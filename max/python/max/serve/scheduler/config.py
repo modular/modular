@@ -51,6 +51,9 @@ class TokenGenerationSchedulerConfig:
     """Data-parallelism parameter. The degree to which the model is replicated
     is dependent on the model type."""
 
+    max_used_blocks_pct: float = 0.95
+    """The maximum percentage of blocks that can be used after allocating for a request. This parameter was found empirically."""
+
     @property
     def max_batch_size_tg_per_replica(self) -> int:
         return self.max_batch_size_tg // self.data_parallel_degree

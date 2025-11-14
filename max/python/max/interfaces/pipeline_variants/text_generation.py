@@ -257,7 +257,7 @@ class TextGenerationContext(BaseContext, Protocol):
           resizes to multiples of ``CHUNK_SIZE`` to accommodate new tokens.
 
     Key Indices:
-        - ``start_idx``: Marks the beginning of completed tokens
+        - ``start_idx``: Marks the beginning of uncompleted tokens
         - ``active_idx``: Marks the start of next_tokens within the array
         - ``end_idx``: Marks the end of all active tokens (one past the last token)
     """

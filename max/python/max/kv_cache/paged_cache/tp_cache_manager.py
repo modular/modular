@@ -28,13 +28,7 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import (
-    BufferType,
-    DeviceRef,
-    Graph,
-    TensorType,
-    TensorValue,
-)
+from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
 from max.interfaces import RequestID, TextGenerationContext, get_blocking
 from max.nn.kv_cache.cache_params import KVCacheParams
 from max.nn.kv_cache.manager import RaggedKVCacheInputs
@@ -77,7 +71,7 @@ class _TPPagedKVCacheManager:
 
     total_num_pages: int
     """Total number of logical pages (complete token slots) available.
-    
+
     In tensor parallelism, each page's KV data is sharded across all devices,
     but this count represents complete logical pages (where all shards together
     form one complete page of `page_size` tokens).
@@ -551,6 +545,22 @@ class _TPPagedKVCacheManager:
         seq_len = ctx.current_length + num_steps - 1
         num_blocks = len(self.block_manager.req_to_blocks[ctx.request_id])
         return seq_len > num_blocks * self.page_size
+
+    @traced
+    def get_pct_used_blocks_after_allocation(
+        self, ctx: TextGenerationContext, num_steps: int = 1
+    ) -> float:
+        """Get the percentage of blocks used after allocating for a request."""
+        num_used_blocks = self.total_num_pages - self.num_free_blocks
+        num_needed_blocks = (
+            num_used_blocks
+            + self.block_manager.num_blocks_to_allocate(ctx, num_steps)
+        )
+        assert self.total_num_pages > 0
+        return min(
+            1.0,
+            num_needed_blocks / self.total_num_pages,
+        )
 
     @traced
     def maybe_reserve(

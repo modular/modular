@@ -202,6 +202,22 @@ class PagedKVCacheManager:
 
         return Tensor.from_numpy(splits)
 
+    def get_pct_used_blocks_after_allocation(
+        self, ctx: TextGenerationContext, num_steps: int = 1
+    ) -> float:
+        """Get the percentage of blocks used after allocating for a request.
+
+        Args:
+            ctx: The request context containing sequence information and token indices.
+            num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
+
+        Returns:
+            The percentage of total blocks used after allocating for the request.
+        """
+        return self._replica_managers[
+            self._request_to_replica_idx[ctx.request_id]
+        ].get_pct_used_blocks_after_allocation(ctx, num_steps)
+
     def maybe_reserve(
         self,
         data: TextGenerationContext,

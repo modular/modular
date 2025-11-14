@@ -311,11 +311,6 @@ class TextBatchConstructor:
         if len(replica.tg_reqs) == 0:
             return True
 
-        if self.paged_cache is not None:
-            # If there are less than 10% free blocks, prioritize TG over CE.
-            if self.paged_cache.free_blocks_pct < 0.1:
-                return False
-
         return True
 
     @traced
@@ -537,10 +532,33 @@ class TextBatchConstructor:
                     )
 
             if self.paged_cache is not None:
-                # Attempt to schedule the request.
-                scheduled = self.paged_cache.maybe_reserve(ctx, num_steps=1)
+                # Check if the CE request will fit in the KVCache
+                pct_blocks_used_after_ce_request = (
+                    self.paged_cache.get_pct_used_blocks_after_allocation(
+                        ctx,
+                        1,  # Number of steps to schedule
+                    )
+                )
+                pct_blocks_used_after_ce_request = max(
+                    0.0, min(pct_blocks_used_after_ce_request, 1.0)
+                )
 
-                # We were able to schedule this request
+                # Check if the percentage of blocks used after allocating for
+                # the CE request is within the allowed limit.
+                sufficient_free_blocks = (
+                    pct_blocks_used_after_ce_request
+                    <= self.scheduler_config.max_used_blocks_pct
+                )
+                # If there are no active TG requests then we must schedule CE.
+                no_active_requests = (
+                    len(replica.tg_reqs) == 0 and len(ce_batch) == 0
+                )
+                scheduled = False
+                if sufficient_free_blocks or no_active_requests:
+                    # Attempt to schedule the request.
+                    scheduled = self.paged_cache.maybe_reserve(ctx, num_steps=1)
+
+                # We were not able to schedule this request
                 if not scheduled:
                     self._return_to_request_queue(ctx, replica_idx)
                     break
