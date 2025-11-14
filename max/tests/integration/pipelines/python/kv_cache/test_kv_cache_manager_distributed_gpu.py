@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 import numpy as np
@@ -24,13 +26,14 @@ from test_common.context_utils import create_text_context
 
 
 def _create_kv_manager(
-    data_parallel_degree: int, num_devices: int
+    data_parallel_degree: int, num_devices: int, batch_size: int | None = None
 ) -> PagedKVCacheManager:
     """Creates a PagedKVCacheManager with the given data parallel degree
     and number of devices.
 
     The maximum batch size is 2 * num_devices.
     """
+    batch_size = 2 * num_devices if batch_size is None else batch_size
 
     devices = [Accelerator(id=i) for i in range(num_devices)]
     params = KVCacheParams(
@@ -44,7 +47,7 @@ def _create_kv_manager(
     )
     manager = load_kv_manager(
         params=params,
-        max_batch_size=2 * num_devices,
+        max_batch_size=batch_size,
         max_seq_len=100,
         num_layers=10,
         devices=devices,
@@ -66,6 +69,16 @@ def test_init() -> None:
         assert single_device_manager.devices == [devices[i]]
         assert single_device_manager.max_seq_len == 100
         assert single_device_manager.num_layers == 10
+
+
+def test_init_small_batch_size() -> None:
+    data_parallel_degree = 2
+    num_devices = 2
+
+    with pytest.raises(
+        ValueError, match=r"minimum value of max_batch_size allowed is 2."
+    ):
+        _ = _create_kv_manager(data_parallel_degree, num_devices, 1)
 
 
 def test_claim_until_full() -> None:
