@@ -106,6 +106,7 @@ modular_cc_library(
         "lib/DeviceContext/CUDA/CUDADriver.h",
         "lib/DeviceContext/CUDA/NVML.cpp",
         "lib/DeviceContext/CUDA/NVML.h",
+        "lib/DeviceContext/CompilationDevice.cpp",
         "lib/DeviceContext/DeviceContext.cpp",
         "lib/DeviceContext/HIP/HIPCompilationDevice.cpp",
         "lib/DeviceContext/HIP/HIPCompilationDevice.h",
