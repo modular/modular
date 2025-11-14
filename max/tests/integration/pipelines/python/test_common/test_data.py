@@ -35,6 +35,8 @@ class MockTextGenerationRequest:
 
     is_multimodal: bool
 
+    model_name: str = ""
+
     @classmethod
     def text_only(cls, prompt: str) -> MockTextGenerationRequest:
         """Creates a text-only generation request."""
@@ -78,7 +80,7 @@ class MockTextGenerationRequest:
             ]
         return TextGenerationRequest(
             request_id=request_id,
-            model_name="",
+            model_name=self.model_name,
             sampling_params=sampling_params,
             **payload,
         )

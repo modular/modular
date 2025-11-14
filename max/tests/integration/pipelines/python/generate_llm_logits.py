@@ -8,8 +8,11 @@ from __future__ import annotations
 
 import copy
 import functools
+import json
 import os
+import shutil
 import sys
+import tempfile
 import traceback
 
 # Standard library
@@ -50,7 +53,6 @@ from test_common import (
 )
 from test_common.evaluate import NUM_STEPS, ModelOutput
 from test_common.github_utils import github_log_group
-from test_common.lora_utils import create_test_lora_adapter
 from test_common.storage import load_image
 from test_common.torch_utils import MockTextGenerationRequest
 from typing_extensions import ParamSpec
@@ -784,13 +786,11 @@ class LoRAOracle(PipelineOracle):
         self,
         *,
         hf_repo_id: str,
-        target_modules: list[str],
-        lora_adapter_path: str | None = None,
+        lora_repo_id: str,
         device_encoding_map: dict[str, list[str]],
         config_params: dict[str, Any] = {},  # noqa: B006
         prompts: list[str] | None = None,
         use_cache: bool = True,
-        lora_rank: int = 8,
     ) -> None:
         """Initialize LoRA oracle.
 
@@ -805,14 +805,13 @@ class LoRAOracle(PipelineOracle):
             lora_rank: LoRA rank parameter
         """
         self.hf_repo_id = hf_repo_id
+        self.lora_repo_id = lora_repo_id
         self._device_encoding_map = device_encoding_map
         self.config_params = config_params
         self._prompts = prompts
         self._use_cache = use_cache
-        self.target_modules = target_modules
-        self.lora_rank = lora_rank
-
-        self._adapter_path = lora_adapter_path
+        self.lora_rank = -1
+        self._adapter_path: str | None = None
 
     @property
     def device_encoding_map(self) -> dict[str, list[str]]:
@@ -820,14 +819,44 @@ class LoRAOracle(PipelineOracle):
 
     def _get_shared_adapter(self) -> str:
         if self._adapter_path is None:
-            revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
-            self._adapter_path = create_test_lora_adapter(
-                base_model_id=self.hf_repo_id,
-                lora_rank=self.lora_rank,
-                target_modules=self.target_modules,
+            revision = hf_repo_lock.revision_for_hf_repo(self.lora_repo_id)
+            original_adapter_path = huggingface_hub.snapshot_download(
+                repo_id=self.lora_repo_id,
                 revision=revision,
             )
 
+            # Copy the adapter to /tmp/ to avoid modifying the original
+            tmp_dir = tempfile.mkdtemp(prefix="lora_adapter_", dir="/tmp")
+            self._adapter_path = os.path.join(
+                tmp_dir, os.path.basename(original_adapter_path)
+            )
+            shutil.copytree(original_adapter_path, self._adapter_path)
+
+            # Fix adapter config for compatibility with older PEFT versions
+            config_path = Path(self._adapter_path) / "adapter_config.json"
+            if config_path.exists():
+                with open(config_path) as f:
+                    config = json.load(f)
+
+                self.lora_rank = config["r"]
+                unsupported_fields = [
+                    "corda_config",
+                    "eva_config",
+                    "exclude_modules",
+                    "lora_bias",
+                    "qalora_group_size",
+                    "target_parameters",
+                    "trainable_token_indices",
+                    "use_qalora",
+                ]
+                for field in unsupported_fields:
+                    if field in config:
+                        del config[field]
+
+                with open(config_path, "w") as f:
+                    json.dump(config, f, indent=2)
+
+        assert self._adapter_path is not None
         return self._adapter_path
 
     def create_max_pipeline(
@@ -859,6 +888,7 @@ class LoRAOracle(PipelineOracle):
 
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
         assert pipeline._pipeline_model._lora_manager is not None
+        pipeline._pipeline_model._lora_manager.activate_adapter(lora_path)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
@@ -882,22 +912,24 @@ class LoRAOracle(PipelineOracle):
             torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
         )
 
-        # Apply LoRA adapter
-        model = PeftModel.from_pretrained(model, lora_path, revision=revision)
+        model = PeftModel.from_pretrained(model, lora_path, "lora")
+        model.set_adapter("lora")
 
-        model.eval()
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
-        return (
-            [
-                MockTextGenerationRequest.text_only(prompt=prompt)
-                for prompt in self._prompts
-            ]
-            if self._prompts
-            else test_data.DEFAULT_TEXT_ONLY
-        )
+        prompts = self._prompts if self._prompts else test_data.DEFAULT_PROMPTS
+        return [
+            MockTextGenerationRequest(
+                prompt=prompt,
+                images=[],
+                messages=[],
+                is_multimodal=False,
+                model_name=self._get_shared_adapter(),
+            )
+            for prompt in prompts
+        ]
 
     @property
     def use_cache(self) -> bool:
@@ -1187,16 +1219,15 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float32", "bfloat16"],
         },
     ),
-    "HuggingFaceTB/SmolLM2-135M-Instruct": LoRAOracle(
-        hf_repo_id="HuggingFaceTB/SmolLM2-135M-Instruct",
+    "HuggingFaceTB/SmolLM2-360M-Instruct": LoRAOracle(
+        hf_repo_id="HuggingFaceTB/SmolLM2-360M-Instruct",
+        lora_repo_id="fausap/peft-smollm2-lora-gtx1660",
         device_encoding_map={
             "gpu": ["bfloat16"],
         },
         config_params={
             "max_length": 2048,
         },
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
-        lora_rank=16,
     ),
     "sentence-transformers/all-mpnet-base-v2": GenericOracle(
         model_path="sentence-transformers/all-mpnet-base-v2",

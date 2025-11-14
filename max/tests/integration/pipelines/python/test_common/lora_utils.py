@@ -120,13 +120,11 @@ def generate_test_lora_adapter(
 
             # LoRA A: maps from proj_dim to rank
             lora_a_key = f"base_model.model.layers.{layer_idx}.self_attn.{module}.lora_A.weight"
-            lora_weights[lora_a_key] = (
-                torch.randn(lora_rank, hidden_size) * 0.01
-            )
+            lora_weights[lora_a_key] = torch.randn(lora_rank, hidden_size) * 0.1
 
             # LoRA B: maps from rank to proj_dim
             lora_b_key = f"base_model.model.layers.{layer_idx}.self_attn.{module}.lora_B.weight"
-            lora_weights[lora_b_key] = torch.randn(out_dim, lora_rank) * 0.01
+            lora_weights[lora_b_key] = torch.randn(out_dim, lora_rank) * 0.1
 
     # Save weights in safetensors format
     save_file(

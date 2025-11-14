@@ -42,6 +42,7 @@ bartowski/Meta-Llama-3.1-8B-Instruct-GGUF	bf5b95e96dac0462e2a09145ec66cae9a3f120
 deepseek-ai/DeepSeek-R1	56d4cbbb4d29f4355bab4b9a39ccb717a14ad5ad
 deepseek-ai/DeepSeek-R1-Distill-Llama-8B	6a6f4aa4197940add57724a7707d069478df56b1
 deepseek-ai/DeepSeek-V2-Lite-Chat	85864749cd611b4353ce1decdb286193298f64c7
+fausap/peft-smollm2-lora-gtx1660	6b3a770dc8dceb01b1d1f4c593f1d516a03882c2
 google/gemma-3-12b-it	96b6f1eccf38110c56df3a15bffe176da04bfd80
 google/gemma-3-1b-it	dcc83ea841ab6100d6b47a070329e1ba4cf78752
 google/gemma-3-27b-it	005ad3404e59d6023443cb575daa05336842228a
