@@ -292,27 +292,6 @@ class TextBatchConstructor:
                 f"Preempted a request due to lack of KV pages. This can affect the end-to-end performance. Consider increasing device-memory-utilization to provide more KV cache memory. Total preemption count: {self.total_preemption_count}."
             )
 
-    def _should_schedule_ce(self, replica_idx: int) -> bool:
-        """Returns True if the scheduler should schedule a context encoding batch."""
-        replica = self.replicas[replica_idx]
-
-        # Cannot schedule CE if there are no requests awaiting CE.
-        if len(replica.ce_reqs) == 0:
-            return False
-
-        # Cannot schedule CE if the TG batch is full.
-        if (
-            len(replica.tg_reqs)
-            >= self.scheduler_config.max_batch_size_tg_per_replica
-        ):
-            return False
-
-        # Must schedule CE if the TG batch is empty.
-        if len(replica.tg_reqs) == 0:
-            return True
-
-        return True
-
     @traced
     def _create_tg_batch(self, replica_idx: int) -> ReplicaBatch:
         """Creates a non empty token generation batch"""
@@ -480,6 +459,16 @@ class TextBatchConstructor:
         replica = self.replicas[replica_idx]
 
         ce_batch: dict[RequestID, TextContext] = {}
+
+        # Cannot schedule CE if there are no requests awaiting CE and
+        # cannot schedule CE if the TG batch is full.
+        if (
+            len(replica.ce_reqs) == 0
+            or len(replica.tg_reqs)
+            >= self.scheduler_config.max_batch_size_tg_per_replica
+        ):
+            return ReplicaBatch(batch=ce_batch, num_steps=1)
+
         input_tokens = 0
 
         if self.scheduler_config.enable_in_flight_batching and replica.tg_reqs:
@@ -589,11 +578,10 @@ class TextBatchConstructor:
         """Constructs a batch for a single replica."""
         replica = self.replicas[replica_idx]
 
-        if self._should_schedule_ce(replica_idx):
-            ce_batch = self._try_create_ce_batch(replica_idx)
-            if len(ce_batch.batch) > 0:
-                return ce_batch
-            # failed to create a CE batch, try to create a TG batch instead
+        ce_batch = self._try_create_ce_batch(replica_idx)
+        if len(ce_batch.batch) > 0:
+            return ce_batch
+        # failed to create a CE batch, try to create a TG batch instead
 
         # if there are no active requests, we can't create a TG batch
         if not replica.tg_reqs:
