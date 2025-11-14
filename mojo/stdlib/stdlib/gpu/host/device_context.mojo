@@ -1933,18 +1933,7 @@ fn _is_nvidia_gpu[target: _TargetType]() -> Bool:
 
 
 fn _is_path_like(ss: StringSlice) -> Bool:
-    # Ideally we want to use `val.start_with` but we hit a compiler bug if we do
-    # that. So, instead we implement the function inline, since we only care
-    # about whether the string starts with a `/`, `~`, or "./".
-    if len(ss) == 0:
-        return False
-    if len(ss) >= 1:
-        if ss[0] == "/" or ss[0] == "~":
-            return True
-    if len(ss) >= 2:
-        if ss[0] == "." and ss[1] == "/":
-            return True
-    return False
+    return ss.startswith("/") or ss.startswith("~") or ss.startswith("./")
 
 
 struct DeviceFunction[
