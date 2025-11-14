@@ -892,7 +892,7 @@ struct List[T: Copyable & Movable](
         )
         self._len += len(value)
 
-    fn pop(mut self, i: Int = -1) -> T:
+    fn pop(mut self, i: Int) -> T:
         """Pops a value from the list at the given index.
 
         Args:
@@ -913,6 +913,17 @@ struct List[T: Copyable & Movable](
         self._len -= 1
         self._annotate_shrink(self._len + 1)
         return ret_val^
+
+    fn pop(mut self) -> T:
+        """Pops a value from the end of the list.
+
+        Returns:
+            The popped value.
+        """
+
+        debug_assert(self._len > 0, "called .pop() on an empty List")
+        self._len -= 1
+        return (self._data + self._len).take_pointee()
 
     fn reserve(mut self, new_capacity: Int):
         """Reserves the requested capacity.
