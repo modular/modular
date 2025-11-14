@@ -291,6 +291,26 @@ struct UnsafePointer[
         """
         self.address = value
 
+    @always_inline
+    fn __init__(out self, *, unsafe_from_address: Int):
+        """Create a pointer from a raw address.
+
+        Args:
+            unsafe_from_address: The raw address to create a pointer from.
+
+        Safety:
+            Creating a pointer from a raw address is inherently unsafe as the
+            caller must ensure the address is valid before writing to it, and
+            that the memory is initialized before reading from it. The caller
+            must also ensure the pointer's origin and mutability is valid for
+            the address, failure to to do may result in undefined behavior.
+        """
+        constrained[
+            size_of[type_of(self)]() == size_of[Int](),
+            "Pointer/Int size mismatch",
+        ]()
+        self = UnsafePointer(to=unsafe_from_address).bitcast[type_of(self)]()[]
+
     @always_inline("nodebug")
     fn __init__(
         out self,

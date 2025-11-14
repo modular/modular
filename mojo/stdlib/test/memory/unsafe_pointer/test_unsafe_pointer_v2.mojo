@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# from testing import TestSuite
+from compile import compile_info
 from memory import UnsafePointer, alloc
+from sys import size_of
 
 from test_utils import (
     ExplicitCopyOnly,
@@ -556,5 +557,37 @@ def test_unsafe_origin_cast():
     _ref_to[origin_of(y)](ptr.unsafe_origin_cast[origin_of(y)]()[])
 
 
+fn _ptr_to_int(ptr: UnsafePointer[Int, MutOrigin.external]) -> Int:
+    return Int(ptr)
+
+
+def test_ptr_to_int_llvm_lowering():
+    var info = compile_info[_ptr_to_int, emission_kind="llvm-opt"]()
+    # https://llvm.org/docs/LangRef.html#ptrtoint-to-instruction
+    # We need to check `ptrtoint` is used instead of `ptrtoaddr` to ensure
+    # pointer provenance is preserved for the default ptr -> int conversion.
+    assert_true("ptrtoint" in info.asm)
+    assert_false("ptrtoaddr" in info.asm)
+
+
+fn _from_address(x: Int, out result: UnsafePointer[Int, MutOrigin.external]):
+    result = type_of(result)(unsafe_from_address=x)
+
+
+def test_unsafe_from_address_llvm_lowering():
+    var info = compile_info[_from_address, emission_kind="llvm-opt"]()
+    assert_true("inttoptr" in info.asm)
+
+
+def test_unsafe_from_address():
+    var x = 42
+    var ptr = UnsafePointer(to=x)
+    var ptr2 = type_of(ptr)(unsafe_from_address=Int(ptr))
+    assert_equal(ptr2[], 42)
+
+    var ptr3 = UnsafePointer[Int, MutOrigin.external](unsafe_from_address=42)
+    assert_true(ptr3)
+
+
 def main():
-    var x = TestSuite.discover_tests[__functions_in_module()]().run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

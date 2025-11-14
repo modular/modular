@@ -408,6 +408,28 @@ You also need to be aware of the format of the data stored in memory, including
 data types and byte order. For more information, see
 [Converting data: bitcasting and byte order](#converting-data-bitcasting-and-byte-order).
 
+### Creating a Mojo pointer from a raw memory address
+
+You can create a `UnsafePointer` from a raw memory address using the
+`unsafe_from_address` initializer.
+
+```mojo
+fn write_to_address(mmio_address: Int, value: Int32):
+    var ptr = UnsafePointer[Int32, MutOrigin.external](
+      unsafe_from_address=mmio_address
+    )
+
+     # Writing to a raw memory address may require a volatile load/store as the
+     # operation may have side effects not visible to the compiler.
+     # You can specify this using the `volatile` parameter.
+    ptr.store[volatile = True](value)
+```
+
+This is unsafe, as the caller must ensure the address is valid before writing to
+it, and that the memory is initialized before reading from it. The caller must
+also ensure the pointer's origin and mutability is valid for the address,
+failure to to do may result in undefined behavior.
+
 ### Creating a Mojo pointer from a Python pointer
 
 The `PythonObject` type defines an

@@ -34,6 +34,9 @@ what we publish.
 
 - Implicit conversion between `Int` and `UInt` have been removed.
 
+- `UnsafePointer` can now be initialized from a raw memory address using the
+  `unsafe_from_address` initializer.
+
 ### Tooling changes
 
 ### ❌ Removed
