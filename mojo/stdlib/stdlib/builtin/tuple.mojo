@@ -19,7 +19,6 @@ from sys.intrinsics import _type_is_eq
 
 from builtin.variadics import VariadicOf
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from utils._visualizers import lldb_formatter_wrapping_type
 
 # ===-----------------------------------------------------------------------===#
@@ -175,8 +174,7 @@ struct Tuple[*element_types: Copyable & Movable](
         var elt_kgen_ptr = __mlir_op.`kgen.pack.gep`[
             index = idx.__mlir_index__()
         ](storage_kgen_ptr)
-        # Use an immortal mut reference, which converts to self's origin.
-        return UnsafePointer(elt_kgen_ptr)[]
+        return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
 
     @always_inline("nodebug")
     fn __contains__[T: EqualityComparable](self, value: T) -> Bool:

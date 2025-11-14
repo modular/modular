@@ -59,7 +59,9 @@ struct _OwnedStringRef(Boolable, Defaultable):
 
     fn consume_as_error(var self) -> Error:
         result = Error()
-        result.data = self.data
+        result.data = self.data.as_immutable().unsafe_origin_cast[
+            ImmutOrigin.external
+        ]()
         result.loaded_length = -self.length
 
         # Don't free self.data in our dtor.

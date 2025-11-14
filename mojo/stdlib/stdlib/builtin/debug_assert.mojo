@@ -26,7 +26,6 @@ from sys.intrinsics import assume
 from sys.param_env import env_get_string
 
 from builtin._location import __call_location, _SourceLocation
-from memory import LegacyUnsafePointer as UnsafePointer
 
 alias ASSERT_MODE = env_get_string["ASSERT", "safe"]()
 
@@ -378,7 +377,7 @@ fn debug_assert[
 
 @no_inline
 fn _debug_assert_msg(
-    message: UnsafePointer[Byte, mut=False], length: Int, loc: _SourceLocation
+    message: UnsafePointer[mut=False, Byte], length: Int, loc: _SourceLocation
 ):
     """Aborts with (or prints) the given message and location.
 

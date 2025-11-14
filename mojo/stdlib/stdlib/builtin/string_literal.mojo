@@ -17,7 +17,6 @@ These are Mojo built-ins, so you don't need to import them.
 
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import CodepointSliceIter, StaticString
-from memory import LegacyUnsafePointer as UnsafePointer
 from os import PathLike
 from sys.ffi import c_char
 
@@ -329,27 +328,25 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     @always_inline("nodebug")
     fn unsafe_ptr(
         self,
-    ) -> UnsafePointer[Byte, mut=False, origin=StaticConstantOrigin]:
+    ) -> UnsafePointer[Byte, StaticConstantOrigin]:
         """Get raw pointer to the underlying data.
 
         Returns:
             The raw pointer to the data.
         """
-        var ptr = UnsafePointer(__mlir_op.`pop.string.address`(self.value))
+        var ptr = UnsafePointer[_, StaticConstantOrigin](
+            __mlir_op.`pop.string.address`(self.value)
+        )
 
         # TODO(MSTDL-555):
         #   Remove bitcast after changing pop.string.address
         #   return type.
-        return (
-            ptr.bitcast[Byte]()
-            .as_immutable()
-            .unsafe_origin_cast[StaticConstantOrigin]()
-        )
+        return ptr.bitcast[Byte]()
 
     @always_inline
     fn unsafe_cstr_ptr(
         self,
-    ) -> UnsafePointer[c_char, mut=False, origin=StaticConstantOrigin]:
+    ) -> UnsafePointer[c_char, StaticConstantOrigin]:
         """Retrieves a C-string-compatible pointer to the underlying memory.
 
         The returned pointer is guaranteed to be NUL terminated, and not null.

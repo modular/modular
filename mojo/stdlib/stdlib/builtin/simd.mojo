@@ -75,12 +75,7 @@ from builtin.device_passable import DevicePassable
 from builtin.format_int import _try_write_int
 from builtin.math import DivModable, Powable
 from documentation import doc_private
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-    bitcast,
-    memcpy,
-)
+from memory import bitcast, memcpy
 from python import ConvertibleToPython, Python, PythonObject
 
 from utils import IndexList, StaticTuple
@@ -509,7 +504,7 @@ struct SIMD[dtype: DType, size: Int](
     alias device_type: AnyType = Self
     """SIMD types are remapped to the same type when passed to accelerator devices."""
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: LegacyOpaquePointer):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 
