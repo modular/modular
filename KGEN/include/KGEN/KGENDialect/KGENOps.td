@@ -2184,4 +2184,26 @@ def KGEN_DeferredOp: KGENOp<"deferred"> {
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// CodeGenReachable
+//===----------------------------------------------------------------------===//
+
+def KGEN_CodeGenReachableOp: KGENOp<"codegen.reachable",
+  [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "check if codegen into runtime code is allowed";
+  let description = [{
+    The `kgen.codegen.reachable` operation checks if
+    codegen into runtimne code is allowed or not.
+  }];
+
+  let arguments = (ins AttrOfType<I1>:$cond,
+                       AttrOfType<KGEN_StringType>:$message);
+  let assemblyFormat = [{
+    ` ` `<` custom<ParamValue>($cond, "$_builder.getI1Type()") `>` `,`
+    custom<StringParam>($message) attr-dict
+  }];
+
+  let hasCanonicalizeMethod = 1;
+}
+
 #endif // KGEN_KGENDIALECT_KGENOPS_TD

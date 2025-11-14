@@ -1512,3 +1512,30 @@ StructGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
                                     state.getReboundType(getType())));
   return success();
 }
+
+//===----------------------------------------------------------------------===//
+// CodeGenReachableOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult CodeGenReachableOp::canonicalize(CodeGenReachableOp op,
+                                               PatternRewriter &rewriter) {
+  auto cond = op.getCond();
+  if (auto intCond = dyn_cast<IntegerAttr>(cond)) {
+    if (intCond.getValue().isZero())
+      return failure();
+    rewriter.eraseOp(op);
+    return success();
+  }
+  return failure();
+}
+
+ErrorTreeOrSuccess CodeGenReachableOp::interpret(ArrayRef<Attribute> operands,
+                                                 InterpreterState &state) {
+  return success();
+}
+
+ErrorTreeOrSuccess
+CodeGenReachableOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                         ParametricInterpreterState &state) {
+  return success();
+}
