@@ -188,10 +188,10 @@ struct TiledMatmul[
     TODO: add fusion hooks.
     """
 
-    var alg: algorithm
-    var c: NDBuffer[c_type, 2, c_origin, c_shape]
-    var a: NDBuffer[a_type, 2, a_origin, a_shape]
-    var b: NDBuffer[b_type, 2, b_origin, b_shape]
+    var alg: Self.algorithm
+    var c: NDBuffer[Self.c_type, 2, Self.c_origin, Self.c_shape]
+    var a: NDBuffer[Self.a_type, 2, Self.a_origin, Self.a_shape]
+    var b: NDBuffer[Self.b_type, 2, Self.b_origin, Self.b_shape]
     # Dynamic tile parameter.
     var tile_n_k: IndexList[2]
 
@@ -202,14 +202,14 @@ struct TiledMatmul[
     var global_tile_shape: GemmShape
 
     var b_tile_generator: BTileGenerator[
-        config,
-        a_type,
-        b_type,
-        c_type,
-        b_shape,
-        transpose_b,
-        b_packed,
-        b_origin,
+        Self.config,
+        Self.a_type,
+        Self.b_type,
+        Self.c_type,
+        Self.b_shape,
+        Self.transpose_b,
+        Self.b_packed,
+        Self.b_origin,
     ]
 
     var elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None
@@ -263,7 +263,7 @@ struct TiledMatmul[
             self.alg.__inner_matmul__[
                 tile_kernel_rows,
                 tile_kernel_cols,
-                config.simd_size,
+                Self.config.simd_size,
             ](
                 self.c,
                 self.a,
@@ -274,7 +274,7 @@ struct TiledMatmul[
                 skip_boundary_check,
             )
 
-            if elementwise_epilogue_enabled and last_k_tile:
+            if Self.elementwise_epilogue_enabled and last_k_tile:
                 self.elementwise_epilogue_fn(
                     global_offset + GemmShape(row_offset, 0, 0),
                     GemmShape(
@@ -283,10 +283,10 @@ struct TiledMatmul[
                 )
 
         @parameter
-        if kernel_id == InnerKernelID.I8MM:
+        if Self.kernel_id == InnerKernelID.I8MM:
             tile[
                 row_iteration,
-                VariadicList[Int](2 * config.kernel_rows, 8, 6, 4, 2, 1),
+                VariadicList[Int](2 * Self.config.kernel_rows, 8, 6, 4, 2, 1),
             ](
                 0,  # starting row offset
                 knm_bounds.M,  # row bound
@@ -294,7 +294,7 @@ struct TiledMatmul[
         else:
             tile[
                 row_iteration,
-                VariadicList[Int](config.kernel_rows, 4, 3, 2, 1),
+                VariadicList[Int](Self.config.kernel_rows, 4, 3, 2, 1),
             ](0, knm_bounds.M)
 
     # Iterate on the N dimension of the gemm space.
@@ -329,22 +329,24 @@ struct TiledMatmul[
         # if b is packed, the packing was performed offline using a single inner
         # size and tile_n.
         @parameter
-        if not b_packed:
+        if not Self.b_packed:
             alias secondary_tiles = VariadicList[Int](
-                config.kernel_cols, 2 * config.simd_size, config.simd_size
+                Self.config.kernel_cols,
+                2 * Self.config.simd_size,
+                Self.config.simd_size,
             )
             var primary_tiles = VariadicList[Int](
-                tile_n, 2 * config.simd_size, config.simd_size
+                tile_n, 2 * Self.config.simd_size, Self.config.simd_size
             )
-            tile[secondary_tiles, config.simd_size, m_loop](
-                0, valid_col_count, primary_tiles, config.simd_size
+            tile[secondary_tiles, Self.config.simd_size, m_loop](
+                0, valid_col_count, primary_tiles, Self.config.simd_size
             )
         else:
             alias secondary_tiles_packed_b = VariadicList[Int](
-                config.kernel_cols
+                Self.config.kernel_cols
             )
             var primary_tiles_packed_b = VariadicList[Int](tile_n)
-            tile[secondary_tiles_packed_b, config.kernel_cols, m_loop](
+            tile[secondary_tiles_packed_b, Self.config.kernel_cols, m_loop](
                 0, valid_col_count, primary_tiles_packed_b, tile_n
             )
 
@@ -378,11 +380,13 @@ struct TiledMatmul[
     #  need to remap every time K and kernel_cols changes.
     fn _view_buffer_as(
         self,
-        b_packed_ptr: UnsafePointer[Scalar[b_type]],
+        b_packed_ptr: UnsafePointer[Scalar[Self.b_type]],
         tile_n: Int,
         tile_k: Int,
         n_inner_size: Int,
-    ) -> NDBuffer[b_type, 3, b_packed_ptr.origin, config.packed_shape]:
+    ) -> NDBuffer[
+        Self.b_type, 3, b_packed_ptr.origin, Self.config.packed_shape
+    ]:
         """Utility function to use to map the allocated packing workspace into
         an n-dimensional buffer.
 
@@ -393,7 +397,7 @@ struct TiledMatmul[
             n_inner_size: Inner dimension size to use for the packed data
                 layout.
         """
-        return NDBuffer[b_type, 3, _, config.packed_shape](
+        return NDBuffer[Self.b_type, 3, _, Self.config.packed_shape](
             b_packed_ptr,
             DimList(tile_n // n_inner_size, tile_k, n_inner_size),
         )

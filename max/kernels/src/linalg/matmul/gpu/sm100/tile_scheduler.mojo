@@ -77,10 +77,12 @@ struct TileScheduler[
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
 ]:
-    alias cluster_size = cluster_shape[0] * cluster_shape[1] * cluster_shape[2]
-    alias log_cluster_m = FastDiv[DType.uint32](cluster_shape[0])
-    alias log_cluster_n = FastDiv[DType.uint32](cluster_shape[1])
-    alias log_cluster_k = FastDiv[DType.uint32](cluster_shape[2])
+    alias cluster_size = Self.cluster_shape[0] * Self.cluster_shape[
+        1
+    ] * Self.cluster_shape[2]
+    alias log_cluster_m = FastDiv[DType.uint32](Self.cluster_shape[0])
+    alias log_cluster_n = FastDiv[DType.uint32](Self.cluster_shape[1])
+    alias log_cluster_k = FastDiv[DType.uint32](Self.cluster_shape[2])
 
     var cluster_dim: StaticTuple[Int32, 3]
     var log_cluster_dim_m: FastDiv[DType.uint32]
@@ -112,7 +114,7 @@ struct TileScheduler[
         ],
     ):
         constrained[
-            block_swizzle_size in [0, 1, 2, 4, 8],
+            Self.block_swizzle_size in [0, 1, 2, 4, 8],
             "block_swizzle_size must be 0, 1, 2, 4, or 8",
         ]()
 
@@ -238,7 +240,7 @@ struct TileScheduler[
     fn fetch_next_work(
         self,
         work_info: WorkInfo,
-        consumer_state: PipelineState[num_stages],
+        consumer_state: PipelineState[Self.num_stages],
     ) -> WorkInfo:
         # num_stages == 0 implies there is only one wave. Only initial
         # work info is valid, next work info is invalid.
@@ -262,8 +264,8 @@ struct TileScheduler[
     @always_inline
     fn advance_to_next_work(
         self,
-        mut clc_state: PipelineState[num_stages],
-    ) -> PipelineState[num_stages]:
+        mut clc_state: PipelineState[Self.num_stages],
+    ) -> PipelineState[Self.num_stages]:
         alias multicast = True if Self.cluster_size > 1 else False
         var lane_id = lane_id()
         var pred: UInt32 = 1 if lane_id < UInt(Self.cluster_size) else 0

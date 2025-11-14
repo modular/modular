@@ -169,7 +169,7 @@ fn _resolve_backend[
 struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
     ImplicitlyCopyable, Movable
 ):
-    alias resolved_backend = _resolve_backend[backend]()
+    alias resolved_backend = _resolve_backend[Self.backend]()
     alias _cublas_type = UnsafePointer[cublasContext]
     alias _rocblas_type = _rocblas.Handle
     alias _hipblaslt_type = hipblasLtHandle_t
@@ -199,7 +199,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
         else:
             raise Error(
                 "the backend '",
-                backend,
+                Self.backend,
                 "' is not currently supported",
             )
 

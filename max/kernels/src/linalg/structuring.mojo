@@ -78,7 +78,10 @@ struct ScatterGatherAmd[
             offset: Optional copy offset.
         """
         _copy_dram_to_local[
-            thread_layout, num_threads, thread_scope, block_dim_count
+            Self.thread_layout,
+            Self.num_threads,
+            Self.thread_scope,
+            Self.block_dim_count,
         ](dst_reg_tile, src_gmem_tile, self.buffer)
 
     @always_inline("nodebug")
@@ -94,7 +97,10 @@ struct ScatterGatherAmd[
             src_reg_tile: Source register tile.
         """
         _copy_local_to_dram[
-            thread_layout, num_threads, thread_scope, block_dim_count
+            Self.thread_layout,
+            Self.num_threads,
+            Self.thread_scope,
+            Self.block_dim_count,
         ](dst_gmem_tile, src_reg_tile, self.buffer)
 
 
@@ -138,7 +144,10 @@ struct IteratorScatterGatherAmd[
             src_gmem_tile_iter: Source memory iterator.
         """
         _copy_dram_to_local[
-            thread_layout, num_threads, thread_scope, block_dim_count
+            Self.thread_layout,
+            Self.num_threads,
+            Self.thread_scope,
+            Self.block_dim_count,
         ](dst_reg_tile, src_gmem_tile_iter, self.buffer)
 
 
@@ -218,21 +227,25 @@ struct SMemTileArrayType[
     """
 
     alias Tile = SMemTileType[
-        dtype,
+        Self.dtype,
         Self.layout,
-        alignment=alignment,
+        alignment = Self.alignment,
     ]
 
-    alias storage_size = eval[layout.size()] * size_of[dtype]() * num_tiles
+    alias storage_size = eval[Self.layout.size()] * size_of[
+        Self.dtype
+    ]() * Self.num_tiles
 
-    var ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED]
+    var ptr: UnsafePointer[
+        Scalar[Self.dtype], address_space = AddressSpace.SHARED
+    ]
 
     fn __init__[
         mut: Bool, //, origin: Origin[mut]
     ](
         out self,
         unsafe_ptr: UnsafePointer[
-            Scalar[dtype],
+            Scalar[Self.dtype],
             address_space = AddressSpace.SHARED,
             mut=mut,
             origin=origin,
@@ -244,7 +257,8 @@ struct SMemTileArrayType[
             unsafe_ptr: Shared memory pointer.
         """
         constrained[
-            layout.all_dims_known(), "Layout must be known at compile time."
+            Self.layout.all_dims_known(),
+            "Layout must be known at compile time.",
         ]()
 
         self.ptr = unsafe_ptr
@@ -259,15 +273,15 @@ struct SMemTileArrayType[
         Returns:
             Tile at index.
         """
-        return Self.Tile(self.ptr + eval[layout.size()] * Int(index))
+        return Self.Tile(self.ptr + eval[Self.layout.size()] * Int(index))
 
     @always_inline
     @staticmethod
     fn stack_allocation() -> Self:
         var ptr = stack_allocation[
             Self.storage_size,
-            dtype,
-            alignment=alignment,
+            Self.dtype,
+            alignment = Self.alignment,
             address_space = AddressSpace.SHARED,
         ]()
         return Self(ptr)
@@ -282,8 +296,10 @@ struct SMemArrayType[type: AnyTrivialRegType, size: Int]:
         size: Number of elements.
     """
 
-    alias ptr_type = UnsafePointer[type, address_space = AddressSpace.SHARED]
-    alias storage_size = size * size_of[type]()
+    alias ptr_type = UnsafePointer[
+        Self.type, address_space = AddressSpace.SHARED
+    ]
+    alias storage_size = Self.size * size_of[Self.type]()
 
     var ptr: Self.ptr_type
 
@@ -319,14 +335,14 @@ struct SMemArrayType[type: AnyTrivialRegType, size: Int]:
         Returns:
             Total size in bytes.
         """
-        return size * size_of[type]()
+        return Self.size * size_of[Self.type]()
 
     @always_inline
     @staticmethod
-    fn stack_allocation[alignment: Int = align_of[type]()]() -> Self:
+    fn stack_allocation[alignment: Int = align_of[Self.type]()]() -> Self:
         var ptr = stack_allocation[
             Self.len(),
-            type,
+            Self.type,
             alignment=alignment,
             address_space = AddressSpace.SHARED,
         ]()
@@ -358,19 +374,19 @@ struct NVIDIASharedMemoryBasePtr[
         return external_memory[
             Int8,
             address_space = AddressSpace.SHARED,
-            alignment=memory_alignment,
-            name=name,
+            alignment = Self.memory_alignment,
+            name = Self.name,
         ]()
 
 
 struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
     alias Tile[dtype: DType, layout: Layout] = SMemTileType[
-        dtype, layout, alignment = SMBP.alignment
+        dtype, layout, alignment = Self.SMBP.alignment
     ]
 
     alias TileArray[
         dtype: DType, layout: Layout, num_tiles: Int
-    ] = SMemTileArrayType[dtype, layout, num_tiles, SMBP.alignment]
+    ] = SMemTileArrayType[dtype, layout, num_tiles, Self.SMBP.alignment]
 
     alias Array[type: AnyTrivialRegType, size: Int] = SMemArrayType[type, size]
 
@@ -380,7 +396,7 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
     @always_inline
     fn __init__(out self):
         """Initialize the shared memory manager."""
-        self.base_ptr = SMBP.ptr()
+        self.base_ptr = Self.SMBP.ptr()
         self.offset = 0
 
     @always_inline

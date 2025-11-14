@@ -80,11 +80,14 @@ struct TileScheduler[
     num_split_k: Int = 1,
 ]:
     alias UnderlyingScheduler = B200TileScheduler[
-        num_stages, cluster_shape, rasterize_order, block_swizzle_size
+        Self.num_stages,
+        Self.cluster_shape,
+        Self.rasterize_order,
+        Self.block_swizzle_size,
     ]
-    alias BM = reduction_tile_shape[0]
-    alias MMA_N = reduction_tile_shape[1]
-    alias BK = reduction_tile_shape[2]
+    alias BM = Self.reduction_tile_shape[0]
+    alias MMA_N = Self.reduction_tile_shape[1]
+    alias BK = Self.reduction_tile_shape[2]
     alias ROW_SIZE = Self.MMA_N if Self.BM == 128 else Self.MMA_N // 2
 
     var locks_ptr: UnsafePointer[Int32]
@@ -111,8 +114,8 @@ struct TileScheduler[
         self.scheduler = Self.UnderlyingScheduler(
             cluster_dim, clc_response_ptr, full_mbar_ptr, empty_mbar_ptr
         )
-        self.total_k_tiles = ceildiv(mnk[2], reduction_tile_shape[2])
-        self.k_tiles_per_split = ceildiv(self.total_k_tiles, num_split_k)
+        self.total_k_tiles = ceildiv(mnk[2], Self.reduction_tile_shape[2])
+        self.k_tiles_per_split = ceildiv(self.total_k_tiles, Self.num_split_k)
         self.locks_ptr = locks_ptr.bitcast[Int32]()
 
     @always_inline
@@ -136,15 +139,15 @@ struct TileScheduler[
     @always_inline
     fn advance_to_next_work(
         self,
-        mut clc_state: PipelineState[num_stages],
-    ) -> PipelineState[num_stages]:
+        mut clc_state: PipelineState[Self.num_stages],
+    ) -> PipelineState[Self.num_stages]:
         return self.scheduler.advance_to_next_work(clc_state)
 
     @always_inline
     fn fetch_next_work(
         self,
         work_info: WorkInfo,
-        consumer_state: PipelineState[num_stages],
+        consumer_state: PipelineState[Self.num_stages],
     ) -> WorkInfo:
         var underlying_workinfo = B200WorkInfo(
             work_info.m, work_info.n, work_info.k_start, work_info.is_valid_tile
