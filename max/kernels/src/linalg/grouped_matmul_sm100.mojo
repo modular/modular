@@ -1296,6 +1296,8 @@ fn _grouped_matmul_sm100_persistent[
     var M_maybe_swapped = a_device.dim[0]()
     var N_maybe_swapped = b_device.dim[0]()
     var K = a_device.dim[1]()
+    if M == 0 or N == 0 or K == 0:
+        return
 
     a_tma_op = create_tma_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
