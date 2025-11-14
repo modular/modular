@@ -120,7 +120,8 @@ static void sortValueUses(Operation *topLevelOp) {
 /// provides the compiler a canonical form of IR coming out of the parser. This,
 /// for instance, ensures the cache key computed on parser output does not
 /// depend on whether the parser has cache hits for lazy loading.
-static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
+static void eraseUnreachableDecls(Operation *declOp, ModuleOp module,
+                                  bool preserveClosureTraitMethods = false) {
   CompilerTimeTraceScope traceScope("eraseUnreachableDecls");
 
   // Precompute a map from structs to their extensions, this will help with
@@ -211,6 +212,15 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
       }
     }
 
+    // If preserving closure trait methods, mark all functions in closure traits
+    // as live when the trait itself is live.
+    if (preserveClosureTraitMethods) {
+      if (auto traitOp = dyn_cast<LIT::TraitDeclOp>(cur)) {
+        if (traitOp.getClosureSignature().has_value())
+          traitOp.walk([&](FnOp fn) { markLive(fn); });
+      }
+    }
+
     // Collect symbol references between this symbol table and any child symbol
     // tables. Nested `lit.fn` operations are trickier, however.
     cur->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
@@ -242,11 +252,6 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
     // Don't purge anything from the main package if we are parsing one.
     if (op == declOp && isa<PackageOp>(declOp))
       return WalkResult::skip();
-
-    // Keep the top level closures around.
-    if (auto traitDecl = dyn_cast<TraitDeclOp>(op))
-      if (traitDecl.getClosureSignature().has_value())
-        return WalkResult::skip();
 
     if (isa<mlir::SymbolOpInterface, FnOp>(op) && !liveSymbols.contains(op)) {
       op->erase();
@@ -309,7 +314,14 @@ importMojoImpl(AsyncRT::Runtime &runtime, StringRef moduleIdentifier,
   }
 #endif // MODULAR_PRODUCTION
 
-  eraseUnreachableDecls(moduleDecl.getIfOperation(), *module);
+  // Closure traits live outside module so we cannot distinguish between those
+  // that were defined by this unit and those that were defined by dependencies.
+  // The difference between a trait defined by the unit and one defined by the
+  // dependency is that the methods of the latter need not persist. The same is
+  // not true for the former. Opt to keep all methods of closure traits to
+  // guarantee correctness.
+  eraseUnreachableDecls(moduleDecl.getIfOperation(), *module,
+                        /*preserveClosureTraitMethods=*/true);
   sortValueUses(*module);
 
   // Set the included files if requested.
@@ -530,7 +542,10 @@ OwningOpRef<ModuleOp> LIT::cloneDeclModuleForCompilation(ASTDecl &decl,
 
   // Perform the necessary post-parse transformations to prepare the module for
   // compilation.
-  eraseUnreachableDecls(newDeclOp, *newModule);
+  // TODO: ensure bodies of closure traits survive resolution and remove the
+  // closure preservation flag.
+  eraseUnreachableDecls(newDeclOp, *newModule,
+                        /*preserveClosureTraitMethods=*/false);
   sortValueUses(*newModule);
   return newModule;
 }
