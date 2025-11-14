@@ -14,7 +14,7 @@
 
 [workspace]
 authors = ["Modular <hello@modular.com>"]
-channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
+channels = ["conda-forge", "https://conda.modular.com/max/"]
 description = "MAX encode examples with RoBERTa models"
 name = "MAX Encode Examples"
 platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
