@@ -290,7 +290,6 @@ struct Int(
         self = value.__int__()
 
     @always_inline("builtin")
-    @implicit(deprecated=True)
     fn __init__(out self, value: UInt):
         """Construct Int from the given UInt value.
 

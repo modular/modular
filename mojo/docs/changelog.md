@@ -32,6 +32,8 @@ what we publish.
   source-available. Note that this changes the random number sequence for a given
   seed value, which may affect tests or code relying on reproducible sequences.
 
+- Implicit conversion between `Int` and `UInt` have been removed.
+
 ### Tooling changes
 
 ### ❌ Removed
