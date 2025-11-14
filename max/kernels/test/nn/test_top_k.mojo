@@ -31,21 +31,23 @@ from utils.index import IndexList, product
 
 
 struct TestTensor[rank: Int, dtype: DType](Movable):
-    var storage: List[Scalar[dtype]]
-    var shape: IndexList[rank]
+    var storage: List[Scalar[Self.dtype]]
+    var shape: IndexList[Self.rank]
 
-    fn __init__(out self, shape: IndexList[rank]):
-        self.storage = List[Scalar[dtype]](
+    fn __init__(out self, shape: IndexList[Self.rank]):
+        self.storage = List[Scalar[Self.dtype]](
             length=shape.flattened_length(), fill=0
         )
         self.shape = shape
 
     fn to_layout_tensor(
         ref self,
-    ) -> LayoutTensor[dtype, Layout.row_major[rank](), origin_of(self.storage)]:
+    ) -> LayoutTensor[
+        Self.dtype, Layout.row_major[Self.rank](), origin_of(self.storage)
+    ]:
         return {
-            Span[Scalar[dtype]](self.storage),
-            RuntimeLayout[Layout.row_major[rank]()].row_major(self.shape),
+            Span[Scalar[Self.dtype]](self.storage),
+            RuntimeLayout[Layout.row_major[Self.rank]()].row_major(self.shape),
         }
 
 

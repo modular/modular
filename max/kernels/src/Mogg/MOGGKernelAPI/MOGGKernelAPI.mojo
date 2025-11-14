@@ -6382,7 +6382,7 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
             max_lengths,
         )
         generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
-            interleaved=interleaved,
+            interleaved = Self.interleaved,
             has_position_ids=True,
             target=target,
             mrope_section = Optional[IntTuple](
@@ -6431,7 +6431,9 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
             max_lengths,
         )
         generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
-            interleaved=interleaved, has_position_ids=False, target=target
+            interleaved = Self.interleaved,
+            has_position_ids=False,
+            target=target,
         ](
             q_proj,
             input_row_offsets,
@@ -6477,7 +6479,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
                 trace_arg("input_row_offsets", input_row_offsets.shape()),
                 trace_arg("start_pos", start_pos.shape()),
                 trace_arg("freqs_cis", freqs_cis.shape()),
-                "interleaved=" + String(interleaved),
+                "interleaved=" + String(Self.interleaved),
                 "target=" + String(target),
             )
 
@@ -6502,7 +6504,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         ):
             rope_ragged[
-                interleaved=interleaved,
+                interleaved = Self.interleaved,
                 target=target,
                 output_fn=output_fn,
             ](
@@ -8636,12 +8638,12 @@ struct ArgSort[*, ascending: Bool]:
     ) raises:
         @parameter
         if target == "cpu":
-            argsort[ascending=ascending](
+            argsort[ascending = Self.ascending](
                 indices.to_layout_tensor(), input.to_layout_tensor()
             )
         else:
             var cuda_ctx = ctx.get_device_context()
-            argsort[ascending=ascending, target=target](
+            argsort[ascending = Self.ascending, target=target](
                 indices.to_layout_tensor(), input.to_layout_tensor(), cuda_ctx
             )
 
@@ -8672,7 +8674,7 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
             "output dtype should be float8_e4m3fn or float8_e4m3fnuz",
         ]()
         var scale_loaded = scale.cast[DType.float32]()
-        quantize_static_scaled_fp8[scale_is_inverted=scale_is_inverted](
+        quantize_static_scaled_fp8[scale_is_inverted = Self.scale_is_inverted](
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(input),
             scale_loaded,

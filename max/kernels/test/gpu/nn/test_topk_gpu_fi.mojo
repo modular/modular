@@ -531,11 +531,11 @@ fn fill_random[
 struct TestCase[_sampling: Bool, _largest: Bool = True, _block_size: Int = 256](
     ImplicitlyCopyable, Movable
 ):
-    alias sampling = _sampling
-    alias largest = _largest
+    alias sampling = Self._sampling
+    alias largest = Self._largest
     var N: Int
     var K: Int
-    alias block_size: Int = _block_size
+    alias block_size: Int = Self._block_size
     var batch_size: Int
     var num_blocks_per_input: OptionalReg[Int]
 

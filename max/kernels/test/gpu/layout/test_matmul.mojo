@@ -51,40 +51,40 @@ struct test_matmul[
     var N: Int
     var K: Int
 
-    var a_host: HostNDBuffer[dtype, 2]
-    var b_host: HostNDBuffer[dtype, 2]
-    var c_host: HostNDBuffer[dtype, 2]
-    var c_host_ref: HostNDBuffer[dtype, 2]
+    var a_host: HostNDBuffer[Self.dtype, 2]
+    var b_host: HostNDBuffer[Self.dtype, 2]
+    var c_host: HostNDBuffer[Self.dtype, 2]
+    var c_host_ref: HostNDBuffer[Self.dtype, 2]
 
-    var a_device_buffer: DeviceBuffer[dtype]
-    var b_device_buffer: DeviceBuffer[dtype]
-    var c_device_buffer: DeviceBuffer[dtype]
-    var c_device_buffer_ref: DeviceBuffer[dtype]
+    var a_device_buffer: DeviceBuffer[Self.dtype]
+    var b_device_buffer: DeviceBuffer[Self.dtype]
+    var c_device_buffer: DeviceBuffer[Self.dtype]
+    var c_device_buffer_ref: DeviceBuffer[Self.dtype]
 
     fn __init__(out self, mut m: Bench, ctx: DeviceContext) raises:
         self.ctx = ctx
-        self.M = a_layout.shape[0].value()
-        self.N = b_layout.shape[1].value()
-        self.K = b_layout.shape[0].value()
+        self.M = Self.a_layout.shape[0].value()
+        self.N = Self.b_layout.shape[1].value()
+        self.K = Self.b_layout.shape[0].value()
         var a_shape = DimList(self.M, self.K)
         var b_shape = DimList(self.K, self.N)
         var c_shape = DimList(self.M, self.N)
 
-        self.a_host = HostNDBuffer[dtype, 2](a_shape)
-        self.b_host = HostNDBuffer[dtype, 2](b_shape)
-        self.c_host = HostNDBuffer[dtype, 2](c_shape)
-        self.c_host_ref = HostNDBuffer[dtype, 2](c_shape)
+        self.a_host = HostNDBuffer[Self.dtype, 2](a_shape)
+        self.b_host = HostNDBuffer[Self.dtype, 2](b_shape)
+        self.c_host = HostNDBuffer[Self.dtype, 2](c_shape)
+        self.c_host_ref = HostNDBuffer[Self.dtype, 2](c_shape)
 
-        self.a_device_buffer = ctx.enqueue_create_buffer[dtype](
+        self.a_device_buffer = ctx.enqueue_create_buffer[Self.dtype](
             a_shape.product().get()
         )
-        self.b_device_buffer = ctx.enqueue_create_buffer[dtype](
+        self.b_device_buffer = ctx.enqueue_create_buffer[Self.dtype](
             b_shape.product().get()
         )
-        self.c_device_buffer = ctx.enqueue_create_buffer[dtype](
+        self.c_device_buffer = ctx.enqueue_create_buffer[Self.dtype](
             c_shape.product().get()
         )
-        self.c_device_buffer_ref = ctx.enqueue_create_buffer[dtype](
+        self.c_device_buffer_ref = ctx.enqueue_create_buffer[Self.dtype](
             c_shape.product().get()
         )
 
@@ -97,7 +97,7 @@ struct test_matmul[
         ctx.enqueue_copy(self.b_device_buffer, self.b_host.tensor.data)
         ctx.enqueue_memset(self.c_device_buffer_ref, 0)
 
-        run_cublas[dtype, enable_tc](
+        run_cublas[Self.dtype, Self.enable_tc](
             m,
             ctx,
             self.M,
@@ -121,8 +121,8 @@ struct test_matmul[
         ](
             m: Int,
             n: Int,
-            ptr: UnsafePointer[Scalar[dtype]],
-            out result: LayoutTensor[dtype, layout, ptr.origin],
+            ptr: UnsafePointer[Scalar[Self.dtype]],
+            out result: LayoutTensor[Self.dtype, layout, ptr.origin],
         ):
             var dynamic_layout = type_of(result.runtime_layout)(
                 type_of(result.runtime_layout.shape)(m, n),
@@ -130,13 +130,13 @@ struct test_matmul[
             )
             return {ptr, dynamic_layout}
 
-        var a = create_tensor[a_layout](
+        var a = create_tensor[Self.a_layout](
             self.M, self.K, self.a_device_buffer.unsafe_ptr()
         )
-        var b = create_tensor[b_layout](
+        var b = create_tensor[Self.b_layout](
             self.K, self.N, self.b_device_buffer.unsafe_ptr()
         )
-        var c = create_tensor[c_layout](
+        var c = create_tensor[Self.c_layout](
             self.M, self.N, self.c_device_buffer.unsafe_ptr()
         )
 

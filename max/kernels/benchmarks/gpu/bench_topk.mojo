@@ -394,8 +394,8 @@ fn fill_buffer[
 struct TestCase[_sampling: Bool, _largest: Bool = True](
     ImplicitlyCopyable, Movable
 ):
-    alias sampling = _sampling
-    alias largest = _largest
+    alias sampling = Self._sampling
+    alias largest = Self._largest
     var N: Int
     var K: Int
     var block_size: Int

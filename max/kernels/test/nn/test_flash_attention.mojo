@@ -297,10 +297,10 @@ def reference_attention_bshd_with_sinks[
 struct TestCaseConfig[batch_rank: Int](ImplicitlyCopyable, Movable):
     """Test case workload configuration hyperparameters."""
 
-    alias rank = batch_rank + 2
+    alias rank = Self.batch_rank + 2
     alias kv_cache_rank = Self.rank + 1
 
-    var batch_dims: IndexList[batch_rank]
+    var batch_dims: IndexList[Self.batch_rank]
     var seq_len: Int
     var kv_num_heads: Int
     var kv_seq_len: Int
@@ -325,17 +325,17 @@ struct TestCaseConfig[batch_rank: Int](ImplicitlyCopyable, Movable):
             shape[0] = 1
 
             @parameter
-            for i in range(batch_rank):
+            for i in range(Self.batch_rank):
                 shape[i + 1] = self.batch_dims[i]
         else:
             # Copy the batch dims without unsqueezing.
             @parameter
-            for i in range(batch_rank):
+            for i in range(Self.batch_rank):
                 shape[i] = self.batch_dims[i]
 
         # Replace the number of query heads with the number of KV heads.
         @parameter
-        if is_kv and batch_rank == 2:
+        if is_kv and Self.batch_rank == 2:
             shape[shape_rank - 3] = self.kv_num_heads
 
         shape[shape_rank - 2] = x
@@ -356,19 +356,19 @@ struct TestCaseConfig[batch_rank: Int](ImplicitlyCopyable, Movable):
             shape[1] = self.batch_dims[0]
 
             @parameter
-            for i in range(1, batch_rank):
+            for i in range(1, Self.batch_rank):
                 shape[i + 2] = self.batch_dims[i]
         else:
             shape[0] = self.batch_dims[0]
 
             # Copy the batch dims without unsqueezing.
             @parameter
-            for i in range(1, batch_rank):
+            for i in range(1, Self.batch_rank):
                 shape[i + 1] = self.batch_dims[i]
 
         # Replace the number of query heads with the number of KV heads.
         @parameter
-        if is_kv and batch_rank == 2:
+        if is_kv and Self.batch_rank == 2:
             shape[shape_rank - 2] = self.kv_num_heads
 
         shape[1] = x

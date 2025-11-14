@@ -568,7 +568,7 @@ struct ManagedTensorSlice[
 
     # `trait DevicePassable` implementation
     alias device_type: AnyType = LayoutTensor[
-        dtype, static_spec.to_layout(), MutAnyOrigin
+        Self.dtype, Self.static_spec.to_layout(), MutAnyOrigin
     ]
 
     fn _to_device_type(self, target: OpaquePointer):
@@ -1167,9 +1167,11 @@ struct ManagedTensorSlice[
     @always_inline
     fn to_layout_tensor(
         self,
-        out result: LayoutTensor[dtype, static_spec.to_layout(), MutAnyOrigin],
+        out result: LayoutTensor[
+            Self.dtype, Self.static_spec.to_layout(), MutAnyOrigin
+        ],
     ):
-        alias layout = static_spec.to_layout()
+        alias layout = Self.static_spec.to_layout()
         return type_of(result)(
             self.unsafe_ptr(),
             type_of(result.runtime_layout)(

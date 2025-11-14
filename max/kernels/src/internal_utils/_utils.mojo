@@ -289,8 +289,8 @@ struct TestTensor[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
     fn __del__(deinit self):
         self.ndbuffer.data.free()
 
-    fn to_managed_tensor_slice(self) -> DynamicTensor[dtype, rank]:
-        return DynamicTensor[dtype, rank](self.ndbuffer)
+    fn to_managed_tensor_slice(self) -> DynamicTensor[Self.dtype, Self.rank]:
+        return DynamicTensor[Self.dtype, Self.rank](self.ndbuffer)
 
 
 @register_passable("trivial")

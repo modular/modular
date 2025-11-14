@@ -36,8 +36,8 @@ struct Matrix[rows: Int, cols: Int]:
 
     # Initialize zeroeing all values
     fn __init__(out self):
-        self.data = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-        memset_zero(self.data, rows * cols)
+        self.data = UnsafePointer[Scalar[dtype]].alloc(Self.rows * Self.cols)
+        memset_zero(self.data, Self.rows * Self.cols)
 
     # Initialize taking a pointer, don't set any elements
     fn __init__(out self, data: UnsafePointer[Scalar[dtype]]):
@@ -46,8 +46,8 @@ struct Matrix[rows: Int, cols: Int]:
     ## Initialize with random values
     @staticmethod
     fn rand() -> Self:
-        var data = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-        rand(data, rows * cols)
+        var data = UnsafePointer[Scalar[dtype]].alloc(Self.rows * Self.cols)
+        rand(data, Self.rows * Self.cols)
         return Self(data)
 
     fn __getitem__(self, y: Int, x: Int) -> Scalar[dtype]:
