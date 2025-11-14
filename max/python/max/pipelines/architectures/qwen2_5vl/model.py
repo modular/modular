@@ -27,6 +27,7 @@ from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, Value
+from max.graph.tensor_utils import cast_tensors_to
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
@@ -179,6 +180,7 @@ class Qwen2_5VLModel(
         )
 
         self.model_config = None
+        self._session = session  # reuse for on-device casts
 
         self.vision_model, self.language_model = self.load_model(session)
 
@@ -747,6 +749,10 @@ class Qwen2_5VLModel(
                 for output in vision_outputs
                 if isinstance(output, Tensor)
             ]
+            image_embeddings = cast_tensors_to(
+                image_embeddings, self.dtype, self._session
+            )
+
             scatter_indices = model_inputs.scatter_indices
             gather_indices = model_inputs.gather_indices
 
@@ -764,6 +770,15 @@ class Qwen2_5VLModel(
             assert (
                 scatter_indices[0].shape[0] <= model_inputs.input_ids.shape[0]
             )
+
+            # Normalize index dtypes to match the language graph contract.
+            scatter_indices = cast_tensors_to(
+                scatter_indices, DType.int32, self._session
+            )
+            gather_indices = cast_tensors_to(
+                gather_indices, DType.int64, self._session
+            )
+
         else:
             # Initialize empty tensors for text-only mode
             image_embeddings = self._empty_image_embeddings
