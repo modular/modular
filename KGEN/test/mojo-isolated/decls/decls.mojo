@@ -634,12 +634,25 @@ fn int_abs[x: Int]() -> Int
     where x < 0:
     return 0 - x
 
+# CHECK: lit.fn @"int_abs_param[[INT_ABS_PARAM_NONNEG:[^"]+]]"
+fn int_abs_param[x: Int where x > -1]() -> Int:
+    return x
+
+# CHECK: lit.fn @"int_abs_param[[INT_ABS_PARAM_NEG:[^"]+]]"
+fn int_abs_param[x: Int where x < 0]() -> Int:
+    return 0 - x
+
+
 # CHECK: lit.fn @"constraint_overloading
 fn constraint_overloading():
     # CHECK: lit.call @decls::@"int_abs[[INT_ABS_NONNEG]]"
     _ = int_abs[1]()
     # CHECK: lit.call @decls::@"int_abs[[INT_ABS_NEG]]"
     _ = int_abs[-1]()
+    # CHECK: lit.call @decls::@"int_abs_param[[INT_ABS_PARAM_NONNEG]]"
+    _ = int_abs_param[1]()
+    # CHECK: lit.call @decls::@"int_abs_param[[INT_ABS_PARAM_NEG]]"
+    _ = int_abs_param[-1]()
 
 ##===----------------------------------------------------------------------===##
 # Structs
