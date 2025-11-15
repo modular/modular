@@ -247,12 +247,19 @@ DeadArgumentElimination::surveyUse(OpOperand &inputUse, CallGraphNode *node,
     return Live;
 
   std::vector<std::reference_wrapper<OpOperand>> worklist;
+  DenseSet<Operation *> visited;
 
   worklist.emplace_back(inputUse);
 
   while (!worklist.empty()) {
     OpOperand &use = worklist.back();
     worklist.pop_back();
+    if (visited.count(use.getOwner()) && !worklist.empty()) {
+      // Also check is worklist is not emtpy before continuing. This is needed
+      // because of the special handling in code below that can return `Live`.
+      continue;
+    }
+    visited.insert(use.getOwner());
 
     if (auto ret = dyn_cast<ReturnOp>(use.getOwner())) {
       DeadArgumentElimination::Liveness result = MaybeLive;
