@@ -1160,6 +1160,20 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
 //===----------------------------------------------------------------------===//
 // Decl Helpers
 
+static void printConstraints(llvm::raw_ostream &os,
+                             ArrayRef<ConstraintAttr> constraints) {
+  if (constraints.empty())
+    return;
+  os << '{';
+  llvm::interleave(
+      constraints, os,
+      [&](ConstraintAttr constraint) {
+        ASTType::printParam(os, constraint.getProposition(), /*diags=*/nullptr);
+      },
+      ",");
+  os << '}';
+}
+
 StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
                                         FnTypeGeneratorType signatureGen) {
   // Compute the full signature of the decl to ensure dependent parameters from
@@ -1173,6 +1187,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
   // Don't include parent parameters in the mangling.
   ArrayRef<Type> params = fullSig.getInputParamTypes().take_back(
       signatureGen.getInputParamTypes().size());
+  ArrayRef<PogMetadataAttr> pogs = fullSig.getParamListAttrs().getPogs();
   if (!params.empty()) {
     size_t numSkipped = fullSig.getInputParamTypes().size() - params.size();
     os << '[';
@@ -1186,6 +1201,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
             type = type.getVariadicElementType();
           }
           os << type.getAsString(/*diags=*/nullptr);
+          printConstraints(os, pogs[idx].getConstraints());
         },
         ",");
     os << ']';
@@ -1255,20 +1271,8 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
   }
   mangledName += ')';
 
-  // Add constraints to the mangled name.
-  ArrayRef<ConstraintAttr> constraints =
-      fullSig.getFnMetadata().getConstraints();
-  if (!constraints.empty()) {
-    mangledName += '{';
-    llvm::interleave(
-        constraints, os,
-        [&](ConstraintAttr constraint) {
-          ASTType::printParam(os, constraint.getProposition(),
-                              /*diags=*/nullptr);
-        },
-        ",");
-    mangledName += '}';
-  }
+  // Add fn constraints to the mangled name.
+  printConstraints(os, fullSig.getFnMetadata().getConstraints());
 
   // Having "@" in mangled names confuses gnu ld and triggers error at linking
   // stage. See issue #6918. So replacing "@" with "_".
