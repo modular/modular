@@ -17,6 +17,7 @@ from os import abort
 
 from python import Python, PythonObject
 from python.bindings import PythonModuleBuilder, TypeObjectSlot
+from python._cpython import PyObjectPtr
 
 
 @export
@@ -57,6 +58,7 @@ fn PyInit_mojo_module() -> PythonObject:
             .def_special_method[
                 Person.py__getitem__, TypeObjectSlot.MappingGetItem
             ]("__getitem__")
+            .def_rich_compare[Person.rich_compare]()
         )
 
         return b.finalize()
@@ -269,3 +271,28 @@ struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
 
         self_ptr[].age += total
         return PythonObject(self_ptr[].age)
+
+    @staticmethod
+    fn rich_compare(
+        self_ptr: PyObjectPtr, other: PyObjectPtr, op: Int
+    ) raises -> Bool:
+        """Implement the rich compare functionality."""
+        # Py_EQ = 2 (equal comparison)
+        if op == 2:
+            # First check if they're the same object (identity)
+            if self_ptr == other:
+                return True
+
+            # Otherwise, check if the other object is also a Person and compare values
+            var self_person = Self._get_self_ptr(
+                PythonObject(from_borrowed=self_ptr)
+            )
+            var other_person = Self._get_self_ptr(
+                PythonObject(from_borrowed=other)
+            )
+            return (
+                self_person[].name == other_person[].name
+                and self_person[].age == other_person[].age
+            )
+        # For other comparisons, return False
+        return False

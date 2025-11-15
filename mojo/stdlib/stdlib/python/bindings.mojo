@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import _Global, c_int
+from sys.ffi import _Global, c_int, c_long
 from sys.info import size_of
 
 from builtin._startup import _ensure_current_or_global_runtime_init
@@ -26,6 +26,8 @@ from python import Python, PythonObject
 from python._cpython import (
     GILAcquired,
     Py_mp_subscript,
+    Py_tp_richcompare,
+    Typed_richcompare,
     Py_TPFLAGS_DEFAULT,
     PyCFunction,
     PyCFunctionWithKeywords,
@@ -95,6 +97,9 @@ struct TypeObjectSlot:
 
     # https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_subscript
     alias MappingGetItem = TypeObjectSlot(Py_mp_subscript)
+
+    # https://docs.python.org/3/c-api/typeobj.html#c.PyTypeObject.tp_richcompare
+    alias RichCompare = TypeObjectSlot(Py_tp_richcompare)
 
 
 fn lookup_py_type_object[T: AnyType]() raises -> PythonObject:
@@ -267,6 +272,37 @@ fn _mp_subscript_wrapper[
             self_obj, PythonObject(from_owned=tuple_builder)
         )
         return result.steal_data()
+    except e:
+        var error_type = cpython.get_error_global("PyExc_Exception")
+        cpython.PyErr_SetString(error_type, e.unsafe_cstr_ptr())
+        return PyObjectPtr()
+
+
+fn _richcompare_wrapper[
+    method: fn (PyObjectPtr, PyObjectPtr, Int) raises -> Bool
+](py_self: PyObjectPtr, py_other: PyObjectPtr, op: c_int) -> PyObjectPtr:
+    """Python-compatible wrapper for rich comparison protocol.
+
+    This function serves as the `tp_richcompare` slot for Python type objects.
+    It adapts user methods to the richcmpfunc signature required by Python.
+
+    Parameters:
+        method: The user's comparison method that returns a Bool.
+
+    Args:
+        py_self: Pointer to the first Python object.
+        py_other: Pointer to the second Python object.
+        op: The comparison operator (Py_LT, Py_LE, Py_EQ, Py_NE, Py_GT, Py_GE).
+
+    Returns:
+        A Python boolean object (Py_True or Py_False), or null pointer if an
+        error occurs (with Python exception set).
+    """
+    ref cpython = Python().cpython()
+
+    try:
+        var result = method(py_self, py_other, Int(op))
+        return cpython.PyBool_FromLong(c_long(Int(result)))
     except e:
         var error_type = cpython.get_error_global("PyExc_Exception")
         cpython.PyErr_SetString(error_type, e.unsafe_cstr_ptr())
@@ -1113,6 +1149,19 @@ struct PythonTypeBuilder(Copyable, Movable):
             abort(
                 "Unsupported special method slot: " + String(tp_slot._tp_slot)
             )
+
+        return self
+
+    fn def_rich_compare[
+        method: fn (PyObjectPtr, PyObjectPtr, Int) raises -> Bool
+    ](mut self: Self) -> ref [self] Self:
+        """Sets the rich compare method."""
+        self._insert_slot(
+            PyType_Slot(
+                Py_tp_richcompare,
+                rebind[OpaquePointer](_richcompare_wrapper[method]),
+            )
+        )
 
         return self
 
