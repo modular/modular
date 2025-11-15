@@ -182,3 +182,9 @@ def test_add_kwargs_to_age_auto() -> None:
     expected_age = initial_age + 15
     assert result == expected_age
     assert person.get_age() == expected_age
+
+
+def test_rich_compare() -> None:
+    person1 = def_method.Person()
+    person2 = def_method.Person()
+    assert person1 == person2
