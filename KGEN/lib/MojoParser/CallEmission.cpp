@@ -230,27 +230,6 @@ static CallKind getCallKind(CallSyntax syntax) {
   llvm_unreachable("invalid call syntax");
 }
 
-// This is for those weird cases where we detect we've printed out that X != X,
-// in other words, the actual and expected types look the same to the user,
-// which is confusing.
-// The temporarily solution is to call this function to print out the kgen type
-// as well.
-// TODO(MOCO-2080): Make this irrelevant by improving the original error
-// message that wasn't detailed enough.
-static void printSimilarTypesNote(MojoInflightDiag &diag, llvm::SMLoc smLoc,
-                                  Type actualMlirType, Type expectedMlirType) {
-  std::string actualRaw;
-  llvm::raw_string_ostream(actualRaw) << actualMlirType;
-  std::string expectedRaw;
-  llvm::raw_string_ostream(expectedRaw) << expectedMlirType;
-  diag.attachNote(smLoc)
-      << "More detailed comparison:"
-      << "\nActual:   " // Extra space to line it up
-      << actualRaw << "\nExpected: " << expectedRaw
-      << "\n(If you see this, please file an issue to improve this "
-         "error message!)";
-}
-
 /// Evaluate the fnDecls candidates and see if there is an unambiguous
 /// candidate that works with the specified parameter bindings on the overload
 /// set. If so, return the single entry that works.  If not, generate a
@@ -489,22 +468,8 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
              << "; did you mean to instantiate " << initResType << "?"
              << expr->getRange();
       } else {
-        std::string singleOperandTypeAsString =
-            "'" + singleOperandType.getAsString(&getShared()) + "'";
-        std::string initResTypeAsString =
-            "'" + initResType.getAsString(&getShared()) + "'";
-
-        diag << "cannot implicitly convert " << singleOperandTypeAsString
-             << " value to " << initResTypeAsString << expr->getRange();
-
-        if (singleOperandTypeAsString == initResTypeAsString) {
-          // Print out the internal representation of the types.
-          // TODO(MOCO-2080): Make this irrelevant by making the above type
-          // printing smarter.
-          printSimilarTypesNote(diag, expr->getLoc(),
-                                singleOperandType.mlirType,
-                                initResType.mlirType);
-        }
+        diag << "cannot implicitly convert " << singleOperandType
+             << " value to " << initResType << expr->getRange();
       }
 
       return {};
@@ -596,17 +561,12 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     if (emitDiagnosticOnFailure && syntax == CallSyntax::kImplicitConvert &&
         selectedFunc.getImplicitConversion() ==
             ImplicitConversionKind::Deprecated) {
-      std::string toTyAsString = selfResultType.getAsString(&emitter.shared);
-      std::string fromTyAsString =
-          operands[0].ir.getRValueTypeIfResolvable().getAsString(
-              &emitter.shared);
       auto diag = emitter.emitWarning(expr->getLoc(),
-                                      "deprecated implicit conversion from '")
-                  << fromTyAsString << "' to '" << toTyAsString << "'"
-                  << expr->getRange();
+                                      "deprecated implicit conversion from ")
+                  << operands[0].ir.getRValueTypeIfResolvable() << " to "
+                  << selfResultType << expr->getRange();
       diag.attachNote(selectedDecl->getLoc())
-          << "'@implicit' constructor '"
-          << toTyAsString + ".__init__' declared here";
+          << "implicit constructor for " << selfResultType << " declared here";
     }
 
     // It is possible this candidate needs some arguments emitted as MValues
@@ -772,16 +732,15 @@ PValue OverloadSet::filterOverloadSetForValueType(
     return {};
 
   MojoInflightDiag &diag = emitError(expr->getLoc());
-  std::string functionTypeAsString = functionType.getAsString(&getShared());
 
   ArrayRef<ASTDecl *> declsToReport;
   if (validCandidates.empty()) {
-    diag << "no '" << baseName << "' candidates have type '"
-         << functionTypeAsString << "'" << expr->getRange();
+    diag << "no '" << baseName << "' candidates have type " << functionType
+         << expr->getRange();
     declsToReport = fnDecls;
   } else {
-    diag << "ambiguous use of '" << baseName << "' as type '"
-         << functionTypeAsString << "'" << expr->getRange();
+    diag << "ambiguous use of '" << baseName << "' as type " << functionType
+         << expr->getRange();
     declsToReport = validCandidates;
   }
 
@@ -790,32 +749,22 @@ PValue OverloadSet::filterOverloadSetForValueType(
         << "candidate declared here with type ";
     FnTypeGeneratorType candidateType =
         cast<FnOp>(candidate->getIfOperation()).getFullSignature();
-    std::string candidateTypeAsString;
     // If there are bindings, specialize the candidate type and print the
     // specialized type.
+    bool hadCandidate = false;
     if (!paramBindings.empty()) {
       auto [newBindings, boundCandidateType] =
           getBindingsAndBoundCandidateType(candidateType);
       if (boundCandidateType) {
-        candidateTypeAsString =
-            ASTType(boundCandidateType).getAsString(&getShared());
-        diag << "'" << candidateTypeAsString << "' (specialized from "
+        diag << ASTType(boundCandidateType) << " (specialized from "
              << ASTType(candidateType) << ")";
+        hadCandidate = true;
       }
     }
     // If there are no bindings (or bindings were illegal), print the candidate
     // type as is.
-    if (candidateTypeAsString.empty()) {
-      candidateTypeAsString = ASTType(candidateType).getAsString(&getShared());
-      diag << "'" << candidateTypeAsString << "'";
-    }
-    if (functionTypeAsString == candidateTypeAsString) {
-      // Print out the internal representation of the types.
-      // TODO(MOCO-2080): Make this irrelevant by making the above type
-      // printing smarter.
-      printSimilarTypesNote(diag, expr->getLoc(), candidateType,
-                            functionType.mlirType);
-    }
+    if (!hadCandidate)
+      diag << ASTType(candidateType);
   }
   return {};
 }
