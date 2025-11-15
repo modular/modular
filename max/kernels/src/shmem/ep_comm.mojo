@@ -1127,6 +1127,13 @@ fn combine_kernel[
                 var global_expert_idx = (
                     my_rank * n_local_experts + local_expert_id
                 )
+
+                # TODO(E2EOPT-767): Update to use `store_release`.
+                # When the target device is on the same node, shmem_signal_op is
+                # just a simple `st.global`. Use a membar to ensure that once a
+                # a remote device receives the signal, all transfers are complete.
+                threadfence[Scope.SYSTEM]()
+
                 shmem_signal_op(
                     recv_count_p.offset(global_expert_idx),
                     UInt64(token_end - token_start),
@@ -1235,7 +1242,7 @@ fn combine_cb_kernel[
         if tid < n_experts:
             var target_count_ptr = recv_count_p.offset(tid)
             while (
-                load_acquire[scope = Scope.GPU](target_count_ptr)
+                load_acquire[scope = Scope.SYSTEM](target_count_ptr)
                 == UInt64.MAX_FINITE
             ):
                 pass
