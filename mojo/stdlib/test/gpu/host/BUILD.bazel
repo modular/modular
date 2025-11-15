@@ -1,0 +1,25 @@
+load("//bazel:api.bzl", "mojo_test")
+
+[
+    mojo_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [src],
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME MOCO-2509
+            "//conditions:default": [],
+        }),
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in glob(["*.mojo"])
+]
+
+filegroup(
+    name = "test-sources",
+    srcs = glob(["**/*.mojo"]),
+    visibility = ["//utils/debugging/gpu-build-benchmarking:__subpackages__"],
+)
