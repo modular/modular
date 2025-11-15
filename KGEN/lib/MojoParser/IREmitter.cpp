@@ -450,8 +450,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
     emitter.emitError(loc, "cannot synthesize lvalue of ")
         << (isRegisterPassable ? "register-passable "
                                : "non-register-passable ")
-        << "type " << resultType.getAsString(/*diags=*/&emitter.shared)
-        << getContextMessage(emitter.paramContext);
+        << "type " << resultType << getContextMessage(emitter.paramContext);
     return {};
   }
 

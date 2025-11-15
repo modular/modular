@@ -188,7 +188,7 @@ struct CheckImplicit:
     fn __init__(out self, c: Bool): pass
 
 struct DeprecatedImplicitConversion:
-    # expected-note @+2 {{'@implicit' constructor 'DeprecatedImplicitConversion.__init__' declared here}}
+    # expected-note @+2 {{implicit constructor for 'DeprecatedImplicitConversion' declared here}}
     @implicit(deprecated=True)
     fn __init__(out self, value: Int):
         pass
