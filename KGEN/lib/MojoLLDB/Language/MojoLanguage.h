@@ -65,7 +65,8 @@ public:
 
   static llvm::StringRef GetPluginNameStatic() { return "mojo"; }
 
-  bool SymbolNameFitsToLanguage(lldb_private::Mangled mangled) const override {
+  bool SymbolNameFitsToLanguage(
+      const lldb_private::Mangled &mangled) const override {
     return false;
   }
 
