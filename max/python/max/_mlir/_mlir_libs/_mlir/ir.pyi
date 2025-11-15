@@ -4,7 +4,7 @@
 
 import enum
 from collections.abc import Callable, Iterator, Sequence
-from typing import overload
+from typing import TypeVar, overload
 
 import typing_extensions
 
@@ -31,128 +31,239 @@ class WalkResult(enum.Enum):
 
 class Diagnostic:
     @property
-    def severity(self) -> DiagnosticSeverity: ...
+    def severity(self) -> DiagnosticSeverity:
+        """Returns the severity of the diagnostic."""
+
     @property
-    def location(self) -> Location: ...
+    def location(self) -> Location:
+        """Returns the location associated with the diagnostic."""
+
     @property
-    def message(self) -> str: ...
+    def message(self) -> str:
+        """Returns the message text of the diagnostic."""
+
     @property
-    def notes(self) -> tuple: ...
-    def __str__(self) -> str: ...
+    def notes(self) -> tuple:
+        """Returns a tuple of attached note diagnostics."""
+
+    def __str__(self) -> str:
+        """Returns the diagnostic message as a string."""
 
 class DiagnosticInfo:
-    def __init__(self, arg: Diagnostic, /) -> None: ...
+    def __init__(self, diag: Diagnostic) -> None:
+        """Creates a DiagnosticInfo from a Diagnostic."""
+
     @property
-    def severity(self) -> DiagnosticSeverity: ...
+    def severity(self) -> DiagnosticSeverity:
+        """The severity level of the diagnostic."""
+
     @property
-    def location(self) -> Location: ...
+    def location(self) -> Location:
+        """The location associated with the diagnostic."""
+
     @property
-    def message(self) -> str: ...
+    def message(self) -> str:
+        """The message text of the diagnostic."""
+
     @property
-    def notes(self) -> list[DiagnosticInfo]: ...
-    def __str__(self) -> str: ...
+    def notes(self) -> list[DiagnosticInfo]:
+        """List of attached note diagnostics."""
+
+    def __str__(self) -> str:
+        """Returns the diagnostic message as a string."""
 
 class DiagnosticHandler:
-    def detach(self) -> None: ...
+    def detach(self) -> None:
+        """Detaches the diagnostic handler from the context."""
+
     @property
-    def attached(self) -> bool: ...
+    def attached(self) -> bool:
+        """Returns True if the handler is attached to a context."""
+
     @property
-    def had_error(self) -> bool: ...
-    def __enter__(self) -> object: ...
+    def had_error(self) -> bool:
+        """Returns True if an error was encountered during diagnostic handling."""
+
+    def __enter__(self) -> object:
+        """Enters the diagnostic handler as a context manager."""
+
     def __exit__(
         self,
         exc_type: object | None,
         exc_value: object | None,
         traceback: object | None,
-    ) -> None: ...
+    ) -> None:
+        """Exits the diagnostic handler context manager."""
 
 class ThreadPool:
-    def __init__(self) -> None: ...
-    def get_max_concurrency(self) -> int: ...
+    def __init__(self) -> None:
+        """Creates a new thread pool with default concurrency."""
+
+    def get_max_concurrency(self) -> int:
+        """Returns the maximum number of threads in the pool."""
 
 class Context:
-    def __init__(self) -> None: ...
-    def __enter__(self) -> object: ...
+    def __init__(self) -> None:
+        """
+        Creates a new MLIR context.
+
+        The context is the top-level container for all MLIR objects. It owns the storage
+        for types, attributes, locations, and other core IR objects. A context can be
+        configured to allow or disallow unregistered dialects and can have dialects
+        loaded on-demand.
+        """
+
+    def __enter__(self) -> object:
+        """Enters the context as a context manager."""
+
     def __exit__(
         self,
         exc_type: object | None,
         exc_value: object | None,
         traceback: object | None,
-    ) -> None: ...
+    ) -> None:
+        """Exits the context manager."""
 
     current: Context | None = ...
-    """Gets the Context bound to the current thread or raises ValueError"""
+    """
+    Gets the Context bound to the current thread or returns None if no context is set.
+    """
 
     @property
     def dialects(self) -> Dialects:
-        """Gets a container for accessing dialects by name"""
+        """Gets a container for accessing dialects by name."""
 
     @property
     def d(self) -> Dialects:
-        """Alias for 'dialect'"""
+        """Alias for `dialects`."""
 
     def get_dialect_descriptor(self, dialect_name: str) -> DialectDescriptor:
-        """Gets or loads a dialect by name, returning its descriptor object"""
+        """Gets or loads a dialect by name, returning its descriptor object."""
 
     @property
-    def allow_unregistered_dialects(self) -> bool: ...
+    def allow_unregistered_dialects(self) -> bool:
+        """Controls whether unregistered dialects are allowed in this context."""
+
     @allow_unregistered_dialects.setter
     def allow_unregistered_dialects(self, arg: bool, /) -> None: ...
     def attach_diagnostic_handler(self, callback: object) -> object:
-        """Attaches a diagnostic handler that will receive callbacks"""
+        """Attaches a diagnostic handler that will receive callbacks."""
 
-    def enable_multithreading(self, enable: bool) -> None: ...
-    def set_thread_pool(self, arg: ThreadPool, /) -> None: ...
-    def get_num_threads(self) -> int: ...
-    def is_registered_operation(self, operation_name: str) -> bool: ...
-    def append_dialect_registry(self, registry: DialectRegistry) -> None: ...
+    def enable_multithreading(self, enable: bool) -> None:
+        """
+        Enables or disables multi-threading support in the context.
+
+        Args:
+          enable: Whether to enable (True) or disable (False) multi-threading.
+        """
+
+    def set_thread_pool(self, arg: ThreadPool, /) -> None:
+        """
+        Sets a custom thread pool for the context to use.
+
+        Args:
+          pool: A ThreadPool object to use for parallel operations.
+
+        Note:
+          Multi-threading is automatically disabled before setting the thread pool.
+        """
+
+    def get_num_threads(self) -> int:
+        """Gets the number of threads in the context's thread pool."""
+
+    def is_registered_operation(self, operation_name: str) -> bool:
+        """
+        Checks whether an operation with the given name is registered.
+
+        Args:
+          operation_name: The fully qualified name of the operation (e.g., `arith.addf`).
+
+        Returns:
+          True if the operation is registered, False otherwise.
+        """
+
+    def append_dialect_registry(self, registry: DialectRegistry) -> None:
+        """
+        Appends the contents of a dialect registry to the context.
+
+        Args:
+          registry: A DialectRegistry containing dialects to append.
+        """
+
     @property
     def emit_error_diagnostics(self) -> bool:
         """
-        Emit error diagnostics to diagnostic handlers. By default error diagnostics are captured and reported through MLIRError exceptions.
+        Controls whether error diagnostics are emitted to diagnostic handlers.
+
+        By default, error diagnostics are captured and reported through MLIRError exceptions.
         """
 
     @emit_error_diagnostics.setter
     def emit_error_diagnostics(self, arg: bool, /) -> None: ...
-    def load_all_available_dialects(self) -> None: ...
+    def load_all_available_dialects(self) -> None:
+        """
+        Loads all dialects available in the registry into the context.
+
+        This eagerly loads all dialects that have been registered, making them
+        immediately available for use.
+        """
 
 class DialectDescriptor:
     @property
-    def namespace(self) -> str: ...
-    def __repr__(self) -> str: ...
+    def namespace(self) -> str:
+        """Returns the namespace of the dialect."""
+
+    def __repr__(self) -> str:
+        """Returns a string representation of the dialect descriptor."""
 
 class Dialects:
-    def __getitem__(self, arg: str, /) -> object: ...
-    def __getattr__(self, arg: str, /) -> object: ...
+    def __getitem__(self, arg: str, /) -> object:
+        """Gets a dialect by name using subscript notation."""
+
+    def __getattr__(self, arg: str, /) -> object:
+        """Gets a dialect by name using attribute notation."""
 
 class Dialect:
-    def __init__(self, descriptor: object) -> None: ...
+    def __init__(self, descriptor: object) -> None:
+        """Creates a Dialect from a DialectDescriptor."""
+
     @property
-    def descriptor(self) -> object: ...
-    def __repr__(self) -> str: ...
+    def descriptor(self) -> object:
+        """Returns the DialectDescriptor for this dialect."""
+
+    def __repr__(self) -> str:
+        """Returns a string representation of the dialect."""
 
 class DialectRegistry:
-    def __init__(self) -> None: ...
+    def __init__(self) -> None:
+        """Creates a new empty dialect registry."""
 
 class Location:
-    def __enter__(self) -> object: ...
+    def __enter__(self) -> object:
+        """Enters the location as a context manager."""
+
     def __exit__(
         self,
         exc_type: object | None,
         exc_value: object | None,
         traceback: object | None,
-    ) -> None: ...
+    ) -> None:
+        """Exits the location context manager."""
+
     @overload
-    def __eq__(self, arg: Location, /) -> bool: ...
+    def __eq__(self, arg: Location, /) -> bool:
+        """Compares two locations for equality."""
+
     @overload
-    def __eq__(self, arg: object, /) -> bool: ...
+    def __eq__(self, arg: object, /) -> bool:
+        """Compares location with non-location object (always returns False)."""
 
     current: Location | None = ...
-    """Gets the Location bound to the current thread or raises ValueError"""
+    """Gets the Location bound to the current thread or raises ValueError."""
 
     @staticmethod
     def unknown(context: Context | None = None) -> Location:
-        """Gets a Location representing an unknown location"""
+        """Gets a Location representing an unknown location."""
 
     @staticmethod
     def callsite(
@@ -160,19 +271,25 @@ class Location:
         frames: Sequence[Location],
         context: Context | None = None,
     ) -> Location:
-        """Gets a Location representing a caller and callsite"""
+        """Gets a Location representing a caller and callsite."""
 
-    def is_a_callsite(self) -> bool: ...
+    def is_a_callsite(self) -> bool:
+        """Returns True if this location is a CallSiteLoc."""
+
     @property
-    def callee(self) -> Location: ...
+    def callee(self) -> Location:
+        """Gets the callee location from a CallSiteLoc."""
+
     @property
-    def caller(self) -> Location: ...
+    def caller(self) -> Location:
+        """Gets the caller location from a CallSiteLoc."""
+
     @overload
     @staticmethod
     def file(
         filename: str, line: int, col: int, context: Context | None = None
     ) -> Location:
-        """Gets a Location representing a file, line and column"""
+        """Gets a Location representing a file, line and column."""
 
     @overload
     @staticmethod
@@ -184,30 +301,46 @@ class Location:
         end_col: int,
         context: Context | None = None,
     ) -> Location:
-        """Gets a Location representing a file, line and column range"""
+        """Gets a Location representing a file, line and column range."""
 
-    def is_a_file(self) -> bool: ...
+    def is_a_file(self) -> bool:
+        """Returns True if this location is a FileLineColLoc."""
+
     @property
-    def filename(self) -> str: ...
+    def filename(self) -> str:
+        """Gets the filename from a FileLineColLoc."""
+
     @property
-    def start_line(self) -> int: ...
+    def start_line(self) -> int:
+        """Gets the start line number from a `FileLineColLoc`."""
+
     @property
-    def start_col(self) -> int: ...
+    def start_col(self) -> int:
+        """Gets the start column number from a `FileLineColLoc`."""
+
     @property
-    def end_line(self) -> int: ...
+    def end_line(self) -> int:
+        """Gets the end line number from a `FileLineColLoc`."""
+
     @property
-    def end_col(self) -> int: ...
+    def end_col(self) -> int:
+        """Gets the end column number from a `FileLineColLoc`."""
+
     @staticmethod
     def fused(
         locations: Sequence[Location],
         metadata: Attribute | None = None,
         context: Context | None = None,
     ) -> Location:
-        """Gets a Location representing a fused location with optional metadata"""
+        """Gets a Location representing a fused location with optional metadata."""
 
-    def is_a_fused(self) -> bool: ...
+    def is_a_fused(self) -> bool:
+        """Returns True if this location is a `FusedLoc`."""
+
     @property
-    def locations(self) -> list[Location]: ...
+    def locations(self) -> list[Location]:
+        """Gets the list of locations from a `FusedLoc`."""
+
     @staticmethod
     def name(
         name: str,
@@ -215,32 +348,44 @@ class Location:
         context: Context | None = None,
     ) -> Location:
         """
-        Gets a Location representing a named location with optional child location
+        Gets a Location representing a named location with optional child location.
         """
 
-    def is_a_name(self) -> bool: ...
+    def is_a_name(self) -> bool:
+        """Returns True if this location is a `NameLoc`."""
+
     @property
-    def name_str(self) -> str: ...
+    def name_str(self) -> str:
+        """Gets the name string from a `NameLoc`."""
+
     @property
-    def child_loc(self) -> Location: ...
+    def child_loc(self) -> Location:
+        """Gets the child location from a `NameLoc`."""
+
     @staticmethod
     def from_attr(
         attribute: Attribute, context: Context | None = None
     ) -> Location:
-        """Gets a Location from a LocationAttr"""
+        """Gets a Location from a `LocationAttr`."""
 
     @property
     def context(self) -> Context:
-        """Context that owns the Location"""
+        """Context that owns the `Location`."""
 
     @property
     def attr(self) -> Attribute:
-        """Get the underlying LocationAttr"""
+        """Get the underlying `LocationAttr`."""
 
     def emit_error(self, message: str) -> None:
-        """Emits an error at this location"""
+        """
+        Emits an error diagnostic at this location.
 
-    def __repr__(self) -> str: ...
+        Args:
+          message: The error message to emit.
+        """
+
+    def __repr__(self) -> str:
+        """Returns the assembly representation of the location."""
 
 class Module:
     @overload
@@ -269,19 +414,19 @@ class Module:
 
     @staticmethod
     def create(loc: Location | None = None) -> Module:
-        """Creates an empty module"""
+        """Creates an empty module."""
 
     @property
     def context(self) -> Context:
-        """Context that created the Module"""
+        """Context that created the `Module`."""
 
     @property
     def operation(self) -> Operation:
-        """Accesses the module as an operation"""
+        """Accesses the module as an operation."""
 
     @property
     def body(self) -> Block:
-        """Return the block for this module"""
+        """Return the block for this module."""
 
     def dump(self) -> None:
         """Dumps a debug representation of the object to stderr."""
@@ -295,8 +440,11 @@ class Module:
         customize behavior.
         """
 
-    def __eq__(self, other: Module) -> bool: ...
-    def __hash__(self) -> int: ...
+    def __eq__(self, other: Module) -> bool:
+        """Compares two modules for equality."""
+
+    def __hash__(self) -> int:
+        """Returns the hash value of the module."""
 
 class Operation(_OperationBase):
     @staticmethod
@@ -315,19 +463,17 @@ class Operation(_OperationBase):
         Creates a new operation.
 
         Args:
-          name: Operation name (e.g. "dialect.operation").
-          results: Sequence of Type representing op result types.
-          attributes: Dict of str:Attribute.
-          successors: List of Block for the operation's successors.
-          regions: Number of regions to create.
-          location: A Location object (defaults to resolve from context manager).
-          ip: An InsertionPoint (defaults to resolve from context manager or set to
-            False to disable insertion, even with an insertion point set in the
-            context manager).
-          infer_type: Whether to infer result types.
+          name: Operation name (e.g. `dialect.operation`).
+          results: Optional sequence of Type representing op result types.
+          operands: Optional operands of the operation.
+          attributes: Optional Dict of {str: Attribute}.
+          successors: Optional List of Block for the operation's successors.
+          regions: Number of regions to create (default = 0).
+          location: Optional Location object (defaults to resolve from context manager).
+          ip: Optional InsertionPoint (defaults to resolve from context manager or set to False to disable insertion, even with an insertion point set in the context manager).
+          infer_type: Whether to infer result types (default = False).
         Returns:
-          A new "detached" Operation object. Detached operations can be added
-          to blocks, which causes them to become "attached."
+          A new detached Operation object. Detached operations can be added to blocks, which causes them to become attached.
         """
 
     @staticmethod
@@ -339,11 +485,23 @@ class Operation(_OperationBase):
         """
 
     @property
-    def operation(self) -> Operation: ...
+    def operation(self) -> Operation:
+        """Returns self (the operation)."""
+
     @property
-    def opview(self) -> OpView: ...
+    def opview(self) -> OpView:
+        """
+        Returns an OpView of this operation.
+
+        Note:
+          If the operation has a registered and loaded dialect then this OpView will
+          be concrete wrapper class.
+        """
+
     @property
-    def block(self) -> Block: ...
+    def block(self) -> Block:
+        """Returns the block containing this operation."""
+
     @property
     def successors(self) -> OpSuccessors:
         """Returns the list of Operation successors."""
@@ -388,7 +546,7 @@ class OpView(_OperationBase):
         r"""
         (cls: object, source: str, *, source_name: str = \'\', context: Context | None = None) -> max._mlir._mlir_libs._mlir.ir.OpView
 
-        Parses a specific, generated OpView based on class level attributes
+        Parses a specific, generated OpView based on class level attributes.
         """
 
 class Region:
@@ -404,9 +562,12 @@ class Region:
         """Iterates over blocks in the region."""
 
     @overload
-    def __eq__(self, arg: Region, /) -> bool: ...
+    def __eq__(self, arg: Region, /) -> bool:
+        """Compares two regions for pointer equality."""
+
     @overload
-    def __eq__(self, arg: object, /) -> bool: ...
+    def __eq__(self, arg: object, /) -> bool:
+        """Compares region with non-region object (always returns False)."""
 
 class Block:
     @property
@@ -423,11 +584,23 @@ class Block:
 
     def add_argument(self, type: Type, loc: Location) -> BlockArgument:
         """
-        Append an argument of the specified type to the block and returns the newly added argument.
+        Appends an argument of the specified type to the block.
+
+        Args:
+          type: The type of the argument to add.
+          loc: The source location for the argument.
+
+        Returns:
+          The newly added block argument.
         """
 
-    def erase_argument(self, arg: int, /) -> None:
-        """Erase the argument at 'index' and remove it from the argument list."""
+    def erase_argument(self, index: int) -> None:
+        """
+        Erases the argument at the specified index.
+
+        Args:
+          index: The index of the argument to erase.
+        """
 
     @property
     def operations(self) -> OperationList:
@@ -443,8 +616,15 @@ class Block:
         Creates and returns a new Block at the beginning of the given region (with given argument types and locations).
         """
 
-    def append_to(self, arg: Region, /) -> None:
-        """Append this block to a region, transferring ownership if necessary"""
+    def append_to(self, region: Region) -> None:
+        """
+        Appends this block to a region.
+
+        Transfers ownership if the block is currently owned by another region.
+
+        Args:
+          region: The region to append the block to.
+        """
 
     def create_before(
         self, *arg_types, arg_locs: Sequence | None = None
@@ -464,16 +644,27 @@ class Block:
         """Iterates over operations in the block."""
 
     @overload
-    def __eq__(self, arg: Block, /) -> bool: ...
+    def __eq__(self, arg: Block, /) -> bool:
+        """Compares two blocks for pointer equality."""
+
     @overload
-    def __eq__(self, arg: object, /) -> bool: ...
-    def __hash__(self) -> int: ...
+    def __eq__(self, arg: object, /) -> bool:
+        """Compares block with non-block object (always returns False)."""
+
+    def __hash__(self) -> int:
+        """Returns the hash value of the block."""
+
     def __str__(self) -> str:
         """Returns the assembly form of the block."""
 
     def append(self, operation: _OperationBase) -> None:
         """
-        Appends an operation to this block. If the operation is currently in another block, it will be moved.
+        Appends an operation to this block.
+
+        If the operation is currently in another block, it will be moved.
+
+        Args:
+          operation: The operation to append to the block.
         """
 
     @property
@@ -493,132 +684,212 @@ class InsertionPoint:
     def __init__(self, beforeOperation: _OperationBase) -> None:
         """Inserts before a referenced operation."""
 
-    def __enter__(self) -> object: ...
+    def __enter__(self) -> object:
+        """Enters the insertion point as a context manager."""
+
     def __exit__(
         self,
         exc_type: object | None,
         exc_value: object | None,
         traceback: object | None,
-    ) -> None: ...
+    ) -> None:
+        """Exits the insertion point context manager."""
 
     current: InsertionPoint = ...
     """
-    Gets the InsertionPoint bound to the current thread or raises ValueError if none has been set
+    Gets the InsertionPoint bound to the current thread or raises ValueError if none has been set.
     """
 
     @staticmethod
     def at_block_begin(block: Block) -> InsertionPoint:
-        """Inserts at the beginning of the block."""
+        """
+        Creates an insertion point at the beginning of a block.
+
+        Args:
+          block: The block at whose beginning operations should be inserted.
+
+        Returns:
+          An InsertionPoint at the block's beginning.
+        """
 
     @staticmethod
     def at_block_terminator(block: Block) -> InsertionPoint:
-        """Inserts before the block terminator."""
+        """
+        Creates an insertion point before a block's terminator.
+
+        Args:
+          block: The block whose terminator to insert before.
+
+        Returns:
+          An InsertionPoint before the terminator.
+
+        Raises:
+          ValueError: If the block has no terminator.
+        """
 
     @staticmethod
     def after(operation: _OperationBase) -> InsertionPoint:
-        """Inserts after the operation."""
+        """
+        Creates an insertion point immediately after an operation.
+
+        Args:
+          operation: The operation after which to insert.
+
+        Returns:
+          An InsertionPoint after the operation.
+        """
 
     def insert(self, operation: _OperationBase) -> None:
-        """Inserts an operation."""
+        """
+        Inserts an operation at this insertion point.
+
+        Args:
+          operation: The operation to insert.
+        """
 
     @property
     def block(self) -> Block:
-        """Returns the block that this InsertionPoint points to."""
+        """Returns the block that this `InsertionPoint` points to."""
 
     @property
     def ref_operation(self) -> Operation | None:
         """
-        The reference operation before which new operations are inserted, or None if the insertion point is at the end of the block
+        The reference operation before which new operations are inserted, or None if the insertion point is at the end of the block.
         """
 
 class Attribute:
     def __init__(self, cast_from_type: Attribute) -> None:
-        """Casts the passed attribute to the generic Attribute"""
+        """Casts the passed attribute to the generic `Attribute`."""
 
     @staticmethod
     def parse(asm: str, context: Context | None = None) -> Attribute:
         """
-        Parses an attribute from an assembly form. Raises an MLIRError on failure.
+        Parses an attribute from an assembly form. Raises an `MLIRError` on failure.
         """
 
     @property
     def context(self) -> Context:
-        """Context that owns the Attribute"""
+        """Context that owns the `Attribute`."""
 
     @property
-    def type(self) -> Type: ...
+    def type(self) -> Type:
+        """Returns the type of the `Attribute`."""
+
     def get_named(self, arg: str, /) -> NamedAttribute:
-        """Binds a name to the attribute"""
+        """
+        Binds a name to the attribute, creating a `NamedAttribute`.
+
+        Args:
+          name: The name to bind to the `Attribute`.
+
+        Returns:
+          A `NamedAttribute` with the given name and this attribute.
+        """
 
     @overload
-    def __eq__(self, arg: Attribute, /) -> bool: ...
+    def __eq__(self, arg: Attribute, /) -> bool:
+        """Compares two attributes for equality."""
+
     @overload
-    def __eq__(self, arg: object, /) -> bool: ...
-    def __hash__(self) -> int: ...
+    def __eq__(self, arg: object, /) -> bool:
+        """Compares attribute with non-attribute object (always returns False)."""
+
+    def __hash__(self) -> int:
+        """Returns the hash value of the attribute."""
+
     def dump(self) -> None:
         """Dumps a debug representation of the object to stderr."""
 
     def __str__(self) -> str:
         """Returns the assembly form of the Attribute."""
 
-    def __repr__(self) -> str: ...
+    def __repr__(self) -> str:
+        """Returns a string representation of the attribute."""
+
     @property
-    def typeid(self) -> TypeID: ...
-    def maybe_downcast(self) -> Attribute: ...
+    def typeid(self) -> TypeID:
+        """Returns the `TypeID` of the attribute."""
+
+    def maybe_downcast(self) -> Attribute:
+        """Downcasts the attribute to a more specific attribute if possible."""
 
 class NamedAttribute:
-    def __repr__(self) -> str: ...
+    def __repr__(self) -> str:
+        """Returns a string representation of the named attribute."""
+
     @property
     def name(self) -> str:
-        """The name of the NamedAttribute binding"""
+        """The name of the `NamedAttribute` binding."""
 
     @property
     def attr(self) -> Attribute:
-        """The underlying generic attribute of the NamedAttribute binding"""
+        """The underlying generic attribute of the `NamedAttribute` binding."""
 
 class Type:
     def __init__(self, cast_from_type: Type) -> None:
-        """Casts the passed type to the generic Type"""
+        """Casts the passed type to the generic `Type`."""
 
     @staticmethod
     def parse(asm: str, context: Context | None = None) -> Type:
         """
         Parses the assembly form of a type.
 
-        Returns a Type object or raises an MLIRError if the type cannot be parsed.
+        Returns a Type object or raises an `MLIRError` if the type cannot be parsed.
 
         See also: https://mlir.llvm.org/docs/LangRef/#type-system
         """
 
     @property
     def context(self) -> Context:
-        """Context that owns the Type"""
+        """Context that owns the `Type`."""
 
     @overload
-    def __eq__(self, arg: Type, /) -> bool: ...
+    def __eq__(self, arg: Type, /) -> bool:
+        """Compares two types for equality."""
+
     @overload
-    def __eq__(self, other: object | None) -> bool: ...
-    def __hash__(self) -> int: ...
+    def __eq__(self, other: object | None) -> bool:
+        """Compares type with non-type object (always returns False)."""
+
+    def __hash__(self) -> int:
+        """Returns the hash value of the `Type`."""
+
     def dump(self) -> None:
         """Dumps a debug representation of the object to stderr."""
 
     def __str__(self) -> str:
-        """Returns the assembly form of the type."""
+        """Returns the assembly form of the `Type`."""
 
-    def __repr__(self) -> str: ...
-    def maybe_downcast(self) -> Type: ...
+    def __repr__(self) -> str:
+        """Returns a string representation of the `Type`."""
+
+    def maybe_downcast(self) -> Type:
+        """Downcasts the Type to a more specific `Type` if possible."""
+
     @property
-    def typeid(self) -> TypeID: ...
+    def typeid(self) -> TypeID:
+        """
+        Returns the `TypeID` of the `Type`, or raises `ValueError` if `Type` has no `TypeID`.
+        """
 
 class TypeID:
     @overload
-    def __eq__(self, arg: TypeID, /) -> bool: ...
-    @overload
-    def __eq__(self, arg: object, /) -> bool: ...
-    def __hash__(self) -> int: ...
+    def __eq__(self, arg: TypeID, /) -> bool:
+        """Compares two `TypeID`s for equality."""
 
-class Value:
-    def __init__(self, value: Value) -> None: ...
+    @overload
+    def __eq__(self, arg: object, /) -> bool:
+        """Compares TypeID with non-TypeID object (always returns False)."""
+
+    def __hash__(self) -> int:
+        """Returns the hash value of the `TypeID`."""
+
+_T = TypeVar("_T", bound=Type)
+
+class Value(Generic[_T]):
+    def __init__(self, value: Value) -> None:
+        """Creates a Value reference from another `Value`."""
+
     @property
     def context(self) -> Context:
         """Context in which the value lives."""
@@ -627,14 +898,26 @@ class Value:
         """Dumps a debug representation of the object to stderr."""
 
     @property
-    def owner(self) -> Operation | Block | None: ...
+    def owner(self) -> object:
+        """
+        Returns the owner of the value (`Operation` for results, `Block` for arguments).
+        """
+
     @property
-    def uses(self) -> OpOperandIterator: ...
+    def uses(self) -> OpOperandIterator:
+        """Returns an iterator over uses of this value."""
+
     @overload
-    def __eq__(self, arg: Value, /) -> bool: ...
+    def __eq__(self, arg: Value, /) -> bool:
+        """Compares two values for pointer equality."""
+
     @overload
-    def __eq__(self, arg: object, /) -> bool: ...
-    def __hash__(self) -> int: ...
+    def __eq__(self, arg: object, /) -> bool:
+        """Compares value with non-value object (always returns False)."""
+
+    def __hash__(self) -> int:
+        """Returns the hash value of the value."""
+
     def __str__(self) -> str:
         """
         Returns the string form of the value.
@@ -649,18 +932,32 @@ class Value:
         self,
         use_local_scope: bool = False,
         use_name_loc_as_prefix: bool = False,
-    ) -> str: ...
+    ) -> str:
+        """
+        Returns the string form of value as an operand.
+
+        Args:
+          use_local_scope: Whether to use local scope for naming.
+          use_name_loc_as_prefix: Whether to use the location attribute (NameLoc) as prefix.
+
+        Returns:
+          The value's name as it appears in IR (e.g., `%0`, `%arg0`).
+        """
+
     @overload
     def get_name(self, state: AsmState) -> str:
         """Returns the string form of value as an operand (i.e., the ValueID)."""
 
     @property
-    def type(self) -> Type: ...
-    def set_type(self, type: Type) -> None: ...
+    def type(self) -> Type:
+        """Returns the type of the value."""
+
+    def set_type(self, type: _T):
+        """Sets the type of the value."""
+
     def replace_all_uses_with(self, arg: Value, /) -> None:
         """
-        Replace all uses of value with the new value, updating anything in
-        the IR that uses 'self' to use the other value instead.
+        Replace all uses of value with the new value, updating anything in the IR that uses `self` to use the other value instead.
         """
 
     @overload
@@ -668,8 +965,8 @@ class Value:
         self, with_: Value, exceptions: Operation
     ) -> None:
         """
-        "Replace all uses of this value with the 'with' value, except for those
-        in 'exceptions'. 'exceptions' can be either a single operation or a list of
+        Replace all uses of this value with the `with` value, except for those
+        in `exceptions`. `exceptions` can be either a single operation or a list of
         operations.
         """
 
@@ -685,83 +982,186 @@ class Value:
     def replace_all_uses_except(
         self, with_: Value, exceptions: Sequence[Operation]
     ) -> None: ...
-    def maybe_downcast(self) -> Value: ...
+    def maybe_downcast(self) -> Value:
+        """Downcasts the `Value` to a more specific kind if possible."""
+
     @property
     def location(self) -> Location:
-        """Returns the source location the value"""
+        """Returns the source location of the value."""
 
-class BlockArgument(Value):
+class BlockArgument(Value[_T]):
     def __init__(self, value: Value) -> None: ...
     @staticmethod
     def isinstance(other_value: Value) -> bool: ...
     def maybe_downcast(self) -> BlockArgument: ...
     @property
-    def owner(self) -> Block: ...
-    @property
-    def arg_number(self) -> int: ...
-    def set_type(self, type: Type) -> None: ...
+    def owner(self) -> Block:
+        """Returns the block that owns this argument."""
 
-class OpResult(Value):
+    @property
+    def arg_number(self) -> int:
+        """Returns the position of this argument in the block's argument list."""
+
+    def set_type(self, type: Type) -> None:
+        """Sets the type of this block argument."""
+
+class OpResult(Value[_T]):
     def __init__(self, value: Value) -> None: ...
     @staticmethod
     def isinstance(other_value: Value) -> bool: ...
     def maybe_downcast(self) -> OpResult: ...
     @property
-    def owner(self) -> Operation: ...
+    def owner(self) -> Operation:
+        """Returns the operation that produces this result."""
+
     @property
-    def result_number(self) -> int: ...
+    def result_number(self) -> int:
+        """Returns the position of this result in the operation's result list."""
 
 class OpOperand:
     @property
-    def owner(self) -> OpView: ...
+    def owner(self) -> OpView:
+        """Returns the operation that owns this operand."""
+
     @property
-    def operand_number(self) -> int: ...
+    def operand_number(self) -> int:
+        """Returns the operand number in the owning operation."""
 
 class AsmState:
     @overload
-    def __init__(self, value: Value, use_local_scope: bool = False) -> None: ...
+    def __init__(self, value: Value, use_local_scope: bool = False) -> None:
+        """
+        Creates an `AsmState` for consistent SSA value naming.
+
+        Args:
+          value: The value to create state for.
+          use_local_scope: Whether to use local scope for naming.
+        """
+
     @overload
     def __init__(
         self, op: _OperationBase, use_local_scope: bool = False
-    ) -> None: ...
+    ) -> None:
+        """
+        Creates an AsmState for consistent SSA value naming.
+
+        Args:
+          op: The operation to create state for.
+          use_local_scope: Whether to use local scope for naming.
+        """
 
 class SymbolTable:
-    def __init__(self, arg: _OperationBase, /) -> None: ...
-    def __getitem__(self, arg: str, /) -> OpView: ...
-    def insert(self, operation: _OperationBase) -> StringAttr: ...
-    def erase(self, operation: _OperationBase) -> None: ...
-    def __delitem__(self, arg: str, /) -> None: ...
-    def __contains__(self, arg: str, /) -> bool: ...
+    def __init__(self, arg: _OperationBase, /) -> None:
+        """
+        Creates a symbol table for an operation.
+
+        Args:
+          operation: The `Operation` that defines a symbol table (e.g., a `ModuleOp`).
+
+        Raises:
+          TypeError: If the operation is not a symbol table.
+        """
+
+    def __getitem__(self, arg: str, /) -> OpView:
+        """
+        Looks up a symbol by name in the symbol table.
+
+        Args:
+          name: The name of the symbol to look up.
+
+        Returns:
+          The operation defining the symbol.
+
+        Raises:
+          KeyError: If the symbol is not found.
+        """
+
+    def insert(self, operation: _OperationBase) -> StringAttr:
+        """
+        Inserts a symbol operation into the symbol table.
+
+        Args:
+          operation: An operation with a symbol name to insert.
+
+        Returns:
+          The symbol name attribute of the inserted operation.
+
+        Raises:
+          ValueError: If the operation does not have a symbol name.
+        """
+
+    def erase(self, operation: _OperationBase) -> None:
+        """
+        Erases a symbol operation from the symbol table.
+
+        Args:
+          operation: The symbol operation to erase.
+
+        Note:
+          The operation is also erased from the IR and invalidated.
+        """
+
+    def __delitem__(self, arg: str, /) -> None:
+        """Deletes a symbol by name from the symbol table."""
+
+    def __contains__(self, arg: str, /) -> bool:
+        """Checks if a symbol with the given name exists in the table."""
+
     @staticmethod
-    def set_symbol_name(symbol: _OperationBase, name: str) -> None: ...
+    def set_symbol_name(symbol: _OperationBase, name: str) -> None:
+        """Sets the symbol name for a symbol operation."""
+
     @staticmethod
-    def get_symbol_name(symbol: _OperationBase) -> StringAttr: ...
+    def get_symbol_name(symbol: _OperationBase) -> StringAttr:
+        """Gets the symbol name from a symbol operation."""
+
     @staticmethod
-    def get_visibility(symbol: _OperationBase) -> StringAttr: ...
+    def get_visibility(symbol: _OperationBase) -> StringAttr:
+        """Gets the visibility attribute of a symbol operation."""
+
     @staticmethod
-    def set_visibility(symbol: _OperationBase, visibility: str) -> None: ...
+    def set_visibility(symbol: _OperationBase, visibility: str) -> None:
+        """Sets the visibility attribute of a symbol operation."""
+
     @staticmethod
     def replace_all_symbol_uses(
         old_symbol: str, new_symbol: str, from_op: _OperationBase
-    ) -> None: ...
+    ) -> None:
+        """
+        Replaces all uses of a symbol with a new symbol name within the given operation.
+        """
+
     @staticmethod
     def walk_symbol_tables(
         from_op: _OperationBase, all_sym_uses_visible: bool, callback: object
-    ) -> None: ...
+    ) -> None:
+        """
+        Walks symbol tables starting from an operation with a callback function.
+        """
 
 class BlockArgumentList:
     def __add__(self, arg: BlockArgumentList, /) -> list[BlockArgument]: ...
     @property
-    def types(self) -> list[Type]: ...
+    def types(self) -> list[Type]:
+        """Returns a list of types for all arguments in this argument list."""
 
 class BlockIterator:
-    def __iter__(self) -> BlockIterator: ...
-    def __next__(self) -> Block: ...
+    def __iter__(self) -> BlockIterator:
+        """Returns an iterator over the blocks in the operation's region."""
+
+    def __next__(self) -> Block:
+        """Returns the next block in the iteration."""
 
 class BlockList:
-    def __getitem__(self, arg: int, /) -> Block: ...
-    def __iter__(self) -> BlockIterator: ...
-    def __len__(self) -> int: ...
+    def __getitem__(self, arg: int, /) -> Block:
+        """Returns the block at the specified index."""
+
+    def __iter__(self) -> BlockIterator:
+        """Returns an iterator over blocks in the operation's region."""
+
+    def __len__(self) -> int:
+        """Returns the number of blocks in the operation's region."""
+
     def append(self, *args, arg_locs: Sequence | None = None) -> Block:
         """
         Appends a new block, with argument types as positional args.
@@ -777,66 +1177,111 @@ class BlockPredecessors:
     def __add__(self, arg: BlockPredecessors, /) -> list[Block]: ...
 
 class OperationIterator:
-    def __iter__(self) -> OperationIterator: ...
-    def __next__(self) -> OpView: ...
+    def __iter__(self) -> OperationIterator:
+        """Returns an iterator over the operations in an operation's block."""
+
+    def __next__(self) -> OpView:
+        """Returns the next operation in the iteration."""
 
 class OperationList:
-    def __getitem__(self, arg: int, /) -> OpView: ...
-    def __iter__(self) -> OperationIterator: ...
-    def __len__(self) -> int: ...
+    def __getitem__(self, arg: int, /) -> OpView:
+        """Returns the operation at the specified index."""
+
+    def __iter__(self) -> OperationIterator:
+        """Returns an iterator over operations in the list."""
+
+    def __len__(self) -> int:
+        """Returns the number of operations in the list."""
 
 class OpAttributeMap:
-    def __contains__(self, arg: str, /) -> bool: ...
-    def __len__(self) -> int: ...
+    def __contains__(self, name: str) -> bool:
+        """Checks if an attribute with the given name exists in the map."""
+
+    def __len__(self) -> int:
+        """Returns the number of attributes in the map."""
+
     @overload
-    def __getitem__(self, arg: str, /) -> Attribute: ...
+    def __getitem__(self, name: str) -> Attribute:
+        """Gets an attribute by name."""
+
     @overload
-    def __getitem__(self, arg: int, /) -> NamedAttribute: ...
-    def __setitem__(self, arg0: str, arg1: Attribute, /) -> None: ...
-    def __delitem__(self, arg: str, /) -> None: ...
-    def __iter__(self) -> Iterator: ...
-    def keys(self) -> list: ...
-    def values(self) -> list: ...
-    def items(self) -> list: ...
+    def __getitem__(self, index: int) -> NamedAttribute:
+        """Gets a named attribute by index."""
+
+    def __setitem__(self, name: str, attr: Attribute) -> None:
+        """Sets an attribute with the given name."""
+
+    def __delitem__(self, name: str) -> None:
+        """Deletes an attribute with the given name."""
+
+    def __iter__(self) -> Iterator:
+        """Iterates over attribute names."""
+
+    def keys(self) -> list:
+        """Returns a list of attribute names."""
+
+    def values(self) -> list:
+        """Returns a list of attribute values."""
+
+    def items(self) -> list:
+        """Returns a list of `(name, attribute)` tuples."""
 
 class OpOperandIterator:
-    def __iter__(self) -> OpOperandIterator: ...
-    def __next__(self) -> OpOperand: ...
+    def __iter__(self) -> OpOperandIterator:
+        """Returns an iterator over operands."""
+
+    def __next__(self) -> OpOperand:
+        """Returns the next operand in the iteration."""
 
 class OpOperandList:
     def __add__(self, arg: OpOperandList, /) -> list[Value]: ...
-    def __setitem__(self, arg0: int, arg1: Value, /) -> None: ...
+    def __setitem__(self, index: int, value: Value) -> None:
+        """Sets the operand at the specified index to a new value."""
 
 class OpResultList:
     def __add__(self, arg: OpResultList, /) -> list[OpResult]: ...
     @property
-    def types(self) -> list[Type]: ...
+    def types(self) -> list[Type]:
+        """Returns a list of types for all results in this result list."""
+
     @property
-    def owner(self) -> OpView: ...
+    def owner(self) -> OpView:
+        """Returns the operation that owns this result list."""
 
 class OpSuccessors:
     def __add__(self, arg: OpSuccessors, /) -> list[Block]: ...
-    def __setitem__(self, arg0: int, arg1: Block, /) -> None: ...
+    def __setitem__(self, index: int, block: Block) -> None:
+        """Sets the successor block at the specified index."""
 
 class RegionIterator:
-    def __iter__(self) -> RegionIterator: ...
-    def __next__(self) -> Region: ...
+    def __iter__(self) -> RegionIterator:
+        """Returns an iterator over the regions in the operation."""
+
+    def __next__(self) -> Region:
+        """Returns the next region in the iteration."""
 
 class RegionSequence:
     def __add__(self, arg: RegionSequence, /) -> list[Region]: ...
-    def __iter__(self) -> RegionIterator: ...
+    def __iter__(self) -> RegionIterator:
+        """Returns an iterator over the regions in the sequence."""
 
 class AttrBuilder:
     @staticmethod
-    def contains(arg: str, /) -> bool: ...
+    def contains(attribute_kind: str) -> bool:
+        """
+        Checks whether an attribute builder is registered for the given attribute kind.
+        """
+
     @staticmethod
-    def get(arg: str, /) -> Callable: ...
+    def get(attribute_kind: str) -> Callable:
+        """Gets the registered attribute builder for the given attribute kind."""
+
     @staticmethod
     def insert(
         attribute_kind: str, attr_builder: Callable, replace: bool = False
     ) -> None:
         """
-        Register an attribute builder for building MLIR attributes from python values.
+        Register an attribute builder for building MLIR attributes from Python values.
         """
 
 class AffineExpr:
