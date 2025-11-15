@@ -349,7 +349,17 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         Returns:
             Estimated activation memory in bytes
         """
+        del pipeline_config, huggingface_config  # Unused.
         return 0
+
+    @classmethod
+    def finalize_pipeline_config(cls, pipeline_config: PipelineConfig) -> None:
+        """Finalizes the pipeline configuration.
+
+        This method is called after the pipeline configuration is resolved.
+        It can be overridden to perform any finalization steps that are needed.
+        """
+        del pipeline_config  # Unused.
 
     @abstractmethod
     def execute(

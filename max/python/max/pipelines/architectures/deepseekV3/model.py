@@ -20,17 +20,16 @@ from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
-from max.driver import Device, Tensor
+from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
-from max.graph.weights import WeightData, Weights, WeightsAdapter
+from max.graph.weights import WeightData
 from max.kv_cache import (
     NullKVCacheManager,
     PagedKVCacheManager,
     load_kv_manager,
 )
-from max.nn import ReturnLogits
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.float8_config import parse_float8_config
 from max.nn.kv_cache import (
@@ -44,7 +43,6 @@ from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    SupportedEncoding,
 )
 from max.pipelines.lib.config_enums import PipelineRole
 from max.support.human_readable_formatter import to_human_readable_bytes
@@ -86,8 +84,7 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
 
 
 def _choose_correct_data_parallel_degree(
-    pipeline_config: PipelineConfig,
-    devices: list[Device],
+    pipeline_config: PipelineConfig, num_devices: int
 ) -> None:
     """Ensures the data parallel degree is set correctly in the PipelineConfig.
 
@@ -95,40 +92,22 @@ def _choose_correct_data_parallel_degree(
     TP), so the DP degree must be equal to the number of devices.
     """
     data_parallel_degree = pipeline_config.model_config.data_parallel_degree
-    if data_parallel_degree > 1 and data_parallel_degree != len(devices):
+    if data_parallel_degree > 1 and data_parallel_degree != num_devices:
         raise ValueError(
-            "--data-parallel-degree for DeepSeekV3 must be "
-            " equal to the number of devices"
+            f"--data-parallel-degree for DeepSeekV3 ({data_parallel_degree}) must be "
+            f" equal to the number of devices ({num_devices})"
         )
-    pipeline_config.model_config.data_parallel_degree = len(devices)
+    pipeline_config.model_config.data_parallel_degree = num_devices
 
 
 class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     """A DeepseekV3 model."""
 
-    def __init__(
-        self,
-        pipeline_config: PipelineConfig,
-        session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
-        devices: list[Device],
-        kv_cache_config: KVCacheConfig,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-        return_logits: ReturnLogits = ReturnLogits.ALL,
-    ) -> None:
-        _choose_correct_data_parallel_degree(pipeline_config, devices)
-        super().__init__(
-            pipeline_config,
-            session,
-            huggingface_config,
-            encoding,
-            devices,
-            kv_cache_config,
-            weights,
-            adapter,
-            return_logits,
+    @classmethod
+    def finalize_pipeline_config(cls, pipeline_config: PipelineConfig) -> None:
+        """Finalizes the pipeline configuration."""
+        _choose_correct_data_parallel_degree(
+            pipeline_config, len(pipeline_config.model_config.device_specs)
         )
 
     @classmethod

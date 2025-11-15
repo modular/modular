@@ -819,6 +819,10 @@ class PipelineConfig(MAXConfig):
             default_weights_format=arch.default_weights_format,
         )
 
+        # Resolve final pipeline-specific changes to the config before doing
+        # memory estimations.
+        arch.pipeline_model.finalize_pipeline_config(self)
+
         MemoryEstimator.estimate_memory_footprint(
             self, arch.pipeline_model, model_config, devices
         )
