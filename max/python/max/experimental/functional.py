@@ -13,7 +13,7 @@
 
 """Provides experimental functional APIs for tensor operations.
 
-.. warning::
+.. caution::
     This module contains experimental APIs that are subject to change or
     removal in future versions. Use with caution in production environments.
 

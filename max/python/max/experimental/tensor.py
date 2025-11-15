@@ -13,8 +13,9 @@
 
 """Provides experimental tensor operations with eager execution capabilities.
 
-**Warning:** This module contains experimental APIs that are subject to change
-or removal in future versions. Use with caution in production environments.
+.. caution::
+  This module contains experimental APIs that are subject to change
+  or removal in future versions. Use with caution in production environments.
 
 This module provides the :class:`~max.experimental.tensor` class which supports
 eager execution of tensor operations, complementing the graph-based execution
