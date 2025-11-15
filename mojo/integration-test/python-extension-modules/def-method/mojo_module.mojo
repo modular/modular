@@ -16,7 +16,7 @@ from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 
 from python import Python, PythonObject
-from python.bindings import PythonModuleBuilder
+from python.bindings import PythonModuleBuilder, TypeObjectSlot
 
 
 @export
@@ -53,7 +53,12 @@ fn PyInit_mojo_module() -> PythonObject:
             .def_py_method[Person.sum_kwargs_ints_py]("sum_kwargs_ints_py")
             # auto-convert self + kwargs test method
             .def_method[Person.add_kwargs_to_age_auto]("add_kwargs_to_age_auto")
+            # Mapping protocol.
+            .def_special_method[
+                Person.py__getitem__, TypeObjectSlot.MappingGetItem
+            ]("__getitem__")
         )
+
         return b.finalize()
     except e:
         return abort[PythonObject](
@@ -113,6 +118,16 @@ struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
     ) raises -> PythonObject:
         var self_ptr = Self._get_self_ptr(py_self)
         return Python.list(self_ptr[].name.split(String(sep)))
+
+    @staticmethod
+    fn py__getitem__(
+        py_self: PythonObject, index: PythonObject
+    ) raises -> PythonObject:
+        """For __getitem__ we will iterate over the Person's name, just for testing.
+        """
+        var self_ptr = Self._get_self_ptr(py_self)
+        var index_mojo = Int(index)
+        return PythonObject(self_ptr[].name[index_mojo : index_mojo + 1])
 
     @staticmethod
     fn _with(
