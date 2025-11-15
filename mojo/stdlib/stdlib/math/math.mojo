@@ -1434,15 +1434,16 @@ fn align_down(value: Int, alignment: Int) -> Int:
     value.
 
     Args:
-        value: The value to align.
-        alignment: Value to align to.
+        value: The value to align (must be non-negative).
+        alignment: Value to align to (must be positive).
 
     Returns:
         Closest multiple of the alignment that is less than or equal to the
         input value. In other words, floor(value / alignment) * alignment.
     """
-    debug_assert(alignment != 0, "zero alignment")
-    return (value // alignment) * alignment
+    debug_assert(value >= 0, "negative value")
+    debug_assert(alignment > 0, "zero alignment")
+    return Int(align_down(UInt(value), UInt(alignment)))
 
 
 @always_inline
@@ -1451,14 +1452,14 @@ fn align_down(value: UInt, alignment: UInt) -> UInt:
     value.
 
     Args:
-        value: The value to align.
-        alignment: Value to align to.
+        value: The value to align (must be non-negative).
+        alignment: Value to align to (must be positive).
 
     Returns:
         Closest multiple of the alignment that is less than or equal to the
         input value. In other words, floor(value / alignment) * alignment.
     """
-    debug_assert(alignment != 0, "zero alignment")
+    debug_assert(alignment > 0, "zero alignment")
     return (value // alignment) * alignment
 
 
