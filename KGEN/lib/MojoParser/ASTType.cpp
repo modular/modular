@@ -278,23 +278,20 @@ ASTType::ASTType(TypedAttr typeParamExpr) {
 Type ASTType::getMetaType() const {
   if (!mlirType)
     return {};
-  if (auto declRef = dyn_cast<StructType>(mlirType))
-    return StructMetaType::get(declRef);
-  if (auto metaRef = dyn_cast<StructMetaType>(mlirType))
-    return StructMetaMetaType::get(metaRef);
-  if (auto paramRef = dyn_cast<ParamType>(mlirType))
-    return paramRef.getParam().getType();
-  if (auto traitRef = dyn_cast<TraitType>(mlirType))
-    return traitRef.getMetaType();
-  if (auto closureType = dyn_cast<ClosureType>(mlirType))
-    return TypeType::get(closureType.getContext());
-  if (auto module = dyn_cast<ModuleType>(mlirType))
-    return module; // Module's are their own metatype.
 
-  // Look through sugar.
-  ASTType stripped = stripTopLevelSugar();
-  if (stripped.mlirType != mlirType)
-    return stripped.getMetaType();
+  auto type = SugarAttr::strip(mlirType);
+  if (auto declRef = dyn_cast<StructType>(type))
+    return StructMetaType::get(declRef);
+  if (auto metaRef = dyn_cast<StructMetaType>(type))
+    return StructMetaMetaType::get(metaRef);
+  if (auto paramRef = dyn_cast<ParamType>(type))
+    return paramRef.getParam().getType();
+  if (auto traitRef = dyn_cast<TraitType>(type))
+    return traitRef.getMetaType();
+  if (auto closureType = dyn_cast<ClosureType>(type))
+    return TypeType::get(closureType.getContext());
+  if (auto module = dyn_cast<ModuleType>(type))
+    return module; // Module's are their own metatype.
 
   // This is some generic MLIR type.
   return {};
@@ -306,7 +303,7 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
   // We get the declaration from the metatype of the type.  For example, if we
   // have a parametric type like "T" where "T: AnyType", we can know that T has
   // AnyType bound.
-  Type type = ASTType(getMetaType()).stripTopLevelSugar();
+  Type type = SugarAttr::strip(getMetaType());
   if (!type)
     return nullptr;
 
@@ -316,7 +313,7 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
   // Movable.  Use Movable as the declaration we're working with.
   if (auto paramRef = dyn_cast<ParamType>(type)) {
     // AnyTrait is the only metatype of a metatype.
-    type = cast<AnyTraitType>(paramRef.getParam().getType());
+    type = sugarCast<AnyTraitType>(paramRef.getParam().getType());
   }
 
   if (auto anyStruct = dyn_cast<StructMetaType>(type))
@@ -338,7 +335,7 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
 }
 
 ArrayRef<TypedAttr> ASTType::getParamBindings() const {
-  Type metatype = ASTType(getMetaType()).stripTopLevelSugar();
+  Type metatype = SugarAttr::strip(getMetaType());
   if (auto metaType = dyn_cast_or_null<StructMetaType>(metatype))
     return metaType.getParamValues();
   if (auto mmType = dyn_cast_or_null<StructMetaMetaType>(metatype))
@@ -350,20 +347,17 @@ ArrayRef<TypedAttr> ASTType::getParamBindings() const {
 ASTType ASTType::getWithoutParameters(SharedState &shared) const {
   if (!mlirType)
     return {};
-  if (auto declRef = dyn_cast<StructType>(mlirType))
+
+  Type type = SugarAttr::strip(mlirType);
+  if (auto declRef = dyn_cast<StructType>(type))
     return cast<StructDeclOp>(getDecl(shared)->getIfOperation())
         .bindReference();
-  if (auto metaType = dyn_cast_or_null<StructMetaType>(mlirType))
+  if (auto metaType = dyn_cast_or_null<StructMetaType>(type))
     return MetaType::get(
         ASTType(metaType.getType()).getWithoutParameters(shared));
-  if (auto mmType = dyn_cast_or_null<StructMetaMetaType>(mlirType))
+  if (auto mmType = dyn_cast_or_null<StructMetaMetaType>(type))
     return MetaType::get(
         ASTType(mmType.getType()).getWithoutParameters(shared));
-
-  // Look through sugar.
-  ASTType stripped = stripTopLevelSugar();
-  if (stripped.mlirType != mlirType)
-    return stripped.getWithoutParameters(shared);
 
   // Not parameterized.
   return *this;
@@ -380,14 +374,6 @@ bool ASTType::isEqualCanon(ASTType other) const {
       return true;
 
   return getCanonicalType(*this) == getCanonicalType(other);
-}
-
-/// Remove any top-level sugar nodes from this type, but don't fully
-/// canonicalize it.
-ASTType ASTType::stripTopLevelSugar() const {
-  if (auto paramRef = dyn_cast_or_null<ParamType>(mlirType))
-    return ASTType(SugarAttr::strip(paramRef.getParam()));
-  return *this;
 }
 
 /// Return true if this is the same as another ASTType are the same, or if they
@@ -441,15 +427,15 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
                                              TypeConvention genericDefault) {
   // Downcast preserves register passability, strip it before querying the
   // property.
-  if (auto paramRefTy = dyn_cast<ParamType>(type.mlirType))
+  if (auto paramRefTy = sugarDynCast<ParamType>(type.mlirType))
     type = DowncastAttr::strip(paramRefTy.getParam());
 
   ASTDecl *decl = type.getDecl(shared);
 
-  if (!decl || isa<StructMetaType>(type.mlirType)) {
+  if (!decl || sugarIsa<StructMetaType>(type.mlirType)) {
     // If this is a generic type, use the default specification.
-    if (auto paramRefTy = dyn_cast<ParamType>(type.mlirType))
-      if (isa<ParamType, AnyTraitType>(paramRefTy.getParam().getType()))
+    if (auto paramRefTy = sugarDynCast<ParamType>(type.mlirType))
+      if (sugarIsa<ParamType, AnyTraitType>(paramRefTy.getParam().getType()))
         return genericDefault;
 
     // MLIR types are assumed to be register-passable + Trivial.
@@ -474,7 +460,7 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
   }
 
   if (TraitType traitType =
-          dyn_cast_or_null<TraitType>(decl->getIfTypeValue())) {
+          sugarDynCastIfPresent<TraitType>(decl->getIfTypeValue())) {
     // The register passability of a trait composition is the strictest of its
     // members.
     TypeConvention convention = TypeConvention::Unspecified;
@@ -652,11 +638,12 @@ RefPackType ASTType::getVariadicPackInfo(SharedState &shared) const {
   auto bindings = getParamBindings();
   // NOTE: `bindings[0]` and `bindings[1]` are expected to be the Mojo `Bool`
   // type, and `bindings[2]` is an Origin.
-  assert(bindings.size() == 5 && isa<LIT::StructType>(bindings[0].getType()) &&
-         isa<LIT::StructType>(bindings[1].getType()) &&
-         isa<LIT::StructType>(bindings[2].getType()) &&
-         isa<AnyTraitType>(bindings[3].getType()) &&
-         isa<VariadicType>(bindings[4].getType()) &&
+  assert(bindings.size() == 5 &&
+         sugarIsa<LIT::StructType>(bindings[0].getType()) &&
+         sugarIsa<LIT::StructType>(bindings[1].getType()) &&
+         sugarIsa<LIT::StructType>(bindings[2].getType()) &&
+         sugarIsa<AnyTraitType>(bindings[3].getType()) &&
+         sugarIsa<VariadicType>(bindings[4].getType()) &&
          "Not a VariadicPack struct?");
 
   TypedAttr origin = ASTType::extractOriginOf(SMLoc(), bindings[2], shared);
@@ -675,11 +662,12 @@ TypedAttr ASTType::getVariadicPackTypeList() const {
   auto bindings = getParamBindings();
   // NOTE: `bindings[0]` and `bindings[1]` are expected to be the Mojo `Bool`
   // type, and `bindings[2]` is an Origin.
-  assert(bindings.size() == 5 && isa<LIT::StructType>(bindings[0].getType()) &&
-         isa<LIT::StructType>(bindings[1].getType()) &&
-         isa<LIT::StructType>(bindings[2].getType()) &&
-         isa<AnyTraitType>(bindings[3].getType()) &&
-         isa<VariadicType>(bindings[4].getType()) &&
+  assert(bindings.size() == 5 &&
+         sugarIsa<LIT::StructType>(bindings[0].getType()) &&
+         sugarIsa<LIT::StructType>(bindings[1].getType()) &&
+         sugarIsa<LIT::StructType>(bindings[2].getType()) &&
+         sugarIsa<AnyTraitType>(bindings[3].getType()) &&
+         sugarIsa<VariadicType>(bindings[4].getType()) &&
          "Not a VariadicPack struct?");
   return bindings[4];
 }

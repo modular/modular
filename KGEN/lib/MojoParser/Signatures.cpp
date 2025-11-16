@@ -43,7 +43,7 @@ static TypedAttr digOutSingleField(TypedAttr value, StringRef fieldName,
   // call emission because Origin is parametric.  Therefore it will break
   // parameter inference.
   ASTDecl *typeDecl = ASTType(value.getType()).getDecl(shared);
-  if (!typeDecl || !isa<LIT::StructType>(getCanonicalType(value.getType())))
+  if (!typeDecl || !sugarIsa<LIT::StructType>(value.getType()))
     return {};
 
   // Check to see if it has the expected field of Origin.
@@ -1386,9 +1386,11 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   auto isVarType = typeSig.getParamTypes()[1];
   auto originType = typeSig.getParamTypes()[2];
   auto traitMetaType = typeSig.getParamTypes()[3];
-  if (!isa<LIT::StructType>(isMutType) || !isa<LIT::StructType>(isVarType) ||
-      !isa<LIT::StructType>(originType) || !isa<AnyTraitType>(traitMetaType) ||
-      !isa<VariadicType>(typeSig.getParamTypes()[4])) {
+  if (!sugarIsa<LIT::StructType>(isMutType) ||
+      !sugarIsa<LIT::StructType>(isVarType) ||
+      !sugarIsa<LIT::StructType>(originType) ||
+      !sugarIsa<AnyTraitType>(traitMetaType) ||
+      !sugarIsa<VariadicType>(typeSig.getParamTypes()[4])) {
     emitter.emitError(arg.loc, "malformed VariadicPack");
     return {};
   }

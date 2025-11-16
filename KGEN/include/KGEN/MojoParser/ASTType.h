@@ -76,10 +76,6 @@ public:
   /// the specified other type.
   bool isEqualCanon(ASTType other) const;
 
-  /// Remove any top-level sugar nodes from this type, but don't fully
-  /// canonicalize it.
-  ASTType stripTopLevelSugar() const;
-
   /// Return true if this is the same as another ASTType are the same, or if
   /// they match when UnknownAttr parameters in the 'this' type are treated as
   /// the same as the corresponding parameter in the second type.

@@ -2403,7 +2403,7 @@ parseOptionalInheritanceList(ParserBase &p, ASTDecl &declScope, ASTDecl &decl,
       return failure();
 
     // Reject inheriting from types we don't support yet.
-    auto traitType = dyn_cast<TraitType>(type);
+    auto traitType = sugarDynCast<TraitType>(type);
     if (!traitType) {
       if (sugarIsa<LIT::StructType>(type)) {
         p.emitError(loc) << "inheriting from structs is not allowed";

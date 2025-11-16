@@ -26,17 +26,14 @@ using namespace KGEN;
 using namespace LIT;
 
 static bool isMetaType(Type type) {
+  type = SugarAttr::strip(type);
   if (auto genType = dyn_cast<LITGeneratorType>(type))
     return isMetaType(genType.getBody());
   if (auto param = dyn_cast<ParamType>(type))
-    return isa<StructMetaType, AnyTraitType>(param.getParam().getType());
+    return sugarIsa<StructMetaType, AnyTraitType>(param.getParam().getType());
   if (isa<TypeType, StructMetaType, StructMetaMetaType, TraitType,
           AnyTraitType>(type))
     return true;
-
-  auto canType = getCanonicalType(type);
-  if (canType != type)
-    return isMetaType(canType);
   return false;
 }
 
