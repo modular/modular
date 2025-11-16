@@ -1975,8 +1975,7 @@ def KGEN_SugarAttr : KGENAttr<"Sugar", "sugar", [TypedAttrInterface]> {
     "SugarKind":$kind,
     "TypedAttr":$sugared,  // Fully sugared form.
     "TypedAttr":$expanded, // One level expanded form, other sugar may exist.
-    "TypedAttr":$canonical, // Recursively desugared form.
-    AttributeSelfTypeParameter<"">:$type
+    "TypedAttr":$canonical // Recursively desugared form.
   );
 
   let assemblyFormat =
@@ -1990,7 +1989,7 @@ def KGEN_SugarAttr : KGENAttr<"Sugar", "sugar", [TypedAttrInterface]> {
 
     // Override the default builder used by the generated parser.
     AttrBuilder<(ins "SugarKind":$kind, "TypedAttr":$sugared,
-                  "TypedAttr":$expanded, "TypedAttr":$canonical, "Type":$type),
+                  "TypedAttr":$expanded, "TypedAttr":$canonical),
                    "", "TypedAttr">,
   ];
 
@@ -1999,6 +1998,8 @@ def KGEN_SugarAttr : KGENAttr<"Sugar", "sugar", [TypedAttrInterface]> {
     /// canonicalize it.
     static TypedAttr strip(TypedAttr value, bool keepApplies = false);
     static Type strip(Type value, bool keepApplies = false);
+
+    Type getType() const;
   }];
 }
 
