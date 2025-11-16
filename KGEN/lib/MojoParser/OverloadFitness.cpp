@@ -157,36 +157,6 @@ MojoInflightDiag DiagEmitter::argGenericMemType(size_t expectedArgIdx,
          << ASTType(expectedType);
 }
 
-/// Return true if the two types are the same when any parameter expressions are
-/// ignored.  This is to tell when two types might be the same after
-/// evaluation in the elaborator, in order to give better error messages when
-/// people are confused that seemingly identical types don't match during
-/// overload resolution.
-static bool isEqualModuloExpressions(ASTType lhsType, ASTType rhsType,
-                                     SharedState &shared) {
-  // Must have the same struct declarations.
-  if (lhsType.getDecl(shared) != rhsType.getDecl(shared))
-    return false;
-
-  assert(lhsType.getParamBindings().size() ==
-             rhsType.getParamBindings().size() &&
-         "Type with the same decl should have consistent number of params");
-
-  bool hadMismatchedParamExpr = false;
-  for (auto [lhs, rhs] :
-       llvm::zip(lhsType.getParamBindings(), rhsType.getParamBindings())) {
-    // If any hard known differences exist, then unfolded exprs are not the
-    // problem.
-    if (lhs == rhs)
-      continue;
-    if (isa<ParamOperatorAttr>(lhs) || isa<ParamOperatorAttr>(rhs))
-      hadMismatchedParamExpr = true;
-    else
-      return false;
-  }
-  return hadMismatchedParamExpr;
-}
-
 /// Attach extra type conversion error detail or hints to the user when
 /// reporting an error passing `operand` to an argument of type `argType`.
 static void addTypeConversionDetail(MojoInflightDiag &diag,
@@ -214,13 +184,6 @@ static void addTypeConversionDetail(MojoInflightDiag &diag,
     diag.attachNote(loc) << "memory-only type bound to generic result type: "
                          << (lhsByRef ? "payload" : "argument") << " returns "
                          << ASTType(lhsRetType) << " by reference";
-    return;
-  }
-
-  if (isEqualModuloExpressions(argType, operandType, shared)) {
-    diag.attachNote(loc)
-        << "types parameters include unfolded expression at parser time; try "
-           "rebinding to a consistent type?";
     return;
   }
 }

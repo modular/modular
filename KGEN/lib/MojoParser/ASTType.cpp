@@ -83,6 +83,87 @@ void M::addToDiagnostic(MojoInflightDiag &&otherDiag, InflightDiag &diag) {
   diag.addDiag(std::move(otherDiag));
 }
 
+namespace {
+struct ParamDiffer {
+  SharedState &shared;
+  std::string accessPath;
+  TypedAttr leftNested, rightNested;
+  void diff(TypedAttr lhs, TypedAttr rhs) {
+    // Look through type<->attr conversions.
+    if (auto lhsTypeParam = dyn_cast<TypeParamAttr>(lhs)) {
+      if (auto rhsTypeParam = dyn_cast<TypeParamAttr>(rhs))
+        return diff(lhsTypeParam.getTypeValue(), rhsTypeParam.getTypeValue());
+    }
+
+    // Look through sugar to find problems.
+    if (auto sugarAttr = dyn_cast<SugarAttr>(lhs)) {
+      diff(sugarAttr.getSugared(), rhs);
+      if (leftNested == sugarAttr.getSugared())
+        leftNested = sugarAttr; // Preserve the sugar.
+      return;
+    }
+    if (auto sugarAttr = dyn_cast<SugarAttr>(rhs)) {
+      diff(lhs, sugarAttr.getSugared());
+      if (rightNested == sugarAttr.getSugared())
+        rightNested = sugarAttr; // Preserve the sugar.
+      return;
+    }
+
+    leftNested = lhs;
+    rightNested = rhs;
+  }
+
+  void diff(ASTType lhs, ASTType rhs) {
+    // Look through type<->attr conversions.
+    if (auto lhsParam = dyn_cast<ParamType>(lhs)) {
+      if (auto rhsParam = dyn_cast<ParamType>(rhs))
+        return diff(lhsParam.getParam(), rhsParam.getParam());
+    }
+    if (auto lhsTypeValue = dyn_cast<TypeValueType>(lhs)) {
+      if (auto rhsTypeValue = dyn_cast<TypeValueType>(rhs))
+        return diff(lhsTypeValue.getTypeValue(), rhsTypeValue.getTypeValue());
+    }
+
+    // If these are two metatypes, just transparently look through them.
+    if (auto lhsMeta = dyn_cast<StructMetaType>(lhs)) {
+      if (auto rhsMeta = dyn_cast<StructMetaType>(rhs))
+        return diff(lhsMeta.getType(), rhsMeta.getType());
+    }
+
+    // TODO: We should diff function types. They can also get very long.
+
+    // Check to see if these are two structs or struct meta types with differing
+    // parameters values.  If so, diagnose that difference.
+
+    // Must have the same declarations to compare, we can't diff a Int vs
+    // String.
+    auto lhsDecl = lhs.getDecl(shared);
+    if (!lhsDecl || lhsDecl != rhs.getDecl(shared)) {
+      leftNested = PValue(lhs);
+      rightNested = PValue(rhs);
+      return;
+    }
+
+    assert(lhs.getParamBindings().size() == rhs.getParamBindings().size() &&
+           "Type with the same decl should have consistent number of params");
+
+    for (auto [idx, lhsParam, rhsParam] :
+         llvm::enumerate(lhs.getParamBindings(), rhs.getParamBindings())) {
+      if (isEqualCanon(lhsParam, rhsParam))
+        continue;
+
+      // Ok, we found a difference, recursively diff the two parameters.
+      auto structDecl = cast<LIT::StructDeclOp>(lhsDecl->getIfOperation());
+      accessPath += "." + structDecl.getParams()[idx].getName().str();
+      return diff(lhsParam, rhsParam);
+    }
+
+    // Couldn't determine the failure.
+    llvm_unreachable("params matched but type didn't?");
+  }
+};
+} // end anonymous namespace
+
 /// On destruction, emit notes about any sugared values in the types we emitted.
 /// There may be more than one type, in which case we're complaining about a X
 /// != Y sort of event. We should only unwrap any given identical alias once.
@@ -94,10 +175,45 @@ MojoInflightDiag::~MojoInflightDiag() {
   // Copy the attribute list so we don't get more entries as we emit notes.
   auto emitted = emittedParams;
 
-  // If we have multiple types emitted, then we're comparing the types unless
-  // told otherwise.  Dig into them to try to identify a sub-component that
-  // disagrees
-  auto &shared = *static_cast<SharedState *>(getDiags()->extraContext);
+  // If we have multiple types emitted, then we're comparing the types.  It is
+  // possible we have two small types like Scalar[f32] and Scalar[f64], but it
+  // is also possible we have ridiculously huge types like happens in kernel
+  // programming.  In this case, we should dig into the type to understand what
+  // is going on and explain it in a way that doesn't require too much squinting
+  // and long type names.
+  auto *shared = static_cast<SharedState *>(getDiags()->extraContext);
+  if (emittedParams.size() > 1 &&
+      !isEqualCanon(emittedParams[0].second, emittedParams[1].second)) {
+    ParamDiffer differ{*shared, "", {}, {}};
+    differ.diff(emittedParams[0].second, emittedParams[1].second);
+    if (!differ.accessPath.empty()) {
+      assert(differ.leftNested && differ.rightNested && "differ broken");
+
+      // Only do this for very long type names. Don't clutter things up for
+      // SIMD types that disagree obviously.
+      auto first = ASTType::getParamAsString(emittedParams[0].second, shared);
+      if (first.size() > 30) {
+        const char *kind =
+            LIT::isTypeExpr(differ.leftNested) ? "type" : "value";
+        attachNote(emittedParams[0].first)
+            << differ.accessPath << " of left " << kind << " is "
+            << differ.leftNested << " but the right " << kind << " is "
+            << differ.rightNested;
+        // Keep track of these as printed so we can unpack sugar if needed.
+        emitted.push_back({emittedParams[0].first, differ.leftNested});
+        emitted.push_back({emittedParams[1].first, differ.rightNested});
+      }
+
+      // If the nested values differ as the result of a parameter operator, emit
+      // a note suggesting a rebind.  It is plausible we cannot prove equality.
+      if (sugarIsa<ParamOperatorAttr>(differ.leftNested) ||
+          sugarIsa<ParamOperatorAttr>(differ.rightNested)) {
+        attachNote(getPrimaryLoc()) << "types parameters include unfolded "
+                                       "expression at parser time; try "
+                                       "rebinding to a consistent type?";
+      }
+    }
+  }
 
   // Don't unpack a single attribute more than once, even if printed multiple
   // times.
@@ -107,13 +223,16 @@ MojoInflightDiag::~MojoInflightDiag() {
   // have top-level sugar.  If so, unpack them so the user has a better chance
   // of understanding what is going on.
   for (auto [loc, attrValue] : emitted) {
-    TypedAttr desugared = SugarAttr::strip(attrValue);
+    // See if anything has alias sugar on it, and if so, unpack it so the user
+    // has a better chance of understanding what is going on.  We don't want to
+    // look into the body of an always_inline("builtin") calls though!
+    TypedAttr desugared = SugarAttr::strip(attrValue, /*keepApplies=*/true);
     if (desugared == attrValue || !unpackedAttr.insert(attrValue).second)
       continue;
 
     // Ensure the strings are textually different.
-    auto attrString = ASTType::getParamAsString(attrValue, /*forDiag=*/&shared);
-    auto sugString = ASTType::getParamAsString(desugared, /*forDiag=*/&shared);
+    auto attrString = ASTType::getParamAsString(attrValue, /*forDiag=*/shared);
+    auto sugString = ASTType::getParamAsString(desugared, /*forDiag=*/shared);
     if (attrString != sugString)
       attachNote(loc) << "'" << attrString << "' is aka '" << sugString << "'";
   }

@@ -3706,18 +3706,23 @@ TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
 
 /// Remove any top-level sugar nodes from this type, but don't fully
 /// canonicalize it.
-TypedAttr SugarAttr::strip(TypedAttr value) {
-  while (auto sugar = dyn_cast<SugarAttr>(value))
+TypedAttr SugarAttr::strip(TypedAttr value, bool keepApplies) {
+  while (auto sugar = dyn_cast<SugarAttr>(value)) {
+    // Keep always_inline("builtin") calls if requested. Diagnostics should
+    // never look through them.
+    if (sugar.getKind() == SugarKind::AlwaysInlineBuiltin && keepApplies)
+      break;
     value = sugar.getOriginal();
+  }
   return value;
 }
 
-Type SugarAttr::strip(Type value) {
+Type SugarAttr::strip(Type value, bool keepApplies) {
   // Sugar for a type will be wrapped in a ParamType converting the attr into
   // the type domain.
   if (auto paramRef = dyn_cast<ParamType>(value))
     if (isa<SugarAttr>(paramRef.getParam()))
-      return ParamType::get(strip(paramRef.getParam()));
+      return ParamType::get(strip(paramRef.getParam(), keepApplies));
   return value;
 }
 

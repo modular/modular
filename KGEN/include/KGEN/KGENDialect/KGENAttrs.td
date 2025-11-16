@@ -1994,8 +1994,8 @@ def KGEN_SugarAttr : KGENAttr<"Sugar", "sugar", [TypedAttrInterface]> {
   let extraClassDeclaration = [{
     /// Remove any top-level sugar nodes from this type, but don't fully
     /// canonicalize it.
-    static TypedAttr strip(TypedAttr value);
-    static Type strip(Type value);
+    static TypedAttr strip(TypedAttr value, bool keepApplies = false);
+    static Type strip(Type value, bool keepApplies = false);
   }];
 }
 

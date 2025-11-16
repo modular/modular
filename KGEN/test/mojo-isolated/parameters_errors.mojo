@@ -632,11 +632,16 @@ struct TestAutoParamsAndSugar[f1: HasSize]:
         takes4(HasSize[f2.size]())
         # expected-error @+1 {{cannot be converted from 'HasSize[f3.size]' to 'HasSize[4]'}}
         takes4(HasSize[f3.size]())
-        # expected-error @+1 {{converted from 'HasSize[f3.size._positive_div(4)]' to 'HasSize[4]'}}
+        # expected-error @below {{converted from 'HasSize[f3.size._positive_div(4)]' to 'HasSize[4]'}}
+        # expected-note @below {{.size of left value is 'f3.size._positive_div(4)' but the right value is '4'}}
         takes4(HasSize[f3.size._positive_div(4)]())
         # expected-error @below {{converted from 'HasSize[complex((f3.size * 1234))]' to 'HasSize[4]'}}
+        # expected-note @below {{.size of left value is 'complex((f3.size * 1234))' but the right value is '4'}}
+        # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
         takes4(HasSize[complex(f3.size*1234)]())
-        # expected-error @+1 {{cannot be converted from 'HasSize[StructWithAlias.size_int]' to 'HasSize[4]'}}
+        # expected-error @below {{cannot be converted from 'HasSize[StructWithAlias.size_int]' to 'HasSize[4]'}}
+        # expected-note @below {{.size of left value is 'StructWithAlias.size_int' but the right value is '4'}}
+        # expected-note @below {{'StructWithAlias.size_int' is aka '42'}}
         takes4(HasSize[StructWithAlias.size_int]())
 
         # TODO(SUGAR): Maintain this sugar too.
