@@ -39,6 +39,9 @@ what we publish.
 
 ### Tooling changes
 
+- The Mojo compiler now "diffs" very long types in error messages to explain
+  what is going on in a more easy to understand way.
+
 ### ❌ Removed
 
 ### 🛠️ Fixed
