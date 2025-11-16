@@ -416,6 +416,12 @@ alias Py_tp_init = 60
 alias Py_tp_methods = 64
 alias Py_tp_new = 65
 alias Py_tp_repr = 66
+alias Py_tp_richcompare = 67
+
+# Mapping protocol slots
+alias Py_mp_ass_subscript = 3
+alias Py_mp_length = 4
+alias Py_mp_subscript = 5
 
 # https://docs.python.org/3/c-api/typeobj.html#slot-type-typedefs
 
@@ -435,6 +441,20 @@ alias Typed_newfunc = fn (
     PyObjectPtr,
 ) -> PyObjectPtr
 """`typedef PyObject *(*newfunc)(PyTypeObject*, PyObject*, PyObject*)`"""
+alias Typed_richcompare = fn (
+    PyObjectPtr,
+    PyObjectPtr,
+    c_int,
+) -> PyObjectPtr
+"""`typedef PyObject *(*richcmpfunc)(PyObject*, PyObject*, int)`"""
+
+# Mapping protocol function types
+alias lenfunc = fn (PyObjectPtr) -> Py_ssize_t
+"""`typedef Py_ssize_t (*lenfunc)(PyObject*)`"""
+alias binaryfunc = fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr
+"""`typedef PyObject *(*binaryfunc)(PyObject*, PyObject*)`"""
+alias objobjargproc = fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> c_int
+"""`typedef int (*objobjargproc)(PyObject*, PyObject*, PyObject*)`"""
 
 
 @fieldwise_init
