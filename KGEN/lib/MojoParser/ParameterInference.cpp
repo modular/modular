@@ -681,9 +681,9 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
     return matchParams(actualSugar.getSugared(), expectedSugar.getSugared());
   }
   if (actualSugar)
-    return matchParams(actualSugar.getOriginal(), expectedAttr);
+    return matchParams(actualSugar.getExpanded(), expectedAttr);
   if (expectedSugar)
-    return matchParams(actualAttr, expectedSugar.getOriginal());
+    return matchParams(actualAttr, expectedSugar.getExpanded());
 
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER UNKNOWN ATTRS:\n"; actualAttr.dump();
              expectedAttr.dump(); llvm::errs() << "\n");

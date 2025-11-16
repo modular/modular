@@ -1467,7 +1467,7 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
     }
     printParamValue(p, sugar.getSugared());
     p << ", ";
-    printParamValue(p, sugar.getOriginal());
+    printParamValue(p, sugar.getExpanded());
     p << ")";
     return;
   }

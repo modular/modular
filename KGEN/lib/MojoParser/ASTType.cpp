@@ -219,10 +219,11 @@ MojoInflightDiag::~MojoInflightDiag() {
             << differ.accessPath << " of left " << kind << " is "
             << differ.leftNested << " but the right " << kind << " is "
             << differ.rightNested;
-        // Keep track of these as printed so we can unpack sugar if needed.
-        emitted.push_back({emittedParams[0].first, differ.leftNested});
-        emitted.push_back({emittedParams[1].first, differ.rightNested});
       }
+
+      // Keep track of these as printed so we can unpack sugar if needed.
+      emitted.push_back({emittedParams[0].first, differ.leftNested});
+      emitted.push_back({emittedParams[1].first, differ.rightNested});
 
       // If the nested values differ as the result of a parameter operator, emit
       // a note suggesting a rebind.  It is plausible we cannot prove equality.

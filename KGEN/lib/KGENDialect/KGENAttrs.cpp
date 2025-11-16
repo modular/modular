@@ -3712,7 +3712,7 @@ TypedAttr SugarAttr::strip(TypedAttr value, bool keepApplies) {
     // never look through them.
     if (sugar.getKind() == SugarKind::AlwaysInlineBuiltin && keepApplies)
       break;
-    value = sugar.getOriginal();
+    value = sugar.getExpanded();
   }
   return value;
 }

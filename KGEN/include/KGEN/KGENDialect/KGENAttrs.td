@@ -1967,27 +1967,30 @@ def KGEN_SugarAttr : KGENAttr<"Sugar", "sugar", [TypedAttrInterface]> {
   let description = [{
     The `#kgen.sugar` attribute represents a syntax sugar overlaid on some other
     value e.g. an alias or expanded builtin function call. It maintains the
-    original unexpanded attribute value as well as the "one level expanded" and
+    original sugared form as well as the "one level expanded" form, and
     fully expanded "canonical" version of the attribute.
   }];
 
   let parameters = (ins
-    "SugarKind":$kind, "TypedAttr":$sugared, "TypedAttr":$original,
-    "TypedAttr":$canonical, AttributeSelfTypeParameter<"">:$type
+    "SugarKind":$kind,
+    "TypedAttr":$sugared,  // Fully sugared form.
+    "TypedAttr":$expanded, // One level expanded form, other sugar may exist.
+    "TypedAttr":$canonical, // Recursively desugared form.
+    AttributeSelfTypeParameter<"">:$type
   );
 
   let assemblyFormat =
-    "$kind `,` custom<SugarAttr>($sugared, $original, $canonical)";
+    "$kind `,` custom<SugarAttr>($sugared, $expanded, $canonical)";
 
   let skipDefaultBuilders = 1;
   let builders = [
     AttrBuilderWithInferredContext<(ins "SugarKind":$kind,
                                     "TypedAttr":$sugared,
-                                    "TypedAttr":$original), "", "TypedAttr">,
+                                    "TypedAttr":$expanded), "", "TypedAttr">,
 
     // Override the default builder used by the generated parser.
     AttrBuilder<(ins "SugarKind":$kind, "TypedAttr":$sugared,
-                  "TypedAttr":$original, "TypedAttr":$canonical, "Type":$type),
+                  "TypedAttr":$expanded, "TypedAttr":$canonical, "Type":$type),
                    "", "TypedAttr">,
   ];
 
