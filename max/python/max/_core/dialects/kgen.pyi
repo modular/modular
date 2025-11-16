@@ -1162,7 +1162,7 @@ class SugarAttr(max._core.Attribute):
     """
     The `#kgen.sugar` attribute represents a syntax sugar overlaid on some other
     value e.g. an alias or expanded builtin function call. It maintains the
-    original unexpanded attribute value as well as the "one level expanded" and
+    original sugared form as well as the "one level expanded" form, and
     fully expanded "canonical" version of the attribute.
     """
 
@@ -1171,14 +1171,14 @@ class SugarAttr(max._core.Attribute):
         self,
         kind: SugarKind,
         sugared: max._core.dialects.builtin.TypedAttr,
-        original: max._core.dialects.builtin.TypedAttr,
+        expanded: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
         self,
         kind: SugarKind,
         sugared: max._core.dialects.builtin.TypedAttr,
-        original: max._core.dialects.builtin.TypedAttr,
+        expanded: max._core.dialects.builtin.TypedAttr,
         canonical: max._core.dialects.builtin.TypedAttr,
         type: max._core.Type,
     ) -> None: ...
@@ -1187,7 +1187,7 @@ class SugarAttr(max._core.Attribute):
     @property
     def sugared(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def original(self) -> max._core.dialects.builtin.TypedAttr: ...
+    def expanded(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def canonical(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
