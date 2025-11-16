@@ -84,10 +84,30 @@ void M::addToDiagnostic(MojoInflightDiag &&otherDiag, InflightDiag &diag) {
 }
 
 namespace {
+/// This struct implements textual type+parameter "diffing" to help dig into
+/// long type names and identify what parts of them differ.
+///
+/// Context: A common complaint about mojo is that advanced metaprogramming can
+/// produce very long types, particularly when using LayoutTensor. Given this,
+/// it can be very difficult to understand what is going on when the compiler
+/// barfs out some extremely type type name that isn't compatible with something
+/// else.
+///
+/// We address this through maintenance and selective unwrapping of type sugar,
+/// but still some types will have over a dozen parameters.  This digs into the
+/// type tree to print something like:
+///  .field.size of left value is 'SomeType.size_int' but the right value is '4'
 struct ParamDiffer {
   SharedState &shared;
   std::string accessPath;
   TypedAttr leftNested, rightNested;
+
+  /// The diff functions analyze the two specified attrs/types and either decide
+  /// they are either 1) atomically incompatible, or 2) there is some
+  /// subcomponent that is different.  In the first case, this should set
+  /// leftNested/rightNested with the current values.  In the second case, this
+  /// adds path information to accessPath and recurses on the subcomponents that
+  /// disagree.
   void diff(TypedAttr lhs, TypedAttr rhs) {
     // Look through type<->attr conversions.
     if (auto lhsTypeParam = dyn_cast<TypeParamAttr>(lhs)) {
@@ -135,8 +155,8 @@ struct ParamDiffer {
     // Check to see if these are two structs or struct meta types with differing
     // parameters values.  If so, diagnose that difference.
 
-    // Must have the same declarations to compare, we can't diff a Int vs
-    // String.
+    // Must have the same declarations to compare, we just say that Int vs
+    // String are different, we don't "diff" them.
     auto lhsDecl = lhs.getDecl(shared);
     if (!lhsDecl || lhsDecl != rhs.getDecl(shared)) {
       leftNested = PValue(lhs);
@@ -180,7 +200,7 @@ MojoInflightDiag::~MojoInflightDiag() {
   // is also possible we have ridiculously huge types like happens in kernel
   // programming.  In this case, we should dig into the type to understand what
   // is going on and explain it in a way that doesn't require too much squinting
-  // and long type names.
+  // at long type names.
   auto *shared = static_cast<SharedState *>(getDiags()->extraContext);
   if (emittedParams.size() > 1 &&
       !isEqualCanon(emittedParams[0].second, emittedParams[1].second)) {
