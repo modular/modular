@@ -3690,19 +3690,20 @@ TypedAttr SugarAttr::get(SugarKind kind, TypedAttr sugared,
          "SugarAttr sugared and original types must match");
 
   auto canonical = getCanonicalAttr(original);
-  return Base::get(sugared.getContext(), kind, sugared, original, canonical,
-                   sugared.getType());
+  return Base::get(sugared.getContext(), kind, sugared, original, canonical);
 }
 
 TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
                          TypedAttr sugared, TypedAttr original,
-                         TypedAttr canonical, Type type) {
+                         TypedAttr canonical) {
   // This method gets called by client doing general structural replacements,
   // e.g. a parameter with an arbitrary attribute.  This can turn canonical
   // forms to non-canonical and visa-versa, so always recompute the canonical
   // pointer.
   return get(kind, sugared, original);
 }
+
+Type SugarAttr::getType() const { return getSugared().getType(); }
 
 /// Remove any top-level sugar nodes from this type, but don't fully
 /// canonicalize it.
