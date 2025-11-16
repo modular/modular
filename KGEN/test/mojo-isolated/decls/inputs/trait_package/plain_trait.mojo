@@ -4,9 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-alias int = __mlir_type.index
-
-
 trait Flying:
-    fn fly_to(mut self, new_location: int):
+    fn fly_to(mut self, new_location: Int):
         ...

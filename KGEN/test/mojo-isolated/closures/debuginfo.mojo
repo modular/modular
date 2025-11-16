@@ -10,18 +10,18 @@
 # CHECK-LABEL:    lit.fn @"makes_escaping_closure
 # CHECK-NEXT:    [[MEMTMP:%.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!escaping
 # CHECK-NEXT:    %0 = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%m, [[MEMTMP]])
-# CHECK-NEXT:    %myclosure = lit.var.decl "myclosure" var : !lit.ref<!index
+# CHECK-NEXT:    %myclosure = lit.var.decl "myclosure" var : !lit.ref<!Int
 # CHECK-NEXT:    %1 = lit.call {{.*}}fn{{.*}}__init__{{.*}}([[MEMTMP]], %myclosure)
 # CHECK-NEXT:    lit.ownership.use %myclosure
 # CHECK-NEXT:    lit.call {{.*}}fn{{.*}}__moveinit__{{.*}}(%myclosure, %__result__){{.*}} loc(#[[LOC26:.*]])
 
-# CHECK-DAG: #makes_escaping_closure_name = #debuginfo.source_name<(fn)"makes_escaping_closure"(<"index">, <"index">) from <(module)"debuginfo">>
+# CHECK-DAG: #makes_escaping_closure_name = #debuginfo.source_name<(fn)"makes_escaping_closure"(#Int_name, #Int_name) from <(module)"debuginfo">>
 # CHECK-DAG: #[[SP9:.*]] = #debuginfo.subprogram<{{.*}}, sourceName = #makes_escaping_closure_name, linkageName = "makes_escaping_closure{{.*}}", {{.*}}, line = [[#LN42:]],
 # CHECK-DAG: #[[LOC26]] = loc(fused<#[[SP9]]>[#
 
 
-fn makes_escaping_closure(m: Index, z: Index) -> fn (n: Index) escaping -> Index:
-    fn myclosure(n: Index) -> Index:
+fn makes_escaping_closure(m: Int, z: Int) -> fn (n: Int) escaping -> Int:
+    fn myclosure(n: Int) -> Int:
         return m
 
     return myclosure^
@@ -42,17 +42,17 @@ fn makes_escaping_closure(m: Index, z: Index) -> fn (n: Index) escaping -> Index
 # CHECK-NEXT:     = lit.ref.immut %myclosure : {{.*}} loc(#[[LOC1:.*]])
 # CHECK-NEXT:     = lit.call {{.*}}fn{{.*}}__call__({{.*}}) : {{.*}} loc(#[[LOC1]])
 
-# CHECK-DAG: #closure_in_block_name = #debuginfo.source_name<(fn)"closure_in_block"(<"index">, <"index">, #Bool_name) from <(module)"debuginfo">>
+# CHECK-DAG: #closure_in_block_name = #debuginfo.source_name<(fn)"closure_in_block"(#Int_name, #Int_name, #Bool_name) from <(module)"debuginfo">>
 # CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<{{.*}}, sourceName = #closure_in_block_name, linkageName = "closure_in_block{{.*}}",
 # CHECK-DAG: #[[LEXBLOCK:.*]] = #debuginfo.lexical_block<scope = #[[SP]],
 # CHECK-DAG: #[[LOC0]] = loc(fused<#[[LEXBLOCK]]>[#
 # CHECK-DAG: #[[LOC1]] = loc(fused<#[[LEXBLOCK]]>[#
 
 
-fn closure_in_block(m: Index, z: Index, b: Bool) -> Index:
+fn closure_in_block(m: Int, z: Int, b: Bool) -> Int:
     if b:
 
-        fn myclosure(n: Index) -> Index:
+        fn myclosure(n: Int) -> Int:
             return m
 
         return myclosure(z)

@@ -4,14 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-alias int = __mlir_type.index
-
 
 struct BaseType:
-    var value: int
+    var value: Int
 
-    fn __init__(out self, value: int):
+    fn __init__(out self, value: Int):
         self.value = value
 
     fn __init__(out self):
-        self.value = __mlir_attr.`42 : index`
+        self.value = 42

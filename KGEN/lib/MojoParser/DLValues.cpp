@@ -304,6 +304,10 @@ CValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
     CValue intIndexCValue =
         emitter.emitInt(ASTExprAnd<PValue>{PValue(indexAttr), value.expr},
                         ExprContext::EC_CallParamValue);
+    if (!intIndexCValue) {
+      eltDest.resetForError(emitter);
+      return BValue();
+    }
     PValue intIndex = intIndexCValue.getIfPValue();
     assert(intIndex && "Int must be PValue when constructed from int attr");
 
