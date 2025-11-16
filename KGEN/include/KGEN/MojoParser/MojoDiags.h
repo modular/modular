@@ -21,20 +21,9 @@ namespace M::KGEN::LIT {
 class MojoInflightDiag : public InflightDiag {
 public:
   MojoInflightDiag(InflightDiag &&diag,
-                   ArrayRef<std::pair<Location, ASTType>> emittedTypes)
-      : InflightDiag(std::move(diag)), emittedTypes(emittedTypes) {}
+                   ArrayRef<std::pair<Location, TypedAttr>> emittedParams)
+      : InflightDiag(std::move(diag)), emittedParams(emittedParams) {}
   ~MojoInflightDiag();
-
-  // Override emission of ASTType to track the types we've emitted so our dtor
-  // can emit notes about them.
-  MojoInflightDiag &operator<<(ASTType type) & {
-    addType(type);
-    return *this;
-  }
-  MojoInflightDiag operator<<(ASTType type) && {
-    addType(type);
-    return std::move(*this);
-  }
 
   // These are all wrappers for the underlying functionality that preserves the
   // Self type.
@@ -42,8 +31,8 @@ public:
   MojoInflightDiag &operator=(MojoInflightDiag &&other) = default;
 
   MojoInflightDiag attachNote(Location loc) && {
-    auto types = emittedTypes;
-    return {std::move(*this).InflightDiag::attachNote(loc), types};
+    auto params = emittedParams;
+    return {std::move(*this).InflightDiag::attachNote(loc), params};
   }
   MojoInflightDiag attachNote(llvm::SMLoc loc) &&;
   MojoInflightDiag &attachNote(Location loc) & {
@@ -62,10 +51,14 @@ public:
     return std::move(*this);
   }
 
-  void addType(ASTType type);
+  void addEmittedParam(TypedAttr param, std::optional<Location> loc = {});
+
+  ArrayRef<std::pair<Location, TypedAttr>> getEmittedParams() const {
+    return emittedParams;
+  }
 
 private:
-  SmallVector<std::pair<Location, ASTType>, 2> emittedTypes;
+  SmallVector<std::pair<Location, TypedAttr>, 2> emittedParams;
 };
 
 // A wrapper around Diags that adds Mojo-specific functionality.
@@ -83,5 +76,12 @@ public:
 };
 
 } // namespace M::KGEN::LIT
+
+namespace M {
+using KGEN::LIT::MojoInflightDiag;
+void addToDiagnostic(KGEN::LIT::ASTType type, InflightDiag &diag);
+void addToDiagnostic(TypedAttr paramValue, InflightDiag &diag);
+void addToDiagnostic(MojoInflightDiag &&otherDiag, InflightDiag &diag);
+} // namespace M
 
 #endif // KGEN_MOJOPARSER_MOJODIAGS_H

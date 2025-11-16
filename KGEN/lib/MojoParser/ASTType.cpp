@@ -43,14 +43,44 @@ MojoInflightDiag &MojoInflightDiag::attachNote(llvm::SMLoc loc) & {
   return *this;
 }
 
-void MojoInflightDiag::addType(ASTType type) {
-  if (!getDiags())
-    return; // Ignore discarded diagnostics.
+void MojoInflightDiag::addEmittedParam(TypedAttr param,
+                                       std::optional<Location> loc) {
   // Remember that we emitted this type.
-  emittedTypes.push_back({getLastLoc(), type});
+  emittedParams.push_back({loc.value_or(getLastLoc()), param});
+}
 
-  auto *shared = static_cast<SharedState *>(getDiags()->extraContext);
-  *this << '\'' << type.getAsString(/*forDiag=*/shared) << '\'';
+void M::addToDiagnostic(TypedAttr paramValue, InflightDiag &diag) {
+  if (!diag.getDiags())
+    return; // Ignore discarded diagnostics.
+
+  // Format it of course.
+  diag << '\'';
+  auto *shared = static_cast<SharedState *>(diag.getDiags()->extraContext);
+  diag << ASTType::getParamAsString(paramValue, /*forDiag=*/shared);
+  diag << '\'';
+
+  // Remember we emitted this parameter so we can post-process the diagnostic.
+  auto &mdiag = static_cast<MojoInflightDiag &>(diag);
+  mdiag.addEmittedParam(paramValue);
+}
+
+void M::addToDiagnostic(ASTType type, InflightDiag &diag) {
+  if (!diag.getDiags())
+    return; // Ignore discarded diagnostics.
+  if (!type) {
+    diag << "<<NULL TYPE>>";
+    return;
+  }
+  addToDiagnostic(PValue(type), diag);
+}
+
+void M::addToDiagnostic(MojoInflightDiag &&otherDiag, InflightDiag &diag) {
+  auto &mdiag = static_cast<MojoInflightDiag &>(diag);
+
+  for (auto [loc, param] : otherDiag.getEmittedParams())
+    mdiag.addEmittedParam(param, loc);
+
+  diag.addDiag(std::move(otherDiag));
 }
 
 /// On destruction, emit notes about any sugared values in the types we emitted.
@@ -58,13 +88,34 @@ void MojoInflightDiag::addType(ASTType type) {
 /// != Y sort of event. We should only unwrap any given identical alias once.
 MojoInflightDiag::~MojoInflightDiag() {
   // If abandoned, don't do anything.
-  if (!getDiags() || emittedTypes.empty())
+  if (!getDiags() || emittedParams.empty())
     return;
 
-  for (auto [loc, type] : emittedTypes) {
-    Type desugared = SugarAttr::strip(type);
-    if (desugared != type)
-      attachNote(loc) << type << " is aka " << ASTType(desugared);
+  // Copy the attribute list so we don't get more entries as we emit notes.
+  auto emitted = emittedParams;
+
+  // If we have multiple types emitted, then we're comparing the types unless
+  // told otherwise.  Dig into them to try to identify a sub-component that
+  // disagrees
+  auto &shared = *static_cast<SharedState *>(getDiags()->extraContext);
+
+  // Don't unpack a single attribute more than once, even if printed multiple
+  // times.
+  SmallPtrSet<Attribute, 4> unpackedAttr;
+
+  // Finally, take a look at any of the parameters we've printed to see if they
+  // have top-level sugar.  If so, unpack them so the user has a better chance
+  // of understanding what is going on.
+  for (auto [loc, attrValue] : emitted) {
+    TypedAttr desugared = SugarAttr::strip(attrValue);
+    if (desugared == attrValue || !unpackedAttr.insert(attrValue).second)
+      continue;
+
+    // Ensure the strings are textually different.
+    auto attrString = ASTType::getParamAsString(attrValue, /*forDiag=*/&shared);
+    auto sugString = ASTType::getParamAsString(desugared, /*forDiag=*/&shared);
+    if (attrString != sugString)
+      attachNote(loc) << "'" << attrString << "' is aka '" << sugString << "'";
   }
 }
 
@@ -507,16 +558,6 @@ ASTType ASTType::getSignatureUserResultType() const {
   auto sigGenType = cast<FnTypeGeneratorType>(mlirType);
   return LIT::getSignatureUserResultType(sigGenType, sigGenType.getArguments(),
                                          sigGenType.getResults().front());
-}
-
-void M::addToDiagnostic(TypedAttr paramValue, InflightDiag &diag) {
-  if (!diag.getDiags())
-    return; // Ignore discarded diagnostics.
-
-  diag << '\'';
-  auto *shared = static_cast<SharedState *>(diag.getDiags()->extraContext);
-  diag << ASTType::getParamAsString(paramValue, /*forDiag=*/shared);
-  diag << '\'';
 }
 
 /// Print to standard error with newline after it, for use in a debugger.
