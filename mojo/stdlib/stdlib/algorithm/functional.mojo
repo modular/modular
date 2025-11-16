@@ -166,8 +166,8 @@ fn vectorize[
     debug_assert(size >= 0, "size must be >= 0")
 
     alias unrolled_simd_width = simd_width * unroll_factor
-    var simd_end = align_down(UInt(size), UInt(simd_width))
-    var unrolled_end = align_down(UInt(size), UInt(unrolled_simd_width))
+    var simd_end = align_down(size, simd_width)
+    var unrolled_end = align_down(size, unrolled_simd_width)
 
     for unrolled_idx in range(0, unrolled_end, unrolled_simd_width):
 
