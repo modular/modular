@@ -1012,3 +1012,17 @@ fn test_type_of_deprecated(x: Int) -> __type_of(x):
 fn test_origin_of_deprecated[T: AnyType](a: T):
   # expected-error @+1 {{use of unknown declaration '__origin_of'; did you mean 'origin_of'?}}
   _ = __origin_of(a)
+
+##===----------------------------------------------------------------------===##
+# Type sugar processing
+##===----------------------------------------------------------------------===##
+
+
+# expected-note @+1 {{function declared here}}
+fn sugar_test1(x: type_of(HasIntParam[1])): pass
+
+fn sugar_test():
+    # expected-error @below {{cannot be converted from 'AnyStruct[HasIntParam[int_fn(0)]]' to 'AnyStruct[HasIntParam[1]]'}}
+    # expected-note @below {{.p of left value is 'int_fn(0)'}}
+    # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
+    sugar_test1(HasIntParam[int_fn(0)])
