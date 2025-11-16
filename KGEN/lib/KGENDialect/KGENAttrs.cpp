@@ -305,9 +305,9 @@ TypedAttr TypeParamAttr::get(MLIRContext *ctx, Type typeValue, Type mlirType,
   // unwrapping a wrapper. Remove this to keep the types canonical.
   if (isEqualCanon(mlirType, typeValue)) {
     TypedAttr result;
-    if (auto refType = sugarDynCast<ParamType>(mlirType))
+    if (auto refType = dyn_cast<ParamType>(mlirType))
       result = refType.getParam();
-    if (auto typeValueType = sugarDynCast<TypeValueType>(mlirType))
+    if (auto typeValueType = dyn_cast<TypeValueType>(mlirType))
       result = typeValueType.getTypeValue();
     if (result && isEqualCanon(result.getType(), metaType))
       return ParamOperatorAttr::getRebind(result, metaType);
@@ -315,7 +315,7 @@ TypedAttr TypeParamAttr::get(MLIRContext *ctx, Type typeValue, Type mlirType,
 
   // Unwrap immediately-nested TypeParamAttr as the typeValue. This is
   // casting the metatype of the inner type constant.
-  if (auto typeValueType = sugarDynCast<TypeValueType>(typeValue))
+  if (auto typeValueType = dyn_cast<TypeValueType>(typeValue))
     if (auto innerTypeConstant =
             sugarDynCast<TypeParamAttr>(typeValueType.getTypeValue()))
       typeValue = innerTypeConstant.getTypeValue();
