@@ -924,9 +924,7 @@ fn fb[T: B]() -> T.Type:
     # CHECK: %__call_result_tmp__ = lit.var.decl "
     # CHECK: lit.call{{.*}}fa{{.*}}(%__call_result_tmp__)
     # CHECK: [[REBIND:%.*]] = kgen.rebind %__call_result_tmp__ : !lit.ref<:!AA {{.*}}#kgen.get_witness<:!A !kgen.param<:!B T>, "associated_aliases::A", "Type">
-    # CHECK: [[REBIND2:%.*]] = kgen.rebind [[REBIND]]
-    # CHECK: [[REBIND3:%.*]] = kgen.rebind %__result__
-    # CHECK-NEXT: lit.call{{.*}}__moveinit__{{.*}}([[REBIND2]], [[REBIND3]])
+    # CHECK-NEXT: lit.call{{.*}}__moveinit__{{.*}}([[REBIND]], %__result__)
     return fa[T]()
 
 
