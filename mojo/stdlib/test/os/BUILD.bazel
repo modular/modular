@@ -2,6 +2,7 @@ load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 
 _FILECHECK_TESTS = [
     "test_trap.mojo",
+    "test_process.mojo",
 ]
 
 _LIT_TESTS = [
