@@ -4,14 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-alias int = __mlir_type.index
-
-
 struct PlainStruct:
-    var location: int
+    var location: Int
 
     fn __init__(out self):
-        self.location = __mlir_attr.`0 : index`
+        self.location = 0
 
-    fn set_location(mut self, new_location: int):
+    fn set_location(mut self, new_location: Int):
         self.location = new_location

@@ -355,19 +355,14 @@ fn issue15404():
     consume(c^)
     consume(c^)  # expected-error {{use of uninitialized value 'c'}}
 
-
-alias int = __mlir_type.index
-alias two = __mlir_attr.`2 : index`
-
-
 @fieldwise_init
-struct SP[n: int]:
+struct SP[n: Int]:
     pass
 
 
-fn test_no_unused_warning() -> int:
+fn test_no_unused_warning() -> Int:
     # expected-warning @+1 {{assignment to 's' was never used; assign to '_' instead?}}
-    s = SP[two]()
+    s = SP[2]()
     # This is syntactically a use, but n is a parameter, so the warning does show up.
     return s.n
 

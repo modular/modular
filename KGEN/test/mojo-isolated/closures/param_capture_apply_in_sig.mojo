@@ -8,20 +8,20 @@
 
 @fieldwise_init
 @register_passable
-struct Foo[x: Index](ImplicitlyCopyable):
-    var b: Index
+struct Foo[x: Int](ImplicitlyCopyable):
+    var b: Int
 
-    fn get(self) -> Index:
+    fn get(self) -> Int:
         return self.b
 
 
-# CHECK: lit.struct.decl @"`_CI_{{.*}}"<a, Y: {{.*}}Foo<a>
+# CHECK: lit.struct.decl @"`_CI_{{.*}}"<a: !Int, Y: {{.*}}Foo<:!Int a>
 # CHECK: lit.fn @"__call__
-# CHECK-SAME: @Foo<apply(:{{.*}}@Foo::@"get{{.*}}"<a>), store_to_mem(Y))>
+# CHECK-SAME: @Foo<:!Int apply(:{{.*}}@Foo::@"get{{.*}}"<:!Int a>), store_to_mem(Y))>
 
 
-fn alias_ref_apply_in_sig[a: Index, Y: Foo[a]]():
+fn alias_ref_apply_in_sig[a: Int, Y: Foo[a]]():
     # alias Y = Foo[a](__mlir_attr.`2 : index`)
 
-    fn p_capture(x: Index, y: Foo[Y.get()]) escaping -> Index:
+    fn p_capture(x: Int, y: Foo[Y.get()]) escaping -> Int:
         return Foo[a](x).get()

@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen -elaborate -O0 %s -S | FileCheck %s
 
-alias Int = __mlir_type.index
-
 
 fn use(lhs: Int, rhs: Int) -> Int:
     return rhs
@@ -48,7 +46,7 @@ fn makeEscapingClosure[
     parametricClosure: fn[x: Int] (v: Int) capturing -> Int
 ](x: Int) -> fn (v: Int) escaping -> Int:
     fn writer(v: Int) -> Int:
-        return parametricClosure[__mlir_attr.`2 : index`](use(x, v))
+        return parametricClosure[2](use(x, v))
 
     return writer
 

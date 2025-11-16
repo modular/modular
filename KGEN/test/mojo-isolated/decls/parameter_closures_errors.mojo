@@ -7,31 +7,31 @@
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
 
-fn bind_fat_to_thin_target[g: fn (y: Index) -> Index](x: Index):
+fn bind_fat_to_thin_target[g: fn (y: Int) -> Int](x: Int):
     pass
 
 
 fn bind_fat_to_thin_main():
-    var x = __mlir_attr.`4 : index`
+    var x = 4
 
     @__copy_capture(x)
     @parameter
-    fn g(y: Index) -> Index:
+    fn g(y: Int) -> Int:
         return x
 
-    # expected-error @below {{cannot pass 'fn(y: index) capturing -> index' value, expected 'fn(y: index) -> index' in call parameter}}
+    # expected-error @below {{cannot pass 'fn(y: Int) capturing -> Int' value, expected 'fn(y: Int) -> Int' in call parameter}}
     alias Bound = bind_fat_to_thin_target[g]
     Bound(3)
 
 
-fn makeClosure(x: Index):
-    var z = __mlir_op.`index.add`(x, x)
+fn makeClosure(x: Int):
+    var z = x+x
 
     @__copy_capture(z)
     @parameter
-    fn writer() -> Index:
+    fn writer() -> Int:
         # expected-error @below {{expression must be mutable in assignment}}
-        z = __mlir_op.`index.add`(z, z)
+        z = z+z
         return z
 
     var y = writer()
@@ -39,22 +39,22 @@ fn makeClosure(x: Index):
 
 @fieldwise_init
 struct MemType:
-    var a: Index
+    var a: Int
 
     fn foo(self) -> MemType:
-        return MemType(__mlir_op.`index.add`(self.a, self.a))
+        return MemType(self.a + self.a)
 
 
 @register_passable
 struct NoCopyType:
-    var a: Index
+    var a: Int
 
     @implicit
-    fn __init__(out self, aa: Index):
+    fn __init__(out self, aa: Int):
         self.a = aa
 
     fn foo(self) -> NoCopyType:
-        return NoCopyType(__mlir_op.`index.add`(self.a, self.a))
+        return NoCopyType(self.a + self.a)
 
 
 @no_inline
@@ -65,7 +65,7 @@ fn makeClosure(x: MemType):
     # expected-note @below {{consider transferring the value with '^'}}
     @__copy_capture(rp)
     @parameter
-    fn writer() -> Index:
+    fn writer() -> Int:
         pass
 
 

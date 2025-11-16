@@ -305,7 +305,7 @@ struct FloatDyn:
 
 @register_passable("trivial")
 struct Int(AnyRPTrivialType, ImplicitlyCopyable, Intable):
-    var _mlir_value: Index
+    var _mlir_value: __mlir_type.index
 
     @always_inline("builtin")
     fn __init__(out self):
@@ -314,7 +314,7 @@ struct Int(AnyRPTrivialType, ImplicitlyCopyable, Intable):
         ]()
 
     @always_inline("builtin")
-    fn __init__(out self, *, mlir_value: Index):
+    fn __init__(out self, *, mlir_value: __mlir_type.index):
         self._mlir_value = mlir_value
 
     @always_inline("builtin")

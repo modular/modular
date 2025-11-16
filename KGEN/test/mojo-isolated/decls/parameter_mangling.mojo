@@ -10,16 +10,16 @@
 alias z = __mlir_attr.`0: index`
 
 
-# CHECK-LABEL: lit.struct.decl @A<x, x_0>
-struct A[x: Index, x_0: Index]:
+# CHECK-LABEL: lit.struct.decl @A<x: !Int, x_0: !Int>
+struct A[x: Int, x_0: Int]:
     # CHECK: lit.alias.decl *"z`" = <1>
     alias z = __mlir_attr.`1: index`
     # CHECK: lit.alias.decl *"y`1" = <11>
     alias y = __mlir_attr.`11: index`
 
     # CHECK-LABEL: lit.fn @"foo
-    # CHECK-SAME: <_x, x_1>[imm *"self`2x"]
-    fn foo[_x: Index, x_1: Index](self):
+    # CHECK-SAME: <_x: !Int, x_1: !Int>[imm *"self`2x"]
+    fn foo[_x: Int, x_1: Int](self):
         # CHECK: lit.alias.decl *"z`2x1" = <2>
         alias z = __mlir_attr.`2: index`
         # CHECK: lit.alias.decl *"y`2x2" = <12>
@@ -27,26 +27,25 @@ struct A[x: Index, x_0: Index]:
         # CHECK: lit.alias.decl *"yy`2x3" = <22>
         alias yy = __mlir_attr.`22: index`
 
-        # CHECK-LABEL: lit.fn *"bar
-        # CHECK-SAME: <*"x`3x", x_2>
-        fn bar[x: Index, x_2: Index]():
+        # CHECK-LABEL: lit.fn *"bar{{.*}}<*"x`3x": !Int, x_2: !Int>
+        fn bar[x: Int, x_2: Int]():
             # CHECK: lit.alias.decl *"z`3x1" = <3>
             alias z = __mlir_attr.`3: index`
 
 
 # COM: test names of implicit parameters
-struct MyStruct[a: Index, b: Index]:
+struct MyStruct[a: Int, b: Int]:
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_implicit_parameters
-# CHECK-SAME: <?, *"a`", *"b`1", *"a`3", *"b`4">[imm *"x`2", imm *"y`5"]
+# CHECK-SAME: <?, *"a`": !Int, *"b`1": !Int, *"a`3": !Int, *"b`4": !Int>[imm *"x`2", imm *"y`5"]
 fn test_implicit_parameters(x: MyStruct, y: MyStruct):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_nested_alias_mangling_1
-fn test_nested_alias_mangling_1[x: Index](c: Bool):
+fn test_nested_alias_mangling_1[x: Int](c: Bool):
     # CHECK: hlcf.elif
     if c:
         # CHECK: lit.alias.decl *"y`"
@@ -60,7 +59,7 @@ fn test_nested_alias_mangling_1[x: Index](c: Bool):
 
 
 # CHECK-LABEL: lit.fn @"test_nested_alias_mangling_2
-fn test_nested_alias_mangling_2[x: Index](c: Bool):
+fn test_nested_alias_mangling_2[x: Int](c: Bool):
     # CHECK: hlcf.elif
     if c:
         # CHECK: lit.alias.decl *"y`"

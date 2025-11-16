@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated --mojo-disable-builtins -I %S/inputs %s -split-input-file | FileCheck %s
+# RUN: %parse-mojo-isolated -I %S/inputs %s -split-input-file | FileCheck %s
 
 
 from struct_package import PlainStruct
@@ -42,12 +42,8 @@ __extension PlainStruct:
 from struct_package import PlainStruct
 
 
-alias int = __mlir_type.index
-alias `2` = __mlir_attr.`2 : index`
-
-
 trait Flying:
-    fn fly_to(mut self, new_location: int):
+    fn fly_to(mut self, new_location: Int):
         ...
 
 
@@ -57,15 +53,15 @@ trait Flying:
 __extension PlainStruct(Flying):
     # CHECK-LABEL: lit.fn @"fly_to
     # CHECK-SAME: %self: !lit.ref<!PlainStruct, mut *"{{.*}}">
-    # CHECK-SAME: %new_location: index
-    fn fly_to(mut self: PlainStruct, new_location: int):
+    # CHECK-SAME: %new_location: !Int
+    fn fly_to(mut self: PlainStruct, new_location: Int):
         self.set_location(new_location)
 
     # CHECK: kgen.conformance @"struct_extensions_importing::Flying" {
 
 
 fn launch_flying[F: Flying](mut flying: F):
-    flying.fly_to(`2`)
+    flying.fly_to(2)
 
 
 # CHECK-LABEL: lit.fn @"launch_ship
@@ -80,18 +76,13 @@ fn launch_ship(mut ship: PlainStruct):
 
 from trait_package import Flying as ImportedFlying
 
-
-alias int = __mlir_type.index
-alias `2` = __mlir_attr.`2 : index`
-
-
 struct Spaceship:
-    var location: int
+    var location: Int
 
     fn __init__(out self):
-        self.location = __mlir_attr.`0 : index`
+        self.location = 0
 
-    fn set_location(mut self, new_location: int):
+    fn set_location(mut self, new_location: Int):
         self.location = new_location
 
 
@@ -101,15 +92,15 @@ struct Spaceship:
 __extension Spaceship(ImportedFlying):
     # CHECK-LABEL: lit.fn @"fly_to
     # CHECK-SAME: %self: !lit.ref<!Spaceship, mut *"{{.*}}">
-    # CHECK-SAME: %new_location: index
-    fn fly_to(mut self: Spaceship, new_location: int):
+    # CHECK-SAME: %new_location: !Int
+    fn fly_to(mut self: Spaceship, new_location: Int):
         self.set_location(new_location)
 
     # CHECK: kgen.conformance @"trait_package::plain_trait::Flying" {
 
 
 fn launch_flying2[F: ImportedFlying](mut flying: F):
-    flying.fly_to(`2`)
+    flying.fly_to(2)
 
 
 # CHECK-LABEL: lit.fn @"launch_ship2
@@ -134,12 +125,9 @@ fn launch_ship2(mut ship: Spaceship):
 # TODO(MOCO-522): Better solution would be to make it so the lookup can find
 # only the struct and not its extensions.
 
-alias int = __mlir_type.index
-alias `2` = __mlir_attr.`2 : index`
-
 from struct_and_extension_package import MyStruct
 
 
 fn use_struct():
-    var s = MyStruct(`2`)
+    var s = MyStruct(2)
     s.extended_method()
