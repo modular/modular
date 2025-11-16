@@ -1180,7 +1180,6 @@ class SugarAttr(max._core.Attribute):
         sugared: max._core.dialects.builtin.TypedAttr,
         expanded: max._core.dialects.builtin.TypedAttr,
         canonical: max._core.dialects.builtin.TypedAttr,
-        type: max._core.Type,
     ) -> None: ...
     @property
     def kind(self) -> SugarKind: ...
@@ -1190,8 +1189,6 @@ class SugarAttr(max._core.Attribute):
     def expanded(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def canonical(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
-    def type(self) -> max._core.Type | None: ...
 
 class SymbolConstantAttr(max._core.Attribute):
     """
