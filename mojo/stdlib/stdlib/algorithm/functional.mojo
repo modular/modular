@@ -165,7 +165,7 @@ fn vectorize[
     constrained[unroll_factor > 0, "unroll factor must be > 0"]()
     debug_assert(size >= 0, "size must be >= 0")
 
-    alias unrolled_simd_width = simd_width * unroll_factor
+    comptime unrolled_simd_width = simd_width * unroll_factor
     var simd_end = align_down(UInt(size), UInt(simd_width))
     var unrolled_end = align_down(UInt(size), UInt(unrolled_simd_width))
 
@@ -269,9 +269,9 @@ fn vectorize[
     constrained[unroll_factor > 0, "unroll factor must be > 0"]()
     constrained[size >= 0, "size must be >= 0"]()
 
-    alias unrolled_simd_width = simd_width * unroll_factor
-    alias simd_end = align_down(size, simd_width)
-    alias unrolled_end = align_down(size, unrolled_simd_width)
+    comptime unrolled_simd_width = simd_width * unroll_factor
+    comptime simd_end = align_down(size, simd_width)
+    comptime unrolled_end = align_down(size, unrolled_simd_width)
 
     @parameter
     for unrolled_idx in range(0, unrolled_end, unrolled_simd_width):
@@ -466,20 +466,22 @@ fn _parallelize_impl[
 # tile
 # ===-----------------------------------------------------------------------===#
 
-alias Static1DTileUnitFunc = fn[width: Int] (Int) capturing [_] -> None
+comptime Static1DTileUnitFunc = fn[width: Int] (Int) capturing [_] -> None
 """
 Signature of a 1d tiled function that performs some work with a static tile size
 and an offset. i.e. func<tile_size: Int> (offset: Int)
 """
 
-alias Dynamic1DTileUnitFunc = fn (Int, Int) capturing [_] -> None
+comptime Dynamic1DTileUnitFunc = fn (Int, Int) capturing [_] -> None
 """
 Signature of a 1d tiled function that performs some work with a dynamic tile size
   and an offset. i.e. func(offset: Int, tile_size: Int)
 """
 
 
-alias BinaryTile1DTileUnitFunc = fn[width: Int] (Int, Int) capturing [_] -> None
+comptime BinaryTile1DTileUnitFunc = fn[width: Int] (Int, Int) capturing [
+    _
+] -> None
 """
 Signature of a tiled function that performs some work with a dynamic tile size
 and a secondary static tile size.
@@ -616,9 +618,9 @@ fn tile[
 # ===-----------------------------------------------------------------------===#
 
 
-alias Static2DTileUnitFunc = fn[tile_x: Int, tile_y: Int] (Int, Int) capturing [
-    _
-] -> None
+comptime Static2DTileUnitFunc = fn[tile_x: Int, tile_y: Int] (
+    Int, Int
+) capturing [_] -> None
 """
 Signature of a 2d tiled function that performs some work with a static tile size
 and an offset. i.e.
@@ -671,10 +673,10 @@ fn tile[
 # ===-----------------------------------------------------------------------===#
 
 # Signature of a function that unswitch can take.
-alias SwitchedFunction = fn[sw: Bool] () raises capturing [_] -> None
+comptime SwitchedFunction = fn[sw: Bool] () raises capturing [_] -> None
 
 # Version of unswitch supporting 2 predicates.
-alias SwitchedFunction2 = fn[sw0: Bool, sw1: Bool] () capturing [_] -> None
+comptime SwitchedFunction2 = fn[sw0: Bool, sw1: Bool] () capturing [_] -> None
 
 
 @always_inline
@@ -817,7 +819,7 @@ fn unswitch[
 # TileWithUnswitch
 # ===-----------------------------------------------------------------------===#
 
-alias Static1DTileUnswitchUnitFunc = fn[width: Int, sw: Bool] (
+comptime Static1DTileUnswitchUnitFunc = fn[width: Int, sw: Bool] (
     Int, Int
 ) capturing [_] -> None
 """
@@ -825,7 +827,7 @@ Signature of a tiled function that performs some work with a static tile size
   and an offset. i.e. func<tile_size: Int> (offset: Int)
 """
 
-alias Static1DTileUnitFuncWithFlag = fn[width: Int, flag: Bool] (
+comptime Static1DTileUnitFuncWithFlag = fn[width: Int, flag: Bool] (
     Int
 ) capturing [_] -> None
 
@@ -873,9 +875,9 @@ fn tile_and_unswitch[
         )
 
 
-alias Dynamic1DTileUnswitchUnitFunc = fn[sw: Bool] (Int, Int, Int) capturing [
-    _
-] -> None
+comptime Dynamic1DTileUnswitchUnitFunc = fn[sw: Bool] (
+    Int, Int, Int
+) capturing [_] -> None
 
 
 @always_inline
@@ -982,7 +984,7 @@ fn tile_middle_unswitch_boundaries[
         offset += right_tile_size
 
 
-alias Static1DTileUnitFuncWithFlags = fn[
+comptime Static1DTileUnitFuncWithFlags = fn[
     width: Int, left_flag: Bool, right_flag: Bool
 ] (Int) capturing [_] -> None
 
@@ -1778,8 +1780,8 @@ fn parallelize_over_rows[
 # stencil
 # ===-----------------------------------------------------------------------===#
 
-alias stencil = _stencil_impl_cpu
-alias stencil_gpu = _stencil_impl_gpu
+comptime stencil = _stencil_impl_cpu
+comptime stencil_gpu = _stencil_impl_gpu
 
 
 fn _stencil_impl_cpu[

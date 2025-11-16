@@ -446,7 +446,7 @@ fn exp2[
 
 @always_inline
 fn _exp2_float32(x: SIMD[DType.float32, _]) -> type_of(x):
-    alias u32 = DType.uint32
+    comptime u32 = DType.uint32
     var xc = x.clamp(-126, 126)
     var m = xc.cast[DType.int32]()
     xc -= m.cast[x.dtype]()
@@ -494,7 +494,7 @@ fn _ldexp_impl[
         Vector containing elementwise result of ldexp on x and exp.
     """
 
-    alias hardware_width = simd_width_of[dtype]()
+    comptime hardware_width = simd_width_of[dtype]()
 
     @parameter
     if (
@@ -507,7 +507,7 @@ fn _ldexp_impl[
 
         @parameter
         for idx in range(width // hardware_width):
-            alias i = idx * hardware_width
+            comptime i = idx * hardware_width
             # On AVX512, we can use the scalef intrinsic to compute the ldexp
             # function.
             var part = llvm_intrinsic[
@@ -525,7 +525,7 @@ fn _ldexp_impl[
 
         return res
 
-    alias integral_type = FPUtils[dtype].integral_type
+    comptime integral_type = FPUtils[dtype].integral_type
     var m = exp.cast[integral_type]() + FPUtils[dtype].exponent_bias()
 
     return x * type_of(x)(from_bits=m << FPUtils[dtype].mantissa_width())
@@ -576,7 +576,7 @@ trait _Expable:
 fn _exp_taylor[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    alias coefficients = [
+    comptime coefficients = [
         Scalar[dtype](1.0),
         1.0,
         0.5,
@@ -621,7 +621,7 @@ fn exp[
         element in the input SIMD vector.
     """
     constrained[dtype.is_floating_point(), "must be a floating point value"]()
-    alias neg_ln2 = -0.69314718055966295651160180568695068359375
+    comptime neg_ln2 = -0.69314718055966295651160180568695068359375
 
     @parameter
     if is_gpu():
@@ -848,11 +848,11 @@ fn frexp[
     """
     # Based on the implementation in boost/simd/arch/common/simd/function/ifrexp.hpp
     constrained[dtype.is_floating_point(), "must be a floating point value"]()
-    alias T = SIMD[dtype, width]
-    alias zero = T(0)
+    comptime T = SIMD[dtype, width]
+    comptime zero = T(0)
     # Add one to the resulting exponent up by subtracting 1 from the bias
-    alias exponent_bias = FPUtils[dtype].exponent_bias() - 1
-    alias mantissa_width = FPUtils[dtype].mantissa_width()
+    comptime exponent_bias = FPUtils[dtype].exponent_bias() - 1
+    comptime mantissa_width = FPUtils[dtype].mantissa_width()
     var mask1 = _frexp_mask1[dtype, width]()
     var mask2 = _frexp_mask2[dtype, width]()
     var x_int = x._to_bits_signed()
@@ -888,7 +888,7 @@ fn _log_base[
         Vector containing result of performing logarithm on x.
     """
     # Based on the Cephes approximation.
-    alias sqrt2_div_2 = 0.70710678118654752440
+    comptime sqrt2_div_2 = 0.70710678118654752440
 
     constrained[base == 2 or base == 27, "input base must be either 2 or 27"]()
 
@@ -922,7 +922,7 @@ fn _log_base[
     # TODO: fix this hack
     @parameter
     if base == 27:  # Natural log
-        alias ln2 = 0.69314718055994530942
+        comptime ln2 = 0.69314718055994530942
         y = exp.fma(ln2, y)
     else:
         y = y.fma(log2e, exp)
@@ -953,7 +953,7 @@ fn log[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 
     @parameter
     if is_nvidia_gpu() and dtype is DType.float32:
-        alias ln2 = 0.69314718055966295651160180568695068359375
+        comptime ln2 = 0.69314718055966295651160180568695068359375
         return (
             _call_ptx_intrinsic[
                 instruction="lg2.approx.f32", constraints="=f,f"
@@ -1289,7 +1289,7 @@ fn iota[
     if width == 1:
         return offset
 
-    alias step_dtype = dtype if dtype.is_integral() else DType.int
+    comptime step_dtype = dtype if dtype.is_integral() else DType.int
     var step: SIMD[step_dtype, width]
     if is_compile_time():
         step = 0

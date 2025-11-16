@@ -27,66 +27,66 @@ from .intrinsics import _mlirtype_is_eq
 # Primitive C type aliases
 # ===-----------------------------------------------------------------------===#
 
-alias c_char = Int8
+comptime c_char = Int8
 """C `char` type."""
 
-alias c_uchar = UInt8
+comptime c_uchar = UInt8
 """C `unsigned char` type."""
 
-alias c_int = Int32
+comptime c_int = Int32
 """C `int` type.
 
 The C `int` type is typically a signed 32-bit integer on commonly used targets
 today.
 """
 
-alias c_uint = UInt32
+comptime c_uint = UInt32
 """C `unsigned int` type."""
 
-alias c_short = Int16
+comptime c_short = Int16
 """C `short` type."""
 
-alias c_ushort = UInt16
+comptime c_ushort = UInt16
 """C `unsigned short` type."""
 
-alias c_long = Scalar[_c_long_dtype()]
+comptime c_long = Scalar[_c_long_dtype()]
 """C `long` type.
 
 The C `long` type is typically a signed 64-bit integer on macOS and Linux, and a
 32-bit integer on Windows."""
 
-alias c_long_long = Scalar[_c_long_long_dtype()]
+comptime c_long_long = Scalar[_c_long_long_dtype()]
 """C `long long` type.
 
 The C `long long` type is typically a signed 64-bit integer on commonly used
 targets today."""
 
-alias c_ulong = Scalar[_c_long_dtype[unsigned=True]()]
+comptime c_ulong = Scalar[_c_long_dtype[unsigned=True]()]
 """C `unsigned long` type.
 
 The C `unsigned long` type is typically a 64-bit integer on commonly used
 targets today."""
 
-alias c_ulong_long = Scalar[_c_long_long_dtype[unsigned=True]()]
+comptime c_ulong_long = Scalar[_c_long_long_dtype[unsigned=True]()]
 """C `unsigned long long` type.
 
 The C `unsigned long long` type is typically a 64-bit integer on commonly used
 targets today."""
 
 
-alias c_size_t = UInt
+comptime c_size_t = UInt
 """C `size_t` type."""
 
-alias c_ssize_t = Int
+comptime c_ssize_t = Int
 """C `ssize_t` type."""
 
-alias c_float = Float32
+comptime c_float = Float32
 """C `float` type."""
 
-alias c_double = Float64
+comptime c_double = Float64
 """C `double` type."""
 
-alias MAX_PATH = _get_max_path()
+comptime MAX_PATH = _get_max_path()
 
 
 fn _get_max_path() -> Int:
@@ -137,22 +137,22 @@ fn _c_long_long_dtype[unsigned: Bool = False]() -> DType:
 struct RTLD:
     """Enumeration of the RTLD flags used during dynamic library loading."""
 
-    alias LAZY = 1
+    comptime LAZY = 1
     """Load library lazily (defer function resolution until needed).
     """
-    alias NOW = 2
+    comptime NOW = 2
     """Load library immediately (resolve all symbols on load)."""
-    alias LOCAL = 4
+    comptime LOCAL = 4
     """Make symbols not available for symbol resolution of subsequently loaded
     libraries."""
-    alias GLOBAL = 256 if CompilationTarget.is_linux() else 8
+    comptime GLOBAL = 256 if CompilationTarget.is_linux() else 8
     """Make symbols available for symbol resolution of subsequently loaded
     libraries."""
-    alias NODELETE = 4096 if CompilationTarget.is_linux() else 128
+    comptime NODELETE = 4096 if CompilationTarget.is_linux() else 128
     """Do not delete the library when the process exits."""
 
 
-alias DEFAULT_RTLD = RTLD.NOW | RTLD.GLOBAL
+comptime DEFAULT_RTLD = RTLD.NOW | RTLD.GLOBAL
 
 
 struct OwnedDLHandle(Movable):
@@ -525,7 +525,7 @@ struct _DLHandle(Boolable, Copyable, Movable):
             A handle to the function.
         """
         # Force unique the func_name so we know that it is nul-terminated.
-        alias func_name_literal = get_static_string[func_name]()
+        comptime func_name_literal = get_static_string[func_name]()
         return self._get_function[result_type](
             cstr_name=func_name_literal.unsafe_ptr().bitcast[c_char](),
         )
@@ -837,7 +837,7 @@ struct _Global[
     init_fn: fn () -> StorageType,
     on_error_msg: Optional[fn () -> Error] = None,
 ](Defaultable):
-    alias ResultType = UnsafePointer[Self.StorageType, MutAnyOrigin]
+    comptime ResultType = UnsafePointer[Self.StorageType, MutAnyOrigin]
 
     fn __init__(out self):
         pass
@@ -877,9 +877,9 @@ struct _Global[
     # 0: Python runtime context
     # 1: GPU comm P2P availability cache
     # 2: Intentionally unused (reserved for prototyping / future use)
-    alias _python_idx = 0
-    alias _gpu_comm_p2p_idx = 1
-    alias _unused = 2  # Intentionally unused (enabled for prototyping).
+    comptime _python_idx = 0
+    comptime _gpu_comm_p2p_idx = 1
+    comptime _unused = 2  # Intentionally unused (enabled for prototyping).
 
     # This accesses a well-known global with a fixed index rather than using a
     # name to unique the value.  The index table is above.
@@ -973,7 +973,7 @@ fn external_call[
     # but we want to pass their values directly into the C printf call. Load
     # all the members of the pack.
     var loaded_pack = args.get_loaded_kgen_pack()
-    alias callee_kgen_string = _get_kgen_string[callee]()
+    comptime callee_kgen_string = _get_kgen_string[callee]()
 
     @parameter
     if _mlirtype_is_eq[return_type, NoneType]():

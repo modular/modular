@@ -38,7 +38,7 @@ trait _IsUnsafePointer:
     converted to it's associated kernel argument type.
     """
 
-    alias _UnsafePointerType: AnyType
+    comptime _UnsafePointerType: AnyType
 
 
 @always_inline
@@ -82,7 +82,7 @@ struct LegacyUnsafePointer[
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias _UnsafePointerType = UnsafePointer[
+    comptime _UnsafePointerType = UnsafePointer[
         mut = Self.mut,
         Self.type,
         Self.origin,
@@ -90,7 +90,7 @@ struct LegacyUnsafePointer[
     ]
 
     # Fields
-    alias _mlir_type = __mlir_type[
+    comptime _mlir_type = __mlir_type[
         `!kgen.pointer<`,
         Self.type,
         `, `,
@@ -254,7 +254,7 @@ struct LegacyUnsafePointer[
         Returns:
             Pointer to the newly allocated uninitialized array.
         """
-        alias size_of_t = size_of[Self.type]()
+        comptime size_of_t = size_of[Self.type]()
         constrained[size_of_t > 0, "size must be greater than zero"]()
         return _malloc[Self.type](size_of_t * count, alignment=alignment)
 
@@ -271,7 +271,7 @@ struct LegacyUnsafePointer[
         """
 
         # We're unsafe, so we can have unsafe things.
-        alias _ref_type = Pointer[Self.type, Self.origin, Self.address_space]
+        comptime _ref_type = Pointer[Self.type, Self.origin, Self.address_space]
         return __get_litref_as_mvalue(
             __mlir_op.`lit.ref.from_pointer`[_type = _ref_type._mlir_type](
                 self.address
@@ -1076,7 +1076,7 @@ struct LegacyUnsafePointer[
             ]._mlir_type,
         ](self.address)
 
-    alias _OriginCastType[
+    comptime _OriginCastType[
         target_mut: Bool, target_origin: Origin[target_mut]
     ] = LegacyUnsafePointer[
         Self.type,
@@ -1495,7 +1495,7 @@ struct LegacyUnsafePointer[
         ) = __get_address_as_owned_value(self.address)
 
 
-alias LegacyOpaquePointer = LegacyUnsafePointer[NoneType]
+comptime LegacyOpaquePointer = LegacyUnsafePointer[NoneType]
 """An opaque pointer, equivalent to the C `void*` type."""
 
 

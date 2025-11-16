@@ -71,7 +71,7 @@ struct _OptimizationLevel(ImplicitlyCopyable, Intable, Stringable, Writable):
         return String.write(self)
 
 
-alias OptimizationLevel = _OptimizationLevel()
+comptime OptimizationLevel = _OptimizationLevel()
 """Represents the optimization level used during compilation."""
 
 # ===----------------------------------------------------------------------=== #
@@ -107,14 +107,14 @@ struct _DebugLevel(ImplicitlyCopyable, Movable, Stringable, Writable):
         return String.write(self)
 
 
-alias DebugLevel = _DebugLevel()
+comptime DebugLevel = _DebugLevel()
 """Represents the debug level used during compilation."""
 
 # ===----------------------------------------------------------------------=== #
 # SanitizeAddress
 # ===----------------------------------------------------------------------=== #
 
-alias SanitizeAddress = is_defined["__SANITIZE_ADDRESS"]() and env_get_int[
+comptime SanitizeAddress = is_defined["__SANITIZE_ADDRESS"]() and env_get_int[
     "__SANITIZE_ADDRESS"
 ]() == 1
 """True if address sanitizer is enabled at compile-time"""

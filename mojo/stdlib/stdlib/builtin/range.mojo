@@ -44,10 +44,10 @@ fn _sign(x: Int) -> Int:
 
 @register_passable("trivial")
 struct _ZeroStartingRange(Iterable, Iterator, Movable, ReversibleRange, Sized):
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = Int
+    comptime Element = Int
     var curr: Int
     var end: Int
 
@@ -93,10 +93,10 @@ struct _ZeroStartingRange(Iterable, Iterator, Movable, ReversibleRange, Sized):
 @fieldwise_init
 @register_passable("trivial")
 struct _SequentialRange(Iterable, Iterator, ReversibleRange, Sized):
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = Int
+    comptime Element = Int
     var start: Int
     var end: Int
 
@@ -136,10 +136,10 @@ struct _SequentialRange(Iterable, Iterator, ReversibleRange, Sized):
 @fieldwise_init
 @register_passable("trivial")
 struct _StridedRangeIterator(Iterable, Iterator, Sized):
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = Int
+    comptime Element = Int
     var start: Int
     var end: Int
     var step: Int
@@ -176,10 +176,10 @@ struct _StridedRangeIterator(Iterable, Iterator, Sized):
 @fieldwise_init
 @register_passable("trivial")
 struct _StridedRange(Iterable, Iterator, ReversibleRange, Sized):
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _StridedRangeIterator
-    alias Element = Int
+    comptime Element = Int
     var start: Int
     var end: Int
     var step: Int
@@ -432,10 +432,10 @@ fn _uint_range_bounds(len: UInt) -> Tuple[Int, Optional[Int]]:
 
 @register_passable("trivial")
 struct _UIntZeroStartingRange(Iterable, Iterator, UIntSized):
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = UInt
+    comptime Element = UInt
     var curr: UInt
     var end: UInt
 
@@ -475,10 +475,10 @@ struct _UIntZeroStartingRange(Iterable, Iterator, UIntSized):
 @fieldwise_init
 @register_passable("trivial")
 struct _UIntStridedRangeIterator(Iterable, Iterator, UIntSized):
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = UInt
+    comptime Element = UInt
     var start: UInt
     var end: UInt
     var step: UInt
@@ -508,10 +508,10 @@ struct _UIntStridedRangeIterator(Iterable, Iterator, UIntSized):
 
 @register_passable("trivial")
 struct _UIntStridedRange(Iterable, Iterator, UIntSized):
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _UIntStridedRangeIterator
-    alias Element = UInt
+    comptime Element = UInt
     var start: UInt
     var end: UInt
     var step: UInt
@@ -612,10 +612,10 @@ fn _scalar_range_bounds[
 struct _ZeroStartingScalarRange[dtype: DType](
     Iterable, Iterator & ImplicitlyCopyable
 ):
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = Scalar[Self.dtype]
+    comptime Element = Scalar[Self.dtype]
     var curr: Scalar[Self.dtype]
     var end: Scalar[Self.dtype]
 
@@ -666,10 +666,10 @@ struct _ZeroStartingScalarRange[dtype: DType](
 struct _SequentialScalarRange[dtype: DType](
     Iterable, Iterator & ImplicitlyCopyable
 ):
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = Scalar[Self.dtype]
+    comptime Element = Scalar[Self.dtype]
     var start: Scalar[Self.dtype]
     var end: Scalar[Self.dtype]
 
@@ -713,10 +713,10 @@ struct _SequentialScalarRange[dtype: DType](
 struct _StridedScalarRange[dtype: DType](
     Iterable, Iterator & ImplicitlyCopyable
 ):
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = Scalar[Self.dtype]
+    comptime Element = Scalar[Self.dtype]
     var start: Scalar[Self.dtype]
     var end: Scalar[Self.dtype]
     var step: Scalar[Self.dtype]

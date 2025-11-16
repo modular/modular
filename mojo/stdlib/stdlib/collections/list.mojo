@@ -49,9 +49,9 @@ struct _ListIter[
         forward: The iteration direction. `False` is backwards.
     """
 
-    alias Element = Self.T  # FIXME(MOCO-2068): shouldn't be needed.
+    comptime Element = Self.T  # FIXME(MOCO-2068): shouldn't be needed.
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
@@ -255,7 +255,7 @@ struct List[T: Copyable & Movable](
     var capacity: Int
     """The amount of elements that can fit in the list without resizing it."""
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _ListIter[Self.T, iterable_origin, True]
 

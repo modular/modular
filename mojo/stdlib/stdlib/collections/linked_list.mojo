@@ -25,7 +25,7 @@ struct Node[
         ElementType: The type of element stored in the node.
     """
 
-    alias _NodePointer = UnsafePointer[Self, MutOrigin.external]
+    comptime _NodePointer = UnsafePointer[Self, MutOrigin.external]
 
     var value: Self.ElementType
     """The value stored in this node."""
@@ -95,11 +95,11 @@ struct _LinkedListIter[
     var src: Pointer[LinkedList[Self.ElementType], Self.origin]
     var curr: UnsafePointer[Node[Self.ElementType], MutOrigin.external]
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
-    alias Element = Self.ElementType  # FIXME(MOCO-2068): shouldn't be needed.
+    comptime Element = Self.ElementType  # FIXME(MOCO-2068): shouldn't be needed.
 
     fn __init__(out self, src: Pointer[LinkedList[Self.Element], Self.origin]):
         self.src = src
@@ -146,11 +146,11 @@ struct LinkedList[
     at any position.
     """
 
-    alias _NodePointer = UnsafePointer[
+    comptime _NodePointer = UnsafePointer[
         Node[Self.ElementType], MutOrigin.external
     ]
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _LinkedListIter[Self.ElementType, iterable_origin]
 

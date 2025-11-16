@@ -66,7 +66,7 @@ fn count_leading_zeros[
     constrained[dtype.is_integral(), "must be integral"]()
 
     # HACK(#5003): remove this workaround
-    alias d = dtype if dtype is not DType.int else (
+    comptime d = dtype if dtype is not DType.int else (
         DType.int32 if size_of[dtype]() == 4 else DType.int64
     )
     return llvm_intrinsic["llvm.ctlz", SIMD[d, width], has_side_effect=False](
@@ -311,7 +311,7 @@ fn bit_width(val: Int) -> Int:
     Returns:
         The number of bits required to represent the integer.
     """
-    alias bitwidth = bit_width_of[Int]()
+    comptime bitwidth = bit_width_of[Int]()
     return bitwidth - count_leading_zeros(select(val < 0, ~val, val))
 
 
@@ -335,7 +335,7 @@ fn bit_width[
         A SIMD value where the element at position `i` equals the number of bits required to represent the integer at position `i` of the input.
     """
     constrained[dtype.is_integral(), "must be integral"]()
-    alias bitwidth = bit_width_of[dtype]()
+    comptime bitwidth = bit_width_of[dtype]()
 
     @parameter
     if dtype.is_unsigned():

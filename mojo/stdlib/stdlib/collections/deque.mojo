@@ -42,7 +42,7 @@ struct Deque[ElementType: Copyable & Movable](
             Must implement the traits `Copyable` and `Movable`.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _DequeIter[Self.ElementType, iterable_origin]
 
@@ -50,7 +50,7 @@ struct Deque[ElementType: Copyable & Movable](
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias default_capacity: Int = 64
+    comptime default_capacity: Int = 64
     """The default capacity of the deque: must be the power of 2."""
 
     # ===-------------------------------------------------------------------===#
@@ -995,10 +995,10 @@ struct _DequeIter[
         forward: The iteration direction. `False` is backwards.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = Self.T
+    comptime Element = Self.T
 
     var index: Int
     var src: Pointer[Deque[Self.T], Self.origin]

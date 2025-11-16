@@ -86,13 +86,13 @@ struct InlineArray[
     """
 
     # Fields
-    alias type = __mlir_type[
+    comptime type = __mlir_type[
         `!pop.array<`, Self.size._mlir_value, `, `, Self.ElementType, `>`
     ]
     var _array: Self.type
     """The underlying storage for the array."""
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: LegacyOpaquePointer):
         """Convert the host type object to a device_type and store it at the
@@ -238,7 +238,7 @@ struct InlineArray[
         _inline_array_construction_checks[Self.size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
-        alias unroll_end = math.align_down(Self.size, batch_size)
+        comptime unroll_end = math.align_down(Self.size, batch_size)
 
         var ptr = self.unsafe_ptr()
 
@@ -454,7 +454,9 @@ struct InlineArray[
         constrained[
             -Self.size <= index(idx) < Self.size, "Index must be within bounds."
         ]()
-        alias normalized_index = normalize_index["InlineArray"](idx, Self.size)
+        comptime normalized_index = normalize_index["InlineArray"](
+            idx, Self.size
+        )
         return self.unsafe_get(normalized_index)
 
     # ===------------------------------------------------------------------=== #

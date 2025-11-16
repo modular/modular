@@ -95,11 +95,11 @@ struct Span[
     """
 
     # Aliases
-    alias Mutable = Span[Self.T, MutOrigin.cast_from[Self.origin]]
+    comptime Mutable = Span[Self.T, MutOrigin.cast_from[Self.origin]]
     """The mutable version of the `Span`."""
-    alias Immutable = Span[Self.T, ImmutOrigin.cast_from[Self.origin]]
+    comptime Immutable = Span[Self.T, ImmutOrigin.cast_from[Self.origin]]
     """The immutable version of the `Span`."""
-    alias UnsafePointerType = UnsafePointer[
+    comptime UnsafePointerType = UnsafePointer[
         Self.T,
         Self.origin,
         address_space = Self.address_space,
@@ -109,7 +109,7 @@ struct Span[
     var _data: Self.UnsafePointerType
     var _len: Int
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: LegacyOpaquePointer):
         """Device type mapping is the identity function."""
@@ -788,7 +788,7 @@ struct Span[
             The amount of times the function returns `True`.
         """
 
-        alias simdwidth = simd_width_of[DType.int]()
+        comptime simdwidth = simd_width_of[DType.int]()
         var ptr = self.unsafe_ptr()
         var length = len(self)
         var countv = SIMD[DType.int, simdwidth](0)

@@ -51,10 +51,10 @@ struct FPUtils[
         _constraint: Implements the constraint. Do not pass explicitly.
     """
 
-    alias integral_type = _integral_type_of[Self.dtype]()
+    comptime integral_type = _integral_type_of[Self.dtype]()
     """The equivalent integer dtype of the float type."""
 
-    alias uint_type = _unsigned_integral_type_of[Self.dtype]()
+    comptime uint_type = _unsigned_integral_type_of[Self.dtype]()
     """The equivalent uint dtype of the float type."""
 
     @staticmethod
@@ -563,8 +563,8 @@ fn isnan[
         var bits = val.to_bits()
         return (bits & 0x7C00).eq(0x7C00) & (bits & 0x03FF).ne(0)
 
-    alias signaling_nan_test: UInt32 = 0x0001
-    alias quiet_nan_test: UInt32 = 0x0002
+    comptime signaling_nan_test: UInt32 = 0x0001
+    comptime quiet_nan_test: UInt32 = 0x0002
     return llvm_intrinsic[
         "llvm.is.fpclass", SIMD[DType.bool, width], has_side_effect=False
     ](val._mlir_value, signaling_nan_test | quiet_nan_test)
@@ -851,8 +851,8 @@ fn isinf[
         # For the float8_e5m2 both 7C and FC are infinity.
         return (val.to_bits() & 0x7F).eq(0x7C)
 
-    alias negative_infinity_test: UInt32 = 0x0004
-    alias positive_infinity_test: UInt32 = 0x0200
+    comptime negative_infinity_test: UInt32 = 0x0004
+    comptime positive_infinity_test: UInt32 = 0x0200
     return llvm_intrinsic[
         "llvm.is.fpclass", SIMD[DType.bool, width], has_side_effect=False
     ](val._mlir_value, negative_infinity_test | positive_infinity_test)

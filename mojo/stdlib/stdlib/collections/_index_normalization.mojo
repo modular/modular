@@ -37,7 +37,7 @@ fn normalize_index[
         The normalized index value.
     """
 
-    alias assert_mode = "safe" if assert_always else "none"
+    comptime assert_mode = "safe" if assert_always else "none"
 
     @parameter
     if (

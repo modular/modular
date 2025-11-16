@@ -471,7 +471,7 @@ struct _FormatCurlyEntry(ImplicitlyCopyable, Movable):
 # ===-----------------------------------------------------------------------===#
 
 
-alias _CurlyEntryFormattable = Stringable & Representable
+comptime _CurlyEntryFormattable = Stringable & Representable
 """This trait is used by the `format()` method to support format specifiers.
 Currently, it is a composition of both `Stringable` and `Representable`
 traits i.e. a type to be formatted must implement both. In the future this

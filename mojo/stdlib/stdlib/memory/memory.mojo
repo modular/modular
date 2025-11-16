@@ -65,7 +65,7 @@ fn _memcmp_opt_impl_unconstrained[
     s2: UnsafePointer[mut=False, Scalar[dtype], **_],
     count: Int,
 ) -> Int:
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
     if count < simd_width:
         for i in range(count):
             var s1i = s1[i]
@@ -494,7 +494,7 @@ fn _malloc[
 ):
     @parameter
     if is_gpu():
-        alias U = UnsafePointer[
+        comptime U = UnsafePointer[
             NoneType,
             MutOrigin.external,
             address_space = AddressSpace.GENERIC,

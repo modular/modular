@@ -38,7 +38,7 @@ struct Tuple[*element_types: Copyable & Movable](
         element_types: The elements type.
     """
 
-    alias _mlir_type = __mlir_type[
+    comptime _mlir_type = __mlir_type[
         `!kgen.pack<:`,
         VariadicOf[Copyable & Movable],
         Self.element_types,
@@ -144,7 +144,7 @@ struct Tuple[*element_types: Copyable & Movable](
             The tuple length.
         """
 
-        alias result = stdlib.builtin.variadic_size(Self.element_types)
+        comptime result = stdlib.builtin.variadic_size(Self.element_types)
         return result
 
     @always_inline("nodebug")

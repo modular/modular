@@ -81,7 +81,7 @@ from memory import (
 from memory.memory import _memcmp_impl_unconstrained
 from python import ConvertibleToPython, Python, PythonObject
 
-alias StaticString = StringSlice[StaticConstantOrigin]
+comptime StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice."""
 
 
@@ -104,10 +104,10 @@ struct CodepointSliceIter[
     always take an element from the end.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = StringSlice[Self.origin]
+    comptime Element = StringSlice[Self.origin]
 
     var _slice: StringSlice[Self.origin]
 
@@ -500,9 +500,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     """
 
     # Aliases
-    alias Mutable = StringSlice[MutOrigin.cast_from[Self.origin]]
+    comptime Mutable = StringSlice[MutOrigin.cast_from[Self.origin]]
     """The mutable version of the `StringSlice`."""
-    alias Immutable = StringSlice[ImmutOrigin.cast_from[Self.origin]]
+    comptime Immutable = StringSlice[ImmutOrigin.cast_from[Self.origin]]
     """The immutable version of the `StringSlice`."""
     # Fields
     var _slice: Span[Byte, Self.origin]
@@ -2553,7 +2553,7 @@ fn _memchr_impl[
 ):
     var haystack = source.unsafe_ptr()
     var length = len(source)
-    alias bool_mask_width = simd_width_of[DType.bool]()
+    comptime bool_mask_width = simd_width_of[DType.bool]()
     var first_needle = SIMD[dtype, bool_mask_width](char)
     var vectorized_end = align_down(length, bool_mask_width)
 
@@ -2625,7 +2625,7 @@ fn _memmem_impl[
         output = {}
         return
 
-    alias bool_mask_width = simd_width_of[DType.bool]()
+    comptime bool_mask_width = simd_width_of[DType.bool]()
     var vectorized_end = align_down(
         haystack_len - needle_len + 1, bool_mask_width
     )

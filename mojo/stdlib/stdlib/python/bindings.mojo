@@ -44,7 +44,7 @@ from utils import Variant
 # Global `PyTypeObject` Registration
 # ===-----------------------------------------------------------------------===#
 
-alias MOJO_PYTHON_TYPE_OBJECTS = _Global[
+comptime MOJO_PYTHON_TYPE_OBJECTS = _Global[
     StorageType = Dict[StaticString, PythonObject],
     "MOJO_PYTHON_TYPE_OBJECTS",
     Dict[StaticString, PythonObject].__init__,
@@ -109,7 +109,7 @@ fn lookup_py_type_object[T: AnyType]() raises -> PythonObject:
     #   This should use a unique compiler type ID, not the Python name of this
     #   type.
 
-    alias type_name = get_type_name[T, qualified_builtins=True]()
+    comptime type_name = get_type_name[T, qualified_builtins=True]()
     if entry := type_dict[].find(type_name):
         return entry.take()
 
@@ -223,7 +223,7 @@ fn _tp_repr_wrapper[T: Representable](py_self: PyObjectPtr) -> PyObjectPtr:
 # Builders
 # ===-----------------------------------------------------------------------===#
 
-alias PyFunction = fn (mut PythonObject, mut PythonObject) -> PythonObject
+comptime PyFunction = fn (mut PythonObject, mut PythonObject) -> PythonObject
 """The generic function type for non-raising Python bindings.
 
 The first argument is the self object, and the second argument is a tuple of the
@@ -231,7 +231,7 @@ positional arguments. These functions always return a Python object (could be a
 `None` object).
 """
 
-alias PyFunctionWithKeywords = fn (
+comptime PyFunctionWithKeywords = fn (
     mut PythonObject, mut PythonObject, mut PythonObject
 ) -> PythonObject
 """The generic function type for non-raising Python bindings with keyword arguments.
@@ -240,7 +240,7 @@ The first argument is the self object, the second argument is a tuple of the
 positional arguments, and the third argument is a dictionary of the keyword arguments.
 """
 
-alias PyFunctionRaising = fn (
+comptime PyFunctionRaising = fn (
     mut PythonObject, mut PythonObject
 ) raises -> PythonObject
 """The generic function type for raising Python bindings.
@@ -250,7 +250,7 @@ positional arguments. These functions always return a Python object (could be a
 `None` object).
 """
 
-alias PyFunctionWithKeywordsRaising = fn (
+comptime PyFunctionWithKeywordsRaising = fn (
     mut PythonObject, mut PythonObject, mut PythonObject
 ) raises -> PythonObject
 """The generic function type for raising Python bindings with keyword arguments.
@@ -259,7 +259,7 @@ The first argument is the self object, the second argument is a tuple of the
 positional arguments, and the third argument is a dictionary of the keyword arguments.
 """
 
-alias GenericPyFunction = Variant[
+comptime GenericPyFunction = Variant[
     PyFunction,
     PyFunctionWithKeywords,
     PyFunctionRaising,

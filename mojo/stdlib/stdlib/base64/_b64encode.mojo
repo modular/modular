@@ -31,7 +31,7 @@ from memory import LegacyUnsafePointer as UnsafePointer, Span, bitcast, memcpy
 
 from utils import IndexList
 
-alias Bytes = SIMD[DType.uint8, _]
+comptime Bytes = SIMD[DType.uint8, _]
 
 
 fn _base64_simd_mask[
@@ -95,8 +95,8 @@ fn _6bit_to_byte[width: Int](input: Bytes[width]) -> Bytes[width]:
 # | 62          | +           | 11           | -19                     |
 # | 63          | /           | 12           | -16                     |
 # fmt: off
-alias UNUSED = 0
-alias OFFSETS = Bytes[16](
+comptime UNUSED = 0
+comptime OFFSETS = Bytes[16](
     71,                                     # a ... z
     -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, # 0 ... 9
     -19,                                    # +
@@ -104,8 +104,8 @@ alias OFFSETS = Bytes[16](
     65,                                     # A ... Z
     UNUSED, UNUSED
 )
-alias END_FIRST_RANGE = 25
-alias END_SECOND_RANGE = 51
+comptime END_FIRST_RANGE = 25
+comptime END_SECOND_RANGE = 51
 # fmt: on
 
 

@@ -12,28 +12,28 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the stat module."""
 
-alias S_IFMT = 0o0170000
+comptime S_IFMT = 0o0170000
 """Bits that determine the file type."""
 
-alias S_IFDIR = 0o040000
+comptime S_IFDIR = 0o040000
 """Bits that determine the directory."""
 
-alias S_IFCHR = 0o020000
+comptime S_IFCHR = 0o020000
 """Bits that determine the char device."""
 
-alias S_IFBLK = 0o060000
+comptime S_IFBLK = 0o060000
 """Bits that determine the block device."""
 
-alias S_IFREG = 0o0100000
+comptime S_IFREG = 0o0100000
 """Bits that determine the regular file."""
 
-alias S_IFIFO = 0o010000
+comptime S_IFIFO = 0o010000
 """Bits that determine the fifo."""
 
-alias S_IFLNK = 0o0120000
+comptime S_IFLNK = 0o0120000
 """Bits that determine the symlink."""
 
-alias S_IFSOCK = 0o0140000
+comptime S_IFSOCK = 0o0140000
 """Bits that determine the socket."""
 
 

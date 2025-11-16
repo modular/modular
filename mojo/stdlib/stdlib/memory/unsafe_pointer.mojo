@@ -68,7 +68,7 @@ fn alloc[
     ptr.free()
     ```
     """
-    alias size_of_t = size_of[type]()
+    comptime size_of_t = size_of[type]()
     constrained[size_of_t > 0, "size must be greater than zero"]()
     return _malloc[type](size_of_t * count, alignment=alignment)
 
@@ -78,7 +78,7 @@ fn alloc[
 # ===----------------------------------------------------------------------=== #
 
 
-alias MutUnsafePointer[
+comptime MutUnsafePointer[
     type: AnyType,
     origin: MutOrigin,
     *,
@@ -86,7 +86,7 @@ alias MutUnsafePointer[
 ] = UnsafePointer[mut=True, type, origin, address_space=address_space]
 """A mutable unsafe pointer."""
 
-alias ImmutUnsafePointer[
+comptime ImmutUnsafePointer[
     type: AnyType,
     origin: ImmutOrigin,
     *,
@@ -94,7 +94,7 @@ alias ImmutUnsafePointer[
 ] = UnsafePointer[type, origin, address_space=address_space]
 """An immutable unsafe pointer."""
 
-alias OpaquePointer[
+comptime OpaquePointer[
     mut: Bool, //,
     origin: Origin[mut],
     *,
@@ -102,14 +102,14 @@ alias OpaquePointer[
 ] = UnsafePointer[NoneType, origin, address_space=address_space]
 """An opaque pointer, equivalent to the C `(const) void*` type."""
 
-alias MutOpaquePointer[
+comptime MutOpaquePointer[
     origin: MutOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ] = OpaquePointer[origin, address_space=address_space]
 """A mutable opaque pointer, equivalent to the C `void*` type."""
 
-alias ImmutOpaquePointer[
+comptime ImmutOpaquePointer[
     origin: ImmutOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -244,9 +244,9 @@ struct UnsafePointer[
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias _UnsafePointerType = Self
+    comptime _UnsafePointerType = Self
 
-    alias _mlir_type = __mlir_type[
+    comptime _mlir_type = __mlir_type[
         `!kgen.pointer<`,
         Self.type,
         `, `,
@@ -255,7 +255,7 @@ struct UnsafePointer[
     ]
     """The underlying pointer type."""
 
-    alias _with_origin[
+    comptime _with_origin[
         with_mut: Bool, //, with_origin: Origin[with_mut]
     ] = UnsafePointer[
         mut=with_mut,
@@ -1309,7 +1309,7 @@ struct UnsafePointer[
         """
         return self._as_legacy().bitcast[T]()
 
-    alias _OriginCastType[
+    comptime _OriginCastType[
         target_mut: Bool, target_origin: Origin[target_mut]
     ] = UnsafePointer[
         Self.type,

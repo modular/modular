@@ -84,16 +84,16 @@ struct Optional[T: Copyable & Movable](
     """
 
     # Iterator aliases
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
-    alias Element = Self.T
+    comptime Element = Self.T
 
     # Fields
     # _NoneType comes first so its index is 0.
     # This means that Optionals that are 0-initialized will be None.
-    alias _type = Variant[_NoneType, Self.T]
+    comptime _type = Variant[_NoneType, Self.T]
     var _value: Self._type
 
     # ===-------------------------------------------------------------------===#

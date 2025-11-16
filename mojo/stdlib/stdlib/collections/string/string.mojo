@@ -136,14 +136,14 @@ struct String(
     """The capacity and bit flags for this String."""
 
     # Useful string aliases.
-    alias ASCII_LOWERCASE = "abcdefghijklmnopqrstuvwxyz"
-    alias ASCII_UPPERCASE = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    alias ASCII_LETTERS = Self.ASCII_LOWERCASE + Self.ASCII_UPPERCASE
-    alias DIGITS = "0123456789"
-    alias HEX_DIGITS = Self.DIGITS + "abcdef" + "ABCDEF"
-    alias OCT_DIGITS = "01234567"
-    alias PUNCTUATION = """!"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"""
-    alias PRINTABLE = Self.DIGITS + Self.ASCII_LETTERS + Self.PUNCTUATION + " \t\n\r\v\f"
+    comptime ASCII_LOWERCASE = "abcdefghijklmnopqrstuvwxyz"
+    comptime ASCII_UPPERCASE = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    comptime ASCII_LETTERS = Self.ASCII_LOWERCASE + Self.ASCII_UPPERCASE
+    comptime DIGITS = "0123456789"
+    comptime HEX_DIGITS = Self.DIGITS + "abcdef" + "ABCDEF"
+    comptime OCT_DIGITS = "01234567"
+    comptime PUNCTUATION = """!"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"""
+    comptime PRINTABLE = Self.DIGITS + Self.ASCII_LETTERS + Self.PUNCTUATION + " \t\n\r\v\f"
 
     # ===------------------------------------------------------------------=== #
     # String Implementation Details
@@ -151,23 +151,23 @@ struct String(
     # This is the number of bytes that can be stored inline in the string value.
     # 'String' is 3 words in size and we use the top byte of the capacity field
     # to store flags.
-    alias INLINE_CAPACITY = Int.BITWIDTH // 8 * 3 - 1
+    comptime INLINE_CAPACITY = Int.BITWIDTH // 8 * 3 - 1
     # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
     # is known to be an accessible 'nul' terminator.
-    alias FLAG_HAS_NUL_TERMINATOR = 1 << (Int.BITWIDTH - 3)
+    comptime FLAG_HAS_NUL_TERMINATOR = 1 << (Int.BITWIDTH - 3)
     # When FLAG_IS_REF_COUNTED is set, the string is pointing to a mutable buffer
     # that may have other references to it.
-    alias FLAG_IS_REF_COUNTED = 1 << (Int.BITWIDTH - 2)
+    comptime FLAG_IS_REF_COUNTED = 1 << (Int.BITWIDTH - 2)
     # When FLAG_IS_INLINE is set, the string is inline or "Short String
     # Optimized" (SSO). The first 23 bytes of the fields are treated as UTF-8
     # data
-    alias FLAG_IS_INLINE = 1 << (Int.BITWIDTH - 1)
+    comptime FLAG_IS_INLINE = 1 << (Int.BITWIDTH - 1)
     # gives us 5 bits for the length.
-    alias INLINE_LENGTH_START = Int.BITWIDTH - 8
-    alias INLINE_LENGTH_MASK = 0b1_1111 << Self.INLINE_LENGTH_START
+    comptime INLINE_LENGTH_START = Int.BITWIDTH - 8
+    comptime INLINE_LENGTH_MASK = 0b1_1111 << Self.INLINE_LENGTH_START
     # This is the size to offset the pointer by, to get access to the
     # atomic reference count prepended to the UTF-8 data.
-    alias REF_COUNT_SIZE = size_of[Atomic[DType.int]]()
+    comptime REF_COUNT_SIZE = size_of[Atomic[DType.int]]()
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
@@ -306,7 +306,7 @@ struct String(
         print(string) # "1, 2.0, three"
         ```
         """
-        alias length = args.__len__()
+        comptime length = args.__len__()
         var total_bytes = _TotalWritableBytes()
 
         @parameter
@@ -376,7 +376,7 @@ struct String(
         %# assert_equal(string, "1, 2.0, three")
         ```
         """
-        alias length = args.__len__()
+        comptime length = args.__len__()
         var total_bytes = _TotalWritableBytes()
 
         @parameter
@@ -428,7 +428,7 @@ struct String(
         Returns:
             A string formed by formatting the argument sequence.
         """
-        alias length = args.__len__()
+        comptime length = args.__len__()
         var total_bytes = _TotalWritableBytes()
 
         @parameter
@@ -474,7 +474,7 @@ struct String(
         Args:
             args: Sequence of arguments to write to this Writer.
         """
-        alias length = args.__len__()
+        comptime length = args.__len__()
         var total_bytes = _TotalWritableBytes()
         total_bytes.size += self.byte_length()
 
@@ -2074,9 +2074,9 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
 
     start, is_negative = _trim_and_handle_sign(str_slice, str_len)
 
-    alias ord_0 = ord("0")
-    alias ord_letter_min = (ord("a"), ord("A"))
-    alias ord_underscore = ord("_")
+    comptime ord_0 = ord("0")
+    comptime ord_letter_min = (ord("a"), ord("A"))
+    comptime ord_underscore = ord("_")
 
     if base == 0:
         var real_base_new_start = _identify_base(str_slice, start)

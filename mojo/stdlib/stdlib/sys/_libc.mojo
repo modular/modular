@@ -46,7 +46,7 @@ fn exit(status: c_int):
 # stdio.h — input/output operations
 # ===-----------------------------------------------------------------------===#
 
-alias FILE_ptr = OpaquePointer[MutOrigin.external]
+comptime FILE_ptr = OpaquePointer[MutOrigin.external]
 
 
 @always_inline

@@ -385,8 +385,8 @@ struct Codepoint(
         Returns:
             True if the character is a printable character, otherwise False.
         """
-        alias ord_space = UInt32(ord(" "))
-        alias ord_tilde = UInt32(ord("~"))
+        comptime ord_space = UInt32(ord(" "))
+        comptime ord_tilde = UInt32(ord("~"))
         return ord_space <= self.to_u32() <= ord_tilde
 
     @always_inline
@@ -453,15 +453,15 @@ struct Codepoint(
         var c = UInt8(Int(self))
 
         # NOTE: a global LUT doesn't work at compile time so we can't use it here.
-        alias ` ` = UInt8(ord(" "))
-        alias `\t` = UInt8(ord("\t"))
-        alias `\n` = UInt8(ord("\n"))
-        alias `\r` = UInt8(ord("\r"))
-        alias `\f` = UInt8(ord("\f"))
-        alias `\v` = UInt8(ord("\v"))
-        alias `\x1c` = UInt8(ord("\x1c"))
-        alias `\x1d` = UInt8(ord("\x1d"))
-        alias `\x1e` = UInt8(ord("\x1e"))
+        comptime ` ` = UInt8(ord(" "))
+        comptime `\t` = UInt8(ord("\t"))
+        comptime `\n` = UInt8(ord("\n"))
+        comptime `\r` = UInt8(ord("\r"))
+        comptime `\f` = UInt8(ord("\f"))
+        comptime `\v` = UInt8(ord("\v"))
+        comptime `\x1c` = UInt8(ord("\x1c"))
+        comptime `\x1d` = UInt8(ord("\x1d"))
+        comptime `\x1e` = UInt8(ord("\x1e"))
 
         # This compiles to something very clever that's even faster than a LUT.
         return (
@@ -537,8 +537,8 @@ struct Codepoint(
             else:
                 is_ascii = num_bytes == 1
 
-            alias cont_mask = 0b11_1111  # 6 set bits
-            alias cont_marker = 0b1000_0000  # marker for continuation bytes
+            comptime cont_mask = 0b11_1111  # 6 set bits
+            comptime cont_marker = 0b1000_0000  # marker for continuation bytes
 
             if is_ascii:
                 ptr[0] = c
@@ -593,7 +593,7 @@ struct Codepoint(
 
         # Minimum codepoint values (respectively) that can fit in a 1, 2, 3,
         # and 4 byte encoded UTF-8 sequence.
-        alias sizes = SIMD[DType.uint32, 4](0, 2**7, 2**11, 2**16)
+        comptime sizes = SIMD[DType.uint32, 4](0, 2**7, 2**11, 2**16)
 
         # Count how many of the minimums this codepoint exceeds, which is equal
         # to the number of bytes needed to encode it.
