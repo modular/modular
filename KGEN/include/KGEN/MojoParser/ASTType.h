@@ -237,8 +237,6 @@ raw_ostream &operator<<(raw_ostream &os, ASTType type);
 
 } // namespace KGEN::LIT
 
-void addToDiagnostic(TypedAttr paramValue, M::InflightDiag &diag);
-
 } // namespace M
 
 namespace llvm {

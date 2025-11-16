@@ -550,6 +550,7 @@ void InflightDiag::addFixIt(FixIt fixIt) {
 
 /// Get the location of the most recent message in the diagnostic.
 Location InflightDiag::getLastLoc() const { return messages.back().loc; }
+Location InflightDiag::getPrimaryLoc() const { return messages.front().loc; }
 
 //===----------------------------------------------------------------------===//
 // FixIt Implementation

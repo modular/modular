@@ -234,6 +234,7 @@ public:
   InflightDiag &attachNote(SMLoc loc) &;
 
   /// Get the location of the most recent message in the diagnostic.
+  Location getPrimaryLoc() const;
   Location getLastLoc() const;
 
   // Insertion operations for various things that contribute to the current
