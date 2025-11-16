@@ -228,7 +228,7 @@ ASTType VariantValueStorageBase::getIfTypeValue() const {
 
   // Otherwise, check to see if this is some other sort of value that is
   // returning a struct metatype.  If so, we know it is a singleton result.
-  if (auto structMeta = dyn_cast<StructMetaType>(cv.getRValueType()))
+  if (auto structMeta = sugarDynCast<StructMetaType>(cv.getRValueType()))
     return structMeta.getType();
 
   return {};

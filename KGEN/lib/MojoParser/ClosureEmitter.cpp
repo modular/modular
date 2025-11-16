@@ -1697,17 +1697,31 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(ASTDecl &moduleDecl,
            "Closure Impls are generated with a __call__ method.");
     SymbolConstantAttr symbol =
         closureImpl->getAttrOfType<SymbolConstantAttr>(callMethodAttr);
-    SmallVector<Value> args;
-    args.push_back(implRef);
-    for (unsigned i = 1 /*implPtr*/, e = closureSignature.getNumArguments();
-         i != e; ++i)
-      args.push_back(topLevelCall.getArgument(i));
-
     SymbolConstantAttr typedSymbol =
         createTypedSymbol(symbol, topLevelParams, shared);
+    auto finalSig = cast<FnTypeGeneratorType>(typedSymbol.getType());
+
+    // Adjust sugar if needed.
+    auto argConv = finalSig.getArgConventions()[0];
+    Type expectedType = finalSig.getArguments()[0];
+    if (RefType::stripRefConvention(implRef.getType(), argConv) !=
+        RefType::stripRefConvention(expectedType, argConv)) {
+      // Change the element type, but not the origin.
+      if (hasAddress(argConv))
+        expectedType = cast<RefType>(implRef.getType())
+                           .getWithElement(cast<RefType>(expectedType))
+                           .getElementType();
+      implRef = RebindOp::create(builder, expectedType, implRef);
+    }
+
+    SmallVector<Value> args;
+    args.push_back(implRef);
+    for (unsigned i = 1 /*implPtr*/, e = finalSig.getNumArguments(); i != e;
+         ++i) {
+      args.push_back(topLevelCall.getArgument(i));
+    }
 
     SmallVector<TypedAttr> implicitOrigins;
-    auto finalSig = cast<FnTypeGeneratorType>(typedSymbol.getType());
     for (auto [arg, conv] : llvm::zip(args, finalSig.getArgConventions()))
       if (hasImplicitOrigin(conv))
         implicitOrigins.push_back(cast<RefType>(arg.getType()).getOrigin());

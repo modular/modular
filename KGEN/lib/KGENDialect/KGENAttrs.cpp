@@ -3708,6 +3708,9 @@ Type SugarAttr::getType() const { return getSugared().getType(); }
 /// Remove any top-level sugar nodes from this type, but don't fully
 /// canonicalize it.
 TypedAttr SugarAttr::strip(TypedAttr value, bool keepApplies) {
+  if (!value)
+    return {};
+
   while (auto sugar = dyn_cast<SugarAttr>(value)) {
     // Keep always_inline("builtin") calls if requested. Diagnostics should
     // never look through them.
@@ -3719,6 +3722,8 @@ TypedAttr SugarAttr::strip(TypedAttr value, bool keepApplies) {
 }
 
 Type SugarAttr::strip(Type value, bool keepApplies) {
+  if (!value)
+    return {};
   // Sugar for a type will be wrapped in a ParamType converting the attr into
   // the type domain.
   if (auto paramRef = dyn_cast<ParamType>(value))

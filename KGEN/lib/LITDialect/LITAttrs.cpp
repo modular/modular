@@ -1106,8 +1106,11 @@ TypedAttr LIT::StructExtractAttr::get(MLIRContext *context,
     auto it = llvm::find_if(value.getValues(), [&](const auto &p) {
       return std::get<0>(p) == field;
     });
-    if (it != value.getValues().end())
-      return std::get<1>(*it);
+    // Return it if we found it.
+    if (it != value.getValues().end()) {
+      // Make sure type sugar on the field value doesn't break invariants.
+      return ParamOperatorAttr::getRebind(std::get<1>(*it), resultType);
+    }
   }
 
   // Fold UnknownAttr for convenience.

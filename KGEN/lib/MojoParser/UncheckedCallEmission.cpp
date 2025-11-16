@@ -70,11 +70,12 @@ emitVariadicPackConstructor(ASTType variadicPackType, TypedAttr originToUse,
       cast<LIT::StructType>(variadicPackType).getParamValues());
   // NOTE: `bindings[0]` and `bindings[1]` are expected to be the Mojo `Bool`
   // type, and `bindings[2]` is an Origin.
-  assert(bindings.size() == 5 && isa<LIT::StructType>(bindings[0].getType()) &&
-         isa<LIT::StructType>(bindings[1].getType()) &&
-         isa<LIT::StructType>(bindings[2].getType()) &&
-         isa<AnyTraitType>(bindings[3].getType()) &&
-         isa<VariadicType>(bindings[4].getType()) &&
+  assert(bindings.size() == 5 &&
+         sugarIsa<LIT::StructType>(bindings[0].getType()) &&
+         sugarIsa<LIT::StructType>(bindings[1].getType()) &&
+         sugarIsa<LIT::StructType>(bindings[2].getType()) &&
+         sugarIsa<AnyTraitType>(bindings[3].getType()) &&
+         sugarIsa<VariadicType>(bindings[4].getType()) &&
          "Not a VariadicPack struct?");
 
   // Construct the pack type without parameters so we re-infer the origin which

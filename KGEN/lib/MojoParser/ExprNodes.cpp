@@ -4082,7 +4082,7 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   exprVal = emitter.emitRebindOpIfNeeded(
       exprVal, SugarAttr::strip(exprVal.getType()), subExpr->getLoc());
 
-  if (!isa<PointerType>(exprRVal.getRValueType())) {
+  if (!isa<PointerType>(exprVal.getType())) {
     emitter.emitError(getLoc(),
                       "operand must have '!kgen.pointer<T>' type, not ")
         << exprRVal.getRValueType() << getRange();

@@ -56,7 +56,7 @@ void InferenceFailure::addExplanation(MojoInflightDiag &diag) const {
 
   auto failure = cast<TypeConflictFailure>(info);
   if (sugarIsa<TypeType>(failure.paramType)) {
-    if (auto anyStruct = dyn_cast<StructMetaType>(failure.argParamType)) {
+    if (auto anyStruct = sugarDynCast<StructMetaType>(failure.argParamType)) {
       diag << ", argument type " << ASTType(anyStruct.getType())
            << " is not a '@register_passable(\"trivial\")' type, so "
               "does not satisfy AnyTrivialRegType";
@@ -65,7 +65,7 @@ void InferenceFailure::addExplanation(MojoInflightDiag &diag) const {
   }
 
   if (sugarIsa<TraitType>(failure.paramType)) {
-    if (auto anyStruct = dyn_cast<StructMetaType>(failure.argParamType)) {
+    if (auto anyStruct = sugarDynCast<StructMetaType>(failure.argParamType)) {
       diag << ", argument type " << ASTType(anyStruct.getType())
            << " does not conform to trait " << failure.paramType;
       return;
@@ -471,7 +471,7 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
 LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
                                                    TypedAttr expectedAttr) {
   // If the attrs trivial match then we're done and there is no inference to do.
-  if (actualAttr == expectedAttr)
+  if (isEqualCanon(actualAttr, expectedAttr))
     return success();
 
   // Look through type upcasts to the more derived type.
@@ -552,7 +552,7 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
 
       // If the types don't agree, attempt an implicit conversion between the
       // actual value and the expected type.
-      if (actualAttr.getType() != expectedType) {
+      if (!isEqualCanon(actualAttr.getType(), expectedType)) {
         IREmitter emitter(declScope, EC_TypeParamValue);
         SyntheticNode node(declScope.getLoc());
         if (IREmitter::canImplicitlyConvertToType(
@@ -563,7 +563,7 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
         }
       }
       // If that didn't work, then we fail due to the type mismatch.
-      if (actualAttr.getType() != expectedType) {
+      if (!isEqualCanon(actualAttr.getType(), expectedType)) {
         // Otherwise, we failed to infer the parameter. Record this failure.
         addFailure(parameterIndex, InferenceFailure::TypeConflictFailure{
                                        expectedType, actualAttr.getType()});

@@ -1584,12 +1584,13 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
     if (auto anyTrait =
             sugarDynCastIfPresent<AnyTraitType>(toType.getMetaType())) {
       TraitType trait = anyTrait.getTraitType();
-      if (isa<TypeType>(fromType)) {
+      if (sugarIsa<TypeType>(fromType)) {
         // Conversions from MLIR types.
         return bindMLIRTypeToTrait(valueExpr, trait, *this);
-      } else if (sugarIsaAndNonNull<StructMetaMetaType>(
-                     fromType.getMetaType()) ||
-                 sugarIsaAndNonNull<AnyTraitType>(fromType.getMetaType())) {
+      }
+
+      if (sugarIsaAndNonNull<StructMetaMetaType>(fromType.getMetaType()) ||
+          sugarIsaAndNonNull<AnyTraitType>(fromType.getMetaType())) {
         // Augment the witness table of closure wrapper with rebind if
         // necessary. We do this for every closure trait in the type.
         for (const auto &symbol : trait.getSymbols()) {
