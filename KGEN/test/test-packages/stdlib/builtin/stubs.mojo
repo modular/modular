@@ -1358,3 +1358,7 @@ struct SIMD[dtype: DType, size: Int]:
     @always_inline("nodebug")
     fn __iadd__(mut self, rhs: Self):
         self = self + rhs
+
+    @always_inline("nodebug")
+    fn join(self, other: Self) -> SIMD[Self.dtype, 2 * Self.size]:
+        return SIMD[Self.dtype, 2 * Self.size]()

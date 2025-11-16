@@ -1018,11 +1018,28 @@ fn test_origin_of_deprecated[T: AnyType](a: T):
 ##===----------------------------------------------------------------------===##
 
 
+fn some_complex_calculation() -> Int: return 4
+comptime ideal_width = some_complex_calculation()*4
+fn get_data() -> SIMD[DType.int32, ideal_width]: ...
+
 # expected-note @+1 {{function declared here}}
 fn sugar_test1(x: type_of(HasIntParam[1])): pass
 
 fn sugar_test():
     # expected-error @below {{cannot be converted from 'AnyStruct[HasIntParam[int_fn(0)]]' to 'AnyStruct[HasIntParam[1]]'}}
-    # expected-note @below {{.p of left value is 'int_fn(0)'}}
+    # expected-note @below {{.p of left value is 'int_fn(0)' but the right value is '1'}}
     # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
     sugar_test1(HasIntParam[int_fn(0)])
+
+    var a = get_data()  # Ok
+    var b : SIMD[DType.int32, 4]
+
+    # expected-error @below {{cannot implicitly convert 'SIMD[DType.int32, ideal_width]' value to 'SIMD[DType.int32, 4]'}}
+    # expected-note @below {{'ideal_width' is aka '(some_complex_calculation() * 4)'}}
+    b = get_data()
+
+    var c = a.join(a) # c has twice the width.
+
+    # expected-error @below {{cannot implicitly convert 'SIMD[DType.int32, (2 * ideal_width)]' value to 'SIMD[DType.int32, 4]'}}
+    # expected-note @below {{.size of left value is '(2 * ideal_width)' but the right value is '4'}}
+    b = c

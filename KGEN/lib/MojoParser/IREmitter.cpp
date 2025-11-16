@@ -1717,7 +1717,7 @@ RValue IREmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
   if (auto pvalue = litBoolCall.getIfPValue())
     if (auto sugar = llvm::dyn_cast_or_null<SugarAttr>(pvalue.get()))
       if (sugar.getKind() == SugarKind::AlwaysInlineBuiltin)
-        litBoolCall = sugar.getOriginal();
+        litBoolCall = sugar.getExpanded();
 
   return emitRValue({litBoolCall, value.expr}, context);
 }
@@ -1742,7 +1742,7 @@ CValue IREmitter::emitIndex(ASTExprAnd<AnyValue> value, ExprContext context) {
   if (auto pvalue = result.getIfPValue())
     if (auto sugar = llvm::dyn_cast_or_null<SugarAttr>(pvalue.get()))
       if (sugar.getKind() == SugarKind::AlwaysInlineBuiltin)
-        result = sugar.getOriginal();
+        result = sugar.getExpanded();
 
   return result;
 }

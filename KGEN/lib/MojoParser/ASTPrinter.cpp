@@ -917,7 +917,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     if (diagShared)
       param = sugar.getSugared();
     else
-      param = sugar.getOriginal();
+      param = sugar.getExpanded();
     return printParam(os, param, diagShared);
   }
 
@@ -1016,7 +1016,7 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
       // implicit.
       removeImplicitCtorCall(param, diagShared);
     } else
-      param = sugar.getOriginal();
+      param = sugar.getExpanded();
     return printOriginParam(os, param, diagShared);
   }
 

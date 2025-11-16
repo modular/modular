@@ -291,7 +291,7 @@ def LLVMBitcodeLibArrayAttr : DialectAttribute<(attr
 def SugarAttr : DialectAttribute<(attr
   EnumAttr<"SugarKind">:$kind,
   TypedAttr:$sugared,
-  TypedAttr:$original
+  TypedAttr:$expanded
 )>;
 
 def ClosureSymbolAttr : DialectAttribute<(attr
