@@ -140,6 +140,7 @@ def test_kv_cache_radd_basic() -> None:
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.external_claim(context.request_id)
+        kv_manager.maybe_reserve(context)
         batch.append(context)
 
     fetch_args = kv_manager.fetch(batch)[0]

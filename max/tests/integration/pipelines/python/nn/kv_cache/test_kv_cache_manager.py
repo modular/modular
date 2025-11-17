@@ -44,7 +44,6 @@ async def test_step() -> None:
     for i in range(3):
         context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.external_claim(context.request_id)
-        kv_manager.maybe_reserve(context, num_steps=1)
         batch.append(context)
 
     # Assert that each cache_length is initialized appropriately as 0
@@ -53,6 +52,8 @@ async def test_step() -> None:
 
     # Update these values a few times
     for j in range(3):
+        for ctx in batch:
+            kv_manager.maybe_reserve(ctx, num_steps=1)
         kv_manager.fetch(batch)
         for ctx in batch:
             ctx.update(42)
@@ -158,10 +159,10 @@ async def test_fetch_paged() -> None:
         context = create_text_context(np.empty(1))
         kv_manager.external_claim(context.request_id)
         contexts.append(context)
-        kv_manager.maybe_reserve(context, num_steps=1)
 
-    # Fetch 3 of the 5 ids
     # Fetch 3 of the 5 contexts created above
+    for ctx in contexts[:3]:
+        kv_manager.maybe_reserve(ctx, 1)
     kv_collection = kv_manager.fetch(contexts[:3])[0]
 
     assert kv_collection is not None

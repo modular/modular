@@ -98,12 +98,17 @@ def test_smollm_with_structured_output_gpu(
     # union without some force.  So we cast it off.  This is bad, ideally we
     # wouldn't have to do this, but we boxed ourselves in here.
     pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
+    kv_managers = pipeline.kv_managers
+    for kv_manager in kv_managers:
+        kv_manager.external_claim(context.request_id)
 
     tokens = []
     while True:
         inputs = TextGenerationInputs(
             batches=[{request_id: context}], num_steps=1
         )
+        for kv_manager in kv_managers:
+            kv_manager.maybe_reserve(context)
         response = pipeline.execute(inputs)
 
         for token in response[request_id].tokens:

@@ -37,8 +37,15 @@ def generate_tokens_from_contexts(
     """
     all_tokens: dict[RequestID, list[int]] = {req_id: [] for req_id in contexts}
     active_contexts = contexts.copy()
+    kv_managers = pipeline.kv_managers
+    for kv_manager in kv_managers:
+        for context in active_contexts.values():
+            kv_manager.external_claim(context.request_id)
 
     while active_contexts:
+        for kv_manager in kv_managers:
+            for context in active_contexts.values():
+                kv_manager.maybe_reserve(context, num_steps=1)
         response = pipeline.execute(
             TextGenerationInputs(batches=[active_contexts], num_steps=1)
         )

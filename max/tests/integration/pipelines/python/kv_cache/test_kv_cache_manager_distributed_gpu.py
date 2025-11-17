@@ -129,7 +129,6 @@ def test_step() -> None:
         context = create_text_context(np.empty(prompt_len))
         replica_idx = kv_manager.get_or_recommend_replica(context)
         kv_manager.external_claim(context.request_id, replica_idx=replica_idx)
-        kv_manager.maybe_reserve(context, num_steps=1)
         batch.append(context)
 
     # Assert that each cache_length is initialized appropriately as 0
@@ -138,6 +137,8 @@ def test_step() -> None:
 
     # Update these values a few times
     for j in range(3):
+        for ctx in batch:
+            kv_manager.maybe_reserve(ctx, 1)
         kv_manager.fetch(batch)
         for ctx in batch:
             ctx.update(42)

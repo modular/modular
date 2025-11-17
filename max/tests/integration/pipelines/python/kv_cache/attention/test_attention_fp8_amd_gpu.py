@@ -260,6 +260,7 @@ def _build_and_execute_attention_graph(
 
     for context in batch:
         kv_manager.external_claim(context.request_id)
+        kv_manager.maybe_reserve(context)
 
     fetch_result = kv_manager.fetch(batch)[0]
     blocks_tensor = fetch_result[0]

@@ -181,6 +181,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
             np.empty(max_seq_len), max_length=max_seq_len
         )
         kv_manager.external_claim(context.request_id)
+        kv_manager.maybe_reserve(context)
         batch.append(context)
 
     kv_inputs = PagedKVCacheTensorsNoOpaque(*kv_manager.fetch(batch)[0])

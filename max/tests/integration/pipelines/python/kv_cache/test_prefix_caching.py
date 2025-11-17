@@ -18,7 +18,6 @@ from max.interfaces import ImageMetadata, RequestID
 from max.kv_cache import (
     PagedKVCacheManager,
 )
-from max.kv_cache.paged_cache.block_manager import InsufficientBlocksError
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
@@ -243,12 +242,12 @@ async def test_prefix_caching_with_no_release() -> None:
 
     # Try to assign and release more than 128 blocks.
     # We expect to run out of blocks here.
-    with pytest.raises(InsufficientBlocksError):
+    with pytest.raises(AssertionError, match="Out of blocks"):
         for _ in range(1000):
             prompt = gen_prompt(16)
             batch = [create_text_context(prompt)]
             kv_manager.external_claim(batch[0].request_id)
-            kv_manager.maybe_reserve(batch[0], num_steps=1)
+            assert kv_manager.maybe_reserve(batch[0]), "Out of blocks"
             _ = kv_manager.fetch(batch)
             batch[0].update(42)
             kv_manager.step(batch)
@@ -351,7 +350,7 @@ async def test_prefix_caching_with_num_steps_gt_1() -> None:
     batch = [create_text_context(np.array(initial_prompt_1))]
     for context in batch:
         kv_manager.external_claim(context.request_id)
-        kv_manager.maybe_reserve(context, num_steps=1)
+        kv_manager.maybe_reserve(context, num_steps=3)
 
     kv_tuple_list = kv_manager.fetch(batch, num_steps=3)
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
@@ -365,6 +364,8 @@ async def test_prefix_caching_with_num_steps_gt_1() -> None:
     kv_manager.step(batch)
 
     # Seq 1: Token gen 18 - 19 in one pass
+    for ctx in batch:
+        kv_manager.maybe_reserve(ctx, num_steps=2)
     kv_tuple_list = kv_manager.fetch(batch, num_steps=2)
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
         [1, 8],
@@ -439,6 +440,8 @@ async def test_prefix_caching_with_page_size_gt_1_and_num_steps_gt_1() -> None:
     kv_manager.step(batch)
 
     # Seq 1: Token gen 18 - 19 in one pass
+    for ctx in batch:
+        kv_manager.maybe_reserve(ctx, num_steps=2)
     kv_tuple_list = kv_manager.fetch(batch, num_steps=2)
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2, 3, 4]
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
@@ -627,6 +630,8 @@ async def test_prefix_caching_grouped_prefixes(
         orig_request_ids_and_prompts = {
             request_id: ctx.next_tokens for request_id, ctx in batch.items()
         }
+        for ctx in ctxs:
+            kv_manager.maybe_reserve(ctx, num_steps=num_steps)
         fetch_kv_tuple = kv_manager.fetch(ctxs, num_steps=num_steps)
         request_ids_and_new_tokens_subset = model.run(
             orig_request_ids_and_prompts, fetch_kv_tuple, num_steps=num_steps
@@ -725,6 +730,7 @@ def run_and_check_num_cached_tokens(
     # reset cache_tokens to 0
     kv_manager.reset_metrics()
     kv_manager.external_claim(ctx.request_id)
+    kv_manager.maybe_reserve(ctx)
     kv_manager.fetch([ctx])
     magic_token_value = 42  # this is arbitrary
     if do_step:

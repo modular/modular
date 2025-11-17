@@ -50,6 +50,7 @@ async def test_kv_cache_multi_gpu() -> None:
         kv_manager.external_claim(context.request_id)
 
         batch = [context]
+        kv_manager.maybe_reserve(context)
         list_of_kv_tuples = kv_manager.fetch(batch)
         for i in range(num_devices):
             kv_tuple = list_of_kv_tuples[i]
@@ -176,6 +177,8 @@ async def test_swapping_to_host_multi_gpu(
         for iter in range(5):
             prompt_tokens = sum(ctx.active_length for ctx in batch)
 
+            for ctx in batch:
+                kv_manager.maybe_reserve(ctx, num_steps=1)
             _ = kv_manager.fetch(batch)
 
             new_prompt_tokens = sum(ctx.active_length for ctx in batch)

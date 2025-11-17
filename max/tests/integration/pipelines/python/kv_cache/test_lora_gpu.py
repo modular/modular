@@ -725,6 +725,7 @@ def attention_lora_max_output(
 
     for context in batch:
         kv_manager.external_claim(context.request_id)
+        kv_manager.maybe_reserve(context)
 
     blocks, cache_lengths, lookup_table_tensor, max_lengths_buf = (
         kv_manager.fetch(batch)[0]  # type: ignore
