@@ -84,68 +84,85 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
                                     CompilationOptions &compilationOptions,
                                     MLIRContext &ctx, TargetInfoAttr &target) {
   BuildOptTable options;
+
+  // First, parse arguments to check for help flags.
+  // We need to do this separately because help text is command-specific.
   unsigned missingIndex = 0;
   unsigned missingCount = 0;
-  args = options.ParseArgs(state.arguments, missingIndex, missingCount);
+  llvm::opt::InputArgList allArgs =
+      options.ParseArgs(state.arguments, missingIndex, missingCount);
 
-  // If `--help` was specified, print help before checking any other arguments.
-  if (args.hasArg(options::OPT_help)) {
+  // Check for help before doing any other processing.
+  if (allArgs.hasArg(options::OPT_help)) {
     return state.printHelp(
 #include "Build/BuildOptionsHelpText.inc"
     );
-  } else if (args.hasArg(options::OPT_help_hidden)) {
+  } else if (allArgs.hasArg(options::OPT_help_hidden)) {
     return state.printHelp(
 #include "Build/BuildOptionsHelpHiddenText.inc"
     );
   }
 
-  if (int result = state.parseDiagnosticFormatArguments(
-          args, options::OPT_diagnostic_format, options::OPT_disable_warnings))
-    return result;
-  if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
-    return result;
-
-  if (!args.hasArg(options::OPT_INPUT))
-    return state.reportError("no input file provided");
-  if (args.hasMultipleArgs(options::OPT_INPUT)) {
-    std::vector<std::string> inputs = args.getAllArgValues(options::OPT_INPUT);
-    return state.reportError(llvm::formatv(
-        "too many input files, cannot process both '{0}' and '{1}'", inputs[0],
-        inputs[1]));
-  }
-
-  // Open the provided input file path, or exit with an error if it's not a
-  // valid argument that can be opened.
-  auto bufferOrErr =
-      openMojoInputFile(args.getLastArgValue(options::OPT_INPUT));
-  if (failed(bufferOrErr))
-    return state.reportError(bufferOrErr.getError());
-
-  // Initialize the source manager with the input file buffer and an appropriate
-  // diagnostic handler.
-  sourceManager.setDiagHandler(getDiagHandler(state.diagnosticFormat));
-  sourceManager.AddNewSourceBuffer(std::move(*bufferOrErr), llvm::SMLoc());
-
-  // Build the compilation options based on the provided arguments.
-  if (ErrorOrSuccess err = parseCompilationOptions(
-          state, args, compilationOptions, sourceManager, ctx, options::OPT_I,
-          options::OPT_optimization_level, options::OPT_debug_level,
-          options::OPT_sanitize, options::OPT_shared_libasan,
-          options::OPT_external_libasan, options::OPT_bitcode_libs,
-          options::OPT_debug_info_language, options::OPT_num_threads,
-          options::OPT_mojo_search_paths,
-          options::OPT_loop_unrolling_warn_threshold,
-          options::OPT_elaboration_error_limit,
+  // Set up common option IDs.
+  CommonOptionIDs optionIDs{
+      .help = options::OPT_help,
+      .helpHidden = options::OPT_help_hidden,
+      .diagnosticFormat = options::OPT_diagnostic_format,
+      .disableWarnings = options::OPT_disable_warnings,
+      .unknown = options::OPT_UNKNOWN,
+      .input = options::OPT_INPUT,
+      .includeDirs = options::OPT_I,
+      .optimizationLevel = options::OPT_optimization_level,
+      .debugLevel = options::OPT_debug_level,
+      .sanitize = options::OPT_sanitize,
+      .sharedLibasan = options::OPT_shared_libasan,
+      .externalLibasan = options::OPT_external_libasan,
+      .bitcodeLibs = options::OPT_bitcode_libs,
+      .debugInfoLanguage = options::OPT_debug_info_language,
+      .numThreads = options::OPT_num_threads,
+      .mojoSearchPaths = options::OPT_mojo_search_paths,
+      .loopUnrollingWarnThreshold = options::OPT_loop_unrolling_warn_threshold,
+      .elaborationErrorLimit = options::OPT_elaboration_error_limit,
+      .elaborationErrorIncludePrelude =
           options::OPT_elaboration_error_include_prelude,
-          options::OPT_elaboration_error_verbose))
-    return state.reportError(err.getError());
-  if (ErrorOrSuccess err = parseTargetOptions(
-          state, args, compilationOptions, sourceManager, ctx, target,
-          options::OPT_target_triple, options::OPT_target_cpu,
-          options::OPT_target_features, options::OPT_march, options::OPT_mcpu,
-          options::OPT_mtune, options::OPT_target_accelerator,
-          options::OPT_mcmodel, options::OPT_large_data_threshold))
-    return state.reportError(err.getError());
+      .elaborationErrorVerbose = options::OPT_elaboration_error_verbose,
+      .targetTriple = options::OPT_target_triple,
+      .targetCpu = options::OPT_target_cpu,
+      .targetFeatures = options::OPT_target_features,
+      .march = options::OPT_march,
+      .mcpu = options::OPT_mcpu,
+      .mtune = options::OPT_mtune,
+      .targetAccelerator = options::OPT_target_accelerator,
+      .mcmodel = options::OPT_mcmodel,
+      .largeDataThreshold = options::OPT_large_data_threshold,
+      .diagnoseMissingDocStrings = options::OPT_diagnose_missing_doc_strings,
+      .validateDocStrings = options::OPT_validate_doc_strings,
+      .maxNotes = options::OPT_max_notes,
+      .defines = options::OPT_D,
+      .stripFilePrefix = options::OPT_strip_file_prefix,
+      .disableBuiltins = options::OPT_disable_builtins,
+      .fixit = options::OPT_fixit,
+  };
+
+  // Configure parsing for `mojo build` - parse all arguments normally.
+  CommonParseConfig config{
+      .parseAllArguments = true,
+      .requireSingleInput = true,
+  };
+
+  // Parse common arguments.
+  ErrorOr<CommonParseResult> result = parseCommonMojoArguments(
+      state, sourceManager, ctx, options, optionIDs, config);
+  if (failed(result))
+    return state.reportError(result.getError());
+
+  if (result->exitCode)
+    return *result->exitCode;
+
+  // Extract results.
+  args = std::move(result->args);
+  compilationOptions = std::move(result->compilationOptions);
+  target = std::move(result->target);
   return {};
 }
 

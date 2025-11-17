@@ -128,20 +128,18 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
                                     CompilationOptions &compilationOptions,
                                     MLIRContext &ctx, TargetInfoAttr &target,
                                     RunOptTable &options) {
-  // First, parse all arguments, in order to find the index of the input
-  // argument.
+  // First, parse all arguments to find the input file location.
+  // For `mojo run`, we need special handling: arguments BEFORE the input file
+  // are parsed as options to mojo run, but arguments AFTER are passed to the
+  // program itself.
   unsigned unused = 0;
   llvm::opt::InputArgList allArgs =
       options.ParseArgs(state.arguments, unused, unused);
 
-  // LLVMOption treats all "positional arguments" (arguments that do not have a
-  // "-" or "--" prefix) as `INPUT`. The very first of these is our Mojo source
-  // file, and each remaining positional argument is an argument being passed to
-  // the Mojo executable produced from that source file.
+  // Find the input file position.
   auto inputArgs = allArgs.filtered(options::OPT_INPUT);
   if (inputArgs.empty()) {
-    // If we have no input argument, then that's normally an error -- unless the
-    // user is invoking `--help`.
+    // No input file - check if user wanted help.
     if (allArgs.hasArg(options::OPT_help)) {
       return state.printHelp(
 #include "Run/RunOptionsHelpText.inc"
@@ -151,71 +149,90 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
 #include "Run/RunOptionsHelpHiddenText.inc"
       );
     }
-    return state.reportError("no input file provided");
-  }
+    // No input and no help request is an error, which will be caught below.
+  } else {
+    // We have an input file. Parse only the arguments up to and including it.
+    llvm::opt::InputArgList argsBeforeInput = options.ParseArgs(
+        state.arguments.slice(0, (*inputArgs.begin())->getIndex() + 1), unused,
+        unused);
 
-  // We now have the index of the Mojo source file argument, so we can parse
-  // the arguments up to and including that argument "normally."
-  args = options.ParseArgs(
-      state.arguments.slice(0, (*inputArgs.begin())->getIndex() + 1), unused,
-      unused);
-
-  // If those arguments include `--help`, print help before checking any other
-  // arguments.
-  if (args.hasArg(options::OPT_help)) {
-    return state.printHelp(
+    // Check if help was requested BEFORE the input file.
+    if (argsBeforeInput.hasArg(options::OPT_help)) {
+      return state.printHelp(
 #include "Run/RunOptionsHelpText.inc"
-    );
-  } else if (allArgs.hasArg(options::OPT_help_hidden)) {
-    return state.printHelp(
+      );
+    } else if (argsBeforeInput.hasArg(options::OPT_help_hidden)) {
+      return state.printHelp(
 #include "Run/RunOptionsHelpHiddenText.inc"
-    );
+      );
+    }
   }
 
-  // Otherwise, within this subset of arguments that appear before the input,
-  // unknown or invalid arguments are rejected.
-  if (int result = state.parseDiagnosticFormatArguments(
-          args, options::OPT_diagnostic_format, options::OPT_disable_warnings))
-    return result;
-  if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
-    return result;
-
-  // Open the provided input file path, or exit with an error if it's not a
-  // valid argument that can be opened.
-  auto bufferOrErr =
-      openMojoInputFile(args.getLastArgValue(options::OPT_INPUT));
-  if (failed(bufferOrErr))
-    return state.reportError(bufferOrErr.getError());
-
-  // Initialize the source manager with the input file buffer, as well as the
-  // appropriate diagnostic handler.
-  sourceManager.setDiagHandler(getDiagHandler(state.diagnosticFormat));
-  sourceManager.AddNewSourceBuffer(std::move(*bufferOrErr), llvm::SMLoc());
-
-  if (ErrorOrSuccess err = parseCompilationOptions(
-          state, args, compilationOptions, sourceManager, ctx, options::OPT_I,
-          options::OPT_optimization_level, options::OPT_debug_level,
-          options::OPT_sanitize, options::OPT_shared_libasan,
-          options::OPT_external_libasan, options::OPT_bitcode_libs,
-          options::OPT_debug_info_language, options::OPT_num_threads,
-          options::OPT_mojo_search_paths,
-          options::OPT_loop_unrolling_warn_threshold,
-          options::OPT_elaboration_error_limit,
+  // Set up common option IDs.
+  CommonOptionIDs optionIDs{
+      .help = options::OPT_help,
+      .helpHidden = options::OPT_help_hidden,
+      .diagnosticFormat = options::OPT_diagnostic_format,
+      .disableWarnings = options::OPT_disable_warnings,
+      .unknown = options::OPT_UNKNOWN,
+      .input = options::OPT_INPUT,
+      .includeDirs = options::OPT_I,
+      .optimizationLevel = options::OPT_optimization_level,
+      .debugLevel = options::OPT_debug_level,
+      .sanitize = options::OPT_sanitize,
+      .sharedLibasan = options::OPT_shared_libasan,
+      .externalLibasan = options::OPT_external_libasan,
+      .bitcodeLibs = options::OPT_bitcode_libs,
+      .debugInfoLanguage = options::OPT_debug_info_language,
+      .numThreads = options::OPT_num_threads,
+      .mojoSearchPaths = options::OPT_mojo_search_paths,
+      .loopUnrollingWarnThreshold = options::OPT_loop_unrolling_warn_threshold,
+      .elaborationErrorLimit = options::OPT_elaboration_error_limit,
+      .elaborationErrorIncludePrelude =
           options::OPT_elaboration_error_include_prelude,
-          options::OPT_elaboration_error_verbose))
-    return state.reportError(err.getError());
-  if (ErrorOrSuccess err = parseTargetOptions(
-          state, args, compilationOptions, sourceManager, ctx, target,
-          options::OPT_target_triple, options::OPT_target_cpu,
-          options::OPT_target_features, options::OPT_march, options::OPT_mcpu,
-          options::OPT_mtune, options::OPT_target_accelerator,
-          options::OPT_mcmodel, options::OPT_large_data_threshold))
-    return state.reportError(err.getError());
+      .elaborationErrorVerbose = options::OPT_elaboration_error_verbose,
+      .targetTriple = options::OPT_target_triple,
+      .targetCpu = options::OPT_target_cpu,
+      .targetFeatures = options::OPT_target_features,
+      .march = options::OPT_march,
+      .mcpu = options::OPT_mcpu,
+      .mtune = options::OPT_mtune,
+      .targetAccelerator = options::OPT_target_accelerator,
+      .mcmodel = options::OPT_mcmodel,
+      .largeDataThreshold = options::OPT_large_data_threshold,
+      .diagnoseMissingDocStrings = options::OPT_diagnose_missing_doc_strings,
+      .validateDocStrings = options::OPT_validate_doc_strings,
+      .maxNotes = options::OPT_max_notes,
+      .defines = options::OPT_D,
+      .stripFilePrefix = options::OPT_strip_file_prefix,
+      .disableBuiltins = options::OPT_disable_builtins,
+      .fixit = options::OPT_fixit,
+  };
 
-  // Validate the requested sanitizers.
+  // Configure parsing for `mojo run` - only parse args up to the input file.
+  CommonParseConfig config{
+      .parseAllArguments = false,
+      .requireSingleInput = true,
+  };
+
+  // Parse common arguments.
+  ErrorOr<CommonParseResult> result = parseCommonMojoArguments(
+      state, sourceManager, ctx, options, optionIDs, config);
+  if (failed(result))
+    return state.reportError(result.getError());
+
+  if (result->exitCode)
+    return *result->exitCode;
+
+  // Validate the requested sanitizers (specific to `mojo run`).
   if (std::optional<int> exitCode =
-          validateSanitizers(state, compilationOptions.sanitizers))
+          validateSanitizers(state, result->compilationOptions.sanitizers))
     return exitCode;
+
+  // Extract results.
+  args = std::move(result->args);
+  compilationOptions = std::move(result->compilationOptions);
+  target = std::move(result->target);
   return {};
 }
 
