@@ -49,7 +49,7 @@ struct NMType(ImplicitlyCopyable):
 fn metatypes():
     # COM: Test that a local alias can retain type properties.
     # CHECK: lit.alias.decl [[T:\*"T.*]]: !mt_Thing = <!Thing>
-    alias T = Thing
+    comptime T = Thing
     # CHECK-NEXT: [[TVAL:%.*]] = lit.call {{.*}}Thing::@"__init__(){{.*}}()
     # CHECK: call {{.*}}@Thing::@"foo({{.*}})"([[TVAL]])
     T().foo()
@@ -58,7 +58,7 @@ fn metatypes():
 
     # COM: Test that binding to a generic type works.
     # CHECK: bound{{.*}}: !lit.generator<() -> !kgen.none> = <{{.*}}@"anytype[AnyTrivialRegType]()"<:type !Thing>>
-    alias bound = anytype[Thing]
+    comptime bound = anytype[Thing]
 
     # COM: Test that result types are bound correctly.
     # CHECK: call {{.*}}@"anytype_result[AnyTrivialRegType]()"<:type !Thing>
@@ -69,7 +69,7 @@ fn metatypes():
     anytype_arg(v)
 
     # COM: Test inferring from a non-materializable type.
-    alias nm_alias = NMType()
+    comptime nm_alias = NMType()
     # CHECK: [[DNMVAL:%.*]] = lit.var.decl "anonymous*"
     # CHECK-NEXT: [[NMVAL:%.*]] = kgen.param.materialize: !NMType = <sugar_alias{{.*}}apply(:!lit.generator<() -> !NMType> @metatypes::@NMType::@"__init__()"){{.*}}>
     # CHECK-NEXT: lit.ref.store [[NMVAL]], [[DNMVAL]]
@@ -96,7 +96,7 @@ fn use_int(a: Int):
 # CHECK-LABEL: lit.fn @"access_param_from_metatype()"
 fn access_param_from_metatype():
     # CHECK-NEXT: lit.alias.decl *"f1`": meta<!lit.struct<#StefStressTest <:!Int {1}>>>
-    alias f1 = StefStressTest[0].increment()
+    comptime f1 = StefStressTest[0].increment()
     # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <{1}>
     # CHECK: lit.call {{.*}}@"use_int{{.*}}([[TMP]])
     use_int(f1.x)

@@ -16,12 +16,12 @@ fn get_type(dtype: DType) -> DType:
 
 
 fn compiled_fn[dtype: DType](M: SIMD[get_type(dtype), 4]) -> Int:
-    alias b = size_of[get_type(dtype)]()
+    comptime b = size_of[get_type(dtype)]()
     return b + Int(M[0])
 
 
 def main():
-    alias myCompiledFn = compiled_fn[DType.uint32]
+    comptime myCompiledFn = compiled_fn[DType.uint32]
     # compile myCompileFn into a shared object binary
     var myShared = compile_info[myCompiledFn, emission_kind="object"]()
 

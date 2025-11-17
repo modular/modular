@@ -7,30 +7,30 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # CHECK: lit.alias.decl *"z`0x" = <0>
-alias z = __mlir_attr.`0: index`
+comptime z = __mlir_attr.`0: index`
 
 
 # CHECK-LABEL: lit.struct.decl @A<x: !Int, x_0: !Int>
 struct A[x: Int, x_0: Int]:
     # CHECK: lit.alias.decl *"z`" = <1>
-    alias z = __mlir_attr.`1: index`
+    comptime z = __mlir_attr.`1: index`
     # CHECK: lit.alias.decl *"y`1" = <11>
-    alias y = __mlir_attr.`11: index`
+    comptime y = __mlir_attr.`11: index`
 
     # CHECK-LABEL: lit.fn @"foo
     # CHECK-SAME: <_x: !Int, x_1: !Int>[imm *"self`2x"]
     fn foo[_x: Int, x_1: Int](self):
         # CHECK: lit.alias.decl *"z`2x1" = <2>
-        alias z = __mlir_attr.`2: index`
+        comptime z = __mlir_attr.`2: index`
         # CHECK: lit.alias.decl *"y`2x2" = <12>
-        alias y = __mlir_attr.`12: index`
+        comptime y = __mlir_attr.`12: index`
         # CHECK: lit.alias.decl *"yy`2x3" = <22>
-        alias yy = __mlir_attr.`22: index`
+        comptime yy = __mlir_attr.`22: index`
 
         # CHECK-LABEL: lit.fn *"bar{{.*}}<*"x`3x": !Int, x_2: !Int>
         fn bar[x: Int, x_2: Int]():
             # CHECK: lit.alias.decl *"z`3x1" = <3>
-            alias z = __mlir_attr.`3: index`
+            comptime z = __mlir_attr.`3: index`
 
 
 # COM: test names of implicit parameters
@@ -49,12 +49,12 @@ fn test_nested_alias_mangling_1[x: Int](c: Bool):
     # CHECK: hlcf.elif
     if c:
         # CHECK: lit.alias.decl *"y`"
-        alias y = x
+        comptime y = x
         _ = y
     # CHECK: } else {
     else:
         # CHECK: lit.alias.decl *"y`1"
-        alias y = x
+        comptime y = x
         _ = y
 
 
@@ -63,11 +63,11 @@ fn test_nested_alias_mangling_2[x: Int](c: Bool):
     # CHECK: hlcf.elif
     if c:
         # CHECK: lit.alias.decl *"y`"
-        alias y = x
+        comptime y = x
         _ = y
 
     # CHECK: lit.fn *"nested()"
     fn nested():
         # CHECK: lit.alias.decl *"y`2x"
-        alias y = x
+        comptime y = x
         _ = y

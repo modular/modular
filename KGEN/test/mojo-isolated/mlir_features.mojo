@@ -6,7 +6,7 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-alias one = __mlir_attr.`1 : index`
+comptime one = __mlir_attr.`1 : index`
 
 
 # CHECK: lit.fn @"mlirMagicTest{{.*}}(%x: bf16, %y: f8E5M2)
@@ -14,7 +14,7 @@ fn mlirMagicTest(
     x: __mlir_type.bf16, y: __mlir_type.f8E5M2
 ) -> __mlir_type.index:
     # CHECK: lit.alias.decl [[A:.*]] = <{{.*}}1{{.*}}>
-    alias a: __mlir_type.index = one
+    comptime a: __mlir_type.index = one
     # CHECK: %b = lit.var.decl "b" var : !lit.ref<f64, mut
     var b: __mlir_type.f64
     # CHECK: %c = lit.var.decl "c" var : !lit.ref<pointer<pointer<f32>>, mut
@@ -39,7 +39,7 @@ fn mlirMagicTest(
     var i1Cast = __mlir_op.`index.castu`[_type = __mlir_type.i1](idxConstant)
 
     # CHECK: lit.alias.decl *"new_lower{{.*}} = <42>
-    alias new_lower = __mlir_attr[
+    comptime new_lower = __mlir_attr[
         `#kgen.param.expr<max, `, a, `, `, Int(42)._mlir_value, `> : index`
     ]
 
@@ -78,9 +78,9 @@ fn fancierSubstitutions():
     var complexInt: __mlir_type[`complex<`, __mlir_type.i32, `>`]
 
     # CHECK: lit.alias.decl [[A:.*]] = <{{.*}}1{{.*}}>
-    alias a: __mlir_type.index = one
+    comptime a: __mlir_type.index = one
     # CHECK: lit.alias.decl *"new_lower{{.*}}" = <42>
-    alias new_lower = __mlir_attr[
+    comptime new_lower = __mlir_attr[
         `#kgen.param.expr<max,`, a, `, `, Int(42)._mlir_value, `> : index`
     ]
 
@@ -92,7 +92,7 @@ fn testAttrConcatWithoutType[
     length: __mlir_type.index,
 ]():
     # CHECK: lit.alias.decl *"x{{.*}}": variadic<index> = <[1, length]>
-    alias x = __mlir_attr[
+    comptime x = __mlir_attr[
         `#kgen.variadic<`, +one, `,`, length, `> : !kgen.variadic<index>`
     ]
 
@@ -104,7 +104,7 @@ fn testAttrConcatWithoutType[
 # CHECK-LABEL: lit.struct.decl @MyPointer<elType: type>
 @register_passable
 struct MyPointer[elType: __mlir_type.`!kgen.type`]:
-    alias StorageTy = __mlir_type[`!kgen.pointer<`, elType, `>`]
+    comptime StorageTy = __mlir_type[`!kgen.pointer<`, elType, `>`]
     # CHECK: lit.struct.field value : !kgen.pointer<elType>
     var value: Self.StorageTy
 

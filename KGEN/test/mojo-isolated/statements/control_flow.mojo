@@ -501,7 +501,7 @@ fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
 
 @fieldwise_init
 struct IterRange(Iterator, ImplicitlyCopyable):
-    alias Element = Int
+    comptime Element = Int
 
     var value: Int
 

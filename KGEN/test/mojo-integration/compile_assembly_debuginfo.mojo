@@ -14,12 +14,12 @@ fn get_type(dtype: DType) -> DType:
 
 
 fn compiled_fn[dtype: DType](M: SIMD[get_type(dtype), 4]) -> Int:
-    alias b = size_of[get_type(dtype)]()
+    comptime b = size_of[get_type(dtype)]()
     return b + Int(M[0])
 
 
 fn main():
-    alias myCompiledFn = compiled_fn[DType.uint32]
+    comptime myCompiledFn = compiled_fn[DType.uint32]
     print(compile_info[myCompiledFn, emission_kind="llvm"]())
 
 

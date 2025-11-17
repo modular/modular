@@ -7,12 +7,12 @@
 # RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics %s
 
 # expected-error @below {{only traits may contain a comptime member without an initializer}}
-alias K: Int
+comptime K: Int
 
 trait MyTrait:  # expected-note {{trait 'MyTrait' declared here}}
     # expected-note @below {{required member 'N' is not specified}}
     # expected-note @below {{comptime member 'N' type 'Bool' does not conform to trait's required type 'Int'}}
-    alias N: Int
+    comptime N: Int
 
 
 # expected-error @below {{'StructConformingExplicitlyWithNoMatchingAlias' does not implement all requirements for 'MyTrait'}}
@@ -22,7 +22,7 @@ struct StructConformingExplicitlyWithNoMatchingAlias(MyTrait):
 
 # expected-error @below {{'StructConformingExplicitlyWithMismatchedAlias' does not implement all requirements for 'MyTrait'}}
 struct StructConformingExplicitlyWithMismatchedAlias(MyTrait):
-    alias N: Bool = Bool()
+    comptime N: Bool = Bool()
 
 
 # expected-error @below {{'StructConformingExplicitlyWithMemberSameName' does not implement all requirements for 'MyTrait'}}
@@ -37,23 +37,23 @@ struct StructWithNoMatchingAlias:
 
 @fieldwise_init
 struct StructWithMismatchedAlias:
-    alias N: Bool = Bool()
+    comptime N: Bool = Bool()
 
 
 struct StructWithUninitializedAlias:
     # expected-error @below {{only traits may contain a comptime member without an initializer}}
-    alias N: Bool
+    comptime N: Bool
 
 
 struct StructWithTypelessUninitializedAlias:
     # This makes sure we print out this error, rather than the also-relevant "alias without initial value must have a type" error
     # expected-error @below {{expected '=' after comptime declaration}}
-    alias N
+    comptime N
 
 
 # expected-note @below {{function declared here}}
 fn funcForMyTrait[T: MyTrait](t: T) -> Int:
-    alias X = T.N
+    comptime X = T.N
     return X
 
 
@@ -77,7 +77,7 @@ struct TensorIndex[rank: Int]:
 
 
 trait Stencil:
-    alias rank: Int
+    comptime rank: Int
 
 
 # // -----
@@ -96,12 +96,12 @@ struct ZBool:
 
 trait TraitWithTypeAlias:
     # expected-note @below {{parent trait's member defined here}}
-    alias T: ZBool
+    comptime T: ZBool
 
 
 trait TraitWithSameTypeAlias(TraitWithTypeAlias):
     # expected-error @below {{invalid redefinition of 'T': cannot convert 'ZInt' to parent trait's member's type 'ZBool'}}
-    alias T: ZInt
+    comptime T: ZInt
 
 
 # // -----
@@ -122,11 +122,11 @@ struct ZFloat:
 
 
 trait SuperTrait:
-    alias T: ZFloat
+    comptime T: ZFloat
 
 
 trait TraitWithTooManyAliases(SuperTrait):
     # expected-note @below {{previous definition here}}
-    alias T: ZBool
+    comptime T: ZBool
     # expected-error @below {{invalid redefinition of 'T'}}
-    alias T: ZInt
+    comptime T: ZInt

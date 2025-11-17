@@ -253,7 +253,7 @@ struct SomeRefItemStruct:
 # CHECK-LABEL: lit.fn @"test_param_refitem
 fn test_param_refitem[a: SomeRefItemStruct]():
     # CHECK-NEXT: !Int = <load_from_mem(:!lit.ref<!Int, imm #lit.comptime.origin> apply(:{{.*}}SomeRefItemStruct::@"__getitem__
-    alias x = a[]
+    comptime x = a[]
 
 
 # Passing non-default address space through mut arg, must use temporary.
@@ -429,7 +429,7 @@ struct ThingWithParam[X: Int]:
   fn __init__(out self: ThingWithParam[42], other: Bool): pass
 
 fn test_cond_conformance(exclude: Bool):
-    alias local_alias = 42
+    comptime local_alias = 42
     var ptr : UnsafePointer[ThingWithParam[local_alias]]
     ptr[] = exclude
 
@@ -479,10 +479,10 @@ struct SomeStructWithRefMethod:
 
 # CHECK-LABEL: lit.fn @"testSomeStructWithRefMethod
 fn testSomeStructWithRefMethod[val: SomeStructWithRefMethod]():
-    alias f = SomeStructWithRefMethod.take_ref
+    comptime f = SomeStructWithRefMethod.take_ref
     # CHECK: lit.alias.decl *"b`1":
     # CHECK-SAME: <:i1 0, :origin<0> #lit.any.origin>), {{.*}} store_to_mem(val)))>
-    alias b = f(val)
+    comptime b = f(val)
 
 
 

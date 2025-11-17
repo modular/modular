@@ -30,5 +30,5 @@ trait MyTrait:
     comptime AssociatedType: AnyType
 
 # Mixing alias and comptime in same file (both should work)
-alias old_style = 42
+comptime old_style = 42
 comptime new_style = 42

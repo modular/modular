@@ -21,7 +21,7 @@ fn throwing_fn() raises -> Int:
 
 fn literal_promotion[cond: Bool]():
     # This needs to coerce to the materialization type of float literal
-    alias a = 2.0 if cond else 3
+    comptime a = 2.0 if cond else 3
 
 
 ##===----------------------------------------------------------------------===##
@@ -208,7 +208,7 @@ fn testUnmovable(a: Unmovable):
 # type_of
 ##===----------------------------------------------------------------------===##
 
-alias index = __mlir_type.index
+comptime index = __mlir_type.index
 
 
 # CHECK-LABEL: lit.fn @"simple_typeof_return(
@@ -231,12 +231,12 @@ fn typeof_dynval_in_param(x: index):
     var y = String()
 
     # CHECK-NEXT: lit.alias.decl *"a`1": type = <index>
-    alias a = type_of(x)
+    comptime a = type_of(x)
     # CHECK-NEXT: lit.alias.decl *"b`2": !mt_Int = <!Int>
-    alias b = type_of(y.__len__())
+    comptime b = type_of(y.__len__())
 
     # CHECK-NEXT: lit.alias.decl *"c`3": !mt_Int = <!Int>
-    alias c = type_of(throwing_fn())
+    comptime c = type_of(throwing_fn())
 
 
 ##===----------------------------------------------------------------------===##
@@ -247,15 +247,15 @@ fn typeof_dynval_in_param(x: index):
 # CHECK-LABEL: lit.fn @"lifetime_of
 fn lifetime_of(x: Unmovable, y: Unmovable, mut z: Unmovable):
     # CHECK-NEXT: origin<0> = <{}>
-    alias lt0 = origin_of()
+    comptime lt0 = origin_of()
     # CHECK-NEXT: origin<0> = <*"x`">
-    alias lt1 = origin_of(x)
+    comptime lt1 = origin_of(x)
     # CHECK-NEXT: origin<0> = <{*"x`", *"y`1"}>
-    alias lt2 = origin_of(x, y)
+    comptime lt2 = origin_of(x, y)
     # CHECK-NEXT: origin<1> = <*"z`2">
-    alias lt3 = origin_of(z)
+    comptime lt3 = origin_of(z)
     # CHECK-NEXT: origin<0> = <{*"x`", (mutcast mut *"z`2")}>
-    alias lt4 = origin_of(x, z)
+    comptime lt4 = origin_of(x, z)
 
 
 ##===----------------------------------------------------------------------===##
@@ -431,11 +431,11 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
 # Test chained comparison op in parameter domain for issue
 # https://github.com/modularml/modular/issues/22050
 # CHECK: lit.alias.decl *"chainedCmpAlias1{{.*}}": !Bool ={{.*}}{:i1 0}
-alias chainedCmpAlias1 = 1 == 2 == 3 == 4 == 5
+comptime chainedCmpAlias1 = 1 == 2 == 3 == 4 == 5
 # CHECK: lit.alias.decl *"chainedCmpAlias2{{.*}}": !Bool ={{.*}}{:i1 1}
-alias chainedCmpAlias2 = 1 <= 2 <= 3 <= 4 <= 5
+comptime chainedCmpAlias2 = 1 <= 2 <= 3 <= 4 <= 5
 # CHECK: lit.alias.decl *"chainedCmpAlias3{{.*}}": !Bool ={{.*}}{:i1 0}
-alias chainedCmpAlias3 = 1 <= 2 <= 9 <= 4 <= 5
+comptime chainedCmpAlias3 = 1 <= 2 <= 9 <= 4 <= 5
 
 
 # CHECK-LABEL: lit.fn @"chainedCmpSemiDyn
@@ -529,15 +529,15 @@ struct MoveOnly(Movable):
 
 # CHECK-LABEL: lit.fn @"test_if_else_move
 fn test_if_else_move(r: Bool, var a: MoveOnly, var b: MoveOnly):
-   # This should move a/b into t.
-   var t = b^ if r else a^
+    # This should move a/b into t.
+    var t = b^ if r else a^
 
-   # CHECK: hlcf.if
-   # CHECK-NEXT: lit.ownership.use %b
-   # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%b, %t)
-   # CHECK-NEXT: hlcf.yield
-   # CHECK-NEXT: } else {
-   # CHECK-NEXT: lit.ownership.use %a
-   # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%a, %t)
-   # CHECK-NEXT: hlcf.yield
-   # CHECK-NEXT: }
+    # CHECK: hlcf.if
+    # CHECK-NEXT: lit.ownership.use %b
+    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%b, %t)
+    # CHECK-NEXT: hlcf.yield
+    # CHECK-NEXT: } else {
+    # CHECK-NEXT: lit.ownership.use %a
+    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%a, %t)
+    # CHECK-NEXT: hlcf.yield
+    # CHECK-NEXT: }

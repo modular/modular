@@ -125,7 +125,7 @@ trait DeprecatedTrait:
 # CHECK-LABEL: lit.alias.decl *"deprecated_alias
 # CHECK-SAME: deprecationWarning = "alias"
 @deprecated("alias")
-alias deprecated_alias = 1
+comptime deprecated_alias = 1
 
 
 ##===----------------------------------------------------------------------===##
@@ -159,12 +159,12 @@ trait DeprecatedTraitTarget:
 trait DeprecatedTraitUse:
     pass
 
-alias deprecated_alias_target = 1
+comptime deprecated_alias_target = 1
 
 # CHECK-LABEL: lit.alias.decl *"deprecated_alias_use
 # CHECK-SAME: deprecationWarning = "'deprecated_alias_use' is deprecated, use 'deprecated_alias_target' instead"
 @deprecated(use=deprecated_alias_target)
-alias deprecated_alias_use = 1
+comptime deprecated_alias_use = 1
 
 # ===----------------------------------------------------------------------=== #
 # @implicit
@@ -206,7 +206,7 @@ fn kernel[x: Int]():
 
 # CHECK-LABEL: lit.fn @"kernel_1{{.*}}"<x:
 # CHECK-SAME: LLVMMetadataArray = [#kgen.unknown : !lit.struct<#StringLiteral <:string "nvvm.maxntid">>, {{.*}}#pop.array<x> : !pop.array<
-alias mname = "nvvm.maxntid"
+comptime mname = "nvvm.maxntid"
 
 @__llvm_metadata(
     mname=__mlir_attr[`#pop.array<`, x, `> : !pop.array<1, `, Int, `>`]
@@ -235,7 +235,7 @@ fn alias_parametric_fn() -> StaticString:
         return "rocdl.flat_work_group_size"
 
 
-alias mname1 = _get_kgen_string[alias_parametric_fn()]()
+comptime mname1 = _get_kgen_string[alias_parametric_fn()]()
 
 @__llvm_metadata(mname1=128)
 fn kernel_3[x: Int]():
@@ -466,7 +466,7 @@ struct Node(ImplicitlyCopyable, Movable):
 
 # CHECK-LABEL: lit.struct.decl @RecursiveCopyable
 struct RecursiveCopyable:
-    alias ID = Int
+    comptime ID = Int
     # CHECK: lit.struct.field recurse
     # CHECK-SAME: <:!ImplicitlyCopyable !Node>
     var recurse: BoxCopyable[Node]

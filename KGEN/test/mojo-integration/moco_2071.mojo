@@ -17,7 +17,7 @@ from hashlib import default_comp_time_hasher
 # COM: one MemoryBlob for this memory type allocation due to
 # COM: mlir::Attribute uniquing. Use refCount to make sure we free
 # COM: these blobs correctly if needed in the interpreter.
-alias COUNTRY_CODE_TO_REGION_CODE: Dict[
+comptime COUNTRY_CODE_TO_REGION_CODE: Dict[
     Int, List[String], default_comp_time_hasher
 ] = {
     800: ["001"],

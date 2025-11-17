@@ -10,7 +10,7 @@
 
 
 trait BarAble:
-    alias bar: Foo
+    comptime bar: Foo
 
 
 # CHECK-LABEL: lit.struct.decl @BarViaTrait
@@ -18,7 +18,7 @@ struct BarViaTrait(BarAble):
     fn __init__(out self):
         pass
 
-    alias bar: Foo = 10
+    comptime bar: Foo = 10
 
 
 struct Bar:

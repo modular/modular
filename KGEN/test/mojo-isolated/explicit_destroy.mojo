@@ -93,11 +93,11 @@ fn foo3[T: ImplicitlyDestructible](var x: T):
 
 
 trait Iterator:
-    alias Element: AnyType
+    comptime Element: AnyType
 
 
 struct I(Iterator):
-    alias Element = Int
+    comptime Element = Int
 
 
 struct _MapIterator[

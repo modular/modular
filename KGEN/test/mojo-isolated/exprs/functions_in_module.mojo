@@ -21,7 +21,7 @@ fn bar(x: Int): pass
 
 # CHECK: lit.alias.decl {{.*}}::@Tuple<:variadic<!AnyType> [[[TYPE1]], [[TYPE2]], [[TYPE3]], [[TYPE4]], [[TYPE5]]]>
 # CHECK-SAME: <store_to_mem(@functions_in_module::@"foo()"), store_to_mem(@functions_in_module::@"bar(::Int)"), store_to_mem(@functions_in_module::@"bar(::Int,::Int)"), store_to_mem(@functions_in_module::@"baz()"), store_to_mem(@functions_in_module::@"take[::AnyType,$0]()")>))))>
-alias funcs = __functions_in_module()
+comptime funcs = __functions_in_module()
 
 # CHECK-LABEL: lit.fn @"main
 fn main():

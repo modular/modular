@@ -70,7 +70,7 @@ fn testTestParamStruct(a: Parameterized[4]):
     var partial_var_type: Thing[1]
 
 
-alias DType = __mlir_type.`!kgen.dtype`
+comptime DType = __mlir_type.`!kgen.dtype`
 
 
 # expected-note @below {{struct declared here}}
@@ -238,9 +238,9 @@ fn arg_overloading_with_param[param: Int](a: Int):
 
 fn form_reference_to_overloaded[value: NotConvertible]():
     # expected-error @below {{cannot form a reference to overloaded declaration of 'parameter_overloading', each candidate requires 1 implicit conversion, disambiguate with an explicit cast}}
-    alias ambiguous = parameter_overloading[1]
+    comptime ambiguous = parameter_overloading[1]
     # expected-error @below {{cannot form a reference to overloaded declaration of 'parameter_overloading'}}
-    alias none_valid = parameter_overloading[value]
+    comptime none_valid = parameter_overloading[value]
 
     # MOCO-1024: Bad error message with missing ()'s on UnsafePointer.load
     # expected-error @below {{cannot form a reference to overloaded declaration of 'arg_overloading_with_param'}}
@@ -255,18 +255,18 @@ fn form_reference_to_overloaded[value: NotConvertible]():
 
 fn testAliases(variable: Int):
     # expected-error @below {{only traits may contain a comptime member without an initializer}}
-    alias MissingInit: Int
+    comptime MissingInit: Int
 
     # expected-error @+1 {{cannot use a dynamic value in alias initializer}}
-    alias NotConstant = variable + 2
+    comptime NotConstant = variable + 2
 
     # expected-error @+1 {{expected '=' after comptime declaration}}
-    alias MissingTypeAndInit
+    comptime MissingTypeAndInit
 
 
 fn testConversionQoI():
     # expected-error @+1 {{cannot implicitly convert 'FloatLiteral[1.2]' value to 'Int'}}
-    alias intVal: Int = 1.2
+    comptime intVal: Int = 1.2
 
 
 @always_inline("nodebug")
@@ -278,17 +278,17 @@ fn crash1_callee(
 
 fn crash1_caller[p: __mlir_type.index](a: __mlir_type.index):
     # expected-error @below {{cannot use a dynamic value in alias initializer}}
-    alias y = crash1_callee(a, p)
+    comptime y = crash1_callee(a, p)
 
 
 @fieldwise_init
 struct StructWithParams[a: Int, b: Int]:
-    alias a1 = StructWithParams[1, 2]()
-    alias a2 = a+1
-    alias a3 = a+b+1
+    comptime a1 = StructWithParams[1, 2]()
+    comptime a2 = a+1
+    comptime a3 = a+b+1
 
 struct StructWithRecReference[n: Int]:
-    alias res = StructWithRecReference.f
+    comptime res = StructWithRecReference.f
     @staticmethod
     fn f():
         pass
@@ -328,7 +328,7 @@ struct DefaultParams2[a: Int, b: Int = 7]:  # expected-note {{declared here}}
 
 fn test_default_param_struct():
     # expected-error @+1 {{expects at most 2 parameters, but 3 were specified}}
-    alias S = DefaultParams2[1, 3, 4]
+    comptime S = DefaultParams2[1, 3, 4]
 
 
 fn missing_bound_param():
@@ -619,8 +619,8 @@ fn complex(a: Int) -> Int:
   return a*a if a < 42 else a-1
 
 struct StructWithAlias:
-    alias size_lit = 42  # IntLiteral type
-    alias size_int : Int = 42 # Int type
+    comptime size_lit = 42  # IntLiteral type
+    comptime size_int : Int = 42 # Int type
 
 # Make sure error messages include scope for auto parameters.
 # MOCO-970: "can't convert type to type" error stripped off full parameter name.

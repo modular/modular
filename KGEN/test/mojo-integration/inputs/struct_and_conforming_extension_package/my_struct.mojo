@@ -18,7 +18,7 @@ struct MyStruct:
 
 
 __extension MyStruct(Convertible):
-    alias ExtensionAlias = Int
+    comptime ExtensionAlias = Int
 
     fn convert(self) -> Int:
         return self.value

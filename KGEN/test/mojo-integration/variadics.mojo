@@ -358,7 +358,7 @@ fn test_comptime_pack():
     print(str1)
     # CHECK: 16
 
-    alias str2 = sum_intable(4, 5.0, 7)
+    comptime str2 = sum_intable(4, 5.0, 7)
     print(str2)
     # CHECK: 16
 

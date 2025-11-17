@@ -18,7 +18,7 @@ struct MyUnsafePointer[
     alignment: Int = 1,
     lifetime: Origin[True]._mlir_type = MutAnyOrigin,
 ]:
-    alias _mlir_type = __mlir_type[
+    comptime _mlir_type = __mlir_type[
         `!kgen.pointer<`,
         type,
         `, `,

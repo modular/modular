@@ -679,7 +679,7 @@ fn unqualifiedNameLookup(a: StructWithField):
   StructWithField.field
 
 struct DirectInstanceReference:
-  alias my_alias: Int = 8
+  comptime my_alias: Int = 8
   var value: Int
   fn fxn(self):
     # expected-error @+1 {{cannot access instance field 'value' directly; did you mean 'self.'?}}
@@ -695,7 +695,7 @@ struct DirectInstanceReference:
     stat() # expected-error {{cannot access method 'stat' directly; did you mean 'Self.'?}}
 
 trait DirectTraitMemberReference:
-  alias my_alias: Int
+  comptime my_alias: Int
   fn fxn(self):
     _ = my_alias  # expected-error {{cannot access comptime 'my_alias' directly; did you mean 'Self.'?}}
 

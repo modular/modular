@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full -O0 %s 2 3 | FileCheck %s
 
-alias TestFn = fn (x: Int) raises -> Tuple[Bool, Int]
+comptime TestFn = fn (x: Int) raises -> Tuple[Bool, Int]
 
 
 @no_inline

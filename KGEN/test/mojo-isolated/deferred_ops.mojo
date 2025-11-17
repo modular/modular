@@ -8,7 +8,7 @@
 
 # CHECK-LABEL: lit.fn @"test0(::Int,::Int)"
 def test0(a: Int, b: Int) -> Bool:
-    alias pred_attr = __mlir_attr.`#index<cmp_predicate sle>`
+    comptime pred_attr = __mlir_attr.`#index<cmp_predicate sle>`
 
     # CHECK: kgen.deferred "index.cmp"(%{{.*}}, %{{.*}} : !Int, !Int) {pred = #kgen<deferred #index<cmp_predicate sle>> : !kgen.deferred} : i1
     var res = __mlir_op.`index.cmp`[pred=pred_attr](a, b)
@@ -25,7 +25,7 @@ def test1[cmp: Bool](a: Int, b: Int) -> Bool:
         else:
             return __mlir_attr.`#index<cmp_predicate sgt>`
 
-    alias pred_attr = select_pred[cmp]()
+    comptime pred_attr = select_pred[cmp]()
 
     # CHECK: kgen.deferred "index.cmp"(%{{.}}, %{{.*}} : !Int, !Int) {pred = #kgen.param.expr<apply, #kgen.bind_params<:!lit.generator<<"cmp": !Bool>() -> !kgen.deferred> *"select_pred[::Bool]()", cmp> : !kgen.generator<!lit.generator<() -> !kgen.deferred>>> : !kgen.deferred} : i1
     var res = __mlir_op.`index.cmp`[pred=pred_attr](a, b)
@@ -66,7 +66,7 @@ fn test2[pred: StaticString](x: Int, y: Int) -> Bool:
 
 
 struct DType:
-    alias type = __mlir_type.`!kgen.dtype`
+    comptime type = __mlir_type.`!kgen.dtype`
     var value: Self.type
 
 

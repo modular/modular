@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %parse-mojo-isolated %s | kgen-opt -mlir-print-op-generic | FileCheck %s
 
-alias AnyTrivialRegType = __mlir_type.`!kgen.type`
-alias NoneType = __mlir_type.`!kgen.none`
+comptime AnyTrivialRegType = __mlir_type.`!kgen.type`
+comptime NoneType = __mlir_type.`!kgen.none`
 
 
 @register_passable
@@ -16,7 +16,7 @@ struct Optional[T: AnyTrivialRegType]:
         pass
 
 
-alias Index = __mlir_type.index
+comptime Index = __mlir_type.index
 
 
 @register_passable
@@ -28,4 +28,4 @@ struct Param[x: Index]:
 # CHECK: "lit.struct.decl"() {{.*}} convention = 0 :
 # CHECK-SAME: signature = !lit.type_signature<"x": index, "y": [[OPT:.*:@Optional]]<:type !lit.generator<<"y": index>() -> !lit.struct<#Param <*(1,0)>>
 struct Thing[x: Index, y: Optional[fn[y: Index] () -> Param[x]] = None]:
-    alias z = 1
+    comptime z = 1

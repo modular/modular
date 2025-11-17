@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated -import-mojo -verify-diagnostics -split-input-file %s
 
 # expected-error @below {{cannot unpack value of 'Tuple[Int, FloatDyn]' of 2 elements into 3 values}}
-alias a, (b, c, d) = (1, (2, 3.0))
+comptime a, (b, c, d) = (1, (2, 3.0))
 
 # // -----
 

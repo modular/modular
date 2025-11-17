@@ -73,9 +73,9 @@ fn test_else_block():
 
 
 fn test_tuple_unpack():
-    alias lst0 = [1, 4]
-    alias lst1 = [1, 4]
-    alias lst2 = [(2, 3), (5, 6)]
+    comptime lst0 = [1, 4]
+    comptime lst1 = [1, 4]
+    comptime lst2 = [(2, 3), (5, 6)]
 
     var ret = 0
 

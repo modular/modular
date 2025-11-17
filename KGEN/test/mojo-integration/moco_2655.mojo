@@ -27,7 +27,7 @@ struct Config(ConfigTrait):
     # Case 1: return a constant.
     @staticmethod
     fn trait_method_0() -> Int:
-        alias src = 1
+        comptime src = 1
         return src
 
     # Case 2: return a argument.

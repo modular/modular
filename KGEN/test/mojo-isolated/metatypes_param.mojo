@@ -14,7 +14,7 @@
 @fieldwise_init
 @register_passable("trivial")
 struct Param[x: Int]:
-    alias value = x
+    comptime value = x
 
     @staticmethod
     fn foo():
@@ -32,8 +32,8 @@ struct Param[x: Int]:
 @fieldwise_init
 @register_passable("trivial")
 struct TwoParam[x: Int, y: Int]:
-    alias first = x
-    alias second = y
+    comptime first = x
+    comptime second = y
 
     @staticmethod
     fn foo():
@@ -44,9 +44,9 @@ struct TwoParam[x: Int, y: Int]:
 fn fully_bound_alias():
     # COM: Test alias to a fully bound parametric type.
     # CHECK: BoundType{{.*}}: meta<!lit.struct<{{.*}}Param <{{.*}}1{{.*}}>>> = <{{.*}}@Param<{{.*}}1{{.*}}>>
-    alias BoundType = Param[1]
+    comptime BoundType = Param[1]
     # CHECK: alias_value{{.*}} = <sugar_alias(#lit.struct.extract<:meta<!lit.struct<#Param <{{.*}}1{{.*}}>>> @metatypes_param::@Param<{{.*}}1{{.*}}>, "value">, {{.*}}1{{.*}})>
-    alias alias_value = BoundType.value
+    comptime alias_value = BoundType.value
     # CHECK: call {{.*}}@Param::@"foo()"<{{.*}}1{{.*}}>
     BoundType.foo()
     # CHECK: call {{.*}}@Param::@"self_type()"<{{.*}}1{{.*}}>{{.*}} -> !lit.struct<#Param <{{.*}}1{{.*}}>>
@@ -57,51 +57,51 @@ fn fully_bound_alias():
 fn unbound_alias():
     # COM: Test alias to a fully unbound parametric type.
     # CHECK: [[UNBOUND:\*"Unbound.*]]: meta<!lit.struct<#Param <:!Int ?>, <"x": !Int>>> = <{{.*}}@Param<:!Int ?>>
-    alias Unbound = Param
+    comptime Unbound = Param
     # CHECK: unbound_value{{.*}} = <sugar_alias(#lit.struct.extract<:meta<!lit.struct<#Param <{{.*}}2{{.*}}>>> @metatypes_param::@Param<:!Int {2}>, "value">, {{.*}}2{{.*}})>
-    alias unbound_value = Unbound[2].value
+    comptime unbound_value = Unbound[2].value
     # CHECK: call {{.*}}@Param::@"foo()"<:!Int {2}>
     Unbound[2].foo()
     # CHECK: unbound_function{{.*}}: !lit.generator<<"x": !Int, |>() -> !kgen.none> = <{{.*}}@Param::@"foo()"<:!Int ?>>
-    alias unbound_function = Unbound.foo
+    comptime unbound_function = Unbound.foo
 
     # COM: Test fully unbound alias can be fully bound.
     # CHECK: BoundFromUnbound{{.*}}: meta<!lit.struct<#Param <:!Int {1}>>> =
     # CHECK-SAME: <@metatypes_param::@Param<:!Int {1}>>
-    alias BoundFromUnbound = Unbound[1]
+    comptime BoundFromUnbound = Unbound[1]
 
 
 # CHECK-LABEL: partially_bound_alias
 fn partially_bound_alias():
     # COM: Test partially binding a type.
     # CHECK: [[PBOUND:\*"PartiallyBound.*]]: meta<!lit.struct<#TwoParam <:!Int {1}, :!Int ?>, <"y": !Int>>> = <{{.*}}@TwoParam<:!Int {1}, :!Int ?>>
-    alias PartiallyBound = TwoParam[1]
+    comptime PartiallyBound = TwoParam[1]
 
     # COM: Test taking a function from a partially bound type.
     # CHECK: [[PBOUND_FN:\*"PartiallyBoundFn.*]]: !lit.generator<<"y": !Int, |>() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<:!Int {1}, :!Int ?>>
-    alias PartiallyBoundFn = PartiallyBound.foo
+    comptime PartiallyBoundFn = PartiallyBound.foo
     # CHECK: FullyBoundFn{{.*}}: {{.*}} =   <@metatypes_param::@TwoParam::@"foo()"<:!Int {1}, :!Int {2}>>
-    alias FullyBoundFn = PartiallyBoundFn[2]
+    comptime FullyBoundFn = PartiallyBoundFn[2]
 
     # COM: Test fully binding a partially bound type.
     # CHECK: *"BoundFromPartial`3": meta<!lit.struct<#TwoParam <:!Int {1}, :!Int {2}>>> =
     # CHECK-SAME: <@metatypes_param::@TwoParam<:!Int {1}, :!Int {2}>>
-    alias BoundFromPartial = PartiallyBound[2]
+    comptime BoundFromPartial = PartiallyBound[2]
     # CHECK: first{{.*}} = <sugar_alias(#lit.struct.extract<:meta<!lit.struct<#TwoParam <:!Int {1}, :!Int {2}>>> @metatypes_param::@TwoParam<:!Int {1}, :!Int {2}>, "first">, {{.*}}1{{.*}})>
-    alias first = BoundFromPartial.first
+    comptime first = BoundFromPartial.first
     # CHECK: second{{.*}} = <sugar_alias(#lit.struct.extract<:meta<!lit.struct<#TwoParam <:!Int {1}, :!Int {2}>>> @metatypes_param::@TwoParam<:!Int {1}, :!Int {2}>, "second">, {{.*}}2{{.*}})>
-    alias second = BoundFromPartial.second
+    comptime second = BoundFromPartial.second
     # CHECK: fn_from_bound{{.*}}: !lit.generator<() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<:!Int {1}, :!Int {2}>>
-    alias fn_from_bound = BoundFromPartial.foo
+    comptime fn_from_bound = BoundFromPartial.foo
 
 
 # CHECK-LABEL: partially_bound_kw
 fn partially_bound_kw():
     # COM: Test partially binding the parameters out-of-order with keywords.
     # CHECK: TwoParam <:!Int ?, :!Int {1}>
-    alias PartiallyBound = TwoParam[y=1]
+    comptime PartiallyBound = TwoParam[y=1]
     # CHECK: TwoParam <:!Int {2}, :!Int {1}>
-    alias FullyBound = PartiallyBound[x=2]
+    comptime FullyBound = PartiallyBound[x=2]
 
     # COM: Test emission of fully bound type.
     # CHECK: expr_type{{.*}}@TwoParam<:!Int {2}, :!Int {1}>
@@ -111,8 +111,8 @@ fn partially_bound_kw():
 # CHECK-LABEL: lit.fn @"partial_autoparam
 # CHECK-SAME: <?, [[X:.*]]: !Int>(%value: !lit.struct<#TwoParam <:!Int [[X]], :!Int {1}>>
 fn partial_autoparam(value: TwoParam[y=1]):
-    alias first = value.x
-    alias second = value.y
+    comptime first = value.x
+    comptime second = value.y
 
 
 # CHECK-LABEL: lit.struct.decl @ParamVarArg<F: !Int, I: variadic<!Int> pos_vararg>
@@ -124,14 +124,14 @@ struct ParamVarArg[F: Int, *I: Int]:
     @staticmethod
     fn self_type() -> Self:
         # CHECK: lit.alias.decl {{.*}}Unbound{{.*}}: {{.*}}ParamVarArg <:!Int ?, :variadic<!Int> ?>, <"F": !Int, "I": variadic<!Int> pos_vararg>>
-        alias Unbound = ParamVarArg
+        comptime Unbound = ParamVarArg
         # CHECK: lit.alias.decl {{.*}}BoundSome{{.*}}: {{.*}}ParamVarArg <:!Int {1}, :variadic<!Int> ?>
-        alias BoundSome = Unbound[1]
+        comptime BoundSome = Unbound[1]
         # CHECK: lit.alias.decl {{.*}}BoundFinal{{.*}}: {{.*}}ParamVarArg <:!Int {1}, :variadic<!Int> [{3}, {4}]>
-        alias BoundFinal = BoundSome[3, 4]
+        comptime BoundFinal = BoundSome[3, 4]
 
         # CHECK: BoundMore{{.*}}: {{.*}}ParamVarArg <:!Int {1}, :variadic<!Int> [{2}, {1}]>
-        alias BoundMore = Unbound[1, 2, 1]
+        comptime BoundMore = Unbound[1, 2, 1]
 
 
 
@@ -150,27 +150,27 @@ struct DependentParam[
 fn direct_binding():
     # Test direct bind of StructType
     # CHECK: alias.decl *"a{{.*}} meta<!lit.struct<[[DEP:.*]]<?, ?, :[[PT:.*]]<?> ?>, <"a": index, "b": index, "c": [[PT]]<*(0,1)>>
-    alias a = DependentParam
+    comptime a = DependentParam
     # CHECK: alias.decl *"b{{.*}} meta<!lit.struct<[[DEP]]<1, ?, :[[PT]]<?> ?>, <"b": index, "c": [[PT]]<*(0,0)>>>
-    alias b = DependentParam[__mlir_attr.`1:index`]
+    comptime b = DependentParam[__mlir_attr.`1:index`]
     # CHECK: alias.decl *"c{{.*}} meta<!lit.struct<[[DEP]]<1, 2, :[[PT]]<2> ?>, <"c": [[PT]]<2>>>
-    alias c = DependentParam[__mlir_attr.`1:index`, __mlir_attr.`2:index`]
+    comptime c = DependentParam[__mlir_attr.`1:index`, __mlir_attr.`2:index`]
 
     # Test partial bind of StructType
     # CHECK: alias.decl *"d{{.*}} meta<!lit.struct<[[DEP]]<1, 2, :[[PT]]<2> ?>, <"c": [[PT]]<2>>>
-    alias d = DependentParam[__mlir_attr.`1:index`][__mlir_attr.`2:index`]
+    comptime d = DependentParam[__mlir_attr.`1:index`][__mlir_attr.`2:index`]
 
 
 # CHECK: lit.fn @"indirect_binding
 fn indirect_binding():
     # CHECK: alias.decl [[a:\*"a.*"]]: meta
-    alias a = DependentParam
+    comptime a = DependentParam
     # Test indirect binds.
     # CHECK: alias.decl [[b:\*"b.*"]]: meta<!lit.struct<[[DEP]]<1, ?, :[[PT]]<?> ?>, <"b": index, "c": [[PT]]<*(0,0)>{{.*}}> = <@metatypes_param::@DependentParam<1, ?, :@metatypes_param::@ParamType<?> ?>>
-    alias b = a[__mlir_attr.`1:index`]
+    comptime b = a[__mlir_attr.`1:index`]
     # CHECK: alias.decl [[c:\*"c.*"]]: meta<!lit.struct<[[DEP]]<1, 2, :[[PT]]<2> ?>, <"c": [[PT]]<2>{{.*}}> = <@metatypes_param::@DependentParam<1, 2, :@metatypes_param::@ParamType<2> ?>>
-    alias c = b[__mlir_attr.`2:index`]
+    comptime c = b[__mlir_attr.`2:index`]
     # CHECK: alias.decl [[d:\*"d.*"]]: meta<!lit.struct<[[DEP]]<1, 2, :[[PT]]<2> *?>>> = <@metatypes_param::@DependentParam<1, 2, :@metatypes_param::@ParamType<2> *?>>
-    alias d = c[
+    comptime d = c[
         __mlir_attr[`#kgen.unknown : `, ParamType[__mlir_attr.`2:index`]]
     ]

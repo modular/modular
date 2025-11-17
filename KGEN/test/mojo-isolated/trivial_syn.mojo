@@ -25,7 +25,7 @@ struct X_T_U(ImplicitlyCopyable, Movable):
         pass
 
     # User marked __del__as trivial
-    alias __del__is_trivial: Bool = True
+    comptime __del__is_trivial: Bool = True
 
 
 # CHECK-LABEL: lit.struct.decl @C

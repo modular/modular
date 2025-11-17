@@ -18,6 +18,6 @@ fn compTime(x: Int, w: String) -> Int:
 
 
 fn main():
-    alias x = compTime(4, "hello")
+    comptime x = compTime(4, "hello")
     # CHECK: 20
     print(x + 4)

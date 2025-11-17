@@ -53,8 +53,8 @@ fn fold_select_op[B: Int = 4, C: Int = 3]() -> IntT[B]:
 
 # CHECK-LABEL: lit.fn @"fold_index_ceildiv
 fn fold_index_ceildiv() -> UIntT[2]:
-    alias A: UInt = 5
-    alias B: UInt = 3
+    comptime A: UInt = 5
+    comptime B: UInt = 3
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@UIntT<:!UInt {2}>, mut *"a`3">
     var a = UIntT[A.__ceildiv__(B)]()
     return a
@@ -67,8 +67,10 @@ fn fold_index_ceildiv() -> UIntT[2]:
 
 # CHECK-LABEL: lit.fn @"fold_bool_init
 fn fold_bool_init() -> BoolT[True]:
-    alias T = Bool(mlir_value=__mlir_attr.`#pop.simd<true> : !pop.scalar<bool>`)
-    alias F = Bool(
+    comptime T = Bool(
+        mlir_value=__mlir_attr.`#pop.simd<true> : !pop.scalar<bool>`
+    )
+    comptime F = Bool(
         mlir_value=__mlir_attr.`#pop.simd<false> : !pop.scalar<bool>`
     )
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@BoolT<:!Bool {:i1 1}>, mut *"a`3">
@@ -91,12 +93,12 @@ struct UInt8T[x: UInt8._mlir_type](ImplicitlyCopyable):
         pass
 
 
-alias UI8_139 = __mlir_attr.`#pop.simd<139> : !pop.scalar<ui8>`
+comptime UI8_139 = __mlir_attr.`#pop.simd<139> : !pop.scalar<ui8>`
 
 
 # CHECK-LABEL: lit.fn @"fold_dtype_as_ui8
 fn fold_dtype_as_ui8() -> UInt8T[UI8_139]:
-    alias A: DType = DType.int32
+    comptime A: DType = DType.int32
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@UInt8T<{{.*}}, 139)>
     var a = UInt8T[A._as_ui8()]()
     return a

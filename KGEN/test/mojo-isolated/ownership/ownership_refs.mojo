@@ -157,7 +157,7 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
   # CHECK: lit.call @stdlib::@builtin::@stubs::@Pointer::@"__init__{{.*}}(%a)
   var aref = Pointer(to=a)
   # CHECK: lit.alias.decl *"aLifetime{{.*}}": origin<1> = <*"a`1">
-  alias aLifetime =  aref.origin._mlir_origin
+  comptime aLifetime =  aref.origin._mlir_origin
 
   # CHECK-NEXT: [[AR:%.*]] = lit.ref.load %aref
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[AR]])

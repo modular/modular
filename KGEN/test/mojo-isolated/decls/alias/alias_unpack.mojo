@@ -9,7 +9,7 @@
 # foldable.
 
 # works without parens
-alias _, (b, c) = 1, (2, 3.0)
+comptime _, (b, c) = 1, (2, 3.0)
 
 
 # TODO(MOCO-2764)

@@ -22,8 +22,8 @@ trait Trait3:
         ...
 
 
-alias Traits12 = Trait1 & Trait2
-alias Traits123 = Trait1 & Trait2 & Trait3
+comptime Traits12 = Trait1 & Trait2
+comptime Traits123 = Trait1 & Trait2 & Trait3
 
 
 @fieldwise_init

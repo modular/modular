@@ -9,7 +9,7 @@
 
 # expected-note  {{no instantiation for trait {{.*}}Foo, get witness table failed}}
 trait Foo:
-    alias x: Bool
+    comptime x: Bool
 
 
 fn main():

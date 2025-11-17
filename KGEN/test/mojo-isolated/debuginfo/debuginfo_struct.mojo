@@ -42,5 +42,5 @@ struct MyData[A: Int, B: MyRP[3], C: AnyTrivialRegType]:
 
 
 fn entry():
-    alias rp = MyRP[3](4)
+    comptime rp = MyRP[3](4)
     var data = MyData[7, rp, MyRP[3]](rp)

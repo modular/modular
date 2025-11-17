@@ -62,7 +62,7 @@ struct Constructible:
 
 fn init_self_conversion():
     # expected-error @below {{cannot implicitly convert 'fn(arg: Int) -> Constructible' value to 'fn() -> None'}}
-    alias f: fn () -> None = Constructible.__init__
+    comptime f: fn () -> None = Constructible.__init__
 
 
 struct ConvertibleFromInt(ImplicitlyCopyable, Movable):

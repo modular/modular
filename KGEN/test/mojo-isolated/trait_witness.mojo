@@ -8,7 +8,7 @@
 
 
 trait R1:
-    alias N: Int
+    comptime N: Int
 
     fn f1(self, x: Bool):
         ...
@@ -18,7 +18,7 @@ trait R1:
 
 
 trait R2:
-    alias T: AnyType
+    comptime T: AnyType
 
     fn f2(self, x: Self.T):
         ...
@@ -31,8 +31,8 @@ trait R1Child(R1):
 @register_passable("trivial")
 # CHECK-LABEL: lit.struct.decl @S1<X: !Int>
 struct S1[X: Int](R1, R1Child, R2, Movable):
-    alias N: Int = X
-    alias T: AnyType = Int
+    comptime N: Int = X
+    comptime T: AnyType = Int
 
     # CHECK: lit.fn @"f1[[F1_BOOL_NAME:.+]]"({{.*}}, %x: !Bool)
     fn f1(self, x: Bool):

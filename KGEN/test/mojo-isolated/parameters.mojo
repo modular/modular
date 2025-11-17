@@ -19,7 +19,7 @@ struct StructWithIntParam[size: Int]:
 # CHECK-LABEL: lit.fn @"paramArith{{.*}}"<x: !Int>() -> !kgen.none
 fn paramArith[x: Int]():
     # CHECK: lit.alias.decl *"y`": !Bool = <{{.*}}{_mlir_value: i1 = eq(#lit.struct.extract<:!Int x, "_mlir_value">, 99)}
-    alias y = x == 98 + 1
+    comptime y = x == 98 + 1
 
 fn take_3index(a: Int, b: Int, c: Int) -> Int:
     return a
@@ -71,23 +71,23 @@ struct TestParamStruct[A: Int]:
   # CHECK-LABEL: lit.fn @"aliases{{.*}}%x: {{.*}}#TestParamStruct <
   fn aliases(self, x: TestParamStruct[TestParamStruct[A].TypeLevelAlias]):
     # CHECK: lit.alias.decl [[B:.*]]: !Int = <{{.*}}{_mlir_value = add({{.*}}mul(#lit.struct.extract<:!Int *"A`", "_mlir_value">, 2){{.*}}, 1)}
-    alias B = A+A+1
+    comptime B = A+A+1
     # CHECK: lit.alias.decl *"C{{.*}}: !Int =
-    alias C = B+A
+    comptime C = B+A
     # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<:!Int {{.*}}1{{.*}}> =
     # CHECK-SAME: <apply(:!lit.generator<{{.*}}TestParamStruct <:!Int {1}>>> {{.*}}__init__()"<:!Int {1}>)>
-    alias D = TestParamStruct[1]()
+    comptime D = TestParamStruct[1]()
     # CHECK: %temp = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int
     var temp: TestParamStruct[C]
 
     # CHECK: lit.alias.decl *"intVal{{.*}}": !Int = <{42}>
-    alias intVal : Int = 42
+    comptime intVal : Int = 42
 
     # CHECK: %temp2 = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int {{.*}}{_mlir_value = mul(#lit.struct.extract<:!Int [[A]], "_mlir_value">, 2)}
     var temp2: TestParamStruct[TestParamStruct[A].TypeLevelAlias]
 
   # CHECK: lit.alias.decl *"TypeLevelAlias{{.*}}": !Int = <{{.*}}{_mlir_value = mul(#lit.struct.extract<:!Int *"A`", "_mlir_value">, 2)}
-  alias TypeLevelAlias = A+A
+  comptime TypeLevelAlias = A+A
 
 # Test that we support partially bound parameters.
 # CHECK-LABEL: lit.fn @"testTestParamStruct
@@ -157,7 +157,7 @@ struct Pair[dt: DType]:
 # CHECK: useParameterizedField
 fn useParameterizedField[x: Pair[DType.float32]]():
   # CHECK: lit.alias.decl *"y{{.*}}":
-  alias y : SIMD[DType.float32, 42] = x.a
+  comptime y : SIMD[DType.float32, 42] = x.a
 
 
 # CHECK-LABEL: lit.struct.decl @TypeParameter
@@ -248,7 +248,7 @@ fn infer_implicit_params():
 
     # CHECK: alias.decl *"partial_bind{{.*}}: !lit.generator<<?, "a`": !Int, "b`1": !Int, "a`2": !Int, "b`3": !Int>
     # CHECK-SAME: implicit_params_with_others{{.*}}<:!Int {1}, :!Int ?, :!Int ?, :!Int ?, :!Int ?>
-    alias partial_bind = implicit_params_with_others[1]
+    comptime partial_bind = implicit_params_with_others[1]
     # CHECK: lit.call {{.*}}implicit_params_with_others{{.*}}<:!Int {1}, :!Int {1}, :!Int {2}, :!Int {3}, :!Int {4}>
     partial_bind(one, two)
 
@@ -267,7 +267,7 @@ fn test_implicit_params_with_var_params():
 fn explicit_autoparameterization(v: TwoParams[5, _], w: TwoParams[b=_, a=_]):
     pass
 
-alias TwoParamsSwap[b: Int, a: Int] = TwoParams[a, b]
+comptime TwoParamsSwap[b: Int, a: Int] = TwoParams[a, b]
 
 # CHECK-LABEL: lit.fn @"autoparam_param_alias
 # CHECK-SAME: <?, [[B0:.*]]: !Int, [[A0:.*]]: !Int, [[B1:.*]]: !Int>
@@ -321,7 +321,7 @@ fn function_autoparam[f: fn () capturing [_] -> None, g: fn () capturing [_] -> 
 
     # CHECK: lit.alias.decl *"bind_one{{.*}}": !lit.generator<() capturing -> !kgen.none> =
     # CHECK-SAME: <{{.*}}function_autoparam{{.*}}<:origin.set {}, :origin.set {}, :{{.*}} *"function()", :{{.*}} *"function()">
-    alias bind_one = function_autoparam[function, function]
+    comptime bind_one = function_autoparam[function, function]
 
 
 # CHECK-LABEL: lit.fn @"nonprop_capture_set
@@ -407,20 +407,20 @@ fn readMemoryValue(x: NonMovableMemoryType) -> Int:
 # CHECK-LABEL: lit.fn @"callMemoryValueParam
 fn callMemoryValueParam():
     # CHECK: lit.alias.decl [[PARAM_VALUE1:.*]]: {{.*}}MemoryType = <apply_result_slot({{.*}}makeMemoryValue{{.*}}, {{.*}}1234
-    alias paramValue = makeMemoryValue(1234)
+    comptime paramValue = makeMemoryValue(1234)
     # CHECK: %dynamicLet = lit.var.decl
     # CHECK: %[[PARAM_VALUE2:.*]] = kgen.param.materialize: !MemoryType =
     # CHECK: lit.ref.store %[[PARAM_VALUE2]], %dynamicLet
     var dynamicLet = paramValue
 
-    alias nonMovable = NonMovableMemoryType(42)
+    comptime nonMovable = NonMovableMemoryType(42)
     # CHECK: %dynamicVar = lit.var.decl
     # CHECK: %[[NON_MOVABLE:.*]] = kgen.param.materialize: !NonMovableMemoryType
     # CHECK: lit.ref.store %[[NON_MOVABLE]], %dynamicVar
     var dynamicVar = nonMovable
 
     # CHECK: lit.alias.decl [[COPY:.*]]: {{.*}}MemoryType = <apply_result_slot({{.*}}passMemoryValue{{.*}} store_to_mem(
-    alias copy = passMemoryValue(paramValue)
+    comptime copy = passMemoryValue(paramValue)
     # CHECK: [[MVALUE:%.*]] = lit.var.decl "anonymous*"
     # CHECK: [[PVALUE:%.*]] = kgen.param.materialize: !MemoryType =
     # CHECK: lit.ref.store [[PVALUE]], [[MVALUE]]
@@ -433,7 +433,7 @@ fn callMemoryValueParam():
     memoryParam[MemoryType(22)]()
 
     # CHECK: dontFoldMemoryCall{{.*}}{42})))
-    alias dontFoldMemoryCall = readMemoryValue(NonMovableMemoryType(42))._mlir_value
+    comptime dontFoldMemoryCall = readMemoryValue(NonMovableMemoryType(42))._mlir_value
 
 # CHECK-LABEL: lit.fn @"memoryParam{{.*}}"<value: !MemoryType>()
 fn memoryParam[value: MemoryType]():
@@ -471,7 +471,7 @@ fn intbox_memory_result(x: Int) -> IntBox:
 # CHECK-SAME: %arg: !lit.struct<#InitSelfParam <:!InitSelfCtor {{.*}}{x: !Int = {42}})>
 fn interpret_initself_ctor(arg: InitSelfParam[InitSelfCtor(42)]):
     # CHECK-NEXT: !lit.generator<() -> !lit.struct<#InitSelfParam <:!InitSelfCtor
-    alias refined_fn = refine_memory_only_results[1, 2]
+    comptime refined_fn = refine_memory_only_results[1, 2]
 
     # CHECK: [[CST:%.*]] = kgen.param.constant: !InitSelfCtor = <{{.*}}{x: !Int = {42}})>
     # CHECK-NEXT: store [[CST]], %inlined_initself_call
@@ -516,7 +516,7 @@ fn selectIntBoxFromVariadic(*values: IntBox) -> IntBox: pass
 
 # CHECK-LABEL: lit.fn @"parameter_call_drop_dangling_implicit_origins
 fn parameter_call_drop_dangling_implicit_origins[b: IntBox]():
-    alias res = selectIntBoxFromVariadic(b)
+    comptime res = selectIntBoxFromVariadic(b)
     var wrapper : IntBoxParam[res]
     takeIntBoxParam[res](wrapper)
 
@@ -527,7 +527,7 @@ fn take_nonmat(x: IntLiteral):
 
 # CHECK-LABEL: lit.fn @"call_take_nonmat
 fn call_take_nonmat():
-  alias a = 1
+  comptime a = 1
   # CHECK: lit.call {{.*}}take_nonmat
   take_nonmat(a)
 
@@ -553,7 +553,7 @@ fn posOnlyArg(x: Int, /):
 # CHECK-LABEL: lit.fn @"takeAndReturnIndex
 fn passFunction(a: Int) -> Int:
   # CHECK: rebind(:!lit.generator<("x": !Int, |) -> !kgen.none> {{.*}}posOnlyArg
-  alias changeKw: fn(x: Int) -> None = posOnlyArg
+  comptime changeKw: fn(x: Int) -> None = posOnlyArg
 
   # CHECK: lit.call @parameters::@"takeCallable{{.*}}<:!lit.generator<(!Int, |) -> !Int>
   # CHECK-SAME: rebind(:!lit.generator<("x": !Int) -> !Int> {{.*}}takeAndReturnIndex{{.*}}")>(%a)
@@ -583,7 +583,7 @@ struct ParamType[x: Int]:
 
 # CHECK-LABEL: lit.fn @"dependent_function_type
 fn dependent_function_type[a: Int, f: fn (ParamType[a]) -> None]():
-    alias func = dependent_function_type
+    comptime func = dependent_function_type
     # CHECK: lit.call{{.*}}dependent_function_type
     func[a, f]()
 
@@ -605,42 +605,42 @@ fn variadic_func_param[*fs: fn() -> None]():
 # CHECK-LABEL: lit.fn @"bind_overloaded_fn
 fn bind_overloaded_fn[f: fn[f: fn () -> None] () -> None]():
     # CHECK-NEXT: meta<!lit.struct<#ParamFuncType <:!lit.generator<() -> !kgen.none> {{.*}}@"overloaded_function()"
-    alias T = ParamFuncType[overloaded_function]
+    comptime T = ParamFuncType[overloaded_function]
     # CHECK-NEXT: meta<!lit.struct<#ParamFuncType <:!lit.generator<() -> !kgen.none> {{.*}}@"overloaded_function()"
-    alias U = ParamFuncType[f=overloaded_function]
+    comptime U = ParamFuncType[f=overloaded_function]
 
     # CHECK-NEXT: bind_params(:{{.*}} f, {{.*}}@"overloaded_function()")
-    alias g = f[overloaded_function]
+    comptime g = f[overloaded_function]
     # CHECK-NEXT: bind_params(:{{.*}} f, {{.*}}@"overloaded_function()")
-    alias h = f[f=overloaded_function]
+    comptime h = f[f=overloaded_function]
 
     # CHECK-NEXT: bind_twice{{.*}}<:!lit.generator<() -> !kgen.none> {{.*}}@"overloaded_function()", :!lit.generator<(!Int, |) -> !kgen.none> {{.*}}overloaded_function(::Int)")>
-    alias bound = bind_twice[overloaded_function][overloaded_function]
+    comptime bound = bind_twice[overloaded_function][overloaded_function]
 
     # CHECK-NEXT: variadic_func_param{{.*}}<:variadic<{{.*}}> [{{.*}}@"overloaded_function()", {{.*}}@"overloaded_function()"]>
-    alias bind_variadic = variadic_func_param[overloaded_function, overloaded_function]
+    comptime bind_variadic = variadic_func_param[overloaded_function, overloaded_function]
 
 ##===----------------------------------------------------------------------===##
 # Alias resolution
 ##===----------------------------------------------------------------------===##
 
 # CHECK: lit.alias.decl *"boolDtype{{.*}}": dtype = <bool>
-alias boolDtype = __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`
+comptime boolDtype = __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`
 # CHECK: lit.alias.decl *"FORTY_TWO{{.*}}": {{.*}}<:!pop.int_literal 42>
-alias FORTY_TWO = 42
+comptime FORTY_TWO = 42
 
 # CHECK-LABEL: lit.struct.decl @A
 # CHECK-SAME: <v: !Int>
 struct A[v: Int]:
   # CHECK: lit.alias.decl *"member{{.*}}": !Int = <{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int v, "_mlir_value">, 42)}
-  alias member = v + FORTY_TWO
+  comptime member = v + FORTY_TWO
 
 # CHECK-LABEL: lit.fn @"testUseOfAliases
 fn testUseOfAliases():
   # This type checks.
   SIMD[DType(boolDtype), 4].splat()
   # CHECK: lit.alias.decl *"y{{.*}}": !Int = <{{.*}}44
-  alias y = A[2].member
+  comptime y = A[2].member
 
 @register_passable
 struct MyDType:
@@ -656,9 +656,9 @@ struct MyDType:
   fn __eq__(self, rhs: MyDType) -> Bool:
      return __mlir_attr.true
 
-  alias ui8 = MyDType(Int(1))
-  alias float32 = MyDType(Int(2))
-  alias float64 = MyDType(Int(3))
+  comptime ui8 = MyDType(Int(1))
+  comptime float32 = MyDType(Int(2))
+  comptime float64 = MyDType(Int(3))
 
 struct MyVector[size: Int, dtype: MyDType]:
     pass
@@ -671,7 +671,7 @@ fn testMyDType[dt: MyDType](a: MyVector[4, MyDType.float32],
 # CHECK-LABEL: lit.struct.decl @UnqualAliasLookup<param: !Int>
 struct UnqualAliasLookup[param: Int]:
   # CHECK: lit.alias.decl *"member{{.*}}": !Int = <{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int param, "_mlir_value">, 1)}
-  alias member = param+1
+  comptime member = param+1
   fn get(self) -> Int:
     # CHECK: %0 = kgen.param.constant: !Int = <{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int param, "_mlir_value">, 1)}
     return Self.member
@@ -703,7 +703,7 @@ fn useParamVariadics():
   # This keeps the parameters unbound, allowing them to be used with different length..
   # CHECK-NEXT: lit.alias.decl *"fnAlias{{.*}}": !lit.generator<<"b": variadic<!Int> pos_vararg>() -> !kgen.none>
   # CHECK-SAME: = <@parameters::@"fnWithVariadics{{.*}}">
-  alias fnAlias = fnWithVariadics
+  comptime fnAlias = fnWithVariadics
 
   # Use of an unbound thing in a DRValue context binds an empty variadic list.
   # FIXME(#29495): Pack references aren't working right.
@@ -729,9 +729,9 @@ fn useParamVariadics():
 # CHECK-LABEL: lit.fn @"unpack_variadic
 fn unpack_variadic[*a: Int]():
     # CHECK-NEXT: @StructWithVariadics<:variadic<!Int> a>
-    alias T = StructWithVariadics[*a]
+    comptime T = StructWithVariadics[*a]
     # CHECK-NEXT: fnWithVariadics{{.*}}<:variadic<!Int> a>
-    alias f = fnWithVariadics[*a]
+    comptime f = fnWithVariadics[*a]
 
 
 # CHECK-LABEL: lit.fn @"variadic_parameter{{.*}}"<elems: variadic<index>>
@@ -758,14 +758,14 @@ fn init_self_memory_variadics():
     # 1 and 2 need to be passed through memory in the variadics.
     # CHECK-NEXT: lit.alias.decl *"x`":
     # CHECK-SAME:  [store_to_mem({1}), store_to_mem({2})]
-    alias x = MyList[Int](1, 2)
+    comptime x = MyList[Int](1, 2)
 
 struct MyList[T: ImplicitlyCopyable]:
     @implicit
     fn __init__(out self, *values: T): pass
 
 # Infer-only parameters should be bindable with keywords
-alias ImmMyStringSlice = MyStringSlice[mut=False]
+comptime ImmMyStringSlice = MyStringSlice[mut=False]
 struct MyStringSlice[mut: Bool, //, origin: Origin[mut]]:  pass
 
 # This only binds to immutable things.
@@ -798,9 +798,9 @@ fn partial_parameter_overloading[param: DType, other: DType]():
 # CHECK-LABEL: lit.fn @"form_reference_to_overloaded
 fn form_reference_to_overloaded():
     # CHECK-NEXT: @"parameter_overloading[[[INT:.*Int]]]()"<:!Int {1}>
-    alias refresult = parameter_overloading[1]
+    comptime refresult = parameter_overloading[1]
     # CHECK-NEXT: !lit.generator<<"other": !Int>() -> !kgen.none> = <{{.*}}@"partial_parameter_overloading[[[INT]],[[INT]]]()"<:!Int {1}, :!Int ?>
-    alias partial = partial_parameter_overloading[1]
+    comptime partial = partial_parameter_overloading[1]
 
 ##===----------------------------------------------------------------------===##
 # Parameter Inference
@@ -845,7 +845,7 @@ fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
 @fieldwise_init
 @register_passable("trivial")
 struct Abstraction[a: Int]:
-  alias val = a._mlir_value
+  comptime val = a._mlir_value
 
   @implicit
   fn __init__(out self, arg: Int):
@@ -875,7 +875,7 @@ fn dont_interpret():
 fn testParameterEvaluator():
   # CHECK-NEXT: lit.alias.decl *"x{{.*}}" = <sugar_alias
   # CHECK-SAME: #lit.struct.extract<:meta<!lit.struct<#Abstraction <:!Int {1}>>> @parameters::@Abstraction<:!Int {1}>, "val">, 1)>
-  alias x = Abstraction[1].val
+  comptime x = Abstraction[1].val
   # CHECK-NEXT: %y = lit.var.decl "y"
   # CHECK-NEXT: %0 = lit.call @parameters::@Abstraction::@"push{{.*}}"<:!Int {1}, :!Int {2}>
   # CHECK-NEXT: lit.ref.store %0, %y
@@ -969,7 +969,7 @@ fn deduce_kw_only[*Ts: Int, x: Int](y: Abstraction[x]):
 # CHECK-LABEL: lit.fn @"out_of_order_kw
 fn out_of_order_kw[x: Int, y: IndexParam[x]]():
     # CHECK-NEXT: out_of_order_kw{{.*}}<{{.*}}0{{.*}}, :{{.*}}IndexParam<{{.*}}0{{.*}}> {{.*}}IndexParam::@"__init__{{.*}}<{{.*}}0{{.*}}>, #kgen.none)>>
-    alias bound = out_of_order_kw[y=None, x=0]
+    comptime bound = out_of_order_kw[y=None, x=0]
 
 
 # CHECK-LABEL: lit.fn @"test_deduce_kw_only
@@ -1112,11 +1112,11 @@ fn test_origin_struct_inf[imm_data: Int](mut data: Int):
 
 # MOCO-2194: Parameter inference correctly folds contextually-evaluated params.
 trait WithAnAlias:
-    alias A: AnyType
+    comptime A: AnyType
 
 # Struct that conforms to `WithAnAlias`
 struct SomeStruct(WithAnAlias):
-    alias A = Int
+    comptime A = Int
 
 # Needs a struct that conforms to `WithAnAlias`
 # Will infer `a` and `b` automatically from `__init__`.
@@ -1184,7 +1184,7 @@ struct DependentParam[x: Int, y: ParamType[x]]:
 # CHECK-SAME: <?, [[Y0:.*]]: !Int, [[Y1:.*]]: {{.*}}ParamType<:!Int [[Y0]]>>
 fn auto_param_dependent(value: DependentParam[*_]):
     # CHECK-NEXT: ParamType<:!Int [[Y0]]> = <[[Y1]]>
-    alias param = value.y
+    comptime param = value.y
 
 
 ##===----------------------------------------------------------------------===##
@@ -1308,7 +1308,7 @@ struct DefaultParams[a: Int, b: Int = 7, msg: String = "woof"]: pass
 fn test_default_param_struct():
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
     # CHECK-SAME: :!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof">
-    alias T = DefaultParams[1]
+    comptime T = DefaultParams[1]
     # CHECK-NEXT: %[[INIT:.*]] = lit.var.decl {{.*}} synth : !lit.ref<@{{.*}}::@DefaultParams<
     # CHECK-SAME:   :!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof">
     # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}<:!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof">
@@ -1316,7 +1316,7 @@ fn test_default_param_struct():
 
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
     # CHECK-SAME: :!Int {2}, :!Int {3}, {{.*}}#StringLiteral <:string "woof">
-    alias U = DefaultParams[2, 3]
+    comptime U = DefaultParams[2, 3]
     # CHECK-NEXT: %[[INIT:.*]] = lit.var.decl {{.*}} synth : !lit.ref<@{{.*}}::@DefaultParams<
     # CHECK-SAME:   :!Int {2}, :!Int {3}, {{.*}}#StringLiteral <:string "woof">
     # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}<:!Int {2}, :!Int {3}, {{.*}}#StringLiteral <:string "woof">
@@ -1324,7 +1324,7 @@ fn test_default_param_struct():
 
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
     # CHECK-SAME: :!Int {4}, :!Int {5}, {{.*}}#StringLiteral <:string "meow">
-    alias S = DefaultParams[4, 5, "meow"]
+    comptime S = DefaultParams[4, 5, "meow"]
     # CHECK-NEXT: %[[INIT:.*]] = lit.var.decl {{.*}} synth : !lit.ref<@{{.*}}::@DefaultParams<
     # CHECK-SAME:   :!Int {4}, :!Int {5}, {{.*}}#StringLiteral <:string "meow">
     # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}<:!Int {4}, :!Int {5}, {{.*}}#StringLiteral <:string "meow">
@@ -1340,7 +1340,7 @@ fn test_default_param_struct_all_default():
     # CHECK: lit.alias.decl *"T{{.*}}": meta<!lit.struct<{{.*}}#AllDefaultParams{{.*}}>> = <@{{.*}}::@AllDefaultParams<
     # CHECK-SAME: :!Int {0},
     # CHECK-SAME: :!MemoryOnlyType {{.*}}MemoryOnlyType::@"__init__()
-    alias T = AllDefaultParams[]
+    comptime T = AllDefaultParams[]
 
     # CHECK: %[[INIT:.*]] = lit.var.decl {{.*}} : !lit.ref<@{{.*}}::@AllDefaultParams<
     # CHECK-SAME:   :!Int {0}, :!MemoryOnlyType {{.*}}MemoryOnlyType::@"__init__()
@@ -1360,7 +1360,7 @@ fn test_struct_with_parametric_default_value():
     # CHECK: lit.alias.decl *"a{{.*}}": meta<!lit.struct<{{.*}}>> = <@{{.*}}::@StructWithParametricDefaultValue<
     # CHECK-SAME: :type !Int
     # CHECK-SAME: :!Int apply(:!lit.generator<() -> !Int> @{{.*}}::@"IntForType[AnyTrivialRegType]()"{{.*}}<:type !Int>)>
-    alias a = StructWithParametricDefaultValue[Int]
+    comptime a = StructWithParametricDefaultValue[Int]
 
 ##===----------------------------------------------------------------------===##
 # Struct keyword parameters
@@ -1466,16 +1466,16 @@ struct DependentDefault[x: Int = 1, y: Int = x]:
 # CHECK-LABEL: lit.fn @"dependent_default_ctad
 fn dependent_default_ctad():
     # CHECK-NEXT: value{{.*}}: {{.*}}@DependentDefault<:!Int {1}, :!Int {1}>
-    alias value = DependentDefault()
+    comptime value = DependentDefault()
 
 
-alias Scalar = SIMD[_, 1]
+comptime Scalar = SIMD[_, 1]
 
 
 # CHECK-LABEL: lit.fn @"scalar_type{{.*}}"<dt: !DType>
 fn scalar_type[dt: DType]():
     # CHECK: alias.decl [[T:.*]]: meta<{{.*}}SIMD<:!DType dt, :!Int {1}>>
-    alias T = Scalar[dt]
+    comptime T = Scalar[dt]
 
     #FIXME(29495): reenable.
     # https://github.com/modularml/modular/issues/29495
@@ -1490,11 +1490,11 @@ fn funct_partial_binding[x: Empty, F: fn[t: Empty, s: Empty] () -> None]():
     # CHECK-SAME: :!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none>
     # CHECK-SAME: bind_params(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, ?, ?)
 
-    alias G: fn[u: Empty, v: Empty] () -> None = F[s=_, t=_]
+    comptime G: fn[u: Empty, v: Empty] () -> None = F[s=_, t=_]
     # CHECK: !lit.generator<<"u": !Empty>() -> !kgen.none> = <rebind(
     # CHECK-SAME: :!lit.generator<<"s": !Empty>() -> !kgen.none>
     # CHECK-SAME: bind_params(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, x, ?))>
-    alias H: fn[u: Empty] () -> None = F[x]
+    comptime H: fn[u: Empty] () -> None = F[x]
 
 struct StructWithSpecificSelfInitTypes[size: Int]:
     fn __init__(out self: StructWithSpecificSelfInitTypes[0]): pass
@@ -1555,7 +1555,7 @@ struct MOCO1144[
     type: AnyType,
     alignment: Int = takeAnyTypeReturnInt[type]()
 ]: pass
-alias MOCO1144Bound = MOCO1144[True, _, _]
+comptime MOCO1144Bound = MOCO1144[True, _, _]
 
 fn getMOCO1144Bound() -> MOCO1144Bound[Int]: pass
 
@@ -1604,7 +1604,7 @@ struct MOCO1065[
 
 fn test_MOCO1065[p: Empty](t: Empty):
     var s = MOCO1065(t)
-    alias a = MOCO1065(p)
+    comptime a = MOCO1065(p)
 
 
 ### Complex dependent type inference problem.
@@ -1663,13 +1663,13 @@ struct IOSpec[input: IO]:
 @register_passable("trivial")
 struct ManagedTensorSlice[input: IO, //, io_spec: IOSpec[input]]:
     pass
-alias InputTensor = ManagedTensorSlice[IOSpec[IO()]()]
+comptime InputTensor = ManagedTensorSlice[IOSpec[IO()]()]
 
 
 # We should be able to infer parameter from generator type.
 
 # This specifies the type for a generator that generate a generator type.
-alias GeneratorTypeGeneratorType[
+comptime GeneratorTypeGeneratorType[
     From: type_of(AnyType), To: type_of(AnyType)
 ] = __mlir_type[
     `!lit.generator<<"From": `,
@@ -1679,7 +1679,7 @@ alias GeneratorTypeGeneratorType[
     `>`,
 ]
 
-alias Generator[From: Copyable] = Int
+comptime Generator[From: Copyable] = Int
 
 
 fn takeGenerator[

@@ -39,25 +39,25 @@ struct S[n: Int]:
 # CHECK-LABEL: lit.trait.decl @TraitWithDependentAlias
 trait TraitWithDependentAlias:
     # CHECK-NEXT: lit.alias.decl *"N`1": !Int
-    alias N: Int
+    comptime N: Int
     # CHECK-NEXT: lit.alias.decl *"depend_on_N`2": @{{.*}}::@S<:!Int {{.*}}#kgen.get_witness<:!{{.*}} *"_Self`", "{{.*}}::{{.*}}", "N">)>
-    alias depend_on_N: S[Self.N]
+    comptime depend_on_N: S[Self.N]
 
 
 # CHECK-LABEL: lit.struct.decl @StructWithMatchingDependentAlias1
 struct StructWithMatchingDependentAlias1(TraitWithDependentAlias):
     # CHECK-NEXT: lit.alias.decl *"N`": !Int = <{1}>
-    alias N: Int = 1
+    comptime N: Int = 1
     # CHECK-NEXT: lit.alias.decl *"depend_on_N`1": @associated_aliases::@S<:!Int {1}> =
-    alias depend_on_N = S[1]()
+    comptime depend_on_N = S[1]()
 
 
 # CHECK-LABEL: lit.struct.decl @StructWithMatchingDependentAlias2
 struct StructWithMatchingDependentAlias2(TraitWithDependentAlias):
     # CHECK-NEXT: lit.alias.decl *"N`": !Int = <{1}>
-    alias N: Int = 1
+    comptime N: Int = 1
     # CHECK-NEXT: lit.alias.decl *"depend_on_N`1": @{{.*}}::@S<:!Int sugar_alias(#lit.struct.extract<:!mt_StructWithMatchingDependentAlias2 !StructWithMatchingDependentAlias2, "N">, {1})> =
-    alias depend_on_N = S[Self.N]()
+    comptime depend_on_N = S[Self.N]()
 
 
 # This tests that we correctly call get_witness when looking up a trait's
@@ -99,7 +99,7 @@ trait TraitWithAlias:
 
 
 trait TraitWithTypeAlias:
-    alias T: TraitWithAlias
+    comptime T: TraitWithAlias
 
 
 trait TraitWithSameTypeAlias(TraitWithTypeAlias):
@@ -109,7 +109,7 @@ trait TraitWithSameTypeAlias(TraitWithTypeAlias):
 # CHECK-LABEL: lit.fn @"testTraitWithRefinedTypeAlias
 fn testTraitWithRefinedTypeAlias[T: TraitWithSameTypeAlias]():
     # CHECK-NEXT: !TraitWithAlias = <{{.*}}#kgen.get_witness<:!TraitWithSameTypeAlias T, "associated_aliases::TraitWithTypeAlias", "T">
-    alias MyT: TraitWithAlias = T.T
+    comptime MyT: TraitWithAlias = T.T
 
 
 # // -----
@@ -871,7 +871,7 @@ struct Zcalar[X: ZInt]:
 
 
 trait FooTrait:
-    alias dtype: ZInt
+    comptime dtype: ZInt
 
     @staticmethod
     fn foo(x: Zcalar[Self.dtype]):
@@ -1036,7 +1036,7 @@ struct ZInt:
 
 
 trait MyTrait:
-    alias BIT_WIDTH: ZInt
+    comptime BIT_WIDTH: ZInt
 
 
 trait MyTrait2:
@@ -1045,7 +1045,7 @@ trait MyTrait2:
 
 @fieldwise_init
 struct MyStruct(MyTrait, MyTrait2):
-    alias BIT_WIDTH = ZInt()
+    comptime BIT_WIDTH = ZInt()
 
 
 # CHECK-LABEL: lit.fn @"bitwidth_from_instance
@@ -1064,8 +1064,8 @@ fn bitwidth_from_composition_instance[T: MyTrait & MyTrait2, Inst: T]() -> ZInt:
 
 
 trait DependentAssociatedTypeInDefault:
-    alias T1: AnyType
-    alias V1: Self.T1
+    comptime T1: AnyType
+    comptime V1: Self.T1
 
 # CHECK-LABEL: lit.fn @"foo
 fn foo[

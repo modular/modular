@@ -156,7 +156,7 @@ struct BaseStruct:
 
 __extension BaseStruct:
     # expected-error @below {{invalid redefinition of 'colliding'}}
-    alias colliding: Int = 43
+    comptime colliding: Int = 43
 
 
 fn test_collisions(s: BaseStruct):
