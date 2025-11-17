@@ -4,12 +4,16 @@ modular_cc_binary(
     name = "cache-mgr",
     srcs = glob(["*.cpp"]),
     deps = [
+        "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:Support",
         "//Cache",
         "//Init",
+        "//Support:Base",
         "//Support:CommonCLOptions",
         "//Support:Context",
         "//Support:Globals",
+        "@llvm-project//llvm:Support",
         "@llvm-project//mlir:Support",
     ],
 )
