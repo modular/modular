@@ -106,7 +106,7 @@ from collections import OptionalReg, Optional
 
 
 @register_passable("trivial")
-struct Backend(EqualityComparable, ImplicitlyCopyable, Movable, Writable):
+struct Backend(Equatable, ImplicitlyCopyable, Movable, Writable):
     var _value: Int32
 
     alias AUTOMATIC = Self(0)

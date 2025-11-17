@@ -62,7 +62,7 @@ struct MaskName(Stringable):
 @fieldwise_init
 @register_passable("trivial")
 struct TileMaskStatus(
-    EqualityComparable,
+    Equatable,
     Identifiable,
     ImplicitlyCopyable,
     Movable,

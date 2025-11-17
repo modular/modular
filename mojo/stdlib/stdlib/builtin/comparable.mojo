@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-trait Comparable(EqualityComparable):
+trait Comparable(Equatable):
     """A type which can be compared for order with other instances of itself.
 
     Implementers of this trait must define the `__lt__` and `__eq__` methods.

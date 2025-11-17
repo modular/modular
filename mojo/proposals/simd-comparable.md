@@ -5,8 +5,8 @@ Date: Aug 6, 2025
 Status: Implemented.
 
 This document proposes a path forward to make the `SIMD` type conform to
-comparison traits (e.g. `EqualityComparable`). While this document uses
-`EqualityComparable` as the primary example, the same patterns apply to all
+comparison traits (e.g. `Equatable`). While this document uses
+`Equatable` as the primary example, the same patterns apply to all
 binary comparison operations, and therefore their composition `Comparable` as
 well.
 
@@ -16,7 +16,7 @@ Currently, `SIMD`'s comparison operations return a mask (another `SIMD` type of
 the same size, with boolean elements) rather than a `Bool`, which prevents
 `SIMD` from conforming to standard comparison traits. This creates
 inconsistencies in the type system and limits generic programming capabilities.
-For example, since `SIMD` values are not `EqualityComparable`, they cannot
+For example, since `SIMD` values are not `Equatable`, they cannot
 conform to the `KeyElement` trait, preventing them from being used in `Dict`,
 `Set`, `Counter`, and other hashmap based data structures. The problem is
 exacerbated by the fact that most of our basic numeric types (e.g. `Int8`) are
@@ -31,7 +31,7 @@ arbitrary type that conforms to `Boolable`. Since we already have associated
 aliases, this already works today:
 
 ```mojo
-trait EqualityComparable:
+trait Equatable:
     alias ComparisonResult: Boolable
 
     fn __eq__(self, other: Self) -> ComparisonResult:
@@ -50,14 +50,14 @@ struct SIMD[dtype: DType, size: Int](...):
 ```
 
 With (real) conditional conformance (exact syntax TBD), `SIMD` would conform to
-`EqualityComparable` when `size == 1`, because `Self._Mask` would be just
+`Equatable` when `size == 1`, because `Self._Mask` would be just
 `SIMD[DType.bool, 1]`, which would in turn (conditionally) conform to
 `Boolable`:
 
 ```mojo
 struct SIMD[dtype: DType, size: Int](
     Boolable,  # conditionally when size == 1
-    EqualityComparable,   # conditionally when size == 1
+    Equatable,   # conditionally when size == 1
 ):
     alias _Mask = SIMD[DType.bool, size]
     alias ComparisonResult = Self._Mask
@@ -75,7 +75,7 @@ trait HasEquivalence:  # name could be improved
     fn equivalent(self, other: Self) -> Bool:
         ...
 
-trait EqualityComparable(HasEquivalence):
+trait Equatable(HasEquivalence):
     alias ComparisonType: Boolable
 
     fn __eq__(self, other: Self) -> ComparisonType:
@@ -95,7 +95,7 @@ and `SIMD` would provide a special implementation for `equivalent` enabling
 values of any `size` to be compared exactly:
 
 ```mojo
-struct SIMD(EqualityComparable):
+struct SIMD(Equatable):
     alias ComparisonType: Self._Mask
 
     fn __eq__(self, other: Self) -> Self._Mask:
@@ -126,7 +126,7 @@ struct SIMD(EqualityComparable):
     associated aliases) could mitigate this completely, i.e. we could have
 
     ```mojo
-    trait EqualityComparable:
+    trait Equatable:
         alias ComparisonResult: Boolable = Bool
     ```
 
@@ -145,7 +145,7 @@ The idea is straightforward: we force the comparison dunder methods to return
 ```mojo
 struct SIMD[dtype: DType, size: Int](
     Boolable,
-    EqualityComparable,  # always
+    Equatable,  # always
 ):
     alias _Mask = SIMD[DType.bool, size]
 
@@ -192,7 +192,7 @@ scalars, but note that this isn’t a one-way door and we might relax this later
 - Works today with the existing conditional conformance hack using
   `constrained`.
   - Although it would be admittedly nicer without it.
-- `SIMD` values with `size` larger than one will conform to `EqualityComparable`
+- `SIMD` values with `size` larger than one will conform to `Equatable`
   (and when scalars, also to `Comparable`), and could be made unconditionally
   conformant to `Comparable` in the future.
 

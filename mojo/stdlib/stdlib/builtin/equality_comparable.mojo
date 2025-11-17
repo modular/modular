@@ -12,7 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
-trait EqualityComparable:
+@deprecated(use=Equatable)
+alias EqualityComparable = Equatable
+
+
+trait Equatable:
     """A type which can be compared for equality with other instances of itself.
     """
 

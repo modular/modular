@@ -33,7 +33,7 @@ from memory import LegacyUnsafePointer as UnsafePointer, bitcast
 
 @register_passable("trivial")
 struct Consistency(
-    EqualityComparable,
+    Equatable,
     Identifiable,
     ImplicitlyCopyable,
     Movable,

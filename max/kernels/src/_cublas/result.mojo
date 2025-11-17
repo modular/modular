@@ -15,7 +15,7 @@ from os import abort
 
 
 @register_passable("trivial")
-struct Result(EqualityComparable, Writable):
+struct Result(Equatable, Writable):
     var _value: Int32
     alias SUCCESS = Self(0)
     alias NOT_INITIALIZED = Self(1)

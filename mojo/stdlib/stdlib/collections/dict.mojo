@@ -28,7 +28,7 @@ Its implementation closely mirrors Python's `dict` implementation:
   [Python types in Mojo](/mojo/manual/python/types/#python-types-in-mojo).
 
 Key elements must implement the `KeyElement` trait composition, which includes
-`Movable`, `Hashable`, `EqualityComparable`, and `Copyable`. The `Copyable`
+`Movable`, `Hashable`, `Equatable`, and `Copyable`. The `Copyable`
 requirement will eventually be removed.
 
 Value elements must be `Copyable` and `Movable`. As with `KeyElement`, the
@@ -42,10 +42,10 @@ from sys.intrinsics import likely
 
 from memory import bitcast, memcpy
 
-comptime KeyElement = Copyable & Movable & Hashable & EqualityComparable
+comptime KeyElement = Copyable & Movable & Hashable & Equatable
 """A trait composition for types which implement all requirements of
 dictionary keys. Dict keys must minimally be `Copyable`, `Movable`, `Hashable`,
-and `EqualityComparable`."""
+and `Equatable`."""
 
 
 @fieldwise_init
@@ -294,7 +294,7 @@ struct DictEntry[K: KeyElement, V: Copyable & Movable, H: Hasher](
     """Store a key-value pair entry inside a dictionary.
 
     Parameters:
-        K: The key type of the dict. Must be Hashable+EqualityComparable.
+        K: The key type of the dict. Must be Hashable+Equatable.
         V: The value type of the dict.
         H: The type of the hasher used to hash the key.
     """
@@ -628,7 +628,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
     #     the beginning to free new space while retaining insertion order.
     #
     # Key elements must implement the `KeyElement` trait composition, which
-    # includes Copyable, Movable, Hashable, and EqualityComparable.
+    # includes Copyable, Movable, Hashable, and Equatable.
     # Some of these requirements will be relaxed when we have more robust
     # support for conditional trait conformance.
     #

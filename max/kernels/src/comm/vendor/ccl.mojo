@@ -33,7 +33,7 @@ alias ncclComm_t = OpaquePointer
 
 @fieldwise_init
 @register_passable("trivial")
-struct ncclResult_t(EqualityComparable, Writable):
+struct ncclResult_t(Equatable, Writable):
     var _value: Int32
     alias ncclSuccess = Self(0)
 

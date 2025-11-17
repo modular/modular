@@ -41,7 +41,7 @@ from builtin.constrained import constrained
 from builtin.coroutine import AnyCoroutine, Coroutine, RaisingCoroutine
 from builtin.debug_assert import debug_assert
 from builtin.dtype import DType
-from builtin.equality_comparable import EqualityComparable
+from builtin.equality_comparable import Equatable
 from builtin.error import Error
 from builtin.float_literal import FloatLiteral
 from builtin.floatable import Floatable, FloatableRaising

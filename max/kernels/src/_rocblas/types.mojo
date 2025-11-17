@@ -196,7 +196,7 @@ struct ComputeType:
 
 @fieldwise_init
 @register_passable("trivial")
-struct Status(EqualityComparable, Writable):
+struct Status(Equatable, Writable):
     var _value: Int32
 
     alias SUCCESS = Self(0)

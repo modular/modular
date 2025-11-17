@@ -225,7 +225,7 @@ fn cudnnGetRNNDescriptor_v6(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnForwardMode_t(EqualityComparable, Identifiable, Writable):
+struct cudnnForwardMode_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_FWD_MODE_INFERENCE = Self(0)
     alias CUDNN_FWD_MODE_TRAINING = Self(1)
@@ -779,7 +779,7 @@ fn cudnnGetRNNDescriptor_v8(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnSeqDataAxis_t(EqualityComparable, Identifiable, Writable):
+struct cudnnSeqDataAxis_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_SEQDATA_TIME_DIM = Self(0)
     alias CUDNN_SEQDATA_BATCH_DIM = Self(1)

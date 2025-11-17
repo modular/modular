@@ -578,12 +578,12 @@ struct InlineArray[
 
     @always_inline
     fn __contains__[
-        T: EqualityComparable & Copyable & Movable, //
+        T: Equatable & Copyable & Movable, //
     ](self: InlineArray[T, Self.size], value: T) -> Bool:
         """Tests if a value is present in the array using the `in` operator.
 
         Parameters:
-            T: The element type, must implement both `EqualityComparable` and
+            T: The element type, must implement both `Equatable` and
                 `Copyable` and `Movable`.
 
         Args:
@@ -605,7 +605,7 @@ struct InlineArray[
             This method enables using the `in` operator to check if a value
             exists in the array. It performs a linear search comparing each
             element for equality with the given value. The element type must
-            implement the `EqualityComparable`, `Copyable` and `Movable` traits
+            implement the `Equatable`, `Copyable` and `Movable` traits
             to support equality comparison.
         """
 

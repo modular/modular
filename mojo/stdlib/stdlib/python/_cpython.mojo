@@ -129,7 +129,7 @@ struct PyThreadState:
 struct PyObjectPtr(
     Boolable,
     Defaultable,
-    EqualityComparable,
+    Equatable,
     ImplicitlyCopyable,
     Intable,
     Movable,

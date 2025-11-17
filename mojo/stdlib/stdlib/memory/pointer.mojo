@@ -28,7 +28,7 @@ from memory import LegacyUnsafePointer as UnsafePointer
 
 @register_passable("trivial")
 struct AddressSpace(
-    EqualityComparable,
+    Equatable,
     Identifiable,
     ImplicitlyCopyable,
     Intable,

@@ -1936,7 +1936,7 @@ alias Radeon860m = GPUInfo.from_family(
 
 @fieldwise_init
 @register_passable
-struct GPUInfo(EqualityComparable, Identifiable, Stringable, Writable):
+struct GPUInfo(Equatable, Identifiable, Stringable, Writable):
     """Comprehensive information about a GPU architecture.
 
     This struct contains detailed specifications about GPU capabilities,

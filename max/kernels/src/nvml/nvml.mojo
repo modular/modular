@@ -113,9 +113,7 @@ struct DriverVersion(ImplicitlyCopyable, Movable, StringableRaising):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Result(
-    EqualityComparable, ImplicitlyCopyable, Movable, Stringable, Writable
-):
+struct Result(Equatable, ImplicitlyCopyable, Movable, Stringable, Writable):
     var code: Int32
 
     alias SUCCESS = Self(0)
@@ -293,7 +291,7 @@ fn _check_error(err: Result) raises:
 
 @fieldwise_init
 @register_passable("trivial")
-struct EnableState(EqualityComparable, ImplicitlyCopyable, Movable):
+struct EnableState(Equatable, ImplicitlyCopyable, Movable):
     var code: Int32
 
     alias DISABLED = Self(0)
@@ -314,7 +312,7 @@ struct EnableState(EqualityComparable, ImplicitlyCopyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct ClockType(EqualityComparable, ImplicitlyCopyable, Movable):
+struct ClockType(Equatable, ImplicitlyCopyable, Movable):
     var code: Int32
 
     alias GRAPHICS = Self(0)

@@ -29,7 +29,7 @@ comptime _mIsFloat = __mlir_attr.`#pop.simd<64> : !pop.scalar<ui8>`
 
 @register_passable("trivial")
 struct DType(
-    EqualityComparable,
+    Equatable,
     Hashable,
     Identifiable,
     ImplicitlyCopyable,

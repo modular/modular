@@ -177,7 +177,7 @@ struct Tuple[*element_types: Copyable & Movable](
         return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
 
     @always_inline("nodebug")
-    fn __contains__[T: EqualityComparable](self, value: T) -> Bool:
+    fn __contains__[T: Equatable](self, value: T) -> Bool:
         """Return whether the tuple contains the specified value.
 
         For example:
@@ -229,8 +229,8 @@ struct Tuple[*element_types: Copyable & Movable](
 
     @always_inline
     fn __eq__[
-        self_elt_types: VariadicOf[Copyable & Movable & EqualityComparable],
-        other_elt_types: VariadicOf[Copyable & Movable & EqualityComparable],
+        self_elt_types: VariadicOf[Copyable & Movable & Equatable],
+        other_elt_types: VariadicOf[Copyable & Movable & Equatable],
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using equality comparison.
 
@@ -246,7 +246,7 @@ struct Tuple[*element_types: Copyable & Movable](
         """
 
         # We do not use self._compare here because we only want
-        # EqualityComparable conformance for the method.
+        # Equatable conformance for the method.
         alias self_len = type_of(self).__len__()
         alias other_len = type_of(other).__len__()
 
@@ -268,8 +268,8 @@ struct Tuple[*element_types: Copyable & Movable](
 
     @always_inline
     fn __ne__[
-        self_elt_types: VariadicOf[Copyable & Movable & EqualityComparable],
-        other_elt_types: VariadicOf[Copyable & Movable & EqualityComparable],
+        self_elt_types: VariadicOf[Copyable & Movable & Equatable],
+        other_elt_types: VariadicOf[Copyable & Movable & Equatable],
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using inequality comparison.
 

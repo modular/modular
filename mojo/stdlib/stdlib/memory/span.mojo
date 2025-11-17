@@ -530,13 +530,13 @@ struct Span[
     # accesses to the origin.
     @__unsafe_disable_nested_origin_exclusivity
     fn __eq__[
-        _T: EqualityComparable & Copyable & Movable, //,
+        _T: Equatable & Copyable & Movable, //,
     ](self: Span[_T, Self.origin], rhs: Span[_T, _],) -> Bool:
         """Verify if span is equal to another span.
 
         Parameters:
             _T: The type of the elements must implement the
-              traits `EqualityComparable`, `Copyable` and `Movable`.
+              traits `Equatable`, `Copyable` and `Movable`.
 
         Args:
             rhs: The span to compare against.
@@ -559,13 +559,13 @@ struct Span[
 
     @always_inline
     fn __ne__[
-        _T: EqualityComparable & Copyable & Movable, //
+        _T: Equatable & Copyable & Movable, //
     ](self: Span[_T, Self.origin], rhs: Span[_T]) -> Bool:
         """Verify if span is not equal to another span.
 
         Parameters:
             _T: The type of the elements in the span. Must implement the
-              traits `EqualityComparable`, `Copyable` and `Movable`.
+              traits `Equatable`, `Copyable` and `Movable`.
 
         Args:
             rhs: The span to compare against.
