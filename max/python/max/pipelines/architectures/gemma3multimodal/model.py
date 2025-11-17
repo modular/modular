@@ -292,7 +292,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             for dev in self.devices
         ]
 
-        self.language_model = self.load_model(session)
+        self.vision_model, self.language_model = self.load_model(session)
 
     @classmethod
     def calculate_max_seq_len(
@@ -397,7 +397,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         )
         self._input_row_offsets_prealloc = [
-            input_row_offsets_prealloc_host.to(self.devices[0])
+            input_row_offsets_prealloc_host.to(dev) for dev in self.devices
         ]
 
         language_graph, language_weight_dict = self._build_language_graph(
@@ -533,7 +533,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         self, config: Gemma3ForConditionalGenerationConfig
     ) -> Sequence[TensorType]:
         dev = self.devices[0]
-        device_ref = DeviceRef(dev.label, dev.id)
         """Build the vision model graph for processing images."""
         pixel_values_types = [
             TensorType(
@@ -588,7 +587,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             ]
 
             signal_buffers = [
-                inp.buffer for inp in variadic_args[: len(self.devices)]
+                inp.buffer for inp in graph.inputs[len(self.devices) :]
             ]
 
             image_embeddings = vision_model(
@@ -612,11 +611,9 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         if model_inputs.has_vision_inputs:
             assert model_inputs.pixel_values is not None
 
-            logger.info(f"shape of initial PVs: {model_inputs.pixel_values.shape}")
-
             # Execute vision model: patched pixel_values -> image_embeddings.
             vision_outputs = self.vision_model.execute(
-                model_inputs.pixel_values, *model_inputs.signal_buffers
+                *model_inputs.pixel_values, *model_inputs.signal_buffers
             )
             assert len(vision_outputs) == len(self.devices)
 
@@ -642,45 +639,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
         )
-
-        # Debug: Check logits and token predictions
-        if len(model_outputs) >= 1:
-            logits_tensor = model_outputs[1] if len(model_outputs) == 3 else model_outputs[0]
-            logger.info(f"Logits tensor shape: {logits_tensor.shape}, dtype: {logits_tensor.dtype}")
-
-            # Convert MAX Tensor to numpy - need to move to CPU first
-            logits_cpu = logits_tensor.to("cpu")
-            logits_np = np.asarray(logits_cpu)
-            logger.info(f"Logits numpy shape: {logits_np.shape}")
-
-            # Handle different logit shapes
-            # Expected: (1, vocab_size) or (batch_size, vocab_size)
-            if len(logits_np.shape) == 2:
-                # Shape is (batch_size, vocab_size) - take first/only batch
-                last_logits = logits_np[0] if logits_np.shape[0] == 1 else logits_np[-1]
-            elif len(logits_np.shape) == 1:
-                # Shape is (vocab_size,) - already correct
-                last_logits = logits_np
-            else:
-                logger.error(f"Unexpected logits shape: {logits_np.shape}")
-                last_logits = logits_np.flatten()[:262208]  # Take first vocab_size elements
-
-            logger.info(f"last_logits shape: {last_logits.shape}")
-            top_5_indices = np.argsort(last_logits)[-5:][::-1]
-            top_5_logits = last_logits[top_5_indices]
-            logger.info(f"Top 5 predicted token IDs: {top_5_indices}")
-            logger.info(f"Top 5 logit values: {top_5_logits}")
-            logger.info(f"Input tokens shape: {model_inputs.tokens.shape}")
-
-            # Check if token 107 (<end_of_turn>) is in top predictions
-            if 107 in top_5_indices:
-                rank = np.where(top_5_indices == 107)[0][0]
-                logger.info(f"WARNING: <end_of_turn> (token 107) is rank {rank+1} in predictions!")
-                logger.info(f"Token 107 logit value: {last_logits[107]:.2f}")
-
-            # Check logit distribution statistics
-            logger.info(f"Logit stats - min: {last_logits.min():.2f}, max: {last_logits.max():.2f}, mean: {last_logits.mean():.2f}, std: {last_logits.std():.2f}")
-
+            
         if len(model_outputs) == 3:
             assert isinstance(model_outputs[0], Tensor)
             assert isinstance(model_outputs[1], Tensor)
@@ -745,8 +704,8 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Slice each tensor in the list, not the list itself
         next_row_offsets = [
-            self._input_row_offsets_prealloc[:row_offsets_size].to(device)
-            for device in self.devices
+            offsets_prealloc[:row_offsets_size]
+            for offsets_prealloc in self._input_row_offsets_prealloc
         ]
 
         return Gemma3MultiModalModelInputs(
@@ -761,32 +720,14 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     # ⚠️ borrowed from idefics3
     def _prepare_vision_inputs(
         self, context_batch: Sequence[TextAndVisionContext]
-    ) -> List[Tensor] | None:
-        # Huggingface Gemma3ImageProcessor approach
-        # processed_images_batch = []
-        # image_processor = Gemma3ImageProcessor()
-        # for ctx in context_batch:
-        #     next_images = ctx.next_images
-        #     image = next_images[0].pixel_values
-
-        #     # preprocess wants an np.ndarray or PIL.Image.Image (or list of these)
-        #     # it returns a dict containing `pixel_values` and a num of crops (should be zero)
-        #     processed_image = image_processor.preprocess(image, do_rescale=False, do_resize=False)
-        #     processed_images_batch.append(processed_image['pixel_values'])
-        # return processed_images_batch
-
-        # borrowed from idefics3 + claude
+    ) -> list[Tensor] | None:
         """Batches up pixel_values for vision processing."""
         images = []
         for context in context_batch:
-            # For Idefics, a single image may be split into multiple "patch_groups"
-            # which appear as multiple images in the context object.
             for img in context.next_images:
                 # TODO image count check, must be 1?
-                patch_group_pixels = img.pixel_values
                 # TODO shape check
-                for patch_group in patch_group_pixels:
-                    images.append(patch_group)
+                images.append(img.pixel_values)
 
         if not images:
             return None
@@ -804,7 +745,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
     def _batch_image_token_indices(
         self, context_batch: Sequence[TextAndVisionContext]
-    ) -> List[Tensor] | None:
+    ) -> list[Tensor] | None:
         """Batch image token indices from multiple contexts, adjusting for
         position in batch.
 
@@ -826,9 +767,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
             # Find where image tokens appear
             special_image_token_mask = input_ids == self.config.image_token_index
-            logger.info(f"img token max: {special_image_token_mask}")
             indices = np.where(special_image_token_mask)[0]
-            logger.info(f"img token idxs: {indices}")
 
             if len(indices) > 0:
                 indices_and_offsets.append(indices + batch_offset)
@@ -839,7 +778,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             return [Tensor.zeros(shape=[0], dtype=DType.int32).to(self.devices[0])]
 
         np_indices = np.concatenate(indices_and_offsets).astype(
-            np.uint32, copy=False
+            np.int32, copy=False
         )
 
         # Create tensor and distribute to device

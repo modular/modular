@@ -62,7 +62,7 @@ class Gemma3VisionEncoderLayer(Module):
 
     def __call__(
         self,
-        hidden_states: TensorValue, # Sequence[TensorValue]
+        hidden_states: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue]
     ) -> list[TensorValue]:
         residual = hidden_states
@@ -83,7 +83,7 @@ class Gemma3VisionEncoderLayer(Module):
 class Gemma3VisionEncoder(Module):
     """SigLIP vision encoder with 27 transformer layers."""
 
-    def __init__(self, config: Gemma3ForConditionalGenerationConfig): # , signal_buffers: Sequence[TensorValue]):
+    def __init__(self, config: Gemma3ForConditionalGenerationConfig, signal_buffers: Sequence[TensorValue]):
         super().__init__()
         self.layers = LayerList(
             [
@@ -93,12 +93,24 @@ class Gemma3VisionEncoder(Module):
                 )
             ]
         )
-        # self.signal_buffers = signal_buffers
+        self.signal_buffers = signal_buffers
 
     def __call__(
         self,
-        hidden_states: TensorValue,
-    ) -> TensorValue:
-        for layer in self.layers:
-            hidden_states = layer(hidden_states, self.signal_buffers)
-        return hidden_states
+        hidden_states: TensorValue | Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+    ) -> TensorValue | Sequence[TensorValue]:
+        # Handle both single tensor and list of tensors (multi-device case)
+        if isinstance(hidden_states, list):
+            # Multi-device: process each device's tensor through the replicated layers
+            # Each layer is replicated across devices, so we process them independently
+            for layer in self.layers:
+                # Note: signal_buffers parameter is included for API consistency,
+                # but not used in simple replicated vision processing
+                hidden_states = [layer(hs, signal_buffers) for hs in hidden_states]
+            return hidden_states
+        else:
+            # Single device case
+            for layer in self.layers:
+                hidden_states = layer(hidden_states, signal_buffers)
+            return hidden_states

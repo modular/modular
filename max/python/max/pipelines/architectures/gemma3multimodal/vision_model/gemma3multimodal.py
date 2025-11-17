@@ -328,7 +328,7 @@ class Gemma3VisionModel(Module):
 
         # Vision embeddings
         self.embeddings = Gemma3VisionEmbeddings(
-            config, device=config.devices[0]
+            config, device=config.devices
         )
         self.embeddings.sharding_strategy = ShardingStrategy.replicate(
             len(config.devices)
@@ -336,13 +336,13 @@ class Gemma3VisionModel(Module):
         self.embeddings_list = self.embeddings.shard(config.devices)
 
         # Vision encoder (27 transformer layers)
-        self.encoder = Gemma3VisionEncoder(config) # , signal_buffers)
+        self.encoder = Gemma3VisionEncoder(config)
 
         # Post-encoder layer norm
         self.post_layernorm = LayerNorm(
             vision_config.hidden_size,
             eps=vision_config.layer_norm_eps,
-            device=config.devices[0],
+            device=config.devices,
             dtype=config.dtype,
         )
 
@@ -353,11 +353,12 @@ class Gemma3VisionModel(Module):
         self,
         pixel_values: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
-    ) -> TensorValue:
-        print(self.embeddings_list)
-        print(self.embeddings_list[0])
-        # Get vision embeddings from each device
-        # hidden_states = self.embeddings(ops.permute(pixel_values, [0,2,3,1]))
+    ) -> Sequence[TensorValue]:
+        # For vision processing, use first device (replicated approach)
+        # Get vision embeddings - use first embedding instance
+        stuff = zip(self.embeddings_list, pixel_values)
+        logger.info(f"zipped: {stuff}") # blah
+        # hidden_states = self.embeddings_list[0](pixel_values[0])
         hidden_states = [
             embed(pixels)
             for embed, pixels in zip(
@@ -365,14 +366,14 @@ class Gemma3VisionModel(Module):
             )
         ]
 
-        # TODO MLX-VLM transposes here to 0, 2, 3, 1
-        
-        hidden_states = self.encoder(hidden_states)
+        # Pass through encoder layers (single tensor path)
+        hidden_states = self.encoder(hidden_states, signal_buffers)
 
+        # Apply post-encoder layer norm
         hidden_states = self.post_layernorm(hidden_states)
 
+        # Project to language model hidden size
         image_embeddings = self.projector(hidden_states)
 
-        # Replicate to all devices
-        #return [image_embeddings for _ in range(len(self.config.devices))]
-        return image_embeddings
+        # Replicate to all devices for language model consumption
+        return [image_embeddings for _ in range(len(self.config.devices))]
