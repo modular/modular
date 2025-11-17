@@ -408,6 +408,9 @@ bool isNVPTX_HopperAndAbove(TargetInfoAttr target);
 /// Return true if target is AMDGPU and arch is `gfx942`.
 bool isAMDGPU_gfx942(TargetInfoAttr target);
 
+/// Return true if fpType is an fp8 type.
+bool isFP8(Type fpType);
+
 } // namespace M::KGEN
 
 #endif // KGEN_LLVM_LOWERING_UTILS_H

@@ -11,6 +11,7 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "LLVMLoweringUtils.h"
+#include "Support/Compiler/MLIRDType.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/MDialect/MAttrs.h"
@@ -321,6 +322,15 @@ struct ConvertPOPCast : public ConvertPOPToLLVMPattern<CastOp> {
       opName = LLVM::FPExtOp::getOperationName();
     } else if (outByteCount < inByteCount) {
       // Truncate.
+      if (isFP8(getEquivalentFloatType(op.getContext(), outDType))) {
+        // Can't truncate a floating point number to fp8 because fp8 is
+        // represented as int8.
+        return emitError(op.getLoc(),
+                         Twine("casts between " + inDType.getAsString() +
+                               " and " + outDType.getAsString() +
+                               " unsupported"));
+      }
+
       opName = LLVM::FPTruncOp::getOperationName();
     } else if (outDType != inDType) {
       // FIXME: Unclear how to cast between `bf16` and `f16`.
