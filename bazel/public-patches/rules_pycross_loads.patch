@@ -1,0 +1,37 @@
+diff --git a/MODULE.bazel b/MODULE.bazel
+index e8f068d..15bedbf 100644
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -8,6 +8,7 @@ module(
+
+ bazel_dep(name = "aspect_bazel_lib", version = "2.9.4")
+ bazel_dep(name = "bazel_features", version = "1.11.0")
++bazel_dep(name = "rules_cc", version = "0.2.14")
+ bazel_dep(name = "bazel_skylib", version = "1.4.2")
+ bazel_dep(name = "platforms", version = "0.0.4")
+ bazel_dep(name = "rules_python", version = "1.0.0")
+diff --git a/pycross/private/cc_toolchain_util.bzl b/pycross/private/cc_toolchain_util.bzl
+index 30e01ac..a246436 100644
+--- a/pycross/private/cc_toolchain_util.bzl
++++ b/pycross/private/cc_toolchain_util.bzl
+@@ -3,6 +3,8 @@
+ load("@bazel_skylib//lib:collections.bzl", "collections")
+ load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
+ load("@bazel_tools//tools/cpp:toolchain_utils.bzl", "find_cpp_toolchain")
++load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
++load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+
+ CxxToolsInfo = provider(
+     doc = "Paths to the C/C++ tools, taken from the toolchain",
+diff --git a/pycross/private/wheel_build.bzl b/pycross/private/wheel_build.bzl
+index 1856d57..5032f38 100644
+--- a/pycross/private/wheel_build.bzl
++++ b/pycross/private/wheel_build.bzl
+@@ -2,6 +2,7 @@
+
+ load("@bazel_skylib//lib:paths.bzl", "paths")
+ load("@bazel_tools//tools/cpp:toolchain_utils.bzl", "find_cpp_toolchain", "use_cpp_toolchain")
++load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+ load("@rules_python//python:py_info.bzl", "PyInfo")
+ load(
+     ":cc_toolchain_util.bzl",
