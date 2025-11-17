@@ -404,3 +404,25 @@ point and there are multiple different answers:
    representation a lot more verbose.
 
 The solution to these problems are a few rebinds, which work well in practice.
+
+### We choose to elide some sugar
+
+While sugar is a good thing and the compiler should support it in arbitrary
+places in the parameter/type graph, too much sugar isn't good for us either:
+it can bloat the IR, it can be noisy for testcases, etc.
+
+As such, we intentionally elide sugar from a few places:
+
+1) `comptime` aliases that start with an underscore are assumed to be internal
+   implementation details. Notably things like `_mlir_type` cause a lot of
+   clutter for primitive types and are generally a nuisance.
+
+2) We have some heuristics to collapse away things that simplify, e.g. if
+   something simplifies to a parameter, it is omitted (e.g. the builtin function
+   call for `X+0` gets turned into `X`).
+
+3) Types can implement the `SugaredTypeInterface.canElideSugarFor` interface +
+   hook to do custom logic.  For example, it becomes onerous to sugar primitive
+   origin expression and simple constants.  The hook allows elision for
+   builtin-function-only (so 4+5 always folds to 9) and also to omit aliases
+   that are "simple enough" to not be worth propagating around.
