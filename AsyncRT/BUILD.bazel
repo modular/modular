@@ -130,6 +130,7 @@ modular_cc_library(
         ":DeviceContext.headers",
         ":RuntimeGlobals",
         "//Support:ML",
+        "//Support:Tracy",
     ] + select({
         "@platforms//os:linux": [":NVPTX"],
         "@platforms//os:macos": ["@metal-cpp//:metal-cpp"],
@@ -160,6 +161,7 @@ modular_cc_library(
         "//Support:ADT",
         "//Support:Context",
         "//Support:Profiling",
+        "//Support:Tracy",
     ],
 )
 
