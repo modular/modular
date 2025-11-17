@@ -16,5 +16,5 @@ trait TraitWithAlias:
     # CHECK-DAG: "kind": "alias",
     # CHECK-DAG: "name": "N",
     # CHECK-DAG: "summary": "This is the alias."
-    alias N: Int
+    comptime N: Int
     """This is the alias."""

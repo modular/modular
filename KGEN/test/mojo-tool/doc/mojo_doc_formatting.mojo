@@ -19,7 +19,7 @@ This module tests docstring formatting issues."""
 # CHECK:        "summary": "Docstring for the alias."
 
 
-alias MULTILINE_ALIAS = 5
+comptime MULTILINE_ALIAS = 5
 """Docstring for the alias.
 
 With multiple lines!"""

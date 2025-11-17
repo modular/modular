@@ -64,4 +64,4 @@ fn m # expected-error {{expected '(' for argument list}}
 
 # Issue #6909
 # expected-error @below {{invalid comptime declaration: expected an identifier or '_'}}
-alias True = 42
+comptime True = 42
