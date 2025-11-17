@@ -612,8 +612,9 @@ class _TPPagedKVCacheManager:
         for batch_idx, ctx in enumerate(batch):  # noqa: B007
             # Allocate blocks for request if we need more.
             if self._does_req_need_more_blocks(ctx, num_steps):
-                self.block_manager.reuse_blocks_from_prefix_cache(ctx)
-                self.block_manager.allocate_new_blocks(ctx, num_steps)
+                raise ValueError(
+                    f"Called fetch with request {ctx.request_id} but it does not have sufficient blocks. `maybe_reserve` must be called first."
+                )
 
             # Compute the total sequence length
             seq_len = ctx.current_length + num_steps - 1
