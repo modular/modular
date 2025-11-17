@@ -24,11 +24,11 @@ struct MemExample(ImplicitlyCopyable, Movable):
   fn noop(self): pass
   fn mutate(mut self): pass
 
-# CHECK-LABEL: lit.fn @"borrow{{.*}}"<lt: origin<0>>(%a: !lit.ref<!MemExample, imm lt>
+# CHECK-LABEL: lit.fn @"borrow{{.*}}"<lt: {{.*}}Origin<:!Bool {:i1 0}>>(%a: !lit.ref<!MemExample, imm #lit.struct.extract<:@stdlib::@builtin::@stubs::@Origin<:!Bool {:i1 0}> lt, "_mlir_origin">>
 fn borrow[lt: ImmutOrigin](a: Pointer[MemExample, lt]._mlir_type):
   pass
 
-# CHECK-LABEL: lit.fn @"mutate{{.*}}"<lt: origin<1>>(%a: !lit.ref<!MemExample, mut lt>
+# CHECK-LABEL: lit.fn @"mutate{{.*}}"<lt: {{.*}}Origin<:!Bool {:i1 1}>>(%a: !lit.ref<!MemExample, mut #lit.struct.extract<:@stdlib::@builtin::@stubs::@Origin<:!Bool {:i1 1}> lt, "_mlir_origin">>
 fn mutate[lt: MutOrigin](a: Pointer[MemExample, lt]._mlir_type):
   pass
 
@@ -236,14 +236,14 @@ fn testLifetimeOf2(a: MemExample) -> Pointer[MemExample, origin_of(a)]._mlir_typ
 
 # CHECK-LABEL: lit.fn @"callByRefResultLifetime
 fn callByRefResultLifetime(mut x: MemExample, mut y: MemExample, z: MemExample):
-  # CHECK: lit.var.decl "l1" var : !lit.ref<@ownership_refs::@OneLifetime<:origin<0> (mutcast mut *"x`")>
+  # CHECK: lit.var.decl "l1" var : !lit.ref<{{.*}}(mutcast mut *"x`")
   var l1 = returnOneArgLifetime(x)
 
-  # CHECK: lit.var.decl "l2" var : !lit.ref<@ownership_refs::@TwoLifetimes<:origin<0> (mutcast mut *"x`"), :origin<0> (mutcast mut *"y`1")>
+  # CHECK: lit.var.decl "l2" var : !lit.ref<@ownership_refs::@TwoLifetimes<{{.*}}(mutcast mut *"x`")}, {{.*}}(mutcast mut *"y`1")}>
   var l2 = returnTwoArgLifetimes(x, y)
-  # CHECK: %l3 = lit.var.decl "l3" var : !lit.ref<@ownership_refs::@TwoLifetimes<:origin<0> (mutcast mut *"x`"), :origin<0> (mutcast mut *"x`")>
+  # CHECK: %l3 = lit.var.decl "l3" var : !lit.ref<@ownership_refs::@TwoLifetimes<{{.*}}(mutcast mut *"x`")}, {{.*}}(mutcast mut *"x`")}>
   var l3 = returnTwoArgLifetimes(x, x)
-  # CHECK: %l4 = lit.var.decl "l4" var : !lit.ref<@ownership_refs::@TwoLifetimes<:origin<0> *"z`2", :origin<0> *"z`2">
+  # CHECK: %l4 = lit.var.decl "l4" var : !lit.ref<@ownership_refs::@TwoLifetimes<{{.*}}origin<0> = *"z`2"}, {{.*}}origin<0> = *"z`2"}
   var l4 = returnTwoArgLifetimes(z, z)
 
   use_any(l1, l2, l3, l4)

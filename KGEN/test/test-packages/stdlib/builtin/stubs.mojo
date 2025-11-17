@@ -8,8 +8,8 @@ alias string = __mlir_type.`!kgen.string`
 alias float = __mlir_type.`!pop.scalar<f64>`
 
 alias AnyTrivialRegType = __mlir_type.`!kgen.type`
-alias ImmutOrigin = __mlir_type.`!lit.origin<0>`
-alias MutOrigin = __mlir_type.`!lit.origin<1>`
+comptime ImmutOrigin = Origin[False]
+comptime MutOrigin = Origin[True]
 alias ImmutAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
 alias MutAnyOrigin = __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`
 alias OriginSet = __mlir_type.`!lit.origin.set`
@@ -51,12 +51,12 @@ alias StaticConstantOrigin = __mlir_attr[
 ]
 
 
-struct _lit_indirect_origin[mut: Bool, //, base: Origin[mut]._mlir_type]:
+struct _lit_indirect_origin[mut: Bool, //, base: Origin[mut]]:
     alias result = __mlir_attr[
         `#lit.indirect.origin<`,
-        Self.base,
+        Self.base._mlir_origin,
         `> : `,
-        type_of(Self.base),
+        type_of(Self.base._mlir_origin),
     ]
 
 

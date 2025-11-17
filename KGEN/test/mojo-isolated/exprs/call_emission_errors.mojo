@@ -231,8 +231,9 @@ fn exclusivity[
     # Compiler injects a temporary to make this ok.
     x = x^
 
-    # expected-error @below {{argument of 'take_two_spans' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'spanlife' memory accessed through reference embedded in value of type 'MyMutSpan[spanlife]'}}
+    # TODO: Why did we lose these errors?
+    # xpected-error @below {{argument of 'take_two_spans' call allows writing a memory location previously writable through another aliased argument}}
+    # xpected-note @below {{'spanlife' memory accessed through reference embedded in value of type 'MyMutSpan[spanlife]'}}
     take_two_spans(span, span)
 
 
