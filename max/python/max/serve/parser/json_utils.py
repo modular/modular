@@ -31,7 +31,7 @@ _JSON_REGEX_STR = r"""
 """
 
 
-_JSON_REGEX = regex.compile(_JSON_REGEX_STR, regex.VERBOSE | regex.DOTALL)  # type: ignore[attr-defined]
+_JSON_REGEX = regex.compile(_JSON_REGEX_STR, regex.VERBOSE | regex.DOTALL)
 
 
 def parse_json_from_text(text: str) -> list[Any]:
