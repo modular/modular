@@ -39,10 +39,12 @@ alias CUDA_NVML_LIBRARY_EXT = ".so"
 
 fn _get_nvml_library_paths() raises -> List[Path]:
     var paths = List[Path]()
-    var common_path = CUDA_NVML_LIBRARY_DIR / (
-        CUDA_NVML_LIBRARY_BASE_NAME + CUDA_NVML_LIBRARY_EXT
-    )
-    paths.append(common_path)
+    var lib_name = CUDA_NVML_LIBRARY_BASE_NAME + CUDA_NVML_LIBRARY_EXT
+    # Look for libnvidia-ml.so
+    paths.append(CUDA_NVML_LIBRARY_DIR / lib_name)
+    # Look for libnvida-ml.so.1
+    paths.append(CUDA_NVML_LIBRARY_DIR / (lib_name + ".1"))
+    # Look for libnvidia-ml.so.<driver>.<major>.<minor>
     for fd in CUDA_NVML_LIBRARY_DIR.listdir():
         var path = CUDA_NVML_LIBRARY_DIR / fd
         if CUDA_NVML_LIBRARY_BASE_NAME in String(fd):
