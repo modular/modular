@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/tutorials/build-custom-ops.mdx
+# DOC: max/develop/build-custom-ops.mdx
 
 from pathlib import Path
 
