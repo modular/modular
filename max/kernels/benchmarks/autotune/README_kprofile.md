@@ -1,27 +1,15 @@
 
 # `kprofile`: Profile `kbench` output pickle
 
-```plaintext
+`kprofile` is a tool to review and extract insight from `kbench` results
+stored in `pkl` files.
 
-Options:
-  -o, --output TEXT   Path to output file.
-  -t, --top FLOAT     Form a new spec from frequent values of each param from
-                      top percent.
-  -s, --snippet TEXT  Path to snippet to replace the parameters with values.
-  -r, --ratio         Print the running time ratio of each entry to the top
-                      entry.
-  --head INTEGER      The number of elements at head to print (sorted by
-                      running time).
-  --tail INTEGER      The number of elements at tail to print (sorted by
-                      running time).
-  -v, --verbose       Print all the (unsorted) entries from pkl.
-  --help              Show this message and exit.
-```
+`kprofile` can work with multiple pkl files, displaying the output of one
+after the other.
+This effectively groups the outputs per shape, allowing to select the
+different tuning parameters.
 
-`kprofile` is essential for reviewing and extracting insight from `kbench`
-results stored in `pkl` files.
-
-# Example
+## Example
 
 - Simply print the top result:
 
@@ -35,20 +23,6 @@ kprofile output.pkl
 kprofile output.pkl --top 0.05
 ```
 
-- Replace the parameters in a code snippet with values from the top spec
-
-```bash
-kprofile output.pkl -s path_to_snippet.mojo
-```
-
-- To replace the values in snippet, simply encode each parameter as
-    `[@parameter_name]`. For example, for parameter `NUM_BLOCKS` in the
-    following snippet:
-
-```mojo
-alias num_blocks = [@NUM_BLOCKS]
-```
-
 - Printing a simplified table with running time ratio of each entry to the top entry
 
 ```bash
@@ -59,4 +33,32 @@ kprofile sample.pkl -r
 
 ```bash
 kprofile sample.pkl --head 10 --tail 10
+```
+
+- Grouping together multiple pkl files from different runs and showing the
+best 2 results for each of them
+
+```bash
+kprofile file*.pk --head 2
+```
+
+## Filling in parameters in mojo files
+
+You can use `kprofile` to replace the parameters from a mojo program
+by the best tuning parameters, effectively injecting the best parameters
+onto a file.
+
+```bash
+kprofile output.pkl -s path_to_snippet.mojo
+```
+
+The mechanism is a simple string and replace, so developers must be careful
+with accidental pattern matching.
+
+To replace the values in snippet, simply encode each parameter as
+    `[@parameter_name]`. For example, for parameter `NUM_BLOCKS` in the
+    following snippet:
+
+```mojo
+alias num_blocks = [@NUM_BLOCKS]
 ```

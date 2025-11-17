@@ -31,9 +31,6 @@ cause the process to crash which brings down the driver, so we need to have
 separation there.
 - Abundance of utilities and libraries (Pandas, Plotly, Rich progress bar/console)
 
-We could invent and build a fancy system, however, that’s not solving the
-autotuning problem, so just leaned into building something simple.
-
 ## Setup for tuning
 
 Compile using `--config=production`:
@@ -131,16 +128,11 @@ There are two ways to run kbench:
     ```
 
 4. Run `kbench.py` script as follows:
-    For simply running all the configs in the YAML file:
+    For simply running all the configs in the YAML file and store the results
+    on a pkl file (for later inspection)
 
     ```bash
-    br -- //max/kernels/benchmarks/autotune:kbench YAML_FILE --output OUTPUT_PATH
-    ```
-
-    For finding the best measured elapsed time add `--tune`:
-
-    ```bash
-    br -- //max/kernels/benchmarks/autotune:kbench YAML_FILE --output OUTPUT_PATH --tune
+    br -- //max/kernels/benchmarks/autotune:kbench YAML_FILE --output OUTPUT_FILE_NAME
     ```
 
 5. Avoid recompilation by enabling `kbench` object cache:
@@ -164,6 +156,17 @@ There are two ways to run kbench:
     ```bash
     kbench --filter NAME=VALUE # only show the instances where parameter NAME=VALUE.
     ```
+
+8. You can split build and compilation stages re-using the .pkl cache
+
+  ```bash
+  # Build all the combinations from a given parameter file and create a
+  # cache file
+  $ kbench -c --build YAML_FILE.
+  # Run all the combinations previously created, requires an existing
+  # cache file and program binaries on the correct folders
+  $ kbench --run-only YAML_FILE
+  ```
 
 ### Example
 
@@ -315,12 +318,18 @@ kbench tuning_params.yaml --shapes input_shapes.yaml
 For simply running all the configs in the YAML file:
 
 ```bash
-kbench YAML_FILE -o/--output OUTPUT_PATH
+kbench YAML_FILE -o/--output OUTPUT_FILE_NAME
 ```
 
 This will automatically store the intermediate output in `OUTPUT_PATH.pkl`.
 Please refer to [README_kprofile.md](README_kprofile.md) for details on how to
 analyze the data in `.pkl` files.
+
+`.pkl` files are also used for split compilation and runs.
+Note the `pkl` file contains the path to the binaries, but not the binaries
+themselves.
+If moving around machines, moving the pkl and all the output directory is
+required for running.
 
 ## Compile-time Parameters vs. Runtime Variables
 
@@ -357,9 +366,11 @@ params:
 ## `kbench` Object Cache
 
 Recompiling with same set of parameters and hitting the mojo-cache requires
-parsing The baseline cost of parsing is not quite negligible. Still, an
-unnecessary price. What if we keep track of the compiled binaries between
-various launches of kbench? To that end, we have implemented `kbench`
+parsing. The baseline cost of parsing is not quite negligible. Still, an
+unnecessary price.
+What if we want to keep track of the compiled binaries between
+various launches of kbench?
+To that end, we have implemented `kbench`
 object-cache available via `kbench --cached` or `kbench -c`.
 
 NOTE: This doesn't check the changes in the source.
@@ -370,6 +381,8 @@ NOTE: This doesn't check the changes in the source.
 kbench --cached test.yaml
 kbench -c test.yaml
 ```
+
+Note `--run-only` implies `-c`
 
 ### Clear object cache
 

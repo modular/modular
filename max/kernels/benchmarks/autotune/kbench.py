@@ -51,6 +51,8 @@ from rich.progress import (
 )
 from utils import pretty_exception_handler
 
+##### Utilities and configurations #####
+
 CONSOLE = Console(width=80)
 CURRENT_FILE = Path(__file__).resolve()
 LINE = "\n" + 70 * "-"
@@ -97,17 +99,18 @@ def configure_logging(
     return CONSOLE
 
 
-@dataclass
-class Param:
-    name: str
-    value: Any
+def log_and_raise_error(message: str, param_hint: str | None = None) -> None:
+    """Log an error and raise a Click exception.
 
-    def define(self) -> list[str]:
-        """Generate command line arguments for this parameter."""
-        if self.name.startswith("$"):
-            var_name = self.name.split("$")[1]
-            return [f"--{var_name}={self.value}"]
-        return ["-D", f"{self.name}={self.value}"]
+    Args:
+        message: The error message to log and display
+        param_hint: Optional parameter hint for BadParameter exception
+    """
+    logging.error(message)
+    if param_hint:
+        raise click.BadParameter(message, param_hint=param_hint)
+    else:
+        raise click.UsageError(message)
 
 
 def flatten(value: int | object | Iterable) -> list[Any]:
@@ -165,6 +168,51 @@ def _run_cmdline(
         raise SystemExit(f"Unable to run command {list2cmdline(cmd)}") from exc
 
 
+def _get_core_count() -> int:
+    try:
+        # The 'os.sched_getaffinity' method is only available on some Unix platforms
+        return len(os.sched_getaffinity(0))  # type: ignore[attr-defined, unused-ignore]
+    except AttributeError:
+        # To cover other platforms, including mac
+        return cpu_count()
+
+
+def _get_visible_device_prefix(target_accelerator: str = "") -> str:
+    if "nvidia" in target_accelerator or "cuda" in target_accelerator:
+        return "CUDA_VISIBLE_DEVICES"
+    elif "amd" in target_accelerator:
+        return "ROCR_VISIBLE_DEVICES"
+    else:
+        return ""
+
+
+def _get_similar_files(path: Path) -> list[Path]:
+    """Returns a list of files that belong to the same benchmark but are
+    created by different processes, e.g. due to using mpirun
+    """
+    dir_name = os.path.dirname(path)
+    stem = path.stem
+    suffix = path.suffix
+    pattern = os.path.join(dir_name, f"{stem}*{suffix}")
+    return [Path(p) for p in sorted(glob.glob(pattern))]
+
+
+#### Data Classes for Pandas DataFrame ####
+
+
+@dataclass
+class Param:
+    name: str
+    value: Any
+
+    def define(self) -> list[str]:
+        """Generate command line arguments for this parameter."""
+        if self.name.startswith("$"):
+            var_name = self.name.split("$")[1]
+            return [f"--{var_name}={self.value}"]
+        return ["-D", f"{self.name}={self.value}"]
+
+
 @dataclass
 class ParamSpace:
     name: str
@@ -201,12 +249,6 @@ class ProcessOutput:
             logging.debug("error " + self.stderr + LINE)
 
 
-class KBENCH_MODE(Enum):
-    RUN = auto()
-    TUNE = auto()
-    BUILD = auto()
-
-
 # Singleton build failed state
 @dataclass(frozen=True)
 class _BuildFailed:
@@ -214,6 +256,13 @@ class _BuildFailed:
 
 
 BuildFailed = _BuildFailed()
+
+
+###### KBench Classes ######
+class KBENCH_MODE(Enum):
+    RUN = auto()
+    BUILD = auto()
+    BUILD_AND_RUN = auto()
 
 
 class KbenchCache:
@@ -771,32 +820,6 @@ class Spec:
         return "\n".join(rs)
 
 
-def _get_core_count() -> int:
-    try:
-        # The 'os.sched_getaffinity' method is only available on some Unix platforms
-        return len(os.sched_getaffinity(0))  # type: ignore[attr-defined, unused-ignore]
-    except AttributeError:
-        # To cover other platforms, including mac
-        return cpu_count()
-
-
-def _get_visible_device_prefix(target_accelerator: str = "") -> str:
-    if "nvidia" in target_accelerator or "cuda" in target_accelerator:
-        return "CUDA_VISIBLE_DEVICES"
-    elif "amd" in target_accelerator:
-        return "ROCR_VISIBLE_DEVICES"
-    else:
-        return ""
-
-
-def _get_similar_files(path: Path) -> list[Path]:
-    dir_name = os.path.dirname(path)
-    stem = path.stem
-    suffix = path.suffix
-    pattern = os.path.join(dir_name, f"{stem}*{suffix}")
-    return [Path(p) for p in sorted(glob.glob(pattern))]
-
-
 @dataclass
 class BuildItem:
     """
@@ -846,6 +869,7 @@ class Scheduler:
     num_gpu: int
     build_items: list[BuildItem]
     obj_cache: KbenchCache
+    run_only: bool
     output_suffix: str
     output_dir: Path
     num_specs: int
@@ -858,6 +882,7 @@ class Scheduler:
         num_cpu: int,
         num_gpu: int,
         obj_cache: KbenchCache,
+        run_only: bool,
         spec_list: list[SpecInstance],
         output_dir: Path,
         build_opts: list[str],
@@ -879,6 +904,7 @@ class Scheduler:
         ]
         self.output_suffix = output_suffix
         self.output_dir = output_dir
+        self.run_only = run_only
 
         self.build_items = [
             BuildItem(
@@ -897,22 +923,32 @@ class Scheduler:
         self.progress = progress
 
     @staticmethod
-    def kbench_mkdir(args: tuple[Path, str]) -> Path:
+    def kbench_mkdir(args: tuple[Path, str, bool]) -> Path:
         """Run the following command:
         `mkdir -p {output_dir}`
         """
 
-        output_dir, output_suffix = args
-        if os.path.exists(output_dir) and os.path.isdir(output_dir):
-            logging.warning(
-                f"Following output dir already exists and will be overwritten!\n[{str(output_dir)}]\n"
-            )
-            # Check for existing output files and remove them (if any):
-            existing_csv = _get_similar_files(output_dir / output_suffix)
-            for f in existing_csv:
-                os.remove(f)
+        output_dir, output_suffix, run_only = args
+        path_exists: bool = os.path.exists(output_dir) and os.path.isdir(
+            output_dir
+        )
+        if not run_only:
+            if path_exists:
+                logging.warning(
+                    f"Following output dir already exists and will be overwritten!\n[{str(output_dir)}]\n"
+                )
+                # Check for existing output files and remove them (if any):
+                existing_csv = _get_similar_files(output_dir / output_suffix)
+                for f in existing_csv:
+                    os.remove(f)
 
-        os.makedirs(output_dir, exist_ok=True)
+            os.makedirs(output_dir, exist_ok=True)
+        else:
+            if not path_exists:
+                raise click.ClickException(
+                    f"--run-only specified but output directory does not exist: {output_dir}"
+                )
+            logging.debug(f"Re-using existing output directory: {output_dir}")
         return output_dir
 
     def get_chunksize(self, num_elements: int) -> int:
@@ -924,7 +960,8 @@ class Scheduler:
         Make output directories for kbench results (one per spec-instance)
         """
         output_dir_list = [
-            (b.output_dir, self.output_suffix) for b in self.build_items
+            (b.output_dir, self.output_suffix, self.run_only)
+            for b in self.build_items
         ]
 
         for r in self.build_pool.imap(
@@ -936,8 +973,11 @@ class Scheduler:
         logging.debug("Created directories for all instances in spec." + LINE)
 
     def schedule_unique_build_items(self) -> list[dict]:
+        # Stores items that need to be build (i.e. not in cache)
         unique_build_items: dict[str, int] = {}
+        # Stores paths to real binaries that have been cached beforehand
         unique_build_paths: dict[str, str] = {}
+
         for b in self.build_items:
             i = b.idx
             s = b.spec_instance
@@ -992,6 +1032,14 @@ class Scheduler:
         unique_build_items_dict, unique_build_paths = (
             self.schedule_unique_build_items()
         )
+
+        if self.run_only and len(unique_build_items_dict) > 0:
+            logging.error("Run only but not all binaries are found")
+            raise click.ClickException(
+                f"--run-only specified but {len(unique_build_items_dict)} binaries not found in cache. "
+                "Please build first or remove --run-only flag."
+            )
+
         unique_build_items = [
             self.build_items[i] for i in list(unique_build_items_dict.values())
         ]
@@ -1234,7 +1282,7 @@ class Scheduler:
         bi_list: list[BuildItem],
         spec: Spec,
         output_path: Path = Path(),
-        mode: KBENCH_MODE = KBENCH_MODE.RUN,
+        mode: KBENCH_MODE = KBENCH_MODE.BUILD_AND_RUN,
         t_build_total: float = 0.0,
         t_benchmark_total: float = 0.0,
         t_elapsed_total: float = 0.0,
@@ -1292,25 +1340,8 @@ class Scheduler:
             output_dict["merged_df"] = merged_df
 
             met_col = str(merged_df.columns[2])
-            if mode == KBENCH_MODE.TUNE:
-                tune_df = merged_df.sort_values([met_col], ascending=True)
-
-                output_dict["tune_df"] = tune_df
-                output_lines += [tune_df.to_string(index=False)]
-                # Index to top spec after sort
-                top_spec_idx = tune_df.iloc[0].mesh_idx
-                runtime = tune_df.iloc[0][met_col]
-
-                output_lines += [LINE]
-                output_lines += ["Spec with the best measured time:"]
-                output_lines += [
-                    f"mesh_idx: {top_spec_idx} measured time: {runtime:6f} (ms)"
-                ]
-                output_lines += [bi_list[top_spec_idx].spec_instance.to_obj()]
-                output_lines += [LINE]
-            else:
-                output_lines += [merged_df.to_string(index=False)]
-                output_lines += [LINE]
+            output_lines += [merged_df.to_string(index=False)]
+            output_lines += [LINE]
             ###############################
         t_overhead = t_elapsed_total - (t_build_total + t_benchmark_total)
         timing_details = pd.DataFrame(
@@ -1346,7 +1377,9 @@ class Scheduler:
 
             # KBENCH_MODE.RUN overrides everything else and just dumps the running results.
             # THIS IS CRITICAL for CI automated kernel benchmarks workflow.
-            if mode == KBENCH_MODE.RUN and valid_specs:
+            if (
+                mode in [KBENCH_MODE.RUN, KBENCH_MODE.BUILD_AND_RUN]
+            ) and valid_specs:
                 merged_df.drop(columns=["mesh_idx"]).to_csv(
                     csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC
                 )
@@ -1354,6 +1387,7 @@ class Scheduler:
                 build_df.to_csv(
                     csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC
                 )
+
             with open(txt_path, "w") as f:
                 f.write(output_str + "\n")
             logging.info(f"wrote results to [{txt_path}]")
@@ -1372,7 +1406,7 @@ def run(
     obj_cache: KbenchCache,
     shape: SpecInstance,
     output_path: Path = Path(),
-    mode=KBENCH_MODE.RUN,  # noqa: ANN001
+    mode=KBENCH_MODE.BUILD_AND_RUN,  # noqa: ANN001
     param_list=None,  # noqa: ANN001
     filter_list=None,  # noqa: ANN001
     build_opts: list[str] = [],  # noqa: B006
@@ -1448,6 +1482,7 @@ def run(
         num_cpu=num_cpu,
         num_gpu=num_gpu,
         obj_cache=obj_cache,
+        run_only=(mode == KBENCH_MODE.RUN),
         spec_list=list(spec),
         output_dir=output_dir,
         build_opts=build_opts,
@@ -1474,7 +1509,7 @@ def run(
             t_build_total = time() - t_start_total
 
             t_benchmark_start = time()
-            if mode in [KBENCH_MODE.RUN, KBENCH_MODE.TUNE]:
+            if mode in [KBENCH_MODE.RUN, KBENCH_MODE.BUILD_AND_RUN]:
                 scheduler.setup_execution_pool()
                 num_build_items = len(scheduler.build_items)
                 exec_progress = scheduler.progress.add_task(
@@ -1734,19 +1769,18 @@ help_str = "Benchmarking toolkit for Mojo kernels"
     help="Path to output directory for all results (default='./kbench-output')",
 )
 @click.option(
-    "--tune",
-    "-t",
-    "tune",
-    is_flag=True,
-    default=False,
-    help="Sort results by running time.",
-)
-@click.option(
     "--build",
     "build",
     is_flag=True,
     default=False,
     help="Just build the binary and report the build time.",
+)
+@click.option(
+    "--run-only",
+    "run_only",
+    is_flag=True,
+    default=False,
+    help="Only run, do not build. Cache must exist, -c is implied",
 )
 @click.option(
     "--param",
@@ -1875,8 +1909,8 @@ def cli(
     filter,  # noqa: ANN001
     output_path,  # noqa: ANN001
     output_dir,  # noqa: ANN001
-    tune,  # noqa: ANN001
     build,  # noqa: ANN001
+    run_only,  # noqa: ANN001
     param,  # noqa: ANN001
     debug_level,  # noqa: ANN001
     use_experimental_kernels,  # noqa: ANN001
@@ -1904,23 +1938,39 @@ def cli(
     if not verbose:
         sys.tracebacklimit = 1
 
-    mode = KBENCH_MODE.RUN
+    mode = KBENCH_MODE.BUILD_AND_RUN
 
-    assert (build == False) or (tune == False)
+    if run_only:
+        mode = KBENCH_MODE.RUN
+
+    if run_only and clear_cache:
+        log_and_raise_error(
+            "Cannot clear cache when in run-only mode. Need cache to run.",
+            param_hint="'--clear-cache'",
+        )
+    if run_only and build_opts:
+        log_and_raise_error("Cannot provide build options when run-only mode")
 
     partition_idx, num_partitions = _validate_partition(partition)
 
     if build:
         mode = KBENCH_MODE.BUILD
-    elif tune:
-        mode = KBENCH_MODE.TUNE
 
     obj_cache = KbenchCache()
     # check kbench_cache and load it if exists:
-    if clear_cache:
+    if clear_cache and run_only:
+        log_and_raise_error("Trying to clear cache when run_only")
+    elif clear_cache:
         obj_cache.clear()
-    if cached:
+
+    if cached or (mode == KBENCH_MODE.RUN):
         obj_cache.load()
+
+    if len(obj_cache.data) == 0 and mode == KBENCH_MODE.RUN:
+        log_and_raise_error(
+            "Run Only requires an active cache object but the object is empty",
+            param_hint="'--run-only'",
+        )
 
     if not len(files) and not len(shapes):
         logging.info(
