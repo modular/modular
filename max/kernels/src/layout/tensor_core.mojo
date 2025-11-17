@@ -206,6 +206,9 @@ struct TensorCore[
         )
         and Self.shape == shape_16x16x32
     )
+    alias supported_fp64 = Self.in_type is DType.float64 and Self.out_type is DType.float64 and (
+        Self.shape in (shape_8x8x4, shape_16x8x4, shape_16x8x8, shape_16x8x16)
+    ) if is_nvidia_gpu() else False
 
     # Operand register types.
     alias a_reg_type = SIMD[
@@ -261,6 +264,8 @@ struct TensorCore[
             _in_type is DType.float8_e4m3fn or _in_type is DType.float8_e5m2
         ):
             return [shape_16x8x32]
+        elif _out_type is DType.float64 and _in_type is DType.float64:
+            return [shape_8x8x4, shape_16x8x4, shape_16x8x8, shape_16x8x16]
         else:
             constrained[False, "No valid shape of mma"]()
             return [shape_null]
@@ -390,6 +395,7 @@ struct TensorCore[
         constrained[
             Self.in_type
             in (
+                DType.float64,
                 DType.float32,
                 DType.bfloat16,
                 DType.float16,
@@ -433,6 +439,13 @@ struct TensorCore[
                 lane_id()
             )
             a_reg_tile.vectorize[1, 4]().copy_from(a_reg_frags)
+        elif Self.in_type is DType.float64:
+            constrained[
+                reg_per_thread in (1, 2, 4, 8),
+                "No valid mma shape to load matrix fragment a (float64)",
+            ]()
+            var a_reg_frags = a.distribute[warp_layout](lane_id())
+            a_reg_tile.copy_from(a_reg_frags)
         return a_reg_tile
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
@@ -615,7 +628,14 @@ struct TensorCore[
                 lane_id()
             )
             b_reg_tile.vectorize[4, 1]().copy_from(b_ram_frags)
-
+        elif in_type is DType.float64:
+            constrained[
+                reg_per_thread in (1, 2, 4),
+                "No valid mma shape to load matrix fragment b",
+            ]()
+            
+            var b_ram_frags = b.distribute[warp_layout](lane_id())
+            b_reg_tile.copy_from(b_ram_frags)
         else:
             constrained[False, "No valid type to load matrix fragment b"]()
         return b_reg_tile
@@ -684,7 +704,15 @@ struct TensorCore[
                 Layout.row_major(8, 4)
             ](lane_id())
             c_reg_tile.vectorize[1, 2]().copy_from(c_ram_frags)
-
+        elif Self.out_type is DType.float64:
+            constrained[
+                reg_per_thread in (2, 4),
+                "No valid shape to load matrix fragment c (float64)"
+            ]()
+            var c_ram_frags = c.vectorize[1, 2]().distribute[
+                Layout.row_major(8, 4)
+            ](lane_id())
+            c_reg_tile.vectorize[1, 2]().copy_from(c_ram_frags)
         else:
             constrained[False, "No valid type to load matrix fragment c"]()
         return c_reg_tile
@@ -769,6 +797,14 @@ struct TensorCore[
                 reg_per_thread == 4, "No valid shape to store to LayoutTensor d"
             ]()
 
+            d_dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
+                lane_id()
+            ).copy_from(d_src.vectorize[1, 2]())
+        elif Self.out_type is DType.float64:
+            constrained[
+                reg_per_thread in (2, 4),
+                "No valid shape to store to LayoutTensor d"
+            ]()
             d_dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
                 lane_id()
             ).copy_from(d_src.vectorize[1, 2]())
