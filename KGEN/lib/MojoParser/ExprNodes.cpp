@@ -1012,7 +1012,10 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
         resolveAliasReference(param, spelling, /*bindings=*/{}, loc, emitter);
 
     // Maintain alias sugar, e.g. print "UInt8" as UInt8 instead of SIMD[..].
-    if (result) {
+    // We don't maintain sugar for aliases whose name start with _, because that
+    // is assumed to be an internal implementation detail. This also covers
+    // important things like _mlir_type.
+    if (result && !param.getParamDecl().getName().strref().starts_with('_')) {
       auto sugared = ParamDeclRefAttr::get(param.getParamDecl());
       // Some param refs (eg to unqualified parameters of structs) are already
       // fully sugared.
@@ -1983,9 +1986,10 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // Maintain sugar.  The base might be dynamic so we turn it into
     // "Type.member" from a sugar perspective.
     auto getParamMemberSugar = [&](PValue value) -> PValue {
-      // Propagate failures, never sugar `_mlir_type` accesses.  Eliding this
+      // Propagate failures, never sugar aliases that start with an _.  These
+      // are internal implementation details of types and eliding this
       // chops gigabytes of IR out of .mlir files for the stdlib.
-      if (!value || spelling == "_mlir_type")
+      if (!value || spelling.starts_with('_'))
         return value;
 
       auto sugaredMember = StructExtractAttr::get(
