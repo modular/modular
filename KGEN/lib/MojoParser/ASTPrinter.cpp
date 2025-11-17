@@ -938,6 +938,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
 /// in an `origin_of(x)` body.
 void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
                                SharedState *diagShared) {
+  param = SugarAttr::strip(param);
 
   if (auto originField = dyn_cast<OriginFieldAttr>(param)) {
     if (isa<StaticOriginAttr>(originField.getBase())) {

@@ -1315,7 +1315,7 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
     return {};
   }
   Type elementType = paramVariadicType.getElementType();
-  if (isa<TypeType>(elementType)) {
+  if (sugarIsa<TypeType>(elementType)) {
     emitter.emitError(arg.loc)
         << "variadic pack elements declared as 'AnyTrivialRegType' are removed,"
         << " please declare elements as 'AnyType' instead of "
@@ -1324,7 +1324,7 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   }
 
   auto metaType = ASTType(elementType).getMetaType();
-  if (!metaType || !isa<StructMetaType, AnyTraitType>(metaType)) {
+  if (!metaType || !sugarIsa<StructMetaType, AnyTraitType>(metaType)) {
     emitter.emitError(arg.typeExpr->getLoc(),
                       "argument type list elements must be types")
         << arg.typeExpr->getRange();

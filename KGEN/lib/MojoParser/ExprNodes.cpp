@@ -1192,6 +1192,14 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
   if (!baseBVal)
     return {};
 
+  // RefStructGEROp requires the base to be a StructType: rebind away sugar.
+  if (!isa<LIT::StructType>(baseBVal.getRValueType())) {
+    auto baseRefType = cast<RefType>(baseBVal.getType());
+    auto newEltType = SugarAttr::strip(baseBVal.getRValueType());
+    baseBVal = emitter.emitRebindOpIfNeeded(
+        baseBVal, baseRefType.getWithElement(newEltType), expr->getLoc());
+  }
+
   auto fieldRef =
       RefStructGEROp::create(*emitter.builder, mlirLoc, baseBVal, fieldOp);
   // Result kind depends on the input kind.

@@ -451,9 +451,9 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
   // TODO: Why isn't this a general solution?
   if (auto actualParamRef = dyn_cast<ParamType>(actualType)) {
     if (auto actualMetaType = ASTType(actualType).getMetaType()) {
-      if (auto structMeta = dyn_cast<StructMetaType>(actualMetaType))
+      if (auto structMeta = sugarDynCast<StructMetaType>(actualMetaType))
         return matchTypes(structMeta.getType(), expectedType);
-      if (auto traitMeta = dyn_cast<AnyTraitType>(actualMetaType))
+      if (auto traitMeta = sugarDynCast<AnyTraitType>(actualMetaType))
         return matchTypes(traitMeta.getTraitType(), expectedType);
     }
   }
@@ -710,10 +710,10 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
 // The "right" solution is to change pointer and reference to take an
 // AddressSpace directly.  Until then we do a special hack for these things.
 LogicalResult
-ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
-                                              TypedAttr expected) {
-  actual = ParamOperatorAttr::stripRebind(actual);
-  expected = ParamOperatorAttr::stripRebind(expected);
+ParameterInferenceState::matchSingleEltStruct(TypedAttr actualOrig,
+                                              TypedAttr expectedOrig) {
+  auto actual = ParamOperatorAttr::stripRebind(actualOrig);
+  auto expected = ParamOperatorAttr::stripRebind(expectedOrig);
 
   if (actual == expected)
     return success();
@@ -791,7 +791,7 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
     return matchSingleEltStruct(wrappedActual, expStruct);
   }
 
-  return matchParams(actual, expected);
+  return matchParams(actualOrig, expectedOrig);
 }
 
 /// Return true if the specified parameter expression contains a reference to an

@@ -139,6 +139,7 @@ static std::string getSignatureOrigin(SharedState &shared, TypedAttr origin,
                                       bool isRefResult) {
   // Strip out extra stuff.
   origin = OriginType::stripMutCastAndFieldExtract(origin);
+  origin = SugarAttr::strip(origin);
 
   // Check to see if the origin is a parameter on this signature.  If so, it
   // will have a depth of zero.
