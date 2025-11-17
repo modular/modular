@@ -134,7 +134,8 @@ def test_vision_patch_position_embedding(target_size: int) -> None:
 
     # Load config and generate weights
     loader = get_config_loader()
-    hf_vision_config = loader.load_hf_vision_config(ConfigNames.QWEN3VL_30B)
+    hf_full_config = loader.load_config(ConfigNames.QWEN3VL_30B)
+    hf_vision_config = hf_full_config["vision_config"]
     qwen3vl_config = loader.create_qwen3vl_config(ConfigNames.QWEN3VL_30B)
     embeddings_weights = get_weight_generator(
         ConfigNames.QWEN3VL_30B
@@ -204,7 +205,8 @@ def test_vision_patch_position_embedding_non_square(
 
     # Load config and generate weights
     loader = get_config_loader()
-    hf_vision_config = loader.load_hf_vision_config(ConfigNames.QWEN3VL_30B)
+    hf_full_config = loader.load_config(ConfigNames.QWEN3VL_30B)
+    hf_vision_config = hf_full_config["vision_config"]
     qwen3vl_config = loader.create_qwen3vl_config(ConfigNames.QWEN3VL_30B)
     embeddings_weights = get_weight_generator(
         ConfigNames.QWEN3VL_30B
@@ -268,7 +270,8 @@ def test_vision_patch_position_embedding_video() -> None:
 
     # Load config and generate weights
     loader = get_config_loader()
-    hf_vision_config = loader.load_hf_vision_config(ConfigNames.QWEN3VL_30B)
+    hf_full_config = loader.load_config(ConfigNames.QWEN3VL_30B)
+    hf_vision_config = hf_full_config["vision_config"]
     qwen3vl_config = loader.create_qwen3vl_config(ConfigNames.QWEN3VL_30B)
     embeddings_weights = get_weight_generator(
         ConfigNames.QWEN3VL_30B
@@ -352,7 +355,8 @@ def test_vision_patch_position_embedding_multiple_images(
 
     # Load config and generate weights
     loader = get_config_loader()
-    hf_vision_config = loader.load_hf_vision_config(ConfigNames.QWEN3VL_30B)
+    hf_full_config = loader.load_config(ConfigNames.QWEN3VL_30B)
+    hf_vision_config = hf_full_config["vision_config"]
     qwen3vl_config = loader.create_qwen3vl_config(ConfigNames.QWEN3VL_30B)
     embeddings_weights = get_weight_generator(
         ConfigNames.QWEN3VL_30B

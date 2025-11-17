@@ -45,21 +45,6 @@ class ConfigLoader:
 
         return self._cache[config_name.value]
 
-    def load_hf_vision_config(self, config_name: ConfigNames) -> dict[str, Any]:
-        """Load HuggingFace vision config as dictionary."""
-        # Load the full config first
-        full_config = self.load_config(config_name)
-
-        # Extract the vision_config section
-        if "vision_config" not in full_config:
-            raise ValueError(f"Vision config not found in {config_name} config")
-
-        vision_config = full_config["vision_config"].copy()
-        # Add missing attributes that tests expect
-        vision_config["in_channels"] = vision_config.get("in_chans", 3)
-
-        return vision_config
-
     def create_qwen3vl_config(self, config_name: ConfigNames) -> dict[str, Any]:
         """Create Qwen3VL-30B-A3B-Instruct config from JSON file."""
         config = self.load_config(config_name)
@@ -100,10 +85,10 @@ class ConfigLoader:
                 "max_position_embeddings": text_config[
                     "max_position_embeddings"
                 ],
-                "sliding_window": text_config.get("sliding_window"),
                 "rope_scaling": text_config.get("rope_scaling"),
                 "rms_norm_eps": text_config["rms_norm_eps"],
                 "dtype": DType.bfloat16,
+                "head_dim": text_config["head_dim"],
             },
             "image_token_id": config["image_token_id"],
             "video_token_id": config["video_token_id"],
