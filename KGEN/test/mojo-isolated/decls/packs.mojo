@@ -79,8 +79,7 @@ fn test_owned_trait():
     # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[PACKVAL]], [[PACKTMP]]
 
-    # CHECK-NEXT: [[PACKSUGAR:%.*]] = kgen.rebind [[PACKTMP]]
-    # CHECK-NEXT: lit.call {{.*}}takeOwnedAnyTypePack{{.*}}([[PACKSUGAR]])
+    # CHECK-NEXT: lit.call {{.*}}takeOwnedAnyTypePack{{.*}}([[PACKTMP]])
     takeOwnedAnyTypePack(value1^, value2)
 
     # Test register types.
@@ -102,8 +101,7 @@ fn test_owned_trait():
     # CHECK-NEXT: [[PACKVAL:%.*]] = lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACK]])
     # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[PACKVAL]], [[PACKTMP]]
-    # CHECK-NEXT: [[PACKSUGAR:%.*]] = kgen.rebind [[PACKTMP]]
-    # CHECK-NEXT: lit.call {{.*}}takeOwnedAnyTypePack{{.*}}([[PACKSUGAR]])
+    # CHECK-NEXT: lit.call {{.*}}takeOwnedAnyTypePack{{.*}}([[PACKTMP]])
     takeOwnedAnyTypePack(value3^, SomeReg())
 
 
@@ -135,8 +133,7 @@ fn test_inout():
     # CHECK-NEXT: lit.ref.store [[PACKVAL]], [[VARIADICPACK]]
 
     # CHECK-NEXT: [[PACKIMM:%.*]] = lit.ref.immut [[VARIADICPACK]]
-    # CHECK-NEXT: [[PACKIMMSUGAR:%.*]] = kgen.rebind [[PACKIMM]]
-    # CHECK-NEXT: lit.call {{.*}}takeInoutSomeTraitPack{{.*}}([[PACKIMMSUGAR]])
+    # CHECK-NEXT: lit.call {{.*}}takeInoutSomeTraitPack{{.*}}([[PACKIMM]])
     takeInoutSomeTraitPack(value1, value2)
 
     # Test register types.
@@ -152,8 +149,7 @@ fn test_inout():
     # CHECK-NEXT: lit.ref.store [[PACKVAL]], [[VARIADICPACK]]
     # CHECK-NEXT: [[PACKIMM:%.*]] = lit.ref.immut [[VARIADICPACK]]
 
-    # CHECK-NEXT: [[PACKIMMSUGAR:%.*]] = kgen.rebind [[PACKIMM]]
-    # CHECK-NEXT: lit.call {{.*}}takeInoutSomeTraitPack{{.*}}([[PACKIMMSUGAR]])
+    # CHECK-NEXT: lit.call {{.*}}takeInoutSomeTraitPack{{.*}}([[PACKIMM]])
     takeInoutSomeTraitPack(value3)
 
 
@@ -185,14 +181,14 @@ struct MyTuple[*Ts: AnyType]:
 
 # CHECK-LABEL: lit.fn @"pack
 # CHECK-SAME: Ts: variadic<!AnyType> pos_vararg>
-# CHECK-SAME: (%args: !lit.ref<{{.*}}@VariadicPack<:!Bool {:i1 0}, {{.*}}origin<0> = *"args`"}), :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>, imm *"args`1"> read_mem|pack_vararg)
+# CHECK-SAME: (%args: !lit.ref<{{.*}}@VariadicPack<:!Bool {:i1 0}, {{.*}}origin<0> = *"args`"}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>, imm *"args`1"> read_mem|pack_vararg)
 fn pack[*Ts: AnyType](*args: *Ts):
     pass
 
 
 # CHECK-LABEL: lit.fn @"packBorrowed[
 # CHECK-SAME: Ts: variadic<!AnyType> pos_vararg>
-# CHECK-SAME: (%args: !lit.ref<{{.*}}@VariadicPack<:!Bool {:i1 0}, {{.*}}origin<0> = *"args`"}), :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>, imm *"args`1"> read_mem|pack_vararg)
+# CHECK-SAME: (%args: !lit.ref<{{.*}}@VariadicPack<:!Bool {:i1 0}, {{.*}}origin<0> = *"args`"}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>, imm *"args`1"> read_mem|pack_vararg)
 fn packBorrowed[*Ts: AnyType](*args: *Ts):
     pass
 

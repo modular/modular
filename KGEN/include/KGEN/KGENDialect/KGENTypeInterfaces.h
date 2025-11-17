@@ -15,6 +15,7 @@
 
 namespace M::KGEN {
 class SymTabEvaluationContext;
+enum class SugarKind : uint32_t;
 } // namespace M::KGEN
 
 //===----------------------------------------------------------------------===//

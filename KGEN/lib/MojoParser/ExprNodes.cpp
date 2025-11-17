@@ -1966,7 +1966,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // "Type.member" from a sugar perspective.
     auto getParamMemberSugar = [&](PValue value) -> PValue {
       // Propagate failures.
-      if (!value)
+      if (!value || spelling == "_mlir_type")
         return value;
 
       auto sugaredMember = StructExtractAttr::get(
