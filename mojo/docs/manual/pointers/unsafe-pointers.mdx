@@ -87,13 +87,13 @@ At any given time, a pointer can be in one of several states:
   be declared but uninitialized.
 
   ```mojo
-  var ptr: UnsafePointer[Int]
+  var ptr: UnsafePointer[Int, MutOrigin.external]
   ```
 
 - Null. A null pointer has an address of 0, indicating an invalid pointer.
 
   ```mojo
-  ptr = UnsafePointer[Int]()
+  ptr = {}
   ```
 
 - Pointing to allocated, uninitialized memory. The `alloc()` function
@@ -124,7 +124,7 @@ At any given time, a pointer can be in one of several states:
   syntax:
 
   ```mojo
-  oldValue = ptr[]
+  var oldValue = ptr[]
   ptr[] = newValue
   ```
 
@@ -155,7 +155,7 @@ pointer pointing to the requested memory. You can allocate space for one or
 more values of the pointee's type.
 
 ```mojo
-ptr = alloc[Int](10) # Allocate space for 10 Int values
+var ptr = alloc[Int](10) # Allocate space for 10 Int values
 ```
 
 The allocated space is *uninitialized*—like a variable that's been declared but
@@ -194,7 +194,7 @@ getting a pointer to a value on the stack, for example.
 
 ```mojo
 var counter: Int = 5
-ptr = UnsafePointer(to=counter)
+var ptr = UnsafePointer(to=counter)
 ```
 
 Note that when calling `UnsafePointer(to=value)`, you don't need to allocate
@@ -233,7 +233,7 @@ calls lifecycle methods on the existing pointee (such as the destructor, move
 constructor or copy constructor).
 
 ```mojo
-str_ptr = alloc[String](1)
+var str_ptr = alloc[String](1)
 # str_ptr[] = "Testing" # Undefined behavior!
 str_ptr.init_pointee_move("Testing")
 str_ptr[] += " pointers" # Works now
@@ -295,7 +295,7 @@ to a pointer returns a new pointer offset by the specified number of values from
 the original pointer:
 
 ```mojo
-third_ptr = first_ptr + 2
+var third_ptr = first_ptr + 2
 ```
 
 Pointers also support subtraction, as well as in-place addition and subtraction:
@@ -317,7 +317,7 @@ For example, the following example allocates memory to store 6 `Float64`
 values, and initializes them all to zero.
 
 ```mojo
-float_ptr = alloc[Float64](6)
+var float_ptr = alloc[Float64](6)
 for offset in range(6):
     (float_ptr+offset).init_pointee_copy(0.0)
 ```
@@ -350,9 +350,9 @@ s_ptr = UnsafePointer(to=s)
 
 When allocating memory with the `alloc()` function, the returned pointer has
 an `origin` value of `MutOrigin.external`. This value represents an origin that
-does not _alias_ any existing value. (For example, it does not point to the
-memory allocated for any other variable.) This memory isn't tracked by Mojo's
-lifetime checker, so you're responsible for freeing it.
+is mutable and does not _alias_ any existing value. (For example, it does not
+point to the memory allocated for any other variable.) This memory isn't tracked
+by Mojo's lifetime checker, so you're responsible for freeing it.
 
 If you're using a pointer in the implementation of a struct, you usually don't
 have to worry about the origin, as long as the pointer isn't exposed outside of
@@ -371,11 +371,7 @@ That method looks something like this:
 ```mojo
 fn unsafe_ptr(
     ref self,
-) -> UnsafePointer[
-    T,
-    mut = Origin(origin_of(self)).mut,
-    origin = origin_of(self),
-]:
+) -> UnsafePointer[T, origin_of(self)]:
 
     return self.data.unsafe_origin_cast[origin_of(self)]()
 ```
@@ -471,13 +467,17 @@ If you call a C/C++ function that returns a pointer using the
 the return type as an `UnsafePointer`, and Mojo will handle the type conversion
 for you.
 
+Notably, the `origin` parameter when working across FFI boundaries should often
+be set to `(MutOrigin/ImmutOrigin).external`, since the pointer points to memory
+external to the mojo program.
+
 ```mojo
 from sys.ffi import external_call
 
-def get_foreign_pointer() -> UnsafePointer[Int]:
-    ptr = external_call[
-        "my_c_function",   # external function name
-        UnsafePointer[Int] # return type
+def get_foreign_pointer() -> UnsafePointer[Int, MutOrigin.external]:
+    var ptr = external_call[
+        "my_c_function", # external function name
+        UnsafePointer[Int, MutOrigin.external] # return type
     ]()
     return ptr
 ```
@@ -498,9 +498,9 @@ using the `bitcast()` method. Similarly, you can create an opaque pointer from
 an existing pointer by bitcasting to `NoneType`. For example:
 
 ```mojo
-str = "Hello, world!"
-str_ptr = UnsafePointer(to=str)
-opaque_ptr = str_ptr.bitcast[NoneType]()
+var str = "Hello, world!"
+var str_ptr = UnsafePointer(to=str)
+var opaque_ptr = str_ptr.bitcast[NoneType]()
 # ... call some foreign function that takes a void pointer
 ```
 
@@ -518,7 +518,9 @@ Each chunk begins with an 8-bit integer that identifies the number of values
 in the chunk.
 
 ```mojo
-def read_chunks(var ptr: UnsafePointer[UInt8]) -> List[List[UInt32]]:
+def read_chunks(
+  var ptr: UnsafePointer[mut=False, UInt8],
+) -> List[List[UInt32]]:
     chunks = List[List[UInt32]]()
     # A chunk size of 0 indicates the end of the data
     chunk_size = Int(ptr[])
@@ -589,7 +591,7 @@ that this function only handles images where the number of pixels is evenly
 divisible by eight.)
 
 ```mojo
-def invert_red_channel(ptr: UnsafePointer[UInt8], pixel_count: Int):
+def invert_red_channel(ptr: UnsafePointer[mut=True, UInt8], pixel_count: Int):
     # number of values loaded or stored at a time
     alias simd_width = 8
     # bytes per pixel, which is also the stride size

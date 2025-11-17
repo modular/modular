@@ -433,7 +433,10 @@ struct Person(Representable):
         return self_ptr[].name
 
     @staticmethod
-    fn set_age(self_ptr: UnsafePointer[Self], new_age: PythonObject) raises:
+    fn set_age(
+        self_ptr: UnsafePointer[mut=True, Self],
+        new_age: PythonObject,
+    ) raises:
         self_ptr[].age = Int(new_age)
     # highlight-end
 
