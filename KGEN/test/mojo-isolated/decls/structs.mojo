@@ -165,7 +165,7 @@ struct MyParam[p: Int]:
 
 
 trait TraitWithPAlias:
-    alias p: Int = 42
+    comptime p: Int = 42
 
 
 # CHECK-LABEL: lit.struct.decl @MyStruct
@@ -192,7 +192,7 @@ struct MyStructWithPAlias[m1: MyParam[_]]:
         pass
 
     # COM: Ensure there's no conflict with this alias.
-    alias p: Int = 2
+    comptime p: Int = 2
 
 
 # CHECK-LABEL: lit.struct.decl @MyStructWithTraitWithPAlias

@@ -24,7 +24,7 @@ fn test() -> Int:
 
     # This uses the alias defined in the extension, which requires the
     # extension to survive DCE during importing.
-    alias t = MyStruct.ExtensionAlias
+    comptime t = MyStruct.ExtensionAlias
 
     # This call requires the extension conformance to be pulled in from the
     # mojopkg. Without it, this would fail in the elaborator because it can't

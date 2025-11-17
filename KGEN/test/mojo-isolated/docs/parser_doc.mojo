@@ -28,7 +28,7 @@ from docs_package import documented_method_defined_in_init
 # CHECK: lit.package @docs_package{{.*}}docString = #[[PACKAGE_DOC]]
 # CHECK: lit.fn @"documented_method_defined_in_init()"{{.*}}docString = #[[IMPORTED_FUNC_DOC]]
 
-alias AliasType = __mlir_type.`!kgen.type`
+comptime AliasType = __mlir_type.`!kgen.type`
 """This is an alias doc."""
 
 # This is needed by the compiler to synthesize trivial bit.

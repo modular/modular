@@ -534,13 +534,13 @@ fn paramAndOr[a: Boolish, b: Boolish]():
 
   # CHECK: lit.alias.decl *"c{{.*}}": !Boolish = <cond(
   # CHECK-SAME: apply({{.*}}Boolish::@"__bool__{{.*}}"), store_to_mem(a)), "_mlir_value">{{.*}}, b, a)>
-  alias c = a and b
+  comptime c = a and b
 
   # Short circuiting OR returns first operand when it is true-y, second
   # otherwise.
 
   # CHECK: lit.alias.decl *"d{{.*}}": !Boolish = <cond({{.*}}apply({{.*}}Boolish::@"__bool__{{.*}}"), store_to_mem(a)), "_mlir_value">{{.*}}, a, b)>
-  alias d = a or b
+  comptime d = a or b
 
 # CHECK-LABEL: lit.fn @"do_math
 fn do_math(a: Int, b: Int, c: Int) -> Int:
@@ -593,11 +593,11 @@ fn test_if_cond(var cond: Bool, memCond: MemBoolish):
 # CHECK-LABEL: lit.fn @"test_param_if_cond{{.*}}"<cond: !Bool>
 fn test_param_if_cond[cond: Bool]() -> Int:
   # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond(#lit.struct.extract<:!Bool cond, "_mlir_value">, {2}, {3})>
-  alias i = 2 if cond else 3
+  comptime i = 2 if cond else 3
 
   # CHECK-NEXT: lit.alias.decl *"j{{.*}} = <cond({{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">
   # CHECK-SAME: :!pop.float_literal #pop.float_literal<2|1>{{.*}}:!pop.int_literal 3>
-  alias j = 2.0 if cond else 3
+  comptime j = 2.0 if cond else 3
 
   # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = <sugar_alias(*"i`", cond(#lit.struct.extract<:!Bool cond, "_mlir_value">, {2}, {3}))>
   return i
@@ -639,11 +639,11 @@ fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
 # CHECK-SAME: <a: !Int, a2: !Int>
 fn parameterExprs[a: Int, a2: Int]():
   # CHECK: lit.alias.decl *"b{{.*}}": !Int = <{0}>
-  alias b = a-a
+  comptime b = a-a
   # CHECK: lit.alias.decl *"c{{.*}}": !Int = <{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int a, "_mlir_value">, 42)}
-  alias c = a+42
+  comptime c = a+42
   # CHECK: lit.alias.decl *"d{{.*}}": !Int = <{{.*}}{_mlir_value = mul(#lit.struct.extract<:!Int a, "_mlir_value">, #lit.struct.extract<:!Int a2, "_mlir_value">)}
-  alias d = a*a2
+  comptime d = a*a2
 
 ##===----------------------------------------------------------------------===##
 # Patterns, LValues and RValues
@@ -702,10 +702,10 @@ fn lvaluesAndRValues() -> __mlir_type.index:
 # CHECK-LABEL: lit.fn @"mvalueStructField()"
 fn mvalueStructField():
   # CHECK: lit.alias.decl [[INT:.*]]: !Int = <{4}>
-  alias Index = Int(4)
+  comptime Index = Int(4)
   # CHECK: lit.alias.decl *"value{{.*}}" = <4>
-  alias value = Index._mlir_value
-  alias foldToValue = Int(5)._mlir_value
+  comptime value = Index._mlir_value
+  comptime foldToValue = Int(5)._mlir_value
 
 ##===----------------------------------------------------------------------===##
 # Augmented Assignments
@@ -803,7 +803,7 @@ def literals():
     a = 0O711         # CHECK: 457
     # Test parsing for this value with lots of underscores here because mblack
     # can't handle it.
-    alias b = 1_2.3__1e+1_1 # CHECK: #pop.float_literal<1231000000000|1>
+    comptime b = 1_2.3__1e+1_1 # CHECK: #pop.float_literal<1231000000000|1>
     c = False         # CHECK: !Bool = <{:i1 0}>
     c = True          # CHECK: !Bool = <{:i1 1}>
 
@@ -1045,10 +1045,10 @@ fn function_types[
 # CHECK:         lit.alias.decl *"x{{.*}}": type = <i8>
 # CHECK-NEXT:    lit.alias.decl *"B{{.*}}": type = <!lit.generator<("foo": i8) -> !kgen.none>>
 struct Mem:
-   alias x = __mlir_type.i8
-   alias B = fn (foo: Self.x) -> None
+   comptime x = __mlir_type.i8
+   comptime B = fn (foo: Self.x) -> None
 
-alias fn_type_alias = fn() -> None
+comptime fn_type_alias = fn() -> None
 
 @always_inline
 fn func_with_decorator(): pass
@@ -1063,7 +1063,7 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}VariadicList{{.*}}__init__{{.*}}(%b)
     # CHECK-NEXT: lit.ref.store [[TMP]], %b_0
     # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <variadic_get(:variadic<!Int> a, 2)>
-    alias v0 = a[2]
+    comptime v0 = a[2]
 
     # CHECK: %v1 = lit.var.decl "v1"
     # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <variadic_get(:variadic<!Int> a, 3)>
@@ -1106,7 +1106,7 @@ fn testTransferWarning():
 ##===----------------------------------------------------------------------===##
 
 # CHECK: lit.alias.decl *"bigggNumber{{.*}}@IntLiteral<:!pop.int_literal 115792089237316195423570985008687907853269984665640564039457584007913129639936> = <*?>
-alias bigggNumber = 2 << 255
+comptime bigggNumber = 2 << 255
 fn useBigNumber() -> Int:
   # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <{512}>
   var notSoBig = bigggNumber // (2 << 246)
@@ -1126,7 +1126,7 @@ struct IndexList[size: Int]:
 
 # Issue 23233 https://github.com/modularml/modular/issues/23233
 fn setitemParamToDLValue():
-  alias x = 3
+  comptime x = 3
   var coords = IndexList[3](0)
   # The main check is just that it's not erroring.
   # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <{-3}>
@@ -1204,7 +1204,7 @@ struct StructWithStaticMethods:
      Self._init_op_state(Pointer(to=x), x)
 
 fn infer_through_alias():
-  alias MyType = MemoryOnlyInt
+  comptime MyType = MemoryOnlyInt
   _ = MyType(4)
 
 
@@ -1232,4 +1232,4 @@ fn testThingWithMethodReferenceSelf[a: ThingWithMethodReferenceSelf]():
     # CHECK-SAME: <apply(:!lit.generator<("a": !lit.ref<!ThingWithMethodReferenceSelf,
     # CHECK-SAME:     <:i1 0, :origin<0> #lit.any.origin>,
     # CHECK-SAME:     rebind(:!lit.ref<!ThingWithMethodReferenceSelf, imm #lit.comptime.origin> store_to_mem(a)))>
-    alias sizzle = a.method()
+    comptime sizzle = a.method()

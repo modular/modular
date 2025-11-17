@@ -20,8 +20,8 @@ trait SubTraitT2:
 
 @register_passable("trivial")
 trait MainTraitT:
-    alias ret_type: SubTraitT
-    alias anything: AnyType
+    comptime ret_type: SubTraitT
+    comptime anything: AnyType
 
     fn get(self) -> Self.ret_type:
         ...
@@ -29,7 +29,7 @@ trait MainTraitT:
 
 @register_passable("trivial")
 trait MainTraitT2:
-    alias ret_type: SubTraitT2
+    comptime ret_type: SubTraitT2
 
     fn get2(self) -> Self.ret_type:
         ...
@@ -52,9 +52,9 @@ struct ImplT(SubTraitT, SubTraitT2):
 @register_passable("trivial")
 struct MainImplT(MainTraitT, MainTraitT2):
     # CHECK: lit.alias.decl *"ret_type{{.*}}": !mt_ImplT = <!ImplT>
-    alias ret_type = ImplT
+    comptime ret_type = ImplT
     # CHECK: lit.alias.decl *"anything{{.*}}": !mt_Int = <!Int>
-    alias anything = Int
+    comptime anything = Int
 
     fn get(self) -> Self.ret_type:
         return ImplT()

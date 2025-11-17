@@ -197,7 +197,7 @@ fn launch_ship(mut ship: Spaceship):
 # // -----
 
 # Define a capturing lambda type (like elementwise_epilogue_type)
-alias capturing_lambda_type = fn(Int) capturing -> Int
+comptime capturing_lambda_type = fn(Int) capturing -> Int
 
 struct StructWithCapturingLambda[T: Int, my_lambda: capturing_lambda_type]:
     var value: Int
@@ -265,7 +265,7 @@ struct ZDType:
         pass
 
 
-alias ZScalar = ZSIMD[ZDType(), size=1]
+comptime ZScalar = ZSIMD[ZDType(), size=1]
 
 
 struct ZSIMD[dtype: ZDType, size: Int]:
@@ -303,7 +303,7 @@ __extension MyContainer:
 fn test_param_access[dtype: Int]():
     # Note the Int below, thats what makes sure it's working.
     # CHECK: lit.alias.decl *"element_type`": !Int = <dtype>
-    alias element_type = MyContainer[dtype].d
+    comptime element_type = MyContainer[dtype].d
 
 
 # TODO(MOCO-522): Add tests for aliases in extensions

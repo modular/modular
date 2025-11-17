@@ -40,7 +40,7 @@ trait Foo:
 
 
 trait FooActual(Absable, Foo, Intable):
-    alias P: Int
+    comptime P: Int
 
     fn rp_return_params[T: Int](self) -> Int:
         var res = (
@@ -101,7 +101,7 @@ trait FooActual(Absable, Foo, Intable):
 @fieldwise_init
 struct Bar(Barable, FooActual):
     var x: Int
-    alias P: Int = 10
+    comptime P: Int = 10
 
     fn __int__(self) -> Int:
         return self.x
@@ -127,7 +127,7 @@ fn generic_trait_caller[T: Foo](x: T):
 
 
 trait AATrait1:
-    alias X: ImplicitlyCopyable
+    comptime X: ImplicitlyCopyable
 
     fn zork(self, x: Self.X) -> Self.X:
         print("In AATrait1.zork")
@@ -135,7 +135,7 @@ trait AATrait1:
 
 
 trait AATrait2:
-    alias X: ImplicitlyCopyable & Movable
+    comptime X: ImplicitlyCopyable & Movable
 
     fn zork(self, x: Self.X) -> Self.X:
         print("In AATrait2.zork")
@@ -144,7 +144,7 @@ trait AATrait2:
 
 @fieldwise_init
 struct AAStruct(AATrait1, AATrait2):
-    alias X = Int
+    comptime X = Int
 
     fn zork(self, x: Self.X) -> Self.X:
         print("In Foo.zork")

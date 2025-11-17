@@ -46,13 +46,13 @@ struct BuiltinSI32T[x: __mlir_type.`!pop.scalar<si32>`](ImplicitlyCopyable):
 
 
 # 139 = DType.int32
-alias MLIR_UI8_139 = __mlir_attr.`139 : ui8`
-alias POP_UI8_139 = __mlir_attr.`#pop.simd<139> : !pop.scalar<ui8>`
+comptime MLIR_UI8_139 = __mlir_attr.`139 : ui8`
+comptime POP_UI8_139 = __mlir_attr.`#pop.simd<139> : !pop.scalar<ui8>`
 
 
 # 77 = DType.f8e5m2
-alias MLIR_UI8_77 = __mlir_attr.`77 : ui8`
-alias POP_UI8_77 = __mlir_attr.`#pop.simd<77> : !pop.scalar<ui8>`
+comptime MLIR_UI8_77 = __mlir_attr.`77 : ui8`
+comptime POP_UI8_77 = __mlir_attr.`#pop.simd<77> : !pop.scalar<ui8>`
 
 
 @always_inline("builtin")
@@ -162,8 +162,8 @@ struct POPUInt8T[x: __mlir_type.`!pop.scalar<ui8>`](ImplicitlyCopyable):
         pass
 
 
-alias POP_SI8_N1 = __mlir_attr.`#pop.simd<-1> : !pop.scalar<si8>`
-alias POP_UI8_N1 = __mlir_attr.`#pop.simd<255> : !pop.scalar<ui8>`
+comptime POP_SI8_N1 = __mlir_attr.`#pop.simd<-1> : !pop.scalar<si8>`
+comptime POP_UI8_N1 = __mlir_attr.`#pop.simd<255> : !pop.scalar<ui8>`
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_cast
@@ -186,7 +186,7 @@ struct POPUInt8x4T[x: __mlir_type.`!pop.simd<4, ui8>`](ImplicitlyCopyable):
         pass
 
 
-alias POP_UI8x4_N1 = __mlir_attr.`#pop.simd<255, 255, 255, 255> : !pop.simd<4, ui8>`
+comptime POP_UI8x4_N1 = __mlir_attr.`#pop.simd<255, 255, 255, 255> : !pop.simd<4, ui8>`
 
 
 @always_inline("builtin")
@@ -217,7 +217,7 @@ fn pop_simd_and(
     return __mlir_op.`pop.simd.and`(x, y)
 
 
-alias POP_UI8x4_Fold = __mlir_attr.`#pop.simd<42, 255, 1, 0> : !pop.simd<4, ui8>`
+comptime POP_UI8x4_Fold = __mlir_attr.`#pop.simd<42, 255, 1, 0> : !pop.simd<4, ui8>`
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_and
@@ -285,7 +285,7 @@ struct POPBoolx4T[x: __mlir_type.`!pop.simd<4, bool>`](ImplicitlyCopyable):
         pass
 
 
-alias POP_Boolx4_EQ_Fold = __mlir_attr.`#pop.simd<false, true, true, false> : !pop.simd<4, bool>`
+comptime POP_Boolx4_EQ_Fold = __mlir_attr.`#pop.simd<false, true, true, false> : !pop.simd<4, bool>`
 
 
 @always_inline("builtin")

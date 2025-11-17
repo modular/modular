@@ -13,7 +13,7 @@ from collections import List
 struct MTuple[T: ImplicitlyCopyable & Movable](
     ImplicitlyCopyable, Movable, Stringable, Writable
 ):
-    alias Element = Variant[T, Self]
+    comptime Element = Variant[T, Self]
     var elts: List[Self.Element]
 
     @always_inline
@@ -70,17 +70,17 @@ struct MTuple[T: ImplicitlyCopyable & Movable](
         writer.write(")")
 
 
-alias IntTuple = MTuple[Int]
+comptime IntTuple = MTuple[Int]
 
 
 fn main():
-    alias tup = IntTuple(IntTuple(3) + IntTuple(4))
+    comptime tup = IntTuple(IntTuple(3) + IntTuple(4))
     # CHECK: (3, 4)
     print(tup)
     add_print[tup]()
 
 
 fn add_print[x: IntTuple]():
-    alias tup = x + IntTuple(4)
+    comptime tup = x + IntTuple(4)
     # CHECK: ((3, 4), 4)
     print(tup)

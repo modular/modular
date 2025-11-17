@@ -23,7 +23,7 @@ fn test_is_compile_time():
     print("testing test_is_compile_time")
 
     # CHECK: interpret value: 42
-    alias a = diverge_comptime(1)
+    comptime a = diverge_comptime(1)
     print("interpret value:", a)
 
     # CHECK: runtime value: 3
@@ -55,14 +55,14 @@ fn test_exception_handling():
     print("test_exception_handling")
 
     # CHECK: interpret value: 36
-    alias a = might_throw(True)
+    comptime a = might_throw(True)
     print("interpret value:", a)
 
     # CHECK: run value: 36
     print("run value:", might_throw(True))
 
     # CHECK: interpret value: 7
-    alias b = might_throw(False)
+    comptime b = might_throw(False)
     print("interpret value:", b)
 
     # CHECK: run value: 7

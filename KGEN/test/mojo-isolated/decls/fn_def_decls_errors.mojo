@@ -105,7 +105,7 @@ struct NonCopyable:
        pass
 
 def defTests() -> None:
-  alias abc = 1
+  comptime abc = 1
 
   # MOCO-83: [mojo][Bug] def methods can't shadow names via assignment
   # expected-error @+1 {{expression must be mutable in assignment}}

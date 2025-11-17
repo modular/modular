@@ -14,12 +14,12 @@ fn f0(not_used: String, values: List[List[String]], i: Int) -> List[String]:
 fn main():
     # CHECK: ['hello']
     # CHECK-NEXT: ['world']
-    alias not_used = String("not_used")
-    alias res0 = f0(
+    comptime not_used = String("not_used")
+    comptime res0 = f0(
         not_used, List(List[String]("hello"), List[String]("world")), 0
     )
     print(materialize[res0.__str__()]())
-    alias res1 = f0(
+    comptime res1 = f0(
         not_used, List(List[String]("hello"), List[String]("world")), 1
     )
     print(materialize[res1.__str__()]())

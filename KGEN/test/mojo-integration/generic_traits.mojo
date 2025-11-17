@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen -elaborate -O0 %s -S | FileCheck %s
 
-alias Index = __mlir_type.index
+comptime Index = __mlir_type.index
 
 
 trait SimpleTrait:

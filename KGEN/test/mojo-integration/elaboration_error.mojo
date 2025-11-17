@@ -55,7 +55,7 @@ fn parametric[param: Int]():  # expected-note {{function instantiation failed}}
 # This is copied so the note ends up in this file.
 @always_inline("nodebug")
 fn constrained[cond: Bool, msg: StaticString]():
-    alias msg_literal = _get_kgen_string[msg]()
+    comptime msg_literal = _get_kgen_string[msg]()
     __mlir_op.`kgen.param.assert`[
         cond = cond.__mlir_i1__(), message=msg_literal
     ]()  # expected-note {{constraint failed: param must be 2}}

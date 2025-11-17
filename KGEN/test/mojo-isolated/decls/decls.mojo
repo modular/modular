@@ -29,7 +29,7 @@ fn implicit_variable_decls(a: Int) -> Int:
     return b
 
 
-alias IntToFloat32Type = fn (:Int) -> FloatDyn
+comptime IntToFloat32Type = fn (:Int) -> FloatDyn
 
 
 fn takeIntToFloat32Param[f: IntToFloat32Type]():
@@ -465,7 +465,7 @@ fn callNonRegisterDefaultArg():
     defaultArgumentNonRegisterType()
     # CHECK: lit.alias.decl *"none{{.*}}": none = <apply({{.*}}defaultArgumentNonRegisterType
     # CHECK-SAME: store_to_mem(apply_result_slot({{.*}}MemoryType::@"__init__{{.*}}1}
-    alias none = defaultArgumentNonRegisterType()
+    comptime none = defaultArgumentNonRegisterType()
 
 
 # CHECK: lit.fn @"referencesDefaultArgumentFunction
@@ -523,9 +523,9 @@ fn callVariadic[p: Int](x: Int):
     variadics(x, 1)
 
     # CHECK: @"variadics({{.*}}Int*)", []
-    alias EmptyVariadic = variadics()
+    comptime EmptyVariadic = variadics()
     # CHECK: @"variadics({{.*}}Int*)", [p, {1}]
-    alias NonEmptyVariadic = variadics(p, 1)
+    comptime NonEmptyVariadic = variadics(p, 1)
 
     # CHECK: @"parameterizedVariadic{{.*}}"<:type !Int>
     parameterizedVariadic(1, 2)
@@ -540,7 +540,7 @@ fn callVariadic[p: Int](x: Int):
 # COM: Test variadic arguments in a parameter context.
 @fieldwise_init
 struct MemStruct:
-    alias t = 5
+    comptime t = 5
 
 
 fn variadic_mem_only(*values: MemStruct) -> Int:
@@ -552,7 +552,7 @@ fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
     # CHECK: lit.alias.decl {{.*}}: !Int = <apply(
     # CHECK-SAME: :!lit.generator<[1]("values": !kgen.variadic<!lit.ref<!MemStruct, imm #lit.comptime.origin>> read_mem|pos_vararg) -> !Int> {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
     # CHECK-SAME: [store_to_mem(x), store_to_mem(y)]
-    alias b = variadic_mem_only(x, y)
+    comptime b = variadic_mem_only(x, y)
 
 
 ##===----------------------------------------------------------------------===##
@@ -839,7 +839,7 @@ struct LegacyInOutInit:
 
 @register_passable("trivial")
 struct Container[T: AnyType]:
-    alias _mlir_type = __mlir_type[
+    comptime _mlir_type = __mlir_type[
         `!kgen.pointer<`,
         T,
         `>`,
@@ -990,7 +990,7 @@ fn topLevelFunction() -> Int:
         return a
 
     # CHECK: lit.alias.decl *"b{{.*}}": !lit.generator<:{mut *"a`"}:() capturing -> !Int> = <*"nestedFunction()">
-    alias b = nestedFunction
+    comptime b = nestedFunction
     # CHECK: call[!lit.generator<:{mut *"a`"}:() capturing -> !Int>: *"nestedFunction()"]()
     return nestedFunction()
 
@@ -1008,7 +1008,7 @@ struct SomeStruct:
             return a
 
         # CHECK: lit.alias.decl *"b{{.*}}": !lit.generator<:{mut [[A_LT:\*"a`.*"]]}:() capturing -> !Int> = <*"nestedFunction()">
-        alias b = nestedFunction
+        comptime b = nestedFunction
         # CHECK: call[!lit.generator<:{mut [[A_LT]]}:() capturing -> !Int>: *"nestedFunction()"]()
         return nestedFunction()
 
@@ -1155,7 +1155,7 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
         return
 
     # CHECK: lit.alias.decl *"thinref{{.*}}": !lit.generator<<"b_param": index>() -> !kgen.none> = <*"nestedFunction[__mlir_type.index]()">
-    alias thinref = nestedFunction
+    comptime thinref = nestedFunction
     # CHECK: call[{{.*}}: bind_params(:!lit.generator<<"b_param": index>() -> !kgen.none> *"nestedFunction[__mlir_type.index]()", 2)]()
     nestedFunction[Int(2)._mlir_value]()
 
@@ -1167,7 +1167,7 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
         return value
 
     # CHECK: lit.alias.decl *"fatRef{{.*}}": !lit.generator<() capturing -> !Int> = <*"capturingNestedFunction()">
-    alias fatRef = capturingNestedFunction
+    comptime fatRef = capturingNestedFunction
 
 
 struct SomeParamStruct[c_param: Int]:
@@ -1178,7 +1178,7 @@ struct SomeParamStruct[c_param: Int]:
             return
 
         # CHECK: lit.alias.decl *"reff{{.*}}": !lit.generator<<"b_param": !Int>() -> !kgen.none> = <*"nestedFunction[{{.*}}Int]()">
-        alias reff = nestedFunction
+        comptime reff = nestedFunction
         # CHECK: call[{{.*}}: bind_params(:!lit.generator<<"b_param": !Int>() -> !kgen.none> *"nestedFunction[{{.*}}Int]()", {{.*}}2{{.*}})]()
         nestedFunction[2]()
 
@@ -1430,7 +1430,7 @@ fn testOverloadKwArgs():
 
 # Can't generate the constructors for a type wrapping !lit.ref
 struct MOCO1320[mut: Bool, //, origin: Origin[mut]]:
-    alias _mlir_type = __mlir_type[
+    comptime _mlir_type = __mlir_type[
         `!lit.ref<`,
         Int,
         `, `,
@@ -1465,7 +1465,7 @@ fn need_positive_int[x: Int where x > 0]():
 # CHECK-LABEL: lit.struct.decl @ConstraintStruct
 # CHECK-SAME: <a: !Int {{.*}}ge(#lit.struct.extract<:!Int a, "_mlir_value">, 1)
 struct ConstraintStruct[a: Int where a > 0]:
-    alias b = a + 1
+    comptime b = a + 1
 
     fn use_known_assumption(self):
         need_positive_int[self.a]()

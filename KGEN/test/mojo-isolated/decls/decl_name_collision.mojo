@@ -21,4 +21,4 @@ struct Foo:
 
 def main():
     # CHECK: lit.alias.decl *"{{.*}}": !Foo = <apply(:!lit.generator<(*, "b": !Int) -> !Foo> @decl_name_collision::@Foo::@"__init__(::Int)_0", {42})>
-    alias _foo = Foo(b=42)
+    comptime _foo = Foo(b=42)

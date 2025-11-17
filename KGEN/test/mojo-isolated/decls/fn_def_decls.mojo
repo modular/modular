@@ -89,14 +89,14 @@ fn variadic_param_after_default[
 # CHECK-SAME: <x: !Int, y: !Int, +>
 fn inferred_params[x: Int, y: Int, //]():
     # CHECK-NEXT: !lit.generator<<"x": !Int, "y": !Int, +>() -> !kgen.none> = <@
-    alias fn_type: fn[x: Int, y: Int, //] () -> None = inferred_params
+    comptime fn_type: fn[x: Int, y: Int, //] () -> None = inferred_params
 
 
 # CHECK-LABEL: lit.fn @"inferred_params_regular
 # CHECK-SAME: <x: !Int, +, y: !Int>
 fn inferred_params_regular[x: Int, //, y: Int]():
     # CHECK-NEXT: !lit.generator<<"x": !Int, +, "y": !Int>() -> !kgen.none> = <@
-    alias fn_type: fn[
+    comptime fn_type: fn[
         x: Int, //, y: Int
     ] () -> None = inferred_params_regular
 

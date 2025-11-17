@@ -11,13 +11,13 @@ struct Spaceship:
 
 
 __extension Spaceship:
-    alias MaxSpeed: Int = 42
+    comptime MaxSpeed: Int = 42
 
 
 # CHECK-LABEL: lit.fn @"test_function
 fn test_function():
     # CHECK: lit.alias.decl *"MySpeed`"
-    alias MySpeed = Spaceship.MaxSpeed
+    comptime MySpeed = Spaceship.MaxSpeed
     # CHECK: lit.var.decl "speed"
     var speed: Int = MySpeed
 
@@ -40,8 +40,8 @@ struct Spaceship:
 
 
 __extension Spaceship:
-    alias InnerType: AnyType = ZInt
-    alias MaxSpeed: InnerType = ZInt()
+    comptime InnerType: AnyType = ZInt
+    comptime MaxSpeed: InnerType = ZInt()
 
 
 # CHECK-LABEL: lit.fn @"test_function()"
@@ -72,7 +72,7 @@ struct Spaceship:
 
 
 __extension Spaceship:
-    alias MaxSpeed = ZInt()
+    comptime MaxSpeed = ZInt()
 
     # CHECK-LABEL: lit.fn @"get_max_speed
     fn get_max_speed(self: Spaceship) -> ZInt:
@@ -117,7 +117,7 @@ struct Rocket[T: AnyType]:
 
 
 __extension Rocket:
-    alias FuelType = T
+    comptime FuelType = T
 
 
 # // -----
@@ -139,8 +139,8 @@ struct Container[T: ImplicitlyCopyable]:
 
 
 __extension Container:
-    alias ElementType = T
-    alias DefaultSize = ZInt()
+    comptime ElementType = T
+    comptime DefaultSize = ZInt()
 
     fn get_element_via_self(self: Container[T]) -> T:
         return self.data

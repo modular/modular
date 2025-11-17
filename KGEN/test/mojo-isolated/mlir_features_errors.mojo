@@ -6,7 +6,7 @@
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
-alias index42 = __mlir_attr.`42 : index`
+comptime index42 = __mlir_attr.`42 : index`
 
 fn test_mlir():
   var x: __mlir_type.index
@@ -90,7 +90,7 @@ fn bad_signature_type[func: __mlir_type[`!kgen.func<(index mut) -> !kgen.none>`]
 
 fn mlir_magic_keyword_param():
     # expected-error @below {{only positional operands allowed in mlir magic}}
-    alias a = __mlir_type[a=`!pop.scalar<bool>`]
+    comptime a = __mlir_type[a=`!pop.scalar<bool>`]
 
 
 fn mlir_properties(arg0: __mlir_type.i64, arg1: __mlir_type.i64):

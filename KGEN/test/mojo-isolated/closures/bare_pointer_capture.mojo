@@ -6,7 +6,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-alias ptr = __mlir_type.`!kgen.pointer<none>`
+comptime ptr = __mlir_type.`!kgen.pointer<none>`
 
 # CHECK: lit.struct.field field0 : !kgen.pointer<none>
 

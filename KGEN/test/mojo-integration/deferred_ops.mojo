@@ -8,7 +8,7 @@
 
 
 def test0(a: Int, b: Int) -> Bool:
-    alias pred_attr = __mlir_attr.`#index<cmp_predicate sle>`
+    comptime pred_attr = __mlir_attr.`#index<cmp_predicate sle>`
 
     var res = __mlir_op.`index.cmp`[pred=pred_attr](a, b)
     return res
@@ -22,7 +22,7 @@ def test1[cmp: Bool](a: Int, b: Int) -> Bool:
         else:
             return __mlir_attr.`#index<cmp_predicate sgt>`
 
-    alias pred_attr = select_pred[cmp]()
+    comptime pred_attr = select_pred[cmp]()
 
     var res = __mlir_op.`index.cmp`[pred=pred_attr](a, b)
     return res
@@ -59,7 +59,7 @@ fn test2[pred: StaticString](x: Int, y: Int) -> Bool:
     return z
 
 
-alias dtype_to_llvm_type_i32[
+comptime dtype_to_llvm_type_i32[
     dtype: DType
 ] = __mlir_type.`i32` if dtype is DType.int32 or dtype is DType.uint32 else __mlir_type.`!kgen.none`
 

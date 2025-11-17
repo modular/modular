@@ -9,9 +9,9 @@
 
 # The octal escape sequence in string literals \ooo can have variable length.
 fn testOctal():
-    alias x = "A\0"
-    alias y = "A\01"
-    alias z = "A\012"
+    comptime x = "A\0"
+    comptime y = "A\01"
+    comptime z = "A\012"
 
 
 # // -----

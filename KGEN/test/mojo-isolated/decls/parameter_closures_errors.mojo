@@ -20,18 +20,18 @@ fn bind_fat_to_thin_main():
         return x
 
     # expected-error @below {{cannot pass 'fn(y: Int) capturing -> Int' value, expected 'fn(y: Int) -> Int' in call parameter}}
-    alias Bound = bind_fat_to_thin_target[g]
+    comptime Bound = bind_fat_to_thin_target[g]
     Bound(3)
 
 
 fn makeClosure(x: Int):
-    var z = x+x
+    var z = x + x
 
     @__copy_capture(z)
     @parameter
     fn writer() -> Int:
         # expected-error @below {{expression must be mutable in assignment}}
-        z = z+z
+        z = z + z
         return z
 
     var y = writer()

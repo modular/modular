@@ -64,7 +64,7 @@ struct Zork(ImplicitlyCopyable, Movable):
 
 
 trait AA1:
-    alias X: ImplicitlyCopyable
+    comptime X: ImplicitlyCopyable
 
     fn zork(self, x: Self.X) -> Self.X:
         return x
@@ -73,7 +73,7 @@ trait AA1:
 # Check that we handle traits with associated aliases properly
 # CHECK-LABEL: lit.struct.decl @TAA
 struct TAA(AA1):
-    alias X = Zork
+    comptime X = Zork
 
     # CHECK: lit.fn @"zork(default_trait_methods::TAA,default_trait_methods::Zork)AA1"{{.*}}([[SELF:%[^:]+]]: {{.*}}, [[X:%[^:]+]]: {{.*}}, {{.*}}, [[RESULT:%[^:]+]]: {{.*}}) -> !kgen.none
     # CHECK: lit.call @default_trait_methods::@AA1::@"zork($0,$0.X)"{{.*}}([[SELF]], [[X]], [[RESULT]])

@@ -32,7 +32,7 @@ struct ParamType[x: Int](FooTrait):
 
 fn invalid_trait_bind():
     # expected-error @below {{'ParamType' missing required parameter 'x'}}
-    alias Bound: FooTrait = ParamType
+    comptime Bound: FooTrait = ParamType
 
 
 fn different_trait_types[
@@ -140,11 +140,11 @@ fn bindAnyTraitToTrait():
 
 fn anytrait_assignment():
     # expected-error @below {{cannot implicitly convert 'AnyTrait[ImplicitlyCopyable]' value to 'AnyTrait[Movable]' in alias initializer}}
-    alias t: type_of(Movable) = ImplicitlyCopyable
+    comptime t: type_of(Movable) = ImplicitlyCopyable
 
 
 trait SomeTrait:
-    alias A: Int
+    comptime A: Int
 
 
 @fieldwise_init

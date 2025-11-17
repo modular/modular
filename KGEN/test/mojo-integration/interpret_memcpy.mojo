@@ -67,9 +67,9 @@ struct Data(ImplicitlyCopyable, Stringable):
 
 
 fn main():
-    alias d1 = Data(4, 2)
-    alias d2 = Data(2, 8)
-    alias d3 = d1 + d2
+    comptime d1 = Data(4, 2)
+    comptime d2 = Data(2, 8)
+    comptime d3 = d1 + d2
     var d4 = d1 + d2
 
     # CHECK: data[0] = 4

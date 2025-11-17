@@ -177,41 +177,41 @@ fn test_overloaded_arg_ambiguity() :
 
 fn test_func_type():
     # expected-error @below {{fn(Int) -> Int}}
-    alias float0: fn(Int) -> Int = test_func_type
+    comptime float0: fn(Int) -> Int = test_func_type
     # expected-error @below {{async fn() -> None}}
-    alias float1: async fn() -> None = test_func_type
+    comptime float1: async fn() -> None = test_func_type
     # expected-error @below {{fn[a: Int]() -> MemType}}
-    alias float2: fn[a: Int]() -> MemType = test_func_type
+    comptime float2: fn[a: Int]() -> MemType = test_func_type
     # expected-error @below {{fn[a: Int](var Int) -> MemType}}
-    alias float3: fn[a: Int](var Int) -> MemType = test_func_type
+    comptime float3: fn[a: Int](var Int) -> MemType = test_func_type
     # expected-error @below {{fn[a: Int](mut *Int) -> None}}
-    alias float4: fn[a: Int](mut *Int) -> None = test_func_type
+    comptime float4: fn[a: Int](mut *Int) -> None = test_func_type
     # expected-error @below {{fn(*MemType) raises capturing -> None}}
-    alias float5: def(*MemType) capturing -> None = test_func_type
+    comptime float5: def(*MemType) capturing -> None = test_func_type
     # expected-error @below {{'fn[Ts: Variadic[AnyType]](var * *Ts) capturing -> None'}}
-    alias float6: fn[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
+    comptime float6: fn[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
     # expected-error @below {{'fn[Ts: Variadic[AnyType]](var * *Ts) capturing -> None'}}
-    alias float6a: fn[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
+    comptime float6a: fn[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
     # expected-error @below {{fn[T: AnyTrivialRegType](mut *T) capturing -> None}}
-    alias float7: fn[T: AnyTrivialRegType](mut *T) capturing -> None = test_func_type
+    comptime float7: fn[T: AnyTrivialRegType](mut *T) capturing -> None = test_func_type
 
     # expected-error @below {{unnamed argument cannot follow named argument}}
-    alias f1: fn (a: Int, Int) -> Int
+    comptime f1: fn (a: Int, Int) -> Int
     # expected-error @below {{unnamed argument cannot follow '/' or '*'}}
-    alias f2: fn (Int, /, Int) -> Int
+    comptime f2: fn (Int, /, Int) -> Int
     # expected-error @below {{unnamed argument cannot follow '/' or '*'}}
-    alias f3: fn (*, Int) -> Int
+    comptime f3: fn (*, Int) -> Int
     # expected-error @below {{unnamed argument must be positional-only}}
-    alias f4 = fn (Int, b: Int) capturing -> Int
+    comptime f4 = fn (Int, b: Int) capturing -> Int
 
     # expected-error @below {{unnamed parameter cannot follow named parameter}}
-    alias f5: fn [a: Int, Int]() -> Int
+    comptime f5: fn [a: Int, Int]() -> Int
     # expected-error @below {{unnamed parameter cannot follow '/' or '*'}}
-    alias f6: fn [Int, /, Int] -> Int
+    comptime f6: fn [Int, /, Int] -> Int
     # expected-error @below {{unnamed parameter cannot follow '/' or '*'}}
-    alias f7: fn [*, Int] -> Int = test_func_type
+    comptime f7: fn [*, Int] -> Int = test_func_type
     # expected-error @below {{unnamed parameter must be positional-only}}
-    alias f8 = fn [Int, b: Int] capturing -> Int
+    comptime f8 = fn [Int, b: Int] capturing -> Int
 
 ##===----------------------------------------------------------------------===##
 # LValue and RValues
@@ -287,7 +287,7 @@ def testLValuesRvalues() -> None:
   var mpPair = MemoryOnlyPair()
 
   # expected-error @+1 {{cannot implicitly convert 'AnyStruct[MemoryOnlyPair]' value to 'AnyTrivialRegType' in alias initializer}}
-  alias T: AnyTrivialRegType = MemoryOnlyPair
+  comptime T: AnyTrivialRegType = MemoryOnlyPair
 
 # expected-note @+1 {{function declared here}}
 fn badRef(mut val: Int):
@@ -433,7 +433,7 @@ struct WeirdBoolish:
 
 fn badParamAnd[a: Bool, b: WeirdBoolish]():
   #expected-error @+1 {{value of type 'Bool' is not compatible with value of type 'WeirdBoolish'}}
-  alias c = a and b
+  comptime c = a and b
 
 # expected-error @+1 {{'Self' type may only be used inside a struct, trait, or extension}}
 fn badSelf(a: Self):
@@ -492,7 +492,7 @@ fn list_literals():
   _ = [x for x in SimpleRange() if x * 2 == 0]
 
   # expected-error @+1 {{comprehensions are not supported at compile time; move into a function and call it}}
-  alias some_alias = [1 for x in range(10)]
+  comptime some_alias = [1 for x in range(10)]
 
 
 fn set_parse_errors(a: Int):
@@ -956,9 +956,9 @@ fn test_var_decl_error():
 # MOCO-2094 - String memory leak observed in _get_dylib_function
 fn test_comptime_materialize():
   # This is ok!
-  alias bad = String("hello").unsafe_ptr()
+  comptime bad = String("hello").unsafe_ptr()
   # This is ok too.
-  alias byte = bad[]
+  comptime byte = bad[]
   # Swimmingly fine.
   var rt_byte = byte
 
@@ -976,7 +976,7 @@ fn elide_implicit_conversion_in_struct_params[value: __mlir_type.i1](a: BoolPara
 
 # MOCO-2332 / https://github.com/modular/modular/issues/5139
 struct a_struct:
-  alias an_alias = 1
+  comptime an_alias = 1
 
 fn a_fn() -> Dict[String, Int]:
   # expected-error @below {{'a_struct' value has no attribute 'an_alias_that_does_not_exist'}}
@@ -991,14 +991,14 @@ trait TraitWithMember:
     fn member_method(self) -> Int:
         return 42
 
-    alias MemberAlias: AnyType
+    comptime MemberAlias: AnyType
 
 fn test_trait_member_access_error():
     # expected-error @below {{Direct access of trait members is not supported.}}
     _ = TraitWithMember.member_method
 
     # expected-error @below {{Direct access of trait members is not supported.}}
-    alias SomeAlias = TraitWithMember.MemberAlias
+    comptime SomeAlias = TraitWithMember.MemberAlias
 
 
 ##===----------------------------------------------------------------------===##

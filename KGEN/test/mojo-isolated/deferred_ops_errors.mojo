@@ -12,7 +12,7 @@ fn test1():
     _ = __mlir_attr.`#kgen.deferred 0 : index`
 
 struct DType:
-    alias type = __mlir_type.`!kgen.dtype`
+    comptime type = __mlir_type.`!kgen.dtype`
     var value: Self.type
 
 fn test3[n: Int, dtype: DType](x: __mlir_type[`!kgen.struct<(`, __mlir_type[`!kgen.variadic_splat<`, __mlir_type[`!pop.scalar<`, dtype.value, `>`], `, `, n._mlir_value, `>`] , `)>`]):

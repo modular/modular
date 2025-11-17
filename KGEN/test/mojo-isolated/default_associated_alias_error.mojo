@@ -12,12 +12,12 @@
 
 trait B:
     # expected-note@below{{conflicting implementation from trait B here}}
-    alias a: Int = 1
+    comptime a: Int = 1
 
 
 trait A:
     # expected-note@below{{original default implementation from trait A here}}
-    alias a: Int = 2
+    comptime a: Int = 2
 
 
 # expected-error@below{{trait member 'a' has conflicting default implementations in B and A, you must implement it manually}}

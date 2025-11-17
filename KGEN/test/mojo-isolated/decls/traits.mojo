@@ -445,11 +445,11 @@ struct TwoThunks(SimpleTraitA, SimpleTraitB):
 # CHECK-LABEL: lit.fn @"regpassable_reference
 fn regpassable_reference():
     # CHECK-NEXT: @TwoThunks::@"method
-    alias f = TwoThunks.method
+    comptime f = TwoThunks.method
 
 
 trait RequiredType:
-    alias T: AnyType
+    comptime T: AnyType
 
     @staticmethod
     fn use_it(arg: Self.T) -> Self.T:
@@ -457,7 +457,7 @@ trait RequiredType:
 
 
 struct RegPassableRequiredType(RequiredType):
-    alias T = Int
+    comptime T = Int
 
     @staticmethod
     fn use_it(arg: Int) -> Int:
@@ -470,7 +470,7 @@ struct RegPassableRequiredType(RequiredType):
 # CHECK-LABEL: lit.fn @"bind_regpassable_required_type
 fn bind_regpassable_required_type():
     # CHECK-NEXT: : !RequiredType = <!RegPassableRequiredType>
-    alias T: RequiredType = RegPassableRequiredType
+    comptime T: RequiredType = RegPassableRequiredType
 
 
 # ===----------------------------------------------------------------------=== #
@@ -775,7 +775,7 @@ struct KeysContainer[end: Int](KeysBuilder):
 # CHECK-LABEL: lit.fn @"param_trait
 fn param_trait[T: SimpleTrait, value: T]():
     # CHECK-NEXT: apply({{.*}} #kgen.get_witness<:!SimpleTrait T, "traits::SimpleTrait", "method{{.*}}">{{.*}} store_to_mem(value), {{.*}}1{{.*}})
-    alias param = value.method(1)
+    comptime param = value.method(1)
     # CHECK-NEXT: [[VAR:%.*]] = lit.var.decl
     # CHECK-NEXT: [[VALUE:%.*]] = kgen.param.materialize
     # CHECK-NEXT: store [[VALUE]], [[VAR]]
@@ -801,7 +801,7 @@ struct MakeNamedResult(Makeable):
 # CHECK-LABEL: lit.fn @"check_named_result_regpassable
 fn check_named_result_regpassable():
     # CHECK-NEXET: @MakeNamedResult::@"make()"
-    alias T: Makeable = MakeNamedResult
+    comptime T: Makeable = MakeNamedResult
 
 
 # COM: Issue https://github.com/modularml/modular/issues/33939
@@ -832,7 +832,7 @@ fn test_infer_sub_trait[T: OtherEmptyTrait](var foo: Foo[T], bar: Bar[T]):
 # CHECK-LABEL: lit.fn @"anytrait_assignment
 fn anytrait_assignment():
     # CHECK-NEXT: !lit.anytrait<!AnyType_Movable> = <!AnyType_Movable>
-    alias t: type_of(AnyType & Movable) = AnyType&Movable
+    comptime t: type_of(AnyType & Movable) = AnyType&Movable
 
 
 # CHECK-LABEL: lit.fn @"test_anytrait_subtyping
@@ -870,7 +870,7 @@ fn call_many_things_of_specified_trait(a: TraitStruct):
     take_many_things_of_specified_trait[SimpleTrait, TraitStruct, TraitStruct]()
 
 
-alias _AnyTypeMetaType = type_of(AnyType)
+comptime _AnyTypeMetaType = type_of(AnyType)
 
 # CHECK-LABEL: lit.struct.decl @TestAnyTrait
 struct TestAnyTrait[element_trait: _AnyTypeMetaType]:
@@ -926,7 +926,7 @@ fn test_pack_of_traits2[elt_trait: _AnyTypeMetaType, *elt_types: elt_trait](
      pass
 
 
-alias _MovableMetaType = type_of(Movable)
+comptime _MovableMetaType = type_of(Movable)
 
 fn take_anytype_ref[type: UnknownDestructibility](ref value: type): pass
 
@@ -937,7 +937,7 @@ fn pass_movable_mt_ref[elt_trait: _MovableMetaType, PassT: elt_trait](mut a: Pas
     # CHECK-SAME: : !lit.generator<("value": !lit.ref<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT, mut *"a`"> ref) -> !kgen.none>
     take_anytype_ref(a)
 
-alias _CollectionElementMetaType = type_of(ImplicitlyCopyable & Movable)
+comptime _CollectionElementMetaType = type_of(ImplicitlyCopyable & Movable)
 
 struct FormVariadicPackWithCastedElementVariadic[
     element_trait: _CollectionElementMetaType, //,

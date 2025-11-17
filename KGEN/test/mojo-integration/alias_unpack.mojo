@@ -8,7 +8,7 @@
 
 
 fn main():
-    alias a, (b, c) = 1, (2, 3)
+    comptime a, (b, c) = 1, (2, 3)
     # CHECK:      1
     # CHECK-NEXT: 2
     # CHECK-NEXT: 3

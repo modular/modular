@@ -40,7 +40,7 @@ fn test_parameter_string():
     # CHECK: hello world
     StringParam["hello" + " " + "world"]().print_it()
 
-    alias strValue: String = "thrice"
+    comptime strValue: String = "thrice"
     # CHECK-COUNT-4: thrice
     # ELABORATE: kgen.call @{{.*}}stringInputParam[[FUNC]]()
     stringInputParam[strValue]()
@@ -50,7 +50,7 @@ fn test_parameter_string():
     print(strValue)
 
     # CHECK: hihi-hihi
-    alias hi: String = "hi"
+    comptime hi: String = "hi"
     var str = test_literal_from_comptime_string[hi * 2]()
     print(str)
 
@@ -62,7 +62,7 @@ fn test_parameter_string():
 
 
 fn test_string_global_constant():
-    alias A = String(11.1)
+    comptime A = String(11.1)
 
     # CHECK: alias is 11.1
     print("alias is ", A)

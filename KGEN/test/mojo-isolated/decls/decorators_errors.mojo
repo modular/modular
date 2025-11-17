@@ -30,7 +30,7 @@ fn decorator_on_statements():
     var decorated_var: Int  # expected-error {{'var' statement in function body does not allow decorators}}
 
     @invalid_dec
-    alias decorated_alias = 42  # expected-error {{'alias' statement in function body does not allow decorators}}
+    comptime decorated_alias = 42  # expected-error {{'comptime' statement in function body does not allow decorators}}
 
     @invalid_dec
     while True:  # expected-error {{'while' statement does not allow decorators}}

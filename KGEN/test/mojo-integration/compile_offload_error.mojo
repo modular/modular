@@ -17,5 +17,5 @@ fn param_fn[x: Int, y: Int]() -> Int:
 
 def main():
     # intentionally missing one parameter
-    alias myInstantiatedFn = param_fn[2]
+    comptime myInstantiatedFn = param_fn[2]
     print(compile_info[myInstantiatedFn]())

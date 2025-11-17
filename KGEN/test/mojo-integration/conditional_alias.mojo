@@ -21,4 +21,4 @@ fn make_true() -> __mlir_type.i1:
 
 @export
 fn conditional_alias():
-    alias value = __mlir_attr.`1 : index` if make_true() else no_impl()
+    comptime value = __mlir_attr.`1 : index` if make_true() else no_impl()

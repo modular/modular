@@ -7,7 +7,7 @@
 
 from .test_nested_package.module import nested_function
 
-alias top_level_alias = 2
+comptime top_level_alias = 2
 
 
 fn function():
@@ -43,7 +43,7 @@ struct ParameterizedType[value: Int](ImplicitlyCopyable, Movable):
 struct Wrapper:
     var data: Int
 
-    alias MyType = ParameterizedType[42]
+    comptime MyType = ParameterizedType[42]
 
     fn unused_method(mut self) -> Self.MyType:
         return Self.MyType()

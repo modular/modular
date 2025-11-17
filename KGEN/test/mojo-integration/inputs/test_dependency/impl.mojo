@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-alias ALIAS = child()
+comptime ALIAS = child()
 
 
 fn use_me() -> __mlir_type.index:

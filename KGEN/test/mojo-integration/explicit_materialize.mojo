@@ -8,7 +8,7 @@
 
 
 fn main():
-    alias lst = [1, 2, 3]
+    comptime lst = [1, 2, 3]
     var dyn_lst = materialize[lst]()
     # CHECK: 1
     # CHECK: 2

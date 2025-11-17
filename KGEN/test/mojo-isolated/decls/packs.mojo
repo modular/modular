@@ -234,4 +234,4 @@ fn test_comptime_call[a: Int]():
     # CHECK-SAME: <apply(:!lit.generator<[2](
     # CHECK-SAME: "args": !lit.ref<{{.*}}@VariadicPack<{{.*}}origin<0> = #lit.comptime.origin}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [!Int]>, imm #lit.comptime.origin> read_mem|pack_vararg)
     # CHECK-SAME: <store_to_mem(a)>))
-    alias foo = pack(a)
+    comptime foo = pack(a)

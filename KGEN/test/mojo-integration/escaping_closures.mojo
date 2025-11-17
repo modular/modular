@@ -40,7 +40,7 @@ fn legal_type_ref[a: Int](c: Int) -> fn (x: Int, y: Int) escaping -> Int:
 
 
 fn parameter_capture[a: Int, b: Int](c: Int) -> fn (x: Int) escaping -> Int:
-    alias X = Foo[a](1)
+    comptime X = Foo[a](1)
 
     fn p_capture(x: Int) -> Int:
         return X.get() + c + b
@@ -85,7 +85,7 @@ fn foo[Z: Int, W: Int]() -> Int:
 fn test_captures_are_ordered_correctly[
     aa: Int, a: Int, b: Int, bb: Int
 ](c: Int) -> fn (x: Int, y: Foo[b]) escaping -> Foo[a]:
-    alias Y = foo[aa, bb]()
+    comptime Y = foo[aa, bb]()
 
     fn p_capture(x: Int, y: Foo[b]) -> Foo[a]:
         return Foo[a](c + Y + b)
@@ -190,7 +190,7 @@ fn main():
     # CHECK: 20
     print(bar.get())
 
-    alias a = DType.int8
+    comptime a = DType.int8
     # CHECK: 3
     take_closure[a](C[a](3), make_closure[a]())
 

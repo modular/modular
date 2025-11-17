@@ -13,22 +13,22 @@ struct DT[a: Int]:
 
 # CHECK-LABEL: lit.trait.decl @B
 trait B:
-    alias a: Int
+    comptime a: Int
 
     # This is a default value
     # CHECK:      lit.alias.decl *"c`2": !Int = <#kgen.get_witness<:!B *"_Self`", "{{.*}}::B", "a">>
     # CHECK-SAME:   {defaultedAssociatedAlias}
-    alias c = Self.a
+    comptime c = Self.a
 
     # This is a dependent default type alias
     # CHECK:      lit.alias.decl *"T`3": meta<!lit.struct<#DT <:!Int #kgen.get_witness<:!B *"_Self`", "{{.*}}::B", "a">>>> = <@{{.*}}::@DT<:!Int #kgen.get_witness<:!B *"_Self`", "{{.*}}::B", "a">>>
     # CHECK-SAME:   {defaultedAssociatedAlias}
-    alias T = DT[Self.a]
+    comptime T = DT[Self.a]
 
 
 # CHECK-LABEL: lit.struct.decl @Foo
 struct Foo(B):
-    alias a: Int = 1
+    comptime a: Int = 1
 
     # CHECK: lit.alias.decl *"c`2": !Int = <{1}>
     #

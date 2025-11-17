@@ -160,7 +160,7 @@ struct RegWeirdArray:
 # CHECK-LABEL: lit.fn @"test_dlvalue_to_pvalue
 fn test_dlvalue_to_pvalue[arr: RegWeirdArray, y: Int]():
     # CHECK-NEXT: lit.alias.decl *"x{{.*}}": !Int = <apply({{.*}}@RegWeirdArray::@"__getitem__{{.*}}"), store_to_mem(arr), y)>
-    alias x = arr[y]
+    comptime x = arr[y]
 
 
 
