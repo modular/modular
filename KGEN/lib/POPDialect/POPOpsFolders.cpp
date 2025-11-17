@@ -31,6 +31,37 @@ Operation *POPDialect::materializeConstant(OpBuilder &b, Attribute value,
 }
 
 //===----------------------------------------------------------------------===//
+// SIMD Construction Checks
+
+static ErrorTreeOrSuccess validateSIMDConstruction(int64_t size, DType dtype,
+                                                   const Location &loc) {
+  if (dtype.isInvalid())
+    return ErrorTree(loc, "simd type cannot be DType.invalid");
+  if (!llvm::isPowerOf2_64(size))
+    return ErrorTree(loc, "simd width must be a power of 2");
+  // MOCO-1388: Until LLVM's issue #122571 is fixed, LLVM's SelectionDAG has
+  // a limit of 2^15 for the number of operands of the instruction.
+  // NOTE: Even after the limit increases in LLVM, compile time might be 3x
+  // slower than with GCC, therefore until we have a real use case for large
+  // SIMD, we better to keep limit at 2^15.
+  // NOTE: Might need to revisit the limit for targets that use GlobalISel
+  // as it does have smaller limit now.
+  if (size > (1LL << 15))
+    return ErrorTree(loc, "simd size must be less than 2^15");
+  return success();
+}
+
+static ErrorTreeOrSuccess validateSIMDConstruction(SIMDType simdType,
+                                                   const Location &loc) {
+  if (!simdType.getResolvedSize())
+    return ErrorTree(loc, "simd size must be known");
+  if (!simdType.getResolvedDType())
+    return ErrorTree(loc, "simd DType must be known");
+  return validateSIMDConstruction(*simdType.getResolvedSize(),
+                                  *simdType.getResolvedDType(), loc);
+}
+
+//===----------------------------------------------------------------------===//
 // Arithmetic Operation Folders
 //===----------------------------------------------------------------------===//
 
@@ -1198,6 +1229,9 @@ ErrorTreeOrSuccess CastOp::interpret(ArrayRef<Attribute> operands,
     return success();
   }
 
+  if (auto ret = validateSIMDConstruction(resultType, getLoc()))
+    return ret;
+
   auto in = dyn_cast_if_present<SIMDAttr>(operands[0]);
   std::optional<KGENDType> dtype = getType().getResolvedDType();
   if (!in || !dtype)
@@ -1250,9 +1284,11 @@ CastOp::parametric_interpret(ArrayRef<Attribute> operands,
     return success();
   }
 
+  if (auto ret = validateSIMDConstruction(resultType, getLoc()))
+    return ret;
+
   auto in = dyn_cast_if_present<SIMDAttr>(operands[0]);
   std::optional<KGENDType> dtype = resultType.getResolvedDType();
-
   if (!in || !dtype)
     return ErrorTree(getLoc(), "types must be known at this point");
 
@@ -1611,6 +1647,9 @@ OpFoldResult SIMDSplatOp::fold(FoldAdaptor adaptor) {
 
 ErrorTreeOrSuccess SIMDSplatOp::interpret(ArrayRef<Attribute> operands,
                                           InterpreterState &state) {
+  SIMDType resultType = cast<SIMDType>(getType());
+  if (auto ret = validateSIMDConstruction(resultType, getLoc()))
+    return ret;
   return state.interpretOpWithFolder(this->getOperation(), operands);
 }
 
@@ -1624,6 +1663,9 @@ SIMDSplatOp::parametric_interpret(ArrayRef<Attribute> operands,
     state.mapResults(operands.front());
     return success();
   }
+
+  if (auto ret = validateSIMDConstruction(resultType, getLoc()))
+    return ret;
 
   auto scalar = dyn_cast_if_present<SIMDAttr>(operands.front());
   if (!size || !scalar)

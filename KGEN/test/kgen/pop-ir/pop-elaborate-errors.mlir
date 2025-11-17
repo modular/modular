@@ -1,8 +1,8 @@
 // RUN: kgen-opt -elaborate-generators="use-parametric-interpret=false" %s -verify-diagnostics -split-input-file
 // RUN: kgen-opt -elaborate-generators="use-parametric-interpret=true" %s -split-input-file 2>&1 | FileCheck %s --check-prefix=CHECK-PARAM
 
-// COM: use-parametric-interpret=true has slight difference from =false for error messages. 
-//      Using FileCheck instead to check those with CHECK-PRAMA prefix.
+// COM: use-parametric-interpret=true has slight difference from =false for error messages.
+//      Using FileCheck instead to check those with CHECK-PARAM prefix.
 
 // expected-note @below {{failed to interpret function @out_of_range_read}}
 kgen.generator @out_of_range_read() -> i32 {
@@ -178,6 +178,52 @@ kgen.generator export @use_it() {
   // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.constant: union<index> = <apply(:() -> !pop.union<index> @load_union)>
+  kgen.return
+}
+
+}
+
+// -----
+
+module attributes {M.target = #M.target<triple="", arch="", features="", data_layout="p:64:64", simd_bit_width=128>} {
+
+// expected-note @below {{failed to interpret function @invalid_simd,dtype=si32,size=5}}
+// expected-note @below {{failed to interpret function @invalid_simd,dtype=si32,size=3}}
+// expected-note @below {{failed to interpret function @invalid_simd,dtype=invalid,size=4}}
+kgen.generator @invalid_simd<dtype: dtype, size>() -> index {
+  %0 = kgen.param.constant: index = <42>
+  %1 = pop.cast_from_builtin %0 : index to !pop.scalar<index>
+  // expected-note @below {{failed to interpret operation pop.cast}}
+  // expected-note @below {{simd type cannot be DType.invalid}}
+  %2 = pop.cast %1 : !pop.scalar<index> to !pop.scalar<dtype>
+  // expected-note @below {{failed to interpret operation pop.simd.splat}}
+  // expected-note @below {{simd width must be a power of 2}}
+  %3 = pop.simd.splat %2 : !pop.simd<size, dtype>
+
+  kgen.return %0 : index
+}
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator export @use_it_simd_5() {
+  // CHECK-PARAM: failed to compile-time evaluate function call
+  // expected-note @below {{failed to compile-time evaluate function call}}
+  kgen.param.constant = <apply(:() -> index @invalid_simd<:dtype si32, 5>)>
+  kgen.return
+}
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator export @use_it_simd_3() {
+  // CHECK-PARAM: failed to compile-time evaluate function call
+  // expected-note @below {{failed to compile-time evaluate function call}}
+  kgen.param.constant = <apply(:() -> index @invalid_simd<:dtype si32, 3>)>
+  kgen.return
+}
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator export @use_it_simd_invalid() {
+  // CHECK-PARAM: failed to compile-time evaluate function call
+  // expected-note @below {{failed to compile-time evaluate function call}}
+  kgen.param.constant = <apply(:() -> index @invalid_simd<:dtype invalid, 4>)>
   kgen.return
 }
 
