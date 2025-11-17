@@ -109,7 +109,7 @@ public:
               ValueDest &dest)
       : emitter(emitter), callee(callee), callExpr(callExpr),
         loc(emitter.translateLocation(callExpr->getLoc())), dest(dest),
-        calleeSig(cast<FnTypeGeneratorType>(callee.getRValueType())),
+        calleeSig(sugarCast<FnTypeGeneratorType>(callee.getRValueType())),
         afterCallActions(*this) {}
 
   /// Emit IR for a single argument, according to its convention.
@@ -1221,7 +1221,7 @@ struct ExclusivityChecker : public SharedStateUser {
 
     // Handle __unsafe_disable_nested_origin_exclusivity.
     isNestedOriginExclusivityCheckingDisabled =
-        cast<FnTypeGeneratorType>(callee.getRValueType())
+        sugarCast<FnTypeGeneratorType>(callee.getRValueType())
             .getIsNestedOriginExclusivityCheckingDisabled();
 
     // Check capture origins first so we know if argument values may overlap.
@@ -1273,7 +1273,8 @@ private:
 
 void ExclusivityChecker::checkCaptureOrigins() {
   TypedAttr captureOrigins =
-      cast<FnTypeGeneratorType>(callee.getRValueType()).getCaptureOrigins();
+      sugarCast<FnTypeGeneratorType>(callee.getRValueType())
+          .getCaptureOrigins();
   for (TypedAttr origin : shared.cachedOriginFinder.findOriginsIn(
            /*types=*/{}, captureOrigins))
     checkOriginAccess(Value(), /*convention=*/{}, /*argIdx=*/{}, origin);
@@ -1543,7 +1544,7 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
 static bool shouldEmitParameterCall(RValue callee,
                                     ArrayRef<ASTExprAnd<AnyValue>> argValues,
                                     SharedState &shared) {
-  auto calleeSig = cast<FnTypeGeneratorType>(callee.getRValueType());
+  auto calleeSig = sugarCast<FnTypeGeneratorType>(callee.getRValueType());
 
   // If this returns something like an UnsafePointer with an unusual origin,
   // materialization will fail, so we can't emit it as a parameter call.

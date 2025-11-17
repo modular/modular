@@ -1169,6 +1169,11 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
 
   // Keep things in the parameter expression domain if we can.
   if (PValue baseMV = base.ir.getIfPValue()) {
+    // StructExtract expects the value to be of struct type, so strip away any
+    // sugar if present.
+    baseMV = ParamOperatorAttr::getRebind(
+        baseMV.get(), SugarAttr::strip(baseMV.get().getType()));
+
     auto extractVal = LIT::StructExtractAttr::get(baseMV.get(), fieldOp);
     return emitter.emitCResult(PValue(extractVal), expr, dest);
   }
@@ -1182,8 +1187,13 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
   // If we got a trivial SSA value, extract the field and return as SBValue.
   if (base.ir.isSValue() &&
       base.ir.getRValueType().isTrivial(expr->getLoc(), emitter.shared)) {
-    auto extractVal = StructExtractOp::create(
-        *emitter.builder, mlirLoc, base.ir.getSValueRegister(), fieldOp);
+    Value baseVal = base.ir.getSValueRegister();
+    // StructExtract expects the value to be of struct type, so strip away any
+    // sugar if present.
+    baseVal = emitter.emitRebindOpIfNeeded(
+        baseVal, SugarAttr::strip(baseVal.getType()), expr->getLoc());
+    auto extractVal =
+        StructExtractOp::create(*emitter.builder, mlirLoc, baseVal, fieldOp);
     return emitter.emitCResult(SBValue(extractVal), expr, dest);
   }
 
@@ -1973,7 +1983,8 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // Maintain sugar.  The base might be dynamic so we turn it into
     // "Type.member" from a sugar perspective.
     auto getParamMemberSugar = [&](PValue value) -> PValue {
-      // Propagate failures.
+      // Propagate failures, never sugar `_mlir_type` accesses.  Eliding this
+      // chops gigabytes of IR out of .mlir files for the stdlib.
       if (!value || spelling == "_mlir_type")
         return value;
 

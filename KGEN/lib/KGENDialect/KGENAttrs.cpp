@@ -607,7 +607,7 @@ mergeParamBindings(ArrayRef<TypedAttr> prevBindings,
 static Type inferBindParamsType(TypedAttr generator,
                                 ArrayRef<TypedAttr> paramValues,
                                 ParameterEvaluationContext *evaluationContext) {
-  auto genType = ::cast<GeneratorType>(generator.getType());
+  auto genType = sugarCast<GeneratorType>(generator.getType());
   GeneratorType specializedType =
       genType.getSpecializedGenerator(paramValues, evaluationContext,
                                       /*emitErrorFn=*/{});
