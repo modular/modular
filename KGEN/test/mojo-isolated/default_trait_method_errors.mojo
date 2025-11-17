@@ -61,3 +61,32 @@ trait WithAsyncMethod:
     # expected-error @+1 {{async defaulted trait methods are not supported yet}}
     async fn async_default_method(self) -> Int:
         return 42
+
+
+# TODO: Should the 'original' implementation not be FooC here? It's ordering
+# alphabetically.
+@fieldwise_init
+@register_passable("trivial")
+struct RP:
+    pass
+
+trait FooC:
+    # expected-note @+1 {{conflicting implementation from trait 'FooC' here}}
+    fn foo(self) -> RP:
+        return RP()
+
+    fn bar(self) -> RP:
+        return RP()
+
+
+trait FooB(FooC):
+    # expected-note @+1 {{original default implementation from trait 'FooB' here}}
+    fn foo(self) -> RP:
+        return RP()
+
+    fn bar(self) -> RP:
+        return RP()
+
+
+# expected-error @+1 {{trait method requirement 'foo' has conflicting default implementations in 'FooB' and 'FooC' you must implement it manually}}
+struct FooActual(FooB): pass

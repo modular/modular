@@ -779,7 +779,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
             // If this is a synthetic decl, complete it specially.
             if (decl.getCursor().isInvalid()) {
               if constexpr (std::is_same_v<FnOp, decltype(op)>) {
-                if (failed(resolveSyntheticBody(op, decl)))
+                if (op.isSynthetic() && failed(resolveSyntheticBody(op, decl)))
                   decl.setErroneous();
                 return;
               }
