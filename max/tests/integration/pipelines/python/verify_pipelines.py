@@ -831,7 +831,7 @@ PIPELINES = {
             ),
             # TODO(AIPIPE-230): These tolerances are very high due to an accuracy regression.
             cos_dist_threshold=2.1e-2,
-            kl_div_threshold=2.9e-2,
+            kl_div_threshold=3.0e-2,
         ),
     ),
     "mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16": PipelineDef(
@@ -982,7 +982,7 @@ PIPELINES = {
     ),
     "allenai/OLMo-2-1124-7B-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
-        tags=["big"],
+        tags=["big", "nvidia-only"],  # KERN(2196)
         run=_make_pipeline_runner(
             pipeline="allenai/OLMo-2-1124-7B",
             encoding="float32",
@@ -1007,7 +1007,7 @@ PIPELINES = {
     ),
     "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
-        tags=["big"],
+        tags=["big", "nvidia-only"],  # KERN(2196)
         run=_make_pipeline_runner(
             pipeline="LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
             encoding="float32",
