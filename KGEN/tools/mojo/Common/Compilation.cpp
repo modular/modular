@@ -26,6 +26,109 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
+ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
+    State &state, llvm::SourceMgr &sourceManager, MLIRContext &ctx,
+    const llvm::opt::PrecomputedOptTable &optTable,
+    const CommonOptionIDs &optionIDs, const CommonParseConfig &config) {
+  CommonParseResult result;
+
+  // Parse arguments based on the configuration.
+  unsigned unused = 0;
+
+  // Handle the special case for `mojo run` where we need to find the input
+  // argument and only parse up to that point.
+  llvm::opt::InputArgList args(nullptr, nullptr);
+  if (!config.parseAllArguments) {
+    llvm::opt::InputArgList allArgs =
+        optTable.ParseArgs(state.arguments, unused, unused);
+
+    // LLVMOption treats all "positional arguments" (arguments that do not have
+    // a "-" or "--" prefix) as `INPUT`. The very first of these is our Mojo
+    // source file, and each remaining positional argument is an argument being
+    // passed to the Mojo executable produced from that source file.
+    auto inputArgs = allArgs.filtered(optionIDs.input);
+    if (inputArgs.empty()) {
+      return Error("no input file provided");
+    }
+
+    // We now have the index of the Mojo source file argument, so we can parse
+    // the arguments up to and including that argument "normally."
+    args = optTable.ParseArgs(
+        state.arguments.slice(0, (*inputArgs.begin())->getIndex() + 1), unused,
+        unused);
+  } else {
+    // Parse all arguments normally for `mojo build`.
+    args = optTable.ParseArgs(state.arguments, unused, unused);
+  }
+
+  // Parse diagnostic format arguments.
+  if (int exitCode = state.parseDiagnosticFormatArguments(
+          args, optionIDs.diagnosticFormat, optionIDs.disableWarnings)) {
+    result.exitCode = exitCode;
+    return result;
+  }
+
+  // Reject unknown arguments.
+  if (int exitCode = state.rejectUnknownArguments(args, optionIDs.unknown)) {
+    result.exitCode = exitCode;
+    return result;
+  }
+
+  // Validate input file arguments based on configuration.
+  if (!args.hasArg(optionIDs.input)) {
+    if (config.requireSingleInput) {
+      return Error("no input file provided");
+    }
+  } else if (config.requireSingleInput &&
+             args.hasMultipleArgs(optionIDs.input)) {
+    std::vector<std::string> inputs = args.getAllArgValues(optionIDs.input);
+    return Error(llvm::formatv(
+        "too many input files, cannot process both '{0}' and '{1}'", inputs[0],
+        inputs[1]));
+  }
+
+  // Open the provided input file path, or exit with an error if it's not a
+  // valid argument that can be opened.
+  if (args.hasArg(optionIDs.input)) {
+    auto bufferOrErr = openMojoInputFile(args.getLastArgValue(optionIDs.input));
+    if (failed(bufferOrErr))
+      return bufferOrErr.takeError();
+
+    // Initialize the source manager with the input file buffer, as well as the
+    // appropriate diagnostic handler.
+    sourceManager.setDiagHandler(getDiagHandler(state.diagnosticFormat));
+    sourceManager.AddNewSourceBuffer(std::move(*bufferOrErr), llvm::SMLoc());
+  }
+
+  // Parse compilation options.
+  if (ErrorOrSuccess err = parseCompilationOptions(
+          state, args, result.compilationOptions, sourceManager, ctx,
+          optionIDs.includeDirs, optionIDs.optimizationLevel,
+          optionIDs.debugLevel, optionIDs.sanitize, optionIDs.sharedLibasan,
+          optionIDs.externalLibasan, optionIDs.bitcodeLibs,
+          optionIDs.debugInfoLanguage, optionIDs.numThreads,
+          optionIDs.mojoSearchPaths, optionIDs.loopUnrollingWarnThreshold,
+          optionIDs.elaborationErrorLimit,
+          optionIDs.elaborationErrorIncludePrelude,
+          optionIDs.elaborationErrorVerbose))
+    return err.takeError();
+
+  // Parse target options.
+  if (ErrorOrSuccess err = parseTargetOptions(
+          state, args, result.compilationOptions, sourceManager, ctx,
+          result.target, optionIDs.targetTriple, optionIDs.targetCpu,
+          optionIDs.targetFeatures, optionIDs.march, optionIDs.mcpu,
+          optionIDs.mtune, optionIDs.targetAccelerator, optionIDs.mcmodel,
+          optionIDs.largeDataThreshold))
+    return err.takeError();
+
+  // Store the parsed args for the caller.
+  result.args = std::move(args);
+
+  // Success - no exit code, continue with compilation.
+  return result;
+}
+
 ErrorOrSuccess M::parseCompilationOptions(
     const State &state, const llvm::opt::InputArgList &args,
     CompilationOptions &compilationOptions, llvm::SourceMgr &sourceMgr,

@@ -38,6 +38,103 @@ struct ParserConfig;
 
 class TargetInfoAttr;
 
+/// Holds the option IDs that are common between mojo build and mojo run.
+/// These are passed to parseCommonMojoArguments to avoid duplicating the
+/// option ID mappings.
+struct CommonOptionIDs {
+  llvm::opt::OptSpecifier help;
+  llvm::opt::OptSpecifier helpHidden;
+  llvm::opt::OptSpecifier diagnosticFormat;
+  llvm::opt::OptSpecifier disableWarnings;
+  llvm::opt::OptSpecifier unknown;
+  llvm::opt::OptSpecifier input;
+
+  // Compilation options
+  llvm::opt::OptSpecifier includeDirs;
+  llvm::opt::OptSpecifier optimizationLevel;
+  llvm::opt::OptSpecifier debugLevel;
+  llvm::opt::OptSpecifier sanitize;
+  llvm::opt::OptSpecifier sharedLibasan;
+  llvm::opt::OptSpecifier externalLibasan;
+  llvm::opt::OptSpecifier bitcodeLibs;
+  llvm::opt::OptSpecifier debugInfoLanguage;
+  llvm::opt::OptSpecifier numThreads;
+  llvm::opt::OptSpecifier mojoSearchPaths;
+  llvm::opt::OptSpecifier loopUnrollingWarnThreshold;
+  llvm::opt::OptSpecifier elaborationErrorLimit;
+  llvm::opt::OptSpecifier elaborationErrorIncludePrelude;
+  llvm::opt::OptSpecifier elaborationErrorVerbose;
+
+  // Target options
+  llvm::opt::OptSpecifier targetTriple;
+  llvm::opt::OptSpecifier targetCpu;
+  llvm::opt::OptSpecifier targetFeatures;
+  llvm::opt::OptSpecifier march;
+  llvm::opt::OptSpecifier mcpu;
+  llvm::opt::OptSpecifier mtune;
+  llvm::opt::OptSpecifier targetAccelerator;
+  llvm::opt::OptSpecifier mcmodel;
+  llvm::opt::OptSpecifier largeDataThreshold;
+
+  // Parser options
+  llvm::opt::OptSpecifier diagnoseMissingDocStrings;
+  llvm::opt::OptSpecifier validateDocStrings;
+  llvm::opt::OptSpecifier maxNotes;
+  llvm::opt::OptSpecifier defines;
+  llvm::opt::OptSpecifier stripFilePrefix;
+  llvm::opt::OptSpecifier disableBuiltins;
+  llvm::opt::OptSpecifier fixit;
+};
+
+/// Configuration flags for common argument parsing behavior.
+struct CommonParseConfig {
+  /// If true, parse all arguments normally. If false (for `mojo run`), only
+  /// parse arguments up to and including the input file, treating remaining
+  /// arguments as program arguments to pass to the Mojo executable.
+  bool parseAllArguments = true;
+
+  /// If true, require exactly one input file. If false, allow zero or more.
+  bool requireSingleInput = true;
+};
+
+/// Result of parsing common Mojo arguments.
+struct CommonParseResult {
+  /// If set, the caller should exit immediately with this code.
+  std::optional<int> exitCode;
+
+  /// The parsed argument list. For `mojo run`, this includes only arguments
+  /// up to and including the input file.
+  llvm::opt::InputArgList args;
+
+  /// The parsed compilation options.
+  KGEN::CompilationOptions compilationOptions;
+
+  /// The parsed target information.
+  TargetInfoAttr target;
+};
+
+/// Parse arguments common to both mojo build and mojo run.
+///
+/// This function extracts the common argument parsing logic shared between
+/// the two commands, including:
+/// - Diagnostic format parsing
+/// - Unknown argument rejection
+/// - Input file validation and opening
+/// - Source manager setup
+/// - Compilation option parsing
+/// - Target option parsing
+///
+/// Note: Help text handling is intentionally left to the caller, as each
+/// command has different help text files that cannot be easily parameterized.
+/// Callers should check for help flags before calling this function.
+///
+/// Returns a CommonParseResult containing either an exit code (if parsing
+/// failed) or the parsed arguments and options.
+ErrorOr<CommonParseResult> parseCommonMojoArguments(
+    State &state, llvm::SourceMgr &sourceManager, MLIRContext &ctx,
+    const llvm::opt::PrecomputedOptTable &optTable,
+    const CommonOptionIDs &optionIDs, const CommonParseConfig &config);
+
 /// Parse the common configuration options for Mojo related to compilation,
 /// populating the provided `compilationOptions` argument. An error is returned
 /// if any of the provided option values are invalid.
