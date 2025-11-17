@@ -412,16 +412,16 @@ struct LayoutTensor[
     ]
 
     alias GenericAddressSpaceLayoutTensor = LayoutTensor[
-        mut=mut,
-        dtype,
-        layout,
-        origin,
+        mut = Self.mut,
+        Self.dtype,
+        Self.layout,
+        Self.origin,
         address_space = AddressSpace.GENERIC,
-        element_layout=element_layout,
-        layout_int_type=layout_int_type,
-        linear_idx_type=linear_idx_type,
-        masked=masked,
-        alignment=alignment,
+        element_layout = Self.element_layout,
+        layout_int_type = Self.layout_int_type,
+        linear_idx_type = Self.linear_idx_type,
+        masked = Self.masked,
+        alignment = Self.alignment,
     ]
 
     # ===------------------------------------------------------------------=== #

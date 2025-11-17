@@ -48,7 +48,7 @@ struct _SpanIter[
     """
 
     var index: Int
-    var src: Span[T, Self.origin]
+    var src: Span[Self.T, Self.origin]
 
     @always_inline
     fn __iter__(self) -> Self:
@@ -601,12 +601,12 @@ struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: type_of(Span[T, _]),
+        other_type: type_of(Span[Self.T, _]),
     ](
         self,
         out result: Span[
             mut = Self.mut & other_type.origin.mut,
-            T,
+            Self.T,
             origin_of(Self.origin, other_type.origin),
         ],
     ):
