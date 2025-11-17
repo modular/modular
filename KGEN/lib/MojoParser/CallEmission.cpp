@@ -1068,7 +1068,7 @@ CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,
 CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
                                    ValueDest &dest, CallSyntax syntax,
                                    const ExprNode *callExpr) {
-  auto calleeSig = dyn_cast<FuncTypeGeneratorType>(callee.getRValueType());
+  auto calleeSig = sugarDynCast<FuncTypeGeneratorType>(callee.getRValueType());
   if (!calleeSig) {
     // If we are invoking something other than a FuncTypeGeneratorType, try to
     // invoke its `__call__` method.
