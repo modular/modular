@@ -194,7 +194,7 @@ fn main() raises -> :
 
 alias T = Tuple[StringLiteral, StringLiteral, StringLiteral]
 
-fn f[T: EqualityComparable](s: T):
+fn f[T: Equatable](s: T):
   pass
 `
     );
