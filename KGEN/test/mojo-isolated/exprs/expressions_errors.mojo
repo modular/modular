@@ -16,36 +16,36 @@ struct MemType:
   fn consume(var self): pass
 
 
-fn takes_pos_or_kw_arg(i: Index, j: Index):
+fn takes_pos_or_kw_arg(i: Int, j: Int):
     pass
 
 
-fn test_duplicate_kw_arg(x: Index):
+fn test_duplicate_kw_arg(x: Int):
     takes_pos_or_kw_arg(
         j=x,  # expected-note {{previously specified here}}
         j=x,  # expected-error {{duplicate keyword argument 'j'}}
     )
 
 
-fn test_pos_after_kw_arg(x: Index):
+fn test_pos_after_kw_arg(x: Int):
     takes_pos_or_kw_arg(
         j=x,
         x,  # expected-error {{positional argument follows keyword argument}}
     )
 
 
-fn takes_pos_or_kw_param[i: Index, j: Index]():
+fn takes_pos_or_kw_param[i: Int, j: Int]():
     pass
 
 
-fn test_duplicate_kw_param[x: Index]():
+fn test_duplicate_kw_param[x: Int]():
     takes_pos_or_kw_param[
         j=x,  # expected-note {{previously specified here}}
         j=x,  # expected-error {{duplicate keyword parameter 'j'}}
     ]
 
 
-fn test_pos_after_kw_param[x: Index]():
+fn test_pos_after_kw_param[x: Int]():
     takes_pos_or_kw_param[
         j=x,
         x,  # expected-error {{positional parameter follows keyword parameter}}
@@ -757,7 +757,7 @@ fn field_sensitive_origins(a: ThingWithFields)
   # expected-error @+1 {{'ThingWithFields' value has no attribute 'field_abc'}}
   _ = origin_of(a.field_abc)
   # expected-error @+1 {{MLIR type 'index' has no attributes}}
-  _ = origin_of(Index.field_abc)
+  _ = origin_of(__mlir_type.index.field_abc)
 
   # expected-error @+1 {{cannot implicitly convert 'ThingWithFields' value to 'Pointer[ThingWithFields, origin_of(a.field)]'}}
   return a

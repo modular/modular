@@ -11,7 +11,7 @@ from test_package.module import *
 
 # CHECK-LABEL: lit.fn @"foo
 fn foo():
-    var x = Wrapper(__mlir_attr.`33 : index`)
+    var x = Wrapper(33)
     var y = x.data
 
 

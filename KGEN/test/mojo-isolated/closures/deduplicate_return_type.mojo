@@ -11,9 +11,9 @@
 # CHECK: lit.struct.decl @"fn(
 
 
-fn make_diff_closures(m: string, z: Index):
+fn make_diff_closures(m: string, z: Int):
     fn ret_mem() -> string:
         return m
 
-    fn ret_mlir_type() -> Index:
+    fn ret_mlir_type() -> Int:
         return z

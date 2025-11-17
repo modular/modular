@@ -15,7 +15,7 @@ struct MemType(ImplicitlyCopyable, Movable):
         pass
 
 
-fn use(y: MemType, z: Int, u: Index):
+fn use(y: MemType, z: Int, u: __mlir_type.index):
     pass
 
 

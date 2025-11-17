@@ -24,7 +24,7 @@ fn test_unbound_pack_arg():
     test_unbound_pack_arg(*_)
 
 
-fn test_unpack(d: Index):
+fn test_unpack(d: Int):
     # expected-error @+1 {{unpacked arguments are not supported yet}}
     test_unpack(**d)
     # expected-error @+1 {{unpacked arguments are not supported yet}}

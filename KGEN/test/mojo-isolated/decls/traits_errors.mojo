@@ -15,8 +15,8 @@ trait MyMovable:
 
 
 trait ErroneousTrait:
-    # expected-error @+1 {{'self' argument must have type 'Self' in trait method declaration, but actually has type 'index'}}
-    fn add(self: Index):
+    # expected-error @+1 {{'self' argument must have type 'Self' in trait method declaration, but actually has type 'Int'}}
+    fn add(self: Int):
         ...
 
 
@@ -25,7 +25,7 @@ trait FooTrait:
         ...
 
 
-struct ParamType[x: Index](FooTrait):
+struct ParamType[x: Int](FooTrait):
     fn foo(self):
         pass
 

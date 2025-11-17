@@ -9,42 +9,42 @@
 
 @register_passable("trivial")
 struct MyInt:
-    var value: Index
+    var value: Int
 
     @always_inline("nodebug")
     @implicit
-    fn __init__(out self, v: Index):
+    fn __init__(out self, v: Int):
         self.value = v
 
 
-fn overloaded_param[a: Index, b: MyInt]():
+fn overloaded_param[a: Int, b: MyInt]():
     pass
 
 
-fn overloaded_param[a: Index, b: Index]():
+fn overloaded_param[a: Int, b: Int]():
     pass
 
 
-# CHECK-LABEL: lit.fn @"test_kw_params_overload{{.*}}"<x, y>
-fn test_kw_params_overload[x: Index, y: Index]():
-    # CHECK: call {{.*}}@"overloaded_param{{.*}}"<x, y>()
+# CHECK-LABEL: lit.fn @"test_kw_params_overload{{.*}}"<x: !Int, y: !Int>
+fn test_kw_params_overload[x: Int, y: Int]():
+    # CHECK: call {{.*}}@"overloaded_param{{.*}}"<:!Int x, :!Int y>()
     overloaded_param[b=y, a=x]()
 
-    # CHECK: call {{.*}}@"overloaded_param{{.*}}"<x, :!MyInt apply(
-    # CHECK-SAME :!lit.generator<("v": index) -> !MyInt> {{.*}}@MyInt::@"__init__{{.*}}", y)>()
+    # CHECK: call {{.*}}@"overloaded_param{{.*}}"<:!Int x, :!MyInt apply(
+    # CHECK-SAME :!lit.generator<("v": Int) -> !MyInt> {{.*}}@MyInt::@"__init__{{.*}}", y)>()
     overloaded_param[b = MyInt(y), a=x]()
 
 
-fn overloaded_arg(a: Index, b: MyInt):
+fn overloaded_arg(a: Int, b: MyInt):
     pass
 
 
-fn overloaded_arg(a: Index, b: Index):
+fn overloaded_arg(a: Int, b: Int):
     pass
 
 
-# CHECK-LABEL: lit.fn @"test_kw_args_overload{{.*}}"(%x: index, %y: index)
-fn test_kw_args_overload(x: Index, y: Index):
+# CHECK-LABEL: lit.fn @"test_kw_args_overload{{.*}}"(%x: !Int, %y: !Int)
+fn test_kw_args_overload(x: Int, y: Int):
     # CHECK: call {{.*}}@"overloaded_arg{{.*}}"(%x, %y)
     overloaded_arg(b=y, a=x)
 
@@ -63,20 +63,20 @@ fn take_kw_param_infer[B: AnyTrivialRegType](a: MyInt, b: B):
 
 
 # CHECK-LABEL: lit.fn @"test_kw_args_param_infer
-fn test_kw_args_param_infer(x: Index, f: float, s: MyInt):
-    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType,AnyTrivialRegType]{{.*}}"<:type {{.*}}index{{.*}}, :type scalar<f64>>(%x, %f)
+fn test_kw_args_param_infer(x: Int, f: float, s: MyInt):
+    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType,AnyTrivialRegType]{{.*}}"<:type {{.*}}Int{{.*}}, :type scalar<f64>>(%x, %f)
     take_kw_param_infer(x, b=f)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType,AnyTrivialRegType]{{.*}}"<:type {{.*}}index{{.*}}, :type scalar<f64>>(%x, %f)
-    take_kw_param_infer[Index](b=f, a=x)
+    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType,AnyTrivialRegType]{{.*}}"<:type {{.*}}Int{{.*}}, :type scalar<f64>>(%x, %f)
+    take_kw_param_infer[Int](b=f, a=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType,AnyTrivialRegType]{{.*}}"<:type {{.*}}index{{.*}}, :type {{.*}}scalar<f64>{{.*}}>(%x, %f)
-    take_kw_param_infer[Index, float](b=f, a=x)
+    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType,AnyTrivialRegType]{{.*}}"<:type {{.*}}!Int{{.*}}, :type {{.*}}scalar<f64>{{.*}}>(%x, %f)
+    take_kw_param_infer[Int, float](b=f, a=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType]{{.*}}<:type index>(%s, %x)
+    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType]{{.*}}<:type !Int>(%s, %x)
     take_kw_param_infer(s, b=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType]{{.*}}<:type index>(%s, %x)
+    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType]{{.*}}<:type !Int>(%s, %x)
     take_kw_param_infer(b=x, a=s)
 
 
@@ -112,7 +112,7 @@ struct MyElement(ImplicitlyCopyable):
 
 struct ConvertibleFromInt:
     @implicit
-    fn __init__(out self, a: Index):
+    fn __init__(out self, a: Int):
         pass
 
 
@@ -122,11 +122,11 @@ struct MyContainer[T: ImplicitlyCopyable]:
     fn foo(self, limits: ConvertibleFromInt):
         pass
 
-    fn foo(self, index: Index) -> T:
+    fn foo(self, index: Int) -> T:
         return self.v
 
 
 # CHECK-LABEL: lit.fn @"test_impl
-fn test_impl(a: MyContainer[MyElement], b: Index):
-    # CHECK: lit.call @{{.*}}@MyContainer::@"foo{{.*}}, "index": index
+fn test_impl(a: MyContainer[MyElement], b: Int):
+    # CHECK: lit.call @{{.*}}@MyContainer::@"foo{{.*}}, "index": !Int
     _ = a.foo(b)
