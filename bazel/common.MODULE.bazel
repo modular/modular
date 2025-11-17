@@ -313,8 +313,9 @@ genrule(
     ''',
 )
 """,
-    sha256 = "1f9ae02d6e90b7248adb3399397229abb85517e5c8e8b62181a08730bb2f616a",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/3.4.5/1f9ae02d6e90b7248adb3399397229abb85517e5c8e8b62181a08730bb2f616a/nvshmem.tar.gz",
+    # commit: https://github.com/modularml/NVSHMEM/commit/3f75eec2b4eb616b9cd171c3b3f8856279155b99
+    sha256 = "75c0faf01ff45ea78c17bf18f8c7e5740553b067899cc915951d5cad3434aea2",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/3.4.5/75c0faf01ff45ea78c17bf18f8c7e5740553b067899cc915951d5cad3434aea2/nvshmem.tar.gz",
 )
 
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
