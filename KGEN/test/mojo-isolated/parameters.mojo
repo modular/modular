@@ -177,8 +177,8 @@ struct ParamSubst[
 
 # CHECK-LABEL: lit.fn @"testParamSubst
 fn testParamSubst():
-  # CHECK: %xx = lit.var.decl {{.*}} : !lit.ref<@parameters::@ParamSubst<:type sugar_alias(*"Index`0x", index), :variadic<index> [1, 2]>
-  var xx : ParamSubst[Index, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`]
+  # CHECK: %xx = lit.var.decl {{.*}} : !lit.ref<@parameters::@ParamSubst<:type index, :variadic<index> [1, 2]>
+  var xx : ParamSubst[__mlir_type.index, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`]
 
 
 # Test parameter substitution.

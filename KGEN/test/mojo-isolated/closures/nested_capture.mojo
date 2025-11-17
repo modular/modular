@@ -6,12 +6,12 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-fn use(x: Index):
+fn use(x: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"direct
-fn direct(output: Index):
+fn direct(output: Int):
     # CHECK: call {{.*}}_CI_{{.*}}__init__{{.*}}(%output, %__call_result_tmp__)
     fn closure():
         @parameter
@@ -22,13 +22,13 @@ fn direct(output: Index):
 
 # CHECK-LABEL: lit.fn @"deep_runtime_capture
 fn deep_runtime_capture(
-    m: Index,
-) -> fn (n: Index) escaping -> fn (o: Index) escaping -> Index:
+    m: Int,
+) -> fn (n: Int) escaping -> fn (o: Int) escaping -> Int:
     # CHECK: lit.call {{.*}}_CI_{{.*}}__init__{{.*}}(%m, %__call_result_tmp__)
-    fn myclosure(n: Index) -> fn (o: Index) escaping -> Index:
-        fn my_inner_closure(o: Index) -> Index:
-            var x = __mlir_op.`index.add`(o, m)
-            return __mlir_op.`index.add`(x, n)
+    fn myclosure(n: Int) -> fn (o: Int) escaping -> Int:
+        fn my_inner_closure(o: Int) -> Int:
+            var x = o + m
+            return x + n
 
         return my_inner_closure
 

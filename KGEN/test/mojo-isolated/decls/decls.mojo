@@ -1029,12 +1029,12 @@ fn closureParameterCaptures[
 
 
 @register_passable("trivial")
-struct HasParam[p: Index]:
+struct HasParam[p: Int]:
     pass
 
 
 fn closureParameterInference[
-    p: Index, //, f: fn () capturing -> None
+    p: Int, //, f: fn () capturing -> None
 ](arg: HasParam[p]):
     pass
 
@@ -1057,7 +1057,7 @@ fn inaccessibleImplicitLifetimeParam(arg: HasLifetimeParam):
 
 
 # CHECK-LABEL: lit.struct.decl @CapturingStruct
-struct CapturingStruct[a: Index]:
+struct CapturingStruct[a: Int]:
     @staticmethod
     fn takeClosure[
         origins: OriginSet, //,
@@ -1090,7 +1090,7 @@ struct CapturingStructTrait(CapturingTrait):
 # CHECK-LABEL: lit.fn @"inferCaptureOrigins
 fn inferCaptureOrigins[
     lt: MutOrigin, param: HasLifetimeParam[lt]
-](mut x: Index, mut y: Index, arg: HasParam):
+](mut x: Int, mut y: Int, arg: HasParam):
     @parameter
     fn bareFunc():
         pass
@@ -1105,7 +1105,7 @@ fn inferCaptureOrigins[
     # CHECK: call {{.*}}closureParameterCaptures{{.*}}<:origin.set {mut *"x`"},
     # CHECK-SAME: !lit.generator<:{mut *"x`"}:() capturing -> !kgen.none>
     closureParameterCaptures[captureSomething]()
-    # CHECK: call {{.*}}closureParameterInference{{.*}}<*"p`{{.*}}",
+    # CHECK: call {{.*}}closureParameterInference{{.*}}<:!Int *"p`{{.*}}",
     # CHECK-SAME: rebind(:!lit.generator<:{mut *"x`"}:{{.*}} *"captureSomething
     closureParameterInference[captureSomething](arg)
 
@@ -1135,7 +1135,7 @@ fn inferCaptureOrigins[
 
 
 # CHECK-LABEL: lit.fn @"testParameterCapture
-fn testParameterCapture(mut x: Index, mut y: Index):
+fn testParameterCapture(mut x: Int, mut y: Int):
     # CHECK: lit.fn *"capture()":{mut *"x`"}
     @parameter
     fn capture():

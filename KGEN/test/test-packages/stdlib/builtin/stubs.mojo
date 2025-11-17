@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-alias Index = __mlir_type.index
 alias string = __mlir_type.`!kgen.string`
 alias float = __mlir_type.`!pop.scalar<f64>`
 
@@ -659,10 +658,10 @@ struct Bool(AnyRPTrivialType):
 @register_passable("trivial")
 struct Slice:
     @implicit
-    fn __init__(out self, end: Index):
+    fn __init__(out self, end: Int):
         pass
 
-    fn __init__(out self, start: Index, end: Index):
+    fn __init__(out self, start: Int, end: Int):
         return
 
     fn __init__[

@@ -9,12 +9,12 @@
 
 struct WeirdArray:
     # expected-note @+1 {{function declared here}}
-    fn __getitem__(self, x: Index) -> Index:
+    fn __getitem__(self, x: Int) -> Int:
         return x
 
 
-fn test_getitem(var a: WeirdArray, f: float, x: Index):
-    # expected-error @+1 {{invalid call to '__getitem__': index cannot be converted from 'scalar<f64>' to 'index'}}
+fn test_getitem(var a: WeirdArray, f: float, x: Int):
+    # expected-error @+1 {{invalid call to '__getitem__': index cannot be converted from 'scalar<f64>' to 'Int'}}
     _ = a[f]
 
     # expected-error @+1 {{invalid call to '__getitem__': expected at most 2 positional arguments, got 3}}
@@ -25,7 +25,7 @@ fn test_getitem(var a: WeirdArray, f: float, x: Index):
 
 
 struct Settable:
-    fn __setitem__(self, x: Index, y: Index): pass
+    fn __setitem__(self, x: Int, y: Int): pass
 
 struct NotSettable:
     fn __getitem__(self) -> Int: pass
@@ -33,7 +33,7 @@ struct NotSettable:
     fn __setitem__(self): pass
 
 
-fn test_setitem_kwargs(c: Settable, ns: NotSettable, x: Index):
+fn test_setitem_kwargs(c: Settable, ns: NotSettable, x: Int):
     # Issue #22580: Allow keyword arguments in __setitem__ calls
     # weird but ok, value is passed as 'y'.
     c[x=x] = x
@@ -45,15 +45,15 @@ fn test_setitem_kwargs(c: Settable, ns: NotSettable, x: Index):
 
 struct MultiSetItem:
     # expected-note @+1 {{candidate declared here}}
-    fn __setitem__(self, x: Index, y: Index):
+    fn __setitem__(self, x: Int, y: Int):
         pass
 
     # expected-note @+1 {{candidate declared here}}
-    fn __setitem__(self, x: Index, y: float):
+    fn __setitem__(self, x: Int, y: float):
         pass
 
 
-fn test_setitem_overload(b: MultiSetItem, x: Index):
+fn test_setitem_overload(b: MultiSetItem, x: Int):
     # expected-error @+1 {{'MultiSetItem' has overloaded __setitem__ implementations, which isn't supported}}
     b[x] = x
 

@@ -7,7 +7,7 @@
 
 from .test_nested_package.module import nested_function
 
-alias top_level_alias = __mlir_attr.`2 : index`
+alias top_level_alias = 2
 
 
 fn function():
@@ -22,7 +22,7 @@ fn call_nested_function():
 
 @fieldwise_init
 struct SomeType:
-    var value: Index
+    var value: Int
 
 
 @fieldwise_init
@@ -35,15 +35,15 @@ fn `use()weird[]`() -> `weird()struct[]`:
 
 
 @fieldwise_init
-struct ParameterizedType[value: Index](ImplicitlyCopyable, Movable):
+struct ParameterizedType[value: Int](ImplicitlyCopyable, Movable):
     pass
 
 
 @fieldwise_init
 struct Wrapper:
-    var data: Index
+    var data: Int
 
-    alias MyType = ParameterizedType[__mlir_attr.`42 : index`]
+    alias MyType = ParameterizedType[42]
 
     fn unused_method(mut self) -> Self.MyType:
         return Self.MyType()

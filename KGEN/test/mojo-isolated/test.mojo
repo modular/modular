@@ -24,4 +24,4 @@
 # CHECK: lit.struct.decl @BoxedInt(!AnyType_Copyable_ImplicitlyCopyable_Movable_UnknownDestructibility)
 @fieldwise_init
 struct BoxedInt(Copyable, ImplicitlyCopyable, Movable):
-    var value: Index
+    var value: Int
