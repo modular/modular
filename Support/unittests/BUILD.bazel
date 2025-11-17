@@ -63,7 +63,6 @@ modular_cc_test(
     name = "CompilerTest",
     srcs = glob(["Compiler/*.cpp"]),
     deps = [
-        "//AsyncRT:CompilerSupport",
         "//Support:Compiler",
     ],
 )
@@ -87,7 +86,6 @@ modular_cc_test(
     name = "DebugInfoDialectTest",
     srcs = glob(["DebugInfoDialect/*.cpp"]),
     deps = [
-        "//AsyncRT:CompilerSupport",
         "//Support:DebugInfoDialect",
         "//Support:DebugInfoToLLVM",
         "//Support:DebugInfoTransforms",
@@ -142,7 +140,6 @@ modular_cc_test(
     name = "HostTest",
     srcs = ["HostTest.cpp"],
     deps = [
-        "//AsyncRT:CompilerSupport",
         "//Support:MArchTarget",
         "//Support:Threading",
     ],
@@ -161,8 +158,6 @@ modular_cc_test(
     name = "MArchTargetTest",
     srcs = glob(["MArchTarget/*.cpp"]),
     deps = [
-        "//AsyncRT:CompilerSupport",
-        "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",
         "//Support:MArchTarget",
     ],

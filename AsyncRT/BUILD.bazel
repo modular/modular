@@ -12,19 +12,6 @@ config_setting(
 )
 
 modular_cc_library(
-    name = "CompilerSupport.headers",
-    hdrs = glob([
-        "include/AsyncRT/CompilerSupport/*.h",
-    ]),
-    tags = ["no-clang-tidy-headers"],
-    visibility = ["//Support:__subpackages__"],
-    deps = [
-        ":Runtime.headers",
-        "//Support:Threading",
-    ],
-)
-
-modular_cc_library(
     name = "DeviceContext.headers",
     hdrs = [
         "include/AsyncRT/DeviceContext/CompilationDevice.h",
@@ -184,6 +171,7 @@ modular_cc_library(
     hdrs = glob(["include/AsyncRT/Support/*.h"]),
     tags = ["no-clang-tidy-headers"],
     deps = [
+        ":Runtime.headers",
         "//Support:MArchTarget",
         "//Support:Threading",
     ],
