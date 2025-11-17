@@ -13,12 +13,12 @@ struct PlainStruct:
 # TODO(MOCO-522): Simplify generic_struct_package, struct_only_package,
 # and simple_struct_package into this one package
 struct GenericBox[T: ImplicitlyCopyable]:
-    var value: T
+    var value: Self.T
 
-    fn __init__(out self, value: T):
+    fn __init__(out self, value: Self.T):
         self.value = value
 
-    fn get(self) -> T:
+    fn get(self) -> Self.T:
         return self.value
 
 

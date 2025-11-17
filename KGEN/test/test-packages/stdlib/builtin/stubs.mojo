@@ -19,7 +19,7 @@ alias OriginSet = __mlir_type.`!lit.origin.set`
 struct Origin[mut: Bool]:
     alias _mlir_type = __mlir_type[
         `!lit.origin<`,
-        mut._mlir_value,
+        Self.mut._mlir_value,
         `>`,
     ]
 
@@ -29,7 +29,7 @@ struct Origin[mut: Bool]:
         `#lit.origin.mutcast<`,
         o._mlir_origin,
         `> : !lit.origin<`,
-        mut._mlir_value,
+        Self.mut._mlir_value,
         `>`,
     ]
 
@@ -256,7 +256,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
         out result: FloatLiteral[
             __mlir_attr[
                 `#pop<float_literal_bin<mul `,
-                value,
+                Self.value,
                 `,`,
                 rhs.value,
                 `>> : !pop.float_literal`,
@@ -271,7 +271,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
     ) -> FloatLiteral[
         __mlir_attr[
             `#pop<float_literal_bin<truediv `,
-            value,
+            Self.value,
             `,`,
             rhs.value,
             `>> : !pop.float_literal`,
@@ -502,16 +502,18 @@ struct Span[
     origin: Origin[mut],
 ]:
     # Field
-    var _data: UnsafePointer[T, mut=mut, origin=origin]
+    var _data: UnsafePointer[Self.T, mut = Self.mut, origin = Self.origin]
     var _len: Int
 
     fn __init__(out self):
-        self._data = UnsafePointer[T, mut=mut, origin=origin]()
+        self._data = UnsafePointer[
+            Self.T, mut = Self.mut, origin = Self.origin
+        ]()
         self._len = 0
 
     fn unsafe_ptr(
         self,
-    ) -> UnsafePointer[T, mut=mut, origin=origin,]:
+    ) -> UnsafePointer[Self.T, mut = Self.mut, origin = Self.origin,]:
         return self._data
 
 
@@ -537,7 +539,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`]:
 
 @register_passable("trivial")
 struct StringSlice[mut: Bool, //, origin: Origin[mut]]:
-    var _slice: Span[Byte, origin]
+    var _slice: Span[Byte, Self.origin]
 
     @implicit
     fn __init__[
@@ -671,21 +673,21 @@ struct Slice:
 
 
 struct List[T: AnyType](Copyable, Movable):
-    fn __init__(out self, *elements: T, __list_literal__: () = ()):
+    fn __init__(out self, *elements: Self.T, __list_literal__: () = ()):
         pass
 
-    fn append(mut self, var value: T):
+    fn append(mut self, var value: Self.T):
         pass
 
-    fn __getitem__(ref self, idx: Int) -> ref [self] T:
+    fn __getitem__(ref self, idx: Int) -> ref [self] Self.T:
         pass
 
 
 struct Set[T: AnyType]:
-    fn __init__(out self, *elements: T, __set_literal__: () = ()):
+    fn __init__(out self, *elements: Self.T, __set_literal__: () = ()):
         pass
 
-    fn add(mut self, var value: T):
+    fn add(mut self, var value: Self.T):
         pass
 
 
@@ -695,13 +697,13 @@ struct Dict[K: AnyType, V: ImplicitlyCopyable & Movable]:
 
     fn __init__(
         out self,
-        var keys: List[K],
-        var values: List[V],
+        var keys: List[Self.K],
+        var values: List[Self.V],
         __dict_literal__: (),
     ):
         pass
 
-    fn __setitem__(mut self, key: K, value: V):
+    fn __setitem__(mut self, key: Self.K, value: Self.V):
         pass
 
 
@@ -778,12 +780,12 @@ trait AnyRPTrivialType:
 
 @register_passable("trivial")
 struct VariadicList[type: AnyTrivialRegType]:
-    alias _mlir_type = __mlir_type[`!kgen.variadic<`, type, `>`]
+    alias _mlir_type = __mlir_type[`!kgen.variadic<`, Self.type, `>`]
 
     var value: Self._mlir_type
 
     @implicit
-    fn __init__(out self, *value: type):
+    fn __init__(out self, *value: Self.type):
         self = value
 
     @implicit
@@ -791,7 +793,7 @@ struct VariadicList[type: AnyTrivialRegType]:
         self.value = value
 
     @always_inline
-    fn __getitem__(self, idx: Int) -> type:
+    fn __getitem__(self, idx: Int) -> Self.type:
         pass
 
 
@@ -830,12 +832,14 @@ struct _VariadicListMemIter[
         list_origin: The origin of the VariadicListMem.
     """
 
-    alias variadic_list_type = VariadicListMem[elt_type, elt_origin, is_owned]
+    alias variadic_list_type = VariadicListMem[
+        Self.elt_type, Self.elt_origin, Self.is_owned
+    ]
 
     var index: Int
-    var src: Pointer[Self.variadic_list_type, list_origin]
+    var src: Pointer[Self.variadic_list_type, Self.list_origin]
 
-    fn __next_ref__(mut self) -> ref [elt_origin] elt_type:
+    fn __next_ref__(mut self) -> ref [Self.elt_origin] Self.elt_type:
         while True:
             pass
 
@@ -849,7 +853,7 @@ struct VariadicListMem[
     origin: Origin[elt_is_mutable],
     is_owned: Bool,
 ]:
-    alias reference_type = Pointer[element_type, origin]
+    alias reference_type = Pointer[Self.element_type, Self.origin]
     alias _mlir_ref_type = Self.reference_type._mlir_type
     alias _mlir_type = __mlir_type[`!kgen.variadic<`, Self._mlir_ref_type, `>`]
 
@@ -866,15 +870,15 @@ struct VariadicListMem[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        Origin[elt_is_mutable].cast_from[origin_of(origin, self)]
-    ] element_type:
+        Origin[Self.elt_is_mutable].cast_from[origin_of(Self.origin, self)]
+    ] Self.element_type:
         while True:
             pass
 
     fn __iter__(
         self,
         out result: _VariadicListMemIter[
-            element_type, origin, origin_of(self), is_owned
+            Self.element_type, Self.origin, origin_of(self), Self.is_owned
         ],
     ):
         """Iterate over the list.
@@ -898,11 +902,11 @@ struct VariadicPack[
 ]:
     alias _mlir_pack_type = __mlir_type[
         `!lit.ref.pack<:variadic<`,
-        element_trait,
+        Self.element_trait,
         `> `,
-        element_types,
+        Self.element_types,
         `, `,
-        origin._mlir_origin,
+        Self.origin._mlir_origin,
         `>`,
     ]
 
@@ -913,7 +917,9 @@ struct VariadicPack[
     fn __init__(out self, value: Self._mlir_pack_type):
         pass
 
-    fn __getitem__[index: Int](self) -> ref [Self.origin] element_types[index]:
+    fn __getitem__[
+        index: Int
+    ](self) -> ref [Self.origin] Self.element_types[index]:
         while True:
             pass
 
@@ -986,11 +992,11 @@ struct Pointer[
 ]:
     alias _mlir_type = __mlir_type[
         `!lit.ref<`,
-        type,
+        Self.type,
         `, `,
-        origin._mlir_origin,
+        Self.origin._mlir_origin,
         `, `,
-        address_space._value._mlir_value,
+        Self.address_space._value._mlir_value,
         `>`,
     ]
 
@@ -1003,7 +1009,9 @@ struct Pointer[
 
     @always_inline("nodebug")
     fn __init__(
-        out self, *, ref [origin, address_space._value._mlir_value]to: type
+        out self,
+        *,
+        ref [Self.origin, Self.address_space._value._mlir_value]to: Self.type,
     ):
         """Constructs a Pointer from a reference to a value.
 
@@ -1014,25 +1022,27 @@ struct Pointer[
 
     @staticmethod
     @always_inline("nodebug")
-    fn address_of(ref [origin, address_space]value: type) -> Self:
+    fn address_of(
+        ref [Self.origin, Self.address_space]value: Self.type
+    ) -> Self:
         return Pointer(_mlir_value=__get_mvalue_as_litref(value))
 
-    fn __getitem__(self) -> ref [origin, address_space] type:
+    fn __getitem__(self) -> ref [Self.origin, Self.address_space] Self.type:
         return __get_litref_as_mvalue(self._value)
 
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
-    fn __eq__(self, rhs: Pointer[type, _, address_space]) -> Bool:
+    fn __eq__(self, rhs: Pointer[Self.type, _, Self.address_space]) -> Bool:
         return True
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: type_of(Pointer[type, _, address_space]),
+        other_type: type_of(Pointer[Self.type, _, Self.address_space]),
     ](self) -> Pointer[
-        mut = mut & other_type.origin.mut,
-        type=type,
-        origin = origin_of(origin, other_type.origin),
-        address_space=address_space,
+        mut = Self.mut & other_type.origin.mut,
+        type = Self.type,
+        origin = origin_of(Self.origin, other_type.origin),
+        address_space = Self.address_space,
     ]:
         return self._value  # allow lit.ref to convert.
 
@@ -1042,7 +1052,7 @@ struct Tuple[*element_types: AnyType](ImplicitlyCopyable):
         pass
 
     @implicit
-    fn __init__(out self, *args: *element_types):
+    fn __init__(out self, *args: * Self.element_types):
         pass
 
     fn __copyinit__(out self, existing: Self):
@@ -1051,7 +1061,7 @@ struct Tuple[*element_types: AnyType](ImplicitlyCopyable):
     fn __moveinit__(out self, deinit existing: Self):
         pass
 
-    fn __getitem__[i: Int](ref self) -> ref [self] element_types[i]:
+    fn __getitem__[i: Int](ref self) -> ref [self] Self.element_types[i]:
         while __mlir_attr.true:
             pass
 
@@ -1065,7 +1075,11 @@ struct UnsafePointer[
     origin: Origin[mut] = Origin[mut].cast_from[MutAnyOrigin],
 ]:
     alias _mlir_type = __mlir_type[
-        `!kgen.pointer<`, T, `,`, address_space._value._mlir_value, `>`
+        `!kgen.pointer<`,
+        Self.T,
+        `,`,
+        Self.address_space._value._mlir_value,
+        `>`,
     ]
     var address: Self._mlir_type
 
@@ -1078,7 +1092,9 @@ struct UnsafePointer[
         self.address = value
 
     @always_inline("nodebug")
-    fn __init__(out self, *, ref [address_space._value._mlir_value]to: T):
+    fn __init__(
+        out self, *, ref [Self.address_space._value._mlir_value]to: Self.T
+    ):
         """Constructs a Pointer from a reference to a value.
 
         Args:
@@ -1087,16 +1103,16 @@ struct UnsafePointer[
         self = Self(__mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(to)))
 
     @staticmethod
-    fn address_of(ref [address_space]arg: T) -> Self:
+    fn address_of(ref [Self.address_space]arg: Self.T) -> Self:
         return Self(__mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(arg)))
 
-    fn __getitem__(
-        self,
-    ) -> ref [Self.origin, address_space] T:
+    fn __getitem__(self) -> ref [Self.origin, Self.address_space] Self.T:
         while __mlir_attr.true:
             pass
 
-    fn __getitem__(self, offset: Int) -> ref [Self.origin, address_space] T:
+    fn __getitem__(
+        self, offset: Int
+    ) -> ref [Self.origin, Self.address_space] Self.T:
         while __mlir_attr.true:
             pass
 
@@ -1107,8 +1123,8 @@ struct UnsafePointer[
         self_origin: ImmutOrigin
     ](ref [self_origin]self, offset: Int = 0) -> ref [
         Origin[True].cast_from[_lit_indirect_origin[self_origin].result],
-        address_space,
-    ] T:
+        Self.address_space,
+    ] Self.T:
         while __mlir_attr.true:
             pass
 
@@ -1185,7 +1201,7 @@ struct Optional[T: ImplicitlyCopyable & Movable]:
         pass
 
     @implicit
-    fn __init__(out self, var value: T):
+    fn __init__(out self, var value: Self.T):
         pass
 
     @implicit
@@ -1203,7 +1219,7 @@ struct Optional[T: ImplicitlyCopyable & Movable]:
     fn __moveinit__(out self, deinit other: Self):
         pass
 
-    fn value(ref self) -> ref [self] T:
+    fn value(ref self) -> ref [self] Self.T:
         while True:
             pass
 
@@ -1299,7 +1315,7 @@ alias UInt32 = SIMD[DType.uint32, 1]
 @register_passable("trivial")
 struct SIMD[dtype: DType, size: Int]:
     alias _mlir_type = __mlir_type[
-        `!pop.simd<`, size._mlir_value, `, `, dtype._mlir_value, `>`
+        `!pop.simd<`, Self.size._mlir_value, `, `, Self.dtype._mlir_value, `>`
     ]
 
     var _mlir_value: Self._mlir_type
@@ -1311,7 +1327,7 @@ struct SIMD[dtype: DType, size: Int]:
 
     @always_inline("nodebug")
     fn __init__(out self):
-        alias res = SIMD[dtype, size](Int())
+        alias res = SIMD[Self.dtype, Self.size](Int())
         self = res
 
     @always_inline
@@ -1319,10 +1335,12 @@ struct SIMD[dtype: DType, size: Int]:
         var index = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<index>`
         ](value._mlir_value)
-        var s = __mlir_op.`pop.cast`[_type = SIMD[dtype, 1]._mlir_type](index)
+        var s = __mlir_op.`pop.cast`[_type = SIMD[Self.dtype, 1]._mlir_type](
+            index
+        )
 
         @parameter
-        if size == 1:
+        if Self.size == 1:
             self._mlir_value = rebind[Self._mlir_type](s)
         else:
             self._mlir_value = __mlir_op.`pop.simd.splat`[

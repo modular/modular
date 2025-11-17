@@ -744,12 +744,12 @@ struct HMyUnsafePointer[
     # CHECK: "signature": "__getitem__(self) -> ref [MutAnyOrigin, address_space] T",
     fn __getitem__(
         self,
-    ) -> ref [MutAnyOrigin, address_space] T:
+    ) -> ref [MutAnyOrigin, Self.address_space] Self.T:
         pass
 
     # CHECK: "signature": "address_of(ref [address_space] arg: T) -> Self",
     @staticmethod
-    fn address_of(ref [address_space]arg: T) -> Self:
+    fn address_of(ref [Self.address_space]arg: Self.T) -> Self:
         pass
 
 
@@ -758,7 +758,7 @@ struct HMyUnsafePointer[
 
 struct HList[T: ImplicitlyCopyable & Movable]:
     # CHECK: "signature": "__getitem__(ref self, idx: Int) -> ref [self] T",
-    fn __getitem__(ref self, idx: Int) -> ref [self] T:
+    fn __getitem__(ref self, idx: Int) -> ref [self] Self.T:
         pass
 
 
@@ -896,7 +896,7 @@ struct ParameterClass[_type: __mlir_type.`!kgen.dtype`]:
         _type: This is a parameter.
     """
 
-    fn fn_with_self_param[param: ParameterClass[_type]](self):
+    fn fn_with_self_param[param: ParameterClass[Self._type]](self):
         """A summary.
 
         Parameters:

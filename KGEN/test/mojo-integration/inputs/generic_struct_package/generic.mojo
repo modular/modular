@@ -8,10 +8,10 @@
 
 
 struct Container[T: ImplicitlyCopyable]:
-    var value: T
+    var value: Self.T
 
-    fn __init__(out self, value: T):
+    fn __init__(out self, value: Self.T):
         self.value = value
 
-    fn get(self) -> T:
+    fn get(self) -> Self.T:
         return self.value
