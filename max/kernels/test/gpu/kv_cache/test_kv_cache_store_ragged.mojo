@@ -40,8 +40,8 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     alias kv_params = KVCacheStaticParams(num_heads=num_kv_heads, head_size=64)
     alias num_layers = 2
     alias batch_size = 3
-    var valid_lengths = List[Int](100, 200, 300)
-    var cache_lengths = List[Int](100, 200, 300)
+    var valid_lengths: List[Int] = [100, 200, 300]
+    var cache_lengths: List[Int] = [100, 200, 300]
 
     debug_assert(
         len(valid_lengths) == len(cache_lengths),

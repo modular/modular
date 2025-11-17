@@ -672,9 +672,18 @@ fn _matmul_gpu[
                     and ctx.default_device_info is A100
                     and transpose_b
                 ):
-                    alias Ms = List[Int32](
-                        16, 32, 64, 128, 256, 512, 768, 1024, 2048, 4096
-                    )
+                    alias Ms: List[Int32] = [
+                        16,
+                        32,
+                        64,
+                        128,
+                        256,
+                        512,
+                        768,
+                        1024,
+                        2048,
+                        4096,
+                    ]
                     try:
 
                         @parameter

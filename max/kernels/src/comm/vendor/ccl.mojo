@@ -69,20 +69,20 @@ struct ncclDataType_t:
         self._value = value
 
 
-alias RCCL_LIBRARY_PATHS = List[Path](
+alias RCCL_LIBRARY_PATHS: List[Path] = [
     "librccl.so",
     "librccl.so.1",
     "/opt/rocm/lib/librccl.so",
     "/opt/rocm/lib/librccl.so.1",
-)
+]
 
 
-alias NCCL_LIBRARY_PATHS = List[Path](
+alias NCCL_LIBRARY_PATHS: List[Path] = [
     "libnccl.so",
     "libnccl.so.2",
     "/usr/lib/x86_64-linux-gnu/libnccl.so",
     "/usr/lib/x86_64-linux-gnu/libnccl.so.2",
-)
+]
 
 
 # Unified CCL loader (selects RCCL/NCCL at compile time)

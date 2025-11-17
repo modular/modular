@@ -122,7 +122,7 @@ struct TuningConfigSM100(TuningConfig):
 
 
 fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
-    return List(
+    return [
         TuningConfigSM100(
             M=3456,
             M_end=3456 + 64,
@@ -324,7 +324,7 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             num_clc_pipeline_stages=2,
             k_group_size=2,
         ),
-    )
+    ]
 
 
 # ===----------------------------------------------------------------------=== #
@@ -334,7 +334,7 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
 
 fn _get_tuning_list_sm100_fp8[mma_k: Int, bk: Int]() -> List[TuningConfigSM100]:
     # ----------------BEGIN-TUNING-LIST-SM100-FP8----------------
-    alias config_list = List(
+    alias config_list = [
         # Automatically generated from [tuning_table_sm100_fp8.yaml]
         # index: [0]
         TuningConfigSM100(
@@ -1487,7 +1487,7 @@ fn _get_tuning_list_sm100_fp8[mma_k: Int, bk: Int]() -> List[TuningConfigSM100]:
             block_swizzle_size=8,
             rasterize_order=RasterOrder(1),
         ),
-    )
+    ]
     # ----------------END-TUNING-LIST-SM100-FP8----------------
 
     return materialize[config_list]()

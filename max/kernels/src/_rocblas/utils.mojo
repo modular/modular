@@ -22,12 +22,12 @@ from .types import Status
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias ROCM_ROCBLAS_LIBRARY_PATHS = List[Path](
+alias ROCM_ROCBLAS_LIBRARY_PATHS: List[Path] = [
     "librocblas.so.4",
     "librocblas.so.5",
     "/opt/rocm/lib/librocblas.so.4",
     "/opt/rocm/lib/librocblas.so.5",
-)
+]
 
 
 fn _on_error_msg() -> Error:

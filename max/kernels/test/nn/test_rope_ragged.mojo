@@ -33,8 +33,8 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() -> None:
 
     # Set up test hyperparameters.
     alias batch_size = 2
-    var start_positions = List[UInt32](0, 5)
-    var lookup_table = List[UInt32](0, 1)
+    var start_positions: List[UInt32] = [0, 5]
+    var lookup_table: List[UInt32] = [0, 1]
     alias seq_len = 3
     alias max_seq_len = 16
     alias num_layers = 1

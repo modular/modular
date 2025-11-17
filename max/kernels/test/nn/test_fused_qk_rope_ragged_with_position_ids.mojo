@@ -45,11 +45,11 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
 
     # Set up test hyperparameters.
     alias batch_size = 2
-    alias start_positions = List[UInt32](0, 5)
+    alias start_positions: List[UInt32] = [0, 5]
     alias seq_len = 3
     alias max_seq_len = 16
     alias num_layers = 1
-    var lookup_table = List[UInt32](0, 1)
+    var lookup_table: List[UInt32] = [0, 1]
 
     fn _max[dtype: DType, items: List[Scalar[dtype]]]() -> Scalar[dtype]:
         constrained[len(items) > 0, "empty list in _max"]()

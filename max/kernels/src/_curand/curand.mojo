@@ -29,10 +29,10 @@ from utils import StaticTuple
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_CURAND_LIBRARY_PATHS = List[Path](
+alias CUDA_CURAND_LIBRARY_PATHS: List[Path] = [
     "libcurand.so.10",
     "/usr/local/cuda/lib64/libcurand.so.10",
-)
+]
 
 
 fn _on_error_msg() -> Error:

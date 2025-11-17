@@ -1018,7 +1018,7 @@ struct TuningConfigAllreduce(TuningConfig):
 
 
 alias allreduce_table = Table(
-    List(
+    [
         # default for sm90 (encoded with ngpus=-1, num_bytes=-1)
         TuningConfigAllreduce(
             ngpus=-1, num_bytes=-1, sm_version="sm_90a", num_blocks=216
@@ -1061,7 +1061,7 @@ alias allreduce_table = Table(
         TuningConfigAllreduce(
             ngpus=4, num_bytes=(1 << 27), sm_version="sm_100a", num_blocks=512
         ),
-    ),
+    ],
     "allreduce_table",
 )
 

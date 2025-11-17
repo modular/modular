@@ -77,8 +77,8 @@ def main():
         print("== test_scatternd")
         var data = TestTensor[DType.float32, 3](
             DimList(4, 4, 4),
-            List[Float32](
-                1,
+            [
+                Float32(1),
                 2,
                 3,
                 4,
@@ -142,17 +142,15 @@ def main():
                 6,
                 7,
                 8,
-            ),
+            ],
         )
 
-        var indices = TestTensor[DType.int64, 2](
-            DimList(2, 1), List[Int64](0, 2)
-        )
+        var indices = TestTensor[DType.int64, 2](DimList(2, 1), [Int64(0), 2])
 
         var updates = TestTensor[DType.float32, 3](
             DimList(2, 4, 4),
-            List[Float32](
-                5,
+            [
+                Float32(5),
                 5,
                 5,
                 5,
@@ -184,13 +182,13 @@ def main():
                 4,
                 4,
                 4,
-            ),
+            ],
         )
 
         var output_ref = TestTensor[DType.float32, 3](
             DimList(4, 4, 4),
-            List[Float32](
-                5,
+            [
+                Float32(5),
                 5,
                 5,
                 5,
@@ -254,7 +252,7 @@ def main():
                 6,
                 7,
                 8,
-            ),
+            ],
         )
 
         test_case[DType.float32](
@@ -270,8 +268,8 @@ def main():
         print("== test_scatternd_add")
         var data = TestTensor[DType.float32, 3](
             DimList(4, 4, 4),
-            List[Float32](
-                1,
+            [
+                Float32(1),
                 2,
                 3,
                 4,
@@ -335,17 +333,15 @@ def main():
                 6,
                 7,
                 8,
-            ),
+            ],
         )
 
-        var indices = TestTensor[DType.int64, 2](
-            DimList(2, 1), List[Int64](0, 0)
-        )
+        var indices = TestTensor[DType.int64, 2](DimList(2, 1), [Int64(0), 0])
 
         var updates = TestTensor[DType.float32, 3](
             DimList(2, 4, 4),
-            List[Float32](
-                5,
+            [
+                Float32(5),
                 5,
                 5,
                 5,
@@ -377,13 +373,13 @@ def main():
                 4,
                 4,
                 4,
-            ),
+            ],
         )
 
         var output_ref = TestTensor[DType.float32, 3](
             DimList(4, 4, 4),
-            List[Float32](
-                7,
+            [
+                Float32(7),
                 8,
                 9,
                 10,
@@ -447,7 +443,7 @@ def main():
                 6,
                 7,
                 8,
-            ),
+            ],
         )
 
         @always_inline
@@ -465,8 +461,8 @@ def main():
         print("== test_scatternd_max")
         var data = TestTensor[DType.float32, 3](
             DimList(4, 4, 4),
-            List[Float32](
-                1,
+            [
+                Float32(1),
                 2,
                 3,
                 4,
@@ -530,17 +526,15 @@ def main():
                 6,
                 7,
                 8,
-            ),
+            ],
         )
 
-        var indices = TestTensor[DType.int64, 2](
-            DimList(2, 1), List[Int64](0, 0)
-        )
+        var indices = TestTensor[DType.int64, 2](DimList(2, 1), [Int64(0), 0])
 
         var updates = TestTensor[DType.float32, 3](
             DimList(2, 4, 4),
-            List[Float32](
-                5,
+            [
+                Float32(5),
                 5,
                 5,
                 5,
@@ -572,13 +566,13 @@ def main():
                 4,
                 4,
                 4,
-            ),
+            ],
         )
 
         var output_ref = TestTensor[DType.float32, 3](
             DimList(4, 4, 4),
-            List[Float32](
-                5,
+            [
+                Float32(5),
                 5,
                 5,
                 5,
@@ -642,7 +636,7 @@ def main():
                 6,
                 7,
                 8,
-            ),
+            ],
         )
 
         @always_inline
@@ -660,8 +654,8 @@ def main():
         print("== test_scatternd_min")
         var data = TestTensor[DType.float32, 3](
             DimList(4, 4, 4),
-            List[Float32](
-                1,
+            [
+                Float32(1),
                 2,
                 3,
                 4,
@@ -725,17 +719,15 @@ def main():
                 6,
                 7,
                 8,
-            ),
+            ],
         )
 
-        var indices = TestTensor[DType.int64, 2](
-            DimList(2, 1), List[Int64](0, 0)
-        )
+        var indices = TestTensor[DType.int64, 2](DimList(2, 1), [Int64(0), 0])
 
         var updates = TestTensor[DType.float32, 3](
             DimList(2, 4, 4),
-            List[Float32](
-                5,
+            [
+                Float32(5),
                 5,
                 5,
                 5,
@@ -767,13 +759,13 @@ def main():
                 4,
                 4,
                 4,
-            ),
+            ],
         )
 
         var output_ref = TestTensor[DType.float32, 3](
             DimList(4, 4, 4),
-            List[Float32](
-                1,
+            [
+                Float32(1),
                 1,
                 1,
                 1,
@@ -837,7 +829,7 @@ def main():
                 6,
                 7,
                 8,
-            ),
+            ],
         )
 
         @always_inline
@@ -855,8 +847,8 @@ def main():
         print("== test_scatternd_multiply")
         var data = TestTensor[DType.float32, 3](
             DimList(4, 4, 4),
-            List[Float32](
-                1,
+            [
+                Float32(1),
                 2,
                 3,
                 4,
@@ -920,17 +912,15 @@ def main():
                 6,
                 7,
                 8,
-            ),
+            ],
         )
 
-        var indices = TestTensor[DType.int64, 2](
-            DimList(2, 1), List[Int64](0, 0)
-        )
+        var indices = TestTensor[DType.int64, 2](DimList(2, 1), [Int64(0), 0])
 
         var updates = TestTensor[DType.float32, 3](
             DimList(2, 4, 4),
-            List[Float32](
-                5,
+            [
+                Float32(5),
                 5,
                 5,
                 5,
@@ -962,13 +952,13 @@ def main():
                 4,
                 4,
                 4,
-            ),
+            ],
         )
 
         var output_ref = TestTensor[DType.float32, 3](
             DimList(4, 4, 4),
-            List[Float32](
-                5,
+            [
+                Float32(5),
                 10,
                 15,
                 20,
@@ -1032,7 +1022,7 @@ def main():
                 6,
                 7,
                 8,
-            ),
+            ],
         )
 
         @always_inline
@@ -1051,7 +1041,7 @@ def main():
         # Test 1D scatter_nd with empty updates (identity operation).
         var data = TestTensor[DType.float32, 1](
             DimList(5),
-            List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
+            [Float32(1.0), 2.0, 3.0, 4.0, 5.0],
         )
 
         # Empty indices and updates.
@@ -1061,7 +1051,7 @@ def main():
         # Output should equal input (identity).
         var output_ref = TestTensor[DType.float32, 1](
             DimList(5),
-            List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
+            [Float32(1.0), 2.0, 3.0, 4.0, 5.0],
         )
 
         # Create a proper test case function for 1D.
@@ -1083,7 +1073,7 @@ def main():
         # Test 2D scatter_nd with empty row updates.
         var data = TestTensor[DType.float32, 2](
             DimList(2, 2),
-            List[Float32](1.0, 2.0, 3.0, 4.0),
+            [Float32(1.0), 2.0, 3.0, 4.0],
         )
 
         var indices = TestTensor[DType.int64, 2](DimList(0, 1), List[Int64]())
@@ -1093,7 +1083,7 @@ def main():
 
         var output_ref = TestTensor[DType.float32, 2](
             DimList(2, 2),
-            List[Float32](1.0, 2.0, 3.0, 4.0),
+            [Float32(1.0), 2.0, 3.0, 4.0],
         )
 
         var output = TestTensor[DType.float32, 2](DimList(2, 2))
@@ -1114,7 +1104,7 @@ def main():
         # Test 2D scatter_nd with empty point updates.
         var data = TestTensor[DType.float32, 2](
             DimList(3, 3),
-            List[Float32](1, 2, 3, 4, 5, 6, 7, 8, 9),
+            [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9],
         )
 
         var indices = TestTensor[DType.int64, 2](DimList(0, 2), List[Int64]())
@@ -1122,7 +1112,7 @@ def main():
 
         var output_ref = TestTensor[DType.float32, 2](
             DimList(3, 3),
-            List[Float32](1, 2, 3, 4, 5, 6, 7, 8, 9),
+            [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9],
         )
 
         var output = TestTensor[DType.float32, 2](DimList(3, 3))
@@ -1143,7 +1133,7 @@ def main():
         # Test 3D scatter_nd with empty updates.
         var data = TestTensor[DType.float32, 3](
             DimList(2, 2, 2),
-            List[Float32](1, 2, 3, 4, 5, 6, 7, 8),
+            [Float32(1), 2, 3, 4, 5, 6, 7, 8],
         )
 
         var indices = TestTensor[DType.int64, 2](DimList(0, 1), List[Int64]())
@@ -1153,7 +1143,7 @@ def main():
 
         var output_ref = TestTensor[DType.float32, 3](
             DimList(2, 2, 2),
-            List[Float32](1, 2, 3, 4, 5, 6, 7, 8),
+            [Float32(1), 2, 3, 4, 5, 6, 7, 8],
         )
 
         test_case[DType.float32](
@@ -1170,17 +1160,15 @@ def main():
         # Test basic functionality with single element update.
         var data = TestTensor[DType.float32, 1](
             DimList(5),
-            List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
+            [Float32(1.0), 2.0, 3.0, 4.0, 5.0],
         )
 
-        var indices = TestTensor[DType.int64, 2](DimList(1, 1), List[Int64](2))
-        var updates = TestTensor[DType.float32, 1](
-            DimList(1), List[Float32](99.0)
-        )
+        var indices = TestTensor[DType.int64, 2](DimList(1, 1), [Int64(2)])
+        var updates = TestTensor[DType.float32, 1](DimList(1), [Float32(99.0)])
 
         var output_ref = TestTensor[DType.float32, 1](
             DimList(5),
-            List[Float32](1.0, 2.0, 99.0, 4.0, 5.0),
+            [Float32(1.0), 2.0, 99.0, 4.0, 5.0],
         )
 
         var output = TestTensor[DType.float32, 1](DimList(5))
@@ -1201,19 +1189,17 @@ def main():
         # Test 2D scatter_nd updating entire rows.
         var data = TestTensor[DType.float32, 2](
             DimList(3, 3),
-            List[Float32](1, 2, 3, 4, 5, 6, 7, 8, 9),
+            [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9],
         )
 
-        var indices = TestTensor[DType.int64, 2](
-            DimList(2, 1), List[Int64](0, 2)
-        )
+        var indices = TestTensor[DType.int64, 2](DimList(2, 1), [Int64(0), 2])
         var updates = TestTensor[DType.float32, 2](
-            DimList(2, 3), List[Float32](10, 11, 12, 20, 21, 22)
+            DimList(2, 3), [Float32(10), 11, 12, 20, 21, 22]
         )
 
         var output_ref = TestTensor[DType.float32, 2](
             DimList(3, 3),
-            List[Float32](10, 11, 12, 4, 5, 6, 20, 21, 22),
+            [Float32(10), 11, 12, 4, 5, 6, 20, 21, 22],
         )
 
         var output = TestTensor[DType.float32, 2](DimList(3, 3))
@@ -1234,19 +1220,19 @@ def main():
         # Test 2D scatter_nd updating individual points.
         var data = TestTensor[DType.float32, 2](
             DimList(3, 3),
-            List[Float32](1, 2, 3, 4, 5, 6, 7, 8, 9),
+            [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9],
         )
 
         var indices = TestTensor[DType.int64, 2](
-            DimList(3, 2), List[Int64](0, 0, 1, 1, 2, 2)
+            DimList(3, 2), [Int64(0), 0, 1, 1, 2, 2]
         )
         var updates = TestTensor[DType.float32, 1](
-            DimList(3), List[Float32](100, 200, 300)
+            DimList(3), [Float32(100), 200, 300]
         )
 
         var output_ref = TestTensor[DType.float32, 2](
             DimList(3, 3),
-            List[Float32](100, 2, 3, 4, 200, 6, 7, 8, 300),
+            [Float32(100), 2, 3, 4, 200, 6, 7, 8, 300],
         )
 
         var output = TestTensor[DType.float32, 2](DimList(3, 3))
@@ -1267,20 +1253,18 @@ def main():
         # Test negative index wrapping.
         var data = TestTensor[DType.float32, 1](
             DimList(5),
-            List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
+            [Float32(1.0), 2.0, 3.0, 4.0, 5.0],
         )
 
         # -1 should wrap to index 4, -3 should wrap to index 2.
-        var indices = TestTensor[DType.int64, 2](
-            DimList(2, 1), List[Int64](-1, -3)
-        )
+        var indices = TestTensor[DType.int64, 2](DimList(2, 1), [Int64(-1), -3])
         var updates = TestTensor[DType.float32, 1](
-            DimList(2), List[Float32](100.0, 200.0)
+            DimList(2), [Float32(100.0), 200.0]
         )
 
         var output_ref = TestTensor[DType.float32, 1](
             DimList(5),
-            List[Float32](1.0, 2.0, 200.0, 4.0, 100.0),
+            [Float32(1.0), 2.0, 200.0, 4.0, 100.0],
         )
 
         var output = TestTensor[DType.float32, 1](DimList(5))
@@ -1301,19 +1285,19 @@ def main():
         # Test with int32 indices instead of int64.
         var data = TestTensor[DType.float32, 2](
             DimList(3, 3),
-            List[Float32](1, 2, 3, 4, 5, 6, 7, 8, 9),
+            [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9],
         )
 
         var indices = TestTensor[DType.int32, 2](
-            DimList(2, 2), List[Int32](0, 1, 2, 0)
+            DimList(2, 2), [Int32(0), 1, 2, 0]
         )
         var updates = TestTensor[DType.float32, 1](
-            DimList(2), List[Float32](100, 200)
+            DimList(2), [Float32(100), 200]
         )
 
         var output_ref = TestTensor[DType.float32, 2](
             DimList(3, 3),
-            List[Float32](1, 100, 3, 4, 5, 6, 200, 8, 9),
+            [Float32(1), 100, 3, 4, 5, 6, 200, 8, 9],
         )
 
         var output = TestTensor[DType.float32, 2](DimList(3, 3))

@@ -28,7 +28,7 @@ def test_spatial_merge(ctx: DeviceContext):
 
     # Batch item 0: t=1, h=4, w=4
     # Batch item 1: t=2, h=2, w=2
-    var grid_thw_list = List[Int64](1, 4, 4, 2, 2, 2)
+    var grid_thw_list: List[Int64] = [1, 4, 4, 2, 2, 2]
 
     var total_input_patches = 20
     var total_output_patches = 6
@@ -89,9 +89,24 @@ def test_spatial_merge(ctx: DeviceContext):
     # Output patch 2 (ho=1, wo=0) contains input patches: [8,9,12,13]
     # Output patch 3 (ho=1, wo=1) contains input patches: [10,11,14,15]
 
-    var batch0_expected_list = List[Int](
-        0, 1, 4, 5, 2, 3, 6, 7, 8, 9, 12, 13, 10, 11, 14, 15
-    )
+    var batch0_expected_list: List[Int] = [
+        0,
+        1,
+        4,
+        5,
+        2,
+        3,
+        6,
+        7,
+        8,
+        9,
+        12,
+        13,
+        10,
+        11,
+        14,
+        15,
+    ]
     var batch0_expected = batch0_expected_list.unsafe_ptr()
 
     # Verify batch 0 (4 output patches × 4 spatial positions × 4 features).
@@ -122,9 +137,16 @@ def test_spatial_merge(ctx: DeviceContext):
     # Each merged patch contains 2×2 spatial positions (entire spatial grid).
     # Input patches are 16, 17, 18, 19.
 
-    var batch1_expected_list = List[Int](
-        16, 17, 18, 19, 16, 17, 18, 19  # Frame 0 and Frame 1 (repeated)
-    )
+    var batch1_expected_list: List[Int] = [
+        16,
+        17,
+        18,
+        19,
+        16,
+        17,
+        18,
+        19,  # Frame 0 and Frame 1 (repeated)
+    ]
     var batch1_expected = batch1_expected_list.unsafe_ptr()
 
     var batch1_start = 4 * C_out  # Batch 0 had 4 output patches
