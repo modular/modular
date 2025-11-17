@@ -29,7 +29,7 @@ struct Foo[a: Int](ImplicitlyCopyable):
     var b: Int
 
     fn get(self) -> Int:
-        return a + self.b
+        return Self.a + self.b
 
 
 fn legal_type_ref[a: Int](c: Int) -> fn (x: Int, y: Int) escaping -> Int:
