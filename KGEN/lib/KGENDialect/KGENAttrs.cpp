@@ -3634,24 +3634,24 @@ void LLVMBitcodeLibArrayAttr::externalize(
 // SugarAttr
 //===----------------------------------------------------------------------===//
 
-/// Return true if the specified result doesn't need to be sugared, because it
-/// is simple enough to be printed directly without sugar.
+/// Return the strongest form of sugar that the specified result should be
+/// elided for.
 ///
 /// This is designed to align with ASTPrinter, but needs to be here as part of
 /// Sugar building, because we want this to simplify sugar when parameter values
 /// are bound to concrete things.  For example we want to maintain "x+y" as
 /// sugar, but fold it to "4" when 3 and 1 are substituted in.
-static bool canElideSugarFor(TypedAttr attr) {
+static std::optional<SugarKind> canElideSugarFor(TypedAttr attr) {
   // If we folded this to a reference to another declaration, just use it.
   if (isa<ParamDeclRefAttr>(attr))
-    return true;
+    return SugarKind::AlwaysInlineBuiltin;
 
   // Otherwise, see if the LIT type knows how to elide itself.  LIT::StructType
   // knows how to print literals for Int, IntegerLiteral, etc.
   if (auto sugarItf = dyn_cast<SugaredTypeInterface>(attr.getType()))
     return sugarItf.canElideSugarFor(attr);
 
-  return false;
+  return {};
 }
 
 static ParseResult parseSugarAttr(AsmParser &p, TypedAttr &sugared,
@@ -3682,14 +3682,25 @@ TypedAttr SugarAttr::get(SugarKind kind, TypedAttr sugared,
   // original. We strip sugar for always_inline builtin calls that simplify down
   // to something simple like "42". We don't want to maintain the call sugar
   // for things like 4+5 because it just gets in the way.
-  if (kind == SugarKind::AlwaysInlineBuiltin && canElideSugarFor(original))
-    return original;
+  //
+  // This is also important for reducing the size of the IR, making it more
+  // readable and the compiler faster for primitive things like origins.
+  if (auto shouldElide = canElideSugarFor(original))
+    if ((int)*shouldElide >= (int)kind)
+      return original;
 
-  // The two operand types must match otherwise this won't round-trip correctly.
+  auto canonical = getCanonicalAttr(original);
+
+  // We will /never/ use the type sugar in the original form of a builtin
+  // call, so we can strip it all away to simplify things.
+  if (kind == SugarKind::AlwaysInlineBuiltin)
+    original = ParamOperatorAttr::getRebind(canonical, sugared.getType());
+
+  // The two operand types must match otherwise this won't round-trip
+  // correctly.
   assert(sugared.getType() == original.getType() &&
          "SugarAttr sugared and original types must match");
 
-  auto canonical = getCanonicalAttr(original);
   return Base::get(sugared.getContext(), kind, sugared, original, canonical);
 }
 

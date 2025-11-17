@@ -71,9 +71,9 @@ fn fold_bool_init() -> BoolT[True]:
     alias F = Bool(
         mlir_value=__mlir_attr.`#pop.simd<false> : !pop.scalar<bool>`
     )
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@BoolT<:!Bool sugar_alias(*"T`1", {:i1 1})>, mut *"a`3">
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@BoolT<:!Bool {:i1 1}>, mut *"a`3">
     var a = BoolT[T]()
-    # CHECK: %b = lit.var.decl "b" var : !lit.ref<@builtin_function_folder::@BoolT<:!Bool sugar_alias(*"F`2", {:i1 0})>, mut *"b`4">
+    # CHECK: %b = lit.var.decl "b" var : !lit.ref<@builtin_function_folder::@BoolT<:!Bool {:i1 0}>, mut *"b`4">
     var b = BoolT[F]()
     return a
 
@@ -112,6 +112,6 @@ struct DTypeT[x: DType](ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.fn @"fold_dtype_from_ui8
 fn fold_dtype_from_ui8() -> DTypeT[DType.int32]:
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@DTypeT<:!DType sugar_builtin(apply(:!lit.generator<("ui8": !pop.scalar<ui8>) -> !DType> @stdlib::@builtin::@dtype::@DType::@"_from_ui8(__mlir_type.!pop.scalar<ui8>)", sugar_alias(*"UI8_139`0x", 139)), {:dtype #pop.dtype_from_ui8<#pop.cast_to_builtin<#kgen<sugar alias, !pop.scalar<ui8>, *"UI8_139`0x", 139> : !pop.scalar<ui8>> : ui8>})>, mut *"a`1">
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@DTypeT<:!DType {:dtype si32}>, mut *"a`1">
     var a = DTypeT[DType._from_ui8(UI8_139)]()
     return a

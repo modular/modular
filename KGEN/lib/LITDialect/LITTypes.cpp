@@ -415,7 +415,8 @@ LIT::StructType LIT::StructType::bindUnbound(ArrayRef<TypedAttr> values) const {
 
 /// We don't sugar always_inline builtin calls to things that produce a literal,
 /// we want things like "x+1" to fold to "5" when x is substituted with 4.
-bool LIT::StructType::canElideSugarFor(TypedAttr attr) const {
+std::optional<SugarKind>
+LIT::StructType::canElideSugarFor(TypedAttr attr) const {
   auto getTypeName = [&]() -> StringRef {
     if (auto structType = dyn_cast<LIT::StructType>(attr.getType()))
       return structType.getSymbol().getLeafReference().strref();
@@ -430,19 +431,20 @@ bool LIT::StructType::canElideSugarFor(TypedAttr attr) const {
     if (structAttr.getValues().size() == 1) {
       auto typeName = getTypeName();
       TypedAttr elt = std::get<1>(structAttr.getValues().front());
-      if (typeName == "Int" || typeName == "UInt" || typeName == "Bool" ||
-          typeName == "DType") {
+      if (typeName == "Int" || typeName == "UInt")
+        if (isa<IntegerAttr>(elt))
+          return SugarKind::AlwaysInlineBuiltin;
+
+      if (typeName == "Bool" || typeName == "DType") {
         if (isa<IntegerAttr, DTypeConstantAttr>(elt))
-          return true;
+          return SugarKind::Alias;
       }
 
-      if (typeName == "Origin") {
-        if (isa<AnyOriginAttr, ComptimeOriginAttr>(elt))
-          return true;
-      }
+      if (typeName == "Origin")
+        return SugarKind::Alias;
 
-      if (typeName == "AddressSpace" && canElideSugarFor(elt))
-        return true;
+      if (typeName == "AddressSpace")
+        return canElideSugarFor(elt);
     }
   }
 
@@ -450,10 +452,10 @@ bool LIT::StructType::canElideSugarFor(TypedAttr attr) const {
     auto typeName = getTypeName();
     if (typeName == "IntLiteral" || typeName == "FloatLiteral" ||
         typeName == "StringLiteral")
-      return true;
+      return SugarKind::AlwaysInlineBuiltin;
   }
 
-  return false;
+  return {};
 }
 
 Type LIT::StructType::getCachedCanonicalType(Type type) const {
@@ -775,12 +777,24 @@ TypedAttr OriginType::stripMutCastAndFieldExtract(TypedAttr origin) {
   return origin;
 }
 
-bool OriginType::canElideSugarFor(TypedAttr attr) const {
+std::optional<SugarKind> OriginType::canElideSugarFor(TypedAttr attr) const {
   // Sugar for !lit.origin<true> and !lit.origin<false> can be elided, as these
   // print as MutableOrigin / ImmutableOrigin.  This ends up being a lot nicer
   // than: "origin_of(_lit_mut_cast[True, MutAnyOrigin].result".  We keep sugar
   // if our mutability so parametric expression.
-  return sugarIsa<IntegerAttr>(getIsMutable());
+  if (sugarIsa<IntegerAttr>(getIsMutable()))
+    return SugarKind::Alias;
+
+  // StaticConstantOrigin can also be elided.
+  if (auto originField = sugarDynCast<OriginFieldAttr>(attr)) {
+    if (isa<StaticOriginAttr>(originField.getBase())) {
+      if (originField.getField().str() == "__constants__" &&
+          originField.getType().isMutableKnown(false))
+        return SugarKind::Alias;
+    }
+  }
+
+  return {};
 }
 
 Type OriginType::getCachedCanonicalType(Type type) const { return {}; }

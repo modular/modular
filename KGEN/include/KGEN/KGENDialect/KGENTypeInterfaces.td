@@ -127,8 +127,11 @@ def SugaredTypeInterface : TypeInterface<"SugaredTypeInterface"> {
 
   let methods = [
     InterfaceMethod<[{
-      Returns whether the sugar should be elided for the given attribute.
-    }], "bool", "canElideSugarFor", (ins "TypedAttr":$attr)>,
+      Returns whether the sugar should be elided for the given attribute. This
+      returns AlwaysInlineBuiltin if it should only be elided when it is a
+      builtin call, or Alias if it should always be elided.
+    }], "std::optional<KGEN::SugarKind>", "canElideSugarFor",
+        (ins "TypedAttr":$attr)>,
 
     InterfaceMethod<[{
       If this type has a cached canonical type, return it, otherwise return

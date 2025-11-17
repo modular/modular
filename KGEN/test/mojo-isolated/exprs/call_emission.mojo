@@ -361,7 +361,6 @@ fn test_byref_slot_with_references():
     var f = String()
 
     # CHECK: [[RESULTTMP:%.*]] = lit.var.decl "__call_result_tmp__"
-    # CHECK-NEXT: [[RESULTSUGAR:%.*]] = kgen.rebind
     # CHECK-NEXT: lit.call {{.*}}pack_it{{.*}}({{.*}},  [[RESULTTMP]])
     f = pack_it(f)
     # CHECK-NEXT: lit.call {{.*}}String::@"__moveinit__{{.*}}([[RESULTTMP]], %f)
