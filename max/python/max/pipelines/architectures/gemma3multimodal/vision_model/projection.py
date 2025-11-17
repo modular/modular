@@ -63,43 +63,51 @@ class Gemma3MultiModalProjector(Module):
             self.patches_per_image // self.tokens_per_side
         )  # 64 / 16 = 4
 
-    def __call__(self, vision_outputs: Tensor):
+    def __call__(self, vision_outputs: Tensor) -> TensorValue:
         batch_size, _, seq_length = (
             vision_outputs.shape
         )  # TensorValue shape: ['batch_size', 4096, 1152]
 
-        reshaped_vision_outputs = vision_outputs.transpose(1, 2)
+        transposed_vision_outputs = vision_outputs.transpose(1, 2)
 
-        reshaped_vision_outputs = reshaped_vision_outputs.reshape(
-            (
+        reshaped_vision_outputs = ops.reshape(
+            transposed_vision_outputs,
+            [
                 batch_size,
                 seq_length,
                 self.patches_per_image,
                 self.patches_per_image,
-            )
+            ]
         )
 
         # reshape to 0 2 3 1 HWBC
-        reshaped_vision_outputs = reshaped_vision_outputs.permute(0, 2, 3, 1)
+        reshaped_vision_outputs = ops.permute(reshaped_vision_outputs, [0, 2, 3, 1])
         # avg pool
         pooled_vision_outputs = avg_pool2d(
-            input=normed_vision_outputs,
+            input=reshaped_vision_outputs,
             kernel_size=(self.kernel_size, self.kernel_size),  # (4,4)
             stride=self.kernel_size,  # 4
         )
-        # reshape 0 3 1 2.flatten(2)
-        pooled_vision_outputs = pooled_vision_outputs.transpose(
-            0, 3, 1, 2
-        ).pooled_vision_outputs.flatten(2)
-        # transpose 0 2 1?
-        pooled_vision_outputs = vision_outputs.transpose(1, 2)
+        # permute to 0 3 1 2 then flatten from dim 2
+        pooled_vision_outputs = ops.permute(pooled_vision_outputs, [0, 3, 1, 2])
+        pooled_vision_outputs = pooled_vision_outputs.flatten(2)
+        # transpose 0 2 1
+        pooled_vision_outputs = pooled_vision_outputs.transpose(1, 2)
 
-        normed_vision_outputs = self.mm_soft_emb_norm(reshaped_vision_outputs)
+        normed_vision_outputs = self.mm_soft_emb_norm(pooled_vision_outputs)
 
         projected_vision_outputs = matmul(
             normed_vision_outputs, self.mm_input_projection_weight
         )
-        return projected_vision_outputs.type_as(vision_outputs)
+
+        # Reshape to flatten batch and sequence dimensions for language model
+        # From [batch, seq, hidden] to [batch*seq, hidden]
+        #image_hidden_states = ops.reshape(
+        #    projected_vision_outputs, (-1, projected_vision_outputs.shape[-1])
+        #)
+        image_hidden_states = ops.flatten(projected_vision_outputs, start_dim=0, end_dim=1) # TODO the only thing different to MLX-VLM/HF
+
+        return image_hidden_states
 
 
 # ✅ working, based on HF and MLX-VLM

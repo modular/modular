@@ -65,8 +65,9 @@ class Gemma3VisionEmbeddings(Module):
         self.num_patches = (
             self.image_size // self.patch_size
         ) ** 2  # 4096 = (896 // 14)^2
-        self.num_positions = self.num_patches + 1 # ? internvl adds the 1
+        self.num_positions = self.num_patches
 
+        # TODO internVL uses a Weight directly.  we are working with Embedding.Weight
         self.position_embedding = Embedding(
             vocab_size=self.num_positions,
             hidden_dim=self.embed_dim,
@@ -81,8 +82,7 @@ class Gemma3VisionEmbeddings(Module):
 
     @sharding_strategy.setter
     def sharding_strategy(self, strategy: ShardingStrategy) -> None:
-        """Set the sharding strategy for the patch, class, and position
-        embeddings.
+        """Set the sharding strategy for the patch and position embeddings.
 
         Args:
             strategy: The strategy describing the embeddings' sharding.
@@ -94,7 +94,8 @@ class Gemma3VisionEmbeddings(Module):
             )
 
         self.patch_embedding.sharding_strategy = strategy
-        self.position_embedding.sharding_strategy = strategy
+        # For Embedding, set sharding strategy on its weight
+        self.position_embedding.weight.sharding_strategy = strategy
 
     def shard(
         self, devices: Iterable[DeviceRef]
@@ -112,13 +113,14 @@ class Gemma3VisionEmbeddings(Module):
 
         # Get sharded weights
         patch_embedding_shards = self.patch_embedding.shard(devices)
-        position_embedding_shards = self.position_embedding.shard(devices)
+        # Shard the weight inside the Embedding module
+        position_embedding_weight_shards = self.position_embedding.weight.shard(devices)
 
         shards = []
-        for device, patch_shard, pos_shard in zip(
+        for device, patch_shard, pos_weight_shard in zip(
             devices,
             patch_embedding_shards,
-            position_embedding_shards,
+            position_embedding_weight_shards,
             strict=True,
         ):
             # Create the new sharded embedding.
@@ -126,59 +128,69 @@ class Gemma3VisionEmbeddings(Module):
 
             # Assign the sharded weights.
             sharded.patch_embedding = patch_shard
-            sharded.position_embedding = pos_shard
+            # Replace the weight inside the Embedding module
+            sharded.position_embedding.weight = pos_weight_shard
 
             shards.append(sharded)
 
         return shards
 
     def __call__(self, pixel_values: TensorValue) -> TensorValue:
-        # ⚠️
+        """Forward pass of vision embeddings.
+
+        Args:
+            pixel_values: Input images of shape [batch_size, channels, height, width].
+
+        Returns:
+            Embeddings of shape [batch_size, num_patches, hidden_size].
+        """
         batch_size = pixel_values.shape[0]
         max_im_h = pixel_values.shape[2]
         max_im_w = pixel_values.shape[3]
 
-        # ✅ based on MLX-VLM https://github.com/Blaizzy/mlx-vlm/blob/main/mlx_vlm/models/gemma3/vision.py#L137
-        # permute to [NHWC]
-        # pixel_values = ops.permute(pixel_values, [0, 2, 1, 3])
-        patch_embeddings = self.patch_embedding(pixel_values)
-        # # permute back to [NCHW] BORROWED FROM IDEFICES3
-        # patch_embeddings = ops.permute(patch_embeddings, [0, 3, 1, 2])
-        # # flatten to [N, embed_dim, num_patches]
-        # patch_embeddings = ops.flatten(patch_embeddings, start_dim=2)
-        # # transpose to [N, num_patches, embed_dim]
-        # embeddings = ops.tranpose(patch_embeddings, 1, 2)
+        # Convert input from NCHW to NHWC format for MAX Conv2d
+        # pixel_values: [batch_size, channels, height, width] -> [batch_size, height, width, channels]
+        pixel_values_nhwc = ops.permute(pixel_values, [0, 2, 3, 1])
 
+        patch_embeds_nhwc = self.patch_embedding(pixel_values_nhwc)
 
-        # ⚠️ BORROWED HEAVILY FROM IDEFICS3
-        # position_ids = Tensor.zeros([0, self.num_positions], self.dtype, self.devices[0].to_device())
-        position_ids = Weight(
-            "position_ids",
-            dtype=DType.uint32,
-            shape=(0, self.num_positions),
+        # Convert output back to NCHW format: [batch_size, out_channels, out_height, out_width]
+        patch_embeds = ops.permute(patch_embeds_nhwc, [0, 3, 1, 2])
+
+        # Flatten spatial dimensions and transpose to [batch_size, num_patches, embed_dim]
+        # patch_embeds shape: [batch_size, embed_dim, num_patches_h, num_patches_w]
+        embeddings = ops.flatten(
+            patch_embeds, start_dim=2
+        )  # [batch_size, embed_dim, num_patches]
+        embeddings = ops.transpose(
+            embeddings, 1, 2
+        )  # [batch_size, num_patches, embed_dim]
+
+        max_nb_patches_h = max_im_h // self.patch_size
+        max_nb_patches_w = max_im_w // self.patch_size
+        total_patches = max_nb_patches_h * max_nb_patches_w
+
+        # Create position IDs: [0, 1, 2, ..., total_patches-1] for each batch
+        # Generate 2D tensor with shape [batch_size, total_patches]
+        position_ids = ops.range(
+            start=0,
+            stop=self.num_patches,
+            step=1,
+            out_dim=total_patches,
             device=self.devices[0],
-        )
-        # max_nb_patches_h = max_im_h // self.patch_size
-        # max_nb_patches_w = max_im_w // self.patch_size
-        # total_patches = max_nb_patches_h * max_nb_patches_w
+            dtype=DType.int32,
+        )  # [total_patches]
+        position_ids = ops.unsqueeze(position_ids, 0)  # [1, total_patches]
+        position_ids = ops.tile(
+            position_ids, [batch_size, 1]
+        )  # [batch_size, total_patches]
 
-        # # Create position IDs: [0, 1, 2, ..., total_patches-1] for each batch
-        # # Generate 2D tensor with shape [batch_size, total_patches]
-        # position_ids = ops.range(
-        #     start=0,
-        #     stop=self.num_patches,
-        #     step=1,
-        #     out_dim=total_patches,
-        #     device=self.devices[0],
-        #     dtype=DType.int32,
-        # )  # [total_patches]
-        # position_ids = ops.unsqueeze(position_ids, 0)  # [1, total_patches]
-        # position_ids = ops.tile(
-        #     position_ids, [batch_size, 1]
-        # )  # [batch_size, total_patches]
+        # Get position embeddings for the position IDs
+        position_embeds = self.position_embedding(
+            position_ids
+        )  # [batch_size, total_patches, embed_dim]
 
+        # Add position embeddings to patch embeddings
+        embeddings = embeddings + position_embeds
 
-        # ✅
-        embeddings = patch_embeddings
-        embeddings += self.position_embedding(position_ids)
         return embeddings
