@@ -53,6 +53,8 @@ modular_py_binary(
         "PIPELINES_TESTDATA": (
             "max/tests/integration/pipelines/python/llama3/testdata"
         ),
+        # required by models that use Expert Parallelism.
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
     visibility = ["//visibility:public"],
     deps = [
@@ -247,6 +249,8 @@ modular_py_binary(
         "PIPELINES_TESTDATA": (
             "max/tests/integration/pipelines/python/llama3/testdata"
         ),
+        # required by models that use Expert Parallelism.
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
     imports = ["."],
     main = "generate_llm_logits.py",
