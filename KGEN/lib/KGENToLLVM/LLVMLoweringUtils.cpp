@@ -40,9 +40,12 @@ static Type getLLVMTypeForKGENStringType(MLIRContext *ctx, Type strSizeType) {
 //===----------------------------------------------------------------------===//
 
 int64_t LLVMDataLayout::getTypeSizeInBits(Type type) const {
-  assert(LLVM::isCompatibleType(type) && "expected an LLVM type");
   if (type.isIntOrFloat())
     return type.getIntOrFloatBitWidth();
+
+  // Assert here to let fp8 types passes above.
+  assert(LLVM::isCompatibleType(type) && "expected an LLVM type");
+
   if (auto ptrType = dyn_cast<LLVM::LLVMPointerType>(type)) {
     assert(ptrType.getAddressSpace() == 0 &&
            "only default address space supported");
@@ -71,12 +74,15 @@ int64_t LLVMDataLayout::getTypeSizeInBits(Type type) const {
 
 std::pair<int64_t, Type>
 LLVMDataLayout::getTypeABIAlignAndType(Type type) const {
-  assert(LLVM::isCompatibleType(type) && "expected an LLVM type");
   if (auto intType = dyn_cast<IntegerType>(type))
     return {target.getDataLayout().getIntegerABIAlign(intType.getWidth()),
             intType};
   if (auto fpType = dyn_cast<FloatType>(type))
     return {target.getDataLayout().getFloatABIAlign(fpType.getWidth()), fpType};
+
+  // Assert here to let fp8 types passes above.
+  assert(LLVM::isCompatibleType(type) && "expected an LLVM type");
+
   if (auto ptrType = dyn_cast<LLVM::LLVMPointerType>(type))
     return {target.getDataLayout().getPointerABIAlign(), ptrType};
   // Use the natural alignment for vector to be conservative
@@ -121,9 +127,10 @@ ArrayAttr KGEN::attachTargetPassthroughAttrs(OpBuilder &b,
 // POPToLLVMTypeConverter
 //===----------------------------------------------------------------------===//
 
-static bool isFP8(Type fpType) {
+bool KGEN::isFP8(Type fpType) {
   return isa<Float8E5M2Type, Float8E5M2FNUZType, Float8E4M3FNType,
-             Float8E4M3FNUZType, Float8E8M0FNUType>(fpType);
+             mlir::Float8E3M4Type, Float8E4M3FNUZType, Float8E8M0FNUType>(
+      fpType);
 }
 
 std::optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx,
