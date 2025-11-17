@@ -132,7 +132,7 @@ fn _test_naive_matmul[size: Int]():
         2,
         _,
         DimList(size, size),
-    ](c_stack)
+    ](c_stack.unsafe_ptr())
     c.fill(0)
 
     var b_stack = InlineArray[Float32, size * size](uninitialized=True)
@@ -141,7 +141,7 @@ fn _test_naive_matmul[size: Int]():
         2,
         _,
         DimList(size, size),
-    ](b_stack)
+    ](b_stack.unsafe_ptr())
     fill_b[size](b)
 
     var a_stack = InlineArray[Float32, size * size](uninitialized=True)
@@ -150,7 +150,7 @@ fn _test_naive_matmul[size: Int]():
         2,
         _,
         DimList(size, size),
-    ](a_stack)
+    ](a_stack.unsafe_ptr())
     fill_a[size](a)
 
     _test_my_naive_matmul[

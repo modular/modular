@@ -157,7 +157,9 @@ def test_accumulate_with_offsets[
             (b_ptr + j * simd_size).store(SIMD[type, simd_size](i))
 
     var a_base_stack = InlineArray[Int32, num_rows](uninitialized=True)
-    var a_base_offsets = NDBuffer[DType.int32, 1, _, num_rows](a_base_stack)
+    var a_base_offsets = NDBuffer[DType.int32, 1, _, num_rows](
+        a_base_stack.unsafe_ptr()
+    )
     a_base_offsets[0] = 0
     a_base_offsets[1] = length
 

@@ -40,7 +40,7 @@ def test_reductions():
 
     # Create a mem of size size
     var vector_stack = InlineArray[Float32, size](uninitialized=True)
-    var vector = NDBuffer[DType.float32, 1, _, size](vector_stack)
+    var vector = NDBuffer[DType.float32, 1, _, size](vector_stack.unsafe_ptr())
 
     for i in range(size):
         vector[i] = i + 1
@@ -60,7 +60,7 @@ def test_reductions_zero_size():
 
     alias size = 0
     var vector_stack = InlineArray[Float32, size](uninitialized=True)
-    var vector = NDBuffer[DType.float32, 1, _, size](vector_stack)
+    var vector = NDBuffer[DType.float32, 1, _, size](vector_stack.unsafe_ptr())
 
     print(min(vector))
     print(max(vector))
@@ -75,7 +75,7 @@ def test_fused_reductions_inner():
     alias test_type = DType.float32
     alias num_reductions = 3
     var vector_stack = InlineArray[Float32, size](uninitialized=True)
-    var vector = NDBuffer[test_type, 1, _, size](vector_stack)
+    var vector = NDBuffer[test_type, 1, _, size](vector_stack.unsafe_ptr())
 
     for i in range(size):
         vector[i] = i + 1
@@ -156,7 +156,7 @@ def test_fused_reductions_outer():
     alias test_type = DType.float32
     alias num_reductions = 3
     var vector_stack = InlineArray[Float32, size](uninitialized=True)
-    var vector = NDBuffer[test_type, 1, _, size](vector_stack)
+    var vector = NDBuffer[test_type, 1, _, size](vector_stack.unsafe_ptr())
 
     # COM: For the purposes of this test, we reinterpret this as a tensor
     # COM: of shape [50, 2] and reduce along the outer dimension.
@@ -238,7 +238,7 @@ def test_product():
 
     # Create a mem of size size
     var vector_stack = InlineArray[Float32, size](uninitialized=True)
-    var vector = NDBuffer[DType.float32, 1, _, size](vector_stack)
+    var vector = NDBuffer[DType.float32, 1, _, size](vector_stack.unsafe_ptr())
 
     for i in range(size):
         vector[i] = i + 1
@@ -256,7 +256,7 @@ def test_mean_variance():
 
     # Create a mem of size size
     var vector_stack = InlineArray[Float32, size](uninitialized=True)
-    var vector = NDBuffer[DType.float32, 1, _, size](vector_stack)
+    var vector = NDBuffer[DType.float32, 1, _, size](vector_stack.unsafe_ptr())
 
     for i in range(size):
         vector[i] = i + 1
@@ -280,11 +280,15 @@ fn _test_3d_reductions[
     var input_stack = InlineArray[Float32, Int(input_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[DType.float32, 3, _, input_shape](input_stack)
+    var input = NDBuffer[DType.float32, 3, _, input_shape](
+        input_stack.unsafe_ptr()
+    )
     var output_stack = InlineArray[Float32, Int(output_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[DType.float32, 3, _, output_shape](output_stack)
+    var output = NDBuffer[DType.float32, 3, _, output_shape](
+        output_stack.unsafe_ptr()
+    )
     output.fill(0)
 
     for i in range(input.size()):
@@ -352,7 +356,7 @@ def test_boolean():
 
     # Create a mem of size size
     var vector_stack = InlineArray[Scalar[DType.bool], size](uninitialized=True)
-    var vector = NDBuffer[DType.bool, 1, _, size](vector_stack)
+    var vector = NDBuffer[DType.bool, 1, _, size](vector_stack.unsafe_ptr())
     vector[0] = True
     vector[1] = False
     vector[2] = False
@@ -406,13 +410,17 @@ def test_cumsum():
     print("== test_cumsum")
 
     var vector_stack = InlineArray[Float32, 150](uninitialized=True)
-    var vector = NDBuffer[DType.float32, 1, _, vector_stack.size](vector_stack)
+    var vector = NDBuffer[DType.float32, 1, _, vector_stack.size](
+        vector_stack.unsafe_ptr()
+    )
     for i in range(len(vector)):
         vector[i] = i + 1
     var cumsum_out1_stack = InlineArray[Float32, vector_stack.size](
         uninitialized=True
     )
-    var cumsum_out1 = NDBuffer[DType.float32, 1, _, 150](cumsum_out1_stack)
+    var cumsum_out1 = NDBuffer[DType.float32, 1, _, 150](
+        cumsum_out1_stack.unsafe_ptr()
+    )
     # cumsum[150, DType.float32](cumsum_out1, vector)
     # cumsum(cumsum_out1, vector)
     cumsum(cumsum_out1, vector)
@@ -440,12 +448,14 @@ def test_cumsum():
     print()
 
     var vector2_stack = InlineArray[Int64, 128](uninitialized=True)
-    var vector2 = NDBuffer[DType.int64, 1, _, vector2_stack.size](vector2_stack)
+    var vector2 = NDBuffer[DType.int64, 1, _, vector2_stack.size](
+        vector2_stack.unsafe_ptr()
+    )
     for i in range(vector2.__len__()):
         vector2[i] = i + 1
     var cumsum_out2_stack = InlineArray[Int64, 128](uninitialized=True)
     var cumsum_out2 = NDBuffer[DType.int64, 1, _, vector2_stack.size](
-        cumsum_out2_stack
+        cumsum_out2_stack.unsafe_ptr()
     )
     # cumsum[128, DType.int64](cumsum_out2, vector2)
     # cumsum(cumsum_out2, vector2)
