@@ -577,7 +577,6 @@ modular_cc_library(
         ":MDialectIncGen",
         ":ML",
         ":MTypeInterfaces",
-        "//AsyncRT:CompilerSupport.headers",
         "@llvm-project//llvm:MC",
         "@llvm-project//llvm:Target",
     ],
