@@ -15,7 +15,7 @@ from gpu.host import get_gpu_target
 from gpu.host.compile import _compile_code
 from layout.layout import IntTuple, Layout
 from layout.layout_tensor import LayoutTensor
-from python import Python
+from python import Python, PythonObject
 from testing import assert_true
 
 from utils.fast_div import FastDiv
@@ -34,7 +34,7 @@ def contains_fastdiv_div_sequence(asm: String) -> Bool:
         r"st\.global\.b32\s+[^;]+;"
     )
     var result = re.search(fastdiv_pattern, asm)
-    return result is not None
+    return result is not PythonObject(None)
 
 
 def contains_power_of_2_sequence(asm: String) -> Bool:
@@ -45,7 +45,7 @@ def contains_power_of_2_sequence(asm: String) -> Bool:
         r"st\.global\.b32\s+[^;]+;"
     )
     var shift_result = re.search(shift_pattern, asm)
-    return shift_result is not None
+    return shift_result is not PythonObject(None)
 
 
 fn fast_div_kernel[
