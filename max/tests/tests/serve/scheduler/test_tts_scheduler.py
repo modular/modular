@@ -212,6 +212,8 @@ class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
 
         ctxs: list[TTSContext] = list(inputs.batch.values())
 
+        for context in ctxs:
+            self.paged_manager.maybe_reserve(context, num_steps=num_tokens)
         self.paged_manager.fetch(ctxs, num_steps=num_tokens)
 
         # Generate the responses
