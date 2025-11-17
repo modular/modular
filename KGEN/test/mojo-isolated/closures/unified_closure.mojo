@@ -128,11 +128,11 @@ fn make_closure(x: Int) -> Int:
 # CHECK-SAME: <impl: [[TRAIT]], origin_set: origin.set, |>([[TRAIT]]) attributes {synthetic}
 # CHECK: lit.struct.field field0 : !kgen.param<:[[TRAIT]] impl>
 
-# CHECK-NEXT: lit.fn @"__call__{{.*}}"<lt: origin<1>>[mut *"[[L1:.*]]`", imm *"[[L2:.*]]`"](%0[*""]: !lit.ref<@{{.*}}::@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"
-# CHECK-SAME: <:[[TRAIT]] impl, :origin.set origin_set>, mut *"[[L1]]`"> read_mem, |, %a: !lit.ref<!String, mut lt>, %b: !lit.ref<!String, imm *"[[L2]]`"> read_mem) capturing -> !kgen.none attributes {sourceName = "__call__", specialFnKind = 0 : i8, synthetic} {
+# CHECK-NEXT: lit.fn @"__call__{{.*}}"<lt: {{.*}}@Origin<:!Bool {:i1 1}>>[mut *"[[L1:.*]]`", imm *"[[L2:.*]]`"](%0[*""]: !lit.ref<@{{.*}}::@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"
+# CHECK-SAME: <:[[TRAIT]] impl, :origin.set origin_set>, mut *"[[L1]]`"> read_mem, |, %a: !lit.ref<!String, {{.*}}>, %b: !lit.ref<!String, imm *"[[L2]]`"> read_mem) capturing -> !kgen.none attributes {sourceName = "__call__", specialFnKind = 0 : i8, synthetic} {
 # CHECK-NEXT: [[V1:%.*]] = lit.ref.struct.ger %0[field0] : <@{{.*}}::@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"<:[[TRAIT]] impl, :origin.set origin_set>, mut *"[[L1]]`"> -> :[[TRAIT]] impl
-# CHECK-NEXT: [[V2:%.*]] = lit.call[!lit.generator<[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, mut lt>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none>
-# CHECK-SAME:: bind_params(:!lit.generator<<"lt": origin<1>>[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, mut *(0,0)>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none
+# CHECK-NEXT: [[V2:%.*]] = lit.call[!lit.generator<[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none>:
+# CHECK-SAME: bind_params(:!lit.generator<<"lt": {{.*}}Origin<:!Bool {:i1 1}>>[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none
 # CHECK-SAME:> #kgen.get_witness<:[[TRAIT]] impl, "fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None", "__call__{{.*}}">, lt)][mut *"[[L1]]`"->field0, imm *"[[L2]]`"]([[V1]], %a, %b)
 # CHECK-NEXT: lit.return [[V2]] : !kgen.none
 # CHECK-NEXT: lit.end_fn
@@ -327,8 +327,8 @@ fn bindIt() -> Int:
 
 
 # CHECK: kgen.conformance @"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None" {
-# CHECK-NEXT: kgen.witness "__call__{{.*}}" : !lit.generator<<"lt": origin<1>>[2](!lit.ref<@{{.*}}::@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"<{{.*}}>, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, mut *(0,0)>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none
-# CHECK-SAME: > = @{{.*}}::@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"::@"__call__{{.*}}"<:[[TRAIT]] impl, :origin.set origin_set, :origin<1> ?>
+# CHECK-NEXT: kgen.witness "__call__{{.*}}" : !lit.generator<<"lt": {{.*}}@Origin<:!Bool {:i1 1}>>[2](!lit.ref<@{{.*}}::@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"<{{.*}}>, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none
+# CHECK-SAME: > = @{{.*}}::@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"::@"__call__{{.*}}"<:[[TRAIT]] impl, :origin.set origin_set, {{.*}}@Origin<:!Bool {:i1 1}> ?>
 
 # CHECK: kgen.conformance @{{.*}}::Movable" {
 # CHECK-NEXT: kgen.witness "__moveinit__{{.*}}" : !lit.generator<[2]("existing": !lit.ref<@{{.*}}::@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"<{{.*}}>, mut *[0,0]> owned_in_mem, |, ?, "self": !lit.ref<@{{.*}}::@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"<:[[TRAIT]] impl, :origin.set origin_set>, mut *[0,1]> byref_result) -> !kgen.none

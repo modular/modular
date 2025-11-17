@@ -1012,14 +1012,14 @@ fn signature_inference[dt: DType, rank: Int]():
     implicit_signature[func]()
 
 
-struct ClosureParam[lt: MutOrigin, f: fn () capturing [lt] -> None]:
+struct ClosureParam[lt: MutOrigin, f: fn () capturing [lt._mlir_origin] -> None]:
     fn __moveinit__(out self, deinit existing: Self):
         pass
 
 
 # CHECK-LABEL: lit.fn @"infer_implicit_params
 fn infer_implicit_params(var p: ClosureParam):
-    # CHECK: call {{.*}}ClosureParam::@"__moveinit__{{.*}}<:origin<1> *"lt`", :!lit.generator<:{mut *"lt`"}:() capturing -> !kgen.none> *"f`1">
+    # CHECK: call {{.*}}ClosureParam::@"__moveinit__{{.*}}<{{.*}}@Origin<:!Bool {:i1 1}> *"lt`", :!lit.generator<:{mut #lit.struct.extract<:@stdlib::@builtin::@stubs::@Origin<:!Bool {:i1 1}> *"lt`", "_mlir_origin">}:() capturing -> !kgen.none> *"f`1">
     var tmp = p^
     _ = tmp^
 

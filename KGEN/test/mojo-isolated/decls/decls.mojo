@@ -1045,13 +1045,13 @@ struct HasLifetimeParam[p: MutOrigin]:
 
 
 # CHECK-LABEL: lit.fn @"explicitLifetime
-# CHECK-SAME: :{mut *(0,0)}:
+# CHECK-SAME: @Origin<:!Bool {:i1 1}> lt>
 fn explicitLifetime[lt: MutOrigin, //, arg: HasLifetimeParam[lt]]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"inaccessibleImplicitLifetimeParam
-# CHECK-SAME: "<?, *"p`": origin<1>>(%arg:
+# CHECK-SAME: "<?, *"p`": @stdlib::@builtin::@stubs::@Origin<:!Bool {:i1 1}>>(%arg:
 fn inaccessibleImplicitLifetimeParam(arg: HasLifetimeParam):
     pass
 
@@ -1114,9 +1114,9 @@ fn inferCaptureOrigins[
     # CHECK: lit.alias.decl *"boundSet{{.*}} !lit.generator<:{mut *"x`"}
     alias boundSet = closureParameterCaptures[captureSomething]
 
-    # CHECK: lit.alias.decl *"unboundSingleParam{{.*}} !lit.generator<<{{.*}}>:{mut *(0,0)}
+    # CHECK: lit.alias.decl *"unboundSingleParam{{.*}}@Origin<:!Bool {:i1 1}> *(0,0)>
     alias unboundSingleParam = explicitLifetime
-    # CHECK: lit.alias.decl *"boundSingleParam{{.*}} !lit.generator<:{mut lt}
+    # CHECK: lit.alias.decl *"boundSingleParam{{.*}}@Origin<:!Bool {:i1 1}> lt> param>
     alias boundSingleParam = explicitLifetime[param]
 
     # CHECK: lit.alias.decl *"memberFunction{{.*}} !lit.generator<<{{.*}}>:*(0,1):
