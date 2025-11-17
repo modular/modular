@@ -54,7 +54,7 @@ fn keep_alive[*Ts: AnyType](*args: *Ts):
     pass
 
 
-alias AFloatOrBoolOrSimd = __mlir_type[
+comptime AFloatOrBoolOrSimd = __mlir_type[
     `!kgen.variant<`,
     Float64,
     `, `,

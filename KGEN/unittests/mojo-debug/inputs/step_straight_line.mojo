@@ -8,7 +8,7 @@ from memory import LegacyUnsafePointer as UnsafePointer
 
 
 fn main():
-    alias length = 3
+    comptime length = 3
 
     var vector = List[Int]()  # breakpoint
 

@@ -30,7 +30,7 @@ from buffer import NDBuffer
 # CHECK:   "path": "/mojo_doc/#alias_type",
 # CHECK:   "summary": "An example alias of a Type",
 # CHECK:   "value": "Int"
-alias alias_Type = Int
+comptime alias_Type = Int
 """An example alias of a Type"""
 
 # CHECK:  "kind": "alias",
@@ -38,7 +38,7 @@ alias alias_Type = Int
 # CHECK:  "path": "/mojo_doc/#alias_value",
 # CHECK:  "summary": "An example alias of a Value",
 # CHECK:  "value": "10"
-alias alias_Value = 10
+comptime alias_Value = 10
 """An example alias of a Value"""
 
 
@@ -46,27 +46,27 @@ alias alias_Value = 10
 # CHECK:  "name": "alias_construct",
 # CHECK:  "path": "/mojo_doc/#alias_construct",
 # CHECK:  "value": "IntTuple(0, 1, 2, 3, 4)"
-alias alias_construct = IntTuple(0, 1, 2, 3, 4)
+comptime alias_construct = IntTuple(0, 1, 2, 3, 4)
 
 
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_cond",
 # CHECK:  "path": "/mojo_doc/#alias_cond",
 # CHECK:  "value": "2 if is_nvidia_gpu() else 1"
-alias alias_cond = 2 if is_nvidia_gpu() else 1
+comptime alias_cond = 2 if is_nvidia_gpu() else 1
 
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_fn",
 # CHECK:  "path": "/mojo_doc/#alias_fn",
 # CHECK:  "value": "fn(Int, Int) -> None"
-alias alias_fn = fn (Int, Int) -> None
+comptime alias_fn = fn (Int, Int) -> None
 
 
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_str",
 # CHECK:  "path": "/mojo_doc/#alias_str",
 # CHECK:  "value": "\"\""
-alias alias_str = ""
+comptime alias_str = ""
 
 
 # CHECK:  "deprecated": "deprecated alias",
@@ -74,7 +74,7 @@ alias alias_str = ""
 # CHECK:  "name": "deprecated_alias",
 # CHECK:  "path": "/mojo_doc/#deprecated_alias",
 @deprecated("deprecated alias")
-alias deprecated_alias = 1
+comptime deprecated_alias = 1
 
 
 # CHECK:  "description": "",
@@ -372,7 +372,7 @@ fn tile_and_unswitch[
     pass
 
 
-alias Static1DTileUnswitchUnitFunc = fn[width: Int, sw: Bool] (
+comptime Static1DTileUnswitchUnitFunc = fn[width: Int, sw: Bool] (
     Int, Int
 ) capturing [_] -> None
 

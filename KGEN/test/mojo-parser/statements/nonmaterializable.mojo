@@ -41,9 +41,9 @@ struct NmStruct:
 
 
 # CHECK: lit.alias.decl{{.*}}notMaterializedAlias{{.*}}NmStruct{{.*}}77
-alias notMaterializedAlias = NmStruct(77)
+comptime notMaterializedAlias = NmStruct(77)
 # CHECK: lit.alias.decl{{.*}}notMaterializedButConverted{{.*}}: !NmTarget = {{.*}}{:i1 0}})>
-alias notMaterializedButConverted: NmTarget = NmStruct(76)
+comptime notMaterializedButConverted: NmTarget = NmStruct(76)
 
 
 fn tail_types[T: AnyType, *U: AnyType](a: T, *b: *U):
@@ -67,7 +67,7 @@ fn useNonmaterializable(p: Bool):
     # CHECK: kgen.param.constant: !NmTarget {{.*}}{:i1 0}
     var gotConverted2 = notMaterializedAlias + NmStruct(1)
     # CHECK: lit.alias.decl{{.*}}useIfAlias{{.*}}NmStruct{{.*}}2
-    alias useIfAlias = NmStruct(2) if True else NmStruct(3)
+    comptime useIfAlias = NmStruct(2) if True else NmStruct(3)
     # CHECK: lit.var.decl "useIfVar" var : !lit.ref<!NmTarget
     var useIfVar = NmStruct(2) if p else NmStruct(77)
 
