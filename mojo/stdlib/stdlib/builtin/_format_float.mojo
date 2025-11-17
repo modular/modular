@@ -124,6 +124,11 @@ fn _write_float[
         return writer.write(
             float8_e4m3fnuz_to_str[Int(bitcast[DType.uint8](value))]
         )
+    elif dtype is DType.float8_e8m0fnu:
+        if isnan(value):
+            return writer.write("nan")
+        return writer.write("2**", Int(bitcast[DType.uint8](value)) - 127)
+
     else:
         # Upcast the float16 types to float32
         casted = value.cast[

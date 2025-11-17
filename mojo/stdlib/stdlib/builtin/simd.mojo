@@ -3668,9 +3668,27 @@ fn _convert_f32_to_float8_scalar[
 fn _convert_f32_to_float8_ue8m0_scalar[
     dtype: DType, //,
     target: DType,
+    *,
+    satfinite: Bool = False,
+    rounding_mode: String = "rp",
 ](x: Scalar[dtype]) -> Scalar[target]:
+    constrained[
+        not satfinite,
+        (
+            "satfinite is not implemented for CPU path. Extend this function to"
+            " support it."
+        ),
+    ]()
+    constrained[
+        rounding_mode == "rp",
+        (
+            "Only rounding mode 'rp' is supported for CPU path. Extend this"
+            " function to support other rounding modes."
+        ),
+    ]()
+
     if _isnan(x) or _isinf(x):
-        return Scalar[target](0xFF)
+        return bitcast[target, 1](UInt8(0xFF))
 
     var x_uint32: UInt32 = bitcast[DType.uint32, 1](x)
     var exp: UInt8 = UInt8(
@@ -3689,12 +3707,22 @@ fn _convert_f32_to_float8_ue8m0[
     dtype: DType,
     size: Int, //,
     target: DType,
+    *,
+    satfinite: Bool = False,
+    rounding_mode: String = "rp",
 ](val: SIMD[dtype, size],) -> SIMD[target, size]:
-    constrained[target == DType.uint8, "target must be uint8"]()
+    constrained[
+        dtype is DType.float32 and target is DType.float8_e8m0fnu,
+        (
+            "this conversion is only supported for float32 -> float8_e8m0fnu."
+            " Exnted it if you need bfloat16 -> float8_e8m0fnu."
+        ),
+    ]()
 
     @parameter
     if is_nvidia_gpu() and _is_sm_100x_or_newer():
-        alias asm_prefix = "cvt.rp.satfinite.ue8m0x2.f32"
+        alias satfinite_suffix = ".satfinite" if satfinite else ""
+        alias asm_prefix = "cvt." + rounding_mode + satfinite_suffix + ".ue8m0x2.f32"
 
         @parameter
         if size > 1:
@@ -3727,7 +3755,9 @@ fn _convert_f32_to_float8_ue8m0[
         fn wrapper_fn[
             input_dtype: DType, result_dtype: DType
         ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
-            return _convert_f32_to_float8_ue8m0_scalar[result_dtype](val)
+            return _convert_f32_to_float8_ue8m0_scalar[
+                result_dtype, satfinite=satfinite, rounding_mode=rounding_mode
+            ](val)
 
         return _simd_apply[wrapper_fn, result_dtype=target](val)
 

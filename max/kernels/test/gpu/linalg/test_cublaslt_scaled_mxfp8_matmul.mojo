@@ -56,7 +56,8 @@ fn _convert_ref_scales_to_mxfp8_format[
         "Only support float32 reference scales",
     ]()
     constrained[
-        mxfp8_scales_type == DType.uint8, "Only support uint8 mxfp8 scales"
+        mxfp8_scales_type == DType.float8_e8m0fnu,
+        "Only support float8_e8m0fnu scales",
     ]()
 
     var M = m.value
@@ -79,7 +80,7 @@ fn _convert_ref_scales_to_mxfp8_format[
                 (m % MN_SCALE) // atom_m[0],
                 k % atom_k,
             ] = rebind[Scalar[mxfp8_scales_type]](
-                _convert_f32_to_float8_ue8m0[DType.uint8](
+                _convert_f32_to_float8_ue8m0[DType.float8_e8m0fnu](
                     ref_a_scales[k // REF_BLOCK_SCALE, m]
                 )
             )
@@ -93,7 +94,7 @@ fn _convert_ref_scales_to_mxfp8_format[
                 (n % MN_SCALE) // atom_m[0],
                 k % atom_k,
             ] = rebind[Scalar[mxfp8_scales_type]](
-                _convert_f32_to_float8_ue8m0[DType.uint8](
+                _convert_f32_to_float8_ue8m0[DType.float8_e8m0fnu](
                     ref_b_scales[n // REF_BLOCK_SCALE, k // REF_BLOCK_SCALE]
                 )
             )
@@ -150,7 +151,7 @@ fn test_scaled_mxfp8_cublaslt[
     else:
         raise Error("Unknown scaling mode")
 
-    alias scales_type = DType.uint8  # equal to Float8-UE8M0
+    alias scales_type = DType.float8_e8m0fnu
     alias ref_scales_type = DType.float32
 
     # Initialize reference scales
@@ -238,17 +239,17 @@ fn test_scaled_mxfp8_cublaslt[
         Dim(atom_k),
     )
 
-    var a_scales_host = HostNDBuffer[DType.uint8, 5, static_a_scales_shape](
+    var a_scales_host = HostNDBuffer[scales_type, 5, static_a_scales_shape](
         dynamic_a_scales_shape
     )
-    var b_scales_host = HostNDBuffer[DType.uint8, 5, static_b_scales_shape](
+    var b_scales_host = HostNDBuffer[scales_type, 5, static_b_scales_shape](
         dynamic_b_scales_shape
     )
 
-    var a_scales_device = DeviceNDBuffer[DType.uint8, 5, static_a_scales_shape](
+    var a_scales_device = DeviceNDBuffer[scales_type, 5, static_a_scales_shape](
         dynamic_a_scales_shape, ctx=ctx
     )
-    var b_scales_device = DeviceNDBuffer[DType.uint8, 5, static_b_scales_shape](
+    var b_scales_device = DeviceNDBuffer[scales_type, 5, static_b_scales_shape](
         dynamic_b_scales_shape, ctx=ctx
     )
 

@@ -502,6 +502,10 @@ fn nan[dtype: DType]() -> Scalar[dtype]:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e5m2fnuz>`,
         )
+    elif dtype is DType.float8_e8m0fnu:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e8m0fnu>`,
+        )
     elif dtype is DType.bfloat16:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<bf16>`,
@@ -553,6 +557,8 @@ fn isnan[
         return SIMD[DType.bool, width](fill=False)
     elif dtype is DType.float8_e4m3fn:
         return (val.to_bits() & 0x7F).eq(0x7F)
+    elif dtype is DType.float8_e8m0fnu:
+        return val.to_bits().eq(0xFF)
     elif dtype is DType.float8_e5m2:
         # For the float8_e5m2 dtype NaN is limited to 0x7F and 0xFF values.
         # 7D, 7E, 7F are positive NaNs; FD, FE, FF are negative NaNs.
