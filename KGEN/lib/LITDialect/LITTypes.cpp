@@ -764,14 +764,18 @@ bool OriginType::isMutableKnown(TypedAttr originValue, bool value) {
 
 /// Remove any OriginMutCast and ._mlir_origin if present.
 TypedAttr OriginType::stripMutCastAndFieldExtract(TypedAttr origin) {
+  if (auto rebind = sugarDynCast<ParamOperatorAttr>(origin);
+      rebind && rebind.getOpcode() == POC::Rebind)
+    return stripMutCastAndFieldExtract(rebind.getOperand(0));
+
   // Handle an extract out of an Origin type.
-  if (auto extract = ::dyn_cast<LIT::StructExtractAttr>(origin)) {
+  if (auto extract = sugarDynCast<StructExtractAttr>(origin)) {
     if (extract.getField() == ORIGIN_FIELD_NAME)
       return stripMutCastAndFieldExtract(extract.getStructValue());
   }
 
   // Ignore MutCasts.
-  if (auto mutCast = ::dyn_cast<OriginMutCastAttr>(origin))
+  if (auto mutCast = sugarDynCast<OriginMutCastAttr>(origin))
     return stripMutCastAndFieldExtract(mutCast.getOperand());
 
   return origin;

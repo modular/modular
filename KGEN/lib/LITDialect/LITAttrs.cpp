@@ -664,13 +664,21 @@ TypedAttr OriginUnionAttr::get(MLIRContext *ctx, ArrayRef<TypedAttr> origins) {
   if (origins.empty())
     return OriginUnionAttr::get(OriginType::get(ctx, /*mutable=*/false));
 
-  auto getMut = [](TypedAttr origin) {
-    return sugarCast<OriginType>(origin.getType()).getIsMutable();
+  bool needMutCast = false;
+  auto getMut = [&](TypedAttr origin) {
+    if (!isa<OriginType>(origin.getType()))
+      needMutCast = true; // Notice sugar.
+
+    auto isMut = sugarCast<OriginType>(origin.getType()).getIsMutable();
+    // Remove any sugar from the mutability to get a pure i1.
+    if (!isMut.getType().isInteger(1))
+      isMut = ParamOperatorAttr::getRebind(
+          isMut, IntegerType::get(isMut.getContext(), 1));
+    return isMut;
   };
 
   // The resultant mutability is the worst case of the input mutabilities.
   TypedAttr mutability = getMut(origins.front());
-  bool needMutCast = false;
   for (TypedAttr other : origins.drop_front()) {
     TypedAttr otherMut = getMut(other);
     if (otherMut == mutability)
@@ -679,14 +687,19 @@ TypedAttr OriginUnionAttr::get(MLIRContext *ctx, ArrayRef<TypedAttr> origins) {
     needMutCast = true;
   }
 
+  auto resultType = OriginType::get(mutability);
+
   SmallVector<TypedAttr> newOrigins;
   if (needMutCast) {
-    for (TypedAttr origin : origins)
-      newOrigins.push_back(OriginMutCastAttr::get(origin, mutability));
+    for (TypedAttr origin : origins) {
+      auto elt = OriginMutCastAttr::get(origin, mutability);
+      elt = ParamOperatorAttr::getRebind(elt, resultType);
+      newOrigins.push_back(elt);
+    }
     origins = newOrigins;
   }
 
-  return OriginUnionAttr::get(origins, OriginType::get(mutability));
+  return OriginUnionAttr::get(origins, resultType);
 }
 
 // Origins unions are simple constants if all their elements are.

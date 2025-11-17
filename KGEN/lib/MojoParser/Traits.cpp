@@ -185,7 +185,7 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
 
         auto existingSignature = fnOp.getFullSignature();
         // now we need to compare the full signature to the trait signature
-        if (existingSignature == wrapperSignature) {
+        if (isEqualCanon(existingSignature, wrapperSignature)) {
           // Produce an informative diagnostic citing the conflicting traits
           // **and the struct name**.
           StringAttr currentTraitName =
@@ -262,7 +262,7 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
   };
 
   for (ASTDecl *decl : candidates) {
-    FnOp fnOp = dyn_cast_if_present<LIT::FnOp>(decl->getIfOperation());
+    FnOp fnOp = dyn_cast_if_present<FnOp>(decl->getIfOperation());
     if (!fnOp)
       continue;
 
@@ -899,9 +899,9 @@ createRequirementSignature(FnOp traitFn, ASTType newSelfType,
   // Start with the full signature for the trait requirement.
   FnTypeGeneratorType signature = traitFn.getFullSignature();
 
-  if (auto paramType = dyn_cast<ParamType>(newSelfType.getMetaType())) {
+  if (auto paramType = sugarDynCast<ParamType>(newSelfType.getMetaType())) {
     auto simpleTraitType =
-        cast<AnyTraitType>(paramType.getParam().getType()).getTraitType();
+        sugarCast<AnyTraitType>(paramType.getParam().getType()).getTraitType();
     // Upcast from a parametric type of trait metatype value (e.g. "some
     // type that conforms to Movable) to the simple trait type (Movable)
     // so we can substitute the value into the signature.
@@ -976,7 +976,7 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared,
   ASTDecl *typeDecl = type.getDecl(shared);
   if (!typeDecl) {
     [[maybe_unused]] Type metaType = type.getMetaType();
-    assert(!metaType || isa<TypeType>(metaType));
+    assert(!metaType || sugarIsa<TypeType>(metaType));
     // This is a MLIR type, so we need to bind it to the builtin stub.
     // Use a special wrapper decl in the builtins as stubs.
     typeDecl = shared.getBuiltinStubsMLIRType(errorLoc).getDecl(shared);
