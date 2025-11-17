@@ -232,8 +232,8 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
     FnOp traitFn, ASTDecl *traitFnDecl, bool structDefinesMethod,
     ImplicitLocOpBuilder &builder, StringRef suffix) {
 
-  assert(existingDecl.resolvedness < DeclResolvedness::signature &&
-         "synthesizeMethodInStruct is only valid on non-signature resolved Fn "
+  assert(existingDecl.resolvedness <= DeclResolvedness::signature &&
+         "synthesizeMethodInStruct is only valid on non-body resolved Fn "
          "ASTDecls");
 
   // Extract signature components from the high-level types
