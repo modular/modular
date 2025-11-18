@@ -6,7 +6,9 @@ modular_nanobind_extension(
     srcs = ["test_bindings.cpp"],
     new_link_root = "lib",  # Not needed here
     deps = [
+        "//Support:Base",
         "//Support:NanobindUtils",
+        "@llvm-project//llvm:Support",
     ],
 )
 
