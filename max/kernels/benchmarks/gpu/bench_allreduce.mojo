@@ -206,21 +206,6 @@ fn bench_reduce[
             out_bufs_list[i].unsafe_ptr(), DimList(length)
         )
 
-    @always_inline
-    @parameter
-    @__copy_capture(out_bufs_capture)
-    fn outputs_lambda[
-        input_index: Int,
-        _dtype: DType,
-        _rank: Int,
-        _width: Int,
-        *,
-        _alignment: Int,
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
-        out_bufs_capture[input_index].store[width=_width, alignment=_alignment](
-            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, _width]](val)
-        )
-
     # Monotonic iteration counter to color quickreduce flags across launches.
     var iter = 0
 
@@ -251,7 +236,6 @@ fn bench_reduce[
                 for i in range(ngpus):
                     allreduce[
                         ngpus=ngpus,
-                        output_lambda = outputs_lambda[input_index=i],
                         use_multimem=use_multimem,
                         use_quickreduce=use_quickreduce,
                     ](

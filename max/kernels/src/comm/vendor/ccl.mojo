@@ -21,12 +21,13 @@ from sys.ffi import _get_global_or_null, external_call
 from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import OwnedDLHandle, _Global
+from collections.optional import OptionalReg
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host._amdgpu_hip import HIP
 from gpu.host._nvidia_cuda import CUDA
-from comm.allreduce import MAX_GPUS
+from comm.allreduce import MAX_GPUS, elementwise_epilogue_type
 
 alias ncclComm_t = OpaquePointer
 
@@ -241,11 +242,16 @@ fn allreduce[
     dtype: DType,
     rank: Int,
     ngpus: Int,
+    output_lambda: OptionalReg[elementwise_epilogue_type] = None,
 ](
     inputs: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
     outputs: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
     list_of_ctx: List[DeviceContext],
 ) raises:
+    constrained[
+        not output_lambda,
+        "vendor_ccl allreduce does not support output epilogue lambdas yet",
+    ]()
     if ngpus < 1:
         raise Error("ngpus must be >= 1")
     if ngpus > MAX_GPUS:
