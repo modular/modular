@@ -51,7 +51,7 @@ import gc
 import sys
 import warnings
 import weakref
-from collections.abc import Iterable
+from collections.abc import Generator, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from itertools import chain
@@ -134,7 +134,7 @@ def defaults(
     return (dtype or _default_dtype(device)), device
 
 
-def default_device(device: Device):  # noqa: ANN201
+def default_device(device: Device | graph.DeviceRef):  # noqa: ANN201
     """Context manager for setting the default device for tensor creation.
 
     Sets the default device used for tensor creation within the context. All
@@ -158,6 +158,8 @@ def default_device(device: Device):  # noqa: ANN201
     Returns:
         A context manager that sets the default device.
     """
+    if isinstance(device, graph.DeviceRef):
+        device = device.to_device()
     return contextvar_context(_DEFAULT_DEVICE, device)
 
 
@@ -186,6 +188,36 @@ def default_dtype(dtype: DType):  # noqa: ANN201
         A context manager that sets the default dtype.
     """
     return contextvar_context(_DEFAULT_DTYPE, dtype)
+
+
+@contextlib.contextmanager
+def defaults_like(like: Tensor | TensorType) -> Generator[None]:
+    """Context manager setting the default dtype and device for tensor creation.
+
+    Sets the default data type and device used for tensor creation within the
+    context. All tensors created inside the context block without explicit
+    dtypes or devices will use these parameters.
+
+    .. code-block:: python
+
+        from max.experimental import tensor
+        from max.driver import CPU
+        from max.dtype import DType
+
+        x = Tensor.zeros([1], dtype=DType.int32, device=CPU())
+        # Use int32 as default dtype in this context
+        with tensor.defaults_like(x):
+            y = tensor.Tensor.zeros((2, 3))  # int32, cpu
+            z = tensor.Tensor.zeros((2, 3), dtype=DType.float32)  # float32, cpu
+
+    Args:
+        tensor: A tensor to use as the default dtype and device for the context.
+
+    Returns:
+        A context manager that sets the default dtype and device.
+    """
+    with default_dtype(like.dtype), default_device(like.device):
+        yield
 
 
 def _session() -> engine.api.InferenceSession:
