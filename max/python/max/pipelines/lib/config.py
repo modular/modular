@@ -43,6 +43,7 @@ from .registry import (
     get_pipeline_for_task,
 )
 from .sampling import SamplingConfig
+from .speculative_config import SpeculativeConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -211,6 +212,9 @@ class PipelineConfig(MAXConfig):
     _lora_config: LoRAConfig | None = None
     """The LoRA config."""
 
+    _speculative_config: SpeculativeConfig | None = None
+    """The SpeculativeConfig."""
+
     _config_file_section_name: str = "pipeline_config"
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
@@ -279,6 +283,7 @@ class PipelineConfig(MAXConfig):
         # click PipelineConfig autogenerates defaults for all fields, including
         # required ones.
 
+    # TODO: It might be cleaner to have the draft model be a part of the SpeculativeConfig
     def _create_draft_model_config_if_needed(
         self, kwargs: dict[str, Any]
     ) -> None:
@@ -293,6 +298,26 @@ class PipelineConfig(MAXConfig):
         # params are provided, but model_path is not. We can't do this today
         # as our click PipelineConfig autogenerates defaults for all fields,
         # including required ones.
+
+    def _create_speculative_config_if_needed(
+        self, kwargs: dict[str, Any]
+    ) -> None:
+        """Extract speculative config kwargs and create SpeculativeConfig if any speculative parameters provided."""
+        speculative_kwargs = PipelineConfig._extract_kwargs_for_config(
+            kwargs, SpeculativeConfig
+        )
+        # Only create speculative config if speculative_method is explicitly set
+        if (
+            speculative_kwargs
+            and speculative_kwargs.get("speculative_method") is not None
+        ):
+            # Remove None values to use defaults
+            filtered_kwargs = {
+                k: v for k, v in speculative_kwargs.items() if v is not None
+            }
+            if filtered_kwargs:
+                self._speculative_config = SpeculativeConfig(**filtered_kwargs)
+                assert self._draft_model_config is not None
 
     def _process_remaining_config_classes(
         self, unmatched_kwargs: dict[str, Any]
@@ -407,6 +432,7 @@ class PipelineConfig(MAXConfig):
         # Process specialized config creation
         self._create_lora_config_if_needed(kwargs)
         self._create_draft_model_config_if_needed(kwargs)
+        self._create_speculative_config_if_needed(kwargs)
 
         # Check if any kwargs are meant for other MAXConfig classes
         unmatched_kwargs: dict[str, Any] = {}
@@ -658,7 +684,8 @@ class PipelineConfig(MAXConfig):
         """
         Validate the pipeline configs when used in speculative decoding mode.
         """
-        assert self.draft_model_config is not None  # keep mypy happy
+        assert self.draft_model_config is not None
+        assert self._speculative_config is not None
 
         # Validate that both the `draft_model` and target model `model_path` have the same
         # architecture
@@ -679,41 +706,42 @@ class PipelineConfig(MAXConfig):
                 "MAX-Optimized architecture not found for target model (`model_path`)"
             )
 
-        if draft_arch != target_arch:
-            raise ValueError(
-                f"architecture for the draft_model ({draft_arch.name}) does not match the architecture retrieved for the target model ({target_arch.name})"
-            )
-
         # Validate that their tokenizers are identical.
-        draft_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
-            huggingface_repo=self.draft_model_config.huggingface_model_repo
-        )
-        target_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
-            huggingface_repo=self.model_config.huggingface_model_repo
-        )
+        if self._speculative_config.is_standalone():
+            if draft_arch != target_arch:
+                raise ValueError(
+                    f"architecture for the draft_model ({draft_arch.name}) does not match the architecture retrieved for the target model ({target_arch.name})"
+                )
 
-        # Compare Vocabularies
-        if draft_tokenizer.get_vocab() != target_tokenizer.get_vocab():
-            raise ValueError(
-                f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the vocabulary of the tokenizer for the target model ({self.model_config.model_path})"
+            draft_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
+                huggingface_repo=self.draft_model_config.huggingface_model_repo
+            )
+            target_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
+                huggingface_repo=self.model_config.huggingface_model_repo
             )
 
-        # Compare Tokenizer Configuration
-        if hasattr(draft_tokenizer, "_tokenizer") and hasattr(
-            target_tokenizer, "_tokenizer"
-        ):
-            if (
-                draft_tokenizer._tokenizer.__dict__
-                != target_tokenizer._tokenizer.__dict__
+            # Compare Vocabularies
+            if draft_tokenizer.get_vocab() != target_tokenizer.get_vocab():
+                raise ValueError(
+                    f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the vocabulary of the tokenizer for the target model ({self.model_config.model_path})"
+                )
+
+            # Compare Tokenizer Configuration
+            if hasattr(draft_tokenizer, "_tokenizer") and hasattr(
+                target_tokenizer, "_tokenizer"
             ):
-                raise ValueError(
-                    f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
-                )
-        else:
-            if draft_tokenizer.__dict__ != target_tokenizer.__dict__:
-                raise ValueError(
-                    f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
-                )
+                if (
+                    draft_tokenizer._tokenizer.__dict__
+                    != target_tokenizer._tokenizer.__dict__
+                ):
+                    raise ValueError(
+                        f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
+                    )
+            else:
+                if draft_tokenizer.__dict__ != target_tokenizer.__dict__:
+                    raise ValueError(
+                        f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
+                    )
 
         if self.enable_echo:
             raise ValueError(
@@ -813,7 +841,6 @@ class PipelineConfig(MAXConfig):
             raise ValueError(
                 f"quantization_encoding of '{model_config.quantization_encoding}' not supported by MAX engine."
             )
-
         model_config.validate_and_resolve_with_resolved_quantization_encoding(
             supported_encodings=arch.supported_encodings,
             default_weights_format=arch.default_weights_format,

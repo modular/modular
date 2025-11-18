@@ -47,7 +47,6 @@ from .memory_estimation import MemoryEstimator
 from .model_config import MAXModelConfig, MAXModelConfigBase
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .profiling_config import ProfilingConfig
-from .ragged_token_merger import ragged_token_merger
 from .registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .sampling import (
     SamplingConfig,
@@ -55,7 +54,11 @@ from .sampling import (
     rejection_sampler_with_residuals,
     token_sampler,
 )
-from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
+from .speculative_config import SpeculativeConfig
+from .speculative_decoding import (
+    SpeculativeDecodingPipelineBase,
+    StandaloneSpeculativeDecodingPipeline,
+)
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import (
     IdentityPipelineTokenizer,
@@ -94,8 +97,10 @@ __all__ = [
     "RepoType",
     "RopeType",
     "SamplingConfig",
-    "SpeculativeDecodingTextGenerationPipeline",
+    "SpeculativeConfig",
+    "SpeculativeDecodingBase",
     "SpeechTokenGenerationPipeline",
+    "StandaloneSpeculativeDecodingPipeline",
     "SupportedArchitecture",
     "SupportedEncoding",
     "TextAndVisionTokenizer",
@@ -109,7 +114,6 @@ __all__ = [
     "get_default_max_config_file_section_name",
     "get_paged_manager",
     "max_tokens_to_generate",
-    "ragged_token_merger",
     "rejection_sampler",
     "rejection_sampler_with_residuals",
     "resolve_max_config_inheritance",

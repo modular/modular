@@ -46,6 +46,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     ProfilingConfig,
     SamplingConfig,
+    SpeculativeConfig,
 )
 from typing_extensions import ParamSpec
 
@@ -244,6 +245,7 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     @config_to_flag(LoRAConfig)
     @config_to_flag(ProfilingConfig)
     @config_to_flag(SamplingConfig)
+    @config_to_flag(SpeculativeConfig)
     @click.option(
         "--devices",
         is_flag=False,
