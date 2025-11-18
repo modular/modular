@@ -43,7 +43,7 @@ async def test_step() -> None:
     batch = []
     for i in range(3):
         context = create_text_context(np.empty(prompt_lens[i]))
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
         batch.append(context)
 
     # Assert that each cache_length is initialized appropriately as 0
@@ -102,7 +102,7 @@ async def test_claim_and_release() -> None:
     prompt_lens = [2, 3, 4, 5, 6]
     for i in range(5):
         context = create_text_context(np.empty(prompt_lens[i]))
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
         contexts.append(context)
 
     # Claim 5 ids
@@ -115,7 +115,7 @@ async def test_claim_and_release() -> None:
     prompt_lens_2 = [7, 8, 9]
     for i in range(3):
         context = create_text_context(np.empty(prompt_lens_2[i]))
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
         contexts_2.append(context)
 
     outstanding -= 3
@@ -157,7 +157,7 @@ async def test_fetch_paged() -> None:
     contexts = []
     for _ in range(5):
         context = create_text_context(np.empty(1))
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
         contexts.append(context)
 
     # Fetch 3 of the 5 contexts created above

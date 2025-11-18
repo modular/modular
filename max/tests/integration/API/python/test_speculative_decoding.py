@@ -564,7 +564,7 @@ def test_draft_model_encoding_selection() -> None:
 
 
 def test_kv_cache_claiming_protocol() -> None:
-    """Test that external_claim is called before fetch in prepare_batch."""
+    """Test that claim is called before fetch in prepare_batch."""
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
     pipeline_config = PipelineConfig(
         model_path=model_name,
@@ -602,8 +602,8 @@ def test_kv_cache_claiming_protocol() -> None:
     # Track call order
     call_order = []
 
-    def track_external_claim(request_id: RequestID) -> None:
-        call_order.append(("external_claim", request_id))
+    def track_claim(request_id: RequestID) -> None:
+        call_order.append(("claim", request_id))
 
     def track_fetch(batch: dict[RequestID, TextContext], num_steps: int):  # noqa: ANN202
         call_order.append(
@@ -611,7 +611,7 @@ def test_kv_cache_claiming_protocol() -> None:
         )
         return []
 
-    mock_kv_manager.external_claim.side_effect = track_external_claim
+    mock_kv_manager.claim.side_effect = track_claim
     mock_kv_manager.fetch.side_effect = track_fetch
 
     # Replace the KV manager in both models
@@ -628,21 +628,21 @@ def test_kv_cache_claiming_protocol() -> None:
                 is_draft=True,
             )
 
-            # Verify that external_claim was called before fetch
+            # Verify that claim was called before fetch
             assert len(call_order) >= 2, (
                 f"Expected at least 2 calls, got {len(call_order)}: {call_order}"
             )
 
-            # Check that external_claim was called first
+            # Check that claim was called first
             first_call = call_order[0]
-            assert first_call[0] == "external_claim", (
-                f"First call should be external_claim, got {first_call[0]}"
+            assert first_call[0] == "claim", (
+                f"First call should be claim, got {first_call[0]}"
             )
             assert first_call[1] == context.request_id, (
-                f"external_claim should be called with request_id {context.request_id}, got {first_call[1]}"
+                f"claim should be called with request_id {context.request_id}, got {first_call[1]}"
             )
 
-            # Check that fetch was called after external_claim
+            # Check that fetch was called after claim
             fetch_calls = [call for call in call_order if call[0] == "fetch"]
             assert len(fetch_calls) > 0, "fetch should have been called"
 

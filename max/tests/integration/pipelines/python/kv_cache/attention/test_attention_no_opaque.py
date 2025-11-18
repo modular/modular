@@ -180,7 +180,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         context = create_text_context(
             np.empty(max_seq_len), max_length=max_seq_len
         )
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
         kv_manager.maybe_reserve(context)
         batch.append(context)
 

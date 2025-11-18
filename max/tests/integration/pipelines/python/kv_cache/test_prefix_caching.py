@@ -97,7 +97,7 @@ async def test_prefix_caching_basic() -> None:
     # Reserve a slot in the KV cache manager.
     initial_prompt_1 = [10, 11, 12, 13, 14]
     context_1 = create_text_context(np.array(initial_prompt_1))
-    kv_manager.external_claim(context_1.request_id)
+    kv_manager.claim(context_1.request_id)
     kv_manager.maybe_reserve(context_1, num_steps=6)
 
     # Seq 1: Prefill 10 - 14
@@ -127,7 +127,7 @@ async def test_prefix_caching_basic() -> None:
     initial_prompt_2 = [10, 11, 12, 13]
     context_2 = create_text_context(np.array(initial_prompt_2))
     batch = [context_2]
-    kv_manager.external_claim(context_2.request_id)
+    kv_manager.claim(context_2.request_id)
     kv_manager.maybe_reserve(context_2, num_steps=5)
 
     # Seq 2: Prefill 10 - 13
@@ -174,7 +174,7 @@ async def test_prefix_caching_reset_prefix_cache() -> None:
     context_3 = create_text_context(prompt)
 
     # Get cache hit of 0 tokens since the prefix cache is empty
-    kv_manager.external_claim(context_1.request_id)
+    kv_manager.claim(context_1.request_id)
     kv_manager.maybe_reserve(context_1)
     kv_manager.fetch([context_1])
     context_1.update(15)
@@ -183,14 +183,14 @@ async def test_prefix_caching_reset_prefix_cache() -> None:
     assert kv_manager.metrics.cache_tokens == 0
 
     # Get cache hit of 4 tokens
-    kv_manager.external_claim(context_2.request_id)
+    kv_manager.claim(context_2.request_id)
     kv_manager.maybe_reserve(context_2)
     kv_manager.release(context_2.request_id)
     assert kv_manager.metrics.cache_tokens == 4
 
     # Get cache hit of 0 tokens since we reset the prefix cache
     kv_manager.reset_prefix_cache()
-    kv_manager.external_claim(context_3.request_id)
+    kv_manager.claim(context_3.request_id)
     kv_manager.maybe_reserve(context_3)
     kv_manager.release(context_3.request_id)
     assert kv_manager.metrics.cache_tokens == 4
@@ -208,7 +208,7 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
         prompt = np.array([100, 101, 102, 103, 104])
         batch = [create_text_context(prompt)]
         context = batch[0]
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
         kv_manager.maybe_reserve(context, num_steps=1)
         _ = kv_manager.fetch(batch)
 
@@ -246,7 +246,7 @@ async def test_prefix_caching_with_no_release() -> None:
         for _ in range(1000):
             prompt = gen_prompt(16)
             batch = [create_text_context(prompt)]
-            kv_manager.external_claim(batch[0].request_id)
+            kv_manager.claim(batch[0].request_id)
             assert kv_manager.maybe_reserve(batch[0]), "Out of blocks"
             _ = kv_manager.fetch(batch)
             batch[0].update(42)
@@ -292,7 +292,7 @@ async def test_prefix_caching_with_random_prompts(
         prompt = gen_prompt(prompt_len)
         batch = [create_text_context(prompt)]
         context = batch[0]
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
         kv_manager.maybe_reserve(context, num_steps=num_steps)
         # This fetch can trigger evictions from the tree.
         _ = kv_manager.fetch(batch, num_steps=num_steps)
@@ -349,7 +349,7 @@ async def test_prefix_caching_with_num_steps_gt_1() -> None:
     # Seq 1: Prefill 10 - 14 and generate 15 - 17 in one pass
     batch = [create_text_context(np.array(initial_prompt_1))]
     for context in batch:
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
         kv_manager.maybe_reserve(context, num_steps=3)
 
     kv_tuple_list = kv_manager.fetch(batch, num_steps=3)
@@ -385,7 +385,7 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
 
     # Seq 1: Prefill 10 - 14
     batch = [create_text_context(np.array([10, 11, 12, 13, 14]))]
-    kv_manager.external_claim(batch[0].request_id)
+    kv_manager.claim(batch[0].request_id)
     kv_manager.maybe_reserve(batch[0], num_steps=5)
     kv_tuple_list = kv_manager.fetch(batch)
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2]
@@ -425,7 +425,7 @@ async def test_prefix_caching_with_page_size_gt_1_and_num_steps_gt_1() -> None:
 
     # Seq 1: Prefill 10 - 14 and generate 15 - 17 in one pass
     batch = [create_text_context(np.array([10, 11, 12, 13, 14]))]
-    kv_manager.external_claim(batch[0].request_id)
+    kv_manager.claim(batch[0].request_id)
     kv_manager.maybe_reserve(batch[0], num_steps=5)
     kv_tuple_list = kv_manager.fetch(batch, num_steps=3)
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2, 3]
@@ -590,7 +590,7 @@ async def test_prefix_caching_grouped_prefixes(
             random_len = np.random.randint(0, 10)
             prompt = np.concatenate([group_prefix, gen_prompt(random_len)])
             ctx = create_text_context(prompt)
-            kv_manager.external_claim(ctx.request_id)
+            kv_manager.claim(ctx.request_id)
             batch[ctx.request_id] = ctx
 
         ctxs = list(batch.values())
@@ -697,8 +697,8 @@ async def test_prefix_caching_chunked_prefill() -> None:
 
     ctx_1 = create_text_context(np.array([]))
     ctx_2 = create_text_context(np.array([]))
-    kv_manager.external_claim(ctx_1.request_id)
-    kv_manager.external_claim(ctx_2.request_id)
+    kv_manager.claim(ctx_1.request_id)
+    kv_manager.claim(ctx_2.request_id)
 
     prompt_1_part_1 = np.array([10, 11, 12, 13, 14, 15, 16, 17])
     prompt_1_part_2 = np.array([18, 19, 20, 21, 22])
@@ -729,7 +729,7 @@ def run_and_check_num_cached_tokens(
 ) -> int:
     # reset cache_tokens to 0
     kv_manager.reset_metrics()
-    kv_manager.external_claim(ctx.request_id)
+    kv_manager.claim(ctx.request_id)
     kv_manager.maybe_reserve(ctx)
     kv_manager.fetch([ctx])
     magic_token_value = 42  # this is arbitrary

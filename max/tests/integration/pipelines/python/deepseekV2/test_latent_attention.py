@@ -161,7 +161,7 @@ def generate_max_outputs(
     batch = []
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
         batch.append(context)
 
     input_row_offsets = Tensor(DType.uint32, [batch_size + 1])
@@ -328,7 +328,7 @@ def generate_max_outputs_dp(
     batch = []
     for _ in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[0]))
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
         batch.append(context)
 
     input_row_offsets = Tensor(DType.uint32, [batch_size + 1])

@@ -100,7 +100,7 @@ def test_smollm_with_structured_output_gpu(
     pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
     kv_managers = pipeline.kv_managers
     for kv_manager in kv_managers:
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
 
     tokens = []
     while True:

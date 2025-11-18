@@ -42,7 +42,7 @@ async def _test_kv_cache_gpu() -> None:
         available_cache_memory=500 * 2**20,
     )
     context = create_text_context(np.empty(1))
-    kv_manager.external_claim(context.request_id)
+    kv_manager.claim(context.request_id)
     kv_manager.maybe_reserve(context)
     batch = [context]
     # suffixed [0] because we only have one device

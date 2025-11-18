@@ -40,7 +40,7 @@ def generate_tokens_from_contexts(
     kv_managers = pipeline.kv_managers
     for kv_manager in kv_managers:
         for context in active_contexts.values():
-            kv_manager.external_claim(context.request_id)
+            kv_manager.claim(context.request_id)
 
     while active_contexts:
         for kv_manager in kv_managers:

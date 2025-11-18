@@ -724,7 +724,7 @@ def attention_lora_max_output(
     batch = [create_text_context(np.empty(seq_len)) for _ in range(batch_size)]
 
     for context in batch:
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
         kv_manager.maybe_reserve(context)
 
     blocks, cache_lengths, lookup_table_tensor, max_lengths_buf = (

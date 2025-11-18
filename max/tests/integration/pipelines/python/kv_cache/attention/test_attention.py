@@ -136,7 +136,7 @@ def test_kv_cache_ragged_attention(
     ]
 
     for context in batch:
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
         assert isinstance(kv_manager, PagedKVCacheManager)
         kv_manager.maybe_reserve(context, num_steps=1)
 

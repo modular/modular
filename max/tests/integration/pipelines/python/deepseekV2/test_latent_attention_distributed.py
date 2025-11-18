@@ -156,7 +156,7 @@ def _single_gpu_baseline(
     # Reserve 1 request
     batch = []
     ctx = create_text_context(np.empty(prompt_lens[0]))
-    kv_manager.external_claim(ctx.request_id)
+    kv_manager.claim(ctx.request_id)
     kv_manager.maybe_reserve(ctx)
     batch.append(ctx)
 
@@ -388,7 +388,7 @@ def _run_distributed_dp(
     seq_len = total_tokens if use_prefill else 1
     for replica_idx in range(dp_degree):
         ctx = create_text_context(np.empty(seq_len))
-        kv_manager.external_claim(ctx.request_id, replica_idx=replica_idx)
+        kv_manager.claim(ctx.request_id, replica_idx=replica_idx)
         kv_manager.maybe_reserve(ctx, 1)
         batch.append(ctx)
 

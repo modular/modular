@@ -213,7 +213,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
     batch = []
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
         kv_manager.maybe_reserve(context, num_steps=1)
         batch.append(context)
 
@@ -373,7 +373,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
     batch = []
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
         kv_manager.maybe_reserve(context, num_steps=1)
         batch.append(context)
 
@@ -509,7 +509,7 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
     batch = []
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
         kv_manager.maybe_reserve(context, num_steps=1)
         batch.append(context)
 

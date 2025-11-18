@@ -47,7 +47,7 @@ async def test_kv_cache_multi_gpu() -> None:
             available_cache_memory=500 * 2**20,
         )
         context = create_text_context(np.empty(1))
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
 
         batch = [context]
         kv_manager.maybe_reserve(context)
@@ -171,7 +171,7 @@ async def test_swapping_to_host_multi_gpu(
     cache_hit_rates = []
     for batch_idx, batch in enumerate(batches):
         for context in batch:
-            kv_manager.external_claim(context.request_id)
+            kv_manager.claim(context.request_id)
 
         # Run 1 CE batch and 4 TG batches
         for iter in range(5):

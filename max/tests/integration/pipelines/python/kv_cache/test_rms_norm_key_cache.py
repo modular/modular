@@ -128,7 +128,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     batch = []
     for i in range(batch_size):
         context = create_text_context(np.empty(seq_lens[i]))
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
         kv_manager.maybe_reserve(context, num_steps=1)
         batch.append(context)
 
@@ -208,7 +208,7 @@ def test_partial_rms_norm_key_cache(
     batch = []
     for i in range(batch_size):
         context = create_text_context(np.empty(seq_lens[i]))
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
         kv_manager.maybe_reserve(context, num_steps=1)
         batch.append(context)
 
@@ -301,7 +301,7 @@ def test_rms_norm_new_key_cache(
     batch = []
     for i in range(batch_size):
         context = create_text_context(np.empty(seq_lens[i]))
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
         kv_manager.maybe_reserve(context, num_steps=1)
         batch.append(context)
 
@@ -462,7 +462,7 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     batch = []
     for i in range(batch_size):
         context = create_text_context(np.empty(seq_lens[i]))
-        kv_manager.external_claim(context.request_id)
+        kv_manager.claim(context.request_id)
         kv_manager.maybe_reserve(context, num_steps=1)
         batch.append(context)
 
