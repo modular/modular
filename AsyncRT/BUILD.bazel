@@ -128,7 +128,6 @@ modular_cc_library(
         ":RuntimeGlobals",
         "//Support:Base",
         "//Support:ML",
-        "//Support:Tracy",
         "@llvm-project//llvm:Support",
     ] + select({
         "@platforms//os:linux": [":NVPTX"],
@@ -164,7 +163,6 @@ modular_cc_library(
         "//Support:Profiling",
         "//Support:SymbolExport",
         "//Support:Threading",
-        "//Support:Tracy",
         "@llvm-project//llvm:Support",
     ],
 )

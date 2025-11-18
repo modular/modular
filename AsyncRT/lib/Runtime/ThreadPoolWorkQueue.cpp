@@ -19,7 +19,6 @@
 #include "Support/AlignedAlloc.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Profiling/TimeProfiler.h"
-#include "Support/Profiling/Tracy.h"
 #include "Support/Threading/Atomics.h"
 #include "Support/Threading/SpinWaiter.h"
 #include "llvm/ADT/Twine.h"
@@ -389,8 +388,6 @@ struct WorkQueueThread {
   // or addLocalTask (via an AsyncValue waiter).
   template <bool IsWaiter>
   void doWork(WorkItem &&workItem, WorkType type) {
-    TRACY_ZONE_SCOPED_NC("WorkQueueThread::doWork", TRACY_COLOR_BLUE);
-
 #if ASYNCRT_WORKER_STATS
     auto start = std::chrono::high_resolution_clock::now();
 #endif
@@ -512,8 +509,6 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
                                    StringLiteral spinningLabel,
                                    StringLiteral sleepingLabel) {
   while (true) {
-    TRACY_ZONE_SCOPED_NC("WorkQueueThread::runItemsImpl", TRACY_COLOR_BLUE);
-
   KeepRunning:
     // Stop immediately if there is nothing to do.
     if (earlyStopPredicate())
@@ -528,11 +523,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 
       // May append to localTaskList.
       // May re-enter this loop.
-      {
-        TRACY_ZONE_SCOPED_NC("Invoke WorkQueueThread::doWork (immediate,local)",
-                             TRACY_COLOR_BLUE);
-        doWork</*IsWaiter=*/true>(std::move(workItem), kLocal);
-      }
+      doWork</*IsWaiter=*/true>(std::move(workItem), kLocal);
     }
     localTaskList.clear();
     nextLocalTaskListIndex = 0;
@@ -544,12 +535,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 #endif
     // Check for tasks in local taskId affinities queue.
     if (auto workItem = affinityTaskList.dequeue()) {
-      {
-        TRACY_ZONE_SCOPED_NC(
-            "Invoke WorkQueueThread::doWork (immediate,affinity)",
-            TRACY_COLOR_BLUE);
-        doWork</*IsWaiter=*/false>(std::move(workItem), kAffinity);
-      }
+      doWork</*IsWaiter=*/false>(std::move(workItem), kAffinity);
 #if ASYNCRT_WORKER_STATS
       auto end = std::chrono::high_resolution_clock::now();
       affinityListAccessTime += (end - start);
@@ -565,12 +551,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     // In the normal case we happily pick up and do work.
 
     if (WorkItem workItem; taskList.try_dequeue(workItem)) {
-      {
-        TRACY_ZONE_SCOPED_NC(
-            "Invoke WorkQueueThread::doWork (immediate,global)",
-            TRACY_COLOR_BLUE);
-        doWork</*IsWaiter=*/false>(std::move(workItem), kGlobal);
-      }
+      doWork</*IsWaiter=*/false>(std::move(workItem), kGlobal);
 #if ASYNCRT_WORKER_STATS
       auto end = std::chrono::high_resolution_clock::now();
       taskListAccessTime += (end - start);
@@ -605,12 +586,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
         // normal.
 
         if (auto workItem = affinityTaskList.dequeue()) {
-          {
-            TRACY_ZONE_SCOPED_NC(
-                "Invoke WorkQueueThread::doWork (spin,affinity)",
-                TRACY_COLOR_BLUE);
-            doWork</*IsWaiter=*/true>(std::move(workItem), kAffinity);
-          }
+          doWork</*IsWaiter=*/true>(std::move(workItem), kAffinity);
 #if ASYNCRT_WORKER_STATS
           auto end = std::chrono::high_resolution_clock::now();
           spinAffinityListAccessTime += (end - start);
@@ -625,11 +601,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 #endif
 
         if (WorkItem workItem; taskList.try_dequeue(workItem)) {
-          {
-            TRACY_ZONE_SCOPED_NC("Invoke WorkQueueThread::doWork (spin,global)",
-                                 TRACY_COLOR_BLUE);
-            doWork</*IsWaiter=*/true>(std::move(workItem), kGlobal);
-          }
+          doWork</*IsWaiter=*/true>(std::move(workItem), kGlobal);
 #if ASYNCRT_WORKER_STATS
           auto end = std::chrono::high_resolution_clock::now();
           globalAccessCount++;
@@ -704,12 +676,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 
     start = std::chrono::high_resolution_clock::now();
     if (auto labelledTask = affinityTaskList.dequeue()) {
-      {
-        TRACY_ZONE_SCOPED_NC(
-            "Invoke WorkQueueThread::doWork (pre-suspend,affinity)",
-            TRACY_COLOR_BLUE);
-        doWork</*IsWaiter=*/false>(std::move(labelledTask), kAffinity);
-      }
+      doWork</*IsWaiter=*/false>(std::move(labelledTask), kAffinity);
 #if ASYNCRT_WORKER_STATS
       auto end = std::chrono::high_resolution_clock::now();
       affinityAccessCount++;
@@ -731,12 +698,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     // unlikely for numThreads > 1.
 
     if (WorkItem labelledTask; taskList.try_dequeue(labelledTask)) {
-      {
-        TRACY_ZONE_SCOPED_NC(
-            "Invoke WorkQueueThread::doWork (pre-suspend,global)",
-            TRACY_COLOR_BLUE);
-        doWork</*IsWaiter=*/false>(std::move(labelledTask), kGlobal);
-      }
+      doWork</*IsWaiter=*/false>(std::move(labelledTask), kGlobal);
 #if ASYNCRT_WORKER_STATS
       auto end = std::chrono::high_resolution_clock::now();
       globalAccessCount++;
@@ -1005,8 +967,6 @@ void ThreadPoolWorkQueue::shutdown() {
 }
 
 void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
-  TRACY_ZONE_SCOPED_NC("ThreadPoolWorkQueue::addTask", TRACY_COLOR_BLUE);
-
   assert(workItem);
 #if ASYNCRT_WORKER_STATS
   auto start = std::chrono::high_resolution_clock::now();
@@ -1091,8 +1051,6 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
 }
 
 void ThreadPoolWorkQueue::addLocalTask(WorkItem &&workItem) {
-  TRACY_ZONE_SCOPED_NC("ThreadPoolWorkQueue::addLocalTask", TRACY_COLOR_BLUE);
-
   assert(workItem && "invalid work item");
 
   WorkQueueThread *callerWorker = getOwningWorkQueueThread();
@@ -1110,7 +1068,6 @@ void ThreadPoolWorkQueue::addLocalTask(WorkItem &&workItem) {
 }
 
 void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
-  TRACY_ZONE_SCOPED_NC("ThreadPoolWorkQueue::await", TRACY_COLOR_BLUE);
 
   // If all the values are ready, then we don't have to do anything.
   if (llvm::all_of(values, [](auto &av) { return av.isReady(); }))
