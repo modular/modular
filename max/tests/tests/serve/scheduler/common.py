@@ -209,7 +209,7 @@ class FakeTokenGeneratorPipeline(
 
         for ctx in ctxs:
             self.kv_manager.alloc(ctx, num_steps=num_steps)
-        self.kv_manager.fetch(ctxs, num_steps=num_steps)
+        self.kv_manager.get_runtime_inputs(ctxs, num_steps=num_steps)
 
         # Generate the responses
         responses = {}
