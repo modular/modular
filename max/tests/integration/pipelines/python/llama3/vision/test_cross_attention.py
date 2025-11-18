@@ -16,11 +16,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight
 from max.kv_cache import load_kv_manager
 from max.nn import LinearV1, RMSNormV1
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
 from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
     CrossSdpaAttention,
 )
@@ -109,14 +105,14 @@ class CrossAttentionModel:
         hidden_max_seq_len: TensorValue,
         cross_attention_states: TensorValue,
         cross_input_row_offsets: TensorValue,
-        *fetch_args: TensorValue,
+        *kv_inputs: TensorValue,
     ) -> TensorValue:
         """Builds the cross attention model graph."""
         kv_collection = PagedCacheValues(
-            kv_blocks=fetch_args[0].buffer,
-            cache_lengths=fetch_args[1].tensor,
-            lookup_table=fetch_args[2].tensor,
-            max_lengths=fetch_args[3].tensor,
+            kv_blocks=kv_inputs[0].buffer,
+            cache_lengths=kv_inputs[1].tensor,
+            lookup_table=kv_inputs[2].tensor,
+            max_lengths=kv_inputs[3].tensor,
         )
         return self.cross_attention(
             hidden_states,
@@ -209,7 +205,7 @@ def test_cross_attention(
             hidden_max_seq_len_type,
             cross_attention_states_type,
             input_row_offsets_type,
-            *kv_manager.input_symbols()[0],
+            *kv_manager.get_symbolic_inputs()[0],
         ],
     )
 
@@ -240,7 +236,7 @@ def test_cross_attention(
     for context in batch:
         kv_manager.claim(context.request_id)
         kv_manager.alloc(context, num_steps=1)
-    kv_cache_inputs = kv_manager.fetch(batch)[0]
+    kv_cache_inputs = kv_manager.get_runtime_inputs(batch)[0]
 
     # Initialize model inputs.
     total_seq_len = sum(hidden_seq_lens)

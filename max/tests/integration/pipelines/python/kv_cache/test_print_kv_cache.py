@@ -28,7 +28,7 @@ class PrintKVCacheModel:
     def __call__(
         self,
         valid_lengths: TensorValue,
-        *fetch_args: TensorValue,
+        *kv_inputs: TensorValue,
     ) -> None:
         """Stages a graph consisting of a print KV cache op.
 
@@ -36,10 +36,10 @@ class PrintKVCacheModel:
         KVCacheCollection.
         """
         kv_collection = PagedCacheValues(
-            kv_blocks=fetch_args[0].buffer,
-            cache_lengths=fetch_args[1].tensor,
-            lookup_table=fetch_args[2].tensor,
-            max_lengths=fetch_args[3].tensor,
+            kv_blocks=kv_inputs[0].buffer,
+            cache_lengths=kv_inputs[1].tensor,
+            lookup_table=kv_inputs[2].tensor,
+            max_lengths=kv_inputs[3].tensor,
         )
         page_size = self.kv_params.page_size
         if page_size is None:
@@ -109,7 +109,7 @@ def test_print_kv_cache(dtype: DType) -> None:
             TensorType(
                 dtype=DType.uint32, shape=[batch_size], device=DeviceRef.CPU()
             ),
-            *kv_manager.input_symbols()[0],
+            *kv_manager.get_symbolic_inputs()[0],
         ],
     )
 

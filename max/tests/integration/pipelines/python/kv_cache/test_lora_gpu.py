@@ -23,15 +23,9 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.tensor_utils import cast_tensor_to
 from max.graph.weights import WeightData
-from max.kv_cache import (
-    PagedKVCacheManager,
-)
+from max.kv_cache import PagedKVCacheManager
 from max.nn import AttentionWithRopeAndLoRA, LinearLoRA, RotaryEmbedding
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
 from test_common.context_utils import create_text_context
 
 DTYPE = DType.bfloat16
@@ -640,7 +634,7 @@ def attention_lora_max_output(
     )
 
     blocks_type, cache_lengths_type, lookup_table_type, max_lengths_type = (
-        kv_manager.input_symbols()[0]
+        kv_manager.get_symbolic_inputs()[0]
     )
 
     with Graph(
@@ -728,7 +722,7 @@ def attention_lora_max_output(
         kv_manager.alloc(context)
 
     blocks, cache_lengths, lookup_table_tensor, max_lengths_buf = (
-        kv_manager.fetch(batch)[0]  # type: ignore
+        kv_manager.get_runtime_inputs(batch)[0]  # type: ignore
     )
 
     x_tensor = (

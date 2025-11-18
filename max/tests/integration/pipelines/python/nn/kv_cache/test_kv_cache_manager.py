@@ -54,7 +54,7 @@ async def test_step() -> None:
     for j in range(3):
         for ctx in batch:
             kv_manager.alloc(ctx, num_steps=1)
-        kv_manager.fetch(batch)
+        kv_manager.get_runtime_inputs(batch)
         for ctx in batch:
             ctx.update(42)
         kv_manager.step(batch)
@@ -163,6 +163,6 @@ async def test_fetch_paged() -> None:
     # Fetch 3 of the 5 contexts created above
     for ctx in contexts[:3]:
         kv_manager.alloc(ctx, 1)
-    kv_collection = kv_manager.fetch(contexts[:3])[0]
+    kv_collection = kv_manager.get_runtime_inputs(contexts[:3])[0]
 
     assert kv_collection is not None

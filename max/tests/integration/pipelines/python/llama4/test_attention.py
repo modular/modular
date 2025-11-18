@@ -20,11 +20,7 @@ from max.kv_cache import (
     load_kv_manager,
 )
 from max.nn import RotaryEmbedding
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
 from max.pipelines import KVCacheConfig
 from max.pipelines.architectures.llama4.layers.attention import (
     _Llama4TextAttention,
@@ -224,7 +220,7 @@ def generate_max_outputs(
             ["total_seq_len"],
             device=device_ref,
         )
-        kv_cache_args = kv_manager.input_symbols()
+        kv_cache_args = kv_manager.get_symbolic_inputs()
         flattened_kv_types = [
             kv_type for sublist in kv_cache_args for kv_type in sublist
         ]
@@ -259,7 +255,7 @@ def generate_max_outputs(
         kv_manager.claim(batch[0].request_id)
         kv_manager.alloc(batch[0])
         blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-            kv_manager.fetch(batch)[0]
+            kv_manager.get_runtime_inputs(batch)[0]
         )
         cache_positions_input = np.arange(input_seq_len, dtype=np.uint32)
         outputs.append(

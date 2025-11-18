@@ -12,18 +12,12 @@ from max.driver import Accelerator, Tensor, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.kv_cache import (
-    PagedKVCacheManager,
-)
+from max.kv_cache import PagedKVCacheManager
 from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
     LatentAttentionWithRope,
 )
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
@@ -130,7 +124,7 @@ def generate_max_outputs(
             input_types=(
                 hidden_state_type,
                 input_row_offsets_type,
-                *kv_manager.input_symbols()[0],
+                *kv_manager.get_symbolic_inputs()[0],
             ),
         ) as graph:
             hidden_states = graph.inputs[0].tensor
@@ -176,7 +170,7 @@ def generate_max_outputs(
         for tok_idx in range(total_tokens):
             for ctx in batch:
                 kv_manager.alloc(ctx, 1)
-            fetch_args = kv_manager.fetch(batch)[0]
+            kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
             input_tensor_device = (
                 Tensor.from_numpy(
                     input_tensor[:, tok_idx, :].view(torch.float16).numpy()
@@ -185,7 +179,7 @@ def generate_max_outputs(
                 .to(device0)
             )
             max_output = compiled.execute(
-                input_tensor_device, input_row_offsets.to(device0), *fetch_args
+                input_tensor_device, input_row_offsets.to(device0), *kv_inputs
             )
 
             for ctx in batch:
@@ -198,14 +192,14 @@ def generate_max_outputs(
 
     for ctx in batch:
         kv_manager.alloc(ctx)
-    fetch_args = kv_manager.fetch(batch)[0]
+    kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
     input_tensor_device = (
         Tensor.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
         .view(DType.bfloat16)
         .to(device0)
     )
     max_output = compiled.execute(
-        input_tensor_device, input_row_offsets.to(device0), *fetch_args
+        input_tensor_device, input_row_offsets.to(device0), *kv_inputs
     )
     torch_output = from_dlpack(max_output[0]).to(torch.bfloat16).to("cpu")
     return torch_output[None, :, :]
@@ -297,7 +291,7 @@ def generate_max_outputs_dp(
             input_types=(
                 hidden_state_type,
                 input_row_offsets_type,
-                *kv_manager.input_symbols()[0],
+                *kv_manager.get_symbolic_inputs()[0],
             ),
         ) as graph:
             hidden_states = graph.inputs[0].tensor
@@ -343,7 +337,7 @@ def generate_max_outputs_dp(
         for tok_idx in range(total_tokens):
             for ctx in batch:
                 kv_manager.alloc(ctx)
-            fetch_args = kv_manager.fetch(batch)[0]
+            kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
             input_tensor_device = (
                 Tensor.from_numpy(
                     input_tensor[:, tok_idx, :].view(torch.float16).numpy()
@@ -352,7 +346,7 @@ def generate_max_outputs_dp(
                 .to(device0)
             )
             max_output = compiled.execute(
-                input_tensor_device, input_row_offsets.to(device0), *fetch_args
+                input_tensor_device, input_row_offsets.to(device0), *kv_inputs
             )
 
             for ctx in batch:
@@ -365,14 +359,14 @@ def generate_max_outputs_dp(
 
     for ctx in batch:
         kv_manager.alloc(ctx)
-    fetch_args = kv_manager.fetch(batch)[0]
+    kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
     input_tensor_device = (
         Tensor.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
         .view(DType.bfloat16)
         .to(device0)
     )
     max_output = compiled.execute(
-        input_tensor_device, input_row_offsets.to(device0), *fetch_args
+        input_tensor_device, input_row_offsets.to(device0), *kv_inputs
     )
     torch_output = from_dlpack(max_output[0]).to(torch.bfloat16).to("cpu")
     return torch_output[None, :, :]

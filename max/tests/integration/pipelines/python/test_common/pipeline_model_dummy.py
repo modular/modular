@@ -20,11 +20,7 @@ from max.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-    KVCacheStrategy,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -241,7 +237,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         session: InferenceSession,
     ) -> Model:
         """Provided a PipelineConfig and InferenceSession, build and load the model graph."""
-        kv_inputs = self.kv_manager.input_symbols()[0]
+        kv_inputs = self.kv_manager.get_symbolic_inputs()[0]
         with Graph(
             "dummy",
             input_types=[

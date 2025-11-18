@@ -13,15 +13,8 @@ import pytest
 from max.driver import Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.kv_cache import (
-    PagedKVCacheManager,
-    load_kv_manager,
-)
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    RaggedKVCacheInputs,
-)
+from max.kv_cache import PagedKVCacheManager, load_kv_manager
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, RaggedKVCacheInputs
 from test_common.context_utils import create_text_context
 
 
@@ -139,7 +132,7 @@ def test_step() -> None:
     for j in range(3):
         for ctx in batch:
             kv_manager.alloc(ctx, 1)
-        kv_manager.fetch(batch)
+        kv_manager.get_runtime_inputs(batch)
         for ctx in batch:
             ctx.update(42)
         kv_manager.step(batch)
@@ -176,7 +169,7 @@ def test_increment_cache_lengths() -> None:
         kv_manager.alloc(context, num_steps=1)
         batch.append(context)
 
-    kv_cache_inputs = kv_manager.fetch(batch)
+    kv_cache_inputs = kv_manager.get_runtime_inputs(batch)
 
     # Check that the cache lengths are initialized to 0.
     assert len(kv_cache_inputs) == 2

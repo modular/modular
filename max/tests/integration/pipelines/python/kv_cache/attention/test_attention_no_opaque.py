@@ -184,8 +184,10 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         kv_manager.alloc(context)
         batch.append(context)
 
-    kv_inputs = PagedKVCacheTensorsNoOpaque(*kv_manager.fetch(batch)[0])
-    kv_input_symbols = kv_manager.input_symbols()[0]
+    kv_inputs = PagedKVCacheTensorsNoOpaque(
+        *kv_manager.get_runtime_inputs(batch)[0]
+    )
+    kv_input_symbols = kv_manager.get_symbolic_inputs()[0]
 
     def reference_attention_fn(
         hidden_state: TensorValue,

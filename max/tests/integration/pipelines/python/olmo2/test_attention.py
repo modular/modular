@@ -14,15 +14,8 @@ from max.driver import Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.kv_cache import (
-    PagedKVCacheManager,
-    load_kv_manager,
-)
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
+from max.kv_cache import PagedKVCacheManager, load_kv_manager
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines import KVCacheConfig
 from max.pipelines.architectures.olmo2.layers.attention import (
@@ -107,7 +100,7 @@ def unflatten_kv_inputs(
     kv_inputs_flat: Sequence[TensorValue],
 ) -> list[tuple[TensorValue, ...]]:
     n_devices = kv_params.n_devices
-    fetch_types = kv_manager.input_symbols()[0]
+    fetch_types = kv_manager.get_symbolic_inputs()[0]
     len_of_kv_tuple_per_dev = len(list(fetch_types))
     kv_caches_per_dev = [
         tuple(
@@ -204,7 +197,7 @@ def generate_max_outputs(
         ["total_seq_len"],
         device=device_ref,
     )
-    kv_cache_args = kv_manager.input_symbols()
+    kv_cache_args = kv_manager.get_symbolic_inputs()
     flattened_kv_types = [
         kv_type for sublist in kv_cache_args for kv_type in sublist
     ]
@@ -243,7 +236,7 @@ def generate_max_outputs(
     kv_manager.claim(batch[0].request_id)
     kv_manager.alloc(batch[0])
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(batch)[0]
+        kv_manager.get_runtime_inputs(batch)[0]
     )
 
     output = compiled.execute(

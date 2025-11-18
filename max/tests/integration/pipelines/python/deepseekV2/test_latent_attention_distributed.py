@@ -124,7 +124,7 @@ def _single_gpu_baseline(
             input_types=(
                 hidden_state_type,
                 input_row_offsets_type,
-                *kv_manager.input_symbols()[0],
+                *kv_manager.get_symbolic_inputs()[0],
             ),
         ) as graph:
             hidden_states = graph.inputs[0].tensor
@@ -166,13 +166,13 @@ def _single_gpu_baseline(
     row_off[1] = prompt_lens[0]
 
     if use_prefill:
-        fetch_args = kv_manager.fetch(batch)[0]
+        kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
         inp = (
             Tensor.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
             .view(DType.bfloat16)
             .to(device0)
         )
-        out = compiled.execute(inp, row_off.to(device0), *fetch_args)
+        out = compiled.execute(inp, row_off.to(device0), *kv_inputs)
         return from_dlpack(out[0]).to(torch.bfloat16).to("cpu")[None, :, :]
 
     # decode path (one step at a time)
@@ -180,7 +180,7 @@ def _single_gpu_baseline(
     for tok_idx in range(total_tokens):
         for ctx in batch:
             kv_manager.alloc(ctx, 1)
-        fetch_args = kv_manager.fetch(batch)[0]
+        kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
         tok = (
             Tensor.from_numpy(
                 input_tensor[:, tok_idx, :].view(torch.float16).numpy()
@@ -188,7 +188,7 @@ def _single_gpu_baseline(
             .view(DType.bfloat16)
             .to(device0)
         )
-        out = compiled.execute(tok, row_off.to(device0), *fetch_args)
+        out = compiled.execute(tok, row_off.to(device0), *kv_inputs)
 
         ctx.update(42)
         kv_manager.step(batch)
@@ -284,7 +284,7 @@ def _build_graph_and_compile(
         )  # offsets
 
     # KV symbols across all devices
-    kv_syms = kv_manager.input_symbols()
+    kv_syms = kv_manager.get_symbolic_inputs()
     for tup in kv_syms:
         input_types.extend(tup)
 
@@ -332,7 +332,7 @@ def _build_graph_and_compile(
     return compiled, g
 
 
-def _flatten_kv_fetch_args(fetch_list: Sequence[RaggedKVCacheInputs]) -> list:
+def _flatten_kv_kv_inputs(fetch_list: Sequence[RaggedKVCacheInputs]) -> list:
     flat: list = []
     for f in fetch_list:
         flat.extend([f.blocks, f.cache_lengths, f.lookup_table, f.max_lengths])
@@ -394,8 +394,8 @@ def _run_distributed_dp(
 
     if use_prefill:
         # Single execute covering full prompt lengths (identical prompt on each replica).
-        fetch_list = kv_manager.fetch(batch)
-        kv_args = _flatten_kv_fetch_args(fetch_list)
+        fetch_list = kv_manager.get_runtime_inputs(batch)
+        kv_args = _flatten_kv_kv_inputs(fetch_list)
 
         # Per-device inputs: full sequence + [0, T] row offsets (built on host)
         args = []
@@ -421,8 +421,8 @@ def _run_distributed_dp(
     for tok_idx in range(total_tokens):
         for ctx in batch:
             kv_manager.alloc(ctx, 1)
-        fetch_list = kv_manager.fetch(batch)
-        kv_args = _flatten_kv_fetch_args(fetch_list)
+        fetch_list = kv_manager.get_runtime_inputs(batch)
+        kv_args = _flatten_kv_kv_inputs(fetch_list)
 
         step_args = []
         for dev in devices:

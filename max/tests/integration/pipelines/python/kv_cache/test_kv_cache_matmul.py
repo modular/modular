@@ -17,20 +17,14 @@ from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.kv_cache import (
-    PagedKVCacheManager,
-)
+from max.kv_cache import PagedKVCacheManager
 from max.mlir import StringAttr
 from max.nn.kernels import (
     fused_qkv_ragged_matmul,
     matmul_k_cache_ragged,
     matmul_kv_cache_ragged,
 )
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
 from max.pipelines import TextContext
 from modular_graph_test import modular_graph_test
 from test_common.context_utils import create_text_context
@@ -162,7 +156,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         available_cache_memory=1024 * 1024 * 1024,
     )
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
-        kv_manager.input_symbols()[0]
+        kv_manager.get_symbolic_inputs()[0]
     )
 
     def construct() -> Graph:
@@ -227,7 +221,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[i] = running_sum
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(batch)[0]
+        kv_manager.get_runtime_inputs(batch)[0]
     )
 
     @modular_graph_test(
@@ -271,7 +265,7 @@ class MatmulKVRaggedModel:
         hidden_states: TensorValue,
         input_row_offsets: TensorValue,
         weight: TensorValue,
-        *fetch_args: TensorValue,
+        *kv_inputs: TensorValue,
     ) -> None:
         """Stages a graph consisting of a matmul KV cache ragged custom op.
 
@@ -284,10 +278,10 @@ class MatmulKVRaggedModel:
             input_row_offsets,
             weight,
             kv_collection=PagedCacheValues(
-                kv_blocks=fetch_args[0].buffer,
-                cache_lengths=fetch_args[1].tensor,
-                lookup_table=fetch_args[2].tensor,
-                max_lengths=fetch_args[3].tensor,
+                kv_blocks=kv_inputs[0].buffer,
+                cache_lengths=kv_inputs[1].tensor,
+                lookup_table=kv_inputs[2].tensor,
+                max_lengths=kv_inputs[3].tensor,
             ),
             layer_idx=ops.constant(
                 self.layer_idx, DType.uint32, device=DeviceRef.CPU()
@@ -362,7 +356,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
             hidden_state_type,
             input_row_offsets_type,
             wkv_type,
-            *kv_manager.input_symbols()[0],
+            *kv_manager.get_symbolic_inputs()[0],
         ],
     )
 
@@ -384,8 +378,8 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
     input_row_offsets[i] = running_sum
-    fetch_args = kv_manager.fetch(batch)[0]
-    kv_blocks = fetch_args[0]
+    kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
+    kv_blocks = kv_inputs[0]
     # First check that the KV cache was zeroed out on initialization.
     assert not kv_blocks.to_numpy().any()
 
@@ -394,7 +388,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         dtype=torch_dtype,
     )
     wkv = torch.randn(size=wkv_type.shape.static_dims, dtype=torch_dtype)
-    model(hidden_states, input_row_offsets, wkv, *fetch_args)
+    model(hidden_states, input_row_offsets, wkv, *kv_inputs)
 
     # Check that the matmul wrote output to the KV cache.
     assert kv_blocks.to_numpy().any()
@@ -415,7 +409,7 @@ class MatmulKRaggedModel:
         hidden_states: TensorValue,
         input_row_offsets: TensorValue,
         weight: TensorValue,
-        *fetch_args: TensorValue,
+        *kv_inputs: TensorValue,
     ) -> None:
         """Stages a graph consisting of a matmul KV cache ragged custom op.
 
@@ -428,10 +422,10 @@ class MatmulKRaggedModel:
             input_row_offsets,
             weight,
             kv_collection=PagedCacheValues(
-                kv_blocks=fetch_args[0].buffer,
-                cache_lengths=fetch_args[1].tensor,
-                lookup_table=fetch_args[2].tensor,
-                max_lengths=fetch_args[3].tensor,
+                kv_blocks=kv_inputs[0].buffer,
+                cache_lengths=kv_inputs[1].tensor,
+                lookup_table=kv_inputs[2].tensor,
+                max_lengths=kv_inputs[3].tensor,
             ),
             layer_idx=ops.constant(
                 self.layer_idx, DType.uint32, device=DeviceRef.CPU()
@@ -498,7 +492,7 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
             hidden_state_type,
             input_row_offsets_type,
             wk_type,
-            *kv_manager.input_symbols()[0],
+            *kv_manager.get_symbolic_inputs()[0],
         ],
     )
 
@@ -520,14 +514,14 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
         input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
-    fetch_args = kv_manager.fetch(batch)[0]
+    kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
 
     hidden_states = torch.randn(
         size=[total_seq_len, num_q_heads * kv_params.head_dim],
         dtype=torch_dtype,
     )
     wk = torch.randn(size=wk_type.shape.static_dims, dtype=torch_dtype)
-    model(hidden_states, input_row_offsets, wk, *fetch_args)
+    model(hidden_states, input_row_offsets, wk, *kv_inputs)
 
     ref_results = hidden_states @ wk.T
 
@@ -605,7 +599,7 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
             hidden_state_type,
             input_row_offsets_type,
             wkv_type,
-            *kv_manager.input_symbols()[0],
+            *kv_manager.get_symbolic_inputs()[0],
         ],
     )
     matmul_kv_cache_op = [

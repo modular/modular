@@ -12,9 +12,7 @@ from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
-from max.kv_cache import (
-    PagedKVCacheManager,
-)
+from max.kv_cache import PagedKVCacheManager
 from max.nn import (
     Float8Config,
     Float8InputScaleSpec,
@@ -23,11 +21,7 @@ from max.nn import (
 )
 from max.nn.attention.attention_with_rope import AttentionWithRope
 from max.nn.float8_config import Float8WeightScaleSpec
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
 from max.nn.rotary_embedding import RotaryEmbedding
 from test_common.context_utils import create_text_context
 
@@ -182,7 +176,7 @@ def _build_and_execute_attention_graph(
 ) -> torch.Tensor:
     """Build graph, execute model, and return results."""
     blocks_type, cache_lengths_type, lookup_table_type, max_lengths_type = (
-        kv_manager.input_symbols()[0]
+        kv_manager.get_symbolic_inputs()[0]
     )
 
     # Prepare input data
@@ -262,7 +256,7 @@ def _build_and_execute_attention_graph(
         kv_manager.claim(context.request_id)
         kv_manager.alloc(context)
 
-    fetch_result = kv_manager.fetch(batch)[0]
+    fetch_result = kv_manager.get_runtime_inputs(batch)[0]
     blocks_tensor = fetch_result[0]
     cache_lengths_tensor = fetch_result[1]
     lookup_table_tensor = fetch_result[2]

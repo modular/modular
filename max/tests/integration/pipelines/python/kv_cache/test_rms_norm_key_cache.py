@@ -12,9 +12,7 @@ from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
-from max.kv_cache import (
-    PagedKVCacheManager,
-)
+from max.kv_cache import PagedKVCacheManager
 from max.nn.kernels import rms_norm_key_cache
 from max.nn.kv_cache import (
     KVCacheParams,
@@ -48,7 +46,7 @@ class RMSNormKeyCacheModel:
         self,
         gamma: TensorValue,
         input_row_offsets: TensorValue,
-        *fetch_args: TensorValue,
+        *graph_inputs: TensorValue,
     ) -> None:
         """Stages a graph consisting of a matmul KV cache ragged custom op.
 
@@ -58,10 +56,10 @@ class RMSNormKeyCacheModel:
         rms_norm_key_cache(
             self.kv_params,
             PagedCacheValues(
-                kv_blocks=fetch_args[0].buffer,
-                cache_lengths=fetch_args[1].tensor,
-                lookup_table=fetch_args[2].tensor,
-                max_lengths=fetch_args[3].tensor,
+                kv_blocks=graph_inputs[0].buffer,
+                cache_lengths=graph_inputs[1].tensor,
+                lookup_table=graph_inputs[2].tensor,
+                max_lengths=graph_inputs[3].tensor,
             ),
             gamma=gamma,
             epsilon=1e-5,
@@ -117,7 +115,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         input_types=[
             gamma_type,
             input_row_offsets_type,
-            *kv_manager.input_symbols()[0],
+            *kv_manager.get_symbolic_inputs()[0],
         ],
     )
 
@@ -132,22 +130,22 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         kv_manager.alloc(context, num_steps=1)
         batch.append(context)
 
-    fetch_args = kv_manager.fetch(batch)[0]
+    graph_inputs = kv_manager.get_runtime_inputs(batch)[0]
     # First set KV blocks to all ones so that RMSNorm changes them.
-    kv_blocks = fetch_args[0]
+    kv_blocks = graph_inputs[0]
     all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())
 
     # Create new KVCacheInputs with updated first element
-    fetch_args = RaggedKVCacheInputs(
-        Tensor.from_numpy(all_ones.copy()), *fetch_args[1:]
+    graph_inputs = RaggedKVCacheInputs(
+        Tensor.from_numpy(all_ones.copy()), *graph_inputs[1:]
     )
 
     gamma = np.random.randn(kv_params.head_dim).astype(dtype.to_numpy())
     input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
-    model(gamma, input_row_offsets, *fetch_args)
+    model(gamma, input_row_offsets, *graph_inputs)
 
     # Check that the RMSNorm wrote output to the KV cache.
-    assert (fetch_args[0].to_numpy() != all_ones).any()
+    assert (graph_inputs[0].to_numpy() != all_ones).any()
 
 
 @pytest.mark.parametrize(
@@ -197,7 +195,7 @@ def test_partial_rms_norm_key_cache(
         input_types=[
             gamma_type,
             input_row_offsets_type,
-            *kv_manager.input_symbols()[0],
+            *kv_manager.get_symbolic_inputs()[0],
         ],
     )
 
@@ -212,22 +210,22 @@ def test_partial_rms_norm_key_cache(
         kv_manager.alloc(context, num_steps=1)
         batch.append(context)
 
-    fetch_args = kv_manager.fetch(batch)[0]
+    graph_inputs = kv_manager.get_runtime_inputs(batch)[0]
     # First set KV blocks to all ones so that RMSNorm changes them.
-    kv_blocks = fetch_args[0]
+    kv_blocks = graph_inputs[0]
     all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())
 
     # Create new KVCacheInputs with updated first element
-    fetch_args = RaggedKVCacheInputs(
-        Tensor.from_numpy(all_ones.copy()), *fetch_args[1:]
+    graph_inputs = RaggedKVCacheInputs(
+        Tensor.from_numpy(all_ones.copy()), *graph_inputs[1:]
     )
 
     gamma = np.random.randn(gamma_size).astype(dtype.to_numpy())
     input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
-    model(gamma, input_row_offsets, *fetch_args)
+    model(gamma, input_row_offsets, *graph_inputs)
 
     # shape: [batch_size,kv_dim,num_layers,max_seq_len,n_kv_heads,head_dim]
-    kv_block = fetch_args[0].to_numpy()
+    kv_block = graph_inputs[0].to_numpy()
 
     # Check that the first 512 elements of each head is normalized
     for seq_idx in range(seq_lens[0]):
@@ -290,7 +288,7 @@ def test_rms_norm_new_key_cache(
         input_types=[
             gamma_type,
             input_row_offsets_type,
-            *kv_manager.input_symbols()[0],
+            *kv_manager.get_symbolic_inputs()[0],
         ],
     )
 
@@ -307,27 +305,27 @@ def test_rms_norm_new_key_cache(
 
     # note that unlike previous tests, we step the kv cache by 10 tokens
     # this is to test that we only operate on the new tokens
-    fetch_args = kv_manager.fetch(batch)[0]
+    graph_inputs = kv_manager.get_runtime_inputs(batch)[0]
     for ctx in batch:
         ctx.update(42)
     kv_manager.step(batch)
-    fetch_args = kv_manager.fetch(batch)[0]
+    graph_inputs = kv_manager.get_runtime_inputs(batch)[0]
 
     # First set KV blocks to all ones so that RMSNorm changes them.
-    kv_blocks = fetch_args[0]
+    kv_blocks = graph_inputs[0]
     all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())
 
     # Create new KVCacheInputs with updated first element
-    fetch_args = RaggedKVCacheInputs(
-        Tensor.from_numpy(all_ones.copy()), *fetch_args[1:]
+    graph_inputs = RaggedKVCacheInputs(
+        Tensor.from_numpy(all_ones.copy()), *graph_inputs[1:]
     )
 
     gamma = np.random.randn(gamma_size).astype(dtype.to_numpy())
     input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
-    model(gamma, input_row_offsets, *fetch_args)
+    model(gamma, input_row_offsets, *graph_inputs)
 
     # shape: [batch_size,kv_dim,num_layers,max_seq_len,n_kv_heads,head_dim]
-    kv_block = fetch_args[0].to_numpy()
+    kv_block = graph_inputs[0].to_numpy()
 
     # check that for the first 10 tokens all heads are unchanged
     for seq_idx in range(10):
@@ -398,7 +396,7 @@ def test_rms_norm_key_cache_dtype_mismatch(
             input_types=[
                 gamma_type,
                 input_row_offsets_type,
-                *kv_manager.input_symbols()[0],
+                *kv_manager.get_symbolic_inputs()[0],
             ],
         )
 
@@ -451,7 +449,7 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         input_types=[
             gamma_type,
             input_row_offsets_type,
-            *kv_manager.input_symbols()[0],
+            *kv_manager.get_symbolic_inputs()[0],
         ],
     )
 
@@ -466,15 +464,15 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         kv_manager.alloc(context, num_steps=1)
         batch.append(context)
 
-    fetch_args = kv_manager.fetch(batch)[0]
+    graph_inputs = kv_manager.get_runtime_inputs(batch)[0]
 
     # First set KV blocks to all ones so that RMSNorm changes them.
-    kv_blocks = fetch_args[0]
+    kv_blocks = graph_inputs[0]
     all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())
 
     # Create new KVCacheInputs with updated first element
-    fetch_args = RaggedKVCacheInputs(
-        Tensor.from_numpy(all_ones.copy()), *fetch_args[1:]
+    graph_inputs = RaggedKVCacheInputs(
+        Tensor.from_numpy(all_ones.copy()), *graph_inputs[1:]
     )
 
     # Create gamma weights for per token normalization
@@ -482,10 +480,10 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
 
     # Run the model
-    model(gamma, input_row_offsets, *fetch_args)
+    model(gamma, input_row_offsets, *graph_inputs)
 
     # Verify that normalization was applied per token (across all heads)
-    kv_block = fetch_args[0].to_numpy()
+    kv_block = graph_inputs[0].to_numpy()
 
     # For per token norm, verify that normalization was applied consistently
     # across all heads for each token by checking that the output has expected properties

@@ -12,15 +12,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.tensor_utils import cast_tensor_to
-from max.kv_cache import (
-    PagedKVCacheManager,
-)
+from max.kv_cache import PagedKVCacheManager
 from max.nn.kernels import kv_cache_ragged_radd
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
 from test_common.context_utils import create_text_context
 
 
@@ -128,7 +122,7 @@ def test_kv_cache_radd_basic() -> None:
             a_type,
             input_row_offsets_type,
             batch_offset_type,
-            *kv_manager.input_symbols()[0],
+            *kv_manager.get_symbolic_inputs()[0],
         ],
     )
 
@@ -143,7 +137,7 @@ def test_kv_cache_radd_basic() -> None:
         kv_manager.alloc(context)
         batch.append(context)
 
-    fetch_args = kv_manager.fetch(batch)[0]
+    kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
 
     a_np = np.ones(
         (a_length, kv_params.n_kv_heads * kv_params.head_dim * 2),
@@ -152,7 +146,7 @@ def test_kv_cache_radd_basic() -> None:
     a_data = cast_tensor_to(Tensor.from_numpy(a_np), dtype).to(device)
     input_row_offsets_data = Tensor.from_numpy(input_row_offsets_np).to(device)
 
-    output = model(a_data, input_row_offsets_data, batch_offset, *fetch_args)
+    output = model(a_data, input_row_offsets_data, batch_offset, *kv_inputs)
 
     # simple smoke test, we do more thorough testing in the test_lora_gpu.py test
     assert output is not None

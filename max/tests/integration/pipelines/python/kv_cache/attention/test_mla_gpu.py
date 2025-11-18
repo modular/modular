@@ -12,15 +12,9 @@ from max.driver import Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.kv_cache import (
-    PagedKVCacheManager,
-)
+from max.kv_cache import PagedKVCacheManager
 from max.nn.kernels import flare_mla_decompress_k_cache, flare_mla_prefill_plan
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 
@@ -64,7 +58,7 @@ def test_mla_prefill_plan() -> None:
             "call_mla_prefill_plan",
             input_types=[
                 input_row_offsets_type,
-                *kv_manager.input_symbols()[0],
+                *kv_manager.get_symbolic_inputs()[0],
             ],
         ) as g:
             input_row_offsets = g.inputs[0].tensor
@@ -105,9 +99,9 @@ def test_mla_prefill_plan() -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    fetch_args = kv_manager.fetch(batch)[0]
+    kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
 
-    results = model.execute(input_row_offsets.to(device0), *fetch_args)
+    results = model.execute(input_row_offsets.to(device0), *kv_inputs)
 
     buffer_row_offsets_ref = np.zeros((16, batch_size + 1), dtype=np.int32)
     buffer_row_offsets_ref[0, 1] = 10
@@ -175,7 +169,7 @@ def test_mla_decompress_k_cache() -> None:
             input_types=[
                 input_row_offsets_type,
                 weight_type,
-                *kv_manager.input_symbols()[0],
+                *kv_manager.get_symbolic_inputs()[0],
             ],
         ) as g:
             input_row_offsets = g.inputs[0].tensor
@@ -240,7 +234,7 @@ def test_mla_decompress_k_cache() -> None:
     input_row_offsets[batch_size] = running_sum
 
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(batch)[0]
+        kv_manager.get_runtime_inputs(batch)[0]
     )
 
     new_blocks = torch.randn(size=blocks.shape, dtype=torch.float32)
@@ -322,7 +316,7 @@ def test_mla_decompress_k_cache_only_k() -> None:
             input_types=[
                 input_row_offsets_type,
                 weight_type,
-                *kv_manager.input_symbols()[0],
+                *kv_manager.get_symbolic_inputs()[0],
             ],
         ) as g:
             input_row_offsets = g.inputs[0].tensor

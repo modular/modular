@@ -16,10 +16,7 @@ from max.driver import CPU, Accelerator, Tensor, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
-from max.kv_cache import (
-    PagedKVCacheManager,
-    load_kv_manager,
-)
+from max.kv_cache import PagedKVCacheManager, load_kv_manager
 from max.nn import LinearV1, RMSNormV1
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import (
@@ -27,11 +24,7 @@ from max.nn.kernels import (
     flash_attention_gpu,
     flash_attention_ragged_gpu,
 )
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
 from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
     CrossSdpaAttention,
 )
@@ -138,14 +131,14 @@ class CrossAttentionModel:
         hidden_max_seq_len: TensorValue,
         cross_attention_states: TensorValue,
         cross_input_row_offsets: TensorValue,
-        *fetch_args: TensorValue,
+        *kv_inputs: TensorValue,
     ) -> TensorValue:
         """Builds the cross attention model graph."""
         kv_collection = PagedCacheValues(
-            kv_blocks=fetch_args[0].buffer,
-            cache_lengths=fetch_args[1].tensor,
-            lookup_table=fetch_args[2].tensor,
-            max_lengths=fetch_args[3].tensor,
+            kv_blocks=kv_inputs[0].buffer,
+            cache_lengths=kv_inputs[1].tensor,
+            lookup_table=kv_inputs[2].tensor,
+            max_lengths=kv_inputs[3].tensor,
         )
         return self.cross_attention(
             hidden_states,
@@ -248,7 +241,7 @@ def test_cross_attention_gpu(
             hidden_max_seq_len_type,
             cross_attention_states_type,
             input_row_offsets_type,
-            *kv_manager.input_symbols()[0],
+            *kv_manager.get_symbolic_inputs()[0],
         ],
     )
 
@@ -277,7 +270,7 @@ def test_cross_attention_gpu(
         kv_manager.claim(context.request_id)
         kv_manager.alloc(context)
         batch.append(context)
-    kv_cache_inputs = kv_manager.fetch(batch)[0]
+    kv_cache_inputs = kv_manager.get_runtime_inputs(batch)[0]
 
     # Initialize model inputs.
     total_seq_len = sum(hidden_seq_lens)
@@ -415,7 +408,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     )
 
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
-        kv_manager.input_symbols()[0]
+        kv_manager.get_symbolic_inputs()[0]
     )
 
     def construct() -> Graph:
@@ -488,7 +481,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     input_row_offsets = input_row_offsets.to(cuda)
 
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(batch)[0]
+        kv_manager.get_runtime_inputs(batch)[0]
     )
     model = session.load(g)
 

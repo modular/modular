@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -19,7 +20,7 @@ from max.interfaces import (
     SamplingParams,
     TextGenerationInputs,
 )
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.kv_cache import KVCacheStrategy, RaggedKVCacheInputs
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
 from max.pipelines.core import TextContext
 from max.pipelines.lib.speculative_config import (
@@ -616,7 +617,7 @@ def test_kv_cache_claiming_protocol() -> None:
     # Mock the KV cache manager to track method calls
     mock_kv_manager = Mock()
     mock_kv_manager.contains.return_value = False  # Simulate new request
-    mock_kv_manager.fetch.return_value = []
+    mock_kv_manager.get_runtime_inputs.return_value = []
 
     # Track call order
     call_order = []
@@ -624,14 +625,16 @@ def test_kv_cache_claiming_protocol() -> None:
     def track_claim(request_id: RequestID) -> None:
         call_order.append(("claim", request_id))
 
-    def track_fetch(batch: dict[RequestID, TextContext], num_steps: int):  # noqa: ANN202
+    def track_get_runtime_inputs(
+        batch: dict[RequestID, TextContext], num_steps: int
+    ) -> Sequence[RaggedKVCacheInputs]:
         call_order.append(
-            ("fetch", [ctx.request_id for ctx in batch], num_steps)  # type: ignore
+            ("get_runtime_inputs", [ctx.request_id for ctx in batch], num_steps)  # type: ignore
         )
         return []
 
     mock_kv_manager.claim.side_effect = track_claim
-    mock_kv_manager.fetch.side_effect = track_fetch
+    mock_kv_manager.get_runtime_inputs.side_effect = track_get_runtime_inputs
 
     # Replace the KV manager in both models
     with patch.object(pipeline._draft_model, "kv_manager", mock_kv_manager):
@@ -647,7 +650,7 @@ def test_kv_cache_claiming_protocol() -> None:
                 is_draft=True,
             )
 
-            # Verify that claim was called before fetch
+            # Verify that claim was called before get_runtime_inputs
             assert len(call_order) >= 2, (
                 f"Expected at least 2 calls, got {len(call_order)}: {call_order}"
             )
@@ -661,9 +664,13 @@ def test_kv_cache_claiming_protocol() -> None:
                 f"claim should be called with request_id {context.request_id}, got {first_call[1]}"
             )
 
-            # Check that fetch was called after claim
-            fetch_calls = [call for call in call_order if call[0] == "fetch"]
-            assert len(fetch_calls) > 0, "fetch should have been called"
+            # Check that get_runtime_inputs was called after claim
+            get_runtime_inputs_calls = [
+                call for call in call_order if call[0] == "get_runtime_inputs"
+            ]
+            assert len(get_runtime_inputs_calls) > 0, (
+                "get_runtime_inputs should have been called"
+            )
 
             # Verify contains was called to check if request was already claimed
             mock_kv_manager.contains.assert_called_with(context.request_id)
