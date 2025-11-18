@@ -200,7 +200,7 @@ alias rows = 1024
 alias columns = 1024
 alias buf_size = rows * columns
 alias layout = Layout.row_major(rows, columns)
-var ptr = UnsafePointer[Float32].alloc(buf_size)
+var ptr = alloc[Float32](buf_size)
 memset(ptr, 0, buf_size)
 var tensor = LayoutTensor[DType.float32, layout](storage)
 ```
