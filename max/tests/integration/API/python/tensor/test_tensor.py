@@ -14,6 +14,7 @@ from __future__ import annotations
 from conftest import assert_all_close
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
+from max.experimental import random
 from max.experimental.tensor import Tensor, default_dtype
 
 DEVICE = Accelerator() if accelerator_count() else CPU()
@@ -51,6 +52,13 @@ def test_mean() -> None:
     result = tensor.mean()
     result._sync_realize()
     assert result.real
+
+
+def test_clip() -> None:
+    x = random.normal([20])
+    assert all((x.clip(max=0.0) <= 0.0)._values())
+    assert all((x.clip(min=0.0) >= 0.0)._values())
+    assert all(-0.5 <= v <= 0.5 for v in x.clip(min=-0.5, max=0.5)._values())
 
 
 def test_reshape() -> None:
