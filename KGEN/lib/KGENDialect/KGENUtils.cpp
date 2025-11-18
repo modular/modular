@@ -2348,6 +2348,12 @@ std::string KGEN::printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
           os << param.getName() << ": " << attr.getValue();
           result.push_back(str);
         })
+        .Case<BoolAttr>([&](auto &attr) {
+          std::string str;
+          llvm::raw_string_ostream os(str);
+          os << param.getName() << ": " << attr;
+          result.push_back(str);
+        })
         .Case<IntegerAttr>([&](auto &attr) {
           std::string str;
           llvm::raw_string_ostream os(str);
@@ -2355,12 +2361,6 @@ std::string KGEN::printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
           result.push_back(str);
         })
         .Case<FloatAttr>([&](auto &attr) {
-          std::string str;
-          llvm::raw_string_ostream os(str);
-          os << param.getName() << ": " << attr.getValue();
-          result.push_back(str);
-        })
-        .Case<BoolAttr>([&](auto &attr) {
           std::string str;
           llvm::raw_string_ostream os(str);
           os << param.getName() << ": " << attr.getValue();
