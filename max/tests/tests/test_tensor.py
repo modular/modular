@@ -22,6 +22,7 @@ from max.experimental.tensor import (
     _default_dtype,
     default_device,
     default_dtype,
+    defaults_like,
     driver_tensor_type,
 )
 from max.graph import BufferValue, DeviceRef, Graph
@@ -141,6 +142,16 @@ def test_constant_default_device() -> None:
     t = Tensor.constant(1)
     assert t.device == _default_device()
     assert t.dtype == _default_dtype(_default_device())
+
+
+def test_defaults_like() -> None:
+    t = Tensor.constant(1, dtype=DType.float64)
+    with defaults_like(t):
+        t2 = Tensor.constant(1)
+        assert t.type == t2.type
+    with defaults_like(t.type):
+        t3 = Tensor.constant(1)
+        assert t.type == t3.type
 
 
 @pytest.mark.skipif(
