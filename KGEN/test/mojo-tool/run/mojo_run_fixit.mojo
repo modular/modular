@@ -34,7 +34,13 @@ fn old_origin_of_2[T: AnyType](b: T):
 
 @fieldwise_init
 struct Bar:
-    pass
+    @implicit(deprecated=True)
+    fn __init__(out self, i: Int):
+        pass
+
+
+fn take_bar(b: Bar) -> Int:
+    return 1
 
 
 # CHECK-LABEL: def main():
@@ -46,3 +52,7 @@ def main():
     # CHECK-NEXT: var a = materialize[b]()
     comptime b = Bar()
     var a = b
+
+    # Note: there are two nested fixits we're testing here.
+    # CHECK: var _: Bar = Bar(take_bar(Bar(10 + 5)))
+    var _: Bar = take_bar(10 + 5)

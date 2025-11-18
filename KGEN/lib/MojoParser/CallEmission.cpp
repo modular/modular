@@ -565,6 +565,13 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
                                       "deprecated implicit conversion from ")
                   << operands[0].ir.getRValueTypeIfResolvable() << " to "
                   << selfResultType << expr->getRange();
+      std::string resTypeStr = selfResultType.getAsString(&emitter.shared);
+      diag.attachNote(expr->getLoc())
+          << "call '" << resTypeStr + "(...)' explicitly"
+          << FixIt::insertBeforeToken(expr->getRangeStart(), resTypeStr + "(")
+          << FixIt::insertAfterToken(expr->getRangeEnd(), ")",
+                                     emitter.shared.diags)
+          << expr->getRange();
       diag.attachNote(selectedDecl->getLoc())
           << "implicit constructor for " << selfResultType << " declared here";
     }
