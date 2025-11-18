@@ -20,6 +20,7 @@ modular_py_test(
         "test_lora.py",
         "test_memory_estimation.py",
         "test_registry.py",
+        "test_speculative_config.py",
         "test_telemetry.py",
         "test_weight_path_parser.py",
     ],
