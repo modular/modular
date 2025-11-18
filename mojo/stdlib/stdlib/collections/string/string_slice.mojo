@@ -2283,42 +2283,123 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         return True
 
     fn rjust(self, width: Int, fillchar: StaticString = " ") -> String:
-        """Returns the string right justified in a string of specified width.
+        """Returns the string slice right justified in a string of specified width.
+
+        Pads the string slice on the left with the specified fill character so
+        that the total length of the resulting string equals `width`. If the
+        original string slice is already longer than or equal to `width`,
+        returns the string slice unchanged (as a `String`).
 
         Args:
-            width: The width of the field containing the string.
-            fillchar: Specifies the padding character.
+            width: The total width (in bytes) of the resulting string. This is
+                not the amount of padding, but the final length of the returned
+                string.
+            fillchar: The padding character to use (defaults to space). Must be
+                a single-byte character.
 
         Returns:
-            Returns right justified string, or self if width is not bigger than self length.
+            A right-justified string of length `width`, or the original string
+            slice (as a `String`) if its length is already greater than or
+            equal to `width`.
+
+        Examples:
+
+        ```mojo
+        var s = StringSlice("hello")
+        print(s.rjust(10))        # "     hello"
+        print(s.rjust(10, "*"))   # "*****hello"
+        print(s.rjust(3))         # "hello" (no padding)
+        ```
         """
         return self._justify(width - len(self), width, fillchar)
 
     fn ljust(self, width: Int, fillchar: StaticString = " ") -> String:
-        """Returns the string left justified in a string of specified width.
+        """Returns the string slice left justified in a string of specified width.
+
+        Pads the string slice on the right with the specified fill character so
+        that the total length of the resulting string equals `width`. If the
+        original string slice is already longer than or equal to `width`,
+        returns the string slice unchanged (as a `String`).
 
         Args:
-            width: The width of the field containing the string.
-            fillchar: Specifies the padding character.
+            width: The total width (in bytes) of the resulting string. This is
+                not the amount of padding, but the final length of the returned
+                string.
+            fillchar: The padding character to use (defaults to space). Must be
+                a single-byte character.
 
         Returns:
-            Returns left justified string, or self if width is not bigger than self length.
+            A left-justified string of length `width`, or the original string
+            slice (as a `String`) if its length is already greater than or
+            equal to `width`.
+
+        Examples:
+
+        ```mojo
+        var s = StringSlice("hello")
+        print(s.ljust(10))        # "hello     "
+        print(s.ljust(10, "*"))   # "hello*****"
+        print(s.ljust(3))         # "hello" (no padding)
+        ```
         """
         return self._justify(0, width, fillchar)
 
     fn center(self, width: Int, fillchar: StaticString = " ") -> String:
-        """Returns the string center justified in a string of specified width.
+        """Returns the string slice center justified in a string of specified width.
+
+        Pads the string slice on both sides with the specified fill character so
+        that the total length of the resulting string equals `width`. If the
+        padding needed is odd, the extra character goes on the right side. If the
+        original string slice is already longer than or equal to `width`,
+        returns the string slice unchanged (as a `String`).
 
         Args:
-            width: The width of the field containing the string.
-            fillchar: Specifies the padding character.
+            width: The total width (in bytes) of the resulting string. This is
+                not the amount of padding, but the final length of the returned
+                string.
+            fillchar: The padding character to use (defaults to space). Must be
+                a single-byte character.
 
         Returns:
-            Returns center justified string, or self if width is not bigger than self length.
+            A center-justified string of length `width`, or the original string
+            slice (as a `String`) if its length is already greater than or
+            equal to `width`.
+
+        Examples:
+
+        ```mojo
+        var s = StringSlice("hello")
+        print(s.center(10))        # "  hello   "
+        print(s.center(11, "*"))   # "***hello***"
+        print(s.center(3))         # "hello" (no padding)
+        ```
         """
         return self._justify(width - len(self) >> 1, width, fillchar)
 
     fn _justify(self, start: Int, width: Int, fillchar: StaticString) -> String:
+        """Internal helper function to justify a string with padding.
+
+        This function pads the string to a specified total width by adding fill
+        characters. The `start` parameter controls how many fill characters are
+        added before the string (left padding), with remaining fill characters
+        added after the string (right padding) to reach the total width.
+
+        Args:
+            start: The number of fill characters to add at the beginning (left
+                padding). For left justification this is 0, for right
+                justification this is `width - len(self)`, and for center
+                justification this is `(width - len(self)) >> 1`.
+            width: The total width of the resulting string in bytes. If the
+                original string is already greater than or equal to this width,
+                no padding is added and the original string is returned.
+            fillchar: The padding character to use. Must be a single-byte
+                character.
+
+        Returns:
+            A new string of the specified total width with fill characters
+            padding the original string, or the original string if it's already
+            at least as wide as the requested width.
+        """
         if len(self) >= width:
             return String(self)
         debug_assert(
