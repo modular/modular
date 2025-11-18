@@ -281,7 +281,7 @@ def msgpack_eq(a: Any, b: Any) -> bool:
             if not np.array_equal(self_val, other_val):
                 return False
         # Handle lists
-        elif isinstance(self_val, list) or isinstance(self_val, tuple):
+        elif isinstance(self_val, (list, tuple)):
             if len(self_val) != len(other_val):
                 return False
             for s, o in zip(self_val, other_val, strict=True):
