@@ -157,7 +157,7 @@ def _single_gpu_baseline(
     batch = []
     ctx = create_text_context(np.empty(prompt_lens[0]))
     kv_manager.claim(ctx.request_id)
-    kv_manager.maybe_reserve(ctx)
+    kv_manager.alloc(ctx)
     batch.append(ctx)
 
     # Row offsets on host to avoid GPU __setitem__
@@ -179,7 +179,7 @@ def _single_gpu_baseline(
     outs = []
     for tok_idx in range(total_tokens):
         for ctx in batch:
-            kv_manager.maybe_reserve(ctx, 1)
+            kv_manager.alloc(ctx, 1)
         fetch_args = kv_manager.fetch(batch)[0]
         tok = (
             Tensor.from_numpy(
@@ -389,7 +389,7 @@ def _run_distributed_dp(
     for replica_idx in range(dp_degree):
         ctx = create_text_context(np.empty(seq_len))
         kv_manager.claim(ctx.request_id, replica_idx=replica_idx)
-        kv_manager.maybe_reserve(ctx, 1)
+        kv_manager.alloc(ctx, 1)
         batch.append(ctx)
 
     if use_prefill:
@@ -420,7 +420,7 @@ def _run_distributed_dp(
     outs = []
     for tok_idx in range(total_tokens):
         for ctx in batch:
-            kv_manager.maybe_reserve(ctx, 1)
+            kv_manager.alloc(ctx, 1)
         fetch_list = kv_manager.fetch(batch)
         kv_args = _flatten_kv_fetch_args(fetch_list)
 

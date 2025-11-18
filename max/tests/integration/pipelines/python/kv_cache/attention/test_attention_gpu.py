@@ -275,7 +275,7 @@ def test_cross_attention_gpu(
             np.empty(cross_seq_len), max_length=int(cross_seq_len * 1.1)
         )
         kv_manager.claim(context.request_id)
-        kv_manager.maybe_reserve(context)
+        kv_manager.alloc(context)
         batch.append(context)
     kv_cache_inputs = kv_manager.fetch(batch)[0]
 
@@ -473,7 +473,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.claim(context.request_id)
-        kv_manager.maybe_reserve(context)
+        kv_manager.alloc(context)
         batch.append(context)
 
     input_row_offsets = Tensor(

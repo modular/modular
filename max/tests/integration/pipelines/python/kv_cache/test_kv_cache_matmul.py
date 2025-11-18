@@ -214,7 +214,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.claim(context.request_id)
-        kv_manager.maybe_reserve(context, num_steps=1)
+        kv_manager.alloc(context, num_steps=1)
         batch.append(context)
 
     input_row_offsets = Tensor(
@@ -374,7 +374,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.claim(context.request_id)
-        kv_manager.maybe_reserve(context, num_steps=1)
+        kv_manager.alloc(context, num_steps=1)
         batch.append(context)
 
     # Compute input row offsets for ragged tensors.
@@ -510,7 +510,7 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.claim(context.request_id)
-        kv_manager.maybe_reserve(context, num_steps=1)
+        kv_manager.alloc(context, num_steps=1)
         batch.append(context)
 
     # Compute input row offsets for ragged tensors.

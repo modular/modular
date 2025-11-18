@@ -129,7 +129,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     for i in range(batch_size):
         context = create_text_context(np.empty(seq_lens[i]))
         kv_manager.claim(context.request_id)
-        kv_manager.maybe_reserve(context, num_steps=1)
+        kv_manager.alloc(context, num_steps=1)
         batch.append(context)
 
     fetch_args = kv_manager.fetch(batch)[0]
@@ -209,7 +209,7 @@ def test_partial_rms_norm_key_cache(
     for i in range(batch_size):
         context = create_text_context(np.empty(seq_lens[i]))
         kv_manager.claim(context.request_id)
-        kv_manager.maybe_reserve(context, num_steps=1)
+        kv_manager.alloc(context, num_steps=1)
         batch.append(context)
 
     fetch_args = kv_manager.fetch(batch)[0]
@@ -302,7 +302,7 @@ def test_rms_norm_new_key_cache(
     for i in range(batch_size):
         context = create_text_context(np.empty(seq_lens[i]))
         kv_manager.claim(context.request_id)
-        kv_manager.maybe_reserve(context, num_steps=1)
+        kv_manager.alloc(context, num_steps=1)
         batch.append(context)
 
     # note that unlike previous tests, we step the kv cache by 10 tokens
@@ -463,7 +463,7 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     for i in range(batch_size):
         context = create_text_context(np.empty(seq_lens[i]))
         kv_manager.claim(context.request_id)
-        kv_manager.maybe_reserve(context, num_steps=1)
+        kv_manager.alloc(context, num_steps=1)
         batch.append(context)
 
     fetch_args = kv_manager.fetch(batch)[0]

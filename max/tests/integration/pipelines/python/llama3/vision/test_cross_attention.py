@@ -239,7 +239,7 @@ def test_cross_attention(
 
     for context in batch:
         kv_manager.claim(context.request_id)
-        kv_manager.maybe_reserve(context, num_steps=1)
+        kv_manager.alloc(context, num_steps=1)
     kv_cache_inputs = kv_manager.fetch(batch)[0]
 
     # Initialize model inputs.

@@ -138,7 +138,7 @@ def test_step() -> None:
     # Update these values a few times
     for j in range(3):
         for ctx in batch:
-            kv_manager.maybe_reserve(ctx, 1)
+            kv_manager.alloc(ctx, 1)
         kv_manager.fetch(batch)
         for ctx in batch:
             ctx.update(42)
@@ -173,7 +173,7 @@ def test_increment_cache_lengths() -> None:
     for prompt_len, replica_idx in zip(prompt_lens, replica_idxs, strict=True):
         context = create_text_context(np.empty(prompt_len))
         kv_manager.claim(context.request_id, replica_idx=replica_idx)
-        kv_manager.maybe_reserve(context, num_steps=1)
+        kv_manager.alloc(context, num_steps=1)
         batch.append(context)
 
     kv_cache_inputs = kv_manager.fetch(batch)

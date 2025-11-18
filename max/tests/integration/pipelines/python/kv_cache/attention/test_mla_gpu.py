@@ -94,7 +94,7 @@ def test_mla_prefill_plan() -> None:
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.claim(context.request_id)
-        kv_manager.maybe_reserve(context)
+        kv_manager.alloc(context)
         batch.append(context)
 
     # Compute input row offsets for ragged tensors.
@@ -228,7 +228,7 @@ def test_mla_decompress_k_cache() -> None:
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.claim(context.request_id)
-        kv_manager.maybe_reserve(context)
+        kv_manager.alloc(context)
         batch.append(context)
 
     # Compute input row offsets for ragged tensors.

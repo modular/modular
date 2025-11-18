@@ -344,7 +344,7 @@ def generate_max_outputs_fp8(
         all_outputs = []
         for tok_idx in range(total_tokens):
             for ctx in batch:
-                kv_manager.maybe_reserve(ctx, 1)
+                kv_manager.alloc(ctx, 1)
             fetch_args = kv_manager.fetch(batch)[0]
             input_tensor_device = (
                 Tensor.from_numpy(
@@ -366,7 +366,7 @@ def generate_max_outputs_fp8(
         return torch.concat(all_outputs, dim=1)
 
     for ctx in batch:
-        kv_manager.maybe_reserve(ctx, 1)
+        kv_manager.alloc(ctx, 1)
     fetch_args = kv_manager.fetch(batch)[0]
     input_tensor_device = (
         Tensor.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
