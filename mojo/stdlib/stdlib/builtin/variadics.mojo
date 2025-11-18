@@ -25,7 +25,7 @@ comptime VariadicOf[T: _AnyTypeMetaType] = __mlir_type[
 """Represents a raw variadic sequence of types that satisfy the specified trait."""
 
 
-@always_inline("nodebug")
+@always_inline("builtin")
 fn variadic_size[T: AnyType](seq: Variadic[T]) -> Int:
     """Returns the length of a variadic sequence.
 
@@ -41,7 +41,7 @@ fn variadic_size[T: AnyType](seq: Variadic[T]) -> Int:
     return Int(mlir_value=__mlir_op.`pop.variadic.size`(seq))
 
 
-@always_inline("nodebug")
+@always_inline("builtin")
 fn variadic_size[T: _AnyTypeMetaType](seq: VariadicOf[T]) -> Int:
     """Returns the length of a variadic sequence.
 
