@@ -36,14 +36,14 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
     var _ctx_ptr: _DeviceContextPtr
     var _size: Int
 
-    alias device_type: AnyType = UnsafePointer[Scalar[dtype]]
+    alias device_type: AnyType = UnsafePointer[Scalar[Self.dtype]]
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self._data
 
     @staticmethod
     fn get_type_name() -> String:
-        return String("SHMEMBuffer[", String(dtype), "]")
+        return String("SHMEMBuffer[", String(Self.dtype), "]")
 
     @staticmethod
     fn get_device_type_name() -> String:
@@ -74,7 +74,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
     fn __init__(
         out self,
         ctx: DeviceContext,
-        data: UnsafePointer[Scalar[dtype]],
+        data: UnsafePointer[Scalar[Self.dtype]],
         size: Int,
     ):
         self._data = data
