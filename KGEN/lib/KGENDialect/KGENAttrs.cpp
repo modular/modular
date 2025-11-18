@@ -190,6 +190,7 @@ LogicalResult VariadicType::printValue(AsmPrinter &p, TypedAttr value) const {
 // If not folded, they are not a constant.
 bool VariadicMapAttr::isConstant() const { return false; }
 bool VariadicZipAttr::isConstant() const { return false; }
+bool VariadicSizeAttr::isConstant() const { return false; }
 bool VariadicSplatAttr::isConstant() const { return false; }
 
 LogicalResult
@@ -311,12 +312,13 @@ LogicalResult
 VariadicSplatAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                           VariadicType type, TypedAttr elt, TypedAttr count) {
   if (elt.getType() != type.getElementType())
-    emitError() << "mismatch between element type and output type, expected: "
-                << type.getElementType() << ", got: " << elt.getType();
+    return emitError()
+           << "mismatch between element type and output type, expected: "
+           << type.getElementType() << ", got: " << elt.getType();
 
   if (!isa<IndexType>(count.getType()))
-    emitError() << "expected a 'index' type for the count, got: "
-                << count.getType();
+    return emitError() << "expected a 'index' type for the count, got: "
+                       << count.getType();
 
   return success();
 }
@@ -340,6 +342,32 @@ TypedAttr VariadicSplatAttr::getChecked(
     return {};
   return get(type, elt, count);
 }
+
+LogicalResult
+VariadicSizeAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                         IndexType type, TypedAttr variadic) {
+  if (!isa<VariadicType>(variadic.getType()))
+    return emitError() << "expected a 'variadic' type for the count, got: "
+                       << variadic.getType();
+  return success();
+}
+
+TypedAttr VariadicSizeAttr::get(IndexType type, TypedAttr variadic) {
+  auto vaAttr = sugarDynCast<VariadicAttr>(variadic);
+  if (!vaAttr)
+    return Base::get(type.getContext(), type, variadic);
+
+  return IntegerAttr::get(type, vaAttr.getValues().size());
+}
+
+TypedAttr VariadicSizeAttr::getChecked(
+    function_ref<::mlir::InFlightDiagnostic()> emitError, IndexType type,
+    TypedAttr variadic) {
+  if (failed(verify(emitError, type, variadic)))
+    return {};
+  return get(type, variadic);
+}
+
 //===----------------------------------------------------------------------===//
 // UnknownAttr
 //===----------------------------------------------------------------------===//
