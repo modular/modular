@@ -457,7 +457,7 @@ class SpeculativeDecodingTextGenerationPipeline(
                 model, model.huggingface_config, num_steps, context, is_draft
             )
             if not model.kv_manager.contains(context.request_id):
-                model.kv_manager.external_claim(context.request_id)
+                model.kv_manager.claim(context.request_id)
 
         for ctx in batch:
             model.kv_manager.maybe_reserve(ctx, num_steps=num_steps)

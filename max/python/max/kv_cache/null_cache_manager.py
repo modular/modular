@@ -249,7 +249,7 @@ class NullKVCacheManager:
         """
         self._request_to_replica_idx.pop(request_id, None)
 
-    def external_claim(
+    def claim(
         self, request_id: RequestID, replica_idx: int | None = None
     ) -> None:
         """Externally claim cache blocks (no-op for null manager).

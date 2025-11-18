@@ -516,9 +516,7 @@ class TextBatchConstructor:
             # Claim the cache slot for the request if it's a new request.
             if ctx.start_idx == 0:
                 if self.paged_cache is not None:
-                    self.paged_cache.external_claim(
-                        req_id, replica_idx=replica_idx
-                    )
+                    self.paged_cache.claim(req_id, replica_idx=replica_idx)
 
             if self.paged_cache is not None:
                 # Check if the CE request will fit in the KVCache

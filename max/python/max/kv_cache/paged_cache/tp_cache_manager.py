@@ -924,7 +924,7 @@ class _TPPagedKVCacheManager:
             )
         return kv_cache_inputs
 
-    def external_claim(self, request_id: RequestID) -> None:
+    def claim(self, request_id: RequestID) -> None:
         """Reserve a sequence ID for the given request ID."""
         if request_id in self._request_to_seq_id:
             raise ValueError(f"Request ID {request_id} is already claimed")

@@ -487,7 +487,7 @@ class MultimodalKVCacheManager:
         # As there is only one replica, we always return 0
         return 0
 
-    def external_claim(
+    def claim(
         self, request_id: RequestID, replica_idx: int | None = None
     ) -> None:
         """Reserves sequence IDs for the given request ID in both modalities' KV caches.
@@ -500,8 +500,8 @@ class MultimodalKVCacheManager:
             raise ValueError(
                 "replica_idx must be 0 for MultimodalKVCacheManager"
             )
-        self.text_kv_manager.external_claim(request_id, replica_idx)
-        self.vision_kv_manager.external_claim(request_id, replica_idx)
+        self.text_kv_manager.claim(request_id, replica_idx)
+        self.vision_kv_manager.claim(request_id, replica_idx)
 
     def release(self, request_id: RequestID) -> None:
         """Marks the sequence complete for both modalities' KV caches.
