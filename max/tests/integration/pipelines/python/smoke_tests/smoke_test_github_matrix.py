@@ -38,6 +38,12 @@ MULTI_GPUS = {"2xH100"}
 #   2. Review the results, and the need for framework/GPU exclusions (if any)
 #   3. Add the model to the dictionary above, with the appropriate exclusions
 MODELS = {
+    "allenai/olmOCR-2-7B-1025-FP8": [
+        "max",  # Wait for 25.7
+        "sglang",
+        "multi",
+        "max-ci@MI355",  # TODO(GEX-2814)
+    ],
     # E2EOPT-571: DeepSeek v2 lite chat not working on MAX
     "deepseek-ai/deepseek-v2-lite-chat": ["max-ci", "max", "multi"],
     "google/gemma-3-12b-it": ["multi"],
@@ -47,7 +53,11 @@ MODELS = {
     "microsoft/phi-3.5-mini-instruct": ["multi"],
     "microsoft/phi-4": ["multi"],
     "mistralai/mistral-nemo-instruct-2407": ["multi"],
-    "opengvlab/internvl3-8b-instruct": ["sglang@B200", "multi"],
+    "opengvlab/internvl3-8b-instruct": [
+        "sglang@B200",
+        "multi",
+        "MI355",  # TODO(KERN-2196)
+    ],
     "opengvlab/internvl3_5-8b-instruct": [
         "multi",
         "sglang@B200",  # FA3 vision enc not supported on B200
@@ -55,7 +65,7 @@ MODELS = {
         "max",
     ],
     "qwen/qwen2.5-7b-instruct": ["multi"],
-    "qwen/qwen2.5-vl-7b-instruct": ["multi"],
+    "qwen/qwen2.5-vl-7b-instruct": ["multi", "MI355"],  # TODO(KERN-2196)
     "qwen/qwen3-8b": ["multi"],
     "redhatai/gemma-3-27b-it-fp8-dynamic": ["MI355"],
     "unsloth/gpt-oss-20b-bf16": [
