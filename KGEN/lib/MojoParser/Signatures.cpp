@@ -1115,6 +1115,9 @@ ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
 
   if (!p.consumeIf(Token::r_brace)) {
     do {
+      // Enable trailing commas
+      if (p.consumeIf(Token::r_brace))
+        return success();
       if (parseArgument())
         return failure();
     } while (p.consumeIf(Token::comma));
