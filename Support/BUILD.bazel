@@ -93,6 +93,7 @@ modular_cc_library(
         ":SymbolExport",
         "//Config",
         "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
     ],
@@ -105,7 +106,10 @@ modular_cc_library(
     deps = [
         ":Base",
         ":Compiler",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:BytecodeOpInterface",
         "@llvm-project//mlir:BytecodeWriter",
+        "@llvm-project//mlir:IR",
         "@xxhash",
     ],
 )
@@ -114,7 +118,10 @@ modular_cc_library(
     name = "Base64",
     srcs = ["lib/Base64.cpp"],
     hdrs = ["include/Support/Base64.h"],
-    deps = [":Base"],
+    deps = [
+        ":Base",
+        "@llvm-project//llvm:Support",
+    ],
 )
 
 modular_cc_library(
@@ -131,7 +138,11 @@ modular_cc_library(
     srcs = ["lib/BuildInfo.cpp"],
     hdrs = ["include/Support/BuildInfo.h"],
     local_defines = ASYNCRT_PROFILING_LOCAL_DEFINES,
-    deps = [":Base"],
+    deps = [
+        ":Base",
+        "//Config",
+        "@llvm-project//llvm:Support",
+    ],
 )
 
 modular_cc_library(
@@ -141,6 +152,9 @@ modular_cc_library(
     deps = [
         ":Base",
         ":Filesystem",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Support",
     ],
 )
 
@@ -152,6 +166,7 @@ modular_cc_library(
         ":ADT",
         ":Base",
         ":Filesystem",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -161,6 +176,7 @@ modular_cc_library(
     hdrs = ["include/Support/DeviceSpecs.h"],
     deps = [
         ":Base",
+        "@llvm-project//llvm:Support",
         "@llvm-project//llvm:TargetParser",
     ],
 )
@@ -169,7 +185,10 @@ modular_cc_library(
     name = "CPUCache",
     srcs = ["lib/CPUCache.cpp"],
     hdrs = ["include/Support/CPUCache.h"],
-    deps = [":Base"],
+    deps = [
+        ":Base",
+        "@llvm-project//llvm:Support",
+    ],
 )
 
 modular_cc_library(
@@ -194,6 +213,8 @@ modular_cc_library(
     deps = [
         ":Base",
         ":Filesystem",
+        "@llvm-project//llvm:Option",
+        "@llvm-project//llvm:Support",
         "@llvm-project//mlir:Support",
     ],
 )
@@ -219,6 +240,7 @@ modular_cc_library(
     deps = [
         ":Base",
         ":Globals",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -229,6 +251,7 @@ modular_cc_library(
     deps = [
         ":Base",
         ":Filesystem",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -239,7 +262,9 @@ modular_cc_library(
     deps = [
         ":Base",
         ":Configuration",
+        "//Config",
         "@crashpad//:client",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -258,6 +283,7 @@ modular_cc_library(
     deps = [
         ":Base",
         "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:Support",
     ],
 )
 
@@ -265,7 +291,10 @@ modular_cc_library(
     name = "IPInt",
     srcs = ["lib/IPInt.cpp"],
     hdrs = ["include/Support/IPInt.h"],
-    deps = [":Base"],
+    deps = [
+        ":Base",
+        "@llvm-project//llvm:Support",
+    ],
 )
 
 modular_cc_library(
@@ -275,6 +304,7 @@ modular_cc_library(
     deps = [
         ":Base",
         ":IPInt",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -282,14 +312,20 @@ modular_cc_library(
     name = "Stats",
     srcs = ["lib/Stats.cpp"],
     hdrs = ["include/Support/Stats.h"],
-    deps = [":Base"],
+    deps = [
+        ":Base",
+        "@llvm-project//llvm:Support",
+    ],
 )
 
 modular_cc_library(
     name = "URI",
     srcs = ["lib/URI.cpp"],
     hdrs = ["include/Support/URI.h"],
-    deps = [":Base"],
+    deps = [
+        ":Base",
+        "@llvm-project//llvm:Support",
+    ],
 )
 
 modular_cc_library(
@@ -315,6 +351,8 @@ modular_cc_library(
     ]),
     deps = [
         ":Base",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
     ],
 )
 
@@ -322,7 +360,10 @@ modular_cc_library(
     name = "Threading",
     srcs = glob(["lib/Threading/*.cpp"]),
     hdrs = glob(["include/Support/Threading/*.h"]),
-    deps = [":Base"],
+    deps = [
+        ":Base",
+        "@llvm-project//llvm:Support",
+    ],
 )
 
 modular_cc_library(
@@ -335,6 +376,8 @@ modular_cc_library(
         ":Base",
         ":Globals",
         ":MArchTargetMinimal",
+        "//Config",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -365,6 +408,10 @@ modular_cc_library(
         "@llvm-project//llvm:AllTargetsCodeGens",
         "@llvm-project//llvm:AllTargetsDisassemblers",
         "@llvm-project//llvm:AllTargetsMCAs",
+        "@llvm-project//llvm:MC",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//llvm:Target",
+        "@llvm-project//llvm:TargetParser",
     ],
 )
 
@@ -390,6 +437,8 @@ modular_cc_library(
         "@llvm-project//llvm:AllTargetsCodeGens",
         "@llvm-project//llvm:AllTargetsDisassemblers",
         "@llvm-project//llvm:AllTargetsMCAs",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//llvm:TargetParser",
     ],
 )
 
@@ -402,10 +451,15 @@ modular_cc_library(
         ":ADT",
         ":Base",
         ":Buffer",
+        ":Filesystem",
         ":ML",
         ":Profiling",
+        "@llvm-project//llvm:Support",
         "@llvm-project//mlir:BytecodeReader",
         "@llvm-project//mlir:BytecodeWriter",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:Support",
     ],
 )
 
@@ -444,6 +498,10 @@ modular_cc_library(
         ":Filesystem",
         ":HTTP",
         ":MArchTarget",
+        ":MArchTargetMinimal",
+        ":Threading",
+        "//Config",
+        "@llvm-project//llvm:Support",
         "@opentelemetry-cpp//api",
         "@opentelemetry-cpp//exporters/ostream:ostream_log_record_exporter",
         "@opentelemetry-cpp//exporters/ostream:ostream_metric_exporter",
@@ -571,14 +629,21 @@ modular_cc_library(
         ":Compiler",
         ":Context",
         ":DeviceSpecs",
+        ":MArchTargetMinimal",
         ":MAttrInterfaces",
         ":MAttrs",
         ":MDialectByteCode",
         ":MDialectIncGen",
         ":ML",
         ":MTypeInterfaces",
+        "//Config",
         "@llvm-project//llvm:MC",
+        "@llvm-project//llvm:Support",
         "@llvm-project//llvm:Target",
+        "@llvm-project//llvm:TargetParser",
+        "@llvm-project//mlir:BytecodeOpInterface",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Support",
     ],
 )
 
@@ -653,7 +718,10 @@ modular_cc_library(
         ":DebugInfoTypeInterfaces",
         ":MDialect",
         "@llvm-project//llvm:BinaryFormat",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:BytecodeOpInterface",
         "@llvm-project//mlir:FunctionInterfaces",
+        "@llvm-project//mlir:IR",
     ],
 )
 
@@ -765,7 +833,11 @@ modular_cc_library(
         ":Base",
         ":DebugInfoDialect",
         ":DebugInfoTransformPasses",
+        "@llvm-project//llvm:BinaryFormat",
+        "@llvm-project//mlir:FunctionInterfaces",
         "@llvm-project//mlir:Parser",
+        "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
     ],
 )
@@ -781,9 +853,14 @@ modular_cc_library(
         ":DebugInfoDialect",
         ":DebugInfoToLLVMIncGen",
         ":DebugInfoTransforms",
+        ":MDialect",
+        "@llvm-project//llvm:BinaryFormat",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
         "@llvm-project//mlir:LLVMCommonConversion",
         "@llvm-project//mlir:LLVMDialect",
         "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:Support",
     ],
 )
 

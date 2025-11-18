@@ -6,10 +6,16 @@ modular_cc_binary(
     visibility = ["//visibility:public"],
     deps = [
         "//Support:Base",
+        "//Support:DebugInfoDialect",
         "//Support:DebugInfoToLLVM",
+        "//Support:DebugInfoTransforms",
         "//Support:Globals",
         "//Support:MDialect",
+        "@llvm-project//mlir:FuncDialect",
         "@llvm-project//mlir:IndexDialect",
+        "@llvm-project//mlir:LLVMDialect",
         "@llvm-project//mlir:MlirOptLib",
+        "@llvm-project//mlir:Transforms",
+        "@llvm-project//mlir:UBDialect",
     ],
 )
