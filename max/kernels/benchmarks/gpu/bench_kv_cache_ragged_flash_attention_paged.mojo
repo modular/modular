@@ -226,58 +226,83 @@ def execute_kv_cache_ragged_flash_attention[
     k_cache_device = kv_collection_device.get_key_cache(layer_idx)
     v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
-    @parameter
-    @__copy_capture(
-        q_device,
-        k_cache_device,
-        v_cache_device,
-        output_device_tensor,
-        input_row_offsets_device,
-    )
-    @always_inline
-    fn bench_func(mut b: Bencher):
+    if run_benchmark:
+
         @parameter
+        @__copy_capture(
+            q_device,
+            k_cache_device,
+            v_cache_device,
+            output_device_tensor,
+            input_row_offsets_device,
+        )
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
-            flash_attention[ragged=True](
-                # TODO: move to_layout_tensor here once unified closures are supported.
-                output_device_tensor.as_any_origin(),
-                q_device.to_layout_tensor(),
-                k_cache_device,
-                v_cache_device,
-                CausalMask(),
-                IdentityScoreMod(),
-                ManagedTensorSlice[
-                    io_spec=IOUnknown,
-                    static_spec = StaticTensorSpec[
-                        DType.uint32, 1
-                    ].create_unknown(),
-                ](input_row_offsets_device.tensor),
-                rsqrt(Float32(head_dim)),
-                ctx,
-            )
+        fn bench_func(mut b: Bencher):
+            @parameter
+            @always_inline
+            fn kernel_launch(ctx: DeviceContext) raises:
+                flash_attention[ragged=True](
+                    # TODO: move to_layout_tensor here once unified closures are supported.
+                    output_device_tensor.as_any_origin(),
+                    q_device.to_layout_tensor(),
+                    k_cache_device,
+                    v_cache_device,
+                    CausalMask(),
+                    IdentityScoreMod(),
+                    ManagedTensorSlice[
+                        io_spec=IOUnknown,
+                        static_spec = StaticTensorSpec[
+                            DType.uint32, 1
+                        ].create_unknown(),
+                    ](input_row_offsets_device.tensor),
+                    rsqrt(Float32(head_dim)),
+                    ctx,
+                )
 
-        b.iter_custom[kernel_launch](ctx)
+            b.iter_custom[kernel_launch](ctx)
 
-    flop_count = flops(
-        batch_size,
-        num_q_heads,
-        seq_len,
-        cache_len + seq_len,
-        head_dim,
-    )
-    m.bench_function[bench_func](
-        BenchId(
-            _get_run_name[dtype, num_q_heads, num_kv_heads, head_dim](
-                batch_size,
-                seq_len,
-                use_random_seq_lengths,
-                cache_len,
-                use_random_cache_lengths,
-            )
-        ),
-        [ThroughputMeasure(BenchMetric.flops, flop_count)],
-    )
+        flop_count = flops(
+            batch_size,
+            num_q_heads,
+            seq_len,
+            cache_len + seq_len,
+            head_dim,
+        )
+        m.bench_function[bench_func](
+            BenchId(
+                _get_run_name[dtype, num_q_heads, num_kv_heads, head_dim](
+                    batch_size,
+                    seq_len,
+                    use_random_seq_lengths,
+                    cache_len,
+                    use_random_cache_lengths,
+                )
+            ),
+            [ThroughputMeasure(BenchMetric.flops, flop_count)],
+        )
+    else:
+        # `False` is useful for profiling with NCU.
+        # We don't want to run the benchmark, as this makes the profiling
+        # take a very long time and bloats the prof full of extra runs that
+        # we don't look at.
+        flash_attention[ragged=True](
+            # TODO: move to_layout_tensor here once unified closures are supported.
+            output_device_tensor.as_any_origin(),
+            q_device.to_layout_tensor(),
+            k_cache_device,
+            v_cache_device,
+            CausalMask(),
+            IdentityScoreMod(),
+            ManagedTensorSlice[
+                io_spec=IOUnknown,
+                static_spec = StaticTensorSpec[
+                    DType.uint32, 1
+                ].create_unknown(),
+            ](input_row_offsets_device.tensor),
+            rsqrt(Float32(head_dim)),
+            ctx,
+        )
+
     _ = kv_block_paged_device^
     _ = output_device^
     _ = q_device^
