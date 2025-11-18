@@ -1518,20 +1518,18 @@ fn mogg_async_pack_borrow(
     external_call["MGP_RT_BufferBorrow", NoneType](borrower, borrowee)
 
 
-@register_internal("mogg.async.pack.untracked")
+@register_internal("mogg.async.pack.borrow.v2")
 @no_inline
-fn mogg_async_pack_untracked(
+fn mogg_async_pack_borrow_v2(
     borrower: AnyAsyncValueRefPtr,
     buffer: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    mem: TensorBufferRefPtr,
 ):
     """
-    Borrows an async value. This differs from `mogg.async.pack.borrow` in that
-    it does not actually borrow anything. Instead, it assumes the input data is
-    managed externally. This is used for constants which must stay alive across
-    iterations and destroyed at the very end only.
+    Borrows an async value using the memory storage handle pointed to by mem. Uses the input data from the buffer to describe the borrowed async value.
     """
-    external_call["MGP_RT_BufferUntracked", NoneType](
-        borrower, buffer.data, len(buffer)
+    external_call["MGP_RT_BufferBorrowV2", NoneType](
+        borrower, buffer.data, len(buffer), mem
     )
 
 
