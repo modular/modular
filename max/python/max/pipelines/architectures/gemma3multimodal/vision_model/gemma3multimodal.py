@@ -324,6 +324,7 @@ class Gemma3VisionModel(Module):
     def __init__(self, config: Gemma3ForConditionalGenerationConfig) -> None:
         super().__init__()
         self.config = config
+        self.devices = config.devices
         vision_config = config.vision_config
 
         # Vision embeddings
@@ -345,19 +346,54 @@ class Gemma3VisionModel(Module):
             device=config.devices,
             dtype=config.dtype,
         )
+        self.post_layernorm.weight.sharding_strategy = ShardingStrategy.replicate(
+            len(config.devices)
+        )
+        if self.post_layernorm.bias is not None:
+            self.post_layernorm.bias.sharding_strategy = ShardingStrategy.replicate(
+                len(config.devices)
+            )
+
+        # Shard post_layernorm across devices
+        post_layernorm_weight_shards = self.post_layernorm.weight.shard(
+            config.devices
+        )
+        post_layernorm_bias_shards = (
+            self.post_layernorm.bias.shard(config.devices)
+            if self.post_layernorm.bias is not None
+            else [None] * len(config.devices)
+        )
+
+        self.post_layernorm_list = []
+        for device, weight_shard, bias_shard in zip(
+            config.devices,
+            post_layernorm_weight_shards,
+            post_layernorm_bias_shards,
+            strict=True,
+        ):
+            ln = LayerNorm(
+                vision_config.hidden_size,
+                eps=vision_config.layer_norm_eps,
+                device=device,
+                dtype=config.dtype,
+            )
+            ln.weight = weight_shard
+            if bias_shard is not None:
+                ln.bias = bias_shard
+            self.post_layernorm_list.append(ln)
 
         # Multimodal projector to bridge vision and text spaces
-        self.projector = Gemma3MultiModalProjector(config)
+        self.projector = Gemma3MultiModalProjector(config, device=config.devices[0])
+        self.projector.sharding_strategy = ShardingStrategy.replicate(
+            len(config.devices)
+        )
+        self.projector_list = self.projector.shard(config.devices)
 
     def __call__(
         self,
         pixel_values: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> Sequence[TensorValue]:
-        # For vision processing, use first device (replicated approach)
-        # Get vision embeddings - use first embedding instance
-        stuff = zip(self.embeddings_list, pixel_values)
-        logger.info(f"zipped: {stuff}") # blah
         # hidden_states = self.embeddings_list[0](pixel_values[0])
         hidden_states = [
             embed(pixels)
@@ -367,13 +403,29 @@ class Gemma3VisionModel(Module):
         ]
 
         # Pass through encoder layers (single tensor path)
+        # TODO with multidevice this should return a list
         hidden_states = self.encoder(hidden_states, signal_buffers)
 
         # Apply post-encoder layer norm
-        hidden_states = self.post_layernorm(hidden_states)
+        if isinstance(hidden_states, list):
+            hidden_states = [
+                layer(states)
+                for layer, states in zip(
+                    self.post_layernorm_list, hidden_states, strict=True
+                )
+            ]
+        else:
+            hidden_states = self.post_layernorm_list[0](hidden_states)
 
         # Project to language model hidden size
-        image_embeddings = self.projector(hidden_states)
+        if isinstance(hidden_states, list):
+            image_embeddings_list = [
+                projector(states)
+                for projector, states in zip(
+                    self.projector_list, hidden_states, strict=True
+                )
+            ]
+        else:
+            image_embeddings_list = [self.projector_list[0](hidden_states)]
 
-        # Replicate to all devices for language model consumption
-        return [image_embeddings for _ in range(len(self.config.devices))]
+        return image_embeddings_list

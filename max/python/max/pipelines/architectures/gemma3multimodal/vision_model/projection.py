@@ -11,10 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
+from typing import Iterable
 
 from max.driver import Tensor
 from max.experimental.functional import matmul
 from max.graph import (
+    DeviceRef,
+    ShardingStrategy,
     TensorValue,
     Weight,
     ops,
@@ -24,17 +27,23 @@ from max.nn import (
     Linear,
     Module,
 )
+from max.nn.layer import Shardable
 from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 
 
 # ✅ working, based on HF and MLX-VLM
-class Gemma3MultiModalProjector(Module):
-    def __init__(self, config: Gemma3ForConditionalGenerationConfig):
+class Gemma3MultiModalProjector(Module, Shardable):
+    def __init__(
+        self,
+        config: Gemma3ForConditionalGenerationConfig,
+        device: DeviceRef | None = None
+    ):
         super().__init__()
 
-        self.devices = config.devices
+        self.config = config
+        self.device = device if device is not None else config.devices[0]
 
         self.mm_input_projection_weight = Weight(
             "mm_input_projection_weight",
@@ -43,7 +52,7 @@ class Gemma3MultiModalProjector(Module):
                 config.vision_config.hidden_size,
                 config.text_config.hidden_size,
             ),
-            device=self.devices[0],
+            device=self.device,
         )
 
         self.mm_soft_emb_norm = Gemma3RMSNorm(
@@ -62,6 +71,39 @@ class Gemma3MultiModalProjector(Module):
         self.kernel_size = (
             self.patches_per_image // self.tokens_per_side
         )  # 64 / 16 = 4
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        return self.mm_input_projection_weight.sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        self.mm_input_projection_weight.sharding_strategy = strategy
+        self.mm_soft_emb_norm.weight.sharding_strategy = strategy
+
+    def shard(
+        self, devices: Iterable[DeviceRef]
+    ) -> list[Gemma3MultiModalProjector]:
+        assert self.sharding_strategy
+
+        projection_weight_shards = self.mm_input_projection_weight.shard(devices)
+        norm_weight_shards = self.mm_soft_emb_norm.weight.shard(devices)
+
+        shards = []
+        for device, proj_weight_shard, norm_weight_shard in zip(
+            devices,
+            projection_weight_shards,
+            norm_weight_shards,
+            strict=True,
+        ):
+            sharded = Gemma3MultiModalProjector(self.config, device)
+
+            sharded.mm_input_projection_weight = proj_weight_shard
+            sharded.mm_soft_emb_norm.weight = norm_weight_shard
+
+            shards.append(sharded)
+
+        return shards
 
     def __call__(self, vision_outputs: Tensor) -> TensorValue:
         batch_size, _, seq_length = (
@@ -112,26 +154,72 @@ class Gemma3MultiModalProjector(Module):
 
 # ✅ working, based on HF and MLX-VLM
 class Gemma3VisionMLP(Module):
-    def __init__(self, config: Gemma3ForConditionalGenerationConfig):
+    def __init__(
+        self,
+        config: Gemma3ForConditionalGenerationConfig,
+        hidden_size: int,
+        intermediate_size: int,
+        device: DeviceRef | None = None
+    ):
         super().__init__()
+        self.config = config
         self.hidden_size = config.vision_config.hidden_size
         self.intermediate_size = config.vision_config.intermediate_size
+        self.device = device if device is not None else config.devices[0]
 
         self.fc1 = Linear(
             self.hidden_size,
             self.intermediate_size,
             dtype=config.dtype,
-            device=config.devices[0],
-            has_bias=False,
+            device=self.device,
+            has_bias=True,
         )
 
         self.fc2 = Linear(
             self.intermediate_size,
             self.hidden_size,
             dtype=config.dtype,
-            device=config.devices[0],
-            has_bias=False,
+            device=self.device,
+            has_bias=True,
         )
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        return self.fc1.sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        self.fc1.sharding_strategy = strategy
+        self.fc2.sharding_strategy = strategy
+
+    def shard(
+        self, devices: Iterable[DeviceRef]
+    ) -> list[Gemma3VisionMLP]:
+        assert self.sharding_strategy
+
+        fc1_shards = self.fc1.shard(devices)
+        fc2_shards = self.fc2.shard(devices)
+
+        shards = []
+        for device, fc1_shard, fc2_shard in zip(
+            devices,
+            fc1_shards,
+            fc2_shards,
+            strict=True,
+        ):
+            sharded = Gemma3VisionMLP(
+                self.config,
+                int(self.fc1.weight.shape[1]),  # borrowed from internvl because hidden_size and intermediate_size in our config seem wrong...?
+                int(self.fc1.weight.shape[0]),  # borrowed from internvl
+                device
+            )
+
+            sharded.fc1 = fc1_shard
+            sharded.fc2 = fc2_shard
+
+            shards.append(sharded)
+
+        return shards
 
     def __call__(self, x: TensorValue):
         x = self.fc1(x)
