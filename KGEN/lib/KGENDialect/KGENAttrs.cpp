@@ -184,10 +184,11 @@ LogicalResult VariadicType::printValue(AsmPrinter &p, TypedAttr value) const {
 }
 
 //===----------------------------------------------------------------------===//
-// VariadicMapAttr
+// VariadicMap/ZipAttr
 //===----------------------------------------------------------------------===//
 
 bool VariadicMapAttr::isConstant() const { return false; }
+bool VariadicZipAttr::isConstant() const { return false; }
 
 LogicalResult
 VariadicMapAttr::verify(function_ref<InFlightDiagnostic()> emitError,
@@ -221,6 +222,87 @@ VariadicMapAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                        << toApply.getBody();
 
   return success();
+}
+
+FailureOr<TypedAttr>
+VariadicMapAttr::evaluateWith(ParameterEvaluationContext *evaluationContext) {
+  auto va = sugarDynCast<VariadicAttr>(getVariadic());
+  auto gen = sugarDynCast<GeneratorAttr>(getGenerator());
+
+  if (!va || !gen)
+    return failure();
+
+  // We have a concrete value for both the generator/variadic, then fold them.
+  unsigned eltCnt = va.getValues().size();
+  SmallVector<TypedAttr> mappedVals(eltCnt, nullptr);
+  for (unsigned i = 0; i < eltCnt; i++) {
+    IntegerAttr vaIdx = IntegerAttr::get(IndexType::get(va.getContext()), i);
+    GeneratorAttr spGen =
+        gen.getSpecializedGenerator({va, vaIdx}, evaluationContext);
+    // This should never happen, we should have verified VariadicMapAttr.
+    assert(spGen && spGen.isFullyBound() && "invalid form of variadic map");
+    auto valueInst = spGen.getInstantiatedValue();
+    mappedVals[i] = valueInst;
+  }
+
+  return {VariadicAttr::get(mappedVals, getType())};
+}
+
+LogicalResult
+VariadicZipAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                        VariadicType type, TypedAttr variadics) {
+  if (variadics.getType() != type)
+    emitError() << "expected same input/output type, input type: " << type
+                << ", output type: " << variadics.getType();
+  if (!isa<VariadicType>(type.getElementType()))
+    emitError() << "expected to zip a variadic of variadic values";
+
+  return success();
+}
+
+TypedAttr VariadicZipAttr::get(VariadicType type, TypedAttr variadics) {
+  auto va = sugarDynCast<VariadicAttr>(variadics);
+  if (!va)
+    return Base::get(type.getContext(), type, variadics);
+
+  size_t zipLen = std::numeric_limits<size_t>::max();
+  bool fullyResolved = true;
+  SmallVector<VariadicAttr> elts =
+      llvm::map_to_vector(va.getValues(), [&](TypedAttr elt) {
+        auto vaElt = sugarDynCast<VariadicAttr>(elt);
+        zipLen = vaElt ? std::min(zipLen, vaElt.getValues().size()) : 0;
+        fullyResolved = fullyResolved && vaElt;
+        return vaElt;
+      });
+
+  // Note that zipLen == 0 does not necessarily means !fullyResolved.
+  if (!fullyResolved)
+    return Base::get(type.getContext(), type, variadics);
+
+  // Fold the attribute aggressively whenever possible upon creation.
+  auto eltVATps = cast<VariadicType>(type.getElementType());
+
+  // return <[[]]>
+  if (zipLen == 0)
+    return VariadicAttr::get({VariadicAttr::get({}, eltVATps)}, type);
+
+  // Do zipping.
+  SmallVector<TypedAttr> zippedElts(zipLen, nullptr);
+  for (unsigned i = 0; i < zipLen; i++) {
+    SmallVector<TypedAttr> toZip = llvm::map_to_vector(
+        elts, [i](VariadicAttr elt) { return elt.getValues()[i]; });
+    zippedElts[i] = VariadicAttr::get(toZip, eltVATps);
+  }
+
+  return VariadicAttr::get(zippedElts, type);
+}
+
+TypedAttr VariadicZipAttr::getChecked(
+    function_ref<::mlir::InFlightDiagnostic()> emitError, VariadicType type,
+    TypedAttr variadics) {
+  if (failed(verify(emitError, type, variadics)))
+    return {};
+  return get(type, variadics);
 }
 
 //===----------------------------------------------------------------------===//

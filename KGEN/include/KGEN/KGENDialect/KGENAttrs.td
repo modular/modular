@@ -132,6 +132,70 @@ def KGEN_VariadicAttr : KGEN_ExprAttr<"Variadic", "variadic", [
   let genVerifyDecl = 1;
 }
 
+def KGEN_VariadicMapAttr : KGEN_ExprAttr<"VariadicMap", "variadic.map",
+  [ContextuallyEvaluatedAttrInterface]> {
+  let summary = "Map a variadic of (type) values to a new variadic of (type) values";
+  let description = [{
+    The `#kgen.variadic.map` attribute is used to convert from a variadic of
+    (type) value to a variadic of (type) value by repeatedly applying the
+    provided generator on each element of the variadic.
+  }];
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "VariadicType">:$type,
+    "TypedAttr":$variadic,
+    "TypedAttr":$generator
+  );
+
+  let extraClassDeclaration = [{
+    // Evaluates the variadic with the provided evaluation context.
+    FailureOr<TypedAttr> evaluateWith(ParameterEvaluationContext *ctx);
+  }];
+
+  let assemblyFormat = "`<` $variadic `,` $generator `>`";
+  let genVerifyDecl = 1;
+}
+
+def KGEN_VariadicZipAttr : KGEN_ExprAttr<"VariadicZip", "variadic.zip"> {
+  let summary = "Zip a variadic of variadics.";
+  let description = [{
+    The `#kgen.variadic.zip` attribute is used to zip a variadic of
+    variadic (type) value.
+
+    Example:
+    ```mlir
+    #kgen.variadic.zip<[[Int, Int], [Float, Float]]> : !variadic<!variadic<!AnyType>>
+    // ->
+    #kgen.variadic<[[Int, Float], [Int, Float]]> : !variadic<!variadic<!AnyType>>
+    ```
+
+    At the moment, when the provided variadics are of different lengths, we zip
+    till the shortest variadic are consumed. In the future, we might want to
+    extend the attribute to accept an "default" value for "zip_longest".
+  }];
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "VariadicType">:$type,
+    "TypedAttr":$variadics
+  );
+
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an variadic.zip.
+    AttrBuilderWithInferredContext<(ins
+       "VariadicType":$type, "TypedAttr":$inputTypeValue), "", "TypedAttr">,
+
+    // Verbose form with MLIRContext, needed for ODS constructors.
+    AttrBuilder<(ins "VariadicType":$type, "TypedAttr":$inputTypeValue), [{
+      return get(type, inputTypeValue);
+    }], "TypedAttr">,
+  ];
+
+  let assemblyFormat = "`<` $variadics `>`";
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+}
+
 //===----------------------------------------------------------------------===//
 // UnknownAttr
 //===----------------------------------------------------------------------===//
@@ -1229,25 +1293,6 @@ def KGEN_VariantAttr : KGENAttr<"Variant", "variant", [
     }]>
   ];
 
-  let genVerifyDecl = 1;
-}
-
-def KGEN_VariadicMapAttr : KGEN_ExprAttr<"VariadicMap", "variadic.map",
-  [ContextuallyEvaluatedAttrInterface]> {
-  let summary = "Map a variadic of (type) values to a new variadic of (type) values";
-  let description = [{
-    The `#kgen.variadic.map` attribute is used to convert from a variadic of
-    (type) value to a variadic of (type) value by repeatedly applying the
-    provided generator on each element of the variadic.
-  }];
-
-  let parameters = (ins
-    AttributeSelfTypeParameter<"", "VariadicType">:$type,
-    "TypedAttr":$variadic,
-    "TypedAttr":$generator
-  );
-
-  let assemblyFormat = "`<` $variadic `,` $generator `>`";
   let genVerifyDecl = 1;
 }
 

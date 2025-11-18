@@ -492,10 +492,6 @@ std::string printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
                                        ArrayRef<TypedAttr> values,
                                        bool printAll);
 
-FailureOr<TypedAttr>
-evaluateVariadicMap(VariadicMapAttr variadicMapAttr,
-                    ParameterEvaluationContext *evaluationContext);
-
 } // namespace M::KGEN
 
 #endif // KGEN_KGENDIALECT_KGENUTILS_H
