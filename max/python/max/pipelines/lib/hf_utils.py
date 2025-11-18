@@ -37,7 +37,6 @@ from max.graph.weights import WeightsFormat
 from requests.exceptions import ConnectionError as RequestsConnectionError
 from tqdm.contrib.concurrent import thread_map
 from tqdm.std import TqdmDefaultWriteLock
-from transformers import AutoConfig
 
 from .config_enums import RepoType, SupportedEncoding
 
@@ -418,11 +417,6 @@ class HuggingFaceRepo:
                 f.replace(f"{self.repo_id}/", "") for f in gguf_paths
             ]
 
-        if pytorch_paths:
-            weight_files[WeightsFormat.pytorch] = [
-                f.replace(f"{self.repo_id}/", "") for f in pytorch_paths
-            ]
-
         return weight_files
 
     def size_of(self, filename: str) -> int | None:
@@ -514,34 +508,6 @@ class HuggingFaceRepo:
             else:
                 raise ValueError(f"Unsupported repo_type: {self.repo_type}")
 
-        # Get torch dtype for pytorch files.
-        if WeightsFormat.pytorch in self.formats_available:
-            # TODO: We shouldn't have to make another AutoConfig call here.
-            cfg = AutoConfig.from_pretrained(
-                self.repo_id,
-                trust_remote_code=self.trust_remote_code,
-                revision=self.revision,
-            )
-
-            if torch_dtype := getattr(cfg, "torch_dtype", None):
-                # This is a pt file, we require pytorch to open it
-                try:
-                    import torch  # type: ignore
-
-                    if torch_dtype == torch.float32:
-                        supported_encodings.add(SupportedEncoding.float32)
-                    elif torch_dtype == torch.bfloat16:
-                        supported_encodings.add(SupportedEncoding.bfloat16)
-                except ImportError:
-                    logger.warning(
-                        "Tried loading a PyTorch weights file, but PyTorch isn't installed. "
-                        "Not adding PyTorch supported encodings."
-                    )
-            else:
-                logger.warning(
-                    "torch_dtype not available, can't infer encoding from config.json"
-                )
-
         return list(supported_encodings)
 
     def _get_gguf_files_for_encoding(
@@ -574,32 +540,11 @@ class HuggingFaceRepo:
 
         return {}
 
-    def _get_pytorch_files_for_encoding(
-        self, encoding: SupportedEncoding
-    ) -> dict[WeightsFormat, list[Path]]:
-        if (
-            WeightsFormat.pytorch in self.weight_files
-            and encoding == self.supported_encodings[0]
-        ):
-            return {
-                WeightsFormat.pytorch: [
-                    Path(f) for f in self.weight_files[WeightsFormat.pytorch]
-                ]
-            }
-
-        return {}
-
     def files_for_encoding(
         self,
         encoding: SupportedEncoding,
         weights_format: WeightsFormat | None = None,
     ) -> dict[WeightsFormat, list[Path]]:
-        if weights_format == WeightsFormat.pytorch:
-            logger.warning(
-                "cannot infer encoding from .bin files, returning all bin files"
-            )
-            return self._get_pytorch_files_for_encoding(encoding)
-
         if weights_format is WeightsFormat.gguf:
             return self._get_gguf_files_for_encoding(encoding)
         elif weights_format == WeightsFormat.safetensors:
@@ -609,9 +554,6 @@ class HuggingFaceRepo:
 
         safetensor_files = self._get_safetensor_files_for_encoding(encoding)
         gguf_files.update(safetensor_files)
-
-        pytorch_files = self._get_pytorch_files_for_encoding(encoding)
-        gguf_files.update(pytorch_files)
 
         return gguf_files
 

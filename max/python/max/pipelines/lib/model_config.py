@@ -557,11 +557,7 @@ class MAXModelConfig(MAXModelConfigBase):
             "quantization_encoding must be set (given by user)."
         )
 
-        if (
-            self.weight_path
-            # Cannot validate quantization_encoding for pytorch.
-            and weights_format != WeightsFormat.pytorch
-        ):
+        if self.weight_path:
             # Get the encoding of the first weight path file.
             if os.path.exists(self.weight_path[0]):
                 file_encoding = SupportedEncoding.parse_from_file_name(
@@ -632,7 +628,7 @@ class MAXModelConfig(MAXModelConfigBase):
         )
 
         # If weight path is not None, infer the quantization_encoding from the weight_path.
-        if self.weight_path and weights_format != WeightsFormat.pytorch:
+        if self.weight_path:
             if os.path.exists(self.weight_path[0]):
                 # Not currently supported. Infer encoding from local path.
                 if self.weight_path[0].suffix == ".safetensors":

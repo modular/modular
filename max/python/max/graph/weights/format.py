@@ -42,16 +42,6 @@ class WeightsFormat(str, Enum):
     and supports sharding across multiple files.
     """
 
-    pytorch = "pytorch"
-    """PyTorch checkpoint format for model weights.
-    
-    File extension: ``.bin`` | ``.pt`` | ``.pth``
-    
-    Standard PyTorch format using Python's pickle protocol. Widely
-    supported but requires caution as pickle files can execute arbitrary
-    code.
-    """
-
 
 def weights_format(weight_paths: list[Path]) -> WeightsFormat:
     """Detect the format of weight files based on their extensions.
@@ -91,7 +81,5 @@ def weights_format(weight_paths: list[Path]) -> WeightsFormat:
         weight_path.suffix == ".safetensors" for weight_path in weight_paths
     ):
         return WeightsFormat.safetensors
-    elif all(weight_path.suffix == ".bin" for weight_path in weight_paths):
-        return WeightsFormat.pytorch
     else:
         raise ValueError(f"weights type cannot be inferred from {weight_paths}")

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ._loader_wrappers import GGUFWeights, PytorchWeights
+from ._loader_wrappers import GGUFWeights
 from .format import WeightsFormat, weights_format
 from .load import load_weights
 from .load_safetensors import SafetensorWeights
@@ -19,7 +19,6 @@ from .weights import WeightData, Weights, WeightsAdapter
 
 __all__ = [
     "GGUFWeights",
-    "PytorchWeights",
     "SafetensorWeights",
     "WeightData",
     "Weights",
