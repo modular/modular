@@ -17,7 +17,7 @@ There are a few main tools in this module:
 - `Hashable` trait for types implementing `__hash__(self) -> UInt`
 - `hash[T: Hashable](hashable: T) -> Int` built-in function.
 - A `hash()` implementation for arbitrary byte strings,
-  `hash(data: UnsafePointer[UInt8], n: Int) -> Int`,
+  `hash(data: UnsafePointer[mut=False, UInt8], n: Int) -> Int`,
   is the workhorse function, which implements efficient hashing via SIMD
   vectors. See the documentation of this function for more details on the hash
   implementation.
@@ -25,7 +25,7 @@ There are a few main tools in this module:
     These are useful helpers to specialize for the general bytes implementation.
 """
 
-from memory import LegacyUnsafePointer as UnsafePointer, Span
+from memory import Span
 
 from .hasher import Hasher, default_hasher
 
@@ -95,12 +95,7 @@ fn hash[
 
 fn hash[
     HasherType: Hasher = default_hasher
-](
-    bytes: UnsafePointer[
-        UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
-    ],
-    n: Int,
-) -> UInt64:
+](bytes: UnsafePointer[mut=False, UInt8], n: Int) -> UInt64:
     """Hash a sequence of bytes using the specified hasher.
 
     Parameters:

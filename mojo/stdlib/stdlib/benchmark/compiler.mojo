@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys import size_of
 from sys._assembly import inlined_assembly
 
@@ -73,13 +72,10 @@ fn keep[dtype: DType, simd_width: Int](val: SIMD[dtype, simd_width]):
         return
 
     var tmp = val
-    var tmp_ptr = UnsafePointer(to=tmp).as_immutable().as_any_origin()
+    var tmp_ptr = UnsafePointer(to=tmp).as_immutable()
 
     @parameter
-    if (
-        size_of[dtype]()
-        <= size_of[UnsafePointer[SIMD[dtype, simd_width]]._mlir_type]()
-    ):
+    if size_of[dtype]() <= size_of[type_of(tmp_ptr)._mlir_type]():
         inlined_assembly[
             "",
             NoneType,
@@ -96,7 +92,7 @@ fn keep[dtype: DType, simd_width: Int](val: SIMD[dtype, simd_width]):
 
 
 @always_inline
-fn keep[dtype: AnyType](val: UnsafePointer[dtype]):
+fn keep[dtype: AnyType](val: UnsafePointer[mut=False, dtype]):
     """Provides a hint to the compiler to not optimize the variable use away.
 
     This is useful in benchmarking to avoid the compiler not deleting the

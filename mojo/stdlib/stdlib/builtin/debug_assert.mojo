@@ -160,7 +160,8 @@ fn debug_assert[
 
         message.nul_terminate()
 
-        _debug_assert_msg(message.data, message.pos, __call_location())
+        var span = message.as_span()
+        _debug_assert_msg(span.unsafe_ptr(), len(span), __call_location())
 
 
 @always_inline
@@ -268,7 +269,8 @@ fn debug_assert[
 
         message.nul_terminate()
 
-        _debug_assert_msg(message.data, message.pos, __call_location())
+        var span = message.as_span()
+        _debug_assert_msg(span.unsafe_ptr(), len(span), __call_location())
 
     elif _use_compiler_assume:
         assume(cond)

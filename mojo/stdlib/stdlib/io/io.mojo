@@ -404,16 +404,14 @@ fn print[
             end.write_to(buffer)
             buffer.nul_terminate()
 
+            var span = buffer.as_span()
+
             @parameter
             if is_nvidia_gpu():
-                _printf["%s"](buffer.data)
+                _printf["%s"](span.unsafe_ptr())
             elif is_amd_gpu():
                 var msg = printf_begin()
-                _ = printf_append_string_n(
-                    msg,
-                    Span(ptr=buffer.data, length=buffer.pos),
-                    is_last=True,
-                )
+                _ = printf_append_string_n(msg, span, is_last=True)
             else:
                 return CompilationTarget.unsupported_target_error[
                     operation="print"

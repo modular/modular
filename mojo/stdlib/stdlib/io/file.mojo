@@ -37,22 +37,18 @@ from sys import external_call, size_of
 from sys._libc_errno import ErrNo, get_errno
 from sys.ffi import c_ssize_t
 
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-    Span,
-)
+from memory import Span
 
 
 # This type is used to pass into CompilerRT functions.  It is an owning
 # pointer+length that is tightly coupled to the llvm::StringRef memory layout.
 @register_passable
 struct _OwnedStringRef(Boolable, Defaultable):
-    var data: UnsafePointer[UInt8]
+    var data: UnsafePointer[UInt8, MutOrigin.external]
     var length: Int
 
     fn __init__(out self):
-        self.data = UnsafePointer[UInt8]()
+        self.data = {}
         self.length = 0
 
     fn __del__(deinit self):
@@ -61,13 +57,11 @@ struct _OwnedStringRef(Boolable, Defaultable):
 
     fn consume_as_error(var self) -> Error:
         result = Error()
-        result.data = self.data.as_immutable().unsafe_origin_cast[
-            ImmutOrigin.external
-        ]()
+        result.data = self.data
         result.loaded_length = -self.length
 
         # Don't free self.data in our dtor.
-        self.data = UnsafePointer[UInt8]()
+        self.data = {}
         return result
 
     fn __bool__(self) -> Bool:
@@ -77,12 +71,12 @@ struct _OwnedStringRef(Boolable, Defaultable):
 struct FileHandle(Defaultable, Movable, Writer):
     """File handle to an opened file."""
 
-    var handle: OpaquePointer
+    var handle: OpaquePointer[MutOrigin.external]
     """The underlying pointer to the file handle."""
 
     fn __init__(out self):
         """Default constructor."""
-        self.handle = OpaquePointer()
+        self.handle = {}
 
     fn __init__(out self, path: StringSlice, mode: StringSlice) raises:
         """Construct the FileHandle using the file path and mode.
@@ -103,11 +97,11 @@ struct FileHandle(Defaultable, Movable, Writer):
             )
         var err_msg = _OwnedStringRef()
         var handle = external_call[
-            "KGEN_CompilerRT_IO_FileOpen", OpaquePointer
+            "KGEN_CompilerRT_IO_FileOpen", type_of(self.handle)
         ](path, mode, Pointer(to=err_msg))
 
         if err_msg:
-            self.handle = OpaquePointer()
+            self.handle = {}
             raise err_msg^.consume_as_error()
 
         self.handle = handle
@@ -136,7 +130,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         if err_msg:
             raise err_msg^.consume_as_error()
 
-        self.handle = OpaquePointer()
+        self.handle = {}
 
     fn read(self, size: Int = -1) raises -> String:
         """Reads data from a file and sets the file handle seek position. If
@@ -225,24 +219,22 @@ struct FileHandle(Defaultable, Movable, Writer):
         var file = open(file_name, "r")
 
         # Allocate and load 8 elements
-        var ptr = UnsafePointer[Float32].alloc(8)
         var buffer = InlineArray[Float32, size=8](fill=0)
         var bytes = file.read(buffer)
         print("bytes read", bytes)
 
-        var first_element = ptr[0]
+        var first_element = buffer[0]
         print(first_element)
 
         # Skip 2 elements
         _ = file.seek(2 * size_of[DType.float32](), os.SEEK_CUR)
 
         # Allocate and load 8 more elements from file handle seek position
-        var ptr2 = UnsafePointer[Float32].alloc(8)
         var buffer2 = InlineArray[Float32, size=8](fill=0)
         var bytes2 = file.read(buffer2)
 
-        var eleventh_element = ptr2[0]
-        var twelvth_element = ptr2[1]
+        var eleventh_element = buffer2[0]
+        var twelvth_element = buffer2[1]
         print(eleventh_element, twelvth_element)
         ```
         """
@@ -448,17 +440,12 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         buffer.flush()
 
-    fn _write[
-        address_space: AddressSpace
-    ](
+    fn _write(
         self,
-        ptr: UnsafePointer[UInt8, address_space=address_space, mut=False, **_],
+        ptr: UnsafePointer[mut=False, UInt8, address_space=_],
         len: Int,
     ) raises:
         """Write the data to the file.
-
-        Params:
-          address_space: The address space of the pointer.
 
         Args:
           ptr: The pointer to the data to write.
