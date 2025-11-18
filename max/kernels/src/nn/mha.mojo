@@ -535,7 +535,7 @@ fn flash_attention_dispatch[
                     constrained[is_sm100]()
 
                     @parameter
-                    if depth == 256 or not env_get_bool["ENABLE_FA4", False]():
+                    if depth == 256 or not env_get_bool["ENABLE_FA4", True]():
                         mha_sm100_1q_dispatch[
                             config=config,
                             group = Int(group),
