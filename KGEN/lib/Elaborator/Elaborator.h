@@ -14,6 +14,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "Support/Compiler/Error.h"
 #include "Support/Compiler/ErrorTree.h"
 #include "Support/Threading/Shared.h"
 #include "Support/Threading/ThreadLocalCache.h"
@@ -199,7 +200,8 @@ public:
   /// fixup that needs to happen to produce the output IR.
   LogicalResult run(ModuleOp theModule,
                     ArrayRef<std::pair<GeneratorOp, ParameterExprArrayAttr>>
-                        primaryGenerators);
+                        primaryGenerators,
+                    mlir::SymbolTableAnalysis &analysis);
 
 private:
   //===--------------------------------------------------------------------===//
@@ -342,6 +344,10 @@ private:
   bool diagnoseAndBreakRecursion(unsigned generation,
                                  ArrayRef<ParamNode *> roots);
 
+  bool checkCodeGenUnreachable(ModuleOp module,
+                               DenseSet<StringAttr> &usedSymbols,
+                               ErrorLimit &errorLimit, SymbolTable &symtab);
+
   //===--------------------------------------------------------------------===//
   // Fields
   //===--------------------------------------------------------------------===//
@@ -403,6 +409,13 @@ private:
   Shared<llvm::MapVector<TargetInfoAttr, OffloadInfo>> targetOffloadInfos;
 
   Shared<llvm::SetVector<CompileOffloadOp>> compileOffloadOps;
+
+  /// call instantiation graph where
+  /// the keys are each ParamNode
+  /// the values are each ParamNode's caller's ParamNode and the location
+  /// where the call happens (i.e. parent in the call instantiation graph).
+  Shared<DenseMap<ParamNode *, DenseMap<ParamNode *, std::vector<Location>>>>
+      callInstantiationGraph;
 
   friend class IREvaluator;
 };
