@@ -478,10 +478,10 @@ struct GenericStructWithAliasMethod[Z: ATrait](TraitWithAliasReturnMethod):
     # CHECK: kgen.conformance {{.*}}::TraitWithAliasReturnMethod
     # CHECK: kgen.witness "T" : !ATrait = Z
     # CHECK: kgen.witness "bork{{.*}}" : {{.*}} = {{.*}}::@GenericStructWithAliasMethod::@"bork{{.*}}"
-    alias T: ATrait = Z
+    alias T: ATrait = Self.Z
 
-    fn bork(self) -> SIMD[Z]:
-        return SIMD[Z]()
+    fn bork(self) -> SIMD[Self.Z]:
+        return SIMD[Self.Z]()
 
 
 # CHECK-LABEL: lit.fn @"testUpcastingGenericStructWithAliasMethod
@@ -527,11 +527,11 @@ trait TraitWithAliasReturnMethod:
 # TODO(MOCO-1109): also check that this works with the thunk generation for @register_passable methods
 @fieldwise_init
 struct GenericStructWithAliasMethod[Z: ATrait](TraitWithAliasReturnMethod):
-    alias T: ATrait = Z
+    alias T: ATrait = Self.Z
 
     @staticmethod
-    fn bork() -> SIMD[Z]:
-        return SIMD[Z]()
+    fn bork() -> SIMD[Self.Z]:
+        return SIMD[Self.Z]()
 
 
 # CHECK-LABEL: lit.fn @"testUpcastingGenericStructWithAliasMethod
@@ -690,7 +690,7 @@ struct GenericStructWithSelfDotAliasReturnMethod[Z: ATrait](
     # CHECK: kgen.conformance {{.*}}::TraitWithSelfDotAliasReturnMethod
     # CHECK: kgen.witness "T" : !ATrait = Z
     # CHECK: kgen.witness "bork{{.*}}" : {{.*}} = {{.*}}::@GenericStructWithSelfDotAliasReturnMethod::@"bork{{.*}}"
-    alias T: ATrait = Z
+    alias T: ATrait = Self.Z
 
     fn bork(self) -> SIMD[Self.T]:
         return SIMD[Self.T]()
@@ -747,7 +747,7 @@ trait TraitWithSelfDotAliasReturnMethod:
 struct GenericStructWithSelfDotAliasReturnMethod[Z: ATrait](
     TraitWithSelfDotAliasReturnMethod
 ):
-    alias T: ATrait = Z
+    alias T: ATrait = Self.Z
 
     @staticmethod
     fn bork() -> SIMD[Self.T]:
@@ -1066,6 +1066,7 @@ fn bitwidth_from_composition_instance[T: MyTrait & MyTrait2, Inst: T]() -> ZInt:
 trait DependentAssociatedTypeInDefault:
     comptime T1: AnyType
     comptime V1: Self.T1
+
 
 # CHECK-LABEL: lit.fn @"foo
 fn foo[

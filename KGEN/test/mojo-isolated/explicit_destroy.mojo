@@ -10,14 +10,17 @@
 struct MyAffine:
     fn __init__(out self):
         pass
+
     fn __del__(deinit self):
         pass
+
 
 # CHECK-LABEL: @"testAffineThing
 fn testAffineThing():
     _ = MyAffine()
     # CHECK: lit.call {{.*}}MyAffine::@"__del__
     # CHECK: kgen.return
+
 
 # CHECK-LABEL: lit.struct.decl @EmptyExplicit
 @explicit_destroy
@@ -40,6 +43,7 @@ struct EmptyExplicit:
 fn correctUseExample():
     var l = EmptyExplicit()
     l^.consume()
+
 
 # CHECK-LABEL: lit.struct.decl @ExplicitDestroyThrowing
 @explicit_destroy("end lifetime with foo()")
@@ -70,26 +74,29 @@ struct ExplicitDestroyThrowing:
         self.method_that_raises()
 
 
-
 struct ImplicitlyDestructibleContainerOfExplicit:
     var m: EmptyExplicit
+
     fn __init__(out self):
         self.m = EmptyExplicit()
+
     fn __del__(deinit self):
         self.m^.consume()
+
 
 fn foo1[T: Movable](var x: T) -> T:
     # Is fine, we move it away instead of calling x.__del__()
     return x^
 
+
 fn foo2[T: UnknownDestructibility](x: T):
     # Is fine, since x is a borrow
     pass
 
+
 fn foo3[T: ImplicitlyDestructible](var x: T):
     # Is fine, there's a x.__del__() available
     pass
-
 
 
 trait Iterator:
@@ -104,7 +111,7 @@ struct _MapIterator[
     InnerIteratorType: Iterator, //,
     Function: fn (InnerIteratorType.Element) -> Int,
 ]():
-    var _inner: InnerIteratorType
+    var _inner: Self.InnerIteratorType
 
     fn __init__(out self):
         while True:

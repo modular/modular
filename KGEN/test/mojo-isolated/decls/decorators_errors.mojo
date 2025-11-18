@@ -347,10 +347,10 @@ struct LegacyValueDecorator:
 @fieldwise_init # expected-error {{'FieldwiseInitExample' has an explicitly declared fieldwise initializer}}
 struct FieldwiseInitExample[T: Movable]:
   var x: Int
-  var y: T
+  var y: Self.T
 
   # expected-note @below {{initializer declared here}}
-  fn __init__(out self, x: Int, y: T):
+  fn __init__(out self, x: Int, y: Self.T):
     pass
 
 

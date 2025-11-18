@@ -88,7 +88,7 @@ fn device_func(a: Int, b: Bool) -> Int:
 @fieldwise_init
 struct DeviceFunction[*ArgTypes: AnyRPTrivialType]:
     # expected-note @below {{function declared here}}
-    fn call(self, *args: *ArgTypes) -> Int:
+    fn call(self, *args: *Self.ArgTypes) -> Int:
         return 91
 
 
@@ -156,7 +156,7 @@ fn device_func(a: Int, b: Bool) -> Int:
 @fieldwise_init
 struct DeviceFunction[*ArgTypes: AnyRPTrivialType]:
     # expected-note @below {{function declared here}}
-    fn call(self, *args: *ArgTypes) -> Int:
+    fn call(self, *args: *Self.ArgTypes) -> Int:
         return 91
 
 
@@ -240,7 +240,7 @@ struct ZPointer[T: AnyType](AnyRPTrivialType):
         # generic trait instead of using an associated alias.
         # As it is, this won't catch incorrectly passing in a e.g.
         # ZDeviceBuffer[Int] into a ZPointer[Bool].
-        var z: ZPointer[T] = rebind[ZPointer[T]](c.to_zpointer())
+        var z: ZPointer[Self.T] = rebind[ZPointer[Self.T]](c.to_zpointer())
 
 
 trait ConvertibleToZLayoutTensor:
@@ -261,7 +261,7 @@ struct ZLayoutTensor(AnyRPTrivialType):
 @fieldwise_init
 struct DeviceFunction[*ArgTypes: AnyRPTrivialType]:
     # expected-note @below {{function declared here}}
-    fn call(self, *args: *ArgTypes) -> Int:
+    fn call(self, *args: *Self.ArgTypes) -> Int:
         return 91
 
 

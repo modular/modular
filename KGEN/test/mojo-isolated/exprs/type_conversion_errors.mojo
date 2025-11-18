@@ -41,15 +41,15 @@ fn test_type_instead_of_instance() -> Foo:
 # COM: ensure we do not crash in the example below, but emit an error.
 struct MadeFromPack[*Ts: AnyType]:
     @implicit
-    fn __init__(out self, *args: *Ts):
+    fn __init__(out self, *args: *Self.Ts):
         pass
 
 
 struct WrapsMadeFromPack[*Ts: AnyType]:
-    var data: MadeFromPack[*Ts]
+    var data: MadeFromPack[*Self.Ts]
 
     @implicit
-    fn __init__(out self, *args: *Ts):
+    fn __init__(out self, *args: *Self.Ts):
         # expected-error @+1 {{cannot implicitly convert 'VariadicPack[False, origin_of(args), AnyType, Ts]' value to 'MadeFromPack[Ts]'}}
         self.data = args
 

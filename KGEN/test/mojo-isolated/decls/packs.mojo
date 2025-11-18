@@ -155,7 +155,7 @@ fn test_inout():
 
 struct not_nested_struct[*Ts: AnyType]:
     @implicit
-    fn __init__(out self, mut*args: *Ts):
+    fn __init__(out self, mut*args: * Self.Ts):
         pass
 
 
@@ -175,7 +175,7 @@ fn test_empty_pack():
 # CHECK-SAME: <Ts: variadic<!AnyType> pos_vararg>
 struct MyTuple[*Ts: AnyType]:
     @implicit
-    fn __init__(out self, *args: *Ts):
+    fn __init__(out self, *args: * Self.Ts):
         pass
 
 

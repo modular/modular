@@ -29,7 +29,7 @@ struct Foo[C: Int, D: Int](ImplicitlyCopyable, Movable):
     var x: Int
 
     fn get(self) -> Int:
-        return self.x + C
+        return self.x + Self.C
 
 
 @fieldwise_init
@@ -37,9 +37,9 @@ struct Foo[C: Int, D: Int](ImplicitlyCopyable, Movable):
 struct Bat[A: Int](ImplicitlyCopyable):
     var b: Int
 
-    fn get_test[B: Int](self) -> fn (y: Int) escaping -> Foo[B, A]:
-        fn bar(y: Int) -> Foo[B, A]:
+    fn get_test[B: Int](self) -> fn (y: Int) escaping -> Foo[B, Self.A]:
+        fn bar(y: Int) -> Foo[B, Self.A]:
             var w = B + self.b + y
-            return Foo[B, A](w + A)
+            return Foo[B, Self.A](w + Self.A)
 
         return bar

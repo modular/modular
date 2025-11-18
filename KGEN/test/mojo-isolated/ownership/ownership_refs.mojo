@@ -269,7 +269,7 @@ struct CutDownVariadicPack[element_trait: type_of(AnyType),
                            *element_types: element_trait]:
 
     # CHECK: lit.fn @"each_hack
-    fn each_hack[i: Int, func: fn[T: element_trait] (T) -> None](self):
+    fn each_hack[i: Int, func: fn[T: Self.element_trait] (T) -> None](self):
         # Test that we can infer the type of 'T' from the argument.
         # CHECK-NEXT: [[REFVAL:%.*]] = lit.call {{.*}}get_element{{.*}}(%self)
         # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}Pointer::@"__getitem__{{.*}}([[REFVAL]])
@@ -277,7 +277,7 @@ struct CutDownVariadicPack[element_trait: type_of(AnyType),
         func(self.get_element[i]()[])
 
     fn get_element[index: Int](self) -> Pointer[
-        element_types[index],
+        Self.element_types[index],
         origin_of(self),
     ]:
        while True: pass
@@ -523,8 +523,8 @@ fn check_mutability[
 
 
 struct TestDict[K: AnyType, V: AnyType]:
-    fn __getitem__(ref self) -> ref [self] V:
+    fn __getitem__(ref self) -> ref [self] Self.V:
         while True: pass
 
-    fn __setitem__(mut self, var value: V):
+    fn __setitem__(mut self, var value: Self.V):
         pass

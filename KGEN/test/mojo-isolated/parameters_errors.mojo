@@ -52,7 +52,7 @@ struct Parameterized[p1: Int]:
 
     # expected-note @+2 {{'method' declared here}}
     # expected-note @+1 {{function declared here}}
-    fn method[B: Int](self, other: Parameterized[p1 + B]):
+    fn method[B: Int](self, other: Parameterized[Self.p1 + B]):
         pass
 
 
@@ -76,7 +76,7 @@ comptime DType = __mlir_type.`!kgen.dtype`
 # expected-note @below {{struct declared here}}
 struct MySIMD[size: Int, type: DType]:
     # expected-note @below {{function declared here}}
-    fn __add__(self, rhs: MySIMD[size, type]):
+    fn __add__(self, rhs: MySIMD[Self.size, Self.type]):
         pass
 
 
@@ -284,8 +284,8 @@ fn crash1_caller[p: __mlir_type.index](a: __mlir_type.index):
 @fieldwise_init
 struct StructWithParams[a: Int, b: Int]:
     comptime a1 = StructWithParams[1, 2]()
-    comptime a2 = a+1
-    comptime a3 = a+b+1
+    comptime a2 = Self.a + 1
+    comptime a3 = Self.a + Self.b + 1
 
 struct StructWithRecReference[n: Int]:
     comptime res = StructWithRecReference.f
@@ -577,7 +577,7 @@ fn unused_init_self_param():
 @register_passable("trivial")
 struct SimpleSIMD[arg1: Int, size: Int]:
     # expected-note @below {{function declared here}}
-    fn __init__[T: AnyType](out self: SimpleSIMD[arg1, 1], value: T): pass
+    fn __init__[T: AnyType](out self: SimpleSIMD[Self.arg1, 1], value: T): pass
 
 fn dont_miss_inference_conflict(b: SimpleSIMD[40, 1]):
     # expected-error @below {{failed to infer parameter 'T'}}
@@ -627,7 +627,7 @@ struct StructWithAlias:
 struct TestAutoParamsAndSugar[f1: HasSize]:
     fn method[f2: HasSize](self, f3: HasSize):
         # expected-error @+1 {{cannot be converted from 'HasSize[f1.size]' to 'HasSize[4]'}}
-        takes4(HasSize[f1.size]())
+        takes4(HasSize[Self.f1.size]())
         # expected-error @+1 {{cannot be converted from 'HasSize[f2.size]' to 'HasSize[4]'}}
         takes4(HasSize[f2.size]())
         # expected-error @+1 {{cannot be converted from 'HasSize[f3.size]' to 'HasSize[4]'}}

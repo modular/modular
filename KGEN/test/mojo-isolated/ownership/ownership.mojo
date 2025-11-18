@@ -649,7 +649,7 @@ struct AddrSpace:
 @register_passable("trivial")
 struct MemExamplePtr[addrspace: AddrSpace = __mlir_attr.`0:index`]:
     var value: __mlir_type[
-        `!kgen.pointer<`, MemExample, `, `, addrspace._value, `>`
+        `!kgen.pointer<`, MemExample, `, `, Self.addrspace._value, `>`
     ]
 
 fn sadge(ptr: MemExamplePtr[]):
@@ -1026,11 +1026,11 @@ fn test_if_ownership(x: Bool, var a: RegExample, var b: RegExample) -> RegExampl
 
 
 struct MyStructWithMarkDestroyed[T: ImplicitlyCopyable & Movable]:
-    var a: T
-    var b: T
+    var a: Self.T
+    var b: Self.T
 
 # CHECK-LABEL: lit.fn @{{.*}}reap
-    fn reap(deinit self, out result: T):
+    fn reap(deinit self, out result: Self.T):
         # "a" field is never used here so it is destroyed early.
         # CHECK-NEXT: [[AREF:%.*]] = lit.ref.struct.ger %self[a]
         # CHECK-NEXT: lit.call{{.*}}__del__{{.*}}([[AREF]]
@@ -1379,8 +1379,8 @@ def origin_of_def_arg(a: String):
 # MOCO-1542: Need to rebind field type when checking size.
 @fieldwise_init
 struct MyParameterizedField[T: ImplicitlyCopyable & Movable](ImplicitlyCopyable, Movable):
-  var a: T
-  var b: T
+  var a: Self.T
+  var b: Self.T
 
 fn use_parameterized_field():
   var s = MyParameterizedField[Dim](Dim(8), Dim(3))
@@ -1420,11 +1420,11 @@ struct SomeStruct:
         self.test_agent = SomeValue(123)
 
 struct SomeValue[T: ImplicitlyCopyable & Movable]:
-    var value: T
+    var value: Self.T
     var name: String
     var tmp: Int
 
-    fn __init__(out self, value: T) raises:
+    fn __init__(out self, value: Self.T) raises:
         self.value = value
         self.name = "example"
         self.tmp = 1 #<- remove this field and it works
@@ -1433,9 +1433,9 @@ struct SomeValue[T: ImplicitlyCopyable & Movable]:
 # on discord.
 # CHECK-LABEL: ParametricTask
 struct ParametricTask[T1: Movable, T2: Movable](Movable):
-    var t1: T1
-    var t2: T2
-    fn __init__(out self, var t1: T1, var t2: T2):
+    var t1: Self.T1
+    var t2: Self.T2
+    fn __init__(out self, var t1: Self.T1, var t2: Self.T2):
         self.t1 = t1^
         self.t2 = t2^
     fn concat(var self, var other: Self) -> ParametricTask[Self, Self]:

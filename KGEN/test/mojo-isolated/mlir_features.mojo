@@ -32,7 +32,7 @@ fn mlirMagicTest(
 
     # CHECK-NEXT: %idxConstant = lit.var.decl
     # CHECK: kgen.param.constant = <42>
-    var idxConstant = __mlir_op.`index.constant`[value=Int(42)._mlir_value]()
+    var idxConstant = __mlir_op.`index.constant`[value = Int(42)._mlir_value]()
 
     # CHECK: [[TMP:%.*]] = lit.ref.load %idxConstant
     # CHECK: [[TMP2:%.*]] = index.castu [[TMP:%.*]] : index to i1
@@ -62,7 +62,7 @@ fn mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`]():
 # CHECK-LABEL: lit.struct.decl @ComplexSubstitution<T: dtype>
 struct ComplexSubstitution[T: __mlir_type.`!kgen.dtype`]:
     # CHECK: lit.struct.field pointer : !kgen.pointer<scalar<T>>
-    var pointer: __mlir_type[`!kgen.pointer<!pop.scalar<`, T, `>>`]
+    var pointer: __mlir_type[`!kgen.pointer<!pop.scalar<`, Self.T, `>>`]
 
 
 # Issue #6374: [Lit] Add support for type placeholder
@@ -104,7 +104,7 @@ fn testAttrConcatWithoutType[
 # CHECK-LABEL: lit.struct.decl @MyPointer<elType: type>
 @register_passable
 struct MyPointer[elType: __mlir_type.`!kgen.type`]:
-    comptime StorageTy = __mlir_type[`!kgen.pointer<`, elType, `>`]
+    comptime StorageTy = __mlir_type[`!kgen.pointer<`, Self.elType, `>`]
     # CHECK: lit.struct.field value : !kgen.pointer<elType>
     var value: Self.StorageTy
 

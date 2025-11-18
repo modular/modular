@@ -57,7 +57,7 @@ struct DtorExample3(AnyType):
 # CHECK-NOT: destructor :!lit.generator
 # CHECK: lit.fn @"__del__
 struct DtorExample4[T: RPTTrait]:
-    var thing: T
+    var thing: Self.T
 
 
 # CHECK-LABEL: lit.struct.decl @DtorExample5
@@ -65,7 +65,7 @@ struct DtorExample4[T: RPTTrait]:
 # CHECK-NEXT: destructor :!lit.generator
 # CHECK: lit.fn @"__del__
 struct DtorExample5[T: AnyType]:
-    var thing: T
+    var thing: Self.T
 
 
 # ===----------------------------------------------------------------------=== #
@@ -118,7 +118,7 @@ fn testCopyMoveSynth(var a: IntPair, var b: IntPairWrapper):
 @fieldwise_init
 struct FieldwiseInitExample1[T: Movable]:
     var x: Int
-    var y: T
+    var y: Self.T
 
     fn __moveinit__(out self, deinit other: Self):
         self.x = other.x
@@ -160,6 +160,7 @@ struct FieldwiseInitExample3:
 # Shadow auto-parameterized parameters
 # ===----------------------------------------------------------------------=== #
 
+
 struct MyParam[p: Int]:
     pass
 
@@ -200,6 +201,7 @@ struct MyStructWithTraitWithPAlias[m1: MyParam[_]](TraitWithPAlias):
     # COM: Ensure there's no conflict with the inherited alias.
     fn __init__(out self):
         pass
+
 
 # CHECK-LABEL: lit.struct.decl @MyStructWithPFunc
 struct MyStructWithPFunc[m1: MyParam[_]]:

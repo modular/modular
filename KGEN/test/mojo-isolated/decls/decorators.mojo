@@ -419,7 +419,7 @@ struct ParamVarArg[*I: Int]:
 # CHECK-LABEL: lit.struct.decl @TraitMember
 @fieldwise_init
 struct TraitMember[T: ImplicitlyCopyable](ImplicitlyCopyable, Movable):
-    var value: T
+    var value: Self.T
     # CHECK: lit.fn @"__moveinit__
     # CHECK: call{{.*}}__copyinit__
     # CHECK: lit.fn @"__copyinit__

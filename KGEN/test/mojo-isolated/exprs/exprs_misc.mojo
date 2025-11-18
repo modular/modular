@@ -29,7 +29,7 @@ fn literal_promotion[cond: Bool]():
 ##===----------------------------------------------------------------------===##
 
 struct ListInitializable[T: AnyType](ImplicitlyCopyable, Movable):
-    fn __init__(out self, *elements: T, __list_literal__: () = ()):
+    fn __init__(out self, *elements: Self.T, __list_literal__: () = ()):
         pass
 
 

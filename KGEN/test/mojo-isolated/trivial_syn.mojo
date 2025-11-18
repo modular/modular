@@ -33,8 +33,8 @@ struct X_T_U(ImplicitlyCopyable, Movable):
 struct C[X: ImplicitlyCopyable & Movable, Y: ImplicitlyCopyable & Movable](
     ImplicitlyCopyable, Movable
 ):
-    var x: X
-    var y: Y
+    var x: Self.X
+    var y: Self.Y
 
     # CHECK-LABEL:  kgen.conformance @"{{.*}}::AnyType" {
     # CHECK-NEXT:    kgen.witness "__del__{{.*}}"

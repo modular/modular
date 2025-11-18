@@ -167,7 +167,7 @@ fn ownedVariadicReg(var *args: WrongType): pass
 # expected-note @+1 {{struct declared here}}
 struct ParameterizedStruct[T: __mlir_type.`!kgen.type`]:
     # expected-note @+1 {{function declared here}}
-    def __init__(out self, *args: T):
+    def __init__(out self, *args: Self.T):
         pass
 
 @fieldwise_init
@@ -273,7 +273,7 @@ fn badPackCalls(value: Int):
 struct TestPackErrorMessage[*Ts: AnyType]:
     # expected-error @below {{'self' argument must have type 'TestPackErrorMessage[Ts]', but actually has type 'VariadicPack[False, args, AnyType, Ts]'}}
     # expected-error @below {{__init__ method must return Self type with 'out' argument}}
-    fn __init__(*args: *Ts):
+    fn __init__(*args: *Self.Ts):
          pass
 
 # expected-error @+1 {{variadic pack elements declared as 'AnyTrivialRegType' are removed, please declare elements as 'AnyType' instead of 'AnyTrivialRegType'}}
@@ -634,7 +634,7 @@ struct WrongType:
 struct WrongSelfType[a: Int]:
   # expected-error @+1 {{'self' argument must have type 'WrongSelfType[a]', but actually has type 'Int'}}
   fn badMethod(self: Int): pass
-  fn goodMethod(mut self: WrongSelfType[a]): pass
+  fn goodMethod(mut self: WrongSelfType[Self.a]): pass
 
   # Issue #13358
   # expected-error @+1 {{'__copyinit__' requires 1 operand}}
@@ -657,58 +657,9 @@ struct WrongSelfType[a: Int]:
 struct BadInit[size: __mlir_type.index]:
   @implicit
   fn __init__(out self, elem: BadInit[Int(1)._mlir_value]):
-    var x : __mlir_type[`!pop.simd<`, size, `, FloatDyn>`]
+    var x : __mlir_type[`!pop.simd<`, Self.size, `, FloatDyn>`]
     # expected-error @+1 {{cannot implicitly convert 'simd<size, FloatDyn>' value to 'BadInit[size]'}}
     self = x
-
-struct StructWithField:
-  var field: __mlir_type.index
-
-# Issue #6879: Qualified lookup is looking up names wrong
-fn unqualifiedNameLookup(a: StructWithField):
-  # expected-error @+1 {{StructWithField' value has no attribute 'badPropertyError'}}
-  a.badPropertyError
-
-  # expected-error @+1 {{StructWithField' value has no attribute 'badPropertyError'}}
-  StructWithField.badPropertyError
-
-  # expected-error @+1 {{'EverythingIsWrongTrait' value has no attribute 'value'}}
-  EverythingIsWrongTrait.value
-
-  # expected-error @+1 {{cannot access instance field 'field' without an instance of 'StructWithField'}}
-  StructWithField.field
-
-struct DirectInstanceReference:
-  comptime my_alias: Int = 8
-  var value: Int
-  fn fxn(self):
-    # expected-error @+1 {{cannot access instance field 'value' directly; did you mean 'self.'?}}
-    var xx = value
-    _ = my_alias  # expected-error {{cannot access comptime 'my_alias' directly; did you mean 'Self.'?}}
-
-  @staticmethod
-  fn stat():
-    _ = fxn  # expected-error {{cannot access method 'fxn' directly; did you mean 'Self.'?}}
-
-  fn direct_ref(self):
-    fxn(self) # expected-error {{cannot access method 'fxn' directly; did you mean 'self.'?}}
-    stat() # expected-error {{cannot access method 'stat' directly; did you mean 'Self.'?}}
-
-trait DirectTraitMemberReference:
-  comptime my_alias: Int
-  fn fxn(self):
-    _ = my_alias  # expected-error {{cannot access comptime 'my_alias' directly; did you mean 'Self.'?}}
-
-  @staticmethod
-  fn stat():
-    _ = fxn  # expected-error {{cannot access method 'fxn' directly; did you mean 'Self.'?}}
-
-  fn direct_ref(self):
-    fxn(self) # expected-error {{cannot access method 'fxn' directly; did you mean 'Self.'?}}
-    stat() # expected-error {{cannot access method 'stat' directly; did you mean 'Self.'?}}
-
-fn field_indexes(a: DirectInstanceReference):
-  a.badField = 42 # expected-error {{'DirectInstanceReference' value has no attribute 'badField'}}
 
 struct MLIRAttrWithinStruct:
   # expected-error @below {{expressions are not supported in struct bodies}}
@@ -791,7 +742,7 @@ fn function_with_struct():
 # https://github.com/modularml/modular/issues/12598
 struct not_nested_struct[*Ts: AnyType]:
     @implicit
-    fn __init__(out self, *args: *Ts):
+    fn __init__(out self, *args: *Self.Ts):
         pass
 fn function_with_struct2():
     var s1 = not_nested_struct()  # ok
@@ -1027,7 +978,7 @@ struct AnyTypeMember[T: AnyType](ImplicitlyCopyable, Movable):
 # expected-error @below {{cannot synthesize fieldwise init because field 'value' has non-copyable and non-movable type 'T'}}
 # expected-error @below {{cannot synthesize __moveinit__ because field 'value' has non-copyable and non-movable type 'T'}}
 # expected-error @below {{cannot synthesize __copyinit__ because field 'value' has non-copyable type 'T'}}
-    var value: T
+    var value: Self.T
 
 
 # Issue https://github.com/modular/mojo/issues/1675

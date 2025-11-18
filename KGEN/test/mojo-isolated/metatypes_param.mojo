@@ -14,7 +14,7 @@
 @fieldwise_init
 @register_passable("trivial")
 struct Param[x: Int]:
-    comptime value = x
+    comptime value = Self.x
 
     @staticmethod
     fn foo():
@@ -32,8 +32,8 @@ struct Param[x: Int]:
 @fieldwise_init
 @register_passable("trivial")
 struct TwoParam[x: Int, y: Int]:
-    comptime first = x
-    comptime second = y
+    comptime first = Self.x
+    comptime second = Self.y
 
     @staticmethod
     fn foo():
@@ -132,7 +132,6 @@ struct ParamVarArg[F: Int, *I: Int]:
 
         # CHECK: BoundMore{{.*}}: {{.*}}ParamVarArg <:!Int {1}, :variadic<!Int> [{2}, {1}]>
         comptime BoundMore = Unbound[1, 2, 1]
-
 
 
 @register_passable
