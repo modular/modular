@@ -140,7 +140,7 @@ FailureOr<TypedAttr> SymTabEvaluationContext::evaluateExpression(
   }
 
   if (auto variadicMap = dyn_cast<VariadicMapAttr>(attr))
-    return evaluateVariadicMap(variadicMap, this);
+    return variadicMap.evaluateWith(this);
 
   return failure();
 }
