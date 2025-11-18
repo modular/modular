@@ -632,7 +632,8 @@ def module_dataclass(  # noqa: ANN201
 
     def decorator(cls: type[Module]) -> type[Module]:
         decorated = dataclass_decorator(cls)
-        decorated.__rich_repr__ = _module_dataclass_rich_repr  # type: ignore
+        if cls.__rich_repr__ is Module.__rich_repr__:
+            decorated.__rich_repr__ = _module_dataclass_rich_repr  # type: ignore
         return decorated
 
     return decorator(cls) if cls else decorator
