@@ -16,7 +16,7 @@ from max.driver import CPU, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Weight
-from max.graph.weights import GGUFWeights, PytorchWeights, SafetensorWeights
+from max.graph.weights import GGUFWeights, SafetensorWeights
 
 
 def test_weight(session: InferenceSession) -> None:
@@ -95,52 +95,6 @@ def _test_data() -> dict[str, torch.Tensor | np.ndarray]:  # type: ignore
         data["bf16"] = torch.tensor([123, 45], dtype=torch.bfloat16)
 
     return data
-
-
-def test_load_pytorch(session: InferenceSession, graph_testdata: Path) -> None:
-    """Tests adding an external weight to a graph."""
-    expected_dict = _test_data()
-    # pytorch weights file does not currently contain float8 weights
-    expected_dict.pop("float8_e4m3fn", None)
-    expected_dict.pop("float8_e5m2", None)
-    flat_keys = list(expected_dict.keys())
-    expected = [expected_dict[k] for k in flat_keys]
-
-    weights = PytorchWeights(graph_testdata / "example_data.pt")
-    with Graph("graph_with_pt_weights") as graph:
-        loaded = {k: graph.add_weight(w.allocate()) for k, w in weights.items()}
-        device_ref = (
-            DeviceRef.CPU() if accelerator_count() == 0 else DeviceRef.GPU()
-        )
-        graph.output(*[loaded[k].to(device_ref) for k in flat_keys])
-        compiled = session.load(
-            graph, weights_registry=weights.allocated_weights
-        )
-        output = compiled.execute()
-
-        assert len(expected) == len(output)
-        for n, (expected_tensor, actual_tensor) in enumerate(
-            zip(expected, output, strict=True)
-        ):
-            assert isinstance(actual_tensor, Tensor)
-            if flat_keys[n] == "bf16":
-                assert torch.equal(
-                    expected_tensor, torch.from_dlpack(actual_tensor.to(CPU()))
-                )
-            elif any(
-                flat_keys[n].endswith(suffix)
-                for suffix in ["float8_e4m3fn", "float8_e5m2"]
-            ):
-                assert torch.equal(
-                    expected_tensor.view(torch.uint8),
-                    torch.from_dlpack(
-                        actual_tensor.to(CPU()).view(DType.uint8)
-                    ),
-                )
-            else:
-                np.testing.assert_array_equal(
-                    expected_tensor, actual_tensor.to_numpy()
-                )
 
 
 def test_load_gguf(session: InferenceSession, graph_testdata: Path) -> None:
