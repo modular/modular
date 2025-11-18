@@ -17,9 +17,6 @@ modular_py_library(
     name = "process_control",
     srcs = ["process_control.py"],
     imports = ["../.."],
-    deps = [
-        requirement("taskgroup"),  # only for python < 3.11
-    ],
 )
 
 modular_py_library(

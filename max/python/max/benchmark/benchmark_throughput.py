@@ -480,6 +480,7 @@ async def run_max_async(
             model_name=model_name,
             tokenizer=tokenizer,
             scheduler_zmq_configs=scheduler_zmq_configs,
+            worker_monitor=worker_monitor,
         ) as pipeline,
     ):
         # Start timing and create a progress bar.
