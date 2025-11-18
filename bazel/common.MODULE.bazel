@@ -100,15 +100,10 @@ single_version_override(
 # TODO: Remove once >0.8.0 is released
 archive_override(
     module_name = "rules_pycross",
-    integrity = "sha256-H2I/ayVPKJC1PVDOROxS5AC74n2q7TLwLD+B/Zo0EFc=",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/jvolkman/rules_pycross/pull/206
-        "//bazel/public-patches:rules_pycross_loads.patch",
-    ],
-    strip_prefix = "rules_pycross-15136176e414f09b774e5120c9e3d6d04d105261",
+    integrity = "sha256-8nt5EI2mkzePeqw//u/5jGxxfvEx7727OTIb+tTp+Ag=",
+    strip_prefix = "rules_pycross-573feab78c2d559d282d762568bfd88cbb933dfc",
     urls = [
-        "https://github.com/jvolkman/rules_pycross/archive/15136176e414f09b774e5120c9e3d6d04d105261.tar.gz",
+        "https://github.com/jvolkman/rules_pycross/archive/573feab78c2d559d282d762568bfd88cbb933dfc.tar.gz",
     ],
 )
 
