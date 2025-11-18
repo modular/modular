@@ -20,6 +20,7 @@ modular_cc_test(
     deps = [
         "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals",
+        "//Support:Base",
         "//Support:Globals",
     ],
 )
@@ -35,7 +36,9 @@ modular_cc_test(
     deps = [
         "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:Support",
         "//Support:Globals",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -56,6 +59,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//AsyncRT:DeviceContextImpl",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -79,6 +83,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//AsyncRT:DeviceContextImpl",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -228,6 +233,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//AsyncRT:DeviceContextImpl",
+        "//Support:Buffer",
     ],
 )
 
@@ -313,5 +319,7 @@ modular_cc_test(
         ":TestUtils",
         "//AsyncRT:DeviceContextImpl",
         "//AsyncRT:NIXL",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
     ],
 )

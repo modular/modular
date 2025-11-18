@@ -11,5 +11,6 @@ modular_cc_binary(
         "//Support:Configuration",
         "//Support:CrashReporting",
         "//Support:Globals",
+        "@llvm-project//llvm:Support",
     ],
 )
