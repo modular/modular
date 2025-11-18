@@ -23,9 +23,9 @@
 #include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "KGEN/TransformUtils/EliminateDeadSymbolUtils.h"
 #include "KGEN/TransformUtils/ManglingUtils.h"
 #include "Support/Compiler/DiagnosticHandler.h"
-#include "Support/Compiler/Error.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -519,6 +519,9 @@ Elaborator::getConcreteStructTypeReference(ImplNode *parent, Location loc,
     // and move on.
     assert(parent->numDependencies >= 1 && "impossible for impl to be done");
     parent->dependencies.emplace_back(loc, calleeNode);
+    callInstantiationGraph.modify(
+        [&](auto &map) { map[calleeNode][parent->parent].push_back(loc); });
+
     if (calleeNode->state.addWaiter()) {
       ++parent->numDependencies;
       calleeNode->andThenAsync(
@@ -760,6 +763,10 @@ Elaborator::processGeneratorUser(GeneratorUserOpInterface user,
     // we just need to track the dependency and move on.
     assert(parent->numDependencies >= 1 && "impossible for impl to be done");
     parent->dependencies.emplace_back(user->getLoc(), calleeNode);
+    callInstantiationGraph.modify([&](auto &map) {
+      map[calleeNode][parent->parent].push_back(user->getLoc());
+    });
+
     if (calleeNode->state.addWaiter()) {
       ++parent->numDependencies;
       calleeNode->andThenAsync(
@@ -1401,8 +1408,11 @@ void Elaborator::completeImplNodeProcessing(ImplNode *inode) {
     // Complete processing of outstanding dependencies. Process in reverse with
     // `pop_back` so that forks will end up in the same state.
     while (!inode->dependencies.empty()) {
+      // while (!dependencies.empty()) {
       auto [loc, genNode] = inode->dependencies.back();
+      // auto [loc, genNode] = dependencies.back();
       inode->dependencies.pop_back();
+      // dependencies.pop_back();
 
       // Check for errors in dependencies.
       FailureOr<ImplNode *> concrete =
@@ -2471,12 +2481,75 @@ static WalkResult rewriteCompileOffloadOp(
   return WalkResult::advance();
 }
 
-LogicalResult
-Elaborator::run(ModuleOp theModule,
-                ArrayRef<std::pair<GeneratorOp, ParameterExprArrayAttr>>
-                    primaryGenerators) {
-  // Find any kgen.func we have already - they're already elaborated, and we do
-  // not want to re-process them. Add concrete ImplNodes for each one.
+bool Elaborator::checkCodeGenUnreachable(ModuleOp module,
+                                         DenseSet<StringAttr> &usedSymbols,
+                                         ErrorLimit &errorLimit,
+                                         SymbolTable &symtab) {
+  DenseMap<InstantiatedOpInterface, ParamNode *> nodeMap;
+  for (auto &node : llvm::make_second_range(concreteNodes.get())) {
+    nodeMap.insert({node->inst, node->parent});
+  }
+
+  std::function<void(ParamNode *, Location, ErrorTree)> emitError =
+      [&](ParamNode *node, Location loc, ErrorTree cause) -> void {
+    DenseMap<ParamNode *, DenseMap<ParamNode *, std::vector<Location>>> &graph =
+        callInstantiationGraph.get();
+    auto iter = graph.find(node);
+    if (iter == graph.end() || iter->second.empty()) {
+      emitLimitedError(
+          [&] {
+            return std::move(cause).emit(
+                [](Location loc) { return mlir::emitError(loc); },
+                "call expansion failed", options.elabErrorIncludePrelude);
+          },
+          errorLimit);
+      return;
+    }
+
+    DenseMap<ParamNode *, std::vector<Location>> &parents = iter->second;
+    for (auto &[parent, locs] : parents) {
+      std::string str = printSimpleParamAttrValues(parent->gen.getInputParams(),
+                                                   parent->inputParams,
+                                                   options.elabErrorVerbose);
+      std::string msg = "call expansion failed";
+      if (!str.empty())
+        msg += " with parameter value(s): " + str;
+
+      for (auto loc : locs)
+        emitError(parent, loc, ErrorTree(loc, Twine(msg), cause.copy()));
+    }
+  };
+
+  bool result = true;
+  for (auto name : usedSymbols) {
+    // Check all the live functions.
+    if (auto func = symtab.lookup<FuncOp>(name)) {
+      func->walk([&](CodeGenReachableOp op) {
+        auto cond = cast<IntegerAttr>(op.getCond());
+        if (cond.getValue().isZero()) {
+          // Emit error;
+          auto iter = nodeMap.find(func);
+          assert(iter != nodeMap.end());
+          emitError(
+              iter->second, op->getLoc(),
+              ErrorTree(op.getLoc(),
+                        "codegen unreachable: " +
+                            cast<StringAttr>(op.getMessageAttr()).getValue()));
+          result = false;
+        }
+      });
+    }
+  }
+
+  return result;
+}
+
+LogicalResult Elaborator::run(
+    ModuleOp theModule,
+    ArrayRef<std::pair<GeneratorOp, ParameterExprArrayAttr>> primaryGenerators,
+    mlir::SymbolTableAnalysis &analysis) {
+  // Find any kgen.func we have already - they're already elaborated, and we
+  // do not want to re-process them. Add concrete ImplNodes for each one.
   for (FuncOp func : theModule.getOps<FuncOp>()) {
     (void)addConcreteFunc(func, func.getSymNameAttr(), concreteNodes.get());
     addRegion(func.getBodyRegion());
@@ -2678,7 +2751,8 @@ Elaborator::run(ModuleOp theModule,
 
   theModule.walk([&](Operation *op) {
     if (auto offloadOp = dyn_cast<CompileOffloadOp>(op)) {
-      // Plug offload compilation results as strings back to the elaborated IR.
+      // Plug offload compilation results as strings back to the elaborated
+      // IR.
       rewriteCompileOffloadOp(offloadOp, theModule.getLoc(), compiledOffload,
                               failed, errorLimit,
                               options.elabErrorIncludePrelude);
@@ -2690,6 +2764,17 @@ Elaborator::run(ModuleOp theModule,
       op->erase();
     }
   });
+
+  for (Operation &op : theModule.getOps())
+    if (op.hasTrait<OpTrait::SymbolTable>())
+      analysis.getSymbolTables().invalidateSymbolTable(&op);
+
+  oldSymTab = SymbolTable(theModule);
+
+  DenseSet<StringAttr> usedSymbols = getUsedSymbols(analysis, theModule);
+
+  failed |=
+      !checkCodeGenUnreachable(theModule, usedSymbols, errorLimit, oldSymTab);
 
   return success(!failed);
 }
@@ -2762,10 +2847,10 @@ public:
     }
 
     // Elaboration is the compilation phase in which the IR goes from
-    // target-non-specific to target-specific: in order to fully concretize the
-    // IR, we must evaluate compile-time expressions, which is a target-specific
-    // operation. Make the IR target-specific by attaching the required target
-    // specification.
+    // target-non-specific to target-specific: in order to fully concretize
+    // the IR, we must evaluate compile-time expressions, which is a
+    // target-specific operation. Make the IR target-specific by attaching the
+    // required target specification.
     if (TargetInfoAttr targetInfo = getTargetInfo(theModule))
       target = targetInfo;
     else
@@ -2791,19 +2876,19 @@ public:
       if (failed(impl.run(theModule, roots.takeVector())))
         return signalPassFailure();
 
+      // Invalidate nested symbol tables and recompute a new top level symbol
+      // table.
+      for (Operation &op : theModule.getOps())
+        if (op.hasTrait<OpTrait::SymbolTable>())
+          analysis.getSymbolTables().invalidateSymbolTable(&op);
+      symtab = SymbolTable(theModule);
+
     } else {
       Elaborator impl(symtab, paramCache, target, options, compileAsmFn,
                       compileOffloadFn, config);
-      if (failed(impl.run(theModule, roots.takeVector())))
+      if (failed(impl.run(theModule, roots.takeVector(), analysis)))
         return signalPassFailure();
     }
-
-    // Invalidate nested symbol tables and recompute a new top level symbol
-    // table.
-    for (Operation &op : theModule.getOps())
-      if (op.hasTrait<OpTrait::SymbolTable>())
-        analysis.getSymbolTables().invalidateSymbolTable(&op);
-    symtab = SymbolTable(theModule);
   }
 
 private:

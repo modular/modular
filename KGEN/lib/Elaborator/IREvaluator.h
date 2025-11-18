@@ -170,6 +170,7 @@ struct ImplNode : public ImplNodeBase {
   /// to be handled when the implementation node is complete and all its
   /// dependencies are ready.
   std::vector<std::pair<Location, ParamNode *>> dependencies;
+
   /// The current downstream node blocking elaboration of this node. E.g. when
   /// elaboration of this node requires elaboration of another node. The blocker
   /// node has to be completed before elaboration of this node can continue.
