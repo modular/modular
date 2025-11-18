@@ -92,9 +92,6 @@ class _TPPagedKVCacheManager:
     enable_prefix_caching: bool
     """Flag indicating if prefix caching (block reuse) is enabled."""
 
-    gpu_device: Device | None
-    """An arbitrary GPU device which holds KV cache blocks, should one exist."""
-
     enable_kvcache_swapping_to_host: bool
     """Flag indicating if swapping blocks to host memory is enabled."""
 
