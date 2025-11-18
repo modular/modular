@@ -76,3 +76,59 @@ module {
 #subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, sourceName = #captureParams_name, linkageName = "delete-me::captureParams[delete-me::Trait,delete-me::Trait]($0&,$1&)", file = #file, line = 6, scopeLine = 6, subprogramFlags = "Definition|Optimized"> : !subroutine
 #loc18 = loc(fused<#subprogram>[#loc13])
 #loc19 = loc(fused<#subprogram1>[#loc15])
+
+// -----
+
+// COM: Ensure that ops, debuginfo.value in this case, are not unconditionally wrapped in a subprogram scoped FusedLoc
+
+// DebugInfo values have a location and a variable attribute
+// The variable attribute contains a scope
+// The location scope of the debuginfo.value must be a child of the variable's location scope
+// if both are wrapped in a subprogram fused location, they will appear to have a sibling relationship
+// rather than a child-parent, failing verification.
+!subroutine1 = !debuginfo.subroutine<(index) -> (index): DW_CC_normal>
+!unresolved = !debuginfo.unresolved<index>
+#expr2Eirvalue = #debuginfo.expr.irvalue : !kgen.pointer<index>
+#file = #debuginfo.file<"delete-me.mojo" in "">
+#loc2 = loc("delete-me.mlir":32:21)
+#loc4 = loc("delete-me.mlir":33:35)
+#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_Mojo, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full, nameTableKind = None>
+#expr2Ederef = #debuginfo.expr.deref<#expr2Eirvalue> : index
+#subprogram1 = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, sourceName = <(fn)"closure">, linkageName = "closure", file = #file, line = 13, scopeLine = 13, subprogramFlags = "Definition|Optimized"> : !subroutine1
+#lexical_block1 = #debuginfo.lexical_block<scope = #subprogram1, file = #file, line = 16, column = 17>
+#local_variable = #debuginfo.local_variable<scope = #lexical_block1, name = "j", file = #file, line = 15, flags = Zero> : !unresolved
+module {
+  kgen.struct.generator @"foo::closure"<CAPTURES: !kgen.param_closure<@foo "closure">> = !kgen.closure<@foo, "closure" nonescaping>{
+    kgen.conformance @"fn(x: Int) -> Int" {
+      kgen.witness "__call__($0,::Int)" : (!kgen.pointer<!kgen.closure<@foo, "closure" nonescaping>> read_mem, index) capturing -> index = #kgen.closure.symbol<@foo, "closure", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "closure"> CAPTURES>> loc(#loc11)
+    } attributes {traitRef = @"fn(x: Int) -> Int"} loc(#loc11)
+  } loc(#loc11)
+  kgen.generator @foo(%arg0: index loc("delete-me.mlir":32:21)) {
+    %0 = kgen.closure.init(%arg0)(%arg1: index loc("delete-me.mlir":33:35)) capturing -> index always_inline {
+      hlcf.loop "__loop_1" {
+        %1 = pop.stack_allocation 1 x index marked loc(#loc12)
+        // CHECK:  debuginfo.value #local_variable #expr2Ederef = %2 : !kgen.pointer<index> loc([[LOC:#loc.*]])
+        debuginfo.value #local_variable #expr2Ederef = %1 : !kgen.pointer<index> loc(#loc13)
+        hlcf.continue loc(#loc12)
+      } loc(#loc10)
+      kgen.return %arg0 : index loc(#loc10)
+    } : (index), !kgen.pointer<!kgen.closure<@foo, "closure" nonescaping>>, #subprogram1 loc(#loc9)
+    kgen.unreachable loc(#loc9)
+  } loc(#loc8)
+} loc(#loc)
+// CHECK-DAG: [[LOC]] = loc(fused<#lexical_block{{.*}}>[#loc
+!subroutine = !debuginfo.subroutine<(index) -> (!kgen.none): DW_CC_normal>
+#loc = loc("delete-me.mlir":0:0)
+#loc1 = loc("delete-me.mojo":9:4)
+#loc3 = loc("delete-me.mojo":13:12)
+#loc5 = loc("delete-me.mojo":15:13)
+#loc6 = loc("delete-me.mojo":15:17)
+#loc7 = loc("delete-me.mojo":15:27)
+#subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, sourceName = <(fn)"callIt">, linkageName = "callIt", file = #file, line = 9, scopeLine = 9, subprogramFlags = "Definition|Optimized"> : !subroutine
+#lexical_block = #debuginfo.lexical_block<scope = #subprogram, file = #file, line = 12, column = 9>
+#loc8 = loc(fused<#subprogram>[#loc1])
+#loc9 = loc(fused<#subprogram>[#loc3])
+#loc10 = loc(fused<#subprogram1>[#loc5])
+#loc11 = loc(fused<#lexical_block>[#loc1])
+#loc12 = loc(fused<#lexical_block1>[#loc6])
+#loc13 = loc(fused<#lexical_block1>[#loc7])

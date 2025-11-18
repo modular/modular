@@ -82,6 +82,14 @@ public:
 
   /// Augment the given location to include the current scope information.
   Location createScopedLoc(Location loc);
+  /// Instead of unconditionally wrapping the location in a fused loc with the
+  /// current scope, this method only wraps if the subprograms of given scope
+  /// and the current scope do not match. This preserves the case where the
+  /// current scope is a lexical scope and the operation's scope is a lexical
+  /// scope that is a child of the current lexical scope. This can occur in
+  /// loops for example, where the scope should be the body not the line where
+  /// the for loop is declared.
+  Location createScopedLocIfMismatch(Location loc);
 
   //===--------------------------------------------------------------------===//
   // Creation

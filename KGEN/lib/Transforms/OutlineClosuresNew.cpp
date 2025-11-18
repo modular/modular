@@ -581,6 +581,13 @@ LogicalResult ClosureLifter::liftCallFunction(OpBuilder &b,
   DebugInfo::DISubprogramAttr scope =
       DebugInfo::extractScope((mlir::FunctionOpInterface)liftedWrapper);
   builder.pushScope(scope);
+  if (scope)
+    builder.initializeCompileUnit(scope.getCompileUnit().getSourceLanguage(),
+                                  scope.getCompileUnit().getFile(),
+                                  scope.getCompileUnit().getProducer(),
+                                  scope.getCompileUnit().getIsOptimized(),
+                                  scope.getCompileUnit().getEmissionKind());
+
   if (failed(builder.visitLexicalRegion(liftedWrapper.getBodyRegion())))
     return failure();
 
