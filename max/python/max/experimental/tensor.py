@@ -1114,6 +1114,46 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         return F.mean(self, axis=axis)
 
+    def clip(
+        self,
+        *,
+        min: TensorValueLike | None = None,
+        max: TensorValueLike | None = None,
+    ) -> Tensor:
+        """Clips values outside a range to the boundaries of the range.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+
+            # Create a 2x4 tensor
+            x = tensor.Tensor.constant(
+                [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]]
+            )
+
+            # Find max along last axis (within each row)
+            clipped_above = x.clip(max=3.)
+            # Result: [[1.2, 3., 2.1, 0.8], [2.3, 1.9, 3, 3.]]
+
+            clipped_below = x.clip(min=3.)
+            # Result: [[3., 3.5, 3., 3.], [3., 3., 4.2, 3.]]
+
+        Args:
+            min: The minimum value of the range. If not specified, do not
+                clip values for being too small.
+            max: The maximum value of the range. If not specified, do not
+                clip values for being too large.
+
+        Returns:
+            Tensor: A tensor containing the values clipped to the specified range.
+        """
+        x = self
+        if min is not None:
+            x = F.max(x, min)
+        if max is not None:
+            x = F.min(x, max)
+        return x
+
     def reshape(self, shape: ShapeLike) -> Tensor:
         """Reshapes the tensor to a new shape.
 
