@@ -150,3 +150,37 @@ fn testOnce(x: MyCopyableType):
     # CHECK-COUNT: 1 @MyCopyableType::@"__copyinit__
     fn myclosure() unified {var}:
         use(x, x)
+
+# // -----
+
+# COM: Trailing commas are supported
+
+def callIt(x: String, x1: String, x2: String, x3: String, x4: String):
+    pass
+
+
+@no_inline
+def takeIt[T: def () unified -> None](impl: T):
+    impl()
+
+
+# CHECK-LABEL: lit.fn @"longCaptureLists
+def longCaptureLists(
+    mut something: String,
+    mut something1: String,
+    mut something2: String,
+    mut something3: String,
+    mut something4: String,
+    mut something5: String,
+):
+    # CHECK: lit.closure.init
+    def closure() unified {
+        var something,
+        mut something2,
+        read something3,
+        mut something4,
+        read something5,
+    }:
+        callIt(something, something2, something3, something4, something5)
+
+    takeIt(closure)
