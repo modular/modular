@@ -359,7 +359,7 @@ class Llama4Model(
         signals = Signals(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
-        kv_cache_args = self.kv_manager.input_symbols()
+        kv_cache_args = self.kv_manager.get_symbolic_inputs()
         flattened_kv_types = [
             kv_type for sublist in kv_cache_args for kv_type in sublist
         ]
@@ -407,7 +407,7 @@ class Llama4Model(
             cache_dtype=self.encoding.cache_dtype,
         )
         n_devices = kv_params.n_devices
-        fetch_types = self.kv_manager.input_symbols()[0]
+        fetch_types = self.kv_manager.get_symbolic_inputs()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
         kv_caches_per_dev: list[PagedCacheValues] = []
         for i in range(n_devices):

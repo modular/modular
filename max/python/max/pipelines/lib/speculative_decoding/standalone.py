@@ -21,25 +21,13 @@ from typing import TYPE_CHECKING, final
 import numpy as np
 from max.driver import Tensor
 from max.dtype import DType
-from max.interfaces import (
-    RequestID,
-    TextGenerationInputs,
-    TextGenerationOutput,
-)
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheInputsSequence,
-)
+from max.interfaces import RequestID, TextGenerationInputs, TextGenerationOutput
+from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence
 from max.pipelines.core import TextContext
-from max.pipelines.lib.interfaces import (
-    ModelInputs,
-    PipelineModel,
-)
+from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
 from max.profiler import traced
 
-from ..sampling import (
-    apply_logits_processors,
-)
+from ..sampling import apply_logits_processors
 from .base import SpeculativeDecodingPipelineBase
 
 if TYPE_CHECKING:
@@ -79,7 +67,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         for ctx in batch:
             model.kv_manager.alloc(ctx, num_steps=num_steps)
-        kv_cache_inputs = model.kv_manager.fetch(batch, num_steps)
+        kv_cache_inputs = model.kv_manager.get_runtime_inputs(batch, num_steps)
         if is_draft:
             return (
                 model.prepare_initial_token_inputs(

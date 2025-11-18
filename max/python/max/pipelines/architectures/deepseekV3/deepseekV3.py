@@ -645,7 +645,7 @@ class DeepseekV3(Module):
             device=DeviceRef.CPU(),
         )
 
-        kv_inputs = kv_manager.input_symbols()
+        kv_inputs = kv_manager.get_symbolic_inputs()
 
         # Flatten kv types for each device
         flattened_kv_types: list[TensorType] = [

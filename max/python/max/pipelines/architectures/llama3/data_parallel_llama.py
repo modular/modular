@@ -112,7 +112,7 @@ class DataParallelLlama(Module):
         self.num_kv_cache_inputs = len(single_model_kv_cache_inputs)
 
         flat_kv_cache_inputs: list[TensorType] = []
-        for input_symbols in kv_manager.input_symbols():
+        for input_symbols in kv_manager.get_symbolic_inputs():
             flat_kv_cache_inputs.extend(input_symbols)
 
         data_parallel_split_type = TensorType(

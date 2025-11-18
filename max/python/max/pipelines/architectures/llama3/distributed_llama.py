@@ -210,7 +210,7 @@ class DistributedLlama3(DistributedTransformer):
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = kv_manager.input_symbols()
+        kv_inputs = kv_manager.get_symbolic_inputs()
 
         # Construct Graph Inputs
         tokens_type = TensorType(

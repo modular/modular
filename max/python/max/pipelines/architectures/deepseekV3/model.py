@@ -32,10 +32,7 @@ from max.kv_cache import (
 )
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.float8_config import parse_float8_config
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -384,7 +381,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             ]
 
             # Unmarshal the KV cache arguments.
-            fetch_types = self.kv_manager.input_symbols()[0]
+            fetch_types = self.kv_manager.get_symbolic_inputs()[0]
             len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
             kv_caches_per_dev = self._unflatten_kv_inputs(
                 [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]

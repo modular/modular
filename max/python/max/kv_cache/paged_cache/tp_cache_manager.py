@@ -583,16 +583,17 @@ class _TPPagedKVCacheManager:
         self.block_manager.allocate_new_blocks(data, num_steps)
 
     @traced
-    def fetch(
+    def get_runtime_inputs(
         self, batch: Sequence[TextGenerationContext], num_steps: int = 1
     ) -> Sequence[RaggedKVCacheInputs]:
-        """Reuses blocks from prefix cache and allocates new blocks for requests in batch.
+        """Get the graph inputs for a batch of requests.
 
-        On cache hits, the input context may have their start_idx bumped upwards in order
-        to trim the prompt. Additionally, this method may launch COW memcpy kernel.
+        This method will raise a RuntimeError if any request has insufficient blocks
+        already allocated to it to run for the given number of steps.
 
-        This can fail if there are insufficient blocks to satisfy the batch. In such a case,
-        we raise a RuntimeError.
+        Args:
+            batch: Batch of requests
+            num_steps: Number of steps to run for
         """
 
         if self.block_copy_engine is not None:
@@ -681,7 +682,7 @@ class _TPPagedKVCacheManager:
 
         return ret_list
 
-    def input_symbols(
+    def get_symbolic_inputs(
         self,
         devices: Sequence[Device] | None = None,
         num_layers: int | None = None,
@@ -816,7 +817,7 @@ class _TPPagedKVCacheManager:
         return self.block_manager.get_req_blocks(request_id)
 
     def _create_increment_cache_lengths_graph(self) -> Graph:
-        input_symbols = self.input_symbols()
+        input_symbols = self.get_symbolic_inputs()
         cache_lengths_types = [
             input_symbols[i][1] for i in range(len(self.devices))
         ]

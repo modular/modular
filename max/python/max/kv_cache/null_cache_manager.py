@@ -128,7 +128,7 @@ class NullKVCacheManager:
         """Allocates blocks for a request to run for N steps."""
         self._request_to_replica_idx[data.request_id] = 0
 
-    def fetch(
+    def get_runtime_inputs(
         self, batch: Sequence[TextGenerationContext], num_steps: int = 1
     ) -> list[RaggedKVCacheInputs]:
         """Fetch KV cache blocks (returns dummy tensors).
@@ -165,7 +165,7 @@ class NullKVCacheManager:
             )
         ]
 
-    def input_symbols(
+    def get_symbolic_inputs(
         self,
         devices: Sequence[Device] | None = None,
         num_layers: int | None = None,
