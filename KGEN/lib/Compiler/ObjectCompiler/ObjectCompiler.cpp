@@ -1631,6 +1631,9 @@ static std::string getPrettyMetallibError(StringRef metalCompilerErrorMessage) {
     return "Please make sure Xcode version is at least 16.0 and macOS is at "
            "least 15.0.\nIf after update you still see compilation error, "
            "please submit a bug report.";
+  if (metalCompilerErrorMessage.contains("unable to find utility \"metallib\""))
+    return "Please make sure Xcode is installed and setup correctly\n" +
+           metalCompilerErrorMessage.str();
   return "Metal Compiler failed to compile metallib. Please submit a bug "
          "report.";
 }
