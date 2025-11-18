@@ -198,10 +198,12 @@ fn foo(y: DeprecatedImplicitConversion): pass
 fn foo(z: String): pass
 
 fn deprecated_implicit_conversion():
-    # expected-warning @+1 {{deprecated implicit conversion from 'IntLiteral[1]' to 'DeprecatedImplicitConversion'}}
+    # expected-warning @+2 {{deprecated implicit conversion from 'IntLiteral[1]' to 'DeprecatedImplicitConversion'}}
+    # expected-note @+1 {{call 'DeprecatedImplicitConversion(...)' explicitly}}
     _: DeprecatedImplicitConversion = 1
 
-    # expected-warning @+1 {{deprecated implicit conversion from 'Int' to 'DeprecatedImplicitConversion'}}
+    # expected-warning @+2 {{deprecated implicit conversion from 'Int' to 'DeprecatedImplicitConversion'}}
+    # expected-note @+1 {{call 'DeprecatedImplicitConversion(...)' explicitly}}
     foo(Int(1))
 
 # ===----------------------------------------------------------------------=== #
