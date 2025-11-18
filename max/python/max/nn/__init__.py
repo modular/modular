@@ -32,6 +32,7 @@ from .float8_config import (
     Float8WeightScaleSpec,
     parse_float8_config,
 )
+from .identity import Identity
 from .layer import Layer, LayerList, Module, Shardable
 from .linear import (
     MLP,
@@ -100,6 +101,7 @@ __all__ = [
     "GPTQAttentionWithRope",
     "GPTQLinear",
     "GroupNorm",
+    "Identity",
     "Layer",
     "LayerList",
     "LayerNorm",
