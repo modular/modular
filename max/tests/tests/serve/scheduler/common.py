@@ -208,7 +208,7 @@ class FakeTokenGeneratorPipeline(
         ctxs: list[TextContext] = list(inputs.batch.values())
 
         for ctx in ctxs:
-            self.kv_manager.maybe_reserve(ctx, num_steps=num_steps)
+            self.kv_manager.alloc(ctx, num_steps=num_steps)
         self.kv_manager.fetch(ctxs, num_steps=num_steps)
 
         # Generate the responses

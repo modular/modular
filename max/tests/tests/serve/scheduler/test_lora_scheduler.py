@@ -17,7 +17,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.kv_cache import PagedKVCacheManager
+from max.kv_cache import InsufficientBlocksError, PagedKVCacheManager
 from max.pipelines.core import TextContext
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_batch_constructor import TextBatchConstructor
@@ -61,8 +61,8 @@ def create_mock_paged_cache() -> Mock:
     cache.total_num_pages = 128
     cache.free_blocks_pct = 0.5
 
-    # Mock prefetch to always succeed
-    cache.prefetch = Mock(return_value=True)
+    # Mock alloc to always succeed
+    cache.alloc = Mock()
     cache.claim = Mock()
     cache.release = Mock()
     cache.get_or_recommend_replica = Mock(return_value=0)
@@ -366,14 +366,11 @@ def test_tg_pure_age_based_preemption() -> None:
     pipeline = create_mock_pipeline_with_lora(lora_manager)
     paged_cache = create_mock_paged_cache()
 
-    # Mock prefetch to fail after first request
-    call_count = [0]
-
-    def prefetch_behavior(ctx: TextContext, num_steps: int) -> bool:
-        call_count[0] += 1
-        return call_count[0] <= 1
-
-    paged_cache.maybe_reserve = Mock(side_effect=prefetch_behavior)
+    # This mock alloc method will succeed on the first call, then raise on the next two.
+    # As there are only 3 reqs, this will be called at most 3 times.
+    paged_cache.alloc = Mock(
+        side_effect=[None, InsufficientBlocksError, InsufficientBlocksError]
+    )
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size_tg=4,

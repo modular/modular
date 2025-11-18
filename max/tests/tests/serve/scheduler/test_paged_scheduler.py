@@ -9,6 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from max.driver import CPU
+from max.kv_cache import InsufficientBlocksError
 from max.support.math import ceildiv
 from tests.serve.scheduler.common import (
     CE,
@@ -668,13 +669,13 @@ def test_paged_scheduler_oom_ce() -> None:
     )
 
     actual: list[BatchInfo] = []
-    with pytest.raises(RuntimeError) as e:
+    with pytest.raises(InsufficientBlocksError) as e:
         run_until_completion(scheduler, output_list=actual)
 
     # The error message should be informative:
     assert (
         "Insufficient KV pages for a single request with 200 tokens.\n"
-        "The KVCache has 10 blocks with block size 10. This is only enough to support 100 tokens.\n"
+        "The KVCache has 10 pages with page size 10. This is only enough to support 100 tokens.\n"
         "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
         in str(e.value)
     )
@@ -726,8 +727,8 @@ def test_paged_scheduler_oom_tg() -> None:
     # fmt: on
     # The error message should be informative:
     assert (
-        "Insufficient KV pages for a single request with 101 tokens.\n"
-        "The KVCache has 10 blocks with block size 10. This is only enough to support 100 tokens.\n"
+        "Insufficient KV pages to run token generation on a single request with 101 tokens.\n"
+        "The KVCache has 10 pages with page size 10. This is only enough to support 100 tokens.\n"
         "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
         in str(e.value)
     )
