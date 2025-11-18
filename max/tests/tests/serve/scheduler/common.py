@@ -203,7 +203,7 @@ class FakeTokenGeneratorPipeline(
         # Claim cache rows for context.
         for _, context in inputs.batch.items():
             if not self.kv_manager.contains(context.request_id):
-                self.kv_manager.external_claim(context.request_id)
+                self.kv_manager.claim(context.request_id)
 
         ctxs: list[TextContext] = list(inputs.batch.values())
 
