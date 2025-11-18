@@ -8,6 +8,7 @@ modular_cc_binary(
     ]),
     deps = [
         "//Support:Base",
+        "@llvm-project//llvm:Support",
         "@llvm-project//llvm:TableGen",
     ],
 )

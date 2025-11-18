@@ -5,7 +5,10 @@ modular_cc_test(
     srcs = glob(["ADT/*.cpp"]),
     deps = [
         "//Support:ADT",
+        "//Support:Base",
         "//Support:Globals",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
     ],
 )
 
@@ -26,19 +29,26 @@ modular_cc_test(
     deps = [
         "//Support:Base",
         "//Support:Buffer",
+        "@llvm-project//llvm:Support",
     ],
 )
 
 modular_cc_test(
     name = "HashUtilsTest",
     srcs = ["HashUtilsTest.cpp"],
-    deps = ["//Support:HashUtils"],
+    deps = [
+        "//Support:HashUtils",
+        "@llvm-project//mlir:IR",
+    ],
 )
 
 modular_cc_test(
     name = "IPIntTest",
     srcs = ["IPIntTest.cpp"],
-    deps = ["//Support:IPInt"],
+    deps = [
+        "//Support:IPInt",
+        "@llvm-project//llvm:Support",
+    ],
 )
 
 modular_cc_test(
@@ -50,13 +60,20 @@ modular_cc_test(
 modular_cc_test(
     name = "BufferTest",
     srcs = ["BufferTest.cpp"],
-    deps = ["//Support:Buffer"],
+    deps = [
+        "//Support:Buffer",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:Support",
+    ],
 )
 
 modular_cc_test(
     name = "Base64Test",
     srcs = ["Base64Test.cpp"],
-    deps = ["//Support:Base64"],
+    deps = [
+        "//Support:Base64",
+        "@llvm-project//llvm:Support",
+    ],
 )
 
 modular_cc_test(
@@ -64,13 +81,18 @@ modular_cc_test(
     srcs = glob(["Compiler/*.cpp"]),
     deps = [
         "//Support:Compiler",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
     ],
 )
 
 modular_cc_test(
     name = "ConfigurationTest",
     srcs = ["ConfigurationTest.cpp"],
-    deps = ["//Support:Configuration"],
+    deps = [
+        "//Support:Configuration",
+        "@llvm-project//llvm:Support",
+    ],
 )
 
 modular_cc_test(
@@ -86,9 +108,12 @@ modular_cc_test(
     name = "DebugInfoDialectTest",
     srcs = glob(["DebugInfoDialect/*.cpp"]),
     deps = [
+        "//Support:Base",
         "//Support:DebugInfoDialect",
         "//Support:DebugInfoToLLVM",
         "//Support:DebugInfoTransforms",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Parser",
     ],
 )
 
@@ -101,15 +126,20 @@ modular_cc_test(
 modular_cc_test(
     name = "MicroBenchmarkTest",
     srcs = ["MicroBenchmarkTest.cpp"],
-    deps = ["//Support:MicroBenchmark"],
+    deps = [
+        "//Support:MicroBenchmark",
+        "@llvm-project//llvm:Support",
+    ],
 )
 
 modular_cc_test(
     name = "FilesystemTest",
     srcs = ["FileSystemExtrasTest.cpp"],
     deps = [
+        "//Support:Base",
         "//Support:Buffer",
         "//Support:Filesystem",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -122,7 +152,11 @@ modular_cc_test(
 modular_cc_test(
     name = "HTTPTest",
     srcs = glob(["HTTP/*.cpp"]),
-    deps = ["//Support:HTTP"],
+    deps = [
+        "//Support:Filesystem",
+        "//Support:HTTP",
+        "@llvm-project//llvm:Support",
+    ],
 )
 
 modular_cc_test(
@@ -133,7 +167,12 @@ modular_cc_test(
         "TensorShapeTest.cpp",
         "TensorSpecTest.cpp",
     ],
-    deps = ["//Support:ML"],
+    deps = [
+        "//Support:Base",
+        "//Support:ML",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+    ],
 )
 
 modular_cc_test(
@@ -141,7 +180,9 @@ modular_cc_test(
     srcs = ["HostTest.cpp"],
     deps = [
         "//Support:MArchTarget",
+        "//Support:MArchTargetMinimal",
         "//Support:Threading",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -151,6 +192,7 @@ modular_cc_test(
     deps = [
         "//Support:Globals",
         "//Support:Profiling",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -158,8 +200,11 @@ modular_cc_test(
     name = "MArchTargetTest",
     srcs = glob(["MArchTarget/*.cpp"]),
     deps = [
+        "//Support:Base",
         "//Support:Globals",
         "//Support:MArchTarget",
+        "//Support:MDialect",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -167,13 +212,22 @@ modular_cc_test(
     name = "TelemetryTest",
     srcs = ["TelemetryTest.cpp"],
     env = {"MODULAR_TELEMETRY_ENABLED": "true"},
-    deps = ["//Support:Telemetry"],
+    deps = [
+        "//Support:Base",
+        "//Support:Configuration",
+        "//Support:Filesystem",
+        "//Support:Telemetry",
+        "@llvm-project//llvm:Support",
+    ],
 )
 
 modular_cc_test(
     name = "FillTest",
     srcs = ["ML/FillTest.cpp"],
-    deps = ["//Support:ML"],
+    deps = [
+        "//Support:ML",
+        "@llvm-project//llvm:Support",
+    ],
 )
 
 modular_cc_test(

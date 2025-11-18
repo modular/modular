@@ -5,6 +5,8 @@ modular_cc_binary(
     srcs = glob(["*.cpp"]),
     visibility = ["//visibility:public"],
     deps = [
+        "//Support:Base",
         "//Support:Stats",
+        "@llvm-project//llvm:Support",
     ],
 )

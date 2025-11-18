@@ -8,6 +8,9 @@ modular_cc_binary(
         "//Support:Base",
         "//Support:Globals",
         "//Support:MArchTarget",
+        "//Support:MArchTargetMinimal",
         "//Support:MDialect",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//llvm:TargetParser",
     ],
 )

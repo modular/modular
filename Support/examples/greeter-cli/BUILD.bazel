@@ -46,5 +46,6 @@ modular_cc_binary(
         ":Options.inc_files",
         "//Support:Driver",
         "@llvm-project//llvm:Option",
+        "@llvm-project//llvm:Support",
     ],
 )
