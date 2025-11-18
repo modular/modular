@@ -1571,6 +1571,40 @@ class VariadicMapAttr(max._core.Attribute):
     @property
     def generator(self) -> max._core.dialects.builtin.TypedAttr: ...
 
+class VariadicZipAttr(max._core.Attribute):
+    """
+    The `#kgen.variadic.zip` attribute is used to zip a variadic of
+    variadic (type) value.
+
+    Example:
+    ```mlir
+    #kgen.variadic.zip<[[Int, Int], [Float, Float]]> : !variadic<!variadic<!AnyType>>
+    // ->
+    #kgen.variadic<[[Int, Float], [Int, Float]]> : !variadic<!variadic<!AnyType>>
+    ```
+
+    At the moment, when the provided variadics are of different lengths, we zip
+    till the shortest variadic are consumed. In the future, we might want to
+    extend the attribute to accept an "default" value for "zip_longest".
+    """
+
+    @overload
+    def __init__(
+        self,
+        type: VariadicType,
+        input_type_value: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type: VariadicType,
+        input_type_value: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type(self) -> VariadicType: ...
+    @property
+    def variadics(self) -> max._core.dialects.builtin.TypedAttr: ...
+
 class VariantAttr(max._core.Attribute):
     """
     The `#kgen.variant` attribute represents a constant `!kgen.variant` value.
