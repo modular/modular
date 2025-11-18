@@ -12,7 +12,7 @@ from collections.string.string_slice import StaticString, get_static_string
 @fieldwise_init
 struct StringParam[value: String]:
     fn print_it(self):
-        print(value)
+        print(Self.value)
 
 
 # ELABORATE: kgen.func @{{.*}}stringInputParam[[FUNC:.*]]()

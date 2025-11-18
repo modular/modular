@@ -13,7 +13,7 @@ from collections import List
 struct MTuple[T: ImplicitlyCopyable & Movable](
     ImplicitlyCopyable, Movable, Stringable, Writable
 ):
-    comptime Element = Variant[T, Self]
+    comptime Element = Variant[Self.T, Self]
     var elts: List[Self.Element]
 
     @always_inline
@@ -59,9 +59,9 @@ struct MTuple[T: ImplicitlyCopyable & Movable](
             if self.elts[i].isa[Int]():
                 var value = self.elts[i]
                 writer.write(value[Int])
-            elif self.elts[i].isa[MTuple[T]]():
+            elif self.elts[i].isa[MTuple[Self.T]]():
                 var value = self.elts[i]
-                writer.write(value[MTuple[T]])
+                writer.write(value[MTuple[Self.T]])
             else:
                 writer.write("?")
             if i < len(self.elts) - 1:

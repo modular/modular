@@ -26,9 +26,9 @@ trait ATrait(Movable):
 
 
 struct AStruct[func: fn (x: Int) unified -> Int](ATrait):
-    var myFunc: func
+    var myFunc: Self.func
 
-    fn __init__(out self, var x: func):
+    fn __init__(out self, var x: Self.func):
         self.myFunc = x^
 
     fn my_method(self) -> Int:

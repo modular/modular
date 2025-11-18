@@ -61,10 +61,10 @@ struct Bar[C: Int, D: Int]:
 struct Bat[A: Int](ImplicitlyCopyable, Movable):
     var b: Int
 
-    fn get[B: Int](self) -> fn (y: Int) escaping -> Bar[B, A]:
-        fn bar(y: Int) -> Bar[B, A]:
+    fn get[B: Int](self) -> fn (y: Int) escaping -> Bar[B, Self.A]:
+        fn bar(y: Int) -> Bar[B, Self.A]:
             var w = B + self.b + y
-            return Bar[B, A](w + A)
+            return Bar[B, Self.A](w + Self.A)
 
         return bar
 

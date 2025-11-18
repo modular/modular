@@ -46,7 +46,7 @@ fn captureParams[X: Trait, Y: Trait](impl2: X, mut impl3: Y):
 
 @fieldwise_init
 struct Parameter[*, base: ImplicitlyCopyable & Writable](Copyable):
-    var impl: base
+    var impl: Self.base
 
     fn useIt(self):
         print(self.impl)
