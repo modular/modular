@@ -114,3 +114,12 @@ alias ZipToTuple[T: type_of(AnyType), //, *Ts: VariadicOf[T]] = VariadicToTuple[
     VariadicToTupleMap[T],
     *VariadicZip[*Ts],  # zipped variadic
 ]
+
+alias VariadicSplat[T: AnyType, count: Int] = __mlir_attr[
+    `#kgen.variadic.splat<`,
+    T,
+    `,`,
+    count._mlir_value,
+    `> : `,
+    VariadicOf[type_of(T)],
+]
