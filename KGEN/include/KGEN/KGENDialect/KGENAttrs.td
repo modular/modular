@@ -233,6 +233,31 @@ def KGEN_VariadicSplatAttr : KGEN_ExprAttr<"VariadicSplat", "variadic.splat"> {
   let skipDefaultBuilders = 1;
 }
 
+def KGEN_VariadicSizeAttr : KGEN_ExprAttr<"VariadicSize", "variadic.size"> {
+  let summary = "return the size of a variadic";
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "IndexType">:$type,
+    "TypedAttr":$variadic
+  );
+
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an variadic.size.
+    AttrBuilderWithInferredContext<(ins
+       "IndexType":$type, "TypedAttr":$variadic), "", "TypedAttr">,
+
+    // Verbose form with MLIRContext, needed for ODS constructors.
+    AttrBuilder<(ins "IndexType":$type, "TypedAttr":$variadic), [{
+      return get(type, variadic);
+    }], "TypedAttr">,
+  ];
+
+  let assemblyFormat = "`<` $variadic `>`";
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+}
+
 //===----------------------------------------------------------------------===//
 // UnknownAttr
 //===----------------------------------------------------------------------===//
