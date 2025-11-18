@@ -12,20 +12,6 @@ config_setting(
 )
 
 modular_cc_library(
-    name = "DeviceContext.headers",
-    hdrs = [
-        "include/AsyncRT/DeviceContext/CompilationDevice.h",
-        "include/AsyncRT/DeviceContext/DeviceContext.h",
-    ],
-    visibility = ["//visibility:private"],
-    deps = [
-        "//Support:Base",
-        "//Support:Buffer",
-        "//Support:Configuration",
-    ],
-)
-
-modular_cc_library(
     name = "Runtime.headers",
     hdrs = glob([
         "include/AsyncRT/Runtime/*.h",
@@ -73,12 +59,16 @@ modular_shared_library(
     ],
     hdrs = [
         "include/AsyncRT/DeviceContext/BinaryID.h",
+        "include/AsyncRT/DeviceContext/CompilationDevice.h",
+        "include/AsyncRT/DeviceContext/DeviceContext.h",
     ],
     output_name = "AsyncRTMojoBindings",
     deps = [
-        ":DeviceContext.headers",
         ":DeviceContextImpl",
+        "//Support:Base",
         "//Support:BinaryID",
+        "//Support:Buffer",
+        "//Support:Configuration",
         "//Support:SymbolExport",
         "@llvm-project//llvm:Support",
     ],
@@ -104,6 +94,8 @@ modular_cc_library(
         "lib/DeviceContext/Virtual/VirtualDeviceContext.cpp",
     ],
     hdrs = [
+        "include/AsyncRT/DeviceContext/CompilationDevice.h",
+        "include/AsyncRT/DeviceContext/DeviceContext.h",
         "lib/DeviceContext/BufferCache.h",
         "lib/DeviceContext/CPU/CpuDeviceContext.h",
         "lib/DeviceContext/CUDA/CUDACompilationDevice.h",
@@ -124,9 +116,10 @@ modular_cc_library(
     }),
     visibility = ["//AsyncRT:__subpackages__"],
     deps = [
-        ":DeviceContext.headers",
         ":RuntimeGlobals",
         "//Support:Base",
+        "//Support:Buffer",
+        "//Support:Configuration",
         "//Support:ML",
         "@llvm-project//llvm:Support",
     ] + select({
@@ -275,6 +268,8 @@ modular_shared_library(
         ":NIXLLibOnly",
         ":NVPTX",
         ":Support",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
         "@ucx_prebuilt//:ucx_cpu",
     ],
 )
@@ -322,6 +317,8 @@ modular_shared_library(
         ":NIXLLibOnly",
         ":NVPTX",
         ":Support",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
         "@ucx_prebuilt//:ucx_cuda",
     ],
 )
@@ -369,6 +366,8 @@ modular_shared_library(
         ":NIXLLibOnly",
         ":NVPTX",
         ":Support",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
         "@ucx_prebuilt//:ucx_cuda_verbs",
     ],
 )
@@ -414,6 +413,8 @@ modular_shared_library(
         ":DeviceContextImpl",
         ":NIXLLibOnly",
         ":Support",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
         "@ucx_prebuilt//:ucx_rocm",
     ],
 )
@@ -456,9 +457,12 @@ modular_shared_library(
     visibility = ["//visibility:public"],
     deps = [
         ":DeviceContext",
+        ":DeviceContextImpl",
         ":NIXLLibOnly",
         ":NVPTX",
         ":Support",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
         "@ucx_prebuilt//:ucx_rocm_verbs",
     ],
 )
