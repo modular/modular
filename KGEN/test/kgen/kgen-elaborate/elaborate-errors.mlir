@@ -309,3 +309,25 @@ kgen.generator export @main() {
   kgen.call @fn3<2, 4>() : () -> ()
   kgen.return
 }
+
+
+// -----
+
+kgen.generator @g<T: i1>() -> index {
+  // expected-note @+1 {{call expansion failed with parameter value(s): ("T": true)}}
+  %0 = kgen.call @f<:i1 T>() : () -> index
+  kgen.return %0 : index
+}
+
+kgen.generator @f<T: i1>() -> index {
+  %0 = kgen.param.constant = <42>
+  // expected-note @+1 {{codegen unreachable: materializing code that is not codegen reachable is not allowed}}
+  kgen.codegen.reachable <not(T)>, "materializing code that is not codegen reachable is not allowed"
+  kgen.return %0 : index
+}
+
+kgen.generator export @main() {
+  // expected-error @+1 {{call expansion failed}}
+  %0 = kgen.call @g<:i1 1>() : () -> index
+  kgen.return
+}
