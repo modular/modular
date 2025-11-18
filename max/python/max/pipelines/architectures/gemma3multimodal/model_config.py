@@ -71,6 +71,8 @@ class Gemma3VisionConfig:
     patch_size: int
     """The size (resolution) of each patch.  default 14"""
 
+    attention_bias: bool = True
+
     attention_dropout: float = 0.0
     """The dropout ratio for the attention probabilities"""
 
@@ -218,7 +220,7 @@ class Gemma3ForConditionalGenerationConfig(
         kv_cache_config: KVCacheConfig,
         return_logits: ReturnLogits,
         norm_method: Literal["rms_norm"] = "rms_norm",
-        attention_bias: bool = False,  # Gemma3 attention bias is False in HF.
+        attention_bias: bool = False,
     ) -> Gemma3ForConditionalGenerationConfig:
         _weights_format = weights_format(
             pipeline_config.model_config.weight_path
@@ -258,6 +260,7 @@ class Gemma3ForConditionalGenerationConfig(
         hf_text_config = getattr(huggingface_config, "text_config", None)
         if hf_text_config is None:
             raise ValueError("text_config not found in huggingface_config")
+        
         text_config = Gemma3Config.generate(
             pipeline_config=pipeline_config,
             huggingface_config=hf_text_config,

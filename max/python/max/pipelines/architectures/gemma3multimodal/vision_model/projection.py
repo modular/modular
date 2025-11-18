@@ -157,8 +157,6 @@ class Gemma3VisionMLP(Module):
     def __init__(
         self,
         config: Gemma3ForConditionalGenerationConfig,
-        hidden_size: int,
-        intermediate_size: int,
         device: DeviceRef | None = None
     ):
         super().__init__()
@@ -192,6 +190,7 @@ class Gemma3VisionMLP(Module):
         self.fc1.sharding_strategy = strategy
         self.fc2.sharding_strategy = strategy
 
+    # ⚠️ from Claude.  looks logical but who would know?
     def shard(
         self, devices: Iterable[DeviceRef]
     ) -> list[Gemma3VisionMLP]:
@@ -209,8 +208,6 @@ class Gemma3VisionMLP(Module):
         ):
             sharded = Gemma3VisionMLP(
                 self.config,
-                int(self.fc1.weight.shape[1]),  # borrowed from internvl because hidden_size and intermediate_size in our config seem wrong...?
-                int(self.fc1.weight.shape[0]),  # borrowed from internvl
                 device
             )
 

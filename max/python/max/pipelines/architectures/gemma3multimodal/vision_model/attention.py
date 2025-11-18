@@ -61,28 +61,28 @@ class Gemma3VisionAttention(Module):
         self.q_proj = Linear(
             vision_config.hidden_size,       # 1152
             self.num_heads * self.head_dim,  # 16 * 72 = 1152
-            has_bias=True,
+            has_bias=vision_config.attention_bias,
             dtype=config.dtype,
             device=self.device,
         )
         self.k_proj = Linear(
             vision_config.hidden_size,
             self.num_heads * self.head_dim,
-            has_bias=True,
+            has_bias=vision_config.attention_bias,
             dtype=config.dtype,
             device=self.device,
         )
         self.v_proj = Linear(
             vision_config.hidden_size,
             self.num_heads * self.head_dim,
-            has_bias=True,
+            has_bias=vision_config.attention_bias,
             dtype=config.dtype,
             device=self.device,
         )
         self.out_proj = Linear(
             self.num_heads * self.head_dim,
             vision_config.hidden_size,
-            has_bias=True,
+            has_bias=vision_config.attention_bias,
             dtype=config.dtype,
             device=self.device,
         )
@@ -98,7 +98,7 @@ class Gemma3VisionAttention(Module):
     @property
     def sharding_strategy(self) -> ShardingStrategy:
         return self.q_proj.sharding_strategy
-    
+
     @sharding_strategy.setter
     def sharding_strategy(self, strategy: ShardingStrategy) -> None:
         if not strategy.is_replicate:
