@@ -1408,11 +1408,8 @@ void Elaborator::completeImplNodeProcessing(ImplNode *inode) {
     // Complete processing of outstanding dependencies. Process in reverse with
     // `pop_back` so that forks will end up in the same state.
     while (!inode->dependencies.empty()) {
-      // while (!dependencies.empty()) {
       auto [loc, genNode] = inode->dependencies.back();
-      // auto [loc, genNode] = dependencies.back();
       inode->dependencies.pop_back();
-      // dependencies.pop_back();
 
       // Check for errors in dependencies.
       FailureOr<ImplNode *> concrete =
@@ -2744,8 +2741,12 @@ LogicalResult Elaborator::run(
   for (FuncOp func : deferredSymbols)
     newBlock->push_back(func);
 
+  // Keep the old module body alive for checkCodeGenUnreachable erroring.
+  mlir::OwningOpRef<mlir::ModuleOp> tmpModule =
+      mlir::ModuleOp::create(theModule->getLoc());
+  theModule.getBody()->moveBefore(tmpModule->getBody());
+
   // Update the symbol table with the new one.
-  theModule.getBody()->erase();
   theModule.getBodyRegion().push_back(newBlock);
   replaceSymNames(theModule, symToRename);
 
