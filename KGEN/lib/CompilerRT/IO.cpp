@@ -247,24 +247,6 @@ KGEN_CompilerRT_IO_FileSize(FileHandleWrapper file, llvm::StringRef *errMsg) {
   return unwrap(file)->size(errMsg);
 }
 
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT uint64_t
-KGEN_CompilerRT_IO_FileSeek(FileHandleWrapper file, uint64_t offset,
-                            uint8_t whence, llvm::StringRef *errMsg) {
-  return unwrap(file)->seek(offset, whence, errMsg);
-}
-
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT size_t
-KGEN_CompilerRT_IO_FileReadBytes(FileHandleWrapper file, char *buf,
-                                 size_t buf_size, llvm::StringRef *errMsg) {
-  return unwrap(file)->readBytes(buf, buf_size, errMsg);
-}
-
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_IO_FileWrite(FileHandleWrapper file, const char *data,
-                             uint64_t size, llvm::StringRef *errMsg) {
-  unwrap(file)->write(llvm::StringRef(data, size), errMsg);
-}
-
 //
 // Get the stdout stream associated with the program.
 // Necessary for flushing AMD `stdout`.
