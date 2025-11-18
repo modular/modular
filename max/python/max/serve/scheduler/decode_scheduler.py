@@ -30,6 +30,7 @@ from max.interfaces import (
 )
 from max.interfaces.queue import BackgroundQueueDrainer, drain_queue
 from max.kv_cache import (
+    InsufficientBlocksError,
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManager,
@@ -223,11 +224,13 @@ class DecodeScheduler(Scheduler):
             if not self.paged_manager.contains(req_id):
                 self.paged_manager.claim(req_id)
 
-            # Prefetch memory for Context Encoding eagerly, this only needs to be
-            # for one step.
-            if not self.paged_manager.maybe_reserve(context, 1):
-                # If we don't have enough space in the paged manager
-                # return this to the request queue.
+            # Allocate enough memory needed to run the request for one step.
+            # The blocks allocated here will be written via a KVCache transfer
+            # from prefill -> decode.
+            try:
+                self.paged_manager.alloc(context, 1)
+            except InsufficientBlocksError:
+                # If we don't have enough space, we will return this to the request queue.
                 self.pending_reqs[req_id] = context
                 self.pending_reqs.move_to_end(req_id, last=False)
                 self.paged_manager.release(req_id)
@@ -266,10 +269,12 @@ class DecodeScheduler(Scheduler):
                 )
 
     def check_for_completed_transfers(self) -> None:
-        """Updates the active batch by adding new requests from the decode queue and managing memory prefetching.
+        """Checks for the completion of KVCache transfers.
 
-        Adds new requests to the batch up to the maximum batch size. For each request, attempts to prefetch
-        required memory. If prefetch fails, handles preemption by returning newer requests to the decode queue.
+        For transfers that have been completed, we will mark the request as ready
+        for token generation by enqueuing it into the text batch constructor.
+
+        We also ensure that the metadata is cleaned up in the transfer engine.
         """
 
         request_ids = list(self.inflight_transfers.keys())

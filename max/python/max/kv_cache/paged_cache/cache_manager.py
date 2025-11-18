@@ -47,8 +47,8 @@ class PagedKVCacheManager:
         kv_manager.claim(ctx2.request_id, replica_idx=1)
 
         # Allocate blocks for these requests
-        kv_manager.maybe_reserve(ctx1, num_steps=10)
-        kv_manager.maybe_reserve(ctx2, num_steps=10)
+        kv_manager.alloc(ctx1, num_steps=10)
+        kv_manager.alloc(ctx2, num_steps=10)
 
         # Get KVCache inputs to feed to graph
         kv_cache_inputs = kv_manager.fetch([ctx1, ctx2], num_steps=10)
@@ -218,33 +218,32 @@ class PagedKVCacheManager:
             self._request_to_replica_idx[ctx.request_id]
         ].get_pct_used_blocks_after_allocation(ctx, num_steps)
 
-    def maybe_reserve(
+    def alloc(
         self,
         data: TextGenerationContext,
         num_steps: int = 1,
-    ) -> bool:
-        """Prepares blocks for a request prior to a subsequent fetch call.
+    ) -> None:
+        """Allocates blocks for a request to run for N steps.
 
-        Reuses blocks from prefix cache and allocates new blocks for the request.
-        If a request is reserved, it's guaranteed to not OOM in a subsequent call
-        to ``fetch``.
+        This method allocates blocks needed by a request to run for N steps.
+        When prefix caching is enabled, some of the allocated blocks may be
+        retrieved from the prefix cache.
 
         Args:
             data: The text generation context for the request. The request ID
                 must already be assigned to a replica via `claim`.
             num_steps: The number of steps to reserve blocks for. Default: 1.
 
-        Returns:
-            bool: True if the request was successfully reserved; false otherwise.
+        Raises:
+            InsufficientBlocksError: If there are insufficient free blocks to
+            satisfy the allocation.
         """
         assert data.request_id in self._request_to_replica_idx, (
             f"Request ID {data.request_id} must already be assigned to a "
             "replica before reserving"
         )
         replica_idx = self._request_to_replica_idx[data.request_id]
-        return self._replica_managers[replica_idx].maybe_reserve(
-            data, num_steps
-        )
+        return self._replica_managers[replica_idx].alloc(data, num_steps)
 
     def fetch(
         self, batch: Sequence[TextGenerationContext], num_steps: int = 1

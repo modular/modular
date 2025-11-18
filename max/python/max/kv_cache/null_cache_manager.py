@@ -120,22 +120,13 @@ class NullKVCacheManager:
         """
         return [list(range(len(batch)))]
 
-    def maybe_reserve(
+    def alloc(
         self,
         data: TextGenerationContext,
         num_steps: int = 1,
-    ) -> bool:
-        """Reserve cache blocks (no-op for null manager).
-
-        Args:
-            data: Text generation context
-            num_steps: Number of steps to reserve
-
-        Returns:
-            Always returns True
-        """
+    ) -> None:
+        """Allocates blocks for a request to run for N steps."""
         self._request_to_replica_idx[data.request_id] = 0
-        return True
 
     def fetch(
         self, batch: Sequence[TextGenerationContext], num_steps: int = 1

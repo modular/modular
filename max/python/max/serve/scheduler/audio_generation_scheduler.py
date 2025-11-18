@@ -382,9 +382,10 @@ class AudioGenerationScheduler(Scheduler):
             if not self.paged_manager.contains(req_id):
                 self.paged_manager.claim(req_id)
 
-            # Prefetch here for CE so that we query prefix cache
-            if not self.paged_manager.maybe_reserve(req_data, num_steps=1):
-                raise RuntimeError("Ran out of KV cache")
+            # Allocate enough memory to run the request for one step.
+            # This also queries the prefix cache which may reduce the number of
+            # tokens we need to encode.
+            self.paged_manager.alloc(req_data, num_steps=1)
 
             # activate the LoRA
             if self._lora_manager and is_lora(req_data, self._lora_manager):

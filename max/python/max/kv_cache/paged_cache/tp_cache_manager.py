@@ -44,7 +44,7 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 from max.support.math import ceildiv
 
 from .block_copy_engine import BlockCopyEngine
-from .block_manager import BlockManager, InsufficientBlocksError
+from .block_manager import BlockManager
 
 logger = logging.getLogger("max.pipelines")
 
@@ -563,30 +563,24 @@ class _TPPagedKVCacheManager:
         )
 
     @traced
-    def maybe_reserve(
-        self, data: TextGenerationContext, num_steps: int = 1
-    ) -> bool:
-        """Prepares blocks for a request prior to a subsequent fetch call.
+    def alloc(self, data: TextGenerationContext, num_steps: int = 1) -> None:
+        """Allocates blocks for a request to run for N steps.
 
-        Reuses blocks from prefix cache and allocates new blocks for the request.
-        If a request is reserved, it's guaranteed to not OOM in a subsequent call
-        to ``fetch``.
+        This method allocates blocks needed by a request to run for N steps.
+        When prefix caching is enabled, some of the allocated blocks may be
+        retrieved from the prefix cache.
 
         Args:
-            data: The text generation context for the request.
+            data: The text generation context for the request. The request ID
+                must already be assigned to a replica via `claim`.
             num_steps: The number of steps to reserve blocks for. Default: 1.
 
-        Returns:
-            bool: True if the request was successfully reserved; false otherwise.
+        Raises:
+            InsufficientBlocksError: If there are insufficient free blocks to
+            satisfy the allocation.
         """
         self.block_manager.reuse_blocks_from_prefix_cache(data)
-
-        # Allocating new blocks can fail if there are insufficient blocks.
-        try:
-            self.block_manager.allocate_new_blocks(data, num_steps)
-        except InsufficientBlocksError:
-            return False
-        return True
+        self.block_manager.allocate_new_blocks(data, num_steps)
 
     @traced
     def fetch(
@@ -613,7 +607,7 @@ class _TPPagedKVCacheManager:
             # Allocate blocks for request if we need more.
             if self._does_req_need_more_blocks(ctx, num_steps):
                 raise ValueError(
-                    f"Called fetch with request {ctx.request_id} but it does not have sufficient blocks. `maybe_reserve` must be called first."
+                    f"Called fetch with request {ctx.request_id} but it does not have sufficient blocks. `alloc` must be called first."
                 )
 
             # Compute the total sequence length

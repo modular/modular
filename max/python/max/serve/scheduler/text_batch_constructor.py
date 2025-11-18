@@ -24,7 +24,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.kv_cache import PagedKVCacheManager
+from max.kv_cache import InsufficientBlocksError, PagedKVCacheManager
 from max.pipelines.core.context import TextContext
 from max.pipelines.lib import LoRAManager
 from max.profiler import traced
@@ -363,7 +363,11 @@ class TextBatchConstructor:
                     num_steps = min(num_steps, num_available_steps)
 
                 # Attempt to schedule the request.
-                is_scheduled = self.paged_cache.maybe_reserve(ctx, num_steps)
+                try:
+                    self.paged_cache.alloc(ctx, num_steps)
+                    is_scheduled = True
+                except InsufficientBlocksError:
+                    is_scheduled = False
 
                 # We were able to schedule this request
                 if is_scheduled:
@@ -543,7 +547,17 @@ class TextBatchConstructor:
                 scheduled = False
                 if sufficient_free_blocks or no_active_requests:
                     # Attempt to schedule the request.
-                    scheduled = self.paged_cache.maybe_reserve(ctx, num_steps=1)
+                    try:
+                        self.paged_cache.alloc(ctx, num_steps=1)
+                        scheduled = True
+                    except InsufficientBlocksError:
+                        # If we cannot schedule this CE request and there are no
+                        # other active requests, we re-raise the exception since
+                        # this is a fatal error. This should never occur unless
+                        # a single request saturates the KV cache.
+                        if no_active_requests:
+                            raise
+                        scheduled = False
 
                 # We were not able to schedule this request
                 if not scheduled:

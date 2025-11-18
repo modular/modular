@@ -24,6 +24,11 @@ from max._core_mojo import block_hasher
 from max.interfaces import ImageMetadata
 from max.profiler import traced
 
+
+class InsufficientBlocksError(Exception):
+    """Exception raised when there are insufficient free blocks to satisfy an allocation."""
+
+
 # Note that we use 'None' as a string here instead of None because
 # as of Python 3.12, hash(None) returns a constant predictable value.
 # This could possibly make it easier to find and exploit hash

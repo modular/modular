@@ -529,17 +529,11 @@ class MultimodalKVCacheManager:
 
         return text_kv_contains
 
-    def maybe_reserve(
-        self, data: TextGenerationContext, num_steps: int = 1
-    ) -> bool:
-        """Pre-reserve blocks for both text and vision caches.
-
-        Returns True only if reservation succeeds for both managers.
-        """
-        text_reserved = self.text_kv_manager.maybe_reserve(data, num_steps)
+    def alloc(self, data: TextGenerationContext, num_steps: int = 1) -> None:
+        """Allocates blocks for a request to run for N steps."""
+        self.text_kv_manager.alloc(data, num_steps)
         # For vision, reserve using provided num_steps to maintain symmetry.
-        vision_reserved = self.vision_kv_manager.maybe_reserve(data, num_steps)
-        return bool(text_reserved and vision_reserved)
+        self.vision_kv_manager.alloc(data, num_steps)
 
     def num_kv_inputs(self) -> int:
         """Returns the sum of the KV input lengths for both modalities.
