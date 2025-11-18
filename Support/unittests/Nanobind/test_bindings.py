@@ -8,13 +8,13 @@ import bindings  # type: ignore
 
 
 def test_logical_result() -> None:
-    assert bindings.return_logical_result_success() == True
-    assert bindings.return_logical_result_failure() == False
+    assert bindings.return_logical_result_success()
+    assert not bindings.return_logical_result_failure()
 
 
 def test_error_or_success() -> None:
-    assert bindings.return_error_or_success_success() == True
-    assert bindings.return_error_or_success_failure() == False
+    assert bindings.return_error_or_success_success()
+    assert not bindings.return_error_or_success_failure()
 
 
 def test_error_or() -> None:
