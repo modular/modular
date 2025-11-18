@@ -6,6 +6,7 @@
 
 # RUN: %parse-mojo-isolated -split-input-file %s | FileCheck %s
 
+
 struct Spaceship:
     var fuel: Int
 
@@ -117,7 +118,7 @@ struct Rocket[T: AnyType]:
 
 
 __extension Rocket:
-    comptime FuelType = T
+    comptime FuelType = Self.T
 
 
 # // -----
@@ -135,14 +136,14 @@ struct ZInt(ImplicitlyCopyable):
 
 
 struct Container[T: ImplicitlyCopyable]:
-    var data: T
+    var data: Self.T
 
 
 __extension Container:
-    comptime ElementType = T
+    comptime ElementType = Self.T
     comptime DefaultSize = ZInt()
 
-    fn get_element_via_self(self: Container[T]) -> T:
+    fn get_element_via_self(self: Container[Self.T]) -> Self.T:
         return self.data
 
 

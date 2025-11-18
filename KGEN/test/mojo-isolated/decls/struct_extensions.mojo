@@ -194,10 +194,12 @@ fn launch_ship(mut ship: Spaceship):
     # CHECK-SAME: <:!Flying !Spaceship>
     launch_flying(ship)
 
+
 # // -----
 
 # Define a capturing lambda type (like elementwise_epilogue_type)
-comptime capturing_lambda_type = fn(Int) capturing -> Int
+comptime capturing_lambda_type = fn (Int) capturing -> Int
+
 
 struct StructWithCapturingLambda[T: Int, my_lambda: capturing_lambda_type]:
     var value: Int
@@ -208,7 +210,8 @@ struct StructWithCapturingLambda[T: Int, my_lambda: capturing_lambda_type]:
     # CHECK-LABEL: lit.fn @"helper_with_capturing_lambda
     # CHECK-SAME: capturing -> !Int
     fn helper_with_capturing_lambda(self) -> Int:
-        return T
+        return Self.T
+
 
 __extension StructWithCapturingLambda:
     # CHECK-LABEL: lit.fn @"user_from_extension

@@ -14,7 +14,7 @@ struct SomeCopyable(Copyable):
 
 @fieldwise_init
 struct SomeVA[*elt_types: AnyType]:
-    fn __getitem__[idx: Int](ref self) -> ref [self] elt_types[idx]:
+    fn __getitem__[idx: Int](ref self) -> ref [self] Self.elt_types[idx]:
         pass
 
 

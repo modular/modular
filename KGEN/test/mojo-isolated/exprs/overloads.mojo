@@ -117,12 +117,12 @@ struct ConvertibleFromInt:
 
 
 struct MyContainer[T: ImplicitlyCopyable]:
-    var v: T
+    var v: Self.T
 
     fn foo(self, limits: ConvertibleFromInt):
         pass
 
-    fn foo(self, index: Int) -> T:
+    fn foo(self, index: Int) -> Self.T:
         return self.v
 
 

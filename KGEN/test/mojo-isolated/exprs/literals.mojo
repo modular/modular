@@ -177,7 +177,10 @@ fn test_list_comprehension():
 
 struct MyDict[K: Movable, V: AnyType]:
     fn __init__(
-        out self, var keys: List[K], var values: List[V], __dict_literal__: ()
+        out self,
+        var keys: List[Self.K],
+        var values: List[Self.V],
+        __dict_literal__: (),
     ):
         pass
 
@@ -230,7 +233,7 @@ fn test_dict_comprehension():
 
 
 struct MySet[T: AnyType]:
-    fn __init__(out self, var *values: T, __set_literal__: ()):
+    fn __init__(out self, var *values: Self.T, __set_literal__: ()):
         pass
 
 
@@ -282,10 +285,10 @@ fn test_set_comprehension():
 
 
 struct InitType[T: AnyType]:
-    fn __init__(out self, value: T):
+    fn __init__(out self, value: Self.T):
         pass
 
-    fn __init__(out self, value: T, value2: Int):
+    fn __init__(out self, value: Self.T, value2: Int):
         pass
 
 

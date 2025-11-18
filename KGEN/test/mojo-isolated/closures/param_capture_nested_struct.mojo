@@ -23,7 +23,7 @@ struct Foo[A: Int](ImplicitlyCopyable, Movable):
 
     fn get[C: Int](self) -> fn (y: Int) escaping -> Int:
         fn bar(y: Int) -> Int:
-            var w = A + self.b + y
+            var w = Self.A + self.b + y
             return w
 
         return bar

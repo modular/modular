@@ -457,7 +457,7 @@ fn for_range_loop():
 struct RefIter[list_mutability: Bool, //,
                list_origin: Origin[list_mutability]._mlir_type]:
     fn __init__(out self): pass
-    fn __next_ref__(mut self) -> ref [list_origin] Int: pass
+    fn __next_ref__(mut self) -> ref [Self.list_origin] Int: pass
     fn __has_next__(self) -> Bool: return False
 
 struct ListWithRefIter:

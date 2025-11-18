@@ -30,8 +30,8 @@ trait R1Child(R1):
 
 @register_passable("trivial")
 # CHECK-LABEL: lit.struct.decl @S1<X: !Int>
-struct S1[X: Int](R1, R1Child, R2, Movable):
-    comptime N: Int = X
+struct S1[X: Int](Movable, R1, R1Child, R2):
+    comptime N: Int = Self.X
     comptime T: AnyType = Int
 
     # CHECK: lit.fn @"f1[[F1_BOOL_NAME:.+]]"({{.*}}, %x: !Bool)

@@ -12,7 +12,7 @@ struct Foo[a: Int](ImplicitlyCopyable):
     var b: Int
 
     fn get(self) -> Int:
-        return a + self.b
+        return Self.a + self.b
 
 
 fn bar[a: Int, b: Int]() -> Int:

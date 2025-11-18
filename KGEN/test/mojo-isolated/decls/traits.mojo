@@ -660,7 +660,7 @@ trait InCollection(Movable):
 
 
 struct Collection[T: InCollection]:
-    var x: MovableType[T]
+    var x: MovableType[Self.T]
 
 
 @register_passable("trivial")
@@ -686,7 +686,7 @@ fn converted_metatype_struct_element(x: Collection[Item]):
 # CHECK-NEXT: destructor
 struct TraitMember[T: Movable]:
     # CHECK: lit.fn @"__del__
-    var value: T
+    var value: Self.T
 
 
 # COM: Misleading error about thunk functions when: (issue mojo-#1402)
@@ -883,7 +883,7 @@ struct TestAnyTrait[element_trait: _AnyTypeMetaType]:
     # CHECK: lit.fn @"test
     # CHECK-SAME: <a_type: !kgen.param<:!lit.anytrait<!AnyType> element_trait>>
     # CHECK-SAME: (%self: {{.*}}%a_value: !lit.ref<:!kgen.param<:!lit.anytrait<!AnyType> element_trait> a_type, imm {{.*}}> read_mem
-    fn test[a_type: element_trait](self, a_value: a_type):
+    fn test[a_type: Self.element_trait](self, a_value: a_type):
         self.take_any_type(a_value)
 
 
@@ -943,10 +943,10 @@ struct FormVariadicPackWithCastedElementVariadic[
     element_trait: _CollectionElementMetaType, //,
     *element_types: element_trait]:
 
-    fn __init__(out self, var *args: *element_types):
+    fn __init__(out self, var *args: *Self.element_types):
         # This should work.
         self.foo(args^)
-    fn foo(self, var storage: VariadicPack[_, _, element_trait, *element_types]):
+    fn foo(self, var storage: VariadicPack[_, _, Self.element_trait, *Self.element_types]):
         pass
 
 # This tests that we can take UnsafePointer (which has an AnyType bound for T)

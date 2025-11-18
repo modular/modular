@@ -355,6 +355,7 @@ fn issue15404():
     consume(c^)
     consume(c^)  # expected-error {{use of uninitialized value 'c'}}
 
+
 @fieldwise_init
 struct SP[n: Int]:
     pass
@@ -624,10 +625,10 @@ fn test_linear_type() raises:
 
 
 struct Pair[T: Movable](Movable):
-    var first: T
-    var second: T
+    var first: Self.T
+    var second: Self.T
 
-    fn __init__(out self, var first: T, var second: T):
+    fn __init__(out self, var first: Self.T, var second: Self.T):
         self.first = first^
         self.second = second^
 

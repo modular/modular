@@ -113,6 +113,7 @@ fn result_mem3(var a: MemoryMovableCopyable) -> MemoryMovableCopyable:
     # CHECK-NEXT: kgen.return
     return a^
 
+
 # CHECK-LABEL: lit.fn @"self_copy
 fn self_copy(mut x: MemoryMovableCopyable):
     # Mojo introduces a temporary to avoid exclusivity error.
@@ -203,10 +204,10 @@ fn passFieldToOwnedInt(var a: MemExample):
 
 # Generic type: Issue #14018
 struct MyGenericType[Type: AnyTrivialRegType]:
-    var value: Type
+    var value: Self.Type
 
     @implicit
-    fn __init__(out self, v: Type):
+    fn __init__(out self, v: Self.Type):
         self.value = v
 
 

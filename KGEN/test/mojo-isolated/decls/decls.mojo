@@ -479,7 +479,7 @@ fn referencesDefaultArgumentFunction():
 struct Outer[X: Int]:
     # CHECK: lit.fn @"nested
     # CHECK-SAME: %x: !Int = X)
-    fn nested(self, x: Int = X):
+    fn nested(self, x: Int = Self.X):
         pass
 
 
@@ -495,7 +495,7 @@ fn parameterizedVariadic[T: __mlir_type.`!kgen.type`](*args: T):
 
 struct ParameterizedStruct[T: __mlir_type.`!kgen.type`]:
     @implicit
-    fn __init__(out self, *args: T):
+    fn __init__(out self, *args: Self.T):
         pass
 
 
@@ -839,11 +839,7 @@ struct LegacyInOutInit:
 
 @register_passable("trivial")
 struct Container[T: AnyType]:
-    comptime _mlir_type = __mlir_type[
-        `!kgen.pointer<`,
-        T,
-        `>`,
-    ]
+    comptime _mlir_type = __mlir_type[`!kgen.pointer<`, Self.T, `>`]
     var address: Self._mlir_type
 
     fn __init__(out self):
@@ -1434,7 +1430,7 @@ struct MOCO1320[mut: Bool, //, origin: Origin[mut]]:
         `!lit.ref<`,
         Int,
         `, `,
-        origin._mlir_origin,
+        Self.origin._mlir_origin,
         `>`,
     ]
     var _value: Self._mlir_type
@@ -1442,7 +1438,7 @@ struct MOCO1320[mut: Bool, //, origin: Origin[mut]]:
     fn __init__(out self, *, x: Self._mlir_type):
         self._value = x
 
-    fn __init__(out self, *, ref [origin]to: Int):
+    fn __init__(out self, *, ref [Self.origin]to: Int):
         self._value = __get_mvalue_as_litref(to)
 
 
@@ -1465,7 +1461,7 @@ fn need_positive_int[x: Int where x > 0]():
 # CHECK-LABEL: lit.struct.decl @ConstraintStruct
 # CHECK-SAME: <a: !Int {{.*}}ge(#lit.struct.extract<:!Int a, "_mlir_value">, 1)
 struct ConstraintStruct[a: Int where a > 0]:
-    comptime b = a + 1
+    comptime b = Self.a + 1
 
     fn use_known_assumption(self):
         need_positive_int[self.a]()

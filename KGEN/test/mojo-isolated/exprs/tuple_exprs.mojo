@@ -128,12 +128,12 @@ trait CollectionType(ImplicitlyCopyable, Movable):
 
 
 struct Container[T: CollectionType]:
-    var x: T
+    var x: Self.T
 
-    fn __setitem__(mut self, i: Int, var value: T):
+    fn __setitem__(mut self, i: Int, var value: Self.T):
         self.x = value
 
-    fn __getitem__(self, i: Int) -> T:
+    fn __getitem__(self, i: Int) -> Self.T:
         return self.x
 
 

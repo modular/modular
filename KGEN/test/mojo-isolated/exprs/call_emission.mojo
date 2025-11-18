@@ -490,20 +490,20 @@ fn testSomeStructWithRefMethod[val: SomeStructWithRefMethod]():
 
 @fieldwise_init
 struct MyDictEntry[K: KeyElement, V: Copyable & Movable](Copyable, Movable):
-    var key: K
-    var value: V
+    var key: Self.K
+    var value: Self.V
 
 
 struct MyDict[K: KeyElement, V: Copyable & Movable](Copyable, Movable):
-    var _entries: List[MyDictEntry[K, V]]
+    var _entries: List[MyDictEntry[Self.K, Self.V]]
 
     fn __getitem__(
-        ref self, key: K
+        ref self, key: Self.K
     ) raises -> ref [self._entries[0].value] Self.V:
         ref entry = self._entries[0]
         return entry.value
 
-    fn __setitem__(mut self, var key: K, var value: V):
+    fn __setitem__(mut self, var key: Self.K, var value: Self.V):
         pass
 
 @fieldwise_init
@@ -526,8 +526,8 @@ struct MyMutGetItemCollection[T: AnyType]:
     var state: Value
     fn clear(mut self): pass
     fn __init__(out self): pass
-    fn __getitem__(ref self, idx: Int) -> ref [self] T: pass
-    fn __setitem__(mut self, idx: Int, var value: T): pass
+    fn __getitem__(ref self, idx: Int) -> ref [self] Self.T: pass
+    fn __setitem__(mut self, idx: Int, var value: Self.T): pass
 
 # CHECK: lit.fn @"subscript_assignment_inplace
 fn subscript_assignment_inplace(mut list: MyMutGetItemCollection[MyMutGetItemCollection[Int]]):
@@ -560,8 +560,8 @@ fn subscript_assignment_inplace(mut list: MyMutGetItemCollection[MyMutGetItemCol
 
 # getitem on mutable list returns a immutable ref so setitem is needed.
 struct MyImmutGetItemCollection[T: AnyType]:
-    fn __getitem__(self, idx: Int) -> ref [self] T: pass
-    fn __setitem__(mut self, idx: Int, var value: T): pass
+    fn __getitem__(self, idx: Int) -> ref [self] Self.T: pass
+    fn __setitem__(mut self, idx: Int, var value: Self.T): pass
 
 # CHECK: lit.fn @"subscript_assignment_writeback
 fn subscript_assignment_writeback(mut list: MyImmutGetItemCollection[Value]):

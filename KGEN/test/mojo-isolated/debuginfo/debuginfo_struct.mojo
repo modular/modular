@@ -23,7 +23,7 @@ struct MyRP[A: Int]:
 
     @implicit
     fn __init__(out self, b: Int):
-        self.a = A
+        self.a = Self.A
         self.b = b
 
 
@@ -32,12 +32,12 @@ struct MyRP[A: Int]:
 struct MyData[A: Int, B: MyRP[3], C: AnyTrivialRegType]:
     var a: Int
     var b: MyRP[3]
-    var c: C
+    var c: Self.C
 
     @implicit
-    fn __init__(out self, c: C):
-        self.a = A
-        self.b = B
+    fn __init__(out self, c: Self.C):
+        self.a = Self.A
+        self.b = Self.B
         self.c = c
 
 

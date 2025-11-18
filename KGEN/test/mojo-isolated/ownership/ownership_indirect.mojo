@@ -12,10 +12,10 @@
 
 
 struct MyList[T: ImplicitlyCopyable & Movable]:
-    var data: UnsafePointer[T]
+    var data: UnsafePointer[Self.T]
 
     fn __init__(out self):
-        self.data = UnsafePointer[T]()
+        self.data = UnsafePointer[Self.T]()
 
     fn __del__(deinit self):
         pass
@@ -25,7 +25,7 @@ struct MyList[T: ImplicitlyCopyable & Movable]:
 
     fn __getitem__(
         ref self, idx: Int
-    ) -> ref [self.data.get_unique_item_ref(idx)] T:
+    ) -> ref [self.data.get_unique_item_ref(idx)] Self.T:
         return self.data.get_unique_item_ref(idx)
 
 

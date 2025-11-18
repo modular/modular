@@ -10,7 +10,7 @@
 @register_passable
 struct Foo[A: Int, B: Int](ImplicitlyCopyable):
     fn get(self) -> Int:
-        return A
+        return Self.A
 
 
 fn use(a: Int):

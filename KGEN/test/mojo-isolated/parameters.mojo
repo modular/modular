@@ -65,15 +65,15 @@ struct TestParamStruct[A: Int]:
 
   # CHECK: lit.fn @"method{{.*}}"<B: !Int>(%self: !lit.struct<#TestParamStruct <:!Int [[A]]>
   # CHECK-SAME: %other: {{.*}}#TestParamStruct <:!Int {{.*}}{_mlir_value = add(#lit.struct.extract<:!Int [[A]], "_mlir_value">, #lit.struct.extract<:!Int B, "_mlir_value">)}
-  fn method[B: Int](self: TestParamStruct[A], other: TestParamStruct[A+B]):
+  fn method[B: Int](self: TestParamStruct[Self.A], other: TestParamStruct[Self.A + B]):
     pass
 
   # CHECK-LABEL: lit.fn @"aliases{{.*}}%x: {{.*}}#TestParamStruct <
-  fn aliases(self, x: TestParamStruct[TestParamStruct[A].TypeLevelAlias]):
+  fn aliases(self, x: TestParamStruct[TestParamStruct[Self.A].TypeLevelAlias]):
     # CHECK: lit.alias.decl [[B:.*]]: !Int = <{{.*}}{_mlir_value = add({{.*}}mul(#lit.struct.extract<:!Int *"A`", "_mlir_value">, 2){{.*}}, 1)}
-    comptime B = A+A+1
+    comptime B = Self.A + Self.A + 1
     # CHECK: lit.alias.decl *"C{{.*}}: !Int =
-    comptime C = B+A
+    comptime C = B + Self.A
     # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<:!Int {{.*}}1{{.*}}> =
     # CHECK-SAME: <apply(:!lit.generator<{{.*}}TestParamStruct <:!Int {1}>>> {{.*}}__init__()"<:!Int {1}>)>
     comptime D = TestParamStruct[1]()
@@ -84,10 +84,10 @@ struct TestParamStruct[A: Int]:
     comptime intVal : Int = 42
 
     # CHECK: %temp2 = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int {{.*}}{_mlir_value = mul(#lit.struct.extract<:!Int [[A]], "_mlir_value">, 2)}
-    var temp2: TestParamStruct[TestParamStruct[A].TypeLevelAlias]
+    var temp2: TestParamStruct[TestParamStruct[Self.A].TypeLevelAlias]
 
   # CHECK: lit.alias.decl *"TypeLevelAlias{{.*}}": !Int = <{{.*}}{_mlir_value = mul(#lit.struct.extract<:!Int *"A`", "_mlir_value">, 2)}
-  comptime TypeLevelAlias = A+A
+  comptime TypeLevelAlias = Self.A+Self.A
 
 # Test that we support partially bound parameters.
 # CHECK-LABEL: lit.fn @"testTestParamStruct
@@ -140,12 +140,12 @@ fn implConversion[a: StructWithIntParam[42]]():
 struct Pair[dt: DType]:
  # CHECK: lit.struct.field a : {{.*}}#SIMD <:!DType dt, :!Int {{.*}}42{{.*}}>{{.*}}>
  # CHECK: lit.struct.field b : !Int
-  var a : SIMD[dt, 42]
+  var a : SIMD[Self.dt, 42]
   var b : Int
 
   # CHECK: lit.fn @"__init__{{.*}}-> !lit.struct<#Pair <:!DType dt>>
   @implicit
-  fn __init__(out self, a: SIMD[dt, 42]):
+  fn __init__(out self, a: SIMD[Self.dt, 42]):
     self.a = a
     self.b = 4
   # CHECK: }
@@ -164,7 +164,7 @@ fn useParameterizedField[x: Pair[DType.float32]]():
 # CHECK-SAME: <[[TYPE:.*]]: type>
 struct TypeParameter[T: __mlir_type.`!kgen.type`]:
   # CHECK: @"bar(parameters::TypeParameter{{.*}}(%self: {{.*}} read_mem, %val: !kgen.param<[[TYPE]]>)
-  fn bar(self, val: T):
+  fn bar(self, val: Self.T):
     pass
 
 # Test that parameter decls can refine subsequent ones in the same param list.
@@ -365,7 +365,7 @@ trait ASubTrait(ASuperTrait):
 struct StructWithTraitParam[T: ASuperTrait]():
     pass
 
-    fn __init__(out self: StructWithTraitParam[T]):
+    fn __init__(out self: StructWithTraitParam[Self.T]):
         pass
 
 
@@ -633,7 +633,7 @@ comptime FORTY_TWO = 42
 # CHECK-SAME: <v: !Int>
 struct A[v: Int]:
   # CHECK: lit.alias.decl *"member{{.*}}": !Int = <{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int v, "_mlir_value">, 42)}
-  comptime member = v + FORTY_TWO
+  comptime member = Self.v + FORTY_TWO
 
 # CHECK-LABEL: lit.fn @"testUseOfAliases
 fn testUseOfAliases():
@@ -671,7 +671,7 @@ fn testMyDType[dt: MyDType](a: MyVector[4, MyDType.float32],
 # CHECK-LABEL: lit.struct.decl @UnqualAliasLookup<param: !Int>
 struct UnqualAliasLookup[param: Int]:
   # CHECK: lit.alias.decl *"member{{.*}}": !Int = <{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int param, "_mlir_value">, 1)}
-  comptime member = param+1
+  comptime member = Self.param + 1
   fn get(self) -> Int:
     # CHECK: %0 = kgen.param.constant: !Int = <{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int param, "_mlir_value">, 1)}
     return Self.member
@@ -762,7 +762,7 @@ fn init_self_memory_variadics():
 
 struct MyList[T: ImplicitlyCopyable]:
     @implicit
-    fn __init__(out self, *values: T): pass
+    fn __init__(out self, *values: Self.T): pass
 
 # Infer-only parameters should be bindable with keywords
 comptime ImmMyStringSlice = MyStringSlice[mut=False]
@@ -808,11 +808,11 @@ fn form_reference_to_overloaded():
 
 @register_passable("trivial")
 struct StaticVec[size: Int]:
-  fn __init__[type: __mlir_type.`!kgen.dtype`](out self, v: __mlir_type[`!pop.simd<`, size._mlir_value, `, `, type, `>`]):
+  fn __init__[type: __mlir_type.`!kgen.dtype`](out self, v: __mlir_type[`!pop.simd<`, Self.size._mlir_value, `, `, type, `>`]):
       pass
 
   @staticmethod
-  fn thing[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, size._mlir_value, `, `, type, `>`]):
+  fn thing[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, Self.size._mlir_value, `, `, type, `>`]):
       return
 
 fn callee1[size: Int](v: StaticVec[size]): pass
@@ -845,18 +845,18 @@ fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
 @fieldwise_init
 @register_passable("trivial")
 struct Abstraction[a: Int]:
-  comptime val = a._mlir_value
+  comptime val = Self.a._mlir_value
 
   @implicit
   fn __init__(out self, arg: Int):
     pass
 
   @staticmethod
-  fn push[b: Int]() -> Abstraction[a + b]:
-      return Abstraction[a + b]()
+  fn push[b: Int]() -> Abstraction[Self.a + b]:
+      return Abstraction[Self.a + b]()
 
   @staticmethod
-  fn pull[b: Int](value: Abstraction[a + b]):
+  fn pull[b: Int](value: Abstraction[Self.a + b]):
       return
 
 # CHECK-LABEL: lit.fn @"testDependentType{{.*}}"<
@@ -895,10 +895,10 @@ fn takeAbstraction2(value: Abstraction[2]):
 
 @register_passable
 struct AnotherAbstraction[a: Int]:
-    var value : Abstraction[a + 1]
+    var value : Abstraction[Self.a + 1]
 
     fn __init__(out self):
-        self.value = Abstraction[a + 1]()
+        self.value = Abstraction[Self.a + 1]()
 
     fn __copyinit__(out self, existing: Self):
         self.value = existing.value
@@ -910,7 +910,7 @@ fn testDependentField():
     takeAbstraction2(lvalue.value)
 
 struct LeafToRootEval[a: Int, b: Int]:
-    var value: Abstraction[a + b + a]
+    var value: Abstraction[Self.a + Self.b + Self.a]
 
 # CHECK-LABEL: lit.fn @"refine_type_leaf_to_root
 fn refine_type_leaf_to_root(e: LeafToRootEval[2, 3]):
@@ -982,7 +982,7 @@ fn test_infer_add(a: SIMD[DType.float32, 4], b: SIMD[DType.int32, 5]):
    _ = take_two(a, b)
 
 struct CallableArg[ArgT: AnyTrivialRegType]:
-    fn __call__(self, arg: ArgT):
+    fn __call__(self, arg: Self.ArgT):
         pass
 
 # CHECK-LABEL: lit.fn @"infer_conversion_arg_type
@@ -1054,7 +1054,7 @@ struct MixedInferAndPosParamWithInferredOnStruct[ST: ToInt, //, size: Int]:
 
     # CHECK-LABEL: lit.fn @"__init__[{{.*}}ToInt](
     # CHECK-SAME: T0: !ToInt, T1: !ToInt
-    fn __init__[T0: ToInt, T1: ToInt, //](out self, z: ST, a: T0, b: T1):
+    fn __init__[T0: ToInt, T1: ToInt, //](out self, z: Self.ST, a: T0, b: T1):
         self.f0 = a.to_int()
 
 # CHECK-LABEL: lit.fn @"useMixedInferAndPosParam()"
@@ -1067,7 +1067,7 @@ fn useMixedInferAndPosParam():
 @register_passable("trivial")
 struct Box[T: AnyType]:
     @implicit
-    fn __init__(out self, x: T):
+    fn __init__(out self, x: Self.T):
         pass
 
 # CHECK-LABEL: lit.fn @"infer_box_type
@@ -1077,11 +1077,11 @@ fn infer_box_type[T: AnyType, //, box: Box[T]]():
 
 # MOCO-1457: Support struct param inference for origins
 struct OriginStructInferenceImm[origin: Origin[False]]:
-    fn __init__(out self, ref [origin._mlir_origin]data: Int):  pass
+    fn __init__(out self, ref [Self.origin._mlir_origin]data: Int):  pass
 struct OriginStructInferencePar[mut: Bool, //, origin: Origin[mut]]:
-    fn __init__(out self, ref [origin._mlir_origin]data: Int):  pass
+    fn __init__(out self, ref [Self.origin._mlir_origin]data: Int):  pass
 struct OriginStructInferenceParWrapped[mut: Bool, //, origin: Origin[mut]]:
-    fn __init__(out self, ref [origin]data: Int):  pass
+    fn __init__(out self, ref [Self.origin]data: Int):  pass
 struct OriginStructInferenceParSpecialized[mut: Bool, //, origin: Origin[mut]]:
     fn __init__[O: Origin[False]](out self: OriginStructInferenceParSpecialized[O], ref [O]data: Int):  pass
 
@@ -1122,7 +1122,7 @@ struct SomeStruct(WithAnAlias):
 # Will infer `a` and `b` automatically from `__init__`.
 struct SomeWrapper[t: WithAnAlias, a: AnyType, b: AnyType]:
     @staticmethod
-    fn __init__(out self: SomeWrapper[t, t.A, t.A]):
+    fn __init__(out self: SomeWrapper[Self.t, Self.t.A, Self.t.A]):
         pass
 
 fn test_param_inference_contextual_fold():
@@ -1277,7 +1277,7 @@ struct Optional[T: AnyType]:
         pass
 
     @implicit
-    fn __init__(out self, value: T):
+    fn __init__(out self, value: Self.T):
         pass
 
 fn default_on_infer_failure[p: Int = 0](a: Optional[ParamType[p]] = None):
@@ -1393,32 +1393,32 @@ struct Thing[v: Int]: pass
 
 struct CtadStruct[a: Int, b: Int]:
     @implicit
-    fn __init__(out self, x: Thing[a]): pass
+    fn __init__(out self, x: Thing[Self.a]): pass
 
-    fn __init__(out self, x: Thing[a], y: Thing[b]): pass
-
-    @staticmethod
-    fn foo(x: Thing[a]): pass
+    fn __init__(out self, x: Thing[Self.a], y: Thing[Self.b]): pass
 
     @staticmethod
-    fn foo(x: Thing[a], y: Thing[b]): pass
+    fn foo(x: Thing[Self.a]): pass
+
+    @staticmethod
+    fn foo(x: Thing[Self.a], y: Thing[Self.b]): pass
 
 struct CtadStructWithDefault[a: Int, b: Int, c: Int = 8]:
     @implicit
-    fn __init__(out self, x: Thing[a]): pass
+    fn __init__(out self, x: Thing[Self.a]): pass
 
-    fn __init__(out self, x: Thing[a], y: Thing[b]): pass
-
-    @staticmethod
-    fn foo(x: Thing[a]): pass
+    fn __init__(out self, x: Thing[Self.a], y: Thing[Self.b]): pass
 
     @staticmethod
-    fn foo(x: Thing[a], y: Thing[b]): pass
+    fn foo(x: Thing[Self.a]): pass
+
+    @staticmethod
+    fn foo(x: Thing[Self.a], y: Thing[Self.b]): pass
 
 
 struct CtadStructWithMultiDefault[a: Int, b: Int = 6, c: Int = 8, d: Int = 10]:
     @implicit
-    fn __init__(out self, x: CtadStructWithMultiDefault[a]): pass
+    fn __init__(out self, x: CtadStructWithMultiDefault[Self.a]): pass
 
 
 # CHECK-LABEL: lit.fn @"test_partial_binding_CTAD(
@@ -1537,10 +1537,10 @@ fn test_inference_from_Self_type(x: Int):
 
 struct AutoParamDefault[value: Int, param: Int, default: Int = param]:
     @implicit
-    fn __init__(out self, ptr: ParamType[value]): pass
+    fn __init__(out self, ptr: ParamType[Self.value]): pass
     fn __init__(out self, *, other: Self): pass
-    fn method(self, other: ParamType[value]): pass
-    fn method(self, other: AutoParamDefault[value, *_]): pass
+    fn method(self, other: ParamType[Self.value]): pass
+    fn method(self, other: AutoParamDefault[Self.value, *_]): pass
 
 # CHECK-LABEL: lit.fn @"implicit_conversion_overload
 fn implicit_conversion_overload(x: AutoParamDefault[1], ptr: ParamType[1]):
@@ -1599,7 +1599,7 @@ struct MOCO1065[
     T: ImplicitlyCopyable & Movable,
     o: Origin[mut]._mlir_type,
 ]:
-    fn __init__(out self: MOCO1065[UInt8, o], ref [o] string: Empty):
+    fn __init__(out self: MOCO1065[UInt8, Self.o], ref [Self.o] string: Empty):
         pass
 
 fn test_MOCO1065[p: Empty](t: Empty):

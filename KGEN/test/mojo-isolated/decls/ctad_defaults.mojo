@@ -20,9 +20,9 @@ struct MyUnsafePointer[
 ]:
     comptime _mlir_type = __mlir_type[
         `!kgen.pointer<`,
-        type,
+        Self.type,
         `, `,
-        address_space._value._mlir_value,
+        Self.address_space._value._mlir_value,
         `>`,
     ]
     var address: Self._mlir_type
