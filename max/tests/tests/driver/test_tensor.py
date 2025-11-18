@@ -314,9 +314,9 @@ def test_from_dlpack() -> None:
         assert tensor.shape == array.shape
 
         if dtype is dtype.bool:
-            assert array[0] == False
+            assert not array[0]
             tensor[0] = True
-            assert array[0] == True
+            assert array[0]
         else:
             tensor[0] = np_dtype.type(7)
             assert array[0] == np_dtype.type(7)
