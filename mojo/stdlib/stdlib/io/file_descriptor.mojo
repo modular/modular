@@ -67,7 +67,7 @@ struct FileDescriptor(Writer):
         Args:
             bytes: The byte span to write to this file.
         """
-        written = external_call["write", Int32](
+        written = external_call["write", c_ssize_t](
             self.value, bytes.unsafe_ptr(), len(bytes)
         )
         debug_assert(

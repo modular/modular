@@ -34,6 +34,8 @@ with open("my_file.txt", "r") as f:
 from io.write import _WriteBufferStack
 from os import PathLike, abort
 from sys import external_call, size_of
+from sys._libc_errno import ErrNo, get_errno
+from sys.ffi import c_ssize_t
 
 from memory import (
     LegacyOpaquePointer as OpaquePointer,
@@ -248,19 +250,18 @@ struct FileHandle(Defaultable, Movable, Writer):
         if not self.handle:
             raise Error("invalid file handle")
 
-        var err_msg = _OwnedStringRef()
-
-        var bytes_read = external_call["KGEN_CompilerRT_IO_FileReadBytes", Int](
-            self.handle,
+        var fd = self._get_raw_fd()
+        var bytes_read = external_call["read", c_ssize_t](
+            fd,
             buffer.unsafe_ptr(),
             len(buffer) * size_of[dtype](),
-            Pointer(to=err_msg),
         )
 
-        if err_msg:
-            raise (err_msg^).consume_as_error()
+        if bytes_read < 0:
+            var err = get_errno()
+            raise Error("Failed to read from file: " + String(err))
 
-        return bytes_read
+        return Int(bytes_read)
 
     fn read_bytes(self, size: Int = -1) raises -> List[UInt8]:
         """Reads data from a file and sets the file handle seek position. If
@@ -317,25 +318,24 @@ struct FileHandle(Defaultable, Movable, Writer):
             unsafe_uninit_length=size if size >= 0 else 256
         )
 
-        var err_msg = _OwnedStringRef()
+        var fd = self._get_raw_fd()
         var num_read = 0
         while True:
             # Read bytes into the list buffer and get the number of bytes
             # successfully read. This may return with a partial read, and
             # signifies EOF with a result of zero bytes.
             var chunk_bytes_to_read = len(result) - num_read
-            var chunk_bytes_read = external_call[
-                "KGEN_CompilerRT_IO_FileReadBytes", Int
-            ](
-                self.handle,
+            var chunk_bytes_read = external_call["read", c_ssize_t](
+                fd,
                 result.unsafe_ptr() + num_read,
                 chunk_bytes_to_read,
-                Pointer(to=err_msg),
             )
-            if err_msg:
-                raise err_msg^.consume_as_error()
 
-            num_read += chunk_bytes_read
+            if chunk_bytes_read < 0:
+                var err = get_errno()
+                raise Error("Failed to read from file: " + String(err))
+
+            num_read += Int(chunk_bytes_read)
 
             # If we read all of the 'size' bytes then we're done.
             if num_read == size or chunk_bytes_read == 0:
@@ -391,15 +391,16 @@ struct FileHandle(Defaultable, Movable, Writer):
             whence >= 0 and whence < 3,
             "Second argument to `seek` must be between 0 and 2.",
         )
-        var err_msg = _OwnedStringRef()
-        var pos = external_call["KGEN_CompilerRT_IO_FileSeek", UInt64](
-            self.handle, offset, whence, Pointer(to=err_msg)
-        )
 
-        if err_msg:
-            raise err_msg^.consume_as_error()
+        var fd = self._get_raw_fd()
+        # lseek returns off_t which is typically Int64 on Unix systems
+        var pos = external_call["lseek", Int64](fd, Int64(offset), Int(whence))
 
-        return pos
+        if pos < 0:
+            var err = get_errno()
+            raise Error("Failed to seek in file: " + String(err))
+
+        return UInt64(pos)
 
     @always_inline
     fn write_bytes(mut self, bytes: Span[Byte, _]):
@@ -408,17 +409,20 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         Args:
             bytes: The byte span to write to this file.
+
+        Notes:
+            Passing an invalid file handle (e.g., after calling `close()`) is
+            undefined behavior. In debug builds, this will trigger an assertion.
         """
-        var err_msg = _OwnedStringRef()
-        external_call["KGEN_CompilerRT_IO_FileWrite", NoneType](
-            self.handle,
-            bytes.unsafe_ptr(),
-            len(bytes),
-            Pointer(to=err_msg),
+        debug_assert(self.handle, "invalid file handle in write_bytes()")
+
+        var fd = self._get_raw_fd()
+        var bytes_written = external_call["write", c_ssize_t](
+            fd, bytes.unsafe_ptr(), len(bytes)
         )
 
-        if err_msg:
-            abort(String(err_msg^.consume_as_error()))
+        debug_assert(bytes_written >= 0, "write() syscall failed")
+        debug_assert(bytes_written == len(bytes), "incomplete write to file")
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
         """Write a sequence of Writable arguments to the provided Writer.
@@ -428,7 +432,13 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         Args:
             args: Sequence of arguments to write to this Writer.
+
+        Notes:
+            Passing an invalid file handle (e.g., after calling `close()`) is
+            undefined behavior. In debug builds, this will trigger an assertion.
         """
+        debug_assert(self.handle, "invalid file handle in write()")
+
         var file = FileDescriptor(self._get_raw_fd())
         var buffer = _WriteBufferStack(file)
 
@@ -457,16 +467,17 @@ struct FileHandle(Defaultable, Movable, Writer):
         if not self.handle:
             raise Error("invalid file handle")
 
-        var err_msg = _OwnedStringRef()
-        external_call["KGEN_CompilerRT_IO_FileWrite", NoneType](
-            self.handle,
-            ptr.address,
-            len,
-            Pointer(to=err_msg),
+        var fd = self._get_raw_fd()
+        var bytes_written = external_call["write", c_ssize_t](
+            fd, ptr.address, len
         )
 
-        if err_msg:
-            raise err_msg^.consume_as_error()
+        if bytes_written < 0:
+            var err = get_errno()
+            raise Error("Failed to write to file: " + String(err))
+
+        if bytes_written != len:
+            raise Error("Incomplete write to file")
 
     fn __enter__(var self) -> Self:
         """The function to call when entering the context.
