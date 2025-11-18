@@ -187,8 +187,10 @@ LogicalResult VariadicType::printValue(AsmPrinter &p, TypedAttr value) const {
 // VariadicMap/ZipAttr
 //===----------------------------------------------------------------------===//
 
+// If not folded, they are not a constant.
 bool VariadicMapAttr::isConstant() const { return false; }
 bool VariadicZipAttr::isConstant() const { return false; }
+bool VariadicSplatAttr::isConstant() const { return false; }
 
 LogicalResult
 VariadicMapAttr::verify(function_ref<InFlightDiagnostic()> emitError,
@@ -305,6 +307,39 @@ TypedAttr VariadicZipAttr::getChecked(
   return get(type, variadics);
 }
 
+LogicalResult
+VariadicSplatAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                          VariadicType type, TypedAttr elt, TypedAttr count) {
+  if (elt.getType() != type.getElementType())
+    emitError() << "mismatch between element type and output type, expected: "
+                << type.getElementType() << ", got: " << elt.getType();
+
+  if (!isa<IndexType>(count.getType()))
+    emitError() << "expected a 'index' type for the count, got: "
+                << count.getType();
+
+  return success();
+}
+
+TypedAttr VariadicSplatAttr::get(VariadicType type, TypedAttr elt,
+                                 TypedAttr count) {
+  auto cntAttr = sugarDynCast<IntegerAttr>(count);
+  if (!cntAttr)
+    return Base::get(type.getContext(), type, elt, count);
+
+  // perform the splat as soon as we know the count.
+  auto cnt = cntAttr.getInt();
+  SmallVector<TypedAttr> splatted(cnt, elt);
+  return VariadicAttr::get(splatted, type);
+}
+
+TypedAttr VariadicSplatAttr::getChecked(
+    function_ref<::mlir::InFlightDiagnostic()> emitError, VariadicType type,
+    TypedAttr elt, TypedAttr count) {
+  if (failed(verify(emitError, type, elt, count)))
+    return {};
+  return get(type, elt, count);
+}
 //===----------------------------------------------------------------------===//
 // UnknownAttr
 //===----------------------------------------------------------------------===//

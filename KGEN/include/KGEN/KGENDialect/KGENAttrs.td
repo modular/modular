@@ -196,6 +196,43 @@ def KGEN_VariadicZipAttr : KGEN_ExprAttr<"VariadicZip", "variadic.zip"> {
   let skipDefaultBuilders = 1;
 }
 
+def KGEN_VariadicSplatAttr : KGEN_ExprAttr<"VariadicSplat", "variadic.splat"> {
+  let summary = "Create a variadic by splatting the same value to the given times";
+  let description = [{
+    The `#kgen.variadic.splat` creates a variadic by splatting the same value
+    to the given times.
+
+    Example:
+    ```mlir
+    #kgen.variadic.splat<Int, 5> : !variadic<!AnyType>
+    // ->
+    #kgen.variadic<[Int, Int, Int, Int, Int]> : !variadic<!AnyType>
+    ```
+  }];
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "VariadicType">:$type,
+    "TypedAttr":$element,
+    "TypedAttr":$count
+  );
+
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an variadic.zip.
+    AttrBuilderWithInferredContext<(ins
+       "VariadicType":$type, "TypedAttr":$element, "TypedAttr":$count), "", "TypedAttr">,
+
+    // Verbose form with MLIRContext, needed for ODS constructors.
+    AttrBuilder<(ins "VariadicType":$type, "TypedAttr":$element, "TypedAttr":$count), [{
+      return get(type, element, count);
+    }], "TypedAttr">,
+  ];
+
+  let assemblyFormat = "`<` custom<TypeParamValue>($element) `,` $count `>`";
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+}
+
 //===----------------------------------------------------------------------===//
 // UnknownAttr
 //===----------------------------------------------------------------------===//
