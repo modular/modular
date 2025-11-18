@@ -44,6 +44,55 @@ Location DIBuilder::createScopedLoc(Location loc) {
   return FusedLoc::get(loc.getContext(), loc, scopes.back());
 }
 
+Location DIBuilder::createScopedLocIfMismatch(Location loc) {
+  if (scopes.empty() || !scopes.back())
+    return loc;
+
+  DIScopeAttr currentScope = scopes.back();
+
+  // Only perform strict scope validation when we have full debug information.
+  // In non-full debug modes, operations may not have complete scope info.
+  bool hasFullDebugInfo =
+      compileUnit && compileUnit.getEmissionKind() == EmissionKind::Full;
+
+  if (hasFullDebugInfo) {
+    auto getRootSubprogram = [](DIScopeAttr scope) -> DISubprogramAttr {
+      DISubprogramAttr subprogram = nullptr;
+      while (scope) {
+        if (auto sp = dyn_cast<DISubprogramAttr>(scope))
+          subprogram = sp;
+        scope =
+            TypeSwitch<DIScopeAttr, DIScopeAttr>(scope)
+                .Case([](DILexicalBlockAttr block) { return block.getScope(); })
+                .Case([](DISubprogramAttr sp) { return sp.getScope(); })
+                .Default(DIScopeAttr());
+      }
+      return subprogram;
+    };
+
+    DISubprogramAttr currentSubprogram = getRootSubprogram(currentScope);
+    auto sharesSubprogramScope = [&](DIScopeAttr scope) -> bool {
+      DISubprogramAttr scopeSubprogram = getRootSubprogram(scope);
+      return scopeSubprogram == currentSubprogram;
+    };
+
+    // Walk through nested fused locations checking all scopes
+    Location checkLoc = loc;
+    if (auto fusedLoc = dyn_cast<mlir::FusedLocWith<DIScopeAttr>>(checkLoc)) {
+      if (!sharesSubprogramScope(fusedLoc.getMetadata())) {
+        return FusedLoc::get(loc.getContext(), loc, currentScope);
+      }
+      // the scope is a child of the current scope
+      return loc;
+    }
+  }
+
+  if (auto scopedLoc = dyn_cast<mlir::FusedLocWith<DIScopeAttr>>(loc))
+    if (scopedLoc.getMetadata() == currentScope)
+      return loc;
+  return FusedLoc::get(loc.getContext(), loc, currentScope);
+}
+
 //===----------------------------------------------------------------------===//
 // Creation
 
@@ -90,7 +139,7 @@ DILocalVariableAttr DIBuilder::createLocalVariable(StringRef name,
 
 LogicalResult DIBuilder::visitLexicalRegion(Region &region) {
   for (Operation &op : region.front()) {
-    op.setLoc(createScopedLoc(op.getLoc()));
+    op.setLoc(createScopedLocIfMismatch(op.getLoc()));
     for (Region &region : op.getRegions()) {
       auto fileLoc = op.getLoc()->findInstanceOf<FileLineColLoc>();
       if (!fileLoc)
