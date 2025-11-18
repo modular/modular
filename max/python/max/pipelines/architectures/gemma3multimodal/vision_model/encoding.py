@@ -56,7 +56,7 @@ class Gemma3VisionEncoderLayer(Module):
         )
 
         # MLP (Feed-Forward Network) - simple GELUTanh/fc1/fc2 style
-        self.mlp = Gemma3VisionMLP(config, self.embed_dim, vision_config.intermediate_size, device=self.device)
+        self.mlp = Gemma3VisionMLP(config, device=self.device)
 
         # post-attention layer norm
         self.layer_norm2 = LayerNorm(

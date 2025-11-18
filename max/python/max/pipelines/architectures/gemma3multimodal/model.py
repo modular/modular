@@ -122,7 +122,7 @@ class _VisionStacker:
         """
         n = len(images)
         if n == 0:
-            return np.empty((0,), dtype=np.bfloat16)
+            return np.empty((0,), dtype=np.float32)
 
         # Pre-allocate output.
         out = np.empty((n, *images[0].shape), dtype=images[0].dtype)
@@ -420,40 +420,51 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     def _language_model_input_types(
         self, config: Gemma3ForConditionalGenerationConfig
     ) -> Sequence[TensorType]:
-        # TODO temp measure while removing per-device stuff
-        dev = self.devices[0]
-        device_ref = DeviceRef(dev.label, dev.id)
+        device_ref = DeviceRef.from_device(self.devices[0])
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
         )
-        # NOTE: input_row_offsets_len should be batch_size + 1.
-        # Create input_row_offsets_type for each device
-        input_row_offsets_types = [TensorType(
-            DType.uint32,
-            shape=["input_row_offsets_len"],
-            device=device_ref,
-        )]
-        # Add image embeddings type - one per device, can be empty for text-only inputs. TODO borrowed from InternVL
-        image_embeddings_types = [TensorType(
-            config.dtype,
-            shape=[
-                "num_image_tokens",
-                config.text_config.hidden_size,
-            ],
-            device=device_ref,
-        )]
-        image_token_indices_types = [TensorType(
-            DType.int32,
-            shape=["total_image_tokens"],
-            device=device_ref,
-        )]
+        
+        input_row_offsets_types = [
+            TensorType(
+                DType.uint32,
+                shape=["input_row_offsets_len"],
+                device=DeviceRef.from_device(dev),
+            )
+            for dev in self.devices
+        ]
+
+        image_embeddings_types = [
+            TensorType(
+                config.dtype,
+                shape=[
+                    "num_image_tokens",
+                    config.text_config.hidden_size,
+                ],
+                device=DeviceRef.from_device(dev),
+            )
+            for dev in self.devices
+        ]
+
+        image_token_indices_types = [
+            TensorType(
+                DType.int32,
+                shape=["total_image_tokens"],
+                device=DeviceRef.from_device(dev),
+            )
+            for dev in self.devices
+        ]
+
         return_n_logits_type = TensorType(
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
+
         signals = Signals(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
+
         kv_inputs = self.kv_manager.input_symbols()
+
         flattened_kv_types = [
             kv_type for sublist in kv_inputs for kv_type in sublist
         ]
@@ -724,12 +735,9 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     def _prepare_vision_inputs(
         self, context_batch: Sequence[TextAndVisionContext]
     ) -> list[Tensor] | None:
-        """Batches up pixel_values for vision processing."""
         images = []
         for context in context_batch:
             for img in context.next_images:
-                # TODO image count check, must be 1?
-                # TODO shape check
                 images.append(img.pixel_values)
 
         if not images:
@@ -741,8 +749,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         tensor = _cast_to_dtype(
             final_images, DType.float32, DType.bfloat16, self.devices[0]
         )
-        # if final_images.dtype == np.uint16 or final_images.dtype == np.float32:
-        #     tensor = tensor.view(DType.bfloat16, tensor.shape)
 
         return [tensor.to(dev) for dev in self.devices]
 
