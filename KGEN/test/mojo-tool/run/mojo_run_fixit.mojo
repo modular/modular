@@ -32,6 +32,17 @@ fn old_origin_of_2[T: AnyType](b: T):
     _ = __origin_of(b)
 
 
+@fieldwise_init
+struct Bar:
+    pass
+
+
+# CHECK-LABEL: def main():
 def main():
     old_origin_of(1)
     old_origin_of_2(2)
+
+    # CHECK: comptime b = Bar()
+    # CHECK-NEXT: var a = materialize[b]()
+    comptime b = Bar()
+    var a = b

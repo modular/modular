@@ -436,26 +436,14 @@ void InflightDiag::emitMLIRDiagnostic() {
 void InflightDiag::emitAutoFixItDiagnostic() {
   auto &sourceMgr = diags->sourceMgr;
 
-  // If there is more than one fixit, we can't know with certainty which one
-  // to apply.
-  std::optional<SMFixIt> fixIt;
+  // We register all fixits with he handler. We will resolve conflicts later.
   for (auto &message : messages) {
-    auto &newFixits = message.fixIts;
-    if (newFixits.empty())
-      continue;
-    if (newFixits.size() > 1 || fixIt.has_value()) {
-      fixIt = std::nullopt;
-      break;
+    for (SMFixIt &fixIt : message.fixIts) {
+      unsigned bufferId =
+          sourceMgr.FindBufferContainingLoc(fixIt.getRange().Start);
+      const llvm::MemoryBuffer *buffer = sourceMgr.getMemoryBuffer(bufferId);
+      diags->autoFixItHandler->registerFixIt(buffer, fixIt);
     }
-    fixIt = newFixits[0];
-  }
-
-  if (fixIt) {
-    // If we found exactly one fixit, register it with the auto fixit handler.
-    unsigned bufferId =
-        sourceMgr.FindBufferContainingLoc(fixIt->getRange().Start);
-    const llvm::MemoryBuffer *buffer = sourceMgr.getMemoryBuffer(bufferId);
-    diags->autoFixItHandler->registerFixIt(buffer, *fixIt);
   }
 }
 
