@@ -159,9 +159,9 @@ def test_context__eos() -> None:
         eos_token_ids={4},
     )
     assert context.eos_token_ids == {4}
-    assert context.is_initial_prompt == True
+    assert context.is_initial_prompt
     context.update(4)
-    assert context.is_initial_prompt == False
+    assert not context.is_initial_prompt
     assert context.current_length == 5
     assert context.status == GenerationStatus.END_OF_SEQUENCE
 
@@ -186,10 +186,10 @@ def test_context__current_length() -> None:
     )
 
     assert context.current_length == 4
-    assert context.is_initial_prompt == True
+    assert context.is_initial_prompt
 
     context.update(4)
-    assert context.is_initial_prompt == False
+    assert not context.is_initial_prompt
     assert context.current_length == 5
 
     # Currently, there are 5 tokens, we are saying
