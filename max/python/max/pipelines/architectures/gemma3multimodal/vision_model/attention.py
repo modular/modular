@@ -10,11 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from __future__ import annotations
 
+from collections.abc import Iterable
 
 import math
 
-from max.graph import TensorValue, ops
+from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
 from max.nn import Linear
 from max.nn.layer import Module
 
@@ -30,9 +32,11 @@ class Gemma3VisionAttention(Module):
     - No attention masking
     - Absolute position embeddings (added in embedding layer)
     """
-
     def __init__(
-        self, config: Gemma3ForConditionalGenerationConfig, layer_idx: int
+        self,
+        config: Gemma3ForConditionalGenerationConfig,
+        layer_idx: int,
+        device: DeviceRef | None = None,
     ) -> None:
         super().__init__()
         vision_config = config.vision_config
@@ -44,6 +48,7 @@ class Gemma3VisionAttention(Module):
         )
         self.config = config
         self.layer_idx = layer_idx
+        self.device = device if device is not None else config.devices[0]
         # Vision encoder uses its own head_dim, not the text model's
         self.head_dim = (
             vision_config.hidden_size // vision_config.num_attention_heads
@@ -54,32 +59,32 @@ class Gemma3VisionAttention(Module):
         # self.is_causal = not config.use_bidirectional_attention
 
         self.q_proj = Linear(
-            vision_config.hidden_size,  # 1152
+            vision_config.hidden_size,       # 1152
             self.num_heads * self.head_dim,  # 16 * 72 = 1152
-            has_bias=config.attention_bias,
+            has_bias=True,
             dtype=config.dtype,
-            device=config.devices[0],
+            device=self.device,
         )
         self.k_proj = Linear(
             vision_config.hidden_size,
             self.num_heads * self.head_dim,
-            has_bias=config.attention_bias,
+            has_bias=True,
             dtype=config.dtype,
-            device=config.devices[0],
+            device=self.device,
         )
         self.v_proj = Linear(
             vision_config.hidden_size,
             self.num_heads * self.head_dim,
-            has_bias=config.attention_bias,
+            has_bias=True,
             dtype=config.dtype,
-            device=config.devices[0],
+            device=self.device,
         )
         self.out_proj = Linear(
             self.num_heads * self.head_dim,
             vision_config.hidden_size,
-            has_bias=config.attention_bias,
+            has_bias=True,
             dtype=config.dtype,
-            device=config.devices[0],
+            device=self.device,
         )
 
         self.attn_logit_softcapping = config.attn_logit_softcapping
@@ -90,27 +95,52 @@ class Gemma3VisionAttention(Module):
         )
         self.is_sliding = self.layer_type == "sliding_attention"
 
-        # these appear to be part of language model, not vision
-        # self.q_norm = Gemma3RMSNorm(
-        #     dim=self.head_dim,
-        #     dtype=config.dtype,
-        #     eps=vision_config.layer_norm_eps,
-        # )
-        # self.k_norm = Gemma3RMSNorm(
-        #     dim=self.head_dim,
-        #     dtype=config.dtype,
-        #     eps=vision_config.layer_norm_eps,
-        # )
+    @property
+    def sharding_strategy(self) -> ShardingStrategy:
+        return self.q_proj.sharding_strategy
+    
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        if not strategy.is_replicate:
+            raise ValueError(
+                "only replicate is supported for Gemma3VisionAttention, "
+                "currently"
+            )
+
+        self.q_proj.sharding_strategy = strategy
+        self.k_proj.sharding_strategy = strategy
+        self.v_proj.sharding_strategy = strategy
+        self.out_proj.sharding_strategy = strategy
+
+    def shard(self, devices: Iterable[DeviceRef]) -> list[Gemma3VisionAttention]:
+        assert self.sharding_strategy
+
+        q_proj_shards = self.q_proj.shard(devices)
+        k_proj_shards = self.k_proj.shard(devices)
+        v_proj_shards = self.v_proj.shard(devices)
+        out_proj_shards = self.out_proj.shard(devices)
+
+        shards = []
+        for device, q_shard, k_shard, v_shard, out_shard in zip(
+            devices,
+            q_proj_shards,
+            k_proj_shards,
+            v_proj_shards,
+            out_proj_shards,
+            strict=True,
+        ):
+            sharded = Gemma3VisionAttention(self.config, self.layer_idx, device)
+
+            sharded.q_proj = q_shard
+            sharded.k_proj = k_shard
+            sharded.v_proj = v_shard
+            sharded.out_proj = out_shard
+
+            shards.append(sharded)
+
+        return shards
 
     def __call__(self, x: TensorValue) -> TensorValue:
-        """Standard self-attention.
-
-        Args:
-            x: Input tensor [batch, seq_len, dim]
-
-        Returns:
-            Output tensor [batch, seq_len, dim]
-        """
         batch_size, n_patches = x.shape[0], x.shape[1]
 
         # Project to Q, K, V

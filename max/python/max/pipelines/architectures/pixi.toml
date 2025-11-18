@@ -21,14 +21,15 @@ benchmark_text = { cmd = [
 ] }
 
 # quickly run a model with 1 text and image prompt and then shut it down
-# <img> <start_of_image> <|image|> ???
+# test url https://cdn.britannica.com/93/7993-050-2BFCF7C4/Moose-antlers.jpg
+#	"--prompt", "<bos><start_of_turn>user<start_of_image><end_of_image>what is the password?<end_of_turn><start_of_turn>model\n",
 generate = { cmd = [
 	"max","generate",
 	"--model", "google/gemma-3-4B-it",
 	"--custom-architectures", "gemma3multimodal",
-	"--prompt", "<start_of_image><end_of_image>The username is 'fqpp', what is the password?",
+	"--prompt", "<start_of_image><end_of_image>what is the password?",
     "--image_url", "https://huggingface.co/spaces/big-vision/paligemma-hf/resolve/main/examples/password.jpg",
-    "--max-batch-size", "3",
+    "--max-batch-size", "1",
     "--max-length", "5000"
 ] }
 

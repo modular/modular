@@ -180,7 +180,7 @@ class Gemma3MultiModalModelInputs(ModelInputs):
     """Device buffers used for synchronization in communication collectives."""
 
     # Vision inputs.
-    pixel_values: Tensor | None = None # list[Tensor]
+    pixel_values: list[Tensor] | None = None # list[Tensor]
     """Raw pixel values for vision inputs: [batch, channels, height, width]."""
 
     image_token_indices: list[Tensor] | None = None
@@ -559,9 +559,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         config: Gemma3ForConditionalGenerationConfig,
         state_dict: dict[str, WeightData],
     ) -> tuple[Graph, dict[str, DLPackArray]]:
-        # Build vision model architecture.
-
-        # Initialize graph with input types
         with Graph(
             config.model_type,
             input_types=self._vision_model_input_types(config),
@@ -569,7 +566,13 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             vision_model = Gemma3VisionModel(config)
 
             # TODO shouldn't this be unnecessary??
-            # unexpected weights without this - bug in weight adapters most likely
+            # unexpected weights without this
+            # encoder.layers.{idx}.self_attn.k_proj.bias
+            # encoder.layers.{idx}.self_attn.out_proj.bias
+            # encoder.layers.{idx}.self_attn.q_proj.bias
+            # encoder.layers.{idx}.self_attn.v_proj.bias
+            # encoder.layers.{idx}.mlp.fc1.bias
+            # encoder.layers.{idx}.mlp.fc2.bias
             for w8 in list(
                 state_dict.keys() - vision_model.raw_state_dict().keys()
             ):
@@ -601,7 +604,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         model_inputs = cast(
             Gemma3MultiModalModelInputs, model_inputs
-        )  # TODO do we want this?
+        )
 
         input_row_offsets = model_inputs.input_row_offsets
 

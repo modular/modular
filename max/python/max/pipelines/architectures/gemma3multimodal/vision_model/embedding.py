@@ -82,38 +82,15 @@ class Gemma3VisionEmbeddings(Module):
 
     @sharding_strategy.setter
     def sharding_strategy(self, strategy: ShardingStrategy) -> None:
-        """Set the sharding strategy for the patch and position embeddings.
-
-        Args:
-            strategy: The strategy describing the embeddings' sharding.
-        """
-        if not strategy.is_replicate:
-            raise ValueError(
-                "only replicate is supported for Gemma3VisionEmbeddings, "
-                "currently"
-            )
-
         self.patch_embedding.sharding_strategy = strategy
-        # For Embedding, set sharding strategy on its weight
         self.position_embedding.weight.sharding_strategy = strategy
 
     def shard(
         self, devices: Iterable[DeviceRef]
     ) -> list[Gemma3VisionEmbeddings]:
-        """Creates sharded views of this vision embeddings across multiple devices.
-
-        Args:
-            devices: Iterable of devices to place the shards on.
-
-        Returns:
-            List of sharded Gemma3VisionEmbeddings instances, one for each device.
-        """
-        # This should be set unconditionally in the constructor.
         assert self.sharding_strategy
 
-        # Get sharded weights
         patch_embedding_shards = self.patch_embedding.shard(devices)
-        # Shard the weight inside the Embedding module
         position_embedding_weight_shards = self.position_embedding.weight.shard(devices)
 
         shards = []
@@ -123,12 +100,9 @@ class Gemma3VisionEmbeddings(Module):
             position_embedding_weight_shards,
             strict=True,
         ):
-            # Create the new sharded embedding.
             sharded = Gemma3VisionEmbeddings(self.config, device)
 
-            # Assign the sharded weights.
             sharded.patch_embedding = patch_shard
-            # Replace the weight inside the Embedding module
             sharded.position_embedding.weight = pos_weight_shard
 
             shards.append(sharded)

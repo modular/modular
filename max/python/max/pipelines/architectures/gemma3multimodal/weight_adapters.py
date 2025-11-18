@@ -68,7 +68,7 @@ def convert_safetensor_vision_state_dict(
 
         weight_data = value.data()
 
-        # the patch embedding weight is wonky
+        # the patch embedding weight is wonky.  borrowed from idefics
         if weight_name.endswith("embeddings.patch_embedding.weight"):
             assert isinstance(weight_data.data, Tensor)
             if weight_data.dtype == DType.bfloat16:
