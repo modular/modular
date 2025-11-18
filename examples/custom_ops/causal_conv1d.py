@@ -161,15 +161,12 @@ def main() -> None:
         assert isinstance(output_gpu, Tensor)
         output_gpu_np = output_gpu.to_numpy().astype(np.float32)
 
-        if (
-            np.allclose(
-                output_gpu_np,
-                output_cpu_np,
-                rtol=1e-05,
-                atol=1e-01,
-                equal_nan=False,
-            )
-            == True
+        if np.allclose(
+            output_gpu_np,
+            output_cpu_np,
+            rtol=1e-05,
+            atol=1e-01,
+            equal_nan=False,
         ):
             print("Success!")
         else:

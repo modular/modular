@@ -54,7 +54,6 @@ ignore = [
   "D104", # TODO: Enable missing docstrings in public packages
   "D105", # undocumented-magic-method
   "E402", # TODO: import top of file
-  "E712", # TODO: Unnecessary comparison to bool
   "E722", # bare except
   "E731", # TODO: Don't assign lambda
   "E741", # TODO: Ambiguous variable name
