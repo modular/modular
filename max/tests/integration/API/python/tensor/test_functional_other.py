@@ -85,6 +85,15 @@ def test_chunk() -> None:
         assert chunk.real
 
 
+def test_complex_mul() -> None:
+    lhs = Tensor.ones([2, 2], dtype=DType.float32, device=DEVICE)
+    rhs = Tensor.ones([2, 1, 2], dtype=DType.float32, device=DEVICE)
+    result = F.complex_mul(lhs, rhs)
+    assert result.shape == [2, 2, 2]
+    result._sync_realize()
+    assert result.real
+
+
 def test_concat() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = F.concat([tensor_2d, tensor_2d], axis=0)
