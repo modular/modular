@@ -249,4 +249,4 @@ build:ci-remote-mi355 --config=remote-mi355
 # build:ci-remote-mi355 --test_keep_going=false
 
 # TODO: Remove once transitives are fixed
-common --incompatible_autoload_externally=@rules_shell,@com_google_protobuf,java_binary,+JavaInfo
+common --incompatible_autoload_externally=@rules_shell,@com_google_protobuf,java_binary,+JavaInfo,+@rules_cc

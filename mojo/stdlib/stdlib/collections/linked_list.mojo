@@ -25,7 +25,7 @@ struct Node[
         ElementType: The type of element stored in the node.
     """
 
-    alias _NodePointer = UnsafePointer[Self, MutOrigin.external]
+    comptime _NodePointer = UnsafePointer[Self, MutOrigin.external]
 
     var value: Self.ElementType
     """The value stored in this node."""
@@ -95,11 +95,11 @@ struct _LinkedListIter[
     var src: Pointer[LinkedList[Self.ElementType], Self.origin]
     var curr: UnsafePointer[Node[Self.ElementType], MutOrigin.external]
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
-    alias Element = Self.ElementType  # FIXME(MOCO-2068): shouldn't be needed.
+    comptime Element = Self.ElementType  # FIXME(MOCO-2068): shouldn't be needed.
 
     fn __init__(out self, src: Pointer[LinkedList[Self.Element], Self.origin]):
         self.src = src
@@ -146,11 +146,11 @@ struct LinkedList[
     at any position.
     """
 
-    alias _NodePointer = UnsafePointer[
+    comptime _NodePointer = UnsafePointer[
         Node[Self.ElementType], MutOrigin.external
     ]
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _LinkedListIter[Self.ElementType, iterable_origin]
 
@@ -526,7 +526,7 @@ struct LinkedList[
         other._tail = Self._NodePointer()
 
     fn count[
-        _ElementType: EqualityComparable & Copyable & Movable, //
+        _ElementType: Equatable & Copyable & Movable, //
     ](self: LinkedList[_ElementType], read elem: _ElementType) -> UInt:
         """Count the occurrences of `elem` in the list.
 
@@ -554,7 +554,7 @@ struct LinkedList[
         return UInt(count)
 
     fn __contains__[
-        _ElementType: EqualityComparable & Copyable & Movable, //
+        _ElementType: Equatable & Copyable & Movable, //
     ](self: LinkedList[_ElementType], value: _ElementType) -> Bool:
         """Checks if the list contains `value`.
 
@@ -580,7 +580,7 @@ struct LinkedList[
         return False
 
     fn __eq__[
-        _ElementType: EqualityComparable & Copyable & Movable, //
+        _ElementType: Equatable & Copyable & Movable, //
     ](
         read self: LinkedList[_ElementType],
         read other: LinkedList[_ElementType],
@@ -616,7 +616,7 @@ struct LinkedList[
         return True
 
     fn __ne__[
-        _ElementType: EqualityComparable & Copyable & Movable, //
+        _ElementType: Equatable & Copyable & Movable, //
     ](self: LinkedList[_ElementType], other: LinkedList[_ElementType]) -> Bool:
         """Checks if the two lists are not equal.
 

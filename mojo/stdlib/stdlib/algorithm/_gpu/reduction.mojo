@@ -37,6 +37,7 @@ from memory import stack_allocation
 from utils import IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
+from sys import env_get_int
 
 
 @always_inline
@@ -469,7 +470,7 @@ fn reduce_launch[
     init: StaticTuple[Scalar[dtype], num_reductions],
     ctx: DeviceContext,
 ) raises:
-    alias BLOCK_SIZE = 128
+    alias BLOCK_SIZE = env_get_int["MOJO_REDUCTION_BLOCK_SIZE", 128]()
     alias register_width = 32
     alias sm_count = ctx.default_device_info.sm_count
 

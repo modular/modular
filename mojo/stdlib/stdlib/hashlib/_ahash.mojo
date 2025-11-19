@@ -17,10 +17,10 @@ from memory import LegacyUnsafePointer as UnsafePointer, Span, bitcast
 
 from .hasher import Hasher
 
-alias U256 = SIMD[DType.uint64, 4]
-alias U128 = SIMD[DType.uint64, 2]
-alias MULTIPLE = 6364136223846793005
-alias ROT = 23
+comptime U256 = SIMD[DType.uint64, 4]
+comptime U128 = SIMD[DType.uint64, 2]
+comptime MULTIPLE = 6364136223846793005
+comptime ROT = 23
 
 
 @always_inline
@@ -92,7 +92,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
 
     fn __init__(out self):
         """Initialize the hasher."""
-        alias pi_key = Self.key ^ U256(
+        comptime pi_key = Self.key ^ U256(
             0x243F_6A88_85A3_08D3,
             0x1319_8A2E_0370_7344,
             0xA409_3822_299F_31D0,
@@ -163,7 +163,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
         # values smaller than 8 bytes contribute only once
         # values which are multiple of 8 bytes contribute multiple times
         # e.g. int128 is 16 bytes long and evaluates to 2 rounds
-        alias rounds = max(1, size_of[new_data.dtype]() // 8)
+        comptime rounds = max(1, size_of[new_data.dtype]() // 8)
 
         @parameter
         if rounds == 1:

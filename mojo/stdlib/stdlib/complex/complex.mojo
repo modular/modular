@@ -36,7 +36,7 @@ alias ComplexFloat64 = ComplexScalar[DType.float64]
 
 @register_passable("trivial")
 struct ComplexSIMD[dtype: DType, size: Int](
-    EqualityComparable, Stringable, Writable, _Expable
+    Equatable, Stringable, Writable, _Expable
 ):
     """Represents a complex SIMD value.
 

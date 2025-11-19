@@ -23,9 +23,9 @@ from memory import LegacyUnsafePointer as UnsafePointer, Span, bitcast, memcpy
 
 # ===-----------------------------------------------------------------------===#
 
-alias HEAP_BUFFER_BYTES = env_get_int["HEAP_BUFFER_BYTES", 2048]()
+comptime HEAP_BUFFER_BYTES = env_get_int["HEAP_BUFFER_BYTES", 2048]()
 """How much memory to pre-allocate for the heap buffer, will abort if exceeded."""
-alias STACK_BUFFER_BYTES = UInt(env_get_int["STACK_BUFFER_BYTES", 4096]())
+comptime STACK_BUFFER_BYTES = UInt(env_get_int["STACK_BUFFER_BYTES", 4096]())
 """The size of the stack buffer for IO operations from CPU."""
 
 
@@ -167,7 +167,7 @@ struct _WriteBufferHeap(Writable, Writer):
     var pos: Int
 
     fn __init__(out self):
-        alias alignment: Int = align_of[Byte]()
+        comptime alignment: Int = align_of[Byte]()
         self.data = __mlir_op.`pop.stack_allocation`[
             count = HEAP_BUFFER_BYTES._mlir_value,
             _type = UnsafePointer[Byte]._mlir_type,
@@ -314,7 +314,7 @@ struct _TotalWritableBytes(Writer):
 
 
 # fmt: off
-alias _hex_table = SIMD[DType.uint8, 16](
+comptime _hex_table = SIMD[DType.uint8, 16](
     ord("0"), ord("1"), ord("2"), ord("3"), ord("4"),
     ord("5"), ord("6"), ord("7"), ord("8"), ord("9"),
     ord("a"), ord("b"), ord("c"), ord("d"), ord("e"), ord("f"),

@@ -34,7 +34,7 @@ from .path import isdir, split
 from .pathlike import PathLike
 
 # TODO move this to a more accurate location once nt/posix like modules are in stdlib
-alias sep = "/"
+comptime sep = "/"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -42,11 +42,11 @@ alias sep = "/"
 # ===----------------------------------------------------------------------=== #
 
 
-alias SEEK_SET: UInt8 = 0
+comptime SEEK_SET: UInt8 = 0
 """Seek from the beginning of the file."""
-alias SEEK_CUR: UInt8 = 1
+comptime SEEK_CUR: UInt8 = 1
 """Seek from the current position."""
-alias SEEK_END: UInt8 = 2
+comptime SEEK_END: UInt8 = 2
 """Seek from the end of the file."""
 
 

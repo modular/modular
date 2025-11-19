@@ -49,9 +49,9 @@ struct _ListIter[
         forward: The iteration direction. `False` is backwards.
     """
 
-    alias Element = Self.T  # FIXME(MOCO-2068): shouldn't be needed.
+    comptime Element = Self.T  # FIXME(MOCO-2068): shouldn't be needed.
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
@@ -255,7 +255,7 @@ struct List[T: Copyable & Movable](
     var capacity: Int
     """The amount of elements that can fit in the list without resizing it."""
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _ListIter[Self.T, iterable_origin, True]
 
@@ -425,13 +425,13 @@ struct List[T: Copyable & Movable](
 
     @always_inline
     fn __eq__[
-        U: EqualityComparable & Copyable & Movable, //
+        U: Equatable & Copyable & Movable, //
     ](self: List[U, *_], other: List[U, *_]) -> Bool:
         """Checks if two lists are equal.
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-               trait `EqualityComparable`.
+               trait `Equatable`.
 
         Args:
             other: The list to compare with.
@@ -458,13 +458,13 @@ struct List[T: Copyable & Movable](
 
     @always_inline
     fn __ne__[
-        U: EqualityComparable & Copyable & Movable, //
+        U: Equatable & Copyable & Movable, //
     ](self: List[U, *_], other: List[U, *_]) -> Bool:
         """Checks if two lists are not equal.
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-               trait `EqualityComparable`.
+               trait `Equatable`.
 
         Args:
             other: The list to compare with.
@@ -483,13 +483,13 @@ struct List[T: Copyable & Movable](
         return not (self == other)
 
     fn __contains__[
-        U: EqualityComparable & Copyable & Movable, //
+        U: Equatable & Copyable & Movable, //
     ](self: List[U, *_], value: U) -> Bool:
         """Verify if a given value is present in the list.
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-              trait `EqualityComparable`.
+              trait `Equatable`.
 
         Args:
             value: The value to find.
@@ -1016,7 +1016,7 @@ struct List[T: Copyable & Movable](
 
     # TODO: Remove explicit self type when issue 1876 is resolved.
     fn index[
-        C: EqualityComparable & Copyable & Movable, //
+        C: Equatable & Copyable & Movable, //
     ](
         ref self: List[C, *_],
         value: C,
@@ -1035,7 +1035,7 @@ struct List[T: Copyable & Movable](
 
         Parameters:
             C: The type of the elements in the list. Must implement the
-                `EqualityComparable` trait.
+                `Equatable` trait.
 
         Returns:
             The index of the first occurrence of the value in the list.
@@ -1209,13 +1209,13 @@ struct List[T: Copyable & Movable](
         (self._data + idx).init_pointee_move(value^)
 
     fn count[
-        _T: EqualityComparable & Copyable & Movable, //
+        _T: Equatable & Copyable & Movable, //
     ](self: List[_T, *_], value: _T) -> Int:
         """Counts the number of occurrences of a value in the list.
 
         Parameters:
             _T: The type of the elements in the list. Must implement the
-                trait `EqualityComparable`.
+                trait `Equatable`.
 
         Args:
             value: The value to count.

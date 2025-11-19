@@ -411,16 +411,28 @@ struct LayoutTensor[
         rank, element_type = Self.linear_idx_type
     ]
 
+    alias GenericAddressSpaceLayoutTensor = LayoutTensor[
+        mut = Self.mut,
+        Self.dtype,
+        Self.layout,
+        Self.origin,
+        address_space = AddressSpace.GENERIC,
+        element_layout = Self.element_layout,
+        layout_int_type = Self.layout_int_type,
+        linear_idx_type = Self.linear_idx_type,
+        masked = Self.masked,
+        alignment = Self.alignment,
+    ]
+
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
     @always_inline
     fn __init__(
-        out self,
+        out self: Self.GenericAddressSpaceLayoutTensor,
         span: Span[
             Scalar[Self.dtype],
-            Self.origin,
-            address_space = Self.address_space, **_,
+            Self.origin, **_,
         ],
     ):
         """Create a `LayoutTensor` with a `Span`.
@@ -431,15 +443,14 @@ struct LayoutTensor[
         Args:
             span: The `Span` pointing to the underlying data.
         """
-        self = Self(span.unsafe_ptr())
+        self = Self.GenericAddressSpaceLayoutTensor(span.unsafe_ptr())
 
     @always_inline
     fn __init__(
-        out self,
+        out self: Self.GenericAddressSpaceLayoutTensor,
         span: Span[
             Scalar[Self.dtype],
-            Self.origin,
-            address_space = Self.address_space, **_,
+            Self.origin, **_,
         ],
         runtime_layout: RuntimeLayout[Self.layout, **_],
     ):
@@ -454,15 +465,16 @@ struct LayoutTensor[
             span: The `Span` pointing to the underlying data.
             runtime_layout: The runtime layout of the LayoutTensor.
         """
-        self = Self(span.unsafe_ptr(), runtime_layout)
+        self = Self.GenericAddressSpaceLayoutTensor(
+            span.unsafe_ptr(), runtime_layout
+        )
 
     @always_inline
     fn __init__(
-        out self,
+        out self: Self.GenericAddressSpaceLayoutTensor,
         span: Span[
             Scalar[Self.dtype],
-            Self.origin,
-            address_space = Self.address_space, **_,
+            Self.origin, **_,
         ],
         runtime_layout: RuntimeLayout[Self.layout, **_],
         element_runtime_layout: RuntimeLayout[Self.element_layout, **_],
@@ -480,7 +492,9 @@ struct LayoutTensor[
             runtime_layout: The runtime layout of the `LayoutTensor`.
             element_runtime_layout: The runtime layout of each element.
         """
-        self = Self(span.unsafe_ptr(), runtime_layout, element_runtime_layout)
+        self = Self.GenericAddressSpaceLayoutTensor(
+            span.unsafe_ptr(), runtime_layout, element_runtime_layout
+        )
 
     @always_inline
     fn __init__(

@@ -2885,13 +2885,22 @@ struct SM100MHA2Q[
             )
 
         var warp_group_idx: UInt32 = warp.broadcast(tid // 128)
-        # var position: Self.PositionType = get_position(initial_seq_info)
-        # startend = position.get_start_and_end_for_partitions(partition)
-        # var kv_tile_start_row: UInt32 = startend[0]
-        # var end: UInt32 = startend[1]
+        if tid < 32:
+            if elect() != 0:
+                kv_pipeline.init()
 
-        # var warp_group_idx: UInt32 = warp.broadcast(tid // 128)
-        # barrier()
+                # o produced by 1 MMA, consumed by 128 correction
+                @parameter
+                for i in range(2):
+                    o_mbar[i].init(1)  # producer
+                    o_mbar[i + 2].init(WARPGROUP_SIZE)  # consumer
+                misc_mbars.init()
+        elif tid < 64:
+            tcgen05_alloc[Self.cta_group](
+                ptr_tmem_addr, Self.config.sm100_tmem_cols
+            )
+
+        barrier()
 
         # warp group partitioning
         # Two QO:
@@ -2902,7 +2911,6 @@ struct SM100MHA2Q[
             var kv_tile_start_row: UInt32 = startend[0]
             var end: UInt32 = startend[1]
 
-            named_barrier[448]()
             warpgroup_reg_alloc[num_reg_softmax]()
 
             Self.softmax(
@@ -2931,7 +2939,6 @@ struct SM100MHA2Q[
             var kv_tile_start_row: UInt32 = startend[0]
             var end: UInt32 = startend[1]
 
-            named_barrier[448]()
             warpgroup_reg_dealloc[num_reg_correction]()
             Self.correction(
                 ptr_tmem_addr[0],
@@ -2946,21 +2953,11 @@ struct SM100MHA2Q[
             warp_id = warp.broadcast(tid // 32)
             warpgroup_reg_dealloc[num_reg_other]()
             if warp_id == 13:  # produce
-                if elect() != 0:
-                    kv_pipeline.init()
-
-                    # o produced by 1 MMA, consumed by 128 correction
-                    @parameter
-                    for i in range(2):
-                        o_mbar[i].init(1)  # producer
-                        o_mbar[i + 2].init(WARPGROUP_SIZE)  # consumer
-                    misc_mbars.init()
                 var position: Self.PositionType = get_position(initial_seq_info)
                 startend = position.get_start_and_end_for_partitions(partition)
                 var kv_tile_start_row: UInt32 = startend[0]
                 var end: UInt32 = startend[1]
 
-                named_barrier[448]()
                 Self.load(
                     misc_mbars,
                     kv_pipeline,
@@ -2976,15 +2973,11 @@ struct SM100MHA2Q[
                 )
 
             elif warp_id == 12:  # Q @ K', P @ V
-                tcgen05_alloc[Self.cta_group](
-                    ptr_tmem_addr, Self.config.sm100_tmem_cols
-                )
                 var position: Self.PositionType = get_position(initial_seq_info)
                 startend = position.get_start_and_end_for_partitions(partition)
                 var kv_tile_start_row: UInt32 = startend[0]
                 var end: UInt32 = startend[1]
 
-                named_barrier[448]()
                 Self.mma(
                     ptr_tmem_addr[0],
                     misc_mbars,
@@ -3345,6 +3338,7 @@ struct SM100MHA2Q[
             old_max = row_max
             row_max = max(old_max, load_mask_max(kv_row))
             correction = exp2(old_max - row_max)
+            pipeline_c.acquire()
             tcgen05_st[
                 datapaths=32,
                 bits=32,

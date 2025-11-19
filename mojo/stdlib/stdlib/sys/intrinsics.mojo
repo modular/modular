@@ -60,7 +60,7 @@ fn llvm_intrinsic[
 
     var loaded_pack = args.get_loaded_kgen_pack()
 
-    alias intrin_kgen_string = _get_kgen_string[intrin]()
+    comptime intrin_kgen_string = _get_kgen_string[intrin]()
 
     @parameter
     if _mlirtype_is_eq[type, NoneType]():

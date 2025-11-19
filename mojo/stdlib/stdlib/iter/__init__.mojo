@@ -57,7 +57,7 @@ trait Iterable:
     iterator.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator
 
@@ -80,7 +80,7 @@ trait Iterator(Copyable, Movable):
     iterator, e.g. in a `for` loop.
     """
 
-    alias Element: Copyable & Movable
+    comptime Element: Copyable & Movable
 
     fn __has_next__(self) -> Bool:
         """Checks if there are more elements in the iterator.
@@ -243,10 +243,10 @@ fn enumerate[
 struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
     Copyable, Iterable, Iterator, Movable
 ):
-    alias Element = Tuple[
+    comptime Element = Tuple[
         Self.IteratorTypeA.Element, Self.IteratorTypeB.Element
     ]
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
@@ -273,12 +273,12 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
 struct _Zip3[
     IteratorTypeA: Iterator, IteratorTypeB: Iterator, IteratorTypeC: Iterator
 ](Copyable, Iterable, Iterator, Movable):
-    alias Element = Tuple[
+    comptime Element = Tuple[
         Self.IteratorTypeA.Element,
         Self.IteratorTypeB.Element,
         Self.IteratorTypeC.Element,
     ]
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
@@ -319,13 +319,13 @@ struct _Zip4[
     IteratorTypeC: Iterator,
     IteratorTypeD: Iterator,
 ](Copyable, Iterable, Iterator, Movable):
-    alias Element = Tuple[
+    comptime Element = Tuple[
         Self.IteratorTypeA.Element,
         Self.IteratorTypeB.Element,
         Self.IteratorTypeC.Element,
         Self.IteratorTypeD.Element,
     ]
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 

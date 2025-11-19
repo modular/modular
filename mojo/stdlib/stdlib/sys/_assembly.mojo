@@ -28,8 +28,8 @@ fn inlined_assembly[
     """Generates assembly via inline assembly."""
     var loaded_pack = args.get_loaded_kgen_pack()
 
-    alias asm_kgen_string = _get_kgen_string[asm]()
-    alias constraints_kgen_string = _get_kgen_string[constraints]()
+    comptime asm_kgen_string = _get_kgen_string[asm]()
+    comptime constraints_kgen_string = _get_kgen_string[constraints]()
 
     @parameter
     if _mlirtype_is_eq[result_type, NoneType]():

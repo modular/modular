@@ -29,7 +29,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     Boolable,
     Copyable,
     Defaultable,
-    EqualityComparable,
+    Equatable,
     Iterable,
     Movable,
     Sized,

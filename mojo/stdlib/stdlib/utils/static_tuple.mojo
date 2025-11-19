@@ -53,10 +53,10 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         size: The size of the tuple.
     """
 
-    alias _mlir_type = __mlir_type[
+    comptime _mlir_type = __mlir_type[
         `!pop.array<`, Self.size._mlir_value, `, `, Self.element_type, `>`
     ]
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     var _mlir_value: Self._mlir_type
     """The underlying storage for the static tuple."""

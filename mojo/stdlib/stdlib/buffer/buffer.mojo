@@ -323,30 +323,6 @@ struct NDBuffer[
         )
 
     @always_inline
-    fn __init__(
-        out self,
-        span: Span[
-            Scalar[Self.dtype],
-            address_space = Self.address_space,
-            origin = Self.origin, **_,
-        ],
-    ):
-        """Constructs an NDBuffer with statically known rank, shapes and
-        dtype.
-
-        Constraints:
-            The rank, shapes, and type are known.
-
-        Args:
-            span: Span of the data.
-        """
-        constrained[
-            Self.shape.all_known[Self.rank](),
-            "dimensions must all be known",
-        ]()
-        self = Self(span.unsafe_ptr())
-
-    @always_inline
     @implicit
     fn __init__(
         out self,
@@ -466,28 +442,6 @@ struct NDBuffer[
     @always_inline
     fn __init__(
         out self,
-        span: Span[
-            Scalar[Self.dtype],
-            address_space = Self.address_space,
-            origin = Self.origin,
-        ],
-        dynamic_shape: IndexList[Self.rank, **_],
-    ):
-        """Constructs an NDBuffer with statically known rank, but dynamic
-        shapes and type.
-
-        Constraints:
-            The rank is known.
-
-        Args:
-            span: Span of the data.
-            dynamic_shape: A static tuple of size 'rank' representing shapes.
-        """
-        self = Self(span.unsafe_ptr(), dynamic_shape)
-
-    @always_inline
-    fn __init__(
-        out self,
         ptr: UnsafePointer[
             Scalar[Self.dtype],
             address_space = Self.address_space,
@@ -507,28 +461,6 @@ struct NDBuffer[
             dynamic_shape: A static tuple of size 'rank' representing shapes.
         """
         self = Self(ptr, _make_tuple[Self.rank](dynamic_shape))
-
-    @always_inline
-    fn __init__(
-        out self,
-        span: Span[
-            Scalar[Self.dtype],
-            address_space = Self.address_space,
-            origin = Self.origin,
-        ],
-        dynamic_shape: DimList,
-    ):
-        """Constructs an NDBuffer with statically known rank, but dynamic
-        shapes and type.
-
-        Constraints:
-            The rank is known.
-
-        Args:
-            span: Span of the data.
-            dynamic_shape: A static tuple of size 'rank' representing shapes.
-        """
-        self = Self(span.unsafe_ptr(), dynamic_shape)
 
     @always_inline
     fn __init__(
@@ -564,30 +496,6 @@ struct NDBuffer[
     @always_inline
     fn __init__(
         out self,
-        span: Span[
-            Scalar[Self.dtype],
-            address_space = Self.address_space,
-            origin = Self.origin,
-        ],
-        dynamic_shape: IndexList[Self.rank, **_],
-        dynamic_stride: IndexList[Self.rank, **_],
-    ):
-        """Constructs a strided NDBuffer with statically known rank, but
-        dynamic shapes and type.
-
-        Constraints:
-            The rank is known.
-
-        Args:
-            span: Span over the data.
-            dynamic_shape: A static tuple of size 'rank' representing shapes.
-            dynamic_stride: A static tuple of size 'rank' representing strides.
-        """
-        self = Self(span.unsafe_ptr(), dynamic_shape, dynamic_stride)
-
-    @always_inline
-    fn __init__(
-        out self,
         ptr: UnsafePointer[
             Scalar[Self.dtype],
             address_space = Self.address_space,
@@ -613,30 +521,6 @@ struct NDBuffer[
             dynamic_shape=_make_tuple[Self.rank](dynamic_shape),
             dynamic_stride=dynamic_stride,
         )
-
-    @always_inline
-    fn __init__(
-        out self,
-        span: Span[
-            Scalar[Self.dtype],
-            address_space = Self.address_space,
-            origin = Self.origin,
-        ],
-        dynamic_shape: DimList,
-        dynamic_stride: IndexList[Self.rank, **_],
-    ):
-        """Constructs a strided NDBuffer with statically known rank, but
-        dynamic shapes and type.
-
-        Constraints:
-            The rank is known.
-
-        Args:
-            span: Pointer to the data.
-            dynamic_shape: A DimList of size 'rank' representing shapes.
-            dynamic_stride: A static tuple of size 'rank' representing strides.
-        """
-        self = Self(span.unsafe_ptr(), dynamic_shape, dynamic_stride)
 
     alias OriginCastType[
         target_mut: Bool,

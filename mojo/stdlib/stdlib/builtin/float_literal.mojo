@@ -58,12 +58,12 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         """
         return {}
 
-    alias nan = FloatLiteral[__mlir_attr.`#pop.float_literal<nan>`]()
-    alias infinity = FloatLiteral[__mlir_attr.`#pop.float_literal<inf>`]()
-    alias negative_infinity = FloatLiteral[
+    comptime nan = FloatLiteral[__mlir_attr.`#pop.float_literal<nan>`]()
+    comptime infinity = FloatLiteral[__mlir_attr.`#pop.float_literal<inf>`]()
+    comptime negative_infinity = FloatLiteral[
         __mlir_attr.`#pop.float_literal<neg_inf>`
     ]()
-    alias negative_zero = FloatLiteral[
+    comptime negative_zero = FloatLiteral[
         __mlir_attr.`#pop.float_literal<neg_zero>`
     ]()
 

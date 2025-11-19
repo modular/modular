@@ -81,7 +81,7 @@ from memory import (
 from memory.memory import _memcmp_impl_unconstrained
 from python import ConvertibleToPython, Python, PythonObject
 
-alias StaticString = StringSlice[StaticConstantOrigin]
+comptime StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice."""
 
 
@@ -104,10 +104,10 @@ struct CodepointSliceIter[
     always take an element from the end.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = StringSlice[Self.origin]
+    comptime Element = StringSlice[Self.origin]
 
     var _slice: StringSlice[Self.origin]
 
@@ -467,7 +467,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     Boolable,
     ConvertibleToPython,
     Defaultable,
-    EqualityComparable,
+    Equatable,
     FloatableRaising,
     Hashable,
     ImplicitlyCopyable,
@@ -500,9 +500,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     """
 
     # Aliases
-    alias Mutable = StringSlice[MutOrigin.cast_from[Self.origin]]
+    comptime Mutable = StringSlice[MutOrigin.cast_from[Self.origin]]
     """The mutable version of the `StringSlice`."""
-    alias Immutable = StringSlice[ImmutOrigin.cast_from[Self.origin]]
+    comptime Immutable = StringSlice[ImmutOrigin.cast_from[Self.origin]]
     """The immutable version of the `StringSlice`."""
     # Fields
     var _slice: Span[Byte, Self.origin]
@@ -577,14 +577,19 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         #     _is_valid_utf8(value.as_bytes()), "value is not valid utf8"
         # )
         self._slice = Span[Byte, Self.origin](
-            ptr=unsafe_from_utf8.unsafe_ptr().address_space_cast[
-                Span[Byte, Self.origin].address_space
-            ](),
+            ptr=unsafe_from_utf8.unsafe_ptr(),
             length=unsafe_from_utf8.__len__(),
         )
 
     fn __init__(
-        out self, *, unsafe_from_utf8_ptr: UnsafePointer[Byte, Self.origin]
+        out self,
+        *,
+        unsafe_from_utf8_ptr: UnsafePointer[
+            mut = Self.mut,
+            Byte,
+            origin = Self.origin,
+            address_space = AddressSpace.GENERIC, **_,
+        ],
     ):
         """Construct a new StringSlice from a `UnsafePointer[Byte]` pointing to
         null-terminated UTF-8 encoded bytes.
@@ -623,7 +628,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         self = Self(unsafe_from_utf8=from_utf8)
 
     fn __init__(
-        out self, *, unsafe_from_utf8_ptr: UnsafePointer[c_char, Self.origin]
+        out self,
+        *,
+        unsafe_from_utf8_ptr: UnsafePointer[
+            mut = Self.mut,
+            c_char,
+            origin = Self.origin,
+            address_space = AddressSpace.GENERIC, **_,
+        ],
     ):
         """Construct a new StringSlice from a `UnsafePointer[c_char]` pointing
         to null-terminated UTF-8 encoded bytes.
@@ -643,7 +655,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     fn __init__(
         out self,
         *,
-        ptr: UnsafePointer[Byte, Self.origin],
+        ptr: UnsafePointer[
+            mut = Self.mut,
+            Byte,
+            origin = Self.origin,
+            address_space = AddressSpace.GENERIC, **_,
+        ],
         length: Int,
     ):
         """Construct a `StringSlice` from a pointer to a sequence of UTF-8
@@ -2553,7 +2570,7 @@ fn _memchr_impl[
 ):
     var haystack = source.unsafe_ptr()
     var length = len(source)
-    alias bool_mask_width = simd_width_of[DType.bool]()
+    comptime bool_mask_width = simd_width_of[DType.bool]()
     var first_needle = SIMD[dtype, bool_mask_width](char)
     var vectorized_end = align_down(length, bool_mask_width)
 
@@ -2579,8 +2596,7 @@ fn _memmem[
     haystack_span: Span[mut=False, Scalar[dtype], **_],
     needle_span: Span[
         mut=False,
-        Scalar[dtype],
-        address_space = haystack_span.address_space, **_,
+        Scalar[dtype], **_,
     ],
 ) -> haystack_span.UnsafePointerType:
     if is_compile_time() or len(haystack_span) < simd_width_of[Scalar[dtype]]():
@@ -2608,8 +2624,7 @@ fn _memmem_impl[
     haystack_span: Span[mut=False, Scalar[dtype], **_],
     needle_span: Span[
         mut=False,
-        Scalar[dtype],
-        address_space = haystack_span.address_space, **_,
+        Scalar[dtype], **_,
     ],
     out output: haystack_span.UnsafePointerType,
 ):
@@ -2625,7 +2640,7 @@ fn _memmem_impl[
         output = {}
         return
 
-    alias bool_mask_width = simd_width_of[DType.bool]()
+    comptime bool_mask_width = simd_width_of[DType.bool]()
     var vectorized_end = align_down(
         haystack_len - needle_len + 1, bool_mask_width
     )

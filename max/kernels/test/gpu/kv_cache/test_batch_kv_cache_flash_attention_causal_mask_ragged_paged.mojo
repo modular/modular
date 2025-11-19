@@ -30,7 +30,7 @@ from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
 from tensor import IOUnknown, ManagedTensorSlice
 from tensor.managed_tensor_slice import StaticTensorSpec
-from testing import assert_almost_equal
+from testing import assert_almost_equal, assert_equal
 
 from utils import IndexList
 
@@ -283,22 +283,6 @@ def execute_ragged_flash_attention[
         ctx,
     )
 
-    # continuous execution
-    flash_attention[ragged=True](
-        ref_output_device.to_layout_tensor(),
-        q_ragged_device.to_layout_tensor(),
-        kv_collection_continuous_device.get_key_cache(layer_idx),
-        kv_collection_continuous_device.get_value_cache(layer_idx),
-        CausalMask(),
-        IdentityScoreMod(),
-        ManagedTensorSlice[
-            io_spec=IOUnknown,
-            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](input_row_offsets_device.tensor),
-        rsqrt(Float32(kv_params.head_size)),
-        ctx,
-    )
-
     # paged execution
     flash_attention[ragged=True](
         test_output_device.to_layout_tensor(),
@@ -344,6 +328,39 @@ def execute_ragged_flash_attention[
                             test_out[ragged_offset + s, h, Int(hd)],
                         )
                         raise e
+
+    # check reproducibility
+    for repeat in range(16):
+        flash_attention[ragged=True](
+            ref_output_device.to_layout_tensor(),
+            q_ragged_device.to_layout_tensor(),
+            kv_collection_paged_device.get_key_cache(layer_idx),
+            kv_collection_paged_device.get_value_cache(layer_idx),
+            CausalMask(),
+            IdentityScoreMod(),
+            ManagedTensorSlice[
+                io_spec=IOUnknown,
+                static_spec = StaticTensorSpec[
+                    DType.uint32, 1
+                ].create_unknown(),
+            ](input_row_offsets_device.tensor),
+            rsqrt(Float32(kv_params.head_size)),
+            ctx,
+        )
+        ctx.enqueue_copy(ref_output_host.tensor.data, ref_output_device.buffer)
+        ctx.synchronize()
+        for bs in range(batch_size):
+            prompt_len = valid_lengths[bs]
+            ragged_offset = Int(input_row_offsets_host.tensor[bs])
+            for s in range(prompt_len):
+                for h in range(num_q_heads):
+                    for d in range(kv_params.head_size):
+                        rep = ref_out[ragged_offset + s, h, Int(d)]
+                        orig = test_out[ragged_offset + s, h, Int(d)]
+                        if rep != orig:
+                            print("repeat s h d =", repeat, s, h, d)
+                        assert_equal(rep, orig)
+                        ref_out[ragged_offset + s, h, Int(d)] = 123.4567
 
     _ = q_ragged_host^
     _ = q_ragged_device^

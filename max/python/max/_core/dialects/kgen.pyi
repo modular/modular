@@ -1162,7 +1162,7 @@ class SugarAttr(max._core.Attribute):
     """
     The `#kgen.sugar` attribute represents a syntax sugar overlaid on some other
     value e.g. an alias or expanded builtin function call. It maintains the
-    original unexpanded attribute value as well as the "one level expanded" and
+    original sugared form as well as the "one level expanded" form, and
     fully expanded "canonical" version of the attribute.
     """
 
@@ -1171,27 +1171,24 @@ class SugarAttr(max._core.Attribute):
         self,
         kind: SugarKind,
         sugared: max._core.dialects.builtin.TypedAttr,
-        original: max._core.dialects.builtin.TypedAttr,
+        expanded: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
         self,
         kind: SugarKind,
         sugared: max._core.dialects.builtin.TypedAttr,
-        original: max._core.dialects.builtin.TypedAttr,
+        expanded: max._core.dialects.builtin.TypedAttr,
         canonical: max._core.dialects.builtin.TypedAttr,
-        type: max._core.Type,
     ) -> None: ...
     @property
     def kind(self) -> SugarKind: ...
     @property
     def sugared(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def original(self) -> max._core.dialects.builtin.TypedAttr: ...
+    def expanded(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def canonical(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
-    def type(self) -> max._core.Type | None: ...
 
 class SymbolConstantAttr(max._core.Attribute):
     """
@@ -1573,6 +1570,74 @@ class VariadicMapAttr(max._core.Attribute):
     def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def generator(self) -> max._core.dialects.builtin.TypedAttr: ...
+
+class VariadicSplatAttr(max._core.Attribute):
+    """
+    The `#kgen.variadic.splat` creates a variadic by splatting the same value
+    to the given times.
+
+    Example:
+    ```mlir
+    #kgen.variadic.splat<Int, 5> : !variadic<!AnyType>
+    // ->
+    #kgen.variadic<[Int, Int, Int, Int, Int]> : !variadic<!AnyType>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self,
+        type: VariadicType,
+        element: max._core.dialects.builtin.TypedAttr,
+        count: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type: VariadicType,
+        element: max._core.dialects.builtin.TypedAttr,
+        count: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type(self) -> VariadicType: ...
+    @property
+    def element(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def count(self) -> max._core.dialects.builtin.TypedAttr: ...
+
+class VariadicZipAttr(max._core.Attribute):
+    """
+    The `#kgen.variadic.zip` attribute is used to zip a variadic of
+    variadic (type) value.
+
+    Example:
+    ```mlir
+    #kgen.variadic.zip<[[Int, Int], [Float, Float]]> : !variadic<!variadic<!AnyType>>
+    // ->
+    #kgen.variadic<[[Int, Float], [Int, Float]]> : !variadic<!variadic<!AnyType>>
+    ```
+
+    At the moment, when the provided variadics are of different lengths, we zip
+    till the shortest variadic are consumed. In the future, we might want to
+    extend the attribute to accept an "default" value for "zip_longest".
+    """
+
+    @overload
+    def __init__(
+        self,
+        type: VariadicType,
+        input_type_value: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type: VariadicType,
+        input_type_value: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type(self) -> VariadicType: ...
+    @property
+    def variadics(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class VariantAttr(max._core.Attribute):
     """
@@ -3935,7 +4000,7 @@ class SugaredTypeInterface(Protocol):
 
     def can_elide_sugar_for(
         self, arg: max._core.dialects.builtin.TypedAttr, /
-    ) -> bool: ...
+    ) -> SugarKind | None: ...
     def get_cached_canonical_type(
         self, arg: max._core.Type, /
     ) -> max._core.Type | None: ...

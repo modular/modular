@@ -2629,7 +2629,9 @@ struct DeviceFunction[
         *Ts: DevicePassable,
         num_args: Int,
     ]() -> Tuple[Int, InlineArray[Int, num_args]]:
-        alias declared_num_args = len(VariadicList(declared_arg_types.value()))
+        alias declared_num_args = len(
+            VariadicList(Self.declared_arg_types.value())
+        )
         constrained[
             declared_num_args == num_args,
             "Wrong number of arguments to enqueue",
@@ -2727,7 +2729,7 @@ struct DeviceFunction[
         alias num_captures_static = 16
 
         @parameter
-        if declared_arg_types:
+        if Self.declared_arg_types:
             _ = Self._validate_arguments[*Ts, num_args=num_args]()
 
         # NOTE: Manual short buffer optimization. We could use a
@@ -2851,7 +2853,7 @@ struct DeviceFunction[
         # Validate that all actual arguments do remap to the declared device
         # dtype in the kernel.
         @parameter
-        if declared_arg_types:
+        if Self.declared_arg_types:
             num_translated_args, translated_arg_offsets = (
                 Self._validate_arguments[*Ts, num_args=num_passed_args]()
             )

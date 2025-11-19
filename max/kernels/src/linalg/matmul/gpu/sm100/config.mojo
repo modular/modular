@@ -32,7 +32,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](Copyable, EqualityComparable, Hashable, Movable, Stringable, Writable):
+](Copyable, Equatable, Hashable, Movable, Stringable, Writable):
     """Static configuration of GPU matmul."""
 
     # Mandatory parameters
@@ -397,7 +397,7 @@ fn choose_config[
         # Traverse the tile sizes to find min load volume per wave.
         # TODO: consider the L2 resue across waves.
         var BM = mma_mn[0] // cta_group
-        for tile_size in List[Int](1, 2, 4, 8):
+        for tile_size in [1, 2, 4, 8]:
             var num_ctas_m = ceildiv(M, BM)
             # When tile_size is small, it's possible that a wave has more ctas
             # then num_ctas_m * tile_size and num_ctas_per_wave_m > num_ctas_m.

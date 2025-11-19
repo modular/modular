@@ -34,7 +34,7 @@ from ._cpython import (
 )
 from .python_object import PythonObject
 
-alias _PYTHON_GLOBAL = _Global["Python", _PythonGlobal.__init__]
+comptime _PYTHON_GLOBAL = _Global["Python", _PythonGlobal.__init__]
 
 
 struct _PythonGlobal(Defaultable, Movable):

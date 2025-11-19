@@ -37,6 +37,9 @@ what we publish.
 - `UnsafePointer` can now be initialized from a raw memory address using the
   `unsafe_from_address` initializer.
 
+- The `EqualityComparable` trait has been deprecated in favor of `Equatable`,
+  which has identical functionality.
+
 ### Tooling changes
 
 - The Mojo compiler now "diffs" very long types in error messages to explain

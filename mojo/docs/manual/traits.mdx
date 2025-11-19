@@ -252,11 +252,11 @@ default implementations listed as *provided methods*.
 
 
 The
-[`EqualityComparable`](/mojo/stdlib/builtin/equality_comparable/EqualityComparable/)
+[`Equatable`](/mojo/stdlib/builtin/equality_comparable/Equatable/)
 trait is a good example of the use case for default implementations. The trait
 includes two methods: `__eq__()` (corresponding to the `==` operator) and
 `__ne__()` (corresponding to the `!=` operator). Every type that conforms to
-`EqualityComparable` needs to define the `__eq__()` method for itself, but the
+`Equatable` needs to define the `__eq__()` method for itself, but the
 trait supplies a default implementation for `__ne__()`. Given an `__eq__()`
 method, the definition of `__ne__()` is trivial for most types:
 

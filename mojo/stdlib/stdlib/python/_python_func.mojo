@@ -1408,9 +1408,9 @@ struct PyObjectFunction[
             elif self._has_type[Self._0r]():
                 return rebind[Self._0r](self._func)()
             elif self._has_type[Self._0e]():
-                return rebind[Self._0e](self._func)()
+                return PO(rebind[Self._0e](self._func)())
             elif self._has_type[Self._0]():
-                return rebind[Self._0](self._func)()
+                return PO(rebind[Self._0](self._func)())
             else:
                 constrained[False, "unsupported signature"]()
                 return PO()
@@ -1424,9 +1424,9 @@ struct PyObjectFunction[
             elif self._has_type[Self._1r]():
                 return rebind[Self._1r](self._func)(arg0)
             elif self._has_type[Self._1e]():
-                return rebind[Self._1e](self._func)(arg0)
+                return PO(rebind[Self._1e](self._func)(arg0))
             elif self._has_type[Self._1]():
-                return rebind[Self._1](self._func)(arg0)
+                return PO(rebind[Self._1](self._func)(arg0))
             else:
                 constrained[False, "unsupported signature"]()
                 return PO()
@@ -1441,9 +1441,9 @@ struct PyObjectFunction[
             elif self._has_type[Self._2r]():
                 return rebind[Self._2r](self._func)(arg0, arg1)
             elif self._has_type[Self._2e]():
-                return rebind[Self._2e](self._func)(arg0, arg1)
+                return PO(rebind[Self._2e](self._func)(arg0, arg1))
             elif self._has_type[Self._2]():
-                return rebind[Self._2](self._func)(arg0, arg1)
+                return PO(rebind[Self._2](self._func)(arg0, arg1))
             else:
                 constrained[False, "unsupported signature"]()
                 return PO()
@@ -1459,9 +1459,9 @@ struct PyObjectFunction[
             elif self._has_type[Self._3r]():
                 return rebind[Self._3r](self._func)(arg0, arg1, arg2)
             elif self._has_type[Self._3e]():
-                return rebind[Self._3e](self._func)(arg0, arg1, arg2)
+                return PO(rebind[Self._3e](self._func)(arg0, arg1, arg2))
             elif self._has_type[Self._3]():
-                return rebind[Self._3](self._func)(arg0, arg1, arg2)
+                return PO(rebind[Self._3](self._func)(arg0, arg1, arg2))
             else:
                 constrained[False, "unsupported signature"]()
                 return PO()
@@ -1478,9 +1478,9 @@ struct PyObjectFunction[
             elif self._has_type[Self._4r]():
                 return rebind[Self._4r](self._func)(arg0, arg1, arg2, arg3)
             elif self._has_type[Self._4e]():
-                return rebind[Self._4e](self._func)(arg0, arg1, arg2, arg3)
+                return PO(rebind[Self._4e](self._func)(arg0, arg1, arg2, arg3))
             elif self._has_type[Self._4]():
-                return rebind[Self._4](self._func)(arg0, arg1, arg2, arg3)
+                return PO(rebind[Self._4](self._func)(arg0, arg1, arg2, arg3))
             else:
                 constrained[False, "unsupported signature"]()
                 return PO()
@@ -1502,11 +1502,13 @@ struct PyObjectFunction[
                     arg0, arg1, arg2, arg3, arg4
                 )
             elif self._has_type[Self._5e]():
-                return rebind[Self._5e](self._func)(
-                    arg0, arg1, arg2, arg3, arg4
+                return PO(
+                    rebind[Self._5e](self._func)(arg0, arg1, arg2, arg3, arg4)
                 )
             elif self._has_type[Self._5]():
-                return rebind[Self._5](self._func)(arg0, arg1, arg2, arg3, arg4)
+                return PO(
+                    rebind[Self._5](self._func)(arg0, arg1, arg2, arg3, arg4)
+                )
             else:
                 constrained[False, "unsupported signature"]()
                 return PO()
@@ -1529,12 +1531,16 @@ struct PyObjectFunction[
                     arg0, arg1, arg2, arg3, arg4, arg5
                 )
             elif self._has_type[Self._6e]():
-                return rebind[Self._6e](self._func)(
-                    arg0, arg1, arg2, arg3, arg4, arg5
+                return PO(
+                    rebind[Self._6e](self._func)(
+                        arg0, arg1, arg2, arg3, arg4, arg5
+                    )
                 )
             elif self._has_type[Self._6]():
-                return rebind[Self._6](self._func)(
-                    arg0, arg1, arg2, arg3, arg4, arg5
+                return PO(
+                    rebind[Self._6](self._func)(
+                        arg0, arg1, arg2, arg3, arg4, arg5
+                    )
                 )
             else:
                 constrained[False, "unsupported signature"]()
@@ -1561,9 +1567,9 @@ struct PyObjectFunction[
             elif self._has_type[Self._0r_kwargs]():
                 return rebind[Self._0r_kwargs](self._func)(kwargs)
             elif self._has_type[Self._0e_kwargs]():
-                return rebind[Self._0e_kwargs](self._func)(kwargs)
+                return PO(rebind[Self._0e_kwargs](self._func)(kwargs))
             elif self._has_type[Self._0_kwargs]():
-                return rebind[Self._0_kwargs](self._func)(kwargs)
+                return PO(rebind[Self._0_kwargs](self._func)(kwargs))
             else:
                 constrained[False, "unsupported signature"]()
                 return PO()
@@ -1577,9 +1583,9 @@ struct PyObjectFunction[
             elif self._has_type[Self._1r_kwargs]():
                 return rebind[Self._1r_kwargs](self._func)(arg0, kwargs)
             elif self._has_type[Self._1e_kwargs]():
-                return rebind[Self._1e_kwargs](self._func)(arg0, kwargs)
+                return PO(rebind[Self._1e_kwargs](self._func)(arg0, kwargs))
             elif self._has_type[Self._1_kwargs]():
-                return rebind[Self._1_kwargs](self._func)(arg0, kwargs)
+                return PO(rebind[Self._1_kwargs](self._func)(arg0, kwargs))
             else:
                 constrained[False, "unsupported signature"]()
                 return PO()
@@ -1594,9 +1600,13 @@ struct PyObjectFunction[
             elif self._has_type[Self._2r_kwargs]():
                 return rebind[Self._2r_kwargs](self._func)(arg0, arg1, kwargs)
             elif self._has_type[Self._2e_kwargs]():
-                return rebind[Self._2e_kwargs](self._func)(arg0, arg1, kwargs)
+                return PO(
+                    rebind[Self._2e_kwargs](self._func)(arg0, arg1, kwargs)
+                )
             elif self._has_type[Self._2_kwargs]():
-                return rebind[Self._2_kwargs](self._func)(arg0, arg1, kwargs)
+                return PO(
+                    rebind[Self._2_kwargs](self._func)(arg0, arg1, kwargs)
+                )
             else:
                 constrained[False, "unsupported signature"]()
                 return PO()
@@ -1616,12 +1626,14 @@ struct PyObjectFunction[
                     arg0, arg1, arg2, kwargs
                 )
             elif self._has_type[Self._3e_kwargs]():
-                return rebind[Self._3e_kwargs](self._func)(
-                    arg0, arg1, arg2, kwargs
+                return PO(
+                    rebind[Self._3e_kwargs](self._func)(
+                        arg0, arg1, arg2, kwargs
+                    )
                 )
             elif self._has_type[Self._3_kwargs]():
-                return rebind[Self._3_kwargs](self._func)(
-                    arg0, arg1, arg2, kwargs
+                return PO(
+                    rebind[Self._3_kwargs](self._func)(arg0, arg1, arg2, kwargs)
                 )
             else:
                 constrained[False, "unsupported signature"]()
@@ -1643,12 +1655,16 @@ struct PyObjectFunction[
                     arg0, arg1, arg2, arg3, kwargs
                 )
             elif self._has_type[Self._4e_kwargs]():
-                return rebind[Self._4e_kwargs](self._func)(
-                    arg0, arg1, arg2, arg3, kwargs
+                return PO(
+                    rebind[Self._4e_kwargs](self._func)(
+                        arg0, arg1, arg2, arg3, kwargs
+                    )
                 )
             elif self._has_type[Self._4_kwargs]():
-                return rebind[Self._4_kwargs](self._func)(
-                    arg0, arg1, arg2, arg3, kwargs
+                return PO(
+                    rebind[Self._4_kwargs](self._func)(
+                        arg0, arg1, arg2, arg3, kwargs
+                    )
                 )
             else:
                 constrained[False, "unsupported signature"]()
@@ -1671,12 +1687,16 @@ struct PyObjectFunction[
                     arg0, arg1, arg2, arg3, arg4, kwargs
                 )
             elif self._has_type[Self._5e_kwargs]():
-                return rebind[Self._5e_kwargs](self._func)(
-                    arg0, arg1, arg2, arg3, arg4, kwargs
+                return PO(
+                    rebind[Self._5e_kwargs](self._func)(
+                        arg0, arg1, arg2, arg3, arg4, kwargs
+                    )
                 )
             elif self._has_type[Self._5_kwargs]():
-                return rebind[Self._5_kwargs](self._func)(
-                    arg0, arg1, arg2, arg3, arg4, kwargs
+                return PO(
+                    rebind[Self._5_kwargs](self._func)(
+                        arg0, arg1, arg2, arg3, arg4, kwargs
+                    )
                 )
             else:
                 constrained[False, "unsupported signature"]()
@@ -1700,12 +1720,16 @@ struct PyObjectFunction[
                     arg0, arg1, arg2, arg3, arg4, arg5, kwargs
                 )
             elif self._has_type[Self._6e_kwargs]():
-                return rebind[Self._6e_kwargs](self._func)(
-                    arg0, arg1, arg2, arg3, arg4, arg5, kwargs
+                return PO(
+                    rebind[Self._6e_kwargs](self._func)(
+                        arg0, arg1, arg2, arg3, arg4, arg5, kwargs
+                    )
                 )
             elif self._has_type[Self._6_kwargs]():
-                return rebind[Self._6_kwargs](self._func)(
-                    arg0, arg1, arg2, arg3, arg4, arg5, kwargs
+                return PO(
+                    rebind[Self._6_kwargs](self._func)(
+                        arg0, arg1, arg2, arg3, arg4, arg5, kwargs
+                    )
                 )
             else:
                 constrained[False, "unsupported signature"]()
@@ -1728,9 +1752,9 @@ struct PyObjectFunction[
             elif self._has_type[Self._1r]():
                 return rebind[Self._1r](self._func)(py_self)
             elif self._has_type[Self._1e]():
-                return rebind[Self._1e](self._func)(py_self)
+                return PO(rebind[Self._1e](self._func)(py_self))
             elif self._has_type[Self._1]():
-                return rebind[Self._1](self._func)(py_self)
+                return PO(rebind[Self._1](self._func)(py_self))
             elif self._has_type[Self._1er_self]():
                 var self_arg = Self._get_self_arg(py_self)
                 return rebind[Self._1er_self](self._func)(self_arg)
@@ -1739,10 +1763,10 @@ struct PyObjectFunction[
                 return rebind[Self._1r_self](self._func)(self_arg)
             elif self._has_type[Self._1e_self]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._1e_self](self._func)(self_arg)
+                return PO(rebind[Self._1e_self](self._func)(self_arg))
             elif self._has_type[Self._1_self]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._1_self](self._func)(self_arg)
+                return PO(rebind[Self._1_self](self._func)(self_arg))
             else:
                 constrained[False, "unsupported signature"]()
                 return PO()
@@ -1756,9 +1780,9 @@ struct PyObjectFunction[
             elif self._has_type[Self._2r]():
                 return rebind[Self._2r](self._func)(py_self, arg0)
             elif self._has_type[Self._2e]():
-                return rebind[Self._2e](self._func)(py_self, arg0)
+                return PO(rebind[Self._2e](self._func)(py_self, arg0))
             elif self._has_type[Self._2]():
-                return rebind[Self._2](self._func)(py_self, arg0)
+                return PO(rebind[Self._2](self._func)(py_self, arg0))
             elif self._has_type[Self._2er_self]():
                 var self_arg = Self._get_self_arg(py_self)
                 return rebind[Self._2er_self](self._func)(self_arg, arg0)
@@ -1767,10 +1791,10 @@ struct PyObjectFunction[
                 return rebind[Self._2r_self](self._func)(self_arg, arg0)
             elif self._has_type[Self._2e_self]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._2e_self](self._func)(self_arg, arg0)
+                return PO(rebind[Self._2e_self](self._func)(self_arg, arg0))
             elif self._has_type[Self._2_self]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._2_self](self._func)(self_arg, arg0)
+                return PO(rebind[Self._2_self](self._func)(self_arg, arg0))
             else:
                 constrained[False, "unsupported signature"]()
                 return PO()
@@ -1785,9 +1809,9 @@ struct PyObjectFunction[
             elif self._has_type[Self._3r]():
                 return rebind[Self._3r](self._func)(py_self, arg0, arg1)
             elif self._has_type[Self._3e]():
-                return rebind[Self._3e](self._func)(py_self, arg0, arg1)
+                return PO(rebind[Self._3e](self._func)(py_self, arg0, arg1))
             elif self._has_type[Self._3]():
-                return rebind[Self._3](self._func)(py_self, arg0, arg1)
+                return PO(rebind[Self._3](self._func)(py_self, arg0, arg1))
             elif self._has_type[Self._3er_self]():
                 var self_arg = Self._get_self_arg(py_self)
                 return rebind[Self._3er_self](self._func)(self_arg, arg0, arg1)
@@ -1796,10 +1820,14 @@ struct PyObjectFunction[
                 return rebind[Self._3r_self](self._func)(self_arg, arg0, arg1)
             elif self._has_type[Self._3e_self]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._3e_self](self._func)(self_arg, arg0, arg1)
+                return PO(
+                    rebind[Self._3e_self](self._func)(self_arg, arg0, arg1)
+                )
             elif self._has_type[Self._3_self]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._3_self](self._func)(self_arg, arg0, arg1)
+                return PO(
+                    rebind[Self._3_self](self._func)(self_arg, arg0, arg1)
+                )
             else:
                 constrained[False, "unsupported signature"]()
                 return PO()
@@ -1815,9 +1843,13 @@ struct PyObjectFunction[
             elif self._has_type[Self._4r]():
                 return rebind[Self._4r](self._func)(py_self, arg0, arg1, arg2)
             elif self._has_type[Self._4e]():
-                return rebind[Self._4e](self._func)(py_self, arg0, arg1, arg2)
+                return PO(
+                    rebind[Self._4e](self._func)(py_self, arg0, arg1, arg2)
+                )
             elif self._has_type[Self._4]():
-                return rebind[Self._4](self._func)(py_self, arg0, arg1, arg2)
+                return PO(
+                    rebind[Self._4](self._func)(py_self, arg0, arg1, arg2)
+                )
             elif self._has_type[Self._4er_self]():
                 var self_arg = Self._get_self_arg(py_self)
                 return rebind[Self._4er_self](self._func)(
@@ -1830,13 +1862,15 @@ struct PyObjectFunction[
                 )
             elif self._has_type[Self._4e_self]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._4e_self](self._func)(
-                    self_arg, arg0, arg1, arg2
+                return PO(
+                    rebind[Self._4e_self](self._func)(
+                        self_arg, arg0, arg1, arg2
+                    )
                 )
             elif self._has_type[Self._4_self]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._4_self](self._func)(
-                    self_arg, arg0, arg1, arg2
+                return PO(
+                    rebind[Self._4_self](self._func)(self_arg, arg0, arg1, arg2)
                 )
             else:
                 constrained[False, "unsupported signature"]()
@@ -1858,12 +1892,14 @@ struct PyObjectFunction[
                     py_self, arg0, arg1, arg2, arg3
                 )
             elif self._has_type[Self._5e]():
-                return rebind[Self._5e](self._func)(
-                    py_self, arg0, arg1, arg2, arg3
+                return PO(
+                    rebind[Self._5e](self._func)(
+                        py_self, arg0, arg1, arg2, arg3
+                    )
                 )
             elif self._has_type[Self._5]():
-                return rebind[Self._5](self._func)(
-                    py_self, arg0, arg1, arg2, arg3
+                return PO(
+                    rebind[Self._5](self._func)(py_self, arg0, arg1, arg2, arg3)
                 )
             elif self._has_type[Self._5er_self]():
                 var self_arg = Self._get_self_arg(py_self)
@@ -1877,13 +1913,17 @@ struct PyObjectFunction[
                 )
             elif self._has_type[Self._5e_self]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._5e_self](self._func)(
-                    self_arg, arg0, arg1, arg2, arg3
+                return PO(
+                    rebind[Self._5e_self](self._func)(
+                        self_arg, arg0, arg1, arg2, arg3
+                    )
                 )
             elif self._has_type[Self._5_self]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._5_self](self._func)(
-                    self_arg, arg0, arg1, arg2, arg3
+                return PO(
+                    rebind[Self._5_self](self._func)(
+                        self_arg, arg0, arg1, arg2, arg3
+                    )
                 )
             else:
                 constrained[False, "unsupported signature"]()
@@ -1906,12 +1946,16 @@ struct PyObjectFunction[
                     py_self, arg0, arg1, arg2, arg3, arg4
                 )
             elif self._has_type[Self._6e]():
-                return rebind[Self._6e](self._func)(
-                    py_self, arg0, arg1, arg2, arg3, arg4
+                return PO(
+                    rebind[Self._6e](self._func)(
+                        py_self, arg0, arg1, arg2, arg3, arg4
+                    )
                 )
             elif self._has_type[Self._6]():
-                return rebind[Self._6](self._func)(
-                    py_self, arg0, arg1, arg2, arg3, arg4
+                return PO(
+                    rebind[Self._6](self._func)(
+                        py_self, arg0, arg1, arg2, arg3, arg4
+                    )
                 )
             elif self._has_type[Self._6er_self]():
                 var self_arg = Self._get_self_arg(py_self)
@@ -1925,13 +1969,17 @@ struct PyObjectFunction[
                 )
             elif self._has_type[Self._6e_self]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._6e_self](self._func)(
-                    self_arg, arg0, arg1, arg2, arg3, arg4
+                return PO(
+                    rebind[Self._6e_self](self._func)(
+                        self_arg, arg0, arg1, arg2, arg3, arg4
+                    )
                 )
             elif self._has_type[Self._6_self]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._6_self](self._func)(
-                    self_arg, arg0, arg1, arg2, arg3, arg4
+                return PO(
+                    rebind[Self._6_self](self._func)(
+                        self_arg, arg0, arg1, arg2, arg3, arg4
+                    )
                 )
             else:
                 constrained[False, "unsupported signature"]()
@@ -1959,9 +2007,9 @@ struct PyObjectFunction[
             elif self._has_type[Self._1r_kwargs]():
                 return rebind[Self._1r_kwargs](self._func)(py_self, kwargs)
             elif self._has_type[Self._1e_kwargs]():
-                return rebind[Self._1e_kwargs](self._func)(py_self, kwargs)
+                return PO(rebind[Self._1e_kwargs](self._func)(py_self, kwargs))
             elif self._has_type[Self._1_kwargs]():
-                return rebind[Self._1_kwargs](self._func)(py_self, kwargs)
+                return PO(rebind[Self._1_kwargs](self._func)(py_self, kwargs))
             elif self._has_type[Self._1er_self_kwargs]():
                 var self_arg = Self._get_self_arg(py_self)
                 return rebind[Self._1er_self_kwargs](self._func)(
@@ -1974,12 +2022,14 @@ struct PyObjectFunction[
                 )
             elif self._has_type[Self._1e_self_kwargs]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._1e_self_kwargs](self._func)(
-                    self_arg, kwargs
+                return PO(
+                    rebind[Self._1e_self_kwargs](self._func)(self_arg, kwargs)
                 )
             elif self._has_type[Self._1_self_kwargs]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._1_self_kwargs](self._func)(self_arg, kwargs)
+                return PO(
+                    rebind[Self._1_self_kwargs](self._func)(self_arg, kwargs)
+                )
             else:
                 constrained[False, "unsupported signature"]()
                 return PO()
@@ -1997,11 +2047,13 @@ struct PyObjectFunction[
                     py_self, arg0, kwargs
                 )
             elif self._has_type[Self._2e_kwargs]():
-                return rebind[Self._2e_kwargs](self._func)(
-                    py_self, arg0, kwargs
+                return PO(
+                    rebind[Self._2e_kwargs](self._func)(py_self, arg0, kwargs)
                 )
             elif self._has_type[Self._2_kwargs]():
-                return rebind[Self._2_kwargs](self._func)(py_self, arg0, kwargs)
+                return PO(
+                    rebind[Self._2_kwargs](self._func)(py_self, arg0, kwargs)
+                )
             elif self._has_type[Self._2er_self_kwargs]():
                 var self_arg = Self._get_self_arg(py_self)
                 return rebind[Self._2er_self_kwargs](self._func)(
@@ -2014,13 +2066,17 @@ struct PyObjectFunction[
                 )
             elif self._has_type[Self._2e_self_kwargs]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._2e_self_kwargs](self._func)(
-                    self_arg, arg0, kwargs
+                return PO(
+                    rebind[Self._2e_self_kwargs](self._func)(
+                        self_arg, arg0, kwargs
+                    )
                 )
             elif self._has_type[Self._2_self_kwargs]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._2_self_kwargs](self._func)(
-                    self_arg, arg0, kwargs
+                return PO(
+                    rebind[Self._2_self_kwargs](self._func)(
+                        self_arg, arg0, kwargs
+                    )
                 )
             else:
                 constrained[False, "unsupported signature"]()
@@ -2040,12 +2096,16 @@ struct PyObjectFunction[
                     py_self, arg0, arg1, kwargs
                 )
             elif self._has_type[Self._3e_kwargs]():
-                return rebind[Self._3e_kwargs](self._func)(
-                    py_self, arg0, arg1, kwargs
+                return PO(
+                    rebind[Self._3e_kwargs](self._func)(
+                        py_self, arg0, arg1, kwargs
+                    )
                 )
             elif self._has_type[Self._3_kwargs]():
-                return rebind[Self._3_kwargs](self._func)(
-                    py_self, arg0, arg1, kwargs
+                return PO(
+                    rebind[Self._3_kwargs](self._func)(
+                        py_self, arg0, arg1, kwargs
+                    )
                 )
             elif self._has_type[Self._3er_self_kwargs]():
                 var self_arg = Self._get_self_arg(py_self)
@@ -2059,13 +2119,17 @@ struct PyObjectFunction[
                 )
             elif self._has_type[Self._3e_self_kwargs]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._3e_self_kwargs](self._func)(
-                    self_arg, arg0, arg1, kwargs
+                return PO(
+                    rebind[Self._3e_self_kwargs](self._func)(
+                        self_arg, arg0, arg1, kwargs
+                    )
                 )
             elif self._has_type[Self._3_self_kwargs]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._3_self_kwargs](self._func)(
-                    self_arg, arg0, arg1, kwargs
+                return PO(
+                    rebind[Self._3_self_kwargs](self._func)(
+                        self_arg, arg0, arg1, kwargs
+                    )
                 )
             else:
                 constrained[False, "unsupported signature"]()
@@ -2086,12 +2150,16 @@ struct PyObjectFunction[
                     py_self, arg0, arg1, arg2, kwargs
                 )
             elif self._has_type[Self._4e_kwargs]():
-                return rebind[Self._4e_kwargs](self._func)(
-                    py_self, arg0, arg1, arg2, kwargs
+                return PO(
+                    rebind[Self._4e_kwargs](self._func)(
+                        py_self, arg0, arg1, arg2, kwargs
+                    )
                 )
             elif self._has_type[Self._4_kwargs]():
-                return rebind[Self._4_kwargs](self._func)(
-                    py_self, arg0, arg1, arg2, kwargs
+                return PO(
+                    rebind[Self._4_kwargs](self._func)(
+                        py_self, arg0, arg1, arg2, kwargs
+                    )
                 )
             elif self._has_type[Self._4er_self_kwargs]():
                 var self_arg = Self._get_self_arg(py_self)
@@ -2105,13 +2173,17 @@ struct PyObjectFunction[
                 )
             elif self._has_type[Self._4e_self_kwargs]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._4e_self_kwargs](self._func)(
-                    self_arg, arg0, arg1, arg2, kwargs
+                return PO(
+                    rebind[Self._4e_self_kwargs](self._func)(
+                        self_arg, arg0, arg1, arg2, kwargs
+                    )
                 )
             elif self._has_type[Self._4_self_kwargs]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._4_self_kwargs](self._func)(
-                    self_arg, arg0, arg1, arg2, kwargs
+                return PO(
+                    rebind[Self._4_self_kwargs](self._func)(
+                        self_arg, arg0, arg1, arg2, kwargs
+                    )
                 )
             else:
                 constrained[False, "unsupported signature"]()
@@ -2133,12 +2205,16 @@ struct PyObjectFunction[
                     py_self, arg0, arg1, arg2, arg3, kwargs
                 )
             elif self._has_type[Self._5e_kwargs]():
-                return rebind[Self._5e_kwargs](self._func)(
-                    py_self, arg0, arg1, arg2, arg3, kwargs
+                return PO(
+                    rebind[Self._5e_kwargs](self._func)(
+                        py_self, arg0, arg1, arg2, arg3, kwargs
+                    )
                 )
             elif self._has_type[Self._5_kwargs]():
-                return rebind[Self._5_kwargs](self._func)(
-                    py_self, arg0, arg1, arg2, arg3, kwargs
+                return PO(
+                    rebind[Self._5_kwargs](self._func)(
+                        py_self, arg0, arg1, arg2, arg3, kwargs
+                    )
                 )
             elif self._has_type[Self._5er_self_kwargs]():
                 var self_arg = Self._get_self_arg(py_self)
@@ -2152,13 +2228,17 @@ struct PyObjectFunction[
                 )
             elif self._has_type[Self._5e_self_kwargs]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._5e_self_kwargs](self._func)(
-                    self_arg, arg0, arg1, arg2, arg3, kwargs
+                return PO(
+                    rebind[Self._5e_self_kwargs](self._func)(
+                        self_arg, arg0, arg1, arg2, arg3, kwargs
+                    )
                 )
             elif self._has_type[Self._5_self_kwargs]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._5_self_kwargs](self._func)(
-                    self_arg, arg0, arg1, arg2, arg3, kwargs
+                return PO(
+                    rebind[Self._5_self_kwargs](self._func)(
+                        self_arg, arg0, arg1, arg2, arg3, kwargs
+                    )
                 )
             else:
                 constrained[False, "unsupported signature"]()
@@ -2181,12 +2261,16 @@ struct PyObjectFunction[
                     py_self, arg0, arg1, arg2, arg3, arg4, kwargs
                 )
             elif self._has_type[Self._6e_kwargs]():
-                return rebind[Self._6e_kwargs](self._func)(
-                    py_self, arg0, arg1, arg2, arg3, arg4, kwargs
+                return PO(
+                    rebind[Self._6e_kwargs](self._func)(
+                        py_self, arg0, arg1, arg2, arg3, arg4, kwargs
+                    )
                 )
             elif self._has_type[Self._6_kwargs]():
-                return rebind[Self._6_kwargs](self._func)(
-                    py_self, arg0, arg1, arg2, arg3, arg4, kwargs
+                return PO(
+                    rebind[Self._6_kwargs](self._func)(
+                        py_self, arg0, arg1, arg2, arg3, arg4, kwargs
+                    )
                 )
             elif self._has_type[Self._6er_self_kwargs]():
                 var self_arg = Self._get_self_arg(py_self)
@@ -2200,13 +2284,17 @@ struct PyObjectFunction[
                 )
             elif self._has_type[Self._6e_self_kwargs]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._6e_self_kwargs](self._func)(
-                    self_arg, arg0, arg1, arg2, arg3, arg4, kwargs
+                return PO(
+                    rebind[Self._6e_self_kwargs](self._func)(
+                        self_arg, arg0, arg1, arg2, arg3, arg4, kwargs
+                    )
                 )
             elif self._has_type[Self._6_self_kwargs]():
                 var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._6_self_kwargs](self._func)(
-                    self_arg, arg0, arg1, arg2, arg3, arg4, kwargs
+                return PO(
+                    rebind[Self._6_self_kwargs](self._func)(
+                        self_arg, arg0, arg1, arg2, arg3, arg4, kwargs
+                    )
                 )
             else:
                 constrained[False, "unsupported signature"]()

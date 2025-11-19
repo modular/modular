@@ -28,7 +28,7 @@ from memory import LegacyUnsafePointer as UnsafePointer
 
 @register_passable("trivial")
 struct AddressSpace(
-    EqualityComparable,
+    Equatable,
     Identifiable,
     ImplicitlyCopyable,
     Intable,
@@ -47,21 +47,21 @@ struct AddressSpace(
     var _value: Int
 
     # CPU address space
-    alias GENERIC = AddressSpace(0)
+    comptime GENERIC = AddressSpace(0)
     """Generic address space. Used for CPU memory and default GPU memory."""
 
     # GPU address spaces
     # See https://docs.nvidia.com/cuda/nvvm-ir-spec/#address-space
     # And https://llvm.org/docs/AMDGPUUsage.html#address-spaces
-    alias GLOBAL = AddressSpace(1)
+    comptime GLOBAL = AddressSpace(1)
     """Global GPU memory address space."""
-    alias SHARED = AddressSpace(3)
+    comptime SHARED = AddressSpace(3)
     """Shared GPU memory address space (per thread block/workgroup)."""
-    alias CONSTANT = AddressSpace(4)
+    comptime CONSTANT = AddressSpace(4)
     """Constant GPU memory address space (read-only)."""
-    alias LOCAL = AddressSpace(5)
+    comptime LOCAL = AddressSpace(5)
     """Local GPU memory address space (per thread, private)."""
-    alias SHARED_CLUSTER = AddressSpace(7)
+    comptime SHARED_CLUSTER = AddressSpace(7)
     """Shared cluster GPU memory address space (NVIDIA-specific)."""
 
     @always_inline("builtin")
@@ -163,11 +163,11 @@ struct AddressSpace(
 # Deprecated aliases for backward compatibility
 # ===-----------------------------------------------------------------------===#
 
-alias _GPUAddressSpace = AddressSpace
+comptime _GPUAddressSpace = AddressSpace
 """Deprecated: Use `AddressSpace` instead. This alias is provided for backward
 compatibility and will be removed in a future release."""
 
-alias GPUAddressSpace = AddressSpace
+comptime GPUAddressSpace = AddressSpace
 """Deprecated: Use `AddressSpace` instead. This alias is provided for backward
 compatibility and will be removed in a future release."""
 
@@ -197,7 +197,7 @@ struct Pointer[
     """
 
     # Aliases
-    alias _mlir_type = __mlir_type[
+    comptime _mlir_type = __mlir_type[
         `!lit.ref<`,
         Self.type,
         `, `,
@@ -206,11 +206,11 @@ struct Pointer[
         Self.address_space._value._mlir_value,
         `>`,
     ]
-    alias _with_origin = Pointer[Self.type, _, Self.address_space]
+    comptime _with_origin = Pointer[Self.type, _, Self.address_space]
 
-    alias Mutable = Self._with_origin[MutOrigin.cast_from[Self.origin]]
+    comptime Mutable = Self._with_origin[MutOrigin.cast_from[Self.origin]]
     """The mutable version of the `Pointer`."""
-    alias Immutable = Self._with_origin[ImmutOrigin.cast_from[Self.origin]]
+    comptime Immutable = Self._with_origin[ImmutOrigin.cast_from[Self.origin]]
     """The immutable version of the `Pointer`."""
     # Fields
     var _value: Self._mlir_type

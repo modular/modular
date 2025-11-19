@@ -122,8 +122,8 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
     """
 
     # Fields
-    alias _sentinel: Int = -1
-    alias _mlir_type = __mlir_type[
+    comptime _sentinel: Int = -1
+    comptime _mlir_type = __mlir_type[
         `!kgen.variant<[rebind(:`, type_of(Self.Ts), ` `, Self.Ts, `)]>`
     ]
     var _impl: Self._mlir_type
@@ -152,7 +152,7 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
             value: The value to initialize the variant with.
         """
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        alias idx = Self._check[T]()
+        comptime idx = Self._check[T]()
         self._get_discr() = idx
         self._get_ptr[T]().init_pointee_move(value^)
 
@@ -168,7 +168,7 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
 
         @parameter
         for i in range(len(VariadicList(Self.Ts))):
-            alias T = Self.Ts[i]
+            comptime T = Self.Ts[i]
             if self._get_discr() == i:
                 self._get_ptr[T]().init_pointee_move(
                     other._get_ptr[T]()[].copy()
@@ -186,7 +186,7 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
 
         @parameter
         for i in range(len(VariadicList(Self.Ts))):
-            alias T = Self.Ts[i]
+            comptime T = Self.Ts[i]
             if self._get_discr() == i:
                 # Calls the correct __moveinit__
                 self._get_ptr[T]().init_pointee_move_from(other._get_ptr[T]())
@@ -232,7 +232,7 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
 
     @always_inline("nodebug")
     fn _get_ptr[T: AnyType](self) -> UnsafePointer[T]:
-        alias idx = Self._check[T]()
+        comptime idx = Self._check[T]()
         constrained[idx != Self._sentinel, "not a union element type"]()
         var ptr = UnsafePointer(to=self._impl).address
         var discr_ptr = __mlir_op.`pop.variant.bitcast`[
@@ -368,7 +368,7 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
         Returns:
             True if the variant contains the requested type.
         """
-        alias idx = Self._check[T]()
+        comptime idx = Self._check[T]()
         return self._get_discr() == idx
 
     fn unsafe_get[T: AnyType](ref self) -> ref [self] T:

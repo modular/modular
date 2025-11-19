@@ -33,7 +33,7 @@ from memory import LegacyUnsafePointer as UnsafePointer, bitcast
 
 @register_passable("trivial")
 struct Consistency(
-    EqualityComparable,
+    Equatable,
     Identifiable,
     ImplicitlyCopyable,
     Movable,
@@ -60,19 +60,19 @@ struct Consistency(
     This is the underlying value of the consistency model.
     """
 
-    alias NOT_ATOMIC = Self(0)
+    comptime NOT_ATOMIC = Self(0)
     """Not atomic."""
-    alias UNORDERED = Self(1)
+    comptime UNORDERED = Self(1)
     """Unordered."""
-    alias MONOTONIC = Self(2)
+    comptime MONOTONIC = Self(2)
     """Monotonic."""
-    alias ACQUIRE = Self(3)
+    comptime ACQUIRE = Self(3)
     """Acquire."""
-    alias RELEASE = Self(4)
+    comptime RELEASE = Self(4)
     """Release."""
-    alias ACQUIRE_RELEASE = Self(5)
+    comptime ACQUIRE_RELEASE = Self(5)
     """Acquire-release."""
-    alias SEQUENTIAL = Self(6)
+    comptime SEQUENTIAL = Self(6)
     """Sequentially consistent."""
 
     @always_inline
@@ -135,7 +135,7 @@ struct Consistency(
             A string representation of this consistency.
         """
 
-        alias prefix_len = len("Consistency.")
+        comptime prefix_len = len("Consistency.")
         return self.as_string_slice()[prefix_len:]
 
     fn as_string_slice(self) -> StaticString:
@@ -550,7 +550,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         # values to their integral representation and perform the atomic
         # operation on that.
 
-        alias integral_type = _integral_type_of[Self.dtype]()
+        comptime integral_type = _integral_type_of[Self.dtype]()
 
         var atomic_integral_ptr = ptr.bitcast[Scalar[integral_type]]()
         var expected_integral_ptr = UnsafePointer(to=expected).bitcast[

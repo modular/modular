@@ -40,10 +40,13 @@ logger = logging.getLogger("max.pipelines")
 class NullKVCacheManager:
     """A no-op KV cache manager for compile-only mode.
 
-    This manager is used when compiling for virtual devices and does not
-    allocate any GPU memory. It provides dummy implementations of the
-    KV cache interface to allow graph construction without actual memory
-    allocation.
+    This manager is used when compiling models with virtual devices and does not
+    allocate any GPU memory. It provides dummy implementations of the KV cache
+    interface to allow graph construction and compilation without requiring
+    physical GPU hardware or actual memory allocation.
+
+    This is particularly useful for cross-compilation scenarios where you want to
+    compile models for GPU execution on a machine without a physical GPU present.
     """
 
     def __init__(
@@ -57,17 +60,17 @@ class NullKVCacheManager:
         available_cache_memory: int,
         page_size: int = 128,
     ) -> None:
-        """Initialize the null KV cache manager.
+        """Initializes the null KV cache manager.
 
         Args:
-            params: KV cache parameters
-            max_batch_size: Maximum batch size
-            max_seq_len: Maximum sequence length
-            num_layers: Number of model layers
-            devices: List of devices
-            session: Inference session
-            available_cache_memory: Available cache memory
-            page_size: Page size in tokens
+            params: The KV cache parameters for the pipeline.
+            max_batch_size: The maximum batch size to support.
+            max_seq_len: The maximum sequence length to support.
+            num_layers: The number of transformer layers in the model.
+            devices: The list of virtual devices.
+            session: The inference session for graph operations.
+            available_cache_memory: The nominal available cache memory in bytes.
+            page_size: The page size in tokens. Defaults to 128.
         """
         self.params = params
         self.max_batch_size = max_batch_size
@@ -83,24 +86,24 @@ class NullKVCacheManager:
         logger.info("Using NullKVCacheManager for compile-only mode")
 
     def get_replica(self, context: TextGenerationContext) -> int:
-        """Get the replica index for a context.
+        """Gets the replica index for a request context.
 
         Args:
-            context: Text generation context
+            context: The text generation context containing the request.
 
         Returns:
-            Always returns 0 (single replica)
+            Always returns 0, as the null cache manager operates in single-replica mode.
         """
         return 0
 
     def get_or_recommend_replica(self, context: TextGenerationContext) -> int:
-        """Get or recommend a replica index for a context.
+        """Gets or recommends a replica index for a request context.
 
         Args:
-            context: Text generation context
+            context: The text generation context containing the request.
 
         Returns:
-            Always returns 0 (single replica)
+            Always returns 0, as the null cache manager operates in single-replica mode.
         """
         return 0
 
@@ -246,7 +249,7 @@ class NullKVCacheManager:
         """
         self._request_to_replica_idx.pop(request_id, None)
 
-    def external_claim(
+    def claim(
         self, request_id: RequestID, replica_idx: int | None = None
     ) -> None:
         """Externally claim cache blocks (no-op for null manager).

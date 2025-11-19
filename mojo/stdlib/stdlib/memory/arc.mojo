@@ -105,7 +105,7 @@ struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable, Movable):
         T: The type of the stored value.
     """
 
-    alias _inner_type = _ArcPointerInner[Self.T]
+    comptime _inner_type = _ArcPointerInner[Self.T]
     var _inner: UnsafePointer[Self._inner_type]
 
     fn __init__(out self, var value: Self.T):

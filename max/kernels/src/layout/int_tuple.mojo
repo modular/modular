@@ -317,7 +317,7 @@ struct _IntTupleIter[origin: ImmutOrigin](Iterable, Iterator):
 
 struct IntTuple(
     Defaultable,
-    EqualityComparable,
+    Equatable,
     ImplicitlyCopyable,
     Intable,
     Iterable,

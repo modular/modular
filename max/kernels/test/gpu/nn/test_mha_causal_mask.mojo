@@ -26,7 +26,7 @@ from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
 from nn.mha_utils import FlashAttentionAlgorithm, MHAConfig
-from testing import assert_almost_equal
+from testing import assert_almost_equal, assert_equal
 
 from utils.index import Index
 from utils.numerics import min_or_neg_inf
@@ -311,6 +311,33 @@ fn test[
                     )
 
                 assert_almost_equal(actual, expect, atol=1e-5, rtol=rtol)
+
+    for repeat in range(16):
+        # test reproducibility
+        flash_attention[config=config](
+            output_device_ref,
+            q_device,
+            k_device,
+            v_device,
+            CausalMask(),
+            IdentityScoreMod(),
+            scale,
+            ctx,
+            num_partitions=num_partitions,
+        )
+        ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
+        ctx.synchronize()
+        for s in range(seq_len):
+            for h in range(num_heads):
+                for d in range(depth):
+                    orig = flash_output_ptr.load(
+                        d + depth * (h + s * num_heads)
+                    )
+                    rep = output_ptr.load(d + depth * (h + s * num_heads))
+                    if rep != orig:
+                        print("repeat s h d =", repeat, s, h, d)
+                    assert_equal(rep, orig)
+                    output_ptr.store(d + depth * (h + s * num_heads), 123.4567)
 
     _ = q_device_ptr
     _ = k_device_ptr

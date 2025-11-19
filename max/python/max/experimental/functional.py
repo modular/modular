@@ -123,6 +123,9 @@ cast = functional(ops.cast)
 #: Splits a tensor into chunks along a dimension.
 #: See :func:`max.graph.ops.chunk` for details.
 chunk = functional(ops.chunk)
+#: Multiply two complex-valued tensors.
+#: See :func:`max.graph.ops.complex.mul` for details.
+complex_mul = functional(ops.complex.mul)
 #: Concatenates a list of tensors along an axis.
 #: See :func:`max.graph.ops.concat` for details.
 concat = functional(ops.concat)

@@ -663,7 +663,7 @@ def test_compile_time_dict():
 
 # FIXME: Dictionaries should be equatable when their keys/values are.
 def is_equal[
-    K: KeyElement, V: EqualityComparable & Copyable & Movable
+    K: KeyElement, V: Equatable & Copyable & Movable
 ](a: Dict[K, V], b: Dict[K, V]) -> Bool:
     if len(a) != len(b):
         return False

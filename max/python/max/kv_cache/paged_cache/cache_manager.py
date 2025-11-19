@@ -43,8 +43,8 @@ class PagedKVCacheManager:
     .. code-block:: python
 
         # Allocate metadata for requests in batch
-        kv_manager.external_claim(ctx1.request_id, replica_idx=0)
-        kv_manager.external_claim(ctx2.request_id, replica_idx=1)
+        kv_manager.claim(ctx1.request_id, replica_idx=0)
+        kv_manager.claim(ctx2.request_id, replica_idx=1)
 
         # Allocate blocks for these requests
         kv_manager.maybe_reserve(ctx1, num_steps=10)
@@ -231,7 +231,7 @@ class PagedKVCacheManager:
 
         Args:
             data: The text generation context for the request. The request ID
-                must already be assigned to a replica via `external_claim`.
+                must already be assigned to a replica via `claim`.
             num_steps: The number of steps to reserve blocks for. Default: 1.
 
         Returns:
@@ -289,7 +289,7 @@ class PagedKVCacheManager:
         self._request_count_per_replica[replica_idx] -= 1
         self._replica_managers[replica_idx].release(request_id)
 
-    def external_claim(
+    def claim(
         self, request_id: RequestID, replica_idx: int | None = None
     ) -> None:
         """Reserve a sequence ID for the given request ID."""
@@ -303,7 +303,7 @@ class PagedKVCacheManager:
             raise ValueError(
                 f"Request ID {request_id} is already claimed for replica {self._request_to_replica_idx[request_id]}"
             )
-        self._replica_managers[replica_idx].external_claim(request_id)
+        self._replica_managers[replica_idx].claim(request_id)
         self._request_to_replica_idx[request_id] = replica_idx
         self._request_count_per_replica[replica_idx] += 1
 

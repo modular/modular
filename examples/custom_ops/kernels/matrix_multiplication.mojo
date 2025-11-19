@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/tutorials/custom-ops-matmul.mdx
+# DOC: max/develop/custom-ops-matmul.mdx
 
 from math import ceildiv
 from sys.info import has_accelerator, has_amd_gpu_accelerator, simd_width_of

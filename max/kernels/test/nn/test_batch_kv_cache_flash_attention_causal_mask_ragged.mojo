@@ -263,8 +263,8 @@ def execute_flash_attention_suite():
 
     # Edge-case specific tests
     # Case 0: token gen in one batch, context encoding in another
-    var c0_seq_lens = List[Int](25, 1)
-    var c0_cache_sizes = List[Int](0, 25)
+    var c0_seq_lens: List[Int] = [25, 1]
+    var c0_cache_sizes: List[Int] = [0, 25]
 
     execute_ragged_flash_attention[llama_num_q_heads, dtype, kv_params_llama3](
         c0_seq_lens, 110, c0_cache_sizes, 2, 0

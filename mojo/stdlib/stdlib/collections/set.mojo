@@ -53,7 +53,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         H: The type of the hasher used to hash keys.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _DictKeyIter[Self.T, NoneType, Self.H, iterable_origin]
 

@@ -1,12 +1,12 @@
 """Define bazel dependencies common to the internal and external repos."""
 
 bazel_dep(name = "abseil-cpp", version = "20250127.1")
-bazel_dep(name = "apple_support", version = "1.22.1", repo_name = "build_bazel_apple_support")
-bazel_dep(name = "aspect_bazel_lib", version = "2.19.2")
+bazel_dep(name = "apple_support", version = "1.24.2", repo_name = "build_bazel_apple_support")
+bazel_dep(name = "aspect_bazel_lib", version = "2.21.2")
 bazel_dep(name = "aspect_rules_js", version = "2.4.1")
 bazel_dep(name = "bazel_skylib", version = "1.8.1")
 bazel_dep(name = "curl", version = "8.8.0")
-bazel_dep(name = "gazelle", version = "0.43.0")
+bazel_dep(name = "gazelle", version = "0.47.0")
 bazel_dep(name = "glfw", version = "3.3.9.bcr.1")
 bazel_dep(name = "google_benchmark", version = "1.8.5")
 bazel_dep(name = "grpc", version = "1.73.1", repo_name = "com_github_grpc_grpc")
@@ -16,9 +16,9 @@ bazel_dep(name = "opentelemetry-cpp", version = "1.19.0")
 bazel_dep(name = "opentelemetry-proto", version = "1.5.0")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "31.1")
-bazel_dep(name = "rules_cc", version = "0.2.8")
+bazel_dep(name = "rules_cc", version = "0.2.14")
 bazel_dep(name = "rules_go", version = "0.58.3", repo_name = "io_bazel_rules_go")
-bazel_dep(name = "rules_java", version = "8.15.2")
+bazel_dep(name = "rules_java", version = "9.0.3")
 bazel_dep(name = "rules_mojo", version = "0.5.0")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
@@ -30,11 +30,12 @@ bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
 
 # TODO: Remove when transitives bump to this version or above
 bazel_dep(name = "rules_foreign_cc", version = "0.13.0")  # NOTE: Avoid direct usage
-bazel_dep(name = "re2", version = "2024-07-02.bcr.1")
-bazel_dep(name = "rules_apple", version = "3.22.0")
 bazel_dep(name = "rules_nodejs", version = "6.5.0")
-bazel_dep(name = "rules_swift", version = "2.8.2")
-bazel_dep(name = "protoc-gen-validate", version = "1.2.1.bcr.1")
+
+single_version_override(
+    module_name = "abseil-cpp",
+    version = "20250127.1",
+)
 
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True)
 
@@ -44,6 +45,15 @@ archive_override(
     strip_prefix = "rules_mojo-87f860f96f73ce624d51fe8e836978888e14344c",
     urls = [
         "https://github.com/modular/rules_mojo/archive/87f860f96f73ce624d51fe8e836978888e14344c.tar.gz",
+    ],
+)
+
+single_version_override(
+    module_name = "rules_cc",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/bazelbuild/bazel/pull/26925
+        "//bazel/public-patches:rules_cc_dsym_feature.patch",
     ],
 )
 
@@ -90,19 +100,10 @@ single_version_override(
 # TODO: Remove once >0.8.0 is released
 archive_override(
     module_name = "rules_pycross",
-    integrity = "sha256-H2I/ayVPKJC1PVDOROxS5AC74n2q7TLwLD+B/Zo0EFc=",
-    strip_prefix = "rules_pycross-15136176e414f09b774e5120c9e3d6d04d105261",
+    integrity = "sha256-8nt5EI2mkzePeqw//u/5jGxxfvEx7727OTIb+tTp+Ag=",
+    strip_prefix = "rules_pycross-573feab78c2d559d282d762568bfd88cbb933dfc",
     urls = [
-        "https://github.com/jvolkman/rules_pycross/archive/15136176e414f09b774e5120c9e3d6d04d105261.tar.gz",
-    ],
-)
-
-single_version_override(
-    module_name = "rules_swift",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/bazelbuild/rules_swift/pull/1535
-        "//bazel/public-patches:rules_swift.patch",
+        "https://github.com/jvolkman/rules_pycross/archive/573feab78c2d559d282d762568bfd88cbb933dfc.tar.gz",
     ],
 )
 
@@ -134,6 +135,10 @@ single_version_override(
         "//bazel/public-patches:protobuf-windows.patch",
         # TODO: https://github.com/protocolbuffers/protobuf/commit/27227205a3986987b7495078aaf7377b49dc38aa
         "//bazel/public-patches:protobuf-debug-context.patch",
+        # TODO: https://github.com/protocolbuffers/protobuf/commit/158312dc8c58efc777849dc89734f55c696eae1e remove next bump
+        "//bazel/public-patches:protobuf-loads.patch",
+        # TODO: https://github.com/protocolbuffers/protobuf/commit/25d8081ab9991bf56d54ad52f0ce529c4e5aa979 remove next bump
+        "//bazel/public-patches:protobuf-cc-loads.patch",
     ],
     version = "31.1",  # TODO: Remove restriction next update
 )
@@ -313,8 +318,9 @@ genrule(
     ''',
 )
 """,
-    sha256 = "1f9ae02d6e90b7248adb3399397229abb85517e5c8e8b62181a08730bb2f616a",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/3.4.5/1f9ae02d6e90b7248adb3399397229abb85517e5c8e8b62181a08730bb2f616a/nvshmem.tar.gz",
+    # commit: https://github.com/modularml/NVSHMEM/commit/3f75eec2b4eb616b9cd171c3b3f8856279155b99
+    sha256 = "75c0faf01ff45ea78c17bf18f8c7e5740553b067899cc915951d5cad3434aea2",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/3.4.5/75c0faf01ff45ea78c17bf18f8c7e5740553b067899cc915951d5cad3434aea2/nvshmem.tar.gz",
 )
 
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")

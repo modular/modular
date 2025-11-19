@@ -89,7 +89,7 @@ struct InterleaveMode:
 @fieldwise_init("implicit")
 @register_passable("trivial")
 struct SwizzleMode(
-    EqualityComparable,
+    Equatable,
     ImplicitlyCopyable,
     Intable,
     Movable,

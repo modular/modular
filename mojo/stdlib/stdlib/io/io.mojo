@@ -253,18 +253,18 @@ fn _printf[
                     return UInt64(rebind[UInt](value))
                 return 0
 
-            alias args_len = len(VariadicList(types))
+            comptime args_len = len(VariadicList(types))
 
             var message = printf_begin()
             message = printf_append_string_n(
                 message, fmt.as_bytes(), args_len == 0
             )
-            alias k_args_per_group = 7
+            comptime k_args_per_group = 7
 
             @parameter
             for group in range(0, args_len, k_args_per_group):
-                alias bound = min(group + k_args_per_group, args_len)
-                alias num_args = bound - group
+                comptime bound = min(group + k_args_per_group, args_len)
+                comptime num_args = bound - group
 
                 var arguments = InlineArray[UInt64, k_args_per_group](fill=0)
 
@@ -376,7 +376,7 @@ fn print[
 
     if is_compile_time():
         var buffer = _WriteBufferStack(file)
-        alias length = values.__len__()
+        comptime length = values.__len__()
 
         @parameter
         for i in range(length):
@@ -393,7 +393,7 @@ fn print[
         @parameter
         if is_gpu():
             var buffer = _WriteBufferHeap()
-            alias length = values.__len__()
+            comptime length = values.__len__()
 
             @parameter
             for i in range(length):
@@ -420,7 +420,7 @@ fn print[
                 ]()
         else:
             var buffer = _WriteBufferStack(file)
-            alias length = values.__len__()
+            comptime length = values.__len__()
 
             @parameter
             for i in range(length):

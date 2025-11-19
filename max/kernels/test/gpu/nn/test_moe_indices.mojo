@@ -55,6 +55,7 @@ fn check_token_expert_order(
             assert_equal(token_count, 0, "tokens are grouped incorrectly")
             expert_dictionary[current_expert_id] = 0
             current_expert_id = expert_id
+
             token_count = expert_dictionary.get(current_expert_id, 0) - 1
         else:
             token_count -= 1
@@ -135,12 +136,9 @@ fn check_restore_token_order(
         )
 
 
-fn test_moe_create_indices(
-    token_expert_order_length: Int,
-    ctx: DeviceContext,
-) raises:
-    alias num_experts = 32
-
+fn test_moe_create_indices[
+    expected_count: Int = 8192, num_experts: Int = 256
+](token_expert_order_length: Int, ctx: DeviceContext,) raises:
     var token_expert_order_buffer_host = ctx.enqueue_create_host_buffer[
         DType.uint32
     ](token_expert_order_length)
@@ -225,7 +223,7 @@ fn test_moe_create_indices(
     random(top_k_host, min=0, max=num_experts)
     ctx.enqueue_copy(top_k_buffer_device, top_k_buffer_host)
 
-    moe_create_indices["gpu"](
+    moe_create_indices["gpu", expected_count=expected_count](
         token_expert_order,
         expert_start_indices,
         restore_token_order,
@@ -299,4 +297,8 @@ def main():
         test_moe_create_indices(
             20660,
             ctx,
+        )
+
+        test_moe_create_indices[expected_count=256, num_experts=256](
+            100_000, ctx
         )

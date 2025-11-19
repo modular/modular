@@ -23,7 +23,7 @@ def test_ndbuffer_dynamic_shape():
     # Create a buffer of size 16
     var buffer = InlineArray[Scalar[DType.int], 16](uninitialized=True)
 
-    var matrix = NDBuffer[DType.int, 2](buffer, DimList(4, 4))
+    var matrix = NDBuffer[DType.int, 2](buffer.unsafe_ptr(), DimList(4, 4))
 
     matrix.dynamic_shape[0] = 42
     matrix.dynamic_shape[1] = 43

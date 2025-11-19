@@ -18,6 +18,7 @@ from memory import LegacyUnsafePointer as UnsafePointer
 from sys import (
     CompilationTarget,
     align_of,
+    env_get_bool,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
@@ -534,7 +535,7 @@ fn flash_attention_dispatch[
                     constrained[is_sm100]()
 
                     @parameter
-                    if depth == 256:
+                    if depth == 256 or not env_get_bool["ENABLE_FA4", False]():
                         mha_sm100_1q_dispatch[
                             config=config,
                             group = Int(group),

@@ -35,7 +35,7 @@ from memory import LegacyUnsafePointer as UnsafePointer, Span
 
 # Matches the ABI of:
 # https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/inc/amd_hsa_signal.h#L50
-alias amd_signal_kind64_t = Int64
+comptime amd_signal_kind64_t = Int64
 
 
 # Must match the ABI of:
@@ -81,32 +81,32 @@ fn hsa_signal_add(sig: UInt64, value: UInt64):
 # Matches the values described in:
 # https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/src/services.cl#L21
 struct ServiceId:
-    alias reserved = 0
-    alias function_call = 1
-    alias printf = 2
-    alias fprintf = Self.printf
-    alias devmem = 3
-    alias sanitizer = 4
+    comptime reserved = 0
+    comptime function_call = 1
+    comptime printf = 2
+    comptime fprintf = Self.printf
+    comptime devmem = 3
+    comptime sanitizer = 4
 
 
 # Matches the values described in:
 # https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/src/services.cl#L87
 struct DescriptorOffset:
-    alias flag_begin = 0
-    alias flag_end = 1
-    alias reserved0 = 2
-    alias len = 5
-    alias id = 8
+    comptime flag_begin = 0
+    comptime flag_end = 1
+    comptime reserved0 = 2
+    comptime len = 5
+    comptime id = 8
 
 
 # Matches the values described in:
 # https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/src/services.cl#L95
 struct DescriptorWidth:
-    alias flag_begin = 1
-    alias flag_end = 1
-    alias reserved0 = 3
-    alias len = 3
-    alias id = 56
+    comptime flag_begin = 1
+    comptime flag_end = 1
+    comptime reserved0 = 3
+    comptime len = 3
+    comptime id = 56
 
 
 @always_inline
@@ -299,8 +299,8 @@ fn message_append_args(
 # Matches the values described in:
 # https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/src/services.cl#L243
 struct FprintfCtrl:
-    alias stdout = 0
-    alias stderr = 1
+    comptime stdout = 0
+    comptime stderr = 1
 
 
 @always_inline
@@ -734,8 +734,8 @@ struct buffer_t(Copyable, Movable):
 @register_passable("trivial")
 struct ControlOffset(ImplicitlyCopyable, Movable):
     var value: UInt32
-    alias ready_flag = Self(0)
-    alias reserved0 = Self(1)
+    comptime ready_flag = Self(0)
+    comptime reserved0 = Self(1)
 
     @always_inline
     fn __ne__(self, rhs: Self) -> Bool:
@@ -750,8 +750,8 @@ struct ControlOffset(ImplicitlyCopyable, Movable):
 @register_passable("trivial")
 struct ControlWidth(ImplicitlyCopyable, Movable):
     var value: UInt32
-    alias ready_flag = Self(1)
-    alias reserved0 = Self(31)
+    comptime ready_flag = Self(1)
+    comptime reserved0 = Self(31)
 
     @always_inline
     fn __ne__(self, rhs: Self) -> Bool:

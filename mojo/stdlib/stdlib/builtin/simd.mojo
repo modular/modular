@@ -100,35 +100,35 @@ from .dtype import (
 # Type Aliases
 # ===----------------------------------------------------------------------=== #
 
-alias Scalar = SIMD[_, size=1]
+comptime Scalar = SIMD[_, size=1]
 """Represents a scalar dtype."""
 
-alias Int8 = Scalar[DType.int8]
+comptime Int8 = Scalar[DType.int8]
 """Represents an 8-bit signed scalar integer."""
-alias UInt8 = Scalar[DType.uint8]
+comptime UInt8 = Scalar[DType.uint8]
 """Represents an 8-bit unsigned scalar integer."""
-alias Int16 = Scalar[DType.int16]
+comptime Int16 = Scalar[DType.int16]
 """Represents a 16-bit signed scalar integer."""
-alias UInt16 = Scalar[DType.uint16]
+comptime UInt16 = Scalar[DType.uint16]
 """Represents a 16-bit unsigned scalar integer."""
-alias Int32 = Scalar[DType.int32]
+comptime Int32 = Scalar[DType.int32]
 """Represents a 32-bit signed scalar integer."""
-alias UInt32 = Scalar[DType.uint32]
+comptime UInt32 = Scalar[DType.uint32]
 """Represents a 32-bit unsigned scalar integer."""
-alias Int64 = Scalar[DType.int64]
+comptime Int64 = Scalar[DType.int64]
 """Represents a 64-bit signed scalar integer."""
-alias UInt64 = Scalar[DType.uint64]
+comptime UInt64 = Scalar[DType.uint64]
 """Represents a 64-bit unsigned scalar integer."""
-alias Int128 = Scalar[DType.int128]
+comptime Int128 = Scalar[DType.int128]
 """Represents a 128-bit signed scalar integer."""
-alias UInt128 = Scalar[DType.uint128]
+comptime UInt128 = Scalar[DType.uint128]
 """Represents a 128-bit unsigned scalar integer."""
-alias Int256 = Scalar[DType.int256]
+comptime Int256 = Scalar[DType.int256]
 """Represents a 256-bit signed scalar integer."""
-alias UInt256 = Scalar[DType.uint256]
+comptime UInt256 = Scalar[DType.uint256]
 """Represents a 256-bit unsigned scalar integer."""
 
-alias Float4_e2m1fn = Scalar[DType.float4_e2m1fn]
+comptime Float4_e2m1fn = Scalar[DType.float4_e2m1fn]
 """Represents a 4-bit `e2m1` floating point format, encoded as
 `s.ee.m` and defined by the [Open Compute MX Format Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf):
 
@@ -137,7 +137,7 @@ alias Float4_e2m1fn = Scalar[DType.float4_e2m1fn]
 - (m)antissa: 1 bits
 - exponent_bias: 1
 """
-alias Float8_e5m2 = Scalar[DType.float8_e5m2]
+comptime Float8_e5m2 = Scalar[DType.float8_e5m2]
 """Represents the 8-bit E5M2 floating point format from the [OFP8
 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1),
 encoded as `seeeeemm`:
@@ -150,7 +150,7 @@ encoded as `seeeeemm`:
 - -inf: 11111100
 - -0: 10000000
 """
-alias Float8_e5m2fnuz = Scalar[DType.float8_e5m2fnuz]
+comptime Float8_e5m2fnuz = Scalar[DType.float8_e5m2fnuz]
 """Represents an 8-bit floating point format, encoded as `seeeeemm`:
 - (s)ign: 1 bit
 - (e)xponent: 5 bits
@@ -160,7 +160,7 @@ alias Float8_e5m2fnuz = Scalar[DType.float8_e5m2fnuz]
 - fn: finite (no inf or -inf encodings)
 - uz: unsigned zero (no -0 encoding)
 """
-alias Float8_e4m3fn = Scalar[DType.float8_e4m3fn]
+comptime Float8_e4m3fn = Scalar[DType.float8_e4m3fn]
 """Represents the E4M3 floating point format defined in the [OFP8
 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1).
 
@@ -178,7 +178,7 @@ in the OFP8 standard above, encoded as `seeeemmm`:
 - -0: 10000000
 - fn: finite (no inf or -inf encodings)
 """
-alias Float8_e4m3fnuz = Scalar[DType.float8_e4m3fnuz]
+comptime Float8_e4m3fnuz = Scalar[DType.float8_e4m3fnuz]
 """Represents an 8-bit e4m3fnuz floating point format, encoded as
 `seeeemmm`:
 - (s)ign: 1 bit
@@ -189,16 +189,16 @@ alias Float8_e4m3fnuz = Scalar[DType.float8_e4m3fnuz]
 - fn: finite (no inf or -inf encodings)
 - uz: unsigned zero (no -0 encoding)
 """
-alias BFloat16 = Scalar[DType.bfloat16]
+comptime BFloat16 = Scalar[DType.bfloat16]
 """Represents a 16-bit brain floating point value."""
-alias Float16 = Scalar[DType.float16]
+comptime Float16 = Scalar[DType.float16]
 """Represents a 16-bit floating point value."""
-alias Float32 = Scalar[DType.float32]
+comptime Float32 = Scalar[DType.float32]
 """Represents a 32-bit floating point value."""
-alias Float64 = Scalar[DType.float64]
+comptime Float64 = Scalar[DType.float64]
 """Represents a 64-bit floating point value."""
 
-alias Byte = UInt8
+comptime Byte = UInt8
 """Represents a byte (backed by an 8-bit unsigned integer)."""
 
 # ===----------------------------------------------------------------------=== #
@@ -278,15 +278,15 @@ struct FastMathFlag(ImplicitlyCopyable):
 
     var _value: UInt8
 
-    alias NONE = Self(0)
-    alias NNAN = Self(1)
-    alias NINF = Self(2)
-    alias NSZ = Self(3)
-    alias ARCP = Self(4)
-    alias CONTRACT = Self(5)
-    alias AFN = Self(6)
-    alias REASSOC = Self(7)
-    alias FAST = Self(8)
+    comptime NONE = Self(0)
+    comptime NNAN = Self(1)
+    comptime NINF = Self(2)
+    comptime NSZ = Self(3)
+    comptime ARCP = Self(4)
+    comptime CONTRACT = Self(5)
+    comptime AFN = Self(6)
+    comptime REASSOC = Self(7)
+    comptime FAST = Self(8)
 
     fn __is__(self, other: Self) -> Bool:
         """Compares two FastMathFlag values for identity.
@@ -476,7 +476,7 @@ struct SIMD[dtype: DType, size: Int](
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    alias _mlir_type = __mlir_type[
+    comptime _mlir_type = __mlir_type[
         `!pop.simd<`, Self.size._mlir_value, `, `, Self.dtype._mlir_value, `>`
     ]
 
@@ -487,21 +487,21 @@ struct SIMD[dtype: DType, size: Int](
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias MAX = Self(_max_or_inf[Self.dtype]())
+    comptime MAX = Self(_max_or_inf[Self.dtype]())
     """Gets the maximum value for the SIMD value, potentially +inf."""
 
-    alias MIN = Self(_min_or_neg_inf[Self.dtype]())
+    comptime MIN = Self(_min_or_neg_inf[Self.dtype]())
     """Gets the minimum value for the SIMD value, potentially -inf."""
 
-    alias MAX_FINITE = Self(_max_finite[Self.dtype]())
+    comptime MAX_FINITE = Self(_max_finite[Self.dtype]())
     """Returns the maximum finite value of SIMD value."""
 
-    alias MIN_FINITE = Self(_min_finite[Self.dtype]())
+    comptime MIN_FINITE = Self(_min_finite[Self.dtype]())
     """Returns the minimum (lowest) finite value of SIMD value."""
 
-    alias _Mask = SIMD[DType.bool, Self.size]
+    comptime _Mask = SIMD[DType.bool, Self.size]
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
     """SIMD types are remapped to the same type when passed to accelerator devices."""
 
     fn _to_device_type(self, target: LegacyOpaquePointer):
@@ -545,7 +545,7 @@ struct SIMD[dtype: DType, size: Int](
         By default the SIMD vectors are initialized to all zeros.
         """
         # make sure this constructor is called at compile time
-        alias res = SIMD[Self.dtype, Self.size](Int())
+        comptime res = SIMD[Self.dtype, Self.size](Int())
         self = res
 
     @always_inline("nodebug")
@@ -614,7 +614,7 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if bit_width_of[Self.dtype]() > bit_width_of[DType.int]():
-            alias dt = _unsigned_integral_type_of[DType.int]()
+            comptime dt = _unsigned_integral_type_of[DType.int]()
             self = bitcast[dt](Scalar[DType.int](value.__int__())).cast[
                 Self.dtype
             ]()
@@ -1857,8 +1857,8 @@ struct SIMD[dtype: DType, size: Int](
         """
         constrained[Self.size == 1, "expected a scalar type"]()
 
-        alias int_width = bit_width_of[Int]()
-        alias type_width = bit_width_of[Self.dtype]()
+        comptime int_width = bit_width_of[Int]()
+        comptime type_width = bit_width_of[Self.dtype]()
 
         @parameter
         if Self.dtype.is_unsigned() and int_width > type_width:
@@ -1970,7 +1970,7 @@ struct SIMD[dtype: DType, size: Int](
 
                 @parameter
                 if Self.dtype.is_half_float():
-                    alias prefix = "abs.bf16" if Self.dtype is DType.bfloat16 else "abs.f16"
+                    comptime prefix = "abs.bf16" if Self.dtype is DType.bfloat16 else "abs.f16"
                     return _call_ptx_intrinsic[
                         scalar_instruction=prefix,
                         vector2_instruction = prefix + "x2",
@@ -1981,7 +1981,7 @@ struct SIMD[dtype: DType, size: Int](
                     self
                 )
 
-            alias mask = FPUtils[Self.dtype].exponent_mantissa_mask()
+            comptime mask = FPUtils[Self.dtype].exponent_mantissa_mask()
             return Self(from_bits=self.to_bits() & mask)
 
     @always_inline("nodebug")
@@ -2269,7 +2269,7 @@ struct SIMD[dtype: DType, size: Int](
         if Self.dtype is DType.bool:
             return self.cast[DType.uint8]().to_bits[_dtype]()
         else:
-            alias uint = _unsigned_integral_type_of[Self.dtype]()
+            comptime uint = _unsigned_integral_type_of[Self.dtype]()
             return bitcast[uint, Self.size](self).cast[_dtype]()
 
     @always_inline
@@ -2567,7 +2567,7 @@ struct SIMD[dtype: DType, size: Int](
             and Self.size == 16
         ):
             # The instruction works with mask size of 16
-            alias target_mask_size = 16
+            comptime target_mask_size = 16
 
             # We know that simd sizes are powers of two, so we can use recursivity
             # to iterate on the method until we reach the target size.
@@ -2669,7 +2669,7 @@ struct SIMD[dtype: DType, size: Int](
             "offset must be a multiple of the subvector's size",
         ]()
 
-        alias input_width = value.size
+        comptime input_width = value.size
         constrained[
             0 <= offset < input_width + offset <= Self.size,
             "insertion position must not exceed the size of the vector",
@@ -2738,7 +2738,7 @@ struct SIMD[dtype: DType, size: Int](
             A new vector `self_0:N/2, self_N/2:N`.
         """
         constrained[Self.size > 1, "the simd width must be at least 2"]()
-        alias half_size = Self.size // 2
+        comptime half_size = Self.size // 2
         var se = self.slice[half_size]()
         var lf = self.slice[half_size, offset=half_size]()
         return se, lf
@@ -2780,7 +2780,7 @@ struct SIMD[dtype: DType, size: Int](
     # Reduce operations
     # ===------------------------------------------------------------------=== #
 
-    alias _T = SIMD[Self.dtype, _]
+    comptime _T = SIMD[Self.dtype, _]
 
     # TODO: remove when non-capturing can be converted to capturing.
     @always_inline
@@ -3249,7 +3249,7 @@ struct SIMD[dtype: DType, size: Int](
         return self.shuffle[mask = indices()]()
 
 
-alias U8x16 = SIMD[DType.uint8, 16]
+comptime U8x16 = SIMD[DType.uint8, 16]
 
 
 fn _pshuf_or_tbl1(lookup_table: U8x16, indices: U8x16) -> U8x16:
@@ -3403,10 +3403,10 @@ fn _convert_float8_to_f32_scalar[
     dtype: DType, //,
     result_dtype: DType,
 ](x: Scalar[dtype]) -> Scalar[result_dtype]:
-    alias FP8_EXPONENT_BIAS = FPUtils[dtype].exponent_bias()
-    alias FP8_NUM_MANTISSA_BITS = FPUtils[dtype].mantissa_width()
-    alias FP32_EXPONENT_BIAS = FPUtils[result_dtype].exponent_bias()
-    alias FP32_NUM_MANTISSA_BITS = FPUtils[result_dtype].mantissa_width()
+    comptime FP8_EXPONENT_BIAS = FPUtils[dtype].exponent_bias()
+    comptime FP8_NUM_MANTISSA_BITS = FPUtils[dtype].mantissa_width()
+    comptime FP32_EXPONENT_BIAS = FPUtils[result_dtype].exponent_bias()
+    comptime FP32_NUM_MANTISSA_BITS = FPUtils[result_dtype].mantissa_width()
 
     var exp = FPUtils.get_exponent_biased(x)
     var mantissa = FPUtils.get_mantissa(x)
@@ -3577,16 +3577,16 @@ fn _convert_f32_to_float8_scalar[
             constrained[target is DType.float8_e5m2]()
             return UInt8(0x7B)
 
-    alias FP8_NUM_MANTISSA_BITS = FPUtils[target].mantissa_width()
-    alias FP8_NUM_EXPONENT_BITS = FPUtils[target].exponent_width()
-    alias FP32_NUM_BITS = bit_width_of[dtype]()
-    alias FP8_EXPONENT_MASK: UInt8 = (1 << FP8_NUM_EXPONENT_BITS) - 1
-    alias FP8_MANTISSA_MASK: UInt8 = (1 << FP8_NUM_MANTISSA_BITS) - 1
-    alias FP8_EXPONENT_BIAS = FPUtils[target].exponent_bias()
-    alias FP8_MIN_EXPONENT = 1 - FP8_EXPONENT_BIAS
-    alias FP32_EXPONENT_BIAS = FPUtils[dtype].exponent_bias()
-    alias FP32_NUM_MANTISSA_BITS = FPUtils[dtype].mantissa_width()
-    alias FP8_MAX_FLT = max_finite_byte()
+    comptime FP8_NUM_MANTISSA_BITS = FPUtils[target].mantissa_width()
+    comptime FP8_NUM_EXPONENT_BITS = FPUtils[target].exponent_width()
+    comptime FP32_NUM_BITS = bit_width_of[dtype]()
+    comptime FP8_EXPONENT_MASK: UInt8 = (1 << FP8_NUM_EXPONENT_BITS) - 1
+    comptime FP8_MANTISSA_MASK: UInt8 = (1 << FP8_NUM_MANTISSA_BITS) - 1
+    comptime FP8_EXPONENT_BIAS = FPUtils[target].exponent_bias()
+    comptime FP8_MIN_EXPONENT = 1 - FP8_EXPONENT_BIAS
+    comptime FP32_EXPONENT_BIAS = FPUtils[dtype].exponent_bias()
+    comptime FP32_NUM_MANTISSA_BITS = FPUtils[dtype].mantissa_width()
+    comptime FP8_MAX_FLT = max_finite_byte()
 
     # Extract the bits in the FP32 type
     var sign: UInt8 = 0x80 if FPUtils[dtype].get_sign(x) else 0x00
@@ -3668,9 +3668,27 @@ fn _convert_f32_to_float8_scalar[
 fn _convert_f32_to_float8_ue8m0_scalar[
     dtype: DType, //,
     target: DType,
+    *,
+    satfinite: Bool = False,
+    rounding_mode: String = "rp",
 ](x: Scalar[dtype]) -> Scalar[target]:
+    constrained[
+        not satfinite,
+        (
+            "satfinite is not implemented for CPU path. Extend this function to"
+            " support it."
+        ),
+    ]()
+    constrained[
+        rounding_mode == "rp",
+        (
+            "Only rounding mode 'rp' is supported for CPU path. Extend this"
+            " function to support other rounding modes."
+        ),
+    ]()
+
     if _isnan(x) or _isinf(x):
-        return Scalar[target](0xFF)
+        return bitcast[target, 1](UInt8(0xFF))
 
     var x_uint32: UInt32 = bitcast[DType.uint32, 1](x)
     var exp: UInt8 = UInt8(
@@ -3689,12 +3707,22 @@ fn _convert_f32_to_float8_ue8m0[
     dtype: DType,
     size: Int, //,
     target: DType,
+    *,
+    satfinite: Bool = False,
+    rounding_mode: String = "rp",
 ](val: SIMD[dtype, size],) -> SIMD[target, size]:
-    constrained[target == DType.uint8, "target must be uint8"]()
+    constrained[
+        dtype is DType.float32 and target is DType.float8_e8m0fnu,
+        (
+            "this conversion is only supported for float32 -> float8_e8m0fnu."
+            " Exnted it if you need bfloat16 -> float8_e8m0fnu."
+        ),
+    ]()
 
     @parameter
     if is_nvidia_gpu() and _is_sm_100x_or_newer():
-        alias asm_prefix = "cvt.rp.satfinite.ue8m0x2.f32"
+        alias satfinite_suffix = ".satfinite" if satfinite else ""
+        alias asm_prefix = "cvt." + rounding_mode + satfinite_suffix + ".ue8m0x2.f32"
 
         @parameter
         if size > 1:
@@ -3727,7 +3755,9 @@ fn _convert_f32_to_float8_ue8m0[
         fn wrapper_fn[
             input_dtype: DType, result_dtype: DType
         ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
-            return _convert_f32_to_float8_ue8m0_scalar[result_dtype](val)
+            return _convert_f32_to_float8_ue8m0_scalar[
+                result_dtype, satfinite=satfinite, rounding_mode=rounding_mode
+            ](val)
 
         return _simd_apply[wrapper_fn, result_dtype=target](val)
 
@@ -3770,7 +3800,7 @@ fn _bfloat16_to_f32[
     return _simd_apply[wrapper_fn, result_dtype = DType.float32](val)
 
 
-alias _f32_bf16_mantissa_diff = (
+comptime _f32_bf16_mantissa_diff = (
     FPUtils[DType.float32].mantissa_width()
     - FPUtils[DType.bfloat16].mantissa_width()
 )
@@ -3915,13 +3945,13 @@ fn _floor(x: SIMD) -> type_of(x):
     if x.dtype.is_integral():
         return x
 
-    alias integral_type = FPUtils[x.dtype].integral_type
-    alias bitwidth = bit_width_of[x.dtype]()
-    alias exponent_width = FPUtils[x.dtype].exponent_width()
-    alias mantissa_width = FPUtils[x.dtype].mantissa_width()
-    alias mask = FPUtils[x.dtype].exponent_mask()
-    alias bias = FPUtils[x.dtype].exponent_bias()
-    alias shift_factor = bitwidth - exponent_width - 1
+    comptime integral_type = FPUtils[x.dtype].integral_type
+    comptime bitwidth = bit_width_of[x.dtype]()
+    comptime exponent_width = FPUtils[x.dtype].exponent_width()
+    comptime mantissa_width = FPUtils[x.dtype].mantissa_width()
+    comptime mask = FPUtils[x.dtype].exponent_mask()
+    comptime bias = FPUtils[x.dtype].exponent_bias()
+    comptime shift_factor = bitwidth - exponent_width - 1
 
     var bits = x._to_bits_signed()
     var e = ((bits & mask) >> mantissa_width) - bias

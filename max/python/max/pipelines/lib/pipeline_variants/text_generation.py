@@ -451,7 +451,7 @@ class TextGenerationPipeline(
                 self.update_for_structured_output(context, bitmask, i)
 
             if not self._pipeline_model.kv_manager.contains(context.request_id):
-                self._pipeline_model.kv_manager.external_claim(
+                self._pipeline_model.kv_manager.claim(
                     context.request_id, replica_idx=replica_idx
                 )
 

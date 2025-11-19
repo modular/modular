@@ -34,7 +34,7 @@ from utils import IndexList, StaticTuple
 struct Dim(
     CeilDivable,
     Defaultable,
-    EqualityComparable,
+    Equatable,
     ImplicitlyBoolable,
     Indexer,
     Intable,

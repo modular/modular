@@ -221,7 +221,7 @@ class DecodeScheduler(Scheduler):
 
             # Claim the slot with the paged manager
             if not self.paged_manager.contains(req_id):
-                self.paged_manager.external_claim(req_id)
+                self.paged_manager.claim(req_id)
 
             # Prefetch memory for Context Encoding eagerly, this only needs to be
             # for one step.

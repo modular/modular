@@ -380,7 +380,7 @@ class AudioGenerationScheduler(Scheduler):
                 continue
 
             if not self.paged_manager.contains(req_id):
-                self.paged_manager.external_claim(req_id)
+                self.paged_manager.claim(req_id)
 
             # Prefetch here for CE so that we query prefix cache
             if not self.paged_manager.maybe_reserve(req_data, num_steps=1):

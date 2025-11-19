@@ -42,7 +42,7 @@ struct Deque[ElementType: Copyable & Movable](
             Must implement the traits `Copyable` and `Movable`.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _DequeIter[Self.ElementType, iterable_origin]
 
@@ -50,7 +50,7 @@ struct Deque[ElementType: Copyable & Movable](
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias default_capacity: Int = 64
+    comptime default_capacity: Int = 64
     """The default capacity of the deque: must be the power of 2."""
 
     # ===-------------------------------------------------------------------===#
@@ -262,13 +262,13 @@ struct Deque[ElementType: Copyable & Movable](
                 self.append(element.copy())
 
     fn __eq__[
-        T: EqualityComparable & Copyable & Movable, //
+        T: Equatable & Copyable & Movable, //
     ](self: Deque[T], other: Deque[T]) -> Bool:
         """Checks if two deques are equal.
 
         Parameters:
             T: The type of the elements in the deque.
-                Must implement the trait `EqualityComparable`.
+                Must implement the trait `Equatable`.
 
         Args:
             other: The deque to compare with.
@@ -287,13 +287,13 @@ struct Deque[ElementType: Copyable & Movable](
         return True
 
     fn __ne__[
-        T: EqualityComparable & Copyable & Movable, //
+        T: Equatable & Copyable & Movable, //
     ](self: Deque[T], other: Deque[T]) -> Bool:
         """Checks if two deques are not equal.
 
         Parameters:
             T: The type of the elements in the deque.
-                Must implement the trait `EqualityComparable`.
+                Must implement the trait `Equatable`.
 
         Args:
             other: The deque to compare with.
@@ -304,13 +304,13 @@ struct Deque[ElementType: Copyable & Movable](
         return not (self == other)
 
     fn __contains__[
-        T: EqualityComparable & Copyable & Movable, //
+        T: Equatable & Copyable & Movable, //
     ](self: Deque[T], value: T) -> Bool:
         """Verify if a given value is present in the deque.
 
         Parameters:
             T: The type of the elements in the deque.
-                Must implement the trait `EqualityComparable`.
+                Must implement the trait `Equatable`.
 
         Args:
             value: The value to find.
@@ -519,13 +519,13 @@ struct Deque[ElementType: Copyable & Movable](
         self._tail = 0
 
     fn count[
-        T: EqualityComparable & Copyable & Movable, //
+        T: Equatable & Copyable & Movable, //
     ](self: Deque[T], value: T) -> Int:
         """Counts the number of occurrences of a `value` in the deque.
 
         Parameters:
             T: The type of the elements in the deque.
-                Must implement the trait `EqualityComparable`.
+                Must implement the trait `Equatable`.
 
         Args:
             value: The value to count.
@@ -612,7 +612,7 @@ struct Deque[ElementType: Copyable & Movable](
         values_data.free()
 
     fn index[
-        T: EqualityComparable & Copyable & Movable, //
+        T: Equatable & Copyable & Movable, //
     ](
         self: Deque[T],
         value: T,
@@ -624,7 +624,7 @@ struct Deque[ElementType: Copyable & Movable](
 
         Parameters:
             T: The type of the elements in the deque.
-                Must implement the `EqualityComparable` trait.
+                Must implement the `Equatable` trait.
 
         Args:
             value: The value to search for.
@@ -706,13 +706,13 @@ struct Deque[ElementType: Copyable & Movable](
             self._realloc(self._capacity << 1)
 
     fn remove[
-        T: EqualityComparable & Copyable & Movable, //
+        T: Equatable & Copyable & Movable, //
     ](mut self: Deque[T], value: T) raises:
         """Removes the first occurrence of the `value`.
 
         Parameters:
             T: The type of the elements in the deque.
-                Must implement the `EqualityComparable` trait.
+                Must implement the `Equatable` trait.
 
         Args:
             value: The value to remove.
@@ -995,10 +995,10 @@ struct _DequeIter[
         forward: The iteration direction. `False` is backwards.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = Self.T
+    comptime Element = Self.T
 
     var index: Int
     var src: Pointer[Deque[Self.T], Self.origin]

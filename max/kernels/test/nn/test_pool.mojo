@@ -33,10 +33,10 @@ fn pool[
     var input_tensor = LayoutTensor[DType.float32, in_layout](in_heap)
     arange(input_tensor)
 
-    var paddings = List[Int32](0, 0, 0, 0)
-    var filter = List[Int32](3, 2)
-    var stride = List[Int32](2, 3)
-    var dilation = List[Int32](1, 1)
+    var paddings: List[Int32] = [0, 0, 0, 0]
+    var filter: List[Int32] = [3, 2]
+    var stride: List[Int32] = [2, 3]
+    var dilation: List[Int32] = [1, 1]
 
     var paddings_tensor = LayoutTensor[
         DType.int32, Layout.row_major(UNKNOWN_VALUE)
@@ -180,10 +180,10 @@ fn test_avg_pool_2d_with_padding[
     var input_tensor = LayoutTensor[DType.float32, in_layout](in_heap)
     arange(input_tensor)
 
-    var paddings = List[Int32](1, 1, 1, 1)
-    var filter = List[Int32](3, 3)
-    var stride = List[Int32](1, 1)
-    var dilation = List[Int32](1, 1)
+    var paddings: List[Int32] = [1, 1, 1, 1]
+    var filter: List[Int32] = [3, 3]
+    var stride: List[Int32] = [1, 1]
+    var dilation: List[Int32] = [1, 1]
 
     var paddings_tensor = LayoutTensor[
         DType.int32, Layout.row_major(UNKNOWN_VALUE)
@@ -365,10 +365,10 @@ fn pool_ceil_test[
     var input_tensor = LayoutTensor[DType.float32, in_layout](in_heap)
     arange(input_tensor)
 
-    var paddings = List[Int32](0, 0, 0, 0)
-    var filter = List[Int32](3, 3)
-    var stride = List[Int32](2, 2)
-    var dilation = List[Int32](1, 1)
+    var paddings: List[Int32] = [0, 0, 0, 0]
+    var filter: List[Int32] = [3, 3]
+    var stride: List[Int32] = [2, 2]
+    var dilation: List[Int32] = [1, 1]
 
     var paddings_tensor = LayoutTensor[
         DType.int32, Layout.row_major(UNKNOWN_VALUE)
@@ -504,10 +504,10 @@ fn test_max_pool_pad_dilation_2d() raises:
         0
     )
 
-    var paddings = List[Int32](0, 0, 2, 0)
-    var filter = List[Int32](2, 2)
-    var stride = List[Int32](1, 1)
-    var dilation = List[Int32](3, 3)
+    var paddings: List[Int32] = [0, 0, 2, 0]
+    var filter: List[Int32] = [2, 2]
+    var stride: List[Int32] = [1, 1]
+    var dilation: List[Int32] = [3, 3]
 
     var paddings_tensor = LayoutTensor[
         DType.int32, Layout.row_major(UNKNOWN_VALUE)

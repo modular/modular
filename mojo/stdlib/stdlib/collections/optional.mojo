@@ -84,16 +84,16 @@ struct Optional[T: Copyable & Movable](
     """
 
     # Iterator aliases
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
-    alias Element = Self.T
+    comptime Element = Self.T
 
     # Fields
     # _NoneType comes first so its index is 0.
     # This means that Optionals that are 0-initialized will be None.
-    alias _type = Variant[_NoneType, Self.T]
+    comptime _type = Variant[_NoneType, Self.T]
     var _value: Self._type
 
     # ===-------------------------------------------------------------------===#
@@ -181,7 +181,7 @@ struct Optional[T: Copyable & Movable](
         return self is None
 
     fn __eq__[
-        _T: EqualityComparable & Copyable & Movable
+        _T: Equatable & Copyable & Movable
     ](self: Optional[_T], rhs: Optional[_T]) -> Bool:
         """Return `True` if this is the same as another `Optional` value,
         meaning both are absent, or both are present and have the same
@@ -189,7 +189,7 @@ struct Optional[T: Copyable & Movable](
 
         Parameters:
             _T: The type of the elements in the list. Must implement the
-                traits `Copyable`, `Movable` and `EqualityComparable`.
+                traits `Copyable`, `Movable` and `Equatable`.
 
         Args:
             rhs: The value to compare to.
@@ -215,7 +215,7 @@ struct Optional[T: Copyable & Movable](
         return self is not None
 
     fn __ne__[
-        _T: EqualityComparable & Copyable & Movable, //
+        _T: Equatable & Copyable & Movable, //
     ](self: Optional[_T], rhs: Optional[_T]) -> Bool:
         """Return `False` if this is the same as another `Optional` value,
         meaning both are absent, or both are present and have the same
@@ -223,7 +223,7 @@ struct Optional[T: Copyable & Movable](
 
         Parameters:
             _T: The type of the elements in the list. Must implement the
-                traits `Copyable`, `Movable` and `EqualityComparable`.
+                traits `Copyable`, `Movable` and `Equatable`.
 
         Args:
             rhs: The value to compare to.

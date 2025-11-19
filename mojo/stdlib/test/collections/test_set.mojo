@@ -18,7 +18,7 @@ from testing import assert_false, assert_raises, assert_true
 from testing import TestSuite
 
 
-fn assert_equal[T: EqualityComparable](lhs: T, rhs: T) raises:
+fn assert_equal[T: Equatable](lhs: T, rhs: T) raises:
     if not lhs == rhs:
         raise Error("AssertionError: values not equal, can't stringify :(")
 

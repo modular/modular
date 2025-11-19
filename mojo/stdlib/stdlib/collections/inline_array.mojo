@@ -86,13 +86,13 @@ struct InlineArray[
     """
 
     # Fields
-    alias type = __mlir_type[
+    comptime type = __mlir_type[
         `!pop.array<`, Self.size._mlir_value, `, `, Self.ElementType, `>`
     ]
     var _array: Self.type
     """The underlying storage for the array."""
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: LegacyOpaquePointer):
         """Convert the host type object to a device_type and store it at the
@@ -238,7 +238,7 @@ struct InlineArray[
         _inline_array_construction_checks[Self.size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
-        alias unroll_end = math.align_down(Self.size, batch_size)
+        comptime unroll_end = math.align_down(Self.size, batch_size)
 
         var ptr = self.unsafe_ptr()
 
@@ -454,7 +454,9 @@ struct InlineArray[
         constrained[
             -Self.size <= index(idx) < Self.size, "Index must be within bounds."
         ]()
-        alias normalized_index = normalize_index["InlineArray"](idx, Self.size)
+        comptime normalized_index = normalize_index["InlineArray"](
+            idx, Self.size
+        )
         return self.unsafe_get(normalized_index)
 
     # ===------------------------------------------------------------------=== #
@@ -576,12 +578,12 @@ struct InlineArray[
 
     @always_inline
     fn __contains__[
-        T: EqualityComparable & Copyable & Movable, //
+        T: Equatable & Copyable & Movable, //
     ](self: InlineArray[T, Self.size], value: T) -> Bool:
         """Tests if a value is present in the array using the `in` operator.
 
         Parameters:
-            T: The element type, must implement both `EqualityComparable` and
+            T: The element type, must implement both `Equatable` and
                 `Copyable` and `Movable`.
 
         Args:
@@ -603,7 +605,7 @@ struct InlineArray[
             This method enables using the `in` operator to check if a value
             exists in the array. It performs a linear search comparing each
             element for equality with the given value. The element type must
-            implement the `EqualityComparable`, `Copyable` and `Movable` traits
+            implement the `Equatable`, `Copyable` and `Movable` traits
             to support equality comparison.
         """
 

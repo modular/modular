@@ -316,7 +316,7 @@ struct _LayoutIter[origin: ImmutOrigin](
 
 struct Layout(
     Defaultable,
-    EqualityComparable,
+    Equatable,
     ImplicitlyCopyable,
     Iterable,
     LayoutTrait,

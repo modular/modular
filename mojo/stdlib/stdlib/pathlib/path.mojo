@@ -22,7 +22,7 @@ from sys.ffi import c_char
 from builtin._location import __call_location
 from memory import LegacyUnsafePointer as UnsafePointer
 
-alias DIR_SEPARATOR = "/"
+comptime DIR_SEPARATOR = "/"
 
 
 fn cwd() raises -> Path:
@@ -34,7 +34,7 @@ fn cwd() raises -> Path:
     Raises:
         If the operation fails.
     """
-    alias MAX_CWD_BUFFER_SIZE = 1024
+    comptime MAX_CWD_BUFFER_SIZE = 1024
     var buf = InlineArray[c_char, MAX_CWD_BUFFER_SIZE](uninitialized=True)
 
     var res = external_call["getcwd", UnsafePointer[c_char]](
@@ -66,7 +66,7 @@ fn _dir_of_current_file_impl(file_name: StaticString) raises -> Path:
 
 struct Path(
     Boolable,
-    EqualityComparable,
+    Equatable,
     Hashable,
     ImplicitlyCopyable,
     KeyElement,

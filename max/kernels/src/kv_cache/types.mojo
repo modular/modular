@@ -65,7 +65,7 @@ fn _compute_kv_cache_dynamic_shape_strides[
 
 
 @register_passable("trivial")
-struct KVCacheStaticParams(EqualityComparable, ImplicitlyCopyable, Movable):
+struct KVCacheStaticParams(Equatable, ImplicitlyCopyable, Movable):
     var num_heads: UInt
     var head_size: UInt
     var is_mla: Bool

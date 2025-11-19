@@ -295,7 +295,7 @@ struct TestTensor[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
 
 @register_passable("trivial")
 struct InitializationType(
-    DevicePassable, EqualityComparable, ImplicitlyCopyable, Movable
+    DevicePassable, Equatable, ImplicitlyCopyable, Movable
 ):
     var _value: Int
     alias zero = InitializationType(0)

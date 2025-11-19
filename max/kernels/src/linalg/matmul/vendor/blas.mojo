@@ -106,7 +106,7 @@ from collections import OptionalReg, Optional
 
 
 @register_passable("trivial")
-struct Backend(EqualityComparable, ImplicitlyCopyable, Movable, Writable):
+struct Backend(Equatable, ImplicitlyCopyable, Movable, Writable):
     var _value: Int32
 
     alias AUTOMATIC = Self(0)
@@ -969,10 +969,8 @@ fn _cublasLt_matmul[
         if a_scales or b_scales:
             if not (a_scales and b_scales):
                 raise Error("a_scales and b_scales must be provided together")
-            if scales_type != DType.uint8:
-                raise Error(
-                    "Only uint8(Float8-UE8M0) scaling is supported for B200"
-                )
+            if scales_type != DType.float8_e8m0fnu:
+                raise Error("Only float8_e8m0fnu scaling is supported for B200")
             if not (a_type == b_type and a_type == DType.float8_e4m3fn):
                 raise Error("Only E4M3 is supported for block scaled matmul")
 

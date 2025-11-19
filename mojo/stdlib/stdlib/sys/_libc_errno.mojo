@@ -64,9 +64,7 @@ alias pm = platform_map
 
 @fieldwise_init
 @register_passable("trivial")
-struct ErrNo(
-    EqualityComparable, ImplicitlyCopyable, Movable, Stringable, Writable
-):
+struct ErrNo(Equatable, ImplicitlyCopyable, Movable, Stringable, Writable):
     """Represents a error number from libc.
 
     This struct acts as an enum providing a wrapper around C library error codes,

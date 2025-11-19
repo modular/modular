@@ -28,7 +28,7 @@ Its implementation closely mirrors Python's `dict` implementation:
   [Python types in Mojo](/mojo/manual/python/types/#python-types-in-mojo).
 
 Key elements must implement the `KeyElement` trait composition, which includes
-`Movable`, `Hashable`, `EqualityComparable`, and `Copyable`. The `Copyable`
+`Movable`, `Hashable`, `Equatable`, and `Copyable`. The `Copyable`
 requirement will eventually be removed.
 
 Value elements must be `Copyable` and `Movable`. As with `KeyElement`, the
@@ -42,10 +42,10 @@ from sys.intrinsics import likely
 
 from memory import bitcast, memcpy
 
-alias KeyElement = Copyable & Movable & Hashable & EqualityComparable
+comptime KeyElement = Copyable & Movable & Hashable & Equatable
 """A trait composition for types which implement all requirements of
 dictionary keys. Dict keys must minimally be `Copyable`, `Movable`, `Hashable`,
-and `EqualityComparable`."""
+and `Equatable`."""
 
 
 @fieldwise_init
@@ -68,10 +68,10 @@ struct _DictEntryIter[
         forward: The iteration direction. `False` is backwards.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = DictEntry[Self.K, Self.V, Self.H]
+    comptime Element = DictEntry[Self.K, Self.V, Self.H]
 
     var index: Int
     var seen: Int
@@ -193,13 +193,13 @@ struct _DictKeyIter[
         forward: The iteration direction. `False` is backwards.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias dict_entry_iter = _DictEntryIter[
+    comptime dict_entry_iter = _DictEntryIter[
         Self.K, Self.V, Self.H, Self.origin, Self.forward
     ]
-    alias Element = Self.K
+    comptime Element = Self.K
 
     var iter: Self.dict_entry_iter
 
@@ -247,11 +247,11 @@ struct _DictValueIter[
         forward: The iteration direction. `False` is backwards.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
     var iter: _DictEntryIter[Self.K, Self.V, Self.H, Self.origin, Self.forward]
-    alias Element = Self.V
+    comptime Element = Self.V
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
@@ -294,7 +294,7 @@ struct DictEntry[K: KeyElement, V: Copyable & Movable, H: Hasher](
     """Store a key-value pair entry inside a dictionary.
 
     Parameters:
-        K: The key type of the dict. Must be Hashable+EqualityComparable.
+        K: The key type of the dict. Must be Hashable+Equatable.
         V: The value type of the dict.
         H: The type of the hasher used to hash the key.
     """
@@ -327,8 +327,8 @@ struct DictEntry[K: KeyElement, V: Copyable & Movable, H: Hasher](
         return self.value^
 
 
-alias _EMPTY = -1
-alias _REMOVED = -2
+comptime _EMPTY = -1
+comptime _REMOVED = -2
 
 
 struct _DictIndex(Movable):
@@ -628,7 +628,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
     #     the beginning to free new space while retaining insertion order.
     #
     # Key elements must implement the `KeyElement` trait composition, which
-    # includes Copyable, Movable, Hashable, and EqualityComparable.
+    # includes Copyable, Movable, Hashable, and Equatable.
     # Some of these requirements will be relaxed when we have more robust
     # support for conditional trait conformance.
     #
@@ -661,12 +661,12 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _DictKeyIter[Self.K, Self.V, Self.H, iterable_origin]
-    alias EMPTY = _EMPTY
-    alias REMOVED = _REMOVED
-    alias _initial_reservation = 8
+    comptime EMPTY = _EMPTY
+    comptime REMOVED = _REMOVED
+    comptime _initial_reservation = 8
 
     # ===-------------------------------------------------------------------===#
     # Fields
@@ -1241,7 +1241,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         return self._index.set_index(self._reserved(), slot, index)
 
     fn _next_index_slot(self, mut slot: UInt64, mut perturb: UInt64):
-        alias PERTURB_SHIFT = 5
+        comptime PERTURB_SHIFT = 5
         perturb >>= PERTURB_SHIFT
         slot = ((5 * slot) + Int(perturb + 1)) & (self._reserved() - 1)
 

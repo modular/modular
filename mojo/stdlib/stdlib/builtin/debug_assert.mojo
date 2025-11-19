@@ -27,7 +27,7 @@ from sys.param_env import env_get_string
 
 from builtin._location import __call_location, _SourceLocation
 
-alias ASSERT_MODE = env_get_string["ASSERT", "safe"]()
+comptime ASSERT_MODE = env_get_string["ASSERT", "safe"]()
 
 
 @no_inline
@@ -396,7 +396,7 @@ fn _debug_assert_msg(
             abort()
         return
 
-    alias fmt = "At: %s:%llu:%llu: block: [%llu,%llu,%llu] thread: [%llu,%llu,%llu] Assert Error: %s\n"
+    comptime fmt = "At: %s:%llu:%llu: block: [%llu,%llu,%llu] thread: [%llu,%llu,%llu] Assert Error: %s\n"
 
     @parameter
     if is_nvidia_gpu():

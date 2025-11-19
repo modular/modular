@@ -26,7 +26,7 @@ from memory import LegacyOpaquePointer as OpaquePointer
 
 from .ffi import _external_call_const, external_call
 
-alias _TargetType = __mlir_type.`!kgen.target`
+comptime _TargetType = __mlir_type.`!kgen.target`
 
 
 @always_inline("nodebug")
@@ -68,8 +68,8 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
             can be specified to satisfy Mojo type checking.
         """
 
-        alias note_text = String(" Note: ", note.value() if note else "")
-        alias msg = "Current compilation target does not support"
+        comptime note_text = String(" Note: ", note.value() if note else "")
+        comptime msg = "Current compilation target does not support"
 
         @parameter
         if operation:
@@ -874,7 +874,7 @@ fn simd_byte_width[target: _TargetType = _current_target()]() -> Int:
     Returns:
         The vector size (in bytes) of the host system.
     """
-    alias CHAR_BIT = 8
+    comptime CHAR_BIT = 8
     return simd_bit_width[target]() // CHAR_BIT
 
 
@@ -905,7 +905,7 @@ fn size_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     ```
     Note: `align_of` is in same module.
     """
-    alias mlir_type = __mlir_attr[
+    comptime mlir_type = __mlir_attr[
         `#kgen.param.expr<rebind, #kgen.type<!kgen.param<`,
         type,
         `>> : `,
@@ -956,7 +956,7 @@ fn align_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     Returns:
         The alignment of the type in bytes.
     """
-    alias mlir_type = __mlir_attr[
+    comptime mlir_type = __mlir_attr[
         `#kgen.param.expr<rebind, #kgen.type<!kgen.param<`,
         type,
         `>> : `,
@@ -1009,7 +1009,7 @@ fn bit_width_of[
     Returns:
         The size of the type in bits.
     """
-    alias CHAR_BIT = 8
+    comptime CHAR_BIT = 8
     return CHAR_BIT * size_of[type, target=target]()
 
 

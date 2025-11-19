@@ -119,13 +119,14 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
             replica_idx = kv_managers[0].get_or_recommend_replica(context)
             # Claim the slot for all kv_managers (eg: main + draft model)
             for kv_manager in self.kv_managers:
-                kv_manager.external_claim(req_id, replica_idx=replica_idx)
+                kv_manager.claim(req_id, replica_idx=replica_idx)
             batches[replica_idx][req_id] = context
             batch_to_replica_idx[req_id] = replica_idx
 
+        num_steps = self.pipeline_config.max_num_steps
         inputs = TextGenerationInputs(
             batches=batches,
-            num_steps=self.pipeline_config.max_num_steps,
+            num_steps=num_steps,
         )
 
         # Generate outputs until all requests are done.
@@ -134,6 +135,15 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
 
         try:
             while done < len(context_batch):
+                for replica_batch in batches:
+                    for ctx in replica_batch.values():
+                        for kv_manager in self.kv_managers:
+                            if not kv_manager.maybe_reserve(
+                                ctx, num_steps=num_steps
+                            ):
+                                raise RuntimeError(
+                                    f"Ran out of blocks for request {ctx.request_id}"
+                                )
                 step_outputs = self.execute(inputs)
                 outputs = []
                 for request_id, output in step_outputs.items():
