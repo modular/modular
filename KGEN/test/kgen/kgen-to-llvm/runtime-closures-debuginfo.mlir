@@ -43,14 +43,14 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // CHECK-LABEL: llvm.func internal @closure_wrapper_fn_0(%arg0: !llvm.ptr
   // CHECK: %0 = llvm.getelementptr %arg0[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i64)> loc(#[[CLOSURE_WRAPPER_FN_LOC:.*]])
   // CHECK: %1 = llvm.load %0 : !llvm.ptr -> i64 loc(#[[CLOSURE_WRAPPER_FN_LOC]])
-  // CHECK: %2 = llvm.call @h(%1) {fastmathFlags = #llvm.fastmath<contract>} : (i64) -> i64  loc(#[[CLOSURE_WRAPPER_FN_LOC]])
+  // CHECK: %2 = llvm.call @h(%1) : (i64) -> i64  loc(#[[CLOSURE_WRAPPER_FN_LOC]])
   // CHECK: llvm.return %2 : i64 loc(#[[CLOSURE_WRAPPER_FN_LOC]])
   // CHECK:} loc(#[[CLOSURE_WRAPPER_FN_LOC]])
 
   // CHECK-LABEL: llvm.func internal @closure_wrapper_fn_1(%arg0: !llvm.ptr
   // CHECK: %0 = llvm.getelementptr %arg0[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i64)> loc(#[[CLOSURE_WRAPPER_FN_LOC0:.*]])
   // CHECK: %1 = llvm.load %0 : !llvm.ptr -> i64 loc(#[[CLOSURE_WRAPPER_FN_LOC0]])
-  // CHECK: %2 = llvm.call @g(%1) {fastmathFlags = #llvm.fastmath<contract>} : (i64) -> i64 loc(#[[CLOSURE_WRAPPER_FN_LOC0]])
+  // CHECK: %2 = llvm.call @g(%1) : (i64) -> i64 loc(#[[CLOSURE_WRAPPER_FN_LOC0]])
   // CHECK: llvm.return %2 : i64 loc(#[[CLOSURE_WRAPPER_FN_LOC0]])
   // CHECK:} loc(#[[CLOSURE_WRAPPER_FN_LOC0]])
 }

@@ -103,6 +103,36 @@ LLVMDataLayout::getTypeABIAlignAndType(Type type) const {
 }
 
 //===----------------------------------------------------------------------===//
+// LLVMBuilder
+//===----------------------------------------------------------------------===//
+
+bool KGEN::canCallHaveFastmathFlags(LLVM::CallOp call) {
+  SmallVector<Type> types = llvm::to_vector(call.getResultTypes());
+  if (types.size() != 1)
+    return false;
+  Type eltTy = types[0];
+  if (auto structTy = dyn_cast<LLVM::LLVMStructType>(eltTy)) {
+    // Struct must be homogeneous
+    if (structTy.getBody().empty() ||
+        !llvm::all_of(structTy.getBody(), [structTy](Type ty) {
+          return ty == structTy.getBody()[0];
+        })) {
+      return false;
+    }
+    eltTy = structTy.getBody()[0];
+  } else if (auto arrayTy = dyn_cast<LLVM::LLVMArrayType>(eltTy)) {
+    eltTy = arrayTy;
+    do {
+      eltTy = cast<LLVM::LLVMArrayType>(eltTy).getElementType();
+    } while (isa<LLVM::LLVMArrayType>(eltTy));
+  }
+  if (auto vectorTy = dyn_cast<VectorType>(eltTy))
+    eltTy = vectorTy.getElementType();
+
+  return isa<FloatType>(eltTy);
+}
+
+//===----------------------------------------------------------------------===//
 // TargetInfoAttr
 //===----------------------------------------------------------------------===//
 
