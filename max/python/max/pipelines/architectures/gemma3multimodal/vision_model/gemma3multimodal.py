@@ -82,7 +82,6 @@ class Gemma3LanguageModel(Module):
             n_heads=text_config.num_attention_heads,
             theta=text_config.rope_theta,
             max_seq_len=text_config.max_position_embeddings,
-            device=config.devices[0],
             head_dim=text_config.head_dim,
             interleaved=False,
             scaling_params=scaling_params,
@@ -94,7 +93,6 @@ class Gemma3LanguageModel(Module):
             n_heads=text_config.num_attention_heads,
             theta=text_config.rope_local_base_freq,
             max_seq_len=text_config.max_position_embeddings,
-            device=config.devices[0],
             head_dim=text_config.head_dim,
             interleaved=False,
             scaling_params=None,  # No scaling
@@ -319,7 +317,7 @@ class Gemma3LanguageModel(Module):
 #     return final_embedding
 
 
-# ⚠️ based on HF and MLX-VLM
+# ✅ based on HF and MLX-VLM
 class Gemma3VisionModel(Module):
     def __init__(self, config: Gemma3ForConditionalGenerationConfig) -> None:
         super().__init__()
@@ -341,7 +339,7 @@ class Gemma3VisionModel(Module):
         self.post_layernorm = LayerNorm(
             vision_config.hidden_size,
             eps=vision_config.layer_norm_eps,
-            device=config.devices,
+            devices=[config.devices],
             dtype=config.dtype,
         )
         self.post_layernorm.weight.sharding_strategy = (
@@ -372,7 +370,7 @@ class Gemma3VisionModel(Module):
             ln = LayerNorm(
                 vision_config.hidden_size,
                 eps=vision_config.layer_norm_eps,
-                device=device,
+                devices=[device],
                 dtype=config.dtype,
             )
             ln.weight = weight_shard
@@ -394,7 +392,6 @@ class Gemma3VisionModel(Module):
         pixel_values: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> Sequence[TensorValue]:
-        # hidden_states = self.embeddings_list[0](pixel_values[0])
         hidden_states = [
             embed(pixels)
             for embed, pixels in zip(
@@ -402,8 +399,7 @@ class Gemma3VisionModel(Module):
             )
         ]
 
-        # Pass through encoder layers (single tensor path)
-        # TODO with multidevice this should return a list
+        # Pass through encoder layers
         hidden_states = self.encoder(hidden_states, signal_buffers)
 
         # Apply post-encoder layer norm

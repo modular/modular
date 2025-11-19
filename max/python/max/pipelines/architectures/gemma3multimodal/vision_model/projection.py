@@ -108,13 +108,13 @@ class Gemma3MultiModalProjector(Module, Shardable):
 
         return shards
 
+    # ✅
     def __call__(self, vision_outputs: Tensor) -> TensorValue:
-        batch_size, _, seq_length = (
-            vision_outputs.shape
-        )  # TensorValue shape: ['batch_size', 4096, 1152]
+        batch_size, _, seq_length = vision_outputs.shape
 
         transposed_vision_outputs = vision_outputs.transpose(1, 2)
 
+        # reshape to NLHW
         reshaped_vision_outputs = ops.reshape(
             transposed_vision_outputs,
             [
@@ -125,15 +125,15 @@ class Gemma3MultiModalProjector(Module, Shardable):
             ],
         )
 
-        # reshape to 0 2 3 1 HWBC
+        # reshape to 0 2 3 1 NHWL (or NHWC) for avg pool
         reshaped_vision_outputs = ops.permute(
             reshaped_vision_outputs, [0, 2, 3, 1]
         )
-        # avg pool
+
         pooled_vision_outputs = avg_pool2d(
             input=reshaped_vision_outputs,
-            kernel_size=(self.kernel_size, self.kernel_size),  # (4,4)
-            stride=self.kernel_size,  # 4
+            kernel_size=(self.kernel_size, self.kernel_size),
+            stride=self.kernel_size,
         )
         # permute to 0 3 1 2 then flatten from dim 2
         pooled_vision_outputs = ops.permute(pooled_vision_outputs, [0, 3, 1, 2])
@@ -147,14 +147,9 @@ class Gemma3MultiModalProjector(Module, Shardable):
             normed_vision_outputs, self.mm_input_projection_weight
         )
 
-        # Reshape to flatten batch and sequence dimensions for language model
-        # From [batch, seq, hidden] to [batch*seq, hidden]
-        # image_hidden_states = ops.reshape(
-        #    projected_vision_outputs, (-1, projected_vision_outputs.shape[-1])
-        # )
         image_hidden_states = ops.flatten(
             projected_vision_outputs, start_dim=0, end_dim=1
-        )  # TODO the only thing different to MLX-VLM/HF
+        )
 
         return image_hidden_states
 
