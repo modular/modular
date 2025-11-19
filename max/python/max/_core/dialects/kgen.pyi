@@ -1551,6 +1551,36 @@ class VariadicAttr(max._core.Attribute):
     @property
     def type(self) -> VariadicType: ...
 
+class VariadicConcatAttr(max._core.Attribute):
+    """
+    The `#kgen.variadic.concat` attribute is used to concatenate a variadic of
+    variadic (type) value.
+
+    Example:
+    ```mlir
+    #kgen.variadic.concat<[[Int, Int], [Float, Float]]> : !variadic<!AnyType>
+    // ->
+    #kgen.variadic<[Int, Int, Float, Float]> : !variadic<!AnyType>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self,
+        type: VariadicType,
+        variadics: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type: VariadicType,
+        variadics: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type(self) -> VariadicType: ...
+    @property
+    def variadics(self) -> max._core.dialects.builtin.TypedAttr: ...
+
 class VariadicMapAttr(max._core.Attribute):
     """
     The `#kgen.variadic.map` attribute is used to convert from a variadic of
