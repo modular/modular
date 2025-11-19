@@ -34,6 +34,9 @@ from max.interfaces.queue import MAXPullQueue, MAXPushQueue
 from max.pipelines.architectures.qwen2_5vl.context import (
     Qwen2_5VLTextAndVisionContext,
 )
+from max.pipelines.architectures.qwen3vl_moe.context import (
+    Qwen3VLTextAndVisionContext,
+)
 from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
 from max.serve.queue.zmq_queue import ZmqConfig
 from max.serve.scheduler.base import sleep_with_backoff
@@ -49,7 +52,11 @@ def _get_request_type_from_pipeline_task(
         PipelineTask.EMBEDDINGS_GENERATION,
     ]:
         return (
-            TextContext | TextAndVisionContext | Qwen2_5VLTextAndVisionContext
+            # TODO: Add custom context types here automatically as they are supported.
+            TextContext
+            | TextAndVisionContext
+            | Qwen2_5VLTextAndVisionContext
+            | Qwen3VLTextAndVisionContext
         )
     elif pipeline_task in [PipelineTask.AUDIO_GENERATION]:
         return TTSContext
