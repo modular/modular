@@ -23,6 +23,16 @@ what we publish.
 
 ### Language changes
 
+- The compiler will now warn on unqualified access to struct parameters, e.g.
+
+  ```mojo
+  @fieldwise_init
+  struct MyStuff[my_param: Int]:
+      fn give_me_stuff(self) -> Int:
+          # Warning: unqualified access to struct parameter 'my_param'; use 'Self.my_param' instead
+          return my_param
+  ```
+
 ### Library changes
 
 - New `ContiguousSlice` and `StridedSlice` types were added to

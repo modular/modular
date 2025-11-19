@@ -247,12 +247,9 @@ fn calculate_warp_offset[MaskType: DType](state: Bool) -> Tuple[UInt64, UInt64]:
     return writes, offset
 
 
-struct _BucketGroupParams[
-    num_threads: Int,
-    input_type: DType,
-]:
-    alias MaskType = _uint_type_of_width[num_threads]()
-    alias width = simd_width_of[input_type]()
+struct _BucketGroupParams[num_threads: Int, input_type: DType]:
+    alias MaskType = _uint_type_of_width[Self.num_threads]()
+    alias width = simd_width_of[Self.input_type]()
 
     var expert: UInt
     var reads_per_iteration: Int
@@ -263,7 +260,7 @@ struct _BucketGroupParams[
 
     fn __init__(out self, top_k_length: Int):
         self.expert = block_idx.x
-        self.reads_per_iteration = num_threads * Self.width
+        self.reads_per_iteration = Self.num_threads * Self.width
         self.topk_ids_length = top_k_length
         self.topk_ids_length_rounded = align_up(
             self.topk_ids_length, self.reads_per_iteration

@@ -216,13 +216,13 @@ struct ConvSpec[static_info: ConvSpecStatic](
     ImplicitlyCopyable, Movable, Stringable
 ):
     var n: Int
-    var input_dims: IndexList[static_info.rank]
+    var input_dims: IndexList[Self.static_info.rank]
     var c: Int
-    var filter_dims: IndexList[static_info.rank]
+    var filter_dims: IndexList[Self.static_info.rank]
     var f: Int
-    var stride: IndexList[static_info.rank]
-    var dilation: IndexList[static_info.rank]
-    var pad: IndexList[2 * static_info.rank]
+    var stride: IndexList[Self.static_info.rank]
+    var dilation: IndexList[Self.static_info.rank]
+    var pad: IndexList[2 * Self.static_info.rank]
     var num_groups: Int
 
     @no_inline
@@ -240,10 +240,10 @@ struct ConvSpec[static_info: ConvSpecStatic](
         # fmt: on
 
     fn flops(self) -> Int:
-        var output_dims = IndexList[static_info.rank](1)
+        var output_dims = IndexList[Self.static_info.rank](1)
 
         @parameter
-        for i in range(static_info.rank):
+        for i in range(Self.static_info.rank):
             output_dims[i] = (
                 self.input_dims[i]
                 + self.pad[2 * i]

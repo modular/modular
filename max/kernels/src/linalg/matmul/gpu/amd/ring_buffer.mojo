@@ -186,17 +186,18 @@ struct ProducerView[
         stage: Int,
         producer_iteration: Int,
         warp_tile_idx: Int,
-    ) -> ring_buffer_type.WarpTileTupleType:
+    ) -> Self.ring_buffer_type.WarpTileTupleType:
         """Acquire tiles for writing by this producer.
 
         Args:
             stage: Pipeline stage to write to.
-            producer_iteration: Which iteration this producer is on (0 to warps_processed_per_producer-1).
+            producer_iteration: Which iteration this producer is on (`0` to
+                `warps_processed_per_producer - 1`).
             warp_tile_idx: Which tile this producer is responsible for.
         """
         # Compute phase index based on stage and iteration
         var phase_idx = (
-            stage * warps_processed_per_producer + producer_iteration
+            stage * Self.warps_processed_per_producer + producer_iteration
         )
         var phase = self.phases[phase_idx]
 
@@ -219,9 +220,7 @@ struct ProducerView[
         self.ring_buffer_ptr[].signal_producer_release(warp_tile_idx, stage)
 
     alias ProducerTileType = ProducerTile[
-        origin,
-        ring_buffer_type,
-        warps_processed_per_producer,
+        Self.origin, Self.ring_buffer_type, Self.warps_processed_per_producer
     ]
 
     @always_inline
@@ -382,8 +381,8 @@ struct RingBuffer[
         sync_strategy_type: Synchronization strategy (SingleCounterSync or SplitCounterSync).
     """
 
-    alias block_warps = block_rows // warp_rows
-    alias total_tiles = Self.block_warps * pipeline_stages
+    alias block_warps = Self.block_rows // Self.warp_rows
+    alias total_tiles = Self.block_warps * Self.pipeline_stages
 
     alias SmemBufferType = SMemBuffer[
         Self.dtype,
@@ -395,11 +394,11 @@ struct RingBuffer[
         Self.warp_cols,
     ]
     alias WarpTileType = Self.SmemBufferType.WarpTileType
-    alias SMemBuffersType = StaticTuple[Self.SmemBufferType, tile_buffers]
-    alias WarpTileTupleType = StaticTuple[Self.WarpTileType, tile_buffers]
+    alias SMemBuffersType = StaticTuple[Self.SmemBufferType, Self.tile_buffers]
+    alias WarpTileTupleType = StaticTuple[Self.WarpTileType, Self.tile_buffers]
 
     var smem_buffers: Self.SMemBuffersType
-    var sync_strategy: sync_strategy_type
+    var sync_strategy: Self.sync_strategy_type
 
     @always_inline
     fn __init__(out self):
@@ -412,13 +411,13 @@ struct RingBuffer[
         ]()
 
         var smem_buffer = Self.SmemBufferType()
-        self.smem_buffers = StaticTuple[type_of(smem_buffer), tile_buffers](
-            smem_buffer
-        )
+        self.smem_buffers = StaticTuple[
+            type_of(smem_buffer), Self.tile_buffers
+        ](smem_buffer)
 
         # Initialize sync strategy based on type
         # We still need compile-time dispatch for the specific type
-        self.sync_strategy = sync_strategy_type()
+        self.sync_strategy = Self.sync_strategy_type()
 
     @always_inline
     fn get_tiles(

@@ -20,11 +20,11 @@ from memory import memcmp, memcpy
 
 
 struct Buffer[capacity: Int](Defaultable, Writer):
-    var data: InlineArray[UInt8, capacity]
+    var data: InlineArray[UInt8, Self.capacity]
     var pos: Int
 
     fn __init__(out self):
-        self.data = InlineArray[UInt8, capacity](fill=0)
+        self.data = InlineArray[UInt8, Self.capacity](fill=0)
         self.pos = 0
 
     fn write_bytes(mut self, bytes: Span[Byte, _]):
