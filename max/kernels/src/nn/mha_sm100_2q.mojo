@@ -1825,15 +1825,10 @@ struct KVPipeline[num_kv_stages: Int, num_mma_stages: Int]:
 
     @always_inline
     fn init(self):
-        # Producer mbars: arrived by 1 thread performing TMA
+        # Consumer & Producer mbars: arrived by 1 thread performing TMA/mma
         @parameter
-        for i in range(Self.num_stages):
+        for i in range(2 * Self.num_stages):
             self.mbar[i].init(1)
-
-        # Consumer mbars: arrived on by the MMA warp
-        @parameter
-        for i in range(Self.num_stages, 2 * Self.num_stages):
-            self.mbar[i].init(WARP_SIZE)
 
     @always_inline
     fn producer_mbar[mma_stage: Int](self) -> MBarType:
@@ -1861,8 +1856,10 @@ struct KVPipeline[num_kv_stages: Int, num_mma_stages: Int]:
         self.producer_mbar[mma_stage]()[].wait(self.state.phase())
 
     @always_inline("nodebug")
-    fn consumer_release[mma_stage: Int = Self.num_mma_stages - 1](mut self):
-        _ = self.consumer_mbar[mma_stage]()[].arrive()
+    fn consumer_release[
+        mma_stage: Int = Self.num_mma_stages - 1
+    ](mut self, e: Int32):
+        elect_mma_arrive(self.consumer_mbar[mma_stage](), e)
 
         @parameter
         if mma_stage == Self.num_mma_stages - 1:
@@ -2145,24 +2142,31 @@ struct KVConsumerPipeline[dtype: DType, config: FA4Config]:
         return self.v_smem_descriptor + Int(self.wait[mma_stage=mma_stage]())
 
     @always_inline("nodebug")
-    fn release_k[*, mma_stage: Int = Self.config.num_mma_stages - 1](mut self):
+    fn release_k[
+        *, mma_stage: Int = Self.config.num_mma_stages - 1
+    ](mut self, e: Int32):
         """
         Must call `producer_commit` on the tmem resource before calling
         `consumer_release`.
         `release_k` does increment the pipeline step.
         """
-        self.kv_pipeline.consumer_release[mma_stage]()
+        self.kv_pipeline.consumer_release[mma_stage](e)
 
     @always_inline("nodebug")
-    fn release_v[*, mma_stage: Int = Self.config.num_mma_stages - 1](self):
+    fn release_v[
+        *, mma_stage: Int = Self.config.num_mma_stages - 1
+    ](self, e: Int32):
         """
         Must call `producer_commit` on the tmem resource before calling
         `consumer_release`.
         `release_v` does not increment the pipeline step.
         """
-        _ = self.kv_pipeline.consumer_mbar[mma_stage](
-            self.v_pipeline_release_index
-        )[].arrive()
+        elect_mma_arrive(
+            self.kv_pipeline.consumer_mbar[mma_stage](
+                self.v_pipeline_release_index
+            ),
+            e,
+        )
 
 
 @register_passable("trivial")
@@ -2885,8 +2889,11 @@ struct SM100MHA2Q[
                 kv_input_row_offsets,
             )
 
-        var warp_group_idx: UInt32 = warp.broadcast(tid // 128)
-        if tid < 32:
+        var warp_idx: UInt32 = warp.broadcast(warp_id())
+        var warp_group_idx: UInt32 = (
+            warp_idx // 4
+        )  # broadcast should be unnecessary
+        if warp_idx == 0:
             if elect() != 0:
                 kv_pipeline.init()
 
@@ -2896,7 +2903,7 @@ struct SM100MHA2Q[
                     o_mbar[i].init(1)  # producer
                     o_mbar[i + 2].init(WARPGROUP_SIZE)  # consumer
                 misc_mbars.init()
-        elif tid < 64:
+        elif warp_idx == 1:
             tcgen05_alloc[Self.cta_group](
                 ptr_tmem_addr, Self.config.sm100_tmem_cols
             )
@@ -2951,9 +2958,8 @@ struct SM100MHA2Q[
                 mask,
             )
         else:
-            var wid: UInt32 = warp_id()
             warpgroup_reg_dealloc[num_reg_other]()
-            if wid == 13:  # produce
+            if warp_idx == 13:  # produce
                 var position: Self.PositionType = get_position(initial_seq_info)
                 startend = position.get_start_and_end_for_partitions(partition)
                 var kv_tile_start_row: UInt32 = startend[0]
@@ -2973,7 +2979,7 @@ struct SM100MHA2Q[
                     q_smem,
                 )
 
-            elif wid == 12:  # Q @ K', P @ V
+            elif warp_idx == 12:  # Q @ K', P @ V
                 var position: Self.PositionType = get_position(initial_seq_info)
                 startend = position.get_start_and_end_for_partitions(partition)
                 var kv_tile_start_row: UInt32 = startend[0]
@@ -3042,10 +3048,11 @@ struct SM100MHA2Q[
         while mask_status == TileMaskStatus.FULL_MASK:
             kv_row += Self.config.BN
             mask_status = position.mask_status(mask, kv_row)
-        var scale_log2e: Scalar[Self.accum_type] = (
-            scale if Self.use_score_mod
-            or Self.MaskType.apply_log2e_after_mask else scale * log2e
-        )
+        var scale_log2e: Scalar[Self.accum_type] = scale
+
+        @parameter
+        if not (Self.use_score_mod or Self.MaskType.apply_log2e_after_mask):
+            scale_log2e *= log2e
 
         @parameter
         @always_inline
@@ -3754,7 +3761,7 @@ struct SM100MHA2Q[
         Self.UMMA0Type.mma(q1, k0, s1_tmem, elect=e, c_scale=0)
         elect_mma_arrive(producer_s1, e)
 
-        pipeline_kv.release_k()  # [kv0]->kv1
+        pipeline_kv.release_k(e)  # [kv0]->kv1
 
         vlatest = pipeline_kv.wait_v[mma_stage=0]()  # [kv1]
         # For the first V tile in the current KV stage buffer:
@@ -3791,14 +3798,14 @@ struct SM100MHA2Q[
             # pipeline_o.step()
             phase_o = phase_s
             c_scale = 1
-            pipeline_kv.release_v()  # [kv_{2n-1}]
+            pipeline_kv.release_v(e)  # [kv_{2n-1}]
 
             # Q_1 @ K_n'
             Self.UMMA0Type.mma(q1, kn, s1_tmem, elect=e, c_scale=0)
             elect_mma_arrive(producer_s1, e)
             phase_s ^= 1
 
-            pipeline_kv.release_k()  # [kv_{2n}]->kv_{2n+1}
+            pipeline_kv.release_k(e)  # [kv_{2n}]->kv_{2n+1}
 
             # O_0 + P_0 @ V_n
             vlatest = pipeline_kv.wait_v[mma_stage=0]()  # [kv_{2n+1}]

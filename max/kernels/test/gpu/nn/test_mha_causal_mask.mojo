@@ -240,12 +240,9 @@ fn test[
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
     ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
-    alias output_ref_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
-    )
-    var output_device_ref = LayoutTensor[qkv_type, output_ref_layout](
+    var output_device_ref = LayoutTensor[qkv_type, output_layout](
         output_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_ref_layout].row_major(
+        RuntimeLayout[output_layout].row_major(
             Index(batch_size, seq_len, num_heads, depth)
         ),
     )
@@ -270,7 +267,6 @@ fn test[
 
     ctx.synchronize()
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
-    _ = output_ref_device_ptr
 
     var rtol = 1e-2
     for s in range(seq_len):
@@ -344,6 +340,7 @@ fn test[
     _ = v_device_ptr
     _ = mask_device_ptr
     _ = output_device_ptr
+    _ = output_ref_device_ptr
 
     q_ptr.free()
     k_ptr.free()
