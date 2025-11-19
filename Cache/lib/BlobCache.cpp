@@ -500,52 +500,10 @@ getVersionedFilesystemBackend(const std::filesystem::path &cacheDir,
   std::error_code ec;
   std::filesystem::path base = cacheDir;
   if (!base.is_absolute()) {
-    // Default to the .derived directory.
-    if (auto path = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH")) {
-      base = std::filesystem::absolute(*path, ec) / cacheDir;
-      if (ec)
-        return Error("failed to get absolute path to derived dir: " +
-                     ec.message());
-    } else if (auto path = llvm::sys::Process::GetEnv("MODULAR_INSTALL_DIR")) {
-      base = std::filesystem::absolute(*path, ec) / cacheDir;
-      if (ec)
-        return Error("failed to get absolute path to installed dir: " +
-                     ec.message());
-    } else if (auto path = llvm::sys::Process::GetEnv("TEST_TMPDIR")) {
-      base = std::filesystem::absolute(*path, ec) / cacheDir;
-      if (ec)
-        return Error("failed to get absolute path to test tmp dir: " +
-                     ec.message());
-    } else {
-      // Attempt to find an existing home directory, but *do not create the
-      // directory*. This is because we will fall back to the using the
-      // hard-coded derived dir below. This logic should likely be reconciled
-      // more generally, as it is generally used only for CI and local
-      // development, which is a strange pattern.
-      auto homePathOr = Config::getModularDataFolderPath(/*create=*/false);
-      if (!homePathOr.isError() && std::filesystem::exists(*homePathOr, ec) &&
-          !ec) {
-        base = std::filesystem::absolute(*homePathOr, ec) / cacheDir;
-        if (ec)
-          return Error("failed to get absolute path to modular home dir: " +
-                       ec.message());
-#ifdef _WIN32
-      } else if (auto path = findDirInEnvPath(cacheDir.string(), "PATH", ';')) {
-#else
-      } else if (auto path = findDirInEnvPath(cacheDir.string())) {
-#endif
-        base = std::filesystem::absolute(*path, ec);
-        if (ec)
-          return Error(
-              "failed to get absolute path to directory specified by " + *path +
-              ec.message());
-      } else {
-        base = std::filesystem::temp_directory_path(ec) / cacheDir;
-        if (ec)
-          return Error("failed to get absolute path to derived dir: " +
-                       ec.message());
-      }
-    }
+    auto cacheFolderPath = Config::getModularCacheFolderPath();
+    if (cacheFolderPath.isError())
+      return Error(cacheFolderPath.getError());
+    base = std::filesystem::absolute(*cacheFolderPath) / cacheDir;
   }
 
   assert(base.is_absolute() && "must default to non-empty absolute path");

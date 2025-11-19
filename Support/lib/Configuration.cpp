@@ -378,6 +378,11 @@ ErrorOr<std::filesystem::path> Config::getModularDataFolderPath(bool create) {
   return findBestPathForType(FolderType::Data, create);
 }
 
+ErrorOr<std::filesystem::path> Config::getModularCacheFolderPath(bool create) {
+  // TODO: check MODULAR_CACHE_DIR here?
+  return findBestPathForType(FolderType::Cache, create);
+}
+
 ErrorOr<std::filesystem::path> Config::getConfigFilePath(bool create) {
   constexpr llvm::StringLiteral kModularConfigFileName = "modular.cfg";
 

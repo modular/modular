@@ -96,10 +96,14 @@ public:
   /// In this case, the caller should check for existence of the returned path,
   /// as this may represent where the directory *would* be created.
   ///
-  /// On systems that follow the XDG Base Directory Specification, this will be
-  /// the $XDG_DATA_HOME/modular folder (typically $HOME/.local/share/modular)
+  /// The precedence of how configuration options affect the data folder path:
   ///
-  /// On other systems except Windows, will typically be $HOME/.modular
+  /// 1. When MODULAR_HOME is set: $MODULAR_HOME
+  /// 2. When MODULAR_DERIVED_DIR is set: $MODULAR_DERIVED_DIR
+  /// 3. When TEST_TMPDIR is set: $TEST_TMPDIR
+  /// 4. If $HOME/.modular directory exists: $HOME/.modular
+  /// 5. Otherwise, follow the XDG Base Directory Specification on systems that
+  ///    support it: $XDG_DATA_HOME or its default $HOME/.local/share/modular
   static ErrorOr<std::filesystem::path>
   getModularDataFolderPath(bool create = true);
 
@@ -110,12 +114,31 @@ public:
   /// NOTE: This will be the same as the modular data folder on systems that
   /// don't follow the XDG Base Directory Specification.
   ///
-  /// On systems that do follow the XDG Base Directory Specification, this will
-  /// be the $XDG_CONFIG_HOME/modular folder (typically $HOME/.config/modular)
+  /// The precedence of how configuration options affect the data folder path:
   ///
-  /// On other systems except Windows, will typically be $HOME/.modular
+  /// 1. When MODULAR_HOME is set: $MODULAR_HOME
+  /// 2. When MODULAR_DERIVED_DIR is set: $MODULAR_DERIVED_DIR
+  /// 3. When TEST_TMPDIR is set: $TEST_TMPDIR
+  /// 4. If $HOME/.modular directory exists: $HOME/.modular
+  /// 5. Otherwise, follow the XDG Base Directory Specification on systems that
+  ///    support it: $XDG_CONFIG_HOME or its default $HOME/.config/modular
   static ErrorOr<std::filesystem::path>
   getModularConfigFolderPath(bool create = true);
+
+  /// Get the path to the canonical modular cache folder.
+  ///
+  /// The semantics for create are the same as getModularDataFolderPath.
+  ///
+  /// The precedence of how configuration options affect the data folder path:
+  ///
+  /// 1. When MODULAR_HOME is set: $MODULAR_HOME/cache
+  /// 2. When MODULAR_DERIVED_DIR is set: $MODULAR_DERIVED_DIR/cache
+  /// 3. When TEST_TMPDIR is set: $TEST_TMPDIR
+  /// 4. If $HOME/.modular directory exists: $HOME/.modular
+  /// 5. Otherwise, follow the XDG Base Directory Specification on systems that
+  ///    support it: $XDG_CACHE_HOME or its default $HOME/.cache/modular
+  static ErrorOr<std::filesystem::path>
+  getModularCacheFolderPath(bool create = true);
 
   /// Get the path to the canonical modular config file.
   /// Often $XDG_CONFIG_HOME/modular/modular.cfg or $HOME/.modular/modular.cfg
