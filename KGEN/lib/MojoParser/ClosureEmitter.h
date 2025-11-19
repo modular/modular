@@ -108,6 +108,11 @@ private:
   void synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
                                   FnTypeGeneratorType sig);
 
+  /// Underlying implementation of `augmentWitnessTablesToConformTo` and
+  /// `isCompatibleWith`.
+  LogicalResult checkStructCompatibility(ASTType structType, ASTDecl *traitDecl,
+                                         bool emitRebind);
+
 public:
   /// If the wrapper conforms to a trait that is compatible with the desired
   /// trait, emit a rebind. For example, suppose we have a parameter P with a
@@ -117,6 +122,11 @@ public:
   /// argument names.
   LogicalResult augmentWitnessTablesToConformTo(ASTType structType,
                                                 ASTDecl *closureTrait);
+
+  /// Checks if the wrapper struct type conforms to a trait that is compatible
+  /// with the desired trait.
+  LogicalResult isCompatibleWith(ASTType structType, ASTDecl *traitDecl);
+
   struct ClosureParent {
     ClosureParent(StringRef name, StringRef fnName, ClosureMethod closureMethod)
         : traitName(name), traitFnName(fnName), closureMethod(closureMethod) {}

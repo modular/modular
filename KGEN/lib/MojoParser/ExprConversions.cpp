@@ -1386,8 +1386,23 @@ static FailureOr<bool> canTypeValueUpCastToTrait(SharedState &shared,
       if (auto pval = valueExpr.ir.getIfPValue();
           pval && LIT::isTypeExpr(pval)) {
         // Can only convert static types to traits, not existentials.
-        if (ASTDecl *decl = ASTType(fromType).getDecl(shared))
+        if (ASTDecl *decl = ASTType(fromType).getDecl(shared)) {
+          // Check for closure rebindability.
+          for (const auto &symbol : trait.getSymbols()) {
+            auto &symbolDecl =
+                shared.declResolver->getDeclForTypeSymbol(symbol);
+            if (auto traitDeclOp = dyn_cast_if_present<TraitDeclOp>(
+                    symbolDecl.getIfOperation());
+                traitDeclOp && traitDeclOp.getDefinesClosure()) {
+              if (succeeded(shared.closureEmitter->isCompatibleWith(
+                      fromType, &symbolDecl))) {
+                return true;
+              }
+            }
+          }
+
           return decl->doesNominalTypeConformTo(trait);
+        }
       }
     }
     return result;
