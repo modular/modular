@@ -46,10 +46,12 @@ class ConfigWithEnvTest(unittest.TestCase):
                 "TEST_TMPDIR": f"{HOME}/test-tmpdir",
                 "XDG_CONFIG_HOME": f"{HOME}/test-config",
                 "XDG_DATA_HOME": f"{HOME}/test-data",
+                "XDG_CACHE_HOME": f"{HOME}/test-data",
             },
             expected={
                 "ModularConfigFolderPath": f"{HOME}/modular",
                 "ModularDataFolderPath": f"{HOME}/modular",
+                "ModularCacheFolderPath": f"{HOME}/modular/cache",
             },
         )
 
@@ -61,10 +63,12 @@ class ConfigWithEnvTest(unittest.TestCase):
                 "TEST_TMPDIR": f"{HOME}/test-tmpdir",
                 "XDG_CONFIG_HOME": f"{HOME}/test-config",
                 "XDG_DATA_HOME": f"{HOME}/test-data",
+                "XDG_CACHE_HOME": f"{HOME}/test-data",
             },
             expected={
                 "ModularConfigFolderPath": f"{HOME}/modular",
                 "ModularDataFolderPath": f"{HOME}/modular",
+                "ModularCacheFolderPath": f"{HOME}/modular/cache",
             },
         )
 
@@ -75,10 +79,12 @@ class ConfigWithEnvTest(unittest.TestCase):
                 "TEST_TMPDIR": f"{HOME}",
                 "XDG_CONFIG_HOME": f"{HOME}/test-config",
                 "XDG_DATA_HOME": f"{HOME}/test-data",
+                "XDG_CACHE_HOME": f"{HOME}/test-data",
             },
             expected={
                 "ModularConfigFolderPath": f"{HOME}/.modular",
                 "ModularDataFolderPath": f"{HOME}/.modular",
+                "ModularCacheFolderPath": f"{HOME}/.modular",
             },
         )
 
@@ -88,10 +94,12 @@ class ConfigWithEnvTest(unittest.TestCase):
             env_vars={
                 "XDG_CONFIG_HOME": f"{HOME}/test-config",
                 "XDG_DATA_HOME": f"{HOME}/test-data",
+                "XDG_CACHE_HOME": f"{HOME}/test-data",
             },
             expected={
                 "ModularConfigFolderPath": f"{HOME}/.modular",
                 "ModularDataFolderPath": f"{HOME}/.modular",
+                "ModularCacheFolderPath": f"{HOME}/.modular",
             },
             dirs=[f"{HOME}/.modular"],
         )
@@ -103,6 +111,7 @@ class ConfigWithEnvTest(unittest.TestCase):
             expected={
                 "ModularConfigFolderPath": f"{HOME}/.config/modular",
                 "ModularDataFolderPath": f"{HOME}/.local/share/modular",
+                "ModularCacheFolderPath": f"{HOME}/.cache/modular",
             },
         )
 
@@ -112,10 +121,12 @@ class ConfigWithEnvTest(unittest.TestCase):
             env_vars={
                 "XDG_CONFIG_HOME": f"{HOME}/test-config",
                 "XDG_DATA_HOME": f"{HOME}/test-data",
+                "XDG_CACHE_HOME": f"{HOME}/test-cache",
             },
             expected={
                 "ModularConfigFolderPath": f"{HOME}/test-config/modular",
                 "ModularDataFolderPath": f"{HOME}/test-data/modular",
+                "ModularCacheFolderPath": f"{HOME}/test-cache/modular",
             },
         )
 

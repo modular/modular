@@ -29,6 +29,11 @@ struct ConfigurationEnvTestCLIOptions {
       cl::desc("M::Config::getModularConfigFolderPath()"),
   };
 
+  cl::opt<bool> ModularCacheFolderPath{
+      "ModularCacheFolderPath",
+      cl::desc("M::Config::getModularCacheFolderPath()"),
+  };
+
   cl::opt<bool> ConfigFilePath{
       "ConfigFilePath",
       cl::desc("M::Conifg::getConfigFilePath()"),
@@ -102,6 +107,16 @@ by `M::Config::getModularConfigFolderPath()`:
       return EXIT_FAILURE;
     }
     print("ModularDataFolderPath", *dataFolderPath);
+  }
+
+  if (cli.ModularCacheFolderPath) {
+    auto cacheFolderPath = cfg->getModularCacheFolderPath();
+    if (cacheFolderPath.isError()) {
+      std::cerr << "FAILURE: cfg->getModularCacheFolderPath(): "
+                << cacheFolderPath.getError() << "\n";
+      return EXIT_FAILURE;
+    }
+    print("ModularCacheFolderPath", *cacheFolderPath);
   }
 
   std::cout << "\n}\n";
