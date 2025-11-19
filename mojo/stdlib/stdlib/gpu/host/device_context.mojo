@@ -4696,6 +4696,94 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             location=location.or_else(__call_location()),
         )
 
+    @always_inline
+    fn enqueue_function_checked[
+        *Ts: AnyType
+    ](
+        self,
+        f: DeviceExternalFunction,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[_SourceLocation] = None,
+    ) raises:
+        """Enqueues an external device function for execution on this device.
+
+        This overload accepts a `DeviceExternalFunction` that was loaded from
+        assembly code (PTX/SASS). External functions are pre-compiled GPU kernels
+        that can be integrated with Mojo code.
+
+        Parameters:
+            Ts: Argument types to pass to the external function.
+
+        Args:
+            f: The external device function to execute.
+            args: Arguments to pass to the function.
+            grid_dim: Dimensions of the compute grid, made up of thread blocks.
+            block_dim: Dimensions of each thread block in the grid.
+            cluster_dim: Dimensions of clusters (if the thread blocks are
+                grouped into clusters).
+            shared_mem_bytes: Amount of shared memory per thread block.
+            attributes: Launch attributes.
+            constant_memory: Constant memory mapping.
+            location: Source location for the function call.
+
+        Example:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        fn vec_add_sig(
+            in0: UnsafePointer[Float32],
+            in1: UnsafePointer[Float32],
+            out: UnsafePointer[Float32],
+            len: Int,
+        ):
+            pass
+
+        with DeviceContext() as ctx:
+            var func = ctx.load_function[vec_add_sig](
+                function_name="vectorAdd",
+                asm=ptx_code,
+            )
+            ctx.enqueue_function_checked(
+                func,
+                in0_buf,
+                in1_buf,
+                out_buf,
+                1024,
+                grid_dim=Dim(32),
+                block_dim=Dim(32),
+            )
+            ctx.synchronize()
+        ```
+
+        Raises:
+            If the operation fails.
+        """
+        _check_dim["DeviceContext.enqueue_function_checked", "grid_dim"](
+            grid_dim, location=__call_location()
+        )
+        _check_dim["DeviceContext.enqueue_function_checked", "block_dim"](
+            block_dim, location=__call_location()
+        )
+
+        self._enqueue_external_function(
+            f,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location.or_else(__call_location()),
+        )
+
     @parameter
     @always_inline
     fn enqueue_function_checked[

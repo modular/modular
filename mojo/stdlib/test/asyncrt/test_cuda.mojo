@@ -167,7 +167,7 @@ $L__BB0_2:
         function_name="_Z9vectorAddPKfS0_Pfi",
         asm=ptx,
     )
-    ctx.enqueue_function(
+    ctx.enqueue_function_checked(
         func,
         lhs,
         rhs,
