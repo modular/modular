@@ -1,19 +1,37 @@
 diff --git a/python/private/py_wheel.bzl b/python/private/py_wheel.bzl
-index e6352efc..79ae9b4f 100644
+index e6352efc..554d58e8 100644
 --- a/python/private/py_wheel.bzl
 +++ b/python/private/py_wheel.bzl
-@@ -516,10 +516,13 @@ def _py_wheel_impl(ctx):
+@@ -502,9 +502,9 @@ def _py_wheel_impl(ctx):
+ 
+     for target, filename in ctx.attr.data_files.items():
+         target_files = target[DefaultInfo].files.to_list()
+-        if len(target_files) != 1:
++        if len(target_files) != 1 and not filename.endswith("/"):
+             fail(
+-                "Multi-file target listed in data_files %s",
++                "Multi-file target listed in data_files %s, this is only supported when specifying a folder path (i.e. a path ending in '/')",
+                 filename,
+             )
+ 
+@@ -516,11 +516,15 @@ def _py_wheel_impl(ctx):
                      filename,
                  ),
              )
-+
-+        final_filename = filename + target_files[0].basename if filename.endswith("/") else filename
-+
-         other_inputs.extend(target_files)
-         args.add(
-             "--data_files",
+-        other_inputs.extend(target_files)
+-        args.add(
+-            "--data_files",
 -            filename + ";" + target_files[0].path,
-+            final_filename + ";" + target_files[0].path,
-         )
+-        )
++
++        for file in target_files:
++            final_filename = filename + file.basename if filename.endswith("/") else filename
++
++            other_inputs.extend(target_files)
++            args.add(
++                "--data_files",
++                final_filename + ";" + file.path,
++            )
  
      ctx.actions.run(
+         mnemonic = "PyWheel",
