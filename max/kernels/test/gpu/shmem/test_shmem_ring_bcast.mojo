@@ -22,6 +22,7 @@ from sys.param_env import env_get_string
 
 from gpu.host.device_attribute import DeviceAttribute
 from gpu.host.dim import Dim
+from gpu.host import DeviceBuffer
 from memory import LegacyUnsafePointer as UnsafePointer
 from python import Python
 from shmem import *
@@ -72,7 +73,7 @@ def test_ring_bcast(ctx: SHMEMContext):
         data,
         data_len,
         root,
-        SHMEMBuffer[DType.uint64](ctx._ctx, psync, 1),
+        DeviceBuffer[DType.uint64](ctx._ctx, psync, 1, owning=False),
         grid_dim=1,
         block_dim=1,
     )
