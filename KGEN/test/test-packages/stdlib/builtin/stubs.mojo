@@ -748,12 +748,12 @@ fn materialize[T: AnyType, //, value: T](out result: T):
 @explicit_destroy
 trait ExplicitlyDestroyedMovable:
     fn __moveinit__(out self, deinit existing: Self, /):
-        pass
+        ...
 
 
 trait Movable:
     fn __moveinit__(out self, deinit existing: Self, /):
-        pass
+        ...
 
     alias __moveinit__is_trivial: Bool
 

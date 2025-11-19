@@ -15,7 +15,7 @@
 
 trait Trait:
     fn method(self) -> Int:
-        pass
+        ...
 
 
 @register_passable("trivial")

@@ -1026,7 +1026,7 @@ fn infer_implicit_params(var p: ClosureParam):
 
 trait ToInt:
     fn to_int(self) -> Int:
-        pass
+        ...
 
 @fieldwise_init
 @register_passable("trivial")

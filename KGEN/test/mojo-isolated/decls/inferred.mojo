@@ -132,7 +132,7 @@ fn mul2_callee[n: Int, //, some_t: TakesIntParam[n * 2]]():
 
 trait FancyTrait(ImplicitlyCopyable, Movable):
     fn __eq__(self, other: Self) -> Bool:
-        pass
+        ...
 
 
 struct MyFancyStruct(FancyTrait):

@@ -11,7 +11,7 @@
 trait MyMovable:
     # expected-note @below {{required function '__moveinit__' is not implemented}}
     fn __moveinit__(out self, deinit existing: Self, /):
-        pass
+        ...
 
 
 trait ErroneousTrait:
@@ -47,7 +47,7 @@ trait SimpleTrait:
     # expected-note @below {{required function 'some_method' is not implemented}}
     # expected-note @below {{no 'some_method' candidates have type 'fn(self: ParamDoesNotConform[x]) -> None'}}
     fn some_method(self):
-        pass
+        ...
 
 
 # expected-error @below {{'TraitStruct' does not implement all requirements for 'MyMovable'}}
@@ -161,3 +161,22 @@ fn call_take_two_inferred_params[T: SomeTrait](x: T):
     # expected-error @below {{invalid call to 'take_two_inferred_params': failed to infer parameter 'Size', it inferred to two different values: 'T.A' and '1'}}
     # expected-note @below {{try `rebind` them to one type if they will be concretized to the same type}}
     take_two_inferred_params(TakeInt[T.A](), TakeInt[1]())
+
+
+# Check that a trait method with a default implementation returning a non-None
+# type may not use 'pass'.
+trait TBar:
+    # expected-error @+4 {{trait method has results but default implementation returns no value; did you mean '...'?}}
+    # expected-note @below {{in 'bar', declared here}}
+    # expected-note @below {{original default implementation from trait 'TBar' here}}
+    fn bar(self) -> Int:
+        pass
+
+trait TBarSub(TBar):
+    # expected-note @below {{conflicting implementation from trait 'TBarSub' here}}
+    fn bar(self) -> Int:
+        return 0
+
+# expected-error @+1 {{trait method requirement 'bar' has conflicting default implementations in 'TBar' and 'TBarSub' you must implement it manually}}
+struct TBarActual(TBarSub):
+    pass

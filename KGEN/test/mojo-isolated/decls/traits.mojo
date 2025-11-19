@@ -20,19 +20,39 @@ trait Trait:
     fn f1(mut self):
         ...
 
-    # CHECK: lit.fn @"f2{{.*}}(%self: !lit.ref<{{.*}}> mut) -> !kgen.none attributes
-    # CHECK-NEXT: kgen.unreachable
+    # CHECK: lit.fn @"f2{{.*}}(%self: !lit.ref<{{.*}}> mut) -> !kgen.none attributes {defaultedTraitFn,
+    # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
+    # CHECK-NEXT: lit.return %none : !kgen.none
+    # CHECK-NEXT: lit.end_fn
     fn f2(mut self):
         pass
 
     # CHECK: lit.fn @"f3{{.*}}(%self: !lit.ref<{{.*}}> read_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, mut *"__result__`2x2"> byref_result) throws -> i1
     # CHECK-NEXT: kgen.unreachable
     def f3(self):
+        ...
+
+    # CHECK: lit.fn @"f4{{.*}}(%self: !lit.ref<{{.*}}> read_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, mut *"__result__`2x2"> byref_result) throws -> i1
+    # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
+    # CHECK-NEXT: lit.ref.store %none, %__result__ : <none, mut *"__result__`2x2">
+    # CHECK-NEXT: %0 = kgen.param.constant: i1 = <0>
+    # CHECK-NEXT: lit.return %0 : i1
+    # CHECK-NEXT: lit.end_fn
+    def f4(self):
         pass
 
-    # CHECK: lit.fn @"f4{{.*}}(%self: !lit.ref<{{.*}}> mut, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, {{.*}}> byref_result) throws -> i1
+    # CHECK: lit.fn @"f5{{.*}}(%self: !lit.ref<{{.*}}> mut, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, {{.*}}> byref_result) throws -> i1
     # CHECK-NEXT: kgen.unreachable
-    def f4(mut self):
+    def f5(mut self):
+        ...
+
+    # CHECK: lit.fn @"f6{{.*}}(%self: !lit.ref<{{.*}}> mut, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, {{.*}}> byref_result) throws -> i1
+    # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
+    # CHECK-NEXT: lit.ref.store %none, %__result__ : <none, mut *"__result__`2x2">
+    # CHECK-NEXT: %0 = kgen.param.constant: i1 = <0>
+    # CHECK-NEXT: lit.return %0 : i1
+    # CHECK-NEXT: lit.end_fn
+    def f6(mut self):
         pass
 
     fn overloaded(self):
@@ -979,3 +999,9 @@ trait B(A):
 
 fn blah[b_t: B](b: b_t):
     b.foo()
+
+# Check that a trait method with a default implementation returning None may
+# use 'pass'.
+trait TBar:
+    fn bar(self) -> None:
+        pass

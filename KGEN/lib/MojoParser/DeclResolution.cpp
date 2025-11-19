@@ -1898,7 +1898,7 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
 
     // If we see an ellipsis, the function member is well formed: don't emit
     // arguments or any other setup logic.
-    if (p.consumeIf(Token::dot_dot_dot) || p.consumeIf(Token::kw_pass)) {
+    if (p.consumeIf(Token::dot_dot_dot)) {
       body.front().erase(); // Remove the lit.endfn op to replace it.
       auto builder = OpBuilder::atBlockEnd(&body);
       UnreachableOp::create(builder, funcOp.getLoc());
@@ -1906,6 +1906,21 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
     }
 
     // Otherwise, must be a trait method with default implementation.
+
+    // If a defaulted trait method should return a value but 'pass' is used,
+    // emit an error. The user likely meant to use '...', so suggest that.
+    if (auto tok = p.getToken();
+        funcOp.isDefaultedTraitFn() && tok.is(Token::kw_pass)) {
+      if (!ASTType(funcOp.getUserResultType()).isNoneType()) {
+        InflightDiag diag = shared.emitError(
+            tok.getLoc(), "trait method has results but default implementation "
+                          "returns no value; did you mean '...'?");
+        diag.attachNote(funcOp.getLoc())
+            << "in '" << funcOp.getDeclName().getValue() << "', declared here";
+        diag.addFixIt(FixIt::replaceToken(tok.getLoc(), "..."));
+        return failure();
+      }
+    }
   }
 
   // Set up information about value arguments, emitting before the lit.endfn.
