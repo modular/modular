@@ -165,5 +165,20 @@ def test_tuple_comparison_different_types_and_lengths():
     assert_true((1, "foo") >= (1, "bar", "baz"))
 
 
+def test_tuple_reverse():
+    var t = ("hi", 1, 4.5)
+    var reversed_t = t.reverse()
+    assert_equal(reversed_t[0], 4.5)
+    assert_equal(reversed_t[1], 1)
+    assert_equal(reversed_t[2], "hi")
+    var t2 = Tuple[]()
+    var t2_reversed = t2.reverse()
+    assert_true(t2_reversed == t2)
+    var t3 = (Bool(True), Int(42))
+    var t3_reversed = t3.reverse()
+    assert_equal(t3_reversed[0], Int(42))
+    assert_equal(t3_reversed[1], Bool(True))
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -632,3 +632,77 @@ struct VariadicPack[
         """This returns the stored KGEN pack after loading all of the elements.
         """
         return __mlir_op.`kgen.pack.load`(self.get_as_kgen_pack())
+
+
+# ===-----------------------------------------------------------------------===#
+# VariadicMap
+# ===-----------------------------------------------------------------------===#
+
+comptime _VariadicIdxToTypeGeneratorTypeGenerator[
+    From: type_of(AnyType), To: type_of(AnyType)
+] = __mlir_type[
+    `!lit.generator<<"From": !kgen.variadic<`,
+    From,
+    `>, "Idx":`,
+    Int,
+    `>`,
+    To,
+    `>`,
+]
+"""This specifies a generator to generate a generator type for the mapper.
+The generated generator type is [Ts: VariadicOf[AnyType], idx: Int] -> AnyType,
+which maps the input variadic + index of the current element to another type.
+"""
+
+comptime _IndexToIntWrap[
+    From: type_of(AnyType),
+    To: type_of(AnyType),
+    ToWrap: _VariadicIdxToTypeGeneratorTypeGenerator[From, To],
+    VA: VariadicOf[From],
+    idx: __mlir_type.index,
+] = ToWrap[VA, Int(mlir_value=idx)]
+
+comptime _MapVariadicAndIdxToType[
+    From: type_of(AnyType), //,
+    *,
+    To: type_of(AnyType),
+    Variadic: __mlir_type[`!kgen.variadic<`, From, `>`],
+    Mapper: _VariadicIdxToTypeGeneratorTypeGenerator[From, To],
+] = __mlir_attr[
+    `#kgen.variadic.map<`,
+    Variadic,
+    `,`,
+    _IndexToIntWrap[From, To, Mapper],
+    `> : `,
+    __mlir_type[`!kgen.variadic<`, To, `>`],
+]
+"""Construct a new variadic of types using a type-to-type mapper.
+
+Parameters:
+    To: A common trait bound for the mapped type
+    Variadic: The variadic to be mapped
+    Mapper: A `[Ts: *From, idx: index] -> To` that does the transform
+"""
+
+comptime _ReversedVariadic[
+    T: type_of(Copyable & Movable),
+    element_types: VariadicOf[T],
+    idx: Int,
+] = element_types[variadic_size(element_types) - 1 - idx]
+"""A generator that reverses a variadic sequence of types.
+
+Parameters:
+    element_types: The variadic sequence of types to reverse.
+    idx: The index of the type to generate in the reversed sequence.
+"""
+
+comptime Reversed[
+    T: type_of(Copyable & Movable), //, *element_types: T
+] = _MapVariadicAndIdxToType[
+    To=T, Variadic=element_types, Mapper = _ReversedVariadic[T]
+]
+"""A wrapper to reverse a variadic sequence of types.
+
+Parameters:
+    element_types: The variadic sequence of types to reverse.
+"""

@@ -17,7 +17,7 @@ These are Mojo built-ins, so you don't need to import them.
 
 from sys.intrinsics import _type_is_eq
 
-from builtin.variadics import VariadicOf
+from builtin.variadics import variadic_size, VariadicOf, Reversed
 
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -403,3 +403,29 @@ struct Tuple[*element_types: Copyable & Movable](
         """
 
         return self._compare(other) >= 0
+
+    @always_inline("nodebug")
+    fn reverse(var self, out result: Tuple[*Reversed[*Self.element_types]]):
+        """Return a new tuple with the elements in reverse order.
+
+        Returns:
+            A new tuple with the elements in reverse order.
+        """
+        # Mark 'self.storage' as being initialized so we can work on it.
+        __mlir_op.`lit.ownership.mark_initialized`(
+            __get_mvalue_as_litref(result.storage)
+        )
+        __mlir_op.`lit.ownership.mark_initialized`(
+            __get_mvalue_as_litref(result)
+        )
+
+        @parameter
+        for i in range(type_of(result).__len__()):
+            UnsafePointer(to=result[i]).init_pointee_move_from(
+                rebind[UnsafePointer[type_of(result[i]), origin_of(self)]](
+                    UnsafePointer(to=self[variadic_size(element_types) - 1 - i])
+                )
+            )
+
+        # I believe this is needed otherwise you'll double free
+        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(self))
