@@ -178,21 +178,6 @@ class KVCacheParams:
         """
         return "bf16" if self.dtype == DType.bfloat16 else "f32"
 
-    @property
-    def static_cache_shape(self) -> tuple[str, str, str, str, str]:
-        """Returns the dimension names for the static cache tensor shape.
-
-        Returns:
-            A tuple of dimension names: (num_layers, batch_size, seq_len, n_kv_heads, head_dim).
-        """
-        return (
-            "num_layers",
-            "batch_size",
-            "seq_len",
-            "n_kv_heads",
-            "head_dim",
-        )
-
     def copy_as_dp_1(self) -> KVCacheParams:
         """Creates a copy of the KVCacheParams with data parallelism disabled.
 

@@ -47,11 +47,11 @@ class PagedKVCacheManager:
         kv_manager.claim(ctx2.request_id, replica_idx=1)
 
         # Allocate blocks for these requests
-        kv_manager.maybe_reserve(ctx1, num_steps=10)
-        kv_manager.maybe_reserve(ctx2, num_steps=10)
+        kv_manager.alloc(ctx1, num_steps=10)
+        kv_manager.alloc(ctx2, num_steps=10)
 
         # Get KVCache inputs to feed to graph
-        kv_cache_inputs = kv_manager.fetch([ctx1, ctx2], num_steps=10)
+        kv_cache_inputs = kv_manager.get_runtime_inputs([ctx1, ctx2], num_steps=10)
 
         # Run model...
         # Update requests with newly generated tokens
@@ -218,42 +218,44 @@ class PagedKVCacheManager:
             self._request_to_replica_idx[ctx.request_id]
         ].get_pct_used_blocks_after_allocation(ctx, num_steps)
 
-    def maybe_reserve(
+    def alloc(
         self,
         data: TextGenerationContext,
         num_steps: int = 1,
-    ) -> bool:
-        """Prepares blocks for a request prior to a subsequent fetch call.
+    ) -> None:
+        """Allocates blocks for a request to run for N steps.
 
-        Reuses blocks from prefix cache and allocates new blocks for the request.
-        If a request is reserved, it's guaranteed to not OOM in a subsequent call
-        to ``fetch``.
+        This method allocates blocks needed by a request to run for N steps.
+        When prefix caching is enabled, some of the allocated blocks may be
+        retrieved from the prefix cache.
 
         Args:
             data: The text generation context for the request. The request ID
                 must already be assigned to a replica via `claim`.
             num_steps: The number of steps to reserve blocks for. Default: 1.
 
-        Returns:
-            bool: True if the request was successfully reserved; false otherwise.
+        Raises:
+            InsufficientBlocksError: If there are insufficient free blocks to
+            satisfy the allocation.
         """
         assert data.request_id in self._request_to_replica_idx, (
             f"Request ID {data.request_id} must already be assigned to a "
             "replica before reserving"
         )
         replica_idx = self._request_to_replica_idx[data.request_id]
-        return self._replica_managers[replica_idx].maybe_reserve(
-            data, num_steps
-        )
+        return self._replica_managers[replica_idx].alloc(data, num_steps)
 
-    def fetch(
+    def get_runtime_inputs(
         self, batch: Sequence[TextGenerationContext], num_steps: int = 1
     ) -> list[RaggedKVCacheInputs]:
-        """Fetch KV cache blocks for a batch of requests.
+        """Get the graph inputs for a batch of requests.
+
+        This method will raise a RuntimeError if any request has insufficient blocks
+        already allocated to it to run for the given number of steps.
 
         Args:
             batch: Batch of requests
-            num_steps: Number of steps to fetch
+            num_steps: Number of steps to run for
         """
 
         batch_by_replica: list[list[TextGenerationContext]] = [
@@ -267,11 +269,13 @@ class PagedKVCacheManager:
         ret_list: list[RaggedKVCacheInputs] = []
         for replica_idx, ctxs in enumerate(batch_by_replica):
             ret_list.extend(
-                self._replica_managers[replica_idx].fetch(ctxs, num_steps)
+                self._replica_managers[replica_idx].get_runtime_inputs(
+                    ctxs, num_steps
+                )
             )
         return ret_list
 
-    def input_symbols(
+    def get_symbolic_inputs(
         self,
         devices: Sequence[Device] | None = None,
         num_layers: int | None = None,
@@ -335,7 +339,7 @@ class PagedKVCacheManager:
             manager.reset_metrics()
 
     def _create_ragged_increment_cache_lengths_graph(self) -> Graph:
-        input_symbols = self.input_symbols()
+        input_symbols = self.get_symbolic_inputs()
         cache_lengths_types = [
             input_symbols[i][1] for i in range(len(self.devices))
         ]

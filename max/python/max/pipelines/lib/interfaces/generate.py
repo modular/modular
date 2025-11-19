@@ -138,12 +138,7 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                 for replica_batch in batches:
                     for ctx in replica_batch.values():
                         for kv_manager in self.kv_managers:
-                            if not kv_manager.maybe_reserve(
-                                ctx, num_steps=num_steps
-                            ):
-                                raise RuntimeError(
-                                    f"Ran out of blocks for request {ctx.request_id}"
-                                )
+                            kv_manager.alloc(ctx, num_steps=num_steps)
                 step_outputs = self.execute(inputs)
                 outputs = []
                 for request_id, output in step_outputs.items():

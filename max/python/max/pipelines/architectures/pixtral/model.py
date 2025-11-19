@@ -37,11 +37,7 @@ from max.kv_cache import (
     load_kv_manager,
 )
 from max.nn import Module, ReturnLogits
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -395,7 +391,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = self.kv_manager.input_symbols()
+        kv_inputs = self.kv_manager.get_symbolic_inputs()
 
         input_ids_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=DeviceRef.GPU()

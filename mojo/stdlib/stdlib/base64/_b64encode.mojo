@@ -27,7 +27,7 @@ https://arxiv.org/abs/1704.00605
 from math import iota
 from sys import llvm_intrinsic
 
-from memory import LegacyUnsafePointer as UnsafePointer, Span, bitcast, memcpy
+from memory import Span, bitcast, memcpy
 
 from utils import IndexList
 
@@ -186,7 +186,7 @@ fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign
 fn load_incomplete_simd[
     width: Int
 ](
-    pointer: UnsafePointer[UInt8, mut=False], nb_of_elements_to_load: Int
+    pointer: UnsafePointer[mut=False, UInt8], nb_of_elements_to_load: Int
 ) -> SIMD[DType.uint8, width]:
     var result = SIMD[DType.uint8, width](0)
     var tmp_buffer_pointer = UnsafePointer(to=result).bitcast[UInt8]()

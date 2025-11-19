@@ -104,7 +104,7 @@ def get_paged_manager(
             return kv_manager
         # Duck-type acceptance for multimodal managers exposing the same interface
         required_attrs = [
-            "maybe_reserve",
+            "alloc",
             "fetch",
             "step",
             "release",

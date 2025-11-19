@@ -184,7 +184,7 @@ def _is_max_graph(obj: Any) -> bool:
 def _process_custom_extensions_object(
     custom_extension: CustomExtensionType,
 ) -> CustomExtensionType:
-    if isinstance(custom_extension, Path) or isinstance(custom_extension, str):
+    if isinstance(custom_extension, (Path, str)):
         if is_mojo_source_package_path(Path(custom_extension)):
             # Builds the source directory into a .mojopkg file.
             return _build_mojo_source_package(Path(custom_extension))

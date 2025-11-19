@@ -8,6 +8,10 @@ mojo_test(
         "test_allreduce.mojo",
         "test_multimem_allreduce.mojo",
     ],
+    env = {
+        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_ONLY": "false",
+        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT": "80",
+    },
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -34,6 +38,10 @@ mojo_test(
         name = src + ".test",
         size = "large",
         srcs = [src],
+        env = {
+            "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_ONLY": "false",
+            "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT": "80",
+        },
         exec_properties = {
             "test.resources:gpu-memory": "4",
         },

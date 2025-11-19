@@ -25,6 +25,12 @@ what we publish.
 
 ### Library changes
 
+- New `ContiguousSlice` and `StridedSlice` types were added to
+  the `builtin_slice` module to support specialization for slicing without strides.
+
+- `List` slicing without a stride now returns a `Span`, instead of a `List` and
+  no longer allocates memory.
+  
 - The `random` module now uses a pure Mojo implementation based on the Philox
   algorithm (via an internal wrapper), replacing the previous `CompilerRT` C++
   dependency. The Philox algorithm provides excellent statistical quality, works

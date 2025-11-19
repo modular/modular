@@ -77,7 +77,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
         # Reserve KV cache blocks for the batch.
         for kv_manager in self.kv_managers:
             for context in batch.values():
-                kv_manager.maybe_reserve(context, num_steps=num_steps)
+                kv_manager.alloc(context, num_steps=num_steps)
 
         # Prepare the batch.
         model_inputs, num_steps, bitmask, context_batch = self.prepare_batch(

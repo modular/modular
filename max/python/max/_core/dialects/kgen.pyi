@@ -1571,6 +1571,24 @@ class VariadicMapAttr(max._core.Attribute):
     @property
     def generator(self) -> max._core.dialects.builtin.TypedAttr: ...
 
+class VariadicSizeAttr(max._core.Attribute):
+    @overload
+    def __init__(
+        self,
+        type: max._core.dialects.builtin.IndexType,
+        variadic: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type: max._core.dialects.builtin.IndexType,
+        variadic: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type(self) -> max._core.dialects.builtin.IndexType: ...
+    @property
+    def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
+
 class VariadicSplatAttr(max._core.Attribute):
     """
     The `#kgen.variadic.splat` creates a variadic by splatting the same value

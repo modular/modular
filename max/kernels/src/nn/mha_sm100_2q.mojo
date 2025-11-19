@@ -26,6 +26,7 @@ from gpu import (
     barrier,
     thread_idx,
     block_idx,
+    warp_id,
 )
 from gpu.globals import WARPGROUP_SIZE, WARP_SIZE
 from gpu.cluster import elect_one_sync
@@ -2950,9 +2951,9 @@ struct SM100MHA2Q[
                 mask,
             )
         else:
-            warp_id = warp.broadcast(tid // 32)
+            var wid: UInt32 = warp_id()
             warpgroup_reg_dealloc[num_reg_other]()
-            if warp_id == 13:  # produce
+            if wid == 13:  # produce
                 var position: Self.PositionType = get_position(initial_seq_info)
                 startend = position.get_start_and_end_for_partitions(partition)
                 var kv_tile_start_row: UInt32 = startend[0]
@@ -2972,7 +2973,7 @@ struct SM100MHA2Q[
                     q_smem,
                 )
 
-            elif warp_id == 12:  # Q @ K', P @ V
+            elif wid == 12:  # Q @ K', P @ V
                 var position: Self.PositionType = get_position(initial_seq_info)
                 startend = position.get_start_and_end_for_partitions(partition)
                 var kv_tile_start_row: UInt32 = startend[0]

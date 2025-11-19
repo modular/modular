@@ -32,11 +32,7 @@ from max.kv_cache import (
     load_kv_manager,
 )
 from max.nn import ReturnLogits
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -440,7 +436,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
             cache_dtype=self.encoding.cache_dtype,
         )
         n_devices = kv_params.n_devices
-        fetch_types = self.kv_manager.input_symbols()[0]
+        fetch_types = self.kv_manager.get_symbolic_inputs()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
         kv_caches_per_dev: list[PagedCacheValues] = []
         for i in range(n_devices):

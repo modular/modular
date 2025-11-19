@@ -37,11 +37,7 @@ from max.kv_cache import (
     load_kv_manager,
 )
 from max.nn import Module, ReturnLogits, Signals
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.nn.parallel import ParallelArrayOps
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -239,7 +235,7 @@ class Qwen3VLModel(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
         """Unflatten KV cache inputs from flat list to per-device structure."""
-        fetch_types = self.kv_manager.input_symbols()[0]
+        fetch_types = self.kv_manager.get_symbolic_inputs()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
         n_devices = len(self.devices)
 
@@ -541,7 +537,7 @@ class Qwen3VLModel(
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = self.kv_manager.input_symbols()
+        kv_inputs = self.kv_manager.get_symbolic_inputs()
 
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref

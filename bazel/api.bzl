@@ -1,10 +1,8 @@
 """Public API accessors to reduce the number of load statements needed in BUILD.bazel files."""
 
-load("@com_github_grpc_grpc//bazel:python_rules.bzl", _py_grpc_library = "py_grpc_library")
 load("@rules_cc//cc:cc_binary.bzl", _cc_binary = "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", _cc_library = "cc_library")
 load("@rules_pkg//pkg:mappings.bzl", _pkg_filegroup = "pkg_filegroup", _pkg_files = "pkg_files", _strip_prefix = "strip_prefix")
-load("@rules_proto//proto:defs.bzl", _proto_library = "proto_library")
 load("//bazel/internal:lit.bzl", _lit_tests = "lit_tests")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_multi_py_version_test.bzl", _modular_multi_py_version_test = "modular_multi_py_version_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_py_binary.bzl", _modular_py_binary = "modular_py_binary")  # buildifier: disable=bzl-visibility
@@ -32,8 +30,6 @@ mojo_filecheck_test = _mojo_filecheck_test
 mojo_test_environment = _mojo_test_environment
 pkg_files = _pkg_files
 pkg_filegroup = _pkg_filegroup
-proto_library = _proto_library
-py_grpc_library = _py_grpc_library
 requirement = _requirement
 strip_prefix = _strip_prefix
 

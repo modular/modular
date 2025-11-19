@@ -23,7 +23,6 @@ import sys
 from collections import OptionalReg
 from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv, clamp
-from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from pathlib import Path
 
@@ -111,7 +110,7 @@ fn vectorize[
     alias simd_width = simd_width_of[DType.int32]()  # assumed to be 4 in this example
 
     fn main():
-        var p = UnsafePointer[Int32].alloc(size)
+        var p = alloc[Int32](size)
 
         # @parameter allows the closure to capture the `p` pointer
         @parameter

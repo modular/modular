@@ -43,13 +43,13 @@ from max.support.math import ceildiv
 
 from .block_copy_engine import BlockCopyEngine
 from .block_pool import BlockPool
-from .block_utils import KVCacheBlock, hash_request_tokens
+from .block_utils import (
+    InsufficientBlocksError,
+    KVCacheBlock,
+    hash_request_tokens,
+)
 
 logger = logging.getLogger("max.pipelines")
-
-
-class InsufficientBlocksError(Exception):
-    pass
 
 
 class BlockManager:
@@ -472,9 +472,8 @@ class BlockManager:
             num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
 
         Raises:
-            InsufficientBlocksError: If there are insufficient free blocks to satisfy the allocation.
-            RuntimeError: If the request has a prompt length that exceeds the total capacity of the KVCache.
-            AssertionError: If the current blocks cannot accommodate the completed tokens.
+            InsufficientBlocksError: If there are insufficient free blocks to
+            satisfy the allocation.
         """
 
         # It is impossible to schedule this request, even if it was the only req
@@ -483,9 +482,9 @@ class BlockManager:
         # large max seq len or the KV cache is very small.
         total_kv_slots = self.total_num_blocks * self.block_size
         if ctx.current_length > total_kv_slots:
-            raise RuntimeError(
+            raise InsufficientBlocksError(
                 f"Insufficient KV pages for a single request with {ctx.current_length} tokens.\n"
-                f"The KVCache has {self.total_num_blocks} blocks with block size {self.block_size}. This is only enough to support {total_kv_slots} tokens.\n"
+                f"The KVCache has {self.total_num_blocks} pages with page size {self.block_size}. This is only enough to support {total_kv_slots} tokens.\n"
                 "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
             )
 

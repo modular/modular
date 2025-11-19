@@ -30,41 +30,6 @@ import max._core
 # This binding prevents errors in those cases.
 DiagnosticHandler = Callable
 
-def NameInputDimsPass(
-    input_shape_dims_override: Sequence[str] = [],
-) -> max._core.Pass:
-    """
-    Give names to the input dimensions of inputs.
-
-    This is done by passing a list of strings where inputs are delimited by ","
-    and dimensions within an input are delimited by ";".
-
-    The character '-' is reserved for dimensions we don't care about renaming.
-    For example, to set the first dimension of two inputs equal to each other
-    without touching the remaining values we would pass in:
-      --dim-names="BATCH;-;-,BATCH;-;-"
-
-    This will result the first dimension renamed something like "REFINE_BATCH".
-
-    Dimensions with the same name have the same value at runtime.
-
-    We use this fact to make input shapes more specific:
-
-    Example1:
-      [4, ?, ?], [?, ?, ?], refined with --dim-names="A;B;C,A;C;B" will become:
-      [4, B, C], [4, C, B]... (since 4 = A, and 4 is more "specific").
-
-    With "specificity" increasing with the following symbols:
-       ? (least specific) --> D1 --> 4 (integer, most specific)
-
-    Example2:
-      [3, 2, 5, ?, ?, 3], [3, 2, ?, 4, ?, 3], with
-        dim-names="-;-;A;B;-;-,-;-;A;B;-;-"
-
-      [3, 2, 5, 4, ?, 3], [3, 2, 5, 4, ?, 3] as the last ? had no name due to
-      the '-'
-    """
-
 def MOToMOGG(
     kernel_library_paths: Sequence[str] = [], force_sync: bool = False
 ) -> max._core.Pass:

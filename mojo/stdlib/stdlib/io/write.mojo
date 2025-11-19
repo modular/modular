@@ -19,7 +19,7 @@ from sys.info import is_gpu
 from sys.param_env import env_get_int
 
 from bit import byte_swap
-from memory import LegacyUnsafePointer as UnsafePointer, Span, bitcast, memcpy
+from memory import Span, bitcast, memcpy
 
 # ===-----------------------------------------------------------------------===#
 
@@ -163,17 +163,17 @@ trait Writable:
 
 
 struct _WriteBufferHeap(Writable, Writer):
-    var data: UnsafePointer[Byte]
-    var pos: Int
+    var _data: UnsafePointer[Byte, MutOrigin.external]
+    var _pos: Int
 
     fn __init__(out self):
         comptime alignment: Int = align_of[Byte]()
-        self.data = __mlir_op.`pop.stack_allocation`[
+        self._data = __mlir_op.`pop.stack_allocation`[
             count = HEAP_BUFFER_BYTES._mlir_value,
-            _type = UnsafePointer[Byte]._mlir_type,
+            _type = type_of(self._data)._mlir_type,
             alignment = alignment._mlir_value,
         ]()
-        self.pos = 0
+        self._pos = 0
 
     fn write_list[
         T: Copyable & Movable & Writable, //
@@ -189,16 +189,16 @@ struct _WriteBufferHeap(Writable, Writer):
     @always_inline
     fn write_bytes(mut self, bytes: Span[UInt8, _]):
         len_bytes = len(bytes)
-        if len_bytes + self.pos > HEAP_BUFFER_BYTES:
+        if len_bytes + self._pos > HEAP_BUFFER_BYTES:
             _printf[
                 "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
                 " HEAP_BUFFER_BYTES=4096`\n"
             ]()
             abort()
         memcpy(
-            dest=self.data + self.pos, src=bytes.unsafe_ptr(), count=len_bytes
+            dest=self._data + self._pos, src=bytes.unsafe_ptr(), count=len_bytes
         )
-        self.pos += len_bytes
+        self._pos += len_bytes
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
         @parameter
@@ -206,17 +206,25 @@ struct _WriteBufferHeap(Writable, Writer):
             args[i].write_to(self)
 
     fn write_to(self, mut writer: Some[Writer]):
-        writer.write_bytes(Span(ptr=self.data, length=self.pos))
+        writer.write_bytes(Span(ptr=self._data, length=self._pos))
 
     fn nul_terminate(mut self):
-        if self.pos + 1 > HEAP_BUFFER_BYTES:
+        if self._pos + 1 > HEAP_BUFFER_BYTES:
             _printf[
                 "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
                 " HEAP_BUFFER_BYTES=4096`\n"
             ]()
             abort()
-        self.data[self.pos] = 0
-        self.pos += 1
+        self._data[self._pos] = 0
+        self._pos += 1
+
+    fn as_span[
+        mut: Bool, origin: Origin[mut], //
+    ](ref [origin]self) -> Span[Byte, origin]:
+        return Span(
+            ptr=self._data.mut_cast[mut]().unsafe_origin_cast[origin](),
+            length=self._pos,
+        )
 
 
 struct _WriteBufferStack[
@@ -323,7 +331,9 @@ comptime _hex_table = SIMD[DType.uint8, 16](
 
 
 @always_inline
-fn _hex_digits_to_hex_chars(ptr: UnsafePointer[Byte], decimal: Scalar):
+fn _hex_digits_to_hex_chars(
+    ptr: UnsafePointer[mut=True, Byte], decimal: Scalar
+):
     """Write a fixed width hexadecimal value into an uninitialized pointer
     location, assumed to be large enough for the value to be written.
 
@@ -354,7 +364,9 @@ fn _hex_digits_to_hex_chars(ptr: UnsafePointer[Byte], decimal: Scalar):
 
 
 @always_inline
-fn _write_hex[amnt_hex_bytes: Int](p: UnsafePointer[Byte], decimal: Int):
+fn _write_hex[
+    amnt_hex_bytes: Int
+](p: UnsafePointer[mut=True, Byte], decimal: Int):
     """Write a python compliant hexadecimal value into an uninitialized pointer
     location, assumed to be large enough for the value to be written.
 

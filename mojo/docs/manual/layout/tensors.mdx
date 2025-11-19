@@ -100,7 +100,7 @@ If your tensor stores scalar values, you can work around this by explicitly
 taking the first item in the vector:
 
 ```mojo
-element = tensor[x, y][0]  # element is guaranteed to be a scalar value
+var element = tensor[row, col][0]  # element is guaranteed to be a scalar value
 ```
 
 You can also access elements using the `load()` and `store()` methods, which
@@ -108,9 +108,9 @@ let you specify the vector width explicitly:
 
 ```mojo
 var elements: SIMD[DType.float32, 4]
-elements = tensor.load[4](x, y)
+var elements = tensor.load[4](row, col)
 elements = elements * 2
-tensor.store(x, y, elements)
+tensor.store(row, col, elements)
 ```
 
 ### Tensor indexing and nested layouts
@@ -202,7 +202,7 @@ alias buf_size = rows * columns
 alias layout = Layout.row_major(rows, columns)
 var ptr = alloc[Float32](buf_size)
 memset(ptr, 0, buf_size)
-var tensor = LayoutTensor[DType.float32, layout](storage)
+var tensor = LayoutTensor[DType.float32, layout](ptr)
 ```
 
 
@@ -246,37 +246,43 @@ on the buffer prior to invoking the kernel. The following example shows
 initializing a `LayoutTensor` from the CPU and passing it to a GPU kernel.
 
 ```mojo
-fn initialize_tensor_from_cpu_example():
+def initialize_tensor_from_cpu_example():
     alias dtype = DType.float32
     alias rows = 32
     alias cols = 8
     alias block_size = 8
-    num_blocks = rows // block_size
+    alias row_blocks = rows // block_size
+    alias col_blocks = cols // block_size
     alias input_layout = Layout.row_major(rows, cols)
+    alias size: Int = rows * cols
+
 
     fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
-        if (global_idx.x < tensor.shape[0]() and global_idx.y < tensor.shape[1]()):
-            tensor[global_idx.x, global_idx.y] = (
-                tensor[global_idx.x, global_idx.y] + 1
+        if global_idx.y < UInt(tensor.shape[0]()) and global_idx.x < UInt(
+            tensor.shape[1]()
+        ):
+            tensor[global_idx.y, global_idx.x] = (
+                tensor[global_idx.y, global_idx.x] + 1
             )
+
 
     try:
         var ctx = DeviceContext()
-        var host_buf = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+        var host_buf = ctx.enqueue_create_host_buffer[dtype](size)
+        var dev_buf = ctx.enqueue_create_buffer[dtype](size)
         ctx.synchronize()
 
+        var expected_values = List[Scalar[dtype]](capacity=size)
 
-        var expected_values = List[Scalar[dtype]](rows * cols)
-        for i in range(rows * cols):
-            host_buf[i] = i
-            expected_values[i] = i + 1
-        var dev_buf = ctx.enqueue_create_buffer[dtype](rows * cols)
+        for i in range(size):
+            host_buf[i] = Scalar[dtype](i)
+            expected_values[i] = Scalar[dtype](i + 1)
         ctx.enqueue_copy(dev_buf, host_buf)
         var tensor = LayoutTensor[dtype, input_layout](dev_buf)
 
         ctx.enqueue_function_checked[kernel, kernel](
             tensor,
-            grid_dim=(num_blocks, 1),
+            grid_dim=(col_blocks, row_blocks),
             block_dim=(block_size, block_size),
         )
         ctx.enqueue_copy(host_buf, dev_buf)
@@ -285,9 +291,10 @@ fn initialize_tensor_from_cpu_example():
         for i in range(rows * cols):
             if host_buf[i] != expected_values[i]:
                 raise Error(
-                    String("Unexpected value ", host_buf[i], " at position ", i)
+                    String("Error at position {} expected {} got {}").format(
+                        i, expected_values[i], host_buf[i]
+                    )
                 )
-        print("Success")
     except error:
         print(error)
 ```
@@ -313,15 +320,20 @@ var shared_tile = LayoutTensor[
 ].stack_allocation()
 ```
 
+In the case of shared memory, all threads in a thread block see the same
+allocation. For local memory, each thread gets a separate allocation.
+
+There's no way to explicitly allocate _register_ memory. However, the
+compiler can promote some local memory allocations to registers. To enable
+this optimization, keep the size of the tensor small, and all indexing into the
+tensor static—for example, using `@parameter for` loops.
+
 :::note
 
 The name `stack_allocation()` is misleading. It is a *static* allocation,
 meaning the allocation is processed at compile time. The allocation is like a
 C/C++ stack allocation in that its lifetime ends when the function in which it
 was allocated returns. This API may be subject to change in the near future.
-
-In the case of shared memory, all threads in a thread block see the same
-allocation. For local memory, each thread gets a separate allocation.
 
 :::
 
@@ -358,11 +370,21 @@ The
 method extracts a tile with a given size at a given set of coordinates:
 
 ```mojo
-tensor.tile[32, 32](0, 1)
+alias rows = 2
+alias columns = 4
+alias tile_size = 32
+alias tile_layout = Layout.row_major(tile_size, tile_size)
+alias tiler_layout = Layout.row_major(rows, columns)
+alias tiled_layout = blocked_product(tile_layout, tiler_layout)
+var storage = InlineArray[Float32, tiled_layout.size()](uninitialized=True)
+for i in range(tiled_layout.size()):
+    storage[i] = i
+var tensor = LayoutTensor[DType.float32, tiled_layout](storage)
+var tile = tensor.tile[tile_size, tile_size](0, 1)
 ```
 
-This call defines a 32x32 tile size, and extracts the tile at row 0, column 1,
-as shown in Figure 3.
+This code creates a 64x128 tensor with 32x32 tiles, and extracts the tile
+at row 0, column 1, as shown in Figure 3.
 
 <figure>
 
@@ -392,12 +414,14 @@ usually results in an error.
 :::
 
 If you need to know the type of the tile (to declare a variable, for example),
-you can use the `tile_type()` method, with the same tile size parameters. Only
-use `tile_type()` inside the `type_of()` operator.
+you can use the `TileType` alias, with the same tile size parameters.
 
 ```mojo
-alias MyTileType = type_of(tensor.tile_type[32, 32]())
-var my_tile: MyTileType
+var my_tile: tensor.TileType[tile_size, tile_size]
+for i in range (rows):
+    for j in range(columns):
+        my_tile = tensor.tile[tile_size, tile_size](i, j)
+        # ... do something with the tile ...
 ```
 
 ### Tiled iterators
@@ -418,19 +442,20 @@ memory one tile at a time. This essentially treats the memory as a flat array of
 tiles.
 
 ```mojo
-alias buf_size = 16
+alias buf_size = 128
 var storage = InlineArray[Int16, buf_size](uninitialized=True)
 for i in range(buf_size):
     storage[i] = i
-alias tile_layout = Layout.row_major(2, 2)
-var iter = LayoutTensorIter[DType.int16, tile_layout, MutAnyOrigin](
-    storage.unsafe_ptr(), buf_size
-)
+alias tile_layout = Layout.row_major(4, 4)
+var iter = LayoutTensorIter[
+    DType.int16,
+    tile_layout,
+    MutAnyOrigin
+](storage.unsafe_ptr(), buf_size)
 
-for i in range(buf_size // tile_layout.size()):
-    tile = iter[]
-    print(tile)
-    print(" - ")
+for i in range(ceildiv(buf_size, tile_layout.size())):
+    var tile = iter[]
+    # ... do something with tile
     iter += 1
 ```
 
@@ -461,14 +486,11 @@ beginning.
 
 ### Tiling a `LayoutTensor`
 
-To iterate over a tensor, call the
+To iterate over an existing tensor, call the
 [`tiled_iterator()`](/mojo/kernels/layout/layout_tensor/LayoutTensor/#tiled_iterator)
 method, which produces a `LayoutTensorIter`:
 
 ```mojo
-from layout import LayoutTensor
-from math import ceildiv
-
 # given a tensor of size rows x cols
 alias num_row_tiles = ceildiv(rows, tile_size)
 alias num_col_tiles = ceildiv(cols, tile_size)
@@ -477,8 +499,8 @@ for i in range(num_row_tiles):
     var iter = tensor.tiled_iterator[tile_size, tile_size, axis=1](i, 0)
 
     for _ in range(num_col_tiles):
-        tile = iter[]
-        # … do something with the tile
+        var tile = iter[]
+        # ... do something with the tile
         iter += 1
 ```
 
@@ -494,23 +516,15 @@ efficient.
 
 To choose the optimum vector size, you need to know the vector operations
 supported for your current GPU for the data type you're working with. (For
-example, if you're working with 32-bit values and the GPU supports 128-bit copy
-operations, you can use a vector width of 4.) You can use the
-[`simd_width_of()`](/mojo/stdlib/sys/info/simd_width_of/) method to find the
-appropriate vector width:
-
-```mojo
-from sys.info import simd_width_of
-from gpu.host.compile import get_gpu_target
-
-alias simd_width = simd_width_of[DType.float32, get_gpu_target()]
-```
+example, if you're working with 4 byte values and the GPU supports 16 byte copy
+operations, you can use a vector width of 4.) The `LayoutTensor` copy operations
+support copy sizes up to 16 bytes.
 
 The [`vectorize()`](/mojo/kernels/layout/layout_tensor/LayoutTensor/#vectorize)
 method creates a new view of the tensor where each element of the tensor is a
 vector of values.
 
-`v_tensor = tensor.vectorize[1, simd_width]()`
+    var vectorized_tensor = tensor.vectorize[1, 4]()
 
 The vectorized tensor is a view of the original tensor, pointing to the same
 data. The underlying number of scalar values remains the same, but the tensor
@@ -556,12 +570,10 @@ the warp size of your GPU, so the work is divided across all available threads.
 For example, the following code vectorizes and partitions a tensor over a full
 warp worth of threads:
 
-
 ```mojo
 alias thread_layout = Layout.row_major(WARP_SIZE // simd_size, simd_size)
 var fragment = tile.vectorize[1, simd_size]().distribute[thread_layout](lane_id())
 ```
-
 
 Given a 16x16 tile size, a warp size of 32 and a `simd_size` of 4, this code
 produces a 16x4 tensor of 1x4 vectors. The thread layout is an 8x4 row major
@@ -595,15 +607,19 @@ and from shared memory.
 ```mojo
 fn copy_from_async_example():
     alias dtype = DType.float32
-    alias in_size = 128
+    alias rows = 128
+    alias cols = 128
     alias block_size = 16
-    alias num_blocks = in_size // block_size # number of block in one dimension
-    alias input_layout = Layout.row_major(in_size, in_size)
-    alias simd_width_gpu = simd_width_of[dtype, get_gpu_target()]()
+    alias num_row_blocks = rows // block_size
+    alias num_col_blocks = cols // block_size
+    alias input_layout = Layout.row_major(rows, cols)
+    alias simd_width = 4
 
     fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
         # extract a tile from the input tensor.
-        var global_tile = tensor.tile[block_size, block_size](block_idx.x, block_idx.y)
+        var global_tile = tensor.tile[block_size, block_size](
+            Int(block_idx.y), Int(block_idx.x)
+        )
         alias tile_layout = Layout.row_major(block_size, block_size)
         var shared_tile = LayoutTensor[
             dtype,
@@ -614,47 +630,48 @@ fn copy_from_async_example():
 
         # Create thread layouts for copying
         alias thread_layout = Layout.row_major(
-            WARP_SIZE // simd_width_gpu, simd_width_gpu
+            WARP_SIZE // simd_width, simd_width
         )
         var global_fragment = global_tile.vectorize[
-            1, simd_width_gpu
+            1, simd_width
         ]().distribute[thread_layout](lane_id())
         var shared_fragment = shared_tile.vectorize[
-            1, simd_width_gpu
+            1, simd_width
         ]().distribute[thread_layout](lane_id())
 
         shared_fragment.copy_from_async(global_fragment)
-        async_copy_wait_all()
+        @parameter
+        if is_nvidia_gpu():
+            async_copy_wait_all()
+        barrier()
 
         # Put some data into the shared tile that we can verify on the host.
-        if (global_idx.x < in_size and global_idx.y < in_size):
-           shared_tile[thread_idx.x, thread_idx.y] = (
-               global_idx.x * in_size + global_idx.y
-           )
+        if global_idx.y < rows and global_idx.x < cols:
+            shared_tile[thread_idx.y, thread_idx.x] =
+                shared_tile[thread_idx.y, thread_idx.x] + 1
 
-        barrier()
         global_fragment.copy_from(shared_fragment)
 
     try:
         var ctx = DeviceContext()
-        var host_buf = ctx.enqueue_create_host_buffer[dtype](in_size * in_size)
-        var dev_buf = ctx.enqueue_create_buffer[dtype](in_size * in_size)
-        ctx.enqueue_memset(dev_buf, 0.0)
+        var host_buf = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+        var dev_buf = ctx.enqueue_create_buffer[dtype](rows * cols)
+        for i in range(rows * cols):
+            host_buf[i] = i
         var tensor = LayoutTensor[dtype, input_layout](dev_buf)
-
+        ctx.enqueue_copy(dev_buf, host_buf)
         ctx.enqueue_function_checked[kernel, kernel](
             tensor,
-            grid_dim=(num_blocks, num_blocks),
+            grid_dim=(num_row_blocks, num_col_blocks),
             block_dim=(block_size, block_size),
         )
         ctx.enqueue_copy(host_buf, dev_buf)
         ctx.synchronize()
-        for i in range(in_size * in_size):
-            if host_buf[i] != i:
+        for i in range(rows * cols):
+            if host_buf[i] != i + 1:
                 raise Error(
                     String("Unexpected value ", host_buf[i], " at position ", i)
                 )
-        print("Success!")
     except error:
         print(error)
 ```

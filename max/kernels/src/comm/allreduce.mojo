@@ -136,6 +136,8 @@ from utils.numerics import get_accum_type
 from internal_utils import TuningConfig, Table
 from gpu.host.info import GPUInfo
 
+from collections.optional import OptionalReg
+
 alias elementwise_epilogue_type = fn[
     dtype: DType, rank: Int, width: Int, *, alignment: Int
 ] (IndexList[rank], SIMD[dtype, size=width]) capturing -> None
@@ -1151,7 +1153,7 @@ fn allreduce[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    output_lambda: elementwise_epilogue_type,
+    output_lambda: OptionalReg[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,
@@ -1225,6 +1227,22 @@ fn allreduce[
     if num_elements == 0:
         return
 
+    @always_inline
+    @parameter
+    @__copy_capture(output_buffer)
+    fn default_output_lambda[
+        _dtype: DType,
+        _rank: Int,
+        _width: Int,
+        *,
+        _alignment: Int,
+    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
+        output_buffer.store[width=_width, alignment=_alignment](
+            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, _width]](val)
+        )
+
+    alias actual_output_lambda = default_output_lambda if not output_lambda else output_lambda.value()
+
     # TODO: check all devices have the same GPU sm_version
     alias sm_version = get_sm_version()
     var max_num_blocks = _max_num_blocks.or_else(
@@ -1250,7 +1268,7 @@ fn allreduce[
             )
         return _allreduce_naive_single[
             ngpus=ngpus,
-            output_lambda=output_lambda,
+            output_lambda=actual_output_lambda,
             num_buffers=ngpus,
         ](
             rebind[InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus]](
@@ -1263,7 +1281,7 @@ fn allreduce[
 
     return _allreduce_p2p[
         ngpus=ngpus,
-        output_lambda=output_lambda,
+        output_lambda=actual_output_lambda,
         pdl_level=pdl_level,
         use_quickreduce=use_quickreduce,
         num_buffers= 1 if use_multimem else ngpus,
@@ -1280,9 +1298,7 @@ fn allreduce_2stage_quickreduce_tile[
     atom_size: Int,
     use_bufferio: Bool,
 ](
-    result_data: UnsafePointer[
-        Scalar[dtype], address_space=_target_address_space
-    ],
+    result: NDBuffer[dtype, rank, MutAnyOrigin],
     local_src: UnsafePointer[
         Scalar[dtype], address_space=_target_address_space
     ],
@@ -1525,7 +1541,9 @@ fn allreduce_2stage_quickreduce_tile[
     @parameter
     for i in range(atom_size):
         var elem_idx_out = dst_offset + i * atom_stride
-        result_data.store[alignment=alignment](elem_idx_out, tA[i])
+        output_lambda[width=simd_width, alignment=alignment](
+            result.get_nd_index(elem_idx_out), tA[i]
+        )
 
 
 @__llvm_metadata(
@@ -1596,7 +1614,7 @@ fn allreduce_2stage_quickreduce[
                 atom_size=atom_size,
                 use_bufferio=use_bufferio,
             ](
-                result.data.address_space_cast[_target_address_space](),
+                result,
                 local_src.address_space_cast[_target_address_space](),
                 rank_sigs,
                 num_elements,
