@@ -1258,17 +1258,26 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         # Return (found, slot, index)
         var slot = hash & (self._reserved() - 1)
         var perturb = hash
+        var removed_slot = Optional[UInt64](None)
         while True:
             var index = self._get_index(slot)
             if index == Self.EMPTY:
+                # we just determined that the key is not in dict.
+                # if we encountered an removed slot on the way, let's use it:
+                if removed_slot:
+                    return (False, removed_slot.value(), self._n_entries)
+                # if we did not encountered one, normally use the empty slot:
                 return (False, slot, self._n_entries)
             elif index == Self.REMOVED:
-                pass
+                # we encounter an removed slot, let's keep the first one:
+                if not removed_slot:
+                    removed_slot = slot
             else:
                 ref entry = self._entries[index]
                 debug_assert(entry.__bool__(), "entry in index must be full")
                 ref val = entry.unsafe_value()
                 if val.hash == hash and likely(val.key == key):
+                    # we just determined that key is in dict:
                     return True, slot, index
             self._next_index_slot(slot, perturb)
 
@@ -1301,12 +1310,12 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
             while not self._entries[right]:
                 right += 1
                 debug_assert(right < self._reserved(), "Invalid dict state")
-            var entry = self._entries[right]
-            debug_assert(entry.__bool__(), "Logic error")
-            var slot = self._find_empty_index(entry.value().hash)
+            var entry = Pointer(to=self._entries[right])
+            debug_assert(entry[].__bool__(), "Logic error")
+            var slot = self._find_empty_index(entry[].value().hash)
             self._set_index(slot, left)
             if left != right:
-                self._entries[left] = entry.unsafe_take()
+                self._entries[left] = entry[].unsafe_take()
             right += 1
 
         self._n_entries = self._len
