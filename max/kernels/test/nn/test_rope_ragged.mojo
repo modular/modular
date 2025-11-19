@@ -14,7 +14,7 @@
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import HostNDBuffer, assert_almost_equal
+from internal_utils import assert_almost_equal
 from layout import *
 from layout._utils import ManagedLayoutTensor
 from nn.rope import rope_ragged
