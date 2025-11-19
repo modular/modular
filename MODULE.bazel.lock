@@ -460,6 +460,1304 @@
           ]
         ]
       }
+    },
+    "@@cel-spec+//:extensions.bzl%non_module_dependencies": {
+      "general": {
+        "bzlTransitiveDigest": "9VbY/eU/puJlYu5Ugvx7SOZSg79FLoXu4XfggX5YU6Q=",
+        "usagesDigest": "HFQJtQrL9nKaFZEjgwaHVMHALMW+cafu696xy7J4ueM=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "com_google_googleapis": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "sha256": "bd8e735d881fb829751ecb1a77038dda4a8d274c45490cb9fcf004583ee10571",
+              "strip_prefix": "googleapis-07c27163ac591955d736f3057b1619ece66f5b99",
+              "urls": [
+                "https://github.com/googleapis/googleapis/archive/07c27163ac591955d736f3057b1619ece66f5b99.tar.gz"
+              ]
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "cel-spec+",
+            "bazel_tools",
+            "bazel_tools"
+          ]
+        ]
+      }
+    },
+    "@@cel-spec+//:googleapis_ext.bzl%googleapis_ext": {
+      "general": {
+        "bzlTransitiveDigest": "65z4sd8o73L2a8X2Pd3yAjn73l9HBG45JVnVY2DUbzI=",
+        "usagesDigest": "Ek7VfZ+tuyRBx/1h5wcmtnW9EGpOb0dkXUwBluZbD8k=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "com_google_googleapis_imports": {
+            "repoRuleId": "@@cel-spec++non_module_dependencies+com_google_googleapis//:repository_rules.bzl%switched_rules",
+            "attributes": {
+              "rules": {
+                "proto_library_with_info": [
+                  "",
+                  ""
+                ],
+                "moved_proto_library": [
+                  "",
+                  ""
+                ],
+                "java_proto_library": [
+                  "",
+                  ""
+                ],
+                "java_grpc_library": [
+                  "",
+                  ""
+                ],
+                "java_gapic_library": [
+                  "",
+                  ""
+                ],
+                "java_gapic_test": [
+                  "",
+                  ""
+                ],
+                "java_gapic_assembly_gradle_pkg": [
+                  "",
+                  ""
+                ],
+                "py_proto_library": [
+                  "",
+                  ""
+                ],
+                "py_grpc_library": [
+                  "",
+                  ""
+                ],
+                "py_gapic_library": [
+                  "",
+                  ""
+                ],
+                "py_test": [
+                  "",
+                  ""
+                ],
+                "py_gapic_assembly_pkg": [
+                  "",
+                  ""
+                ],
+                "py_import": [
+                  "",
+                  ""
+                ],
+                "go_proto_library": [
+                  "",
+                  ""
+                ],
+                "go_library": [
+                  "",
+                  ""
+                ],
+                "go_test": [
+                  "",
+                  ""
+                ],
+                "go_gapic_library": [
+                  "",
+                  ""
+                ],
+                "go_gapic_assembly_pkg": [
+                  "",
+                  ""
+                ],
+                "cc_proto_library": [
+                  "native.cc_proto_library",
+                  ""
+                ],
+                "cc_grpc_library": [
+                  "",
+                  ""
+                ],
+                "cc_gapic_library": [
+                  "",
+                  ""
+                ],
+                "php_proto_library": [
+                  "",
+                  "php_proto_library"
+                ],
+                "php_grpc_library": [
+                  "",
+                  "php_grpc_library"
+                ],
+                "php_gapic_library": [
+                  "",
+                  "php_gapic_library"
+                ],
+                "php_gapic_assembly_pkg": [
+                  "",
+                  "php_gapic_assembly_pkg"
+                ],
+                "nodejs_gapic_library": [
+                  "",
+                  "typescript_gapic_library"
+                ],
+                "nodejs_gapic_assembly_pkg": [
+                  "",
+                  "typescript_gapic_assembly_pkg"
+                ],
+                "ruby_proto_library": [
+                  "",
+                  ""
+                ],
+                "ruby_grpc_library": [
+                  "",
+                  ""
+                ],
+                "ruby_ads_gapic_library": [
+                  "",
+                  ""
+                ],
+                "ruby_cloud_gapic_library": [
+                  "",
+                  ""
+                ],
+                "ruby_gapic_assembly_pkg": [
+                  "",
+                  ""
+                ],
+                "csharp_proto_library": [
+                  "",
+                  ""
+                ],
+                "csharp_grpc_library": [
+                  "",
+                  ""
+                ],
+                "csharp_gapic_library": [
+                  "",
+                  ""
+                ],
+                "csharp_gapic_assembly_pkg": [
+                  "",
+                  ""
+                ]
+              }
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "cel-spec+",
+            "com_google_googleapis",
+            "cel-spec++non_module_dependencies+com_google_googleapis"
+          ]
+        ]
+      }
+    },
+    "@@envoy_api+//bazel:repositories.bzl%non_module_deps": {
+      "general": {
+        "bzlTransitiveDigest": "jSGrrEB+TJtDpcorazT1aqBYRDkLHWscxUYDL6rabik=",
+        "usagesDigest": "OP2p9QPxt4WFY/lah8Iecqt6SOUwZHs89hYRyaV+rSg=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "prometheus_metrics_model": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "urls": [
+                "https://github.com/prometheus/client_model/archive/v0.6.1.tar.gz"
+              ],
+              "sha256": "b9b690bc35d80061f255faa7df7621eae39fe157179ccd78ff6409c3b004f05e",
+              "strip_prefix": "client_model-0.6.1",
+              "build_file_content": "\nload(\"@envoy_api//bazel:api_build_system.bzl\", \"api_cc_py_proto_library\")\nload(\"@io_bazel_rules_go//proto:def.bzl\", \"go_proto_library\")\n\napi_cc_py_proto_library(\n    name = \"client_model\",\n    srcs = [\n        \"io/prometheus/client/metrics.proto\",\n    ],\n    visibility = [\"//visibility:public\"],\n)\n\ngo_proto_library(\n    name = \"client_model_go_proto\",\n    importpath = \"github.com/prometheus/client_model/go\",\n    proto = \":client_model\",\n    visibility = [\"//visibility:public\"],\n)\n"
+            }
+          },
+          "com_github_bufbuild_buf": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "urls": [
+                "https://github.com/bufbuild/buf/releases/download/v1.49.0/buf-Linux-x86_64.tar.gz"
+              ],
+              "sha256": "ee8da9748249f7946d79191e36469ce7bc3b8ba80019bff1fa4289a44cbc23bf",
+              "strip_prefix": "buf",
+              "build_file_content": "\npackage(\n    default_visibility = [\"//visibility:public\"],\n)\n\nfilegroup(\n    name = \"buf\",\n    srcs = [\n        \"@com_github_bufbuild_buf//:bin/buf\",\n    ],\n    tags = [\"manual\"], # buf is downloaded as a linux binary; tagged manual to prevent build for non-linux users\n)\n"
+            }
+          },
+          "envoy_toolshed": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "urls": [
+                "https://github.com/envoyproxy/toolshed/archive/bazel-v0.2.2.tar.gz"
+              ],
+              "sha256": "443fe177aba0cef8c17b7a48905c925c67b09005b10dd70ff12cd9f729a72d51",
+              "strip_prefix": "toolshed-bazel-v0.2.2/bazel"
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "envoy_api+",
+            "bazel_tools",
+            "bazel_tools"
+          ],
+          [
+            "envoy_api+",
+            "envoy_api",
+            "envoy_api+"
+          ]
+        ]
+      }
+    },
+    "@@googleapis+//:extensions.bzl%switched_rules": {
+      "general": {
+        "bzlTransitiveDigest": "JLpojYeGHLdgnwSUuQWOrtkL9UMygBUUEFJZh7ASlmA=",
+        "usagesDigest": "eRkY5RXJ1w5ccUDRgOjieoBfJWY6fVPZQ6hOxdD3xZA=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "com_google_googleapis_imports": {
+            "repoRuleId": "@@googleapis+//:repository_rules.bzl%switched_rules",
+            "attributes": {
+              "rules": {
+                "proto_library_with_info": [
+                  "",
+                  ""
+                ],
+                "moved_proto_library": [
+                  "",
+                  ""
+                ],
+                "java_proto_library": [
+                  "",
+                  ""
+                ],
+                "java_grpc_library": [
+                  "",
+                  ""
+                ],
+                "java_gapic_library": [
+                  "",
+                  ""
+                ],
+                "java_gapic_test": [
+                  "",
+                  ""
+                ],
+                "java_gapic_assembly_gradle_pkg": [
+                  "",
+                  ""
+                ],
+                "py_proto_library": [
+                  "",
+                  ""
+                ],
+                "py_grpc_library": [
+                  "",
+                  ""
+                ],
+                "py_gapic_library": [
+                  "",
+                  ""
+                ],
+                "py_test": [
+                  "",
+                  ""
+                ],
+                "py_gapic_assembly_pkg": [
+                  "",
+                  ""
+                ],
+                "py_import": [
+                  "",
+                  ""
+                ],
+                "go_proto_library": [
+                  "",
+                  ""
+                ],
+                "go_grpc_library": [
+                  "",
+                  ""
+                ],
+                "go_library": [
+                  "",
+                  ""
+                ],
+                "go_test": [
+                  "",
+                  ""
+                ],
+                "go_gapic_library": [
+                  "",
+                  ""
+                ],
+                "go_gapic_assembly_pkg": [
+                  "",
+                  ""
+                ],
+                "cc_proto_library": [
+                  "",
+                  ""
+                ],
+                "cc_grpc_library": [
+                  "",
+                  ""
+                ],
+                "cc_gapic_library": [
+                  "",
+                  ""
+                ],
+                "php_proto_library": [
+                  "",
+                  "php_proto_library"
+                ],
+                "php_grpc_library": [
+                  "",
+                  "php_grpc_library"
+                ],
+                "php_gapic_library": [
+                  "",
+                  "php_gapic_library"
+                ],
+                "php_gapic_assembly_pkg": [
+                  "",
+                  "php_gapic_assembly_pkg"
+                ],
+                "nodejs_gapic_library": [
+                  "",
+                  "typescript_gapic_library"
+                ],
+                "nodejs_gapic_assembly_pkg": [
+                  "",
+                  "typescript_gapic_assembly_pkg"
+                ],
+                "ruby_proto_library": [
+                  "",
+                  ""
+                ],
+                "ruby_grpc_library": [
+                  "",
+                  ""
+                ],
+                "ruby_ads_gapic_library": [
+                  "",
+                  ""
+                ],
+                "ruby_cloud_gapic_library": [
+                  "",
+                  ""
+                ],
+                "ruby_gapic_assembly_pkg": [
+                  "",
+                  ""
+                ],
+                "csharp_proto_library": [
+                  "",
+                  ""
+                ],
+                "csharp_grpc_library": [
+                  "",
+                  ""
+                ],
+                "csharp_gapic_library": [
+                  "",
+                  ""
+                ],
+                "csharp_gapic_assembly_pkg": [
+                  "",
+                  ""
+                ]
+              }
+            }
+          }
+        },
+        "recordedRepoMappingEntries": []
+      }
+    },
+    "@@grpc-java+//:repositories.bzl%grpc_java_repositories_extension": {
+      "general": {
+        "bzlTransitiveDigest": "alHoz62vpjQ6VU8rrxDoaX1BgsjIF44v81sousL2lsA=",
+        "usagesDigest": "1zEqUzy6M8TZttxNX8wHH9GjbnBNmw9Hh+9Zx8sVhqc=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "com_github_cncf_xds": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "strip_prefix": "xds-024c85f92f20cab567a83acc50934c7f9711d124",
+              "sha256": "5f403aa681711500ca8e62387be3e37d971977db6e88616fc21862a406430649",
+              "urls": [
+                "https://github.com/cncf/xds/archive/024c85f92f20cab567a83acc50934c7f9711d124.tar.gz"
+              ]
+            }
+          },
+          "io_grpc_grpc_proto": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "sha256": "729ac127a003836d539ed9da72a21e094aac4c4609e0481d6fc9e28a844e11af",
+              "strip_prefix": "grpc-proto-4f245d272a28a680606c0739753506880cf33b5f",
+              "urls": [
+                "https://github.com/grpc/grpc-proto/archive/4f245d272a28a680606c0739753506880cf33b5f.zip"
+              ]
+            }
+          },
+          "envoy_api": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "sha256": "cb7cd388eaa297320d392c872ceb82571dee71f4b6f1c4546b0c0a399636f523",
+              "strip_prefix": "data-plane-api-874e3aa8c3aa5086b6bffa2166e0e0077bb32f71",
+              "urls": [
+                "https://github.com/envoyproxy/data-plane-api/archive/874e3aa8c3aa5086b6bffa2166e0e0077bb32f71.tar.gz"
+              ]
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "grpc-java+",
+            "bazel_tools",
+            "bazel_tools"
+          ]
+        ]
+      }
+    },
+    "@@pybind11_bazel+//:internal_configure.bzl%internal_configure_extension": {
+      "general": {
+        "bzlTransitiveDigest": "Gquj8vesvC5hyPnGSeCUvf9ZM3kPorAjtRcp31ocIfg=",
+        "usagesDigest": "D1r3lfzMuUBFxgG8V6o0bQTLMk3GkaGOaPzw53wrwyw=",
+        "recordedFileInputs": {
+          "@@pybind11_bazel+//MODULE.bazel": "45d98c531db5f8430f847b195357dca36665d9c926cbbee77a85105fc6865d27"
+        },
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "pybind11": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "build_file": "@@pybind11_bazel+//:pybind11-BUILD.bazel",
+              "strip_prefix": "pybind11-2.12.0",
+              "urls": [
+                "https://github.com/pybind/pybind11/archive/v2.12.0.zip"
+              ]
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "pybind11_bazel+",
+            "bazel_tools",
+            "bazel_tools"
+          ]
+        ]
+      }
+    },
+    "@@rules_foreign_cc+//foreign_cc:extensions.bzl%tools": {
+      "general": {
+        "bzlTransitiveDigest": "a+FVLiEL9OoVElGculmL88byPW59jLkyAG6Nfcwjbxc=",
+        "usagesDigest": "mqChTKgeSo2+U6Pxt2FXlbg3JnDADJTrRE2okUyeU4g=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "rules_foreign_cc_framework_toolchain_linux": {
+            "repoRuleId": "@@rules_foreign_cc+//foreign_cc/private/framework:toolchain.bzl%framework_toolchain_repository",
+            "attributes": {
+              "commands_src": "@rules_foreign_cc//foreign_cc/private/framework/toolchains:linux_commands.bzl",
+              "exec_compatible_with": [
+                "@platforms//os:linux"
+              ]
+            }
+          },
+          "rules_foreign_cc_framework_toolchain_freebsd": {
+            "repoRuleId": "@@rules_foreign_cc+//foreign_cc/private/framework:toolchain.bzl%framework_toolchain_repository",
+            "attributes": {
+              "commands_src": "@rules_foreign_cc//foreign_cc/private/framework/toolchains:freebsd_commands.bzl",
+              "exec_compatible_with": [
+                "@platforms//os:freebsd"
+              ]
+            }
+          },
+          "rules_foreign_cc_framework_toolchain_windows": {
+            "repoRuleId": "@@rules_foreign_cc+//foreign_cc/private/framework:toolchain.bzl%framework_toolchain_repository",
+            "attributes": {
+              "commands_src": "@rules_foreign_cc//foreign_cc/private/framework/toolchains:windows_commands.bzl",
+              "exec_compatible_with": [
+                "@platforms//os:windows"
+              ]
+            }
+          },
+          "rules_foreign_cc_framework_toolchain_macos": {
+            "repoRuleId": "@@rules_foreign_cc+//foreign_cc/private/framework:toolchain.bzl%framework_toolchain_repository",
+            "attributes": {
+              "commands_src": "@rules_foreign_cc//foreign_cc/private/framework/toolchains:macos_commands.bzl",
+              "exec_compatible_with": [
+                "@platforms//os:macos"
+              ]
+            }
+          },
+          "rules_foreign_cc_framework_toolchains": {
+            "repoRuleId": "@@rules_foreign_cc+//foreign_cc/private/framework:toolchain.bzl%framework_toolchain_repository_hub",
+            "attributes": {}
+          },
+          "cmake_src": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "build_file_content": "filegroup(\n    name = \"all_srcs\",\n    srcs = glob([\"**\"]),\n    visibility = [\"//visibility:public\"],\n)\n",
+              "sha256": "f316b40053466f9a416adf981efda41b160ca859e97f6a484b447ea299ff26aa",
+              "strip_prefix": "cmake-3.23.2",
+              "urls": [
+                "https://github.com/Kitware/CMake/releases/download/v3.23.2/cmake-3.23.2.tar.gz"
+              ],
+              "patches": [
+                "@@rules_foreign_cc+//toolchains:cmake-c++11.patch"
+              ]
+            }
+          },
+          "gnumake_src": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "build_file_content": "filegroup(\n    name = \"all_srcs\",\n    srcs = glob([\"**\"]),\n    visibility = [\"//visibility:public\"],\n)\n",
+              "sha256": "dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3",
+              "strip_prefix": "make-4.4.1",
+              "urls": [
+                "https://mirror.bazel.build/ftpmirror.gnu.org/gnu/make/make-4.4.1.tar.gz",
+                "http://ftpmirror.gnu.org/gnu/make/make-4.4.1.tar.gz"
+              ]
+            }
+          },
+          "ninja_build_src": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "build_file_content": "filegroup(\n    name = \"all_srcs\",\n    srcs = glob([\"**\"]),\n    visibility = [\"//visibility:public\"],\n)\n",
+              "integrity": "sha256-ghvf9Io/aDvEuztvC1/nstZHz2XVKutjMoyRpsbfKFo=",
+              "strip_prefix": "ninja-1.12.1",
+              "urls": [
+                "https://mirror.bazel.build/github.com/ninja-build/ninja/archive/v1.12.1.tar.gz",
+                "https://github.com/ninja-build/ninja/archive/v1.12.1.tar.gz"
+              ]
+            }
+          },
+          "meson_src": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "build_file_content": "exports_files([\"meson.py\"])\n\nfilegroup(\n    name = \"runtime\",\n    srcs = glob([\"mesonbuild/**\"]),\n    visibility = [\"//visibility:public\"],\n)\n",
+              "sha256": "567e533adf255de73a2de35049b99923caf872a455af9ce03e01077e0d384bed",
+              "strip_prefix": "meson-1.5.1",
+              "urls": [
+                "https://mirror.bazel.build/github.com/mesonbuild/meson/releases/download/1.5.1/meson-1.5.1.tar.gz",
+                "https://github.com/mesonbuild/meson/releases/download/1.5.1/meson-1.5.1.tar.gz"
+              ]
+            }
+          },
+          "glib_dev": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "build_file_content": "\ncc_import(\n    name = \"glib_dev\",\n    hdrs = glob([\"include/**\"]),\n    shared_library = \"@glib_runtime//:bin/libglib-2.0-0.dll\",\n    visibility = [\"//visibility:public\"],\n)\n        ",
+              "sha256": "bdf18506df304d38be98a4b3f18055b8b8cca81beabecad0eece6ce95319c369",
+              "urls": [
+                "https://mirror.bazel.build/download.gnome.org/binaries/win64/glib/2.26/glib-dev_2.26.1-1_win64.zip",
+                "https://download.gnome.org/binaries/win64/glib/2.26/glib-dev_2.26.1-1_win64.zip"
+              ]
+            }
+          },
+          "glib_src": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "build_file_content": "\ncc_import(\n    name = \"msvc_hdr\",\n    hdrs = [\"msvc_recommended_pragmas.h\"],\n    visibility = [\"//visibility:public\"],\n)\n        ",
+              "sha256": "bc96f63112823b7d6c9f06572d2ad626ddac7eb452c04d762592197f6e07898e",
+              "strip_prefix": "glib-2.26.1",
+              "urls": [
+                "https://mirror.bazel.build/download.gnome.org/sources/glib/2.26/glib-2.26.1.tar.gz",
+                "https://download.gnome.org/sources/glib/2.26/glib-2.26.1.tar.gz"
+              ]
+            }
+          },
+          "glib_runtime": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "build_file_content": "\nexports_files(\n    [\n        \"bin/libgio-2.0-0.dll\",\n        \"bin/libglib-2.0-0.dll\",\n        \"bin/libgmodule-2.0-0.dll\",\n        \"bin/libgobject-2.0-0.dll\",\n        \"bin/libgthread-2.0-0.dll\",\n    ],\n    visibility = [\"//visibility:public\"],\n)\n        ",
+              "sha256": "88d857087e86f16a9be651ee7021880b3f7ba050d34a1ed9f06113b8799cb973",
+              "urls": [
+                "https://mirror.bazel.build/download.gnome.org/binaries/win64/glib/2.26/glib_2.26.1-1_win64.zip",
+                "https://download.gnome.org/binaries/win64/glib/2.26/glib_2.26.1-1_win64.zip"
+              ]
+            }
+          },
+          "gettext_runtime": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "build_file_content": "\ncc_import(\n    name = \"gettext_runtime\",\n    shared_library = \"bin/libintl-8.dll\",\n    visibility = [\"//visibility:public\"],\n)\n        ",
+              "sha256": "1f4269c0e021076d60a54e98da6f978a3195013f6de21674ba0edbc339c5b079",
+              "urls": [
+                "https://mirror.bazel.build/download.gnome.org/binaries/win64/dependencies/gettext-runtime_0.18.1.1-2_win64.zip",
+                "https://download.gnome.org/binaries/win64/dependencies/gettext-runtime_0.18.1.1-2_win64.zip"
+              ]
+            }
+          },
+          "pkgconfig_src": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "build_file_content": "filegroup(\n    name = \"all_srcs\",\n    srcs = glob([\"**\"]),\n    visibility = [\"//visibility:public\"],\n)\n",
+              "sha256": "6fc69c01688c9458a57eb9a1664c9aba372ccda420a02bf4429fe610e7e7d591",
+              "strip_prefix": "pkg-config-0.29.2",
+              "patches": [
+                "@@rules_foreign_cc+//toolchains:pkgconfig-detectenv.patch",
+                "@@rules_foreign_cc+//toolchains:pkgconfig-makefile-vc.patch",
+                "@@rules_foreign_cc+//toolchains:pkgconfig-builtin-glib-int-conversion.patch"
+              ],
+              "urls": [
+                "https://pkgconfig.freedesktop.org/releases/pkg-config-0.29.2.tar.gz",
+                "https://mirror.bazel.build/pkgconfig.freedesktop.org/releases/pkg-config-0.29.2.tar.gz"
+              ]
+            }
+          },
+          "bazel_features": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "sha256": "ba1282c1aa1d1fffdcf994ab32131d7c7551a9bc960fbf05f42d55a1b930cbfb",
+              "strip_prefix": "bazel_features-1.15.0",
+              "url": "https://github.com/bazel-contrib/bazel_features/releases/download/v1.15.0/bazel_features-v1.15.0.tar.gz"
+            }
+          },
+          "bazel_skylib": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "urls": [
+                "https://mirror.bazel.build/github.com/bazelbuild/bazel-skylib/releases/download/1.2.1/bazel-skylib-1.2.1.tar.gz",
+                "https://github.com/bazelbuild/bazel-skylib/releases/download/1.2.1/bazel-skylib-1.2.1.tar.gz"
+              ],
+              "sha256": "f7be3474d42aae265405a592bb7da8e171919d74c16f082a5457840f06054728"
+            }
+          },
+          "rules_python": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "sha256": "84aec9e21cc56fbc7f1335035a71c850d1b9b5cc6ff497306f84cced9a769841",
+              "strip_prefix": "rules_python-0.23.1",
+              "url": "https://github.com/bazelbuild/rules_python/archive/refs/tags/0.23.1.tar.gz"
+            }
+          },
+          "rules_shell": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "sha256": "d8cd4a3a91fc1dc68d4c7d6b655f09def109f7186437e3f50a9b60ab436a0c53",
+              "strip_prefix": "rules_shell-0.3.0",
+              "url": "https://github.com/bazelbuild/rules_shell/releases/download/v0.3.0/rules_shell-v0.3.0.tar.gz"
+            }
+          },
+          "cmake-3.23.2-linux-aarch64": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "urls": [
+                "https://github.com/Kitware/CMake/releases/download/v3.23.2/cmake-3.23.2-linux-aarch64.tar.gz"
+              ],
+              "sha256": "f2654bf780b53f170bbbec44d8ac67d401d24788e590faa53036a89476efa91e",
+              "strip_prefix": "cmake-3.23.2-linux-aarch64",
+              "build_file_content": "load(\"@rules_foreign_cc//toolchains/native_tools:native_tools_toolchain.bzl\", \"native_tool_toolchain\")\n\npackage(default_visibility = [\"//visibility:public\"])\n\nfilegroup(\n    name = \"cmake_bin\",\n    srcs = [\"bin/cmake\"],\n)\n\nfilegroup(\n    name = \"cmake_data\",\n    srcs = glob(\n        [\n            \"**\",\n        ],\n        exclude = [\n            \"WORKSPACE\",\n            \"WORKSPACE.bazel\",\n            \"BUILD\",\n            \"BUILD.bazel\",\n            \"**/* *\",\n        ],\n    ),\n)\n\nnative_tool_toolchain(\n    name = \"cmake_tool\",\n    path = \"bin/cmake\",\n    target = \":cmake_data\",\n    env = {\"CMAKE\": \"$(execpath :cmake_bin)\"},\n    tools = [\":cmake_bin\"],\n)\n"
+            }
+          },
+          "cmake-3.23.2-linux-x86_64": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "urls": [
+                "https://github.com/Kitware/CMake/releases/download/v3.23.2/cmake-3.23.2-linux-x86_64.tar.gz"
+              ],
+              "sha256": "aaced6f745b86ce853661a595bdac6c5314a60f8181b6912a0a4920acfa32708",
+              "strip_prefix": "cmake-3.23.2-linux-x86_64",
+              "build_file_content": "load(\"@rules_foreign_cc//toolchains/native_tools:native_tools_toolchain.bzl\", \"native_tool_toolchain\")\n\npackage(default_visibility = [\"//visibility:public\"])\n\nfilegroup(\n    name = \"cmake_bin\",\n    srcs = [\"bin/cmake\"],\n)\n\nfilegroup(\n    name = \"cmake_data\",\n    srcs = glob(\n        [\n            \"**\",\n        ],\n        exclude = [\n            \"WORKSPACE\",\n            \"WORKSPACE.bazel\",\n            \"BUILD\",\n            \"BUILD.bazel\",\n            \"**/* *\",\n        ],\n    ),\n)\n\nnative_tool_toolchain(\n    name = \"cmake_tool\",\n    path = \"bin/cmake\",\n    target = \":cmake_data\",\n    env = {\"CMAKE\": \"$(execpath :cmake_bin)\"},\n    tools = [\":cmake_bin\"],\n)\n"
+            }
+          },
+          "cmake-3.23.2-macos-universal": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "urls": [
+                "https://github.com/Kitware/CMake/releases/download/v3.23.2/cmake-3.23.2-macos-universal.tar.gz"
+              ],
+              "sha256": "853a0f9af148c5ef47282ffffee06c4c9f257be2635936755f39ca13c3286c88",
+              "strip_prefix": "cmake-3.23.2-macos-universal/CMake.app/Contents",
+              "build_file_content": "load(\"@rules_foreign_cc//toolchains/native_tools:native_tools_toolchain.bzl\", \"native_tool_toolchain\")\n\npackage(default_visibility = [\"//visibility:public\"])\n\nfilegroup(\n    name = \"cmake_bin\",\n    srcs = [\"bin/cmake\"],\n)\n\nfilegroup(\n    name = \"cmake_data\",\n    srcs = glob(\n        [\n            \"**\",\n        ],\n        exclude = [\n            \"WORKSPACE\",\n            \"WORKSPACE.bazel\",\n            \"BUILD\",\n            \"BUILD.bazel\",\n            \"**/* *\",\n        ],\n    ),\n)\n\nnative_tool_toolchain(\n    name = \"cmake_tool\",\n    path = \"bin/cmake\",\n    target = \":cmake_data\",\n    env = {\"CMAKE\": \"$(execpath :cmake_bin)\"},\n    tools = [\":cmake_bin\"],\n)\n"
+            }
+          },
+          "cmake-3.23.2-windows-i386": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "urls": [
+                "https://github.com/Kitware/CMake/releases/download/v3.23.2/cmake-3.23.2-windows-i386.zip"
+              ],
+              "sha256": "6a4fcd6a2315b93cb23c93507efccacc30c449c2bf98f14d6032bb226c582e07",
+              "strip_prefix": "cmake-3.23.2-windows-i386",
+              "build_file_content": "load(\"@rules_foreign_cc//toolchains/native_tools:native_tools_toolchain.bzl\", \"native_tool_toolchain\")\n\npackage(default_visibility = [\"//visibility:public\"])\n\nfilegroup(\n    name = \"cmake_bin\",\n    srcs = [\"bin/cmake.exe\"],\n)\n\nfilegroup(\n    name = \"cmake_data\",\n    srcs = glob(\n        [\n            \"**\",\n        ],\n        exclude = [\n            \"WORKSPACE\",\n            \"WORKSPACE.bazel\",\n            \"BUILD\",\n            \"BUILD.bazel\",\n            \"**/* *\",\n        ],\n    ),\n)\n\nnative_tool_toolchain(\n    name = \"cmake_tool\",\n    path = \"bin/cmake.exe\",\n    target = \":cmake_data\",\n    env = {\"CMAKE\": \"$(execpath :cmake_bin)\"},\n    tools = [\":cmake_bin\"],\n)\n"
+            }
+          },
+          "cmake-3.23.2-windows-x86_64": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "urls": [
+                "https://github.com/Kitware/CMake/releases/download/v3.23.2/cmake-3.23.2-windows-x86_64.zip"
+              ],
+              "sha256": "2329387f3166b84c25091c86389fb891193967740c9bcf01e7f6d3306f7ffda0",
+              "strip_prefix": "cmake-3.23.2-windows-x86_64",
+              "build_file_content": "load(\"@rules_foreign_cc//toolchains/native_tools:native_tools_toolchain.bzl\", \"native_tool_toolchain\")\n\npackage(default_visibility = [\"//visibility:public\"])\n\nfilegroup(\n    name = \"cmake_bin\",\n    srcs = [\"bin/cmake.exe\"],\n)\n\nfilegroup(\n    name = \"cmake_data\",\n    srcs = glob(\n        [\n            \"**\",\n        ],\n        exclude = [\n            \"WORKSPACE\",\n            \"WORKSPACE.bazel\",\n            \"BUILD\",\n            \"BUILD.bazel\",\n            \"**/* *\",\n        ],\n    ),\n)\n\nnative_tool_toolchain(\n    name = \"cmake_tool\",\n    path = \"bin/cmake.exe\",\n    target = \":cmake_data\",\n    env = {\"CMAKE\": \"$(execpath :cmake_bin)\"},\n    tools = [\":cmake_bin\"],\n)\n"
+            }
+          },
+          "cmake_3.23.2_toolchains": {
+            "repoRuleId": "@@rules_foreign_cc+//toolchains:prebuilt_toolchains_repository.bzl%prebuilt_toolchains_repository",
+            "attributes": {
+              "repos": {
+                "cmake-3.23.2-linux-aarch64": [
+                  "@platforms//cpu:aarch64",
+                  "@platforms//os:linux"
+                ],
+                "cmake-3.23.2-linux-x86_64": [
+                  "@platforms//cpu:x86_64",
+                  "@platforms//os:linux"
+                ],
+                "cmake-3.23.2-macos-universal": [
+                  "@platforms//os:macos"
+                ],
+                "cmake-3.23.2-windows-i386": [
+                  "@platforms//cpu:x86_32",
+                  "@platforms//os:windows"
+                ],
+                "cmake-3.23.2-windows-x86_64": [
+                  "@platforms//cpu:x86_64",
+                  "@platforms//os:windows"
+                ]
+              },
+              "tool": "cmake"
+            }
+          },
+          "ninja_1.12.1_linux": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "urls": [
+                "https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-linux.zip"
+              ],
+              "sha256": "6f98805688d19672bd699fbbfa2c2cf0fc054ac3df1f0e6a47664d963d530255",
+              "strip_prefix": "",
+              "build_file_content": "load(\"@rules_foreign_cc//toolchains/native_tools:native_tools_toolchain.bzl\", \"native_tool_toolchain\")\n\npackage(default_visibility = [\"//visibility:public\"])\n\nfilegroup(\n    name = \"ninja_bin\",\n    srcs = [\"ninja\"],\n)\n\nnative_tool_toolchain(\n    name = \"ninja_tool\",\n    env = {\"NINJA\": \"$(execpath :ninja_bin)\"},\n    path = \"$(execpath :ninja_bin)\",\n    target = \":ninja_bin\",\n)\n"
+            }
+          },
+          "ninja_1.12.1_linux-aarch64": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "urls": [
+                "https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-linux-aarch64.zip"
+              ],
+              "sha256": "5c25c6570b0155e95fce5918cb95f1ad9870df5768653afe128db822301a05a1",
+              "strip_prefix": "",
+              "build_file_content": "load(\"@rules_foreign_cc//toolchains/native_tools:native_tools_toolchain.bzl\", \"native_tool_toolchain\")\n\npackage(default_visibility = [\"//visibility:public\"])\n\nfilegroup(\n    name = \"ninja_bin\",\n    srcs = [\"ninja\"],\n)\n\nnative_tool_toolchain(\n    name = \"ninja_tool\",\n    env = {\"NINJA\": \"$(execpath :ninja_bin)\"},\n    path = \"$(execpath :ninja_bin)\",\n    target = \":ninja_bin\",\n)\n"
+            }
+          },
+          "ninja_1.12.1_mac": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "urls": [
+                "https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-mac.zip"
+              ],
+              "sha256": "89a287444b5b3e98f88a945afa50ce937b8ffd1dcc59c555ad9b1baf855298c9",
+              "strip_prefix": "",
+              "build_file_content": "load(\"@rules_foreign_cc//toolchains/native_tools:native_tools_toolchain.bzl\", \"native_tool_toolchain\")\n\npackage(default_visibility = [\"//visibility:public\"])\n\nfilegroup(\n    name = \"ninja_bin\",\n    srcs = [\"ninja\"],\n)\n\nnative_tool_toolchain(\n    name = \"ninja_tool\",\n    env = {\"NINJA\": \"$(execpath :ninja_bin)\"},\n    path = \"$(execpath :ninja_bin)\",\n    target = \":ninja_bin\",\n)\n"
+            }
+          },
+          "ninja_1.12.1_mac_aarch64": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "urls": [
+                "https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-mac.zip"
+              ],
+              "sha256": "89a287444b5b3e98f88a945afa50ce937b8ffd1dcc59c555ad9b1baf855298c9",
+              "strip_prefix": "",
+              "build_file_content": "load(\"@rules_foreign_cc//toolchains/native_tools:native_tools_toolchain.bzl\", \"native_tool_toolchain\")\n\npackage(default_visibility = [\"//visibility:public\"])\n\nfilegroup(\n    name = \"ninja_bin\",\n    srcs = [\"ninja\"],\n)\n\nnative_tool_toolchain(\n    name = \"ninja_tool\",\n    env = {\"NINJA\": \"$(execpath :ninja_bin)\"},\n    path = \"$(execpath :ninja_bin)\",\n    target = \":ninja_bin\",\n)\n"
+            }
+          },
+          "ninja_1.12.1_win": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "urls": [
+                "https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-win.zip"
+              ],
+              "sha256": "f550fec705b6d6ff58f2db3c374c2277a37691678d6aba463adcbb129108467a",
+              "strip_prefix": "",
+              "build_file_content": "load(\"@rules_foreign_cc//toolchains/native_tools:native_tools_toolchain.bzl\", \"native_tool_toolchain\")\n\npackage(default_visibility = [\"//visibility:public\"])\n\nfilegroup(\n    name = \"ninja_bin\",\n    srcs = [\"ninja.exe\"],\n)\n\nnative_tool_toolchain(\n    name = \"ninja_tool\",\n    env = {\"NINJA\": \"$(execpath :ninja_bin)\"},\n    path = \"$(execpath :ninja_bin)\",\n    target = \":ninja_bin\",\n)\n"
+            }
+          },
+          "ninja_1.12.1_toolchains": {
+            "repoRuleId": "@@rules_foreign_cc+//toolchains:prebuilt_toolchains_repository.bzl%prebuilt_toolchains_repository",
+            "attributes": {
+              "repos": {
+                "ninja_1.12.1_linux": [
+                  "@platforms//cpu:x86_64",
+                  "@platforms//os:linux"
+                ],
+                "ninja_1.12.1_linux-aarch64": [
+                  "@platforms//cpu:aarch64",
+                  "@platforms//os:linux"
+                ],
+                "ninja_1.12.1_mac": [
+                  "@platforms//cpu:x86_64",
+                  "@platforms//os:macos"
+                ],
+                "ninja_1.12.1_mac_aarch64": [
+                  "@platforms//cpu:aarch64",
+                  "@platforms//os:macos"
+                ],
+                "ninja_1.12.1_win": [
+                  "@platforms//cpu:x86_64",
+                  "@platforms//os:windows"
+                ]
+              },
+              "tool": "ninja"
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "rules_foreign_cc+",
+            "bazel_tools",
+            "bazel_tools"
+          ],
+          [
+            "rules_foreign_cc+",
+            "rules_foreign_cc",
+            "rules_foreign_cc+"
+          ]
+        ]
+      }
+    },
+    "@@rules_kotlin+//src/main/starlark/core/repositories:bzlmod_setup.bzl%rules_kotlin_extensions": {
+      "general": {
+        "bzlTransitiveDigest": "vXNsnKlU3fVd8YlAjod7PqU6T979UjbL6nINBEgue/I=",
+        "usagesDigest": "QI2z8ZUR+mqtbwsf2fLqYdJAkPOHdOV+tF2yVAUgRzw=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "com_github_jetbrains_kotlin_git": {
+            "repoRuleId": "@@rules_kotlin+//src/main/starlark/core/repositories:compiler.bzl%kotlin_compiler_git_repository",
+            "attributes": {
+              "urls": [
+                "https://github.com/JetBrains/kotlin/releases/download/v1.9.23/kotlin-compiler-1.9.23.zip"
+              ],
+              "sha256": "93137d3aab9afa9b27cb06a824c2324195c6b6f6179d8a8653f440f5bd58be88"
+            }
+          },
+          "com_github_jetbrains_kotlin": {
+            "repoRuleId": "@@rules_kotlin+//src/main/starlark/core/repositories:compiler.bzl%kotlin_capabilities_repository",
+            "attributes": {
+              "git_repository_name": "com_github_jetbrains_kotlin_git",
+              "compiler_version": "1.9.23"
+            }
+          },
+          "com_github_google_ksp": {
+            "repoRuleId": "@@rules_kotlin+//src/main/starlark/core/repositories:ksp.bzl%ksp_compiler_plugin_repository",
+            "attributes": {
+              "urls": [
+                "https://github.com/google/ksp/releases/download/1.9.23-1.0.20/artifacts.zip"
+              ],
+              "sha256": "ee0618755913ef7fd6511288a232e8fad24838b9af6ea73972a76e81053c8c2d",
+              "strip_version": "1.9.23-1.0.20"
+            }
+          },
+          "com_github_pinterest_ktlint": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
+            "attributes": {
+              "sha256": "01b2e0ef893383a50dbeb13970fe7fa3be36ca3e83259e01649945b09d736985",
+              "urls": [
+                "https://github.com/pinterest/ktlint/releases/download/1.3.0/ktlint"
+              ],
+              "executable": true
+            }
+          },
+          "rules_android": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "sha256": "cd06d15dd8bb59926e4d65f9003bfc20f9da4b2519985c27e190cddc8b7a7806",
+              "strip_prefix": "rules_android-0.1.1",
+              "urls": [
+                "https://github.com/bazelbuild/rules_android/archive/v0.1.1.zip"
+              ]
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "rules_kotlin+",
+            "bazel_tools",
+            "bazel_tools"
+          ]
+        ]
+      }
+    },
+    "@@rules_multitool+//multitool:extension.bzl%multitool": {
+      "general": {
+        "bzlTransitiveDigest": "ADJmcFhRAIhS4Pgkog5QSZ/k1997Xgw2IXwBSYnWZyc=",
+        "usagesDigest": "4HqrNwmocZe9Qn5c6cR3D+AauMF7cgJcVOn8awo9qrE=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "multitool.linux_arm64": {
+            "repoRuleId": "@@rules_multitool+//multitool/private:multitool.bzl%_env_specific_tools",
+            "attributes": {
+              "lockfiles": [
+                "@@rules_uv+//uv/private:uv.lock.json"
+              ],
+              "os": "linux",
+              "cpu": "arm64"
+            }
+          },
+          "multitool.linux_x86_64": {
+            "repoRuleId": "@@rules_multitool+//multitool/private:multitool.bzl%_env_specific_tools",
+            "attributes": {
+              "lockfiles": [
+                "@@rules_uv+//uv/private:uv.lock.json"
+              ],
+              "os": "linux",
+              "cpu": "x86_64"
+            }
+          },
+          "multitool.macos_arm64": {
+            "repoRuleId": "@@rules_multitool+//multitool/private:multitool.bzl%_env_specific_tools",
+            "attributes": {
+              "lockfiles": [
+                "@@rules_uv+//uv/private:uv.lock.json"
+              ],
+              "os": "macos",
+              "cpu": "arm64"
+            }
+          },
+          "multitool.macos_x86_64": {
+            "repoRuleId": "@@rules_multitool+//multitool/private:multitool.bzl%_env_specific_tools",
+            "attributes": {
+              "lockfiles": [
+                "@@rules_uv+//uv/private:uv.lock.json"
+              ],
+              "os": "macos",
+              "cpu": "x86_64"
+            }
+          },
+          "multitool": {
+            "repoRuleId": "@@rules_multitool+//multitool/private:multitool.bzl%_multitool_hub",
+            "attributes": {
+              "lockfiles": [
+                "@@rules_uv+//uv/private:uv.lock.json"
+              ]
+            }
+          }
+        },
+        "recordedRepoMappingEntries": []
+      }
+    },
+    "@@rules_nodejs+//nodejs:extensions.bzl%node": {
+      "general": {
+        "bzlTransitiveDigest": "R18dnkskBK6++tGwp2S5BPnL83bNmAMQX+e/mY1AMrA=",
+        "usagesDigest": "YAVFp1tdjEWL4P8DLuKvt3c9cP2DcCAmzIHxrrIIfJM=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "nodejs_linux_amd64": {
+            "repoRuleId": "@@rules_nodejs+//nodejs:repositories.bzl%_nodejs_repositories",
+            "attributes": {
+              "node_download_auth": {},
+              "node_repositories": {},
+              "node_urls": [
+                "https://nodejs.org/dist/v{version}/{filename}"
+              ],
+              "node_version": "20.19.4",
+              "include_headers": false,
+              "platform": "linux_amd64"
+            }
+          },
+          "nodejs_linux_arm64": {
+            "repoRuleId": "@@rules_nodejs+//nodejs:repositories.bzl%_nodejs_repositories",
+            "attributes": {
+              "node_download_auth": {},
+              "node_repositories": {},
+              "node_urls": [
+                "https://nodejs.org/dist/v{version}/{filename}"
+              ],
+              "node_version": "20.19.4",
+              "include_headers": false,
+              "platform": "linux_arm64"
+            }
+          },
+          "nodejs_linux_s390x": {
+            "repoRuleId": "@@rules_nodejs+//nodejs:repositories.bzl%_nodejs_repositories",
+            "attributes": {
+              "node_download_auth": {},
+              "node_repositories": {},
+              "node_urls": [
+                "https://nodejs.org/dist/v{version}/{filename}"
+              ],
+              "node_version": "20.19.4",
+              "include_headers": false,
+              "platform": "linux_s390x"
+            }
+          },
+          "nodejs_linux_ppc64le": {
+            "repoRuleId": "@@rules_nodejs+//nodejs:repositories.bzl%_nodejs_repositories",
+            "attributes": {
+              "node_download_auth": {},
+              "node_repositories": {},
+              "node_urls": [
+                "https://nodejs.org/dist/v{version}/{filename}"
+              ],
+              "node_version": "20.19.4",
+              "include_headers": false,
+              "platform": "linux_ppc64le"
+            }
+          },
+          "nodejs_darwin_amd64": {
+            "repoRuleId": "@@rules_nodejs+//nodejs:repositories.bzl%_nodejs_repositories",
+            "attributes": {
+              "node_download_auth": {},
+              "node_repositories": {},
+              "node_urls": [
+                "https://nodejs.org/dist/v{version}/{filename}"
+              ],
+              "node_version": "20.19.4",
+              "include_headers": false,
+              "platform": "darwin_amd64"
+            }
+          },
+          "nodejs_darwin_arm64": {
+            "repoRuleId": "@@rules_nodejs+//nodejs:repositories.bzl%_nodejs_repositories",
+            "attributes": {
+              "node_download_auth": {},
+              "node_repositories": {},
+              "node_urls": [
+                "https://nodejs.org/dist/v{version}/{filename}"
+              ],
+              "node_version": "20.19.4",
+              "include_headers": false,
+              "platform": "darwin_arm64"
+            }
+          },
+          "nodejs_windows_amd64": {
+            "repoRuleId": "@@rules_nodejs+//nodejs:repositories.bzl%_nodejs_repositories",
+            "attributes": {
+              "node_download_auth": {},
+              "node_repositories": {},
+              "node_urls": [
+                "https://nodejs.org/dist/v{version}/{filename}"
+              ],
+              "node_version": "20.19.4",
+              "include_headers": false,
+              "platform": "windows_amd64"
+            }
+          },
+          "nodejs_windows_arm64": {
+            "repoRuleId": "@@rules_nodejs+//nodejs:repositories.bzl%_nodejs_repositories",
+            "attributes": {
+              "node_download_auth": {},
+              "node_repositories": {},
+              "node_urls": [
+                "https://nodejs.org/dist/v{version}/{filename}"
+              ],
+              "node_version": "20.19.4",
+              "include_headers": false,
+              "platform": "windows_arm64"
+            }
+          },
+          "nodejs": {
+            "repoRuleId": "@@rules_nodejs+//nodejs/private:nodejs_repo_host_os_alias.bzl%nodejs_repo_host_os_alias",
+            "attributes": {
+              "user_node_repository_name": "nodejs"
+            }
+          },
+          "nodejs_host": {
+            "repoRuleId": "@@rules_nodejs+//nodejs/private:nodejs_repo_host_os_alias.bzl%nodejs_repo_host_os_alias",
+            "attributes": {
+              "user_node_repository_name": "nodejs"
+            }
+          },
+          "nodejs_toolchains": {
+            "repoRuleId": "@@rules_nodejs+//nodejs/private:nodejs_toolchains_repo.bzl%nodejs_toolchains_repo",
+            "attributes": {
+              "user_node_repository_name": "nodejs"
+            }
+          }
+        },
+        "recordedRepoMappingEntries": []
+      }
+    },
+    "@@rules_perl+//perl:extensions.bzl%perl_repositories": {
+      "general": {
+        "bzlTransitiveDigest": "zAB9wRtwBZC0rswP6elTOMV3BOPhoCcDQcda/8ExR6A=",
+        "usagesDigest": "qSSNDdCNVxNhY36wMndEAFacdhR0ooLTmumfad0km9s=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "perl_darwin_arm64": {
+            "repoRuleId": "@@rules_perl+//perl:repo.bzl%perl_download",
+            "attributes": {
+              "strip_prefix": "perl-darwin-arm64",
+              "sha256": "285769f3c50c339fb59a3987b216ae3c5c573b95babe6875a1ef56fb178433da",
+              "urls": [
+                "https://github.com/skaji/relocatable-perl/releases/download/5.36.0.1/perl-darwin-arm64.tar.xz"
+              ]
+            }
+          },
+          "perl_darwin_amd64": {
+            "repoRuleId": "@@rules_perl+//perl:repo.bzl%perl_download",
+            "attributes": {
+              "strip_prefix": "perl-darwin-amd64",
+              "sha256": "63bc5ee36f5394d71c50cca6cafdd333ee58f9eaa40bca63c85f9bd06f2c1fd6",
+              "urls": [
+                "https://github.com/skaji/relocatable-perl/releases/download/5.36.0.1/perl-darwin-amd64.tar.xz"
+              ]
+            }
+          },
+          "perl_linux_amd64": {
+            "repoRuleId": "@@rules_perl+//perl:repo.bzl%perl_download",
+            "attributes": {
+              "strip_prefix": "perl-linux-amd64",
+              "sha256": "3bdffa9d7a3f97c0207314637b260ba5115b1d0829f97e3e2e301191a4d4d076",
+              "urls": [
+                "https://github.com/skaji/relocatable-perl/releases/download/5.36.0.1/perl-linux-amd64.tar.xz"
+              ]
+            }
+          },
+          "perl_linux_arm64": {
+            "repoRuleId": "@@rules_perl+//perl:repo.bzl%perl_download",
+            "attributes": {
+              "strip_prefix": "perl-linux-arm64",
+              "sha256": "6fa4ece99e790ecbc2861f6ecb7b52694c01c2eeb215b4370f16a3b12d952117",
+              "urls": [
+                "https://github.com/skaji/relocatable-perl/releases/download/5.36.0.1/perl-linux-arm64.tar.xz"
+              ]
+            }
+          },
+          "perl_windows_x86_64": {
+            "repoRuleId": "@@rules_perl+//perl:repo.bzl%perl_download",
+            "attributes": {
+              "strip_prefix": "",
+              "sha256": "aeb973da474f14210d3e1a1f942dcf779e2ae7e71e4c535e6c53ebabe632cc98",
+              "urls": [
+                "https://mirror.bazel.build/strawberryperl.com/download/5.32.1.1/strawberry-perl-5.32.1.1-64bit.zip",
+                "https://strawberryperl.com/download/5.32.1.1/strawberry-perl-5.32.1.1-64bit.zip"
+              ]
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "rules_perl+",
+            "bazel_tools",
+            "bazel_tools"
+          ],
+          [
+            "rules_perl+",
+            "rules_perl",
+            "rules_perl+"
+          ]
+        ]
+      }
+    },
+    "@@rules_python+//python/uv:uv.bzl%uv": {
+      "general": {
+        "bzlTransitiveDigest": "5wdoIOpi/4FrxGAndrcqvDgByQmBy/tYcMdyyq/gXOY=",
+        "usagesDigest": "icnInV8HDGrRQf9x8RMfxWfBHgT3OgRlYovS/9POEJw=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "uv": {
+            "repoRuleId": "@@rules_python+//python/uv/private:uv_toolchains_repo.bzl%uv_toolchains_repo",
+            "attributes": {
+              "toolchain_type": "'@@rules_python+//python/uv:uv_toolchain_type'",
+              "toolchain_names": [
+                "none"
+              ],
+              "toolchain_implementations": {
+                "none": "'@@rules_python+//python:none'"
+              },
+              "toolchain_compatible_with": {
+                "none": [
+                  "@platforms//:incompatible"
+                ]
+              },
+              "toolchain_target_settings": {}
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "rules_python+",
+            "bazel_tools",
+            "bazel_tools"
+          ],
+          [
+            "rules_python+",
+            "platforms",
+            "platforms"
+          ]
+        ]
+      }
+    },
+    "@@tar.bzl+//tar:extensions.bzl%toolchains": {
+      "general": {
+        "bzlTransitiveDigest": "ARFnga1qqjy0bT/hVunmIZnM4oZCkD8F253Z8POuLXs=",
+        "usagesDigest": "maF8qsAIqeH1ey8pxP0gNZbvJt34kLZvTFeQ0ntrJVA=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "bsd_tar_toolchains": {
+            "repoRuleId": "@@tar.bzl+//tar/toolchain:toolchain.bzl%tar_toolchains_repo",
+            "attributes": {
+              "user_repository_name": "bsd_tar_toolchains"
+            }
+          },
+          "bsd_tar_toolchains_darwin_amd64": {
+            "repoRuleId": "@@tar.bzl+//tar/toolchain:platforms.bzl%bsdtar_binary_repo",
+            "attributes": {
+              "platform": "darwin_amd64"
+            }
+          },
+          "bsd_tar_toolchains_darwin_arm64": {
+            "repoRuleId": "@@tar.bzl+//tar/toolchain:platforms.bzl%bsdtar_binary_repo",
+            "attributes": {
+              "platform": "darwin_arm64"
+            }
+          },
+          "bsd_tar_toolchains_linux_amd64": {
+            "repoRuleId": "@@tar.bzl+//tar/toolchain:platforms.bzl%bsdtar_binary_repo",
+            "attributes": {
+              "platform": "linux_amd64"
+            }
+          },
+          "bsd_tar_toolchains_linux_arm64": {
+            "repoRuleId": "@@tar.bzl+//tar/toolchain:platforms.bzl%bsdtar_binary_repo",
+            "attributes": {
+              "platform": "linux_arm64"
+            }
+          },
+          "bsd_tar_toolchains_windows_amd64": {
+            "repoRuleId": "@@tar.bzl+//tar/toolchain:platforms.bzl%bsdtar_binary_repo",
+            "attributes": {
+              "platform": "windows_amd64"
+            }
+          },
+          "bsd_tar_toolchains_windows_arm64": {
+            "repoRuleId": "@@tar.bzl+//tar/toolchain:platforms.bzl%bsdtar_binary_repo",
+            "attributes": {
+              "platform": "windows_arm64"
+            }
+          }
+        },
+        "recordedRepoMappingEntries": []
+      }
     }
   },
   "facts": {
