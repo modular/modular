@@ -1,0 +1,72 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "create_pipelines",
+    testonly = True,
+    srcs = ["create_pipelines.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        "//max/tests/integration/pipelines/python/idefics3:torch_utils",
+        "//max/tests/integration/pipelines/python/internvl:torch_utils",
+        "//max/tests/integration/pipelines/python/qwen2_5vl:generate_utils",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("einops"),  # Req'd by replit
+        requirement("timm"),  # Required by InternVL.
+        requirement("torch"),
+        requirement("transformers"),
+        requirement("peft"),  # Required for LoRA support
+    ],
+)
+
+modular_py_binary(
+    name = "generate_llm_logits",
+    testonly = True,
+    srcs = [
+        "debugging_utils.py",
+        "generate_llm_logits.py",
+    ],
+    data = [
+        "//max/tests/integration/pipelines/python/llama3/testdata",
+    ],
+    env = {
+        "PIPELINES_TESTDATA": (
+            "max/tests/integration/pipelines/python/llama3/testdata"
+        ),
+        # required by models that use Expert Parallelism.
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
+    imports = ["."],
+    main = "generate_llm_logits.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//max/python/max/entrypoints",
+        "//max/python/max/pipelines/architectures",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        "//max/tests/integration/pipelines/python/idefics3:torch_utils",
+        "//max/tests/integration/pipelines/python/internvl:torch_utils",
+        "//max/tests/integration/pipelines/python/qwen2_5vl:generate_utils",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("click"),
+        requirement("einops"),  # Req'd by replit
+        requirement("pillow"),
+        requirement("requests"),
+        requirement("timm"),  # Required by InternVL.
+        requirement("torch"),
+        requirement("transformers"),
+        requirement("peft"),  # Required for LoRA support
+        ":create_pipelines",
+    ] + select({
+        "//:has_gpu": [
+            requirement("gptqmodel"),
+            requirement("datasets"),  # Required by gptqmodel
+            requirement("device-smi"),  # Required by gptqmodel
+            requirement("logbar"),  # Required by gptqmodel
+            requirement("threadpoolctl"),  # Required by gptqmodel
+            requirement("tokenicer"),  # Required by gptqmodel
+            requirement("optimum"),
+        ],
+        "//conditions:default": [],
+    }),
+)

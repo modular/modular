@@ -58,8 +58,8 @@ modular_py_binary(
     },
     visibility = ["//visibility:public"],
     deps = [
-        ":generate_llm_logits",
         ":verify",
+        "//max/tests/integration/tools:generate_llm_logits",
         requirement("click"),
         "@rules_python//python/runfiles",
     ],
@@ -113,9 +113,9 @@ modular_py_binary(
     main = "verify_layers/cli.py",
     visibility = ["//visibility:public"],
     deps = [
-        ":generate_llm_logits",
         ":verify",
         "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/tools:generate_llm_logits",
         requirement("click"),
         requirement("numpy"),
         requirement("torch"),
@@ -235,56 +235,6 @@ modular_py_test(
     ],
 )
 
-modular_py_binary(
-    name = "generate_llm_logits",
-    testonly = True,
-    srcs = [
-        "debugging_utils.py",
-        "generate_llm_logits.py",
-    ],
-    data = [
-        "//max/tests/integration/pipelines/python/llama3/testdata",
-    ],
-    env = {
-        "PIPELINES_TESTDATA": (
-            "max/tests/integration/pipelines/python/llama3/testdata"
-        ),
-        # required by models that use Expert Parallelism.
-        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
-    },
-    imports = ["."],
-    main = "generate_llm_logits.py",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":hf_repo_lock",
-        "//max/python/max/entrypoints",
-        "//max/python/max/pipelines/architectures",
-        "//max/tests/integration/pipelines/python/idefics3:torch_utils",
-        "//max/tests/integration/pipelines/python/internvl:torch_utils",
-        "//max/tests/integration/pipelines/python/qwen2_5vl:generate_utils",
-        "//max/tests/integration/pipelines/python/test_common",
-        requirement("click"),
-        requirement("einops"),  # Req'd by replit
-        requirement("pillow"),
-        requirement("requests"),
-        requirement("timm"),  # Required by InternVL.
-        requirement("torch"),
-        requirement("transformers"),
-        requirement("peft"),  # Required for LoRA support
-    ] + select({
-        "//:has_gpu": [
-            requirement("gptqmodel"),
-            requirement("datasets"),  # Required by gptqmodel
-            requirement("device-smi"),  # Required by gptqmodel
-            requirement("logbar"),  # Required by gptqmodel
-            requirement("threadpoolctl"),  # Required by gptqmodel
-            requirement("tokenicer"),  # Required by gptqmodel
-            requirement("optimum"),
-        ],
-        "//conditions:default": [],
-    }),
-)
-
 modular_py_test(
     name = "test_generate_llm_logits_gpu",
     size = "medium",
@@ -301,7 +251,7 @@ modular_py_test(
         "run-in-hf-workflow",
     ],
     deps = [
-        ":generate_llm_logits",
+        "//max/tests/integration/tools:generate_llm_logits",
         requirement("click"),
     ],
 )
