@@ -36,7 +36,9 @@ MULTI_GPUS = {"2xH100"}
 #   1. Trigger the smoke test job with the model name you want to add:
 #   https://github.com/modularml/modular/actions/workflows/pipelineVerification.yaml
 #   2. Review the results, and the need for framework/GPU exclusions (if any)
-#   3. Add the model to the dictionary above, with the appropriate exclusions
+#   3. Add the model to the dictionary below, with the appropriate exclusions
+#    3a) For VLMs, add it to the is_vision_model check in smoke_test.py
+#    3b) For reasoning models, add it to the is_reasoning_model check in smoke_test.py
 MODELS = {
     "allenai/olmOCR-2-7B-1025-FP8": [
         "max",  # Wait for 25.7
@@ -129,8 +131,8 @@ def main(
     ignore_exclusions = models_override is not None
 
     job = []
-    for model in sorted(models):
-        for gpu in sorted(gpus):
+    for gpu in sorted(gpus):
+        for model in sorted(models):
             if ignore_exclusions or not excluded(framework, gpu, model):
                 job.append(
                     {

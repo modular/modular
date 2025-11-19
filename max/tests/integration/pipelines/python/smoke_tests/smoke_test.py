@@ -146,11 +146,18 @@ def safe_model_name(model: str) -> str:
 
 
 def call_lm_eval(model: str, task: str) -> tuple[LmEvalResults, LmEvalSamples]:
-    max_gen_toks = {
-        "unsloth/gpt-oss-20b-bf16": ",max_gen_toks=50000",
-        "qwen/qwen3-8b": ",max_gen_toks=4096",
-        "opengvlab/internvl3_5-8b-instruct": ",max_gen_toks=4096",
-    }.get(model, "")
+    extra_gen_kwargs = ""
+    is_reasoning_model = any(
+        kw in model for kw in ("qwen3", "gpt-oss", "internvl3_5")
+    )
+    # Reasoning models needs extra tokens for .. reasoning
+    if is_reasoning_model:
+        extra_gen_kwargs = ",max_gen_toks=4096"
+
+    # GPT-OSS sometimes gets stuck in a reasoning loop. To ensure consistency
+    # in CI, we add a repetition penalty which helps prevent the loop
+    if "gpt-oss" in model:
+        extra_gen_kwargs = extra_gen_kwargs + ",repetition_penalty=1.1"
 
     interpreter = (
         sys.executable if _inside_bazel() else ".venv-lm-eval/bin/python"
@@ -168,7 +175,7 @@ def call_lm_eval(model: str, task: str) -> tuple[LmEvalResults, LmEvalSamples]:
             f"--output_path={tempdir}",
             "--limit=320",
             "--seed=42",
-            f"--gen_kwargs=seed=42,temperature=0{max_gen_toks}",
+            f"--gen_kwargs=seed=42,temperature=0{extra_gen_kwargs}",
             f"--include_path={include_path}",
             "--fewshot_as_multiturn",
         ]
