@@ -65,6 +65,7 @@ jobs:
             )
           fi
 
+          ./bazelw run lint
           ./bazelw mod tidy
           git diff --exit-code -- ./MODULE.bazel ./MODULE.bazel.lock || {
             echo "error: Changes detected: MODULE.bazel is out of date."
