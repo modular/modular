@@ -394,9 +394,9 @@ class MultimodalKVCacheManager:
             np.array(
                 [
                     [
-                        vision_kv_manager_replica._request_to_seq_id[
+                        vision_kv_manager_replica.get_req_blocks(
                             ctx.request_id
-                        ],
+                        )[0],
                         1,
                     ]
                     for ctx in batch

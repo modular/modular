@@ -146,11 +146,8 @@ class _TPPagedKVCacheManager:
                 "_TPPagedKVCacheManager does not support data parallelism."
             )
 
-        # Attributes for managing available slots.
-        self._available = set(range(self.max_batch_size))
-
-        # Mappings between request IDs and sequence IDs.
-        self._request_to_seq_id: dict[RequestID, int] = {}
+        # Track the set of requests that are currently claimed.
+        self._claimed_requests: set[RequestID] = set()
 
         # The number of tokens in a single block.
         self.page_size = page_size
@@ -743,25 +740,12 @@ class _TPPagedKVCacheManager:
         This returns the sequence ID back to the available pool of cache memory,
         allowing it to be reused when a new sequence is claimed.
         """
-        # Get the sequence ID from the request ID for internal use
-        if request_id not in self._request_to_seq_id:
+        if request_id not in self._claimed_requests:
             raise ValueError(
                 f"Attempted to release request ID {request_id} but it is not claimed"
             )
 
-        # Call the base class release method with the request_id
-        if request_id not in self._request_to_seq_id:
-            raise ValueError(
-                f"Attempted to release request ID {request_id} but it is not claimed"
-            )
-
-        # Look up the sequence ID
-        seq_id = self._request_to_seq_id[request_id]
-
-        # Clean up mappings
-        del self._request_to_seq_id[request_id]
-
-        self._available.add(seq_id)
+        self._claimed_requests.remove(request_id)
 
         # Call the block manager release method with the request_id
         self.block_manager.release(request_id)
@@ -918,17 +902,13 @@ class _TPPagedKVCacheManager:
 
     def claim(self, request_id: RequestID) -> None:
         """Reserve a sequence ID for the given request ID."""
-        if request_id in self._request_to_seq_id:
+        if request_id in self._claimed_requests:
             raise ValueError(f"Request ID {request_id} is already claimed")
-
-        if not self._available:
-            raise ValueError("No available sequence IDs to claim")
-
-        # Get the next available sequence ID
-        seq_id = self._available.pop()
-
-        # Update mappings
-        self._request_to_seq_id[request_id] = seq_id
+        if len(self._claimed_requests) == self.max_batch_size:
+            raise ValueError(
+                f"Unable to claim request ID {request_id} due to batch size limit."
+            )
+        self._claimed_requests.add(request_id)
 
     def contains(self, request_id: RequestID) -> bool:
         """Check if the given request ID is currently active in the cache.
@@ -939,7 +919,7 @@ class _TPPagedKVCacheManager:
         Returns:
             True if the request ID is active in the cache, False otherwise.
         """
-        return request_id in self._request_to_seq_id
+        return request_id in self._claimed_requests
 
     @property
     def metrics(self) -> KVCacheMetrics:
