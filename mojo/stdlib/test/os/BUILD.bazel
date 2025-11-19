@@ -6,11 +6,8 @@ _FILECHECK_TESTS = [
 
 _LIT_TESTS = [
     "test_no_trap.mojo",
+    "path/test_islink.mojo",
 ]
-
-_PLATFORM_CONSTRAINTS = {
-    "path/test_islink.mojo": ["@platforms//:incompatible"],  # TODO(#33762): This is causing recursive dirs to be created.
-}
 
 _ENV = {
     "test_env.mojo": {"TEST_MYVAR": "MyValue"},
@@ -47,7 +44,6 @@ _EXPECT_CRASH = [
         ],
         data = [src],  # NOTE: some tests attempt to read their source files
         env = _ENV.get(src, {}),
-        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",
