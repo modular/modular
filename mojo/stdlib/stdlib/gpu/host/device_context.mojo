@@ -1727,6 +1727,57 @@ struct DeviceStream(ImplicitlyCopyable, Movable):
             constant_memory=constant_memory^,
         )
 
+    @always_inline
+    fn enqueue_function_checked[
+        *Ts: DevicePassable
+    ](
+        self,
+        f: DeviceFunction,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+    ) raises:
+        """Enqueues a checked compiled function for execution on this stream.
+
+        Parameters:
+            Ts: Argument types (must be DevicePassable).
+
+        Args:
+            f: The checked compiled function to execute.
+            args: Arguments to pass to the function.
+            grid_dim: Dimensions of the compute grid, made up of thread blocks.
+            block_dim: Dimensions of each thread block in the grid.
+            cluster_dim: Dimensions of clusters (if the thread blocks are
+                grouped into clusters).
+            shared_mem_bytes: Amount of shared memory per thread block.
+            attributes: Launch attributes.
+            constant_memory: Constant memory mapping.
+
+        Raises:
+            If the operation fails.
+        """
+        _check_dim["DeviceStream.enqueue_function_checked", "grid_dim"](
+            grid_dim, location=__call_location()
+        )
+        _check_dim["DeviceStream.enqueue_function_checked", "block_dim"](
+            block_dim, location=__call_location()
+        )
+
+        self._enqueue_function_checked(
+            f,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
+
     @parameter
     @always_inline
     fn _enqueue_function_unchecked[
