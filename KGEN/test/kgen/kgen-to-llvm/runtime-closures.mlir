@@ -5,7 +5,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   llvm.func @take_closure_no_args(%arg0: !llvm.struct<(ptr, ptr)>) {
     // CHECK: %[[V0:.+]] = llvm.extractvalue %arg0[0] : !llvm.struct<(ptr, ptr)>
     // CHECK: %[[V1:.+]] = llvm.extractvalue %arg0[1] : !llvm.struct<(ptr, ptr)>
-    // CHECK: llvm.call %[[V0]](%[[V1]]) {fastmathFlags = #llvm.fastmath<contract>}
+    // CHECK: llvm.call %[[V0]](%[[V1]])
     %0 = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(ptr, ptr)> to !kgen.generator<() capturing -> index>
     %1 = kgen.call_indirect %0() : () capturing -> index
     llvm.return

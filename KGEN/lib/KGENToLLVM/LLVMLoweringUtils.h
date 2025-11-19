@@ -108,12 +108,19 @@ struct POPToLLVMTypeConverter : public mlir::LLVMTypeConverter,
 static constexpr mlir::LLVM::FastmathFlags LLVM_FASTMATH_FLAGS =
     mlir::LLVM::FastmathFlags::contract;
 
-/// Create an `LLVM::CallOp` with the default fastmath flags.
+/// Return true if call is allowed to have fastmath flags. Specifically, expect
+/// that result value is either scalar or vector FP or homogeneous aggregate
+/// with scalar or vector FP.
+bool canCallHaveFastmathFlags(mlir::LLVM::CallOp call);
+
+/// Create an `LLVM::CallOp` with the default fastmath flags if needed
 template <typename... Args>
 auto createLLVMCall(OpBuilder &b, Location loc, Args &&...args) {
   auto call = mlir::LLVM::CallOp::create(b, loc, std::forward<Args>(args)...);
-  // Attach the default fastmath flags.
-  call.setFastmathFlags(LLVM_FASTMATH_FLAGS);
+  if (canCallHaveFastmathFlags(call)) {
+    // Attach the default fastmath flags.
+    call.setFastmathFlags(LLVM_FASTMATH_FLAGS);
+  }
   return call;
 }
 
@@ -142,12 +149,6 @@ struct LLVMBuilder : public ImplicitLocOpBuilder,
 
   using ImplicitLocOpBuilder::getContext;
   using POPToLLVMTypeConverter::getIndexType;
-
-  /// Create an `LLVM::CallOp` with the default fastmath flags.
-  template <typename... Args>
-  auto createCall(Args &&...args) {
-    return createLLVMCall(*this, getLoc(), std::forward<Args>(args)...);
-  }
 
   /// Create an `LLVMFuncOp` with the target info attributes.
   template <typename... Args>

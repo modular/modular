@@ -48,7 +48,7 @@ kgen.func @two_results(%arg0: !pop.simd<1, f32>) -> (!pop.simd<1, f32>, !pop.sim
 kgen.func @convert_call(%arg0: !pop.simd<1, f32>) {
   // CHECK: llvm.call @trivial_simd(%[[ARG0]]) {fastmathFlags = #llvm.fastmath<contract>} : (f32) -> f32
   %0 = kgen.call @trivial_simd(%arg0) : (!pop.simd<1, f32>) -> !pop.simd<1, f32>
-  // CHECK: llvm.call @no_result(%[[ARG0]]) {fastmathFlags = #llvm.fastmath<contract>} : (f32) -> ()
+  // CHECK: llvm.call @no_result(%[[ARG0]]) : (f32) -> ()
   kgen.call @no_result(%arg0) : (!pop.simd<1, f32>) -> ()
   // CHECK: %[[PACK:.*]] = llvm.call @two_results(%[[ARG0]]) {fastmathFlags = #llvm.fastmath<contract>} : (f32) -> !llvm.struct<(f32, f32)>
   %1:2 = kgen.call @two_results(%arg0) : (!pop.simd<1, f32>) -> (!pop.simd<1, f32>, !pop.simd<1, f32>)
