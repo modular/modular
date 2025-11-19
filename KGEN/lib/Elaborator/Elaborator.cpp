@@ -1693,24 +1693,23 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     // parallelize as-is - we should change the approach a bit to have a
     // ParametricNode (or similar) that doesn't store the input parameters, in
     // which we could store the ParameterUseDefGraph.
-    ParameterUseDefGraph *genNodeGraph =
-        knownGraphs.read([gen](const auto &map) -> ParameterUseDefGraph * {
+
+    ParameterUseDefGraph *genNodeGraph = knownGraphs.modify(
+        [gen, &paramCache = this->paramCache](auto &map) mutable {
           if (auto it = map.find(gen); it != map.end())
             return it->second.get();
-          return nullptr;
+          // Compute a new graph. The computed graph could end up getting
+          // discarded if two threads end up here at the same time for the same
+          // generator.
+          auto newGraph =
+              std::make_unique<ParameterUseDefGraph>(gen.getBodyRegion());
+
+          // calculate() modifies gen.getBodyRegion(), so this needs to be done
+          // in a thread safe manner to avoid tsan failures.
+          newGraph->calculate(paramCache.getThreadLocalCache());
+
+          return map.try_emplace(gen, std::move(newGraph)).first->second.get();
         });
-    if (!genNodeGraph) {
-      // Compute a new graph. The computed graph could end up getting discarded
-      // if two threads end up here at the same time for the same generator.
-      auto newGraph =
-          std::make_unique<ParameterUseDefGraph>(gen.getBodyRegion());
-      newGraph->calculate(paramCache.getThreadLocalCache());
-      // Make sure to use whichever graph ended up in the map.
-      genNodeGraph = knownGraphs.modify([gen, newGraph = std::move(newGraph)](
-                                            auto &map) mutable {
-        return map.try_emplace(gen, std::move(newGraph)).first->second.get();
-      });
-    }
 
     // Clone the body of the generator into the function.
     // TODO: is there a nice way for us to avoid cloning this?
