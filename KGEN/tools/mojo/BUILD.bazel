@@ -80,14 +80,6 @@ pkg_files(
             "**/*.cpp",
         ]),
         data = data,
-        env = select({
-            "@platforms//os:macos": {
-                "MODULAR_MOJO_MAX_SYSTEM_LIBS": "-lm",
-            },
-            "@platforms//os:linux": {
-                "MODULAR_MOJO_MAX_SYSTEM_LIBS": "-lrt,-ldl,-lpthread,-lm",
-            },
-        }),
         includes = ["."],
         linkopts = select({
             "@platforms//os:linux": [
