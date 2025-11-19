@@ -101,12 +101,16 @@ def generate_max_outputs(
         DType.float64, shape=np_weights.shape, device=device_ref
     )
 
+    grid_thw_type = TensorType(
+        DType.int64, shape=grid_thw.shape, device=device_ref
+    )
+
     with Graph(
         "VisionPatchPositionEmbedding",
-        input_types=(idx_type, weights_type),
+        input_types=(idx_type, weights_type, grid_thw_type),
     ) as graph:
-        idx, weights = graph.inputs
-        output = patch_embed_module(idx.tensor, weights.tensor)
+        idx, weights, grid = graph.inputs
+        output = patch_embed_module(idx.tensor, weights.tensor, grid.tensor)
         graph.output(output)
 
     compiled = session.load(
@@ -118,84 +122,16 @@ def generate_max_outputs(
     result = compiled.execute(
         Tensor.from_dlpack(np_idx).to(device),
         Tensor.from_dlpack(np_weights).to(device),
+        Tensor.from_dlpack(grid_thw).to(device),
     )
     max_tensor = result[0]
     return from_dlpack(max_tensor)
 
 
 @pytest.mark.parametrize(
-    "target_size",
-    # Small (16x16 patches), Medium (32x32 patches), Large (48x48 patches)
-    [224, 448, 672],
-)
-def test_vision_patch_position_embedding(target_size: int) -> None:
-    """Test patch embedding for different image resolutions."""
-    torch.manual_seed(42)
-
-    # Load config and generate weights
-    loader = get_config_loader()
-    hf_full_config = loader.load_config(ConfigNames.QWEN3VL_30B)
-    hf_vision_config = hf_full_config["vision_config"]
-    qwen3vl_config = loader.create_qwen3vl_config(ConfigNames.QWEN3VL_30B)
-    embeddings_weights = get_weight_generator(
-        ConfigNames.QWEN3VL_30B
-    ).generate_position_embedding_weights()
-
-    # Create test inputs
-    in_channels = hf_vision_config.get("in_channels", 3)
-    temporal_patch_size = hf_vision_config["temporal_patch_size"]
-    patch_size = hf_vision_config["patch_size"]
-
-    # For Qwen3VL, input is already in patch format
-    # Shape: (seq_len, in_channels * temporal_patch_size * patch_size * patch_size)
-    num_patches_h = target_size // patch_size
-    num_patches_w = target_size // patch_size
-    seq_len = num_patches_h * num_patches_w
-
-    grid_thw = torch.tensor(
-        [[1, num_patches_h, num_patches_w]], dtype=torch.int64
-    ).to("cuda")
-
-    # Generate reference output
-    torch_output = generate_torch_outputs(
-        grid_thw=grid_thw,
-        embeddings_weights=embeddings_weights,
-        dtype=torch.bfloat16,
-    )
-
-    # Generate MAX output
-    max_output = generate_max_outputs(
-        grid_thw=grid_thw,
-        qwen3vl_config=qwen3vl_config,
-        embeddings_weights=embeddings_weights,
-        dtype=DType.bfloat16,
-        device=Accelerator(),
-    )
-
-    # Verify output shape
-    expected_shape = (seq_len, hf_vision_config["hidden_size"])
-    assert torch_output.shape == expected_shape, (
-        f"Expected shape {expected_shape}, got Torch: {torch_output.shape}, Max: {max_output.shape}"
-    )
-    assert max_output.shape == expected_shape, (
-        f"Expected shape {expected_shape}, got Torch: {torch_output.shape}, Max: {max_output.shape}"
-    )
-
-    # TODO: Uncomment this when the kernel for bilinear interpolation embedding is implemented
-    # Compare outputs
-    # assert_tensors_close(
-    #     torch_output,
-    #     max_output,
-    #     rtol=RTOL,
-    #     atol=ATOL,
-    #     message="Vision patch embedding outputs do not match",
-    # )
-
-
-@pytest.mark.parametrize(
     "height,width",
     # 16x24 patches, 32x16 patches, 146x98 patches
-    [(224, 320), (448, 224), (2336, 1568)],
+    [(224, 320), (224, 224), (2336, 1568)],
 )
 def test_vision_patch_position_embedding_non_square(
     height: int, width: int
@@ -233,7 +169,7 @@ def test_vision_patch_position_embedding_non_square(
         grid_thw=grid_thw,
         embeddings_weights=embeddings_weights,
         dtype=torch.bfloat16,
-    )
+    ).to("cpu")
 
     # Generate MAX output
     max_output = generate_max_outputs(
@@ -242,78 +178,7 @@ def test_vision_patch_position_embedding_non_square(
         embeddings_weights=embeddings_weights,
         dtype=DType.bfloat16,
         device=Accelerator(),
-    )
-
-    # Verify output shape
-    expected_shape = (seq_len, hf_vision_config["hidden_size"])
-    assert torch_output.shape == expected_shape, (
-        f"Expected shape {expected_shape}, got Torch: {torch_output.shape}, Max: {max_output.shape}"
-    )
-    assert max_output.shape == expected_shape, (
-        f"Expected shape {expected_shape}, got Torch: {torch_output.shape}, Max: {max_output.shape}"
-    )
-
-    # Compare outputs
-    # assert_tensors_close(
-    #     torch_output,
-    #     max_output,
-    #     rtol=RTOL,
-    #     atol=ATOL,
-    #     message="Vision patch embedding non-square outputs do not match",
-    # )
-
-
-@pytest.mark.skip(reason="Skipping test_vision_patch_position_embedding_video")
-def test_vision_patch_position_embedding_video() -> None:
-    """Test patch embedding for video inputs with temporal dimension."""
-    torch.manual_seed(42)
-
-    # Load config and generate weights
-    loader = get_config_loader()
-    hf_full_config = loader.load_config(ConfigNames.QWEN3VL_30B)
-    hf_vision_config = hf_full_config["vision_config"]
-    qwen3vl_config = loader.create_qwen3vl_config(ConfigNames.QWEN3VL_30B)
-    embeddings_weights = get_weight_generator(
-        ConfigNames.QWEN3VL_30B
-    ).generate_position_embedding_weights()
-
-    # Create test inputs for video
-    in_channels = hf_vision_config.get("in_channels", 3)
-    temporal_patch_size = hf_vision_config["temporal_patch_size"]
-    patch_size = hf_vision_config["patch_size"]
-
-    # Video dimensions
-    num_frames = 4  # 4 frames in the video
-    height = 224
-    width = 224
-
-    # Calculate patches
-    num_patches_h = height // patch_size
-    num_patches_w = width // patch_size
-    num_temporal_patches = num_frames // temporal_patch_size
-    seq_len = num_temporal_patches * num_patches_h * num_patches_w
-    _ = in_channels  # unused but kept for clarity of derivation
-
-    grid_thw = torch.tensor(
-        [[num_temporal_patches, num_patches_h, num_patches_w]],
-        dtype=torch.int64,
-    )
-
-    # Generate reference output
-    torch_output = generate_torch_outputs(
-        grid_thw=grid_thw,
-        embeddings_weights=embeddings_weights,
-        dtype=torch.bfloat16,
-    )
-
-    # Generate MAX output
-    max_output = generate_max_outputs(
-        grid_thw=grid_thw,
-        qwen3vl_config=qwen3vl_config,
-        embeddings_weights=embeddings_weights,
-        dtype=DType.bfloat16,
-        device=Accelerator(),
-    )
+    ).to("cpu")
 
     # Verify output shape
     expected_shape = (seq_len, hf_vision_config["hidden_size"])
@@ -330,21 +195,18 @@ def test_vision_patch_position_embedding_video() -> None:
         max_output,
         rtol=RTOL,
         atol=ATOL,
-        message="Vision patch embedding video outputs do not match",
+        message="Vision patch embedding non-square outputs do not match",
     )
 
 
-@pytest.mark.skip(
-    reason="Skipping test_vision_patch_position_embedding_multiple_images"
-)
 @pytest.mark.parametrize(
     "image_sizes",
     [  # Two square images of different sizes
         [(224, 224), (448, 448)],
         # Three images: non-square, non-square, square
-        [(224, 336), (448, 224), (672, 672)],
+        [(224, 352), (448, 224), (672, 672)],
         # Four images of various sizes
-        [(224, 224), (448, 672), (336, 224), (672, 448)],
+        [(224, 224), (448, 672), (352, 224), (672, 448)],
     ],
 )
 def test_vision_patch_position_embedding_multiple_images(
@@ -381,9 +243,6 @@ def test_vision_patch_position_embedding_multiple_images(
         grid_thw_list.append([1, num_patches_h, num_patches_w])
         total_seq_len += seq_len
 
-    _ = in_channels  # unused but kept for clarity of derivation
-    _ = temporal_patch_size  # unused but kept for clarity of derivation
-
     # Create grid_thw tensor [n_images, 3]
     grid_thw = torch.tensor(grid_thw_list, dtype=torch.int64)
 
@@ -392,7 +251,7 @@ def test_vision_patch_position_embedding_multiple_images(
         grid_thw=grid_thw,
         embeddings_weights=embeddings_weights,
         dtype=torch.bfloat16,
-    )
+    ).to("cpu")
 
     # Generate MAX output
     max_output = generate_max_outputs(
@@ -401,12 +260,15 @@ def test_vision_patch_position_embedding_multiple_images(
         embeddings_weights=embeddings_weights,
         dtype=DType.bfloat16,
         device=Accelerator(),
-    )
+    ).to("cpu")
 
     # Verify output shape
     expected_shape = (total_seq_len, hf_vision_config["hidden_size"])
     assert max_output.shape == expected_shape, (
-        f"Expected shape {expected_shape}, got {max_output.shape}"
+        f"Expected shape {expected_shape}, got MAX output shape: {max_output.shape}"
+    )
+    assert torch_output.shape == expected_shape, (
+        f"Expected shape {expected_shape}, got Torch output shape: {torch_output.shape}"
     )
 
     # Compare outputs
