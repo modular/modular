@@ -197,6 +197,13 @@ class PipelineConfig(MAXConfig):
     force: bool = field(default=False)
     """Skip validation of user provided flags against the architecture's required arguments."""
 
+    kvcache_ce_watermark: float = 0.95
+    """Projected cache usage threshold for scheduling CE requests, considers current + incoming
+    request. CE is scheduled if either projected usage stays below this threshold OR no active
+    requests exist. Greater KVCache utilization (as controlled by this parameter) was
+    found to cause more preemptions.
+    """
+
     _model_config: MAXModelConfig = field(default_factory=MAXModelConfig)
     """The model config."""
 
@@ -1103,6 +1110,7 @@ class PipelineConfig(MAXConfig):
             "max_batch_context_length": "Ensures that the sum of the context length in a batch does not exceed max_batch_context_length. If None, the sum of the context length in batch is not limited.",
             "pdl_level": "Level of overlap of kernel launch via programmatic dependent grid control. Default is 0.",
             "custom_architectures": "A list of custom architecture implementations to register. Each input can either be a raw module name or an import path followed by a colon and the module name.",
+            "kvcache_ce_watermark": "Projected cache usage threshold for scheduling CE requests, considers current + incoming request. CE is scheduled if either projected usage stays below this threshold OR no active requests exist. Greater KVCache utilization (as controlled by this parameter) was found to cause more preemptions. Default watermark value is 0.95.",
         }
 
     @property

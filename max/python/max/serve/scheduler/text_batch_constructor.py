@@ -538,7 +538,7 @@ class TextBatchConstructor:
                 # the CE request is within the allowed limit.
                 sufficient_free_blocks = (
                     pct_blocks_used_after_ce_request
-                    <= self.scheduler_config.max_used_blocks_pct
+                    <= self.scheduler_config.kvcache_ce_watermark
                 )
                 # If there are no active TG requests then we must schedule CE.
                 no_active_requests = (
