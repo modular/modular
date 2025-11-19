@@ -225,7 +225,7 @@ trait ConvertibleToZPointer:
     comptime Pointee: AnyType
 
     fn to_zpointer(self) -> ZPointer[Self.Pointee]:
-        pass
+        ...
 
 
 @register_passable("trivial")
@@ -245,7 +245,7 @@ struct ZPointer[T: AnyType](AnyRPTrivialType):
 
 trait ConvertibleToZLayoutTensor:
     fn to_tensor(self) -> ZLayoutTensor:
-        pass
+        ...
 
 
 @register_passable("trivial")

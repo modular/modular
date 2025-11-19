@@ -871,11 +871,11 @@ struct ShapeContainer:
 trait CFMTrait: # expected-note {{trait 'CFMTrait' declared here}}
     # expected-note @below {{no 'f1' candidates have type 'fn(self: CFMStructFail) -> None'}}
     fn f1(self):
-        pass
+        ...
 
     @staticmethod
     fn f2(): # expected-note {{required function 'f2' is not implemented}}
-        pass
+        ...
 
 # struct implements CFMTrait but does not have f2().
 @register_passable("trivial")

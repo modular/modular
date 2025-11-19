@@ -310,7 +310,7 @@ struct StmtParser : public ParserBase {
   ParseResult parseMLIRRegionStmt(LexerCursor startCursor, size_t curIndent);
 
   // Helper invoked during parseDefFnStmt, meant to mark defaulted trait method
-  // (first token in the function body is neither a '...' nor 'pass').
+  // (first token in the function body is not '...').
   void maybeMarkDefaultedTraitMethod(FnOp fnOp);
 
 private:
@@ -2787,9 +2787,8 @@ void StmtParser::maybeMarkDefaultedTraitMethod(FnOp fnOp) {
   consumeIf(Token::string);
 
   // Mark the function as defaulted unless its body is explicitly empty.
-  if (!getToken().isAny(Token::kw_pass, Token::dot_dot_dot)) {
+  if (!getToken().is(Token::dot_dot_dot))
     fnOp.setDefaultedTraitFn(true);
-  }
 
   // Restore lexer state so normal parsing can continue unharmed.
   savedCursor.restore(getLexer());

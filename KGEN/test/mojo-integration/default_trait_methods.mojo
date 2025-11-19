@@ -14,29 +14,29 @@ trait Barable:
 
 trait Foo:
     fn rp_return_params[T: Int](self) -> Int:
-        pass
+        ...
 
     @staticmethod
     fn rp_return_static_multis(x: Int, y: Int) -> Int:
-        pass
+        ...
 
     fn rp_return_multi_params[T: Int, T2: Int](self, x: Int) -> Int:
-        pass
+        ...
 
     fn ref_return(self) -> String:
-        pass
+        ...
 
     fn ref_return_params[T: Int](self, name: String) -> String:
-        pass
+        ...
 
     fn rp_return_raises(self) raises -> Int:
-        pass
+        ...
 
     fn ref_return_raises(self) raises -> String:
-        pass
+        ...
 
     fn parametric_ref_args(self, ref x: Int, ref y: Int) -> Int:
-        pass
+        ...
 
 
 trait FooActual(Absable, Foo, Intable):
