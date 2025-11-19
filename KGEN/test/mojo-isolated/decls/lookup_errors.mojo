@@ -74,3 +74,34 @@ trait DirectTraitMemberReference:
         fxn(self)
         # expected-error @+1 {{cannot access method 'stat' directly; did you mean 'Self.'?}}
         stat()
+
+
+struct StructWithParam[a: Int]:
+    pass
+
+
+@fieldwise_init
+struct UnqualifiedStructParameterAccess[
+    my_param: Int,  # expected-note {{parameter 'my_param' declared here}}
+    other_param: Int,
+    struct_param: StructWithParam[my_param],  # this should be okay
+]:
+    # expected-warning @+1 {{unqualified access to struct parameter 'my_param'; use 'Self.my_param' instead}}
+    comptime my_alias = my_param
+
+    fn bar(self) -> Int:
+        fn nested_fn():
+            # expected-warning @+1 {{unqualified access to struct parameter 'my_param'; use 'Self.my_param' instead}}
+            comptime my_different_alias = my_param
+
+        fn shadowing_nested_fn[my_param: Int]():
+            # There should be no warning here because the comptime is shadowed.
+            comptime my_different_alias = my_param
+
+        nested_fn()
+        shadowing_nested_fn[4]()
+
+        # expected-warning @+1 {{unqualified access to struct parameter 'my_param'; use 'Self.my_param' instead}}
+        comptime my_other_alias = my_param
+        # expected-warning @+1 {{unqualified access to struct parameter 'my_param'; use 'Self.my_param' instead}}
+        return my_param

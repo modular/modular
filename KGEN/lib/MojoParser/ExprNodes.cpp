@@ -731,8 +731,69 @@ static FailureOr<ASTDecl *> getTargetStructDecl(ASTDecl *referencedDecl,
   return nullptr;
 }
 
-/// lookup scope.  This is refactored out from emitLCVIR because we use it for
-/// qualified lookup "x.y" when "x" is a package.
+/// Utility function to diagnose unknown declarations, providing fixits or hints
+/// whenever possible.
+static ExprNode::ELVIITResult
+diagnoseUnknownDeclaration(StringRef spelling, ASTDecl &lookupScope,
+                           ArrayRef<ASTDecl *> failureDecls, IREmitter &emitter,
+                           const ExprNode *expr) {
+  auto loc = expr->getLoc();
+  if (!failureDecls.empty()) {
+    // Reject unqualified struct field references.
+    if (auto fieldOp = dyn_cast_or_null<StructFieldOp>(
+            failureDecls[0]->getIfOperation())) {
+      emitter.emitError(loc, "cannot access instance field '")
+          << spelling << "' directly; did you mean 'self.'?" << expr->getRange()
+          << FixIt::insertBeforeToken(loc, "self.");
+      return {};
+    }
+
+    // Reject unqualified struct/trait method/alias references.
+    ASTDecl *parentDecl = failureDecls[0]->getParentDecl();
+    if (parentDecl && isa_and_nonnull<StructDeclOp, TraitDeclOp>(
+                          parentDecl->getIfOperation())) {
+      const char *declKind = "";
+      const char *replacement =
+          isa<StructDeclOp>(parentDecl->getIfOperation()) ? "self." : "Self.";
+      // References to static methods can always use capital Self.
+      Operation *firstCandidate = failureDecls[0]->getIfOperation();
+      if (auto fnCandidate = dyn_cast_or_null<FnOp>(firstCandidate)) {
+        declKind = "method ";
+        if (fnCandidate.getIsStatic())
+          replacement = "Self.";
+      } else if (isa_and_nonnull<AliasDeclOp>(firstCandidate)) {
+        declKind = "comptime ";
+        // Aliases are properties of the type, so `Self` is more idiomatic.
+        // However `self.` is also supported.
+        replacement = "Self.";
+      }
+
+      // References /from/ static methods can only use capital Self.
+      if (auto curFn = dyn_cast_or_null<FnOp>(lookupScope.getIfOperation()))
+        if (curFn.getIsStatic())
+          replacement = "Self.";
+
+      emitter.emitError(loc, "cannot access ")
+          << declKind << "'" << spelling << "' directly; did you mean '"
+          << replacement << "'?" << expr->getRange()
+          << FixIt::insertBeforeToken(loc, replacement);
+      return {};
+    }
+  }
+
+  auto diag = emitter.emitError(loc, "use of unknown declaration '")
+              << spelling << "'" << expr->getRange();
+  if (spelling == "__type_of" || spelling == "_type_of" ||
+      spelling == "typeof") {
+    diag << "; did you mean 'type_of'?" << FixIt::replaceToken(loc, "type_of");
+  } else if (spelling == "__origin_of" || spelling == "_origin_of" ||
+             spelling == "originof") {
+    diag << "; did you mean 'origin_of'?"
+         << FixIt::replaceToken(loc, "origin_of");
+  }
+  return {};
+}
+
 ExprNode::ELVIITResult
 DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
                               ASTDecl &lookupScope, ValueDest &dest,
@@ -873,63 +934,9 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     if (isSpeculative)
       return expr;
 
-    ArrayRef<ASTDecl *> failureDecls = lookup.getIfFailure();
-    if (!failureDecls.empty()) {
-      // Reject unqualified struct field references.
-      if (auto fieldOp = dyn_cast_or_null<StructFieldOp>(
-              failureDecls[0]->getIfOperation())) {
-        emitter.emitError(loc, "cannot access instance field '")
-            << spelling << "' directly; did you mean 'self.'?"
-            << expr->getRange() << FixIt::insertBeforeToken(loc, "self.");
-        return {};
-        // Rejected unqualified struct/trait method/alias references.
-      } else if (failureDecls[0]->getParentDecl() &&
-                 isa_and_nonnull<StructDeclOp, TraitDeclOp>(
-                     failureDecls[0]->getParentDecl()->getIfOperation())) {
-        const char *declKind = "";
-        const char *replacement =
-            isa<StructDeclOp>(
-                failureDecls[0]->getParentDecl()->getIfOperation())
-                ? "self."
-                : "Self.";
-        // References to static methods can always use capital Self.
-        Operation *firstCandidate = failureDecls[0]->getIfOperation();
-        if (auto fnCandidate = dyn_cast_or_null<FnOp>(firstCandidate)) {
-          declKind = "method ";
-          if (fnCandidate.getIsStatic())
-            replacement = "Self.";
-        } else if (isa_and_nonnull<AliasDeclOp>(firstCandidate)) {
-          declKind = "comptime ";
-          // Aliases are properties of the type, so `Self` is more idiomatic.
-          // However `self.` is also supported.
-          replacement = "Self.";
-        }
-
-        // References /from/ static methods can only use capital Self.
-        if (auto curFn = dyn_cast_or_null<FnOp>(lookupScope.getIfOperation()))
-          if (curFn.getIsStatic())
-            replacement = "Self.";
-
-        emitter.emitError(loc, "cannot access ")
-            << declKind << "'" << spelling << "' directly; did you mean '"
-            << replacement << "'?" << expr->getRange()
-            << FixIt::insertBeforeToken(loc, replacement);
-        return {};
-      }
-    }
-
-    auto diag = emitter.emitError(loc, "use of unknown declaration '")
-                << spelling << "'" << expr->getRange();
-    if (spelling == "__type_of" || spelling == "_type_of" ||
-        spelling == "typeof") {
-      diag << "; did you mean 'type_of'?"
-           << FixIt::replaceToken(loc, "type_of");
-    } else if (spelling == "__origin_of" || spelling == "_origin_of" ||
-               spelling == "originof") {
-      diag << "; did you mean 'origin_of'?"
-           << FixIt::replaceToken(loc, "origin_of");
-    }
-    return {};
+    // Otherwise, diagnose the unknown declaration, and try to provide fixits.
+    return diagnoseUnknownDeclaration(spelling, lookupScope,
+                                      lookup.getIfFailure(), emitter, expr);
   }
 
   // We might modify this further below to filter out extensions and replace
@@ -1038,8 +1045,41 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     return emitter.emitCResult(result, expr, dest);
   }
 
-  if (auto pvalue = decl->getIfIRValue().getIfPValue())
+  if (auto pvalue = decl->getIfIRValue().getIfPValue()) {
+    if (auto declRef = dyn_cast<ParamDeclRefAttr>(pvalue.get())) {
+      ASTDecl *parentDecl = decl->getParentDecl();
+      if (auto fnOp = dyn_cast_or_null<FnOp>(parentDecl->getIfOperation()))
+        parentDecl = parentDecl->tryGetMethodParentDecl();
+
+      if (parentDecl) {
+        if (auto structOp =
+                dyn_cast_or_null<StructDeclOp>(parentDecl->getIfOperation())) {
+          auto paramDecl = ParamDeclAttr::get(declRef);
+          for (auto param : structOp.getParams()) {
+            if (param.getName() == paramDecl.getName()) {
+              auto diag = emitter.emitWarning(
+                              loc, "unqualified access to struct parameter '")
+                          << spelling << "'; use 'Self." << spelling
+                          << "' instead";
+              diag << FixIt::replaceToken(loc, "Self." + spelling);
+              for (auto [name, paramDecls] : parentDecl->getDeclsInScope()) {
+                if (name == spelling) {
+                  assert(paramDecls.size() == 1);
+                  auto paramDecl = *paramDecls.begin();
+
+                  diag.attachNote(paramDecl->getLoc())
+                      << "parameter '" << spelling << "' declared here";
+                  break;
+                }
+              }
+              break;
+            }
+          }
+        }
+      }
+    }
     return emitter.emitCResult(pvalue, expr, dest);
+  }
 
   // If this is a capture we need to emit a capture value.
   ASTDecl *declRef = nullptr;
