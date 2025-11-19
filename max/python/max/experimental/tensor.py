@@ -321,9 +321,7 @@ class Tensor(DLPackArray, HasTensorValue):
         self.real = storage is not None
 
     @classmethod
-    def from_graph_value(
-        cls, value: graph.TensorValue | graph.BufferValue
-    ) -> Tensor:
+    def from_graph_value(cls, value: graph.Value) -> Tensor:
         """Creates a tensor from a graph value.
 
         Constructs a tensor from an existing graph value, which can be either
@@ -338,6 +336,8 @@ class Tensor(DLPackArray, HasTensorValue):
         Returns:
             Tensor: A new tensor backed by the provided graph value.
         """
+        if not isinstance(value, (graph.TensorValue, graph.BufferValue)):
+            raise TypeError(f"{value=} must be a tensor or buffer value")
         return cls(value=value)
 
     @classmethod
@@ -366,6 +366,8 @@ class Tensor(DLPackArray, HasTensorValue):
         Returns:
             Tensor: A new tensor containing the data from the DLPack array.
         """
+        if isinstance(array, Tensor):
+            return array
         return Tensor(storage=driver.Tensor.from_dlpack(array))
 
     @classmethod
