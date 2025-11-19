@@ -21,6 +21,32 @@ what we publish.
 
 ### Language enhancements
 
+- Mojo now differentiates between `...` and `pass` in trait methods. The use of
+  `...` continues to denote no default implementation - `pass` now specifies a
+  default do-nothing implementation. For example:
+
+  ```mojo
+  trait T:
+      # No default implementation
+      fn foo(self): ...
+
+      # Default implementation that does nothing
+      fn bar(self) : pass
+  ```
+
+  The compiler will error on the use of `pass` to define a default
+  implementation for a trait method with results:
+
+  ```mojo
+  trait T:
+      foo.mojo:2:26: error: trait method has results but default implementation returns no value; did you mean '...'?
+      fn foo(self) -> Int: pass
+                           ^
+      trait.mojo:2:8: note: in 'foo', declared here
+      fn foo(self) -> Int: pass
+         ^
+  ```
+
 ### Language changes
 
 - The compiler will now warn on unqualified access to struct parameters, e.g.
@@ -40,7 +66,7 @@ what we publish.
 
 - `List` slicing without a stride now returns a `Span`, instead of a `List` and
   no longer allocates memory.
-  
+
 - The `random` module now uses a pure Mojo implementation based on the Philox
   algorithm (via an internal wrapper), replacing the previous `CompilerRT` C++
   dependency. The Philox algorithm provides excellent statistical quality, works
