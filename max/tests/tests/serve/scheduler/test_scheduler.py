@@ -60,6 +60,7 @@ def create_scheduler(
     max_forward_steps_tg: int = 8,
     max_batch_size_ce: int = 4,
     target_tokens_per_batch_ce: int = 32,
+    kvcache_ce_watermark: float = 0.95,
 ) -> tuple[
     TokenGenerationScheduler,
     MAXPushQueue[TextContext | TextAndVisionContext],
@@ -72,6 +73,7 @@ def create_scheduler(
         max_batch_size_ce=max_batch_size_ce,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         data_parallel_degree=dp,
+        kvcache_ce_watermark=kvcache_ce_watermark,
     )
 
     request_queue: queue.Queue[TextContext | TextAndVisionContext] = (
