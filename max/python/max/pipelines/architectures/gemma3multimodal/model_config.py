@@ -260,7 +260,7 @@ class Gemma3ForConditionalGenerationConfig(
         hf_text_config = getattr(huggingface_config, "text_config", None)
         if hf_text_config is None:
             raise ValueError("text_config not found in huggingface_config")
-        
+
         text_config = Gemma3Config.generate(
             pipeline_config=pipeline_config,
             huggingface_config=hf_text_config,

@@ -20,10 +20,9 @@ from max.nn import (
     LayerNorm,
     Module,
 )
-from max.nn.layer import Shardable
 
-from .attention import Gemma3VisionAttention
 from ..model_config import Gemma3ForConditionalGenerationConfig
+from .attention import Gemma3VisionAttention
 from .projection import Gemma3VisionMLP
 
 
@@ -140,11 +139,11 @@ class Gemma3VisionEncoderLayer(Module):
             shards.append(sharded)
 
         return shards
-    
+
     def __call__(
         self,
         hidden_states: Sequence[TensorValue],
-        signal_buffers: Sequence[BufferValue]
+        signal_buffers: Sequence[BufferValue],
     ) -> list[TensorValue]:
         residual = hidden_states
         hidden_states = self.layer_norm1(hidden_states)

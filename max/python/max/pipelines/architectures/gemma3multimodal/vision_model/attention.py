@@ -12,9 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 import math
+from collections.abc import Iterable
 
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
 from max.nn import Linear
@@ -32,6 +31,7 @@ class Gemma3VisionAttention(Module):
     - No attention masking
     - Absolute position embeddings (added in embedding layer)
     """
+
     def __init__(
         self,
         config: Gemma3ForConditionalGenerationConfig,
@@ -59,7 +59,7 @@ class Gemma3VisionAttention(Module):
         # self.is_causal = not config.use_bidirectional_attention
 
         self.q_proj = Linear(
-            vision_config.hidden_size,       # 1152
+            vision_config.hidden_size,  # 1152
             self.num_heads * self.head_dim,  # 16 * 72 = 1152
             has_bias=vision_config.attention_bias,
             dtype=config.dtype,
@@ -112,7 +112,9 @@ class Gemma3VisionAttention(Module):
         self.v_proj.sharding_strategy = strategy
         self.out_proj.sharding_strategy = strategy
 
-    def shard(self, devices: Iterable[DeviceRef]) -> list[Gemma3VisionAttention]:
+    def shard(
+        self, devices: Iterable[DeviceRef]
+    ) -> list[Gemma3VisionAttention]:
         assert self.sharding_strategy
 
         q_proj_shards = self.q_proj.shard(devices)
