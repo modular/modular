@@ -128,3 +128,8 @@ alias VariadicSplat[T: AnyType, count: Int] = __mlir_attr[
 @always_inline("builtin")
 fn variadic_size[T: type_of(AnyType)](seq: VariadicOf[T]) -> Int:
     return Int(mlir_value=__mlir_op.`pop.variadic.size`(seq))
+
+
+alias VariadicConcat[T: type_of(AnyType), //, *Ts: VariadicOf[T]] = __mlir_attr[
+    `#kgen.variadic.concat<`, Ts, `> :`, VariadicOf[T]
+]

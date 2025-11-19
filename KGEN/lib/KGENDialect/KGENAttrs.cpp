@@ -184,7 +184,7 @@ LogicalResult VariadicType::printValue(AsmPrinter &p, TypedAttr value) const {
 }
 
 //===----------------------------------------------------------------------===//
-// VariadicMap/ZipAttr
+// Variadic-related pAttr
 //===----------------------------------------------------------------------===//
 
 // If not folded, they are not a constant.
@@ -192,6 +192,7 @@ bool VariadicMapAttr::isConstant() const { return false; }
 bool VariadicZipAttr::isConstant() const { return false; }
 bool VariadicSizeAttr::isConstant() const { return false; }
 bool VariadicSplatAttr::isConstant() const { return false; }
+bool VariadicConcatAttr::isConstant() const { return false; }
 
 LogicalResult
 VariadicMapAttr::verify(function_ref<InFlightDiagnostic()> emitError,
@@ -255,10 +256,10 @@ LogicalResult
 VariadicZipAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                         VariadicType type, TypedAttr variadics) {
   if (variadics.getType() != type)
-    emitError() << "expected same input/output type, input type: " << type
-                << ", output type: " << variadics.getType();
+    return emitError() << "expected same input/output type, input type: "
+                       << type << ", output type: " << variadics.getType();
   if (!isa<VariadicType>(type.getElementType()))
-    emitError() << "expected to zip a variadic of variadic values";
+    return emitError() << "expected to zip a variadic of variadic values";
 
   return success();
 }
@@ -366,6 +367,57 @@ TypedAttr VariadicSizeAttr::getChecked(
   if (failed(verify(emitError, type, variadic)))
     return {};
   return get(type, variadic);
+}
+
+LogicalResult
+VariadicConcatAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                           VariadicType type, TypedAttr variadics) {
+
+  auto toConcatVA = dyn_cast<VariadicType>(variadics.getType());
+  if (!toConcatVA)
+    return emitError() << "expected to concat a variadic of variadic values";
+
+  if (type != toConcatVA.getElementType())
+    return emitError() << "mismatch between variadics to concatenate and "
+                          "output type, expected output type: "
+                       << type << ", got:" << toConcatVA.getElementType();
+
+  return success();
+}
+
+TypedAttr VariadicConcatAttr::get(VariadicType type, TypedAttr variadics) {
+  auto va = sugarDynCast<VariadicAttr>(variadics);
+  if (!va)
+    return Base::get(type.getContext(), type, variadics);
+
+  size_t concatLen = 0;
+  bool fullyResolved = true;
+  SmallVector<VariadicAttr> elts =
+      llvm::map_to_vector(va.getValues(), [&](TypedAttr elt) {
+        auto vaElt = sugarDynCast<VariadicAttr>(elt);
+        concatLen += (vaElt ? vaElt.getValues().size() : 0);
+        fullyResolved = fullyResolved && vaElt;
+        return vaElt;
+      });
+
+  if (!fullyResolved)
+    return Base::get(type.getContext(), type, variadics);
+
+  // Fold the attribute aggressively whenever possible upon creation.
+  SmallVector<TypedAttr> concatElts;
+  concatElts.reserve(concatLen);
+  for (auto elt : elts)
+    concatElts.append(elt.getValues().begin(), elt.getValues().end());
+
+  return VariadicAttr::get(concatElts, type);
+}
+
+TypedAttr VariadicConcatAttr::getChecked(
+    function_ref<::mlir::InFlightDiagnostic()> emitError, VariadicType type,
+    TypedAttr variadics) {
+  if (failed(verify(emitError, type, variadics)))
+    return {};
+  return get(type, variadics);
 }
 
 //===----------------------------------------------------------------------===//
