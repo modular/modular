@@ -1518,7 +1518,6 @@ fn mogg_async_pack_borrow(
     external_call["MGP_RT_BufferBorrow", NoneType](borrower, borrowee)
 
 
-@register_internal("mogg.async.pack.borrow.v2")
 @no_inline
 fn mogg_async_pack_borrow_v2(
     borrower: AnyAsyncValueRefPtr,
@@ -1526,10 +1525,26 @@ fn mogg_async_pack_borrow_v2(
     mem: TensorBufferRefPtr,
 ):
     """
-    Borrows an async value using the memory storage handle pointed to by mem. Uses the input data from the buffer to describe the borrowed async value.
+    Borrows an async value. This differs from `mogg.async.pack` which assigns a
+    value to the given async value in that it's a simple refcount increment.
     """
     external_call["MGP_RT_BufferBorrowV2", NoneType](
         borrower, buffer.data, len(buffer), mem
+    )
+
+
+@no_inline
+fn mogg_async_pack_borrow_v2(
+    borrower: AnyAsyncValueRefPtr,
+    buffer: TensorBufferRefPtr,
+    mem: TensorBufferRefPtr,
+):
+    """
+    Borrows an async value. This differs from `mogg.async.pack` which assigns a
+    value to the given async value in that it's a simple refcount increment.
+    """
+    external_call["MGP_RT_BufferBorrowForTensorRef", NoneType](
+        borrower, buffer, mem
     )
 
 
@@ -1637,6 +1652,14 @@ fn tmp_reshape_contiguous_buffer[
 # ===-----------------------------------------------------------------------===#
 # MGP primitives
 # ===-----------------------------------------------------------------------===#
+
+
+fn mgp_get_buffer_handle_from_tensor_buffer_ref(
+    buffer: TensorBufferRefPtr, memStorageHandle: OpaquePointer
+):
+    external_call["MGP_RT_GetMemBufferHandleFromTensorBufferRef", NoneType](
+        buffer, memStorageHandle
+    )
 
 
 @register_internal("tmp.mgp.buffer.get_cached")
