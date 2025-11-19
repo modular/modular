@@ -26,7 +26,7 @@ depends_on: "base_config.yaml"
 # Serving-specific benchmark parameters
 benchmark_config:
   # Backend and API configuration (serving-specific)
-  backend: "modular"  # choices: vllm, vllm-chat, trt-llm, modular, modular-chat, sglang, sglang-chat
+  backend: "modular"  # choices: vllm, vllm-chat, modular, modular-chat, sglang, sglang-chat
   base_url: null  # Server or API base url if not using host/port
   host: "localhost"
   port: 8000
