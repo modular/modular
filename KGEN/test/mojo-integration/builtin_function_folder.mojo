@@ -117,3 +117,23 @@ fn fold_dtype_from_ui8() -> DTypeT[DType.int32]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@DTypeT<:!DType {:dtype si32}>, mut *"a`1">
     var a = DTypeT[DType._from_ui8(UI8_139)]()
     return a
+
+
+##===----------------------------------------------------------------------===##
+# Ignore 'constrained' functions (MOCO-2839)
+##===----------------------------------------------------------------------===##
+
+
+@always_inline("nodebug")
+fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
+    pass
+
+
+fn fold_constrained_func[x: Int]() -> IntT[x]:
+    constrained[False, "this is being ignored anyway"]()
+    return IntT[x]()
+
+
+# CHECK-LABEL: lit.fn @"fold_constrained()
+fn fold_constrained() -> IntT[1]:
+    return fold_constrained_func[1]()

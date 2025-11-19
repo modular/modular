@@ -2873,6 +2873,13 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
          "callee isn't known?");
   auto fnOp = cast_or_null<FnOp>(calleeDecl->getIfOperation());
   if (fnOp.getInlineLevel() != InlineLevel::AlwaysBuiltin) {
+    // FIXME(MOCO-2839): We silently ignore 'constrained' calls when folding
+    // @always_inline("builtin") functions. We should either support these or
+    // remove them from the key locations in the stdlib which we wish to support
+    // (SIMD).
+    if (fnOp.getSourceName() == "constrained")
+      return NoneAttr::get(fnOp.getContext());
+
     folder.emitError(callLoc) << "only supports calls to other "
                                  "'@always_inline(\"builtin\")' functions";
     return {};
