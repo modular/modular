@@ -165,8 +165,7 @@ struct RuntimeOptions {
                      AsyncRT::RuntimeOptions::WorkQueueType::kThreadPool)
       : defaultWorkQueue(wq) {}
   /// Explicitly tell runtime to use single threaded workqueue. This is useful
-  /// in situations where computation is performed by some other runtime (for
-  /// eg: ExternalFrameworks in benchmarking)
+  /// in situations where computation is performed by some other runtime
   void useSingleThreadedWorkqueue() {
     numThreads = 1;
     workQueueType = RuntimeOptions::WorkQueueType::kSingleThread;
