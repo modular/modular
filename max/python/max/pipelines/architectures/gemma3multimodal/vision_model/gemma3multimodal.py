@@ -328,9 +328,7 @@ class Gemma3VisionModel(Module):
         vision_config = config.vision_config
 
         # Vision embeddings
-        self.embeddings = Gemma3VisionEmbeddings(
-            config, device=config.devices
-        )
+        self.embeddings = Gemma3VisionEmbeddings(config, device=config.devices)
         self.embeddings.sharding_strategy = ShardingStrategy.replicate(
             len(config.devices)
         )
@@ -346,12 +344,12 @@ class Gemma3VisionModel(Module):
             device=config.devices,
             dtype=config.dtype,
         )
-        self.post_layernorm.weight.sharding_strategy = ShardingStrategy.replicate(
-            len(config.devices)
+        self.post_layernorm.weight.sharding_strategy = (
+            ShardingStrategy.replicate(len(config.devices))
         )
         if self.post_layernorm.bias is not None:
-            self.post_layernorm.bias.sharding_strategy = ShardingStrategy.replicate(
-                len(config.devices)
+            self.post_layernorm.bias.sharding_strategy = (
+                ShardingStrategy.replicate(len(config.devices))
             )
 
         # Shard post_layernorm across devices
@@ -383,7 +381,9 @@ class Gemma3VisionModel(Module):
             self.post_layernorm_list.append(ln)
 
         # Multimodal projector to bridge vision and text spaces
-        self.projector = Gemma3MultiModalProjector(config, device=config.devices[0])
+        self.projector = Gemma3MultiModalProjector(
+            config, device=config.devices[0]
+        )
         self.projector.sharding_strategy = ShardingStrategy.replicate(
             len(config.devices)
         )

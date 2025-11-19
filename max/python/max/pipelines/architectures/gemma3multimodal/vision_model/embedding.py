@@ -14,15 +14,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from max.driver import Tensor
 from max.dtype import DType
-from max.graph import (
-    DeviceRef,
-    ops,
-    ShardingStrategy,
-    TensorValue,
-    Weight
-)
+from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
 from max.nn import (
     Conv2d,
     Module,
@@ -55,8 +48,8 @@ class Gemma3VisionEmbeddings(Module):
             in_channels=self.num_channels,
             out_channels=self.embed_dim,  # 1152
             kernel_size=self.patch_size,  # 14
-            stride=self.patch_size,       # 14
-            padding=0,                    # "valid" padding
+            stride=self.patch_size,  # 14
+            padding=0,  # "valid" padding
             has_bias=True,
             dtype=self.dtype,
             device=device,
@@ -91,7 +84,9 @@ class Gemma3VisionEmbeddings(Module):
         assert self.sharding_strategy
 
         patch_embedding_shards = self.patch_embedding.shard(devices)
-        position_embedding_weight_shards = self.position_embedding.weight.shard(devices)
+        position_embedding_weight_shards = self.position_embedding.weight.shard(
+            devices
+        )
 
         shards = []
         for device, patch_shard, pos_weight_shard in zip(

@@ -54,7 +54,10 @@ from max.pipelines.lib import (
 from transformers import AutoConfig
 
 from .model_config import Gemma3ForConditionalGenerationConfig
-from .vision_model.gemma3multimodal import Gemma3LanguageModel, Gemma3VisionModel
+from .vision_model.gemma3multimodal import (
+    Gemma3LanguageModel,
+    Gemma3VisionModel,
+)
 from .weight_adapters import (
     convert_safetensor_language_state_dict,
     convert_safetensor_vision_state_dict,
@@ -180,7 +183,7 @@ class Gemma3MultiModalModelInputs(ModelInputs):
     """Device buffers used for synchronization in communication collectives."""
 
     # Vision inputs.
-    pixel_values: list[Tensor] | None = None # list[Tensor]
+    pixel_values: list[Tensor] | None = None  # list[Tensor]
     """Raw pixel values for vision inputs: [batch, channels, height, width]."""
 
     image_token_indices: list[Tensor] | None = None
@@ -393,7 +396,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         )
         self.config = model_config
 
-        input_row_offsets_prealloc_host =Tensor.from_numpy(
+        input_row_offsets_prealloc_host = Tensor.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         )
         self._input_row_offsets_prealloc = [
@@ -424,7 +427,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
         )
-        
+
         input_row_offsets_types = [
             TensorType(
                 DType.uint32,
@@ -496,11 +499,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             )
 
             # Unpack inputs following InternVL pattern
-            (
-                tokens,
-                return_n_logits,
-                *variadic_args
-             ) = graph.inputs
+            (tokens, return_n_logits, *variadic_args) = graph.inputs
 
             # Extract input_row_offsets (one per device)
             input_row_offsets = [
@@ -576,19 +575,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         ) as graph:
             vision_model = Gemma3VisionModel(config)
 
-            # TODO shouldn't this be unnecessary??
-            # unexpected weights without this
-            # encoder.layers.{idx}.self_attn.k_proj.bias
-            # encoder.layers.{idx}.self_attn.out_proj.bias
-            # encoder.layers.{idx}.self_attn.q_proj.bias
-            # encoder.layers.{idx}.self_attn.v_proj.bias
-            # encoder.layers.{idx}.mlp.fc1.bias
-            # encoder.layers.{idx}.mlp.fc2.bias
-            for w8 in list(
-                state_dict.keys() - vision_model.raw_state_dict().keys()
-            ):
-                del state_dict[w8]
-
             vision_model.load_state_dict(
                 state_dict=state_dict,
                 override_quantization_encoding=True,
@@ -604,18 +590,14 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 inp.buffer for inp in graph.inputs[len(self.devices) :]
             ]
 
-            image_embeddings = vision_model(
-                pixel_values, signal_buffers
-            )
+            image_embeddings = vision_model(pixel_values, signal_buffers)
 
             graph.output(*image_embeddings)
 
             return graph, vision_model.state_dict()
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        model_inputs = cast(
-            Gemma3MultiModalModelInputs, model_inputs
-        )
+        model_inputs = cast(Gemma3MultiModalModelInputs, model_inputs)
 
         input_row_offsets = model_inputs.input_row_offsets
 
@@ -653,7 +635,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
         )
-            
+
         if len(model_outputs) == 3:
             assert isinstance(model_outputs[0], Tensor)
             assert isinstance(model_outputs[1], Tensor)
@@ -682,12 +664,11 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         input_row_offsets = Tensor.from_numpy(
             np.cumsum(
                 [0] + [ctx.active_length for ctx in context_batch],
-                dtype=np.uint32
+                dtype=np.uint32,
             )
         )
         input_row_offsets_tensors = [
-            input_row_offsets.to(device)
-            for device in self.devices
+            input_row_offsets.to(device) for device in self.devices
         ]
 
         tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
@@ -775,7 +756,9 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             input_ids = ctx.next_tokens
 
             # Find where image tokens appear
-            special_image_token_mask = input_ids == self.config.image_token_index
+            special_image_token_mask = (
+                input_ids == self.config.image_token_index
+            )
             indices = np.where(special_image_token_mask)[0]
 
             if len(indices) > 0:
@@ -784,7 +767,9 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             batch_offset += ctx.active_length
 
         if not indices_and_offsets:
-            return [Tensor.zeros(shape=[0], dtype=DType.int32).to(self.devices[0])]
+            return [
+                Tensor.zeros(shape=[0], dtype=DType.int32).to(self.devices[0])
+            ]
 
         np_indices = np.concatenate(indices_and_offsets).astype(
             np.int32, copy=False
@@ -868,8 +853,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     def _create_empty_indices(self) -> list[Tensor]:
         """Create empty image token indices tensor."""
         return [
-            Tensor.zeros(
-                shape=[0], dtype=DType.int32
-            ).to(dev)
+            Tensor.zeros(shape=[0], dtype=DType.int32).to(dev)
             for dev in self.devices
         ]

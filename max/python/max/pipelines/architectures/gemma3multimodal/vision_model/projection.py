@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
-from typing import Iterable
+
+from collections.abc import Iterable
 
 from max.driver import Tensor
 from max.experimental.functional import matmul
@@ -38,7 +39,7 @@ class Gemma3MultiModalProjector(Module, Shardable):
     def __init__(
         self,
         config: Gemma3ForConditionalGenerationConfig,
-        device: DeviceRef | None = None
+        device: DeviceRef | None = None,
     ):
         super().__init__()
 
@@ -86,7 +87,9 @@ class Gemma3MultiModalProjector(Module, Shardable):
     ) -> list[Gemma3MultiModalProjector]:
         assert self.sharding_strategy
 
-        projection_weight_shards = self.mm_input_projection_weight.shard(devices)
+        projection_weight_shards = self.mm_input_projection_weight.shard(
+            devices
+        )
         norm_weight_shards = self.mm_soft_emb_norm.weight.shard(devices)
 
         shards = []
@@ -119,11 +122,13 @@ class Gemma3MultiModalProjector(Module, Shardable):
                 seq_length,
                 self.patches_per_image,
                 self.patches_per_image,
-            ]
+            ],
         )
 
         # reshape to 0 2 3 1 HWBC
-        reshaped_vision_outputs = ops.permute(reshaped_vision_outputs, [0, 2, 3, 1])
+        reshaped_vision_outputs = ops.permute(
+            reshaped_vision_outputs, [0, 2, 3, 1]
+        )
         # avg pool
         pooled_vision_outputs = avg_pool2d(
             input=reshaped_vision_outputs,
@@ -144,10 +149,12 @@ class Gemma3MultiModalProjector(Module, Shardable):
 
         # Reshape to flatten batch and sequence dimensions for language model
         # From [batch, seq, hidden] to [batch*seq, hidden]
-        #image_hidden_states = ops.reshape(
+        # image_hidden_states = ops.reshape(
         #    projected_vision_outputs, (-1, projected_vision_outputs.shape[-1])
-        #)
-        image_hidden_states = ops.flatten(projected_vision_outputs, start_dim=0, end_dim=1) # TODO the only thing different to MLX-VLM/HF
+        # )
+        image_hidden_states = ops.flatten(
+            projected_vision_outputs, start_dim=0, end_dim=1
+        )  # TODO the only thing different to MLX-VLM/HF
 
         return image_hidden_states
 
@@ -157,7 +164,7 @@ class Gemma3VisionMLP(Module):
     def __init__(
         self,
         config: Gemma3ForConditionalGenerationConfig,
-        device: DeviceRef | None = None
+        device: DeviceRef | None = None,
     ):
         super().__init__()
         self.config = config
@@ -191,9 +198,7 @@ class Gemma3VisionMLP(Module):
         self.fc2.sharding_strategy = strategy
 
     # ⚠️ from Claude.  looks logical but who would know?
-    def shard(
-        self, devices: Iterable[DeviceRef]
-    ) -> list[Gemma3VisionMLP]:
+    def shard(self, devices: Iterable[DeviceRef]) -> list[Gemma3VisionMLP]:
         assert self.sharding_strategy
 
         fc1_shards = self.fc1.shard(devices)
@@ -206,10 +211,7 @@ class Gemma3VisionMLP(Module):
             fc2_shards,
             strict=True,
         ):
-            sharded = Gemma3VisionMLP(
-                self.config,
-                device
-            )
+            sharded = Gemma3VisionMLP(self.config, device)
 
             sharded.fc1 = fc1_shard
             sharded.fc2 = fc2_shard
