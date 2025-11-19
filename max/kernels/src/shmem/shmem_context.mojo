@@ -422,9 +422,8 @@ struct SHMEMContext(ImplicitlyCopyable, Movable):
 
         ```mojo
         with DeviceContext() as ctx:
-            var compile_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -623,9 +622,8 @@ struct SHMEMContext(ImplicitlyCopyable, Movable):
 
         ```mojo
         with DeviceContext() as ctx:
-            var compile_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -781,9 +779,8 @@ struct SHMEMContext(ImplicitlyCopyable, Movable):
 
         ```mojo
         with DeviceContext() as ctx:
-            var compile_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """

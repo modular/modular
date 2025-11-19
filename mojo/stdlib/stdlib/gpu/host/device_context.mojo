@@ -1693,9 +1693,9 @@ struct DeviceStream(ImplicitlyCopyable, Movable):
         from gpu.host import DeviceContext
 
         with DeviceContext() as ctx:
-            var compiled_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            var compiled_func = ctx.compile_function_checked[kernel, kernel]()
+            ctx.enqueue_function_checked(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked(compiled_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -2055,8 +2055,8 @@ struct DeviceFunction[
         pass
 
     var ctx = DeviceContext()
-    var kernel = ctx.compile_function[my_kernel]()
-    ctx.enqueue_function(kernel, grid_dim=(1,1,1), block_dim=(32,1,1))
+    var kernel = ctx.compile_function_checked[my_kernel, my_kernel]()
+    ctx.enqueue_function_checked(kernel, grid_dim=(1,1,1), block_dim=(32,1,1))
     ```
     """
 
@@ -4342,9 +4342,9 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
 
         ```mojo
         with DeviceContext() as ctx:
-            var compile_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            var compile_func = ctx.compile_function_checked[kernel, kernel]()
+            ctx.enqueue_function_checked(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked(compile_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -4450,9 +4450,9 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
 
         ```mojo
         with DeviceContext() as ctx:
-            var compile_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            var compile_func = ctx.compile_function_checked[kernel, kernel]()
+            ctx.enqueue_function_checked(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked(compile_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -4546,9 +4546,9 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         from gpu.host import DeviceContext
 
         with DeviceContext() as ctx:
-            var compiled_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            var compiled_func = ctx.compile_function_checked[kernel, kernel]()
+            ctx.enqueue_function_checked(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked(compiled_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -4637,9 +4637,9 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         from gpu.host import DeviceContext
 
         with DeviceContext() as ctx:
-            var compiled_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            var compiled_func = ctx.compile_function_checked[kernel, kernel]()
+            ctx.enqueue_function_checked(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked(compiled_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -5023,9 +5023,9 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
 
         ```mojo
         with DeviceContext() as ctx:
-            var compile_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            var compile_func = ctx.compile_function_checked[kernel, kernel]()
+            ctx.enqueue_function_checked(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked(compile_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -5248,9 +5248,9 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
 
         ```mojo
         with DeviceContext() as ctx:
-            var compile_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            var compile_func = ctx.compile_function_checked[kernel, kernel]()
+            ctx.enqueue_function_checked(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked(compile_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -5348,9 +5348,9 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         from gpu.host import DeviceContext
 
         with DeviceContext() as ctx:
-            var compiled_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            var compiled_func = ctx.compile_function_checked[kernel, kernel]()
+            ctx.enqueue_function_checked(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked(compiled_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -5489,7 +5489,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             var ext_func = DeviceExternalFunction("my_kernel")
 
             # Enqueue the external function with execution configuration
-            ctx.enqueue_function(
+            ctx.enqueue_function_checked(
                 ext_func,
                 grid_dim=Dim(16),
                 block_dim=Dim(256)
