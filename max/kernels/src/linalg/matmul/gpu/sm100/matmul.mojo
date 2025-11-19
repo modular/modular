@@ -39,6 +39,12 @@ from gpu.memory import (
 )
 from gpu.mma import st_matrix
 from gpu.mma_sm100 import *
+from gpu.primitives.grid_controls import (
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    PDLLevel,
+    wait_on_dependent_grids,
+)
 from gpu.sync import (
     named_barrier,
     named_barrier_arrive,
@@ -797,6 +803,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
 ](
     c_device: LayoutTensor[c_type, c_layout, *_, **_],
@@ -1008,6 +1015,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         ),
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         register_based_epilogue=register_based_epilogue,
+        pdl_level=pdl_level,
         max_profiled_tiles_per_SM=max_profiled_tiles,
     ]
 
@@ -1057,6 +1065,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         ),
         shared_mem_bytes=smem_size,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(b200_smem),
+        attributes=pdl_launch_attributes(),
     )
 
     @parameter
@@ -1981,6 +1990,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: UInt32 = 0,
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
@@ -2152,6 +2162,11 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     var is_first_cta_in_cluster = block_rank_in_cluster() == 0
     var warp_id = get_warp_id()
     alias max_tmem_cols = 512
+
+    # After this point, we start writing to shared memory.
+    @parameter
+    if pdl_level > PDLLevel.OFF:
+        wait_on_dependent_grids()
 
     if elect_one_warp and elect_one_thread:
         a_tma_op.prefetch_descriptor()
@@ -2410,6 +2425,10 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                             )
                     mma_output_pipeline.producer_step()
                 work_info = next_work_info
+
+            @parameter
+            if pdl_level > PDLLevel.OFF:
+                launch_dependent_grids()
 
             tcgen05_release_allocation_lock[config.cta_group]()
 
@@ -3002,6 +3021,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
 ](
     c_device: LayoutTensor[c_type, c_layout, *_, **_],
@@ -3049,6 +3069,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
                 config=new_config,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 register_based_epilogue=register_based_epilogue,
+                pdl_level=pdl_level,
                 max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
             ](c_device, b_device, a_device, ctx)
     else:
@@ -3080,6 +3101,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
                 config=config,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 register_based_epilogue=register_based_epilogue,
+                pdl_level=pdl_level,
                 max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
             ](c_device, a_device, b_device, ctx)
 

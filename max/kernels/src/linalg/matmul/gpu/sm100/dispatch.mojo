@@ -1740,7 +1740,6 @@ fn _bf16_experimental[
                 k_group_size=tuning_config.k_group_size,
                 num_split_k=tuning_config.num_split_k,
             )
-            # print("Using config: ", matmul_config)
             _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=matmul_config,
@@ -2406,6 +2405,7 @@ fn _matmul_dispatch_sm100[
             transpose_b=transpose_b,
             config=config,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
         ](c_tensor, a_tensor, b_tensor, ctx)
         return
 
@@ -2444,6 +2444,7 @@ fn _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
             ](c_tensor, a_tensor, b_tensor, ctx)
 
             elementwise[epilogue_wrapper, simd_size, target="gpu"](
