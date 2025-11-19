@@ -258,6 +258,42 @@ def KGEN_VariadicSizeAttr : KGEN_ExprAttr<"VariadicSize", "variadic.size"> {
   let skipDefaultBuilders = 1;
 }
 
+def KGEN_VariadicConcatAttr : KGEN_ExprAttr<"VariadicConcat", "variadic.concat"> {
+  let summary = "Concatenate a variadic of variadics.";
+  let description = [{
+    The `#kgen.variadic.concat` attribute is used to concatenate a variadic of
+    variadic (type) value.
+
+    Example:
+    ```mlir
+    #kgen.variadic.concat<[[Int, Int], [Float, Float]]> : !variadic<!AnyType>
+    // ->
+    #kgen.variadic<[Int, Int, Float, Float]> : !variadic<!AnyType>
+    ```
+  }];
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "VariadicType">:$type,
+    "TypedAttr":$variadics
+  );
+
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an variadic.concat.
+    AttrBuilderWithInferredContext<(ins
+       "VariadicType":$type, "TypedAttr":$variadics), "", "TypedAttr">,
+
+    // Verbose form with MLIRContext, needed for ODS constructors.
+    AttrBuilder<(ins "VariadicType":$type, "TypedAttr":$variadics), [{
+      return get(type, variadics);
+    }], "TypedAttr">,
+  ];
+
+  let assemblyFormat = "`<` $variadics `>`";
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+}
+
 //===----------------------------------------------------------------------===//
 // UnknownAttr
 //===----------------------------------------------------------------------===//
