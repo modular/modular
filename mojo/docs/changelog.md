@@ -81,6 +81,8 @@ what we publish.
 - `UnsafePointer` can now be initialized from a raw memory address using the
   `unsafe_from_address` initializer.
 
+- `alloc()` now has a `debug_assert` ensuring count is non-negative.
+
 - The `EqualityComparable` trait has been deprecated in favor of `Equatable`,
   which has identical functionality.
 

@@ -14,6 +14,7 @@ from sys import align_of, is_gpu, is_nvidia_gpu, size_of
 from sys.intrinsics import gather, scatter, strided_load, strided_store
 
 from builtin.simd import _simd_construction_checks
+from compile import get_type_name
 from memory import memcpy
 from memory.memory import _free, _malloc
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
@@ -69,7 +70,15 @@ fn alloc[
     ```
     """
     comptime size_of_t = size_of[type]()
+    comptime type_name = get_type_name[type]()
     constrained[size_of_t > 0, "size must be greater than zero"]()
+    debug_assert(
+        count >= 0,
+        "alloc[",
+        type_name,
+        "]() count must be non-negative: ",
+        count,
+    )
     return _malloc[type](size_of_t * count, alignment=alignment)
 
 
