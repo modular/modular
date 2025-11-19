@@ -19,8 +19,6 @@ from memory import Pointer
 ```
 """
 
-from memory import LegacyUnsafePointer as UnsafePointer
-
 # ===-----------------------------------------------------------------------===#
 # AddressSpace
 # ===-----------------------------------------------------------------------===#

@@ -402,7 +402,7 @@ struct _DLHandle(Boolable, Copyable, Movable):
         library. For safer usage, prefer `OwnedDLHandle`.
     """
 
-    var handle: OpaquePointer[MutAnyOrigin]
+    var handle: OpaquePointer[MutOrigin.external]
     """The handle to the dynamic library."""
 
     @always_inline
@@ -420,7 +420,7 @@ struct _DLHandle(Boolable, Copyable, Movable):
         Raises:
             If `dlopen(nullptr, flags)` fails.
         """
-        self = Self._dlopen(UnsafePointer[c_char, MutAnyOrigin](), flags)
+        self = Self._dlopen(UnsafePointer[c_char, MutOrigin.external](), flags)
 
     fn __init__[
         PathLike: os.PathLike, //
@@ -698,7 +698,9 @@ fn _get_dylib_function[
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(func_cache_name),
-        UnsafePointer(to=new_func).bitcast[OpaquePointer[MutAnyOrigin]]()[],
+        UnsafePointer(to=new_func).bitcast[
+            OpaquePointer[MutOrigin.external]
+        ]()[],
     )
 
     return new_func
@@ -837,13 +839,13 @@ struct _Global[
     init_fn: fn () -> StorageType,
     on_error_msg: Optional[fn () -> Error] = None,
 ](Defaultable):
-    comptime ResultType = UnsafePointer[Self.StorageType, MutAnyOrigin]
+    comptime ResultType = UnsafePointer[Self.StorageType, MutOrigin.external]
 
     fn __init__(out self):
         pass
 
     @staticmethod
-    fn _init_wrapper() -> OpaquePointer[MutAnyOrigin]:
+    fn _init_wrapper() -> OpaquePointer[MutOrigin.external]:
         # Heap allocate space to store this "global"
         # TODO:
         #   Any way to avoid the move, e.g. by calling this function
@@ -853,7 +855,7 @@ struct _Global[
         return ptr^.steal_data().bitcast[NoneType]()
 
     @staticmethod
-    fn _deinit_wrapper(opaque_ptr: OpaquePointer[MutAnyOrigin]):
+    fn _deinit_wrapper(opaque_ptr: OpaquePointer[MutOrigin.external]):
         # Deinitialize and deallocate the storage.
         _ = OwnedPointer(
             unsafe_from_raw_pointer=opaque_ptr.bitcast[Self.StorageType]()
@@ -887,7 +889,7 @@ struct _Global[
     fn get_or_create_indexed_ptr(idx: Int) raises -> Self.ResultType:
         var ptr = external_call[
             "KGEN_CompilerRT_GetOrCreateGlobalIndexed",
-            OpaquePointer[MutAnyOrigin],
+            OpaquePointer[MutOrigin.external],
         ](
             idx,
             Self._init_wrapper,
@@ -905,11 +907,11 @@ struct _Global[
 @always_inline
 fn _get_global[
     name: StaticString,
-    init_fn: fn () -> OpaquePointer[MutAnyOrigin],
-    destroy_fn: fn (OpaquePointer[MutAnyOrigin]) -> None,
-]() -> OpaquePointer[MutAnyOrigin]:
+    init_fn: fn () -> OpaquePointer[MutOrigin.external],
+    destroy_fn: fn (OpaquePointer[MutOrigin.external]) -> None,
+]() -> OpaquePointer[MutOrigin.external]:
     return external_call[
-        "KGEN_CompilerRT_GetOrCreateGlobal", OpaquePointer[MutAnyOrigin]
+        "KGEN_CompilerRT_GetOrCreateGlobal", OpaquePointer[MutOrigin.external]
     ](
         name,
         init_fn,
@@ -918,9 +920,9 @@ fn _get_global[
 
 
 @always_inline
-fn _get_global_or_null(name: StringSlice) -> OpaquePointer[MutAnyOrigin]:
+fn _get_global_or_null(name: StringSlice) -> OpaquePointer[MutOrigin.external]:
     return external_call[
-        "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer[MutAnyOrigin]
+        "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer[MutOrigin.external]
     ](name.unsafe_ptr(), name.byte_length())
 
 

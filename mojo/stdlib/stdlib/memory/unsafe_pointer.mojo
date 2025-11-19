@@ -474,6 +474,26 @@ struct UnsafePointer[
 
     @doc_private
     @always_inline("builtin")
+    @implicit
+    fn __init__[
+        T: AnyType
+    ](
+        other: LegacyUnsafePointer[
+            T,
+            address_space = Self.address_space, **_,
+        ],
+        out self: UnsafePointer[
+            T,
+            Origin[Self.mut].external,
+            address_space = Self.address_space,
+        ],
+    ):
+        self.address = __mlir_op.`pop.pointer.bitcast`[
+            _type = type_of(self)._mlir_type
+        ](other.address)
+
+    @doc_private
+    @always_inline("builtin")
     fn _as_legacy(
         self,
         out result: LegacyUnsafePointer[
@@ -813,6 +833,25 @@ struct UnsafePointer[
         Returns:
             A pointer merged with the specified `other_type`.
         """
+        return self.address  # allow kgen.pointer to convert.
+
+    @doc_private
+    @always_inline("builtin")
+    fn __merge_with__[
+        other_type: type_of(
+            LegacyUnsafePointer[
+                Self.type,
+                mut=_,
+                origin=_,
+                address_space = Self.address_space,
+            ]
+        ),
+    ](self) -> LegacyUnsafePointer[
+        type = Self.type,
+        mut = Self.mut & other_type.origin.mut,
+        origin = origin_of(Self.origin, other_type.origin),
+        address_space = Self.address_space,
+    ]:
         return self.address  # allow kgen.pointer to convert.
 
     # ===-------------------------------------------------------------------===#

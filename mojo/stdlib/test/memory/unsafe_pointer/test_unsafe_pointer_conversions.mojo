@@ -150,5 +150,15 @@ def test_v1_immutable_any_converts_to_v2():
     v2_unbound(p)
 
 
+def test_v1_to_v2_external():
+    var x = 42
+    _: UnsafePointer[Int, MutOrigin.external] = LegacyUnsafePointer[Int]()
+    _: UnsafePointer[Int, ImmutOrigin.external] = LegacyUnsafePointer[Int]()
+    _: UnsafePointer[Int, MutOrigin.external] = LegacyUnsafePointer(to=x)
+    _: UnsafePointer[Int, MutOrigin.external] = LegacyUnsafePointer[
+        Int, origin = MutOrigin.external
+    ]()
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
