@@ -3184,3 +3184,74 @@ def sgmv_qkv_lora_kernel(
     )
 
     return q_out
+
+
+def spatial_merge(
+    input: TensorValue,
+    grid_thw: TensorValue,
+    hidden_size: int,
+    merge_size: int,
+) -> TensorValue:
+    """Performs spatial merge operation on ragged input tensors.
+
+    This operation merges spatial dimensions of input patches according to
+    the grid dimensions specified in grid_thw.
+
+    Args:
+        input: Input tensor of shape [total_patches_in_grid, hidden_size]
+        grid_thw: Grid dimensions tensor of shape [batch_size, 3] containing
+            [t, h, w] for each batch item, where:
+            - t: temporal/frame dimension
+            - h: height dimension
+            - w: width dimension
+        hidden_size: Hidden dimension size
+        merge_size: Size of spatial merge blocks (typically 2)
+
+    Returns:
+        Output tensor of shape [total_patches_in_grid, hidden_size]
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    """
+    if input.rank != 2:
+        raise ValueError(f"expected input to have rank 2, got {input.rank}")
+
+    if grid_thw.dtype != DType.int64:
+        raise ValueError(
+            f"expected grid_thw to have dtype int64, got {grid_thw.dtype}"
+        )
+
+    if grid_thw.rank != 2:
+        raise ValueError(
+            f"expected grid_thw to have rank 2, got {grid_thw.rank}"
+        )
+    if grid_thw.shape[1] != 3:
+        raise ValueError(
+            f"expected grid_thw.shape[1] to be 3, got {grid_thw.shape[1]}"
+        )
+
+    if input.shape[1] != hidden_size:
+        raise ValueError(
+            f"expected input.shape[1] to match hidden_size ({hidden_size}), "
+            f"got {input.shape[1]}"
+        )
+
+    return ops.custom(
+        "mo.spatial_merge",
+        device=input.device,
+        values=[
+            input,
+            grid_thw,
+            ops.constant(
+                hidden_size, dtype=DType.int32, device=DeviceRef.CPU()
+            ),
+            ops.constant(merge_size, dtype=DType.int32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=input.dtype,
+                shape=[input.shape[0], hidden_size],
+                device=input.device,
+            )
+        ],
+    )[0].tensor

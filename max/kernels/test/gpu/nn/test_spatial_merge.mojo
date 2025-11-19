@@ -70,10 +70,8 @@ def test_spatial_merge(ctx: DeviceContext):
         output_device.to_layout_tensor(),
         input_device.to_layout_tensor(),
         grid_thw_device.to_layout_tensor(),
-        batch_size,
         hidden_size,
         merge_size,
-        total_output_patches,
         ctx,
     )
 

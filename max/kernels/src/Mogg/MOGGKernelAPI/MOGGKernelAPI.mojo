@@ -290,6 +290,7 @@ from tensor.transitional import managed_tensor_slice_to_ndbuffer
 from utils import IndexList, StaticTuple
 from utils.index import Index
 from utils.numerics import isinf, isnan
+from nn.spatial_merge import spatial_merge
 
 # ===-----------------------------------------------------------------------===#
 # Helpers
@@ -8949,5 +8950,34 @@ struct Struct_kv_cache_ragged_paged_radd:
             input_row_offsets.to_layout_tensor(),
             batch_offset,
             layer_idx,
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.spatial_merge")
+struct SpatialMerge:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType, //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2],
+        input: InputTensor[dtype=dtype, rank=2],
+        grid_thw: InputTensor[dtype = DType.int64, rank=2],
+        hidden_size: Int32,
+        merge_size: Int32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        constrained[is_gpu[target](), "spatial_merge only supported on GPUs"]()
+
+        var cuda_ctx = ctx.get_device_context()
+
+        spatial_merge[dtype](
+            output.to_layout_tensor(),
+            input.to_layout_tensor(),
+            grid_thw.to_layout_tensor(),
+            Int(hidden_size),
+            Int(merge_size),
             cuda_ctx,
         )

@@ -112,6 +112,9 @@ class Qwen3VLInputs(ModelInputs):
     max_seqlen: list[Tensor] | None = None
     """Maximum sequence length for full attention for vision inputs."""
 
+    grid_thw: list[Tensor] | None = None
+    """Grid dimensions (temporal, height, width) for each image/video, shape (n_images, 3)."""
+
     @property
     def has_vision_inputs(self) -> bool:
         """Check if this input contains vision data."""
@@ -434,6 +437,15 @@ class Qwen3VLModel(
             for _ in self.devices
         ]
 
+        grid_thw_types = [
+            TensorType(
+                DType.int64,
+                shape=["n_images", 3],
+                device=DeviceRef.from_device(device),
+            )
+            for device in self.devices
+        ]
+
         cu_seqlens_types = [
             TensorType(
                 DType.uint32,
@@ -467,6 +479,7 @@ class Qwen3VLModel(
                     *indices_types,
                     *vision_rot_pos_ids_types,
                     *max_grid_size_types,
+                    *grid_thw_types,
                     *cu_seqlens_types,
                     *max_seqlen_types,
                     *signals.input_types(),
@@ -492,6 +505,9 @@ class Qwen3VLModel(
             max_grid_size_list = [inp.tensor for inp in all_inputs[:n_devices]]
             all_inputs = all_inputs[n_devices:]
 
+            grid_thw_list = [inp.tensor for inp in all_inputs[:n_devices]]
+            all_inputs = all_inputs[n_devices:]
+
             cu_seqlens_list = [inp.tensor for inp in all_inputs[:n_devices]]
             all_inputs = all_inputs[n_devices:]
 
@@ -505,6 +521,7 @@ class Qwen3VLModel(
                 pixel_values=pixel_values_list,
                 idxs=indices_list,
                 weights=weights_list,
+                grid_thw=grid_thw_list,
                 rot_pos_ids=rot_pos_ids_list,
                 max_grid_size=max_grid_size_list,
                 cu_seqlens=cu_seqlens_list,
@@ -635,6 +652,7 @@ class Qwen3VLModel(
             assert model_inputs.max_grid_size is not None
             assert model_inputs.cu_seqlens is not None
             assert model_inputs.max_seqlen is not None
+            assert model_inputs.grid_thw is not None
 
             # Execute vision model: pixel_values -> image_embeddings
             vision_outputs = self.vision_model.execute(
@@ -643,6 +661,7 @@ class Qwen3VLModel(
                 *model_inputs.indices,
                 *model_inputs.vision_position_ids,
                 *model_inputs.max_grid_size,
+                *model_inputs.grid_thw,
                 *model_inputs.cu_seqlens,
                 *model_inputs.max_seqlen,
                 *model_inputs.signal_buffers,
@@ -816,6 +835,7 @@ class Qwen3VLModel(
                 max_grid_size=None,
                 cu_seqlens=None,
                 max_seqlen=None,
+                grid_thw=None,
             )
 
         # From here on, assume that all inputs are available in vision_data
@@ -854,6 +874,15 @@ class Qwen3VLModel(
         vision_position_ids = [
             vision_position_ids_tensor.to(dev) for dev in self.devices
         ]
+
+        # Prepare grid_thw
+        grid_thw_list = [
+            vision_data.image_grid_thw for vision_data in vision_datas
+        ]
+        grid_thw_tensor = Tensor.from_numpy(
+            np.concatenate(grid_thw_list).astype(np.int64)
+        )
+        grid_thw = [grid_thw_tensor.to(dev) for dev in self.devices]
 
         # Prepare max_grid_size
         max_grid_size_value = max(
@@ -907,6 +936,7 @@ class Qwen3VLModel(
             max_grid_size=max_grid_size,
             cu_seqlens=cu_seqlens,
             max_seqlen=max_seqlen,
+            grid_thw=grid_thw,
         )
 
     def prepare_next_token_inputs(
@@ -949,6 +979,7 @@ class Qwen3VLModel(
             cu_seqlens=None,
             max_seqlen=None,
             max_grid_size=None,
+            grid_thw=None,
         )
 
     def load_kv_manager(

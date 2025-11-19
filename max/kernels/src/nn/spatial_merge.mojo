@@ -168,14 +168,13 @@ fn spatial_merge[
     output: LayoutTensor[mut=True, dtype, **_],
     input: LayoutTensor[dtype, **_],
     grid_thw: LayoutTensor[DType.int64, **_],
-    batch_size: Int,
     hidden_size: Int,
     merge_size: Int,
-    total_output_patches: Int64,
     ctx: DeviceContext,
 ) raises:
     alias threads_per_block = 256
-    var num_blocks = total_output_patches
+    var batch_size = grid_thw.dim[0]()
+    var num_blocks = input.dim[0]()
 
     alias kernel = spatial_merge_kernel[
         dtype, input.layout, output.layout, grid_thw.layout
