@@ -44,7 +44,7 @@ class Gemma3VisionEncoderLayer(Module):
         self.layer_norm1 = LayerNorm(
             self.embed_dim,
             eps=vision_config.layer_norm_eps,
-            device=self.device,
+            devices=[self.device],
             dtype=config.dtype,
         )
 
@@ -61,7 +61,7 @@ class Gemma3VisionEncoderLayer(Module):
         self.layer_norm2 = LayerNorm(
             self.embed_dim,
             eps=vision_config.layer_norm_eps,
-            device=self.device,
+            devices=[self.device],
             dtype=config.dtype,
         )
 
@@ -143,7 +143,9 @@ class Gemma3VisionEncoderLayer(Module):
     def __call__(
         self,
         hidden_states: Sequence[TensorValue],
-        signal_buffers: Sequence[BufferValue],
+        signal_buffers: Sequence[
+            BufferValue
+        ],  # TODO should this be used somehow?
     ) -> list[TensorValue]:
         residual = hidden_states
         hidden_states = self.layer_norm1(hidden_states)
@@ -168,13 +170,11 @@ class Gemma3VisionEncoder(Module):
         self.config = config
         self.devices = config.devices
 
-        # Create encoder layers
         encoder_layers = [
             Gemma3VisionEncoderLayer(config, layer_idx)
             for layer_idx in range(config.vision_config.num_hidden_layers)
         ]
 
-        # Set sharding strategy for each layer
         for layer in encoder_layers:
             layer.sharding_strategy = ShardingStrategy.replicate(
                 len(config.devices)
@@ -182,7 +182,6 @@ class Gemma3VisionEncoder(Module):
 
         self.layers = LayerList(encoder_layers)
 
-        # Create per-device instances of each layer
         self.layers_per_device = [
             [layer.shard(config.devices)[i] for layer in encoder_layers]
             for i in range(len(config.devices))
@@ -193,10 +192,8 @@ class Gemma3VisionEncoder(Module):
         hidden_states: TensorValue | Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> TensorValue | Sequence[TensorValue]:
-        # Handle both single tensor and list of tensors (multi-device case)
+        # if hidden_states is a list, we are sharding across devices.  each device has a replication of the weights
         if isinstance(hidden_states, list):
-            # Multi-device: process each device's tensor through its device-specific layers
-            # Each device processes its data independently with replicated weights
             outputs = []
             for device_idx, state in enumerate(hidden_states):
                 device_output = state

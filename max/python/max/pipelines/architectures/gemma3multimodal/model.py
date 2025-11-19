@@ -31,15 +31,17 @@ from max.graph import (
     Value,
 )
 from max.graph.weights import WeightData, Weights, WeightsAdapter
+from max.kv_cache import (
+    PagedKVCacheManager,
+    estimate_kv_cache_size,
+    load_kv_manager,
+)
 from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
     PagedCacheValues,
-    PagedKVCacheManager,
-    estimate_kv_cache_size,
-    load_kv_manager,
 )
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
@@ -466,7 +468,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
 
-        kv_inputs = self.kv_manager.input_symbols()
+        kv_inputs = self.kv_manager.get_symbolic_inputs()
 
         flattened_kv_types = [
             kv_type for sublist in kv_inputs for kv_type in sublist
@@ -601,7 +603,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         input_row_offsets = model_inputs.input_row_offsets
 
-        # TODO more borrowing from InternVL
         image_embeddings: list[Tensor]
         image_token_indices: list[Tensor]
         if model_inputs.has_vision_inputs:
@@ -823,7 +824,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             cache_dtype=self.encoding.cache_dtype,
         )
         n_devices = kv_params.n_devices
-        fetch_types = self.kv_manager.input_symbols()[0]
+        fetch_types = self.kv_manager.get_symbolic_inputs()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
         kv_caches_per_dev: list[PagedCacheValues] = []
         for i in range(n_devices):

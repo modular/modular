@@ -25,7 +25,7 @@ from max.nn.embedding import Embedding
 from ..model_config import Gemma3ForConditionalGenerationConfig
 
 
-# ⚠️ in line with MLX-VLM implementation
+# ✅ in line with MLX-VLM implementation
 class Gemma3VisionEmbeddings(Module):
     """Implements patch embeddings for SigLIP vision model."""
 
@@ -38,10 +38,10 @@ class Gemma3VisionEmbeddings(Module):
         super().__init__()
         self.config = config
         self.devices = config.devices
-        self.num_channels = config.vision_config.num_channels  # 3
-        self.embed_dim = config.vision_config.hidden_size  # 1152
-        self.image_size = config.vision_config.image_size  # 896
-        self.patch_size = config.vision_config.patch_size  # 14
+        self.num_channels = config.vision_config.num_channels
+        self.embed_dim = config.vision_config.hidden_size
+        self.image_size = config.vision_config.image_size
+        self.patch_size = config.vision_config.patch_size
         self.dtype = config.dtype
 
         self.patch_embedding = Conv2d(
@@ -68,6 +68,7 @@ class Gemma3VisionEmbeddings(Module):
             device=device,
         )
 
+    # ⚠️
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
         """Get the embedding sharding strategy."""
