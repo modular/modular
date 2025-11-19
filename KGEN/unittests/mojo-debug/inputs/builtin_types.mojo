@@ -47,7 +47,7 @@ struct AStruct:
 
 @fieldwise_init("implicit")
 struct ParamStruct[T: AnyTrivialRegType]:
-    var t: T
+    var t: Self.T
 
 
 fn keep_alive[*Ts: AnyType](*args: *Ts):

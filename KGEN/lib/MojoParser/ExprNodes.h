@@ -198,7 +198,9 @@ struct DeclRefNode final : public LValueCapableExprNode, Identifier {
   SourceRange getRange() const override { return getIdentifierRange(); }
 
   /// This performs a lookup of the specified identifier in the specified lookup
-  /// scope, which might be different than the emitters current scope.
+  /// scope, which might be different than the emitter's current scope. This is
+  /// refactored out from emitLCVIR because we use it for qualified lookup `x.y`
+  /// when `x` is a package.
   static ELVIITResult emitUnqualLookup(StringRef spelling, const ExprNode *expr,
                                        ASTDecl &lookupScope, ValueDest &dest,
                                        IREmitter &emitter, bool isSpeculative);

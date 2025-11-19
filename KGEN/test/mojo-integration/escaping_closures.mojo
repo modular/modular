@@ -53,7 +53,7 @@ struct Bar[C: Int, D: Int]:
     var x: Int
 
     fn get(self) -> Int:
-        return self.x + C
+        return self.x + Self.C
 
 
 @fieldwise_init
