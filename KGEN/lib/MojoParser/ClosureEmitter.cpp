@@ -2276,9 +2276,9 @@ static void addConformanceTable(ASTDecl &structDecl,
   addConformanceTable(structDecl, closureParent, witnesses, fileModule);
 }
 
-LogicalResult
-ClosureEmitter::augmentWitnessTablesToConformTo(ASTType structType,
-                                                ASTDecl *traitDecl) {
+LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
+                                                       ASTDecl *traitDecl,
+                                                       bool rebind) {
   // Ensure that we have a valid closure trait and a struct metatype.
   TraitDeclOp traitDeclOp =
       llvm::dyn_cast_if_present<TraitDeclOp>(traitDecl->getIfOperation());
@@ -2324,15 +2324,30 @@ ClosureEmitter::augmentWitnessTablesToConformTo(ASTType structType,
   PValue newWitness = ov.filterOverloadSetForValueType(
       traitSignature, emitter.getDeclScope(), nullptr);
   if (newWitness) {
-    ASTDecl &fileModule = *structDecl.getNearestDeclOfType<FileModuleOp>();
-    addConformanceTable(structDecl,
-                        ClosureEmitter::ClosureParent(traitDeclOp, callFunction,
-                                                      ClosureMethod::CALL),
-                        newWitness.get(), callFunction.getSymNameAttr(),
-                        fileModule);
+    if (rebind) {
+      ASTDecl &fileModule = *structDecl.getNearestDeclOfType<FileModuleOp>();
+      addConformanceTable(structDecl,
+                          ClosureEmitter::ClosureParent(
+                              traitDeclOp, callFunction, ClosureMethod::CALL),
+                          newWitness.get(), callFunction.getSymNameAttr(),
+                          fileModule);
+    }
+
     return success();
   }
+
   return failure();
+}
+
+LogicalResult
+ClosureEmitter::augmentWitnessTablesToConformTo(ASTType structType,
+                                                ASTDecl *traitDecl) {
+  return checkStructCompatibility(structType, traitDecl, true);
+}
+
+LogicalResult ClosureEmitter::isCompatibleWith(ASTType structType,
+                                               ASTDecl *traitDecl) {
+  return checkStructCompatibility(structType, traitDecl, false);
 }
 
 void ClosureEmitter::addConformanceToDevicePassable(
