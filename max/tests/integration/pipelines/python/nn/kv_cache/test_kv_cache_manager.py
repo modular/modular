@@ -106,9 +106,8 @@ async def test_claim_and_release() -> None:
         contexts.append(context)
 
     # Claim 5 ids
-    outstanding = 11
     assert len(contexts) == 5
-    assert len(kv_manager._available) == outstanding
+    assert len(kv_manager._claimed_requests) == 5
 
     # Claim another 3 ids
     contexts_2 = []
@@ -118,8 +117,7 @@ async def test_claim_and_release() -> None:
         kv_manager.claim(context.request_id)
         contexts_2.append(context)
 
-    outstanding -= 3
-    assert len(kv_manager._available) == outstanding
+    assert len(kv_manager._claimed_requests) == 5 + 3
 
     # Release id that has not been claimed
     with pytest.raises(ValueError):
@@ -128,7 +126,7 @@ async def test_claim_and_release() -> None:
     # Release all ids
     for i, context in enumerate(contexts + contexts_2):
         kv_manager.release(context.request_id)
-        assert len(kv_manager._available) == outstanding + i + 1
+        assert len(kv_manager._claimed_requests) == 5 + 3 - i - 1
 
 
 @pytest.mark.asyncio

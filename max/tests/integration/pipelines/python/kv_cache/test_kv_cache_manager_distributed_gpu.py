@@ -92,7 +92,10 @@ def test_claim_until_full() -> None:
 
     # Check that all slots have been claimed.
     for i in range(num_devices):
-        with pytest.raises(ValueError, match="No available sequence"):
+        with pytest.raises(
+            ValueError,
+            match=r"Unable to claim request ID .* due to batch size limit.",
+        ):
             kv_manager.claim(new_context.request_id, replica_idx=i)
 
     # Release a slot.
