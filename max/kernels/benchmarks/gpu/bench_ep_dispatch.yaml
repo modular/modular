@@ -23,3 +23,5 @@ params:
   n_ranks: [8]
   n_tokens_per_rank: [128]
   num_gpus: 8
+  token_dtype: [DType.bfloat16, DType.float8_e4m3fn]
+  scales_dtype: [DType.float32]
