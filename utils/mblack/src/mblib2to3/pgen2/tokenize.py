@@ -603,11 +603,13 @@ def generate_tokens(
         # handled as a normal Mojo token.
         def check_mojo_token():
             # Context sensitive arg conventions are only a keyword if followed
-            # by an identifier letter.
+            # by an identifier letter or a variadic.
             if token not in ["out", "read", "mut", "deinit"]:
                 return True
             next_token = line[end:].lstrip()
-            return next_token and next_token[0].isidentifier()
+            return next_token and (
+                next_token[0].isidentifier() or next_token[0] == "*"
+            )
 
         while pos < max:
             pseudomatch = pseudoprog.match(line, pos)

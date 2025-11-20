@@ -845,7 +845,7 @@ struct InMemoryStruct(ImplicitlyCopyable, Sized):
         return 0
 
     fn fn_with_by_conventions(
-        mut self, mut arg: InMemoryStruct, mut*args: InMemoryStruct
+        mut self, mut arg: InMemoryStruct, mut *args: InMemoryStruct
     ) -> InMemoryStruct:
         """This is a function summary.
 

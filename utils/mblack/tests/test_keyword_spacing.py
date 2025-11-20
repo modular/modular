@@ -32,3 +32,24 @@ def test_var_keyword_spacing_mixed():
         "    pass\n"
     )
     assert_mojo_format(source, expected)
+
+
+def test_contextual_keyword_spacing():
+    source = "fn __init__(out self, mut v:Int, read x:Int): pass"
+    expected = (
+        "fn __init__(out self, mut v: Int, read x: Int):\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_contextual_keyword_spacing_variadics():
+    source =  (
+        "fn __init__(out self, mut *v: Int, read *x: *Int, mut **kwargs: Int): "
+        "pass"
+    )
+    expected = (
+        "fn __init__(out self, mut *v: Int, read *x: *Int, mut **kwargs: Int):\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
