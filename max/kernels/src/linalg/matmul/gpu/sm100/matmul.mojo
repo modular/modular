@@ -1065,7 +1065,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         ),
         shared_mem_bytes=smem_size,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(b200_smem),
-        attributes=pdl_launch_attributes(),
+        attributes=pdl_launch_attributes(pdl_level),
     )
 
     @parameter
