@@ -121,11 +121,10 @@ modular_cc_library(
         "//Support:Buffer",
         "//Support:Configuration",
         "//Support:ML",
+        "//Support:Profiling",
+        "//Support:SymbolExport",
         "@llvm-project//llvm:Support",
     ] + select({
-        "//:tracy_enabled": ["//Support:Tracy"],
-        "//conditions:default": [],
-    }) + select({
         "@platforms//os:linux": ["//bazel/third-party:NVPTX"],
         "@platforms//os:macos": ["@metal-cpp//:metal-cpp"],
         "//conditions:default": [],
@@ -160,10 +159,7 @@ modular_cc_library(
         "//Support:SymbolExport",
         "//Support:Threading",
         "@llvm-project//llvm:Support",
-    ] + select({
-        "//:tracy_enabled": ["//Support:Tracy"],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 modular_shared_library(
