@@ -33,6 +33,7 @@ def _create_kv_manager(
         dtype=DType.float32,
         n_kv_heads=8,
         head_dim=32,
+        num_layers=10,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=32,
         n_devices=num_devices,
@@ -42,7 +43,6 @@ def _create_kv_manager(
         params=params,
         max_batch_size=batch_size,
         max_seq_len=100,
-        num_layers=10,
         devices=devices,
         session=InferenceSession(devices=devices),
         available_cache_memory=100 * 2**20,
@@ -61,7 +61,7 @@ def test_init() -> None:
         assert single_device_manager.max_batch_size == 2
         assert single_device_manager.devices == [devices[i]]
         assert single_device_manager.max_seq_len == 100
-        assert single_device_manager.num_layers == 10
+        assert single_device_manager.params.num_layers == 10
 
 
 def test_init_small_batch_size() -> None:

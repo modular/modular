@@ -86,6 +86,7 @@ def test_print_kv_cache(dtype: DType) -> None:
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
+        num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
@@ -94,11 +95,9 @@ def test_print_kv_cache(dtype: DType) -> None:
         kv_params,
         max_batch_size=1,
         max_seq_len=1,
-        num_layers=1,
+        total_num_pages=8,
         devices=[CPU()],
         session=InferenceSession(devices=[CPU()]),
-        available_cache_memory=1024 * 1024 * 1024,
-        page_size=128,
     )
 
     batch_size = 2

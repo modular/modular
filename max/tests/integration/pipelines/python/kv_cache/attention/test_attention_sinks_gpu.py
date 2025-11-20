@@ -54,12 +54,14 @@ def max_flash_attention_with_sinks(
     # Extract dimensions
     _total_seq_len, num_heads, head_dim = query.shape
     batch_size = len(input_row_offsets) - 1
+    num_layers = 1
 
     # Setup KV cache parameters
     kv_params = KVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=num_kv_heads,
         head_dim=head_dim,
+        num_layers=num_layers,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
@@ -73,7 +75,6 @@ def max_flash_attention_with_sinks(
         params=kv_params,
         max_batch_size=batch_size,
         max_seq_len=max_seq_len * 2,  # Allow for some headroom
-        num_layers=1,
         session=session,
         devices=[cuda],
         available_cache_memory=1024 * 1024 * 1024,  # 1GB

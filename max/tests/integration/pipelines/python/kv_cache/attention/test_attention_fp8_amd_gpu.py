@@ -80,15 +80,15 @@ def _create_kv_manager(
         page_size=128,
         n_kv_heads=num_kv_heads,
         head_dim=head_dim,
+        num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
     )
 
     manager = PagedKVCacheManager(
         params=kv_cache_params,
-        available_cache_memory=1024 * 1024,
         max_batch_size=batch_size,
         max_seq_len=seq_len * 2,
-        num_layers=1,
+        total_num_pages=8,
         devices=[device],
         session=gpu_session,
     )

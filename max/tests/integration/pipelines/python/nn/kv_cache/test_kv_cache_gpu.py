@@ -25,6 +25,7 @@ async def _test_kv_cache_gpu() -> None:
         n_kv_heads=8,
         head_dim=128,
         dtype=DType.bfloat16,
+        num_layers=32,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
@@ -32,7 +33,6 @@ async def _test_kv_cache_gpu() -> None:
         params=kv_params,
         max_batch_size=1,
         max_seq_len=512,
-        num_layers=32,
         devices=[device],
         session=InferenceSession(devices=[device]),
         available_cache_memory=500 * 2**20,

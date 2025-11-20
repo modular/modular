@@ -27,6 +27,7 @@ async def test_kv_cache_multi_gpu() -> None:
             n_kv_heads=8,
             head_dim=128,
             dtype=DType.bfloat16,
+            num_layers=32,
             cache_strategy=KVCacheStrategy.PAGED,
             page_size=128,
             n_devices=num_devices,
@@ -35,7 +36,6 @@ async def test_kv_cache_multi_gpu() -> None:
             params=kv_params,
             max_batch_size=1,
             max_seq_len=512,
-            num_layers=32,
             devices=list_of_devices,
             session=inference_session,
             available_cache_memory=500 * 2**20,
@@ -59,56 +59,39 @@ def create_paged_manager(
     enable_prefix_caching: bool = False,
     enable_kvcache_swapping_to_host: bool = False,
 ) -> PagedKVCacheManager:
-    NUM_KV_HEADS = 4
-    HEAD_DIM = 1
-    NUM_LAYERS = 1
-
     dtype = DType.float32
 
     devices = [Accelerator(id=i) for i in range(accelerator_count())]
 
-    cache_memory = (
-        2
-        * NUM_LAYERS
-        * NUM_KV_HEADS
-        * HEAD_DIM
-        * page_size
-        * num_blocks
-        * dtype.size_in_bytes
-    )
-
-    # CPU swap space is 100x the device cache memory
-    GiB = 1024 * 1024 * 1024
-    host_kvcache_swap_space_gb = 100 * cache_memory / GiB
-
     kv_params = KVCacheParams(
         dtype=dtype,
-        n_kv_heads=NUM_KV_HEADS,
-        head_dim=HEAD_DIM,
+        n_kv_heads=4,
+        head_dim=1,
+        num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
         enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
-        host_kvcache_swap_space_gb=host_kvcache_swap_space_gb,
+        host_kvcache_swap_space_gb=999,
         n_devices=len(devices),
         data_parallel_degree=1,
     )
 
     session = InferenceSession(devices=devices)
 
+    # There are 100x more host pages than device pages if enabled
+    num_host_pages = 100 * num_blocks if enable_kvcache_swapping_to_host else 0
     kv_manager = PagedKVCacheManager(
         params=kv_params,
+        total_num_pages=num_blocks,
+        total_num_host_pages=num_host_pages,
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
-        num_layers=NUM_LAYERS,
         devices=devices,
         session=session,
-        available_cache_memory=cache_memory,
-        page_size=page_size,
         enable_runtime_checks=True,
     )
 
-    assert kv_manager.total_num_pages == num_blocks
     return kv_manager
 
 

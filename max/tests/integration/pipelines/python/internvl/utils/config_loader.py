@@ -100,6 +100,7 @@ class ConfigLoader:
             n_kv_heads=llm_config["num_key_value_heads"],
             head_dim=llm_config["hidden_size"]
             // llm_config["num_attention_heads"],
+            num_layers=llm_config["num_hidden_layers"],
             page_size=16,
             cache_strategy=KVCacheStrategy.PAGED,
             enable_prefix_caching=False,

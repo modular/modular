@@ -30,6 +30,7 @@ def test_mla_prefill_plan() -> None:
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=128,
+        num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
         is_mla=True,
@@ -44,11 +45,9 @@ def test_mla_prefill_plan() -> None:
 
     kv_manager = PagedKVCacheManager(
         kv_params,
-        available_cache_memory=1024 * 1024 * 1024,
-        page_size=page_size,
+        total_num_pages=8,
         max_batch_size=2,
         max_seq_len=100,
-        num_layers=1,
         devices=[Accelerator(0)],
         session=session,
     )
@@ -135,6 +134,7 @@ def test_mla_decompress_k_cache() -> None:
         dtype=DType.float32,
         n_kv_heads=1,
         head_dim=576,
+        num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
         is_mla=True,
@@ -154,11 +154,9 @@ def test_mla_decompress_k_cache() -> None:
 
     kv_manager = PagedKVCacheManager(
         kv_params,
-        available_cache_memory=1024 * 2 * 576,
-        page_size=page_size,
+        total_num_pages=8,
         max_batch_size=2,
         max_seq_len=100,
-        num_layers=1,
         devices=[Accelerator(0)],
         session=session,
     )
@@ -284,6 +282,7 @@ def test_mla_decompress_k_cache_only_k() -> None:
         dtype=DType.float32,
         n_kv_heads=1,
         head_dim=576,
+        num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
         is_mla=False,  # intentionally false, which is incorrect
@@ -301,11 +300,9 @@ def test_mla_decompress_k_cache_only_k() -> None:
 
     kv_manager = PagedKVCacheManager(
         kv_params,
-        available_cache_memory=1024 * 2 * 576,
-        page_size=page_size,
+        total_num_pages=8,
         max_batch_size=2,
         max_seq_len=100,
-        num_layers=1,
         devices=[Accelerator(0)],
         session=session,
     )

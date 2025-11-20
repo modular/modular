@@ -197,9 +197,6 @@ def generate_max_outputs(
             params=kv_params,
             max_batch_size=1,
             max_seq_len=MAX_SEQ_LEN,
-            num_layers=MaxLlama4Config.get_num_layers(
-                huggingface_config=config
-            ),
             devices=[device],
             available_cache_memory=10 * 1024 * 1024,
             page_size=kv_cache_config.kv_cache_page_size,

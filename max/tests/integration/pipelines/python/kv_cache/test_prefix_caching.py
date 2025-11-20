@@ -43,16 +43,11 @@ def get_cache_lengths_from_kv_tuple(kv_tuple: RaggedKVCacheInputs) -> list[int]:
 def create_paged_manager(
     num_blocks: int, page_size: int = 1
 ) -> PagedKVCacheManager:
-    # Setting kv_heads, head_dim, and num_layers to 1 so it is easy to compute
-    # memory usage. Now we know each block is 1 byte.
-    NUM_KV_HEADS = 1
-    HEAD_DIM = 1
-    NUM_LAYERS = 1
-
     kv_params = KVCacheParams(
         dtype=DType.float32,
-        n_kv_heads=NUM_KV_HEADS,
-        head_dim=HEAD_DIM,
+        num_layers=1,
+        n_kv_heads=1,
+        head_dim=1,
         cache_strategy=KVCacheStrategy.PAGED,
         enable_prefix_caching=True,
         page_size=page_size,
@@ -60,24 +55,13 @@ def create_paged_manager(
 
     session = InferenceSession(devices=[CPU()])
 
-    cache_memory = (
-        2
-        * NUM_LAYERS
-        * NUM_KV_HEADS
-        * HEAD_DIM
-        * page_size
-        * num_blocks
-        * kv_params.dtype.size_in_bytes
-    )
     kv_manager = PagedKVCacheManager(
         params=kv_params,
+        total_num_pages=num_blocks,
         max_batch_size=512,
         max_seq_len=4096,
-        num_layers=NUM_LAYERS,
         devices=[CPU()],
         session=session,
-        available_cache_memory=cache_memory,
-        page_size=page_size,
         enable_runtime_checks=True,
     )
 

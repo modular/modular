@@ -5,58 +5,129 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
-from max.driver import CPU
 from max.dtype import DType
-from max.kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
-from max.support.math import ceildiv
+from max.nn.kv_cache import KVCacheParams
+
+INF = 999999999
+GIB = 1024 * 1024 * 1024
 
 
-@pytest.mark.parametrize(
-    "tp,dp", [(1, 1), (1, 2), (2, 1), (2, 2), (4, 2), (2, 4), (1, 8), (8, 1)]
-)
-def test_memory_estimation(tp: int, dp: int) -> None:
-    page_size = 128
-    n_kv_heads = 8
-    head_dim = 128
-    num_layers = 10
+def create_params(
+    dp: int = 1, tp: int = 1, page_size: int = 128
+) -> KVCacheParams:
+    return KVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=8,
+        head_dim=128,
+        num_layers=1,
+        page_size=page_size,
+        data_parallel_degree=dp,
+        n_devices=tp * dp,
+    )
+
+
+def test_basic() -> None:
+    params = create_params()
+    assert (
+        params.compute_num_device_blocks(
+            available_cache_memory=GIB,
+            max_batch_size=INF,
+            max_seq_len=INF,
+        )
+        == 1024
+    )
+
+
+def test_big_mem() -> None:
+    params = create_params()
+    assert (
+        params.compute_num_device_blocks(
+            available_cache_memory=17 * GIB,
+            max_batch_size=INF,
+            max_seq_len=INF,
+        )
+        == 17 * 1024
+    )
+
+
+def test_small_batch_and_seq_len() -> None:
+    params = create_params()
+    assert (
+        params.compute_num_device_blocks(
+            available_cache_memory=GIB,
+            max_batch_size=4,
+            max_seq_len=1000,
+        )
+        == 32
+    )
+
+
+def test_tp2() -> None:
+    params = create_params(tp=2)
+    assert (
+        params.compute_num_device_blocks(
+            available_cache_memory=GIB,
+            max_batch_size=INF,
+            max_seq_len=INF,
+        )
+        == 1024
+    )
+
+
+def test_limited_mem() -> None:
+    params = create_params()
+    with pytest.raises(
+        RuntimeError,
+        match="Insufficient cache memory to allocate even a single page",
+    ):
+        params.compute_num_device_blocks(
+            available_cache_memory=1,
+            max_batch_size=INF,
+            max_seq_len=INF,
+        )
+
+
+def test_dp2() -> None:
+    params = create_params(dp=2)
+    assert (
+        params.compute_num_device_blocks(
+            available_cache_memory=GIB,
+            max_batch_size=INF,
+            max_seq_len=INF,
+        )
+        == 512
+    )
+
+
+def test_weird_page_size() -> None:
+    params = create_params(page_size=777)
+    assert (
+        params.compute_num_device_blocks(
+            available_cache_memory=GIB,
+            max_batch_size=INF,
+            max_seq_len=INF,
+        )
+        == 168
+    )
+
+
+def test_bytes_per_block() -> None:
     dtype = DType.float32
-    devices = [CPU(0) for _ in range(tp * dp)]
-    bytes_per_page_per_replica = (
-        n_kv_heads * head_dim * page_size * num_layers * dtype.size_in_bytes
-    )
-    available_cache_memory = 1024 * 1024 * 1024
-    max_seq_len = 1024
-    max_batch_size = 32
-    available_cache_memory_per_replica = available_cache_memory // dp
-    max_pages_per_replica = (
-        available_cache_memory_per_replica // bytes_per_page_per_replica
-    )
-    blocks_per_max_seq_len = ceildiv(max_seq_len, page_size)
-    max_pages_per_replica = min(
-        max_pages_per_replica,
-        blocks_per_max_seq_len * max_batch_size,
-    )
+    n_kv_heads = 1
+    head_dim = 24
+    num_layers = 17
+    page_size = 128
+    data_parallel_degree = 1
+    n_devices = 1
+
     params = KVCacheParams(
         dtype=dtype,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
-        cache_strategy=KVCacheStrategy.PAGED,
-        page_size=page_size,
-    )
-    memory_size = PagedKVCacheManager.estimated_memory_size(
-        params=params,
-        max_batch_size=max_batch_size,
-        max_seq_len=max_seq_len,
         num_layers=num_layers,
-        available_cache_memory=available_cache_memory,
-        devices=devices,
+        page_size=page_size,
+        data_parallel_degree=data_parallel_degree,
+        n_devices=n_devices,
     )
-    # This test may compute a slightly different memory size than estimated_memory_size().
-    # The calculation done here aligns the memory_size downward to be a multiple
-    # of bytes per page.
-    assert (
-        max_pages_per_replica * bytes_per_page_per_replica * dp
-        <= memory_size
-        <= available_cache_memory
-    )
+
+    assert params.bytes_per_block == 417792

@@ -14,11 +14,7 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import flare_mla_prefill_ragged
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
 from test_common.context_utils import create_text_context
 
 
@@ -31,14 +27,15 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     num_q_heads = 32
     q_head_dim = 192
     k_head_dim = 128
+    num_layers = 1
     kv_params = KVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=1,
         head_dim=576,
+        num_layers=num_layers,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
-    num_layers = 1
     prompt_lens = [10, 30]
     batch_size = len(prompt_lens)
     total_seq_len = sum(prompt_lens)
@@ -62,11 +59,9 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     )
     kv_manager = PagedKVCacheManager(
         kv_params,
-        available_cache_memory=1024 * 1024 * 32,
-        page_size=128,
+        total_num_pages=8,
         max_batch_size=2,
         max_seq_len=100,
-        num_layers=num_layers,
         devices=[cuda],
         session=session,
     )

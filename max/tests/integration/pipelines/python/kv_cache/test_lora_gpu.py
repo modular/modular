@@ -597,6 +597,7 @@ def attention_lora_max_output(
     kv_params = KVCacheParams(
         dtype=DTYPE,
         page_size=128,
+        num_layers=1,
         n_kv_heads=config.n_kv_heads,
         head_dim=config.head_dim,
         cache_strategy=KVCacheStrategy.PAGED,
@@ -625,10 +626,9 @@ def attention_lora_max_output(
 
     kv_manager = PagedKVCacheManager(
         params=kv_params,
-        available_cache_memory=1024 * 1024,
+        total_num_pages=8,
         max_batch_size=x.shape[0],
         max_seq_len=seq_len * 2,
-        num_layers=1,
         devices=[device],
         session=session,
     )

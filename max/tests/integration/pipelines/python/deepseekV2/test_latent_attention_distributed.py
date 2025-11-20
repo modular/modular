@@ -75,6 +75,7 @@ def _single_gpu_baseline(
 
     kv_params = KVCacheParams(
         dtype=DType.bfloat16,
+        num_layers=config.num_hidden_layers,
         n_kv_heads=1,
         head_dim=576,
         cache_strategy=KVCacheStrategy.PAGED,
@@ -103,11 +104,9 @@ def _single_gpu_baseline(
     kv_manager = PagedKVCacheManager(
         devices=[Accelerator(0)],
         params=kv_params,
-        available_cache_memory=100 * 1024 * 1024,
-        page_size=128,
+        total_num_pages=100,
         max_batch_size=1,
         max_seq_len=config.max_position_embeddings,
-        num_layers=config.num_hidden_layers,
         session=session,
     )
 
@@ -227,6 +226,7 @@ def _build_kv_params(config: DeepseekV2Config, dp_degree: int) -> KVCacheParams:
         dtype=DType.bfloat16,
         n_kv_heads=1,
         head_dim=576,
+        num_layers=config.num_hidden_layers,
         cache_strategy=KVCacheStrategy.PAGED,
         n_devices=dp_degree,
         page_size=128,
@@ -365,7 +365,6 @@ def _run_distributed_dp(
         params=_build_kv_params(config, dp_degree),
         max_batch_size=dp_degree,  # one request per replica
         max_seq_len=config.max_position_embeddings,
-        num_layers=config.num_hidden_layers,
         devices=devices,
         session=session,
         available_cache_memory=100 * 1024 * 1024,

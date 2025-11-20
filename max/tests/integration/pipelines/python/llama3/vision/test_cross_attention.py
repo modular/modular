@@ -179,6 +179,7 @@ def test_cross_attention(
         dtype=dtype,
         n_kv_heads=config.num_key_value_heads,
         head_dim=head_dim,
+        num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
     )
@@ -186,7 +187,6 @@ def test_cross_attention(
         params=kv_params,
         max_batch_size=batch_size,
         max_seq_len=config.max_position_embeddings,
-        num_layers=config.num_hidden_layers,
         session=session,
         devices=[CPU()],
         available_cache_memory=4 * 1024 * 1024 * 1024,

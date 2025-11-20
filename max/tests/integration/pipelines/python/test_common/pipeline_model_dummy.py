@@ -168,6 +168,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
             dtype=cache_dtype,
             n_kv_heads=num_kv_heads,
             head_dim=hidden_size // num_kv_heads,
+            num_layers=cls.get_num_layers(huggingface_config),
             cache_strategy=kv_cache_config.cache_strategy,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
@@ -183,7 +184,6 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
     ) -> PagedKVCacheManager | NullKVCacheManager:
         """Provided a PipelineConfig and InferenceSession, load the kv manager."""
         assert available_cache_memory is not None
-        num_layers = self.get_num_layers(self.huggingface_config)
         devices = load_devices(self.pipeline_config.model_config.device_specs)
 
         return load_kv_manager(
@@ -197,7 +197,6 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
             max_seq_len=self.calculate_max_seq_len(
                 self.pipeline_config, self.huggingface_config
             ),
-            num_layers=num_layers,
             devices=devices,
             available_cache_memory=available_cache_memory,
             session=session,
@@ -216,7 +215,6 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         """Estimates the size of the kv cache in bytes."""
         assert available_cache_memory is not None
         assert pipeline_config.max_length is not None
-        num_layers = cls.get_num_layers(huggingface_config=huggingface_config)
 
         return estimate_kv_cache_size(
             params=cls.get_kv_params(
@@ -227,9 +225,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=pipeline_config.max_length,
-            num_layers=num_layers,
             available_cache_memory=available_cache_memory,
-            devices=devices,
         )
 
     def load_model(

@@ -194,6 +194,7 @@ def test_cross_attention_gpu(
         dtype=dtype,
         n_kv_heads=config.num_key_value_heads,
         head_dim=head_dim,
+        num_layers=config.num_hidden_layers,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
     )
@@ -201,7 +202,6 @@ def test_cross_attention_gpu(
         params=kv_params,
         max_batch_size=batch_size,
         max_seq_len=config.max_position_embeddings,
-        num_layers=config.num_hidden_layers,
         session=session,
         devices=[cuda],
         available_cache_memory=8 * 1024 * 1024 * 1024,

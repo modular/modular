@@ -86,6 +86,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
+        num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
@@ -93,11 +94,9 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         kv_params,
         max_batch_size=batch_size,
         max_seq_len=max_seq_len,
-        num_layers=1,
+        total_num_pages=8,
         devices=[CPU()],
         session=session,
-        available_cache_memory=1024 * 1024 * 1024,
-        page_size=128,
     )
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
@@ -165,6 +164,7 @@ def test_partial_rms_norm_key_cache(
         dtype=dtype,
         n_kv_heads=1,
         head_dim=576,
+        num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
@@ -172,11 +172,9 @@ def test_partial_rms_norm_key_cache(
         kv_params,
         max_batch_size=batch_size,
         max_seq_len=max_seq_len,
-        num_layers=1,
+        total_num_pages=8,
         devices=[CPU()],
         session=session,
-        available_cache_memory=1024 * 1024 * 1024,
-        page_size=128,
     )
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
@@ -258,6 +256,7 @@ def test_rms_norm_new_key_cache(
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
+        num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
@@ -265,11 +264,9 @@ def test_rms_norm_new_key_cache(
         kv_params,
         max_batch_size=batch_size,
         max_seq_len=max_seq_len,
-        num_layers=1,
+        total_num_pages=8,
         devices=[CPU()],
         session=session,
-        available_cache_memory=1024 * 1024 * 1024,
-        page_size=128,
     )
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
@@ -363,6 +360,7 @@ def test_rms_norm_key_cache_dtype_mismatch(
         dtype=kv_dtype,
         n_kv_heads=8,
         head_dim=128,
+        num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
@@ -370,11 +368,9 @@ def test_rms_norm_key_cache_dtype_mismatch(
         kv_params,
         max_batch_size=batch_size,
         max_seq_len=max_seq_len,
-        num_layers=1,
+        total_num_pages=8,
         devices=[CPU()],
         session=session,
-        available_cache_memory=1024 * 1024 * 1024,
-        page_size=128,
     )
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
@@ -413,6 +409,7 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         dtype=DType.float32,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
+        num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
@@ -420,11 +417,9 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         kv_params,
         max_batch_size=batch_size,
         max_seq_len=max_seq_len,
-        num_layers=1,
+        total_num_pages=8,
         devices=[CPU()],
         session=session,
-        available_cache_memory=1024 * 1024 * 1024,
-        page_size=128,
     )
 
     # For per token normalization, gamma has shape [n_kv_heads * head_dim]

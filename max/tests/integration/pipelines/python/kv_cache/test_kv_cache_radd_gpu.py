@@ -72,28 +72,17 @@ def test_kv_cache_radd_basic() -> None:
         head_dim=128,
         dtype=dtype,
         cache_strategy=KVCacheStrategy.PAGED,
+        num_layers=num_layers,
         page_size=128,
-    )
-
-    # Calculate cache memory needed
-    cache_memory = (
-        batch_size
-        * max_seq_len
-        * 2
-        * num_layers
-        * kv_params.n_kv_heads
-        * kv_params.head_dim
-        * dtype.size_in_bytes
     )
 
     kv_manager = PagedKVCacheManager(
         kv_params,
         max_batch_size=batch_size,
         max_seq_len=max_seq_len,
-        num_layers=num_layers,
+        total_num_pages=8,
         devices=[device],
         session=session,
-        available_cache_memory=cache_memory,
     )
 
     # Calculate total length and offsets

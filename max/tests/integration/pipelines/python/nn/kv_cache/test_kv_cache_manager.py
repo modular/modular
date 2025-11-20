@@ -20,10 +20,12 @@ async def test_step() -> None:
     # Initialize llama like params
     # Step is cache_type agnostic, so we can test with contiguous
     device = CPU()
+    num_layers = 10
     params = KVCacheParams(
         dtype=DType.float32,
         n_kv_heads=8,
         head_dim=128,
+        num_layers=num_layers,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
@@ -32,7 +34,6 @@ async def test_step() -> None:
         params=params,
         max_batch_size=16,
         max_seq_len=100,
-        num_layers=10,
         devices=[device],
         session=InferenceSession(devices=[device]),
         available_cache_memory=500 * 2**20,
@@ -79,6 +80,7 @@ async def test_claim_and_release() -> None:
         dtype=DType.float32,
         n_kv_heads=8,
         head_dim=128,
+        num_layers=10,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
@@ -87,7 +89,6 @@ async def test_claim_and_release() -> None:
         params=params,
         max_batch_size=16,
         max_seq_len=100,
-        num_layers=10,
         devices=[device],
         session=InferenceSession(devices=[device]),
         available_cache_memory=500 * 2**20,
@@ -137,6 +138,7 @@ async def test_fetch_paged() -> None:
         dtype=DType.float32,
         n_kv_heads=1,
         head_dim=16,
+        num_layers=10,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
@@ -145,7 +147,6 @@ async def test_fetch_paged() -> None:
         params=params,
         max_batch_size=16,
         max_seq_len=100,
-        num_layers=10,
         devices=[device],
         session=InferenceSession(devices=[device]),
         available_cache_memory=500 * 2**20,

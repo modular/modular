@@ -77,6 +77,7 @@ def generate_max_outputs(
         dtype=DType.bfloat16,
         n_kv_heads=1,
         head_dim=576,
+        num_layers=config.num_hidden_layers,
         cache_strategy=KVCacheStrategy.PAGED,
         n_devices=1,
         page_size=128,
@@ -103,11 +104,9 @@ def generate_max_outputs(
     kv_manager = PagedKVCacheManager(
         devices=[Accelerator(0)],
         params=kv_params,
-        available_cache_memory=100 * 1024 * 1024,
-        page_size=128,
+        total_num_pages=8,
         max_batch_size=1,
         max_seq_len=config.max_position_embeddings,
-        num_layers=config.num_hidden_layers,
         session=session,
     )
 
@@ -244,6 +243,7 @@ def generate_max_outputs_dp(
         dtype=DType.bfloat16,
         n_kv_heads=1,
         head_dim=576,
+        num_layers=config.num_hidden_layers,
         cache_strategy=KVCacheStrategy.PAGED,
         n_devices=1,
         page_size=128,
@@ -270,11 +270,9 @@ def generate_max_outputs_dp(
     kv_manager = PagedKVCacheManager(
         devices=[Accelerator(0)],
         params=kv_params,
-        available_cache_memory=100 * 1024 * 1024,
-        page_size=128,
+        total_num_pages=8,
         max_batch_size=1,
         max_seq_len=config.max_position_embeddings,
-        num_layers=config.num_hidden_layers,
         session=session,
     )
 

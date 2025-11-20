@@ -377,6 +377,7 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
         dtype=DType.float32,
         n_kv_heads=8,
         head_dim=128,
+        num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
@@ -402,11 +403,9 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
         kv_params,
         max_batch_size=2,
         max_seq_len=100,
-        num_layers=1,
+        total_num_pages=8,
         devices=[CPU()],
         session=session,
-        available_cache_memory=1024 * 1024 * 1024,
-        page_size=128,
     )
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
         kv_manager.get_symbolic_inputs()[0]

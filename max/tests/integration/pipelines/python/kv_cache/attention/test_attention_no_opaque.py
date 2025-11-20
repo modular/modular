@@ -114,7 +114,6 @@ def test_compare_attention_with_rope_no_opaque() -> None:
     n_kv_heads = 16
     head_dim = dim // n_heads
     max_seq_len = 1024
-    device_ref = DeviceRef.CPU()
     device = CPU()
     page_size = 128
     max_batch_size = 8
@@ -124,6 +123,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
         dtype=DType.float32,
+        num_layers=1,
         page_size=page_size,
         cache_strategy=KVCacheStrategy.PAGED,
     )
@@ -167,10 +167,8 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         kv_params,
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
-        num_layers=1,
+        total_num_pages=32,
         devices=[device],
-        page_size=page_size,
-        available_cache_memory=1024 * 1024 * 1024,
         session=session,
     )
 

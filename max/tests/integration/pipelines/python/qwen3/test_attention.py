@@ -172,9 +172,6 @@ def generate_max_outputs(
         params=kv_params,
         max_batch_size=1,
         max_seq_len=MAX_SEQ_LEN,
-        num_layers=MaxQwen3Config.get_num_layers(
-            huggingface_config=text_config
-        ),
         devices=[device],
         available_cache_memory=30
         * 1024
