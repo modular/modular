@@ -706,3 +706,15 @@ comptime Reversed[
 Parameters:
     element_types: The variadic sequence of types to reverse.
 """
+
+
+# ===-----------------------------------------------------------------------===#
+# VariadicConcat
+# ===-----------------------------------------------------------------------===#
+
+comptime Concatenated[
+    T: type_of(AnyType), //, *Ts: VariadicOf[T]
+] = __mlir_attr[`#kgen.variadic.concat<`, Ts, `> :`, VariadicOf[T]]
+"""
+Represents the concatenation of multiple variadic sequences of types.
+"""

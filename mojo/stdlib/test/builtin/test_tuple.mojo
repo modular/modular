@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing import assert_equal, assert_false, assert_true, TestSuite
+from test_utils import CopyCounter
 
 
 def test_tuple_contains():
@@ -165,19 +166,63 @@ def test_tuple_comparison_different_types_and_lengths():
     assert_true((1, "foo") >= (1, "bar", "baz"))
 
 
-def test_tuple_reverse():
+def test_tuple_reverse_odd():
     var t = ("hi", 1, 4.5)
-    var reversed_t = t.reverse()
+    var reversed_t = t^.reverse()
     assert_equal(reversed_t[0], 4.5)
     assert_equal(reversed_t[1], 1)
     assert_equal(reversed_t[2], "hi")
-    var t2 = Tuple[]()
-    var t2_reversed = t2.reverse()
-    assert_true(t2_reversed == t2)
-    var t3 = (Bool(True), Int(42))
-    var t3_reversed = t3.reverse()
-    assert_equal(t3_reversed[0], Int(42))
-    assert_equal(t3_reversed[1], Bool(True))
+
+
+def test_tuple_reverse_empty():
+    var t = Tuple[]()
+    var t_reversed = t^.reverse()
+    assert_true(t_reversed == ())
+
+
+def test_tuple_reverse_even():
+    var t = (Bool(True), Int(42))
+    var t_reversed = t^.reverse()
+    assert_equal(t_reversed[0], Int(42))
+    assert_equal(t_reversed[1], Bool(True))
+
+
+def test_tuple_reverse_copy_count():
+    var t = (CopyCounter(),)
+    var t2 = t^.reverse()
+    assert_equal(t2[0].copy_count, 0)
+
+
+def test_tuple_concat():
+    var t = ("hi", "hey", 1)
+    var t2 = (4.5, "hello")
+    var concatted = t^.concat(t2^)
+    assert_equal(concatted[0], "hi")
+    assert_equal(concatted[1], "hey")
+    assert_equal(concatted[2], 1)
+    assert_equal(concatted[3], 4.5)
+    assert_equal(concatted[4], "hello")
+
+
+def test_tuple_empty_concat():
+    var t = ()
+    var t2 = ()
+    var concatted = t^.concat(t2^)
+    assert_true(concatted == ())
+
+
+def test_tuple_identity_concat():
+    var t = (Bool(True),)
+    var t2 = ()
+    var concatted = t^.concat(t2^)
+    assert_true(concatted == (Bool(True),))
+
+
+def test_tuple_concat_copy_count():
+    var t = (CopyCounter(),)
+    var t2 = (String(""),)
+    var t3 = t^.concat(t2^)
+    assert_equal(t3[0].copy_count, 0)
 
 
 def main():

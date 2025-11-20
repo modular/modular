@@ -17,7 +17,12 @@ These are Mojo built-ins, so you don't need to import them.
 
 from sys.intrinsics import _type_is_eq
 
-from builtin.variadics import variadic_size, VariadicOf, Reversed
+from builtin.variadics import (
+    variadic_size,
+    VariadicOf,
+    Reversed,
+    Concatenated,
+)
 
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -423,9 +428,64 @@ struct Tuple[*element_types: Copyable & Movable](
         for i in range(type_of(result).__len__()):
             UnsafePointer(to=result[i]).init_pointee_move_from(
                 rebind[UnsafePointer[type_of(result[i]), origin_of(self)]](
-                    UnsafePointer(to=self[variadic_size(element_types) - 1 - i])
+                    UnsafePointer(
+                        to=self[variadic_size(Self.element_types) - 1 - i]
+                    )
                 )
             )
 
         # I believe this is needed otherwise you'll double free
         __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(self))
+
+    @always_inline("nodebug")
+    fn concat[
+        *other_element_types: Copyable & Movable
+    ](
+        var self,
+        var other: Tuple[*other_element_types],
+        out result: Tuple[
+            *Concatenated[Self.element_types, other_element_types]
+        ],
+    ):
+        """Return a new tuple that concatenates this tuple with another.
+
+        Args:
+            other: The other tuple to concatenate.
+
+        Parameters:
+            other_element_types: The types of the elements contained in the other Tuple.
+
+        Returns:
+            A new tuple with the concatenated elements.
+        """
+        # Mark 'self.storage' as being initialized so we can work on it.
+        __mlir_op.`lit.ownership.mark_initialized`(
+            __get_mvalue_as_litref(result.storage)
+        )
+        __mlir_op.`lit.ownership.mark_initialized`(
+            __get_mvalue_as_litref(result)
+        )
+
+        alias self_len = Self.__len__()
+
+        @parameter
+        for i in range(self_len):
+            UnsafePointer(to=result[i]).init_pointee_move_from(
+                rebind[UnsafePointer[type_of(result[i]), origin_of(self)]](
+                    UnsafePointer(to=self[i])
+                )
+            )
+
+        @parameter
+        for i in range(type_of(other).__len__()):
+            UnsafePointer(to=result[self_len + i]).init_pointee_move_from(
+                rebind[
+                    UnsafePointer[
+                        type_of(result[self_len + i]), origin_of(other)
+                    ]
+                ](UnsafePointer(to=other[i]))
+            )
+
+        # I believe this is needed otherwise you'll double free
+        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(self))
+        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(other))

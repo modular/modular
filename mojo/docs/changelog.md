@@ -61,7 +61,9 @@ what we publish.
 
 ### Library changes
 
-- Tuple can now be reversed with `Tuple.reverse()`.
+- Tuples have been improved:
+  - Tuples can now be concatenated with `Tuple.concat(other)`.
+  - Tuple can now be reversed with `Tuple.reverse()`.
 
 - New `ContiguousSlice` and `StridedSlice` types were added to
   the `builtin_slice` module to support specialization for slicing without strides.

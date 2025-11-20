@@ -11,7 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.variadics import VariadicOf, Reversed, variadic_size
+from builtin.variadics import (
+    VariadicOf,
+    Reversed,
+    Concatenated,
+    variadic_size,
+)
 from sys.intrinsics import _type_is_eq
 from testing import assert_equal, assert_false, assert_true, TestSuite
 
@@ -30,25 +35,65 @@ fn test_variadic_iterator() raises:
     helper(5, 4, 3, 2, 1)
 
 
-def test_variadic_reverse():
+def test_variadic_reverse_empty():
     var _tup = ()
     comptime ReversedVariadic = Reversed[*type_of(_tup).element_types]
     assert_equal(variadic_size(_tup.element_types), 0)
     assert_equal(variadic_size(ReversedVariadic), 0)
-    var _tup2 = (String("hi"), Int(42), Float32(3.14), Bool(True))
-    comptime ReversedVariadic2 = Reversed[*type_of(_tup2).element_types]
-    assert_equal(variadic_size(_tup2.element_types), 4)
-    assert_equal(variadic_size(ReversedVariadic2), 4)
-    assert_true(_type_is_eq[ReversedVariadic2[0], Bool]())
-    assert_true(_type_is_eq[ReversedVariadic2[1], Float32]())
-    assert_true(_type_is_eq[ReversedVariadic2[2], Int]())
-    assert_true(_type_is_eq[ReversedVariadic2[3], String]())
-    var _tup3 = (Int(1), String("a"))
-    comptime ReversedVariadic3 = Reversed[*type_of(_tup3).element_types]
-    assert_equal(variadic_size(_tup3.element_types), 2)
+
+
+def test_variadic_reverse_odd():
+    var _tup = (String("hi"), Int(42), Float32(3.14))
+    comptime ReversedVariadic = Reversed[*type_of(_tup).element_types]
+    assert_equal(variadic_size(_tup.element_types), 3)
+    assert_equal(variadic_size(ReversedVariadic), 3)
+    assert_true(_type_is_eq[ReversedVariadic[0], Float32]())
+    assert_true(_type_is_eq[ReversedVariadic[1], Int]())
+    assert_true(_type_is_eq[ReversedVariadic[2], String]())
+
+
+def test_variadic_reverse_even():
+    var _tup = (Int(1), String("a"))
+    comptime ReversedVariadic3 = Reversed[*type_of(_tup).element_types]
+    assert_equal(variadic_size(_tup.element_types), 2)
     assert_equal(variadic_size(ReversedVariadic3), 2)
     assert_true(_type_is_eq[ReversedVariadic3[0], String]())
     assert_true(_type_is_eq[ReversedVariadic3[1], Int]())
+
+
+def test_variadic_concat_empty():
+    var _tup = ()
+    comptime ConcattedVariadic = Concatenated[
+        type_of(_tup).element_types, type_of(_tup).element_types
+    ]
+    assert_equal(variadic_size(_tup.element_types), 0)
+    assert_equal(variadic_size(ConcattedVariadic), 0)
+
+
+def test_variadic_concat_singleton():
+    var _tup = (String("hi"), Int(42), Float32(3.14))
+    var _tup2 = (Bool(True),)
+    comptime ConcattedVariadic = Concatenated[
+        type_of(_tup).element_types, type_of(_tup2).element_types
+    ]
+    assert_equal(variadic_size(_tup.element_types), 3)
+    assert_equal(variadic_size(ConcattedVariadic), 4)
+    assert_true(_type_is_eq[ConcattedVariadic[0], String]())
+    assert_true(_type_is_eq[ConcattedVariadic[1], Int]())
+    assert_true(_type_is_eq[ConcattedVariadic[2], Float32]())
+    assert_true(_type_is_eq[ConcattedVariadic[3], Bool]())
+
+
+def test_variadic_concat_identity():
+    var _tup = (Int(1), String("a"))
+    var _tup2 = ()
+    comptime ConcattedVariadic = Concatenated[
+        type_of(_tup).element_types, type_of(_tup2).element_types
+    ]
+    assert_equal(variadic_size(_tup.element_types), 2)
+    assert_equal(variadic_size(ConcattedVariadic), 2)
+    assert_true(_type_is_eq[ConcattedVariadic[0], Int]())
+    assert_true(_type_is_eq[ConcattedVariadic[1], String]())
 
 
 def main():
