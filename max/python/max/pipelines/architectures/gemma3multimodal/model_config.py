@@ -11,9 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 from max.dtype.dtype import DType
+from max.graph.weights import WeightData
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.gemma3.model_config import Gemma3Config
@@ -39,7 +42,7 @@ class VisionConfig:
     dtype: DType = DType.bfloat16
 
     @staticmethod
-    def generate(hf_config: AutoConfig) -> "VisionConfig":
+    def generate(hf_config: AutoConfig) -> VisionConfig:
         return VisionConfig(
             hidden_size=hf_config.hidden_size,
             image_size=hf_config.image_size,
@@ -71,19 +74,18 @@ class Gemma3MultimodalConfigBase:
 
 
 class Gemma3MultimodalConfig(Gemma3MultimodalConfigBase):
-    # TODO: fix the return type
     @staticmethod
     def generate(
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        state_dict: dict,
+        state_dict: dict[str, WeightData],
         dtype: DType,
         n_devices: int,
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
         return_logits: ReturnLogits,
         attention_bias: bool = False,
-    ) -> "Gemma3MultimodalConfig":
+    ) -> Gemma3MultimodalConfig:
         # Check if this is a multimodal config or language-only config
         hf_vision_config = getattr(huggingface_config, "vision_config", None)
         hf_text_config = getattr(huggingface_config, "text_config", None)
@@ -177,6 +179,9 @@ class Gemma3MultimodalConfig(Gemma3MultimodalConfigBase):
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             n_devices=n_devices,
+            num_layers=Gemma3MultimodalConfig.get_num_layers(
+                huggingface_config
+            ),
         )
 
     @staticmethod

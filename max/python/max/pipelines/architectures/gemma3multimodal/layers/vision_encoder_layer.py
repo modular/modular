@@ -79,7 +79,7 @@ class VisionEncoderLayer(Module):
         )
         self.mlp = VisionMLP(config, devices=devices, layer_idx=layer_idx)
 
-    def __call__(self, x: TensorValue) -> TensorValue:  # type: ignore[override]
+    def __call__(self, x: TensorValue) -> TensorValue:
         """Forward pass for encoder layer.
 
         Args:

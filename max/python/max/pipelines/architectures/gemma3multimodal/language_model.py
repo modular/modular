@@ -13,10 +13,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
+from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import BufferValue, TensorValue, ops
+from max.graph.weights import WeightData
 from max.nn import Module, ReturnLogits
 from max.nn.kv_cache import PagedCacheValues
 from max.pipelines.architectures.gemma3.gemma3 import Gemma3TextModel
@@ -167,10 +169,24 @@ class Gemma3LanguageModelWithVision(Module):
 
         return (last_logits,)
 
-    def load_state_dict(self, state_dict: dict, **kwargs) -> None:
+    def load_state_dict(
+        self,
+        state_dict: Mapping[str, DLPackArray | WeightData],
+        *,
+        override_quantization_encoding: bool = False,
+        weight_alignment: int | None = None,
+        strict: bool = True,
+    ) -> None:
         """Load weights into the text model."""
-        self.text_model.load_state_dict(state_dict, **kwargs)
+        self.text_model.load_state_dict(
+            state_dict,
+            override_quantization_encoding=override_quantization_encoding,
+            weight_alignment=weight_alignment,
+            strict=strict,
+        )
 
-    def state_dict(self, **kwargs) -> dict:
+    def state_dict(
+        self, auto_initialize: bool = True
+    ) -> dict[str, DLPackArray]:
         """Get the text model's state dict."""
-        return self.text_model.state_dict(**kwargs)
+        return self.text_model.state_dict(auto_initialize=auto_initialize)
