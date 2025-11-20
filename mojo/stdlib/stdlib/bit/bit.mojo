@@ -398,7 +398,7 @@ fn log2_floor[
     """
     constrained[dtype.is_integral(), "dtype must be integral"]()
 
-    alias bitwidth = bit_width_of[dtype]()
+    comptime bitwidth = bit_width_of[dtype]()
     var res = bitwidth - count_leading_zeros(val) - 1
 
     @parameter

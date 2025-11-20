@@ -37,7 +37,7 @@ from utils._serialize import _serialize
 from utils.index import IndexList
 from utils.static_tuple import StaticTuple
 
-alias _MAX_RANK = 8
+comptime _MAX_RANK = 8
 """The maximum tensor rank for any tensor shape.
 This value must match kMaxRank in Support/include/Support/ML/TensorShape.h
 """
@@ -101,7 +101,7 @@ fn _compute_ndbuffer_offset(
         The offset into the NDBuffer given the indices.
     """
 
-    alias rank = buf.rank
+    comptime rank = buf.rank
 
     @parameter
     if buf.rank == 0:
@@ -142,7 +142,7 @@ fn _compute_ndbuffer_offset(
         The offset into the NDBuffer given the indices.
     """
 
-    alias rank = buf.rank
+    comptime rank = buf.rank
 
     @parameter
     if rank == 0:
@@ -263,7 +263,7 @@ struct NDBuffer[
             only to be accessible through this pointer.
     """
 
-    alias type = Self.dtype
+    comptime type = Self.dtype
     var data: UnsafePointer[
         Scalar[Self.dtype],
         address_space = Self.address_space,
@@ -367,7 +367,7 @@ struct NDBuffer[
         ]()
 
         # We can lose information about shape/stride, but not gain information
-        alias unknown_dim_list = DimList.create_unknown[Self.rank]()
+        comptime unknown_dim_list = DimList.create_unknown[Self.rank]()
         constrained[
             other.shape == Self.shape or Self.shape == unknown_dim_list,
             "cannot convert between buffers with incompatible shapes",
@@ -522,7 +522,7 @@ struct NDBuffer[
             dynamic_stride=dynamic_stride,
         )
 
-    alias OriginCastType[
+    comptime OriginCastType[
         target_mut: Bool,
         target_origin: Origin[target_mut],
     ] = NDBuffer[
@@ -816,7 +816,7 @@ struct NDBuffer[
             The tiled buffer at tile_coords.
         """
 
-        alias num_tile_sizes = stdlib.builtin.variadic_size(tile_sizes)
+        comptime num_tile_sizes = stdlib.builtin.variadic_size(tile_sizes)
 
         constrained[
             num_tile_sizes == Self.rank,
@@ -833,7 +833,7 @@ struct NDBuffer[
 
         @parameter
         for i in range(Self.rank):
-            alias tile_size_i = tile_sizes[i].get()
+            comptime tile_size_i = tile_sizes[i].get()
             dyn_shape[i] = tile_size_i
             var coord_i = tile_coords[i]
             offset += coord_i * tile_size_i * self.stride[i]()
@@ -1098,7 +1098,7 @@ struct NDBuffer[
         """
         # First try to extract the static info on this dimension, could be either a
         # meta constant or an unknown.
-        alias static_dim_value = Self.shape.at[index]()
+        comptime static_dim_value = Self.shape.at[index]()
 
         @parameter
         if static_dim_value.has_value():
@@ -1129,7 +1129,7 @@ struct NDBuffer[
         """
         # First try to extract the static info on this stride, could be either a
         # meta constant or an unknown.
-        alias static_stride_value = Self.strides.at[index]()
+        comptime static_stride_value = Self.strides.at[index]()
 
         @parameter
         if static_stride_value.has_value():
@@ -1222,7 +1222,7 @@ struct NDBuffer[
 
         @parameter
         if Self.shape.all_known[Self.rank]():
-            alias count = Int(Self.shape.product())
+            comptime count = Int(Self.shape.product())
             memset_zero[count=count](self.data)
         else:
             memset_zero(self.data, len(self))
@@ -1367,7 +1367,7 @@ struct NDBuffer[
         prefetch[params](self._offset(indices))
 
     # `trait DevicePassable` implementation
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         """Convert the host type object to a device_type and store it at the

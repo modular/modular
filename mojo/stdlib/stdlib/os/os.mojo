@@ -56,7 +56,7 @@ comptime SEEK_END: UInt8 = 2
 
 
 struct _dirent_linux(Copyable, Movable):
-    alias MAX_NAME_SIZE = 256
+    comptime MAX_NAME_SIZE = 256
     var d_ino: Int64
     """File serial number."""
     var d_off: Int64
@@ -70,7 +70,7 @@ struct _dirent_linux(Copyable, Movable):
 
 
 struct _dirent_macos(Copyable, Movable):
-    alias MAX_NAME_SIZE = 1024
+    comptime MAX_NAME_SIZE = 1024
     var d_ino: Int64
     """File serial number."""
     var d_off: Int64

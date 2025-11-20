@@ -45,8 +45,8 @@ from .inline_array import InlineArray
 # Utilities
 # ===-----------------------------------------------------------------------===#
 
-alias _WORD_BITS = bit_width_of[DType.int64]()
-alias _WORD_BITS_LOG2 = log2_floor(_WORD_BITS)
+comptime _WORD_BITS = bit_width_of[DType.int64]()
+comptime _WORD_BITS_LOG2 = log2_floor(_WORD_BITS)
 
 
 @always_inline
@@ -108,7 +108,7 @@ struct BitSet[size: Int](
     lookup speed are critical.
     """
 
-    alias _words_size = max(1, ceildiv(Self.size, _WORD_BITS))
+    comptime _words_size = max(1, ceildiv(Self.size, _WORD_BITS))
     var _words: InlineArray[Int64, Self._words_size]  # Payload storage.
 
     # --------------------------------------------------------------------- #
@@ -129,7 +129,7 @@ struct BitSet[size: Int](
             max(init.size, _WORD_BITS) // _WORD_BITS == Self._words_size
         ]()
         self._words = type_of(self._words)(uninitialized=True)
-        alias step = min(init.size, _WORD_BITS)
+        comptime step = min(init.size, _WORD_BITS)
 
         @parameter
         for i in range(Self._words_size):
@@ -293,7 +293,7 @@ struct BitSet[size: Int](
             A new bitset containing the result of applying the function to each
             corresponding pair of words from the input bitsets.
         """
-        alias simd_width = simd_width_of[Int64]()
+        comptime simd_width = simd_width_of[Int64]()
         var res = Self()
 
         # Define a vectorized operation that processes multiple words at once

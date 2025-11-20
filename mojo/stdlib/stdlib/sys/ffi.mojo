@@ -724,7 +724,7 @@ fn _try_find_dylib[
     Raises:
         If the library could not be loaded from any of the provided paths.
     """
-    alias dylib_name = name if name != "" else "dynamic library"
+    comptime dylib_name = name if name != "" else "dynamic library"
     for path in paths:
         # If we are given a library name like libfoo.so, pass it directly to
         # dlopen(), which will invoke the system linker to find the library.

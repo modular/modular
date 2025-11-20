@@ -54,7 +54,7 @@ struct BlockingSpinLock(Defaultable):
     """A basic locking implementation that uses an integer to represent the
     owner of the lock."""
 
-    alias UNLOCKED = -1
+    comptime UNLOCKED = -1
     """non-zero means locked, -1 means unlocked."""
 
     var counter: Atomic[DType.int64]
@@ -101,7 +101,7 @@ struct BlockingSpinLock(Defaultable):
 struct BlockingScopedLock:
     """A scope adapter for BlockingSpinLock."""
 
-    alias LockType = BlockingSpinLock
+    comptime LockType = BlockingSpinLock
     """The type of the lock."""
 
     var lock: UnsafePointer[Self.LockType]

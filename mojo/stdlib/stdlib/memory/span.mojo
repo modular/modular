@@ -296,14 +296,14 @@ struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
             True if the value is contained in the list, False otherwise.
         """
 
-        alias widths = InlineArray[Int, 6](256, 128, 64, 32, 16, 8)
+        comptime widths = InlineArray[Int, 6](256, 128, 64, 32, 16, 8)
         var ptr = self.unsafe_ptr()
         var length = len(self)
         var processed = 0
 
         @parameter
         for i in range(len(widths)):
-            alias width = widths[i]
+            comptime width = widths[i]
 
             @parameter
             if simd_width_of[dtype]() >= width:
@@ -633,7 +633,7 @@ struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
             O: The origin of the `Span`.
         """
 
-        alias widths = (256, 128, 64, 32, 16, 8, 4, 2)
+        comptime widths = (256, 128, 64, 32, 16, 8, 4, 2)
         var ptr = self.unsafe_ptr()
         var length = len(self)
         var middle = length // 2
@@ -642,7 +642,7 @@ struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
 
         @parameter
         for i in range(len(widths)):
-            alias w = widths[i]
+            comptime w = widths[i]
 
             @parameter
             if simd_width_of[dtype]() >= w:
@@ -673,14 +673,14 @@ struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
             func: The function to evaluate.
         """
 
-        alias widths = (256, 128, 64, 32, 16, 8, 4)
+        comptime widths = (256, 128, 64, 32, 16, 8, 4)
         var ptr = self.unsafe_ptr()
         var length = len(self)
         var processed = 0
 
         @parameter
         for i in range(len(widths)):
-            alias w = widths[i]
+            comptime w = widths[i]
 
             @parameter
             if simd_width_of[dtype]() >= w:
@@ -709,14 +709,14 @@ struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
             cond: The condition to apply the function.
         """
 
-        alias widths = (256, 128, 64, 32, 16, 8, 4)
+        comptime widths = (256, 128, 64, 32, 16, 8, 4)
         var ptr = self.unsafe_ptr()
         var length = len(self)
         var processed = 0
 
         @parameter
         for i in range(len(widths)):
-            alias w = widths[i]
+            comptime w = widths[i]
 
             @parameter
             if simd_width_of[dtype]() >= w:

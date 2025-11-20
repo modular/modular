@@ -23,7 +23,7 @@ from sys import size_of
 # ===----------------------------------------------------------------------=== #
 
 
-alias AnyCoroutine = __mlir_type.`!co.routine`
+comptime AnyCoroutine = __mlir_type.`!co.routine`
 
 
 @always_inline
@@ -49,7 +49,7 @@ struct _CoroutineContext:
     and contain the resume function and a payload pointer."""
 
     # Passed the coroutine being completed and its context's payload.
-    alias _resume_fn_type = fn (AnyCoroutine) -> None
+    comptime _resume_fn_type = fn (AnyCoroutine) -> None
 
     var _resume_fn: Self._resume_fn_type
     var _parent_hdl: AnyCoroutine

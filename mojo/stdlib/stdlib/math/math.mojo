@@ -206,7 +206,7 @@ fn _sqrt_nvvm(x: SIMD, out res: type_of(x)):
     constrained[
         x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
-    alias instruction = "llvm.nvvm.sqrt.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.sqrt.approx.d"
+    comptime instruction = "llvm.nvvm.sqrt.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.sqrt.approx.d"
     res = {}
 
     @parameter
@@ -268,7 +268,7 @@ fn _rsqrt_nvvm(x: SIMD, out res: type_of(x)):
         x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
 
-    alias instruction = "llvm.nvvm.rsqrt.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.rsqrt.approx.d"
+    comptime instruction = "llvm.nvvm.rsqrt.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.rsqrt.approx.d"
     res = {}
 
     @parameter
@@ -326,7 +326,7 @@ fn _recip_nvvm(x: SIMD, out res: type_of(x)):
         x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
 
-    alias instruction = "llvm.nvvm.rcp.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.rcp.approx.ftz.d"
+    comptime instruction = "llvm.nvvm.rcp.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.rcp.approx.ftz.d"
     res = {}
 
     @parameter
@@ -712,14 +712,14 @@ fn _exp2_approx_f32[
     # trick.
     # We use 1.5 * 2^23 (i.e., 2^23 + 2^22) so it works cleanly with
     # round-to-nearest-even across positive/negative inputs in this range.
-    alias ROUND_BIAS_F32 = 3 * FPUtils[DType.float32].mantissa_mask()
-    alias NEG_ROUND_BIAS_F32 = -ROUND_BIAS_F32
+    comptime ROUND_BIAS_F32 = 3 * FPUtils[DType.float32].mantissa_mask()
+    comptime NEG_ROUND_BIAS_F32 = -ROUND_BIAS_F32
 
     # Lower clamp for exp2 range reduction:
     # The float32 exponent bias is 127. Clamping at −127 keeps n from becoming
     # too negative (extreme subnormals/FTZ) and maintains accuracy of the cubic.
     # If you require strictly normal outputs, use −126.0 instead.
-    alias EXP2_MIN_INPUT = -FPUtils[DType.float32].exponent_bias()
+    comptime EXP2_MIN_INPUT = -FPUtils[DType.float32].exponent_bias()
     # --- Kernel ---------------------------------------------------------------
 
     # 1) clamp in float
@@ -1132,7 +1132,7 @@ fn tanh[
 
     @parameter
     if is_nvidia_gpu():
-        alias instruction = "tanh.approx.f32"
+        comptime instruction = "tanh.approx.f32"
 
         @parameter
         if dtype is DType.float16:
@@ -1244,7 +1244,7 @@ fn isclose[
         a.dtype.is_floating_point(),
         "isclose only supports floating-point types",
     ]()
-    alias T = type_of(a)
+    comptime T = type_of(a)
 
     var check_nan = isnan(a) & isnan(b)
     var check_fin: T._Mask
@@ -1894,9 +1894,9 @@ fn _atanh_float32(x: SIMD) -> type_of(x):
     """This computes the `atanh` of the inputs for float32. It uses the same
     approximation used by Eigen library."""
 
-    alias nan_val = nan[x.dtype]()
-    alias inf_val = inf[x.dtype]()
-    alias neg_inf_val = -inf[x.dtype]()
+    comptime nan_val = nan[x.dtype]()
+    comptime inf_val = inf[x.dtype]()
+    comptime neg_inf_val = -inf[x.dtype]()
 
     var is_neg = x.lt(0)
     var x_abs = abs(x)
@@ -2064,7 +2064,7 @@ fn log10[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 
     @parameter
     if is_nvidia_gpu():
-        alias log10_2 = 0.301029995663981195213738894724493027
+        comptime log10_2 = 0.301029995663981195213738894724493027
 
         @parameter
         if size_of[dtype]() < size_of[DType.float32]():
@@ -2095,7 +2095,7 @@ fn _log1p_f64[width: Int, //](x: SIMD[DType.float64, width]) -> type_of(x):
     # log(1+x) = x - x**2/2 + x**3 P(x)/Q(x)
     # in the domain 1/sqrt(2) <= x < sqrt(2)
 
-    alias P = [
+    comptime P = [
         2.0039553499201281259648e1,
         5.7112963590585538103336e1,
         6.0949667980987787057556e1,
@@ -2104,7 +2104,7 @@ fn _log1p_f64[width: Int, //](x: SIMD[DType.float64, width]) -> type_of(x):
         4.9854102823193375972212e-1,
         4.5270000862445199635215e-5,
     ]
-    alias Q = [
+    comptime Q = [
         6.0118660497603843919306e1,
         2.1642788614495947685003e2,
         3.0909872225312059774938e2,
@@ -2114,9 +2114,9 @@ fn _log1p_f64[width: Int, //](x: SIMD[DType.float64, width]) -> type_of(x):
     ]
 
     # Sqrt(1/2)
-    alias sqrt2_div_2 = 0.70710678118654752440
+    comptime sqrt2_div_2 = 0.70710678118654752440
     # Sqrt(2)
-    alias sqrt2 = 1.41421356237309504880
+    comptime sqrt2 = 1.41421356237309504880
 
     var z = 1 + x
     var log1x = log(z)
@@ -2234,8 +2234,8 @@ fn _ilogb[
             exponent_bits - 0x7F,  # Remove bias only
         )
 
-    alias FP_ILOGB0 = (-2147483647 - 1)
-    alias FP_ILOGBNAN = 2147483647
+    comptime FP_ILOGB0 = (-2147483647 - 1)
+    comptime FP_ILOGBNAN = 2147483647
 
     # Extract the binary exponent from |x|
     # For x = m × 2^e where m ∈ [1, 2), this returns e
@@ -2295,8 +2295,8 @@ fn _cbrtf(x: Float32) -> Float32:
     var qu = Int(t / 3.0)  # Quotient: e // 3
     var re = Int(t - Float32(qu) * 3.0)  # Remainder: e % 3
 
-    alias CBRT_2 = 1.2599210498948731647672106
-    alias CBRT_4 = 1.5874010519681994747517056
+    comptime CBRT_2 = 1.2599210498948731647672106
+    comptime CBRT_4 = 1.5874010519681994747517056
 
     # Apply correction factors based on remainder
     # If e % 3 == 1: need to multiply by 2^(1/3) = cbrt(2)
@@ -2489,7 +2489,7 @@ fn _erfcf(x: Float32) -> Float32:
         u = 1.0 / a  # Use reciprocal for a >= 2.2
 
     # Coefficients are domain-specific for optimal accuracy
-    alias coeffs0: List[Float32] = [
+    comptime coeffs0: List[Float32] = [
         -0.112837917790537404939545770596e1,
         -0.636619483208481931303752546439e0,
         -0.102775359343930288081655368891e0,
@@ -2499,7 +2499,7 @@ fn _erfcf(x: Float32) -> Float32:
         0.6000166177e-3,
         -0.8638041618e-4,
     ]
-    alias coeffs1: List[Float32] = [
+    comptime coeffs1: List[Float32] = [
         -0.112855987376668622084547028949e1,
         -0.635609463574589034216723775292e0,
         -0.105247583459338632253369014063e0,
@@ -2509,7 +2509,7 @@ fn _erfcf(x: Float32) -> Float32:
         0.5749821503e-4,
         -0.6236977242e-5,
     ]
-    alias coeffs2: List[Float32] = [
+    comptime coeffs2: List[Float32] = [
         -0.572319781150472949561786101080e0,
         -0.134450203224533979217859332703e-2,
         -0.482365310333045318680618892669e0,
@@ -2519,7 +2519,7 @@ fn _erfcf(x: Float32) -> Float32:
         0.1288077235e1,
         -0.3869504035e0,
     ]
-    alias coeffs3: List[Float32] = [
+    comptime coeffs3: List[Float32] = [
         -0.572364030327966044425932623525e0,
         -0.471199543422848492080722832666e-4,
         -0.498961546254537647970305302739e0,
@@ -3062,7 +3062,7 @@ fn ulp[
     var nan_mask = isnan(x)
     var xabs = abs(x)
     var inf_mask = isinf(xabs)
-    alias inf_val = SIMD[dtype, width](inf[dtype]())
+    comptime inf_val = SIMD[dtype, width](inf[dtype]())
     var x2 = nextafter(xabs, inf_val)
     var x2_inf_mask = isinf(x2)
 
@@ -3091,7 +3091,7 @@ fn factorial(n: Int) -> Int:
     Returns:
         The factorial of the input. Results are undefined for negative inputs.
     """
-    alias table = StaticTuple[Int, 21](
+    comptime table = StaticTuple[Int, 21](
         1,
         1,
         2,
@@ -3219,7 +3219,7 @@ fn _call_libm[
         var arg_f32 = arg.cast[DType.float32]()
         return _call_libm[func_name](arg_f32).cast[dtype]()
 
-    alias libm_name = func_name + ("f" if dtype is DType.float32 else "")
+    comptime libm_name = func_name + ("f" if dtype is DType.float32 else "")
     var res = SIMD[dtype, width]()
 
     @parameter

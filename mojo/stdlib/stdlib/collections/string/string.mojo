@@ -22,7 +22,7 @@ Related types:
 - [`StringSlice`](/mojo/stdlib/collections/string/string_slice/). A non-owning
   view of string data, which can be either mutable or immutable.
 - [`StaticString`](/mojo/stdlib/collections/string/string_slice/#aliases). An
-  alias for an immutable constant `StringSlice`.
+  comptime for an immutable constant `StringSlice`.
 - [`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral/). A
   string literal. String literals are compile-time values. For use at runtime,
   you usually want wrap a `StringLiteral` in a `String` (for a mutable string)
@@ -2019,10 +2019,10 @@ fn _repr_ascii(c: UInt8) -> String:
     Returns:
         A string containing a representation of the given code point.
     """
-    alias ord_tab = ord("\t")
-    alias ord_new_line = ord("\n")
-    alias ord_carriage_return = ord("\r")
-    alias ord_back_slash = ord("\\")
+    comptime ord_tab = ord("\t")
+    comptime ord_new_line = ord("\n")
+    comptime ord_carriage_return = ord("\r")
+    comptime ord_back_slash = ord("\\")
 
     if c == ord_back_slash:
         return r"\\"
@@ -2051,7 +2051,7 @@ fn ascii(value: StringSlice) -> String:
     Returns:
         A string containing the ASCII representation of the object.
     """
-    alias ord_squote = ord("'")
+    comptime ord_squote = ord("'")
     var result = String()
     var use_dquote = False
     var data = value.as_bytes()
@@ -2356,7 +2356,7 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
     # See https://commaok.xyz/post/lookup_tables/ and
     # https://lemire.me/blog/2021/06/03/computing-the-number-of-digits-of-an-integer-even-faster/
     # for a description.
-    alias lookup_table = VariadicList[Int](
+    comptime lookup_table = VariadicList[Int](
         4294967296,
         8589934582,
         8589934582,

@@ -39,7 +39,7 @@ from .host.info import GPUInfo
 # ===-----------------------------------------------------------------------===#
 
 
-alias WARP_SIZE = _resolve_warp_size()
+comptime WARP_SIZE = _resolve_warp_size()
 """The number of threads that execute in lockstep within a warp on the GPU.
 
 This constant represents the hardware warp size, which is the number of threads that execute
@@ -78,7 +78,7 @@ fn _resolve_warp_size() -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
-alias WARPGROUP_SIZE = _resolve_warpgroup_size()
+comptime WARPGROUP_SIZE = _resolve_warpgroup_size()
 """The number of threads in a warpgroup on Nvidia GPUs.
 
 On Nvidia GPUs after hopper, a warpgroup consists of 4 subsequent arps
@@ -100,7 +100,7 @@ fn _resolve_warpgroup_size() -> Int:
 # MAX_THREADS_PER_BLOCK_METADATA
 # ===-----------------------------------------------------------------------===#
 
-alias MAX_THREADS_PER_BLOCK_METADATA = _resolve_max_threads_per_block_metadata()
+comptime MAX_THREADS_PER_BLOCK_METADATA = _resolve_max_threads_per_block_metadata()
 """This is metadata tag that is used in conjunction with __llvm_metadata to
 give a hint to the compiler about the max threads per block that's used."""
 

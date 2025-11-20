@@ -13,7 +13,7 @@
 
 
 @deprecated(use=Equatable)
-alias EqualityComparable = Equatable
+comptime EqualityComparable = Equatable
 
 
 trait Equatable:

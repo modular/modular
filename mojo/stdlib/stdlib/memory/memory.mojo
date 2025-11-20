@@ -300,7 +300,7 @@ fn _memset_impl(
     fn fill[width: Int](offset: Int):
         ptr.store(offset, SIMD[DType.uint8, width](value))
 
-    alias simd_width = simd_width_of[Byte]()
+    comptime simd_width = simd_width_of[Byte]()
     vectorize[fill, simd_width](count)
 
 
@@ -421,7 +421,7 @@ fn stack_allocation[
     if is_gpu():
         # On NVGPU, SHARED and CONSTANT address spaces lower to global memory.
 
-        alias global_name = name.value() if name else "_global_alloc"
+        comptime global_name = name.value() if name else "_global_alloc"
 
         @parameter
         if address_space == AddressSpace.SHARED:

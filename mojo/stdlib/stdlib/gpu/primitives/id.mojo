@@ -306,7 +306,7 @@ struct _BlockDim(Defaultable):
 
         @parameter
         if is_nvidia_gpu():
-            alias intrinsic_name = "llvm.nvvm.read.ptx.sreg.ntid." + dim
+            comptime intrinsic_name = "llvm.nvvm.read.ptx.sreg.ntid." + dim
             return UInt(
                 Int(
                     llvm_intrinsic[
@@ -376,7 +376,7 @@ struct _GridDim(Defaultable):
 
         @parameter
         if is_nvidia_gpu():
-            alias intrinsic_name = "llvm.nvvm.read.ptx.sreg.nctaid." + dim
+            comptime intrinsic_name = "llvm.nvvm.read.ptx.sreg.nctaid." + dim
             return UInt(
                 Int(
                     llvm_intrinsic[
@@ -399,7 +399,7 @@ struct _GridDim(Defaultable):
 
             return _get_gcn_idx[_get_offset(), DType.uint32]()
         elif is_apple_gpu():
-            alias intrinsic_name = "llvm.air.threads_per_grid." + dim
+            comptime intrinsic_name = "llvm.air.threads_per_grid." + dim
             var gridDim = UInt(
                 Int(
                     llvm_intrinsic[
@@ -484,7 +484,7 @@ struct _ClusterDim(Defaultable):
         ]()
         _verify_xyz[dim]()
 
-        alias intrinsic_name = "llvm.nvvm.read.ptx.sreg.cluster.nctaid." + dim
+        comptime intrinsic_name = "llvm.nvvm.read.ptx.sreg.cluster.nctaid." + dim
         return UInt(
             Int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
         )
@@ -525,7 +525,7 @@ struct _ClusterIdx(Defaultable):
             "cluster_id is only supported on NVIDIA SM90+ GPUs",
         ]()
         _verify_xyz[dim]()
-        alias intrinsic_name = Self._get_intrinsic_name[dim]()
+        comptime intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
             Int(llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]())
         )
@@ -566,7 +566,7 @@ struct _ClusterBlockIdx(Defaultable):
             "cluster_id is only supported on NVIDIA SM90+ GPUs",
         ]()
         _verify_xyz[dim]()
-        alias intrinsic_name = Self._get_intrinsic_name[dim]()
+        comptime intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
             Int(llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]())
         )

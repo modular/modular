@@ -252,8 +252,8 @@ struct Tuple[*element_types: Copyable & Movable](
 
         # We do not use self._compare here because we only want
         # Equatable conformance for the method.
-        alias self_len = type_of(self).__len__()
-        alias other_len = type_of(other).__len__()
+        comptime self_len = type_of(self).__len__()
+        comptime other_len = type_of(other).__len__()
 
         @parameter
         if self_len != other_len:
@@ -261,8 +261,8 @@ struct Tuple[*element_types: Copyable & Movable](
 
         @parameter
         for i in range(type_of(self).__len__()):
-            alias self_type = type_of(self[i])
-            alias other_type = type_of(other[i])
+            comptime self_type = type_of(self[i])
+            comptime other_type = type_of(other[i])
             constrained[
                 _type_is_eq[self_type, other_type](),
                 "Tuple elements must be of the same type to compare.",
@@ -296,19 +296,19 @@ struct Tuple[*element_types: Copyable & Movable](
         self_elt_types: VariadicOf[Copyable & Movable & Comparable],
         other_elt_types: VariadicOf[Copyable & Movable & Comparable],
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Int:
-        alias self_len = type_of(self).__len__()
-        alias other_len = type_of(other).__len__()
+        comptime self_len = type_of(self).__len__()
+        comptime other_len = type_of(other).__len__()
 
         @parameter
         if other_len == 0:
             return 1 if self_len > 0 else 0
 
-        alias min_length = min(self_len, other_len)
+        comptime min_length = min(self_len, other_len)
 
         @parameter
         for i in range(min_length):
-            alias self_type = type_of(self[i])
-            alias other_type = type_of(other[i])
+            comptime self_type = type_of(self[i])
+            comptime other_type = type_of(other[i])
             constrained[
                 _type_is_eq[self_type, other_type](),
                 String(
@@ -466,7 +466,7 @@ struct Tuple[*element_types: Copyable & Movable](
             __get_mvalue_as_litref(result)
         )
 
-        alias self_len = Self.__len__()
+        comptime self_len = Self.__len__()
 
         @parameter
         for i in range(self_len):

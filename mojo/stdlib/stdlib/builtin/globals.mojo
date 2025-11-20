@@ -38,7 +38,7 @@ fn global_constant[T: AnyType, //, value: T]() -> ref [StaticConstantOrigin] T:
     from builtin.globals import global_constant
 
     # Create a reference to a constant array and access elements
-    alias lookup_table = InlineArray[Int, 4](1, 2, 3, 4)
+    comptime lookup_table = InlineArray[Int, 4](1, 2, 3, 4)
     var element = global_constant[lookup_table]()[2]  # Access without materializing entire array
     print(element)  # Prints: 3
 
@@ -46,7 +46,7 @@ fn global_constant[T: AnyType, //, value: T]() -> ref [StaticConstantOrigin] T:
     fn compute(x: Int) -> Int:
         return x * 2 + 1
 
-    alias data = InlineArray[Int, 3](1, compute(5), 100)
+    comptime data = InlineArray[Int, 3](1, compute(5), 100)
     ref data_ref = global_constant[data]()
     print(data_ref[0], data_ref[1], data_ref[2])  # Prints: 1 11 100
     ```

@@ -88,8 +88,8 @@ struct Progress(ImplicitlyCopyable):
         print("")
 
     fn advance(mut self, steps: Int = 1):
-        alias BLOCK = "▇"
-        alias PLACE_HOLDER = " "
+        comptime BLOCK = "▇"
+        comptime PLACE_HOLDER = " "
 
         if len(self._range) <= 0 or steps <= 0:
             return

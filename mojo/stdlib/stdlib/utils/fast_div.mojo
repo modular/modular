@@ -36,7 +36,7 @@ struct FastDiv[dtype: DType](Stringable, Writable):
         dtype: The data type for the division operation.
     """
 
-    alias uint_type = _uint_type_of_width[bit_width_of[Self.dtype]()]()
+    comptime uint_type = _uint_type_of_width[bit_width_of[Self.dtype]()]()
 
     var _div: Scalar[Self.uint_type]
     var _mprime: Scalar[Self.uint_type]

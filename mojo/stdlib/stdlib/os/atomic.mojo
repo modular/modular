@@ -784,8 +784,8 @@ fn _max_impl[
 ](ptr: UnsafePointer[Scalar[dtype], **_], rhs: Scalar[dtype]):
     @parameter
     if is_nvidia_gpu() and dtype.is_floating_point():
-        alias integral_type = _integral_type_of[dtype]()
-        alias unsigned_integral_type = _unsigned_integral_type_of[dtype]()
+        comptime integral_type = _integral_type_of[dtype]()
+        comptime unsigned_integral_type = _unsigned_integral_type_of[dtype]()
         if rhs >= 0:
             _max_impl_base[scope=scope, ordering=ordering](
                 ptr.bitcast[Scalar[integral_type]](),
@@ -810,8 +810,8 @@ fn _min_impl[
 ](ptr: UnsafePointer[Scalar[dtype], **_], rhs: Scalar[dtype]):
     @parameter
     if is_nvidia_gpu() and dtype.is_floating_point():
-        alias integral_type = _integral_type_of[dtype]()
-        alias unsigned_integral_type = _unsigned_integral_type_of[dtype]()
+        comptime integral_type = _integral_type_of[dtype]()
+        comptime unsigned_integral_type = _unsigned_integral_type_of[dtype]()
         if rhs >= 0:
             _min_impl_base[scope=scope, ordering=ordering](
                 ptr.bitcast[Scalar[integral_type]](),

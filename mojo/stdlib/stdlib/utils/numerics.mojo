@@ -161,7 +161,7 @@ struct FPUtils[
         Returns:
             The quiet NaN mask.
         """
-        alias mantissa_width_val = Self.mantissa_width()
+        comptime mantissa_width_val = Self.mantissa_width()
         return (1 << Self.exponent_width() - 1) << mantissa_width_val + (
             1 << (mantissa_width_val - 1)
         )
@@ -411,7 +411,7 @@ struct FlushDenormals(Defaultable):
             _ = mxcsr
             return
 
-        alias ARM_FPCR_FZ = Int64(1) << 24
+        comptime ARM_FPCR_FZ = Int64(1) << 24
         var fpcr = self.state.cast[DType.int64]()
         if enable:
             fpcr |= ARM_FPCR_FZ
@@ -429,7 +429,7 @@ struct FlushDenormals(Defaultable):
         if CompilationTarget.has_sse4():
             return (state & 0x8000) != 0 and (state & 0x40) != 0
 
-        alias ARM_FPCR_FZ = Int32(1) << 24
+        comptime ARM_FPCR_FZ = Int32(1) << 24
         return (state & ARM_FPCR_FZ) != 0
 
     @always_inline

@@ -24,7 +24,7 @@ trait Strategy(Movable):
 
     # TODO: `Value` should require `Representable/Stringable` once conditional
     # conformance is supported.
-    alias Value: Copyable & Movable
+    comptime Value: Copyable & Movable
     """The type the strategy produces."""
 
     fn value(mut self, mut rng: Rng) raises -> Self.Value:

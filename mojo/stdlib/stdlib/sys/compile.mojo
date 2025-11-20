@@ -46,7 +46,7 @@ struct _OptimizationLevel(ImplicitlyCopyable, Intable, Stringable, Writable):
         level: The integer value of the optimization level.
     """
 
-    alias level = env_get_int["__OPTIMIZATION_LEVEL", 4]()
+    comptime level = env_get_int["__OPTIMIZATION_LEVEL", 4]()
 
     fn __int__(self) -> Int:
         """Returns the integer value of the optimization level.
@@ -90,7 +90,7 @@ struct _DebugLevel(ImplicitlyCopyable, Movable, Stringable, Writable):
         level: The string value of the debug level.
     """
 
-    alias level = env_get_string["__DEBUG_LEVEL", "none"]()
+    comptime level = env_get_string["__DEBUG_LEVEL", "none"]()
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):

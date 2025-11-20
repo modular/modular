@@ -499,7 +499,7 @@ struct IntervalTree[
           and collection operations.
     """
 
-    alias _IntervalNodePointer = UnsafePointer[
+    comptime _IntervalNodePointer = UnsafePointer[
         _IntervalNode[Self.T, Self.U], MutOrigin.external
     ]
 

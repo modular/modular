@@ -307,11 +307,11 @@ fn _is_newline_char_utf8[
         This assumes valid utf-8 is passed.
     """
     # highly performance sensitive code, benchmark before touching
-    alias `\r` = UInt8(ord("\r"))
-    alias `\n` = UInt8(ord("\n"))
-    alias `\t` = UInt8(ord("\t"))
-    alias `\x1c` = UInt8(ord("\x1c"))
-    alias `\x1e` = UInt8(ord("\x1e"))
+    comptime `\r` = UInt8(ord("\r"))
+    comptime `\n` = UInt8(ord("\n"))
+    comptime `\t` = UInt8(ord("\t"))
+    comptime `\x1c` = UInt8(ord("\x1c"))
+    comptime `\x1e` = UInt8(ord("\x1e"))
 
     # Since line-breaks are a relatively uncommon occurrence it is best to
     # branch here because the algorithm that calls this needs low latency rather

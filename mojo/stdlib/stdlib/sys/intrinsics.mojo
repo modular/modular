@@ -276,13 +276,13 @@ struct PrefetchLocality:
 
     var value: Int32
     """The prefetch locality to use. It should be a value in [0, 3]."""
-    alias NONE = PrefetchLocality(0)
+    comptime NONE = PrefetchLocality(0)
     """No locality."""
-    alias LOW = PrefetchLocality(1)
+    comptime LOW = PrefetchLocality(1)
     """Low locality."""
-    alias MEDIUM = PrefetchLocality(2)
+    comptime MEDIUM = PrefetchLocality(2)
     """Medium locality."""
-    alias HIGH = PrefetchLocality(3)
+    comptime HIGH = PrefetchLocality(3)
     """Extremely local locality (keep in cache)."""
 
     @always_inline("nodebug")
@@ -302,9 +302,9 @@ struct PrefetchRW:
 
     var value: Int32
     """The read-write prefetch. It should be in [0, 1]."""
-    alias READ = PrefetchRW(0)
+    comptime READ = PrefetchRW(0)
     """Read prefetch."""
-    alias WRITE = PrefetchRW(1)
+    comptime WRITE = PrefetchRW(1)
     """Write prefetch."""
 
     @always_inline("nodebug")
@@ -325,9 +325,9 @@ struct PrefetchCache:
 
     var value: Int32
     """The cache prefetch. It should be in [0, 1]."""
-    alias INSTRUCTION = PrefetchCache(0)
+    comptime INSTRUCTION = PrefetchCache(0)
     """The instruction prefetching option."""
-    alias DATA = PrefetchCache(1)
+    comptime DATA = PrefetchCache(1)
     """The data prefetching option."""
 
     @always_inline("nodebug")

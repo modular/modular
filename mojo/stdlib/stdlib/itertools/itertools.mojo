@@ -18,10 +18,10 @@
 @fieldwise_init
 @register_passable("trivial")
 struct _CountIterator(Iterable, Iterator):
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = Int
+    comptime Element = Int
     var start: Int
     var step: Int
 
@@ -64,10 +64,10 @@ fn count(start: Int = 0, step: Int = 1) -> _CountIterator:
 struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
     Copyable, Iterable, Iterator, Movable
 ):
-    alias Element = Tuple[
+    comptime Element = Tuple[
         Self.IteratorTypeA.Element, Self.IteratorTypeB.Element
     ]
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
@@ -176,17 +176,19 @@ fn product[
 struct _Product3[
     IteratorTypeA: Iterator, IteratorTypeB: Iterator, IteratorTypeC: Iterator
 ](Copyable, Iterable, Iterator, Movable):
-    alias Element = Tuple[
+    comptime Element = Tuple[
         Self.IteratorTypeA.Element,
         Self.IteratorTypeB.Element,
         Self.IteratorTypeC.Element,
     ]
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
-    alias _Product2Type = _Product2[Self.IteratorTypeB, Self.IteratorTypeC]
-    alias _OuterProduct2Type = _Product2[Self.IteratorTypeA, Self._Product2Type]
+    comptime _Product2Type = _Product2[Self.IteratorTypeB, Self.IteratorTypeC]
+    comptime _OuterProduct2Type = _Product2[
+        Self.IteratorTypeA, Self._Product2Type
+    ]
 
     var _inner: Self._OuterProduct2Type
 
@@ -271,20 +273,20 @@ struct _Product4[
     IteratorTypeC: Iterator,
     IteratorTypeD: Iterator,
 ](Copyable, Iterable, Iterator, Movable):
-    alias Element = Tuple[
+    comptime Element = Tuple[
         Self.IteratorTypeA.Element,
         Self.IteratorTypeB.Element,
         Self.IteratorTypeC.Element,
         Self.IteratorTypeD.Element,
     ]
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
-    alias _Product3Type = _Product3[
+    comptime _Product3Type = _Product3[
         Self.IteratorTypeB, Self.IteratorTypeC, Self.IteratorTypeD
     ]
-    alias _Product2Type = _Product2[Self.IteratorTypeA, Self._Product3Type]
+    comptime _Product2Type = _Product2[Self.IteratorTypeA, Self._Product3Type]
 
     var _inner: Self._Product2Type
 
@@ -391,8 +393,8 @@ struct _RepeatIterator[ElementType: Copyable & Movable](
         ElementType: The type of the element to repeat.
     """
 
-    alias Element = Self.ElementType
-    alias IteratorType[
+    comptime Element = Self.ElementType
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 

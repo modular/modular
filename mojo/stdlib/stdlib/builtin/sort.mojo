@@ -25,7 +25,7 @@ from memory import Span
 # sort
 # ===-----------------------------------------------------------------------===#
 
-alias insertion_sort_threshold = 32
+comptime insertion_sort_threshold = 32
 
 
 @always_inline

@@ -37,77 +37,77 @@ struct DeviceAttribute:
     var _value: Int32
     """The integer value representing the specific device attribute."""
 
-    alias MAX_THREADS_PER_BLOCK = Self(1)
+    comptime MAX_THREADS_PER_BLOCK = Self(1)
     """Maximum number of threads per block
     """
 
-    alias MAX_BLOCK_DIM_X = Self(2)
+    comptime MAX_BLOCK_DIM_X = Self(2)
     """Maximum block dimension X
     """
 
-    alias MAX_BLOCK_DIM_Y = Self(3)
+    comptime MAX_BLOCK_DIM_Y = Self(3)
     """Maximum block dimension Y
     """
 
-    alias MAX_BLOCK_DIM_Z = Self(4)
+    comptime MAX_BLOCK_DIM_Z = Self(4)
     """Maximum block dimension Z
     """
 
-    alias MAX_GRID_DIM_X = Self(5)
+    comptime MAX_GRID_DIM_X = Self(5)
     """Maximum grid dimension X
     """
 
-    alias MAX_GRID_DIM_Y = Self(6)
+    comptime MAX_GRID_DIM_Y = Self(6)
     """Maximum grid dimension Y
     """
 
-    alias MAX_GRID_DIM_Z = Self(7)
+    comptime MAX_GRID_DIM_Z = Self(7)
     """Maximum grid dimension Z
     """
 
-    alias MAX_SHARED_MEMORY_PER_BLOCK = Self(8)
+    comptime MAX_SHARED_MEMORY_PER_BLOCK = Self(8)
     """Maximum shared memory available per block in bytes
     """
 
-    alias WARP_SIZE = Self(10)
+    comptime WARP_SIZE = Self(10)
     """Warp size in threads
     """
 
-    alias MAX_REGISTERS_PER_BLOCK = Self(12)
+    comptime MAX_REGISTERS_PER_BLOCK = Self(12)
     """Maximum number of 32-bit registers available per block
     """
 
-    alias CLOCK_RATE = Self(13)
+    comptime CLOCK_RATE = Self(13)
     """Typical clock frequency in kilohertz
     """
 
-    alias MULTIPROCESSOR_COUNT = Self(16)
+    comptime MULTIPROCESSOR_COUNT = Self(16)
     """Number of multiprocessors on device
     """
 
-    alias MAX_THREADS_PER_MULTIPROCESSOR = Self(39)
+    comptime MAX_THREADS_PER_MULTIPROCESSOR = Self(39)
     """Maximum resident threads per multiprocessor
     """
 
-    alias COMPUTE_CAPABILITY_MAJOR = Self(75)
+    comptime COMPUTE_CAPABILITY_MAJOR = Self(75)
     """Major compute capability version number
     """
 
-    alias COMPUTE_CAPABILITY_MINOR = Self(76)
+    comptime COMPUTE_CAPABILITY_MINOR = Self(76)
     """Minor compute capability version number
     """
-    alias MAX_SHARED_MEMORY_PER_MULTIPROCESSOR = Self(81)
+    comptime MAX_SHARED_MEMORY_PER_MULTIPROCESSOR = Self(81)
     """Maximum shared memory available per multiprocessor in bytes
     """
-    alias MAX_REGISTERS_PER_MULTIPROCESSOR = Self(82)
+    comptime MAX_REGISTERS_PER_MULTIPROCESSOR = Self(82)
     """Maximum number of 32-bit registers available per multiprocessor
     """
-    alias COOPERATIVE_LAUNCH = Self(95)
+    comptime COOPERATIVE_LAUNCH = Self(95)
     """Device supports launching cooperative kernels
     """
-    alias MAX_BLOCKS_PER_MULTIPROCESSOR = Self(106)
+    comptime MAX_BLOCKS_PER_MULTIPROCESSOR = Self(106)
     """Maximum resident blocks per multiprocessor
     """
-    alias MAX_ACCESS_POLICY_WINDOW_SIZE = Self(109)
+    comptime MAX_ACCESS_POLICY_WINDOW_SIZE = Self(109)
     """ CUDA-only: Maximum value of CUaccessPolicyWindow::num_bytes.
     """

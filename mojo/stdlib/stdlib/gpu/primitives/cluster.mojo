@@ -100,7 +100,7 @@ fn elect_one_sync_with_mask(mask: UInt32 = 0xFFFFFFFF) -> Bool:
         "elect one sync is only implemented for NVIDIA SM90+ GPUs",
     ]()
 
-    alias asm = """{
+    comptime asm = """{
         .reg .pred P1;
         elect.sync _|P1, $1;
         selp.b32 $0, 1, 0, P1;
@@ -290,7 +290,7 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid[
         "id must be one of `x`, `y`, `z`",
     ]()
 
-    alias asm = (
+    comptime asm = (
         """
         {
         .reg .b128 %result;
@@ -332,7 +332,7 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
         ),
     ]()
 
-    alias asm = """{
+    comptime asm = """{
         .reg .b128 result;
         ld.shared.b128 result, [$3];
         clusterlaunchcontrol.query_cancel.get_first_ctaid.v4.b32.b128 {$0, $1, $2, _}, result;
@@ -377,7 +377,7 @@ fn clusterlaunchcontrol_try_cancel[
         ),
     ]()
 
-    alias asm = (
+    comptime asm = (
         """
         clusterlaunchcontrol.try_cancel.async.shared::cta.mbarrier::complete_tx::bytes"""
         + (".multicast::cluster::all" if multicast else "")

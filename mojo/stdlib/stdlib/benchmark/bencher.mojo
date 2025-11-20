@@ -35,14 +35,18 @@ struct BenchMetric(ImplicitlyCopyable, Movable, Stringable, Writable):
     var unit: String
     """Metric's throughput rate unit (count/second)."""
 
-    alias elements = BenchMetric(0, "throughput", "GElems/s")
-    alias bytes = BenchMetric(1, "DataMovement", "GB/s")
-    alias flops = BenchMetric(2, "Arithmetic", "GFLOPS/s")
-    alias theoretical_flops = BenchMetric(
+    comptime elements = BenchMetric(0, "throughput", "GElems/s")
+    comptime bytes = BenchMetric(1, "DataMovement", "GB/s")
+    comptime flops = BenchMetric(2, "Arithmetic", "GFLOPS/s")
+    comptime theoretical_flops = BenchMetric(
         3, "TheoreticalArithmetic", "GFLOPS/s"
     )
 
-    alias DEFAULTS: List[BenchMetric] = [Self.elements, Self.bytes, Self.flops]
+    comptime DEFAULTS: List[BenchMetric] = [
+        Self.elements,
+        Self.bytes,
+        Self.flops,
+    ]
     """Default set of benchmark metrics."""
 
     fn __str__(self) -> String:
@@ -113,7 +117,7 @@ struct BenchMetric(ImplicitlyCopyable, Movable, Stringable, Writable):
             if m.check_name(name):
                 return m
 
-        alias sep = StaticString("-") * 80 + "\n"
+        comptime sep = StaticString("-") * 80 + "\n"
         var err = String(
             "\n",
             sep,
@@ -202,11 +206,11 @@ struct Format(ImplicitlyCopyable, Movable, Stringable, Writable):
     file.
     """
 
-    alias csv = Format(StaticString("csv"))
+    comptime csv = Format(StaticString("csv"))
     """Comma separated values with no alignment."""
-    alias tabular = Format(StaticString("tabular"))
+    comptime tabular = Format(StaticString("tabular"))
     """Comma separated values with dynamically aligned columns."""
-    alias table = Format(StaticString("table"))
+    comptime table = Format(StaticString("table"))
     """Table format with dynamically aligned columns."""
 
     var value: StaticString
@@ -305,7 +309,7 @@ struct BenchConfig(Copyable, Movable):
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias VERBOSE_TIMING_LABELS: List[String] = [
+    comptime VERBOSE_TIMING_LABELS: List[String] = [
         "min (ms)",
         "mean (ms)",
         "max (ms)",
@@ -481,8 +485,8 @@ struct Mode(ImplicitlyCopyable, Movable):
 
     var value: Int
     """Represents the mode type."""
-    alias Benchmark = Mode(0)
-    alias Test = Mode(1)
+    comptime Benchmark = Mode(0)
+    comptime Test = Mode(1)
 
     fn __eq__(self, other: Self) -> Bool:
         """Check if its Benchmark mode or test mode.
@@ -1005,9 +1009,9 @@ struct Bench(Stringable, Writable):
         Args:
             writer: The writer to write to.
         """
-        alias BENCH_LABEL = "name"
-        alias ITERS_LABEL = "iters"
-        alias MET_LABEL = "met (ms)"
+        comptime BENCH_LABEL = "name"
+        comptime ITERS_LABEL = "iters"
+        comptime MET_LABEL = "met (ms)"
 
         var name_width = self._get_max_name_width(BENCH_LABEL)
         var iters_width = self._get_max_iters_width(ITERS_LABEL)
@@ -1191,7 +1195,7 @@ struct Bench(Stringable, Writable):
         # If label is larger than any value, will pad to the label length
 
         var max_met = len(met_label)
-        alias ConfigType = type_of(self.config)
+        comptime ConfigType = type_of(self.config)
         # NOTE: We insert an explicit materialization for Int here to avoid
         # materialize a more expensive `VERBOSE_TIMING_LABELS[]` object.
         var max_min = materialize[len(ConfigType.VERBOSE_TIMING_LABELS[0])]()

@@ -40,15 +40,15 @@ fn _ascii_to_value[validate: Bool = False](char: Byte) raises -> Byte:
         The integer value of the character for base64 decoding, or -1 if
         invalid.
     """
-    alias `A` = Byte(ord("A"))
-    alias `a` = Byte(ord("a"))
-    alias `Z` = Byte(ord("Z"))
-    alias `z` = Byte(ord("z"))
-    alias `0` = Byte(ord("0"))
-    alias `9` = Byte(ord("9"))
-    alias `=` = Byte(ord("="))
-    alias `+` = Byte(ord("+"))
-    alias `/` = Byte(ord("/"))
+    comptime `A` = Byte(ord("A"))
+    comptime `a` = Byte(ord("a"))
+    comptime `Z` = Byte(ord("Z"))
+    comptime `z` = Byte(ord("z"))
+    comptime `0` = Byte(ord("0"))
+    comptime `9` = Byte(ord("9"))
+    comptime `=` = Byte(ord("="))
+    comptime `+` = Byte(ord("+"))
+    comptime `/` = Byte(ord("/"))
 
     # TODO: Measure perf against lookup table approach
     if char == `=`:
@@ -145,7 +145,7 @@ fn b64decode[
     Raises:
         If the operation fails.
     """
-    alias `=` = Byte(ord("="))
+    comptime `=` = Byte(ord("="))
     var data = str.as_bytes()
     var n = str.byte_length()
 
@@ -190,7 +190,7 @@ fn b16encode(str: StringSlice[mut=False]) -> String:
     Returns:
         Base16 encoding of the input string.
     """
-    alias lookup = "0123456789ABCDEF"
+    comptime lookup = "0123456789ABCDEF"
     var b16chars = lookup.unsafe_ptr()
 
     var data = str.as_bytes()
@@ -222,12 +222,12 @@ fn b16decode(str: StringSlice[mut=False]) -> String:
         The decoded string.
     """
 
-    alias `A` = Byte(ord("A"))
-    alias `a` = Byte(ord("a"))
-    alias `Z` = Byte(ord("Z"))
-    alias `z` = Byte(ord("z"))
-    alias `0` = Byte(ord("0"))
-    alias `9` = Byte(ord("9"))
+    comptime `A` = Byte(ord("A"))
+    comptime `a` = Byte(ord("a"))
+    comptime `Z` = Byte(ord("Z"))
+    comptime `z` = Byte(ord("z"))
+    comptime `0` = Byte(ord("0"))
+    comptime `9` = Byte(ord("9"))
 
     # TODO: Measure perf against lookup table approach
     @parameter

@@ -573,7 +573,7 @@ fn splitroot[
         A tuple containing three strings: (drive, root, tail).
     """
     var p = path.__fspath__()
-    alias empty = ""
+    comptime empty = ""
 
     # Relative path, e.g.: 'foo'
     if p[:1] != sep:
@@ -603,7 +603,7 @@ fn _is_shell_special_variable(byte: Byte) -> Bool:
     Returns:
         True if the byte is a special shell variable and False otherwise.
     """
-    alias shell_variables = InlineArray[Int, 17](
+    comptime shell_variables = InlineArray[Int, 17](
         ord("*"),
         ord("#"),
         ord("$"),

@@ -26,11 +26,11 @@ from sys import CompilationTarget
 
 from memory import Span
 
-alias TMP_MAX = 10_000
+comptime TMP_MAX = 10_000
 
 
 fn _get_random_name(size: Int = 8) -> String:
-    alias characters = "abcdefghijklmnopqrstuvwxyz0123456789_"
+    comptime characters = "abcdefghijklmnopqrstuvwxyz0123456789_"
     var name = String(capacity=size)
     for _ in range(size):
         var rand_index = Int(

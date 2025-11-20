@@ -23,10 +23,10 @@ import math
 from math.math import _Expable
 from sys import llvm_intrinsic
 
-alias ComplexScalar = ComplexSIMD[size=1]
+comptime ComplexScalar = ComplexSIMD[size=1]
 """Represents a scalar complex value."""
-alias ComplexFloat32 = ComplexScalar[DType.float32]
-alias ComplexFloat64 = ComplexScalar[DType.float64]
+comptime ComplexFloat32 = ComplexScalar[DType.float32]
+comptime ComplexFloat64 = ComplexScalar[DType.float64]
 
 
 # ===-----------------------------------------------------------------------===#
@@ -51,8 +51,8 @@ struct ComplexSIMD[dtype: DType, size: Int](
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    alias type = Self.dtype
-    alias element_type = SIMD[Self.dtype, Self.size]
+    comptime type = Self.dtype
+    comptime element_type = SIMD[Self.dtype, Self.size]
     var re: Self.element_type
     """The real part of the complex SIMD value."""
     var im: Self.element_type
@@ -79,7 +79,7 @@ struct ComplexSIMD[dtype: DType, size: Int](
             from_interleaved: An interleaved vector of complex values e.g.
                 `[0, 1, 1, 0]` where the pattern is `[re0, im0, re1, im1]`.
         """
-        alias T = Tuple[Self.element_type, Self.element_type]
+        comptime T = Tuple[Self.element_type, Self.element_type]
         self.re, self.im = rebind[T](from_interleaved.deinterleave())
 
     fn __init__(
@@ -91,7 +91,7 @@ struct ComplexSIMD[dtype: DType, size: Int](
             from_deinterleaved: A deinterleaved vector of complex values e.g.
                 `[0, 1, 1, 0]` where the pattern is `[re0, re1, im0, im1]`.
         """
-        alias T = Self.element_type
+        comptime T = Self.element_type
         self.re = rebind[T](from_deinterleaved.slice[Self.size]())
         self.im = rebind[T](
             from_deinterleaved.slice[Self.size, offset = Self.size]()

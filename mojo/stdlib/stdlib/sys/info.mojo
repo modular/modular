@@ -392,7 +392,7 @@ fn platform_map[
     Example:
 
     ```mojo
-    alias EDEADLK = platform_alias["EDEADLK", linux=35, macos=11]()
+    comptime EDEADLK = platform_alias["EDEADLK", linux=35, macos=11]()
     ```
     """
 
@@ -1105,7 +1105,7 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
         "the operating system must be macOS",
     ]()
 
-    alias INITIAL_CAPACITY = 32
+    comptime INITIAL_CAPACITY = 32
 
     # Overallocate the string.
     var buf_len = Int(INITIAL_CAPACITY)

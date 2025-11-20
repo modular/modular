@@ -51,7 +51,7 @@ struct _PhiloxWrapper(Copyable, Movable):
     var _rng: PhiloxRandom[10]
     """The underlying Philox random number generator."""
 
-    alias _cache_length = 4
+    comptime _cache_length = 4
 
     var _cache: SIMD[DType.uint32, Self._cache_length]
     """Cache of generated random values."""
@@ -103,7 +103,7 @@ struct _PhiloxWrapper(Copyable, Movable):
         """
         # Use 53 bits of randomness (mantissa precision of Float64)
         var value = self.next_uint64() >> 11
-        alias float64_mantissa_bits = FPUtils[
+        comptime float64_mantissa_bits = FPUtils[
             DType.float64
         ].mantissa_width() + 1  # 53 (52 mantissa bits + 1 for the sign bit)
         return Float64(value) * (1.0 / Float64(1 << float64_mantissa_bits))
@@ -274,4 +274,4 @@ fn _get_global_random_state() -> UnsafePointer[_RandomState]:
 
 
 # Global random state (using _Global for proper global storage)
-alias _global_random_state = _Global["random_state", _init_random_state]
+comptime _global_random_state = _Global["random_state", _init_random_state]

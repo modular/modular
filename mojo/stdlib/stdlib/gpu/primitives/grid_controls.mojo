@@ -36,7 +36,7 @@ from ..host.launch_attribute import (
     LaunchAttributeValue,
 )
 
-alias _SUPPORT_PDL_LAUNCH = _support_pdl_launch()
+comptime _SUPPORT_PDL_LAUNCH = _support_pdl_launch()
 
 
 @doc_private
@@ -110,7 +110,7 @@ fn launch_dependent_grids():
 
     @parameter
     if _SUPPORT_PDL_LAUNCH:
-        alias kind_attr = __mlir_attr.`#nvvm.grid_dep_action launch_dependents`
+        comptime kind_attr = __mlir_attr.`#nvvm.grid_dep_action launch_dependents`
         __mlir_op.`nvvm.griddepcontrol`[kind=kind_attr, _type=None]()
 
 
@@ -131,7 +131,7 @@ fn wait_on_dependent_grids():
 
     @parameter
     if _SUPPORT_PDL_LAUNCH:
-        alias kind_attr = __mlir_attr.`#nvvm.grid_dep_action wait`
+        comptime kind_attr = __mlir_attr.`#nvvm.grid_dep_action wait`
         __mlir_op.`nvvm.griddepcontrol`[kind=kind_attr, _type=None]()
 
 
@@ -141,10 +141,10 @@ struct PDLLevel(Defaultable):
 
     var _level: Int
 
-    alias OFF = PDLLevel(0)
-    alias OVERLAP_AT_END = PDLLevel(1)
-    alias OVERLAP_AT_BEGINNING = PDLLevel(2)
-    alias NO_WAIT_OVERLAP_AT_END = PDLLevel(3)
+    comptime OFF = PDLLevel(0)
+    comptime OVERLAP_AT_END = PDLLevel(1)
+    comptime OVERLAP_AT_BEGINNING = PDLLevel(2)
+    comptime NO_WAIT_OVERLAP_AT_END = PDLLevel(3)
 
     @always_inline
     fn __init__(out self):

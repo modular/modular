@@ -180,10 +180,10 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         element_type: The underlying dtype of the integer element value.
     """
 
-    alias device_type = Self
+    comptime device_type = Self
     """Indicate the type being used on accelerator devices."""
 
-    alias _int_type = Scalar[Self.element_type]
+    comptime _int_type = Scalar[Self.element_type]
     """The underlying storage of the integer element value."""
 
     var data: StaticTuple[Self._int_type, Self.size]

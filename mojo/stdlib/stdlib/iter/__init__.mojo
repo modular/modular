@@ -176,8 +176,8 @@ struct _Enumerate[InnerIteratorType: Iterator](
     original iterator.
     """
 
-    alias Element = Tuple[Int, Self.InnerIteratorType.Element]
-    alias IteratorType[
+    comptime Element = Tuple[Int, Self.InnerIteratorType.Element]
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
     var _inner: Self.InnerIteratorType
@@ -506,8 +506,8 @@ struct _MapIterator[
     InnerIteratorType: Iterator, //,
     function: fn (var InnerIteratorType.Element) -> OutputType,
 ](Copyable, Iterable, Iterator, Movable):
-    alias Element = Self.OutputType
-    alias IteratorType[
+    comptime Element = Self.OutputType
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 

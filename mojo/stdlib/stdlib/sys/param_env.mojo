@@ -18,7 +18,7 @@ name-value pairs defined on the command line. For example:
 ```mojo
   from sys import is_defined
 
-  alias float_type = DType.float32 if is_defined["FLOAT32"]() else DType.float64
+  comptime float_type = DType.float32 if is_defined["FLOAT32"]() else DType.float64
 
   # Use `float_type` as a constant.
 ```
@@ -60,7 +60,7 @@ fn is_defined[name: StaticString]() -> Bool:
 
 
 fn _is_bool_like[val: StaticString]() -> Bool:
-    alias lower_val = val.lower()
+    comptime lower_val = val.lower()
     return (
         lower_val == "true"
         or lower_val == "1"
@@ -81,7 +81,7 @@ fn env_get_bool[name: StaticString]() -> Bool:
     Returns:
         An boolean parameter value.
     """
-    alias val = env_get_string[name]().lower()
+    comptime val = env_get_string[name]().lower()
 
     constrained[
         _is_bool_like[val](),
@@ -151,7 +151,7 @@ fn env_get_int[name: StaticString, default: Int]() -> Int:
     from sys.param_env import env_get_int
 
     def main():
-        alias number = env_get_int[
+        comptime number = env_get_int[
             "favorite_number",
             1 # Default value
         ]()

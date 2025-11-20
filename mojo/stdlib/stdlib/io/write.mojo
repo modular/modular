@@ -345,7 +345,7 @@ fn _hex_digits_to_hex_chars(
     %# from utils import StringSlice
     %# from io.write import _hex_digits_to_hex_chars
     items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0)
-    alias S = StringSlice[origin_of(items)]
+    comptime S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
     _hex_digits_to_hex_chars(ptr, UInt32(ord("🔥")))
     assert_equal("0001f525", S(ptr=ptr, length=8))
@@ -357,7 +357,7 @@ fn _hex_digits_to_hex_chars(
     assert_equal("d6", S(ptr=ptr, length=2))
     ```
     """
-    alias size = size_of[decimal.dtype]()
+    comptime size = size_of[decimal.dtype]()
     var bytes = bitcast[DType.uint8, size](byte_swap(decimal))
     var nibbles = (bytes >> 4).interleave(bytes & 0xF)
     ptr.store(_hex_table._dynamic_shuffle(nibbles))
@@ -378,7 +378,7 @@ fn _write_hex[
     %# from utils import StringSlice
     %# from io.write import _write_hex
     items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0)
-    alias S = StringSlice[origin_of(items)]
+    comptime S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
     _write_hex[8](ptr, ord("🔥"))
     assert_equal(r"\\U0001f525", S(ptr=ptr, length=10))
@@ -393,10 +393,10 @@ fn _write_hex[
 
     constrained[amnt_hex_bytes in (2, 4, 8), "only 2 or 4 or 8 sequences"]()
 
-    alias `\\` = Byte(ord("\\"))
-    alias `x` = Byte(ord("x"))
-    alias `u` = Byte(ord("u"))
-    alias `U` = Byte(ord("U"))
+    comptime `\\` = Byte(ord("\\"))
+    comptime `x` = Byte(ord("x"))
+    comptime `u` = Byte(ord("u"))
+    comptime `U` = Byte(ord("U"))
 
     p.init_pointee_move(`\\`)
 

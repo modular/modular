@@ -2415,7 +2415,7 @@ struct SIMD[dtype: DType, size: Int](
             "size of the mask must match the output SIMD size",
         ]()
 
-        alias tup = StaticTuple[Int, output_size](values=mask)
+        comptime tup = StaticTuple[Int, output_size](values=mask)
 
         return self._shuffle_list[output_size, tup](other)
 
@@ -3721,8 +3721,8 @@ fn _convert_f32_to_float8_ue8m0[
 
     @parameter
     if is_nvidia_gpu() and _is_sm_100x_or_newer():
-        alias satfinite_suffix = ".satfinite" if satfinite else ""
-        alias asm_prefix = "cvt." + rounding_mode + satfinite_suffix + ".ue8m0x2.f32"
+        comptime satfinite_suffix = ".satfinite" if satfinite else ""
+        comptime asm_prefix = "cvt." + rounding_mode + satfinite_suffix + ".ue8m0x2.f32"
 
         @parameter
         if size > 1:

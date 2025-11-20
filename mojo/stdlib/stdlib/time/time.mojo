@@ -106,7 +106,7 @@ fn _gettime_as_nsec_unix(clockid: Int) -> UInt:
 @always_inline
 fn _gpu_clock() -> UInt:
     """Returns a 64-bit unsigned cycle counter."""
-    alias asm = _gpu_clock_inst()
+    comptime asm = _gpu_clock_inst()
     return UInt(Int(llvm_intrinsic[asm, Int64]()))
 
 

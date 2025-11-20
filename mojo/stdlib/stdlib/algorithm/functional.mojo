@@ -105,9 +105,9 @@ fn vectorize[
     from sys import simd_width_of
 
     # The amount of elements to loop through
-    alias size = 10
+    comptime size = 10
     # How many Dtype.int32 elements fit into the SIMD register (4 on 128bit)
-    alias simd_width = simd_width_of[DType.int32]()  # assumed to be 4 in this example
+    comptime simd_width = simd_width_of[DType.int32]()  # assumed to be 4 in this example
 
     fn main():
         var p = alloc[Int32](size)
@@ -214,9 +214,9 @@ fn vectorize[
     from sys import simd_width_of
 
     # The amount of elements to loop through
-    alias size = 10
+    comptime size = 10
     # How many Dtype.int32 elements fit into the SIMD register (4 on 128bit)
-    alias simd_width = simd_width_of[DType.int32]()  # assumed to be 4 in this example
+    comptime simd_width = simd_width_of[DType.int32]()  # assumed to be 4 in this example
 
     fn main():
         var p = UnsafePointer[Int32].alloc(size)
@@ -594,11 +594,11 @@ fn tile[
           don't fit exactly within the upperbound.
     """
     var work_idx = offset
-    alias num_tiles = len(secondary_tile_size_list)
+    comptime num_tiles = len(secondary_tile_size_list)
 
     @parameter
     for i in range(num_tiles):
-        alias secondary_tile_size = secondary_tile_size_list[i]
+        comptime secondary_tile_size = secondary_tile_size_list[i]
         var primary_tile_size = primary_tile_size_list[i]
 
         while work_idx <= upperbound - primary_tile_size:
@@ -1017,8 +1017,8 @@ fn tile_middle_unswitch_boundaries[
         # tile_size = 6, it's better to use tile_sizes 4 and 3 than using
         # 6 and 1 since the it's tricky to handle padding with very small
         # tile size.
-        alias tile_size_lbound = min(tile_size, size // 2)
-        alias tile_size_rbound = min(tile_size, size - size // 2)
+        comptime tile_size_lbound = min(tile_size, size // 2)
+        comptime tile_size_rbound = min(tile_size, size - size // 2)
 
         var offset = 0
 
@@ -1031,10 +1031,10 @@ fn tile_middle_unswitch_boundaries[
         fn update_middle[_tile_size: Int](_offset: Int):
             work_fn[_tile_size, False, False](_offset)
 
-        alias num_middle_points = size - tile_size_lbound - tile_size_rbound
-        alias remainder = num_middle_points % tile_size
+        comptime num_middle_points = size - tile_size_lbound - tile_size_rbound
+        comptime remainder = num_middle_points % tile_size
         # `tile` can't handle zero tile size.
-        alias tile_size_remainder = remainder if remainder > 0 else 1
+        comptime tile_size_remainder = remainder if remainder > 0 else 1
 
         tile[update_middle, VariadicList[Int](tile_size, tile_size_remainder)](
             tile_size_lbound, size - tile_size_rbound
@@ -1379,9 +1379,9 @@ fn elementwise[
         )
 
     # Intern the kind string as a static string so we don't allocate.
-    alias d = _trace_description
-    alias desc = String("(", d, ")") if d else ""
-    alias kind = get_static_string["elementwise", desc]()
+    comptime d = _trace_description
+    comptime desc = String("(", d, ")") if d else ""
+    comptime kind = get_static_string["elementwise", desc]()
 
     with Trace[TraceLevel.OP, target=target](
         kind,
@@ -1435,7 +1435,7 @@ fn _elementwise_impl_cpu[
     *,
     use_blocking_impl: Bool = False,
 ](shape: IndexList[rank, **_]):
-    alias impl = _elementwise_impl_cpu_1d if rank == 1 else _elementwise_impl_cpu_nd
+    comptime impl = _elementwise_impl_cpu_1d if rank == 1 else _elementwise_impl_cpu_nd
     impl[func, simd_width, use_blocking_impl=use_blocking_impl](shape)
 
 
@@ -1464,7 +1464,7 @@ fn _elementwise_impl_cpu_1d[
     """
     constrained[rank == 1, "Specialization for 1D"]()
 
-    alias unroll_factor = 8  # TODO: Comeup with a cost heuristic.
+    comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
     var problem_size = shape.flattened_length()
 
@@ -1527,7 +1527,7 @@ fn _elementwise_impl_cpu_nd[
     """
     constrained[rank > 1, "Specialization for ND where N > 1"]()
 
-    alias unroll_factor = 8  # TODO: Comeup with a cost heuristic.
+    comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
     # Strategy: we parallelize over all dimensions except the innermost and
     # vectorize over the innermost dimension. We unroll the innermost dimension
@@ -1622,13 +1622,15 @@ fn _elementwise_impl_gpu[
 
     # optimized implementation inspired by https://archive.md/Tye9y#selection-1101.2-1151.3
 
-    alias hw_info = ctx.default_device_info
+    comptime hw_info = ctx.default_device_info
 
-    alias registers_per_thread = 255
-    alias num_waves = 32
-    alias registers_per_block = hw_info.max_registers_per_block
-    alias sm_count = UInt(hw_info.sm_count)
-    alias threads_per_multiprocessor = UInt(hw_info.threads_per_multiprocessor)
+    comptime registers_per_thread = 255
+    comptime num_waves = 32
+    comptime registers_per_block = hw_info.max_registers_per_block
+    comptime sm_count = UInt(hw_info.sm_count)
+    comptime threads_per_multiprocessor = UInt(
+        hw_info.threads_per_multiprocessor
+    )
 
     constrained[
         sm_count > 0 and threads_per_multiprocessor > 0,
@@ -1644,10 +1646,10 @@ fn _elementwise_impl_gpu[
     if length == 0:
         return
 
-    alias block_size_unrounded = registers_per_block // registers_per_thread
+    comptime block_size_unrounded = registers_per_block // registers_per_thread
 
     # when testing other elementwise kernels, they appear to also use 128 as the block size on blackwell specifically
-    alias block_size = 128 if ctx.default_device_info is B200 else block_size_unrounded - (
+    comptime block_size = 128 if ctx.default_device_info is B200 else block_size_unrounded - (
         block_size_unrounded % 2
     )
 
@@ -1718,7 +1720,7 @@ fn _elementwise_impl_gpu[
             launch_dependent_grids()
 
     if shape[rank - 1] % Int(simd_width) == 0:
-        alias kernel = _elementwise_gpu_kernel[
+        comptime kernel = _elementwise_gpu_kernel[
             block_size = UInt(block_size), handle_uneven_simd=False
         ]
         ctx.enqueue_function_checked[kernel, kernel](
@@ -1727,7 +1729,7 @@ fn _elementwise_impl_gpu[
             attributes=pdl_launch_attributes(),
         )
     else:
-        alias kernel = _elementwise_gpu_kernel[
+        comptime kernel = _elementwise_gpu_kernel[
             block_size = UInt(block_size), handle_uneven_simd=True
         ]
         ctx.enqueue_function_checked[kernel, kernel](
@@ -1853,7 +1855,7 @@ fn _stencil_impl_cpu[
     var parallelism_size = total_size // shape[rank - 1]
     var chunk_size = ceildiv(parallelism_size, num_workers)
 
-    alias unroll_factor = 8  # TODO: Comeup with a cost heuristic.
+    comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
     @always_inline
     @parameter

@@ -56,7 +56,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         H: The type of the hasher in the underlying dictionary.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _DictKeyIter[Self.V, Int, Self.H, iterable_origin]
 

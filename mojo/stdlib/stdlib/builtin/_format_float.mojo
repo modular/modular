@@ -405,7 +405,7 @@ fn _compute_endpoint[
 
 
 fn _print_bits[dtype: DType](x: Scalar[dtype]) -> String:
-    alias total_bits = size_of[dtype]() * 8
+    comptime total_bits = size_of[dtype]() * 8
     var output = String()
 
     @parameter
@@ -415,9 +415,9 @@ fn _print_bits[dtype: DType](x: Scalar[dtype]) -> String:
             if i % 8 == 0:
                 output.write(" ")
     else:
-        alias sig_bits = 23 if dtype is DType.float32 else 52
-        alias exp_bits = 8 if dtype is DType.float32 else 11
-        alias cast_type = DType.uint32 if dtype is DType.float32 else DType.uint64
+        comptime sig_bits = 23 if dtype is DType.float32 else 52
+        comptime exp_bits = 8 if dtype is DType.float32 else 11
+        comptime cast_type = DType.uint32 if dtype is DType.float32 else DType.uint64
         var casted = bitcast[cast_type](x)
         for i in reversed(range(total_bits)):
             output.write((casted >> i) & 1)

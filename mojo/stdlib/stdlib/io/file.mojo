@@ -215,7 +215,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         import os
         from sys.info import size_of
 
-        alias file_name = "/tmp/example.txt"
+        comptime file_name = "/tmp/example.txt"
         var file = open(file_name, "r")
 
         # Allocate and load 8 elements

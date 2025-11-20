@@ -54,7 +54,7 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
     from utils import Variant
     import random
 
-    alias IntOrString = Variant[Int, String]
+    comptime IntOrString = Variant[Int, String]
 
     fn to_string(mut x: IntOrString) -> String:
         if x.isa[String]():
@@ -80,7 +80,7 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
     Example usage for error handling:
 
     ```mojo
-    alias Result = Variant[String, Error]
+    comptime Result = Variant[String, Error]
 
     fn process_data(data: String) -> Result:
         if len(data) == 0:
@@ -97,7 +97,7 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
     Example usage in a `List` to create a heterogeneous list:
 
     ```mojo
-    alias MixedType = Variant[Int, Float64, String, Bool]
+    comptime MixedType = Variant[Int, Float64, String, Bool]
 
     var mixed_list = List[MixedType]()
     mixed_list.append(MixedType(42))

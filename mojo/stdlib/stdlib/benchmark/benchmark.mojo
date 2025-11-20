@@ -182,11 +182,11 @@ struct Batch(ImplicitlyCopyable, Movable):
 struct Unit:
     """Time Unit used by Benchmark Report."""
 
-    alias ns = "ns"
+    comptime ns = "ns"
     """Nanoseconds"""
-    alias ms = "ms"
+    comptime ms = "ms"
     """Milliseconds"""
-    alias s = "s"
+    comptime s = "s"
     """Seconds"""
 
     @staticmethod

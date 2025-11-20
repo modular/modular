@@ -349,8 +349,8 @@ struct Codepoint(
         Returns:
             True if the character is a digit.
         """
-        alias ord_0 = UInt32(ord("0"))
-        alias ord_9 = UInt32(ord("9"))
+        comptime ord_0 = UInt32(ord("0"))
+        comptime ord_9 = UInt32(ord("9"))
         return ord_0 <= self.to_u32() <= ord_9
 
     fn is_ascii_upper(self) -> Bool:
@@ -362,8 +362,8 @@ struct Codepoint(
         Returns:
             True if the character is uppercase.
         """
-        alias ord_a = UInt32(ord("A"))
-        alias ord_z = UInt32(ord("Z"))
+        comptime ord_a = UInt32(ord("A"))
+        comptime ord_z = UInt32(ord("Z"))
         return ord_a <= self.to_u32() <= ord_z
 
     fn is_ascii_lower(self) -> Bool:
@@ -375,8 +375,8 @@ struct Codepoint(
         Returns:
             True if the character is lowercase.
         """
-        alias ord_a = UInt32(ord("a"))
-        alias ord_z = UInt32(ord("z"))
+        comptime ord_a = UInt32(ord("a"))
+        comptime ord_z = UInt32(ord("z"))
         return ord_a <= self.to_u32() <= ord_z
 
     fn is_ascii_printable(self) -> Bool:
@@ -420,9 +420,9 @@ struct Codepoint(
         ```
         """
 
-        alias next_line = Codepoint.from_u32(0x85).value()
-        alias unicode_line_sep = Codepoint.from_u32(0x2028).value()
-        alias unicode_paragraph_sep = Codepoint.from_u32(0x2029).value()
+        comptime next_line = Codepoint.from_u32(0x85).value()
+        comptime unicode_line_sep = Codepoint.from_u32(0x2028).value()
+        comptime unicode_paragraph_sep = Codepoint.from_u32(0x2029).value()
 
         return self.is_posix_space() or self in (
             next_line,

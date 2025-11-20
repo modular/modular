@@ -2804,7 +2804,7 @@ struct CPython(Defaultable, Movable):
         # but I think it's only defined via the `PYTHON_API_VERSION` macro that ships with Python.
         # if this mismatches with the user's Python, then a `RuntimeWarning` is emitted according to the
         # docs.
-        alias module_api_version: c_int = 1013
+        comptime module_api_version: c_int = 1013
         return self._PyModule_Create2(module_def_ptr, module_api_version)
 
     fn PyModule_AddFunctions(

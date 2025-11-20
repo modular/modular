@@ -596,7 +596,7 @@ struct LegacyUnsafePointer[
     fn as_noalias_ptr(self) -> Self:
         """Cast the pointer to a new pointer that is known not to locally alias
         any other pointer. In other words, the pointer transitively does not
-        alias any other memory value declared in the local function context.
+        comptime any other memory value declared in the local function context.
 
         This information is relayed to the optimizer. If the pointer does
         locally alias another memory value, the behaviour is undefined.

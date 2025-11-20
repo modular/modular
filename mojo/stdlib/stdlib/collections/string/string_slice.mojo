@@ -328,10 +328,10 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
         origin: Origin of the underlying string data.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = Codepoint
+    comptime Element = Codepoint
 
     var _slice: StringSlice[Self.origin]
     """String slice containing the bytes that have not been read yet.
@@ -1927,15 +1927,15 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         fn _is_space_char(s: StringSlice) -> Bool:
             # sorry for readability, but this has less overhead than memcmp
             # highly performance sensitive code, benchmark before touching
-            alias ` ` = UInt8(ord(" "))
-            alias `\t` = UInt8(ord("\t"))
-            alias `\n` = UInt8(ord("\n"))
-            alias `\r` = UInt8(ord("\r"))
-            alias `\f` = UInt8(ord("\f"))
-            alias `\v` = UInt8(ord("\v"))
-            alias `\x1c` = UInt8(ord("\x1c"))
-            alias `\x1d` = UInt8(ord("\x1d"))
-            alias `\x1e` = UInt8(ord("\x1e"))
+            comptime ` ` = UInt8(ord(" "))
+            comptime `\t` = UInt8(ord("\t"))
+            comptime `\n` = UInt8(ord("\n"))
+            comptime `\r` = UInt8(ord("\r"))
+            comptime `\f` = UInt8(ord("\f"))
+            comptime `\v` = UInt8(ord("\v"))
+            comptime `\x1c` = UInt8(ord("\x1c"))
+            comptime `\x1d` = UInt8(ord("\x1d"))
+            comptime `\x1e` = UInt8(ord("\x1e"))
 
             var no_null_len = s.byte_length()
             var ptr = s.unsafe_ptr()
@@ -2114,8 +2114,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
 
         # highly performance sensitive code, benchmark before touching
-        alias `\r` = UInt8(ord("\r"))
-        alias `\n` = UInt8(ord("\n"))
+        comptime `\r` = UInt8(ord("\r"))
+        comptime `\n` = UInt8(ord("\n"))
 
         var output = List[Self.Immutable](capacity=128)  # guessing
         var ptr = self.get_immutable().unsafe_ptr()
@@ -2804,7 +2804,7 @@ fn _split[
     maxsplit: Int,
     out output: List[type_of(src_str).Immutable],
 ):
-    alias S = type_of(src_str).Immutable
+    comptime S = type_of(src_str).Immutable
     var ptr = src_str.unsafe_ptr().as_immutable()
     var sep_len = sep.byte_length()
     if sep_len == 0:
@@ -2817,7 +2817,7 @@ fn _split[
         output.append(S(ptr=ptr + i_len - 1, length=0))
         return
 
-    alias prealloc = 32  # guessing, Python's implementation uses 12
+    comptime prealloc = 32  # guessing, Python's implementation uses 12
     var amnt = prealloc
 
     @parameter
@@ -2854,8 +2854,8 @@ fn _split[
     maxsplit: Int,
     out output: List[type_of(src_str).Immutable],
 ):
-    alias S = type_of(src_str).Immutable
-    alias prealloc = 32  # guessing, Python's implementation uses 12
+    comptime S = type_of(src_str).Immutable
+    comptime prealloc = 32  # guessing, Python's implementation uses 12
     var amnt = prealloc
 
     @parameter

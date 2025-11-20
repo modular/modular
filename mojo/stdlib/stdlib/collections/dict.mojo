@@ -134,10 +134,10 @@ struct _TakeDictEntryIter[
         origin: The mutable origin of the Dict
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = DictEntry[Self.K, Self.V, Self.H]
+    comptime Element = DictEntry[Self.K, Self.V, Self.H]
 
     var index: Int
     var src: Pointer[Dict[Self.K, Self.V, Self.H], Self.origin]
@@ -1326,8 +1326,8 @@ struct OwnedKwargsDict[V: Copyable & Movable](
     """
 
     # Fields
-    alias key_type = String
-    alias IteratorType[
+    comptime key_type = String
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _DictKeyIter[
         Self.key_type, Self.V, default_comp_time_hasher, iterable_origin

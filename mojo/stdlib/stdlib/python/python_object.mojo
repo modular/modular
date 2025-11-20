@@ -39,10 +39,10 @@ struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = PythonObject
+    comptime Element = PythonObject
 
     var iterator: PythonObject
     """The iterator object that stores location."""

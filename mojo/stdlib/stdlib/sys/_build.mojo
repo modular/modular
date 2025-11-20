@@ -52,7 +52,7 @@ fn is_release_build() -> Bool:
     if is_defined["DEBUG"]():
         return False
     elif is_defined["BUILD_TYPE"]():
-        alias build_type = _build_type()
+        comptime build_type = _build_type()
         return (
             build_type == "release"
             or build_type == "relwithdebinfo"

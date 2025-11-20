@@ -38,7 +38,7 @@ __extension SIMD:
 
 
 struct _SIMDStrategy[dtype: DType, size: Int](Movable, Strategy):
-    alias Value = SIMD[Self.dtype, Self.size]
+    comptime Value = SIMD[Self.dtype, Self.size]
 
     var _min: Scalar[Self.dtype]
     var _max: Scalar[Self.dtype]
@@ -99,7 +99,7 @@ __extension List:
 
 
 struct _ListStrategy[T: Strategy](Movable, Strategy):
-    alias Value = List[Self.T.Value]
+    comptime Value = List[Self.T.Value]
 
     var _strat: Self.T
     var _min_len: Int
@@ -117,7 +117,7 @@ struct _ListStrategy[T: Strategy](Movable, Strategy):
 
         # TODO: Make this configurable for other collection types via
         # a property test config value.
-        alias MAX_LIST_SIZE = 100
+        comptime MAX_LIST_SIZE = 100
 
         self._strat = strategy^
         self._min_len = min_len

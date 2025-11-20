@@ -22,8 +22,8 @@ fn _is_pointer_convertible[T: AnyType, U: AnyType]() -> Bool:
 
     @parameter
     if conforms_to(T, _IsUnsafePointer) and conforms_to(U, _IsUnsafePointer):
-        alias downcast_t = downcast[_IsUnsafePointer, T]
-        alias downcast_u = downcast[_IsUnsafePointer, U]
+        comptime downcast_t = downcast[_IsUnsafePointer, T]
+        comptime downcast_u = downcast[_IsUnsafePointer, U]
         return _type_is_eq[
             downcast_t._UnsafePointerType, downcast_u._UnsafePointerType
         ]()
