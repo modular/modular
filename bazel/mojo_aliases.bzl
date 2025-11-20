@@ -25,7 +25,7 @@ alias(
 ALL_MOJOPKGS = [
 {packages}
 ]
-""".format(packages = ",\n".join(['    "@mojo//:{}"'.format(name) for name in _PACKAGES.keys()])))
+""".format(packages = ",\n".join(['    "@mojo//:{}"'.format(name) for name in _PACKAGES.keys() if name != "python"])))
 
 mojo_aliases = repository_rule(
     implementation = _mojo_aliases_impl,
