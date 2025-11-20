@@ -605,10 +605,6 @@ def load_model_config(
 
     config = PipelineConfig(**config_kwargs)
 
-    if len(config.model_config.weight_path) == 0:
-        hf_file_kwargs = {}
-        hf_file_kwargs["encoding"] = config.model_config.quantization_encoding
-
     tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
         config, task=pipeline_task
     )
