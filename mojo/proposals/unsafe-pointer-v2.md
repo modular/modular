@@ -187,7 +187,7 @@ Function arguments that accept pointers must now state their mutability using
 
 ```mojo
 fn read_pointer(ptr: UnsafePointer[mut=False, Int]):
-    let n = ptr[]
+    var n = ptr[]
 
 fn write_pointer(ptr: UnsafePointer[mut=True, Int]):
     ptr[] = 42
