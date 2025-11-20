@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import iota
-from sys import exit
-from sys.info import has_accelerator
+from sys import exit, has_accelerator
 
 from gpu.host import DeviceContext
 from gpu import block_dim, block_idx, thread_idx

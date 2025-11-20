@@ -14,6 +14,32 @@ Mojo, see the [install guide](/mojo/manual/install).
 
 ### ✨ Highlights
 
+- A new, improved
+  [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) type has
+  been added, and the old version renamed to
+  [`LegacyUnsafePointer`](/mojo/stdlib/memory/legacy_unsafe_pointer/LegacyUnsafePointer).
+  The new version fixes several issues with the old `LegacyUnsafePointer`.
+
+  - `LegacyUnsafePointer` had constructors that allowed unsafe implicit
+    mutability and origin casts, making it easy to make unsafe changes by accident.
+    The new `UnsafePointer` eliminates these.
+  - The new `UnsafePointer` now has an inferred mutability parameter,
+    simplifying the API.
+  - `UnsafePointer` does not have a default value for its origin parameter, so
+    it must be explicitly specified or unbound. `LegacyUnsafePointer` defaults
+    to `MutAnyOrigin`, which results in the lifetimes of many values being
+    extended needlessly.
+
+  For more information, see
+  [Pointer and memory changes](#25-7-pointer-and-memory-changes).
+
+- Many enhancements to compile-time errors, including suppressing extraneous
+  messages and preserving more human-readable display for many aliases and
+  parameters. For details, see [Tooling changes](#25-7-tooling-changes).
+
+- Added a new document on
+  [GPU block and warp operations and synchronization](/mojo/manual/gpu/block-and-warp).
+
 ### Language enhancements {#25-7-language-enhancements}
 
 - Mojo now supports the `comptime` keyword as a synonym for `alias`. The
@@ -29,27 +55,14 @@ Mojo, see the [install guide](/mojo/manual/install).
 
   Note: Future updates will migrate error messages and internal terminology to
   use "comptime". The `alias` keyword will remain supported for backward
-  compatibility.
+  compatibility for now.
 
-- Mojo now supports unpacking an alias tuple with a single statement when it is
-  not inside a `struct` or `trait`. For example:
-
-  ```mojo
-  alias i, f = (1, 3.0)
-  alias q, v = divmod(4, 5)
-  ```
-
-- Mojo now supports compile-time trait conformance check (via `conforms_to`) and
-  downcast (via `trait_downcast`). This allows users to implement features like
-  static dispatching based on trait conformance, e.g.,
+- Mojo now supports unpacking an alias/comptime tuple with a single statement
+  when it is not inside a struct or trait. For example:
 
   ```mojo
-  fn maybe_print[T : AnyType](maybe_printable : T):
-    @parameter
-    if conforms_to(T, Writable):
-      print(trait_downcast[Writable](maybe_printable))
-    else:
-      print("[UNPRINTABLE]")
+  comptime i, f = (1, 3.0)
+  comptime q, v = divmod(4, 5)
   ```
 
 - [Issue #3925](https://github.com/modular/modular/issues/3925): Mojo now allows
@@ -69,7 +82,7 @@ Mojo, see the [install guide](/mojo/manual/install).
   `fn zip[T: Iterable](impl:T)` because it will default to the standard
   library's `List` type.
 
-- Mojo now has a `__functions_in_module` experimental intrinsic that allows
+- Mojo now has a `__functions_in_module()` experimental intrinsic that allows
   reflection over the functions declared in the module where it is called. For
   example:
 
@@ -84,7 +97,9 @@ Mojo, see the [install guide](/mojo/manual/install).
     alias same_funcs = Tuple(foo, bar)
   ```
 
-  The intrinsic is currently limited for use from within `main`.
+  The intrinsic is currently limited for use from within the `main()` function.
+  For an example of using `__functions_in_module()` in a test suite, see
+  [Running tests with TestSuite](/mojo/tools/testing/#running-tests-with-testsuite)
 
 - The `@implicit` decorator now accepts an optional `deprecated` keyword
   argument. This can be used to phase out implicit conversions instead of just
@@ -120,9 +135,9 @@ Mojo, see the [install guide](/mojo/manual/install).
     old() # 'old' is deprecated, use 'new' instead
   ```
 
-- In struct instances that declare a parametric `__call__` method, but not
-  one of the subscript methods (`__getitem__`, `__setitem__`, or
-  `__getattr__`), the `__call__` method can now be invoked with parameters:
+- In struct instances that declare a parametric `__call__()` method, but not
+  one of the subscript methods (`__getitem__()`, `__setitem__()`, or
+  `__getattr__()`), the `__call__()` method can now be invoked with parameters:
 
   ```mojo
   struct Callable:
@@ -137,57 +152,46 @@ Mojo, see the [install guide](/mojo/manual/install).
       print(c[1](2)) # 3
   ```
 
-  Previously you would have needed to explicitly look up `__call__`:
+  Previously you would have needed to explicitly look up `__call__()`:
 
   ```mojo
   print(c.__call__[1](2))
   ```
 
-- Added `DType.float4_e2m1fn` as the 4bit float `e2m1` format. This Float4_e2m1
-  type is defined by the [Open Compute MX Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf).
+- Added `DType.float4_e2m1fn` as the 4bit float `e2m1` format. This
+  `Float4_e2m1` type is defined by the
+  [Open Compute MX Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf).
 
-- `deinit` methods may now transfer all of 'self' to another `deinit' method.
+- `deinit` methods may now transfer all of `self` to another `deinit` method.
 
-- Error and warning messages now preserve `comptime` aliases in many cases, to
-  prevent extremely long type names for complex types.  The compiler will expand
-  these when necessary to understand the type based on a simple heuristic, for
-  example:
-
-  ```mojo
-  struct Dep[T: AnyType, v: T]: pass
-  alias MyDep[T: AnyType, v: T] = Dep[T, v]
-  alias MyDepGetAlias0 = MyDep.hello
-  ```
-
-  produces:
-
-  ```console
-  $ mojo t.mojo
-  t.mojo:10:29: error: 'MyDep' needs more parameters bound before accessing attributes
-  alias MyDepGetAlias0 = MyDep.hello
-                            ^
-  t.mojo:10:29: note: 'MyDep' is aka 'alias[T: AnyType, v: T] Dep[T, v]'
-  ```
-
-  please file issues in cases where more information needs to be exposed.
+- Mojo now uses system allocators in programs built with
+  `mojo build --sanitize address`. This means ASan can see Mojo heap allocations
+  and should now be able to detect many more heap memory errors.
 
 ### Language changes {#25-7-language-changes}
 
-- Expressions like `(Int, Float)` is no longer a syntax sugar for
-  `Tuple[Int, Float]`. It instead creates a tuple instance of two type values,
-  i.e., `(Int, Float) : Tuple[__typeof(Int), __typeof(Float)]`.
+- The `__type_of()` magic function has been renamed to `type_of()`. Using the
+  old spelling will yield an error. Similarly, `__origin_of()` has been renamed
+  to `origin_of()`.
 
-- The `__type_of` magic function has been been renamed to `type_of`. Using the
-  old spelling will yield an error. Similarly, `__origin_of` has been removed in
-  favor of the new `origin_of`.
+- An expression like `(Int, Float64)` is no longer syntax sugar for a tuple types
+  like `Tuple[Int, Float64]`.
 
 ### Library changes {#25-7-library-changes}
 
-- `UnsafePointer` has been renamed to `LegacyUnsafePointer` and a new
-  `UnsafePointer` has [taken its place](https://forum.modular.com/t/proposal-unsafepointer-v2/2411?u=nate).
-  Similarly, `OpaquePointer` has been renamed to `LegacyOpaquePointer` and a new
-  `OpaquePointer` has taken its place.
-  The primary differences is the ordering or parameters now looks as such:
+#### Pointer and memory changes {#25-7-pointer-and-memory-changes}
+
+- `UnsafePointer` has been renamed to
+  [`LegacyUnsafePointer`](/mojo/stdlib/memory/legacy_unsafe_pointer/LegacyUnsafePointer/)
+  and a new
+  [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer/) has
+  [taken its place](https://forum.modular.com/t/proposal-unsafepointer-v2/2411?u=nate).
+  Similarly, `OpaquePointer` has been renamed to
+  [`LegacyOpaquePointer`](/mojo/stdlib/memory/legacy_unsafe_pointer/#legacyopaquepointer)
+  and a new
+  [`OpaquePointer`](/mojo/stdlib/memory/unsafe_pointer/#opaquepointer) has taken
+  its place. The primary difference is the ordering of parameters, which now
+  looks like this:
 
   ```mojo
   struct UnsafePointer[
@@ -207,11 +211,11 @@ Mojo, see the [install guide](/mojo/manual/install).
   ```
 
   Its implicit constructors now no longer allow for unsafe casting between
-  mutabilities and origins. Code will need to update to the new `UnsafePointer`,
-  however, in the interim, users can find-and-replace their current usages of
-  `UnsafePointer` and rename them to `LegacyUnsafePointer`. Another option is
-  users can add the following import statement to the beginning of any files
-  relying on the old pointer type:
+  pointers with different mutability and origin values. Code will need to update
+  to the new `UnsafePointer`, however, in the interim, users can
+  find-and-replace their current usages of `UnsafePointer` and rename them to
+  `LegacyUnsafePointer`. Another option is users can add the following import
+  statement to the beginning of any files relying on the old pointer type:
 
   ```mojo
   from memory import LegacyUnsafePointer as UnsafePointer
@@ -219,11 +223,11 @@ Mojo, see the [install guide](/mojo/manual/install).
   from memory import LegacyOpaquePointer as OpaquePointer
   ```
 
-  Users can also use the `as_legacy_pointer` and `as_unsafe_pointer` conversion
-  functions to convert between the two pointer types during this migration
-  period.
+  Users can also use the `as_legacy_pointer()` and `as_unsafe_pointer()`
+  conversion methods to convert between the two pointer types during this
+  migration period.
 
-  _Note_: `LegacyUnsafePointer` and `LegacyOpaquePointer` will eventually be
+  *Note*: `LegacyUnsafePointer` and `LegacyOpaquePointer` will eventually be
   deprecated and removed in a future version of Mojo.
 
   There are a few new helpful type aliases for `UnsafePointer`:
@@ -232,64 +236,133 @@ Mojo, see the [install guide](/mojo/manual/install).
   - `MutOpaquePointer`
   - `ImmutOpaquePointer`
 
-  Lastly, `alloc` has been moved from a static method on UnsafePointer to a free
-  standing `alloc` function. Therefore, code that was written as:
+  Lastly, [`alloc()`](/mojo/stdlib/memory/unsafe_pointer/alloc) has been moved
+  from a static method on `UnsafePointer` to a free standing `alloc()` function.
+  Therefore, code that was written as:
 
   ```mojo
   var ptr = UnsafePointer[Int].alloc(3)
-  # will now be rewritten as
+  ```
+
+  Must be changed to:
+
+  ```mojo
   var ptr = alloc[Int](3)
   ```
 
-#### Libraries
+  For more details on migrating to the new `UnsafePointer`, see the migration
+  guide provided in the
+  [UnsafePointer v2 proposal](https://github.com/modular/modular/blob/main/mojo/proposals/unsafe-pointer-v2.md#migration-guide-from-legacyunsafepointer-to-the-new-unsafepointer).
+
+- Added a `swap_pointees()` function to `UnsafePointer` as an alternative to
+  `swap()` when the pointers may potentially alias each other.
+
+- `origin_cast()` for
+  [`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor/),
+  [`NDBuffer`](/mojo/stdlib/buffer/buffer/NDBuffer/) and `UnsafePointer` has
+  been deprecated and removed. `LayoutTensor` and `NDBuffer` now support a safer
+  `as_any_origin()` origin casting method. `UnsafePointer` has the same safe
+  alternative and in addition, it has a safe `as_immutable()`
+  casting function and explicitly unsafe `unsafe_mut_cast()` and
+  `unsafe_origin_cast()` casting methods.
+
+- The `empty` origin has been renamed to `external`. This origin represents a
+  value that's not tracked by the Mojo lifetime checker. Newly-allocated memory
+  from `alloc()` is returned with the origin `MutOrigin.external`.
+
+- Renamed `MutableOrigin` to `MutOrigin` and `ImmutableOrigin` to `ImmutOrigin`.
+
+- Renamed `MutableAnyOrigin` to `MutAnyOrigin` and `ImmutableAnyOrigin` to
+  `ImmutAnyOrigin`.
+
+- [`memcpy()`](/mojo/stdlib/memory/memory/memcpy/) and
+  [`parallel_memcpy()`](/mojo/stdlib/algorithm/memory/parallel_memcpy/) without
+  keyword arguments are deprecated.
+
+#### Collections and iterators
+
+- [`Span`](/mojo/stdlib/memory/span/Span/) and
+  [`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice/)
+  constructors now accept `Int` for length parameters instead of `UInt`. This
+  change makes these types more ergonomic to use with integer literals and other
+  `Int`-based APIs.
 
 - Added `Span.binary_search_by()` which allows binary searching with a custom
   comparator function.
 
-- `Codepoint` now conforms to `Writable`.
+- Added `unsafe_get()`, `unsafe_swap_elements()` and `unsafe_subspan()` to
+  the `Span` struct.
 
-- Added `os.isatty()` function to check whether a file descriptor refers to a
-  terminal. This function accepts an `Int` file descriptor. If you have a
-  `FileDescriptor` object, use its `isatty()` method instead.
+- [`Optional`](/mojo/stdlib/collections/optional/Optional/) now conforms to
+  `Iterable` and `Iterator` acting as a collection of size 1 or 0.
 
-- The `Hasher` trait's `_update_with_bytes` method now takes `Span[Byte]`
-  instead of `UnsafePointer[UInt8]` and a separate length parameter. This
-  change applies to all hasher implementations including `AHasher` and `Fnv1a`.
+- New [`ContiguousSlice`](/mojo/stdlib/builtin/builtin_slice/ContiguousSlice)
+  and
+  [`StridedSlice`](/mojo/stdlib/builtin/builtin_slice/StridedSlice)
+  types were added to the `builtin_slice` module to support specialization for
+  slicing without strides.
 
-- Added `unsafe_get`, `unsafe_swap_elements` and `unsafe_subspan` to `Span`.
+- [`List`](/mojo/stdlib/collections/list/List/) slicing without a stride now
+  returns a `Span`, instead of a `List` and no longer allocates memory.
 
-- The deprecated `DType.index` is now removed in favor of the `DType.int`.
+- Several standard library APIs have been updated to use `Int` instead of `UInt`
+  for improved ergonomics, eliminating the need for explicit casts when using
+  `Int` values (the default type for integer literals and loop indices):
+  - `BitSet[size: Int]` - Changed parameter from `UInt` to `Int`
+  - `BitSet.set(idx: Int)`, `BitSet.clear(idx: Int)`, `BitSet.toggle(idx: Int)`,
+    `BitSet.test(idx: Int)` - Changed from `UInt` to `Int`
+  - `String(unsafe_uninit_length: Int)` - Changed from `UInt` to `Int`
+  - `String.capacity() -> Int` - Changed return type from `UInt` to `Int`
+  - `String.reserve(new_capacity: Int)` - Changed from `UInt` to `Int`
+  - `List(length: Int, fill: T)` - Changed from `UInt` to `Int`
+  - `Codepoint.unsafe_write_utf8() -> Int` - Changed return type from `UInt` to
+    `Int`
+  - `Codepoint.utf8_byte_length() -> Int` - Changed return type from `UInt` to
+    `Int`
 
-- `math.isqrt` has been renamed to `rsqrt` since it performs reciprocal square
-  root functionality.
+- Added [`repeat()`](/mojo/stdlib/itertools/itertools/repeat/) function to the
+  `itertools` module that creates an iterator which repeats an element a
+  specified number of times. Unlike Python's `itertools.repeat()`, infinite
+  iteration is not currently supported - the `times` parameter is required.
+  Example usage:
 
-- Added `swap_pointees` function to `UnsafePointer` as an alternative to `swap`
-  when the pointers may potentially alias each other.
+  ```mojo
+  from itertools import repeat
 
-- `Span` and `StringSlice` constructors now accept `Int` for length parameters
-  instead of `UInt`. This change makes these types more ergonomic to use with
-  integer literals and other `Int`-based APIs.
+  for val in repeat(42, times=3):
+      print(val)  # Prints: 42, 42, 42
+  ```
 
-- `memcpy` and `parallel_memcpy` without keyword arguments are deprecated.
+- Tuples now support comparison operations if the element types are also
+  comparable. For example, one can now write `(1, "a") == (1, "a")` or
+  `(1, "a") < (1, "b")`.
 
-- The `math` package now has a mojo native implementation of `acos`, `asin`,
-  `cbrt`, and `erfc`.
+#### String and text
 
-- Added support for NVIDIA GeForce GTX 970.
+- [`Codepoint`](/mojo/stdlib/collections/string/codepoint/Codepoint/) now
+  conforms to [`Writable`](/mojo/stdlib/io/write/Writable/).
 
-- Added support for NVIDIA Jetson Thor.
+- `Codepoint` now conforms to
+  [`Comparable`](/mojo/stdlib/builtin/comparable/Comparable/) adding `__le__()`,
+  `__lt__()`, `__ge__()`, and `__gt__()` implementations.
 
-- Added support for NVIDIA DGX Spark.
+#### Math and numeric types
 
-- `Optional` now conforms to `Iterable` and `Iterator` acting as a collection of
-  size 1 or 0.
+- The deprecated `DType.index` is now removed in favor of the
+  [`DType.int`](/mojo/stdlib/builtin/dtype/DType/#int).
 
-- `origin_cast` for `LayoutTensor`, `NDBuffer` and `UnsafePointer` has been
-  deprecated and removed. `LayoutTensor` and `NDBuffer` now supports a safer
-  `as_any_origin()` origin casting. `UnsafePointer` has the same
-  safe alternative and in addition, it has an additional safe `as_immutable`
-  casting function and explicitly unsafe `unsafe_mut_cast` and
-  `unsafe_origin_cast` casting function.
+- Added `DType.float4_e2m1fn` as the 4bit float `e2m1` format. This
+  `Float4_e2m1` type is defined by the
+  [Open Compute MX Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf).
+
+- `math.isqrt()` has been renamed to [`rsqrt()`](/mojo/stdlib/math/math/rsqrt/)
+  since it performs reciprocal square root functionality.
+
+- The [`math`](/mojo/stdlib/math/math/) package now has a Mojo native
+  implementation of `acos()`, `asin()`, `cbrt()`, and `erfc()`.
+
+- [`SIMD`](/mojo/stdlib/builtin/simd/SIMD/) now implements the
+  [`DivModable`](/mojo/stdlib/builtin/math/DivModable/) trait.
 
 - Implicit conversions between `Int` and `UInt` are now deprecated.
 
@@ -305,101 +378,35 @@ Mojo, see the [install guide](/mojo/manual/install).
   `Bool` was the only Mojo standard library type to implement
   `ImplicitlyIntable`. Conversions from `Bool` to `Int` can now be performed
   explicitly, using `Int(bool-val)` (via the remaining `Intable` trait, which
-  only supports _explicit_ conversions).
+  only supports *explicit* conversions).
 
-- `assert_equal` now displays colored character-by-character diffs when string
-  comparisons fail, making it easier to spot differences. Differing characters
-  are highlighted in red for the left string and green for the right string.
+#### GPU support
 
-- Added `sys.compile.SanitizeAddress` providing a way for mojo code to detect
-  `--sanitize address` at compile time.
+- Added support for NVIDIA GeForce GTX 970.
 
-- The `mojo test` command has been removed. The recommended testing strategy is
-  to define test functions, call them explicitly from `main` (or use the new
-  `test_utils.TestSuite` framework), and run with `mojo run`.
+- [`gpu.sync.syncwarp()`](/mojo/stdlib/gpu/sync/sync/syncwarp/) now supports
+  Apple GPUs via `SIMDGROUP` barrier implementation. On Apple GPUs, this
+  provides execution synchronization for all active lanes using a `SIMDGROUP`
+  barrier with no memory fence. For threadgroup memory ordering, use
+  [`barrier()`](/mojo/stdlib/gpu/sync/sync/barrier/) instead. Note that lane
+  masks are not supported on Apple GPUs, so the mask argument is ignored.
 
-- Error messages now preserve symbolic calls to `always_inline("builtin")`
-  functions rather than inlining them into the error message.
-
-- Error messages now preserve alias names in error messages in many cases,
-  rather than expanding the value inline.
-
-- `SIMD` now implements the `DivModable` trait.
-
-- Mojo now uses system allocators in programs built with `mojo build --sanitize address`.
-  This means asan can see mojo heap allocations and should now be able to
-  detect many more heap memory errors.
-
-- `TestSuite` now can generate test reports with `.generate_report()`. Also
-  a `TestReport` and `TestSuiteReport` structs were added.
-
-- `TestSuite` now allows explicitly skipping registered tests using the
-  `TestSuite.skip` API.
-
-- `TestSuite` now allows basic control from CLI arguments. Tests can be skipped
-  from the CLI by passing test function names after a `--skip` flag, e.g.
-
-  ```console
-  mojo run test_my_stuff.mojo --skip test_currently_failing test_also_failing
-  ```
-
-  Similarly, the `--only` flag enables the specification of an allowlist, e.g.
-  the following will skip any other registered test cases:
-
-  ```console
-  mojo run test_my_stuff.mojo --only test_only_this test_this_as_well
-  ```
-
-  The `--skip-all` flag will skip all registered test cases in the suite. Note
-  that `--only` respects skipped tests, i.e. it does not run tests that are
-  skipped using `TestSuite.skip`.
-
-- `Codepoint` now conforms to `Comparable` adding `__le__`, `__lt__`, `__ge__`,
-  and `__gt__` implementations.
-
-- Several standard library APIs have been updated to use `Int` instead of `UInt`
-  for improved ergonomics, eliminating the need for explicit casts when using
-  `Int` values (the default type for integer literals and loop indices):
-  - `BitSet[size: Int]` - Changed parameter from `UInt` to `Int`
-  - `BitSet.set(idx: Int)`, `BitSet.clear(idx: Int)`, `BitSet.toggle(idx: Int)`,
-    `BitSet.test(idx: Int)` - Changed from `UInt` to `Int`
-  - `String(unsafe_uninit_length: Int)` - Changed from `UInt` to `Int`
-  - `String.capacity() -> Int` - Changed return type from `UInt` to `Int`
-  - `String.reserve(new_capacity: Int)` - Changed from `UInt` to `Int`
-  - `List(length: Int, fill: T)` - Changed from `UInt` to `Int`
-  - `Codepoint.unsafe_write_utf8() -> Int` - Changed return type from `UInt` to `Int`
-  - `Codepoint.utf8_byte_length() -> Int` - Changed return type from `UInt` to `Int`
-
-- Added `repeat()` function to the `itertools` module that creates an iterator
-  which repeats an element a specified number of times. Unlike Python's
-  `itertools.repeat()`, infinite iteration is not currently supported - the
-  `times` parameter is required. Example usage:
-
-  ```mojo
-  from itertools import repeat
-
-  for val in repeat(42, times=3):
-      print(val)  # Prints: 42, 42, 42
-  ```
-
-- `gpu.sync.syncwarp()` now supports Apple GPUs via `SIMDGROUP` barrier
-  implementation. On Apple GPUs, this provides execution synchronization for
-  all active lanes using a `SIMDGROUP` barrier with no memory fence. For
-  threadgroup memory ordering, use `barrier()` instead. Note that lane masks
-  are not supported on Apple GPUs, so the mask argument is ignored.
-
-- `gpu.warp` now supports Apple GPUs with native SIMD-group shuffle operations.
-  This enables `shuffle_idx`, `shuffle_up`, `shuffle_down`, and `shuffle_xor`
-  on Apple hardware by mapping Metal `simd_shuffle*` intrinsics to AIR
+- [`gpu.primitives.warp`](/mojo/stdlib/gpu/primitives/warp/) now supports Apple
+  GPUs with native SIMD-group shuffle operations. This enables `shuffle_idx()`,
+  `shuffle_up()`, `shuffle_down()`, and `shuffle_xor()` on Apple hardware by
+  mapping Metal `simd_shuffle*` intrinsics to AIR
   (`llvm.air.simd_shuffle[_up/_down/_xor]`) instructions, achieving feature
   parity with NVIDIA and AMD backends.
 
-- `gpu.intrinsics.store_release()` and `gpu.intrinsics.load_acquire()` now
-  support Apple silicon GPUs, expanding support for proper memory
+-
+  [`gpu.intrinsics.store_release()`](/mojo/stdlib/gpu/intrinsics/store_release/)
+  and
+  [`gpu.intrinsics.load_acquire()`](/mojo/stdlib/gpu/intrinsics/load_acquire/)
+  now support Apple silicon GPUs, expanding support for proper memory
   synchronization on these devices.
 
-- The `gpu` package has been reorganized into logical subdirectories for better
-  code organization:
+- The [`gpu`](/mojo/stdlib/gpu/) package has been reorganized into logical
+  subdirectories for better code organization:
   - `gpu/primitives/` - Low-level GPU execution primitives (warp, block,
     cluster, id, grid_controls)
   - `gpu/memory/` - Memory operations (async_copy, TMA, address spaces)
@@ -409,7 +416,7 @@ Mojo, see the [install guide](/mojo/manual/install).
   **Backward compatibility**: All existing imports continue to work unchanged.
   Deprecated import paths (`gpu.id`, `gpu.mma`, `gpu.cluster`,
   `gpu.grid_controls`, `gpu.warp`, `gpu.semaphore`, `gpu.mma_sm100`,
-  `gpu.tcgen05`, `gpu.mma_util`, `gpu.mma_operand_descriptor`,
+  `gpu.tcgen05`, `gpu.mma_util`, `gpu.mma_operand_descriptor`, and
   `gpu.tensor_ops`) are preserved as re-export wrappers with deprecation
   notices. Users can migrate to the new recommended import patterns at their
   own pace:
@@ -432,169 +439,251 @@ Mojo, see the [install guide](/mojo/manual/install).
   ```
 
 - The `_GPUAddressSpace` type has been removed and consolidated into
-  `AddressSpace`. GPU-specific address space constants (GLOBAL, SHARED,
-  CONSTANT, LOCAL, SHARED_CLUSTER) are now available as aliases on the unified
-  `AddressSpace` type. The `GPUAddressSpace` alias has also been removed in
-  favor of using `AddressSpace` directly. Since `AddressSpace` is part of the
-  prelude, it no longer needs to be explicitly imported in most code.
+  [`AddressSpace`](/mojo/stdlib/memory/pointer/AddressSpace/). GPU-specific
+  address space constants (`GLOBAL`, `SHARED`, `CONSTANT`, `LOCAL`,
+  `SHARED_CLUSTER`) are now available as aliases on the unified `AddressSpace`
+  type. The `GPUAddressSpace` alias has also been removed in favor of using
+  `AddressSpace` directly. Since `AddressSpace` is part of the prelude, it no
+  longer needs to be explicitly imported in most code.
 
 - TMA (Tensor Memory Accelerator) types have been moved to a dedicated module.
   The types `TMADescriptor`, `TensorMapSwizzle`, `TensorMapDataType`,
   `TensorMapInterleave`, `TensorMapL2Promotion`, `TensorMapFloatOOBFill`, and
-  functions `create_tma_descriptor` and `prefetch_tma_descriptor` are now
-  available from `gpu.host.nvidia.tma` instead of `gpu.host._nvidia_cuda`.
+  the functions `create_tma_descriptor()` and `prefetch_tma_descriptor()` are
+  now available from [`gpu.host.nvidia.tma`](/mojo/stdlib/gpu/host/nvidia/tma/)
+  instead of `gpu.host._nvidia_cuda`.
 
-- The `empty` origin has been renamed to `external`.
+#### Testing {#25-7-testing}
 
-- Rename `MutableOrigin` to `MutOrigin` and `ImmutableOrigin` to `ImmutOrigin`.
+- [`assert_equal()`](/mojo/stdlib/testing/testing/assert_equal) now displays
+  colored character-by-character diffs when string comparisons fail, making it
+  easier to spot differences. Differing characters are highlighted in red for
+  the left string and green for the right string.
 
-- Rename `(Imm/M)utableAnyOrigin` to `(Imm/M)utAnyOrigin`.
+- The `mojo test` command has been removed. The recommended testing strategy is
+  to define test functions, call them explicitly from `main()` (or use the new
+  `TestSuite` framework), and run with `mojo run`.
+
+- [`TestSuite`](/mojo/stdlib/testing/suite/TestSuite/) now can generate test
+  reports with `.generate_report()`. Also, `TestReport` and `TestSuiteReport`
+  structs were added.
+
+- `TestSuite` now allows explicitly skipping registered tests using the
+  `TestSuite.skip()` method.
+
+- `TestSuite` now allows basic control from CLI arguments. Tests can be skipped
+  from the CLI by passing test function names after a `--skip` flag, e.g.
+
+  ```console
+  mojo run test_my_stuff.mojo --skip test_currently_failing test_also_failing
+  ```
+
+  Similarly, the `--only` flag enables the specification of an allowlist, e.g.
+  the following will skip any other registered test cases:
+
+  ```console
+  mojo run test_my_stuff.mojo --only test_only_this test_this_as_well
+  ```
+
+  The `--skip-all` flag will skip all registered test cases in the suite. Note
+  that `--only` respects skipped tests, i.e. it does not run tests that are
+  skipped using `TestSuite.skip()`.
+
+#### System and OS
+
+- Added [`os.isatty()`](/mojo/stdlib/os/os/isatty/) function to check whether a
+  file descriptor refers to a terminal. This function accepts an `Int` file
+  descriptor. If you have a
+  [`FileDescriptor`](/mojo/stdlib/io/file_descriptor/FileDescriptor/) object,
+  use its `isatty()` method instead.
+
+- Added
+  [`sys.compile.SanitizeAddress`](/mojo/stdlib/sys/compile/#sanitizeaddress)
+  providing a way for Mojo code to detect `--sanitize address` at compile time.
+
+- `DLHandle` is no longer part of the public API. To access a dynamically-linked
+  library from Mojo, use [`OwnedDLHandle`](/mojo/stdlib/sys/ffi/OwnedDLHandle/)
+  instead. The new type provides RAII-based automatic resource management for
+  dynamically-linked libraries. `DLHandle` has been renamed to `_DLHandle` and
+  remains available internally for use by the standard library.
+
+#### Performance optimizations
 
 - Optimized float-to-string formatting performance by eliminating unnecessary
   stack allocations. Internal lookup tables used for float formatting
   (`cache_f32` and `cache_f64`) are now stored as global constants instead of
   being materialized on the stack for each conversion. This reduces stack
-  overhead by ~10KB for `Float64` and ~600 bytes for `Float32` operations, improving
-  performance for all float formatting operations including `print()`, string
-  interpolation, and `str()` conversions.
+  overhead by ~10KB for `Float64` and ~600 bytes for `Float32` operations,
+  improving performance for all float formatting operations including `print()`,
+  string interpolation, and `str()` conversions.
 
 - Optimized number parsing performance by eliminating stack allocations for
   large lookup tables. Internal lookup tables used for number parsing
   (`powers_of_5_table` and `POWERS_OF_10`) are now stored as global constants
-  using the `global_constant` function instead of being materialized on the
-  stack for each parsing operation. This reduces stack overhead by ~10.6KB for
-  number parsing operations, improving performance for string-to-number
-  conversions including `atof()` and related float parsing operations.
+  using the [`global_constant`](/mojo/stdlib/builtin/globals/global_constant/)
+  function instead of being materialized on the stack for each parsing
+  operation. This reduces stack overhead by ~10.6KB for number parsing
+  operations, improving performance for string-to-number conversions including
+  `atof()` and related float parsing operations.
 
-- Tuples now support comparison operations if the element types are also
-  comparable. For example, one can now write `(1, "a") == (1, "a")` or
-  `(1, "a") < (1, "b")`.
+#### Other library changes
 
-- Added support for `DType` expressions in `where` clauses:
-
-  ```mojo
-  fn foo[dt: DType]() -> Int where dt is DType.int32:
-      return 42
-  ```
-
-  Currently, the following expressions are supported:
-  - equality and inequality
-  - `is_signed()`, `is_unsigned()`, `is_numeric()`, `is_integral()`,
-    `is_floating_point()`, `is_float8()`, `is_half_float()`
-
-- `DLHandle` is no longer part of the public API. Use `OwnedDLHandle` instead,
-  which provides RAII-based automatic resource management for dynamically linked
-  libraries. `DLHandle` has been renamed to `_DLHandle` and remains available
-  internally for use by the standard library.
+- The [`Hasher`](/mojo/stdlib/hashlib/hasher/Hasher/) trait's
+  `_update_with_bytes()` method now takes `Span[Byte]` instead of
+  `UnsafePointer[UInt8]` and a separate length parameter. This change applies to
+  all hasher implementations including `AHasher` and `Fnv1a`.
 
 - The Philox random number generator (`Random` and `NormalRandom`) has been
-  moved from `gpu.random` to `random.philox`. These types now work on both CPU
-  and GPU. Import them using `from random import Random, NormalRandom` or
+  moved from `gpu.random` to [`random.philox`](/mojo/stdlib/random/philox/).
+  These types now work on both CPU and GPU. Import them using
+  `from random import Random, NormalRandom` or
   `from random.philox import Random, NormalRandom`.
 
 ### Tooling changes {#25-7-tooling-changes}
 
-- `mojo test` has [been deprecated](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371)
-  and will be removed in a future release.
-
-- Elaboration error now reports the full call instantiation failure path.
-  For this mojo file:
-
-  ```mojo
-  fn fn1[T: ImplicitlyCopyable, //] (a: T):
-      constrained[False]()
-  fn fn2[T: ImplicitlyCopyable, //] (a: T):
-      return fn1(a)
-  fn main():
-      fn2(1)
-  ```
-
-  now the error prints the path of `main -> fn2 -> fn1 -> constrained[False]`
-  instead of just `constrained[False]`.
-
-- Elaboration error now prints out trivial parameter values with call expansion failures.
- For this simple mojo program:
+- Error and warning messages now preserve `comptime`/alias names in many cases, to
+  prevent extremely long type names for complex types.  The compiler will expand
+  these when necessary to understand the type based on a simple heuristic, for
+  example:
 
   ```mojo
-  fn fn1[a: Int, b: Int]():
-      constrained[a < b]()
-
-  fn fn2[a: Int, b: Int]():
-      fn1[a, b]()
-
-  fn main():
-      fn2[4, 2]()
+  struct Dep[T: AnyType, v: T]: pass
+  alias MyDep[T: AnyType, v: T] = Dep[T, v]
+  alias MyDepGetAlias0 = MyDep.hello
   ```
 
-  now the error message shows `parameter value(s): ("a": 4, "b": 2)`.
-  Only string value and numerical values are printed out by default now,
-   other values are shown as `...`.
-  use `--elaboration-error-verbose` to show all parameter values.
+  produces:
 
-  ```mojo
-  test.mojo:6:14: note: call expansion failed with parameter value(s): ("a": 4, "b": 2)
-      fn1[a, b]()
-
+  ```console
+  $ mojo t.mojo
+  t.mojo:10:29: error: 'MyDep' needs more parameters bound before accessing attributes
+  alias MyDepGetAlias0 = MyDep.hello
+                            ^
+  t.mojo:10:29: note: 'MyDep' is aka 'alias[T: AnyType, v: T] Dep[T, v]'
   ```
 
-- `--elaboration-error-limit` option is added to `mojo run` and `mojo build`.
-  This option sets a limit to number of elaboration errors that get printed.
-  The default value is 20.
-  This limit can be changed by `--elaboration-error-limit=n` to `n` where
-   `0` means unlimited.
+  Please file issues in cases where more information needs to be exposed.
 
-- `--help-hidden` option is added to all mojo tools to show hidden options.
+- Error messages now preserve symbolic calls to `always_inline("builtin")`
+  functions rather than inlining them into the error message.
+
+- This release includes a number of improvements to elaboration errors.
+  The *elaborator* is the compiler pass where final parameter values are determined
+  and code is transformed from parametric to concrete. Common errors from
+  elaboration include "function instantiation failed" and "call expansion
+  failed" messages, when it's determined that the actual parameter values don't
+  match any viable function overload.
+
+  The elaborator also checks constraints (defined using the
+  [`constrained()`](/mojo/stdlib/builtin/constrained/constrained/) function), so
+  constraint failures are generated during this pass.
+
+  - Elaboration errors now report the full call instantiation failure path.
+    For this Mojo file:
+
+    ```mojo
+    fn fn1[T: ImplicitlyCopyable, //] (a: T):
+        constrained[False]()
+    fn fn2[T: ImplicitlyCopyable, //] (a: T):
+        return fn1(a)
+    fn main():
+        fn2(1)
+    ```
+
+    Now the error prints the path of `main -> fn2 -> fn1 -> constrained[False]`
+    instead of just `constrained[False]`.
+
+  - Elaboration errors now print out trivial parameter values with call expansion
+    failures. For this simple Mojo program:
+
+    ```mojo
+    fn fn1[a: Int, b: Int]():
+        constrained[a < b]()
+
+    fn fn2[a: Int, b: Int]():
+        fn1[a, b]()
+
+    fn main():
+        fn2[4, 2]()
+    ```
+
+    Now the error message shows `parameter value(s): ("a": 4, "b": 2)`:
+
+    ```mojo
+    test.mojo:6:14: note: call expansion failed with parameter value(s): ("a": 4, "b": 2)
+        fn1[a, b]()
+    ```
+
+    Only string and numerical values are printed out by default now, other
+    values are shown as `...`. Use `--elaboration-error-verbose` to show all
+    parameter values.
+
+  - Elaboration error messages related to the prelude are omitted by default. The
+    prelude is the set of APIs exported from `stdlib/builtin/_startup.mojo`. These
+    APIs persist in all call expansion paths but are rarely the source of reported
+    errors. These APIs are now omitted by default to de-clutter elaboration
+    errors.
+
+    Use `--elaboration-error-include-prelude` to include prelude.
+
+    - By default (without prelude):
+
+      ```mojo
+      test.mojo:43:4: error: function instantiation failed
+        fn main():
+          ^
+      test.mojo:45:12: note: call expansion failed
+            my_func()
+      ...
+      ```
+
+    - With prelude:
+
+      ```mojo
+      open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:119:4: error: function instantiation failed
+      fn __mojo_main_prototype(
+        ^
+      open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:119:4: note: call expansion failed with parameter value(s): (...)
+      open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:42:4: note: function instantiation failed
+      fn __wrap_and_execute_main[
+        ^
+      open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:68:14: note: call expansion failed
+          main_func()
+                  ^
+      test.mojo:43:4: note: function instantiation failed
+      fn main():
+        ^
+      test:45:12: note: call expansion failed
+          my_func()
+      ...
+      ```
+
+  - An `--elaboration-error-limit` option has been added to the `mojo run` and
+    `mojo build` commands. This option sets a limit to the number of elaboration
+    errors that get printed. The default value is 20. To change the limit, use
+    <code>--elaboration-error-limit=</code><var>limit</var>, where a *limit* of
+    `0` means unlimited.
+
+- `--help-hidden` option has been added to all Mojo CLI commands to show hidden
+  options.
 
 - `mojo debug` now rejects unknown options between `debug` and the target.
 
 - The Mojo language server will now report more coherent code actions.
 
-- The `mojo` driver now has a `--experimental-fixit` flag that automatically
+- The `mojo` CLI now has an `--experimental-fixit` flag that automatically
   applies FixIt hints emitted by the parser. This feature is highly
   experimental, and users should ensure they back up their files (or check them
   into source control) before using it.
 
 ### ❌ Removed {#25-7-removed}
 
+- `mojo test` has been deprecated and removed as described in the
+  [deprecation proposal](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371).
+  For more information, see the [Testing](#25-7-testing) section.
+
 - `LayoutTensorBuild` type has been removed.  Use `LayoutTensor` with parameters
   directly instead.
-
-- Elaboration error message prelude is removed by default.
- Preludes are call expansion locations in `stdlib/builtin/_startup.mojo`
-  which persists in all call expansion path but rarely is where error happens.
-   Remove these to de-clutter elaboration errors.
- Use `--elaboration-error-include-prelude` to include prelude.
-  - By default (without prelude)
-
-    ```mojo
-      test.mojo:43:4: error: function instantiation failed
-      fn main():
-         ^
-      test.mojo:45:12: note: call expansion failed
-          my_func()
-      ...
-    ```
-
-  - with prelude
-
-    ```mojo
-    open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:119:4: error: function instantiation failed
-    fn __mojo_main_prototype(
-       ^
-    open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:119:4: note: call expansion failed with parameter value(s): (...)
-    open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:42:4: note: function instantiation failed
-    fn __wrap_and_execute_main[
-       ^
-    open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:68:14: note: call expansion failed
-        main_func()
-                 ^
-    test.mojo:43:4: note: function instantiation failed
-    fn main():
-       ^
-    test:45:12: note: call expansion failed
-        my_func()
-    ...
-    ```
 
 - The following traits have been removed: `LessThanComparable`,
   `GreaterThanComparable`, `LessThanOrEqualComparable`,
@@ -607,8 +696,8 @@ Mojo, see the [install guide](/mojo/manual/install).
 
 ### 🛠️ Fixed {#25-7-fixed}
 
-- The `math.cos` and `math.sin` function can now be evaluated at compile time
-  (fixes #5111).
+- [Issue #5111](https://github.com/modular/modular/issues/5111): The
+  `math.cos()` and `math.sin()` function can now be evaluated at compile time.
 
 - Fixed `IntTuple.value(i)` method returning incorrect values when elements are
   stored as nested single-element tuples. Previously, calling
@@ -621,7 +710,7 @@ Mojo, see the [install guide](/mojo/manual/install).
   nested layouts like `((32, 2), (32, 4))`, where the method would return
   garbage values instead of the correct product (e.g., 64).
 
-  - Fixed `LayoutTensor` element-wise arithmetic operations (`+`, `-`, `*`, `/`)
+- Fixed `LayoutTensor` element-wise arithmetic operations (`+`, `-`, `*`, `/`)
   between tensors with different memory layouts. Previously, operations like
   `a.transpose() - b` would produce incorrect results when the operands had
   different layouts, because the same layout index was incorrectly used for both
@@ -639,7 +728,7 @@ Mojo, see the [install guide](/mojo/manual/install).
   `Layout(IntTuple(IntTuple(16, 8), IntTuple(32, 2)), ...)` because it
   attempted to extract shape values from nested tuples incorrectly.
 
-- Fixed [PR5479](https://github.com/modular/modular/issues/5479): mojo crashes
+- [Issue #5479](https://github.com/modular/modular/issues/5479): Mojo crashes
   when compiling standalone `__del__` function without struct context.
 
 - [Issue #5500](https://github.com/modular/modular/issues/5500): Added
@@ -669,15 +758,15 @@ Mojo, see the [install guide](/mojo/manual/install).
   mode would attempt to remove the existing file before opening it, which
   failed for special files that should not be removed.
 
-- The `sys.intrinsics.compressed_store` function now includes a `debug_assert`
-  to catch null pointer usage, providing a clear error message instead of
-  crashing with a segmentation fault
-  ([#5142](https://github.com/modular/modular/issues/5142)).
+- [Issue #5142](https://github.com/modular/modular/issues/5142): The
+  `sys.intrinsics.compressed_store` function now includes a `debug_assert` to
+  catch null pointer usage, providing a clear error message instead of crashing
+  with a segmentation fault.
 
-- The `sys.intrinsics.strided_load`, `sys.intrinsics.strided_store`,
-  `sys.intrinsics.masked_load`, and `sys.intrinsics.masked_store` functions now
-  include a `debug_assert` to catch null pointer usage, providing a clear error
-  message instead of crashing with a segmentation fault.
+- The `sys.intrinsics.strided_load()`, `sys.intrinsics.strided_store()`,
+  `sys.intrinsics.masked_load()`, and `sys.intrinsics.masked_store()` functions
+  now include a `debug_assert()` to catch null pointer usage, providing a clear
+  error message instead of crashing with a segmentation fault.
 
 - The `logger` package now prints its levels in color.
 
@@ -685,11 +774,35 @@ Mojo, see the [install guide](/mojo/manual/install).
   paths, avoiding redundant calls to implicit destructors and improving linear
   type support.
 
+### Special thanks {#25-7-special-thanks}
+
+Special thanks to our community contributors:
+Brian Grenier ([@bgreni](https://github.com/bgreni)),
+c-pozzi ([@c-pozzi](https://github.com/c-pozzi)),
+Christoph Schlumpf ([@christoph-schlumpf](https://github.com/christoph-schlumpf)),
+cudawarped ([@cudawarped](https://github.com/cudawarped)),
+David Faden (revfad.com) ([@fadend](https://github.com/fadend)),
+Ethan Wu ([@YichengDWu](https://github.com/YichengDWu)),
+Hardik Gupta ([@hardikkgupta](https://github.com/hardikkgupta)),
+j_rutzmoser ([@Rutzmoser](https://github.com/Rutzmoser)),
+Johnny Lin ([@johnny19436](https://github.com/johnny19436)),
+Jose ([@josetorrs](https://github.com/josetorrs)),
+josiahls ([@josiahls](https://github.com/josiahls)),
+Luis Chamberlain ([@mcgrof](https://github.com/mcgrof)),
+Manuel Saelices ([@msaelices](https://github.com/msaelices)),
+Marius S ([@winding-lines](https://github.com/winding-lines)),
+martinvuyk ([@martinvuyk](https://github.com/martinvuyk)),
+MaxMeyberg ([@MaxMeyberg](https://github.com/MaxMeyberg)),
+Monal ([@Monal-Patel](https://github.com/Monal-Patel)),
+skrript ([@skrript](https://github.com/skrript)),
+soraros ([@soraros](https://github.com/soraros)), and
+Thomas Mader ([@ThomasMader](https://github.com/ThomasMader)).
+
 ## v0.25.6 (2025-09-22)
 
 :::caution Version scheme change!
 
-This release is technically a version _downgrade_ because we've added a `0.` at
+This release is technically a version *downgrade* because we've added a `0.` at
 the beginning: `0.25.6`. This is necessary because we started publishing `mojo`
 packages on pypi.org and it's important that we don't publish a package greater
 than 1.0 yet.
@@ -753,9 +866,9 @@ However, if you're installing `mojo` as a Python package with `pip` or
   silicon GPUs. See [GPU support](#25-6-gpu-support) for details.
 
 - The way copying is modeled in Mojo has been overhauled. The `Copyable` trait
-  has been updated to represent a type that can be _explicitly_ copied (using a
+  has been updated to represent a type that can be *explicitly* copied (using a
   `copy()` method), and a new `ImplicitlyCopyable` "marker" trait can be used to
-  _opt-in_ to making a type implicitly copyable as well. **This swaps the
+  *opt-in* to making a type implicitly copyable as well. **This swaps the
   default behavior from being implicitly copyable to being only explicitly
   copyable.** Several standard library traits, types, and functions now require
   now require explicit `Copyable` instead of `ImplicitlyCopyable`. See
@@ -894,8 +1007,8 @@ However, if you're installing `mojo` as a Python package with `pip` or
   but had significant usage limitations.
 
   Now, the new `Copyable` trait instead represents a type that can be
-  _explicitly_ copied (using `.copy()`), and a new `ImplicitlyCopyable` "marker"
-  trait can be used to _opt-in_ to making a type implicitly copyable as well.
+  *explicitly* copied (using `.copy()`), and a new `ImplicitlyCopyable` "marker"
+  trait can be used to *opt-in* to making a type implicitly copyable as well.
   This swaps the default behavior from being implicitly copyable to being only
   explicitly copyable.
 
@@ -2312,7 +2425,7 @@ Special thanks to our community contributors:
   for example `var x = one_pointer if cond else other_pointer`.
 
 - Auto-parameterization now extends to struct metatypes. For example, this
-  declaration `fn foo[M: __type_of(StringLiteral[_])]` will auto-parameterize
+  declaration `fn foo[M: type_of(StringLiteral[_])]` will auto-parameterize
   on the unbound parameter of `StringLiteral`.
 
 - The Mojo compiler now warns about stores to values that are never used, e.g.:
@@ -2541,7 +2654,7 @@ String types in Mojo got several significant improvements:
   [`Pointer(to=...)`](/mojo/stdlib/memory/pointer/Pointer#__init__) and
   [`UnsafePointer(to=...)`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#__init__)
   constructors instead. Conceptually, this is saying "please initialize a
-  `Pointer` (a reference, if you will) to _some other address in memory_. In the
+  `Pointer` (a reference, if you will) to *some other address in memory*. In the
   future, these `address_of()` functions will be removed.
 
 ### Tooling changes {#25-3-tooling-changes}
@@ -3339,7 +3452,7 @@ Special thanks to our community contributors:
   [`top_k.mojo`](https://github.com/modular/modular/blob/main/examples/custom_ops/kernels/top_k.mojo).
 
 - The [`layout` package](/mojo/kernels/layout/) includes APIs for working with
-  _layouts_, which describe the organization of a tensor (for example, row-major
+  *layouts*, which describe the organization of a tensor (for example, row-major
   or column-major layout), and the
   [`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor) type, which
   represents a tensor with a specified layout. The `layout` package can be used
@@ -5602,7 +5715,7 @@ Big themes for this release:
   `__refitem__()` to exist.  `__refitem__()` has thus been removed and replaced
   with `__getitem__()` that returns a reference.
 
-- Mojo added support for _infer-only parameters_. Infer-only parameters must
+- Mojo added support for *infer-only parameters*. Infer-only parameters must
   appear at the beginning of the parameter list and cannot be explicitly
   specified by the user. They are declared to the left of a `//` marker, much
   like positional-only parameters. This allows programmers to define functions
@@ -6471,7 +6584,7 @@ Special thanks to our community contributors:
   This prints "`In /path/to/some_file.mojo on line 193: always fails`".
   Note that `__call_location()` only works in `@always_inline` or
   `@always_inline("nodebug")` functions. It gives incorrect results if placed in
-  an `@always_inline` function that's called _from_ an
+  an `@always_inline` function that's called *from* an
   `@always_inline("nodebug")` function.
 
   This feature is still evolving and for the time being you need to explicitly
@@ -7906,7 +8019,7 @@ experience without dedicated sugar.
   specifying `-D MOJO_ENABLE_ASSERTIONS` when invoking `mojo` to
   compile your source file(s).  In the case that an assertion is fired,
   the assertion message will be printed along with the stack trace
-  before the program exits.  By default, assertions are _not enabled_
+  before the program exits.  By default, assertions are *not enabled*
   in the standard library right now for performance reasons.
 
 - The Mojo Language Server now implements the References request. IDEs use
@@ -8015,7 +8128,7 @@ experience without dedicated sugar.
   immutable array slices.
 
   While this is a major step forward for the lifetimes system in Mojo, it is
-  still _very_ early and awkward to use.  Notably, there is no syntactic sugar
+  still *very* early and awkward to use.  Notably, there is no syntactic sugar
   for using references, such as automatic dereferencing. Several aspects of it
   need to be more baked. It is getting exercised by variadic memory arguments,
   which is why they are starting to behave better now.
@@ -8338,8 +8451,8 @@ experience without dedicated sugar.
 
 - Traits have arrived!
 
-  You can now define a _trait_, which consists of a required set of method
-  prototypes. A struct can _conform to_ the trait by implementing these methods.
+  You can now define a *trait*, which consists of a required set of method
+  prototypes. A struct can *conform to* the trait by implementing these methods.
   This lets you write generic functions that work on any structs that conform to
   a given trait.
 
@@ -8457,7 +8570,7 @@ experience without dedicated sugar.
 ### ⭐️ New
 
 - The [Mojo Manual](/mojo/manual/) is an all-new, complete Mojo user guide.
-  It doesn't include _everything_ about Mojo yet, but it includes a lot,
+  It doesn't include *everything* about Mojo yet, but it includes a lot,
   and more than the original programming
   manual (now deprecated).
 
@@ -8480,7 +8593,7 @@ experience without dedicated sugar.
   ```
 
   In the first signature for `eat()`, the `b` parameter isn't bound, so it's
-  _implicitly_ added as an input parameter on the function.
+  *implicitly* added as an input parameter on the function.
 
   In the second signature for `eat()`, the author has explicitly defined an
   input parameter (`_b`), which is bound to the second parameter on the argument
@@ -8725,8 +8838,8 @@ the previous "read to EOF" behavior when size is negative.
 
 - There is an issue affecting Jupyter notebooks that use autotuning and traits.
   This issue only manifests on macOS, and the same code runs without issue
-  outside of the notebooks. This issue affects the _Matrix multiplication in
-  Mojo_ notebook.
+  outside of the notebooks. This issue affects the *Matrix multiplication in
+  Mojo* notebook.
 
 ## v0.5.0 (2023-11-2)
 
@@ -8741,7 +8854,7 @@ the previous "read to EOF" behavior when size is negative.
   function that allows you to concatenate two `SIMD` values together and produce
   a new `SIMD` value.
 
-- Mojo now supports compile-time _keyword parameters_, in addition to existing
+- Mojo now supports compile-time *keyword parameters*, in addition to existing
   support for [keyword
   arguments](/mojo/manual/parameters/#optional-parameters-and-keyword-parameters).
   For example:
@@ -9080,7 +9193,7 @@ now have constructors that take
       return self^
   ```
 
-  Here Mojo _cannot_ invoke a noop `__exit__` method because the context
+  Here Mojo *cannot* invoke a noop `__exit__` method because the context
   manager is consumed by the `__enter__` method.  This can be used for types
   (like file descriptors) that are traditionally used with `with` statements,
   even though Mojo's guaranteed early destruction doesn't require that.
@@ -10349,7 +10462,7 @@ busy this week.
   is currently unsupported).
 
   These should be generally reliable for both memory-only and register-passable
-  types, with the caveat that closures are known to _not_ capture values
+  types, with the caveat that closures are known to *not* capture values
   correctly.  Be very careful with interesting types in the vicinity of a
   closure!
 

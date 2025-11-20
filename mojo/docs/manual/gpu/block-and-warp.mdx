@@ -708,13 +708,13 @@ Mechanisms currently available only on NVIDIA GPUs:
   Memory ordering fence (no execution barrier) that ensures memory operations
   are visible within a specified scope (block, GPU-wide, or system). Essential
   for lock-free algorithms and cross-block communication.
-  
+
 - **Async bulk copy synchronization**
   ([`gpu.sync.cp_async_bulk_commit_group()`](/mojo/stdlib/gpu/sync/sync/cp_async_bulk_commit_group),
   [`gpu.sync.cp_async_bulk_wait_group()`](/mojo/stdlib/gpu/sync/sync/cp_async_bulk_wait_group)):
   Functions for coordinating asynchronous bulk memory transfer groups. Essential
   for managing pipeline stages with bulk memory operations.
-  
+
 Mechanisms currently available only on AMD GPUs:
 
 - **Schedule barriers**
@@ -886,7 +886,7 @@ Finally, for highly-tuned kernels, you can use `@parameter if` blocks to write
 architecture-specific code paths while keeping a single source file.
 
 ```mojo
-from sys.info import is_amd_gpu, is_apple_gpu, is_nvidia_gpu
+from sys import is_amd_gpu, is_apple_gpu, is_nvidia_gpu
 
 fn adaptive_algorithm():
     @parameter
