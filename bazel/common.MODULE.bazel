@@ -94,6 +94,8 @@ single_version_override(
     patches = [
         # https://github.com/bazel-contrib/rules_python/pull/3233
         "//bazel/public-patches:rules_python_wheel.patch",
+        # https://github.com/bazel-contrib/rules_python/pull/3420
+        "//bazel/public-patches:rules_python_hdrs.patch",
         # TODO (SDLC-2681): figure out why this is breaking our code.
         # reverts https://github.com/bazel-contrib/rules_python/pull/3242
         "//bazel/public-patches:rules_python_revert.patch",
