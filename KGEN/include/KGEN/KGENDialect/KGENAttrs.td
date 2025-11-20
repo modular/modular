@@ -132,17 +132,18 @@ def KGEN_VariadicAttr : KGEN_ExprAttr<"Variadic", "variadic", [
   let genVerifyDecl = 1;
 }
 
-def KGEN_VariadicMapAttr : KGEN_ExprAttr<"VariadicMap", "variadic.map",
+def KGEN_VariadicReduceAttr : KGEN_ExprAttr<"VariadicReduce", "variadic.reduce",
   [ContextuallyEvaluatedAttrInterface]> {
   let summary = "Map a variadic of (type) values to a new variadic of (type) values";
   let description = [{
-    The `#kgen.variadic.map` attribute is used to convert from a variadic of
-    (type) value to a variadic of (type) value by repeatedly applying the
-    provided generator on each element of the variadic.
+    The `#kgen.variadic.reduce` attribute is used to reduce a variadic of
+    (type) value to a (type) value by repeatedly applying the provided reducer
+    on each element of the variadic.
   }];
 
   let parameters = (ins
-    AttributeSelfTypeParameter<"", "VariadicType">:$type,
+    AttributeSelfTypeParameter<"">:$type,
+    "TypedAttr":$base,
     "TypedAttr":$variadic,
     "TypedAttr":$generator
   );
@@ -152,7 +153,7 @@ def KGEN_VariadicMapAttr : KGEN_ExprAttr<"VariadicMap", "variadic.map",
     FailureOr<TypedAttr> evaluateWith(ParameterEvaluationContext *ctx);
   }];
 
-  let assemblyFormat = "`<` $variadic `,` $generator `>`";
+  let assemblyFormat = "`<` $base `,` $variadic `,` $generator `>`";
   let genVerifyDecl = 1;
 }
 

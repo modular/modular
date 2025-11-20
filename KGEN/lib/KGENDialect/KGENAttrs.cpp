@@ -188,16 +188,21 @@ LogicalResult VariadicType::printValue(AsmPrinter &p, TypedAttr value) const {
 //===----------------------------------------------------------------------===//
 
 // If not folded, they are not a constant.
-bool VariadicMapAttr::isConstant() const { return false; }
+bool VariadicReduceAttr::isConstant() const { return false; }
 bool VariadicZipAttr::isConstant() const { return false; }
 bool VariadicSizeAttr::isConstant() const { return false; }
 bool VariadicSplatAttr::isConstant() const { return false; }
 bool VariadicConcatAttr::isConstant() const { return false; }
 
 LogicalResult
-VariadicMapAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                        VariadicType type, TypedAttr variadic,
-                        TypedAttr mapper) {
+VariadicReduceAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                           Type type, TypedAttr base, TypedAttr variadic,
+                           TypedAttr mapper) {
+  if (type != base.getType())
+    return emitError() << "mismatch between reduce base value type and output "
+                          "type, expected output type: "
+                       << type << ", got: " << base.getType();
+
   auto toApply = dyn_cast<GeneratorType>(mapper.getType());
   auto srcTp = dyn_cast<VariadicType>(variadic.getType());
 
@@ -211,45 +216,47 @@ VariadicMapAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   IndexDepthAdjuster adjuster(-1);
   toApply = cast<GeneratorType>(adjuster.replace(toApply));
 
-  // Verify that the mapper takes (*Ts, index) as input.
+  // Verify that the mapper takes (base, *Ts, index) as input.
   ArrayRef<Type> mapperInputTps = toApply.getInputParamTypes();
-  if (mapperInputTps.size() != 2 || srcTp != mapperInputTps[0] ||
-      mapperInputTps[1] != IndexType::get(type.getContext()))
-    return emitError() << "expected a GeneratorAttr that takes [" << srcTp
-                       << ", "
-                       << "index] for the mapper, but got ["
-                       << mapperInputTps[0] << ", " << mapperInputTps[1] << "]";
+  if (mapperInputTps.size() != 3)
+    return emitError() << "expected a GeneratorAttr that takes 3 argument";
 
-  if (toApply.getBody() != type.getElementType())
+  if (base.getType() != mapperInputTps[0] || srcTp != mapperInputTps[1] ||
+      mapperInputTps[2] != IndexType::get(type.getContext()))
+    return emitError() << "expected a GeneratorAttr that takes ["
+                       << base.getType() << " ," << srcTp << ", "
+                       << "index] for the mapper, but got ["
+                       << mapperInputTps[0] << ", " << mapperInputTps[1] << ", "
+                       << mapperInputTps[2] << "]";
+
+  if (toApply.getBody() != type)
     return emitError() << "expected a GeneratorAttr with an output type of"
-                       << type.getElementType() << ", but got "
-                       << toApply.getBody();
+                       << type << ", but got " << toApply.getBody();
 
   return success();
 }
 
-FailureOr<TypedAttr>
-VariadicMapAttr::evaluateWith(ParameterEvaluationContext *evaluationContext) {
+FailureOr<TypedAttr> VariadicReduceAttr::evaluateWith(
+    ParameterEvaluationContext *evaluationContext) {
   auto va = sugarDynCast<VariadicAttr>(getVariadic());
-  auto gen = sugarDynCast<GeneratorAttr>(getGenerator());
+  auto reducer = sugarDynCast<GeneratorAttr>(getGenerator());
 
-  if (!va || !gen)
+  if (!va || !reducer)
     return failure();
 
-  // We have a concrete value for both the generator/variadic, then fold them.
+  // We have a concrete value for both the generator/variadic, then fold
   unsigned eltCnt = va.getValues().size();
-  SmallVector<TypedAttr> mappedVals(eltCnt, nullptr);
+  TypedAttr reducedVal = sugarCast<TypedAttr>(getBase());
   for (unsigned i = 0; i < eltCnt; i++) {
     IntegerAttr vaIdx = IntegerAttr::get(IndexType::get(va.getContext()), i);
-    GeneratorAttr spGen =
-        gen.getSpecializedGenerator({va, vaIdx}, evaluationContext);
+    GeneratorAttr spGen = reducer.getSpecializedGenerator(
+        {reducedVal, va, vaIdx}, evaluationContext);
     // This should never happen, we should have verified VariadicMapAttr.
     assert(spGen && spGen.isFullyBound() && "invalid form of variadic map");
-    auto valueInst = spGen.getInstantiatedValue();
-    mappedVals[i] = valueInst;
+    reducedVal = spGen.getInstantiatedValue();
   }
 
-  return {VariadicAttr::get(mappedVals, getType())};
+  return {reducedVal};
 }
 
 LogicalResult

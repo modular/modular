@@ -152,8 +152,8 @@ IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
     return evaluateCompileOffloadClosureAttr(compileOffloadClosureAttr);
   if (auto compileAssemblyAttr = dyn_cast<CompileAssemblyAttr>(attr))
     return evaluateCompileAssemblyAttr(compileAssemblyAttr);
-  if (auto variadicMapAttr = dyn_cast<VariadicMapAttr>(attr))
-    return variadicMapAttr.evaluateWith(this);
+  if (auto variadicReduceAttr = dyn_cast<VariadicReduceAttr>(attr))
+    return variadicReduceAttr.evaluateWith(this);
 
   // Must be a parameter operator then.
   auto op = dyn_cast<ParamOperatorAttr>(attr);

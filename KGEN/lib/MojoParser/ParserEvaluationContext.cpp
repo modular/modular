@@ -56,8 +56,8 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateExpression(
     }
   }
 
-  if (auto variadicMap = dyn_cast<VariadicMapAttr>(attr))
-    return variadicMap.evaluateWith(this);
+  if (auto variadicReduce = dyn_cast<VariadicReduceAttr>(attr))
+    return variadicReduce.evaluateWith(this);
 
   // Otherwise, this is not something we can evaluate, which is ok, because
   // the parser won't be able to evaluate everything. The user is expected to

@@ -139,8 +139,8 @@ FailureOr<TypedAttr> SymTabEvaluationContext::evaluateExpression(
     }
   }
 
-  if (auto variadicMap = dyn_cast<VariadicMapAttr>(attr))
-    return variadicMap.evaluateWith(this);
+  if (auto variadicReduce = dyn_cast<VariadicReduceAttr>(attr))
+    return variadicReduce.evaluateWith(this);
 
   return failure();
 }
