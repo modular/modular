@@ -47,6 +47,12 @@ extern LogicalResult bindParamValuesToDirectCall(OverloadSet &overloadSet,
 // differences and extracting the pointee types to compare.
 bool checkConventionsConvertible(ArgConvention expectedConv,
                                  ArgConvention actualConv) {
+  // DeinitMem is the same as OwnedMem, so we can convert between them.
+  if (expectedConv == ArgConvention::DeinitMem)
+    expectedConv = ArgConvention::OwnedMem;
+  if (actualConv == ArgConvention::DeinitMem)
+    actualConv = ArgConvention::OwnedMem;
+
   // Check the argument convention, reconciling allowed differences and
   // extracting the actual type to compare. This also doesn't check for
   // passing convention, since those are trivially convertible.
@@ -83,6 +89,7 @@ bool checkConventionsConvertible(ArgConvention expectedConv,
       return false;
     break;
 
+  case ArgConvention::DeinitMem:
   case ArgConvention::ByRefResult:
     llvm_unreachable("`byref_result` was already handled");
   }
@@ -499,6 +506,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
       value = MLValue(argForActual);
       break;
     case ArgConvention::OwnedMem:
+    case ArgConvention::DeinitMem:
       value = MRValue(argForActual);
       break;
     case ArgConvention::ReadReg:

@@ -355,6 +355,7 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
 
     switch (conv) {
     case ArgConvention::OwnedMem:
+    case ArgConvention::DeinitMem:
       list.set(ids.noalias, b.getUnitAttr());
       [[fallthrough]];
     case ArgConvention::ReadMem:

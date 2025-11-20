@@ -1073,6 +1073,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     break;
   }
   case ArgConvention::OwnedMem:
+  case ArgConvention::DeinitMem:
   case ArgConvention::ReadMem:
     // Otherwise, we expect an r-value to match up, ignoring the reference type
     // from the convention.

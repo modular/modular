@@ -1140,6 +1140,8 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
       os << "mut ";
     else if (conv == ArgConvention::ByRefResult)
       os << "out ";
+    else if (conv == ArgConvention::DeinitMem)
+      os << "deinit ";
   };
 
   auto printRef = [&](RefType refType) {

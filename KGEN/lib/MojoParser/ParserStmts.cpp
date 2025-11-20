@@ -1915,7 +1915,9 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       // error message in CheckLifetimes, so cut that off here.
       assert(firstArgConvention != ArgConvention::OwnedReg &&
              "not used by the mojo parser");
-      if (firstArgConvention == ArgConvention::OwnedMem && hasExitMethod) {
+      if ((firstArgConvention == ArgConvention::OwnedMem ||
+           firstArgConvention == ArgConvention::DeinitMem) &&
+          hasExitMethod) {
         auto diag =
             emitError(contextExp->getLoc(), "context manager of type ")
             << contextRVType

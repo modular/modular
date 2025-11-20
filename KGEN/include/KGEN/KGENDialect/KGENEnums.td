@@ -198,12 +198,20 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   /// KGEN::PointerType.
   I32EnumAttrCase<"OwnedMem", 3, "owned_in_mem">,
 
+  /// This is an 'deinit' memory value, which is passed indirectly. The
+  /// caller initializes the memory slot and the callee destroys it (without
+  /// running the dtor implicitly), returning with it uninitialized.
+  ///
+  /// The MLIR type is a LIT::RefType which is lowered by LowerLIT to
+  /// KGEN::PointerType.
+  I32EnumAttrCase<"DeinitMem", 4, "deinit_mem">,
+
   /// This is used for mut arguments like `fn x(mut a: Int)`.
   ///
   /// The MLIR type is always a LIT::RefType or PointerType, and the underlying
   /// type can be anything.  The value is initialized before entry to the
   /// function and must be initialized when the function returns.
-  I32EnumAttrCase<"Mut", 4, "mut">,
+  I32EnumAttrCase<"Mut", 5, "mut">,
 
   /// This is used for ref arguments like:
   ///   `fn x[origin: X](ref [origin, addrspace] T)`
@@ -211,11 +219,11 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   /// The MLIR type is always a LIT::RefType or PointerType, and the underlying
   /// type can be anything.  The value is initialized before entry to the
   /// function.
-  I32EnumAttrCase<"Ref", 5, "ref">,
+  I32EnumAttrCase<"Ref", 6, "ref">,
 
   /// This is used for `ref []` arguments that are guaranteed to always be
   /// mutable, and thus are known to be no-alias.
-  I32EnumAttrCase<"MutRef", 6, "mutref">,
+  I32EnumAttrCase<"MutRef", 7, "mutref">,
 
   /// This is used on the last argument of a function that returns a
   /// memory-only value, requiring it to be returned through memory. The value
@@ -224,11 +232,11 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   /// value.
   ///
   /// The MLIR type is a RefType or PointerType.
-  I32EnumAttrCase<"ByRefResult", 7, "byref_result">,
+  I32EnumAttrCase<"ByRefResult", 8, "byref_result">,
 
   /// This is used on the second-last argument of a function that may raise,
   /// returning a potentially initialized error value if the function throws.
-  I32EnumAttrCase<"ByRefError", 8, "byref_error">,
+  I32EnumAttrCase<"ByRefError", 9, "byref_error">,
 ]> {
   let cppNamespace = "M::KGEN";
 }

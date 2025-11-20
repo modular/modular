@@ -854,7 +854,7 @@ PublicArgumentDecl::PublicArgumentDecl(
 }
 
 static StringRef getConventionString(PublicArgumentDecl::Convention conv) {
-  StringRef conventions[] = {"read", "mut", "var", "ref", "out"};
+  StringRef conventions[] = {"read", "deinit", "mut", "var", "ref", "out"};
   auto convIdx = static_cast<size_t>(conv);
   assert(convIdx < sizeof(conventions) / sizeof(conventions[0]) &&
          "enums added");
@@ -888,12 +888,6 @@ std::string PublicArgumentDecl::getMarkdownDocString() const {
 }
 
 llvm::json::Object PublicArgumentDecl::toJSON(MojoParserContext &ctx) const {
-  [[maybe_unused]] StringRef conventions[] = {"read", "mut", "var", "ref",
-                                              "out"};
-  assert(static_cast<size_t>(convention) <
-             sizeof(conventions) / sizeof(conventions[0]) &&
-         "enums added");
-
   llvm::json::Object object{
       {"description", description},
       {"convention", getConventionString(convention)},
@@ -1399,6 +1393,9 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
       declConvention = PublicArgumentDecl::Convention::kRef;
       prefix = getRefPrefixAsString(shared, cast<RefType>(sigType), signature,
                                     /*isRefResult*/ false);
+      break;
+    case ArgConvention::DeinitMem:
+      declConvention = PublicArgumentDecl::Convention::kDeinit;
       break;
     case ArgConvention::OwnedMem:
     case ArgConvention::OwnedReg:

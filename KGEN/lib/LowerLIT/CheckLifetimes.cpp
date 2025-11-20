@@ -2523,6 +2523,7 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
       auto convention = callUser.getCalleeType().getBody().getArgConvention(
           operand.getOperandNumber());
       if (convention != ArgConvention::OwnedMem &&
+          convention != ArgConvention::DeinitMem &&
           convention != ArgConvention::ReadMem)
         return false;
       userOfTmp.insert(callUser);
@@ -2669,7 +2670,8 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
   // moveCtor must have __moveinit__(out self, deinit existing: Self) type.
   FuncType moveSig = cast<FuncTypeGeneratorType>(moveCtor.getType()).getBody();
   assert(moveSig.getNumArguments() == 2);
-  assert(moveSig.getArgConvention(0) == ArgConvention::OwnedMem);
+  assert(moveSig.getArgConvention(0) == ArgConvention::OwnedMem ||
+         moveSig.getArgConvention(0) == ArgConvention::DeinitMem);
   assert(moveSig.getArgConvention(1) == ArgConvention::ByRefResult);
   auto moveArgs = moveSig.getArguments();
   auto moveValue1Ref = cast<RefType>(moveArgs[0]);

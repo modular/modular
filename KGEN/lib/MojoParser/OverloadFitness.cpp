@@ -454,13 +454,15 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
   if (argTypesMatchOrIsUValue) {
     if (operand.ir.getIfBValue() || operand.ir.getIfLValue()) {
       // Heavily penalize implicit copies.
-      if (expectedConvention == ArgConvention::OwnedMem)
+      if (expectedConvention == ArgConvention::OwnedMem ||
+          expectedConvention == ArgConvention::DeinitMem)
         payload.numMismatchedConventions += 2;
     } else {
       assert((operand.ir.getIfUValue() || operand.ir.getIfRValue()) &&
              "UValue and RValue expressions are always owned");
       // Slightly penalize RValue->ref conversions.
-      if (expectedConvention != ArgConvention::OwnedMem)
+      if (expectedConvention != ArgConvention::OwnedMem &&
+          expectedConvention != ArgConvention::DeinitMem)
         ++payload.numMismatchedConventions;
     }
   }
@@ -522,6 +524,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
   }
   case ArgConvention::ReadMem:
   case ArgConvention::OwnedMem:
+  case ArgConvention::DeinitMem:
     // If a register-passable type is being passed in-memory, remember this.
     payload.numMismatchedConventions +=
         expectedRVType.isRegisterPassable(loc, shared);

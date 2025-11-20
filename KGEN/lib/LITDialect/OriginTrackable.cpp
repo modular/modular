@@ -177,6 +177,7 @@ OriginTrackable::OriginTrackable(Value v) {
     endInitState = EndsUninit;
     break;
   case ArgConvention::OwnedMem:
+  case ArgConvention::DeinitMem:
     isIndirect = true;
     startsUninit = false;
     endInitState = EndsUninit;
@@ -291,6 +292,7 @@ static void getCallOpEffects(
     case ArgConvention::OwnedReg:
       return OperandEffect::regConsume;
     case ArgConvention::OwnedMem:
+    case ArgConvention::DeinitMem:
       return OperandEffect::memConsume;
     case ArgConvention::ReadReg:
       return OperandEffect::regUse;

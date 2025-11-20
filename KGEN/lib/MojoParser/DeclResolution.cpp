@@ -1789,6 +1789,7 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
     };
 
     auto isMut = makeBoolAttr(convention == ArgConvention::OwnedMem ||
+                              convention == ArgConvention::DeinitMem ||
                               convention == ArgConvention::Mut);
     evaluator.appendIndexBinding(isMut);
     typeParams[0] = isMut.get();
@@ -1808,7 +1809,8 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
     evaluator.appendIndexBinding(origin);
     typeParams[2] = origin.get();
 
-    auto isOwned = makeBoolAttr(convention == ArgConvention::OwnedMem);
+    auto isOwned = makeBoolAttr(convention == ArgConvention::OwnedMem ||
+                                convention == ArgConvention::DeinitMem);
     evaluator.appendIndexBinding(isOwned);
     typeParams[3] = isOwned.get();
 
@@ -1971,28 +1973,21 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
       continue;
     }
 
-    // Ref convention works with registers and def functions without any funny
-    // business.
-    if (convention == ArgConvention::Ref ||
-        convention == ArgConvention::MutRef ||
-        convention == ArgConvention::OwnedMem ||
-        convention == ArgConvention::Mut ||
-        convention == ArgConvention::ByRefResult) {
-      setDecl(CValue::getMValueForRef(bbArg));
+    CValue argValue;
+    if (convention == ArgConvention::ReadMem) {
+      setDecl(MBValue(bbArg)); // borrowed
+      continue;
+    }
+    if (convention == ArgConvention::ReadReg) {
+      // borrowed_in_reg is used for @register_passable("trivial") types, where
+      // borrowed vs owned doesn't matter so we use SRValue.
+      setDecl(SRValue(bbArg));
       continue;
     }
 
-    CValue argValue;
-    if (convention == ArgConvention::ReadMem)
-      argValue = MBValue(bbArg); // borrowed
-    else {
-      assert(convention == ArgConvention::ReadReg);
-      // borrowed_in_reg is used for @register_passable("trivial") types, where
-      // borrowed vs owned doesn't matter so we use SRValue.
-      argValue = SRValue(bbArg);
-    }
-
-    setDecl(argValue);
+    // Ref convention works with registers and def functions without any funny
+    // business.
+    setDecl(CValue::getMValueForRef(bbArg));
   }
 
   // If we had a named result in a register, create a var decl to hold the
@@ -2785,7 +2780,8 @@ static FnOp findFieldwiseInit(ASTDecl &structDecl) {
       // Fieldwise initializers must have read/owned conventions. ref etc
       // are lit.ref's mechanically but these are invisible the to the caller.
       if (hasImplicitOrigin(conv)) {
-        if (conv != ArgConvention::ReadMem && conv != ArgConvention::OwnedMem) {
+        if (conv != ArgConvention::ReadMem && conv != ArgConvention::OwnedMem &&
+            conv != ArgConvention::DeinitMem) {
           isMatch = false;
           break;
         }

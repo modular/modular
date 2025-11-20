@@ -206,7 +206,8 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
 
   /// LOWER PTR
   if (isa<PointerType>(type) && !(convention == ArgConvention::ReadMem ||
-                                  convention == ArgConvention::OwnedMem))
+                                  convention == ArgConvention::OwnedMem ||
+                                  convention == ArgConvention::DeinitMem))
     return;
 
   if (auto elType = lowerPointerType(type)) {
@@ -215,7 +216,8 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
       return;
     transform->applyPointerTransform(operandIndex, elType);
     conventions[argConventionIndex] =
-        conventions[argConventionIndex] == ArgConvention::OwnedMem
+        (conventions[argConventionIndex] == ArgConvention::OwnedMem ||
+         conventions[argConventionIndex] == ArgConvention::DeinitMem)
             ? ArgConvention::OwnedReg
             : ArgConvention::ReadReg;
     transformNonResultValue(transform, operandIndex, conventions,
