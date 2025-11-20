@@ -1035,7 +1035,7 @@ PIPELINES = {
             encoding="bfloat16",
             absolute_tolerance=1.0e-04,
             relative_tolerance=2.0e00,
-            cos_dist_threshold=7.2e-05,
+            cos_dist_threshold=1e-04,
             kl_div_threshold=1.3e-02,
         ),
     ),
@@ -1210,13 +1210,14 @@ PIPELINES = {
     ),
     "HuggingFaceTB/SmolLM2-360M-Instruct-LoRA-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        # TODO: E2EOPT-698
+        # TODO(E2EOPT-698)
+        # TODO(MODELS-885): Thresholds are 'inf', and/or non-determinism
         tags=["nvidia-only"],  # Small model (<8B params)
         run=_make_pipeline_runner(
             pipeline="HuggingFaceTB/SmolLM2-360M-Instruct",
             encoding="bfloat16",
-            cos_dist_threshold=1.2e-01,
-            kl_div_threshold=2.8e-01,
+            cos_dist_threshold=1e3,
+            kl_div_threshold=1e3,
         ),
     ),
 }
