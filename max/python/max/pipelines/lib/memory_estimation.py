@@ -21,13 +21,11 @@ from typing import TYPE_CHECKING, Any, cast
 
 from max.driver import Device
 from max.dtype import DType
-from max.kv_cache import PagedKVCacheManager
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
-
 
 from .interfaces import KVCacheMixin, PipelineModel
 from .kv_cache_config import KVCacheConfig
@@ -175,17 +173,12 @@ class MemoryEstimator:
             kv_cache_config=model_config.kv_cache_config,
             cache_dtype=model_config.quantization_encoding.cache_dtype,
         )
-        num_layers = kv_cache_model.get_num_layers(
-            huggingface_config=model_config.huggingface_config
-        )
 
-        # Available cache memory
-        memory_available = cls.available_kv_cache_memory(
+        kvcache_mem = cls.available_kv_cache_memory(
             pipeline_model, pipeline_config, model_config, devices
         )
-
-        return PagedKVCacheManager.max_supported_sequence_length(
-            params, num_layers, memory_available
+        return params.compute_max_seq_len_fitting_in_cache(
+            available_cache_memory=kvcache_mem
         )
 
     @classmethod

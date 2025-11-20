@@ -81,6 +81,7 @@ class PixtralConfig(MAXModelConfig, PixtralConfigBase):
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.text_config.num_key_value_heads,
             head_dim=huggingface_config.text_config.head_dim,
+            num_layers=PixtralConfig.get_num_layers(huggingface_config),
             cache_strategy=kv_cache_config.cache_strategy,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,

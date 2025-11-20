@@ -42,6 +42,7 @@ class BertConfig(MAXModelConfig):
                 huggingface_config.hidden_size
                 // huggingface_config.num_attention_heads
             ),
+            num_layers=BertConfig.get_num_layers(huggingface_config),
             cache_strategy=kv_cache_config.cache_strategy,
             n_devices=n_devices,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,

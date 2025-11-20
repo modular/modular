@@ -35,6 +35,9 @@ class LlamaVisionConfig(MAXModelConfig):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
+        cross_attn_layers = len(
+            huggingface_config.text_config.cross_attention_layers
+        )
         return KVCacheParams(
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.text_config.num_key_value_heads,
@@ -42,6 +45,8 @@ class LlamaVisionConfig(MAXModelConfig):
                 huggingface_config.text_config.hidden_size
                 // huggingface_config.text_config.num_attention_heads
             ),
+            num_layers=huggingface_config.text_config.num_hidden_layers
+            - cross_attn_layers,
             page_size=kv_cache_config.kv_cache_page_size,
             cache_strategy=kv_cache_config.cache_strategy,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,

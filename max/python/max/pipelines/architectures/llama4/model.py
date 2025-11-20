@@ -264,11 +264,7 @@ class Llama4Model(
             max_seq_len=cls.calculate_max_seq_len(
                 pipeline_config, huggingface_config=huggingface_config
             ),
-            num_layers=Llama4Config.get_num_layers(
-                huggingface_config=huggingface_config
-            ),
             available_cache_memory=available_cache_memory,
-            devices=devices,
         )
 
     def load_model(self, session: InferenceSession) -> Model:
@@ -583,9 +579,6 @@ class Llama4Model(
             max_batch_size=self.pipeline_config.max_batch_size,
             max_seq_len=self.calculate_max_seq_len(
                 self.pipeline_config, huggingface_config=self.huggingface_config
-            ),
-            num_layers=Llama4Config.get_num_layers(
-                huggingface_config=self.huggingface_config
             ),
             devices=self.devices,
             available_cache_memory=available_cache_memory,

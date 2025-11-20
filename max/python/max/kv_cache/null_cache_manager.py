@@ -54,11 +54,8 @@ class NullKVCacheManager:
         params: KVCacheParams,
         max_batch_size: int,
         max_seq_len: int,
-        num_layers: int,
         devices: Sequence[Device],
         session: InferenceSession,
-        available_cache_memory: int,
-        page_size: int = 128,
     ) -> None:
         """Initializes the null KV cache manager.
 
@@ -66,20 +63,15 @@ class NullKVCacheManager:
             params: The KV cache parameters for the pipeline.
             max_batch_size: The maximum batch size to support.
             max_seq_len: The maximum sequence length to support.
-            num_layers: The number of transformer layers in the model.
             devices: The list of virtual devices.
             session: The inference session for graph operations.
             available_cache_memory: The nominal available cache memory in bytes.
-            page_size: The page size in tokens. Defaults to 128.
         """
         self.params = params
         self.max_batch_size = max_batch_size
         self.max_seq_len = max_seq_len
-        self.num_layers = num_layers
         self.devices = devices
         self.session = session
-        self.available_cache_memory = available_cache_memory
-        self.page_size = page_size
         self._metrics = KVCacheMetrics()
         self._request_to_replica_idx: dict[RequestID, int] = {}
 
@@ -182,7 +174,7 @@ class NullKVCacheManager:
         if devices is None:
             devices = self.devices
         if num_layers is None:
-            num_layers = self.num_layers
+            num_layers = self.params.num_layers
 
         # Create symbolic tensor types for graph construction
         # Block shape: [total_num_pages, kv_dim, num_layers, page_size, n_kv_heads_per_device, head_dim]
@@ -196,7 +188,7 @@ class NullKVCacheManager:
                     "total_num_pages",  # dynamic parameter
                     kv_dim,  # K and V (or just 1 for MLA)
                     num_layers,
-                    self.page_size,
+                    self.params.page_size,
                     self.params.n_kv_heads_per_device,
                     self.params.head_dim,
                 ],
@@ -313,58 +305,6 @@ class NullKVCacheManager:
     def reset_prefix_cache(self) -> None:
         """Reset prefix cache (no-op for null manager)."""
         pass
-
-    @classmethod
-    def estimated_memory_size(
-        cls,
-        params: KVCacheParams,
-        max_batch_size: int,
-        max_seq_len: int,
-        num_layers: int,
-        available_cache_memory: int,
-        devices: Sequence[Device],
-        **kwargs: Any,
-    ) -> int:
-        """Estimate memory size (returns 0 for null manager).
-
-        Args:
-            params: KV cache parameters
-            max_batch_size: Maximum batch size
-            max_seq_len: Maximum sequence length
-            num_layers: Number of layers
-            available_cache_memory: Available cache memory
-            devices: List of devices
-            **kwargs: Additional arguments
-
-        Returns:
-            Always returns 0 (no memory used)
-        """
-        return 0
-
-    @classmethod
-    def infer_optimal_batch_size(
-        cls,
-        params: KVCacheParams,
-        max_seq_len: int,
-        num_layers: int,
-        available_cache_memory: int,
-        devices: Sequence[Device],
-        **kwargs: Any,
-    ) -> int:
-        """Infer optimal batch size (returns 1 for null manager).
-
-        Args:
-            params: KV cache parameters
-            max_seq_len: Maximum sequence length
-            num_layers: Number of layers
-            available_cache_memory: Available cache memory
-            devices: List of devices
-            **kwargs: Additional arguments
-
-        Returns:
-            Always returns 1
-        """
-        return 1
 
     @property
     def free_blocks_pct(self) -> float:

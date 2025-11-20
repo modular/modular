@@ -119,6 +119,7 @@ class DeepseekV3Config(MAXModelConfig, DeepseekV3ConfigBase):
             n_kv_heads=1,
             head_dim=huggingface_config.kv_lora_rank
             + huggingface_config.qk_rope_head_dim,
+            num_layers=DeepseekV3Config.get_num_layers(huggingface_config),
             cache_strategy=KVCacheStrategy.PAGED,
             n_devices=n_devices,
             page_size=page_size,
@@ -128,3 +129,7 @@ class DeepseekV3Config(MAXModelConfig, DeepseekV3ConfigBase):
             data_parallel_degree=data_parallel_degree,
             is_mla=True,
         )
+
+    @staticmethod
+    def get_num_layers(huggingface_config: AutoConfig) -> int:
+        return huggingface_config.num_hidden_layers

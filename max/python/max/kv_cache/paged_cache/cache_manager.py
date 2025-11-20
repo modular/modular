@@ -69,38 +69,28 @@ class PagedKVCacheManager:
     def __init__(
         self,
         params: KVCacheParams,
+        total_num_pages: int,
         max_batch_size: int,
         max_seq_len: int,
-        num_layers: int,
         devices: Sequence[Device],
         session: InferenceSession,
-        available_cache_memory: int,
+        total_num_host_pages: int = 0,
         zmq_endpoint_base: str | None = None,
-        page_size: int = 128,
         enable_runtime_checks: bool = False,
     ) -> None:
         """Initialize the multi-device paged KV cache manager.
 
         Args:
             params: KV cache parameters including data parallelism settings
-            max_batch_size: The maximum number of active requests that the
-                manager should support. Note that this is the global maximum
-                batch size across all devices, so when data parallelism is
-                enabled, this would be split across all replicas of the cache.
-            max_seq_len: Maximum sequence length
-            num_layers: Number of model layers
             devices: The devices to use for the KV cache manager.  If data
                 parallelism is enabled, the devices will be split into
                 ``params.data_parallel_degree`` groups.
             session: Inference session
-            available_cache_memory: Total cache memory across all devices
-            page_size: Page size in tokens
             enable_runtime_checks: Whether to enable runtime checks
         """
         self.params = params
-        self.max_batch_size = max_batch_size
         self.max_seq_len = max_seq_len
-        self.num_layers = num_layers
+        self.max_batch_size = max_batch_size
 
         max_batch_size_per_replica = (
             max_batch_size // params.data_parallel_degree
@@ -111,10 +101,6 @@ class PagedKVCacheManager:
                 " KV cache replicas. The minimum value of max_batch_size allowed"
                 f" is {params.data_parallel_degree}."
             )
-
-        cache_memory_per_replica = (
-            available_cache_memory // params.data_parallel_degree
-        )
 
         # The effective total number of pages is .
         self.num_replicas = params.data_parallel_degree
@@ -130,14 +116,13 @@ class PagedKVCacheManager:
             self._replica_managers.append(
                 _TPPagedKVCacheManager(
                     params=dp_1_params,
+                    total_num_pages=total_num_pages,
+                    total_num_host_pages=total_num_host_pages,
                     max_batch_size=max_batch_size_per_replica,
                     max_seq_len=max_seq_len,
-                    num_layers=num_layers,
                     devices=devices,
                     session=session,
-                    available_cache_memory=cache_memory_per_replica,
                     zmq_endpoint_base=zmq_endpoint_base,
-                    page_size=page_size,
                     enable_runtime_checks=enable_runtime_checks,
                 )
             )
@@ -471,60 +456,6 @@ class PagedKVCacheManager:
     def reset_prefix_cache(self) -> None:
         for manager in self._replica_managers:
             manager.reset_prefix_cache()
-
-    @classmethod
-    def max_supported_sequence_length(
-        cls, params: KVCacheParams, num_layers: int, memory_available: int
-    ) -> int:
-        """Return the maximum sequence length supported across all replicas.
-
-        This queries each data-parallel replica's tensor-parallel cache manager
-        for its per-replica maximum supported sequence length under the provided
-        memory budget, then returns the minimum of those values. Each per-replica
-        value is already rounded down to the nearest multiple of ``params.page_size``,
-        so the result is likewise page-aligned and safe for all replicas.
-
-        Args:
-            params: KV cache configuration parameters.
-            num_layers: Number of transformer layers contributing KV per token.
-            memory_available: Total cache memory budget in bytes.
-
-        Returns:
-            The maximum supported sequence length in tokens (multiple of
-            ``params.page_size``) that all replicas can support.
-        """
-        return _TPPagedKVCacheManager.max_supported_sequence_length(
-            params, num_layers, memory_available
-        )
-
-    @classmethod
-    def estimated_memory_size(
-        cls,
-        params: KVCacheParams,
-        max_batch_size: int,
-        max_seq_len: int,
-        num_layers: int,
-        available_cache_memory: int,
-        devices: Sequence[Device],
-        **kwargs: Any,
-    ) -> int:
-        """Estimated memory size for the DPPagedKVCacheManager."""
-        dp_1_params = params.copy_as_dp_1()
-        mem_per_replica = available_cache_memory // params.data_parallel_degree
-        dp_device_groups = split_into_groups(
-            devices, params.data_parallel_degree
-        )
-        total_mem = 0
-        for dp_devices in dp_device_groups:
-            total_mem += _TPPagedKVCacheManager.estimated_memory_size(
-                params=dp_1_params,
-                max_batch_size=max_batch_size,
-                max_seq_len=max_seq_len,
-                num_layers=num_layers,
-                available_cache_memory=mem_per_replica,
-                devices=dp_devices,
-            )
-        return total_mem
 
     @classmethod
     def infer_optimal_batch_size(

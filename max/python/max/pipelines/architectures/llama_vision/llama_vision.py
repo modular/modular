@@ -42,7 +42,6 @@ from max.kv_cache import (
     NullKVCacheManager,
     PagedCacheInputSymbols,
     PagedKVCacheManager,
-    estimate_kv_cache_size,
     infer_optimal_batch_size,
     load_kv_manager,
 )
@@ -148,15 +147,55 @@ class MultimodalKVCacheManager:
             raise ValueError(
                 "MultimodalKVCacheManager does not support data parallelism"
             )
+
+        # Assume the number of vision tokens is fixed per batch.
+        # This is true until we support multi-image.
+
+        # Round up to the nearest multiple of 128.
+        # This is because the page size must be a multiple of tile size.
+        vision_page_size = ceildiv(vision_max_seq_len, 128) * 128
+
+        self.vision_kv_params = KVCacheParams(
+            dtype=params.dtype,
+            n_kv_heads=params.n_kv_heads,
+            head_dim=params.head_dim,
+            num_layers=vision_num_layers,
+            enable_prefix_caching=params.enable_prefix_caching,
+            enable_kvcache_swapping_to_host=params.enable_kvcache_swapping_to_host,
+            host_kvcache_swap_space_gb=params.host_kvcache_swap_space_gb,
+            cache_strategy=KVCacheStrategy.PAGED,
+            page_size=vision_page_size,
+            n_devices=params.n_devices,
+        )
+
+        vision_model_memory_size = self.vision_kv_params.estimated_memory_size(
+            available_cache_memory, max_batch_size, vision_max_seq_len
+        )
+        remaining_memory = available_cache_memory - vision_model_memory_size
+
+        # Always use paged KV cache for the vision KV projections.
+        self.vision_kv_manager = PagedKVCacheManager(
+            params=self.vision_kv_params,
+            max_batch_size=max_batch_size,
+            # Set the number of pages to equal to the max batch size so that we
+            # have exactly one page per sequence.
+            total_num_pages=max_batch_size,
+            max_seq_len=vision_max_seq_len,
+            devices=devices,
+            session=session,
+        )
+        vision_kv_manager_replica = self.vision_kv_manager._replica_managers[0]
+        self.vision_device_tensors = vision_kv_manager_replica.device_tensors
+
+        # Load the text KV manager.
         paged_text_kv_manager = load_kv_manager(
             params=params,
             max_batch_size=max_batch_size,
             max_seq_len=text_max_seq_len,
-            num_layers=text_num_layers,
             devices=devices,
-            available_cache_memory=available_cache_memory,
-            page_size=page_size,
+            available_cache_memory=remaining_memory,
             session=session,
+            page_size=page_size,
         )
         # MultimodalKVCacheManager requires PagedKVCacheManager (not NullKVCacheManager)
         # since it accesses internal implementation details
@@ -184,50 +223,6 @@ class MultimodalKVCacheManager:
         self.enable_kvcache_swapping_to_host = (
             text_kv_manager_replica.enable_kvcache_swapping_to_host
         )
-
-        # Assume the number of vision tokens is fixed per batch.
-        # This is true until we support multi-image.
-
-        # Round up to the nearest multiple of 128.
-        # This is because the page size must be a multiple of tile size.
-        page_size = ceildiv(vision_max_seq_len, 128) * 128
-
-        self.vision_kv_params = KVCacheParams(
-            dtype=params.dtype,
-            n_kv_heads=params.n_kv_heads,
-            head_dim=params.head_dim,
-            enable_prefix_caching=params.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=params.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=params.host_kvcache_swap_space_gb,
-            cache_strategy=KVCacheStrategy.PAGED,
-            page_size=page_size,
-            n_devices=params.n_devices,
-        )
-
-        # Compute the bytes for the vision KV cache.
-        single_token_size_bytes = (
-            2
-            * vision_num_layers
-            * params.n_kv_heads_per_device
-            * params.head_dim
-            * params.dtype.size_in_bytes
-        )
-        cache_memory_per_image = single_token_size_bytes * page_size
-        cache_memory = cache_memory_per_image * max_batch_size
-
-        # Always use paged KV cache for the vision KV projections.
-        self.vision_kv_manager = PagedKVCacheManager(
-            params=self.vision_kv_params,
-            max_batch_size=max_batch_size,
-            max_seq_len=vision_max_seq_len,
-            num_layers=vision_num_layers,
-            devices=devices,
-            session=session,
-            available_cache_memory=cache_memory,
-            page_size=page_size,
-        )
-        vision_kv_manager_replica = self.vision_kv_manager._replica_managers[0]
-        self.vision_device_tensors = vision_kv_manager_replica.device_tensors
 
         # Store language kvcache attributes.
         self.text_kv_params = params
@@ -263,47 +258,6 @@ class MultimodalKVCacheManager:
         self.text_kv_manager.reset_metrics()
 
     @classmethod
-    @final
-    def estimated_memory_size(
-        cls,
-        params: KVCacheParams,
-        max_batch_size: int,
-        max_seq_len: int,
-        num_layers: int,
-        available_cache_memory: int,
-        devices: Sequence[Device],
-        **kwargs: Any,
-    ) -> int:
-        """Returns the estimated total memory usage of the kv cache."""
-        assert "num_vision_layers" in kwargs, "num_vision_layers must be set"
-        num_vision_layers = kwargs["num_vision_layers"]
-        assert "max_vision_seq_len" in kwargs, "max_vision_seq_len must be set"
-        max_vision_seq_len = kwargs["max_vision_seq_len"]
-
-        vision_kv_cache_size = PagedKVCacheManager.estimated_memory_size(
-            params,
-            max_batch_size,
-            max_vision_seq_len,
-            num_vision_layers,
-            available_cache_memory,
-            devices,
-        )
-
-        remaining_memory = available_cache_memory - vision_kv_cache_size
-        if remaining_memory <= 0:
-            return vision_kv_cache_size
-
-        text_kv_cache_size = estimate_kv_cache_size(
-            params,
-            max_batch_size,
-            max_seq_len,
-            num_layers,
-            remaining_memory,
-            devices,
-        )
-        return vision_kv_cache_size + text_kv_cache_size
-
-    @classmethod
     def infer_optimal_batch_size(
         cls,
         params: KVCacheParams,
@@ -327,19 +281,31 @@ class MultimodalKVCacheManager:
         )
 
         # divvy up our allocation based on this ratio
-        text_cache_size = available_cache_memory * text_to_vision_ratio
+        text_cache_size = int(available_cache_memory * text_to_vision_ratio)
         vision_cache_size = available_cache_memory - text_cache_size
 
         # infer the optimal batch size for each modality based on its cache size
         text_batch_size = infer_optimal_batch_size(
             params, max_seq_len, num_layers, text_cache_size, devices
         )
-        vision_batch_size = PagedKVCacheManager.infer_optimal_batch_size(
-            params,
-            max_vision_seq_len,
-            num_vision_layers,
-            vision_cache_size,
-            devices,
+
+        vision_page_size = ceildiv(max_vision_seq_len, 128) * 128
+        vision_kv_params = KVCacheParams(
+            dtype=params.dtype,
+            n_kv_heads=params.n_kv_heads,
+            head_dim=params.head_dim,
+            num_layers=num_vision_layers,
+            enable_prefix_caching=params.enable_prefix_caching,
+            enable_kvcache_swapping_to_host=params.enable_kvcache_swapping_to_host,
+            host_kvcache_swap_space_gb=params.host_kvcache_swap_space_gb,
+            cache_strategy=KVCacheStrategy.PAGED,
+            page_size=vision_page_size,
+            n_devices=params.n_devices,
+        )
+        vision_batch_size = vision_kv_params.compute_num_device_blocks(
+            available_cache_memory=vision_cache_size,
+            max_batch_size=None,
+            max_seq_len=vision_page_size,
         )
 
         return min(text_batch_size, vision_batch_size)
@@ -1343,29 +1309,41 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         """Estimates the size of the kv cache in bytes."""
         assert pipeline_config.max_batch_size is not None
 
+        params = cls.get_kv_params(
+            huggingface_config=huggingface_config,
+            n_devices=len(devices),
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
+        )
         num_cross_attn_layers = len(
             huggingface_config.text_config.cross_attention_layers
         )
-        return MultimodalKVCacheManager.estimated_memory_size(
-            params=cls.get_kv_params(
-                huggingface_config=huggingface_config,
-                n_devices=len(devices),
-                kv_cache_config=kv_cache_config,
-                cache_dtype=cache_dtype,
-            ),
-            max_batch_size=pipeline_config.max_batch_size,
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            ),
-            num_layers=huggingface_config.text_config.num_hidden_layers
-            - num_cross_attn_layers,
-            available_cache_memory=available_cache_memory,
-            devices=devices,
-            max_vision_seq_len=cls._calculate_vision_max_seq_len(
-                huggingface_config
-            ),
-            num_vision_layers=num_cross_attn_layers,
+        assert pipeline_config.max_batch_size is not None
+        max_batch_size = pipeline_config.max_batch_size
+        max_vision_seq_len = cls._calculate_vision_max_seq_len(
+            huggingface_config
         )
+        aligned_max_vision_seq_len = ceildiv(max_vision_seq_len, 128) * 128
+        vision_model_memory_size = (
+            2
+            * num_cross_attn_layers
+            * max_batch_size
+            * aligned_max_vision_seq_len
+            * params.head_dim
+            * params.n_kv_heads
+        )
+        remaining_memory = available_cache_memory - vision_model_memory_size
+        if remaining_memory < 0:
+            return available_cache_memory
+        max_seq_len = cls.calculate_max_seq_len(
+            pipeline_config, huggingface_config=huggingface_config
+        )
+        language_model_memory_size = params.estimated_memory_size(
+            remaining_memory,
+            pipeline_config.max_batch_size,
+            max_seq_len,
+        )
+        return language_model_memory_size + vision_model_memory_size
 
     @classmethod
     def infer_optimal_batch_size(

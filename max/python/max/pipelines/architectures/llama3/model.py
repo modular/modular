@@ -331,11 +331,6 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         session: InferenceSession,
         available_cache_memory: int | None,
     ) -> PagedKVCacheManager | NullKVCacheManager:
-        # For pipeline parallel, use layers per stage instead of total layers
-        num_layers_for_cache = Llama3Config.get_num_layers(
-            huggingface_config=self.huggingface_config
-        )
-
         n_devices_for_cache = len(self.devices)
 
         return load_kv_manager(
@@ -350,7 +345,6 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
             max_seq_len=self.calculate_max_seq_len(
                 self.pipeline_config, huggingface_config=self.huggingface_config
             ),
-            num_layers=num_layers_for_cache,
             devices=self.devices,
             available_cache_memory=available_cache_memory,
             page_size=self.kv_cache_config.kv_cache_page_size,
@@ -379,11 +373,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
             max_seq_len=cls.calculate_max_seq_len(
                 pipeline_config, huggingface_config=huggingface_config
             ),
-            num_layers=Llama3Config.get_num_layers(
-                huggingface_config=huggingface_config
-            ),
             available_cache_memory=available_cache_memory,
-            devices=devices,
         )
 
     @traced

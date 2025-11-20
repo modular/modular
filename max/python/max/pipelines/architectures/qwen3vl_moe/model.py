@@ -226,11 +226,7 @@ class Qwen3VLModel(
             max_seq_len=cls.calculate_max_seq_len(
                 pipeline_config, huggingface_config=huggingface_config
             ),
-            num_layers=Qwen3VLConfig.get_num_layers(
-                huggingface_config=huggingface_config
-            ),
             available_cache_memory=available_cache_memory,
-            devices=devices,
         )
 
     # TODO: Seems like a common pattern. Implement in a base class?
@@ -996,9 +992,6 @@ class Qwen3VLModel(
             max_batch_size=self.pipeline_config.max_batch_size,
             max_seq_len=self.calculate_max_seq_len(
                 self.pipeline_config, huggingface_config=self.huggingface_config
-            ),
-            num_layers=Qwen3VLConfig.get_num_layers(
-                huggingface_config=self.huggingface_config
             ),
             devices=self.devices,
             available_cache_memory=available_cache_memory,

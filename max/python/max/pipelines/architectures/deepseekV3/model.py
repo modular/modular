@@ -541,7 +541,6 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             max_seq_len=self.calculate_max_seq_len(
                 self.pipeline_config, huggingface_config=self.huggingface_config
             ),
-            num_layers=self.huggingface_config.num_hidden_layers,
             devices=self.devices,
             available_cache_memory=available_cache_memory,
             page_size=self.kv_cache_config.kv_cache_page_size,
