@@ -93,6 +93,36 @@ what we publish.
 - The Mojo compiler now "diffs" very long types in error messages to explain
   what is going on in a more easy to understand way.
 
+### Experimental changes
+
+Changes described in this section are experimental and may be changed, replaced,
+or removed in future releases.
+
+- Mojo now supports compile-time trait conformance check (via `conforms_to()`)
+  and downcast (via `trait_downcast()`). This allows users to implement features
+  like static dispatching based on trait conformance. For example:
+
+  ```mojo
+  fn maybe_print[T : AnyType](maybe_printable : T):
+    @parameter
+    if conforms_to(T, Writable):
+      print(trait_downcast[Writable](maybe_printable))
+    else:
+      print("[UNPRINTABLE]")
+  ```
+
+- Added support for `DType` expressions in `where` clauses:
+
+  ```mojo
+  fn foo[dt: DType]() -> Int where dt is DType.int32:
+      return 42
+  ```
+
+  Currently, the following expressions are supported:
+  - equality and inequality
+  - `is_signed()`, `is_unsigned()`, `is_numeric()`, `is_integral()`,
+    `is_floating_point()`, `is_float8()`, `is_half_float()`
+
 ### ❌ Removed
 
 ### 🛠️ Fixed
