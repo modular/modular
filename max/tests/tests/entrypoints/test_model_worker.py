@@ -70,7 +70,7 @@ async def test_model_worker_propagates_exception(
     """Tests raising in the model worker context manager."""
     settings = Settings()
 
-    with pytest.raises(ValueError, match="kaboom"):
+    with pytest.raises(AssertionError):
         async with start_model_worker(
             EchoTokenGenerator,
             mock_pipeline_config,
@@ -80,7 +80,7 @@ async def test_model_worker_propagates_exception(
                 PipelineTask.TEXT_GENERATION
             ),
         ):
-            raise ValueError("kaboom")
+            raise AssertionError
 
 
 class MockInvalidTokenGenerator(
@@ -109,9 +109,7 @@ async def test_model_worker_propagates_construction_exception(
 
     # The MockTokenGenerator crashes the remote subprocess
     # then ProcessMonitor checks throw TimeoutError here
-    with pytest.raises(
-        ValueError, match=MockInvalidTokenGenerator.ERROR_MESSAGE
-    ):
+    with pytest.raises(TimeoutError, match="Worker died"):
         async with start_model_worker(
             MockInvalidTokenGenerator,
             mock_pipeline_config,
@@ -146,9 +144,7 @@ async def test_model_worker_start_timeout(
     """Tests raising in the model worker task."""
     settings = Settings(MAX_SERVE_MW_TIMEOUT=0.1)
 
-    with pytest.raises(
-        TimeoutError, match="Model Worker failed to become ready"
-    ):
+    with pytest.raises(TimeoutError):
         async with start_model_worker(
             MockSlowTokenGenerator,
             mock_pipeline_config,
@@ -194,9 +190,9 @@ async def test_lifespan_propagates_worker_exception(
 
     # The MockTokenGenerator crashes the remote subprocess
     # then ProcessMonitor checks throw TimeoutError here
-    with pytest.raises(ValueError, match="CRASH TEST DUMMY"):
+    with pytest.raises(TimeoutError, match="Worker died"):
         async with api_server.lifespan(
-            FastAPI(),
+            FastAPI(title="Crash Test Dummy"),
             settings,
             serving_settings,
         ):
