@@ -343,13 +343,13 @@ struct MHAPosition[
 
     @always_inline
     fn mask_status[
-        mask_t: MHAMask
-    ](self, mask: mask_t, kv_tile_start_row: UInt32) -> TileMaskStatus:
+        MaskType: MHAMask
+    ](self, mask: MaskType, kv_tile_start_row: UInt32) -> TileMaskStatus:
         @parameter
         if Self.decoding:
 
             @parameter
-            if mask_t.check_mask_during_decoding:
+            if MaskType.check_mask_during_decoding:
                 # In context encoding, we have BM rows of Q
                 # In decoding, we have `group` rows, but these
                 # correspond to the same position w/ respect to the mask.
@@ -370,6 +370,14 @@ struct MHAPosition[
                 ),
                 Index[dtype = DType.int32](Int(Self.BM), Int(Self.BN)),
             )
+
+    @always_inline
+    fn get_q_row(self) -> UInt32:
+        @parameter
+        if Self.decoding:
+            return self.num_keys - 1
+        else:
+            return self.prompt_offset + self.start_pos
 
     @always_inline
     fn exp_sum_qk_max_ptr[

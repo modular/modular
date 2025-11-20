@@ -2333,6 +2333,110 @@ fn apply_mask[
     ScoreModType: ScoreModTrait, //,
     *,
     use_score_mod: Bool,
+    masked: Bool,  # encoding-only
+    decoding: Bool = False,
+](
+    srow: LocalTensor[dtype, Layout.row_major(BN)],
+    mask: MaskType,
+    score_mod: ScoreModType,
+    scale_log2e: Scalar[dtype],
+    *,
+    prompt_idx: UInt32,
+    q_head_idx: UInt32,
+    kv_tile_start_row: UInt32,
+    seq_len: UInt32,
+    max_seq_len: UInt32,
+    num_keys: UInt32,
+    row: UInt32,  # encoding-only
+    start_pos: UInt32,  # encoding-only
+):
+    alias simd_size = simd_width_of[dtype]()
+    vs = srow.vectorize[simd_size]()
+    var score_row: UInt32 = row
+    var score_row_with_start_pos: UInt32 = score_row + start_pos
+
+    @parameter
+    for n in range(BN // simd_size):
+        # score_col = mask_frag_col + j * 8
+        s = vs[n]
+        alias frag_col = simd_size * n
+        var score_col: UInt32 = kv_tile_start_row + frag_col
+
+        @parameter
+        if masked:
+            s = mask.mask(
+                IndexList[4, element_type = DType.uint32](
+                    Int(prompt_idx),
+                    Int(q_head_idx),
+                    Int(score_row_with_start_pos),
+                    Int(score_col),
+                ),
+                s * scale_log2e,
+            )
+        else:  # if MaskType.apply_log2e_after_mask, this is scale only
+            s *= scale_log2e
+
+        @parameter
+        if use_score_mod:
+            s = (
+                score_mod.score_mod(
+                    IndexList[4, element_type = DType.uint32](
+                        Int(prompt_idx),
+                        Int(q_head_idx),
+                        Int(score_row_with_start_pos),
+                        Int(score_col),
+                    ),
+                    s,
+                    Int(max_seq_len),
+                )
+                * log2e
+            )
+        elif MaskType.apply_log2e_after_mask:
+            s *= log2e
+
+        var bound: IndexList[2, element_type = DType.uint32]
+
+        @parameter
+        if decoding:
+            bound = IndexList[2, element_type = DType.uint32](
+                Int(num_keys),
+                Int(
+                    min(
+                        BN + kv_tile_start_row,
+                        num_keys,
+                    )
+                ),
+            )
+            s = _kernel_mask(
+                IndexList[2, element_type = DType.uint32](
+                    Int(score_row), Int(score_col)
+                ),
+                bound,
+                s,
+            )
+        elif masked:
+            bound = IndexList[2, element_type = DType.uint32](
+                Int(seq_len),
+                Int(num_keys),
+            )
+            s = _kernel_mask(
+                IndexList[2, element_type = DType.uint32](
+                    Int(score_row), Int(score_col)
+                ),
+                bound,
+                s,
+            )
+        vs[n] = s
+
+
+@always_inline
+fn apply_mask_unswitch[
+    dtype: DType,
+    BN: Int,
+    MaskType: MHAMask,
+    ScoreModType: ScoreModTrait, //,
+    *,
+    use_score_mod: Bool,
     decoding: Bool = False,
 ](
     srow: LocalTensor[dtype, Layout.row_major(BN)],
@@ -2350,95 +2454,41 @@ fn apply_mask[
     row: UInt32,  # encoding-only
     start_pos: UInt32,  # encoding-only
 ):
-    alias simd_size = simd_width_of[dtype]()
-    vs = srow.vectorize[simd_size]()
-    var score_row: UInt32 = row
-    var score_row_with_start_pos: UInt32 = score_row + start_pos
-
-    @parameter
-    @always_inline
-    fn _apply_mask_capture[masked: Bool]():
-        @parameter
-        for n in range(BN // simd_size):
-            # score_col = mask_frag_col + j * 8
-            s = vs[n]
-            alias frag_col = simd_size * n
-            var score_col: UInt32 = kv_tile_start_row + frag_col
-
-            @parameter
-            if masked:
-                s = mask.mask(
-                    IndexList[4, element_type = DType.uint32](
-                        Int(prompt_idx),
-                        Int(q_head_idx),
-                        Int(score_row_with_start_pos),
-                        Int(score_col),
-                    ),
-                    s * scale_log2e,
-                )
-            else:  # if MaskType.apply_log2e_after_mask, this is scale only
-                s *= scale_log2e
-
-            @parameter
-            if use_score_mod:
-                s = (
-                    score_mod.score_mod(
-                        IndexList[4, element_type = DType.uint32](
-                            Int(prompt_idx),
-                            Int(q_head_idx),
-                            Int(score_row_with_start_pos),
-                            Int(score_col),
-                        ),
-                        s,
-                        Int(max_seq_len),
-                    )
-                    * log2e
-                )
-            elif MaskType.apply_log2e_after_mask:
-                s *= log2e
-
-            var bound: IndexList[2, element_type = DType.uint32]
-
-            @parameter
-            if decoding:
-                bound = IndexList[2, element_type = DType.uint32](
-                    Int(num_keys),
-                    Int(
-                        min(
-                            BN + kv_tile_start_row,
-                            num_keys,
-                        )
-                    ),
-                )
-                s = _kernel_mask(
-                    IndexList[2, element_type = DType.uint32](
-                        Int(score_row), Int(score_col)
-                    ),
-                    bound,
-                    s,
-                )
-            elif masked:
-                bound = IndexList[2, element_type = DType.uint32](
-                    Int(seq_len),
-                    Int(num_keys),
-                )
-                s = _kernel_mask(
-                    IndexList[2, element_type = DType.uint32](
-                        Int(score_row), Int(score_col)
-                    ),
-                    bound,
-                    s,
-                )
-            vs[n] = s
-
-    unswitch[_apply_mask_capture](
-        (mask_status == TileMaskStatus.PARTIAL_MASK)
-        # NOTE: mask_status should be either PARTIAL_MASK or NO_MASK at
-        # this point.
-        # In the NO_MASK case, we still need to mask out the scores for the
-        # last tile, which goes beyond num_keys (for num_keys % 128 != 0).
-        or (BN + kv_tile_start_row > num_keys)
-    )
+    if (
+        mask_status == TileMaskStatus.PARTIAL_MASK
+        or BN + kv_tile_start_row > num_keys
+    ):
+        apply_mask[use_score_mod=use_score_mod, decoding=decoding, masked=True](
+            srow,
+            mask,
+            score_mod,
+            scale_log2e,
+            prompt_idx=prompt_idx,
+            q_head_idx=q_head_idx,
+            kv_tile_start_row=kv_tile_start_row,
+            seq_len=seq_len,
+            max_seq_len=max_seq_len,
+            num_keys=num_keys,
+            row=row,
+            start_pos=start_pos,
+        )
+    else:
+        apply_mask[
+            use_score_mod=use_score_mod, decoding=decoding, masked=False
+        ](
+            srow,
+            mask,
+            score_mod,
+            scale_log2e,
+            prompt_idx=prompt_idx,
+            q_head_idx=q_head_idx,
+            kv_tile_start_row=kv_tile_start_row,
+            seq_len=seq_len,
+            max_seq_len=max_seq_len,
+            num_keys=num_keys,
+            row=row,
+            start_pos=start_pos,
+        )
 
 
 @always_inline
@@ -2663,6 +2713,7 @@ struct SM100MHA2Q[
     alias num_q_heads = Self.config.num_q_heads
     alias group = Self.config.group
     alias ragged = not Self.ValidLengthType.is_null
+    alias page_size = Self.KVLUTType.page_size
 
     alias num_m_mmas = 2
     alias MMA_M = Self.config.BM // Self.num_m_mmas
@@ -2859,8 +2910,6 @@ struct SM100MHA2Q[
         if not initial_seq_info.is_valid():
             return
 
-        var tid: UInt32 = thread_idx.x
-
         constrained[
             not Self.PartitionType.do_partition,
             (
@@ -2890,9 +2939,6 @@ struct SM100MHA2Q[
             )
 
         var warp_idx: UInt32 = warp.broadcast(warp_id())
-        var warp_group_idx: UInt32 = (
-            warp_idx // 4
-        )  # broadcast should be unnecessary
         if warp_idx == 0:
             if elect() != 0:
                 kv_pipeline.init()
@@ -2912,24 +2958,20 @@ struct SM100MHA2Q[
 
         # warp group partitioning
         # Two QO:
-        if warp_group_idx < 2:
+        if warp_idx < 8:
             # softmax $warp_group_idx
             var position: Self.PositionType = get_position(initial_seq_info)
-            startend = position.get_start_and_end_for_partitions(partition)
-            var kv_tile_start_row: UInt32 = startend[0]
-            var end: UInt32 = startend[1]
+            var end: UInt32 = position.num_keys
 
             warpgroup_reg_alloc[num_reg_softmax]()
 
             Self.softmax(
                 ptr_tmem_addr[0],
-                warp_group_idx,
+                warp_idx,
                 misc_mbars,
                 o_mbar,
                 position,
-                tid,
                 mask,
-                kv_tile_start_row,
                 end,
                 scale.cast[Self.accum_type](),
                 score_mod,
@@ -2939,13 +2981,11 @@ struct SM100MHA2Q[
                 sink_weights,
             )
 
-        elif warp_group_idx == 2:
+        elif warp_idx < 12:
             # correction
             # warpgroup_reg_alloc[num_reg_correction]()
             var position: Self.PositionType = get_position(initial_seq_info)
-            startend = position.get_start_and_end_for_partitions(partition)
-            var kv_tile_start_row: UInt32 = startend[0]
-            var end: UInt32 = startend[1]
+            var end: UInt32 = position.num_keys
 
             warpgroup_reg_dealloc[num_reg_correction]()
             Self.correction(
@@ -2953,7 +2993,6 @@ struct SM100MHA2Q[
                 misc_mbars,
                 o_mbar,
                 position,
-                kv_tile_start_row,
                 end,
                 mask,
             )
@@ -2961,15 +3000,12 @@ struct SM100MHA2Q[
             warpgroup_reg_dealloc[num_reg_other]()
             if warp_idx == 13:  # produce
                 var position: Self.PositionType = get_position(initial_seq_info)
-                startend = position.get_start_and_end_for_partitions(partition)
-                var kv_tile_start_row: UInt32 = startend[0]
-                var end: UInt32 = startend[1]
+                var end: UInt32 = position.num_keys
 
                 Self.load(
                     misc_mbars,
                     kv_pipeline,
                     position,
-                    kv_tile_start_row,
                     end,
                     mask,
                     q_tma_op,
@@ -2981,9 +3017,7 @@ struct SM100MHA2Q[
 
             elif warp_idx == 12:  # Q @ K', P @ V
                 var position: Self.PositionType = get_position(initial_seq_info)
-                startend = position.get_start_and_end_for_partitions(partition)
-                var kv_tile_start_row: UInt32 = startend[0]
-                var end: UInt32 = startend[1]
+                var end: UInt32 = position.num_keys
 
                 Self.mma(
                     ptr_tmem_addr[0],
@@ -2991,7 +3025,6 @@ struct SM100MHA2Q[
                     kv_pipeline,
                     o_mbar,
                     position,
-                    kv_tile_start_row,
                     end,
                     mask,
                     q_smem,
@@ -3001,13 +3034,11 @@ struct SM100MHA2Q[
     @always_inline
     fn softmax(
         tmem_addr: UInt32,
-        warp_group_idx: UInt32,
+        warp_idx: UInt32,
         mbars: FA4MiscMBars,
         o_mbar: MBarType,
         position: Self.PositionType,
-        tid: UInt32,
         mask: Self.MaskType,
-        kv_tile_start_row: UInt32,
         end: UInt32,
         scale: Scalar[Self.accum_type],
         score_mod: Self.ScoreModType,
@@ -3018,6 +3049,8 @@ struct SM100MHA2Q[
     ):
         # FIXME: for depth 256
         var s_tmem: UInt32 = tmem_addr + Self.config.TMEM_S0
+
+        var warp_group_idx: UInt32 = warp_idx // 4
 
         @parameter
         if Self.config.split_m:
@@ -3040,14 +3073,8 @@ struct SM100MHA2Q[
         var order_phase: UInt32 = 0
 
         q_head_idx = position.head_idx
-        row = tid % 128
-        var kv_row: UInt32 = kv_tile_start_row
-        # Peel first iter, as there is no need for a correction
-        # TODO: add sink
-        var mask_status: TileMaskStatus = position.mask_status(mask, kv_row)
-        while mask_status == TileMaskStatus.FULL_MASK:
-            kv_row += Self.config.BN
-            mask_status = position.mask_status(mask, kv_row)
+        var tid: UInt32 = thread_idx.x
+        var row: UInt32 = tid % 128
         var scale_log2e: Scalar[Self.accum_type] = scale
 
         @parameter
@@ -3057,18 +3084,20 @@ struct SM100MHA2Q[
         @parameter
         @always_inline
         fn mask_row[
-            BN: Int, //,
+            BN: Int, //, masked: Bool
         ](
             s: LocalTensor[Self.accum_type, Layout.row_major(BN)],
-            mask_status: TileMaskStatus,
             kv_gmem_row: UInt32,
         ):
-            apply_mask[decoding=False, use_score_mod = Self.use_score_mod](
+            apply_mask[
+                decoding=False,
+                use_score_mod = Self.use_score_mod,
+                masked=masked,
+            ](
                 s,
                 mask,
                 score_mod,
                 scale_log2e,
-                mask_status,
                 prompt_idx=position.prompt_idx,
                 q_head_idx=q_head_idx,
                 kv_tile_start_row=kv_gmem_row,
@@ -3087,7 +3116,9 @@ struct SM100MHA2Q[
 
         @parameter
         @always_inline
-        fn load_mask_max(kv_row: UInt32) -> Scalar[Self.accum_type]:
+        fn load_mask_max[
+            *, masked: Bool
+        ](kv_row: UInt32) -> Scalar[Self.accum_type]:
             # break up into sets of 32
             # minimize wait time by using smallest first
             alias BM = Self.config.BM // 2
@@ -3101,7 +3132,7 @@ struct SM100MHA2Q[
             s1 = TMemTile[Self.accum_type, BM, batch_size](
                 s_tmem + first_cols
             ).load_async()
-            mask_row(s0, mask_status, kv_row)
+            mask_row[masked=masked](s0, kv_row)
             vrow_max = maximum[width = Self.simd_size](s0)
 
             s.ptr.store(s0.ptr.load[width=first_cols]())
@@ -3176,14 +3207,14 @@ struct SM100MHA2Q[
 
                 @parameter
                 if offset1 >= Self.config.BN:
-                    mask_row(s1, mask_status, kv_row + offset0)
+                    mask_row[masked=masked](s1, kv_row + offset0)
                     vrow_max = maximum(s1, vrow_max)
                     s.ptr.store(offset0, s1.ptr.load[width=batch_size]())
                 else:
                     s2 = TMemTile[Self.accum_type, BM, batch_size](
                         s_tmem + offset1
                     ).load_async()
-                    mask_row(s1, mask_status, kv_row + offset0)
+                    mask_row[masked=masked](s1, kv_row + offset0)
                     vrow_max = maximum(s1, vrow_max)
                     s.ptr.store(offset0, s1.ptr.load[width=batch_size]())
                     tcgen05_load_wait()
@@ -3193,13 +3224,21 @@ struct SM100MHA2Q[
                         s1 = TMemTile[Self.accum_type, BM, batch_size](
                             s_tmem + offset2
                         ).load_async()
-                    mask_row(s2, mask_status, kv_row + offset1)
+                    mask_row[masked=masked](s2, kv_row + offset1)
                     vrow_max = maximum(s2, vrow_max)
                     s.ptr.store(offset1, s2.ptr.load[width=batch_size]())
 
             return vrow_max.reduce_max()
 
-        row_max = load_mask_max(kv_row)
+        var q_row: UInt32 = position.get_q_row()
+        var kv_row: UInt32 = mask.start_column[
+            Self.BM, Self.BN, Self.page_size
+        ](q_row)
+        alias mask_sets = Self.MaskType.nonfull_sets[Self.BM, Self.BN]()
+        alias num_sets = len(mask_sets)
+        var row_max: Scalar[Self.accum_type] = load_mask_max[masked=True](
+            kv_row
+        )
         var sink_weights_ptr = UnsafePointer[Scalar[Self.qkv_type]]()
         var sink_weight: Scalar[Self.accum_type]
 
@@ -3334,30 +3373,92 @@ struct SM100MHA2Q[
 
         # TODO: add ordering barriers to prevent overlap
         # between the two softmax warpgroups
-        while True:
-            kv_row += Self.config.BN
-            if kv_row >= end:
-                break
-            mask_status = position.mask_status(mask, kv_row)
-            if mask_status == TileMaskStatus.FULL_MASK:
-                continue
-            pipeline_s.wait()
-            # calculate rowmax
-            old_max = row_max
-            row_max = max(old_max, load_mask_max(kv_row))
-            correction = exp2(old_max - row_max)
-            pipeline_c.acquire()
-            tcgen05_st[
-                datapaths=32,
-                bits=32,
-                repeat=1,
-                pack=False,
-            ](c_tmem, correction)
-            pipeline_c.commit()
-            # update s->p
-            local_rowsum = store_exp(row_max)
-            row_sum = row_sum.fma(correction, local_rowsum)
-            o_phase ^= 1
+        @parameter
+        if mask_sets[0] != TileMaskStatus.UNKNOWN_MASK:
+            mask_ends = mask.masked_set_ends[
+                BM = Self.BM, BN = Self.BN, page_size = Self.page_size
+            ](q_row, end)
+            var decrement: Bool = True
+
+            @parameter
+            for i in range(num_sets):
+                alias mask_status = mask_sets[i]
+                var iters: UInt32
+
+                @parameter
+                if i == 0:
+                    iters = mask_ends[i]
+                else:
+                    iters = mask_ends[i] - mask_ends[i - 1]
+                if decrement and iters > 0:
+                    iters -= 1
+                    decrement = False
+                while iters != 0:
+                    iters -= 1
+                    kv_row += Self.config.BN
+                    pipeline_s.wait()
+                    # calculate rowmax
+                    old_max = row_max
+                    var new_row_max: Scalar[Self.accum_type]
+
+                    @parameter
+                    if mask_status == TileMaskStatus.PARTIAL_MASK:
+                        new_row_max = load_mask_max[masked=True](kv_row)
+                    elif (
+                        mask_status == TileMaskStatus.NO_MASK
+                        and i + 1 < num_sets
+                    ):
+                        new_row_max = load_mask_max[masked=False](kv_row)
+                    else:
+                        # we have NO_MASK but we're on the last set of iters
+                        if iters == 0:
+                            new_row_max = load_mask_max[masked=True](kv_row)
+                        else:
+                            new_row_max = load_mask_max[masked=False](kv_row)
+                    row_max = max(old_max, new_row_max)
+                    correction = exp2(old_max - row_max)
+                    pipeline_c.acquire()
+                    tcgen05_st[
+                        datapaths=32,
+                        bits=32,
+                        repeat=1,
+                        pack=False,
+                    ](c_tmem, correction)
+                    pipeline_c.commit()
+                    # update s->p
+                    local_rowsum = store_exp(row_max)
+                    row_sum = row_sum.fma(correction, local_rowsum)
+                    o_phase ^= 1
+        else:
+            while True:
+                kv_row += Self.config.BN
+                if kv_row >= end:
+                    break
+                mask_status = position.mask_status(mask, kv_row)
+                if mask_status == TileMaskStatus.FULL_MASK:
+                    continue
+                pipeline_s.wait()
+                # calculate rowmax
+                old_max = row_max
+                var new_row_max: Scalar[Self.accum_type]
+                if mask_status == TileMaskStatus.PARTIAL_MASK:
+                    new_row_max = load_mask_max[masked=True](kv_row)
+                else:
+                    new_row_max = load_mask_max[masked=False](kv_row)
+                row_max = max(old_max, new_row_max)
+                correction = exp2(old_max - row_max)
+                pipeline_c.acquire()
+                tcgen05_st[
+                    datapaths=32,
+                    bits=32,
+                    repeat=1,
+                    pack=False,
+                ](c_tmem, correction)
+                pipeline_c.commit()
+                # update s->p
+                local_rowsum = store_exp(row_max)
+                row_sum = row_sum.fma(correction, local_rowsum)
+                o_phase ^= 1
         # Do the final correction and write
         inv_row_sum = recip(row_sum.reduce_add())
         o_tile = Self.UMMA1Type.CType(
@@ -3382,7 +3483,7 @@ struct SM100MHA2Q[
             o_mbar + 2 + warp_group_idx,  # consumer arrive
         )
         named_barrier[2 * WARPGROUP_SIZE](2)
-        if tid < 32:
+        if warp_idx == 0:
             tcgen05_release_allocation_lock[Self.cta_group]()
             tcgen05_dealloc[Self.cta_group](
                 tmem_addr, Self.config.sm100_tmem_cols
@@ -3395,7 +3496,6 @@ struct SM100MHA2Q[
         mbars: FA4MiscMBars,
         o_mbar: MBarType,
         position: Self.PositionType,
-        kv_tile_start_row: UInt32,
         end: UInt32,
         mask: Self.MaskType,
     ):
@@ -3410,21 +3510,20 @@ struct SM100MHA2Q[
         pipeline_c1 = mbars.consumer_c1()
         pipeline_o = ConsumerPipeline[2](o_mbar)
 
-        var kv_row: UInt32 = kv_tile_start_row
-        while position.mask_status(mask, kv_row) == TileMaskStatus.FULL_MASK:
-            kv_row += Self.config.BN
+        var iter_count: UInt32 = (
+            mask.total_iters[Self.BM, Self.BN, Self.page_size](
+                position.get_q_row(), end
+            )
+            - 1
+        )
 
         alias batch_size = 16
         # output is BM x depth
         alias load_iters = Self.config.depth // (2 * batch_size)
         alias load_remainder = Self.config.depth % (2 * batch_size)
 
-        while True:
-            kv_row += Self.config.BN
-            if kv_row >= end:
-                return
-            if position.mask_status(mask, kv_row) == TileMaskStatus.FULL_MASK:
-                continue
+        while iter_count != 0:
+            iter_count -= 1
 
             @parameter
             for i in range(2):
@@ -3550,7 +3649,6 @@ struct SM100MHA2Q[
         mbars: FA4MiscMBars,
         kv_pipeline_arg: Self.KVPipelineType,
         position: Self.PositionType,
-        kv_tile_start_row: UInt32,
         end: UInt32,
         mask: Self.MaskType,
         q_tma_op: QTMATile[
@@ -3621,10 +3719,17 @@ struct SM100MHA2Q[
                 mbark0.mbar[],
                 (UInt(position.q_col), UInt(position.q_row)),
             )
-        var kv_row: UInt32 = kv_tile_start_row
-        while position.mask_status(mask, kv_row) == TileMaskStatus.FULL_MASK:
-            kv_row += Self.config.BN
+        var q_row: UInt32 = position.get_q_row()
+        var kv_row: UInt32 = mask.start_column[
+            Self.BM, Self.BN, Self.page_size
+        ](q_row)
         var kv_gmem_row: UInt32 = kv_lut.row_idx(position.prompt_idx, kv_row)
+        var iter_count: UInt32 = (
+            mask.last_masked_set_end[Self.BM, Self.BN, Self.page_size](
+                q_row, end
+            )
+            - 1
+        )
         # copy k0
         if elect:
             # K0
@@ -3655,13 +3760,21 @@ struct SM100MHA2Q[
                 (UInt(kv_col), UInt(kv_gmem_row)),
             )
         pipeline_kv.commit_kv_step()
+        alias check_mask = mask.nonfull_sets[Self.BM, Self.BN]()[
+            0
+        ] == TileMaskStatus.UNKNOWN_MASK
         # kv producer loop
-        while True:
+        while iter_count != 0:
+            iter_count -= 1
             kv_row += Self.config.BN
-            if kv_row >= end:
-                break
-            if position.mask_status(mask, kv_row) == TileMaskStatus.FULL_MASK:
-                continue
+
+            @parameter
+            if check_mask:
+                if (
+                    position.mask_status(mask, kv_row)
+                    == TileMaskStatus.FULL_MASK
+                ):
+                    continue
             kv_gmem_row = kv_lut.row_idx(position.prompt_idx, kv_row)
             # produce k
             pipeline_kv.acquire_kv()
@@ -3703,7 +3816,6 @@ struct SM100MHA2Q[
         kv_pipeline_arg: Self.KVPipelineType,
         o_mbar: MBarType,
         position: Self.PositionType,
-        kv_tile_start_row: UInt32,
         end: UInt32,
         mask: Self.MaskType,
         q_smem: SharedMemPointer[Scalar[Self.KVLUTType.dtype]],
@@ -3734,18 +3846,12 @@ struct SM100MHA2Q[
         var pipeline_kv: KVPipeType = {kv_pipeline_arg, kv_smem}
 
         # We peel the first iteration, as we want to wait on q1
-        # First, increment the mask
-        var kv_row: UInt32 = kv_tile_start_row
-        while position.mask_status(mask, kv_row) == TileMaskStatus.FULL_MASK:
-            kv_row += Self.config.BN
-        var iter_count: UInt32 = 0
-        while True:
-            kv_row += Self.config.BN
-            if kv_row >= end:
-                break
-            if position.mask_status(mask, kv_row) == TileMaskStatus.FULL_MASK:
-                continue
-            iter_count += 1
+        var iter_count: UInt32 = (
+            mask.total_iters[Self.BM, Self.BN, Self.page_size](
+                position.get_q_row(), end
+            )
+            - 1
+        )
 
         # Q_0 @ K_0'
         k0 = pipeline_kv.wait_k[mma_stage=0, pre_increment=False]()  # [kv0]
