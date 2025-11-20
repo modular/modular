@@ -8,6 +8,7 @@
 #define SUPPORT_COMPILER_THREADING_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/Diagnostics.h"
 #include "llvm/Support/ThreadPool.h"
 
@@ -23,7 +24,7 @@ LogicalResult failableParallelForEach(MLIRContext *ctx, RangeT &&range,
                                       ConsolidateCacheFnT &&consolidate) {
   unsigned numElements = llvm::size(range);
   if (!numElements)
-    return success();
+    return llvm::success();
 
   // If threading is not enabled, there is a single element, or the threadpool
   // is single-threaded, process the elements sequentially. Pass in the cache
@@ -33,8 +34,8 @@ LogicalResult failableParallelForEach(MLIRContext *ctx, RangeT &&range,
       ctx->getThreadPool().getMaxConcurrency() == 1) {
     for (auto e = std::end(range); begin != e; ++begin)
       if (failed(func(cache, *begin)))
-        return failure();
-    return success();
+        return llvm::failure();
+    return llvm::success();
   }
 
   // Otherwise, process the elements in parallel.
@@ -71,7 +72,7 @@ LogicalResult failableParallelForEach(MLIRContext *ctx, RangeT &&range,
 
   // Consolidate the caches.
   consolidate(cache, workerCaches);
-  return failure(processingFailed);
+  return llvm::failure(processingFailed);
 }
 
 /// This version of the function has a no-op consolidate function.
@@ -90,7 +91,7 @@ void parallelForEach(MLIRContext *ctx, RangeT &&range, FuncT &&func,
   (void)failableParallelForEach(
       ctx, std::forward<RangeT>(range),
       [&](CacheT &cache, auto &&arg) {
-        return func(cache, std::forward<decltype(arg)>(arg)), success();
+        return func(cache, std::forward<decltype(arg)>(arg)), llvm::success();
       },
       cache, [](auto &&...) {});
 }

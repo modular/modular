@@ -5,7 +5,10 @@ package(default_visibility = ["//visibility:public"])
 modular_cc_binary(
     name = "env_test_cpp",
     srcs = ["env_test.cpp"],
-    deps = ["//Support:Configuration"],
+    deps = [
+        "//Support:Base",
+        "//Support:Configuration",
+    ],
 )
 
 modular_py_test(

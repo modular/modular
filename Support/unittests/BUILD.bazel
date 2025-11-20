@@ -247,5 +247,6 @@ modular_python_binding_library_test(
     srcs = ["CPython/UtilTest.cpp"],
     deps = [
         "//Support:CPython",
+        "@python_3_10//:python_headers",
     ],
 )
