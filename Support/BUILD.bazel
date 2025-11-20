@@ -37,6 +37,11 @@ modular_cc_library(
 )
 
 modular_cc_library(
+    name = "ConcurrentAppendingVector",
+    hdrs = ["include/Support/ADT/ConcurrentAppendingVector.h"],
+)
+
+modular_cc_library(
     name = "Base",
     srcs = [
         "lib/AlignedAlloc.cpp",
@@ -75,7 +80,6 @@ modular_cc_library(
         "include/Support/ReferenceCounted.h",
         "include/Support/STLExtras.h",
         "include/Support/StringExtras.h",
-        "include/Support/TypeID.h",
         "include/Support/Version.h",
     ],
     local_defines = [
@@ -88,6 +92,7 @@ modular_cc_library(
     }),
     tags = ["no-clang-tidy-headers"],
     deps = [
+        ":ConcurrentAppendingVector",
         ":Globals",
         ":SymbolExport",
         "//Config",
@@ -224,6 +229,19 @@ modular_cc_library(
     deps = [
         ":ADT",
         ":Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_library(
+    name = "TypeID",
+    srcs = ["lib/TypeID.cpp"],
+    hdrs = ["include/Support/TypeID.h"],
+    deps = [
+        ":Base",
+        ":ConcurrentAppendingVector",
+        ":Globals",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -231,14 +249,15 @@ modular_cc_library(
     name = "ADT",
     srcs = glob([
         "lib/ADT/*.cpp",
-    ]) + [
-        # TODO: This should be part of Base but has circular dependencies
-        "lib/TypeID.cpp",
-    ],
-    hdrs = glob(["include/Support/ADT/*.h"]),
+    ]),
+    hdrs = glob(
+        ["include/Support/ADT/*.h"],
+        exclude = ["include/Support/ADT/ConcurrentAppendingVector.h"],
+    ),
     deps = [
         ":Base",
         ":Globals",
+        ":TypeID",
         "@llvm-project//llvm:Support",
     ],
 )
