@@ -9,6 +9,7 @@
 
 #include "Support/LogicalResult.h"
 
+#include "mlir/IR/AttrTypeSubElements.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -41,21 +42,24 @@ public:
   uint64_t current_pos() const override { return 0; }
 };
 
-/// This function serializes an operation to MLIR bytecode and hashes the result
-/// using XXH3's 128-bit variant and then returns the result as a hex string.
-///
-/// This is useful for deduping operations in a stable way, without relying on
-/// in-memory values (e.g. pointers).
-using ReplacementFunc = llvm::function_ref<mlir::Attribute(mlir::Attribute)>;
-FailureOr<std::string> getBytecodeHash(mlir::Operation *op,
-                                       ReplacementFunc replace = nullptr);
+/// BytecodeHasher provides stable IR hashing which ignores source location
+/// information. The hash function is based on hashing MLIR's bytecode
+/// format.
+class BytecodeHasher {
+public:
+  BytecodeHasher();
 
-LogicalResult writeBytecode(mlir::Operation *op, llvm::raw_ostream &os,
-                            ReplacementFunc replace = nullptr);
+  FailureOr<std::string> getBytecodeHash(mlir::Operation *op);
+
+private:
+  /// Replacer which will strip location information and any other
+  /// replacements provided by the caller.
+  mlir::AttrTypeReplacer replacer;
+};
 
 /// This function computes the bytecode hash similar to getBytecodeHash, but
 /// does so by hashing each individual operation in the module in parallel
-/// (via getBytecodeHash) and then combining the results into a single hash.
+/// (via BytecodeHasher) and then combining the results into a single hash.
 FailureOr<std::string> getModuleBytecodeHash(mlir::ModuleOp module);
 
 } // namespace M
