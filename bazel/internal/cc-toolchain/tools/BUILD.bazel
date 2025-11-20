@@ -1,5 +1,6 @@
 load("@rules_cc//cc/toolchains:tool.bzl", "cc_tool")
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
+load(":builtin_module_map.bzl", "builtin_module_map")
 load(":tools.bzl", "declare_tools")
 
 cc_tool(
@@ -79,3 +80,23 @@ declare_tools()
         "resource_directory",
     ]
 ]
+
+builtin_module_map(
+    name = "builtin_module_map",
+    include_directories = select({
+        "//:linux_aarch64": [
+            "@clang-linux-aarch64//:include_dir",
+            "@sysroot-jammy-aarch64//:root",
+        ],
+        "//:linux_x86_64": [
+            "@clang-linux-x86_64//:include_dir",
+            "@sysroot-jammy-x86_64//:root",
+        ],
+        "@platforms//os:macos": [
+            "@clang-macos//:include_dir",
+            "@sysroot-macos//:root",
+        ],
+    }),
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)

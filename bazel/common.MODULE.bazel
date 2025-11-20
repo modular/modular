@@ -54,6 +54,8 @@ single_version_override(
     patches = [
         # https://github.com/bazelbuild/bazel/pull/26925
         "//bazel/public-patches:rules_cc_dsym_feature.patch",
+        # https://github.com/bazelbuild/rules_cc/pull/527
+        "//bazel/public-patches:rules_cc_textual_hdrs.patch",
     ],
 )
 

@@ -21,6 +21,11 @@ filegroup(
 )
 
 directory(
+    name = "include_dir".format(platform),
+    srcs = [":include"],
+)
+
+directory(
     name = "resource_directory",
     srcs = glob(["lib/clang/*/**"]),
     visibility = ["//visibility:public"],
