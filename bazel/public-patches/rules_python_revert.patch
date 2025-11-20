@@ -1,0 +1,93 @@
+diff --git a/python/private/py_executable.bzl b/python/private/py_executable.bzl
+index 1a5ad4c3..0f359dde 100644
+--- a/python/private/py_executable.bzl
++++ b/python/private/py_executable.bzl
+@@ -333,6 +333,7 @@ def _create_executable(
+     # @bazel_tools//tools/python:autodetecting_toolchain, the toolchain used
+     # for workspace builds when no rules_python toolchain is configured.
+     if (
++        BootstrapImplFlag.get_value(ctx) == BootstrapImplFlag.SCRIPT and
+         runtime_details.effective_runtime and
+         hasattr(runtime_details.effective_runtime, "stage2_bootstrap_template")
+     ):
+diff --git a/python/private/python_bootstrap_template.txt b/python/private/python_bootstrap_template.txt
+index 97177560..e693a011 100644
+--- a/python/private/python_bootstrap_template.txt
++++ b/python/private/python_bootstrap_template.txt
+@@ -160,6 +160,10 @@ def FindBinary(module_space, bin_name):
+     # Case 4: Path has to be looked up in the search path.
+     return SearchPath(bin_name)
+ 
++def CreatePythonPathEntries(python_imports, module_space):
++  parts = python_imports.split(':')
++  return [module_space] + ['%s/%s' % (module_space, path) for path in parts]
++
+ def FindModuleSpace(main_rel_path):
+   """Finds the runfiles tree."""
+   # When the calling process used the runfiles manifest to resolve the
+@@ -243,6 +247,14 @@ def CreateModuleSpace():
+   # important that deletion code be in sync with this directory structure
+   return os.path.join(temp_dir, 'runfiles')
+ 
++# Returns repository roots to add to the import path.
++def GetRepositoriesImports(module_space, import_all):
++  if import_all:
++    repo_dirs = [os.path.join(module_space, d) for d in os.listdir(module_space)]
++    repo_dirs.sort()
++    return [d for d in repo_dirs if os.path.isdir(d)]
++  return [os.path.join(module_space, '%workspace_name%')]
++
+ def RunfilesEnvvar(module_space):
+   """Finds the runfiles manifest or the runfiles directory.
+ 
+@@ -285,6 +297,14 @@ def RunfilesEnvvar(module_space):
+ 
+   return (None, None)
+ 
++def Deduplicate(items):
++  """Efficiently filter out duplicates, keeping the first element only."""
++  seen = set()
++  for it in items:
++      if it not in seen:
++          seen.add(it)
++          yield it
++
+ def ExecuteFile(python_program, main_filename, args, env, module_space,
+                 workspace, delete_module_space):
+   # type: (str, str, list[str], dict[str, str], str, str|None, str|None) -> ...
+@@ -360,12 +380,16 @@ def Main():
+ 
+   new_env = {}
+ 
++  # The main Python source file.
++  # The magic string percent-main-percent is replaced with the runfiles-relative
++  # filename of the main file of the Python binary in BazelPythonSemantics.java.
++  main_rel_path = '%main%'
+   # NOTE: We call normpath for two reasons:
+   # 1. Transform Bazel `foo/bar` to Windows `foo\bar`
+   # 2. Transform `_main/../foo/main.py` to simply `foo/main.py`, which
+   #    matters if `_main` doesn't exist (which can occur if a binary
+   #    is packaged and needs no artifacts from the main repo)
+-  main_rel_path = os.path.normpath(STAGE2_BOOTSTRAP)
++  main_rel_path = os.path.normpath(main_rel_path)
+ 
+   if IsRunningFromZip():
+     module_space = CreateModuleSpace()
+@@ -377,6 +401,17 @@ def Main():
+   if os.environ.get("RULES_PYTHON_TESTING_TELL_MODULE_SPACE"):
+     new_env["RULES_PYTHON_TESTING_MODULE_SPACE"] = module_space
+ 
++  python_imports = '%imports%'
++  python_path_entries = CreatePythonPathEntries(python_imports, module_space)
++  python_path_entries += GetRepositoriesImports(module_space, %import_all%)
++
++  old_python_path = os.environ.get('PYTHONPATH')
++  if old_python_path:
++    python_path_entries += old_python_path.split(os.pathsep)
++
++  python_path = os.pathsep.join(Deduplicate(python_path_entries))
++
++  new_env['PYTHONPATH'] = python_path
+   runfiles_envkey, runfiles_envvalue = RunfilesEnvvar(module_space)
+   if runfiles_envkey:
+     new_env[runfiles_envkey] = runfiles_envvalue

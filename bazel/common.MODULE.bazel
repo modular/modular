@@ -4,7 +4,7 @@ bazel_dep(name = "abseil-cpp", version = "20250127.1")
 bazel_dep(name = "apple_support", version = "1.24.2", repo_name = "build_bazel_apple_support")
 bazel_dep(name = "aspect_bazel_lib", version = "2.21.2")
 bazel_dep(name = "aspect_rules_js", version = "2.4.1")
-bazel_dep(name = "bazel_skylib", version = "1.8.1")
+bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "curl", version = "8.8.0")
 bazel_dep(name = "gazelle", version = "0.47.0")
 bazel_dep(name = "glfw", version = "3.3.9.bcr.1")
@@ -24,7 +24,7 @@ bazel_dep(name = "rules_multirun", version = "0.13.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.0.2")
 bazel_dep(name = "rules_pycross", version = "0.8.0")
-bazel_dep(name = "rules_python", version = "1.6.3")
+bazel_dep(name = "rules_python", version = "1.7.0")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
 
@@ -92,8 +92,9 @@ single_version_override(
     patches = [
         # https://github.com/bazel-contrib/rules_python/pull/3233
         "//bazel/public-patches:rules_python_wheel.patch",
-        # https://github.com/bazel-contrib/rules_python/pull/3330
-        "//bazel/public-patches:rules_python_3_14.patch",
+        # TODO (SDLC-2681): figure out why this is breaking our code.
+        # reverts https://github.com/bazel-contrib/rules_python/pull/3242
+        "//bazel/public-patches:rules_python_revert.patch",
     ],
 )
 
