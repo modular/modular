@@ -26,7 +26,7 @@ fn ref_param_in_arg(x: ParameterizedType) -> ParameterizedType[x.value]:
     # CHECK: lit.alias.decl *"fn_type`3":
     # CHECK-SAME: generator<<?, "value`2x": !Int>[2]("x":
     # CHECK-SAME: "y": !lit.ref<{{.*}}ParameterizedType<:!Int *(0,0)>
-    alias fn_type: fn (
+    comptime fn_type: fn (
         x: ParameterizedType, y: ParameterizedType[x.value]
     ) -> None = nested
     return x

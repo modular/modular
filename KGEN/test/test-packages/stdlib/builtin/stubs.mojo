@@ -4,20 +4,20 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-alias string = __mlir_type.`!kgen.string`
-alias float = __mlir_type.`!pop.scalar<f64>`
+comptime string = __mlir_type.`!kgen.string`
+comptime float = __mlir_type.`!pop.scalar<f64>`
 
-alias AnyTrivialRegType = __mlir_type.`!kgen.type`
+comptime AnyTrivialRegType = __mlir_type.`!kgen.type`
 comptime ImmutOrigin = Origin[False]
 comptime MutOrigin = Origin[True]
-alias ImmutAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
-alias MutAnyOrigin = __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`
-alias OriginSet = __mlir_type.`!lit.origin.set`
+comptime ImmutAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
+comptime MutAnyOrigin = __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`
+comptime OriginSet = __mlir_type.`!lit.origin.set`
 
 
 @register_passable("trivial")
 struct Origin[mut: Bool]:
-    alias _mlir_type = __mlir_type[
+    comptime _mlir_type = __mlir_type[
         `!lit.origin<`,
         Self.mut._mlir_value,
         `>`,
@@ -25,7 +25,7 @@ struct Origin[mut: Bool]:
 
     var _mlir_origin: Self._mlir_type
 
-    alias cast_from[o: Origin] = __mlir_attr[
+    comptime cast_from[o: Origin] = __mlir_attr[
         `#lit.origin.mutcast<`,
         o._mlir_origin,
         `> : !lit.origin<`,
@@ -44,7 +44,7 @@ struct Origin[mut: Bool]:
 
 
 # Static constants are a named subset of the global origin.
-alias StaticConstantOrigin = __mlir_attr[
+comptime StaticConstantOrigin = __mlir_attr[
     `#lit.origin.field<`,
     `#lit.static.origin : !lit.origin<0>`,
     `, "__constants__"> : !lit.origin<0>`,
@@ -52,7 +52,7 @@ alias StaticConstantOrigin = __mlir_attr[
 
 
 struct _lit_indirect_origin[mut: Bool, //, base: Origin[mut]]:
-    alias result = __mlir_attr[
+    comptime result = __mlir_attr[
         `#lit.indirect.origin<`,
         Self.base._mlir_origin,
         `> : `,
@@ -65,7 +65,7 @@ struct _lit_indirect_origin[mut: Bool, //, base: Origin[mut]]:
 # ===----------------------------------------------------------------------=== #
 
 
-alias KeyElement = Copyable & Movable
+comptime KeyElement = Copyable & Movable
 
 
 @register_passable
@@ -90,7 +90,7 @@ struct Error(ImplicitlyCopyable):
 
 @register_passable("trivial")
 struct NoneType:
-    alias _mlir_type = __mlir_type.`!kgen.none`
+    comptime _mlir_type = __mlir_type.`!kgen.none`
     """Raw MLIR type of the `None` value."""
 
     var _value: Self._mlir_type
@@ -105,10 +105,10 @@ struct NoneType:
 @nonmaterializable(Int)
 @register_passable("trivial")
 struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
-    alias _zero = IntLiteral[
+    comptime _zero = IntLiteral[
         __mlir_attr.`#pop.int_literal<0> : !pop.int_literal`
     ]()
-    alias _one = IntLiteral[
+    comptime _one = IntLiteral[
         __mlir_attr.`#pop.int_literal<1> : !pop.int_literal`
     ]()
 
@@ -492,7 +492,7 @@ struct UInt8:
         pass
 
 
-alias Byte = UInt8
+comptime Byte = UInt8
 
 
 @register_passable("trivial")
@@ -562,7 +562,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]]:
         return self._slice._len
 
 
-alias StaticString = StringSlice[StaticConstantOrigin]
+comptime StaticString = StringSlice[StaticConstantOrigin]
 
 
 @always_inline("builtin")
@@ -731,7 +731,7 @@ trait Copyable:
     fn copy(self) -> Self:
         return Self.__copyinit__(self)
 
-    alias __copyinit__is_trivial: Bool
+    comptime __copyinit__is_trivial: Bool
 
 
 trait ImplicitlyCopyable(Copyable):
@@ -755,17 +755,17 @@ trait Movable:
     fn __moveinit__(out self, deinit existing: Self, /):
         ...
 
-    alias __moveinit__is_trivial: Bool
+    comptime __moveinit__is_trivial: Bool
 
 
 trait AnyType:
     fn __del__(deinit self, /):
         ...
 
-    alias __del__is_trivial: Bool
+    comptime __del__is_trivial: Bool
 
 
-alias ImplicitlyDestructible = AnyType
+comptime ImplicitlyDestructible = AnyType
 
 
 @register_passable("trivial")
@@ -780,7 +780,7 @@ trait AnyRPTrivialType:
 
 @register_passable("trivial")
 struct VariadicList[type: AnyTrivialRegType]:
-    alias _mlir_type = __mlir_type[`!kgen.variadic<`, Self.type, `>`]
+    comptime _mlir_type = __mlir_type[`!kgen.variadic<`, Self.type, `>`]
 
     var value: Self._mlir_type
 
@@ -804,7 +804,7 @@ struct _lit_origin_union[
     a: Origin[mut].type,
     b: Origin[mut].type,
 ]:
-    alias result = __mlir_attr[
+    comptime result = __mlir_attr[
         `#lit.origin.union<`,
         a,
         `,`,
@@ -832,7 +832,7 @@ struct _VariadicListMemIter[
         list_origin: The origin of the VariadicListMem.
     """
 
-    alias variadic_list_type = VariadicListMem[
+    comptime variadic_list_type = VariadicListMem[
         Self.elt_type, Self.elt_origin, Self.is_owned
     ]
 
@@ -853,9 +853,11 @@ struct VariadicListMem[
     origin: Origin[elt_is_mutable],
     is_owned: Bool,
 ]:
-    alias reference_type = Pointer[Self.element_type, Self.origin]
-    alias _mlir_ref_type = Self.reference_type._mlir_type
-    alias _mlir_type = __mlir_type[`!kgen.variadic<`, Self._mlir_ref_type, `>`]
+    comptime reference_type = Pointer[Self.element_type, Self.origin]
+    comptime _mlir_ref_type = Self.reference_type._mlir_type
+    comptime _mlir_type = __mlir_type[
+        `!kgen.variadic<`, Self._mlir_ref_type, `>`
+    ]
 
     @implicit
     fn __init__(
@@ -889,7 +891,7 @@ struct VariadicListMem[
         return type_of(result)(0, Pointer(to=self))
 
 
-alias _AnyTypeMetaType = type_of(AnyType)
+comptime _AnyTypeMetaType = type_of(AnyType)
 
 
 @register_passable
@@ -900,7 +902,7 @@ struct VariadicPack[
     element_trait: _AnyTypeMetaType,
     *element_types: element_trait,
 ]:
-    alias _mlir_pack_type = __mlir_type[
+    comptime _mlir_pack_type = __mlir_type[
         `!lit.ref.pack<:variadic<`,
         Self.element_trait,
         `> `,
@@ -928,7 +930,7 @@ struct VariadicPack[
 struct __ParameterClosureCaptureList[
     fn_type: AnyTrivialRegType, fn_ref: fn_type
 ](ImplicitlyCopyable):
-    alias type = __mlir_type.`!kgen.pointer<none>`
+    comptime type = __mlir_type.`!kgen.pointer<none>`
     var value: Self.type
 
     @always_inline("nodebug")
@@ -969,14 +971,14 @@ struct AddressSpace:
         self._value = value
 
     # CPU address space
-    alias GENERIC = AddressSpace(0)
+    comptime GENERIC = AddressSpace(0)
 
     # GPU address spaces
-    alias GLOBAL = AddressSpace(1)
-    alias SHARED = AddressSpace(3)
-    alias CONSTANT = AddressSpace(4)
-    alias LOCAL = AddressSpace(5)
-    alias SHARED_CLUSTER = AddressSpace(7)
+    comptime GLOBAL = AddressSpace(1)
+    comptime SHARED = AddressSpace(3)
+    comptime CONSTANT = AddressSpace(4)
+    comptime LOCAL = AddressSpace(5)
+    comptime SHARED_CLUSTER = AddressSpace(7)
 
     @always_inline("builtin")
     fn __mlir_index__(self) -> __mlir_type.index:
@@ -990,7 +992,7 @@ struct Pointer[
     origin: Origin[mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]:
-    alias _mlir_type = __mlir_type[
+    comptime _mlir_type = __mlir_type[
         `!lit.ref<`,
         Self.type,
         `, `,
@@ -1074,7 +1076,7 @@ struct UnsafePointer[
     mut: Bool = True,
     origin: Origin[mut] = Origin[mut].cast_from[MutAnyOrigin],
 ]:
-    alias _mlir_type = __mlir_type[
+    comptime _mlir_type = __mlir_type[
         `!kgen.pointer<`,
         Self.T,
         `,`,
@@ -1161,7 +1163,7 @@ struct _StridedRangeIterator(Iterator):
 
 
 trait Iterator(Movable):
-    alias Element: AnyType
+    comptime Element: AnyType
 
     fn __has_next__(self) -> Bool:
         ...
@@ -1251,8 +1253,8 @@ fn rebind[
 # trait downcast
 # ===-----------------------------------------------------------------------===#
 
-alias AnyTrait = type_of(AnyType)
-alias downcast[_Trait: AnyTrait, T: AnyType] = __mlir_attr[
+comptime AnyTrait = type_of(AnyType)
+comptime downcast[_Trait: AnyTrait, T: AnyType] = __mlir_attr[
     `#kgen.downcast<`, T, `> : `, _Trait
 ]
 
@@ -1288,13 +1290,13 @@ trait Intable:
 
 @register_passable("trivial")
 struct DType:
-    alias type = __mlir_type.`!kgen.dtype`
+    comptime type = __mlir_type.`!kgen.dtype`
     var _mlir_value: Self.type
 
-    alias float32 = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
-    alias float64 = __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`
-    alias int32 = __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`
-    alias uint32 = __mlir_attr.`#kgen.dtype.constant<ui32> : !kgen.dtype`
+    comptime float32 = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
+    comptime float64 = __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`
+    comptime int32 = __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`
+    comptime uint32 = __mlir_attr.`#kgen.dtype.constant<ui32> : !kgen.dtype`
 
     @always_inline("builtin")
     @implicit
@@ -1302,10 +1304,10 @@ struct DType:
         self._mlir_value = value
 
 
-alias Float32 = SIMD[DType.float32, 1]
-alias Float64 = SIMD[DType.float64, 1]
-alias Int32 = SIMD[DType.int32, 1]
-alias UInt32 = SIMD[DType.uint32, 1]
+comptime Float32 = SIMD[DType.float32, 1]
+comptime Float64 = SIMD[DType.float64, 1]
+comptime Int32 = SIMD[DType.int32, 1]
+comptime UInt32 = SIMD[DType.uint32, 1]
 
 # ===----------------------------------------------------------------------=== #
 #  SIMD
@@ -1314,7 +1316,7 @@ alias UInt32 = SIMD[DType.uint32, 1]
 
 @register_passable("trivial")
 struct SIMD[dtype: DType, size: Int]:
-    alias _mlir_type = __mlir_type[
+    comptime _mlir_type = __mlir_type[
         `!pop.simd<`, Self.size._mlir_value, `, `, Self.dtype._mlir_value, `>`
     ]
 
@@ -1327,7 +1329,7 @@ struct SIMD[dtype: DType, size: Int]:
 
     @always_inline("nodebug")
     fn __init__(out self):
-        alias res = SIMD[Self.dtype, Self.size](Int())
+        comptime res = SIMD[Self.dtype, Self.size](Int())
         self = res
 
     @always_inline

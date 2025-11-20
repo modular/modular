@@ -18,14 +18,14 @@ struct ZInt:
 # CHECK-LABEL: lit.trait.decl @TraitWithAlias
 trait TraitWithAlias:
     # CHECK-NEXT: lit.alias.decl *"N`1": !ZInt
-    alias N: ZInt
+    comptime N: ZInt
 
 
 # CHECK-LABEL: lit.struct.decl @StructWithMatchingAlias
 struct StructWithMatchingAlias(TraitWithAlias):
     # CHECK: kgen.conformance {{.*}}::TraitWithAlias
     # CHECK: kgen.witness "N" : !ZInt = apply{{.*}}ZInt::@"__init__()"
-    alias N: ZInt = ZInt()
+    comptime N: ZInt = ZInt()
 
     fn __init__(out self):
         pass
@@ -66,7 +66,7 @@ struct StructWithMatchingDependentAlias2(TraitWithDependentAlias):
 fn getNFromTraitWithAlias[T: TraitWithAlias](t: T) -> ZInt:
     # CHECK-NEXT: lit.alias.decl [[X:.*]]: !ZInt = <{{.*}}#kgen.get_witness<:!TraitWithAlias T, "associated_aliases::TraitWithAlias", "N">
     # CHECK-NEXT: kgen.param.constant: !ZInt = <{{.*}}#kgen.get_witness<:!TraitWithAlias T, "associated_aliases::TraitWithAlias", "N">
-    alias X = T.N
+    comptime X = T.N
     return X
 
 
@@ -95,7 +95,7 @@ struct ZInt:
 # CHECK-LABEL: lit.trait.decl @TraitWithAlias
 trait TraitWithAlias:
     # CHECK-NEXT: lit.alias.decl *"N`1": !ZInt
-    alias N: ZInt
+    comptime N: ZInt
 
 
 trait TraitWithTypeAlias:
@@ -134,7 +134,7 @@ struct SIMD[T: ATrait]:
 
 
 trait TraitWithAliasArgMethod:
-    alias T: ATrait
+    comptime T: ATrait
 
     fn lork(self, thing: SIMD[Self.T]):
         ...
@@ -145,7 +145,7 @@ struct StructWithAliasArgMethod(TraitWithAliasArgMethod):
     # CHECK: kgen.conformance {{.*}}::TraitWithAliasArgMethod
     # CHECK: kgen.witness "T" : !ATrait = !ZInt
     # CHECK: kgen.witness "lork{{.*}}" : {{.*}} = {{.*}}::@StructWithAliasArgMethod::@"lork{{.*}}"
-    alias T: ATrait = ZInt
+    comptime T: ATrait = ZInt
 
     fn lork(self, thing: SIMD[ZInt]):
         pass
@@ -183,7 +183,7 @@ struct SIMD[T: ATrait]:
 
 
 trait TraitWithAliasArgMethod:
-    alias T: ATrait
+    comptime T: ATrait
 
     @staticmethod
     fn lork(thing: SIMD[Self.T]):
@@ -192,7 +192,7 @@ trait TraitWithAliasArgMethod:
 
 @fieldwise_init
 struct StructWithAliasArgMethod(TraitWithAliasArgMethod):
-    alias T: ATrait = ZInt
+    comptime T: ATrait = ZInt
 
     @staticmethod
     fn lork(thing: SIMD[ZInt]):
@@ -230,7 +230,7 @@ struct SIMD[T: ATrait]:
 
 
 trait TraitWithAliasArgMethod:
-    alias T: ATrait
+    comptime T: ATrait
 
     fn lork(self, thing: SIMD[Self.T]):
         ...
@@ -267,7 +267,7 @@ struct SIMD[T: ATrait]:
 
 
 trait TraitWithAliasArgMethod:
-    alias T: ATrait
+    comptime T: ATrait
 
     @staticmethod
     fn lork(thing: SIMD[Self.T]):
@@ -306,7 +306,7 @@ struct SIMD[T: ATrait]:
 
 
 trait TraitWithAliasReturnMethod:
-    alias T: ATrait
+    comptime T: ATrait
 
     fn bork(self) -> SIMD[Self.T]:
         ...
@@ -318,7 +318,7 @@ struct ExplicitStructWithAliasMethod(TraitWithAliasReturnMethod):
     # CHECK: kgen.conformance {{.*}}::TraitWithAliasReturnMethod
     # CHECK: kgen.witness "T" : !ATrait = !ZInt
     # CHECK: kgen.witness "bork{{.*}}" : {{.*}} = {{.*}}::@ExplicitStructWithAliasMethod::@"bork{{.*}}"
-    alias T: ATrait = ZInt
+    comptime T: ATrait = ZInt
 
     fn bork(self) -> SIMD[ZInt]:
         return SIMD[ZInt]()
@@ -357,7 +357,7 @@ struct SIMD[T: ATrait]:
 
 
 trait TraitWithAliasReturnMethod:
-    alias T: ATrait
+    comptime T: ATrait
 
     @staticmethod
     fn bork() -> SIMD[Self.T]:
@@ -367,7 +367,7 @@ trait TraitWithAliasReturnMethod:
 # CHECK-LABEL: lit.struct.decl @ExplicitStructWithAliasMethod
 @fieldwise_init
 struct ExplicitStructWithAliasMethod(TraitWithAliasReturnMethod):
-    alias T: ATrait = ZInt
+    comptime T: ATrait = ZInt
 
     @staticmethod
     fn bork() -> SIMD[ZInt]:
@@ -398,7 +398,7 @@ struct SIMD[T: ATrait]:
 
 
 trait TraitWithAliasReturnMethod:
-    alias T: ATrait
+    comptime T: ATrait
 
     fn bork(self) -> SIMD[Self.T]:
         ...
@@ -427,7 +427,7 @@ struct SIMD[T: ATrait]:
 
 
 trait TraitWithAliasReturnMethod:
-    alias T: ATrait
+    comptime T: ATrait
 
     @staticmethod
     fn bork() -> SIMD[Self.T]:
@@ -465,7 +465,7 @@ struct SIMD[T: ATrait]:
 
 
 trait TraitWithAliasReturnMethod:
-    alias T: ATrait
+    comptime T: ATrait
 
     fn bork(self) -> SIMD[Self.T]:
         ...
@@ -478,7 +478,7 @@ struct GenericStructWithAliasMethod[Z: ATrait](TraitWithAliasReturnMethod):
     # CHECK: kgen.conformance {{.*}}::TraitWithAliasReturnMethod
     # CHECK: kgen.witness "T" : !ATrait = Z
     # CHECK: kgen.witness "bork{{.*}}" : {{.*}} = {{.*}}::@GenericStructWithAliasMethod::@"bork{{.*}}"
-    alias T: ATrait = Self.Z
+    comptime T: ATrait = Self.Z
 
     fn bork(self) -> SIMD[Self.Z]:
         return SIMD[Self.Z]()
@@ -517,7 +517,7 @@ struct SIMD[T: ATrait]:
 
 
 trait TraitWithAliasReturnMethod:
-    alias T: ATrait
+    comptime T: ATrait
 
     @staticmethod
     fn bork() -> SIMD[Self.T]:
@@ -527,7 +527,7 @@ trait TraitWithAliasReturnMethod:
 # TODO(MOCO-1109): also check that this works with the thunk generation for @register_passable methods
 @fieldwise_init
 struct GenericStructWithAliasMethod[Z: ATrait](TraitWithAliasReturnMethod):
-    alias T: ATrait = Self.Z
+    comptime T: ATrait = Self.Z
 
     @staticmethod
     fn bork() -> SIMD[Self.Z]:
@@ -568,7 +568,7 @@ struct SIMD[T: ATrait]:
 # Tests explicit mentions of `Self.T` where `T` is an associated alias.
 # See MOCO-1438.
 trait TraitWithSelfDotAliasReturnMethod:
-    alias T: ATrait
+    comptime T: ATrait
 
     fn bork(self) -> SIMD[Self.T]:
         ...
@@ -579,7 +579,7 @@ struct StructWithSelfDotAliasReturnMethod(TraitWithSelfDotAliasReturnMethod):
     # CHECK: kgen.conformance {{.*}}::TraitWithSelfDotAliasReturnMethod
     # CHECK: kgen.witness "T" : !ATrait = !ZInt
     # CHECK: kgen.witness "bork{{.*}}" : {{.*}} = {{.*}}::@StructWithSelfDotAliasReturnMethod::@"bork{{.*}}"
-    alias T: ATrait = ZInt
+    comptime T: ATrait = ZInt
 
     fn bork(self) -> SIMD[Self.T]:
         return SIMD[Self.T]()
@@ -622,7 +622,7 @@ struct SIMD[T: ATrait]:
 # Tests explicit mentions of `Self.T` where `T` is an associated alias.
 # See MOCO-1438
 trait TraitWithSelfDotAliasReturnMethod:
-    alias T: ATrait
+    comptime T: ATrait
 
     @staticmethod
     fn bork() -> SIMD[Self.T]:
@@ -630,7 +630,7 @@ trait TraitWithSelfDotAliasReturnMethod:
 
 
 struct StructWithSelfDotAliasReturnMethod(TraitWithSelfDotAliasReturnMethod):
-    alias T: ATrait = ZInt
+    comptime T: ATrait = ZInt
 
     @staticmethod
     fn bork() -> SIMD[Self.T]:
@@ -675,7 +675,7 @@ struct SIMD[T: ATrait]:
 # Tests explicit mentions of `Self.T` where `T` is an associated alias.
 # See MOCO-1438
 trait TraitWithSelfDotAliasReturnMethod:
-    alias T: ATrait
+    comptime T: ATrait
 
     fn bork(self) -> SIMD[Self.T]:
         ...
@@ -690,7 +690,7 @@ struct GenericStructWithSelfDotAliasReturnMethod[Z: ATrait](
     # CHECK: kgen.conformance {{.*}}::TraitWithSelfDotAliasReturnMethod
     # CHECK: kgen.witness "T" : !ATrait = Z
     # CHECK: kgen.witness "bork{{.*}}" : {{.*}} = {{.*}}::@GenericStructWithSelfDotAliasReturnMethod::@"bork{{.*}}"
-    alias T: ATrait = Self.Z
+    comptime T: ATrait = Self.Z
 
     fn bork(self) -> SIMD[Self.T]:
         return SIMD[Self.T]()
@@ -735,7 +735,7 @@ struct SIMD[T: ATrait]:
 # Tests explicit mentions of `Self.T` where `T` is an associated alias.
 # See MOCO-1438
 trait TraitWithSelfDotAliasReturnMethod:
-    alias T: ATrait
+    comptime T: ATrait
 
     @staticmethod
     fn bork() -> SIMD[Self.T]:
@@ -747,7 +747,7 @@ trait TraitWithSelfDotAliasReturnMethod:
 struct GenericStructWithSelfDotAliasReturnMethod[Z: ATrait](
     TraitWithSelfDotAliasReturnMethod
 ):
-    alias T: ATrait = Self.Z
+    comptime T: ATrait = Self.Z
 
     @staticmethod
     fn bork() -> SIMD[Self.T]:
@@ -791,7 +791,7 @@ struct SIMD[T: ATrait]:
 
 
 trait TraitWithAliasReturnMethod:
-    alias T: ATrait
+    comptime T: ATrait
 
     fn bork(self) -> SIMD[Self.T]:
         ...
@@ -800,7 +800,7 @@ trait TraitWithAliasReturnMethod:
 # CHECK-LABEL: lit.struct.decl @ExplicitStructWithAliasMethod
 @fieldwise_init
 struct ExplicitStructWithAliasMethod(TraitWithAliasReturnMethod):
-    alias T: ASubTrait = ZInt
+    comptime T: ASubTrait = ZInt
 
     # If we didn't follow SAVMBCTATBS, then verifyConformance would be
     # incorrectly checking for the existence of
@@ -835,7 +835,7 @@ struct SIMD[T: ATrait]:
 
 
 trait TraitWithAliasReturnMethod:
-    alias T: ATrait
+    comptime T: ATrait
 
     @staticmethod
     fn bork() -> SIMD[Self.T]:
@@ -845,7 +845,7 @@ trait TraitWithAliasReturnMethod:
 # CHECK-LABEL: lit.struct.decl @ExplicitStructWithAliasMethod
 @fieldwise_init
 struct ExplicitStructWithAliasMethod(TraitWithAliasReturnMethod):
-    alias T: ASubTrait = ZInt
+    comptime T: ASubTrait = ZInt
 
     # If we didn't follow SAVMBCTATBS, then verifyConformance would be
     # incorrectly checking for the existence of
@@ -908,11 +908,11 @@ trait BB(AA):
 
 
 trait A:
-    alias Type: AA
+    comptime Type: AA
 
 
 trait B(A):
-    alias Type: BB
+    comptime Type: BB
 
 
 fn fa[T: A]() -> T.Type:
@@ -951,27 +951,27 @@ trait CC(AA, BB):
 
 
 trait A:
-    alias Type: AA
+    comptime Type: AA
 
 
 trait B:
-    alias Type: BB
+    comptime Type: BB
 
 
 trait TraitWithExplicitOverride(A, B):
-    alias Type: CC
+    comptime Type: CC
 
 
 fn receiveTraitWithExplicitOverride[T: TraitWithExplicitOverride]():
-    alias cc: CC = T.Type
+    comptime cc: CC = T.Type
 
 
 struct StructWithExplicitOverride(A, B):
-    alias Type: CC = CC()
+    comptime Type: CC = CC()
 
 
 fn receiveStructWithExplicitOverride[T: StructWithExplicitOverride]():
-    alias cc: CC = T.Type
+    comptime cc: CC = T.Type
 
 
 # // -----
@@ -983,11 +983,11 @@ struct ZInt:
 
 
 trait A:
-    alias foo: ZInt
+    comptime foo: ZInt
 
 
 trait B(A):
-    alias foo: ZInt
+    comptime foo: ZInt
 
 
 trait C(B):

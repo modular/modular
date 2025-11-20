@@ -1106,17 +1106,17 @@ fn inferCaptureOrigins[
     closureParameterInference[captureSomething](arg)
 
     # CHECK: lit.alias.decl *"unboundSet{{.*}} !lit.generator<<{{.*}}>:*(0,0):
-    alias unboundSet = closureParameterCaptures
+    comptime unboundSet = closureParameterCaptures
     # CHECK: lit.alias.decl *"boundSet{{.*}} !lit.generator<:{mut *"x`"}
-    alias boundSet = closureParameterCaptures[captureSomething]
+    comptime boundSet = closureParameterCaptures[captureSomething]
 
     # CHECK: lit.alias.decl *"unboundSingleParam{{.*}}@Origin<:!Bool {:i1 1}> *(0,0)>
-    alias unboundSingleParam = explicitLifetime
+    comptime unboundSingleParam = explicitLifetime
     # CHECK: lit.alias.decl *"boundSingleParam{{.*}}@Origin<:!Bool {:i1 1}> lt> param>
-    alias boundSingleParam = explicitLifetime[param]
+    comptime boundSingleParam = explicitLifetime[param]
 
     # CHECK: lit.alias.decl *"memberFunction{{.*}} !lit.generator<<{{.*}}>:*(0,1):
-    alias memberFunction = CapturingStruct.takeClosure
+    comptime memberFunction = CapturingStruct.takeClosure
 
     # CHECK: lit.fn *"captureWithClosure
     # CHECK-SAME: :{mut *"y`{{.*}}", mut |*(0,0)|}:
@@ -1127,7 +1127,7 @@ fn inferCaptureOrigins[
         _ = y
 
     # CHECK: lit.alias.decl *"boundClosure{{.*}} !lit.generator<:{mut *"x`", mut *"y`{{.*}}"}
-    alias boundClosure = captureWithClosure[captureSomething]
+    comptime boundClosure = captureWithClosure[captureSomething]
 
 
 # CHECK-LABEL: lit.fn @"testParameterCapture

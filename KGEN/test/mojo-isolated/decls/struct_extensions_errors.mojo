@@ -130,7 +130,7 @@ fn test_collisions(s: BaseStruct):
 
 struct BaseStruct:
     # expected-note @below {{extension method conflicts with struct declaration}}
-    alias colliding: Int = 42
+    comptime colliding: Int = 42
 
 
 __extension BaseStruct:
@@ -151,7 +151,7 @@ fn test_collisions(s: BaseStruct):
 
 struct BaseStruct:
     # expected-note @below {{extension declaration conflicts with struct declaration}}
-    alias colliding: Int = 42
+    comptime colliding: Int = 42
 
 
 __extension BaseStruct:

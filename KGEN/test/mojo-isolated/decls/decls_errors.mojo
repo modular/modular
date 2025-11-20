@@ -995,7 +995,7 @@ struct OtherBadStruct:
     # expected-note @below {{previous definition here}}
     # expected-note @below {{cannot overload with this non-function definition}}
     var b: Int
-    alias b = 0  # expected-error {{invalid redefinition of 'b'}}
+    comptime b = 0  # expected-error {{invalid redefinition of 'b'}}
 
     fn b(mut self):  # expected-error {{invalid redefinition of 'b'}}
         pass
@@ -1082,7 +1082,7 @@ except e:
 fn top_level_func_param[p: Int]():
     pass
 
-alias a = 100
+comptime a = 100
 # expected-error @below {{expressions are not supported at the file scope}}
 top_level_func_param[a]()
 
