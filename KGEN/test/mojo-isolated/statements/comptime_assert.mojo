@@ -12,16 +12,22 @@
 
 # CHECK-LABEL: lit.fn @"test_assert_with_message
 fn test_assert_with_message[cond: Bool]():
-    # CHECK: kgen.param.assert <{{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">{{.*}}>, "custom error message"
+    # CHECK: kgen.param.assert <{{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">{{.*}}>, data_to_str({{.*}}"custom error message"
     __comptime_assert cond, "custom error message"
 
 
 # CHECK-LABEL: lit.fn @"test_assert_with_long_message
 fn test_assert_with_long_message[cond: Bool]():
-    # CHECK: kgen.param.assert <{{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">{{.*}}>, "custom error message with long message and more"
+    # CHECK: kgen.param.assert <{{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">{{.*}}>, data_to_str({{.*}}"custom error message with long message and more"
     __comptime_assert cond, "custom error message"
                             " with long message "
                             "and more"
+
+
+# CHECK-LABEL: lit.fn @"test_assert_with_message_parameter
+fn test_assert_with_message_parameter[x: Int]():
+    # CHECK: kgen.param.assert <{{.*}}#lit.struct.extract<:!Int x, "_mlir_value">{{.*}}>, data_to_str{{.*}}@String::@"__init__
+    __comptime_assert x, String(x)
 
 
 # CHECK-LABEL: lit.fn @"test_assert_with_param_expr

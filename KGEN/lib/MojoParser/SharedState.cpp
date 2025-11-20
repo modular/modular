@@ -1274,18 +1274,34 @@ ASTDecl *SharedState::lookupNamedTypeDecl(StringRef name, ASTDecl &context,
   // The overload set may contain multiple entries, but if it is a struct, it
   // must be a single entry and therefore we can just check that one.
   ASTDecl &firstDecl = *result.getIfSuccess()[0];
-  if (!isa_and_nonnull<StructDeclOp>(firstDecl.getIfOperation())) {
-    auto diag = emitError(loc, "'") << name << "' doesn't resolve to a type";
-    diag.attachNote(firstDecl.getLoc()) << "'" << name << "' declared here";
-    return {};
+  if (isa_and_nonnull<StructDeclOp>(firstDecl.getIfOperation()))
+    return &firstDecl;
+
+  if (auto aliasDecl =
+          dyn_cast_or_null<AliasDeclOp>(firstDecl.getIfOperation())) {
+    if (LIT::isMetaType(aliasDecl.getType()))
+      return &firstDecl;
   }
-  return &firstDecl;
+
+  auto diag = emitError(loc, "'") << name << "' doesn't resolve to a type";
+  diag.attachNote(firstDecl.getLoc()) << "'" << name << "' declared here";
+  return {};
 }
 
 ASTType SharedState::lookupNamedType(StringRef name, ASTDecl &context,
                                      llvm::SMLoc loc) {
-  if (ASTDecl *decl = lookupNamedTypeDecl(name, context, loc))
-    return cast_or_null<StructDeclOp>(decl->getIfOperation()).bindReference();
+  if (ASTDecl *decl = lookupNamedTypeDecl(name, context, loc)) {
+    if (auto structDecl =
+            dyn_cast_or_null<StructDeclOp>(decl->getIfOperation()))
+      return structDecl.bindReference();
+    if (auto aliasDecl =
+            dyn_cast_or_null<AliasDeclOp>(decl->getIfOperation())) {
+      // We need the alias body to be available to return a type.
+      if (failed(declResolver->resolveBody(*decl, loc)))
+        return getTypeCheckErrorType();
+      return aliasDecl.getValueAttr();
+    }
+  }
   return getTypeCheckErrorType();
 }
 

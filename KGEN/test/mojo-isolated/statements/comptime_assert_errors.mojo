@@ -24,7 +24,7 @@ fn test_runtime_expr_error(x: Int, y: Int):
 
 
 fn test_non_string_literal_message_error():
-    # expected-error @below {{expected a string literal for the message of '__comptime_assert'}}
+    # expected-error @below {{cannot implicitly convert}}
     __comptime_assert True, 42
 
 
