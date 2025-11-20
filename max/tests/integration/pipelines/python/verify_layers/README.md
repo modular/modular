@@ -147,7 +147,7 @@ systematic patterns in the discrepancies.
 
 ## Supported Pipelines
 
-Most of the pipelines included in max/tests/integration/pipelines/python/generate_llm_logits.py
+Most of the pipelines included in max/tests/integration/tools/create_pipelines.py
 
 ## Technical Details
 
