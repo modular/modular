@@ -41,61 +41,66 @@ std::string M::raw_xxhash_stream::hashString() {
   return std::string(output);
 }
 
-FailureOr<std::string> M::getBytecodeHash(Operation *op,
-                                          ReplacementFunc replace) {
+static LogicalResult writeBytecode(Operation *op, llvm::raw_ostream &os,
+                                   mlir::AttrTypeReplacer &replacer) {
+  OwningOpRef<Operation *> cloned = op->clone();
+  replacer.recursivelyReplaceElementsIn(*cloned,
+                                        /*replaceAttrs=*/true,
+                                        /*replaceLocs=*/true,
+                                        /*replaceTypes=*/true);
+  return mlir::writeBytecodeToFile(*cloned, os);
+}
+
+M::BytecodeHasher::BytecodeHasher() {
+  // Add replacement which strips location information.
+  replacer.addReplacement(
+      [](LocationAttr loc) { return UnknownLoc::get(loc.getContext()); });
+}
+
+FailureOr<std::string> M::BytecodeHasher::getBytecodeHash(Operation *op) {
   raw_xxhash_stream ostream;
-  if (failed(M::writeBytecode(op, ostream, replace)))
+  if (failed(writeBytecode(op, ostream, replacer)))
     return op->emitError("Failed to write bytecode");
   return ostream.hashString();
 }
 
-LogicalResult M::writeBytecode(Operation *op, llvm::raw_ostream &os,
-                               ReplacementFunc replacer) {
-  auto unknownLoc = UnknownLoc::get(op->getContext());
+struct ModuleHashCache {
+  ModuleHashCache() = default;
 
-  auto *builtin = op->getContext()->getLoadedDialect<mlir::BuiltinDialect>();
-  BytecodeDialectInterface *iface =
-      builtin->getRegisteredInterface<BytecodeDialectInterface>();
+  LogicalResult computeHash(Operation *op) {
+    auto result = hasher.getBytecodeHash(op);
+    if (failed(result))
+      return failure();
 
-  BytecodeWriterConfig config;
-  config.attachAttributeCallback(
-      [&](Attribute entryValue, std::optional<StringRef> &dialectGroupName,
-          DialectBytecodeWriter &writer) -> LogicalResult {
-        // Map all locations attributes to UnknownLoc.
-        if (isa<LocationAttr>(entryValue))
-          entryValue = unknownLoc;
-        else if (replacer)
-          if (auto replaced = replacer(entryValue))
-            entryValue = replaced;
-        return iface->writeAttribute(entryValue, writer);
-      });
+    hashes.push_back(std::move(*result));
+    return success();
+  }
 
-  return mlir::writeBytecodeToFile(op, os, config);
-}
+  void join(ModuleHashCache &other) {
+    llvm::move(other.hashes, std::back_inserter(hashes));
+    other = ModuleHashCache();
+  }
+
+  M::BytecodeHasher hasher;
+  llvm::SmallVector<std::string> hashes;
+};
 
 FailureOr<std::string> M::getModuleBytecodeHash(mlir::ModuleOp module) {
   auto context = module.getContext();
   auto ops =
       llvm::map_to_vector(module.getOps(), [](Operation &op) { return &op; });
 
-  using CacheT = llvm::SmallVector<std::string>;
-
-  auto workFunc = [](CacheT &cache, Operation *op) -> LogicalResult {
-    auto result = M::getBytecodeHash(op);
-    if (failed(result))
-      return failure();
-    cache.push_back(std::move(*result));
-    return success();
+  auto workFunc = [](ModuleHashCache &cache, Operation *op) -> LogicalResult {
+    return cache.computeHash(op);
   };
 
-  auto consolidateFn = [](CacheT &original, MutableArrayRef<CacheT> caches) {
-    for (CacheT &cache : caches)
-      llvm::move(cache, std::back_inserter(original));
+  auto consolidateFn = [](ModuleHashCache &original,
+                          MutableArrayRef<ModuleHashCache> caches) {
+    for (ModuleHashCache &cache : caches)
+      original.join(cache);
   };
 
-  CacheT resultCache;
-  resultCache.reserve(ops.size());
-
+  ModuleHashCache resultCache;
   auto result = failableParallelForEach(
       /*ctx=*/context,
       /*range=*/ops,
@@ -109,9 +114,9 @@ FailureOr<std::string> M::getModuleBytecodeHash(mlir::ModuleOp module) {
   // Sort results to ensure determinism. The multi-threaded processing of
   // failableParallelForEach does not ensure an particular ordering w.r.t. what
   // input elements are associated to which cache.
-  llvm::sort(resultCache);
+  llvm::sort(resultCache.hashes);
 
   raw_xxhash_stream hasher;
-  llvm::interleave(resultCache, hasher, "");
+  llvm::interleave(resultCache.hashes, hasher, "");
   return hasher.hashString();
 }
