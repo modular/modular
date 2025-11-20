@@ -36,16 +36,16 @@ fn test_assert_with_param_expr[x: Int, y: Int]():
     __comptime_assert x == y
 
 
-fn requires_natural[x: Int]() where x >= 0:
+fn requires_natural[x: Int](y: Int) where x >= 0:
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_assert_enables_where_constraint
-fn test_assert_enables_where_constraint[x: Int]():
+fn test_assert_enables_where_constraint[x: Int](y: Int):
     # First assert that x >= 0
     # CHECK: kgen.param.assert <{{.*}}ge(#lit.struct.extract<:!Int x, "_mlir_value">, 0){{.*}}>
     __comptime_assert x >= 0
 
     # Now we can call a function that requires x >= 0 via where clause
     # CHECK: lit.call {{.*}}@"requires_natural
-    requires_natural[x]()
+    requires_natural[x](y)

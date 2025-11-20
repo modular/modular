@@ -820,9 +820,15 @@ ParseResult StmtParser::parseComptimeAssertStmt(LexerCursor startCursor,
   }
 
   Location loc = translateLocation(smLoc);
-  KGEN::ParamAssertOp::create(builder, loc, propVal.get(), message);
+  auto assertOp =
+      KGEN::ParamAssertOp::create(builder, loc, propVal.get(), message);
 
-  // Inject this assumption into the current context.
+  // All subsequent statements implicitly belong to a new, nested parameter
+  // scope. This scope completely takes over as the new `curDeclScope` and the
+  // old scope is not restored.
+  curDeclScope = &getDeclResolver().addFullyResolvedDecl(assertOp, StringAttr(),
+                                                         smLoc, curDeclScope);
+  // Inject this assumption into the newly created context.
   curDeclScope->insertKnownAssumptions(
       {ConstraintAttr::get(propVal.get(), loc)});
   return success();

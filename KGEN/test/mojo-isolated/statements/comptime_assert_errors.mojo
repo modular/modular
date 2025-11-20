@@ -52,3 +52,11 @@ fn test_assert_injects_assumption_correctly[x: Int]():
 
     # expected-error @below {{unable to satisfy constraint}}
     requires_natural[x]()
+
+
+fn test_newly_created_scope[x: Int]():
+    # expected-error @below {{unable to satisfy constraint}}
+    alias y = requires_natural[x]()
+
+    # COM: This assert should not validate the above statement.
+    __comptime_assert x >= 0
