@@ -2163,11 +2163,6 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     var warp_id = get_warp_id()
     alias max_tmem_cols = 512
 
-    # After this point, we start writing to shared memory.
-    @parameter
-    if pdl_level > PDLLevel.OFF:
-        wait_on_dependent_grids()
-
     if elect_one_warp and elect_one_thread:
         a_tma_op.prefetch_descriptor()
         b_tma_op.prefetch_descriptor()
@@ -2273,6 +2268,10 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         with MatmulProfilerType[0](workspace, 0):
             var required_clc_query = True
 
+            @parameter
+            if pdl_level > PDLLevel.OFF:
+                wait_on_dependent_grids()
+
             while work_info.is_valid():
                 # CLC throttle prevents each CTA from going a few waves ahead.
                 if is_first_cta_in_cluster and required_clc_query:
@@ -2329,6 +2328,10 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
         with MatmulProfilerType[1](workspace, 0):
             var required_clc_query = True
+
+            @parameter
+            if pdl_level > PDLLevel.OFF:
+                wait_on_dependent_grids()
 
             while work_info.is_valid():
                 if required_clc_query:
