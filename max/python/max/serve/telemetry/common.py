@@ -32,10 +32,15 @@ from opentelemetry.metrics import set_meter_provider
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics._internal.aggregation import (
+    ExplicitBucketHistogramAggregation,
+)
+from opentelemetry.sdk.metrics._internal.instrument import Histogram
 from opentelemetry.sdk.metrics.export import (
     MetricReader,
     PeriodicExportingMetricReader,
 )
+from opentelemetry.sdk.metrics.view import View
 from opentelemetry.sdk.resources import Resource
 from pythonjsonlogger import jsonlogger
 
@@ -87,6 +92,50 @@ metrics_resource = Resource.create(
         "enduser.id": os.environ.get("MODULAR_USER_ID", ""),
         "deployment.id": os.environ.get("MAX_SERVE_DEPLOYMENT_ID", ""),
     }
+)
+
+
+# Histogram bucket boundaries for latency-style metrics (in milliseconds).
+#
+# Design goals:
+# - Fine-grained resolution in the sub-10ms region to improve p50/p90 accuracy.
+# - Reasonable coverage for longer requests, up to tens of seconds.
+# - Keep the number of buckets modest to avoid excessive cardinality.
+HISTOGRAM_LATENCY_BUCKETS_MS: tuple[float, ...] = (
+    # Sub-10ms: detailed latency where we currently see coarse quantiles
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    7.5,
+    10.0,
+    # Typical interactive latency band
+    15.0,
+    20.0,
+    30.0,
+    40.0,
+    50.0,
+    75.0,
+    100.0,
+    150.0,
+    200.0,
+    300.0,
+    400.0,
+    500.0,
+    750.0,
+    # Longer running requests up to 30 seconds
+    1_000.0,
+    1_500.0,
+    2_000.0,
+    3_000.0,
+    5_000.0,
+    7_500.0,
+    10_000.0,
+    15_000.0,
+    20_000.0,
+    30_000.0,
+    60_000.0,
 )
 
 
@@ -301,14 +350,40 @@ def configure_logging(
 def configure_metrics(settings: Settings) -> None:
     egress_enabled = not settings.disable_telemetry
 
-    meterProviders: list[MetricReader] = [PrometheusMetricReader(True)]
+    meter_readers: list[MetricReader] = [PrometheusMetricReader(True)]
     if egress_enabled:
-        meterProviders.append(
+        meter_readers.append(
             PeriodicExportingMetricReader(
                 OTLPMetricExporter(endpoint=otelBaseUrl + "/v1/metrics")
             )
         )
-    set_meter_provider(MeterProvider(meterProviders, metrics_resource))
+
+    # Use a single histogram view for all Histogram instruments.
+    #
+    # This deliberately trades per-metric bucket tuning for simplicity and
+    # safety:
+    # - Every histogram (existing and future) uses the same bucket boundaries.
+    # - Each instrument matches exactly one View, so we never get duplicate
+    #   Prometheus histograms for the same metric name due to overlapping Views.
+    #
+    # We reuse the generic latency buckets, which already cover sub-10ms
+    # through long-running (tens of seconds) requests.
+    views: list[View] = [
+        View(
+            instrument_type=Histogram,
+            aggregation=ExplicitBucketHistogramAggregation(
+                HISTOGRAM_LATENCY_BUCKETS_MS
+            ),
+        ),
+    ]
+
+    set_meter_provider(
+        MeterProvider(
+            metric_readers=meter_readers,
+            resource=metrics_resource,
+            views=views,
+        )
+    )
 
     logger = logging.getLogger()
     if settings.disable_telemetry:
