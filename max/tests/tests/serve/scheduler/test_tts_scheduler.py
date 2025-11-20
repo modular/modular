@@ -69,50 +69,32 @@ def create_paged_manager(
     enable_prefix_caching: bool = False,
     enable_kvcache_swapping_to_host: bool = False,
 ) -> PagedKVCacheManager:
-    # Setting kv_heads, head_dim, and num_layers to 1 so it is easy to compute
-    # memory usage. Now we know each block is 1 byte.
-    NUM_KV_HEADS = 1
-    HEAD_DIM = 1
-    NUM_LAYERS = 1
-
     dtype = DType.float32
-
-    cache_memory = (
-        2
-        * NUM_LAYERS
-        * NUM_KV_HEADS
-        * HEAD_DIM
-        * page_size
-        * num_blocks
-        * dtype.size_in_bytes
-    )
-
-    # CPU swap space is 100x the device cache memory
-    GiB = 1024 * 1024 * 1024
-    host_kvcache_swap_space_gb = 100 * cache_memory / GiB
 
     kv_params = KVCacheParams(
         dtype=dtype,
-        n_kv_heads=NUM_KV_HEADS,
-        head_dim=HEAD_DIM,
+        num_layers=1,
+        n_kv_heads=1,
+        head_dim=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
         enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
-        host_kvcache_swap_space_gb=host_kvcache_swap_space_gb,
+        host_kvcache_swap_space_gb=999,
     )
 
     session = InferenceSession(devices=[CPU()])
 
+    # CPU swap space is 100x the device cache memory
+    num_host_pages = num_blocks * 100 if enable_kvcache_swapping_to_host else 0
     kv_manager = PagedKVCacheManager(
         params=kv_params,
+        total_num_pages=num_blocks,
+        total_num_host_pages=num_host_pages,
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
-        num_layers=NUM_LAYERS,
         devices=[CPU()],
         session=session,
-        available_cache_memory=cache_memory,
-        page_size=page_size,
         enable_runtime_checks=True,
     )
 

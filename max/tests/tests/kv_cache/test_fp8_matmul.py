@@ -223,6 +223,7 @@ def test_fused_qkv_ragged_matmul_scaled_float8_valid() -> None:
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=64,
+        num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
@@ -355,6 +356,7 @@ def test_fused_qkv_ragged_matmul_scaled_float8_device_mismatch(
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=64,
+        num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
@@ -409,6 +411,7 @@ def test_fused_qkv_ragged_matmul_scaled_float8_layer_idx_device() -> None:
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=64,
+        num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
@@ -453,6 +456,7 @@ def test_matmul_k_cache_ragged_scaled_float8_valid() -> None:
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=64,
+        num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
@@ -526,6 +530,7 @@ def test_matmul_k_cache_ragged_scaled_float8_invalid() -> None:
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=64,
+        num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
@@ -644,6 +649,7 @@ def test_matmul_k_cache_ragged_scaled_float8_invalid() -> None:
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=64,
+        num_layers=1,
         cache_strategy=KVCacheStrategy.MODEL_DEFAULT,  # Invalid strategy
         page_size=128,
     )

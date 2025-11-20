@@ -15,12 +15,19 @@ import pytest
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, Graph, ops
 from max.nn.attention import AttentionWithRope, TensorParallelAttentionWithRope
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
 from max.nn.rotary_embedding import RotaryEmbedding
+
+
+def create_kv_params(n_kv_heads: int = 8) -> KVCacheParams:
+    return KVCacheParams(
+        n_kv_heads=n_kv_heads,
+        head_dim=64,
+        num_layers=1,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
+        dtype=DType.float32,
+    )
 
 
 def test_attention_with_rope_stacked_qkv_bias_validation() -> None:
@@ -35,6 +42,7 @@ def test_attention_with_rope_stacked_qkv_bias_validation() -> None:
     kv_params = KVCacheParams(
         n_kv_heads=8,
         head_dim=64,
+        num_layers=1,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
         dtype=DType.float32,
@@ -64,13 +72,7 @@ def test_attention_with_rope_clip_qkv_validation() -> None:
         max_seq_len=2048,
     )
 
-    kv_params = KVCacheParams(
-        n_kv_heads=8,
-        head_dim=64,
-        cache_strategy=KVCacheStrategy.PAGED,
-        page_size=128,
-        dtype=DType.float32,
-    )
+    kv_params = create_kv_params()
 
     # Test that stacked_qkv=True with clip_qkv raises ValueError.
     with pytest.raises(
@@ -96,13 +98,7 @@ def test_distributed_attention_with_rope_device_validation() -> None:
         max_seq_len=2048,
     )
 
-    kv_params = KVCacheParams(
-        n_kv_heads=8,
-        head_dim=64,
-        cache_strategy=KVCacheStrategy.PAGED,
-        page_size=128,
-        dtype=DType.float32,
-    )
+    kv_params = create_kv_params()
 
     # Test that CPU devices raises ValueError.
     with pytest.raises(
@@ -130,13 +126,7 @@ def test_distributed_attention_with_rope_call_validation(
         max_seq_len=2048,
     )
 
-    kv_params = KVCacheParams(
-        n_kv_heads=8,
-        head_dim=64,
-        cache_strategy=KVCacheStrategy.PAGED,
-        page_size=128,
-        dtype=DType.float32,
-    )
+    kv_params = create_kv_params()
 
     devices = [DeviceRef("gpu", i) for i in range(2)]
     dist_attn = TensorParallelAttentionWithRope(
@@ -201,13 +191,7 @@ def test_distributed_attention_with_rope_non_divisible_heads(
         max_seq_len=2048,
     )
 
-    kv_params = KVCacheParams(
-        n_kv_heads=8,
-        head_dim=64,
-        cache_strategy=KVCacheStrategy.PAGED,
-        page_size=128,
-        dtype=DType.float32,
-    )
+    kv_params = create_kv_params()
 
     devices = [DeviceRef("gpu", i) for i in range(4)]
 
@@ -242,13 +226,7 @@ def test_distributed_attention_with_rope_stacked_qkv(
         max_seq_len=2048,
     )
 
-    kv_params = KVCacheParams(
-        n_kv_heads=8,
-        head_dim=64,
-        cache_strategy=KVCacheStrategy.PAGED,
-        page_size=128,
-        dtype=DType.float32,
-    )
+    kv_params = create_kv_params()
 
     devices = [DeviceRef("gpu", i) for i in range(4)]
 
@@ -282,13 +260,7 @@ def test_distributed_attention_with_rope_stacked_qkv_non_divisible(
         max_seq_len=2048,
     )
 
-    kv_params = KVCacheParams(
-        n_kv_heads=10,  # Also not divisible by 4
-        head_dim=64,
-        cache_strategy=KVCacheStrategy.PAGED,
-        page_size=128,
-        dtype=DType.float32,
-    )
+    kv_params = create_kv_params(n_kv_heads=10)  # Not divisible by 4
 
     devices = [DeviceRef("gpu", i) for i in range(4)]
 
@@ -326,13 +298,7 @@ def test_distributed_attention_with_rope_separate_projections(
         max_seq_len=2048,
     )
 
-    kv_params = KVCacheParams(
-        n_kv_heads=10,
-        head_dim=64,
-        cache_strategy=KVCacheStrategy.PAGED,
-        page_size=128,
-        dtype=DType.float32,
-    )
+    kv_params = create_kv_params(n_kv_heads=10)  # Not divisible by 4
 
     devices = [DeviceRef("gpu", i) for i in range(4)]
 
