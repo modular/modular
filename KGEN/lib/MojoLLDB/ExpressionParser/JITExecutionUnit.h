@@ -7,8 +7,9 @@
 #ifndef KGEN_LIB_MOJOLLDB_EXPRESSIONPARSER_JITEXECUTIONUNIT_H
 #define KGEN_LIB_MOJOLLDB_EXPRESSIONPARSER_JITEXECUTIONUNIT_H
 
+#include "../Utils/Binary.h"
+
 #include "KGEN/KGENDialect/KGENUtils.h"
-#include "Support/Binary.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "lldb/Expression/IRMemoryMap.h"
