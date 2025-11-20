@@ -18,7 +18,7 @@ modular_py_test(
         "//:nvidia_gpu",
     ],
     mojo_deps = [
-        "@mojo//:shmem",
+        "//max:shmem",
     ],
     tags = ["gpu"],
     deps = [
