@@ -14,7 +14,7 @@ from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight
-from max.kv_cache import load_kv_manager
+from max.kv_cache import PagedKVCacheManager
 from max.nn import LinearV1, RMSNormV1
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
 from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
@@ -183,13 +183,13 @@ def test_cross_attention(
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
     )
-    kv_manager = load_kv_manager(
+    kv_manager = PagedKVCacheManager(
         params=kv_params,
+        total_num_pages=8,
         max_batch_size=batch_size,
         max_seq_len=config.max_position_embeddings,
-        session=session,
         devices=[CPU()],
-        available_cache_memory=4 * 1024 * 1024 * 1024,
+        session=session,
     )
 
     # Phase 1: op staging.

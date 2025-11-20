@@ -16,11 +16,7 @@ from max.driver import Accelerator, Tensor, accelerator_api
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.kv_cache import (
-    NullKVCacheManager,
-    PagedKVCacheManager,
-    load_kv_manager,
-)
+from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
 from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
 )
@@ -104,7 +100,7 @@ def _single_gpu_baseline(
     kv_manager = PagedKVCacheManager(
         devices=[Accelerator(0)],
         params=kv_params,
-        total_num_pages=100,
+        total_num_pages=8,
         max_batch_size=1,
         max_seq_len=config.max_position_embeddings,
         session=session,
@@ -361,14 +357,13 @@ def _run_distributed_dp(
         attention_weights=attention_weights,
     )
 
-    kv_manager = load_kv_manager(
+    kv_manager = PagedKVCacheManager(
+        devices=devices,
         params=_build_kv_params(config, dp_degree),
+        total_num_pages=8,
         max_batch_size=dp_degree,  # one request per replica
         max_seq_len=config.max_position_embeddings,
-        devices=devices,
         session=session,
-        available_cache_memory=100 * 1024 * 1024,
-        page_size=128,
     )
 
     compiled, _ = _build_graph_and_compile(

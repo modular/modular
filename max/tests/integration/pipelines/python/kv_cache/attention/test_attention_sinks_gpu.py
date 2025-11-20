@@ -15,7 +15,7 @@ from max.driver import CPU, Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.kv_cache import load_kv_manager
+from max.kv_cache import PagedKVCacheManager
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import flash_attention_ragged
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
@@ -71,14 +71,13 @@ def max_flash_attention_with_sinks(
         input_row_offsets[i + 1] - input_row_offsets[i]
         for i in range(batch_size)
     )
-    kv_manager = load_kv_manager(
+    kv_manager = PagedKVCacheManager(
         params=kv_params,
+        total_num_pages=8,
         max_batch_size=batch_size,
         max_seq_len=max_seq_len * 2,  # Allow for some headroom
-        session=session,
         devices=[cuda],
-        available_cache_memory=1024 * 1024 * 1024,  # 1GB
-        page_size=128,
+        session=session,
     )
 
     # Create contexts for KV cache

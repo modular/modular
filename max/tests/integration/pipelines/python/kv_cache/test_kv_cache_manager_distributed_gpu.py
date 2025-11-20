@@ -13,7 +13,7 @@ import pytest
 from max.driver import Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.kv_cache import PagedKVCacheManager, load_kv_manager
+from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, RaggedKVCacheInputs
 from test_common.context_utils import create_text_context
 
@@ -39,13 +39,13 @@ def _create_kv_manager(
         n_devices=num_devices,
         data_parallel_degree=data_parallel_degree,
     )
-    manager = load_kv_manager(
+    manager = PagedKVCacheManager(
         params=params,
         max_batch_size=batch_size,
         max_seq_len=100,
         devices=devices,
         session=InferenceSession(devices=devices),
-        available_cache_memory=100 * 2**20,
+        total_num_pages=8,
     )
     assert isinstance(manager, PagedKVCacheManager)
     return manager

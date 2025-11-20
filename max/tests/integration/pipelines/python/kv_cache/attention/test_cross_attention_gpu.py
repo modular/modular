@@ -12,13 +12,9 @@ from max.driver import Accelerator, Tensor, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight
-from max.kv_cache import load_kv_manager
+from max.kv_cache import PagedKVCacheManager
 from max.nn import LinearV1, RMSNormV1
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
 from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
     CrossSdpaAttention,
 )
@@ -198,14 +194,13 @@ def test_cross_attention_gpu(
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
     )
-    kv_manager = load_kv_manager(
+    kv_manager = PagedKVCacheManager(
         params=kv_params,
         max_batch_size=batch_size,
         max_seq_len=config.max_position_embeddings,
         session=session,
         devices=[cuda],
-        available_cache_memory=8 * 1024 * 1024 * 1024,
-        page_size=page_size,
+        total_num_pages=2,
     )
 
     # Phase 1: op staging.

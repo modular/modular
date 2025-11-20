@@ -14,11 +14,7 @@ from max.driver import Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, Value
-from max.kv_cache import (
-    NullKVCacheManager,
-    PagedKVCacheManager,
-    load_kv_manager,
-)
+from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
 from max.nn import RotaryEmbedding
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
 from max.pipelines import KVCacheConfig
@@ -193,13 +189,12 @@ def generate_max_outputs(
         attention.load_state_dict(state_dict)
 
         # Set up blank KV cache.
-        kv_manager = load_kv_manager(
+        kv_manager = PagedKVCacheManager(
             params=kv_params,
             max_batch_size=1,
             max_seq_len=MAX_SEQ_LEN,
             devices=[device],
-            available_cache_memory=10 * 1024 * 1024,
-            page_size=kv_cache_config.kv_cache_page_size,
+            total_num_pages=8,
             session=session,
         )
 

@@ -11,7 +11,7 @@ from max.driver import Accelerator, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import TextGenerationContext
-from max.kv_cache import PagedKVCacheManager, load_kv_manager
+from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
 from test_common.context_utils import create_text_context
 
@@ -32,13 +32,13 @@ async def test_kv_cache_multi_gpu() -> None:
             page_size=128,
             n_devices=num_devices,
         )
-        kv_manager = load_kv_manager(
+        kv_manager = PagedKVCacheManager(
             params=kv_params,
+            total_num_pages=8,
             max_batch_size=1,
             max_seq_len=512,
             devices=list_of_devices,
             session=inference_session,
-            available_cache_memory=500 * 2**20,
         )
         context = create_text_context(np.empty(1))
         kv_manager.claim(context.request_id)

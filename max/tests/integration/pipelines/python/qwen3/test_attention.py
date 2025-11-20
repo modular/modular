@@ -15,7 +15,7 @@ from max.driver import Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.kv_cache import PagedKVCacheManager, load_kv_manager
+from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines import KVCacheConfig
@@ -168,15 +168,12 @@ def generate_max_outputs(
     attention.load_state_dict(state_dict)
 
     # Set up blank KV cache.
-    kv_manager = load_kv_manager(
+    kv_manager = PagedKVCacheManager(
         params=kv_params,
         max_batch_size=1,
         max_seq_len=MAX_SEQ_LEN,
         devices=[device],
-        available_cache_memory=30
-        * 1024
-        * 1024,  # Use 32 instead of 30 for 32B model attention test
-        page_size=kv_cache_config.kv_cache_page_size,
+        total_num_pages=8,
         session=session,
     )
     assert isinstance(kv_manager, PagedKVCacheManager)

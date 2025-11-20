@@ -10,7 +10,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import RequestID
-from max.kv_cache import PagedKVCacheManager, load_kv_manager
+from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
 from test_common.context_utils import create_text_context
 
@@ -30,13 +30,13 @@ async def test_step() -> None:
         page_size=128,
     )
 
-    kv_manager = load_kv_manager(
+    kv_manager = PagedKVCacheManager(
         params=params,
         max_batch_size=16,
         max_seq_len=100,
         devices=[device],
         session=InferenceSession(devices=[device]),
-        available_cache_memory=500 * 2**20,
+        total_num_pages=8,
     )
 
     # Create three text contexts and externally claim each using their request_id
@@ -85,13 +85,13 @@ async def test_claim_and_release() -> None:
         page_size=128,
     )
 
-    dp_kv_manager = load_kv_manager(
+    dp_kv_manager = PagedKVCacheManager(
         params=params,
         max_batch_size=16,
         max_seq_len=100,
         devices=[device],
         session=InferenceSession(devices=[device]),
-        available_cache_memory=500 * 2**20,
+        total_num_pages=8,
     )
     # This test requires PagedKVCacheManager to access internal _replica_managers
     assert isinstance(dp_kv_manager, PagedKVCacheManager), (
@@ -143,13 +143,13 @@ async def test_fetch_paged() -> None:
         page_size=128,
     )
 
-    kv_manager = load_kv_manager(
+    kv_manager = PagedKVCacheManager(
         params=params,
         max_batch_size=16,
         max_seq_len=100,
         devices=[device],
         session=InferenceSession(devices=[device]),
-        available_cache_memory=500 * 2**20,
+        total_num_pages=8,
     )
 
     # Claim 5 items
