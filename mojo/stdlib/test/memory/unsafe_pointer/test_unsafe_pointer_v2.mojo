@@ -113,7 +113,7 @@ def test_unsafepointer_of_move_only_type():
     var actions = List[String]()
     var actions_ptr = UnsafePointer(to=actions).as_immutable()
 
-    alias ObserveType = ObservableMoveOnly[actions_ptr.origin]
+    comptime ObserveType = ObservableMoveOnly[actions_ptr.origin]
 
     var ptr = alloc[ObserveType](1)
     ptr.init_pointee_move(ObserveType(42, actions_ptr))
@@ -265,19 +265,19 @@ def test_unsafepointer_address_space():
 
 
 def test_unsafepointer_aligned_alloc():
-    alias alignment_1 = 32
+    comptime alignment_1 = 32
     var ptr = alloc[UInt8](1, alignment=alignment_1)
     var ptr_uint64 = UInt64(Int(ptr))
     ptr.free()
     assert_equal(ptr_uint64 % alignment_1, 0)
 
-    alias alignment_2 = 64
+    comptime alignment_2 = 64
     var ptr_2 = alloc[UInt8](1, alignment=alignment_2)
     var ptr_uint64_2 = UInt64(Int(ptr_2))
     ptr_2.free()
     assert_equal(ptr_uint64_2 % alignment_2, 0)
 
-    alias alignment_3 = 128
+    comptime alignment_3 = 128
     var ptr_3 = alloc[UInt8](1, alignment=alignment_3)
     var ptr_uint64_3 = UInt64(Int(ptr_3))
     ptr_3.free()

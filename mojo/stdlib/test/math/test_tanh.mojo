@@ -27,7 +27,7 @@ fn tanh_libm[
 
 
 def test_tanh_tfvals_fp32():
-    alias dtype = DType.float32
+    comptime dtype = DType.float32
 
     # The following input values for x are taken from
     # https://github.com/modularml/modular/issues/28981#issuecomment-1890182667
@@ -71,7 +71,7 @@ def test_tanh_tfvals_fp32():
 
 
 def test_tanh_tfvals_fp64():
-    alias dtype = DType.float64
+    comptime dtype = DType.float64
 
     # The following input values for x are taken from
     # https://github.com/modularml/modular/issues/28981#issuecomment-1890182667
@@ -126,7 +126,7 @@ def test_tanh_tfvals_fp64():
 
 def _test_tanh_libm[N: Int = 8192]():
     seed(0)
-    alias test_dtype = DType.float32
+    comptime test_dtype = DType.float32
     var x32 = UnsafePointer[Scalar[test_dtype]].alloc(N)
     randn[test_dtype](x32, N, 0, 9.0)
     print("For N=", N, " randomly generated vals; mean=0.0, var=9.0")
@@ -162,7 +162,7 @@ def _test_tanh_libm[N: Int = 8192]():
 
 
 def test_direct():
-    alias F32x4 = SIMD[DType.float32, 4]
+    comptime F32x4 = SIMD[DType.float32, 4]
     var f32x4 = 0.5 * F32x4(0.0, 1.0, 2.0, 3.0)
     assert_almost_equal(
         tanh(f32x4), F32x4(0.0, 0.462117165, 0.761594176, 0.905148208)
@@ -171,7 +171,7 @@ def test_direct():
         tanh(0.5 * f32x4), F32x4(0.0, 0.244918659, 0.462117165, 0.635149002)
     )
 
-    alias F64x4 = SIMD[DType.float64, 4]
+    comptime F64x4 = SIMD[DType.float64, 4]
     var f64x4 = 0.5 * F64x4(0.0, 1.0, 2.0, 3.0)
     assert_almost_equal(
         tanh(f64x4), F64x4(0.0, 0.462117165, 0.761594176, 0.905148208)

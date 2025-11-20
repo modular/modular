@@ -43,7 +43,7 @@ def test_FPUtils():
     assert_equal(FPUtils[DType.float32].mantissa_width(), 23)
     assert_equal(FPUtils[DType.float32].exponent_bias(), 127)
 
-    alias FPU64 = FPUtils[DType.float64]
+    comptime FPU64 = FPUtils[DType.float64]
 
     assert_equal(FPU64.mantissa_width(), 52)
     assert_equal(FPU64.exponent_bias(), 1023)

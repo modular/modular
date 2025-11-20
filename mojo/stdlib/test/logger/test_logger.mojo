@@ -68,7 +68,7 @@ def test_log_with_prefix():
 def test_log_with_location():
     print("=== Test logging with location")
 
-    alias log = Logger[Level.TRACE](prefix="", source_location=True)
+    comptime log = Logger[Level.TRACE](prefix="", source_location=True)
 
     # CHECK: test_logger.mojo:74:14] hello
     log.trace("hello")
@@ -78,7 +78,7 @@ def test_log_with_location():
 def test_log_with_custom_location():
     print("=== Test logging with custom location")
 
-    alias log = Logger[Level.TRACE](prefix="", source_location=True)
+    comptime log = Logger[Level.TRACE](prefix="", source_location=True)
 
     # CHECK: somefile.mojo:42:999] hello
     log.trace("hello", location=_SourceLocation(42, 999, "somefile.mojo"))

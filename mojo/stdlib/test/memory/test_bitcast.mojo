@@ -29,20 +29,20 @@ def test_bitcast():
 
 
 def test_pack_bits():
-    alias b1 = Scalar[DType.bool](True)
+    comptime b1 = Scalar[DType.bool](True)
     assert_equal(pack_bits(b1).cast[DType.bool](), b1)
     assert_equal(pack_bits(b1).cast[DType.uint8](), UInt8(0b0000_0001))
 
-    alias b2 = SIMD[DType.bool, 2](1, 0)
+    comptime b2 = SIMD[DType.bool, 2](1, 0)
     assert_equal(pack_bits(b2).cast[DType.uint8](), UInt8(0b0000_0001))
 
-    alias b4 = SIMD[DType.bool, 4](1, 1, 0, 1)
+    comptime b4 = SIMD[DType.bool, 4](1, 1, 0, 1)
     assert_equal(pack_bits(b4).cast[DType.uint8](), UInt8(0b0000_1011))
 
-    alias b8 = SIMD[DType.bool, 8](1, 1, 1, 0, 1, 0, 1, 0)
+    comptime b8 = SIMD[DType.bool, 8](1, 1, 1, 0, 1, 0, 1, 0)
     assert_equal(pack_bits(b8), UInt8(0b0101_0111))
 
-    alias b16 = SIMD[DType.bool, 16](
+    comptime b16 = SIMD[DType.bool, 16](
         1, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 1
     )
     assert_equal(pack_bits(b16), UInt16(0b1000_1010_0101_0111))

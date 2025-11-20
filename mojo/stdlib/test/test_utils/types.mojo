@@ -68,7 +68,7 @@ struct ObservableMoveOnly[actions_origin: ImmutOrigin](Movable):
         actions_origin: Origin of the actions list for tracking operations.
     """
 
-    alias _U = UnsafePointer[
+    comptime _U = UnsafePointer[
         List[String], mut=False, origin = Self.actions_origin
     ]
     var actions: Self._U
@@ -312,7 +312,7 @@ struct TriviallyCopyableMoveCounter(Copyable, Movable):
     """Number of times this instance has been moved."""
 
     # Copying this type is trivial, it doesn't care to track copies.
-    alias __copyinit__is_trivial = True
+    comptime __copyinit__is_trivial = True
 
     fn __moveinit__(out self, deinit existing: Self):
         """Moves from an existing instance and increments the count.
@@ -395,7 +395,7 @@ struct DelCounter[counter_origin: ImmutOrigin, *, trivial_del: Bool = False](
         trivial_del: Whether the destructor is trivial.
     """
 
-    alias __del__is_trivial = Self.trivial_del
+    comptime __del__is_trivial = Self.trivial_del
 
     var counter: UnsafePointer[Int, mut=False, origin = Self.counter_origin]
     """Pointer to counter incremented on destruction."""

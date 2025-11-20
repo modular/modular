@@ -187,7 +187,7 @@ def test_copies():
     print("-------")
     print("Running test_copies(" + ctx.name() + "):")
 
-    alias one_mb = 1024 * 1024
+    comptime one_mb = 1024 * 1024
 
     _run_memcpy(ctx, 64, True)
     _run_memcpy(ctx, one_mb, True)

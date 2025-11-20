@@ -36,7 +36,7 @@ fn _test_local_import(mut python: Python) -> String:
 
 
 fn _test_dynamic_import(mut python: Python, times: Int = 1) -> String:
-    alias INLINE_MODULE = """
+    comptime INLINE_MODULE = """
 called_already = False
 def hello(name):
     global called_already

@@ -23,8 +23,8 @@ from memory import (
 )
 from testing import TestSuite
 
-alias T = DType.float64
-alias S = Scalar[T]
+comptime T = DType.float64
+comptime S = Scalar[T]
 
 
 @register_passable("trivial")
@@ -36,7 +36,7 @@ trait MaybeZeroSized:
 @fieldwise_init
 @register_passable("trivial")
 struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -66,7 +66,7 @@ struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
 @fieldwise_init
 @register_passable("trivial")
 struct NotZeroSized(DevicePassable, MaybeZeroSized, Writable):
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -172,11 +172,11 @@ def test_function_unchecked():
 
 
 fn _run_test_function_unchecked(ctx: DeviceContext) raises:
-    alias length = 1024
-    alias block_dim = 32
+    comptime length = 1024
+    comptime block_dim = 32
 
-    alias zero_sized_t = NotZeroSized
-    alias vec_func = _vec_func[zero_sized_t]
+    comptime zero_sized_t = NotZeroSized
+    comptime vec_func = _vec_func[zero_sized_t]
     # alias vec_func = _vec_func_not_zero
     # alias vec_func = _vec_func_zero
 
@@ -229,11 +229,11 @@ def test_function_checked():
 
 
 fn _run_test_function_checked(ctx: DeviceContext) raises:
-    alias length = 1024
-    alias block_dim = 32
+    comptime length = 1024
+    comptime block_dim = 32
 
-    alias zero_sized_t = ZeroSized
-    alias vec_func = _vec_func[zero_sized_t]
+    comptime zero_sized_t = ZeroSized
+    comptime vec_func = _vec_func[zero_sized_t]
     # alias vec_func = _vec_func_not_zero
     # alias vec_func = _vec_func_zero
 

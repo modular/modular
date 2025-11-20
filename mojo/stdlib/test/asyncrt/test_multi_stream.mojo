@@ -37,8 +37,8 @@ def test_concurrent_copy():
 
 
 fn _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
-    alias length = 1 * 1024 * 1024
-    alias T = DType.float32
+    comptime length = 1 * 1024 * 1024
+    comptime T = DType.float32
 
     var in0_dev1 = ctx1.enqueue_create_buffer[T](length)
     var in0_dev2 = ctx1.enqueue_create_buffer[T](length)
@@ -165,8 +165,8 @@ def test_concurrent_func():
 
 
 fn _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
-    alias length = 20 * 1024 * 1024
-    alias T = DType.float32
+    comptime length = 20 * 1024 * 1024
+    comptime T = DType.float32
 
     # Initialize the variable inputs with known values.
     var in_dev1 = ctx1.enqueue_create_buffer[T](length)

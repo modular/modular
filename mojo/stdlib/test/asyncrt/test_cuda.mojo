@@ -154,8 +154,8 @@ $L__BB0_2:
 }
 """
 
-    alias LEN = 1024
-    alias BLOCK_DIM = 32
+    comptime LEN = 1024
+    comptime BLOCK_DIM = 32
 
     lhs = ctx.enqueue_create_buffer[DType.float32](LEN)
     lhs.enqueue_fill(2.0)

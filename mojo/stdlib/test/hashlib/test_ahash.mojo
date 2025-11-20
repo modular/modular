@@ -29,15 +29,15 @@ from test_utils import (
 )
 from testing import assert_equal, assert_not_equal, assert_true, TestSuite
 
-alias hasher0 = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
-alias hasher1 = AHasher[SIMD[DType.uint64, 4](1, 0, 0, 0)]
+comptime hasher0 = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
+comptime hasher1 = AHasher[SIMD[DType.uint64, 4](1, 0, 0, 0)]
 
 
 def test_hash_byte_array():
-    alias a = StaticString("a")
-    alias b = StaticString("b")
-    alias c = StaticString("c")
-    alias d = StaticString("d")
+    comptime a = StaticString("a")
+    comptime b = StaticString("b")
+    comptime c = StaticString("c")
+    comptime d = StaticString("d")
 
     assert_equal(hash[HasherType=hasher0](a), hash[HasherType=hasher0](a))
     assert_equal(hash[HasherType=hasher1](a), hash[HasherType=hasher1](a))

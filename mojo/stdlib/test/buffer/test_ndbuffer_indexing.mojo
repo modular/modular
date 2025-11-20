@@ -21,7 +21,7 @@ def test_ndbuffer_indexing():
     print("== test_ndbuffer_indexing")
 
     # The total amount of data to allocate
-    alias total_buffer_size: Int = 2 * 3 * 4 * 5 * 6
+    comptime total_buffer_size: Int = 2 * 3 * 4 * 5 * 6
 
     # Create a buffer for indexing test:
     var _data = InlineArray[Scalar[DType.int], total_buffer_size](

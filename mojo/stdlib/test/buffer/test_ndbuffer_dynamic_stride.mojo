@@ -21,8 +21,8 @@ from utils.index import Index
 # CHECK-LABEL: test_sub_matrix
 def test_sub_matrix():
     print("== test_sub_matrix")
-    alias num_row = 4
-    alias num_col = 4
+    comptime num_row = 4
+    comptime num_col = 4
 
     var matrix_stack = InlineArray[Float32, num_row * num_col](
         uninitialized=True

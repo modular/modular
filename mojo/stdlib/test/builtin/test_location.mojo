@@ -113,19 +113,19 @@ fn get_callsite_statically() -> _SourceLocation:
 
 fn test_parameter_context() raises:
     # TODO: enable these in parameter contexts
-    alias sloc = __source_location()
+    comptime sloc = __source_location()
     assert_equal(sloc.line, 0)
     assert_equal(sloc.col, 0)
     assert_equal(sloc.file_name, "<unknown location in parameter context>")
 
-    alias cloc = get_callsite_statically()
+    comptime cloc = get_callsite_statically()
     assert_equal(cloc.line, 0)
     assert_equal(cloc.col, 0)
     assert_equal(cloc.file_name, "<unknown location in parameter context>")
 
-    alias iloc = get_inner_location_statically()
+    comptime iloc = get_inner_location_statically()
     check_source_loc(102, 29, iloc)
-    alias iloc2 = get_inner_location_statically_with_debug()
+    comptime iloc2 = get_inner_location_statically_with_debug()
     check_source_loc(106, 33, iloc2)
 
 

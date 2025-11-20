@@ -115,7 +115,7 @@ def test_dimlist_eq():
 
 fn test_dim_ceildiv() raises:
     fn test_dim_ceildiv(m: ValOrDim) -> Dim:
-        alias BLOCK_SCALE_M = 128
+        comptime BLOCK_SCALE_M = 128
         return ceildiv(m.dim, BLOCK_SCALE_M)
 
     assert_equal(String(test_dim_ceildiv(dynamic(120))), "?")

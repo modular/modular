@@ -18,7 +18,7 @@ from testing import TestSuite
 
 @parameter
 fn _timed_iter_func(context: DeviceContext, iter: Int) raises:
-    alias length = 64
+    comptime length = 64
 
     var in_host = context.enqueue_create_host_buffer[DType.float32](length)
     var out_host = context.enqueue_create_host_buffer[DType.float32](length)

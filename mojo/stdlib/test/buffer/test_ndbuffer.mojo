@@ -323,12 +323,12 @@ def test_ndbuffer_tofile():
 def test_ndbuffer_tile():
     print("== test_ndbuffer_tile")
 
-    alias M = 8
-    alias N = 8
-    alias m0_tile_size = 4
-    alias n0_tile_size = 4
-    alias m1_tile_size = 2
-    alias n1_tile_size = 2
+    comptime M = 8
+    comptime N = 8
+    comptime m0_tile_size = 4
+    comptime n0_tile_size = 4
+    comptime m1_tile_size = 2
+    comptime n1_tile_size = 2
 
     var buf_stack = InlineArray[Float32, M * N](uninitialized=True)
     var buff = NDBuffer[DType.float32, 2, _, DimList(M, N)](

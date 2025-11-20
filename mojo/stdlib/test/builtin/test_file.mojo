@@ -20,7 +20,7 @@ from time import sleep
 
 from testing import assert_equal, assert_raises, assert_true, TestSuite
 
-alias DUMMY_FILE_SIZE: UInt = 954
+comptime DUMMY_FILE_SIZE: UInt = 954
 
 
 def test_file_read():
@@ -203,7 +203,7 @@ def test_file_read_context():
 
 
 def test_file_read_to_address():
-    alias DUMMY_FILE_SIZE = 954
+    comptime DUMMY_FILE_SIZE = 954
     # Test buffer size > file size
     with open(
         _dir_of_current_file() / "test_file_dummy_input.txt",
@@ -279,7 +279,7 @@ def test_file_seek():
         var pos = f.seek(6)
         assert_equal(pos, 6)
 
-        alias expected_msg1 = "ipsum dolor sit amet, consectetur adipiscing elit."
+        comptime expected_msg1 = "ipsum dolor sit amet, consectetur adipiscing elit."
         assert_equal(f.read(len(expected_msg1)), expected_msg1)
 
         # Seek from the end of the file
@@ -296,7 +296,7 @@ def test_file_seek():
         try:
             _ = f.seek(-12)
         except e:
-            alias expected_msg = "Failed to seek"
+            comptime expected_msg = "Failed to seek"
             assert_equal(String(e)[: len(expected_msg)], expected_msg)
 
 

@@ -286,9 +286,9 @@ def test_mojo_math():
 
 
 def test_custom():
-    alias N = 1024
-    alias alignment = 64
-    alias dtype = DType.int32
+    comptime N = 1024
+    comptime alignment = 64
+    comptime dtype = DType.int32
     var x = UnsafePointer[Scalar[dtype],].alloc(N, alignment=alignment)
     var y = UnsafePointer[Scalar[dtype],].alloc(N, alignment=alignment)
     randint[dtype](x, N, 0, 255)

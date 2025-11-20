@@ -168,8 +168,8 @@ def test_shuffle():
     # TODO: Clean up with list comprehension when possible.
 
     # Property tests
-    alias L_i = List[Int]
-    alias L_s = List[String]
+    comptime L_i = List[Int]
+    comptime L_s = List[String]
     var a: L_i = [1, 2, 3, 4]
     var b: L_i = [1, 2, 3, 4]
     var c: L_s = ["Random", "shuffle", "in", "Mojo"]
@@ -194,7 +194,7 @@ def test_shuffle():
     shuffle(f)
     assert_true(f == ["Mojo"])
 
-    alias L_l = List[List[Int]]
+    comptime L_l = List[List[Int]]
     var g = L_l()
     var h = L_l()
     for i in range(10):
@@ -215,7 +215,7 @@ def test_shuffle():
                 break
         assert_true(found)
 
-    alias L_l_s = List[List[String]]
+    comptime L_l_s = List[List[String]]
     var i = L_l_s()
     var j = L_l_s()
     for x in range(10):
@@ -345,9 +345,9 @@ def test_uniformity_basic():
     This test just catches egregiously bad distributions.
     """
     seed(42)
-    alias num_buckets = 10
-    alias samples_per_bucket = 100
-    alias total_samples = num_buckets * samples_per_bucket
+    comptime num_buckets = 10
+    comptime samples_per_bucket = 100
+    comptime total_samples = num_buckets * samples_per_bucket
 
     # Count samples in each bucket
     var buckets = List[Int](length=num_buckets, fill=0)

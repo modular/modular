@@ -35,8 +35,8 @@ from utils.index import Index, IndexList, StaticTuple
 def test_reductions():
     print("== test_reductions")
 
-    alias simd_width = 4
-    alias size = 100
+    comptime simd_width = 4
+    comptime size = 100
 
     # Create a mem of size size
     var vector_stack = InlineArray[Float32, size](uninitialized=True)
@@ -58,7 +58,7 @@ def test_reductions():
 def test_reductions_zero_size():
     print("== test_reductions_zero_size")
 
-    alias size = 0
+    comptime size = 0
     var vector_stack = InlineArray[Float32, size](uninitialized=True)
     var vector = NDBuffer[DType.float32, 1, _, size](vector_stack.unsafe_ptr())
 
@@ -71,9 +71,9 @@ def test_reductions_zero_size():
 def test_fused_reductions_inner():
     print("== test_fused_redtest_fused_reductions_inneructions")
 
-    alias size = 100
-    alias test_type = DType.float32
-    alias num_reductions = 3
+    comptime size = 100
+    comptime test_type = DType.float32
+    comptime num_reductions = 3
     var vector_stack = InlineArray[Float32, size](uninitialized=True)
     var vector = NDBuffer[test_type, 1, _, size](vector_stack.unsafe_ptr())
 
@@ -152,9 +152,9 @@ def test_fused_reductions_inner():
 def test_fused_reductions_outer():
     print("== test_fused_reductions_outer")
 
-    alias size = 100
-    alias test_type = DType.float32
-    alias num_reductions = 3
+    comptime size = 100
+    comptime test_type = DType.float32
+    comptime num_reductions = 3
     var vector_stack = InlineArray[Float32, size](uninitialized=True)
     var vector = NDBuffer[test_type, 1, _, size](vector_stack.unsafe_ptr())
 
@@ -233,8 +233,8 @@ def test_fused_reductions_outer():
 def test_product():
     print("== test_product")
 
-    alias simd_width = 4
-    alias size = 10
+    comptime simd_width = 4
+    comptime size = 10
 
     # Create a mem of size size
     var vector_stack = InlineArray[Float32, size](uninitialized=True)
@@ -251,8 +251,8 @@ def test_product():
 def test_mean_variance():
     print("== test_mean_variance")
 
-    alias simd_width = 4
-    alias size = 100
+    comptime simd_width = 4
+    comptime size = 100
 
     # Create a mem of size size
     var vector_stack = InlineArray[Float32, size](uninitialized=True)
@@ -276,7 +276,7 @@ fn _test_3d_reductions[
     reduce_axis: Int,
 ]() raises:
     print("== test_3d_reductions reduce_axis=", reduce_axis)
-    alias simd_width = 4
+    comptime simd_width = 4
     var input_stack = InlineArray[Float32, Int(input_shape.product())](
         uninitialized=True
     )
@@ -351,8 +351,8 @@ def test_3d_reductions_axis_2():
 def test_boolean():
     print("== test_boolean")
 
-    alias simd_width = 2
-    alias size = 5
+    comptime simd_width = 2
+    comptime size = 5
 
     # Create a mem of size size
     var vector_stack = InlineArray[Scalar[DType.bool], size](uninitialized=True)

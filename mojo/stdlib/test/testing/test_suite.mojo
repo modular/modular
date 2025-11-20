@@ -36,7 +36,7 @@ def test_skipped():
 
 
 def main():
-    alias funcs = __functions_in_module()
+    comptime funcs = __functions_in_module()
     var suite = TestSuite.discover_tests[funcs]()
 
     suite.skip[test_skipped]()
@@ -89,7 +89,7 @@ def main():
     def test_nonconforming_signature(x: Int):
         raise Error("should not be run")
 
-    alias failing_funcs = Tuple(
+    comptime failing_funcs = Tuple(
         test_nonconforming_signature, funcs[1], funcs[2], funcs[3], funcs[4]
     )
     with assert_raises(

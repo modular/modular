@@ -13,14 +13,14 @@
 
 from testing import assert_equal, assert_false, assert_true, TestSuite
 
-alias nan = FloatLiteral.nan
-alias neg_zero = FloatLiteral.negative_zero
-alias inf = FloatLiteral.infinity
-alias neg_inf = FloatLiteral.negative_infinity
+comptime nan = FloatLiteral.nan
+comptime neg_zero = FloatLiteral.negative_zero
+comptime inf = FloatLiteral.infinity
+comptime neg_inf = FloatLiteral.negative_infinity
 
 
 def test_init():
-    alias n: IntLiteral[(4).value] = 4
+    comptime n: IntLiteral[(4).value] = 4
     assert_equal(4.0, FloatLiteral(n))
 
 

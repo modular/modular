@@ -25,7 +25,7 @@ fn bar(x: Int) -> Int:
 
 # NOTE: this is intentionally in the middle here, to ensure that the intrinsic
 # correctly resolves signatures that are declared after the call.
-alias funcs = __functions_in_module()
+comptime funcs = __functions_in_module()
 
 
 def main():
@@ -38,7 +38,7 @@ def main():
 
     @parameter
     for i in range(len(funcs)):
-        alias name = get_linkage_name[funcs[i]]()
+        comptime name = get_linkage_name[funcs[i]]()
         assert_equal(name, expected_names[i])
 
 

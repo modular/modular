@@ -21,7 +21,7 @@ fn _run_badbuf(ctx: DeviceContext) raises:
     print("-")
     print("_run_badbuf()")
 
-    alias alloc_size = 256
+    comptime alloc_size = 256
 
     # Construct a bad buffer by adopting the host pointer.
     var host_ptr = UnsafePointer[Int8].alloc(alloc_size)

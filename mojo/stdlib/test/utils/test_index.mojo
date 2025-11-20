@@ -50,7 +50,7 @@ def test_cast():
         String(IndexList[2, element_type = DType.int32](1, 2)),
         "(1, 2)",
     )
-    alias s = String(
+    comptime s = String(
         IndexList[2, element_type = DType.int32](1, 2).cast[DType.int64]()
     )
     assert_equal(s, "(1, 2)")

@@ -184,19 +184,19 @@ def test_unsafepointer_address_space():
 
 
 def test_unsafepointer_aligned_alloc():
-    alias alignment_1 = 32
+    comptime alignment_1 = 32
     var ptr = LegacyUnsafePointer[UInt8].alloc(1, alignment=alignment_1)
     var ptr_uint64 = UInt64(Int(ptr))
     ptr.free()
     assert_equal(ptr_uint64 % alignment_1, 0)
 
-    alias alignment_2 = 64
+    comptime alignment_2 = 64
     var ptr_2 = LegacyUnsafePointer[UInt8].alloc(1, alignment=alignment_2)
     var ptr_uint64_2 = UInt64(Int(ptr_2))
     ptr_2.free()
     assert_equal(ptr_uint64_2 % alignment_2, 0)
 
-    alias alignment_3 = 128
+    comptime alignment_3 = 128
     var ptr_3 = LegacyUnsafePointer[UInt8].alloc(1, alignment=alignment_3)
     var ptr_uint64_3 = UInt64(Int(ptr_3))
     ptr_3.free()

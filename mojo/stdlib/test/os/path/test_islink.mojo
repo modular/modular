@@ -21,7 +21,7 @@ from sys import env_get_string
 
 from testing import TestSuite, assert_false, assert_true
 
-alias TEMP_DIR = env_get_string["TEMP_DIR"]()
+comptime TEMP_DIR = env_get_string["TEMP_DIR"]()
 
 
 def test_islink():

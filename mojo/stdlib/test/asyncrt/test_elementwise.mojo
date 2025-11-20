@@ -28,12 +28,12 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     print("-")
     print("run_elementwise[", dtype, "]:")
 
-    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
-    alias rank = 2
-    alias dim_x = 2
-    alias dim_y = 8
-    alias length = dim_x * dim_y
+    comptime rank = 2
+    comptime dim_x = 2
+    comptime dim_y = 8
+    comptime length = dim_x * dim_y
 
     var in0 = ctx.enqueue_create_buffer[dtype](length)
     var out = ctx.enqueue_create_buffer[dtype](length)

@@ -14,7 +14,7 @@
 from logger import Level, Logger
 from testing import TestSuite
 
-alias log = Logger[Level.INFO]()
+comptime log = Logger[Level.INFO]()
 
 
 def test_log_alias():

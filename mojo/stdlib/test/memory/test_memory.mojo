@@ -29,8 +29,8 @@ from testing import (
 
 from utils.numerics import nan
 
-alias void = __mlir_attr.`#kgen.dtype.constant<invalid> : !kgen.dtype`
-alias int8_pop = __mlir_type.`!pop.scalar<si8>`
+comptime void = __mlir_attr.`#kgen.dtype.constant<invalid> : !kgen.dtype`
+comptime int8_pop = __mlir_type.`!pop.scalar<si8>`
 
 
 @fieldwise_init
@@ -287,10 +287,10 @@ def test_memcmp_extensive():
 
 def test_memcmp_simd_boundary():
     """Test edge cases in SIMD memcmp implementation that could expose bugs."""
-    alias simd_width = simd_width_of[DType.int8]()
+    comptime simd_width = simd_width_of[DType.int8]()
 
     # Test 1: Difference exactly at SIMD boundary
-    alias size = simd_width + 1
+    comptime size = simd_width + 1
     var ptr1 = alloc[Int8](size)
     var ptr2 = alloc[Int8](size)
 
@@ -319,7 +319,7 @@ def test_memcmp_simd_boundary():
 
 def test_memcmp_simd_overlap():
     """Test overlapping region handling in SIMD memcmp."""
-    alias simd_width = simd_width_of[DType.int8]()
+    comptime simd_width = simd_width_of[DType.int8]()
 
     # Test sizes that trigger overlapping tail reads
     var test_sizes: List[Int] = [
@@ -508,7 +508,7 @@ def test_memcmp_simd_width_edge_cases():
 
 def test_memcmp_simd_zero_bytes():
     """Test handling of zero bytes in SIMD memcmp."""
-    alias size = simd_width_of[DType.int8]() * 2
+    comptime size = simd_width_of[DType.int8]() * 2
     var ptr1 = alloc[Int8](size)
     var ptr2 = alloc[Int8](size)
 
@@ -626,7 +626,7 @@ def test_pointer_refitem():
 
 
 def test_pointer_refitem_string():
-    alias payload = "$Modular!Mojo!HelloWorld^"
+    comptime payload = "$Modular!Mojo!HelloWorld^"
     var ptr = alloc[String](1)
     __get_address_as_uninit_lvalue(ptr.address) = String()
     ptr[] = payload

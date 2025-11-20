@@ -18,11 +18,11 @@ from testing import assert_equal, assert_false, assert_true, TestSuite
 # Triviality Struct
 # ===-----------------------------------------------------------------------===#
 
-alias EVENT_TRIVIAL = 0b1  # 1
-alias EVENT_INIT = 0b10  # 2
-alias EVENT_DEL = 0b100  # 4
-alias EVENT_COPY = 0b1000  # 8
-alias EVENT_MOVE = 0b10000  # 16
+comptime EVENT_TRIVIAL = 0b1  # 1
+comptime EVENT_INIT = 0b10  # 2
+comptime EVENT_DEL = 0b100  # 4
+comptime EVENT_COPY = 0b1000  # 8
+comptime EVENT_MOVE = 0b10000  # 16
 
 
 struct ConditionalTriviality[O: MutOrigin, //, T: Movable & Copyable](
@@ -64,9 +64,9 @@ struct ConditionalTriviality[O: MutOrigin, //, T: Movable & Copyable](
 
 
 struct StructInheritTriviality[T: Movable & Copyable](Movable & Copyable):
-    alias __moveinit__is_trivial = Self.T.__moveinit__is_trivial
-    alias __copyinit__is_trivial = Self.T.__copyinit__is_trivial
-    alias __del__is_trivial = Self.T.__del__is_trivial
+    comptime __moveinit__is_trivial = Self.T.__moveinit__is_trivial
+    comptime __copyinit__is_trivial = Self.T.__copyinit__is_trivial
+    comptime __del__is_trivial = Self.T.__del__is_trivial
 
 
 # ===-----------------------------------------------------------------------===#

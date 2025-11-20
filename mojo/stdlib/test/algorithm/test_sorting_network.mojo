@@ -15,7 +15,7 @@ from algorithm._sorting_network import _sort
 from testing import assert_true
 from testing import TestSuite
 
-alias sizes = [
+comptime sizes = [
     2,
     3,
     4,

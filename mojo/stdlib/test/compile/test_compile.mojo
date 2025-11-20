@@ -28,11 +28,11 @@ def test_compile_llvm():
     ](x: SIMD[dtype, size], y: SIMD[dtype, size]) -> SIMD[dtype, size]:
         return x + y
 
-    alias func = my_add_function[DType.float32, 4]
+    comptime func = my_add_function[DType.float32, 4]
     assert_true("fadd" in compile_info[func, emission_kind="llvm"]())
 
 
-alias target_short_ptr = __mlir_attr[
+comptime target_short_ptr = __mlir_attr[
     `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
     `arch = "sm_80", `,
     `features = "+ptx81", `,
@@ -42,7 +42,7 @@ alias target_short_ptr = __mlir_attr[
     `> : !kgen.target`,
 ]
 
-alias target_regular = __mlir_attr[
+comptime target_regular = __mlir_attr[
     `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
     `arch = "sm_80", `,
     `features = "+ptx81", `,
@@ -105,7 +105,7 @@ def test_cross_compile():
         # TODO: MOCO-2593, this test deadlocks in mojo build in ASAN
         return
 
-    alias MI355X_TARGET = get_gpu_target["mi355x"]()
+    comptime MI355X_TARGET = get_gpu_target["mi355x"]()
 
     fn test_kernel():
         constrained[

@@ -59,7 +59,7 @@ def test_vectorize():
 
 
 def test_vectorize_unroll():
-    alias buf_len = 23
+    comptime buf_len = 23
 
     var vec_stack = InlineArray[Float32, buf_len](uninitialized=True)
     var vec = NDBuffer[DType.float32, 1, _, buf_len](vec_stack.unsafe_ptr())
@@ -88,8 +88,8 @@ def test_vectorize_unroll():
             vec.load[width=simd_width](idx) + vec.load[width=simd_width](idx),
         )
 
-    alias simd_width = 4
-    alias unroll_factor = 2
+    comptime simd_width = 4
+    comptime unroll_factor = 2
 
     vectorize[double_vec, simd_width, unroll_factor=unroll_factor](len(vec))
     vectorize[double_buf, simd_width](len(buf))

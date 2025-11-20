@@ -22,7 +22,7 @@ from utils.index import IndexList
 def test_partial_load_store():
     print("== test_partial_load_store")
     # The total amount of data to allocate
-    alias total_buffer_size: Int = 32
+    comptime total_buffer_size: Int = 32
 
     var read_data = InlineArray[Scalar[DType.int], total_buffer_size](
         uninitialized=True

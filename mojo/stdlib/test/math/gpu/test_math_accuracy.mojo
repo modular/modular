@@ -22,13 +22,13 @@ from testing import assert_almost_equal, assert_equal, TestSuite
 
 from utils import Index, IndexList
 
-alias length = 8192
+comptime length = 8192
 
 
 def run_elementwise[
     dtype: DType, math_fn: fn (x: SIMD) -> type_of(x)
 ](ctx: DeviceContext, in_device: DeviceBuffer[dtype],):
-    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
     var out_device = ctx.enqueue_create_buffer[dtype](length)
 
@@ -52,8 +52,8 @@ def run_elementwise[
         for i in range(length):
             var expected_value = math_fn(in_host[i])
 
-            alias atol = 1e-05 if dtype is DType.float32 else 1e-4
-            alias rtol = 2e-05 if dtype is DType.float32 else 2e-2
+            comptime atol = 1e-05 if dtype is DType.float32 else 1e-4
+            comptime rtol = 2e-05 if dtype is DType.float32 else 2e-2
             assert_almost_equal(
                 out_host[i],
                 expected_value,
@@ -65,7 +65,7 @@ def run_elementwise[
 
 def _test_exp[dtype: DType](ctx: DeviceContext):
     var input = ctx.enqueue_create_buffer[dtype](length)
-    alias epsilon = 0.001
+    comptime epsilon = 0.001
     with input.map_to_host() as in_host:
         for i in range(length):
             in_host[i] = log(Scalar[dtype](i) + epsilon)
@@ -74,7 +74,7 @@ def _test_exp[dtype: DType](ctx: DeviceContext):
 
 def _test_exp2[dtype: DType](ctx: DeviceContext):
     var input = ctx.enqueue_create_buffer[dtype](length)
-    alias epsilon = 0.001
+    comptime epsilon = 0.001
     with input.map_to_host() as in_host:
         for i in range(length):
             in_host[i] = log(Scalar[dtype](i) + epsilon)

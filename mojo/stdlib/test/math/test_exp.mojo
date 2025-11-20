@@ -59,7 +59,7 @@ def exp_libm[
 
 def _test_exp_libm[dtype: DType]():
     seed(0)
-    alias N = 8192
+    comptime N = 8192
     for _i in range(N):
         var x = randn_float64(0, 9.0).cast[dtype]()
         assert_almost_equal(

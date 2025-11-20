@@ -69,7 +69,7 @@ def test_memset():
     print("-------")
     print("Running test_memset(" + ctx.name() + "):")
 
-    alias one_mb = 1024 * 1024
+    comptime one_mb = 1024 * 1024
 
     _run_memset[DType.uint8](ctx, 64, 12)
     _run_memset[DType.uint8](ctx, one_mb, 13)

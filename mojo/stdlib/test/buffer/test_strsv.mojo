@@ -15,7 +15,7 @@ from buffer import NDBuffer
 from memory import LegacyUnsafePointer as UnsafePointer
 from testing import TestSuite
 
-alias simd_width = 8
+comptime simd_width = 8
 
 
 fn strsv[
@@ -102,7 +102,7 @@ fn naive_strsv[
 def test_strsv():
     print("== test_strsv")
 
-    alias size: Int = 64
+    comptime size: Int = 64
     var l_stack = InlineArray[Float32, size * size](uninitialized=True)
     var L = NDBuffer[DType.float32, 1, _, size * size](l_stack.unsafe_ptr())
     var x0_stack = InlineArray[Float32, size * size](uninitialized=True)

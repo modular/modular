@@ -157,8 +157,8 @@ def _test_inplace_dunder_methods(mut python: Python):
 
 
 def test_num_conversion():
-    alias n = UInt64(0xFEDC_BA09_8765_4321)
-    alias n_str = String(n)
+    comptime n = UInt64(0xFEDC_BA09_8765_4321)
+    comptime n_str = String(n)
     assert_equal(n_str, String(PythonObject(n)))
 
 
