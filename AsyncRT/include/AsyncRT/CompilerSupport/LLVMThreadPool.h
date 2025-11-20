@@ -8,6 +8,7 @@
 #define ASYNCRT_COMPILERSUPPORT_RUNTIME_H
 
 #include "AsyncRT/Runtime/AsyncValueRef.h"
+#include "AsyncRT/Support/Chain.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Threading/Shared.h"
 #include "llvm/Support/ThreadPool.h"
