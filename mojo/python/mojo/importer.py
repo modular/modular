@@ -16,9 +16,12 @@ import logging
 import os
 import subprocess
 import sys
+from collections import defaultdict
 from collections.abc import Sequence
 from importlib.util import spec_from_file_location
 from pathlib import Path
+from itertools import chain
+import threading
 
 from .paths import MojoCompilationError, MojoModulePath, find_mojo_module_in_dir
 from .run import subprocess_run_mojo
@@ -26,7 +29,7 @@ from .run import subprocess_run_mojo
 # ---------------------------------------
 # Helper Functions
 # ---------------------------------------
-
+_thread_local_storage = threading.local()
 
 def _calculate_mojo_source_hash(mojo_dir: Path) -> str:
     """Calculates a truncated SHA256 hash of all .mojo/.🔥 files in a directory."""
@@ -59,14 +62,33 @@ def _calculate_mojo_source_hash(mojo_dir: Path) -> str:
     return hasher.hexdigest()[:16]
 
 
-def _compile_mojo_to_so(root_mojo_path: Path, output_so_path: Path) -> None:
+def _calculate_comptime_variables_hash(comptime_variables: dict[str, str] | None) -> str:
+    """Calculates a truncated SHA256 hash of compile-time variables."""
+    if not comptime_variables:
+        return ""
+
+    hasher = hashlib.sha256()
+    # Sort items to ensure consistent hashing regardless of dict ordering
+    for key, value in sorted(comptime_variables.items()):
+        hasher.update(key.encode("utf-8"))
+        hasher.update(b"=")
+        hasher.update(value.encode("utf-8"))
+        hasher.update(b"\0")  # null separator between entries
+
+    return hasher.hexdigest()[:16]
+
+
+def _compile_mojo_to_so(
+    root_mojo_path: Path,
+    output_so_path: Path,
+    comptime_variables: dict[str, str] | None = None
+) -> None:
     """Compiles a Mojo file to a shared object library."""
     # Assertions from _build_mojo_file_to_python_extension_module
     assert root_mojo_path.is_file()
     assert output_so_path.suffix == ".so"
 
     mojo_cli_args = [
-        # First arg is implicitly the `mojo` executable (handled by subprocess_run_mojo)
         "build",
         str(root_mojo_path),
         "--emit",
@@ -75,8 +97,16 @@ def _compile_mojo_to_so(root_mojo_path: Path, output_so_path: Path) -> None:
         str(output_so_path),
     ]
 
+    # add comptime variables if set
+    if comptime_variables is not None:
+        extra_cli_args = [
+            ('-D', f"{key}={value}")
+            for key, value in comptime_variables.items()
+        ]
+        extra_cli_args_flat = chain.from_iterable(extra_cli_args)
+        mojo_cli_args.extend(extra_cli_args_flat)
+
     try:
-        # Run the `mojo` that's embedded in the `max` package layout via subprocess_run_mojo.
         subprocess_run_mojo(mojo_cli_args, capture_output=True, check=True)
     except subprocess.CalledProcessError as e:
         error = MojoCompilationError.from_subprocess_error(
@@ -106,6 +136,15 @@ def _delete_matching_cached_files(
     for old_cache_file in cache_dir.glob(f"{stem}.*.{ext}"):
         os.remove(old_cache_file)
 
+
+def set_comptime_variables(module_name: str, values: dict[str, str], ) -> None:
+    """Set compile-time variables for a Mojo module imports."""
+    # Initialize the comptime_variables_by_module dict if it doesn't exist
+    if not hasattr(_thread_local_storage, 'comptime_variables_by_module'):
+        _thread_local_storage.comptime_variables_by_module = defaultdict(dict)
+
+    # Store variables for a specific module
+    _thread_local_storage.comptime_variables_by_module[module_name].update(values)
 
 # ---------------------------------------
 # Define custom importer
@@ -152,12 +191,19 @@ class MojoImporter:
         # Determine cache location and directory to hash
         cache_dir = mojo_dir / "__mojocache__"
 
-        # Calculate hash.
-        current_hash = _calculate_mojo_source_hash(mojo_dir)
+        # Calculate hash of source.
+        source_hash = _calculate_mojo_source_hash(mojo_dir)
 
-        expected_cache_file = (
-            cache_dir / f"{root_mojo_path.stem}.hash-{current_hash}.so"
-        )
+        # Retrieve comptime variables for this specific module
+        comptime_variables = _thread_local_storage.comptime_variables_by_module.get(name, None)
+
+        # Calculate hash of comptime variables
+        comptime_hash = _calculate_comptime_variables_hash(comptime_variables)
+
+        # Build cache filename: <module>.<source_hash>.<comptime_hash>.so
+        # If no comptime variables, the format is: <module>.<source_hash>..so
+        cache_filename = f"{root_mojo_path.stem}.{source_hash}.{comptime_hash}.so"
+        expected_cache_file = cache_dir / cache_filename
 
         # Compile if cache doesn't exist or is invalid
         if not expected_cache_file.is_file():
@@ -168,7 +214,13 @@ class MojoImporter:
             _delete_matching_cached_files(
                 cache_dir, stem=root_mojo_path.stem, ext="so"
             )
-            _compile_mojo_to_so(root_mojo_path, expected_cache_file)
+
+            # compile mojo source
+            _compile_mojo_to_so(
+                root_mojo_path,
+                expected_cache_file,
+                comptime_variables=comptime_variables,
+            )
 
         # If we reach here, expected_cache_file should exist (either pre-existing or just compiled)
         assert expected_cache_file.is_file()
