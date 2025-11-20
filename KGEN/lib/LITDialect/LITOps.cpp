@@ -19,7 +19,6 @@
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
-#include "Support/Compiler/Properties.h"
 #include "Support/Compiler/VerifyUtils.h"
 
 using namespace M;
