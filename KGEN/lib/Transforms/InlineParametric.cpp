@@ -6,8 +6,8 @@
 
 #include "AsyncRT/CompilerSupport/Context.h"
 #include "AsyncRT/Runtime/Algorithms.h"
+#include "AsyncRT/Runtime/ForkJoin.h"
 #include "AsyncRT/Runtime/WorkQueue.h"
-#include "AsyncRT/Support/ForkJoin.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/AttrTypeMangler.h"

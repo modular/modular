@@ -14,7 +14,7 @@
 #include "ParametricElaborator.h"
 
 #include "AsyncRT/CompilerSupport/Context.h"
-#include "AsyncRT/Support/ForkJoin.h"
+#include "AsyncRT/Runtime/ForkJoin.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
