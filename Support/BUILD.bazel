@@ -54,7 +54,6 @@ modular_cc_library(
     hdrs = [
         "include/Support/AlignedAlloc.h",
         "include/Support/AssertStream.h",
-        "include/Support/Binary.h",
         "include/Support/CommandLine.h",
         "include/Support/Config.h",
         "include/Support/Debugger.h",
