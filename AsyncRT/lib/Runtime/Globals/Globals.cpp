@@ -9,7 +9,10 @@
 #if defined(__APPLE__)
 #include <gperftools/tcmalloc.h>
 #else
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wprivate-header"
 #include <tcmalloc/tcmalloc.h>
+#pragma GCC diagnostic pop
 #endif
 
 #include "AsyncRT/Runtime/CompactRuntimePtr.h"
