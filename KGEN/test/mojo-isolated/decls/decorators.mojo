@@ -275,7 +275,7 @@ struct StructExample(ImplicitlyCopyable):
 
 
 # CHECK-LABEL: lit.struct.decl @ValueMem(!AnyType_Copyable_ImplicitlyCopyable_Movable_UnknownDestructibility)
-# CHECK: move :!lit.generator<[2]({{.*}} owned_in_mem, |, ?, {{.*}} byref_result) {{.*}}ValueMem::@"__moveinit__
+# CHECK: move :!lit.generator<[2]({{.*}} deinit_mem, |, ?, {{.*}} byref_result) {{.*}}ValueMem::@"__moveinit__
 @fieldwise_init
 struct ValueMem(ImplicitlyCopyable, Movable):
     var a: Int  # Trivial
@@ -283,7 +283,7 @@ struct ValueMem(ImplicitlyCopyable, Movable):
 
 
 # CHECK: lit.fn @"__moveinit__(
-# CHECK-SAME:  %other: !lit.ref<!ValueMem, mut {{.*}}> owned_in_mem,
+# CHECK-SAME:  %other: !lit.ref<!ValueMem, mut {{.*}}> deinit_mem,
 # CHECK-SAME:  %self: !lit.ref<!ValueMem, mut {{.*}}> byref_result)
 # CHECK-SAME: -> !kgen.none always_inline_no_debug attributes
 # CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
@@ -341,7 +341,7 @@ struct ValueMemHasMove(Movable, ImplicitlyCopyable):
 # CHECK-LABEL: lit.struct.decl @ValueRegTrivial
 # CHECK-SAME: (!AnyType_Copyable_ImplicitlyCopyable_Movable_UnknownDestructibility) register_passable_trivial
 
-# CHECK: lit.fn @"__moveinit__{{.*}}"[{{.*}}](%other: !lit.ref<!ValueRegTrivial, {{.*}}> owned_in_mem,
+# CHECK: lit.fn @"__moveinit__{{.*}}"[{{.*}}](%other: !lit.ref<!ValueRegTrivial, {{.*}}> deinit_mem,
 # CHECK-SAME: %self: !lit.ref<!ValueRegTrivial, {{.*}}> byref_result)
 # CHECK-NEXT: [[V0:%.*]] = lit.ref.load %other : <!ValueRegTrivial
 # CHECK-NEXT: lit.ref.store [[V0]], %self

@@ -446,7 +446,7 @@ void ClosureLifter::liftDelFunction(OpBuilder &b, Location loc,
     KGEN::ReturnOp::create(b, loc, noneAttr->getResults().front());
   };
   createClosureGenerator(b, loc, closureInitData, ClosureMethod::DEL, funcType,
-                         populateBody, {ArgConvention::OwnedMem});
+                         populateBody, {ArgConvention::DeinitMem});
 }
 
 static void emitCopyMoveCall(mlir::OpBuilder &b, Location location,
@@ -514,7 +514,7 @@ void ClosureLifter::liftMoveOrCopyFunction(OpBuilder &b, Location loc,
       b, loc, closureInitData,
       isMove ? ClosureMethod::MOVE : ClosureMethod::COPY, funcType,
       populateBody,
-      {isMove ? ArgConvention::OwnedMem : ArgConvention::ReadMem,
+      {isMove ? ArgConvention::DeinitMem : ArgConvention::ReadMem,
        ArgConvention::ByRefResult});
 }
 

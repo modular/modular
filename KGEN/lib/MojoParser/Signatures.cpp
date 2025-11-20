@@ -1554,11 +1554,13 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
   case ParsedArgument::kConventionByRefResult:
     llvm_unreachable("shouldn't occur in an argument list");
   case ParsedArgument::kConventionVar:
-  case ParsedArgument::kConventionDeinit:
     // Owned arguments are always passed in memory, allowing us to check for
     // exclusivity and other requirements.  Register passable arguments are
     // promoted to being passed in registers after elaboration.
     arg.kgenConvention = ArgConvention::OwnedMem;
+    break;
+  case ParsedArgument::kConventionDeinit:
+    arg.kgenConvention = ArgConvention::DeinitMem;
     break;
   case ParsedArgument::kConventionRef: {
     if (arg.variadicKind != VariadicKind::None) {
@@ -2300,11 +2302,6 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
     diagnoseSelfForDelAndMoveInit("self");
     break;
   }
-
-  // If this function had a deinit self, remember it.
-  if (parsedArgs.size() > kSelfArgNo &&
-      parsedArgs[kSelfArgNo].convention == ParsedArgument::kConventionDeinit)
-    funcOp.setSelfDeinit(true);
 
   // If we have a special function kind and didn't have any errors with it,
   // remember which kind it is.

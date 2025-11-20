@@ -401,6 +401,7 @@ public:
   /// The convention this argument is passed with.
   enum class Convention {
     kBorrowed,
+    kDeinit,
     kInOut,
     kOwned,
     kRef,

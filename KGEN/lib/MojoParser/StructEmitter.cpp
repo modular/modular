@@ -679,15 +679,12 @@ FnOp StructEmitter::synthesizeEmptyDtor() {
 
   // Create the FnOp and ASTDecl for the method.
   auto [funcOp, funcDecl] = synthesizeMethodInStruct(
-      "__del__", selfType.mlirType, ArgConvention::OwnedMem,
+      "__del__", selfType.mlirType, ArgConvention::DeinitMem,
       PogListAttr::get(getContext(), selfName, PassingKind::PosOnly),
       shared.getNoneType(), SpecialFunctionKind::kDel);
   if (!funcOp)
     return {};
   funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
-
-  // Destructors consume their 'self' arg.
-  funcOp.setSelfDeinit(true);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (shared.diBuilder)
@@ -714,7 +711,7 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(bool isMove) {
   // passed as a register, otherwise a reference.
   Type existingArgType = selfType.getRefForArgument("existing", isMove);
   ArgConvention existingConv =
-      isMove ? ArgConvention::OwnedMem : ArgConvention::ReadMem;
+      isMove ? ArgConvention::DeinitMem : ArgConvention::ReadMem;
 
   Type selfArgType = selfType.getRefForArgument("self", /*isMut=*/true);
   auto argListAttrs =
@@ -736,8 +733,6 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(bool isMove) {
   auto resultAtBlockEndBuilder = OpBuilder::atBlockEnd(resultFn.getBody());
   EndFnOp::create(resultAtBlockEndBuilder, resultFn.getLoc(),
                   /*unresolved=*/true);
-  if (isMove) // Move constructors consume their 'self' arg.
-    resultFn.setSelfDeinit(true);
 
   // TODO: Should only do this if the type is RP or small?
   resultFn.setInlineLevel(InlineLevel::AlwaysNoDebug);

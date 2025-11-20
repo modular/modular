@@ -601,8 +601,6 @@ ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl) {
       wrapperSignature.getFnEffects().setUnified(false).setRegisterPassable(
           false),
       "", true, traitFnOp.getInlineLevel());
-  if (traitFnOp.getSelfDeinit())
-    op.setSelfDeinit(true);
   return {op, parameters, result};
 }
 

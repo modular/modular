@@ -108,7 +108,7 @@ fn result_mem1(var a: MemoryUniqueMovable) -> MemoryUniqueMovable:
 # CHECK-LABEL: lit.fn @"result_mem3
 fn result_mem3(var a: MemoryMovableCopyable) -> MemoryMovableCopyable:
     # CHECK-NEXT: lit.ownership.use %a
-    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%a, %__result__){{.*}} owned_in_mem{{.*}}byref_result
+    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%a, %__result__){{.*}} deinit_mem{{.*}}byref_result
     # CHECK-NEXT: kgen.param.constant: none
     # CHECK-NEXT: kgen.return
     return a^

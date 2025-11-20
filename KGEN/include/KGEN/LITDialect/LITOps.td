@@ -63,7 +63,6 @@ def LIT_FnOp : LITOp<"fn", [
     DefaultValuedAttr<LIT_ImplicitConversionKindAttr,
       "ImplicitConversionKind::None">:$implicitConversion,
     UnitAttr:$external,
-    UnitAttr:$selfDeinit, // First argument is 'deinit self'.
     UnitAttr:$defaultedTraitFn, // Present for trait methods with non-empty bodies.
     UnitAttr:$disabled, // Function should be skipped for overload resolution.
     KGEN_ExportKindAttr:$exportKind,

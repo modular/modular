@@ -64,7 +64,7 @@ fn use(y: MemType, z: Int, u: __mlir_type.index):
 # CHECK-NEXT: }
 
 # CHECK-LABEL: lit.fn @"__moveinit__(
-# CHECK-SAME:   %other: !lit.ref<{{.*}}> owned_in_mem,
+# CHECK-SAME:   %other: !lit.ref<{{.*}}> deinit_mem,
 # CHECK-SAME:   %self: !lit.ref<{{.*}}> byref_result
 # CHECK-SAME: ) -> !kgen.none {{.*}}specialFnKind = 4 : i8
 # CHECK-NEXT:   [[W0:%.*]] = lit.ref.struct.ger %self[field0]

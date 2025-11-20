@@ -439,9 +439,11 @@ static void emitRaise(ImplicitLocOpBuilder &b) {
     // If we are in a raising deinit method, and this call throws out of it,
     // then we should assume that we've deconstructed self enough.  Mark self
     // as destroyed so we don't get an error.
-    if (fnOp.getSelfDeinit()) {
-      LIT::OwnershipMarkDestroyedOp::create(
-          b, fnOp.getBody()->getArguments().front());
+    for (auto [conv, arg] :
+         llvm::zip(fnOp.getFuncTypeGenerator().getBody().getArgConventions(),
+                   fnOp.getBody()->getArguments())) {
+      if (conv == ArgConvention::DeinitMem)
+        LIT::OwnershipMarkDestroyedOp::create(b, arg);
     }
     LIT::ErrorReturnOp::create(b,
                                ParamConstantOp::create(b, b.getBoolAttr(true)));

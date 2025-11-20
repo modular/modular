@@ -1868,12 +1868,11 @@ void IREmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
           ParamConstantOp::create(builder, NoneAttr::get(func.getContext()));
   }
 
-  // Handle a `deinit` argument by marking it destroyed.
-  if (func.getSelfDeinit()) {
-    assert(!signature.getArgConventions().empty() &&
-           signature.getArgConventions().front() == ArgConvention::OwnedMem);
-    Value argToDestroy = func.getBody()->getArguments().front();
-    LIT::OwnershipMarkDestroyedOp::create(builder, argToDestroy);
+  // Handle any `deinit` argument by marking it destroyed.
+  for (auto [conv, arg] : llvm::zip(signature.getArgConventions(),
+                                    func.getBody()->getArguments())) {
+    if (conv == ArgConvention::DeinitMem)
+      LIT::OwnershipMarkDestroyedOp::create(builder, arg);
   }
 
   // Finally we emit a normal return with lit.return.

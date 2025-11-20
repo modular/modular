@@ -38,6 +38,7 @@ static inline bool hasImplicitOrigin(ArgConvention conv) {
   case ArgConvention::ReadReg:
     return false;
   case ArgConvention::OwnedMem:
+  case ArgConvention::DeinitMem:
   case ArgConvention::ReadMem:
   case ArgConvention::Mut:
   case ArgConvention::ByRefResult:

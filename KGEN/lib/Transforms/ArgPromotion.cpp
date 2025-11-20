@@ -212,6 +212,7 @@ static std::pair<bool, bool> getInOutFlags(ArgConvention conv) {
   // 'read' and 'owned' arguments convey no side-effects to callees.
   case ArgConvention::ReadMem:
   case ArgConvention::OwnedMem:
+  case ArgConvention::DeinitMem:
     return {true, false};
 
   // 'mut' can read and write. Pessimistically treat 'ref' as 'mut'.
@@ -233,8 +234,9 @@ static std::pair<bool, bool> getInOutFlags(ArgConvention conv) {
 /// ownedness of the convention.
 static ArgConvention getByValueConvention(ArgConvention conv) {
   assert(hasAddress(conv));
-  return conv == ArgConvention::OwnedMem ? ArgConvention::OwnedReg
-                                         : ArgConvention::ReadReg;
+  return (conv == ArgConvention::OwnedMem || conv == ArgConvention::DeinitMem)
+             ? ArgConvention::OwnedReg
+             : ArgConvention::ReadReg;
 }
 
 void Graph::doRewrite(const Node *node) {

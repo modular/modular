@@ -254,9 +254,9 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     assert(operand.ir.getIfLValue() && "Call should already be type checked");
     return operand.ir;
   case ArgConvention::OwnedMem:
+  case ArgConvention::DeinitMem:
     // Owned conventions pass rvalues.
-    if (convention == ArgConvention::OwnedMem)
-      expectedType = sugarCast<RefType>(expectedType).getElementType();
+    expectedType = sugarCast<RefType>(expectedType).getElementType();
     return emitter.emitRValue(operand, EC_CallArgValue, expectedType);
 
   case ArgConvention::Ref:
@@ -849,6 +849,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
   case ArgConvention::OwnedReg:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::OwnedMem:
+  case ArgConvention::DeinitMem:
     // Promote PValue's if needed.
     return checkMValueAddrSpace(emitter.emitMRValue(argValAndExpr, ctx));
   case ArgConvention::ReadReg:

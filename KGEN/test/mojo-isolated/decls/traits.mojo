@@ -521,7 +521,7 @@ struct RegSpecial(AnyType, ImplicitlyCopyable, Movable):
 struct MemoryOnlySpecial(AnyType, ImplicitlyCopyable, Movable):
     pass
     # CHECK: lit.fn @"__del__
-    # CHECK-SAME: [{{.*}} owned_in_mem, |) -> !kgen.none
+    # CHECK-SAME: [{{.*}} deinit_mem, |) -> !kgen.none
     # CHECK: return %none
 
 
@@ -917,7 +917,7 @@ trait RGTrait:
     # CHECK-NEXT: lit.fn @"doSomething{{.*}}"[imm *"{{.*}}"](%self: !lit.ref<:!RGTrait *"{{.*}}", imm *"{{.*}}"> read_mem) -> !kgen.none
     fn doSomething(self):
         ...
-    # CHECK: lit.fn @"__del__({{.*}})"[mut *"{{.*}}"](%self: !lit.ref<:!RGTrait *"{{.*}}", mut *"{{.*}}"> owned_in_mem, |) -> !kgen.none
+    # CHECK: lit.fn @"__del__({{.*}})"[mut *"{{.*}}"](%self: !lit.ref<:!RGTrait *"{{.*}}", mut *"{{.*}}"> deinit_mem, |) -> !kgen.none
 
 # CHECK-LABEL: lit.trait.decl @RGTrivialTrait{{.*}} register_passable_trivial
 @register_passable("trivial")
