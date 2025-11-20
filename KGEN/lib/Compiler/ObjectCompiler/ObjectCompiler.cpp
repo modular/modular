@@ -1587,24 +1587,6 @@ static void attachGPUCodeGenAttributes(llvm::Function *kernelEntry) {
   kernelEntry->addFnAttr(llvm::Attribute::NoRecurse);
 }
 
-static std::string getNVGPUName(StringRef targetAccelerator) {
-  std::pair<StringRef, StringRef> s = targetAccelerator.rsplit(":");
-  if (s.second.starts_with("sm_"))
-    return s.second.str();
-  StringRef versionString =
-      s.second.starts_with("sm") ? s.second.substr(2) : s.second;
-  int version;
-  if (llvm::to_integer(versionString, version)) {
-    std::string result = "sm_" + std::to_string(version);
-    if (version >= 90)
-      return result + "a";
-    return result;
-  }
-  // Set default to sm_52 as what NVPTX lib does.
-  // https://docs.nvidia.com/cuda/ptx-compiler-api/index.html
-  return "sm_52";
-}
-
 // Simple helper to adjust Metal compilation options
 static CompilationOptions
 getMetalAdjustedOptions(const CompilationOptions &options,
@@ -1759,22 +1741,6 @@ static ErrorOr<BufferRef> compileMetalTarget(llvm::Module &module, Location loc,
   cleanupFiles({airTempFile, metallibTempFile, metallibErrorFile});
 
   return buf;
-}
-
-static ErrorOr<BufferRef>
-compilePTXToCUBIN(std::unique_ptr<AsyncRT::CompilationDevice> cd,
-                  llvm::Module &inputModule, StringRef ptx,
-                  CompilationOptions options) {
-  LLVM_DEBUG(
-      llvm::dbgs() << "Using the NVPTXCompiler API to compile PTX to CUBIN.\n");
-  KGEN_DEBUG(0, {
-    llvm::dbgs() << "Using the NVPTXCompiler API to compile PTX to CUBIN.\n";
-  });
-  // FIXME: Will clean this _v2 up once we decide which compiler to use to get
-  // to cubin.
-  return cd->compileFunction(ptx, options.getDebugLevelString(),
-                             options.optimizationLevel,
-                             getNVGPUName(options.targetAccelerator));
 }
 
 static AnyAsyncValueRef lowerLLVMModuleToObject(
@@ -1937,7 +1903,6 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
         auto codeBuf = WriteableBuffer::get();
         if (isNVPTXBackend(options)) {
           // Compile to PTX first.
-
           if (failed(runLlcPasses(module, options, tm, *codeBuf,
                                   machineModuleInfo, mcContext,
                                   llvm::CodeGenFileType::AssemblyFile,
@@ -1945,20 +1910,36 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
             return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                 "llc failed to codegen LLVM IR to object code", loc));
           }
-
           StringRef ptx(codeBuf->getBufferStart(), codeBuf->getBufferSize());
 
+          // Use lowest supported architecture as default
+          std::string targetArch("sm_60");
+          // Extract SM version
+          std::pair<StringRef, StringRef> s =
+              StringRef(options.targetAccelerator).rsplit(":");
+          if (s.second.starts_with("sm_"))
+            targetArch = s.second.str();
+
+          // Create CompilationDevice to compile from PTX to cuBIN
           ErrorOr<std::unique_ptr<AsyncRT::CompilationDevice>> errCD =
-              AsyncRT::CompilationDevice::create(
-                  AsyncRT::Device::cudaAPI,
-                  getNVGPUName(options.targetAccelerator));
+              AsyncRT::CompilationDevice::create(AsyncRT::Device::cudaAPI,
+                                                 targetArch);
           if (errCD.isError()) {
             return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                 "failed to create cuda compilation device to compile to cubin",
                 loc));
           }
-          ErrorOr<BufferRef> cubinOr =
-              compilePTXToCUBIN(std::move(*errCD), inputModule, ptx, options);
+          // Compile PTX module
+          LLVM_DEBUG(
+              llvm::dbgs()
+              << "Using the NVPTXCompiler API to compile PTX to CUBIN.\n");
+          KGEN_DEBUG(
+              0, {
+                llvm::dbgs()
+                    << "Using the NVPTXCompiler API to compile PTX to CUBIN.\n";
+              });
+          ErrorOr<BufferRef> cubinOr = (*errCD)->compileFunction(
+              ptx, options.getDebugLevelString(), options.optimizationLevel);
           if (cubinOr.isError()) {
             return std::move(output).setToError(
                 AsyncRT::getMLIRDiagnostic(cubinOr.takeError(), loc));
