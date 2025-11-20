@@ -141,11 +141,11 @@ def main():
     seed()
     var m = Bench(BenchConfig(num_repetitions=5))
     m.bench_function[bench_dict_init](BenchId("bench_dict_init"))
-    alias sizes = (10, 30, 50, 100, 1000, 10_000, 100_000, 1_000_000)
+    comptime sizes = (10, 30, 50, 100, 1000, 10_000, 100_000, 1_000_000)
 
     @parameter
     for i in range(len(sizes)):
-        alias size = sizes[i]
+        comptime size = sizes[i]
         m.bench_function[bench_dict_insert[size]](
             BenchId(String("bench_dict_insert[", size, "]"))
         )
@@ -168,6 +168,6 @@ def main():
 
     @parameter
     for i in range(len(sizes)):
-        alias size = sizes[i]
+        comptime size = sizes[i]
         var mem_s = total_bytes_used(make_dict[size]())
         print("dict_memory_size[", size, "]: ", mem_s, sep="")
