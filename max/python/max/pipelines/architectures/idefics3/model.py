@@ -774,6 +774,5 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
             ),
             devices=self.devices,
             available_cache_memory=available_cache_memory,
-            page_size=self.kv_cache_config.kv_cache_page_size,
             session=session,
         )

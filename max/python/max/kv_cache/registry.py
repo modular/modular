@@ -37,7 +37,6 @@ def load_kv_manager(
     devices: Sequence[Device],
     session: InferenceSession,
     available_cache_memory: int | None = None,
-    page_size: int | None = 512,
 ) -> PagedKVCacheManager | NullKVCacheManager:
     assert max_batch_size is not None, "Expected max_batch_size to be set"
     assert max_batch_size > 0, "max_batch_size must be greater than 0"
@@ -57,11 +56,7 @@ def load_kv_manager(
         )
 
     if params.cache_strategy == KVCacheStrategy.PAGED:
-        if page_size is None:
-            raise ValueError(
-                "Missing required argument page_size for KVCacheStrategy.PAGED"
-            )
-
+        page_size = params.page_size
         # TODO(KERN-1308) remove this validation as we generalize page_size
         if page_size % 128 != 0 or page_size < 128:
             raise ValueError(
