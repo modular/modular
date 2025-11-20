@@ -321,7 +321,7 @@ fn test[
                     static_spec = StaticTensorSpec[
                         DType.uint32, 1
                     ].create_unknown(),
-                ](null_valid_length),
+                ](null_valid_length.data, null_valid_length.get_shape()),
                 scale,
                 batch_size,
                 seq_len,
@@ -743,7 +743,7 @@ fn test_prefill[
         ManagedTensorSlice[
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](null_valid_length),
+        ](null_valid_length.data, null_valid_length.get_shape()),
         scale,
         batch_size,
         seq_len,

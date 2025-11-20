@@ -254,7 +254,10 @@ def execute_kv_cache_ragged_flash_attention[
                         static_spec = StaticTensorSpec[
                             DType.uint32, 1
                         ].create_unknown(),
-                    ](input_row_offsets_device.tensor),
+                    ](
+                        input_row_offsets_device.tensor.data,
+                        input_row_offsets_device.tensor.get_shape(),
+                    ),
                     rsqrt(Float32(head_dim)),
                     ctx,
                 )
@@ -298,7 +301,10 @@ def execute_kv_cache_ragged_flash_attention[
                 static_spec = StaticTensorSpec[
                     DType.uint32, 1
                 ].create_unknown(),
-            ](input_row_offsets_device.tensor),
+            ](
+                input_row_offsets_device.tensor.data,
+                input_row_offsets_device.tensor.get_shape(),
+            ),
             rsqrt(Float32(head_dim)),
             ctx,
         )

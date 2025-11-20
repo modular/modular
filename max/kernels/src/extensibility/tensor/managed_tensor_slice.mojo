@@ -697,16 +697,6 @@ struct ManagedTensorSlice[
             strides,
         )
 
-    @doc_private
-    fn __init__(out self, ndbuffer: NDBuffer[Self.dtype, Self.rank]):
-        """Initializes a ManagedTensorSlice from an NDBuffer.
-
-        Note that forwarding of static shape, strides, and lambdas won't work.
-        """
-        self = Self(
-            ndbuffer.data.mut_cast[True]().as_any_origin(), ndbuffer.get_shape()
-        )
-
     @always_inline
     fn __getitem__(self, indices: IndexList[Self.rank]) -> Scalar[Self.dtype]:
         """Gets the value at the specified indices.

@@ -278,7 +278,10 @@ def execute_ragged_flash_attention[
         ManagedTensorSlice[
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](input_row_offsets_device.tensor),
+        ](
+            input_row_offsets_device.tensor.data,
+            input_row_offsets_device.tensor.get_shape(),
+        ),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -294,7 +297,10 @@ def execute_ragged_flash_attention[
         ManagedTensorSlice[
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](input_row_offsets_device.tensor),
+        ](
+            input_row_offsets_device.tensor.data,
+            input_row_offsets_device.tensor.get_shape(),
+        ),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -343,7 +349,10 @@ def execute_ragged_flash_attention[
                 static_spec = StaticTensorSpec[
                     DType.uint32, 1
                 ].create_unknown(),
-            ](input_row_offsets_device.tensor),
+            ](
+                input_row_offsets_device.tensor.data,
+                input_row_offsets_device.tensor.get_shape(),
+            ),
             rsqrt(Float32(kv_params.head_size)),
             ctx,
         )

@@ -290,7 +290,9 @@ struct TestTensor[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
         self.ndbuffer.data.free()
 
     fn to_managed_tensor_slice(self) -> DynamicTensor[Self.dtype, Self.rank]:
-        return DynamicTensor[Self.dtype, Self.rank](self.ndbuffer)
+        return DynamicTensor[Self.dtype, Self.rank](
+            self.ndbuffer.data, self.ndbuffer.get_shape()
+        )
 
 
 @register_passable("trivial")
