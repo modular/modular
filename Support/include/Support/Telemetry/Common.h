@@ -7,6 +7,8 @@
 #ifndef SUPPORT_TELEMETRY_COMMON_H
 #define SUPPORT_TELEMETRY_COMMON_H
 
+#include <cstdint>
+
 namespace M::Telemetry {
 
 /// Telemetry levels. We emit more information with increasing telemetry level,

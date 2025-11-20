@@ -473,6 +473,7 @@ modular_cc_library(
         ":ML",
         ":Profiling",
         "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:BytecodeOpInterface",
         "@llvm-project//mlir:BytecodeReader",
         "@llvm-project//mlir:BytecodeWriter",
         "@llvm-project//mlir:IR",
@@ -964,6 +965,10 @@ modular_nanobind_library(
     deps = [
         ":Base",
         ":ML",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:CAPIIRHeaders",
+        "@llvm-project//mlir:IR",
         "@llvm-project//mlir:MLIRBindingsPythonNanobindHeaders",
+        "@llvm-project//mlir:Support",
     ],
 )

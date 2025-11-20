@@ -53,6 +53,7 @@ class Expected;
 // namespace.
 namespace M {
 using llvm::dyn_cast_if_present;
+using llvm::LogicalResult;
 using llvm::SmallDenseMap;
 using mlir::APFloat;
 using mlir::APInt;
