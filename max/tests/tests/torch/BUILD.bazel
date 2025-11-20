@@ -9,10 +9,10 @@ modular_py_test(
         "MODULAR_TORCH_MEMORY_PERCENT": "0.9",
     },
     mojo_deps = [
-        "@mojo//:MOGGPrimitives",
-        "@mojo//:compiler_internal",
+        "//max:MOGGPrimitives",
+        "//max:compiler_internal",
+        "//max:tensor",
         "@mojo//:stdlib",
-        "@mojo//:tensor",
     ],
     tags = ["gpu"],
     target_compatible_with = select({
