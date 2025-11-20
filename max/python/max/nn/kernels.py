@@ -732,6 +732,8 @@ def fused_qk_ragged_rope(
             parameters["mrope_section"] = "_".join(
                 str(x) for x in mrope_section
             )
+        else:
+            parameters["mrope_section"] = ""
 
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
 
