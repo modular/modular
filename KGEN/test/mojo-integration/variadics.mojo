@@ -111,7 +111,7 @@ fn test_inout_varargs():
     var s2: String = "konnichiwa"
     var s3: String = "bonjour"
 
-    fn make_worldly(mut*strs: String):
+    fn make_worldly(mut *strs: String):
         for i in range(len(strs)):
             strs[i] += " world"
 
@@ -125,7 +125,7 @@ fn test_inout_varargs():
     var v1 = TalkativeMem(1)  # CHECK-NEXT: initializing 1
     var v2 = TalkativeMem(2)  # CHECK-NEXT: initializing 2
 
-    fn double(mut*tm: TalkativeMem):
+    fn double(mut *tm: TalkativeMem):
         for i in range(len(tm)):
             tm[i].state *= 2
 
@@ -274,7 +274,7 @@ fn test_owned_variadic_pack():
     print("done three")
 
 
-fn inout_variadic_pack[*Ts: Writable](mut*pack: *Ts):
+fn inout_variadic_pack[*Ts: Writable](mut *pack: *Ts):
     print("-- testing mut variadic pack with", len(pack), "elements")
 
     # TODO: Test mutation of the value not just reading of the value.
