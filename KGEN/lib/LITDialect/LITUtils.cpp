@@ -25,7 +25,7 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
-static bool isMetaType(Type type) {
+bool LIT::isMetaType(Type type) {
   type = SugarAttr::strip(type);
   if (auto genType = dyn_cast<LITGeneratorType>(type))
     return isMetaType(genType.getBody());

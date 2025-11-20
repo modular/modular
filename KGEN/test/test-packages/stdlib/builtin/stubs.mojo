@@ -303,7 +303,7 @@ struct FloatDyn:
 
 
 @register_passable("trivial")
-struct Int(AnyRPTrivialType, ImplicitlyCopyable, Intable):
+struct Int(AnyRPTrivialType, ImplicitlyCopyable, Intable, Stringable):
     var _mlir_value: __mlir_type.index
 
     @always_inline("builtin")
@@ -481,6 +481,9 @@ struct Int(AnyRPTrivialType, ImplicitlyCopyable, Intable):
             mlir_value=__mlir_op.`index.xor`(self._mlir_value, rhs._mlir_value)
         )
 
+    fn __str__(self) -> String:
+        return "[unimplemented]"
+
 
 @register_passable("trivial")
 struct UInt8:
@@ -592,6 +595,11 @@ fn get_static_string[
     return StringLiteral(_get_kgen_string[string, extra]())
 
 
+trait Stringable:
+    fn __str__(self) -> String:
+        ...
+
+
 struct String(ImplicitlyCopyable, KeyElement):
     fn __init__(out self):
         pass
@@ -599,6 +607,9 @@ struct String(ImplicitlyCopyable, KeyElement):
     @implicit
     fn __init__(out self, literal: StringLiteral):
         pass
+
+    fn __init__[T: Stringable](out self, value: T):
+        self = value.__str__()
 
     fn __copyinit__(out self, existing: Self):
         pass

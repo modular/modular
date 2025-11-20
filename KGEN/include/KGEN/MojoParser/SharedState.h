@@ -459,6 +459,9 @@ public:
   ASTType getBuiltinStringLiteralType(ASTDecl &context, llvm::SMLoc loc) {
     return lookupBuiltinType("StringLiteral", context, loc);
   }
+  ASTType getBuiltinStaticStringType(ASTDecl &context, llvm::SMLoc loc) {
+    return lookupBuiltinType("StaticString", context, loc);
+  }
   ASTType getBuiltinVariadicListType(ASTDecl &context, llvm::SMLoc loc,
                                      bool inMem);
   ASTType getBuiltinVariadicPackType(ASTDecl &context, llvm::SMLoc loc) {

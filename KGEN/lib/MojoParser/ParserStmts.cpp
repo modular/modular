@@ -802,14 +802,19 @@ ParseResult StmtParser::parseComptimeAssertStmt(LexerCursor startCursor,
 
   TypedAttr message;
   if (messageExpr) {
-    auto messageNode = dyn_cast<StringLiteralNode>(messageExpr);
-    if (!messageNode) {
-      emitter.emitError(messageExpr->getLoc())
-          << "expected a string literal for the message of '__comptime_assert'";
+    // Parse the message into an expression with stdlib "StaticString" type,
+    // which is an alias for "StringSlice[StaticConstantOrigin]".
+    auto staticStringType =
+        shared.getBuiltinStaticStringType(*curDeclScope, smLoc);
+    PValue messageVal = emitter.emitExprPValue(messageExpr, EC_ComptimeAssert,
+                                               staticStringType);
+    if (!messageVal)
       return failure();
-    }
-    message = StringAttr::get(messageNode->getValue(),
-                              KGEN::StringType::get(builder.getContext()));
+
+    message = ParamOperatorAttr::get(
+        POC::DataToStr,
+        {messageVal.get(),
+         VariadicAttr::get({}, VariadicType::get(staticStringType))});
   } else {
     message = StringAttr::get({}, KGEN::StringType::get(builder.getContext()));
   }
