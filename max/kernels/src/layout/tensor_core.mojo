@@ -1318,7 +1318,7 @@ fn _load_matrix_frag[
     alias row_size = mma_tile.stride[0]()
     alias num_mat_per_row = row_size // simd_size
 
-    var lane = lane_id()
+    var lane: UInt = lane_id()
 
     # We load 4 matrices a time for max throughput. Each matrix has 8 vectors
     # and each thread loads one vector. The 4 matrices for 16x8x8 and 16x8x16
@@ -1360,9 +1360,9 @@ fn _load_matrix_frag[
         swizzle.value() if swizzle else Swizzle(0, 0, 1),
     )
 
-    var lane_offset = eval_composed[ldmatrix_layout](
-        UInt(Int(lane)), UInt(offset)
-    ) * UInt(simd_size)
+    var lane_offset = eval_composed[ldmatrix_layout](lane, UInt(offset)) * UInt(
+        simd_size
+    )
 
     return ld_matrix[res.size, transpose=transposed](
         mma_tile.ptr.offset(lane_offset)

@@ -510,15 +510,15 @@ fn max_reduce_kernel[
     var local_relative_error = relative_error.ptr[offset * elements * Int(bid)]
 
     # Parallel reduction loop: for(int i = elements >> 1; i > 0; i = i >> 1)
-    var i = UInt(elements) >> 1
+    var i = elements >> 1
     while i > 0:
         # Check bounds: threadIdx.x < i && offset * (elements * blockIdx.x + threadIdx.x + i) < maxIdx
-        var current_idx = offset * Int(UInt(elements) * bid + tid + i)
+        var current_idx = offset * (elements * Int(bid) + Int(tid) + i)
 
-        if tid < i and current_idx < max_idx:
+        if Int(tid) < i and current_idx < max_idx:
             var max_val = max(
                 local_relative_error[offset * Int(tid)],
-                local_relative_error[offset * Int(tid + i)],
+                local_relative_error[offset * Int(tid) + i],
             )
             local_relative_error[Int(tid)] = max_val
 
