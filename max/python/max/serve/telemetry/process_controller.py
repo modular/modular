@@ -13,19 +13,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import logging
+import multiprocessing
+import multiprocessing.queues
 import queue
 import threading
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
-from queue import Queue
-from threading import Event
 
 import prometheus_client
 from max.serve.config import MetricLevel, MetricRecordingMethod, Settings
-from max.serve.process_control import subprocess_manager
+from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.telemetry.common import configure_metrics
 from max.serve.telemetry.metrics import (
     MaxMeasurement,
@@ -37,6 +38,20 @@ from uvicorn import Config, Server
 logger = logging.getLogger("max.serve")
 
 
+# Unused class so that SHUTDOWNS is not empty
+class _Shutdown(Exception):
+    pass
+
+
+# In python 3.13, queues can be told to drain & close, ie "shutdown". Handle that exception.
+_SHUTDOWNS = [_Shutdown]
+if hasattr(queue, "Shutdown"):
+    _SHUTDOWNS.append(queue.Shutdown)
+
+
+SHUTDOWNS = tuple(_SHUTDOWNS)
+
+
 def _sync_commit(m: MaxMeasurement) -> None:
     m.commit()
 
@@ -45,7 +60,7 @@ class ProcessMetricClient(MetricClient):
     def __init__(
         self,
         settings: Settings,
-        q: Queue[list[MaxMeasurement]],
+        q: multiprocessing.queues.Queue[list[MaxMeasurement]],
     ) -> None:
         self.queue = q
         # buffer detailed metrics observations until it is safe to flush
@@ -113,14 +128,16 @@ class ProcessMetricClient(MetricClient):
 
 @asynccontextmanager
 async def _reconstruct_client(
-    settings: Settings, q: Queue[list[MaxMeasurement]]
+    settings: Settings, q: multiprocessing.queues.Queue[list[MaxMeasurement]]
 ) -> AsyncGenerator[MetricClient, None]:
     yield ProcessMetricClient(settings, q)
 
 
 @dataclass
 class ProcessTelemetryController:
-    queue: Queue[list[MaxMeasurement]]
+    pc: ProcessControl
+    process: multiprocessing.process.BaseProcess
+    queue: multiprocessing.queues.Queue[list[MaxMeasurement]]
 
     def Client(self, settings: Settings) -> MetricClient:
         return ProcessMetricClient(settings, self.queue)
@@ -130,27 +147,47 @@ class ProcessTelemetryController:
 async def start_process_consumer(
     settings: Settings, handle_fn: TelemetryFn | None = None
 ) -> AsyncGenerator[ProcessTelemetryController, None]:
+    ctx = multiprocessing.get_context("spawn")
+    pc = ProcessControl(ctx, "telemetry-worker", health_fail_s=5.0)
+
+    q: multiprocessing.Queue[list[MaxMeasurement]] = ctx.Queue()
+
     if handle_fn is None:
         handle_fn = _sync_commit
 
-    async with subprocess_manager("Metrics Worker") as proc:
-        metrics_q = proc.ctx.Queue()
-        alive = proc.ctx.Event()
+    worker = ctx.Process(
+        name="telemetry-worker",
+        target=init_and_process,
+        daemon=True,
+        args=(pc, settings, q, handle_fn),
+    )
+    worker.start()
+    monitor = ProcessMonitor(
+        pc,
+        worker,
+        poll_s=100e-3,
+        max_time_s=settings.telemetry_worker_spawn_timeout,
+        unhealthy_poll_s=500e-3,
+        use_heartbeat=settings.use_heartbeat,
+    )
 
-        proc.start(init_and_process, settings, metrics_q, alive, handle_fn)
+    healthy = await monitor.until_healthy()
+    if not healthy:
+        raise Exception("telemetry-worker did not come up")
 
-        await proc.ready(alive, settings.telemetry_worker_spawn_timeout)
-
-        if settings.use_heartbeat:
-            proc.watch_heartbeat(alive, timeout=5)
-
-        yield ProcessTelemetryController(metrics_q)
+    loop = asyncio.get_running_loop()
+    try:
+        task = loop.create_task(monitor.shutdown_if_unhealthy())
+        yield ProcessTelemetryController(pc, worker, q)
+    finally:
+        task.cancel()
+        await monitor.shutdown()
 
 
 def init_and_process(
+    pc: ProcessControl,
     settings: Settings,
-    metrics_q: Queue[list[MaxMeasurement]],
-    alive: Event,
+    q: multiprocessing.queues.Queue[list[MaxMeasurement]],
     commit_fn: TelemetryFn,
 ) -> None:
     """Initialize logging & metrics, and start the metrics server if enabled. This is expected to run from the Telemetry process."""
@@ -183,23 +220,29 @@ def init_and_process(
         server_thread = threading.Thread(target=run_server, daemon=True)
         server_thread.start()
 
-    return process_telemetry(metrics_q, alive, commit_fn)
+    return process_telemetry(pc, settings, q, commit_fn)
 
 
 def process_telemetry(
-    metrics_q: Queue[list[MaxMeasurement]],
-    alive: Event,
+    pc: ProcessControl,
+    settings: Settings,
+    q: multiprocessing.queues.Queue[list[MaxMeasurement]],
     commit_fn: TelemetryFn,
 ) -> None:
     """Long running function to read from a queue & process each element"""
+    pc.set_started()
     try:
         while True:
-            alive.set()
+            pc.beat()
 
             try:
-                ms = metrics_q.get(block=True, timeout=100e-3)
+                ms = q.get(block=True, timeout=100e-3)
             except queue.Empty:
+                if pc.is_canceled():
+                    break
                 continue
+            except SHUTDOWNS:
+                break
 
             try:
                 for m in ms:
@@ -208,3 +251,5 @@ def process_telemetry(
                 logger.exception("Error processing telemetry")
     except KeyboardInterrupt:
         pass
+    finally:
+        pc.set_completed()

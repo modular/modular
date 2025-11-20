@@ -59,7 +59,6 @@ def validate_port_is_free(port: int) -> int:
     # check if port is already in use
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         try:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.bind(("", port))
             return port
         except OSError as e:
@@ -82,7 +81,7 @@ async def lifespan(
     app: FastAPI,
     settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
-) -> AsyncGenerator[None]:
+) -> AsyncGenerator[None, None]:
     try:
         if not settings.disable_telemetry:
             send_telemetry_log(
@@ -100,7 +99,6 @@ async def lifespan(
 
     async with AsyncExitStack() as exit_stack:
         # start telemetry worker and configure Metrics to use it
-
         metric_client = await exit_stack.enter_async_context(
             start_telemetry_consumer(settings)
         )
@@ -143,6 +141,7 @@ async def lifespan(
                 tokenizer=serving_settings.tokenizer,
                 lora_queue=lora_queue,
                 scheduler_zmq_configs=scheduler_zmq_configs,
+                worker_monitor=worker_monitor,
             )
         elif serving_settings.pipeline_task == PipelineTask.AUDIO_GENERATION:
             pipeline = AudioGeneratorPipeline(
@@ -150,6 +149,7 @@ async def lifespan(
                 tokenizer=serving_settings.tokenizer,
                 lora_queue=lora_queue,
                 scheduler_zmq_configs=scheduler_zmq_configs,
+                worker_monitor=worker_monitor,
             )
         else:
             raise ValueError(
@@ -167,8 +167,6 @@ async def lifespan(
         )
 
         yield
-
-        logger.info("Shutting down workers...")
 
 
 def version() -> JSONResponse:
@@ -204,14 +202,9 @@ def fastapi_app(
         try:
             async with lifespan(app, settings, serving_settings):
                 yield
-        except BaseException:
-            logger.exception("Worker exception, Shutting down...")
+        except Exception as e:
+            logger.exception("Worker exception, Shutting down. %s", e)
             # Caught by uvicorn to shutdown the server
-            os.kill(os.getpid(), signal.SIGINT)
-            # After first SIGINT uvicorn waits for pending requests to complete
-            # In our case, they would hang forever due to waiting on worker queues
-            # Uvicorn listens for a second SIGINT to cancel this waiting phase and
-            # close all remaining connections with "Internal Server Error" status
             os.kill(os.getpid(), signal.SIGINT)
             # Ideally we'd just rethrow here, which is caught by
             # starlette Router.lifespan() and converted into ASGI
@@ -276,7 +269,6 @@ def fastapi_config(app: FastAPI, server_settings: Settings) -> Config:
         loop="uvloop",
         host=server_settings.host,
         port=server_settings.port,
-        timeout_graceful_shutdown=5,
     )
 
     for route in app.routes:

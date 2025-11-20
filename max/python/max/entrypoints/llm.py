@@ -16,10 +16,11 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import queue
+import threading
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass, field
-from threading import Event, Thread
+from threading import Thread
 from typing import TypeVar, cast
 
 import tqdm
@@ -34,6 +35,7 @@ from max.serve.config import Settings
 from max.serve.pipelines.llm import TokenGeneratorPipeline
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
+from max.serve.process_control import ProcessControl
 from max.serve.queue.lora_queue import LoRAQueue
 from max.serve.scheduler.queues import SchedulerZmqConfigs
 
@@ -41,7 +43,7 @@ T = TypeVar("T")
 U = TypeVar("U")
 
 
-@dataclass
+@dataclasses.dataclass
 class _Request:
     id: RequestID
     prompts: Sequence[str]
@@ -49,15 +51,9 @@ class _Request:
     use_tqdm: bool
 
 
-@dataclass
+@dataclasses.dataclass
 class _Response:
     complete_texts: Sequence[str]
-
-
-@dataclass
-class ThreadControl:
-    ready: Event = field(default_factory=Event)
-    cancel: Event = field(default_factory=Event)
 
 
 # For now, the LLM class only supports the direct token generation use case.
@@ -66,14 +62,14 @@ class ThreadControl:
 class LLM:
     """A high level interface for interacting with LLMs."""
 
-    _pc: ThreadControl
+    _pc: ProcessControl
     _async_runner: Thread
     _request_queue: queue.Queue[_Request]
     _pending_requests: dict[RequestID, queue.Queue[_Response]]
 
     def __init__(self, pipeline_config: PipelineConfig) -> None:
         settings = Settings(MAX_SERVE_OFFLINE_INFERENCE=True)
-        self._pc = ThreadControl()
+        self._pc = ProcessControl(threading, "LLM")
         self._request_queue = queue.Queue()
         self._pending_requests = {}
         self._async_runner = Thread(
@@ -88,11 +84,10 @@ class LLM:
         )
         self._async_runner.start()
         # TODO: set a timeout on wait
-        self._pc.ready.wait()
+        self._pc.started_event.wait()
 
     def __del__(self) -> None:
-        # FIXME: refactor API to proper context manager
-        self._pc.cancel.set()
+        self._pc.set_canceled()
         self._async_runner.join()
 
     def generate(
@@ -140,7 +135,7 @@ class LLM:
 
 
 def _run_async_worker(
-    pc: ThreadControl,
+    pc: ProcessControl,
     pipeline_config: PipelineConfig,
     request_queue: queue.Queue[_Request],
     pending_requests: Mapping[RequestID, queue.Queue[_Response]],
@@ -180,7 +175,7 @@ async def _async_map(
 
 
 async def _async_worker(
-    pc: ThreadControl,
+    pc: ProcessControl,
     pipeline_config: PipelineConfig,
     request_queue: queue.Queue[_Request],
     pending_requests: Mapping[RequestID, queue.Queue[_Response]],
@@ -218,12 +213,14 @@ async def _async_worker(
             model_name=model_name,
             tokenizer=tokenizer,
             lora_queue=lora_queue,
+            worker_monitor=worker_monitor,
             scheduler_zmq_configs=scheduler_zmq_configs,
         ) as pipeline,
     ):
-        pc.ready.set()
+        pc.set_started()
         while True:
-            if pc.cancel.is_set():
+            pc.beat()
+            if pc.is_canceled():
                 break
             try:
                 request = request_queue.get(timeout=0.3)
@@ -259,3 +256,5 @@ async def _async_worker(
             # Put the response in the specific queue for this request ID
             if response_queue := pending_requests.get(request.id):
                 response_queue.put(_Response(complete_texts=responses))
+
+        pc.set_completed()

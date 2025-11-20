@@ -12,12 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+import asyncio
+import ctypes
 import logging
+import multiprocessing
 import os
+import signal
+import sys
 import uuid
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from threading import Event
 from typing import Any
 
 import uvloop
@@ -31,12 +35,9 @@ from max.kv_cache.paged_cache import ResetPrefixCacheBackend
 from max.pipelines.lib import PipelineConfig, PipelineModel, get_paged_manager
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
-from max.serve.exceptions import detect_and_wrap_oom
+from max.serve.exceptions import detect_and_wrap_cuda_oom
 from max.serve.pipelines.telemetry_worker import MetricClient
-from max.serve.process_control import (
-    ProcessManager,
-    subprocess_manager,
-)
+from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import SchedulerProgress, sleep_with_backoff
 from max.serve.scheduler.queues import SchedulerZmqConfigs
@@ -54,6 +55,15 @@ def get_pipeline_model(
         return pipeline.speech_lm_pipeline._pipeline_model  # type: ignore
     else:
         return getattr(pipeline, "_pipeline_model", None)
+
+
+def _set_pdeathsig(pdeathsig: int) -> None:
+    """Set parent death signal, if supported."""
+    if sys.platform != "linux":
+        return
+    PR_SET_PDEATHSIG = 1
+    libc = ctypes.CDLL("libc.so.6")
+    libc.prctl(PR_SET_PDEATHSIG, pdeathsig)
 
 
 class ModelWorker:
@@ -93,7 +103,7 @@ class ModelWorker:
     @staticmethod
     @traced
     async def run(
-        alive: Event,
+        pc: ProcessControl,
         model_factory: PipelinesFactory[PipelineInputsType, PipelineOutputType],
         pipeline_config: PipelineConfig,
         settings: Settings,
@@ -154,36 +164,44 @@ class ModelWorker:
                 assert lora_manager is not None
 
             # Mark the start of the process, and run the scheduler.
+            pc.set_started()
             logger.debug("Started model worker!")
 
             count_no_progress = 0
-            while True:
-                alive.set()
-                # Checks for new LoRA requests and processes them.
-                if lora_manager is not None:
-                    lora_manager.process_lora_requests()
-                # Check for request to reset prefix cache.
-                if (
-                    reset_prefix_cache_backend is not None
-                    and reset_prefix_cache_backend.should_reset_prefix_cache()
-                ):
-                    assert paged_cache is not None
-                    paged_cache.reset_prefix_cache()
-                # This method must terminate in a reasonable amount of time
-                # so that the ProcessMonitor heartbeat is periodically run.
-                progress = scheduler.run_iteration()
-                if progress == SchedulerProgress.NO_PROGRESS:
-                    await sleep_with_backoff(count_no_progress)
-                    count_no_progress += 1
-                else:
-                    count_no_progress = 0
+            while not pc.is_canceled():
+                pc.beat()
+                try:
+                    # Checks for new LoRA requests and processes them.
+                    if lora_manager is not None:
+                        lora_manager.process_lora_requests()
+                    # Check for request to reset prefix cache.
+                    if (
+                        reset_prefix_cache_backend is not None
+                        and reset_prefix_cache_backend.should_reset_prefix_cache()
+                    ):
+                        assert paged_cache is not None
+                        paged_cache.reset_prefix_cache()
+                    # This method must terminate in a reasonable amount of time
+                    # so that the ProcessMonitor heartbeat is periodically run.
+                    progress = scheduler.run_iteration()
+                    if progress == SchedulerProgress.NO_PROGRESS:
+                        await sleep_with_backoff(count_no_progress)
+                        count_no_progress += 1
+                    else:
+                        count_no_progress = 0
+                except Exception as e:
+                    wrapped_error = detect_and_wrap_cuda_oom(e)
+                    if wrapped_error is not e:
+                        # It was a CUDA OOM error, raise the wrapped version with helpful message
+                        raise wrapped_error from e
+                    raise e
 
         logger.debug("Stopped model worker!")
 
     @staticmethod
     @traced
     def __call__(
-        alive: Event,
+        pc: ProcessControl,
         model_factory: PipelinesFactory[PipelineInputsType, PipelineOutputType],
         pipeline_config: PipelineConfig,
         settings: Settings,
@@ -206,9 +224,16 @@ class ModelWorker:
             metric_client_factory: Factory for creating metric client instances
         """
         try:
+            # kill when parent is killed
+            _set_pdeathsig(signal.SIGTERM)
+
+            # ignore SIGINT (let parent orchestrate shutdown)
+            # otherwise we get zmq disconnect errors intermittently
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+
             uvloop.run(
                 ModelWorker.run(
-                    alive,
+                    pc,
                     model_factory,
                     pipeline_config,
                     settings,
@@ -218,9 +243,6 @@ class ModelWorker:
             )
         except KeyboardInterrupt:
             pass  # suppress noisy stack traces for user abort
-        except Exception as e:
-            detect_and_wrap_oom(e)
-            raise
 
 
 @asynccontextmanager
@@ -230,7 +252,7 @@ async def start_model_worker(
     settings: Settings,
     metric_client: MetricClient,
     scheduler_zmq_configs: SchedulerZmqConfigs,
-) -> AsyncGenerator[ProcessManager]:
+) -> AsyncGenerator[ProcessMonitor, None]:
     """Starts a model worker and associated process.
 
     Args:
@@ -246,25 +268,91 @@ async def start_model_worker(
         Iterator[AsyncIterator[Worker]]: _description_
     """
     worker_name = "MODEL_" + str(uuid.uuid4())
-    logger.debug("Starting worker: %s", worker_name)
 
-    async with subprocess_manager("Model Worker") as proc:
-        alive = proc.ctx.Event()
-        proc.start(
-            ModelWorker(),
-            alive,
+    mp_context = multiprocessing.get_context("spawn")
+    pc = ProcessControl(
+        mp_context, "model-worker", health_fail_s=settings.mw_health_fail_s
+    )
+
+    logger.debug("Starting worker: %s", worker_name)
+    worker = mp_context.Process(
+        name=worker_name,
+        target=ModelWorker(),
+        daemon=True,
+        args=(
+            pc,
             model_factory,
             pipeline_config,
             settings,
             metric_client.cross_process_factory(settings),
             scheduler_zmq_configs,
+        ),
+    )
+    worker.start()
+    monitor = ProcessMonitor(
+        pc,
+        worker,
+        poll_s=10e-3,
+        max_time_s=settings.mw_timeout_s,
+        unhealthy_poll_s=200e-3,
+        use_heartbeat=settings.use_heartbeat,
+    )
+
+    # before progressing, observe the worker process to be healthy or dead
+    dt = asyncio.create_task(monitor.until_dead())
+    if settings.use_heartbeat:
+        ht = asyncio.create_task(monitor.until_healthy())
+    else:
+        ht = asyncio.create_task(monitor.until_started())
+
+    completed_tasks, pending_tasks = await asyncio.wait(
+        [ht, dt],
+        timeout=settings.mw_timeout_s,
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+
+    # cleanup tasks
+    # observe the completed tasks
+    for t in completed_tasks:
+        await t
+    # cancel the pending tasks
+    for t in pending_tasks:
+        t.cancel()
+
+    # figure out if we are in a clean state
+    # verify something completed
+    if not ht.done() and not dt.done():
+        # somehow neither task finished
+        raise TimeoutError("Worker is neither dead nor healthy")
+
+    # are we in a run-able state?
+    if not worker.is_alive():
+        logger.critical(
+            f"Worker ended pre-maturely with exitcode: {worker.exitcode}"
         )
+        # cannot continue if the worker is dead
+        await monitor.shutdown()
+        if pc.is_healthy():
+            raise TimeoutError("Worker became healthy and died")
+        else:
+            raise TimeoutError("Worker died")
 
-        await proc.ready(alive, timeout=settings.mw_timeout_s)
+    # worker is alive!  it needs to be healthy too.
 
+    if not pc.is_healthy():
+        # cannot continue if the worker is not healthy
+        await monitor.shutdown()
+        raise TimeoutError("Worker did not become healthy")
+
+    # worker is both alive and healthy!
+    logger.debug("Model worker task is alive and healthy")
+
+    try:
         if settings.use_heartbeat:
-            proc.watch_heartbeat(alive, timeout=settings.mw_health_fail_s)
-
-        logger.debug("Model worker task is ready")
-
-        yield proc
+            worker_task = asyncio.create_task(monitor.shutdown_if_unhealthy())
+        else:
+            worker_task = asyncio.create_task(monitor.shutdown_if_dead())
+        yield monitor
+    finally:
+        worker_task.cancel()
+        await monitor.shutdown()

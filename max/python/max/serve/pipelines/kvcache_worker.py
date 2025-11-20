@@ -13,24 +13,21 @@
 
 import asyncio
 import logging
+import multiprocessing
 import os
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from threading import Event
 
 from max.serve.config import Settings
 from max.serve.kvcache_agent import start_kvcache_agent_service
-from max.serve.process_control import (
-    ProcessManager,
-    subprocess_manager,
-)
+from max.serve.process_control import ProcessControl, ProcessMonitor
 
 logger = logging.getLogger("max.serve")
 
 
 async def run_kvcache_agent_process(
-    health: Event,
+    pc: ProcessControl,
     settings: Settings,
 ) -> None:
     pid = os.getpid()
@@ -41,22 +38,23 @@ async def run_kvcache_agent_process(
         kv_cache_events_zmq_endpoint=settings.kv_cache_events_zmq_endpoint,
     )
 
-    health.set()
+    pc.set_started()
     logger.debug("Started KV Cache Agent!")
 
     # Run the blocking call in a thread so the event loop stays alive
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, kvcache_agent_service.wait_for_termination)
 
+    pc.set_completed()
     logger.info("Stopped KV Cache Agent!")
 
 
 def _kvcache_agent_process_fn(
-    health: Event,
+    pc: ProcessControl,
     settings: Settings,
 ) -> None:
     try:
-        asyncio.run(run_kvcache_agent_process(health, settings))
+        asyncio.run(run_kvcache_agent_process(pc, settings))
     except KeyboardInterrupt:
         pass
     except Exception as e:
@@ -72,17 +70,70 @@ def _kvcache_agent_process_fn(
 @asynccontextmanager
 async def start_kv_cache_service(
     settings: Settings,
-) -> AsyncGenerator[ProcessManager]:
+) -> AsyncGenerator[None, None]:
     """Starts a kvcache agent and associated process."""
     process_name = "KVCACHE_AGENT_" + str(uuid.uuid4())
+
+    mp_context = multiprocessing.get_context("spawn")
+    pc = ProcessControl(mp_context, "kvcache-agent")
+
     logger.info("Starting KV Cache Agent: %s", process_name)
+    process = mp_context.Process(
+        name=process_name,
+        target=_kvcache_agent_process_fn,
+        daemon=True,
+        args=(pc, settings),
+    )
+    process.start()
+    monitor = ProcessMonitor(pc, process, use_heartbeat=settings.use_heartbeat)
 
-    async with subprocess_manager("KVCache Worker") as proc:
-        health = proc.ctx.Event()
-        proc.start(_kvcache_agent_process_fn, health, settings)
+    # before progressing, observe the kvcache agent process to be healthy or dead
+    dt = asyncio.create_task(monitor.until_dead())
+    ht = asyncio.create_task(monitor.until_started())
 
-        await proc.ready(health, timeout=10)
+    completed_tasks, pending_tasks = await asyncio.wait(
+        [ht, dt], timeout=10, return_when=asyncio.FIRST_COMPLETED
+    )
 
-        logger.debug("KV Cache Agent is alive and healthy")
+    # cleanup tasks
+    # observe the completed tasks
+    for t in completed_tasks:
+        await t
+    # cancel the pending tasks
+    for t in pending_tasks:
+        t.cancel()
 
-        yield proc
+    # figure out if we are in a clean state
+    # verify something completed
+    if not ht.done() and not dt.done():
+        # somehow neither task finished
+        raise TimeoutError("KV Cache Agent is neither dead nor healthy")
+
+    # are we in a run-able state?
+    if not process.is_alive():
+        logger.critical(
+            f"KV Cache Agent ended pre-maturely with exitcode: {process.exitcode}"
+        )
+        # cannot continue if the worker is dead
+        await monitor.shutdown()
+        if pc.is_healthy():
+            raise TimeoutError("KV Cache Agent became healthy and died")
+        else:
+            raise TimeoutError("KV Cache Agent died")
+
+    # worker is alive!  it needs to be healthy too.
+
+    if not pc.is_started():
+        # cannot continue if the worker is not started
+        await monitor.shutdown()
+        raise TimeoutError("KV Cache Agent did not start")
+
+    # worker is both alive and healthy!
+    logger.debug("KV Cache Agent is alive and healthy")
+
+    try:
+        process_task = asyncio.create_task(monitor.shutdown_if_dead())
+        yield
+    finally:
+        process_task.cancel()
+        await monitor.shutdown()
