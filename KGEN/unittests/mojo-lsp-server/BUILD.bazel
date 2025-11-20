@@ -32,9 +32,9 @@ modular_cc_library(
             "PYTHONHOME": "/dev/null",  # Make sure python tests are added below instead
         },
         mojo_deps = [
-            "@mojo//:compiler_internal",
+            "//max:compiler_internal",
+            "//max:tensor",
             "@mojo//:stdlib",
-            "@mojo//:tensor",
         ],
         deps = [
             ":Support",
