@@ -92,6 +92,11 @@ what we publish.
 
 - The Mojo compiler now "diffs" very long types in error messages to explain
   what is going on in a more easy to understand way.
+- Specifying CUDA architectures with `--target-accelerator` now expects a sm
+  version string rather than just a compute capability. For example
+  `--target-accelerator=nvidia:80` should be changed to
+  `--target-accelerator=nvidia:sm_80`. If an incorrect format is used for the
+  version, the compiler will default to the lowest supported sm version.
 
 ### Experimental changes
 

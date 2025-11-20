@@ -56,8 +56,8 @@ from utils.numerics import min_or_neg_inf
 # ===-----------------------------------------------------------------------===#
 
 
-alias is_sm90 = ":90" in _accelerator_arch()
-alias is_sm100 = ":100" in _accelerator_arch()
+alias is_sm90 = "sm_90" in _accelerator_arch()
+alias is_sm100 = "sm_100" in _accelerator_arch()
 alias is_sm90or100 = is_sm90 or is_sm100
 
 
