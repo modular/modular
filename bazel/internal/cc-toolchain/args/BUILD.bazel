@@ -350,3 +350,18 @@ cc_args(
     iterate_over = "@rules_cc//cc/toolchains/variables:dependent_module_map_files",
     requires_not_none = "@rules_cc//cc/toolchains/variables:dependent_module_map_files",
 )
+
+cc_args(
+    name = "parse_headers_args",
+    actions = ["@rules_cc//cc/toolchains/actions:cpp_header_parsing"],
+    args = [
+        "-xc++-header",  # TODO: This is wrong for C only headers https://github.com/bazelbuild/bazel/pull/22971
+        "-fsyntax-only",
+        "-Wno-unused-command-line-argument",  # NOTE: Ideally we wouldn't need this
+    ],
+    env = {
+        "PARSE_HEADER": "{output_file}",
+    },
+    format = {"output_file": "@rules_cc//cc/toolchains/variables:output_file"},
+    requires_not_none = "@rules_cc//cc/toolchains/variables:output_file",
+)

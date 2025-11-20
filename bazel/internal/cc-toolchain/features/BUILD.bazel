@@ -104,6 +104,21 @@ cc_feature(
     requires_any_of = ["//bazel/internal/cc-toolchain/features:modular_code"],  # NOTE: This is something that can't be added upstream
 )
 
+cc_feature(
+    name = "parse_headers",
+    feature_name = "parse_headers",
+    requires_any_of = ["//bazel/internal/cc-toolchain/features:modular_code"],  # NOTE: This is something that can't be added upstream
+)
+
+cc_feature(
+    name = "parse_headers_shim",
+    args = [
+        "//bazel/internal/cc-toolchain/args:parse_headers_args",
+    ],
+    feature_name = "_parse_headers_shim",
+    requires_any_of = [":parse_headers"],
+)
+
 # TODO: Remove after https://github.com/bazelbuild/rules_cc/pull/386
 cc_feature(
     name = "external_include_paths",
