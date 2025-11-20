@@ -10,7 +10,7 @@ mojo_test(
         "//conditions:default": [],
     }),
     deps = [
-        "@mojo//:nvml",
+        "//max:nvml",
         "@mojo//:stdlib",
     ],
 )

@@ -14,7 +14,7 @@ mojo_library(
     validate_missing_docs = False,
     visibility = ["//visibility:public"],
     deps = [
-        "@mojo//:layout",
+        "//max:layout",
         "@mojo//:stdlib",
     ],
 )

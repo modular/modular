@@ -23,11 +23,11 @@ mojo_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        "@mojo//:internal_utils",
-        "@mojo//:kv_cache",
-        "@mojo//:linalg",
-        "@mojo//:nn",
-        "@mojo//:quantization",
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
         "@mojo//:stdlib",
     ],
 )
@@ -51,11 +51,11 @@ mojo_test(
             "//:has_multi_gpu",
         ],
         deps = [
-            "@mojo//:internal_utils",
-            "@mojo//:kv_cache",
-            "@mojo//:linalg",
-            "@mojo//:nn",
-            "@mojo//:quantization",
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
             "@mojo//:stdlib",
         ],
     )

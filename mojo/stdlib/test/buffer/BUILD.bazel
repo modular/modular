@@ -20,7 +20,7 @@ _FILECHECK_TESTS = [
             "full",
         ],
         deps = [
-            "@mojo//:internal_utils",
+            "//max:internal_utils",
             "@mojo//:stdlib",
             "@mojo//:test_utils",
         ],
@@ -37,7 +37,7 @@ _FILECHECK_TESTS = [
             "full",
         ],
         deps = [
-            "@mojo//:internal_utils",
+            "//max:internal_utils",
             "@mojo//:stdlib",
             "@mojo//:test_utils",
         ],

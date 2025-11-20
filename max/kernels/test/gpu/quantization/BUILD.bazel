@@ -1,9 +1,9 @@
 load("//bazel:api.bzl", "mojo_test")
 
 _DEPS = [
-    "@mojo//:internal_utils",
-    "@mojo//:linalg",
-    "@mojo//:quantization",
+    "//max:internal_utils",
+    "//max:linalg",
+    "//max:quantization",
     "@mojo//:stdlib",
 ]
 

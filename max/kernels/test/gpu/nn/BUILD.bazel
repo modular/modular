@@ -142,11 +142,11 @@ _FILECHECK_TESTS = [
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:internal_utils",
-            "@mojo//:linalg",
-            "@mojo//:nn",
+            "//max:internal_utils",
+            "//max:linalg",
+            "//max:nn",
+            "//max:testdata",
             "@mojo//:stdlib",
-            "@mojo//:testdata",
         ],
     )
     for src in _FILECHECK_TESTS
@@ -168,11 +168,11 @@ _FILECHECK_TESTS = [
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:internal_utils",
-            "@mojo//:linalg",
-            "@mojo//:nn",
+            "//max:internal_utils",
+            "//max:linalg",
+            "//max:nn",
+            "//max:testdata",
             "@mojo//:stdlib",
-            "@mojo//:testdata",
         ],
     )
     for src in glob(

@@ -61,9 +61,9 @@ mojo_library(
     srcs = [":kernel_sources"],
     validate_missing_docs = False,
     deps = [
-        "@mojo//:compiler",
-        "@mojo//:layout",
+        "//max:compiler",
+        "//max:layout",
+        "//max:tensor",
         "@mojo//:stdlib",
-        "@mojo//:tensor",
     ],
 )

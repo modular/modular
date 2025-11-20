@@ -4,7 +4,7 @@ mojo_binary(
     name = "layout_tensor_examples",
     srcs = ["layout_tensor_examples.mojo"],
     deps = [
-        "@mojo//:layout",
+        "//max:layout",
         "@mojo//:stdlib",
     ],
 )
@@ -19,7 +19,7 @@ mojo_binary(
     srcs = ["layout_tensor_gpu_examples.mojo"],
     target_compatible_with = ["//:has_gpu"],
     deps = [
-        "@mojo//:layout",
+        "//max:layout",
         "@mojo//:stdlib",
     ],
 )

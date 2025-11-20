@@ -8,9 +8,9 @@ mojo_library(
     validate_missing_docs = False,
     visibility = ["//visibility:public"],
     deps = [
-        "@mojo//:compiler_internal",
-        "@mojo//:layout",
-        "@mojo//:register",
+        "//max:compiler_internal",
+        "//max:layout",
+        "//max:register",
         "@mojo//:stdlib",
     ],
 )

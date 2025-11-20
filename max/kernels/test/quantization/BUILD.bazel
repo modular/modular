@@ -6,7 +6,7 @@ load("//bazel:api.bzl", "mojo_test")
         srcs = [src],
         tags = ["skip-external-ci-macos-15"],  # TODO: Debug why this only fails on public github actions, not locally
         deps = [
-            "@mojo//:quantization",
+            "//max:quantization",
             "@mojo//:stdlib",
         ],
     )
@@ -26,7 +26,7 @@ mojo_test(
         "skip-external-ci-macos-15",
     ],
     deps = [
-        "@mojo//:quantization",
+        "//max:quantization",
         "@mojo//:stdlib",
     ],
 )

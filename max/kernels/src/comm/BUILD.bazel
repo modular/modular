@@ -8,9 +8,9 @@ mojo_library(
     docs_base_path = "kernels",
     validate_missing_docs = False,
     deps = [
-        "@mojo//:internal_utils",
-        "@mojo//:layout",
-        "@mojo//:register",
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:register",
         "@mojo//:stdlib",
     ],
 )

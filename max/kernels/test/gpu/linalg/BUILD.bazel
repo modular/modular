@@ -158,8 +158,8 @@ _GPU_MEMORY = {
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:internal_utils",
-            "@mojo//:linalg",
+            "//max:internal_utils",
+            "//max:linalg",
             "@mojo//:stdlib",
         ],
     )
@@ -174,10 +174,10 @@ _GPU_MEMORY = {
         data = ["//max/kernels/test/testdata:ptx_files"],
         enable_assertions = False,  # PTX comparison assertions disabled
         deps = [
-            "@mojo//:linalg",
+            "//max:linalg",
+            "//max:testdata",
             "@mojo//:stdlib",
             "@mojo//:test_utils",
-            "@mojo//:testdata",
         ],
     )
     for src in _ASM_CHECK_TESTS
@@ -200,8 +200,8 @@ _GPU_MEMORY = {
             "//:b200_gpu",
         ],
         deps = [
-            "@mojo//:internal_utils",
-            "@mojo//:linalg",
+            "//max:internal_utils",
+            "//max:linalg",
             "@mojo//:stdlib",
             "@mojo//:test_utils",
         ],
@@ -226,8 +226,8 @@ _GPU_MEMORY = {
         ),
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:internal_utils",
-            "@mojo//:linalg",
+            "//max:internal_utils",
+            "//max:linalg",
             "@mojo//:stdlib",
             "@mojo//:test_utils",
         ],

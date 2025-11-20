@@ -7,7 +7,7 @@ mojo_binary(
     srcs = ["vector_addition.mojo"],
     target_compatible_with = ["//:has_gpu"],
     deps = [
-        "@mojo//:layout",
+        "//max:layout",
         "@mojo//:stdlib",
     ],
 )
@@ -23,7 +23,7 @@ mojo_binary(
     srcs = ["grayscale.mojo"],
     target_compatible_with = ["//:has_gpu"],
     deps = [
-        "@mojo//:layout",
+        "//max:layout",
         "@mojo//:stdlib",
     ],
 )
@@ -40,7 +40,7 @@ mojo_binary(
     tags = ["manual"],  # TODO: Fix compilation and remove this tag
     target_compatible_with = ["//:has_gpu"],
     deps = [
-        "@mojo//:layout",
+        "//max:layout",
         "@mojo//:stdlib",
     ],
 )
@@ -59,7 +59,7 @@ mojo_binary(
     srcs = ["mandelbrot.mojo"],
     target_compatible_with = ["//:has_gpu"],
     deps = [
-        "@mojo//:layout",
+        "//max:layout",
         "@mojo//:stdlib",
     ],
 )
@@ -78,7 +78,7 @@ mojo_binary(
         "//conditions:default": [],
     }),
     deps = [
-        "@mojo//:layout",
+        "//max:layout",
         "@mojo//:stdlib",
     ],
 )
