@@ -10,7 +10,7 @@ This is a list of changes to the Mojo language, standard library, and tools.
 To check your current version, run `mojo --version`. To install or update
 Mojo, see the [install guide](/mojo/manual/install).
 
-## v0.26.1 nightly
+## Nightly: v0.26.1
 
 This version is still a work in progress.
 
