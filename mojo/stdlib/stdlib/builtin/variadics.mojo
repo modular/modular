@@ -635,6 +635,87 @@ struct VariadicPack[
 
 
 # ===-----------------------------------------------------------------------===#
+# Utils
+# ===-----------------------------------------------------------------------===#
+
+comptime EmptyVariadic[T: type_of(AnyType)] = __mlir_attr[
+    `#kgen.variadic<>: !kgen.variadic<`, T, `>`
+]
+"""Empty comptime variadic of type values"""
+
+comptime MakeVariadic[T: type_of(AnyType), //, *Ts: T] = Ts
+"""Turn discrete type values (bound by `T`) into a single variadic"""
+
+# ===-----------------------------------------------------------------------===#
+# VariadicConcat
+# ===-----------------------------------------------------------------------===#
+
+comptime Concatenated[
+    T: type_of(AnyType), //, *Ts: VariadicOf[T]
+] = __mlir_attr[`#kgen.variadic.concat<`, Ts, `> :`, VariadicOf[T]]
+"""
+Represents the concatenation of multiple variadic sequences of types.
+"""
+
+# ===-----------------------------------------------------------------------===#
+# VariadicReduce
+# ===-----------------------------------------------------------------------===#
+
+comptime _ReduceVariadicIdxGeneratorTypeGenerator[
+    Prev: AnyType, From: type_of(AnyType)
+] = __mlir_type[
+    `!lit.generator<<"Prev": `,
+    +Prev,
+    `, "From": !kgen.variadic<`,
+    From,
+    `>, "Idx":`,
+    Int,
+    `>`,
+    +Prev,
+    `>`,
+]
+"""This specifies a generator to generate a generator type for the reducer.
+The generated generator type is [Prev: AnyType, Ts: VariadicOf[AnyType], idx: Int] -> Prev,
+"""
+
+comptime _IndexToIntWrap[
+    From: type_of(AnyType),
+    ReduceT: AnyType,
+    ToWrap: _ReduceVariadicIdxGeneratorTypeGenerator[ReduceT, From],
+    PrevV: ReduceT,
+    VA: VariadicOf[From],
+    idx: __mlir_type.index,
+] = ToWrap[PrevV, VA, Int(mlir_value=idx)]
+
+
+comptime _ReduceVariadicAndIdxToVariadic[
+    From: type_of(AnyType),
+    To: type_of(AnyType), //,
+    *,
+    BaseVal: VariadicOf[To],
+    Variadic: VariadicOf[From],
+    Reducer: _ReduceVariadicIdxGeneratorTypeGenerator[VariadicOf[To], From],
+] = __mlir_attr[
+    `#kgen.variadic.reduce<`,
+    BaseVal,
+    `,`,
+    Variadic,
+    `,`,
+    _IndexToIntWrap[From, VariadicOf[To], Reducer],
+    `> : `,
+    type_of(BaseVal),
+]
+"""Construct a new variadic of types using with a reducer. To reduce to a single
+type, one could reduce the input to a single element variadic instead.
+
+Parameters:
+    BaseVal: The initial value to reduce on
+    Variadic: The variadic to be reduced
+    Mapper: A `[BaseVal: VariadicOf[To], Ts: *From, idx: index] -> To` that does the reduction
+"""
+
+
+# ===-----------------------------------------------------------------------===#
 # VariadicMap
 # ===-----------------------------------------------------------------------===#
 
@@ -654,27 +735,25 @@ The generated generator type is [Ts: VariadicOf[AnyType], idx: Int] -> AnyType,
 which maps the input variadic + index of the current element to another type.
 """
 
-comptime _IndexToIntWrap[
-    From: type_of(AnyType),
-    To: type_of(AnyType),
-    ToWrap: _VariadicIdxToTypeGeneratorTypeGenerator[From, To],
-    VA: VariadicOf[From],
-    idx: __mlir_type.index,
-] = ToWrap[VA, Int(mlir_value=idx)]
+comptime _WrapVariadicIdxToTypeMapperToReducer[
+    F: type_of(AnyType),
+    T: type_of(AnyType),
+    Mapper: _VariadicIdxToTypeGeneratorTypeGenerator[F, T],
+    Prev: VariadicOf[T],
+    From: VariadicOf[F],
+    Idx: Int,
+] = Concatenated[Prev, MakeVariadic[Mapper[From, Idx]]]
 
 comptime _MapVariadicAndIdxToType[
     From: type_of(AnyType), //,
     *,
     To: type_of(AnyType),
-    Variadic: __mlir_type[`!kgen.variadic<`, From, `>`],
+    Variadic: VariadicOf[From],
     Mapper: _VariadicIdxToTypeGeneratorTypeGenerator[From, To],
-] = __mlir_attr[
-    `#kgen.variadic.map<`,
-    Variadic,
-    `,`,
-    _IndexToIntWrap[From, To, Mapper],
-    `> : `,
-    __mlir_type[`!kgen.variadic<`, To, `>`],
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal = EmptyVariadic[To],  # reduce from a empty variadic
+    Variadic=Variadic,
+    Reducer = _WrapVariadicIdxToTypeMapperToReducer[From, To, Mapper],
 ]
 """Construct a new variadic of types using a type-to-type mapper.
 
@@ -705,16 +784,4 @@ comptime Reversed[
 
 Parameters:
     element_types: The variadic sequence of types to reverse.
-"""
-
-
-# ===-----------------------------------------------------------------------===#
-# VariadicConcat
-# ===-----------------------------------------------------------------------===#
-
-comptime Concatenated[
-    T: type_of(AnyType), //, *Ts: VariadicOf[T]
-] = __mlir_attr[`#kgen.variadic.concat<`, Ts, `> :`, VariadicOf[T]]
-"""
-Represents the concatenation of multiple variadic sequences of types.
 """

@@ -1581,21 +1581,24 @@ class VariadicConcatAttr(max._core.Attribute):
     @property
     def variadics(self) -> max._core.dialects.builtin.TypedAttr: ...
 
-class VariadicMapAttr(max._core.Attribute):
+class VariadicReduceAttr(max._core.Attribute):
     """
-    The `#kgen.variadic.map` attribute is used to convert from a variadic of
-    (type) value to a variadic of (type) value by repeatedly applying the
-    provided generator on each element of the variadic.
+    The `#kgen.variadic.reduce` attribute is used to reduce a variadic of
+    (type) value to a (type) value by repeatedly applying the provided reducer
+    on each element of the variadic.
     """
 
     def __init__(
         self,
-        type: VariadicType,
+        type: max._core.Type,
+        base: max._core.dialects.builtin.TypedAttr,
         variadic: max._core.dialects.builtin.TypedAttr,
         generator: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
-    def type(self) -> VariadicType: ...
+    def type(self) -> max._core.Type | None: ...
+    @property
+    def base(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
