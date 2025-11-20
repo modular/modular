@@ -12,33 +12,36 @@
 # ===----------------------------------------------------------------------=== #
 """The rope embedding used within the model."""
 
-from ....dtype import DType
-from ....experimental import functional as F
-from ....experimental.tensor import Tensor, defaults, defaults_like
-from ....graph import Dim
+from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor, defaults, defaults_like
+from max.graph import Dim
+
 from ..module import Module, module_dataclass
 
 
-def inverse_exponential_frequencies(n: int, theta: float) -> Tensor:
+def theta(dim: int, base: float) -> Tensor:
     """Inverse-exponential frequencies for producing rotary positional
     embeddings.
 
     See 'Roformer: Enhanced Transformer with Rotary Embedding'
     (arxiv.org/pdf/2104.09864).
 
+    In the paper,
+
     Args:
-        n: The embedding dimension. By convention each component
+        dim: The embedding dimension. By convention each component
             of the complex valued embedding is considered its own dim
-            in the embedding, so output has dim n // 2.
-        theta: Scaling factor for the frequency
+            in the embedding, so output has shape `dim // 2`.
+        base: ...
 
     Returns:
         The 1d frequency tensor with shape (n // 2).
     """
     dtype, _ = defaults()
     # Use float64 for higher range in the exponential
-    iota = Tensor.arange(n, step=2, dtype=DType.float64)
-    frequencies = theta ** (-iota / n)
+    iota = Tensor.arange(dim, step=2, dtype=DType.float64)
+    frequencies = base ** (-iota / dim)
     return frequencies.cast(dtype)
 
 
@@ -55,18 +58,18 @@ def embed(
 
     Returns:
         The embedded frequency tensor with shape
-        (max_sequence_length * 2, n / 2, 2).
+        (max_sequence_length, n / 2, 2).
     """
     with defaults_like(frequencies):
-        t = Tensor.arange(max_sequence_length * 2)
+        t = Tensor.arange(max_sequence_length, dtype=DType.float64)
         # [max_seq_len*2, n // 2]
-        freqs = F.outer(t, frequencies)
+        freqs = F.outer(t, frequencies).cast(frequencies.dtype)
         # [max_seq_len*2, n // 2, 2]
         return F.stack([F.cos(freqs), F.sin(freqs)], axis=-1)
 
 
 def positional_embedding(
-    n: int, theta: float, max_sequence_length: int
+    dim: int, base: float, max_sequence_length: int
 ) -> Tensor:
     """Computes rotary positional embeddings up to a specified
     sequence length.
@@ -75,17 +78,15 @@ def positional_embedding(
     (arxiv.org/pdf/2104.09864).
 
     Args:
-        n: The embedding dimension. By convention each component
+        dim: The embedding dimension. By convention each component
             of the complex valued embedding is considered its own dim.
-        theta: Scaling factor for the frequency
+        base: Scaling factor for the frequency
         max_sequence_length: The number of positional embeddings to compute.
-            By convention produce twice the vector size.
 
     Returns:
-        RoPE positional embeddings of shape (max_sequence_length * 2, n / 2, 2).
+        RoPE positional embeddings of shape (max_sequence_length, dim / 2, 2).
     """
-    frequencies = inverse_exponential_frequencies(n, theta)
-    return embed(frequencies, max_sequence_length)
+    return embed(theta(dim, base), max_sequence_length)
 
 
 @module_dataclass
@@ -94,7 +95,7 @@ class RotaryEmbedding(Module):
     #: Pre-computed embeddings of shape [max_sequence_length, n // 2, 2]
 
     @property
-    def n(self) -> int:
+    def dim(self) -> int:
         return int(self.weight.shape[1]) * 2
 
     @property
@@ -102,7 +103,7 @@ class RotaryEmbedding(Module):
         return int(self.weight.shape[0])
 
     def __rich_repr__(self):
-        yield "n", self.n
+        yield "dim", self.dim
         yield "max_sequence_length", self.max_sequence_length
 
     @F.functional
