@@ -492,7 +492,6 @@ fn mgp_tensor_extract_tensor_spec[
 @register_internal("mgp.tensor.extract.buffer")
 @no_inline
 fn mgp_tensor_extract_buffer[
-    tensor_rank: Int,
     buffer_rank: Int,
     dtype: DType,
 ](buffer: NDBuffer[dtype, buffer_rank, MutAnyOrigin]) -> NDBuffer[
@@ -1519,22 +1518,43 @@ fn mogg_async_pack_borrow(
 
 
 @no_inline
-fn mogg_async_pack_borrow_v2(
+fn mogg_async_pack_borrow_v2[
+    buffer_rank: Int,
+    dtype: DType, //,
+    spec_rank: Int,
+    is_tensor: Bool,
+](
     borrower: AnyAsyncValueRefPtr,
-    buffer: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    buffer: NDBuffer[dtype, buffer_rank, MutAnyOrigin],
     mem: TensorBufferRefPtr,
 ):
     """
     Borrows an async value. This differs from `mogg.async.pack` which assigns a
     value to the given async value in that it's a simple refcount increment.
     """
-    external_call["MGP_RT_BufferBorrowV2", NoneType](
-        borrower, buffer.data, len(buffer), mem
-    )
+
+    @parameter
+    if is_tensor:
+        external_call["MGP_RT_TensorBorrowV2", NoneType](
+            borrower,
+            buffer.data,
+            bytecount_with_dtype[dtype](buffer.dynamic_shape),
+            spec_rank,
+            UnsafePointer(to=buffer.dynamic_shape.data),
+            dtype,
+            mem,
+        )
+    else:
+        external_call["MGP_RT_BufferBorrowV2", NoneType](
+            borrower, buffer.data, len(buffer), mem
+        )
 
 
 @no_inline
-fn mogg_async_pack_borrow_v2(
+fn mogg_async_pack_borrow_v2[
+    spec_rank: Int,  # unused
+    is_tensor: Bool,  # unused
+](
     borrower: AnyAsyncValueRefPtr,
     buffer: TensorBufferRefPtr,
     mem: TensorBufferRefPtr,
@@ -1783,3 +1803,11 @@ fn all_zeros(indices: IndexList) -> Bool:
         if indices[i] != 0:
             return False
     return True
+
+
+fn get_buffer_mem_storage_handle(
+    buffer: OpaquePointer, type: Int, memStorageHandle: OpaquePointer
+):
+    external_call["MGP_RT_GetBufferMemStorageHandle", NoneType](
+        buffer, type, memStorageHandle
+    )
