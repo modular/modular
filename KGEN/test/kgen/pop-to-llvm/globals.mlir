@@ -231,10 +231,9 @@ module attributes {M.target_info = #M.target<triple = "air64-apple-macosx", arch
   }
 
   // CHECK-LABEL: @test_air_max_bf16_mangling
-  llvm.func @test_air_max_bf16_mangling(%arg0: !llvm.struct<(bf16)>) {
-    %input = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(bf16)> to !kgen.struct<(scalar<bf16>)>
-    // CHECK: llvm.call @air.max.bf16
-    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.max", (%input, %input) : (!kgen.struct<(scalar<bf16>)>, !kgen.struct<(scalar<bf16>)>) -> !pop.scalar<bf16>
+  kgen.func @test_air_max_bf16_mangling(%arg0: !pop.scalar<bf16>, %arg1: !pop.scalar<bf16>) {
+    // CHECK: llvm.call @air.fmax.bf16
+    %0 = pop.max %arg0, %arg1 : !pop.scalar<bf16>
     llvm.return
   }
 
@@ -248,7 +247,7 @@ module attributes {M.target_info = #M.target<triple = "air64-apple-macosx", arch
 
   // CHECK-LABEL: @test_air_min_f16_mangling
   kgen.func @test_air_min_f16_mangling(%arg0: !pop.scalar<f16>, %arg1: !pop.scalar<f16>) {
-    // CHECK: llvm.call @air.min.f16
+    // CHECK: llvm.call @air.fmin.f16
     %0 = pop.min %arg0, %arg1 : !pop.scalar<f16>
     llvm.return
   }
@@ -276,7 +275,7 @@ module attributes {M.target_info = #M.target<triple = "air64-apple-macosx", arch
 
   // CHECK-LABEL: @test_air_max_f16_mangling
   kgen.func @test_air_max_f16_mangling(%arg0: !pop.scalar<f16>, %arg1: !pop.scalar<f16>) {
-    // CHECK: llvm.call @air.max.f16
+    // CHECK: llvm.call @air.fmax.f16
     %0 = pop.max %arg0, %arg1 : !pop.scalar<f16>
     llvm.return
   }

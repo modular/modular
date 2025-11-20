@@ -2558,7 +2558,7 @@ struct ConvertPOPMinToAIR : public ConvertSymbolOpToAIR<MinOp> {
       // That corresponds to fp min with precise fp model.
       // TODO: With 'fast' fp model support, use `air.fast_min` intrinsic
       // instead.
-      funcName = "air.min";
+      funcName = "air.fmin";
     }
 
     LLVM::LLVMFuncOp func = createAIRFunction(rewriter, module, op.getLoc(),
@@ -2603,7 +2603,7 @@ struct ConvertPOPMaxToAIR : public ConvertSymbolOpToAIR<MaxOp> {
       // That corresponds to fp max with precise fp model.
       // TODO: With 'fast' fp model support, use `air.fast_max` intrinsic
       // instead.
-      funcName = "air.max";
+      funcName = "air.fmax";
     }
 
     LLVM::LLVMFuncOp func = createAIRFunction(rewriter, module, op.getLoc(),
