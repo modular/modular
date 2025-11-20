@@ -19,12 +19,12 @@ from max.nn.module_v3.rope import (
 def test_repr() -> None:
     assert (
         repr(RotaryEmbedding(Tensor.zeros([2, 3, 2])))
-        == "RotaryEmbedding(n=6, max_sequence_length=2)"
+        == "RotaryEmbedding(dim=6, max_sequence_length=2)"
     )
 
 
-def test_n() -> None:
-    assert RotaryEmbedding(Tensor.zeros([2, 3, 2])).n == 6
+def test_dim() -> None:
+    assert RotaryEmbedding(Tensor.zeros([2, 3, 2])).dim == 6
 
 
 def test_max_sequence_length() -> None:
@@ -51,23 +51,22 @@ def test_transposed_rotary_embedding() -> None:
 
 
 def test_inverse_exponential_frequencies() -> None:
-    freqs = rope.inverse_exponential_frequencies(n=20, theta=1.0)
+    freqs = rope.theta(dim=20, base=10000)
     assert freqs.shape == [10]  # [20 // 2]
 
 
 def test_positional_embedding() -> None:
-    freqs = rope.positional_embedding(n=20, theta=1.0, max_sequence_length=5)
-    assert freqs.shape == [10, 10, 2]  # [5 * 2, 20 // 2, 2]
+    freqs = rope.positional_embedding(dim=20, base=10000, max_sequence_length=5)
+    assert freqs.shape == [5, 10, 2]  # [5, 20 // 2, 2]
 
 
 def test_symbolic_seqlen() -> None:
     embedding = RotaryEmbedding(Tensor.zeros([2, 3, 2]))
-    head_dim = 6
 
     compiled = embedding.compile(
         TensorType(
             embedding.weight.dtype,
-            ["batch", "seqlen", "n_kv_heads", head_dim],
+            ["batch", "seqlen", "n_kv_heads", embedding.dim],
             embedding.weight.device,
         )
     )
@@ -80,6 +79,6 @@ def test_symbolic_seqlen() -> None:
     # with pytest.raises(ValueError):
     #     compiled(Tensor.zeros([1, 3, 1, 6]))
 
-    # 5 != head_dim
+    assert 5 != embedding.dim
     with pytest.raises(ValueError):
         compiled(Tensor.zeros([1, 2, 1, 5]))
