@@ -466,6 +466,10 @@ Type LIT::StructType::getCachedCanonicalType(Type type) const {
   return structType;
 }
 
+SymbolRefAttr LIT::StructType::getSymbolRef() const {
+  return getValue().getValue();
+}
+
 //===----------------------------------------------------------------------===//
 // StructMetaType
 //===----------------------------------------------------------------------===//
