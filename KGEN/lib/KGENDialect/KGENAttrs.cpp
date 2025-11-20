@@ -2478,6 +2478,19 @@ static IntegerAttr foldCompareOp(
   return {};
 }
 
+static SymbolRefAttr getOptionalTypeSymbolRef(Type type) {
+  if (auto structIfaceType = dyn_cast<StructTypeInterface>(type))
+    return structIfaceType.getSymbolRef();
+  if (auto typeValueType = dyn_cast<TypeValueType>(type)) {
+    TypedAttr typeRef = typeValueType.getTypeValue();
+    if (auto genRef = dyn_cast<TypeGeneratorRefAttr>(typeRef))
+      return genRef.getSymbol();
+    else if (auto instRef = dyn_cast<TypeInstanceRefAttr>(typeRef))
+      return instRef.getSymbol();
+  }
+  return {};
+}
+
 /// Compute the result of == for the two specified attributes, handling the
 /// index truncation issue but otherwise relying on MLIR's canonicalization of
 /// attributes to do the job for us.  Both operands may be null, and this
@@ -2487,16 +2500,46 @@ static IntegerAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
   if (lhs.getType().isIndex() && isa<IntegerAttr>(lhs) && isa<IntegerAttr>(rhs))
     return foldCompareOp(lhs, rhs, [](auto a, auto b) { return a == b; });
 
-  // If the values have pointer equality, we know they are equal.
+  // Folding to True is easy: If the values have pointer equality, we know they
+  // are equal.
   if (lhs == rhs)
     return BoolAttr::get(rhs.getContext(), true);
 
-  // Otherwise, we can use pointer equality for the attributes we support that
-  // are known to have agreeable widths.
-  if (ParameterAttr::isSimpleConstant(lhs) &&
-      ParameterAttr::isSimpleConstant(rhs))
+  // Folding to False is a lot harder:
+  // If either side contains expression nodes that still need to be evaluated,
+  // we cannot fold to False since after evaluation they may become equal.
+  // Conservatively we only fold if both sides are simple constants (fully
+  // evaluated & contains no parameter references).
+  bool lhsSimpleConstant = ParameterAttr::isSimpleConstant(lhs);
+  bool rhsSimpleConstant = ParameterAttr::isSimpleConstant(rhs);
+  if (lhsSimpleConstant && rhsSimpleConstant)
     return BoolAttr::get(rhs.getContext(), lhs == rhs);
 
+  // Type inequality is a bit stronger due to nominality of struct types.
+  // If both sides are type values and they point to different type references,
+  // we can fold to False.
+  if (auto lhsTypeParam = dyn_cast<TypeParamAttr>(lhs)) {
+    if (auto rhsTypeParam = dyn_cast<TypeParamAttr>(rhs)) {
+      auto lhsStructRef = getOptionalTypeSymbolRef(lhsTypeParam.getTypeValue());
+      auto rhsStructRef = getOptionalTypeSymbolRef(rhsTypeParam.getTypeValue());
+      if (lhsStructRef && rhsStructRef) {
+        // Both sides are struct types. If the referenced symbols are different,
+        // they are never equal.
+        if (lhsStructRef != rhsStructRef)
+          return BoolAttr::get(rhs.getContext(), false);
+      } else if (static_cast<bool>(lhsStructRef) !=
+                 static_cast<bool>(rhsStructRef)) {
+        // If one side is a struct type and the other is not, we can only fold
+        // to false if the non-struct side is already fully evaluated. Otherwise
+        // we do not yet know whether the non-struct side will evaluate to a
+        // struct.
+        if (lhsStructRef && rhsSimpleConstant)
+          return BoolAttr::get(rhs.getContext(), false);
+        else if (rhsStructRef && lhsSimpleConstant)
+          return BoolAttr::get(rhs.getContext(), false);
+      }
+    }
+  }
   // Otherwise can't fold something like "x == y".
   return {};
 }

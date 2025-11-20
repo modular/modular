@@ -111,7 +111,10 @@ def StructTypeInterface : TypeInterface<"StructTypeInterface"> {
     }], "std::optional<StringRef>", "getAliasName">,
     InterfaceMethod<[{
       Pretty print the symbol reference as a type.
-    }], "void", "printSymbol", (ins "AsmPrinter &":$p)>
+    }], "void", "printSymbol", (ins "AsmPrinter &":$p)>,
+    InterfaceMethod<[{
+      Get the referenced symbol.
+    }], "SymbolRefAttr", "getSymbolRef">
   ];
 }
 

@@ -216,6 +216,51 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   kgen.return
 }
 
+lit.struct.decl @StructType0<a: index, b: index> {}
+lit.struct.decl @StructType1<a: index, b: index> {}
+
+kgen.struct.generator @StructTypeGen0<a: index, b: index> = !kgen.struct<(index, index)>
+kgen.struct.generator @StructTypeGen1<a: index, b: index> = !kgen.struct<(index, index)>
+
+// CHECK-LABEL: @param_expr_type_equality
+kgen.generator @param_expr_type_equality<p1>() {
+  // COM: Trivial pointer equality.
+  // CHECK-NEXT: = kgen.param.constant: i1 = <1>
+  kgen.param.constant: i1 = <eq(
+    :!kgen.type #kgen.type<!lit.struct<@StructType0<:index 1, :index p1>>>,
+    #kgen.type<!lit.struct<@StructType0<:index 1, :index p1>>>
+  )>
+
+  // COM: Different struct type references.
+  // CHECK-NEXT: = kgen.param.constant: i1 = <0>
+  kgen.param.constant: i1 = <eq(
+    :!kgen.type #kgen.type<!lit.struct<@StructType0<:index 1, :index p1>>>,
+    #kgen.type<!lit.struct<@StructType1<:index 1, :index p1>>>
+  )>
+
+  // COM: One struct type reference and one non-struct type reference.
+  // CHECK-NEXT: = kgen.param.constant: i1 = <0>
+  kgen.param.constant: i1 = <eq(
+    :!kgen.type #kgen.type<!lit.struct<@StructType0<:index 1, :index p1>>>,
+    #kgen.type<index>
+  )>
+
+  // COM: Different struct generator references.
+  // CHECK-NEXT: = kgen.param.constant: i1 = <0>
+  kgen.param.constant: i1 = <eq(
+    :!kgen.type [typevalue<#kgen.genref<@StructTypeGen0<1, p1>>>, !kgen.struct<(index, index)>],
+    [typevalue<#kgen.genref<@StructTypeGen1<1, p1>>>, !kgen.struct<(index, index)>]
+  )>
+
+  // COM: One struct generator reference and one non-struct generator reference.
+  // CHECK-NEXT: = kgen.param.constant: i1 = <0>
+  kgen.param.constant: i1 = <eq(
+    :!kgen.type [typevalue<#kgen.genref<@StructTypeGen0<1, p1>>>, !kgen.struct<(index, index)>],
+    #kgen.type<index>
+  )>
+  kgen.return
+}
+
 // CHECK-LABEL: @fixed_width_integers
 kgen.generator @fixed_width_integers<p1: i32, p2: i32>() {
   // CHECK-NEXT: constant: i32 = <add(p1, p2)>
