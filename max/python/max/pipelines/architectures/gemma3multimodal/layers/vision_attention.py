@@ -86,7 +86,7 @@ class VisionAttention(Module):
             has_bias=True,
         )
 
-    def __call__(self, x: TensorValue) -> TensorValue:  # type: ignore[override]
+    def __call__(self, x: TensorValue) -> TensorValue:
         """Forward pass for attention layer.
 
         Args:

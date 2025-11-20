@@ -40,7 +40,7 @@ class PositionEmbeddingModule(Module):
             device=device,
         )
 
-    def __call__(self, *args, **kwargs) -> None:  # type: ignore[override]
+    def __call__(self, *args, **kwargs) -> None:
         """Not meant to be called."""
         raise NotImplementedError(
             "PositionEmbeddingModule is a container, use .weight directly"
@@ -90,7 +90,7 @@ class VisionEmbeddings(Module):
             device=self.device,
         )
 
-    def __call__(self, pixel_values: TensorValue) -> TensorValue:  # type: ignore[override]
+    def __call__(self, pixel_values: TensorValue) -> TensorValue:
         """Forward pass for vision embeddings.
 
         Args:

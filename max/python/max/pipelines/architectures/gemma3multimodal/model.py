@@ -19,13 +19,14 @@ from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
-from max.driver import Device, Tensor
+from max.driver import Device, DLPackArray, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Value
-from max.graph.weights import Weights, WeightsAdapter
+from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
 from max.kv_cache import (
+    NullKVCacheManager,
     PagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
@@ -116,7 +117,6 @@ class Gemma3Inputs(ModelInputs):
     def has_vision_inputs(self) -> bool:
         """Check if this input contains vision data."""
         return self.pixel_values is not None and len(self.pixel_values) > 0
-        self.return_n_logits = return_n_logits
 
 
 class Gemma3_MultiModalModel(
@@ -264,11 +264,7 @@ class Gemma3_MultiModalModel(
             max_seq_len=Gemma3_MultiModalModel.calculate_max_seq_len(
                 pipeline_config, huggingface_config=huggingface_config
             ),
-            num_layers=Gemma3MultimodalConfig.get_num_layers(
-                huggingface_config=huggingface_config
-            ),
             available_cache_memory=available_cache_memory,
-            devices=devices,
         )
 
     # @classmethod
@@ -327,8 +323,10 @@ class Gemma3_MultiModalModel(
     #     )
 
     def _separate_state_dicts(
-        self, state_dict: dict
-    ) -> tuple[dict, dict, dict]:
+        self, state_dict: dict[str, WeightData]
+    ) -> tuple[
+        dict[str, WeightData], dict[str, WeightData], dict[str, WeightData]
+    ]:
         """Separate the full state dict into vision, projector, and language components.
 
         After the weight adapter has run, the keys will be:
@@ -435,12 +433,12 @@ class Gemma3_MultiModalModel(
         if len(llm_state_dict) > 0:
             logger.info("Building and compiling language model...")
             before = time.perf_counter()
-            language_graph = self._build_language_graph()
-
-            language_weights_for_graph = self.state_dict
+            language_graph, language_model_state_dict = (
+                self._build_language_graph()
+            )
 
             language_model = session.load(
-                language_graph, weights_registry=language_weights_for_graph
+                language_graph, weights_registry=language_model_state_dict
             )
             after = time.perf_counter()
             logger.info(
@@ -470,7 +468,8 @@ class Gemma3_MultiModalModel(
             cache_dtype=self.encoding.cache_dtype,
         )
         n_devices = kv_params.n_devices
-        fetch_types = self.kv_manager.input_symbols()[0]
+        assert isinstance(self.kv_manager, PagedKVCacheManager)
+        fetch_types = self.kv_manager.get_symbolic_inputs()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
         kv_caches_per_dev: list[PagedCacheValues] = []
         for i in range(n_devices):
@@ -485,7 +484,7 @@ class Gemma3_MultiModalModel(
             )
         return kv_caches_per_dev
 
-    def _build_vision_graph(self) -> tuple[Graph, dict]:
+    def _build_vision_graph(self) -> tuple[Graph, dict[str, DLPackArray]]:
         """Build the vision encoder graph.
 
         This graph processes image inputs through the SigLip vision encoder
@@ -571,17 +570,16 @@ class Gemma3_MultiModalModel(
 
             graph.output(projected_embeddings)
 
-            projector_state_dict_for_registry = {
-                k.replace("multi_modal_projector.", ""): v
-                for k, v in self._projector_state_dict_for_graph.items()
-            }
+            vision_model_state = vision_model.state_dict(auto_initialize=False)
+            projector_state = projector.state_dict(auto_initialize=False)
+
             combined_state_dict = {
-                **vision_state_dict,
-                **projector_state_dict_for_registry,
+                **vision_model_state,
+                **projector_state,
             }
             return graph, combined_state_dict
 
-    def _build_language_graph(self) -> Graph:
+    def _build_language_graph(self) -> tuple[Graph, dict[str, DLPackArray]]:
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
         tokens_type = TensorType(
@@ -640,9 +638,6 @@ class Gemma3_MultiModalModel(
             llm_state_dict_clean,
             strict=True,
         )
-        self.state_dict = nn_model.language_model.state_dict(
-            auto_initialize=False
-        )
 
         signals = Signals(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
@@ -670,7 +665,8 @@ class Gemma3_MultiModalModel(
             for dev in self.devices
         ]
 
-        kv_inputs = self.kv_manager.input_symbols()
+        assert isinstance(self.kv_manager, PagedKVCacheManager)
+        kv_inputs = self.kv_manager.get_symbolic_inputs()
         flattened_kv_types = [
             kv_type for sublist in kv_inputs for kv_type in sublist
         ]
@@ -721,7 +717,8 @@ class Gemma3_MultiModalModel(
                 image_token_indices=image_token_indices,
             )
             graph.output(*outputs)
-        return graph
+
+        return graph, nn_model.language_model.state_dict(auto_initialize=False)
 
     def compute_log_probabilities(
         self,
@@ -1013,7 +1010,7 @@ class Gemma3_MultiModalModel(
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager:
+    ) -> PagedKVCacheManager | NullKVCacheManager:
         """Loads and initializes the KVCacheManager for the Gemma 3 model.
 
         Configures the KV cache manager based on model parameters, pipeline settings,
@@ -1037,11 +1034,7 @@ class Gemma3_MultiModalModel(
             max_seq_len=self.calculate_max_seq_len(
                 self.pipeline_config, huggingface_config=self.huggingface_config
             ),
-            num_layers=Gemma3MultimodalConfig.get_num_layers(
-                huggingface_config=self.huggingface_config
-            ),
             devices=self.devices,
             available_cache_memory=available_cache_memory,
-            page_size=self.kv_cache_config.kv_cache_page_size,
             session=session,
         )

@@ -57,7 +57,7 @@ class VisionEncoder(Module):
             ]
         )
 
-    def __call__(self, x: TensorValue, output_hidden_states: bool = False):  # type: ignore[override]
+    def __call__(self, x: TensorValue, output_hidden_states: bool = False):
         """Forward pass through all encoder layers.
 
         Args:
@@ -127,7 +127,7 @@ class SigLipVisionModel(Module):
 
     def __call__(
         self, pixel_values: TensorValue, output_hidden_states: bool = False
-    ):  # type: ignore[override]
+    ):
         """Forward pass for vision model.
 
         Args:
@@ -311,7 +311,7 @@ class Gemma3Multimodal(Module):
         kv_cache_inputs_per_dev: Sequence[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
-    ) -> tuple[TensorValue, ...]:  # type: ignore[override]
+    ) -> tuple[TensorValue, ...]:
         """This class is not meant to be called directly.
 
         Use the component models (vision_encoder, language_model) instead for
