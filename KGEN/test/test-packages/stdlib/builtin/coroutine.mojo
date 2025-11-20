@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-alias AnyCoroutine = __mlir_type.`!co.routine`
+comptime AnyCoroutine = __mlir_type.`!co.routine`
 
 
 @explicit_destroy

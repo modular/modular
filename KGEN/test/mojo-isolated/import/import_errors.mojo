@@ -138,7 +138,7 @@ fn baz():
 import test_package
 
 # expected-error @below {{cannot implicitly convert 'test_package' value to 'AnyType' in type parameter}}
-alias x = S[test_package]()
+comptime x = S[test_package]()
 
 struct S[a: AnyType]:
     pass

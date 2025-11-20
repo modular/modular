@@ -6,7 +6,7 @@
 
 
 trait DevicePassable:
-    alias device_type: AnyType
+    comptime device_type: AnyType
 
     fn _to_device_type(self, target: UnsafePointer[NoneType]):
         ...

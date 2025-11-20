@@ -12,7 +12,7 @@ comptime a, (b, c, d) = (1, (2, 3.0))
 # // -----
 
 # expected-error @below {{invalid comptime declaration: expected an identifier or '_'}}
-alias t, True, c = 1, 2, 3
+comptime t, True, c = 1, 2, 3
 
 
 # // -----
@@ -20,7 +20,7 @@ alias t, True, c = 1, 2, 3
 
 struct A:
     # expected-error @below {{only comptime declarations with a single name are allowed inside a struct}}
-    alias a, b = 1, 2
+    comptime a, b = 1, 2
 
 
 # // -----
@@ -28,13 +28,13 @@ struct A:
 
 trait A:
     # expected-error @below {{only comptime declarations with a single name are allowed inside a trait}}
-    alias a, b = 1, 2
+    comptime a, b = 1, 2
 
 
 # // -----
 
 
 # expected-note @below {{previous definition here}}
-alias a, b = 1, 2
+comptime a, b = 1, 2
 # expected-error @below {{invalid redefinition of 'b'}}
-alias b, c = 2, 3
+comptime b, c = 2, 3

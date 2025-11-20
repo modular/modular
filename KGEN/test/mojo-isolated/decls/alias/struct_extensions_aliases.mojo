@@ -49,7 +49,7 @@ __extension Spaceship:
 fn test_function():
     # Note how this is resolving to ZInt right here, it means the lookup worked.
     # CHECK: lit.alias.decl *"MySpeed`": !ZInt
-    alias MySpeed = Spaceship.MaxSpeed
+    comptime MySpeed = Spaceship.MaxSpeed
     # Note how this is resolving to ZInt right here, it means the lookup worked.
     # CHECK: lit.var.decl "speed" var : !lit.ref<!ZInt,
     var speed = MySpeed
@@ -96,7 +96,7 @@ struct ZInt(ImplicitlyCopyable):
 
 
 struct Rocket:
-    alias DefaultFuel = ZInt()
+    comptime DefaultFuel = ZInt()
     var fuel: ZInt
 
 
@@ -152,7 +152,7 @@ fn test_self_alias_with_generic_1(container: Container[ZInt]):
     # Note how it's ZInt right here, it means the lookup worked.
     # CHECK: lit.alias.decl *"MyElementType`1": !ImplicitlyCopyable =
     # CHECK-SAME: <sugar_alias(#lit.struct.extract<:meta<!lit.struct<#Container <:!ImplicitlyCopyable !ZInt>>> @struct_extensions_aliases::@Container<:!ImplicitlyCopyable !ZInt>, "ElementType">, !ZInt)>
-    alias MyElementType = Container[ZInt].ElementType
+    comptime MyElementType = Container[ZInt].ElementType
 
 
 # CHECK-LABEL: lit.fn @"test_self_alias_with_generic_2
