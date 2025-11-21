@@ -2869,7 +2869,6 @@ void DestructorInsertion::scanFunction(FunctionLikeOp func) {
 /// change its liveness state.  This diagnoses uses of values that are not yet
 /// initialized, and returns the set of values that are live at the end of the
 /// block.
-
 void DestructorInsertion::scanBlock(Block &block) {
   // Process each operation bottom-up in the block.
   SmallVector<std::pair<Value, OperandEffect>> operandEffects;

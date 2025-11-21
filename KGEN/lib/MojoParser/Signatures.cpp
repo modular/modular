@@ -1522,9 +1522,15 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
 
   // Type check 'deinit' arguments.
   if (arg.convention == ParsedArgument::kConventionDeinit) {
-    if (idx != 0 || !tcSignature.selfType) {
-      shared.emitError(
-          arg.loc, "only 'self' arguments in struct methods may be 'deinit'");
+    if (arg.isErroneous) {
+      arg.convention = ParsedArgument::kConventionVar;
+    } else if (!tcSignature.selfType) {
+      shared.emitError(arg.loc, "only struct methods may be 'deinit'");
+      arg.convention = ParsedArgument::kConventionVar;
+    } else if (!type.getWithoutParameters(shared).isEqualCanon(
+                   tcSignature.selfType.getWithoutParameters(shared))) {
+      shared.emitError(arg.loc,
+                       "only arguments of Self type may be marked 'deinit'");
       arg.convention = ParsedArgument::kConventionVar;
     } else if (arg.variadicKind != VariadicKind::None) {
       shared.emitError(arg.loc, "deinit arguments may not be variadic");
