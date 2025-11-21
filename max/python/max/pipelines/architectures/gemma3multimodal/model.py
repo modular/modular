@@ -339,10 +339,10 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             pipeline_config: The configuration for the pipeline.
             available_cache_memory: The total memory available for the KV cache
                 in bytes.
-            huggingface_config: The HuggingFace model configuration object
-                (:obj:`transformers.AutoConfig`).
             devices: A list of MAX Engine devices (:obj:`max.driver.Device`) the
                 model will run on.
+            huggingface_config: The HuggingFace model configuration object
+                (:obj:`transformers.AutoConfig`).
             kv_cache_config: Configuration settings for the KV cache
                 (:obj:`max.pipelines.max_config.KVCacheConfig`).
             cache_dtype: The data type for the KV cache (:obj:`max.dtype.DType`).
@@ -352,17 +352,17 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         """
         return estimate_kv_cache_size(
             params=Gemma3ForConditionalGenerationConfig.get_kv_params(
-                huggingface_config=huggingface_config,
+                huggingface_config,
                 n_devices=len(devices),
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=Gemma3_MultiModalModel.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
+                pipeline_config, huggingface_config
             ),
             num_layers=Gemma3ForConditionalGenerationConfig.get_num_layers(
-                huggingface_config=huggingface_config
+                huggingface_config
             ),
             available_cache_memory=available_cache_memory,
             devices=devices,
@@ -713,7 +713,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             pixel_values=None,
         )
 
-    # ⚠️ borrowed from idefics3
     def _prepare_vision_inputs(
         self, context_batch: Sequence[TextAndVisionContext]
     ) -> list[Tensor] | None:
@@ -839,7 +838,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             )
         return kv_caches_per_dev
 
-    # borrowed from InternVL
     def _create_empty_image_embeddings(self) -> list[Tensor]:
         """Create empty image embeddings for text-only inputs."""
         return [
@@ -850,7 +848,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             for dev in self.devices
         ]
 
-    # borrowed from InternVL
     def _create_empty_indices(self) -> list[Tensor]:
         """Create empty image token indices tensor."""
         return [

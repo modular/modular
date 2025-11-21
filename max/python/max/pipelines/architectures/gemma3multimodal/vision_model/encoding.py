@@ -40,7 +40,6 @@ class Gemma3VisionEncoderLayer(Module):
         self.embed_dim = vision_config.hidden_size
         self.layer_idx = layer_idx
 
-        # Pre-attention layer norm
         self.layer_norm1 = LayerNorm(
             self.embed_dim,
             eps=vision_config.layer_norm_eps,
@@ -48,16 +47,13 @@ class Gemma3VisionEncoderLayer(Module):
             dtype=config.dtype,
         )
 
-        # Self-attention
         self.self_attn = Gemma3VisionAttention(
             config=config,
             layer_idx=layer_idx,
         )
 
-        # MLP (Feed-Forward Network) - simple GELUTanh/fc1/fc2 style
         self.mlp = Gemma3VisionMLP(config, device=self.device)
 
-        # post-attention layer norm
         self.layer_norm2 = LayerNorm(
             self.embed_dim,
             eps=vision_config.layer_norm_eps,
@@ -163,8 +159,6 @@ class Gemma3VisionEncoderLayer(Module):
 
 # ✅ based on HF and MLX-VLM
 class Gemma3VisionEncoder(Module):
-    """SigLIP vision encoder with 27 transformer layers."""
-
     def __init__(self, config: Gemma3ForConditionalGenerationConfig):
         super().__init__()
         self.config = config

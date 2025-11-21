@@ -293,30 +293,6 @@ class Gemma3LanguageModel(Module):
         return (last_logits,)
 
 
-# ⚠️ from MLX-VLM not sure if required
-# def masked_scatter(
-#     final_embedding: Tensor,
-#     image_mask_expanded: Tensor,
-#     scaled_image_features: Tensor,
-# ) -> TensorValue: # TODO check return type
-#     # Reshape the tensors to 1D
-#     final_embedding_shape = final_embedding.shape
-#     scaled_image_features_flattened = scaled_image_features.flatten()
-#     final_embedding_flattened = final_embedding.flatten()
-#     image_mask_expanded_flattened = image_mask_expanded.flatten()
-
-#     # Scatter the scaled image features into the special image token positions
-#     image_positions = Tensor(
-#         ops.where(image_mask_expanded_flattened)[0], DType.uint32
-#     )
-#     final_embedding_flattened[image_positions] = scaled_image_features_flattened
-
-#     # Reshape back to the original shape
-#     final_embedding = final_embedding_flattened.reshape(final_embedding_shape)
-
-#     return final_embedding
-
-
 # ✅ based on HF and MLX-VLM
 class Gemma3VisionModel(Module):
     def __init__(self, config: Gemma3ForConditionalGenerationConfig) -> None:
