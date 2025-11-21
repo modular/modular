@@ -256,5 +256,49 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         )
         d = rebind[type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
 
+    # ===------------------------------------------------------------------===#
+    # F64 = F64 * F64 + F64
+    # ===------------------------------------------------------------------===#    
+    elif _has_type[DType.float64](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(1, 1, 2, 2)](a.size, b.size, c.size, d.size):
+        var r = llvm_intrinsic[
+            "llvm.nvvm.mma.m8n8k4.row.col.f64",
+            _RegisterPackType[Float64, Float64],
+        ](a, b, c[0], c[1])
+        d = rebind[type_of(d)](SIMD[DType.float64, 2](r[0], r[1]))
+    elif _has_type[DType.float64](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(2, 1, 4, 4)](a.size, b.size, c.size, d.size):
+        var r = llvm_intrinsic[
+            "llvm.nvvm.mma.m16n8k4.row.col.f64",
+            _RegisterPackType[Float64, Float64, Float64, Float64],
+        ](a[0], a[1], b, c[0], c[1], c[2], c[3])
+        d = rebind[type_of(d)](SIMD[DType.float64, 4](r[0], r[1], r[2], r[3]))
+    elif _has_type[DType.float64](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(4, 2, 4, 4)](a.size, b.size, c.size, d.size):
+        var r = llvm_intrinsic[
+            "llvm.nvvm.mma.m16n8k8.row.col.f64",
+            _RegisterPackType[Float64, Float64, Float64, Float64],
+        ](
+            a[0], a[1], a[2], a[3],
+            b[0], b[1],
+            c[0], c[1], c[2], c[3]
+        )
+        d = rebind[type_of(d)](SIMD[DType.float64, 4](r[0], r[1], r[2], r[3]))
+    elif _has_type[DType.float64](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(8, 4, 4, 4)](a.size, b.size, c.size, d.size):
+        var r = llvm_intrinsic[
+            "llvm.nvvm.mma.m16n8k16.row.col.f64",
+            _RegisterPackType[Float64, Float64, Float64, Float64],
+        ](
+            a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7],
+            b[0], b[1], b[2], b[3],
+            c[0], c[1], c[2], c[3]
+        )
+        d = rebind[type_of(d)](SIMD[DType.float64, 4](r[0], r[1], r[2], r[3]))
+
     else:
         _unsupported_mma_op(d, a, b, c)

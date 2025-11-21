@@ -172,9 +172,26 @@ def main():
 
         @parameter
         if has_nvidia_gpu_accelerator():
+            alias shape_884 = IndexList[3](8, 8, 4)
             alias shape_1684 = IndexList[3](16, 8, 4)
             alias shape_1688 = IndexList[3](16, 8, 8)
             alias shape_16816 = IndexList[3](16, 8, 16)
+
+            test_layout_mma[DType.float64, DType.float64, shape_884, 8, 8, 4](
+                ctx, rtol=1e-01
+            )            
+
+            test_layout_mma[DType.float64, DType.float64, shape_1684, 16, 8, 4](
+                ctx, rtol=1e-01
+            )
+
+            test_layout_mma[DType.float64, DType.float64, shape_1688, 16, 8, 8](
+                ctx, rtol=1e-01
+            )
+
+            test_layout_mma[DType.float64, DType.float64, shape_16816, 16, 8, 16](
+                            ctx, rtol=1e-01
+                        )
 
             test_layout_mma[DType.float32, DType.float32, shape_1684, 16, 8, 4](
                 ctx, rtol=1e-01
@@ -203,3 +220,4 @@ def main():
             ](ctx, rtol=1e-01)
         else:
             abort("Unknown GPU Accelerator.")
+
