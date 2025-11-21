@@ -13,10 +13,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import json
 import logging
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import numpy as np
@@ -340,6 +342,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
                 raise ValueError(
                     "vision_config must be provided in HuggingFace Config"
                 )
+        self.executor: ThreadPoolExecutor | None = None
 
     def apply_chat_template(
         self, messages: list[TextGenerationRequestMessage]
@@ -362,6 +365,18 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         This method processes both text and vision inputs using the Qwen2.5VL
         processor and extracts the necessary components for model execution.
         """
+        if self.executor is None:
+            # lazy init the executor because the tokenizer gets pickled
+            # when launching the model worker, and the executor is not pickle-safe
+            self.executor = ThreadPoolExecutor(max_workers=2)
+
+        return await asyncio.get_running_loop().run_in_executor(
+            self.executor, self.new_context_blocking, request
+        )
+
+    def new_context_blocking(
+        self, request: TextGenerationRequest
+    ) -> Qwen2_5VLTextAndVisionContext:
         # Determine prompt
         prompt: str | Sequence[int]
         add_special_tokens = True
