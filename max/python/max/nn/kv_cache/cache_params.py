@@ -240,13 +240,16 @@ class KVCacheParams:
     ) -> int:
         """Computes the number of blocks that can be allocated based on the available cache memory.
 
+        The number of blocks returned is for a single replica. Each replica will
+        have the same number of blocks.
+
         Args:
             available_cache_memory: The amount of cache memory available across all devices.
             max_batch_size: The maximum batch size, or None.
             max_seq_len: The maximum sequence length, or None.
 
         Returns:
-            The number of blocks that can be allocated.
+            The number of blocks that can be allocated for a single replica.
         """
         # Compute upper bound of total number of pages required.
         max_blocks_per_req: int | None = None
@@ -320,7 +323,7 @@ class KVCacheParams:
     def estimated_memory_size(
         self, available_cache_memory: int, max_batch_size: int, max_seq_len: int
     ) -> int:
-        """Computes the estimated memory size of the KV cache.
+        """Computes the estimated memory size of the KV cache used by all replicas.
 
         Args:
             available_cache_memory: The amount of cache memory available across all devices.
@@ -335,7 +338,9 @@ class KVCacheParams:
             max_batch_size=max_batch_size,
             max_seq_len=max_seq_len,
         )
-        return num_device_blocks * self.bytes_per_block
+        return (
+            num_device_blocks * self.bytes_per_block * self.data_parallel_degree
+        )
 
     def compute_max_seq_len_fitting_in_cache(
         self, available_cache_memory: int
