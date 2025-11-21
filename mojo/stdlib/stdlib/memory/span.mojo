@@ -751,8 +751,9 @@ struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
         var countv = SIMD[DType.int, simdwidth](0)
         var count = Scalar[DType.int](0)
 
-        @parameter
-        fn do_count[width: Int](idx: Int):
+        fn do_count[
+            width: Int
+        ](idx: Int) unified {mut count, mut countv, read ptr}:
             var vec = func(ptr.load[width=width](idx)).cast[DType.int]()
 
             @parameter
@@ -761,7 +762,7 @@ struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
             else:
                 countv += rebind[type_of(countv)](vec)
 
-        vectorize[do_count, simdwidth](length)
+        vectorize[simdwidth](length, do_count)
 
         return UInt(countv.reduce_add() + count)
 

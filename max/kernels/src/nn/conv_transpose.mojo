@@ -571,11 +571,10 @@ struct ConvTransposedPacked[
         for _ in range(num_rows):
 
             @always_inline
-            @parameter
-            fn zero[width: Int](offset: Int):
+            fn zero[width: Int](offset: Int) unified {mut}:
                 output_ptr.store(offset, SIMD[Self.output_type, width](0))
 
-            vectorize[zero, simd_size](self.partition.f_size)
+            vectorize[simd_size](self.partition.f_size, zero)
 
             output_ptr += self.conv_shape.f
 
@@ -1518,13 +1517,13 @@ fn conv_transposed_cpu[
             rank: Int
         ](coords: IndexList[rank], f_size: Int):
             alias simd_size = simd_width_of[output_type]()
+            alias input_rank = input.rank
 
             @always_inline
-            @parameter
-            fn body[width: Int](idx: Int):
+            fn body[width: Int](idx: Int) unified {mut}:
                 # Coordinates of the current index.
-                var curr_coords = rebind[IndexList[input.rank]](coords)
-                curr_coords[input.rank - 1] += idx
+                var curr_coords = rebind[IndexList[input_rank]](coords)
+                curr_coords[input_rank - 1] += idx
 
                 var output_idx = output.runtime_layout(
                     RuntimeTuple[fill_like(output.layout.shape, UNKNOWN_VALUE)](
@@ -1535,7 +1534,7 @@ fn conv_transposed_cpu[
                 var vec = output.ptr.load[width=width](output_idx)
                 elementwise_lambda(curr_coords, vec)
 
-            vectorize[body, simd_size](f_size)
+            vectorize[simd_size](f_size, body)
 
         ConvTransposedPacked[
             input.origin,

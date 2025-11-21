@@ -1322,12 +1322,10 @@ fn iota[
     """
 
     @always_inline
-    @__copy_capture(offset, buff)
-    @parameter
-    fn fill[width: Int](i: Int):
+    fn fill[width: Int](i: Int) unified {var offset, var buff}:
         buff.store(i, iota[dtype, width](offset + i))
 
-    vectorize[fill, simd_width_of[dtype]()](len)
+    vectorize[simd_width_of[dtype]()](len, fill)
 
 
 fn iota[dtype: DType, //](mut v: List[Scalar[dtype], *_], offset: Int = 0):

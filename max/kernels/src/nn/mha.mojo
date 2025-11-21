@@ -4821,8 +4821,7 @@ fn _bmm0_bs[
         if is_amd_gpu():
             var accum_vec = SIMD[p_type, simd_width_of[p_type]()](0)
 
-            @parameter
-            fn accum_fn[width: Int](offset: Int):
+            fn accum_fn[width: Int](offset: Int) unified {mut}:
                 alias alignment = align_of[SIMD[p_type, width]]()
                 var q_val = q.load[width=width, alignment=alignment](
                     y * UInt(num_heads) * UInt(depth) + UInt(offset)
@@ -4836,7 +4835,7 @@ fn _bmm0_bs[
                 else:
                     accum_vec += rebind[type_of(accum_vec)](qk_val)
 
-            vectorize[accum_fn, simd_width_of[p_type]()](depth)
+            vectorize[simd_width_of[p_type]()](depth, accum_fn)
             accum += accum_vec.reduce_add()
         else:
             for d in range(depth):

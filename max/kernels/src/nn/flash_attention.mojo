@@ -675,13 +675,12 @@ struct _FlashAttention[
             max_vals[m] = max_val
             sum_vals[m] = sum_vals[m] * fixup_val + accum_val
 
-            @parameter
             @always_inline
-            fn do_correction[_simd_width: Int](idx: Int):
+            fn do_correction[_simd_width: Int](idx: Int) unified {mut}:
                 var val = o_row_ptr.load[width=_simd_width](idx)
                 o_row_ptr.store(idx, val * fixup_val)
 
-            vectorize[do_correction, Self.simd_width, unroll_factor=2](count_n)
+            vectorize[Self.simd_width, unroll_factor=2](count_n, do_correction)
 
             qk_row_ptr += Self._config.qk_block_n
             o_row_ptr += Self._config.o_block_n
@@ -913,14 +912,13 @@ struct _FlashAttention[
                 for m in range(count_m):
                     var reciprocal = 1 / sum_vals[m][0]
 
-                    @parameter
                     @always_inline
-                    fn do_final[_simd_width: Int](idx: Int):
+                    fn do_final[_simd_width: Int](idx: Int) unified {mut}:
                         var v = oz_ptr.load[width=_simd_width](idx)
                         o_ptr.store(idx, v * reciprocal)
 
-                    vectorize[do_final, Self.simd_width, unroll_factor=4](
-                        count_n
+                    vectorize[Self.simd_width, unroll_factor=4](
+                        count_n, do_final
                     )
 
                     o_ptr += q_seq_stride

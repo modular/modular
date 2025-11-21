@@ -297,9 +297,10 @@ struct BitSet[size: Int](
         var res = Self()
 
         # Define a vectorized operation that processes multiple words at once
-        @parameter
         @always_inline
-        fn _intersect[simd_width: Int](offset: Int):
+        fn _intersect[
+            simd_width: Int
+        ](offset: Int) unified {mut res, read left, read right}:
             # Initialize SIMD vectors to hold multiple words from each bitset
             var left_vec = SIMD[DType.int64, simd_width]()
             var right_vec = SIMD[DType.int64, simd_width]()
@@ -324,7 +325,7 @@ struct BitSet[size: Int](
         if Self._words_size >= simd_width:
             # If we have enough words, use SIMD vectorization for better
             # performance
-            vectorize[_intersect, simd_width, size = Self._words_size]()
+            vectorize[simd_width](Self._words_size, _intersect)
         else:
             # For small bitsets, use a simple scalar implementation
             @parameter

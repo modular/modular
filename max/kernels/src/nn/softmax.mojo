@@ -183,8 +183,7 @@ fn _softmax_2_pass_step2[
     #   end for
 
     @always_inline
-    @parameter
-    fn _step_2[simd_width: Int](idx: Int):
+    fn _step_2[simd_width: Int](idx: Int) unified {mut}:
         var running_max_simd = SIMD[dtype, simd_width](running_max)
         var running_sum_simd = SIMD[dtype, simd_width](running_sum)
         var input_val = input.load[width=simd_width](IndexList[1](idx))
@@ -193,7 +192,7 @@ fn _softmax_2_pass_step2[
             exp(input_val - running_max_simd) / running_sum_simd,
         )
 
-    vectorize[_step_2, simd_width, unroll_factor=unroll_factor](output.size())
+    vectorize[simd_width, unroll_factor=unroll_factor](output.size(), _step_2)
 
 
 fn softmax_2_pass[
@@ -278,8 +277,7 @@ fn _softmax_3_pass_step_2[
     var accum_simd: SIMD[dtype, outer_simd_width] = 0
 
     @always_inline
-    @parameter
-    fn step_2[simd_width: Int](idx: Int):
+    fn step_2[simd_width: Int](idx: Int) unified {mut}:
         var vin = input_fn_1d[simd_width](idx)
         var elem = vin - SIMD[dtype, simd_width](max_val)
 
@@ -290,7 +288,7 @@ fn _softmax_3_pass_step_2[
             accum_scalar, accum_simd, elem
         )
 
-    vectorize[step_2, simd_width, unroll_factor=unroll_factor](output.size())
+    vectorize[simd_width, unroll_factor=unroll_factor](output.size(), step_2)
     # Reduce the values from both the scalar and vector accum.
     return accum_scalar + accum_simd.reduce_add()
 
@@ -315,15 +313,13 @@ fn _softmax_3_pass_step_3[
     var accum_proc = accum_proc_func[dtype, 1](accum)
 
     @always_inline
-    @__copy_capture(accum_proc)
-    @parameter
-    fn step_3[simd_width: Int](idx: Int):
+    fn step_3[simd_width: Int](idx: Int) unified {var accum_proc, mut output}:
         var accum_simd = SIMD[dtype, simd_width](accum_proc)
         var elem = output.load[width=simd_width](IndexList[1](idx))
         elem = accum_apply_func[dtype, simd_width](elem, accum_simd)
         output.store[width=simd_width](IndexList[1](idx), elem)
 
-    vectorize[step_3, simd_width, unroll_factor=unroll_factor](output.size())
+    vectorize[simd_width, unroll_factor=unroll_factor](output.size(), step_3)
 
 
 fn _softmax_3_pass_base[

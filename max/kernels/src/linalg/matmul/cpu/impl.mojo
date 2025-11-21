@@ -85,8 +85,7 @@ fn elementwise_epilogue_c_tile[
     c: NDBuffer[dtype, 2, origin, c_shape],
 ):
     @always_inline
-    @parameter
-    fn activation_on_col_chunk[col_chunk_size: Int](idx_n: Int):
+    fn activation_on_col_chunk[col_chunk_size: Int](idx_n: Int) unified {mut}:
         var n_coord = idx_n + offset.N
         for idx_m in range(tile_len.M):
             var m_coord = idx_m + offset.M
@@ -94,7 +93,7 @@ fn elementwise_epilogue_c_tile[
             var c_val = c.load[width=col_chunk_size](c_coord)
             func[dtype, col_chunk_size](c_coord, c_val)
 
-    vectorize[activation_on_col_chunk, simd_width](tile_len.N)
+    vectorize[simd_width](tile_len.N, activation_on_col_chunk)
 
 
 # Interface method
@@ -426,8 +425,7 @@ fn _small_matmul[
                 var acc_scalar = Scalar[c.type]()
 
                 @always_inline
-                @parameter
-                fn compute_fn[width: Int](k: Int):
+                fn compute_fn[width: Int](k: Int) unified {mut}:
                     @parameter
                     if width == 1:
                         acc_scalar += (
@@ -439,7 +437,7 @@ fn _small_matmul[
                             * b.load[width=simd_width](n, k).cast[c.type]()
                         )
 
-                vectorize[compute_fn, simd_width, unroll_factor=2](K)
+                vectorize[simd_width, unroll_factor=2](K, compute_fn)
 
                 var val = acc_vector.reduce_add() + acc_scalar
 
@@ -482,15 +480,14 @@ fn _small_matmul[
             var a_val = a[m, k].cast[c.type]()
 
             @always_inline
-            @parameter
-            fn _wrapper[simd_width: Int](n: Int):
+            fn _wrapper[simd_width: Int](n: Int) unified {mut}:
                 output_func[c.type, simd_width](
                     Index(m, n),
                     c.load[width=simd_width](m, n)
                     + a_val * b.load[width=simd_width](k, n).cast[c.type](),
                 )
 
-            vectorize[_wrapper, simd_width, unroll_factor=2](N)
+            vectorize[simd_width, unroll_factor=2](N, _wrapper)
 
         for m in range(M):
             memset_zero(c.data + m * N, N)

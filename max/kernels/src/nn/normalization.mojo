@@ -640,9 +640,7 @@ fn layer_norm_cpu[
         )  # use biased estimator
         var norm_factor = rsqrt(var_val + epsilon)
 
-        @__copy_capture(norm_factor, mean_val, row)
-        @parameter
-        fn _normalize[simd_width: Int](col: Int):
+        fn _normalize[simd_width: Int](col: Int) unified {mut}:
             var out_val = input_fn[simd_width](row, col)
             var gamma_val = gamma_fn[simd_width, 1](col)
             var beta_col = beta.runtime_layout(
@@ -658,7 +656,7 @@ fn layer_norm_cpu[
                 row, col, rebind[SIMD[dtype, simd_width]](norm_val)
             )
 
-        vectorize[_normalize, simd_width](num_cols)
+        vectorize[simd_width](num_cols, _normalize)
 
 
 fn layer_norm_cpu[
@@ -1290,9 +1288,7 @@ fn rms_norm_cpu[
         var mean_val = _sum_to_mean(sum_val, num_cols)
         var norm_factor = rsqrt(mean_val + epsilon.cast[intermediate_type]())
 
-        @__copy_capture(norm_factor, weight_offset)
-        @parameter
-        fn _normalize[simd_width: Int](col: Int):
+        fn _normalize[simd_width: Int](col: Int) unified {mut}:
             var input_val = input_fn[simd_width](row, col).cast[
                 intermediate_type
             ]()
@@ -1315,7 +1311,7 @@ fn rms_norm_cpu[
 
             output_fn[simd_width, 1](row, col, norm_val)
 
-        vectorize[_normalize, simd_width](num_cols)
+        vectorize[simd_width](num_cols, _normalize)
 
 
 fn rms_norm_cpu[

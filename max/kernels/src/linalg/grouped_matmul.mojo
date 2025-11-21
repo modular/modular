@@ -795,8 +795,7 @@ fn grouped_matmul_amd_kernel_launcher[
             var elements_to_process = thread_end - thread_start
 
             @always_inline
-            @parameter
-            fn process_elements[width: Int](idx: Int):
+            fn process_elements[width: Int](idx: Int) unified {mut}:
                 var elem_idx = thread_start + idx
                 var tile_row, tile_col = divmod(elem_idx, BN)
                 var local_row: UInt32 = block_m * BM + tile_row
@@ -826,7 +825,7 @@ fn grouped_matmul_amd_kernel_launcher[
                                     zero_scalar,
                                 )
 
-            vectorize[process_elements, vec_width](elements_to_process)
+            vectorize[vec_width](elements_to_process, process_elements)
 
 
 @always_inline

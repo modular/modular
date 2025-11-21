@@ -75,8 +75,7 @@ def main():
         alias scale_x = (max_x - min_x) / cols
         alias scale_y = (max_y - min_y) / rows
 
-        @parameter
-        fn compute_vector[simd_width: Int](col: Int):
+        fn compute_vector[simd_width: Int](col: Int) unified {mut}:
             """Each time we operate on a `simd_width` vector of pixels."""
             var cx = min_x + (col + iota[float_type, simd_width]()) * scale_x
             var cy = min_y + row * SIMD[float_type, simd_width](scale_y)
@@ -84,7 +83,7 @@ def main():
             matrix.store(row, col, mandelbrot_kernel_SIMD(c))
 
         # Vectorize the call to compute_vector with a chunk of pixels.
-        vectorize[compute_vector, simd_width, size=cols]()
+        vectorize[simd_width, size=cols](compute_vector)
 
     @parameter
     fn bench():

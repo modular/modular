@@ -38,11 +38,10 @@ fn apply[
     ],
     dtype: DType,
 ](input: NDBuffer[dtype, 1], output: NDBuffer[mut=True, dtype, 1]):
-    @parameter
-    fn _func[width: Int](idx: Int):
+    fn _func[width: Int](idx: Int) unified {mut}:
         output.store(idx, func(input.load[width=width](idx)))
 
-    vectorize[_func, simd_width_of[dtype]()](len(input))
+    vectorize[simd_width_of[dtype]()](len(input), _func)
 
 
 def bench_unary[

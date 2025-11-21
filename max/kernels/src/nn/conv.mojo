@@ -325,9 +325,8 @@ fn _reduce_output[
         # Use all threads in reduction.
         var reduce_range = partition_work(tid, num_threads, num_rows, 1)
 
-        @parameter
         @always_inline
-        fn sum[width: Int](offset: Int):
+        fn sum[width: Int](offset: Int) unified {mut}:
             var tid_output_offset = reduce_range[0] * F + offset
             var vec = scratch.load[width=width](tid_output_offset)
             # The number of partitions here is typically small.
@@ -339,7 +338,7 @@ fn _reduce_output[
                 )
             output.store(tid_output_offset, vec)
 
-        vectorize[sum, simd_size, unroll_factor=4](reduce_range[1] * F)
+        vectorize[simd_size, unroll_factor=4](reduce_range[1] * F, sum)
 
         @parameter
         if elementwise_epilogue:
@@ -3058,8 +3057,7 @@ fn conv_nhwc_direct[
             alias simd_size = simd_width_of[output_type]()
 
             @always_inline
-            @parameter
-            fn body[width: Int](idx: Int):
+            fn body[width: Int](idx: Int) unified {mut}:
                 # Coordinates of the current index.
                 var curr_coords = rebind[IndexList[input.rank]](coords)
                 curr_coords[input.rank - 1] += idx
@@ -3067,7 +3065,7 @@ fn conv_nhwc_direct[
                 var vec = output.load[width=width](curr_coords)
                 elementwise_lambda(curr_coords, vec)
 
-            vectorize[body, simd_size](f_size)
+            vectorize[simd_size](f_size, body)
 
         ConvDirectNHWC[
             input_layout,

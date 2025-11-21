@@ -408,9 +408,9 @@ fn _reduce_3D[
     for i in range(h):
 
         @always_inline
-        @__copy_capture(w)
-        @parameter
-        fn reduce_w_chunked[simd_width: Int](idx: Int):
+        fn reduce_w_chunked[
+            simd_width: Int
+        ](idx: Int) unified {var w, read i, read src, read dst, read init}:
             var accum = SIMD[init.dtype, simd_width](init)
             for j in range(w):
                 var chunk = src.load[width=simd_width](
@@ -419,7 +419,7 @@ fn _reduce_3D[
                 accum = map_fn(accum, chunk)
             dst.store(IndexList[dst.rank](i, idx), accum)
 
-        vectorize[reduce_w_chunked, usimd_width](c)
+        vectorize[usimd_width](c, reduce_w_chunked)
 
 
 @parameter
@@ -1079,8 +1079,7 @@ fn _reduce_along_outer_dimension[
         for slice_idx in range(start_parallel_offset, end_parallel_offset):
 
             @always_inline
-            @parameter
-            fn reduce_chunk[simd_width: Int](inner_dim_idx: Int):
+            fn reduce_chunk[simd_width: Int](inner_dim_idx: Int) unified {read}:
                 var acc_simd_tup = StaticTuple[
                     SIMD[init_type, simd_width], num_reductions
                 ]()
@@ -1110,7 +1109,7 @@ fn _reduce_along_outer_dimension[
                     indices, acc_simd_tup
                 )
 
-            vectorize[reduce_chunk, simd_width](inner_dim)
+            vectorize[simd_width](inner_dim, reduce_chunk)
 
     @parameter
     if single_thread_blocking_override:
@@ -1779,26 +1778,26 @@ fn mean[
     if dst.type.is_integral():
 
         @always_inline
-        @__copy_capture(dst_1d, n)
-        @parameter
-        fn normalize_integral[simd_width: Int](idx: Int):
+        fn normalize_integral[
+            simd_width: Int
+        ](idx: Int) unified {var dst_1d, var n}:
             var elem = dst_1d.load[width=simd_width](idx)
             var to_store = elem // n
             dst_1d.store(idx, to_store)
 
-        vectorize[normalize_integral, simd_width](len(dst_1d))
+        vectorize[simd_width](len(dst_1d), normalize_integral)
     else:
         var n_recip = Scalar[dst.type](1) / n
 
         @always_inline
-        @__copy_capture(dst_1d, n, n_recip)
-        @parameter
-        fn normalize_floating[simd_width: Int](idx: Int):
+        fn normalize_floating[
+            simd_width: Int
+        ](idx: Int) unified {var dst_1d, var n_recip}:
             var elem = dst_1d.load[width=simd_width](idx)
             var to_store = elem * n_recip
             dst_1d.store(idx, to_store)
 
-        vectorize[normalize_floating, simd_width](len(dst_1d))
+        vectorize[simd_width](len(dst_1d), normalize_floating)
 
 
 @always_inline

@@ -76,25 +76,24 @@ fn map[
 
 @always_inline
 fn vectorize[
-    origins: OriginSet, //,
-    func: fn[width: Int] (Int) capturing [origins] -> None,
+    func: fn[width: Int] (idx: Int) unified -> None, //,
     simd_width: Int,
     /,
     *,
     unroll_factor: Int = 1,
-](size: Int):
+](size: Int, closure: func):
     """Simplifies SIMD optimized loops by mapping a function across a range from
     0 to `size`, incrementing by `simd_width` at each step. The remainder of
     `size % simd_width` will run in separate iterations.
 
     Parameters:
-        origins: The capture origins.
         func: The function that will be called in the loop body.
         simd_width: The SIMD vector width.
         unroll_factor: The unroll factor for the main loop (Default 1).
 
     Args:
         size: The upper limit for the loop.
+        closure: The captured state of the function bound to func.
 
     The below example demonstrates how you could improve the performance of a
     loop, by setting multiple values at the same time using SIMD registers on
@@ -112,13 +111,11 @@ fn vectorize[
     fn main():
         var p = alloc[Int32](size)
 
-        # @parameter allows the closure to capture the `p` pointer
-        @parameter
-        fn closure[width: Int](i: Int):
+        fn closure[width: Int](i: Int) unified {mut}:
             print("storing", width, "els at pos", i)
             p.store[width=width](i, i)
 
-        vectorize[closure, simd_width](size)
+        vectorize[simd_width](size, closure)
         print(p.load[width=simd_width]())
         print(p.load[width=simd_width](simd_width))
     ```
@@ -172,38 +169,39 @@ fn vectorize[
 
         @parameter
         for idx in range(unroll_factor):
-            func[simd_width](unrolled_idx + idx * simd_width)
+            closure[simd_width](unrolled_idx + idx * simd_width)
 
     @parameter
     if unroll_factor > 1:
         for simd_idx in range(unrolled_end, simd_end, simd_width):
-            func[simd_width](simd_idx)
+            closure[simd_width](simd_idx)
 
     for i in range(simd_end, size):
-        func[1](i)
+        closure[1](i)
 
 
 @always_inline
 fn vectorize[
-    origins: OriginSet, //,
-    func: fn[width: Int] (Int) capturing [origins] -> None,
+    func: fn[width: Int] (idx: Int) unified -> None, //,
     simd_width: Int,
     /,
     *,
     size: Int,
     unroll_factor: Int = size if sys.is_gpu() else 1,
-]():
+](closure: func):
     """Simplifies SIMD optimized loops by mapping a function across a range from
     0 to `size`, incrementing by `simd_width` at each step. The remainder of
     `size % simd_width` will run in a single iteration if it's an exponent of
     2.
 
     Parameters:
-        origins: The capture origins.
         func: The function that will be called in the loop body.
         simd_width: The SIMD vector width.
         size: The upper limit for the loop.
         unroll_factor: The unroll factor for the main loop (Default 1).
+
+    Args:
+        closure: The captured state of the function bound to func.
 
     The below example demonstrates how you could improve the performance of a
     loop, by setting multiple values at the same time using SIMD registers on
@@ -221,13 +219,12 @@ fn vectorize[
     fn main():
         var p = UnsafePointer[Int32].alloc(size)
 
-        # @parameter allows the closure to capture the `p` pointer
-        @parameter
-        fn closure[width: Int](i: Int):
+        # The closure can capture the `p` pointer with unified {mut}
+        fn closure[width: Int](i: Int) unified {mut}:
             print("storing", width, "els at pos", i)
             p.store[width=width](i, i)
 
-        vectorize[closure, simd_width](size)
+        vectorize[simd_width](size, closure)
         print(p.load[width=simd_width]())
         print(p.load[width=simd_width](simd_width))
     ```
@@ -251,7 +248,7 @@ fn vectorize[
     cost of binary size:
 
     ```
-    vectorize[closure, width, size=size, unroll_factor=2]()
+    vectorize[width, size=size, unroll_factor=2](closure)
     ```
 
     In the generated assembly the function calls will be repeated, resulting in
@@ -277,24 +274,24 @@ fn vectorize[
 
         @parameter
         for idx in range(unroll_factor):
-            func[simd_width](unrolled_idx + idx * simd_width)
+            closure[simd_width](unrolled_idx + idx * simd_width)
 
     @parameter
     if unroll_factor > 1:
         for simd_idx in range(unrolled_end, simd_end, simd_width):
-            func[simd_width](simd_idx)
+            closure[simd_width](simd_idx)
 
     @parameter
     if size > simd_end:
 
         @parameter
         if (size - simd_end).is_power_of_two():
-            func[size - simd_end](simd_end)
+            closure[size - simd_end](simd_end)
         else:
 
             @parameter
             for i in range(simd_end, size):
-                func[1](i)
+                closure[1](i)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1472,12 +1469,11 @@ fn _elementwise_impl_cpu_1d[
     if use_blocking_impl:
 
         @always_inline
-        @parameter
-        fn blocking_task_fun[simd_width: Int](idx: Int):
+        fn blocking_task_fun[simd_width: Int](idx: Int) unified {read}:
             func[simd_width, rank](idx)
 
-        vectorize[blocking_task_fun, simd_width, unroll_factor=unroll_factor](
-            problem_size
+        vectorize[simd_width, unroll_factor=unroll_factor](
+            problem_size, blocking_task_fun
         )
         return
 
@@ -1492,12 +1488,11 @@ fn _elementwise_impl_cpu_1d[
         var len = end_offset - start_offset
 
         @always_inline
-        @parameter
-        fn func_wrapper[simd_width: Int](idx: Int):
+        fn func_wrapper[simd_width: Int](idx: Int) unified {read start_offset}:
             var offset = start_offset + idx
             func[simd_width, rank](offset)
 
-        vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](len)
+        vectorize[simd_width, unroll_factor=unroll_factor](len, func_wrapper)
 
     sync_parallelize[task_func](num_workers)
 
@@ -1546,16 +1541,15 @@ fn _elementwise_impl_cpu_nd[
             var indices = _get_start_indices_of_nth_subvolume(i, shape)
 
             @always_inline
-            @parameter
-            fn func_wrapper[simd_width: Int](idx: Int):
+            fn func_wrapper[simd_width: Int](idx: Int) unified {mut indices}:
                 # The inner most dimension is vectorized, so we set it
                 # to the index offset.
                 indices[rank - 1] = idx
                 func[simd_width, rank](indices.canonicalize())
 
             # We vectorize over the innermost dimension.
-            vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](
-                shape[rank - 1]
+            vectorize[simd_width, unroll_factor=unroll_factor](
+                shape[rank - 1], func_wrapper
             )
 
         map[blocking_task_fn](total_size // shape[rank - 1])
@@ -1584,16 +1578,15 @@ fn _elementwise_impl_cpu_nd[
             )
 
             @always_inline
-            @parameter
-            fn func_wrapper[simd_width: Int](idx: Int):
+            fn func_wrapper[simd_width: Int](idx: Int) unified {mut indices}:
                 # The inner most dimension is vectorized, so we set it
                 # to the index offset.
                 indices[rank - 1] = idx
                 func[simd_width, rank](indices.canonicalize())
 
             # We vectorize over the innermost dimension.
-            vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](
-                shape[rank - 1]
+            vectorize[simd_width, unroll_factor=unroll_factor](
+                shape[rank - 1], func_wrapper
             )
 
     sync_parallelize[task_func](num_workers)
@@ -1875,8 +1868,9 @@ fn _stencil_impl_cpu[
             )
 
             @always_inline
-            @parameter
-            fn func_wrapper[simd_width: Int](idx: Int):
+            fn func_wrapper[
+                simd_width: Int
+            ](idx: Int) unified {mut indices, read input_shape}:
                 indices[rank - 1] = idx
                 var stencil_indices = IndexList[
                     stencil_rank, element_type = stencil_axis.element_type
@@ -1946,8 +1940,8 @@ fn _stencil_impl_cpu[
 
                 compute_finalize_fn[simd_width](indices, result)
 
-            vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](
-                shape[rank - 1]
+            vectorize[simd_width, unroll_factor=unroll_factor](
+                shape[rank - 1], func_wrapper
             )
 
     sync_parallelize[task_func](num_workers)

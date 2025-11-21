@@ -174,13 +174,12 @@ fn _memcpy_impl(
         n: The number of bytes to copy.
     """
 
-    @parameter
-    fn copy[width: Int](offset: Int):
+    fn copy[width: Int](offset: Int) unified {mut}:
         dest_data.store(offset, src_data.load[width=width](offset))
 
     @parameter
     if is_gpu():
-        vectorize[copy, simd_bit_width()](n)
+        vectorize[simd_bit_width()](n, copy)
 
         return
 
@@ -236,7 +235,7 @@ fn _memcpy_impl(
     #    return
 
     # Copy in 32-byte chunks.
-    vectorize[copy, 32](n)
+    vectorize[32](n, copy)
 
 
 @doc_private
@@ -296,12 +295,11 @@ fn memcpy[
 fn _memset_impl(
     ptr: UnsafePointer[mut=True, Byte, **_], value: Byte, count: Int
 ):
-    @parameter
-    fn fill[width: Int](offset: Int):
+    fn fill[width: Int](offset: Int) unified {mut}:
         ptr.store(offset, SIMD[DType.uint8, width](value))
 
     comptime simd_width = simd_width_of[Byte]()
-    vectorize[fill, simd_width](count)
+    vectorize[simd_width](count, fill)
 
 
 @always_inline
@@ -350,11 +348,10 @@ fn memset_zero[
     if count > 128:
         return memset_zero(ptr, count)
 
-    @parameter
-    fn fill[width: Int](offset: Int):
+    fn fill[width: Int](offset: Int) unified {mut}:
         ptr.store(offset, SIMD[dtype, width](0))
 
-    vectorize[fill, simd_width_of[dtype](), size=count]()
+    vectorize[simd_width_of[dtype]()](count, fill)
 
 
 # ===-----------------------------------------------------------------------===#
