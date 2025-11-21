@@ -571,7 +571,7 @@ static void collectUses(ParameterUseDefGraph &g, VerifyingParameterCollector &c,
   // be parametric.
   auto isImplicitlyParametric = [&] {
     return (itf && itf.isImplicitlyParametric()) ||
-           isa<GeneratorUserOpInterface, DeferredOp>(op);
+           isa<GeneratorUserOpInterface, DeferredOp, CodeGenReachableOp>(op);
   };
 
   // If the operation is parametric, add it to the list.

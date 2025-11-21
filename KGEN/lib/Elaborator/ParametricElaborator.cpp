@@ -1583,6 +1583,8 @@ ElaborationState ParametricElaborator::processOp(PImplNode *node,
     return processCompileOffload(node, compileOffload);
   if (auto deferred = dyn_cast<DeferredOp>(op))
     return processDeferredOp(node, deferred);
+  if (auto codegenReachable = dyn_cast<CodeGenReachableOp>(op))
+    return processCodeGenReachableOp(node, codegenReachable);
 
   // Delay elaboration of the DILocalVariableAttr until when locations are
   // elaborated.
@@ -2163,6 +2165,35 @@ ElaborationState ParametricElaborator::processDeferredOp(PImplNode *inode,
   }
 
   op.replaceAllUsesWith(resultOp);
+  op->erase();
+  return ElaborationState::advance();
+}
+
+//===----------------------------------------------------------------------===//
+// processDeferredOp
+//===----------------------------------------------------------------------===//
+
+ElaborationState
+ParametricElaborator::processCodeGenReachableOp(PImplNode *inode,
+                                                CodeGenReachableOp op) {
+  // Check the condition expression.
+  Attribute value;
+  HANDLE_EVALUATOR_CONC(value, inode, op.getLoc(), op.getCond());
+
+  // If the constraint evaluated to zero then we are not allowing to generate
+  // runtime code.
+  auto resultInt = cast<IntegerAttr>(value);
+  if (resultInt.getValue().isZero()) {
+    // Evaluate the string to report it.
+    HANDLE_EVALUATOR_CONC(value, inode, op.getLoc(), op.getMessage());
+    inode->setToError(
+        ErrorTree(op.getLoc(), "codegen unreachable: " +
+                                   cast<StringAttr>(value).getValue()));
+    return failure();
+  }
+
+  // The kgen.codegen.reachable op serves no further purpose, so we can remove
+  // it.
   op->erase();
   return ElaborationState::advance();
 }
