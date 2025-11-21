@@ -102,8 +102,9 @@ struct SeqInfo(ImplicitlyCopyable, Movable):
         if not ValidLengthType.is_null:
             # treat valid_lengths as a input_row_offsets
             ptr = rebind[UnsafePointer[UInt32]](valid_length.value())
-            start_of_seq = ptr[Int(batch_idx)]
-            end_of_seq = ptr[Int(batch_idx + 1)]
+            seq = ptr.load[width=2](batch_idx)
+            start_of_seq = warp.broadcast(seq[0])
+            end_of_seq = warp.broadcast(seq[1])
             seq_len = end_of_seq - start_of_seq
             return SeqInfo(seq_len, start_of_seq, work)
         else:

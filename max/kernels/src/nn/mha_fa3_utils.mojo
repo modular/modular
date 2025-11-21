@@ -56,6 +56,7 @@ from nn.mha_tile_scheduler import (
     MHATileState,
     MHATileSummary,
     SeqInfo,
+    TransientScheduler,
 )
 from nn.mha_utils import (
     MHAConfig,
@@ -282,13 +283,13 @@ struct MHAPosition[
     fn __ne__(self, other: Self) -> Bool:
         return self.q_out_offset != other.q_out_offset
 
+    @staticmethod
     @always_inline
     fn split_out_gmem_tensor[
-        dtype: DType, //,
+        dtype: DType, //, ragged: Bool
     ](
-        self,
         ptr: UnsafePointer[Scalar[dtype]],
-        idx: UInt32,
+        num_rows: UInt32,
         out gmem_block: LayoutTensor[
             dtype,
             Self.split_gmem_layout,
@@ -299,15 +300,8 @@ struct MHAPosition[
         ],
     ):
         constrained[not Self.decoding]()
-        alias splitBM = Self.BM // 2
-        num_rows = min(
-            splitBM,
-            Int32(self.seq_len)
-            - Int32(self.prompt_offset)
-            - Int32(idx * splitBM),
-        )
         gmem_block = {
-            ptr + self.q_out_offset + idx * (Self.q_stride * splitBM),
+            ptr,
             type_of(gmem_block.runtime_layout)(
                 type_of(gmem_block.runtime_layout.shape)(
                     Int(num_rows), Self.depth
@@ -372,7 +366,7 @@ struct MHAPosition[
             )
 
     @always_inline
-    fn get_q_row(self) -> UInt32:
+    fn get_score_row(self) -> UInt32:
         @parameter
         if Self.decoding:
             return self.num_keys - 1
@@ -416,6 +410,187 @@ struct MHAPosition[
         else:
             return (UInt32(0), self.num_keys)
 
+    @staticmethod
+    @always_inline
+    fn get_q_gmem_row[
+        MaxSeqLenType: OptionallyStaticInt, //, ragged: Bool
+    ](seq_info: SeqInfo, max_seq_len: MaxSeqLenType) -> UInt32:
+        var q_row: UInt32
+
+        @parameter
+        if ragged:
+            q_row = seq_info.start_of_seq
+
+        # NDBuffer inputs, homogeneous batching.
+        else:
+            # When cache length (num_keys) is greater, we assume it has
+            # prefix preceding the input seq_len.
+            q_row = seq_info.prompt_idx * max_seq_len.as_uint32()
+
+        @parameter
+        if _is_decoding[MaxSeqLenType]():
+            # q matrix view is rows x depth
+            return q_row * Self.q_num_heads + seq_info.head_idx * Self.group
+        else:  # head_idx is for q_heads
+            # q matrix view is rows x (depth*q_num_heads)
+            return q_row + seq_info.prompt_offset
+
+    @staticmethod
+    @always_inline
+    fn get_q_gmem_row[
+        ragged: Bool
+    ](seq_info: SeqInfo, max_seq_len: UInt32) -> UInt32:
+        var q_row: UInt32
+
+        @parameter
+        if ragged:
+            q_row = seq_info.start_of_seq
+
+        # NDBuffer inputs, homogeneous batching.
+        else:
+            # When cache length (num_keys) is greater, we assume it has
+            # prefix preceding the input seq_len.
+            q_row = seq_info.prompt_idx * max_seq_len
+
+        # q matrix view is rows x (depth*q_num_heads)
+        return q_row + seq_info.prompt_offset
+
+
+@always_inline
+fn get_seq_info[
+    MaxSeqLenType: OptionallyStaticInt,
+    ValidLengthType: OptionalPointer,
+    PartitionType: MHAPartitionScheme, //,
+    BM: Int,
+    num_heads: Int,
+](
+    batch_size: UInt32,
+    max_seq_len: MaxSeqLenType,
+    valid_length: ValidLengthType,
+    partition: PartitionType,
+) -> SeqInfo:
+    var tile_summary = MHATileSummary[ValidLengthType](
+        batch_size,
+        ceildiv(max_seq_len.as_uint32(), BM) * partition.num_partitions(),
+        valid_length,
+        max_seq_len.as_uint32(),
+    )
+    scheduler = TransientScheduler[BM, num_heads]()
+    var state: MHATileState = scheduler.initial_state(
+        UnsafePointer[UInt32, address_space = AddressSpace.SHARED](),
+        tile_summary,
+    )
+    return scheduler.unsafe_seq_info(tile_summary, state)
+
+
+@register_passable("trivial")
+struct PositionSummary:
+    var num_keys: UInt32
+    var score_row: UInt32
+
+    @always_inline
+    fn __init__(out self, num_keys: UInt32, score_row: UInt32):
+        self.num_keys = num_keys
+        self.score_row = score_row
+
+    @staticmethod
+    @always_inline
+    fn get_start_pos[
+        KVLUTType: MHAOperand, //,
+        ragged: Bool,
+        _is_cache_length_accurate: Bool,
+    ](kv_lut: KVLUTType, seq_info: SeqInfo, num_keys_arg: UInt32) -> UInt32:
+        @parameter
+        if not ragged:
+            return num_keys_arg - seq_info.seq_len
+        elif _is_cache_length_accurate:
+            return 0
+        else:
+            return warp.broadcast(kv_lut.cache_length(Int(seq_info.prompt_idx)))
+
+    @staticmethod
+    @always_inline
+    fn get_num_keys[
+        MaxSeqLenType: OptionallyStaticInt,
+        KVInputRowOffsetsType: OptionalPointer, //,
+        ragged: Bool,
+        _is_cache_length_accurate: Bool,
+    ](
+        kv_input_row_offsets: KVInputRowOffsetsType,
+        seq_info: SeqInfo,
+        max_seq_len: MaxSeqLenType,
+        num_keys_arg: UInt32,
+        start_pos: UInt32,
+    ) -> UInt32:
+        @parameter
+        if not ragged:
+            return num_keys_arg
+        else:
+            var batch_idx: UInt32 = seq_info.prompt_idx
+
+            @parameter
+            if KVInputRowOffsetsType.is_null:
+                return seq_info.seq_len + start_pos
+            else:
+                var kv_row_offsets = kv_input_row_offsets.value()
+                kv_seq_start = warp.broadcast(
+                    UInt32(kv_row_offsets[Int(batch_idx)])
+                )
+                kv_seq_end = warp.broadcast(
+                    UInt32(kv_row_offsets[Int(batch_idx) + 1])
+                )
+                cur_kv_len = kv_seq_end - kv_seq_start
+                return cur_kv_len + start_pos
+
+    @staticmethod
+    @always_inline
+    fn get_score_row[
+        *, ragged: Bool, _is_cache_length_accurate: Bool, decoding: Bool
+    ](seq_info: SeqInfo, num_keys: UInt32, start_pos: UInt32) -> UInt32:
+        @parameter
+        if decoding:
+            return num_keys - 1
+        elif ragged and _is_cache_length_accurate:
+            return seq_info.prompt_offset
+        else:
+            return seq_info.prompt_offset + start_pos
+
+    @staticmethod
+    @always_inline
+    fn create[
+        KVLUTType: MHAOperand,
+        KVRowOffsetsType: OptionalPointer,
+        MaxSeqLenType: OptionallyStaticInt, //,
+        ragged: Bool,
+        _is_cache_length_accurate: Bool,
+    ](
+        kv_lut: KVLUTType,
+        seq_info: SeqInfo,
+        num_keys_arg: UInt32,
+        kv_input_row_offsets: KVRowOffsetsType,
+        max_seq_len: MaxSeqLenType,
+    ) -> PositionSummary:
+        start_pos = Self.get_start_pos[
+            ragged=ragged,
+            _is_cache_length_accurate=_is_cache_length_accurate,
+        ](kv_lut, seq_info, num_keys_arg)
+        num_keys = Self.get_num_keys[
+            ragged=ragged,
+            _is_cache_length_accurate=_is_cache_length_accurate,
+        ](
+            kv_input_row_offsets,
+            seq_info,
+            max_seq_len,
+            num_keys_arg,
+            start_pos,
+        )
+        score_row = Self.get_score_row[
+            ragged=ragged,
+            _is_cache_length_accurate=_is_cache_length_accurate,
+            decoding = _is_decoding[MaxSeqLenType](),
+        ](seq_info, num_keys, start_pos)
+        return {num_keys, score_row}
+
 
 @always_inline
 fn _get_position[
@@ -455,11 +630,10 @@ fn _get_position[
 
     @parameter
     if ragged:
-        cache_len = kv_lut.cache_length(Int(batch_idx))
 
         @parameter
         if not _is_cache_length_accurate:
-            start_pos = cache_len
+            start_pos = warp.broadcast(kv_lut.cache_length(Int(batch_idx)))
         else:
             start_pos = 0
 

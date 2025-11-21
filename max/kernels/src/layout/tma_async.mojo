@@ -1794,6 +1794,18 @@ def create_tma_tile[
         )
 
 
+alias RaggedTMALoadTensorTile[
+    dtype: DType,
+    tile_0: Int,
+    tile_1: Int,
+    tile_2: Int,
+    tile_4: Int,
+    swizzle_mode: TensorMapSwizzle,
+    is_k_major: Bool,
+] = TMATensorTile[
+    dtype,
+]
+
 alias TMANestedTensorTile[
     dtype: DType,
     tile_m: Int,
