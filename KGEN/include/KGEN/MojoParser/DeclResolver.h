@@ -179,6 +179,10 @@ public:
     return declsCurrentlyProcessing.stack.back();
   }
 
+  bool isAlreadyProcessing(ASTDecl &decl) const {
+    return declsCurrentlyProcessing.map.contains(&decl);
+  }
+
   //===--------------------------------------------------------------------===//
   // Top-Level Decl Resolution
   //===--------------------------------------------------------------------===//
