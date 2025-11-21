@@ -22,6 +22,7 @@ modular_py_test(
         "test_registry.py",
         "test_speculative_config.py",
         "test_telemetry.py",
+        "test_use_module_v3.py",
         "test_weight_path_parser.py",
     ],
     data = [
