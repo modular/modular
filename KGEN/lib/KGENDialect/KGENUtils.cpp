@@ -765,13 +765,11 @@ ParseResult KGEN::parseBindParams(AsmParser &p, TypedAttr &generator,
   // parameters are allowed to refine the types of subsequent parameters, so
   // specialize the types as we go.
   ParameterEvaluator evaluator;
-  for (Type type : genType.getInputParamTypes()) {
+  for (auto _ : genType.getInputParamTypes()) {
     if (failed(p.parseOptionalComma()))
       break;
-    if (parseParamValue(p, paramValues.emplace_back(),
-                        evaluator.getReboundType(type)))
+    if (parseColonTypeParamValue(p, paramValues.emplace_back()))
       return failure();
-    evaluator.appendIndexBinding(paramValues.back());
   }
   return success();
 }
@@ -781,7 +779,10 @@ void KGEN::printBindParams(AsmPrinter &p, TypedAttr generator,
   printColonTypeParamValue(p, generator);
   for (TypedAttr value : paramValues) {
     p << ", ";
-    printParamValue(p, value);
+    // Be explicit about the type, because bind input parameter type does not
+    // necessarily has the same representation as the generator input parameter
+    // type when they are both inferred from outer scope.
+    printColonTypeParamValue(p, value);
   }
 }
 

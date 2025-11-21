@@ -766,9 +766,9 @@ kgen.generator @elaborateFnWithContextualType2() -> index {
   kgen.param.declare fn: <type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> = <@takeFnContextualType>
 
   // CHECK: kgen.param.declare boundFn: () -> index =
-  // CHECK-SAME: <bind_params(:<type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> fn, index, @sillyFn)>
+  // CHECK-SAME: <bind_params(:<type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> fn, :type index, :() -> index @sillyFn)>
   kgen.param.declare boundFn: () -> index =
-    <bind_params(:<type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> fn, index, @sillyFn)>
+    <bind_params(:<type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> fn, :type index, :() -> index @sillyFn)>
   %0 = kgen.call_param[()->index: boundFn]()
 
   kgen.return %0 : index
@@ -779,12 +779,12 @@ kgen.generator @partialBindSignature() -> index {
   kgen.param.declare fn: <type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> = <@takeFnContextualType>
 
   // CHECK: kgen.param.declare partiallyBound: <() -> index>() -> index =
-  // CHECK-SAME: <bind_params(:<type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> fn, index, ?)>
+  // CHECK-SAME: <bind_params(:<type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> fn, :type index, ?)>
   kgen.param.declare
     partiallyBound: <() -> index>() -> index =
-      <bind_params(:<type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> fn, index, ?)>
-  // CHECK: kgen.call_param[() -> index: bind_params(:<() -> index>() -> index partiallyBound, @sillyFn)]()
-  %0 = kgen.call_param[() -> index: bind_params(:<() -> index>() -> index partiallyBound, @sillyFn)]()
+      <bind_params(:<type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> fn, :type index, ?)>
+  // CHECK: kgen.call_param[() -> index: bind_params(:<() -> index>() -> index partiallyBound, :() -> index @sillyFn)]()
+  %0 = kgen.call_param[() -> index: bind_params(:<() -> index>() -> index partiallyBound, :() -> index @sillyFn)]()
 
   kgen.return %0 : index
 }
@@ -793,12 +793,12 @@ kgen.generator @partialBindSignature() -> index {
 kgen.generator @partialBindSignature2() -> index {
   // CHECK: kgen.param.declare fn: <() -> index>() -> index = <@takeFnContextualType<:type index, :() -> index ?>>
   kgen.param.declare fn: <()->index>() -> index =
-    <bind_params(:<type, ()->!kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> @takeFnContextualType, index, ?)>
-  // CHECK: kgen.param.declare fullyBound: () -> index = <bind_params(:<() -> index>() -> index fn, @sillyFn)>
-  kgen.param.declare fullyBound: () -> index = <bind_params(:<()->index>() -> index fn, @sillyFn)>
+    <bind_params(:<type, ()->!kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> @takeFnContextualType, :type index, :() -> index ?)>
+  // CHECK: kgen.param.declare fullyBound: () -> index = <bind_params(:<() -> index>() -> index fn, :() -> index @sillyFn)>
+  kgen.param.declare fullyBound: () -> index = <bind_params(:<()->index>() -> index fn, :() -> index @sillyFn)>
 
-  // CHECK: kgen.call_param[() -> index: bind_params(:<() -> index>() -> index fn, @sillyFn)]()
-  %0 = kgen.call_param[()->index: bind_params(:<()->index>()->index fn, @sillyFn)]()
+  // CHECK: kgen.call_param[() -> index: bind_params(:<() -> index>() -> index fn, :() -> index @sillyFn)]()
+  %0 = kgen.call_param[()->index: bind_params(:<()->index>()->index fn, :() -> index @sillyFn)]()
   // CHECK: kgen.call_param[() -> index: fullyBound]()
   %1 = kgen.call_param[()->index : fullyBound]()
 
@@ -811,7 +811,7 @@ kgen.generator @returnParam<T: type, I>(%arg : !kgen.param<T>) -> !kgen.param<T>
 
 // CHECK-LABEL: @partialBindSignature3
 kgen.generator @partialBindSignature3<T: type>(%arg : !kgen.param<T>) {
-  // CHECK-NEXT: kgen.param.declare fn: <type>(!kgen.param<*(0,0)>) -> !kgen.param<*(0,0)> = <@returnParam<:type ?, 32>>
+  // CHECK-NEXT: kgen.param.declare fn: <type>(!kgen.param<*(0,0)>) -> !kgen.param<*(0,0)> = <@returnParam<?, 32>>
   kgen.param.declare fn: <type>(!kgen.param<*(0,0)>) -> !kgen.param<*(0,0)> =
     <bind_params(:<type, index>(!kgen.param<*(0,0)>) -> !kgen.param<*(0,0)> @returnParam, ?, 32)>
   kgen.return
@@ -881,17 +881,17 @@ kgen.generator @bindParams<c, d: type>() {
   kgen.param.declare bind0: <type>(!pop.array<c, *(0,0)>) -> () =
     <#kgen.bind_params<:!kgen.generator<<index, type>(!pop.array<*(0,0), *(0,1)>) -> ()> fn, c, ?>>
   // CHECK: declare bind1: <index>(!pop.array<*(0,0), d>) -> () =
-  // CHECK-SAME: <bind_params(:<index, type>(!pop.array<*(0,0), *(0,1)>) -> () fn, ?, d)>
+  // CHECK-SAME: <bind_params(:<index, type>(!pop.array<*(0,0), *(0,1)>) -> () fn, ?, :type d)>
   kgen.param.declare bind1: <index>(!pop.array<*(0,0), d>) -> () =
-    <#kgen.bind_params<:!kgen.generator<<index, type>(!pop.array<*(0,0), *(0,1)>) -> ()> fn, ?, d>>
+    <#kgen.bind_params<:!kgen.generator<<index, type>(!pop.array<*(0,0), *(0,1)>) -> ()> fn, ?, :type d>>
   // CHECK: declare bind_all: (!pop.array<c, d>) -> () =
-  // CHECK-SAME: <bind_params(:<index, type>(!pop.array<*(0,0), *(0,1)>) -> () fn, c, d)>
+  // CHECK-SAME: <bind_params(:<index, type>(!pop.array<*(0,0), *(0,1)>) -> () fn, c, :type d)>
   kgen.param.declare bind_all: (!pop.array<c, d>) -> () =
-    <#kgen.bind_params<:!kgen.generator<<index, type>(!pop.array<*(0,0), *(0,1)>) -> ()> fn, c, d>>
+    <#kgen.bind_params<:!kgen.generator<<index, type>(!pop.array<*(0,0), *(0,1)>) -> ()> fn, c, :type d>>
   // CHECK: declare bind0_then_bind1: (!pop.array<c, d>) -> () =
-  // CHECK-SAME: <bind_params(:<type>(!pop.array<c, *(0,0)>) -> () bind0, d)>
+  // CHECK-SAME: <bind_params(:<type>(!pop.array<c, *(0,0)>) -> () bind0, :type d)>
   kgen.param.declare bind0_then_bind1: (!pop.array<c, d>) -> () =
-    <#kgen.bind_params<:!kgen.generator<<type>(!pop.array<c, *(0,0)>) -> ()> bind0, d>>
+    <#kgen.bind_params<:!kgen.generator<<type>(!pop.array<c, *(0,0)>) -> ()> bind0, :type d>>
   // CHECK: declare bind1_then_bind0: (!pop.array<c, d>) -> () =
   // CHECK-SAME: <bind_params(:<index>(!pop.array<*(0,0), d>) -> () bind1, c)>
   kgen.param.declare bind1_then_bind0: (!pop.array<c, d>) -> () =
@@ -899,18 +899,18 @@ kgen.generator @bindParams<c, d: type>() {
 
   // NESTED BINDING
   // CHECK: declare nested_bind0_then_bind1: (!pop.array<c, d>) -> () =
-  // CHECK-SAME: <bind_params(:<index, type>(!pop.array<*(0,0), *(0,1)>) -> () fn, c, d)>
+  // CHECK-SAME: <bind_params(:<index, type>(!pop.array<*(0,0), *(0,1)>) -> () fn, c, :type d)>
   kgen.param.declare nested_bind0_then_bind1: (!pop.array<c, d>) -> () =
     <#kgen.bind_params<
       :!kgen.generator<<type>(!pop.array<c, *(0,0)>) -> ()>
         #kgen.bind_params<:!kgen.generator<<index, type>(!pop.array<*(0,0), *(0,1)>) -> ()> fn, c>,
-      d>>
+      :type d>>
   // CHECK: declare nested_bind1_then_bind0: (!pop.array<c, d>) -> () =
-  // CHECK-SAME: <bind_params(:<index, type>(!pop.array<*(0,0), *(0,1)>) -> () fn, c, d)>
+  // CHECK-SAME: <bind_params(:<index, type>(!pop.array<*(0,0), *(0,1)>) -> () fn, c, :type d)>
   kgen.param.declare nested_bind1_then_bind0: (!pop.array<c, d>) -> () =
     <#kgen.bind_params<
       :!kgen.generator<<index>(!pop.array<*(0,0), d>) -> ()>
-        #kgen.bind_params<:!kgen.generator<<index, type>(!pop.array<*(0,0), *(0,1)>) -> ()> fn, ?, d>,
+        #kgen.bind_params<:!kgen.generator<<index, type>(!pop.array<*(0,0), *(0,1)>) -> ()> fn, ?, :type d>,
       c>>
   kgen.return
 }

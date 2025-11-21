@@ -587,9 +587,9 @@ lit.fn @call_using_empty_struct<es: !lit.struct<@EmptyStruct>, alwaysFn: <index,
   // CHECK-NEXT: kgen.call @expect_parametric_empty_struct<:type {{.*}}, :struct<() memoryOnly> {  }>()
   lit.call @expect_parametric_empty_struct<:type #kgen.type<!lit.struct<@EmptyStruct>>, :!lit.struct<@EmptyStruct> es>() : !lit.generator<() -> ()>
   // CHECK-NEXT: <bind_params(:<index>() -> () alwaysFn, 1)>
-  kgen.param.declare alwaysFn2: !lit.generator<() -> ()> = <bind_params(:<index, @EmptyStruct>() -> () alwaysFn, 1, es)>
-  // CHECK-NEXT: <bind_params(:<type, *(0,0)>() -> () paramFn, {{.*}}, {  })>
-  kgen.param.declare paramFn2: !lit.generator<() -> ()> = <bind_params(:<type, *(0,0)>() -> () paramFn, #kgen.type<!lit.struct<@EmptyStruct>>, es)>
+  kgen.param.declare alwaysFn2: !lit.generator<() -> ()> = <bind_params(:<index, @EmptyStruct>() -> () alwaysFn, :index 1, :!lit.struct<@EmptyStruct> es)>
+  // CHECK-NEXT: <bind_params(:<type, *(0,0)>() -> () paramFn, {{.*}}, :struct<() memoryOnly> {  })>
+  kgen.param.declare paramFn2: !lit.generator<() -> ()> = <bind_params(:<type, *(0,0)>() -> () paramFn, #kgen.type<!lit.struct<@EmptyStruct>>, :!lit.struct<@EmptyStruct> es)>
   kgen.return
 }
 

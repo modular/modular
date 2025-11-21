@@ -1132,11 +1132,6 @@ def KGEN_GeneratorAttr : KGEN_ExprAttr<"Generator", "gen", [
              "TypedAttr":$body,
              CArg<"GeneratorMetadataAttrInterface", "nullptr">:$metadata), [{
       return get(body.getContext(), body, inputParamTypes, metadata);
-    }]>,
-    AttrBuilderWithInferredContext<(ins "TypedAttr":$body,
-                                        "GeneratorType":$type), [{
-      return get(body.getContext(), body, type.getInputParamTypes(),
-        type.getMetadata());
     }]>
   ];
   let hasCustomAssemblyFormat = 1;

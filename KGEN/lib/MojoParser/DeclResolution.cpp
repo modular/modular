@@ -2296,8 +2296,9 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
     type = parameterizeType(type);
     if (!paramSignature.paramDeclAttrs.empty()) {
       TypedAttr remappedBody = remapper.replace(rhsValue.get());
-      rhsValue = cast<TypedAttr>(
-          GeneratorAttr::get(remappedBody, cast<GeneratorType>(type)));
+      auto genTp = cast<GeneratorType>(type);
+      rhsValue = cast<TypedAttr>(GeneratorAttr::get(
+          genTp.getInputParamTypes(), remappedBody, genTp.getMetadata()));
     }
     // Remember the value
     attrs.set(aliasDeclOp.getValueAttrName(), rhsValue.get());
