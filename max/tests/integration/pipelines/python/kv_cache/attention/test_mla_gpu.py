@@ -119,7 +119,9 @@ def test_mla_prefill_plan() -> None:
     assert np.all(
         from_dlpack(results[0]).cpu().numpy() == buffer_row_offsets_ref
     )
-    assert np.all(from_dlpack(results[1]).cpu().numpy() == cache_offsets_ref)
+    max_cache_offsets = from_dlpack(results[1]).cpu().numpy()
+    # the last row is not used.
+    assert np.all(max_cache_offsets[:, :-1] == cache_offsets_ref)
     assert np.all(from_dlpack(results[2]).cpu().numpy() == buffer_lengths_ref)
 
 
