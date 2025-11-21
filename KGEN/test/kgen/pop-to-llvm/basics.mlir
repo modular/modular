@@ -968,6 +968,29 @@ kgen.func @kgen_fp8_param_constant() {
   %1 = kgen.param.constant: f8E5M2 = <1.>
   kgen.return
 }
+
+// CHECK-LABEL: @simd_reduce_or_si32
+kgen.func @simd_reduce_or_si32(%arg0: !pop.simd<4, si32>) -> !pop.scalar<si32> {
+  // CHECK-DAG: [[ARG0:%.*]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK: "llvm.intr.vector.reduce.or"([[ARG0]])
+  %0 = pop.simd.reduce_or %arg0 : !pop.simd<4, si32>
+  kgen.return %0 : !pop.scalar<si32>
+}
+
+// CHECK-LABEL: @simd_reduce_or_1elt_si32
+kgen.func @simd_reduce_or_1elt_si32(%arg0: !pop.simd<1, si32>) -> !pop.scalar<si32> {
+  // CHECK: kgen.return %arg0
+  %0 = pop.simd.reduce_or %arg0 : !pop.simd<1, si32>
+  kgen.return %0 : !pop.scalar<si32>
+}
+
+// CHECK-LABEL: simd_reduce_or_bool
+kgen.func @simd_reduce_or_bool(%arg0: !pop.simd<4, bool>) -> !pop.scalar<bool> {
+  // CHECK-DAG: [[ARG0:%.*]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK: "llvm.intr.vector.reduce.or"([[ARG0]])
+  %0 = pop.simd.reduce_or %arg0 : !pop.simd<4, bool>
+  kgen.return %0 : !pop.scalar<bool>
+}
 }
 
 // -----

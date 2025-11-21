@@ -327,3 +327,11 @@ kgen.func @invalid_union_unwrap(%arg0: !pop.union<i32>) {
   %0 = pop.union.unwrap %arg0 : <i32> as i64
   kgen.return
 }
+
+// -----
+
+kgen.func @invalid_simd_reduce_or(%arg0: i32) {
+  // expected-error @below {{custom op 'pop.simd.reduce_or' 'vector' must be parameterized SIMD vector type, but got 'i32'}}
+  %0 = pop.simd.reduce_or %arg0 : i32
+  kgen.return
+}

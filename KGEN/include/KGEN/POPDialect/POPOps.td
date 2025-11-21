@@ -2420,4 +2420,29 @@ def POP_UnionUnwrapOp : POPOp<"union.unwrap", [Pure,
   let hasFolder = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// SIMDReduceOrOp
+//===----------------------------------------------------------------------===//
+
+def POP_SIMDReduceOrOp : POPOp<"simd.reduce_or", [Pure,
+    SIMDSizeOneOfSameDType<"vector", "result">]> {
+  let summary = "SIMD 'Or' Reduction";
+  let description = [{
+    The `pop.simd.reduce_or` op performs an 'Or' reduction over the vector. The
+    dtype must be a boolean or integral, or parametric type with underlying
+    boolean or integral dtype.
+
+    ```mlir
+    %arg = ... : !pop.simd<4, i32>
+    %x = pop.simd.reduce_or %arg : !pop.scalar<i32>
+    ```
+  }];
+
+  let arguments = (ins POP_SIMDType:$vector);
+  let results = (outs ScalarType:$result);
+
+  let assemblyFormat = "$vector attr-dict `:` qualified(type($vector))";
+  let hasFolder = 1;
+}
+
 #endif // KGEN_POPDIALECT_POPOPS_TD

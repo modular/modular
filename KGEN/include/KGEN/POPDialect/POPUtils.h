@@ -40,6 +40,10 @@ OpFoldResult foldCast(ArrayRef<Attribute> operands, SIMDType resultType,
 OpFoldResult foldSIMDSplat(Value scalarVal, Attribute scalarAttr,
                            SIMDType resultType);
 
+/// Fold a SIMD Or-reduction operation.
+OpFoldResult foldSIMDReduceOr(Value vectorVal, Attribute vectorAttr,
+                              SIMDType vectorType);
+
 //===----------------------------------------------------------------------===//
 // SIMD Folder Helpers
 //===----------------------------------------------------------------------===//
@@ -99,6 +103,33 @@ static SIMDAttr foldSIMDOpImpl(std::index_sequence<I...>,
                                               *type.getResolvedSize(), dtype));
 }
 
+/// Perform the folding of a SIMD vector reduction of a given dtype by
+/// accumulatively applying the binary operation `op` to each vector
+/// element, in order, starting with the first. `getValue` transforms a
+/// `DTypeValue` to the value used to represent the dtype: `APSInt` for
+/// integers, `APFloat` for floats, and `bool` for bools.
+template <typename OpFn, typename GetValueFn>
+static SIMDAttr foldSIMDReduceOpImpl(Attribute operand, OpFn op,
+                                     KGENDType dtype, GetValueFn getValue) {
+  auto firstArg = cast<SIMDAttr>(operand);
+  auto values = firstArg.getValues();
+  auto accumResult = getValue(values[0]);
+  for (unsigned i = 1, e = values.size(); i < e; ++i) {
+    auto res = std::apply(op, std::make_pair(accumResult, getValue(values[i])));
+    // Allow folders to return failure. This indicates undefined behaviour,
+    // which we do not fold.
+    if constexpr (llvm::is_detected<IsOptionalType, decltype(res)>::value) {
+      if (!res)
+        return {};
+      accumResult = *res;
+    } else {
+      accumResult = res;
+    }
+  }
+  return SIMDAttr::get(DTypeValue(accumResult, dtype),
+                       SIMDType::get(operand.getContext(), 1, dtype));
+}
+
 /// Return true if the function type `OpFn` is a function whose first argument
 /// type is `TestType`, which can be an integer, float, index, or bool type.
 template <typename OpFn, typename TestType>
@@ -141,6 +172,23 @@ static SIMDAttr foldSIMDOpDType([[maybe_unused]] GetValueFn getValue,
     return foldSIMDOpImpl(std::make_index_sequence<
                               llvm::function_traits<decltype(op)>::num_args>(),
                           operands, op, dtype, getValue);
+  }
+}
+
+/// Try to fold the operation using one of the provided fold functions for a
+/// given dtype. If a fold function for that dtype is not provided, if such a
+/// dtype is encountered by the folder, it will assert; a folder must be
+/// provided for each dtype for which the operation is valid.
+template <typename TestType, typename GetValueFn, typename... OpFns>
+static SIMDAttr foldSIMDReduceOpDType([[maybe_unused]] GetValueFn getValue,
+                                      [[maybe_unused]] Attribute operand,
+                                      [[maybe_unused]] KGENDType dtype,
+                                      OpFns &&...ops) {
+  auto op = getOpFnOfType<TestType>(std::forward<OpFns>(ops)...);
+  if constexpr (std::is_same_v<decltype(op), std::nullopt_t>) {
+    llvm_unreachable("unhandled dtype");
+  } else {
+    return foldSIMDReduceOpImpl(operand, op, dtype, getValue);
   }
 }
 
@@ -244,6 +292,28 @@ SIMDAttr foldSIMDOp(ArrayRef<Attribute> operands, KGENDType inputDType,
                                                   std::forward<OpFns>(ops)...);
   llvm_unreachable("unhandled dtype");
 }
+
+/// Try to fold an n-ary SIMD vector operation using one of the provided
+/// functions for each possible operand dtype given a result dtype.
+template <typename... OpFns>
+SIMDAttr foldSIMDReduceOp(Attribute operand, KGENDType inputDType,
+                          KGENDType resultDType, OpFns &&...ops) {
+  if (inputDType.isInt())
+    return Detail::foldSIMDReduceOpDType<APSInt>(
+        [](const DTypeValue &val) { return val.getIntVal(); }, operand,
+        resultDType, std::forward<OpFns>(ops)...);
+  // FIXME: Should we even do floating point folds? Results don't match hardware
+  // and not all float semantics are supported.
+  if (inputDType.isFloat())
+    return Detail::foldSIMDReduceOpDType<APFloat>(
+        [](const DTypeValue &val) { return val.getFloatVal(); }, operand,
+        resultDType, std::forward<OpFns>(ops)...);
+  if (inputDType.isBool())
+    return Detail::foldSIMDReduceOpDType<bool>(
+        [](const DTypeValue &val) { return val.getBoolVal(); }, operand,
+        resultDType, std::forward<OpFns>(ops)...);
+  llvm_unreachable("unhandled dtype");
+}
 } // namespace Detail
 
 /// Try to fold an n-ary SIMD vector operation using one of the provided
@@ -273,6 +343,18 @@ SIMDAttr foldSIMDOp(ArrayRef<Attribute> operands, OpFns &&...ops) {
       *cast<SIMDAttr>(operands.front()).getType().getResolvedDType();
   return Detail::foldSIMDOp<kIndexResult>(operands, dtype, dtype,
                                           std::forward<OpFns>(ops)...);
+}
+
+/// Try to fold a SIMD vector reduction operation using one of the provided
+/// functions for each possible operand dtype, assuming the result dtype is the
+/// same as the operands' dtypes.
+template <typename... OpFns>
+SIMDAttr foldSIMDReduceOp(Attribute operand, OpFns &&...ops) {
+  if (!isa_and_nonnull<SIMDAttr>(operand))
+    return {};
+  KGENDType dtype = *cast<SIMDAttr>(operand).getType().getResolvedDType();
+  return Detail::foldSIMDReduceOp(operand, dtype, dtype,
+                                  std::forward<OpFns>(ops)...);
 }
 
 } // namespace M::KGEN::POP
