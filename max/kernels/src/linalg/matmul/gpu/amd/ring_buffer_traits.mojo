@@ -37,7 +37,9 @@ from .structured import SMemBuffer
 
 @always_inline
 fn wait_for_counter(
-    counter: UnsafePointer[Int32, address_space = AddressSpace.SHARED],
+    counter: UnsafePointer[
+        mut=True, Int32, address_space = AddressSpace.SHARED
+    ],
     threshold: Int32,
 ):
     """Spin-wait until counter reaches threshold."""
@@ -49,7 +51,9 @@ fn wait_for_counter(
 
 @always_inline
 fn increment_counter_if_first_thread(
-    counter: UnsafePointer[Int32, address_space = AddressSpace.SHARED],
+    counter: UnsafePointer[
+        mut=True, Int32, address_space = AddressSpace.SHARED
+    ],
     increment: Int32,
 ):
     """Atomically increment counter, but only from the first thread in warp."""
