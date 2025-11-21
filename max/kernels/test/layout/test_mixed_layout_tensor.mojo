@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout._mixed_layout import MixedLayout, make_row_major
+from layout._mixed_layout import MixedLayout, row_major
 from layout._mixed_layout_tensor import MixedLayoutTensor, distribute, tile
 from layout._mixed_tuple import ComptimeInt, Idx, MixedTuple, RuntimeInt
 from layout.int_tuple import IntTuple
@@ -23,7 +23,7 @@ def main():
 
 
 fn test_distribute() raises:
-    alias thread_layout = make_row_major(MixedTuple(Idx[2](), Idx[2]()))
+    alias thread_layout = row_major(MixedTuple(Idx[2](), Idx[2]()))
 
     var array = InlineArray[UInt32, 16](fill=-1)
     var ptr = array.unsafe_ptr()
@@ -62,7 +62,7 @@ fn test_tile() raises:
     var ptr = data.unsafe_ptr()
 
     var layout_tensor = MixedLayoutTensor[dtype = DType.uint32](
-        ptr=ptr, layout=make_row_major([Idx[4](), Idx[4]()])
+        ptr=ptr, layout=row_major([Idx[4](), Idx[4]()])
     )
 
     var counter = 0

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout._mixed_layout import MixedLayout, make_row_major
+from layout._mixed_layout import MixedLayout, row_major
 from layout._mixed_tuple import ComptimeInt, Idx, MixedTuple, RuntimeInt
 from layout.int_tuple import IntTuple
 from testing import assert_equal, assert_true, TestSuite
@@ -56,21 +56,21 @@ fn test_crd2idx() raises:
     assert_equal(layout.size(), 8)
 
 
-fn test_row_major() raises:
-    var shape2 = MixedTuple(Idx[3](), Idx(4))
-    var layout2 = make_row_major(shape2)
-    assert_true(layout2.shape == shape2)
-    assert_true(layout2.stride == MixedTuple(Idx(4), Idx[1]()))
+def test_row_major():
+    var shape = MixedTuple(Idx[3](), Idx(4))
+    var layout = row_major(shape)
+    assert_true(layout.shape == shape)
+    assert_true(layout.stride == MixedTuple(Idx(4), Idx[1]()))
 
     var shape3 = MixedTuple(Idx[3](), Idx(4), Idx(5))
-    var layout3 = make_row_major(shape3)
+    var layout3 = row_major(shape3)
     assert_true(layout3.shape == shape3)
     assert_true(layout3.stride == MixedTuple(Idx(20), Idx(5), Idx[1]()))
 
     var shape3_static = MixedTuple(
         ComptimeInt[3](), ComptimeInt[4](), ComptimeInt[5]()
     )
-    var layout3_static = make_row_major[Second=4, Third=5](shape3_static)
+    var layout3_static = row_major(shape3_static)
     assert_true(layout3_static.shape == shape3_static)
     assert_true(
         layout3_static.stride
