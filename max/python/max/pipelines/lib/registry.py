@@ -260,7 +260,6 @@ class PipelineRegistry:
         for architecture_name in architecture_names:
             if use_module_v3:
                 architecture_name += "_ModuleV3"
-
             if architecture_name in self.architectures:
                 return self.architectures[architecture_name]
 

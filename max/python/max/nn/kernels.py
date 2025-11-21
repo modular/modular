@@ -124,7 +124,7 @@ def fused_qkv_ragged_matmul(
     op_name = f"mo.fused_qkv_matmul.ragged.{cache_strategy_str}"
     values = [input, input_row_offsets, wqkv, *kv_collection, layer_idx]
 
-    if bias:
+    if bias is not None:
         op_name += ".bias"
         values.append(bias)
 
@@ -426,7 +426,7 @@ def fused_qkv_ragged_matmul_quantized(
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
 
     args = [input, input_row_offsets, wqkv, *kv_collection, layer_idx]
-    if bias:
+    if bias is not None:
         args.append(bias)
         bias_name_str = "bias."
     else:

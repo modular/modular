@@ -192,6 +192,9 @@ greater_equal = functional(ops.greater_equal)
 #: Creates a Hann window.
 #: See :func:`max.graph.ops.hann_window` for details.
 hann_window = functional(ops.hann_window)
+#: Applies inplace custom operation.
+#: See :func:`max.graph.ops.inplace_custom` for details.
+inplace_custom = functional(ops.inplace_custom)
 #: Computes the inverse real FFT.
 #: See :func:`max.graph.ops.irfft` for details.
 irfft = functional(ops.irfft)
