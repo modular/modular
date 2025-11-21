@@ -16,11 +16,7 @@ from sys.info import size_of
 
 from builtin._startup import _ensure_current_or_global_runtime_init
 from compile.reflection import get_type_name
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-    stack_allocation,
-)
+from memory import OpaquePointer, stack_allocation
 from python import Python, PythonObject
 from python._cpython import (
     GILAcquired,
@@ -559,7 +555,7 @@ struct PythonTypeBuilder(Copyable, Movable):
     var basicsize: Int
     """The required allocation size to hold an instance of this type as a Python object."""
 
-    var _slots: Dict[Int, OpaquePointer]
+    var _slots: Dict[Int, OpaquePointer[MutAnyOrigin]]
     """Dictionary of Python type slots that define the behavior of the type, mapping slot number to function pointer."""
 
     var methods: List[PyMethodDef]
@@ -1316,7 +1312,7 @@ fn check_and_get_arg[
     T: AnyType
 ](
     func_name: StaticString, py_args: PythonObject, index: Int
-) raises -> UnsafePointer[T]:
+) raises -> UnsafePointer[T, MutAnyOrigin]:
     """Get the argument at the given index and downcast it to a given Mojo type.
 
     Parameters:
@@ -1371,7 +1367,7 @@ fn check_and_get_or_convert_arg[
     T: ConvertibleFromPython
 ](
     func_name: StaticString, py_args: PythonObject, index: Int
-) raises -> UnsafePointer[T]:
+) raises -> UnsafePointer[T, MutAnyOrigin]:
     """Get the argument at the given index and convert it to a given Mojo type.
 
     If the argument cannot be directly downcast to the given type, it will be
@@ -1394,7 +1390,9 @@ fn check_and_get_or_convert_arg[
     """
 
     # Stack space to hold a converted value for this argument, if needed.
-    var converted_arg_ptr: UnsafePointer[T] = stack_allocation[1, T]()
+    var converted_arg_ptr: UnsafePointer[
+        mut=True, T, MutAnyOrigin
+    ] = stack_allocation[1, T]()
 
     try:
         return check_and_get_arg[T](func_name, py_args, index)

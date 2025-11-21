@@ -19,7 +19,6 @@ from python import PythonObject
 ```
 """
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys.ffi import c_double, c_long, c_size_t, c_ssize_t
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
@@ -1380,7 +1379,7 @@ struct PythonObject(
 
     fn unsafe_get_as_pointer[
         dtype: DType
-    ](self) raises -> UnsafePointer[Scalar[dtype]]:
+    ](self) raises -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
         """Reinterpret a Python integer as a Mojo pointer.
 
         Warning: converting from an integer to a pointer is unsafe! The
@@ -1401,7 +1400,9 @@ struct PythonObject(
 
     fn downcast_value_ptr[
         T: AnyType
-    ](self, *, func: Optional[StaticString] = None) raises -> UnsafePointer[T]:
+    ](self, *, func: Optional[StaticString] = None) raises -> UnsafePointer[
+        T, MutAnyOrigin
+    ]:
         """Get a pointer to the expected contained Mojo value of type `T`.
 
         This method validates that this object actually contains an instance of
@@ -1451,7 +1452,7 @@ struct PythonObject(
 
     fn _try_downcast_value[
         T: AnyType
-    ](var self) raises -> Optional[UnsafePointer[T]]:
+    ](var self) raises -> Optional[UnsafePointer[T, MutAnyOrigin]]:
         """Try to get a pointer to the expected contained Mojo value of type `T`.
 
         None will be returned if the type of this object does not match the
@@ -1473,12 +1474,12 @@ struct PythonObject(
         if type == expected_type:
             ref mojo_obj = self._obj_ptr.bitcast[PyMojoObject[T]]()[]
             if mojo_obj.is_initialized:
-                return UnsafePointer(to=mojo_obj.mojo_value)
+                return UnsafePointer(to=mojo_obj.mojo_value).as_any_origin()
         return None
 
     fn unchecked_downcast_value_ptr[
         mut: Bool, origin: Origin[mut], //, T: AnyType
-    ](ref [origin]self) -> UnsafePointer[T, mut=mut, origin=origin]:
+    ](ref [origin]self) -> UnsafePointer[T, origin]:
         """Get a pointer to the expected Mojo value of type `T`.
 
         This function assumes that this Python object was allocated as an
@@ -1501,11 +1502,9 @@ struct PythonObject(
         ref mojo_obj = self._obj_ptr.bitcast[PyMojoObject[T]]()[]
         # TODO(MSTDL-950): Should use something like `addr_of!`
         # Safety: The mutability matches that of `self`.
-        return (
-            UnsafePointer(to=mojo_obj.mojo_value)
-            .unsafe_mut_cast[mut]()
-            .unsafe_origin_cast[origin]()
-        )
+        return UnsafePointer[mut=mut](
+            to=mojo_obj.mojo_value
+        ).unsafe_origin_cast[origin]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1515,7 +1514,9 @@ struct PythonObject(
 
 fn _unsafe_alloc[
     T: AnyType
-](type_obj_ptr: UnsafePointer[PyTypeObject]) raises -> PyObjectPtr:
+](
+    type_obj_ptr: UnsafePointer[PyTypeObject, MutAnyOrigin]
+) raises -> PyObjectPtr:
     """Allocate an uninitialized Python object for storing a Mojo value.
 
     Parameters:
@@ -1562,7 +1563,7 @@ fn _unsafe_init[
 fn _unsafe_alloc_init[
     T: Movable, //,
 ](
-    type_obj_ptr: UnsafePointer[PyTypeObject], var mojo_value: T
+    type_obj_ptr: UnsafePointer[PyTypeObject, MutAnyOrigin], var mojo_value: T
 ) raises -> PythonObject:
     """Allocate a Python object pointer and initialize it with a Mojo value.
 

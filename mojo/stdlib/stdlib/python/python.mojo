@@ -20,7 +20,6 @@ from python import Python
 """
 
 from collections.dict import OwnedKwargsDict
-from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys.ffi import _Global
 
@@ -47,7 +46,9 @@ struct _PythonGlobal(Defaultable, Movable):
         self.cpython.destroy()
 
 
-fn _get_python_interface() raises -> Pointer[CPython, StaticConstantOrigin]:
+fn _get_python_interface() raises -> (
+    UnsafePointer[CPython, StaticConstantOrigin]
+):
     """Returns an immutable static pointer to the CPython global.
 
     The returned pointer is immutable to prevent invalid shared mutation of
@@ -60,13 +61,13 @@ fn _get_python_interface() raises -> Pointer[CPython, StaticConstantOrigin]:
         .as_immutable()
         .unsafe_origin_cast[StaticConstantOrigin]()
     )
-    return Pointer(to=cpython_instance[])
+    return cpython_instance
 
 
 struct Python(Defaultable, ImplicitlyCopyable):
     """Provides methods that help you use Python code in Mojo."""
 
-    var _impl: Pointer[CPython, StaticConstantOrigin]
+    var _impl: UnsafePointer[mut=False, CPython, StaticConstantOrigin]
     """The underlying implementation of Mojo's Python interface."""
 
     # ===-------------------------------------------------------------------===#
@@ -90,7 +91,9 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Args:
             cpython: Reference to the `CPython` singleton.
         """
-        self._impl = Pointer(to=cpython)
+        self._impl = UnsafePointer[mut=False, CPython, MutAnyOrigin](
+            to=cpython
+        ).unsafe_origin_cast[StaticConstantOrigin]()
 
     @always_inline
     fn cpython(self) -> ref [StaticConstantOrigin] CPython:
@@ -291,7 +294,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     @staticmethod
     fn _unsafe_add_functions(
         module: PythonObject,
-        functions: UnsafePointer[PyMethodDef],
+        functions: UnsafePointer[PyMethodDef, MutAnyOrigin],
     ) raises:
         """Adds functions to a Python module object.
 
