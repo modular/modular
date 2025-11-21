@@ -575,7 +575,7 @@ fn crd2idx[
     Index: MixedTupleLike,
     Shape: MixedTupleLike,
     Stride: MixedTupleLike,
-    out_type: DType = DType.int,
+    out_type: DType = DType.int64,
 ](crd: Index, shape: Shape, stride: Stride) -> Scalar[out_type]:
     """Calculate the index from a coordinate tuple."""
     alias shape_len = Shape.__len__()

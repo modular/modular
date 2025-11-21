@@ -24,7 +24,8 @@ struct MixedLayoutTensor[
     dtype: DType,
     shape_types: VariadicOf[MixedTupleLike],
     stride_types: VariadicOf[MixedTupleLike], //,
-    alignment: Int = align_of[dtype](),
+    *,
+    linear_idx_type: DType = DType.int64,
 ]:
     var ptr: UnsafePointer[Scalar[Self.dtype]]
 
@@ -44,12 +45,16 @@ struct MixedLayoutTensor[
     fn __getitem__[
         index_type: MixedTupleLike
     ](self, arg: index_type) -> Scalar[Self.dtype]:
-        return self.ptr[self.layout(arg)]
+        return self.ptr[
+            self.layout[linear_idx_type = Self.linear_idx_type](arg)
+        ]
 
     fn __setitem__[
         index_type: MixedTupleLike
     ](self, arg: index_type, value: Scalar[Self.dtype]):
-        self.ptr[self.layout(arg)] = value
+        self.ptr[
+            self.layout[linear_idx_type = Self.linear_idx_type](arg)
+        ] = value
 
 
 fn distribute[

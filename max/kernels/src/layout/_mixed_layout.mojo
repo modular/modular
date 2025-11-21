@@ -91,7 +91,11 @@ struct MixedLayout[
         self.shape = shape
         self.stride = stride
 
-    fn __call__[index_type: MixedTupleLike](self, index: index_type) -> Int:
+    fn __call__[
+        index_type: MixedTupleLike,
+        *,
+        linear_idx_type: DType = DType.int64,
+    ](self, index: index_type) -> Scalar[linear_idx_type]:
         """Maps a logical coordinate to a linear memory index.
 
         Args:
@@ -100,7 +104,7 @@ struct MixedLayout[
         Returns:
             The linear memory index corresponding to the given coordinates.
         """
-        return Int(crd2idx(index, self.shape, self.stride))
+        return crd2idx[out_type=linear_idx_type](index, self.shape, self.stride)
 
     fn size(self) -> Int:
         """Returns the total number of elements in the layout's domain.
@@ -113,7 +117,9 @@ struct MixedLayout[
         """
         return self.shape.product()
 
-    fn cosize(self) -> Int:
+    fn cosize[
+        linear_idx_type: DType = DType.int64
+    ](self) -> Scalar[linear_idx_type]:
         """Returns the size of the memory region spanned by the layout.
 
         For a layout with shape `(m, n)` and stride `(r, s)`, this returns
@@ -122,7 +128,7 @@ struct MixedLayout[
         Returns:
             The size of the memory region required by the layout.
         """
-        return self(Idx(self.size() - 1)) + 1
+        return self[linear_idx_type=linear_idx_type](Idx(self.size() - 1)) + 1
 
     fn to_layout(self) -> Layout:
         return Layout(
