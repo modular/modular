@@ -243,7 +243,7 @@ class PipelineRegistry:
         self.architectures[architecture.name] = architecture
 
     def retrieve_architecture(
-        self, huggingface_repo: HuggingFaceRepo
+        self, huggingface_repo: HuggingFaceRepo, use_module_v3: bool = False
     ) -> SupportedArchitecture | None:
         # Retrieve model architecture names
         hf_config = self.get_active_huggingface_config(
@@ -258,6 +258,9 @@ class PipelineRegistry:
             return None
 
         for architecture_name in architecture_names:
+            if use_module_v3:
+                architecture_name += "_ModuleV3"
+
             if architecture_name in self.architectures:
                 return self.architectures[architecture_name]
 
@@ -359,7 +362,8 @@ class PipelineRegistry:
             arch = self.architectures[override_architecture]
         else:
             arch = self.retrieve_architecture(
-                huggingface_repo=pipeline_config.model_config.huggingface_model_repo
+                huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
+                use_module_v3=pipeline_config.use_module_v3,
             )
 
         if arch is None:
@@ -416,7 +420,8 @@ class PipelineRegistry:
             arch = self.architectures[override_architecture]
         else:
             arch = self.retrieve_architecture(
-                huggingface_repo=pipeline_config.model_config.huggingface_model_repo
+                huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
+                use_module_v3=pipeline_config.use_module_v3,
             )
 
         # Load HuggingFace Config
@@ -482,7 +487,8 @@ class PipelineRegistry:
         # If using speculative decoding, add draft model-specific parameters
         if pipeline_config.draft_model_config is not None:
             draft_arch = self.retrieve_architecture(
-                huggingface_repo=pipeline_config.draft_model_config.huggingface_weight_repo
+                huggingface_repo=pipeline_config.draft_model_config.huggingface_weight_repo,
+                use_module_v3=pipeline_config.use_module_v3,
             )
             if draft_arch is None:
                 raise ValueError(
@@ -522,7 +528,8 @@ class PipelineRegistry:
             ValueError: If no supported architecture is found for the given model repository.
         """
         if arch := self.retrieve_architecture(
-            huggingface_repo=pipeline_config.model_config.huggingface_model_repo
+            huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
+            use_module_v3=pipeline_config.use_module_v3,
         ):
             return arch.task
 

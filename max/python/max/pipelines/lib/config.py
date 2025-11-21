@@ -204,6 +204,9 @@ class PipelineConfig(MAXConfig):
     found to cause more preemptions.
     """
 
+    use_module_v3: bool = False
+    """Whether to use the ModuleV3 architecture if it exists."""
+
     _model_config: MAXModelConfig = field(default_factory=MAXModelConfig)
     """The model config."""
 
@@ -697,7 +700,8 @@ class PipelineConfig(MAXConfig):
         # Validate that both the `draft_model` and target model `model_path` have the same
         # architecture
         draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.draft_model_config.huggingface_model_repo
+            huggingface_repo=self.draft_model_config.huggingface_model_repo,
+            use_module_v3=self.use_module_v3,
         )
 
         if not draft_arch:
@@ -706,7 +710,8 @@ class PipelineConfig(MAXConfig):
             )
 
         target_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model_config.huggingface_model_repo
+            huggingface_repo=self.model_config.huggingface_model_repo,
+            use_module_v3=self.use_module_v3,
         )
         if not target_arch:
             raise ValueError(
@@ -782,7 +787,8 @@ class PipelineConfig(MAXConfig):
         reason."""
         # Retrieve the architecture
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=model_config.huggingface_model_repo
+            huggingface_repo=model_config.huggingface_model_repo,
+            use_module_v3=self.use_module_v3,
         )
 
         # If nothing is provided, we should not update any more params.
@@ -895,7 +901,8 @@ class PipelineConfig(MAXConfig):
 
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model_config.huggingface_model_repo
+            huggingface_repo=self.model_config.huggingface_model_repo,
+            use_module_v3=self.use_module_v3,
         )
 
         if arch is None:
@@ -1038,7 +1045,8 @@ class PipelineConfig(MAXConfig):
         """
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model_config.huggingface_model_repo
+            huggingface_repo=self.model_config.huggingface_model_repo,
+            use_module_v3=self.use_module_v3,
         )
 
         if arch is None:
@@ -1049,7 +1057,8 @@ class PipelineConfig(MAXConfig):
 
         # Get pipeline task
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model_config.huggingface_model_repo
+            huggingface_repo=self.model_config.huggingface_model_repo,
+            use_module_v3=self.use_module_v3,
         )
         if arch is None:
             raise ValueError(
