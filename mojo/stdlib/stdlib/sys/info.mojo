@@ -1122,7 +1122,7 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
         raise "Unable to query macOS version"
 
     # Truncate the string down to the actual length.
-    osver = osver[0:buf_len]
+    osver.resize(buf_len)
 
     var major = 0
     var minor = 0
@@ -1130,11 +1130,11 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
 
     if "." in osver:
         major = Int(osver[: osver.find(".")])
-        osver = osver[osver.find(".") + 1 :]
+        osver = String(osver[osver.find(".") + 1 :])
 
     if "." in osver:
         minor = Int(osver[: osver.find(".")])
-        osver = osver[osver.find(".") + 1 :]
+        osver = String(osver[osver.find(".") + 1 :])
 
     if "." in osver:
         patch = Int(osver[: osver.find(".")])

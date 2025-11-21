@@ -83,6 +83,7 @@ from collections.string.string_slice import (
     _to_string_list,
     _unsafe_strlen,
 )
+from builtin.builtin_slice import ContiguousSlice
 from hashlib.hasher import Hasher
 from io.write import STACK_BUFFER_BYTES, _TotalWritableBytes, _WriteBufferStack
 from os import PathLike, abort
@@ -734,7 +735,7 @@ struct String(
         var normalized_idx = normalize_index["String"](idx, len(self))
         return StringSlice(ptr=self.unsafe_ptr() + normalized_idx, length=1)
 
-    fn __getitem__(self, span: Slice) -> String:
+    fn __getitem__(self, span: ContiguousSlice) -> StringSlice[origin_of(self)]:
         """Gets the sequence of characters at the specified positions.
 
         Args:
@@ -745,24 +746,13 @@ struct String(
         """
         var start: Int
         var end: Int
-        var step: Int
         # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
 
-        start, end, step = span.indices(self.byte_length())
-        var r = range(start, end, step)
-        if step == 1:
-            return String(
-                StringSlice(
-                    ptr=self.unsafe_ptr() + start,
-                    length=len(r),
-                )
-            )
-
-        var result = String(capacity=len(r))
-        var ptr = self.unsafe_ptr()
-        for i in r:
-            result.append_byte(ptr[i])
-        return result^
+        start, end = span.indices(self.byte_length())
+        return StringSlice(
+            ptr=self.unsafe_ptr() + start,
+            length=end - start,
+        )
 
     fn __eq__(self, rhs: String) -> Bool:
         """Compares two Strings if they have the same values.

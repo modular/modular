@@ -370,7 +370,7 @@ struct Path(
         var start = self.path.rfind(DIR_SEPARATOR) + 2
         var i = self.path.rfind(".", start)
         if 0 < i < (len(self.path) - 1):
-            return self.path[i:]
+            return String(self.path[i:])
 
         return ""
 
