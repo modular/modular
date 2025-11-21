@@ -1233,3 +1233,15 @@ fn testThingWithMethodReferenceSelf[a: ThingWithMethodReferenceSelf]():
     # CHECK-SAME:     <:i1 0, :origin<0> #lit.any.origin>,
     # CHECK-SAME:     rebind(:!lit.ref<!ThingWithMethodReferenceSelf, imm #lit.comptime.origin> store_to_mem(a)))>
     comptime sizzle = a.method()
+
+struct HasOverloadedFooMethods:
+    fn foo(ref self): pass
+    fn foo(var self): pass
+
+# CHECK-LABEL: lit.fn @"testHasOverloadedFooMethods
+fn testHasOverloadedFooMethods():
+    var foo: HasOverloadedFooMethods
+    # CHECK: lit.call {{.*}}@HasOverloadedFooMethods::@"foo{{.*}}(%foo){{.*}}mut *"foo`"> ref) -> !kgen.none>
+    foo.foo()
+    # CHECK: lit.call {{.*}}@HasOverloadedFooMethods::@"foo{{.*}}(%foo){{.*}}owned_in_mem) -> !kgen.none>
+    foo^.foo()

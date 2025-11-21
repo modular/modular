@@ -622,15 +622,20 @@ bool OverloadFitness::isBetter(const OverloadFitness &other) const {
   if (mask != otherMask)
     return mask < otherMask;
 
-  // If still ambiguous, we compare the number of bindings.
-  if (paramBindings.size() != other.paramBindings.size())
-    return paramBindings.size() < other.paramBindings.size();
-
   // Otherwise these candidates are almost identical, so we try to decide based
   // on the number of input conventions mismatches (e.g. register-passable
   // passed in memory).
-  return payload.numMismatchedConventions <
-         other.payload.numMismatchedConventions;
+  if (payload.numMismatchedConventions !=
+      other.payload.numMismatchedConventions)
+    return payload.numMismatchedConventions <
+           other.payload.numMismatchedConventions;
+
+  // If still ambiguous, we compare the number of bindings. This allows us to
+  // treat a function with more parameters as worse than a parameter-less
+  // function, so things like:
+  //    fn foo(a: Int):   and  fn foo[T: AnyType](a: T):
+  // resolve to the more specific function.
+  return paramBindings.size() < other.paramBindings.size();
 }
 
 int8_t OverloadFitness::Payload::getBoolMask() const {
