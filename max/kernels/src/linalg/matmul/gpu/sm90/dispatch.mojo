@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
 from collections import OptionalReg
 from math import ceildiv
 from sys import env_get_bool, env_get_int, size_of
@@ -32,6 +33,7 @@ from .tuning_configs import _get_tuning_list_bf16, TuningConfigSM90
 alias MAX_M = Int.MAX
 
 # TODO: Move to a general location and use for all dispatch
+
 alias DISPATCH_MISS = 0
 alias DISPATCH_HIT = 1
 
@@ -117,11 +119,13 @@ fn matmul_dispatch_sm90[
 
 
 # ===----------------------------------------------------------------------=== #
+
 # FP8 (e4m3fn) Dispatch
+
 # ===----------------------------------------------------------------------=== #
 
-
 # llama-405B-FP8 gemm shapes
+
 alias llama_405b_fp8_list = [
     ##############################
     # N=16384 and K=2048
@@ -422,6 +426,7 @@ alias llama_405b_fp8_list = [
 alias llama_405b_fp8_table = Table(llama_405b_fp8_list, "llama_405b_fp8")
 
 # llama-8B-FP8 gemm shapes
+
 alias llama_8b_fp8_list = [
     ##############################
     # ignore N and K for this table.
@@ -715,7 +720,9 @@ fn matmul_dispatch_sm90_fp8[
 
 
 # ===----------------------------------------------------------------------=== #
+
 # BF16 and FP32 Dispatch
+
 # ===----------------------------------------------------------------------=== #
 
 
@@ -1262,6 +1269,8 @@ fn _get_internvl_list[
 
 
 # shapes for llama3.3.70b
+
+
 fn _get_llama_3_3_70b_list[
     size_factor: Int, mma_k: Int, BK: Int
 ]() -> List[TuningConfigSM90]:
@@ -1335,6 +1344,8 @@ fn _get_llama_3_3_70b_list[
 
 
 # shapes for gemma.3.27b
+
+
 fn _get_gemma_3_27b_list[
     size_factor: Int, mma_k: Int, BK: Int
 ]() -> List[TuningConfigSM90]:
@@ -2396,8 +2407,13 @@ fn matmul_dispatch_sm90_bf16_fp32[
     # make sure the domain (nk_idx_list) is not empty!
     @parameter
     if tuning_nk_idx_list:
-        # TODO(GENAI-326): remove this if. Currently, these kernels are hitting accuracy bugs.
-        if not (static_N == 27648 and static_K == 5120 and m <= 8):
+        # TODO(GENAI-326): Skip problematic configs
+        # - N=27648, K=5120, M<=8: accuracy bugs
+        # - N=5120 with m <=8 : causes hang (unknown root cause in tuning configs)
+        if not (
+            (static_N == 27648 and static_K == 5120 and m <= 8)
+            or (static_N == 5120 and m <= 8)
+        ):
             if (
                 _search[tuning_table, domain=tuning_nk_idx_list]()
                 == DISPATCH_HIT
