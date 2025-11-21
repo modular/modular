@@ -221,10 +221,7 @@ modular_py_test(
 modular_py_test(
     name = "multi-gpu-tests",
     size = "large",
-    srcs = glob(
-        ["multi_gpu_tests/**/*.py"],
-        exclude = ["multi_gpu_tests/test_allgather.py"],  # TODO(GEX-2832): Re-enable once timeout issue is resolved
-    ),
+    srcs = glob(["multi_gpu_tests/**/*.py"]),
     data = [
         "//max/tests/integration:test_user_op",
         "//max/tests/integration/API:inputs",
