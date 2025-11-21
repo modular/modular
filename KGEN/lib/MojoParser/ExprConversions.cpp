@@ -786,7 +786,9 @@ static CValue convertGeneratorValue(CValue value, const ExprNode *expr,
       {concreteGenAttr.getBody(), expr}, expected.getBody(), tmpDest);
 
   assert(convBody && convBody.getIfPValue());
-  auto convGen = GeneratorAttr::get(convBody.getIfPValue().get(), expected);
+  auto convGen =
+      GeneratorAttr::get(expected.getInputParamTypes(),
+                         convBody.getIfPValue().get(), expected.getMetadata());
   return emitter.emitCResult(convGen, expr, dest);
 }
 

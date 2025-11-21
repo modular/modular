@@ -72,10 +72,10 @@ fn test_kw_param_passing[x: Int, y: Int, z: Int]():
 fn test_kw_param_passing_indirect[x: Int, y: Int, z: Int,
                                   callee: fn[a: Int, b: Int=1, c: Int=2]()->None]():
 
-    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, {1}, z)]()
+    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int {1}, :!Int z)]()
     callee[x, c=z]()
 
-    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, y, z)]()
+    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int y, :!Int z)]()
     callee[c=z, b=y, a=x]()
 
 
@@ -166,10 +166,10 @@ fn test_kw_only_params[x: Int]():
 # CHECK-LABEL: lit.fn @"test_kw_only_params_indirect
 fn test_kw_only_params_indirect[x: Int, callee: fn[a: Int, b: Int = 1, *, c: Int, d: Int = 2]()->None]():
 
-    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, {1}, x, {2})]()
+    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int {1}, :!Int x, :!Int {2})]()
     callee[x, c=x]()
 
-    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, {1}, x, x)]()
+    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int {1}, :!Int x, :!Int x)]()
     callee[x, d=x, c=x]()
 
 
@@ -218,10 +218,10 @@ fn test_variadic_and_kw_only_params[x: Int]():
 fn test_variadic_and_kw_only_params_indirect[x: Int,
     callee: fn [a: Int, b: Int, *args: Int, c: Int, d: Int = 0]()->None]():
 
-    # CHECK: lit.call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, x, [], x, {0})]()
+    # CHECK: lit.call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int x, :variadic<!Int> [], :!Int x, :!Int {0})]()
     callee[x, x, c=x]()
 
-    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, x, [x, x], x, {0})]()
+    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int x, :variadic<!Int> [x, x], :!Int x, :!Int {0})]()
     callee[x, x, x, x, c=x]()
 
 

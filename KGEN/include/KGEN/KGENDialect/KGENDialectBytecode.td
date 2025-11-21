@@ -132,6 +132,34 @@ def VariadicAttr : DialectAttribute<(attr
   ConcreteType<"VariadicType">:$type
 )>;
 
+def VariadicReduceAttr : DialectAttribute<(attr
+    Type:$type,
+    TypedAttr:$base,
+    TypedAttr:$variadic,
+    TypedAttr:$generator
+)>;
+
+def VariadicZipAttr : DialectAttribute<(attr
+  ConcreteType<"VariadicType">:$type,
+  TypedAttr:$variadics
+)>;
+
+def VariadicSplatAttr : DialectAttribute<(attr
+  ConcreteType<"VariadicType">:$type,
+  TypedAttr:$element,
+  TypedAttr:$count
+)>;
+
+def VariadicSizeAttr : DialectAttribute<(attr
+  ConcreteType<"IndexType">:$type,
+  TypedAttr:$variadic
+)>;
+
+def VariadicConcatAttr : DialectAttribute<(attr
+  ConcreteType<"VariadicType">:$type,
+  TypedAttr:$variadics
+)>;
+
 def UnknownAttr : DialectAttribute<(attr
   Type:$type
 )>;
@@ -187,8 +215,9 @@ def SymbolConstantAttr : DialectAttribute<(attr
 )>;
 
 def GeneratorAttr : DialectAttribute<(attr
+  TypeArray:$inputParamTypes,
   ConcreteAttribute<"TypedAttr">:$body,
-  ConcreteType<"GeneratorType">:$type
+  ConcreteOptionalAttribute<"GeneratorMetadataAttrInterface">:$metadata
 )>;
 
 def TargetParamAttr : DialectAttribute<(attr
@@ -319,6 +348,11 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     ParamDeclAttr,
     ParamDeclArrayAttr,
     VariadicAttr,
+    VariadicReduceAttr,
+    VariadicZipAttr,
+    VariadicSplatAttr,
+    VariadicSizeAttr,
+    VariadicConcatAttr,
     UnknownAttr,
     UnboundAttr,
     NoneAttr,

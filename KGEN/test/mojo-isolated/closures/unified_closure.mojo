@@ -133,7 +133,7 @@ fn make_closure(x: Int) -> Int:
 # CHECK-NEXT: [[V1:%.*]] = lit.ref.struct.ger %0[field0] : <@{{.*}}::@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"<:[[TRAIT]] impl, :origin.set origin_set>, mut *"[[L1]]`"> -> :[[TRAIT]] impl
 # CHECK-NEXT: [[V2:%.*]] = lit.call[!lit.generator<[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none>:
 # CHECK-SAME: bind_params(:!lit.generator<<"lt": {{.*}}Origin<:!Bool {:i1 1}>>[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none
-# CHECK-SAME:> #kgen.get_witness<:[[TRAIT]] impl, "fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None", "__call__{{.*}}">, lt)][mut *"[[L1]]`"->field0, imm *"[[L2]]`"]([[V1]], %a, %b)
+# CHECK-SAME:> #kgen.get_witness<:[[TRAIT]] impl, "fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None", "__call__{{.*}}">, :{{.*}}Origin<:!Bool {:i1 1}> lt)][mut *"[[L1]]`"->field0, imm *"[[L2]]`"]([[V1]], %a, %b)
 # CHECK-NEXT: lit.return [[V2]] : !kgen.none
 # CHECK-NEXT: lit.end_fn
 

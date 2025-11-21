@@ -273,7 +273,7 @@ struct CutDownVariadicPack[element_trait: type_of(AnyType),
         # Test that we can infer the type of 'T' from the argument.
         # CHECK-NEXT: [[REFVAL:%.*]] = lit.call {{.*}}get_element{{.*}}(%self)
         # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}Pointer::@"__getitem__{{.*}}([[REFVAL]])
-        # CHECK-NEXT: lit.call{{.*}} func, variadic_get(:variadic<:!lit.anytrait<!AnyType> element_trait> element_types{{.*}}([[REF]])
+        # CHECK-NEXT: lit.call{{.*}} func, :!kgen.param<:!lit.anytrait<!AnyType> element_trait> variadic_get(:variadic<:!lit.anytrait<!AnyType> element_trait> element_types{{.*}}([[REF]])
         func(self.get_element[i]()[])
 
     fn get_element[index: Int](self) -> Pointer[

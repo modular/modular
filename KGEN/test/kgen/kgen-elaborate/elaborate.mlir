@@ -303,7 +303,7 @@ kgen.generator @takeParametricBinary
   // CHECK: kgen.call @"parametricBinOp,ty=scalar<f32>"
   %1 = kgen.call_param[(!pop.scalar<dt>, !pop.scalar<dt>) -> !pop.scalar<dt>:
     bind_params(:<type>(!kgen.param<*(0,0)>, !kgen.param<*(0,0)>) -> !kgen.param<*(0,0)>
-      fn, !pop.scalar<dt>)](%0, %0)
+      fn, :type !pop.scalar<dt>)](%0, %0)
   kgen.return
 }
 
@@ -362,7 +362,7 @@ kgen.generator @elaborateFnWithContextualType2() -> (index, index) {
   // Show we can bind a generic signature to a concrete one.
   kgen.param.declare boundFn: ()->index =
     <bind_params(:<type, ()->!kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> @takeFnContextualType,
-                    index, @sillyFn)>
+                    :type index, :()->index @sillyFn)>
 
   // CHECK-NEXT: %0 = kgen.call @"takeFnContextualType,ty=index,fn=sillyFn"()
   %0 = kgen.call_param[()->index: boundFn]()
@@ -371,7 +371,7 @@ kgen.generator @elaborateFnWithContextualType2() -> (index, index) {
 
   kgen.param.declare boundFn2: ()->index =
     <bind_params(:<type, ()->!kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> fn,
-                    index, @sillyFn)>
+                    :type index, :()->index @sillyFn)>
 
   // CHECK-NEXT: %1 = kgen.call @"takeFnContextualType,ty=index,fn=sillyFn"()
   %1 = kgen.call_param[()->index: boundFn2]()

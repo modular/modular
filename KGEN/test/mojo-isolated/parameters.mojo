@@ -943,7 +943,7 @@ fn test_infer_with_default_arg():
 fn indirect_call_infer_params[callee: fn[x: Int](y: Abstraction[x])->None]():
     # CHECK: call[!lit.generator<("y": {{.*}}#Abstraction <:!Int {2}>
     # CHECK-SAME: bind_params(:!lit.generator<<"x": !Int>("y": {{.*}}Abstraction <:!Int *(0,0)>
-    # CHECK-SAME: callee, {2}
+    # CHECK-SAME: callee, :!Int {2}
     callee(Abstraction[2]())
 
 # COM: test parameter inference through signatureType,
@@ -1214,15 +1214,15 @@ fn test_indirect_default_params[
     callee: fn[a: Int, b: Int = 7, c: String = "woof"]()->None]():
 
     # CHECK: lit.call[!lit.generator<() -> !kgen.none>: bind_params(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
-    # CHECK-SAME: {1}, {7}, {{.*}}#StringLiteral <:string "woof"
+    # CHECK-SAME: :!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof"
     callee[1]()
 
     # CHECK: lit.call[!lit.generator<() -> !kgen.none>: bind_params(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
-    # CHECK-SAME: {2}, {8}, {{.*}}#StringLiteral <:string "woof"
+    # CHECK-SAME: :!Int {2}, :!Int {8}, {{.*}}#StringLiteral <:string "woof"
     callee[2, 8]()
 
     # CHECK: lit.call[!lit.generator<() -> !kgen.none>: bind_params(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
-    # CHECK-SAME: {4}, {9}, {{.*}}#StringLiteral <:string "meow"
+    # CHECK-SAME: :!Int {4}, :!Int {9}, {{.*}}#StringLiteral <:string "meow"
     callee[4, 9, "meow"]()
 
 
@@ -1488,12 +1488,12 @@ fn scalar_type[dt: DType]():
 fn funct_partial_binding[x: Empty, F: fn[t: Empty, s: Empty] () -> None]():
     # CHECK: !lit.generator<<"u": !Empty, "v": !Empty>() -> !kgen.none> = <rebind(
     # CHECK-SAME: :!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none>
-    # CHECK-SAME: bind_params(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, ?, ?)
+    # CHECK-SAME: bind_params(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, :!Empty ?, :!Empty ?)
 
     comptime G: fn[u: Empty, v: Empty] () -> None = F[s=_, t=_]
     # CHECK: !lit.generator<<"u": !Empty>() -> !kgen.none> = <rebind(
     # CHECK-SAME: :!lit.generator<<"s": !Empty>() -> !kgen.none>
-    # CHECK-SAME: bind_params(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, x, ?))>
+    # CHECK-SAME: bind_params(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, :!Empty x, :!Empty ?))>
     comptime H: fn[u: Empty] () -> None = F[x]
 
 struct StructWithSpecificSelfInitTypes[size: Int]:
