@@ -130,8 +130,8 @@ fn naive_matrix_multiplication[
             # Multiply the elements and accumulate the result.
             dst_reg = dst_reg + a[row, k_index] * b[k_index, col]
 
-    # Write the final accumulated result to the output matrix.
-    c[row, col] = dst_reg
+        # Write the final accumulated result to the output matrix.
+        c[row, col] = dst_reg
 
 
 # ===-----------------------------------------------------------------------=== #
@@ -198,8 +198,8 @@ fn coalescing_matrix_multiplication[
             # Multiply the elements and accumulate the result.
             dst_reg = dst_reg + a[row, k_index] * b[k_index, col]
 
-    # Write the final accumulated result to the output matrix.
-    c[row, col] = dst_reg
+        # Write the final accumulated result to the output matrix.
+        c[row, col] = dst_reg
 
 
 # ===-----------------------------------------------------------------------=== #
@@ -953,8 +953,8 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     a_layout,
                     b_layout,
                     out_layout,
-                    grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
-                    block_dim=(BN, BM),
+                    grid_dim=(ceildiv(M, BM), ceildiv(N, BN)),
+                    block_dim=(BM, BN),
                 )
             elif Self.algorithm == "coalescing":
                 alias BM = OPTIMIZED_BLOCK_SIZE
