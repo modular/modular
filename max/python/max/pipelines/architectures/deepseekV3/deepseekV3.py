@@ -235,25 +235,12 @@ class DeepseekV3DecoderLayer(Module):
         kv_lookup_table: list[TensorValue],
         kv_max_lengths: list[TensorValue],
         freqs_cis: list[TensorValue],
+        mla_inputs: list[TensorValue],
         input_row_offsets: list[TensorValue],
         input_row_offsets_int64: TensorValue,
         data_parallel_splits: TensorValue,
         ep_inputs: list[Value[Any]] | None = None,
     ) -> list[TensorValue]:
-        # we split the inputs outside the layer when using EP
-        if self.config.ep_config is None:
-            original_shape = xs[0].shape
-            xs, input_row_offsets = split_batch_replicated(
-                self.config.devices,
-                xs,
-                input_row_offsets,
-                input_row_offsets_int64,
-                data_parallel_splits,
-            )
-
-        # Apply input layer norm to each shard
-        norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
-
         # We have to unpack our PagedCacheValues into constituent parts so
         # subgraphs have only max.graph.Values as arguments.
         # Re-pack those arguments into a nice structured type.
@@ -267,6 +254,25 @@ class DeepseekV3DecoderLayer(Module):
             for i in range(len(kv_blocks))
         ]
 
+        # we split the inputs outside the layer when using EP
+        if self.config.ep_config is None:
+            original_shape = xs[0].shape
+            xs, input_row_offsets = split_batch_replicated(
+                self.config.devices,
+                xs,
+                input_row_offsets,
+                input_row_offsets_int64,
+                data_parallel_splits,
+            )
+            # Create MLA prefill inputs if not in decode mode
+            if self.config.graph_mode != "decode":
+                mla_inputs = self.self_attn.create_mla_inputs(
+                    input_row_offsets, kv_collections
+                )
+
+        # Apply input layer norm to each shard
+        norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
+
         # Data-parallel attention (per-device)
         attn_outs = self.self_attn(
             layer_idx,
@@ -275,6 +281,7 @@ class DeepseekV3DecoderLayer(Module):
             kv_collections,
             freqs_cis=freqs_cis,
             input_row_offsets=input_row_offsets,
+            mla_inputs=mla_inputs,
         )
 
         if self.config.ep_config is not None:
@@ -436,6 +443,7 @@ class DeepseekV3(Module):
         devices = self.config.devices
         h = self.embed_tokens(tokens, signal_buffers)
 
+        mla_inputs: list[TensorValue] = []
         freqs_cis = distribute_value(self.rope.freqs_cis, devices)
         input_row_offsets_ = distribute_value(input_row_offsets, devices)
         input_row_offsets_int64 = input_row_offsets.cast(DType.int64)
@@ -449,6 +457,12 @@ class DeepseekV3(Module):
                 data_parallel_splits,
             )
 
+            # Create MLA prefill inputs if not in decode mode
+            if self.config.graph_mode != "decode":
+                mla_inputs = self.layers[0].self_attn.create_mla_inputs(  # type: ignore
+                    input_row_offsets_, kv_collections
+                )
+
         subgraph_input_types: list[Type[Any] | list[Type[Any]]] = [
             TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
             [hidden.type for hidden in h],
@@ -458,6 +472,7 @@ class DeepseekV3(Module):
             [kv_collection[2].type for kv_collection in kv_collections],
             [kv_collection[3].type for kv_collection in kv_collections],
             [freq.type for freq in freqs_cis],
+            [val.type for val in mla_inputs],
             [offset.type for offset in input_row_offsets_],
             input_row_offsets_int64.type,
             data_parallel_splits.type,
@@ -514,6 +529,7 @@ class DeepseekV3(Module):
                                 for kv_collection in kv_collections
                             ],
                             *freqs_cis,
+                            *mla_inputs,
                             *input_row_offsets_,
                             input_row_offsets_int64,
                             data_parallel_splits,
@@ -532,6 +548,7 @@ class DeepseekV3(Module):
                     [kv_collection[2] for kv_collection in kv_collections],
                     [kv_collection[3] for kv_collection in kv_collections],
                     freqs_cis=freqs_cis,
+                    mla_inputs=mla_inputs,
                     input_row_offsets=input_row_offsets_,
                     input_row_offsets_int64=input_row_offsets_int64,
                     data_parallel_splits=data_parallel_splits,
