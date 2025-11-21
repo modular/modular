@@ -356,7 +356,6 @@ def test_text_and_vision_tokenizer_forwards_sampling_params() -> None:
     assert context.sampling_params.top_k == 42
 
 
-@pytest.mark.skip("TODO: test fails in CI")
 def test_tokenizer_stores_eos_token_ids(
     modular_ai_llama_3_1_local_path: str,
 ) -> None:
@@ -391,6 +390,29 @@ def test_tokenizer_stores_eos_token_ids(
         pipeline_config=pipeline_config,
     )
     assert tokenizer._default_eos_token_ids == {tokenizer.eos, 123, 456}
+
+
+def test_text_and_vision_tokenizer_stores_eos_token_ids(
+    google_gemma_3_4b_it_local_path: str,
+) -> None:
+    """Tests that all eos token ids stored in the huggingface config are added
+    to the TextAndVisionTokenizer's eos token ids.
+    """
+    model_path = google_gemma_3_4b_it_local_path
+
+    pipeline_config = PipelineConfig(
+        model_path=model_path,
+        trust_remote_code=True,
+        max_batch_size=1,
+        max_length=100,
+    )
+
+    gemma_3_eos_token_ids = {1, 106}
+    tokenizer = TextAndVisionTokenizer(
+        model_path=model_path,
+        pipeline_config=pipeline_config,
+    )
+    assert tokenizer._default_eos_token_ids == gemma_3_eos_token_ids
 
 
 @pytest.mark.asyncio

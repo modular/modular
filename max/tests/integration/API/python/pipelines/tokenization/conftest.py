@@ -84,6 +84,10 @@ MISTRAL_NEMO_INSTRUCT_2407_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
     MISTRAL_NEMO_INSTRUCT_2407_HF_REPO_ID
 )
 
+GOOGLE_GEMMA_3_4B_IT_HF_REPO_ID = "google/gemma-3-4b-it"
+GOOGLE_GEMMA_3_4B_IT_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
+    GOOGLE_GEMMA_3_4B_IT_HF_REPO_ID
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -453,4 +457,22 @@ def mistral_nemo_instruct_2407_local_path() -> str:
             f"Falling back to repo_id: {MISTRAL_NEMO_INSTRUCT_2407_HF_REPO_ID} as config to PipelineConfig"
         )
         model_path = MISTRAL_NEMO_INSTRUCT_2407_HF_REPO_ID
+    return model_path
+
+
+@pytest.fixture
+def google_gemma_3_4b_it_local_path() -> str:
+    assert isinstance(GOOGLE_GEMMA_3_4B_IT_HF_REVISION, str), (
+        "GOOGLE_GEMMA_3_4B_IT_HF_REVISION must be a string and present in hf-repo-lock.tsv"
+    )
+    try:
+        model_path = generate_local_model_path(
+            GOOGLE_GEMMA_3_4B_IT_HF_REPO_ID, GOOGLE_GEMMA_3_4B_IT_HF_REVISION
+        )
+    except FileNotFoundError as e:
+        logger.warning(f"Failed to generate local model path: {e}")
+        logger.warning(
+            f"Falling back to repo_id: {GOOGLE_GEMMA_3_4B_IT_HF_REPO_ID} as config to PipelineConfig"
+        )
+        model_path = GOOGLE_GEMMA_3_4B_IT_HF_REPO_ID
     return model_path
