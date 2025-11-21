@@ -149,7 +149,7 @@ def test_file_read_bytes_sequential_small():
     # Read in chunks of 10 bytes
     with open(temp_file, "r") as f:
         var total_read = 0
-        for i in range(10):
+        for _ in range(10):
             var chunk = f.read_bytes(10)
             assert_equal(len(chunk), 10)
             total_read += len(chunk)

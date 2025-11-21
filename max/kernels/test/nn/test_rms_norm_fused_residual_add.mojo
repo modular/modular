@@ -75,7 +75,7 @@ fn run_rms_norm_fused_residual_add_gpu[
     random(gamma1_h)
     random(gamma2_h)
 
-    var param_shape = Index(cols)
+    var _ = Index(cols)
 
     var data_buf = data_h
     var gamma1 = gamma1_h

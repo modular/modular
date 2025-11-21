@@ -53,8 +53,6 @@ def test_get_batch_from_row_offsets():
         5,
     )
 
-    _ = prefix_sums^
-
 
 def main():
     test_get_batch_from_row_offsets()
