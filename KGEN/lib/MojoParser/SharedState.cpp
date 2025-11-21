@@ -2719,8 +2719,24 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
   }
 
   if (auto call = dyn_cast<LIT::CallOp>(op)) {
+    TypedAttr callee = evaluator.getReboundAttribute(call.getCallee());
+
+    // Check for recursion. At this point we have only marked the callee as
+    // being processed if we have already visited it in an always-inline
+    // context.
+    if (auto symCst = dyn_cast<SymbolConstantAttr>(callee)) {
+      auto &resolver = shared.getDeclResolver();
+      if (ASTDecl *calleeDecl =
+              resolver.getDeclForFuncSymbol(symCst.getSymbol())) {
+        if (resolver.isAlreadyProcessing(*calleeDecl)) {
+          emitError(op.getLoc()) << "does not support recursion";
+          return {};
+        }
+      }
+    }
+
     SmallVector<TypedAttr> calleeOperands;
-    calleeOperands.push_back(evaluator.getReboundAttribute(call.getCallee()));
+    calleeOperands.push_back(callee);
     for (auto operandVal : call.getOperands()) {
       calleeOperands.push_back(findValue(operandVal));
       if (!calleeOperands.back())
