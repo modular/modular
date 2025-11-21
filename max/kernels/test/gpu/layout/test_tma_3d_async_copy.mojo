@@ -100,10 +100,8 @@ fn test_tma_3d_load_kernel[
     alias smem_dim2 = smem_layout.shape[2].value()
 
     var idx = (
-        block_idx.z * grid_dim.x * grid_dim.y
-        + block_idx.y * grid_dim.x
-        + block_idx.x
-    )
+        block_idx.z * grid_dim.y + block_idx.y
+    ) * grid_dim.x + block_idx.x
     for i in range(cta_tile_dim0):
         smem_tile_i = smem_tile.tile[1, cta_tile_dim1, cta_tile_dim2](i)
 

@@ -97,7 +97,8 @@ fn _tma_desc_tile_layout[
     ]()
 
     constrained[
-        rank == 2 or rank == 3, "Only support 2D/3D TMA descriptor for now."
+        rank == 2 or rank == 3 or rank == 4 or rank == 5,
+        "Only support 2D/3D/4D/5D TMA descriptor for now.",
     ]()
 
     @parameter
@@ -128,7 +129,7 @@ fn _tma_desc_tile_layout[
                     core_matrix_num_rows, swizzle_granularity
                 )
 
-    else:
+    elif rank == 3:
         alias dim0 = tile_shape[0]
         alias dim1 = tile_shape[1]
         alias dim2 = tile_shape[2]
@@ -138,6 +139,33 @@ fn _tma_desc_tile_layout[
         return Layout(
             [dim0, dim1, swizzle_mode.bytes() // size_of[dtype]()],
             [1, 1, 1],
+        )
+
+    elif rank == 4:
+        alias dim0 = tile_shape[0]
+        alias dim1 = tile_shape[1]
+        alias dim2 = tile_shape[2]
+        alias dim3 = tile_shape[3]
+
+        constrained[is_k_major, "Only K-Major is supported!"]()
+
+        return Layout(
+            [dim0, dim1, dim2, swizzle_mode.bytes() // size_of[dtype]()],
+            [1, 1, 1, 1],
+        )
+
+    else:  # rank == 5
+        alias dim0 = tile_shape[0]
+        alias dim1 = tile_shape[1]
+        alias dim2 = tile_shape[2]
+        alias dim3 = tile_shape[3]
+        alias dim4 = tile_shape[4]
+
+        constrained[is_k_major, "Only K-Major is supported!"]()
+
+        return Layout(
+            [dim0, dim1, dim2, dim3, swizzle_mode.bytes() // size_of[dtype]()],
+            [1, 1, 1, 1, 1],
         )
 
 
@@ -867,6 +895,171 @@ struct TMATensorTile[
                             coords[2] + UInt(m * copy_dim0),
                         ),
                     )
+
+    @always_inline
+    fn async_copy_4d(
+        self,
+        dst: LayoutTensor[
+            Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
+        ],
+        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
+        coords: Tuple[UInt, UInt, UInt, UInt],
+    ):
+        """
+        Schedules an asynchronous copy from global memory to shared memory at specified 4D coordinates.
+
+        This method initiates a hardware-accelerated asynchronous transfer of data from global memory
+        to the specified destination in shared memory for 4D tensors. The transfer is tracked by the
+        provided memory barrier.
+
+        Args:
+            dst: The destination tensor in shared memory where data will be copied.
+                 Must be 128-byte aligned.
+            mem_barrier: The memory barrier used to track and synchronize the asynchronous transfer.
+            coords: The 4D coordinates in the source tensor from which to copy data.
+
+        Constraints:
+
+            - The destination tensor must be 128-byte aligned in shared memory.
+            - The descriptor layout may be smaller than the shared memory tile shape
+              to accommodate hardware requirements.
+        """
+        # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
+        constrained[
+            type_of(dst).alignment % 128 == 0,
+            "TMA requires 128B alignment in shared memory",
+        ]()
+
+        alias copy_dim0 = Self.desc_layout.shape[0].value()
+        alias copy_dim1 = Self.desc_layout.shape[1].value()
+        alias copy_dim2 = Self.desc_layout.shape[2].value()
+        alias copy_dim3 = Self.desc_layout.shape[3].value()
+        alias copy_size = Self.desc_layout.size()
+        alias num_copies_dim0 = Self.layout.shape[0].value() // copy_dim0
+        alias num_copies_dim1 = Self.layout.shape[1].value() // copy_dim1
+        alias num_copies_dim2 = Self.layout.shape[2].value() // copy_dim2
+        alias num_copies_dim3 = Self.layout.shape[3].value() // copy_dim3
+
+        @parameter
+        for n in range(num_copies_dim0):
+
+            @parameter
+            for m in range(num_copies_dim1):
+
+                @parameter
+                for i in range(num_copies_dim2):
+
+                    @parameter
+                    for j in range(num_copies_dim3):
+                        alias copy_offset = n * (
+                            num_copies_dim1 * num_copies_dim2 * num_copies_dim3
+                        ) + m * (num_copies_dim2 * num_copies_dim3) + (
+                            i * num_copies_dim3 + j
+                        ) * copy_size
+
+                        cp_async_bulk_tensor_shared_cluster_global(
+                            dst.ptr.mut_cast[True]() + copy_offset,
+                            UnsafePointer(to=self.descriptor).bitcast[
+                                NoneType
+                            ](),
+                            mem_barrier.unsafe_ptr(),
+                            Index(
+                                coords[0] + UInt(j * copy_dim3),
+                                coords[1] + UInt(i * copy_dim2),
+                                coords[2] + UInt(m * copy_dim1),
+                                coords[3] + UInt(n * copy_dim0),
+                            ),
+                        )
+
+    @always_inline
+    fn async_copy_5d(
+        self,
+        dst: LayoutTensor[
+            Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
+        ],
+        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
+        coords: Tuple[UInt, UInt, UInt, UInt, UInt],
+    ):
+        """
+        Schedules an asynchronous copy from global memory to shared memory at specified 5D coordinates.
+
+        This method initiates a hardware-accelerated asynchronous transfer of data from global memory
+        to the specified destination in shared memory for 5D tensors. The transfer is tracked by the
+        provided memory barrier.
+
+        Args:
+            dst: The destination tensor in shared memory where data will be copied.
+                 Must be 128-byte aligned.
+            mem_barrier: The memory barrier used to track and synchronize the asynchronous transfer.
+            coords: The 5D coordinates in the source tensor from which to copy data.
+
+        Constraints:
+
+            - The destination tensor must be 128-byte aligned in shared memory.
+            - The descriptor layout may be smaller than the shared memory tile shape
+              to accommodate hardware requirements.
+        """
+        # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
+        constrained[
+            type_of(dst).alignment % 128 == 0,
+            "TMA requires 128B alignment in shared memory",
+        ]()
+
+        alias copy_dim0 = Self.desc_layout.shape[0].value()
+        alias copy_dim1 = Self.desc_layout.shape[1].value()
+        alias copy_dim2 = Self.desc_layout.shape[2].value()
+        alias copy_dim3 = Self.desc_layout.shape[3].value()
+        alias copy_dim4 = Self.desc_layout.shape[4].value()
+        alias copy_size = Self.desc_layout.size()
+        alias num_copies_dim0 = Self.layout.shape[0].value() // copy_dim0
+        alias num_copies_dim1 = Self.layout.shape[1].value() // copy_dim1
+        alias num_copies_dim2 = Self.layout.shape[2].value() // copy_dim2
+        alias num_copies_dim3 = Self.layout.shape[3].value() // copy_dim3
+        alias num_copies_dim4 = Self.layout.shape[4].value() // copy_dim4
+
+        @parameter
+        for o in range(num_copies_dim0):
+
+            @parameter
+            for n in range(num_copies_dim1):
+
+                @parameter
+                for m in range(num_copies_dim2):
+
+                    @parameter
+                    for i in range(num_copies_dim3):
+
+                        @parameter
+                        for j in range(num_copies_dim4):
+                            alias copy_offset = o * (
+                                num_copies_dim1
+                                * num_copies_dim2
+                                * num_copies_dim3
+                                * num_copies_dim4
+                            ) + n * (
+                                num_copies_dim2
+                                * num_copies_dim3
+                                * num_copies_dim4
+                            ) + m * (
+                                num_copies_dim3 * num_copies_dim4
+                            ) + (
+                                i * num_copies_dim4 + j
+                            ) * copy_size
+
+                            cp_async_bulk_tensor_shared_cluster_global(
+                                dst.ptr.mut_cast[True]() + copy_offset,
+                                UnsafePointer(to=self.descriptor).bitcast[
+                                    NoneType
+                                ](),
+                                mem_barrier.unsafe_ptr(),
+                                Index(
+                                    coords[0] + UInt(j * copy_dim4),
+                                    coords[1] + UInt(i * copy_dim3),
+                                    coords[2] + UInt(m * copy_dim2),
+                                    coords[3] + UInt(n * copy_dim1),
+                                    coords[4] + UInt(o * copy_dim0),
+                                ),
+                            )
 
     @always_inline
     fn async_multicast_load[
@@ -1664,17 +1857,17 @@ def create_tma_tile[
     dtype, __tile_layout, __desc_layout
 ]:
     """
-    Creates a `TMATensorTile` with advanced configuration options for 2D or 3D tensors.
+    Creates a `TMATensorTile` with advanced configuration options for 2D, 3D, 4D, or 5D tensors.
 
     This overload provides more control over the TMA descriptor creation, allowing
-    specification of data type, rank, and layout orientation. It supports both 2D and 3D
+    specification of data type, rank, and layout orientation. It supports 2D, 3D, 4D, and 5D
     tensors and provides fine-grained control over the memory access patterns.
 
     Parameters:
         dtype: DType
             The data type of the tensor elements.
         rank: Int
-            The dimensionality of the tensor (must be 2 or 3).
+            The dimensionality of the tensor (must be 2, 3, 4, or 5).
         tile_shape: IndexList[rank]
             The shape of the tile to be transferred.
         is_k_major: Bool = True
@@ -1702,14 +1895,17 @@ def create_tma_tile[
 
     Constraints:
 
-        - Only supports 2D and 3D tensors (rank must be 2 or 3).
+        - Only supports 2D, 3D, 4D, and 5D tensors (rank must be 2, 3, 4, or 5).
         - For non-SWIZZLE_NONE modes, the K dimension size in bytes must be a multiple
           of the swizzle mode's byte size.
         - For MN-major layout, only SWIZZLE_128B is supported.
-        - For 3D tensors, only K-major layout is supported.
+        - For 3D, 4D, and 5D tensors, only K-major layout is supported.
     """
     # Current impl limitations
-    constrained[rank == 2 or rank == 3, "Only support 2D/3D TMA"]()
+    constrained[
+        rank == 2 or rank == 3 or rank == 4 or rank == 5,
+        "Only support 2D/3D/4D/5D TMA",
+    ]()
 
     alias desc_bytes_size = __desc_layout.size() * size_of[dtype]()
     alias layout_size = __tile_layout.size() * size_of[dtype]()
@@ -1761,7 +1957,7 @@ def create_tma_tile[
             (__desc_layout.shape[0].value(), __desc_layout.shape[1].value()),
         )
 
-    else:
+    elif rank == 3:
 
         @parameter
         if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
@@ -1790,6 +1986,92 @@ def create_tma_tile[
                 __desc_layout.shape[0].value(),
                 __desc_layout.shape[1].value(),
                 __desc_layout.shape[2].value(),
+            ),
+        )
+
+    elif rank == 4:
+
+        @parameter
+        if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
+            constrained[
+                (tile_shape[3] * size_of[dtype]()) % swizzle_mode.bytes() == 0,
+                String(swizzle_mode),
+                " mode requires K dim multiple of ",
+                String(swizzle_mode.bytes()),
+                "B. K dim is now ",
+                String(tile_shape[3] * size_of[dtype]()),
+                "bytes.",
+            ]()
+
+        return create_tma_descriptor[dtype, 4, swizzle_mode](
+            DeviceBuffer(
+                ctx,
+                tensor.ptr.mut_cast[True]().address_space_cast[
+                    AddressSpace.GENERIC
+                ](),
+                1,
+                owning=False,
+            ),
+            IndexList[4](
+                tensor.dim(0), tensor.dim(1), tensor.dim(2), tensor.dim(3)
+            ),
+            IndexList[4](
+                tensor.stride(0),
+                tensor.stride(1),
+                tensor.stride(2),
+                tensor.stride(3),
+            ),
+            IndexList[4](
+                __desc_layout.shape[0].value(),
+                __desc_layout.shape[1].value(),
+                __desc_layout.shape[2].value(),
+                __desc_layout.shape[3].value(),
+            ),
+        )
+
+    else:  # rank == 5
+
+        @parameter
+        if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
+            constrained[
+                (tile_shape[4] * size_of[dtype]()) % swizzle_mode.bytes() == 0,
+                String(swizzle_mode),
+                " mode requires K dim multiple of ",
+                String(swizzle_mode.bytes()),
+                "B. K dim is now ",
+                String(tile_shape[4] * size_of[dtype]()),
+                "bytes.",
+            ]()
+
+        return create_tma_descriptor[dtype, 5, swizzle_mode](
+            DeviceBuffer(
+                ctx,
+                tensor.ptr.mut_cast[True]().address_space_cast[
+                    AddressSpace.GENERIC
+                ](),
+                1,
+                owning=False,
+            ),
+            IndexList[5](
+                tensor.dim(0),
+                tensor.dim(1),
+                tensor.dim(2),
+                tensor.dim(3),
+                tensor.dim(4),
+            ),
+            IndexList[5](
+                tensor.stride(0),
+                tensor.stride(1),
+                tensor.stride(2),
+                tensor.stride(3),
+                tensor.stride(4),
+            ),
+            IndexList[5](
+                __desc_layout.shape[0].value(),
+                __desc_layout.shape[1].value(),
+                __desc_layout.shape[2].value(),
+                __desc_layout.shape[3].value(),
+                __desc_layout.shape[4].value(),
             ),
         )
 
