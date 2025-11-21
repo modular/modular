@@ -217,6 +217,6 @@ class Gemma3VisionMLP(Module):
 
     def __call__(self, x: TensorValue):
         x = self.fc1(x)
-        x = ops.gelu(x)
+        x = ops.gelu(x, "tanh")
         x = self.fc2(x)
         return x

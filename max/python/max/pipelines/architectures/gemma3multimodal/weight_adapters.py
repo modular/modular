@@ -68,24 +68,6 @@ def convert_safetensor_vision_state_dict(
 
         weight_data = value.data()
 
-        # the patch embedding weight is wonky.  borrowed from idefics
-        if weight_name.endswith("embeddings.patch_embedding.weight"):
-            assert isinstance(weight_data.data, Tensor)
-            if weight_data.dtype == DType.bfloat16:
-                data = weight_data.data.view(DType.float16).to_numpy()
-            else:
-                data = weight_data.data.to_numpy()
-            transposed_data = data.transpose(2, 3, 1, 0)
-            # Ensure the array is contiguous in memory
-            transposed_data = transposed_data.copy()
-            weight_data = WeightData(
-                data=transposed_data,
-                name=weight_data.name,
-                dtype=weight_data.dtype,
-                shape=Shape(transposed_data.shape),
-                quantization_encoding=weight_data.quantization_encoding,
-            )
-
         new_state_dict[max_name] = weight_data
 
     return new_state_dict

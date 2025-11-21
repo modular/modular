@@ -13,6 +13,8 @@ serve_inference = { cmd = [
 	"--custom-architectures", "gemma3multimodal",
     "--max-batch-size", "1",
     "--max-length", "5000",
+    "--no-enable-prefix-caching",
+    "--no-enable-chunked-prefill"
 ] }
 
 # run a benchmark test
@@ -35,13 +37,14 @@ run_lm_eval = { cmd = [
     "--tasks=chartqa",
     "--model=local-chat-completions",
     "--log_samples",
-    "--model_args=model=google/gemma-3-4B-it,base_url=http://127.0.0.1:8000/v1/chat/completions,num_concurrent=64,max_retries=1",
+    "--model_args=model=google/gemma-3-4B-it,base_url=http://127.0.0.1:8000/v1/chat/completions,num_concurrent=64,max_retries=1,timeout=7200",
     "--apply_chat_template",
     "--output_path=/tmp/tmpqd471l8t",
     "--limit=320",
     "--seed=42",
     "--gen_kwargs=seed=42,temperature=0",
-    "--fewshot_as_multiturn"
+    "--fewshot_as_multiturn",
+    "--log_samples"
 ]}
 
 # quickly run a model with 1 text and image prompt and then shut it down

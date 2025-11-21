@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-import math
 from collections.abc import Iterable
 
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
@@ -55,12 +54,11 @@ class Gemma3VisionAttention(Module):
         )
         self.num_heads = vision_config.num_attention_heads
         self.attention_dropout = vision_config.attention_dropout
-        # self.scaling = config.query_pre_attn_scalar**-0.5
-        # self.is_causal = not config.use_bidirectional_attention
+        self.scaling = self.head_dim**-0.5
 
         self.q_proj = Linear(
-            vision_config.hidden_size,  # 1152
-            self.num_heads * self.head_dim,  # 16 * 72 = 1152
+            vision_config.hidden_size,
+            self.num_heads * self.head_dim,
             has_bias=vision_config.attention_bias,
             dtype=config.dtype,
             device=self.device,
@@ -161,20 +159,14 @@ class Gemma3VisionAttention(Module):
             xv, [batch_size, n_patches, self.num_heads, self.head_dim]
         )
 
-        # Apply per-head QK normalization (Gemma3-specific)
-        # appear to be part of language model
-        # xq = self.q_norm(xq)
-        # xk = self.k_norm(xk)
-
         # Transpose to [batch, n_heads, n_patches, head_dim]
         xq = xq.transpose(1, 2)
         xk = xk.transpose(1, 2)
         xv = xv.transpose(1, 2)
 
         # Scaled dot-product attention
-        scale = math.sqrt(1.0 / self.head_dim)
-        scores = xq @ ops.transpose(xk, 2, 3)
-        scores = ops.softmax(scores * scale)
+        scores = (xq @ ops.transpose(xk, 2, 3)) * self.scaling
+        scores = ops.softmax(scores)
 
         # Apply attention to values
         output = scores @ xv  # [batch, n_heads, n_patches, head_dim]
