@@ -135,3 +135,6 @@ or removed in future releases.
 ### ❌ Removed
 
 ### 🛠️ Fixed
+
+- [Issue #5578](https://github.com/modular/modular/issues/5578): ownership
+  overloading not working when used with `ref`.
