@@ -553,10 +553,6 @@ class GeneratorAttr(max._core.Attribute):
 
     @overload
     def __init__(
-        self, body: max._core.dialects.builtin.TypedAttr, type: GeneratorType
-    ) -> None: ...
-    @overload
-    def __init__(
         self,
         input_param_types: Sequence[max._core.Type],
         body: max._core.dialects.builtin.TypedAttr,
