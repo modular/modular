@@ -11,11 +11,10 @@
 #include "llvm/ExecutionEngine/Orc/AbsoluteSymbols.h"
 #include "llvm/ExecutionEngine/Orc/COFFPlatform.h"
 #include "llvm/ExecutionEngine/Orc/Core.h"
-#include "llvm/ExecutionEngine/Orc/DebugObjectManagerPlugin.h"
 #include "llvm/ExecutionEngine/Orc/Debugging/DebugInfoSupport.h"
 #include "llvm/ExecutionEngine/Orc/Debugging/DebuggerSupportPlugin.h"
+#include "llvm/ExecutionEngine/Orc/Debugging/ELFDebugObjectPlugin.h"
 #include "llvm/ExecutionEngine/Orc/Debugging/PerfSupportPlugin.h"
-#include "llvm/ExecutionEngine/Orc/EPCDebugObjectRegistrar.h"
 #include "llvm/ExecutionEngine/Orc/EPCDynamicLibrarySearchGenerator.h"
 #include "llvm/ExecutionEngine/Orc/MapperJITLinkMemoryManager.h"
 #include "llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h"
@@ -187,12 +186,7 @@ ExecutionEngine::create(ExecutionEngineOptions options,
       // they're hidden visibility.
       auto err =
           toModularErrorOr(platformStdlib.define(llvm::orc::absoluteSymbols(
-              {{session.intern("_llvm_orc_registerJITLoaderGDBWrapper"),
-                {llvm::orc::ExecutorAddr::fromPtr(
-                     &llvm_orc_registerJITLoaderGDBWrapper),
-                 llvm::JITSymbolFlags::Exported |
-                     llvm::JITSymbolFlags::Absolute}},
-               {session.intern("_llvm_orc_registerJITLoaderGDBAllocAction"),
+              {{session.intern("_llvm_orc_registerJITLoaderGDBAllocAction"),
                 {llvm::orc::ExecutorAddr::fromPtr(
                      &llvm_orc_registerJITLoaderGDBAllocAction),
                  llvm::JITSymbolFlags::Exported |
@@ -209,13 +203,13 @@ ExecutionEngine::create(ExecutionEngineOptions options,
 
       ee->objectLayer->addPlugin(std::move(*plugin));
     } else if (tt.isOSBinFormatELF()) {
-      // Register the DebugObjectManagerPlugin.
-      ee->objectLayer->addPlugin(
-          std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
-              session,
-              std::make_unique<llvm::orc::EPCDebugObjectRegistrar>(
-                  session, llvm::orc::ExecutorAddr::fromPtr(
-                               &llvm_orc_registerJITLoaderGDBWrapper))));
+      // Register the ELFDebugObjectPlugin.
+      llvm::Error error = llvm::Error::success();
+      auto plugin = std::make_unique<llvm::orc::ELFDebugObjectPlugin>(
+          session, true, true, error);
+      if (auto errOr = toModularErrorOr(std::move(error)); failed(errOr))
+        return errOr.takeError();
+      ee->objectLayer->addPlugin(std::move(plugin));
     }
   }
 
