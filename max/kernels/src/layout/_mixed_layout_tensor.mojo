@@ -14,20 +14,25 @@
 from sys import align_of
 
 from builtin.variadics import VariadicOf
-from memory import LegacyUnsafePointer as UnsafePointer
 
 from ._mixed_layout import MixedLayout
 from ._mixed_tuple import ComptimeInt, Idx, MixedTuple, MixedTupleLike
 
 
+@fieldwise_init
 struct MixedLayoutTensor[
+    mut: Bool,
     dtype: DType,
     shape_types: VariadicOf[MixedTupleLike],
     stride_types: VariadicOf[MixedTupleLike], //,
+    origin: Origin[mut],
     *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
     linear_idx_type: DType = DType.int64,
-]:
-    var ptr: UnsafePointer[Scalar[Self.dtype]]
+](Copyable, Movable):
+    var ptr: UnsafePointer[
+        Scalar[Self.dtype], Self.origin, address_space = Self.address_space
+    ]
 
     var layout: MixedLayout[
         shape_types = Self.shape_types,
@@ -35,12 +40,19 @@ struct MixedLayoutTensor[
     ]
 
     fn __init__(
-        out self,
-        ptr: UnsafePointer[Scalar[Self.dtype]],
-        layout: MixedLayout[Self.shape_types, Self.stride_types],
+        out self: MixedLayoutTensor[
+            dtype = Self.dtype,
+            shape_types = Self.shape_types,
+            stride_types = Self.stride_types,
+            origin = Self.origin,
+            address_space = Self.address_space,
+            linear_idx_type = Self.linear_idx_type,
+        ],
+        var span: Span[Scalar[Self.dtype], Self.origin],
+        var layout: MixedLayout[Self.shape_types, Self.stride_types],
     ):
-        self.ptr = ptr
-        self.layout = layout
+        self.ptr = span.unsafe_ptr().address_space_cast[Self.address_space]()
+        self.layout = layout^
 
     fn __getitem__[
         index_type: MixedTupleLike
@@ -51,7 +63,18 @@ struct MixedLayoutTensor[
 
     fn __setitem__[
         index_type: MixedTupleLike
-    ](self, arg: index_type, value: Scalar[Self.dtype]):
+    ](
+        self: MixedLayoutTensor[
+            mut=True,
+            dtype = Self.dtype,
+            shape_types = Self.shape_types,
+            stride_types = Self.stride_types,
+            address_space = Self.address_space,
+            linear_idx_type = Self.linear_idx_type,
+        ],
+        arg: index_type,
+        value: Scalar[Self.dtype],
+    ):
         self.ptr[
             self.layout[linear_idx_type = Self.linear_idx_type](arg)
         ] = value
@@ -96,6 +119,9 @@ fn distribute[
         ComptimeInt[data_stride_0 * thread_shape_0],
         ComptimeInt[data_stride_1 * thread_shape_1],
     ].element_types,
+    data_layout_tensor.origin,
+    address_space = data_layout_tensor.address_space,
+    linear_idx_type = data_layout_tensor.linear_idx_type,
 ]:
     """A simplified implementation of LayoutTensor.distribute on MixedLayoutTensor.
     """
@@ -153,6 +179,9 @@ fn tile[
     dtype=dtype,
     shape_types=tile_shape_types,
     stride_types=stride_types,
+    data_layout_tensor.origin,
+    address_space = data_layout_tensor.address_space,
+    linear_idx_type = data_layout_tensor.linear_idx_type,
 ]:
     """Extract a tile (sub-tensor) from a MixedLayoutTensor at specified coordinates.
 

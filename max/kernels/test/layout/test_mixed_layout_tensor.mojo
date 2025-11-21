@@ -91,3 +91,11 @@ fn test_tile() raises:
     var expected = [0, 1, 4, 5, 2, 3, 6, 7, 8, 9, 12, 13, 10, 11, 14, 15]
     for i in range(16):
         assert_equal(ptr[i], expected[i])
+
+
+def test_tensor_span_constructor():
+    var bytes: List[UInt8] = [0, 1, 2, 3]
+    var _tensor = MixedLayoutTensor(
+        bytes,
+        row_major([Idx(2), Idx[2]()]),
+    )
