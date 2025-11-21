@@ -36,27 +36,53 @@ public:
 
   /// Return the parameter bindings if the candidate is valid.
   ParameterExprArrayAttr getParamBindings() const {
-    assert(isValid());
+    assert(getValidity() >= Validity::kFunctionConstraintInconclusive);
     return paramBindings;
   }
 
   /// Return the number of implicit conversions if the candidate is valid.
   size_t getNumImplicitConversions() const {
-    assert(isValid());
+    assert(getValidity() >= Validity::kFunctionConstraintInconclusive);
     return payload.numImplicitConversions;
   }
 
   /// Returns whether this fitness is strictly better than another one.
   bool isBetter(const OverloadFitness &other) const;
 
-  /// Consume the diagnostic if the candidate is not valid.
+  /// Consume the diagnostic if the candidate is invalid.
   MojoInflightDiag takeDiag() {
-    assert(!isValid());
+    assert(getValidity() == Validity::kInvalid);
     return std::move(*diag);
   }
 
+  /// Return the unprovable constraints if the candidate is inconclusive.
+  ArrayRef<ConstraintAttr> getUnprovableConstraints() const {
+    assert(isInconclusive());
+    return unprovableConstraints;
+  }
+
+  // Ordered from worst to best validity.
+  enum class Validity {
+    kInvalid,                        // This is definitely invalid.
+    kParamConstraintInconclusive,    // Unprovable parameter constraints.
+    kFunctionConstraintInconclusive, // Unprovable function constraints.
+    kValid,                          // This is definitely valid.
+  };
+
   /// Return whether the candidate was valid.
-  bool isValid() const { return !diag; }
+  Validity getValidity() const {
+    if (!unprovableConstraints.empty()) {
+      return paramBindings ? Validity::kFunctionConstraintInconclusive
+                           : Validity::kParamConstraintInconclusive;
+    }
+    return diag ? Validity::kInvalid : Validity::kValid;
+  }
+
+  /// Return whether the candidate is any kind of inconclusive.
+  bool isInconclusive() const {
+    return getValidity() == Validity::kParamConstraintInconclusive ||
+           getValidity() == Validity::kFunctionConstraintInconclusive;
+  }
 
   /// Determine whether the specified signature can be invoked with the
   /// parameter bindings specified in `callable` and the arguments specified in
@@ -93,6 +119,8 @@ private:
   ParameterExprArrayAttr paramBindings;
   /// The diagnostic for invalid candidates, or null for valid ones.
   std::optional<MojoInflightDiag> diag = std::nullopt;
+  /// Any unprovable constraints.
+  SmallVector<ConstraintAttr> unprovableConstraints;
 
   /// If this candidate requires any arguments to be emitted (from a PValue or
   /// SValue to an MValue) so a origin can be inferred, their corresponding
@@ -120,7 +148,15 @@ private:
     int8_t getBoolMask() const;
   } payload;
 
+  /// Constructor for invalid candidates (kInvalid).
   OverloadFitness(MojoInflightDiag &&diag) : diag(std::move(diag)) {}
+  /// Constructor for parameter constraint inconclusiveness
+  /// (kParamConstraintInconclusive).
+  OverloadFitness(SmallVector<ConstraintAttr> &&constraints)
+      : unprovableConstraints(std::move(constraints)) {}
+  /// Constructor for valid candidates (kValid).
+  /// To create a kFunctionConstraintInconclusive fitness, just insert the
+  /// constraints into `unprovableConstraints`.
   OverloadFitness(ParameterExprArrayAttr paramBindings)
       : paramBindings(paramBindings) {}
 

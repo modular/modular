@@ -308,10 +308,12 @@ fn simple_constraints[x: Int, y: Int]()
   where y < 10:
     pass
 
+# expected-note @below {{cannot evaluate call to non-builtin function declared here}}
 fn unfoldable_predicate(y: Int) -> Bool:
   return y > 2
 
-# expected-note @+1 {{function declared here}}
+# expected-note @below {{function declared here}}
+# expected-note @below {{cannot prove constraint}}
 fn unprovable_constraints[x: Int, y: Int]()
   # expected-note @+1 {{constraint declared here}}
   where x > 1
@@ -329,14 +331,18 @@ fn test_constraints():
 
   # expected-error @+1 {{violated constraint}}
   unprovable_constraints[0, 0]()
-  # expected-error @+1 {{unable to satisfy constraint}}
+  # expected-error @below {{invalid call to 'unprovable_constraints': lacking evidence to prove correctness}}
+  # expected-note @below {{provide evidence for the constraint here to aid in candidate selection}}
   unprovable_constraints[2, 0]()
 
-# expected-note @below {{constraint declared here}}
-struct ConstraintStruct[a: Int where a > 0]:
+# expected-note @below {{cannot prove constraint}}
+struct ConstraintStruct[
+  # expected-note @below {{constraint declared here}}
+  a: Int where a > 0
+]:
     pass
 
-# expected-error @below {{unable to satisfy constraint}}
+# expected-error @below {{invalid bindings for 'ConstraintStruct': lacking evidence to prove correctness}}
 fn use_constraint_struct[x: Int, cs: ConstraintStruct[x]]():
     pass
 

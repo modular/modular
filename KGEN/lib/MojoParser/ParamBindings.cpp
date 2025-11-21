@@ -75,27 +75,13 @@ FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
   return traitAliasReplacer.replace(desiredSignature);
 }
 
-LogicalResult
-LIT::checkConstraints(ASTDecl &declScope, ArrayRef<ConstraintAttr> constraints,
-                      const ParamBindings::DiagEmitter *diagEmitter,
-                      ParameterEvaluator *evaluator) {
-  if (diagEmitter)
-    return checkConstraints(declScope, constraints,
-                            diagEmitter->emitConstraintViolations,
-                            diagEmitter->emitUnprovableConstraints, evaluator);
-  return checkConstraints(declScope, constraints,
-                          /*emitConstraintViolations=*/nullptr,
-                          /*emitUnprovableConstraints=*/nullptr, evaluator);
-}
-
-LogicalResult LIT::checkConstraints(
+ConstraintResult LIT::checkConstraints(
     ASTDecl &declScope, ArrayRef<ConstraintAttr> constraints,
     llvm::function_ref<void(ArrayRef<ConstraintAttr>)> emitConstraintViolations,
-    llvm::function_ref<void(ArrayRef<ConstraintAttr>)>
-        emitUnprovableConstraints,
+    SmallVectorImpl<ConstraintAttr> *unprovableConstraints,
     ParameterEvaluator *evaluator) {
   if (constraints.empty())
-    return success();
+    return ConstraintResult::Satisfied;
 
   SmallVector<ConstraintAttr> assumptions;
   declScope.getKnownAssumptionsIncludingParents(assumptions);
@@ -115,7 +101,7 @@ LogicalResult LIT::checkConstraints(
     overallAssumption = getCanonicalAttr(overallAssumption);
 
   SmallVector<ConstraintAttr> failedConstraints;
-  SmallVector<ConstraintAttr> unprovableConstraints;
+  SmallVector<ConstraintAttr> localUnprovableConstraints;
   for (ConstraintAttr constraint : constraints) {
     TypedAttr prop = constraint.getProposition();
     prop = getCanonicalAttr(prop);
@@ -137,22 +123,57 @@ LogicalResult LIT::checkConstraints(
       continue;
 
     // Unprovable constraint.
-    unprovableConstraints.push_back(constraint);
+    localUnprovableConstraints.push_back(
+        ConstraintAttr::get(prop, constraint.getLoc()));
   }
 
   if (!failedConstraints.empty()) {
     if (emitConstraintViolations)
       emitConstraintViolations(failedConstraints);
-    return failure();
+    return ConstraintResult::Violated;
   }
 
-  if (!unprovableConstraints.empty()) {
-    if (emitUnprovableConstraints)
-      emitUnprovableConstraints(unprovableConstraints);
-    return failure();
+  if (!localUnprovableConstraints.empty()) {
+    // Populate the out-parameter if provided.
+    if (unprovableConstraints)
+      unprovableConstraints->append(localUnprovableConstraints.begin(),
+                                    localUnprovableConstraints.end());
+    return ConstraintResult::Unprovable;
   }
 
-  return success();
+  return ConstraintResult::Satisfied;
+}
+
+/// Emit a note explaining why a constraint is inconclusive. The incoming
+/// constraint is expected to be the folded form with all input parameters
+/// already substituted.
+void LIT::emitConstraintInconclusive(DeclResolver &resolver,
+                                     MojoInflightDiag &diag,
+                                     ConstraintAttr constraint) {
+  TypedAttr canonProp = getCanonicalAttr(constraint.getProposition());
+  // Strip the outermost conversion from Bool to i1.
+  if (auto structExtract = dyn_cast<LIT::StructExtractAttr>(canonProp))
+    if (structExtract.getField() == "_mlir_value")
+      canonProp = structExtract.getStructValue();
+
+  // First point to the constraint declaration and explain what it folded into.
+  diag.attachNote(constraint.getLoc())
+      << "constraint declared here needs evidence for " << canonProp;
+
+  // Walk the proposition to look for signs of inconclusiveness.
+  canonProp.walk([&](ParamOperatorAttr op) {
+    // If the constraint involves a function call, it must be inconclusive
+    // because it calls a function that is not always_inline("builtin").
+    if (op.getOpcode() == POC::Apply) {
+      auto callee = op.getOperand(0);
+      if (auto sym = dyn_cast<SymbolConstantAttr>(callee)) {
+        ASTDecl *calleeDecl = resolver.getDeclForFuncSymbol(sym.getSymbol());
+        diag.attachNote(calleeDecl->getLoc())
+            << "cannot evaluate call to non-builtin function declared here";
+      }
+    }
+    return WalkResult::skip();
+  });
 }
 
 //===----------------------------------------------------------------------===//
@@ -266,6 +287,23 @@ void ParamBindings::add(const ExprNode *expr, PValue value, StringAttr name) {
 // verifyBindings
 //===----------------------------------------------------------------------===//
 
+/// Helper function to emit diagnostics for unprovable constraints from a
+/// Fitness result.
+static void emitUnprovableConstraintsFromFitness(
+    const ParamBindings::Fitness &fitness, SharedState &shared, SMLoc exprLoc,
+    const Twine &baseName, std::optional<Location> opLoc = std::nullopt) {
+  if (fitness.unprovableConstraints.empty())
+    return;
+  MojoInflightDiag diag = shared.emitError(exprLoc)
+                          << "invalid bindings for " << baseName
+                          << ": lacking evidence to prove correctness";
+  if (opLoc)
+    diag.attachNote(*opLoc) << "cannot prove constraint"
+                            << plural(fitness.unprovableConstraints.size());
+  for (auto constraint : fitness.unprovableConstraints)
+    LIT::emitConstraintInconclusive(shared.getDeclResolver(), diag, constraint);
+}
+
 /// Check a single binding and emit a parameter value if possible. If an
 /// implicit conversion is required, the provided counter is incremented.
 static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
@@ -313,7 +351,7 @@ ParamBindings::verifyBindingsImpl(
     PogListAttr paramListAttr, ParameterInferenceHookTy parameterInferenceHook,
     const DiagEmitter *diagEmitter, bool partial) const {
   assert(parameterInferenceHook && "expected a parameter inference hook");
-  Fitness fitness{0, false};
+  Fitness fitness{{}, 0, false};
 
   // Check to see if we have *_ or **_ and filter them from the parameter list.
   bool unpackedPos = false;
@@ -423,8 +461,12 @@ ParamBindings::verifyBindingsImpl(
     if (constraints.empty())
       return success();
 
-    // Verify all constraints are satisfied.
-    return checkConstraints(declScope, constraints, diagEmitter, &evaluator);
+    // Verify all constraints are satisfied, collecting unprovable constraints.
+    ConstraintResult result = checkConstraints(
+        declScope, constraints,
+        diagEmitter ? diagEmitter->emitConstraintViolations : nullptr,
+        &fitness.unprovableConstraints, &evaluator);
+    return success(result == ConstraintResult::Satisfied);
   };
 
   // Use an expr emitter to perform implicit conversions within a parameter
@@ -821,10 +863,17 @@ ParameterExprArrayAttr ParamBindings::verifyBindings(StructDeclOp structOp,
                                                      TypeSignatureType sig,
                                                      SMLoc exprLoc,
                                                      bool partial) const {
-  auto [bindingValuesAttr, _, diag] =
+  auto [bindingValuesAttr, fitness, diag] =
       verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
                      Twine("'") + structOp.getName() + "'", exprLoc,
                      structOp.getLoc(), partial);
+  // Emit diagnostics for unprovable constraints if no other diagnostics were
+  // emitted.
+  if (!fitness.unprovableConstraints.empty() && !diag) {
+    emitUnprovableConstraintsFromFitness(fitness, shared, exprLoc,
+                                         Twine("'") + structOp.getName() + "'",
+                                         structOp.getLoc());
+  }
   return bindingValuesAttr;
 }
 
@@ -832,10 +881,17 @@ ParameterExprArrayAttr
 ParamBindings::verifyBindings(LITGeneratorType sig, StringRef baseName,
                               SMLoc exprLoc,
                               std::optional<Location> opLoc) const {
-  auto [newBindings, _, diag] =
-      verifyBindings(sig.getInputParamTypes(), sig.getMetadata(),
-                     opLoc ? Twine("'") + baseName + "'" : Twine(baseName),
-                     exprLoc, opLoc, /*partial=*/true);
+  auto [newBindings, fitness, diag] = verifyBindings(
+      sig.getInputParamTypes(), sig.getMetadata(),
+      opLoc ? Twine("'") + baseName + "'" : Twine(baseName), exprLoc, opLoc,
+      /*partial=*/true);
+  // Emit diagnostics for unprovable constraints if no other diagnostics were
+  // emitted.
+  if (!fitness.unprovableConstraints.empty() && !diag) {
+    emitUnprovableConstraintsFromFitness(
+        fitness, shared, exprLoc,
+        opLoc ? Twine("'") + baseName + "'" : Twine(baseName), opLoc);
+  }
   return newBindings;
 }
 
@@ -955,13 +1011,6 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       [&](ArrayRef<ConstraintAttr> constraints) {
         diag = shared.emitError(exprLoc);
         *diag << "violated constraint" << plural(constraints.size());
-        for (auto constraint : constraints)
-          diag->attachNote(constraint.getLoc()) << "constraint declared here";
-      },
-      /*emitUnprovableConstraints=*/
-      [&](ArrayRef<ConstraintAttr> constraints) {
-        diag = shared.emitError(exprLoc);
-        *diag << "unable to satisfy constraint" << plural(constraints.size());
         for (auto constraint : constraints)
           diag->attachNote(constraint.getLoc()) << "constraint declared here";
       },
