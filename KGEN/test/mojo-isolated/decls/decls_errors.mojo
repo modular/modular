@@ -599,7 +599,7 @@ struct TestOwnedDeinitWarnings:
   fn __del__(owned self): pass
 
   # expected-warning @+1 {{'owned' has been deprecated, use 'deinit' instead}}
-  fn __moveinit__(out self, owned x: String): pass
+  fn __moveinit__(out self, owned x: TestOwnedDeinitWarnings): pass
 
   # expected-warning @+1 {{'owned' has been deprecated, use 'var' instead}}
   fn method(owned x): pass
@@ -697,19 +697,23 @@ struct BadDtor1:
   fn __del__(self): # expected-error {{'self' argument must be passed as 'deinit'}}
     pass
 
-  # expected-error @+1 {{only 'self' arguments in struct methods may be 'deinit'}}
+  # expected-error @+1 {{only arguments of Self type may be marked 'deinit'}}
   fn bad1(self, deinit x: Int): pass
   # expected-error @+1 {{deinit arguments may not be variadic}}
   fn bad2(deinit *self): pass
 
-# expected-error @+1 {{only 'self' arguments in struct methods may be 'deinit'}}
+# expected-error @+1 {{only struct methods may be 'deinit'}}
 fn invalid_deinit(deinit self: Int):
     pass
 
 struct GoodDtor:
    fn __del__(deinit self): pass
    fn explicit_dtor(deinit self): pass
+   fn explicit_dtor2(deinit self, deinit other: Self): pass
    fn normal_var(var self): pass
+
+struct GoodDtor2[A: Int]:
+   fn explicit_dtor(deinit self, deinit other: GoodDtor2[0]): pass
 
 fn test_deinit_fn_types():
   var fp1 : fn(var self: GoodDtor) -> None
