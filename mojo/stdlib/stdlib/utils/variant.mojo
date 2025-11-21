@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Defines a Variant type."""
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys.intrinsics import _type_is_eq
 
@@ -231,12 +230,13 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn _get_ptr[T: AnyType](self) -> UnsafePointer[T]:
+    fn _get_ptr[T: AnyType](ref [_]self) -> UnsafePointer[T, origin_of(self)]:
         comptime idx = Self._check[T]()
         constrained[idx != Self._sentinel, "not a union element type"]()
         var ptr = UnsafePointer(to=self._impl).address
         var discr_ptr = __mlir_op.`pop.variant.bitcast`[
-            _type = UnsafePointer[T]._mlir_type, index = idx._mlir_value
+            _type = UnsafePointer[T, origin_of(self)]._mlir_type,
+            index = idx._mlir_value,
         ](ptr)
         return discr_ptr
 
