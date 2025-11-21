@@ -273,7 +273,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         encoding = pipeline_config.model_config.quantization_encoding
         assert encoding is not None
-        activation_memory: int = 0
+        mla_activation_memory: int = 0
+        moe_activation_memory: int = 0
 
         # During the prefill, we need to up-project all the KV cache for
         # current requests. The total context length of requests in a batch
@@ -289,7 +290,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             else:
                 max_kv_length = pipeline_config.max_batch_context_length
 
-            activation_memory += (
+            mla_activation_memory += (
                 pipeline_config.model_config.data_parallel_degree
                 * 2  # 2 for K and V
                 * max_kv_length
@@ -308,12 +309,30 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 max_input_len_per_rank * huggingface_config.n_routed_experts
             )
 
-            activation_memory += (
-                n_gpus_per_node
-                * max_recv_tokens_per_rank
-                * huggingface_config.hidden_size
-                * DType.bfloat16.size_in_bytes  # expert output is bfloat16, no matter the quantization type.
+            # The maximal activation memory usage happens at the second
+            # grouped_matmul in the MoE layer. The input for that matmul would
+            # of shape [max_recv_tokens_per_rank, moe_intermediate_size].
+            moe_activation_memory += (
+                max_recv_tokens_per_rank
+                * huggingface_config.moe_intermediate_size
+                * encoding.dtype.size_in_bytes
             )
+
+            # The output would be of shape [max_recv_tokens_per_rank, hidden_size].
+            moe_activation_memory += (
+                max_recv_tokens_per_rank
+                * huggingface_config.hidden_size
+                * DType.bfloat16.size_in_bytes  # output is always bfloat16.
+            )
+
+            # Adding 256MB per GPU to account for misc items (e.g. FP8 scalars).
+            moe_activation_memory += 256 * 1024 * 1024
+
+            moe_activation_memory *= n_gpus_per_node
+
+        # We only need to consider the maximum of the MLA and MoE activation
+        # memories, because the MLA and MoE layers are executed sequentially.
+        activation_memory = max(mla_activation_memory, moe_activation_memory)
 
         if activation_memory != 0:
             logger.info(
