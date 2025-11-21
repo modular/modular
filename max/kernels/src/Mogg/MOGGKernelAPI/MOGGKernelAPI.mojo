@@ -3838,11 +3838,6 @@ struct LinalgBandPart:
                 rebind[IndexList[input.rank]](coords)
             )
 
-        var num_lower_buf = managed_tensor_slice_to_ndbuffer(num_lower)
-        var num_upper_buf = managed_tensor_slice_to_ndbuffer(num_upper)
-        var exclude_buf = managed_tensor_slice_to_ndbuffer(exclude)
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
-
         matrix_band_part[
             input_0_fn=input_fn,
             simd_width = simd_width_of[dtype](),
@@ -3850,10 +3845,10 @@ struct LinalgBandPart:
             target=target,
         ](
             input.shape(),
-            num_lower_buf,
-            num_upper_buf,
-            exclude_buf,
-            output_buf,
+            num_lower.to_layout_tensor().get_immutable(),
+            num_upper.to_layout_tensor().get_immutable(),
+            exclude.to_layout_tensor().get_immutable(),
+            output.to_layout_tensor(),
             ctx,
         )
 
