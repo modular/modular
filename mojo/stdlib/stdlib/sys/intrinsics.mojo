@@ -20,7 +20,6 @@ from sys import PrefetchLocality
 """
 
 import math
-from memory import LegacyUnsafePointer as UnsafePointer
 from collections.string.string_slice import _get_kgen_string
 from sys import is_compile_time
 from sys.info import _is_sm_9x_or_newer, is_gpu
@@ -84,15 +83,6 @@ fn llvm_intrinsic[
 # ===-----------------------------------------------------------------------===#
 
 
-# NOTE: Converting from a scalar to a pointer is unsafe! The resulting pointer
-# is assumed not to alias any Mojo-derived pointer. DO NOT proliferate usage of
-# this function!
-fn _unsafe_aliasing_address_to_pointer[
-    T: AnyType
-](var addr: Int) -> UnsafePointer[T]:
-    return UnsafePointer(to=addr).bitcast[UnsafePointer[T]]()[]
-
-
 @always_inline("nodebug")
 fn gather[
     dtype: DType,
@@ -149,8 +139,8 @@ fn gather[
 
     @parameter
     if size == 1:
-        return _unsafe_aliasing_address_to_pointer[Scalar[dtype]](
-            Int(base[0])
+        return UnsafePointer[Scalar[dtype], MutOrigin.external](
+            unsafe_from_address=Int(base[0])
         ).load[invariant=invariant]() if mask else passthrough[0]
 
     @parameter
@@ -159,8 +149,8 @@ fn gather[
 
         @parameter
         for i in range(size):
-            result[i] = _unsafe_aliasing_address_to_pointer[Scalar[dtype]](
-                Int(base[i])
+            result[i] = UnsafePointer[Scalar[dtype], MutOrigin.external](
+                unsafe_from_address=Int(base[i])
             ).load[invariant=invariant]() if mask[i] else passthrough[i]
         return result
 
@@ -244,8 +234,8 @@ fn scatter[
     @parameter
     if size == 1:
         if mask:
-            var ptr = _unsafe_aliasing_address_to_pointer[Scalar[dtype]](
-                Int(base[0])
+            var ptr = UnsafePointer[Scalar[dtype], MutOrigin.external](
+                unsafe_from_address=Int(base[0])
             )
             ptr.store(value[0])
         return
@@ -316,6 +306,18 @@ struct PrefetchRW:
                    to be used. Should be a value in the range `[0, 1]`.
         """
         self.value = value
+
+    @always_inline
+    fn __eq__(self, other: Self) -> Bool:
+        """Checks if two prefetch read-write options are equal.
+
+        Args:
+            other: The option to compare with.
+
+        Returns:
+            True if the two prefetch read-write options are equal and False otherwise.
+        """
+        return self.value == other.value
 
 
 # LLVM prefetch cache type
@@ -486,6 +488,11 @@ fn prefetch[
       addr: The data pointer to prefetch.
     """
 
+    constrained[
+        params.rw == PrefetchRW.READ or type_of(addr).mut == True,
+        "prefetch pointer mutability must match the prefetch read-write option",
+    ]()
+
     @parameter
     if is_nvidia_gpu():
         inlined_assembly[
@@ -514,7 +521,7 @@ fn masked_load[
     size: Int,
     alignment: Int = 1,
 ](
-    addr: UnsafePointer[Scalar[dtype], mut=False, **_],
+    addr: UnsafePointer[mut=False, Scalar[dtype], **_],
     mask: SIMD[DType.bool, size],
     passthrough: SIMD[dtype, size],
 ) -> SIMD[dtype, size]:
@@ -562,7 +569,7 @@ fn masked_store[
     alignment: Int = 1,
 ](
     value: SIMD,
-    addr: UnsafePointer[Scalar[value.dtype], mut=True, **_],
+    addr: UnsafePointer[mut=True, Scalar[value.dtype], **_],
     mask: SIMD[DType.bool, size],
 ):
     """Stores a value at a memory location, skipping masked lanes.
@@ -604,7 +611,7 @@ fn compressed_store[
     dtype: DType, size: Int
 ](
     value: SIMD[dtype, size],
-    addr: UnsafePointer[Scalar[dtype], mut=True, **_],
+    addr: UnsafePointer[mut=True, Scalar[dtype], **_],
     mask: SIMD[DType.bool, size],
 ):
     """Compresses the lanes of `value`, skipping `mask` lanes, and stores
@@ -644,7 +651,7 @@ fn compressed_store[
 fn strided_load[
     dtype: DType, //, simd_width: Int, *, invariant: Bool = False
 ](
-    addr: UnsafePointer[Scalar[dtype], mut=False, **_],
+    addr: UnsafePointer[mut=False, Scalar[dtype], **_],
     stride: Int,
     mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](
         fill=True
@@ -690,7 +697,7 @@ fn strided_store[
     dtype: DType, //, simd_width: Int
 ](
     value: SIMD[dtype, simd_width],
-    addr: UnsafePointer[Scalar[dtype], mut=True, **_],
+    addr: UnsafePointer[mut=True, Scalar[dtype], **_],
     stride: Int,
     mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](
         fill=True
@@ -915,8 +922,10 @@ fn assume(val: Bool):
 
 
 @always_inline
-fn implicitarg_ptr() -> (
-    UnsafePointer[UInt8, address_space = AddressSpace.CONSTANT]
+fn implicitarg_ptr(
+    out result: UnsafePointer[
+        UInt8, MutOrigin.external, address_space = AddressSpace.CONSTANT
+    ]
 ):
     """
     Get a pointer to AMD's implicit arguments table.
@@ -925,9 +934,9 @@ fn implicitarg_ptr() -> (
         A pointer to LLVM's implicit arguments table.
     """
     constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
-    return llvm_intrinsic[
+    result = llvm_intrinsic[
         "llvm.amdgcn.implicitarg.ptr",
-        UnsafePointer[UInt8, address_space = AddressSpace.CONSTANT],
+        type_of(result),
     ]()
 
 

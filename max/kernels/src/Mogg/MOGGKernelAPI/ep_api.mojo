@@ -25,7 +25,6 @@ from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from sys.info import align_of, simd_width_of, size_of
 from sys.ffi import external_call
-from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 from tensor import InputTensor, OutputTensor
 from tensor.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
@@ -72,7 +71,9 @@ fn unsafe_aliasing_address_to_device_buffer[
 ](var addr: Int, size: Int, ctx: DeviceContext) -> DeviceBuffer[dtype]:
     return DeviceBuffer[dtype](
         ctx,
-        _unsafe_aliasing_address_to_pointer[Scalar[dtype]](addr),
+        UnsafePointer[Scalar[dtype], MutOrigin.external](
+            unsafe_from_address=addr
+        ),
         size,
         owning=False,
     )
@@ -361,7 +362,9 @@ struct Struct_ep_dispatch:
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
-                    _unsafe_aliasing_address_to_pointer[NoneType](1),
+                    UnsafePointer[NoneType, MutOrigin.external](
+                        unsafe_from_address=1
+                    ),
                 )
 
             var send_buf = unsafe_aliasing_address_to_device_buffer[
@@ -508,11 +511,11 @@ struct Struct_ep_dispatch_cb:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var recv_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
-                Int(recv_ptrs[gpu_id])
+            var recv_buf_p = UnsafePointer[UInt8, MutAnyOrigin](
+                unsafe_from_address=Int(recv_ptrs[gpu_id])
             )
-            var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
-                Int(recv_count_ptrs[gpu_id])
+            var recv_count_p = UnsafePointer[UInt64, MutAnyOrigin](
+                unsafe_from_address=Int(recv_count_ptrs[gpu_id])
             )
             var recv_buf_p_dev = DeviceBuffer[DType.uint8](
                 gpu_ctx, recv_buf_p, 1, owning=False
@@ -690,7 +693,9 @@ struct Struct_ep_dispatch_fp8:
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
-                    _unsafe_aliasing_address_to_pointer[NoneType](1),
+                    UnsafePointer[NoneType, MutOrigin.external](
+                        unsafe_from_address=1
+                    ),
                 )
 
             var send_buf = unsafe_aliasing_address_to_device_buffer[
@@ -849,11 +854,11 @@ struct Struct_ep_dispatch_cb_fp8:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var recv_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
-                Int(recv_ptrs[gpu_id])
+            var recv_buf_p = UnsafePointer[UInt8, MutAnyOrigin](
+                unsafe_from_address=Int(recv_ptrs[gpu_id])
             )
-            var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
-                Int(recv_count_ptrs[gpu_id])
+            var recv_count_p = UnsafePointer[UInt64, MutAnyOrigin](
+                unsafe_from_address=Int(recv_count_ptrs[gpu_id])
             )
             var recv_buf_p_dev = DeviceBuffer[DType.uint8](
                 gpu_ctx, recv_buf_p, 1, owning=False
@@ -1006,7 +1011,9 @@ struct Struct_ep_combine:
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
-                    _unsafe_aliasing_address_to_pointer[NoneType](1),
+                    UnsafePointer[NoneType, MutOrigin.external](
+                        unsafe_from_address=1
+                    ),
                 )
 
             var send_buf = unsafe_aliasing_address_to_device_buffer[
@@ -1130,11 +1137,11 @@ struct Struct_ep_combine_cb:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var recv_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
-                Int(recv_ptrs[gpu_id])
+            var recv_buf_p = UnsafePointer[UInt8, MutAnyOrigin](
+                unsafe_from_address=Int(recv_ptrs[gpu_id])
             )
-            var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
-                Int(recv_count_ptrs[gpu_id])
+            var recv_count_p = UnsafePointer[UInt64, MutAnyOrigin](
+                unsafe_from_address=Int(recv_count_ptrs[gpu_id])
             )
             var recv_buf_p_dev = DeviceBuffer[DType.uint8](
                 gpu_ctx, recv_buf_p, 1, owning=False

@@ -22,7 +22,7 @@ from sys.intrinsics import (
 from time import sleep
 
 from gpu.primitives.id import lane_id
-from memory import LegacyUnsafePointer as UnsafePointer, Span
+from memory import Span
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM
 # AMD'S `device-libs`.
@@ -54,9 +54,11 @@ struct amd_signal_t(Copyable, Movable):
 
 
 @always_inline
-fn update_mbox(sig: UnsafePointer[amd_signal_t, **_]):
+fn update_mbox(sig: UnsafePointer[mut=False, amd_signal_t, **_]):
     var mb = UnsafePointer(to=sig[].event_mailbox_ptr).bitcast[
-        UnsafePointer[UInt64, address_space = AddressSpace.GLOBAL]
+        UnsafePointer[
+            UInt64, MutOrigin.external, address_space = AddressSpace.GLOBAL
+        ]
     ]()[]
     if mb:
         var id = sig[].event_id.cast[DType.uint64]()
@@ -67,7 +69,11 @@ fn update_mbox(sig: UnsafePointer[amd_signal_t, **_]):
 @always_inline
 fn hsa_signal_add(sig: UInt64, value: UInt64):
     var s = UnsafePointer(to=sig).bitcast[
-        UnsafePointer[amd_signal_t, address_space = AddressSpace.GLOBAL]
+        UnsafePointer[
+            amd_signal_t,
+            MutOrigin.external,
+            address_space = AddressSpace.GLOBAL,
+        ]
     ]()[]
     _ = Atomic.fetch_add(UnsafePointer(to=s[].value), value)
     update_mbox(s)
@@ -516,7 +522,9 @@ fn printf_append_string_n(
 @fieldwise_init
 @register_passable("trivial")
 struct Header(ImplicitlyCopyable, Movable):
-    var _handle: UnsafePointer[header_t, address_space = AddressSpace.GLOBAL]
+    var _handle: UnsafePointer[
+        header_t, MutOrigin.external, address_space = AddressSpace.GLOBAL
+    ]
 
     fn fill_packet(
         mut self,
@@ -612,7 +620,7 @@ struct header_t(ImplicitlyCopyable, Movable):
 @fieldwise_init
 @register_passable("trivial")
 struct Payload(ImplicitlyCopyable, Movable):
-    var _handle: UnsafePointer[payload_t]
+    var _handle: UnsafePointer[payload_t, MutOrigin.external]
 
     @always_inline
     fn __setitem__(mut self, idx0: Int, idx1: Int, value: UInt64):
@@ -631,7 +639,9 @@ struct payload_t(Copyable, Movable):
 @fieldwise_init
 @register_passable("trivial")
 struct Buffer(ImplicitlyCopyable, Movable):
-    var _handle: UnsafePointer[buffer_t, address_space = AddressSpace.GLOBAL]
+    var _handle: UnsafePointer[
+        buffer_t, MutOrigin.external, address_space = AddressSpace.GLOBAL
+    ]
 
     @always_inline
     fn get_header(self, ptr: UInt64) -> Header:
@@ -645,7 +655,7 @@ struct Buffer(ImplicitlyCopyable, Movable):
             self._handle[].payloads.offset(ptr & self._handle[].index_mask)
         )
 
-    fn pop(mut self, top: UnsafePointer[UInt64, **_]) -> UInt64:
+    fn pop(mut self, top: UnsafePointer[mut=True, UInt64, **_]) -> UInt64:
         var f = Atomic.fetch_add(top, 0)
         # F is guaranteed to be non-zero, since there are at least as
         # many packets as there are waves, and each wave can hold at most
@@ -684,7 +694,7 @@ struct Buffer(ImplicitlyCopyable, Movable):
             | ptr_lo_32.cast[DType.uint64]()
         )
 
-    fn push(mut self, top: UnsafePointer[UInt64, **_], ptr: UInt64):
+    fn push(mut self, top: UnsafePointer[mut=True, UInt64, **_], ptr: UInt64):
         var f = Atomic.fetch_add(top, 0)
         var p = self.get_header(ptr)
         while True:
@@ -722,8 +732,10 @@ struct Buffer(ImplicitlyCopyable, Movable):
 @fieldwise_init
 @register_passable("trivial")
 struct buffer_t(Copyable, Movable):
-    var headers: UnsafePointer[header_t, address_space = AddressSpace.GLOBAL]
-    var payloads: UnsafePointer[payload_t]
+    var headers: UnsafePointer[
+        header_t, MutOrigin.external, address_space = AddressSpace.GLOBAL
+    ]
+    var payloads: UnsafePointer[payload_t, MutOrigin.external]
     var doorbell: UInt64
     var free_stack: UInt64
     var ready_stack: UInt64
@@ -862,7 +874,13 @@ fn hostcall(
     """
     var buffer = Buffer(
         implicitarg_ptr()
-        .bitcast[UnsafePointer[buffer_t, address_space = AddressSpace.GLOBAL]]()
+        .bitcast[
+            UnsafePointer[
+                buffer_t,
+                MutOrigin.external,
+                address_space = AddressSpace.GLOBAL,
+            ]
+        ]()
         .offset(10)[]
     )
 

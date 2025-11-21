@@ -21,7 +21,7 @@ from sys import (
 )
 from sys.intrinsics import assume, likely, unlikely
 
-from memory import LegacyUnsafePointer as UnsafePointer, memset_zero
+from memory import memset_zero
 from testing import assert_equal
 from testing import TestSuite
 
@@ -37,7 +37,7 @@ def test_intrinsic_comp_eval():
 
 
 def test_compressed_store():
-    var vector = UnsafePointer[Float32]().alloc(5)
+    var vector = alloc[Float32](5)
     memset_zero(vector, 5)
 
     compressed_store(iota_4, vector, iota_4.ge(2))
@@ -53,7 +53,7 @@ def test_compressed_store():
 
 
 def test_masked_load():
-    var vector = UnsafePointer[Float32]().alloc(5)
+    var vector = alloc[Float32](5)
     for i in range(5):
         vector[i] = 1
 
@@ -83,7 +83,7 @@ def test_masked_load():
 
 
 def test_masked_store():
-    var vector = UnsafePointer[Float32]().alloc(5)
+    var vector = alloc[Float32](5)
     memset_zero(vector, 5)
 
     masked_store[4](iota_4, vector, iota_4.lt(5))
@@ -99,7 +99,7 @@ def test_masked_store():
 
 fn test_strided_load() raises:
     comptime size = 16
-    var vector = UnsafePointer[Float32]().alloc(size)
+    var vector = alloc[Float32](size)
 
     for i in range(size):
         vector[i] = i
@@ -112,7 +112,7 @@ fn test_strided_load() raises:
 
 fn test_strided_store() raises:
     comptime size = 8
-    var vector = UnsafePointer[Float32]().alloc(size)
+    var vector = alloc[Float32](size)
     memset_zero(vector, size)
 
     strided_store(SIMD[DType.float32, 4](99, 12, 23, 56), vector, 2)

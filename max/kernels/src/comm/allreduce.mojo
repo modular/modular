@@ -95,7 +95,6 @@ from collections import InlineArray
 from math import ceildiv
 from sys import align_of, is_amd_gpu, simd_width_of, size_of
 from sys.ffi import _Global, external_call
-from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 from sys.info import _accelerator_arch
 
 from buffer import NDBuffer
@@ -128,6 +127,7 @@ from gpu.memory import CacheOperation
 from memory import (
     LegacyOpaquePointer as OpaquePointer,
     LegacyUnsafePointer as UnsafePointer,
+    UnsafePointer as UnsafePointerV2,
     stack_allocation,
 )
 
@@ -250,9 +250,13 @@ fn _p2p_cache_init_wrapper() -> OpaquePointer:
 
     try:
         DeviceContext.enable_all_peer_access()
-        return _unsafe_aliasing_address_to_pointer[NoneType](p2p_available)
+        return UnsafePointerV2[NoneType, MutOrigin.external](
+            unsafe_from_address=p2p_available
+        )
     except:
-        return _unsafe_aliasing_address_to_pointer[NoneType](p2p_not_available)
+        return UnsafePointerV2[NoneType, MutOrigin.external](
+            unsafe_from_address=p2p_not_available
+        )
 
 
 fn _p2p_cache_destroy_wrapper(ptr: OpaquePointer) -> None:
