@@ -265,3 +265,22 @@ OpFoldResult POP::foldSIMDSplat(Value scalarVal, Attribute scalarAttr,
   SmallVector<DTypeValue> values(*size, scalarSIMD.getValues().front());
   return SIMDAttr::get(values, resultType);
 }
+
+/// Fold a SIMD Or-reduction operation.
+OpFoldResult POP::foldSIMDReduceOr(Value vectorVal, Attribute vectorAttr,
+                                   SIMDType vectorType) {
+  std::optional<int64_t> size = vectorType.getResolvedSize();
+  // If the vector only has one element, it's already reduced.
+  if (size == 1) {
+    if (vectorAttr)
+      return vectorAttr;
+    return vectorVal;
+  }
+
+  if (auto dtype = vectorType.getResolvedDType(); !dtype || !dtype->isIntLike())
+    return {};
+
+  return foldSIMDReduceOp(
+      vectorAttr, [](APSInt lhs, APSInt rhs) { return lhs | rhs; },
+      [](bool lhs, bool rhs) { return lhs | rhs; });
+}

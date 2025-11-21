@@ -3384,3 +3384,12 @@ UnionUnwrapOp::parametric_interpret(ArrayRef<Attribute> operands,
   }
   return ErrorTree(getLoc(), "non-const input");
 }
+
+//===----------------------------------------------------------------------===//
+// SIMDReduceOrOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult SIMDReduceOrOp::fold(FoldAdaptor adaptor) {
+  return POP::foldSIMDReduceOr(getVector(), adaptor.getVector(),
+                               getVector().getType());
+}

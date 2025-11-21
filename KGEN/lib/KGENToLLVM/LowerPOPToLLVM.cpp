@@ -2735,6 +2735,37 @@ struct ConvertPOPUnionUnwrap : public ConvertPOPToLLVMPattern<UnionUnwrapOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPSIMDReduceOr
+//===----------------------------------------------------------------------===//
+
+/// Convert a SIMD reduction into an llvm.vector.reduce.or intrinsic. If the
+/// vector only has one element, extract that element and return it.
+struct ConvertPOPSIMDReduceOr : public ConvertPOPToLLVMPattern<SIMDReduceOrOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(SIMDReduceOrOp op, SIMDReduceOrOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Location loc = op.getLoc();
+    auto resType = convertType(op.getType());
+
+    // If the original vector is size 1, skip the reduction and just extract the
+    // first element (note the "vector" in this case is already a scalar type,
+    // so we do a straightforward replace).
+    if (op.getVector().getType().isScalar()) {
+      rewriter.replaceOp(op, adaptor.getVector());
+      return success();
+    }
+
+    auto reduction = LLVM::vector_reduce_or::create(rewriter, loc, resType,
+                                                    adaptor.getVector());
+
+    rewriter.replaceOp(op, reduction);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
@@ -2828,7 +2859,8 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPUnionWrap,
       ConvertPOPVariadicGet,
       ConvertPOPVariadicSize,
-      ConvertPOPXOr
+      ConvertPOPXOr,
+      ConvertPOPSIMDReduceOr
       // clang-format on
       >(typeConverter);
 }

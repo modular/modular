@@ -229,6 +229,18 @@ kgen.generator @simd_xor_fold_1() -> !pop.scalar<bool> {
   kgen.return %3: !pop.scalar<bool>
 }
 
+kgen.generator @simd_reduce_or_fold_0() -> !pop.scalar<si32> {
+  %0 = kgen.param.constant: simd<4, si32> = <<0, 1, 2, 16>>
+  %1 = pop.simd.reduce_or %0 : !pop.simd<4, si32>
+  kgen.return %1 : !pop.scalar<si32>
+}
+
+kgen.generator @simd_reduce_or_fold_1() -> !pop.scalar<bool> {
+  %0 = kgen.param.constant: simd<4, bool> = <<true, false, false, true>>
+  %1 = pop.simd.reduce_or %0 : !pop.simd<4, bool>
+  kgen.return %1 : !pop.scalar<bool>
+}
+
 // CHECK-LABEL: kgen.func export @do_it
 kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
@@ -397,6 +409,12 @@ kgen.generator export @do_it() {
 
   // CHECK-NEXT: constant: scalar<bool> = <true>
   kgen.param.constant: scalar<bool> = <apply(:() -> !pop.scalar<bool> @simd_xor_fold_1)>
+
+  // CHECK-NEXT: constant: scalar<si32> = <19>
+  kgen.param.constant: scalar<si32> = <apply(:() -> !pop.scalar<si32> @simd_reduce_or_fold_0)>
+
+  // CHECK-NEXT: constant: scalar<bool> = <true>
+  kgen.param.constant: scalar<bool> = <apply(:() -> !pop.scalar<bool> @simd_reduce_or_fold_1)>
 
   kgen.return
 }
