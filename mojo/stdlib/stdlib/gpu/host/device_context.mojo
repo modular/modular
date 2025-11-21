@@ -3752,9 +3752,8 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: _TargetType = Self.default_device_info.target(),
         compile_options: StaticString = CompilationTarget[
-            target
+            Self.default_device_info.target()
         ].default_compile_options(),
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
@@ -3765,7 +3764,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         out result: DeviceFunction[
             func,
             Optional[VariadicOf[AnyType]](None),
-            target=target,
+            target = Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
@@ -3779,8 +3778,6 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
-            target: Change the target to different device dtype than the
-                one associated with this `DeviceContext`.
             compile_options: Change the compile options to different options
                 than the ones associated with this `DeviceContext`.
             _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
@@ -3806,7 +3803,6 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
             _ptxas_info_verbose=_ptxas_info_verbose,
-            target=target,
             compile_options=compile_options,
         ](func_attribute=func_attribute)
 
@@ -3817,9 +3813,8 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: _TargetType = Self.default_device_info.target(),
         compile_options: StaticString = CompilationTarget[
-            target
+            Self.default_device_info.target()
         ].default_compile_options(),
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
@@ -3830,7 +3825,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         out result: DeviceFunction[
             func,
             Optional[VariadicOf[AnyType]](None),
-            target=target,
+            target = Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
@@ -3844,8 +3839,6 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
-            target: Change the target to different device dtype than the
-                one associated with this `DeviceContext`.
             compile_options: Change the compile options to different options
                 than the ones associated with this `DeviceContext`.
             _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
@@ -3894,9 +3887,8 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: _TargetType = Self.default_device_info.target(),
         compile_options: StaticString = CompilationTarget[
-            target
+            Self.default_device_info.target()
         ].default_compile_options(),
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
@@ -3907,7 +3899,6 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target=target,
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
@@ -3925,8 +3916,6 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
-            target: Change the target to different device dtype than the
-                one associated with this `DeviceContext`.
             compile_options: Change the compile options to different options
                 than the ones associated with this `DeviceContext`.
             _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
@@ -3973,9 +3962,8 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: _TargetType = Self.default_device_info.target(),
         compile_options: StaticString = CompilationTarget[
-            target
+            Self.default_device_info.target()
         ].default_compile_options(),
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
@@ -3986,7 +3974,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target=target,
+            target = Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
@@ -4000,8 +3988,6 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
-            target: Change the target to different device dtype than the
-                one associated with this `DeviceContext`.
             compile_options: Change the compile options to different options
                 than the ones associated with this `DeviceContext`.
             _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
@@ -4050,9 +4036,8 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: _TargetType = Self.default_device_info.target(),
         compile_options: StaticString = CompilationTarget[
-            target
+            Self.default_device_info.target()
         ].default_compile_options(),
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
@@ -4063,7 +4048,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target=target,
+            target = Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
@@ -4081,8 +4066,6 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
-            target: Change the target to different device dtype than the
-                one associated with this `DeviceContext`.
             compile_options: Change the compile options to different options
                 than the ones associated with this `DeviceContext`.
             _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
@@ -4129,9 +4112,8 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: _TargetType = Self.default_device_info.target(),
         compile_options: StaticString = CompilationTarget[
-            target
+            Self.default_device_info.target()
         ].default_compile_options(),
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
@@ -4142,7 +4124,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target=target,
+            target = Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
@@ -4156,8 +4138,6 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
-            target: Change the target to different device dtype than the
-                one associated with this `DeviceContext`.
             compile_options: Change the compile options to different options
                 than the ones associated with this `DeviceContext`.
             _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
@@ -4274,9 +4254,8 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         *Ts: AnyType,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: _TargetType = Self.default_device_info.target(),
         compile_options: StaticString = CompilationTarget[
-            target
+            Self.default_device_info.target()
         ].default_compile_options(),
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
@@ -4302,8 +4281,6 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
-            target: Change the target to different device dtype than the
-                one associated with this `DeviceContext`.
             compile_options: Change the compile options to different options
                 than the ones associated with this `DeviceContext`.
             _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
@@ -4364,7 +4341,6 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
-            target=target,
             compile_options=compile_options,
             _dump_sass=_dump_sass,
             _ptxas_info_verbose=_ptxas_info_verbose,
