@@ -99,6 +99,9 @@ public:
   /// Describe how closely the given parameter bindings match the specified
   /// parameters and call operands.
   struct Fitness {
+    /// Any unprovable constraints encountered during verification.
+    SmallVector<ConstraintAttr> unprovableConstraints;
+
     /// The number of implicit conversion in the parameter bindings.
     size_t numImplicitConversions;
 
@@ -133,8 +136,6 @@ public:
     std::function<void(ArrayRef<StringAttr>, const Twine &)> emitMissing;
     /// Emit diagnostics for constraint violations.
     std::function<void(ArrayRef<ConstraintAttr>)> emitConstraintViolations;
-    /// Emit diagnostics for unprovable constraints.
-    std::function<void(ArrayRef<ConstraintAttr>)> emitUnprovableConstraints;
   };
 
   /// Verify the full parameter bindings for the given generator. If the
@@ -229,21 +230,29 @@ FnTypeGeneratorType substituteTraitAliasesIntoSignature(
     DeclResolver &declResolver, ASTDecl *traitDecl, FnOp candidateFunc,
     FnTypeGeneratorType desiredSignature, PValue selfPValue);
 
-/// Check that the given constraints are satisfied under the given scope. An
-/// optional diag emitter can be provided to emit failures. An optional
-/// ParameterEvaluator can be provided to substitute parameters into the
-/// constraints.
-LogicalResult checkConstraints(ASTDecl &declScope,
-                               ArrayRef<ConstraintAttr> constraints,
-                               const ParamBindings::DiagEmitter *diagEmitter,
-                               ParameterEvaluator *evaluator = nullptr);
+/// Result of checking constraints.
+enum class ConstraintResult {
+  Violated,   // Some constraints are violated.
+  Unprovable, // No violated constraints but some constraints cannot be proven.
+  Satisfied,  // All constraints are satisfied.
+};
 
-LogicalResult checkConstraints(
+/// Check that the given constraints are satisfied under the given scope. An
+/// optional callback can be provided to emit failures for constraint
+/// violations. If provided, unprovableConstraints will be populated with any
+/// unprovable constraints encountered. An optional ParameterEvaluator can be
+/// provided to substitute parameters into the constraints.
+ConstraintResult checkConstraints(
     ASTDecl &declScope, ArrayRef<ConstraintAttr> constraints,
     llvm::function_ref<void(ArrayRef<ConstraintAttr>)> emitConstraintViolations,
-    llvm::function_ref<void(ArrayRef<ConstraintAttr>)>
-        emitUnprovableConstraints,
-    ParameterEvaluator *evaluator = nullptr);
+    SmallVectorImpl<ConstraintAttr> *unprovableConstraints,
+    ParameterEvaluator *evaluator);
+
+/// Emit a note explaining why a constraint is inconclusive. The incoming
+/// constraint is expected to be the folded form with all input parameters
+/// already substituted.
+void emitConstraintInconclusive(DeclResolver &resolver, MojoInflightDiag &diag,
+                                ConstraintAttr constraint);
 
 } // namespace M::KGEN::LIT
 

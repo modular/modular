@@ -125,47 +125,63 @@ static PValue getCallee(ASTDecl *fnDecl, StringRef baseName,
   return paramBindings.getBoundConstAttrFor(funcOp, baseName, expr);
 }
 
-/// Return if the given fitness is valid, and drop the diagnostics otherwise.
-static bool isValid(OverloadFitness &eval) {
-  if (eval.isValid())
+/// Return if the given fitness is valid or function constraint inconclusive,
+/// and drop the diagnostics otherwise.
+static bool isValidOrFnInconclusive(OverloadFitness &eval) {
+  OverloadFitness::Validity validity = eval.getValidity();
+  if (validity >= OverloadFitness::Validity::kFunctionConstraintInconclusive)
     return true;
-  eval.takeDiag().abandon();
+  if (validity == OverloadFitness::Validity::kInvalid)
+    eval.takeDiag().abandon();
   return false;
 }
 
-/// Assuming we have at least one valid candidate, filter the candidate list to
-/// those with the best fitness. If there is more than one candidate with
-/// maximal fitness, we filter for non-static methods.
+/// Assuming we have at least one non-invalid candidate, filter the candidate
+/// list in-place to those with the best fitness. If there is more than one
+/// candidate with maximal fitness, we filter for non-static methods.
 ///
-/// To aid downstream diganostics, the function returns the fitness of the best
-/// candidate. All diagnostics from erroneous candidates are dropped.
-static OverloadFitness *
-selectBestCandidates(ArrayRef<ASTDecl *> fnDecls,
-                     MutableArrayRef<OverloadFitness> evaluations,
-                     SmallVectorImpl<ASTDecl *> &newFnDecls) {
-  assert(newFnDecls.empty());
+/// The input vector is modified in-place to contain only the best candidates.
+/// All diagnostics from erroneous candidates are dropped.
+///
+/// Returns true if any of the best candidates have
+/// kFunctionConstraintInconclusive validity.
+///
+/// This function assumes that no candidates with kInvalid or
+/// kParamConstraintInconclusive validity are present (they should be filtered
+/// out before calling this function).
+static bool filterForBestCandidates(
+    SmallVectorImpl<std::pair<ASTDecl *, OverloadFitness>> &allCandidates) {
+  SmallVector<std::pair<ASTDecl *, OverloadFitness>> bestCandidates;
   bool areTheBestCandidatesStatic = true;
   bool areTheBestCandidatesImplicit = true;
+  bool hasInconclusiveCandidate = false;
 
   // Find the first valid candidate.
-  evaluations = evaluations.drop_until(isValid);
-  OverloadFitness *bestFitness = &evaluations.front();
+  auto firstValid = llvm::find_if(allCandidates, [&](auto &candidate) {
+    return isValidOrFnInconclusive(candidate.second);
+  });
+  MutableArrayRef<std::pair<ASTDecl *, OverloadFitness>> remainingCandidates(
+      firstValid, allCandidates.end());
+  assert(!remainingCandidates.empty() && "no valid candidates");
 
-  for (auto [candidate, eval] :
-       llvm::zip(fnDecls.take_back(evaluations.size()), evaluations)) {
+  // Track the best fitness seen so far.
+  OverloadFitness *bestFitness = &remainingCandidates.front().second;
+
+  for (auto &[candidate, eval] : remainingCandidates) {
     // Ignore all subsequent failures and candidates that are definitely worse.
-    if (!isValid(eval) || bestFitness->isBetter(eval))
+    if (!isValidOrFnInconclusive(eval) || bestFitness->isBetter(eval))
       continue;
 
     // Ignore any functions explicitly marked as disabled.
     if (isDisabledFunction(candidate))
       continue;
 
-    // If we found a strictly better candidate, clear the list.
+    // If we found a strictly better candidate, clear the list and update.
     if (eval.isBetter(*bestFitness)) {
-      newFnDecls.clear();
+      bestCandidates.clear();
       areTheBestCandidatesStatic = true;
       areTheBestCandidatesImplicit = true;
+      hasInconclusiveCandidate = false;
     }
 
     // If the current best candidates are not static, we ignore new static
@@ -187,22 +203,32 @@ selectBestCandidates(ArrayRef<ASTDecl *> fnDecls,
     // If the current best candidates are static, and we just found a non-static
     // one, we clear the list.
     if (areTheBestCandidatesStatic && !isStatic) {
-      newFnDecls.clear();
+      bestCandidates.clear();
       areTheBestCandidatesStatic = false;
+      hasInconclusiveCandidate = false;
     }
 
     // If the current best candidates are implicit, and we just found a
     // non-implicit one, we clear the list.
     if (areTheBestCandidatesImplicit && !isImplicit) {
-      newFnDecls.clear();
+      bestCandidates.clear();
       areTheBestCandidatesImplicit = false;
+      hasInconclusiveCandidate = false;
     }
 
-    newFnDecls.push_back(candidate);
-    bestFitness = &eval;
+    // Track if this candidate is inconclusive.
+    hasInconclusiveCandidate |=
+        eval.getValidity() ==
+        OverloadFitness::Validity::kFunctionConstraintInconclusive;
+
+    bestCandidates.emplace_back(candidate, std::move(eval));
+    bestFitness = &bestCandidates.back().second;
   }
 
-  return bestFitness;
+  allCandidates.clear();
+  allCandidates.append(std::make_move_iterator(bestCandidates.begin()),
+                       std::make_move_iterator(bestCandidates.end()));
+  return hasInconclusiveCandidate;
 }
 
 enum class CallKind { kMethod, kFunction, kIndirect };
@@ -230,28 +256,151 @@ static CallKind getCallKind(CallSyntax syntax) {
   llvm_unreachable("invalid call syntax");
 }
 
+/// Emit an error for ambiguous candidates due to unprovable constraints.
+/// This function will mutate the evaluations to drop any diags from invalid
+/// candidates.
+/// If `baseName` is empty, it is considered an indirect reference.
+/// If `isCall` is true, the error is emitted as a "call", otherwise it is
+/// emitted as a "reference".
+/// `isParamConstraint` indicates whether the inconclusiveness is due to
+/// parameter constraints (true) or function constraints (false).
+static void emitInconclusiveCandidatesError(
+    SharedState &shared, const ExprNode *expr, StringRef baseName, bool isCall,
+    bool isParamConstraint,
+    MutableArrayRef<std::pair<ASTDecl *, OverloadFitness>> candidates) {
+  // Figure out how many possibly valid candidates there are to make the error
+  // message more precise.
+  size_t numRemainingCandidates = 0;
+  for (auto &[candidate, eval] : candidates) {
+    if (eval.getValidity() != OverloadFitness::Validity::kInvalid)
+      ++numRemainingCandidates;
+  }
+
+  auto diag = shared.emitError(expr->getLoc());
+  // Determine the type of error.
+  if (numRemainingCandidates == 1)
+    diag << "invalid ";
+  else
+    diag << "ambiguous ";
+
+  // If it is a named call, include the base name.
+  if (!baseName.empty())
+    diag << (isCall ? "call to '" : "reference to '") << baseName << "'";
+  else
+    diag << (isCall ? "indirect call" : "indirect reference");
+
+  // Build the main error message.
+  diag << ": lacking evidence to ";
+  if (numRemainingCandidates == 1)
+    diag << "prove correctness";
+  else
+    diag << "select candidate";
+  diag << expr->getRange();
+
+  // Add fitness information for function constraints (only once, from first
+  // function constraint candidate). Function constraint inconclusive
+  // candidates have valid parameter bindings, so we can access fitness
+  // metrics.
+  if (!isParamConstraint) {
+    size_t minConversions =
+        candidates.front().second.getNumImplicitConversions() / 2;
+    if (minConversions) {
+      diag << ", each candidate requires " << minConversions
+           << " implicit conversion" << plural(minConversions)
+           << ", disambiguate with an explicit cast";
+    }
+  }
+
+  // Collect constraints, add candidate-specific information, and gather fitness
+  // info in a single pass.
+  SmallVector<ConstraintAttr> allConstraints;
+  for (auto &[candidate, eval] : candidates) {
+    OverloadFitness::Validity validity = eval.getValidity();
+    // If we're reporting param constraint inconclusiveness, only report
+    // candidates that have this kind of validity.
+    if (isParamConstraint &&
+        validity != OverloadFitness::Validity::kParamConstraintInconclusive)
+      continue;
+    // Must abandon any diagnostics from invalid candidates as they'll be
+    // dropped.
+    if (validity == OverloadFitness::Validity::kInvalid) {
+      eval.takeDiag().abandon();
+      continue;
+    }
+    if (auto func = dyn_cast<FnOp>(candidate->getIfOperation())) {
+      if (validity == OverloadFitness::Validity::kValid) {
+        // This is a valid candidate, but we can't use it since we need to
+        // disprove the other candidates first.
+        diag.attachNote(candidate->getLoc())
+            << "candidate is valid but cannot be selected until other "
+               "candidates are disproved";
+        continue;
+      }
+      ArrayRef<ConstraintAttr> constraints = eval.getUnprovableConstraints();
+      diag.attachNote(candidate->getLoc()) << "cannot prove";
+      if (constraints.size() > 1)
+        diag << " or disprove";
+      diag << " constraint" << plural(constraints.size()) << " for candidate";
+      for (auto constraint : constraints)
+        LIT::emitConstraintInconclusive(shared.getDeclResolver(), diag,
+                                        constraint);
+
+      if (func.getSynthetic()) {
+        diag.attachNote(candidate->getLoc())
+            << "generated function with type "
+            << ASTType(func.getFullSignature());
+      }
+    } else {
+      // This is an indirect reference with a constraint failure.
+      diag << "cannot prove constraint";
+    }
+  }
+
+  // Add action item.
+  diag.attachNote(expr->getLoc()) << "provide evidence for ";
+  if (numRemainingCandidates > 1)
+    diag << "or against ";
+  diag << "the constraint" << plural(candidates.size())
+       << " here to aid in candidate selection";
+}
+
 /// Evaluate the fnDecls candidates and see if there is an unambiguous
 /// candidate that works with the specified parameter bindings on the overload
 /// set. If so, return the single entry that works.  If not, generate a
 /// diagnostic and return null.
 PValue OverloadSet::filterOverloadSetForParamBindings() const {
-  SmallVector<OverloadFitness> evaluations;
-  bool anyValid = false;
+  SmallVector<std::pair<ASTDecl *, OverloadFitness>> evaluations;
+  bool allInvalid = true;
+  bool anyParamConstraintInconclusive = false;
   for (ASTDecl *candidate : fnDecls) {
-    evaluations.push_back(OverloadFitness::evaluate(
-        candidate, *this, baseValue.ir.getIfPValue()));
-    anyValid |= evaluations.back().isValid();
+    evaluations.emplace_back(
+        candidate, OverloadFitness::evaluate(candidate, *this,
+                                             baseValue.ir.getIfPValue()));
+    OverloadFitness::Validity validity =
+        evaluations.back().second.getValidity();
+    allInvalid &= validity == OverloadFitness::Validity::kInvalid;
+    anyParamConstraintInconclusive |=
+        validity == OverloadFitness::Validity::kParamConstraintInconclusive;
   }
 
-  // If none are valid, emit an error.
-  if (!anyValid) {
+  // Check for param constraint inconclusiveness - if ANY candidate has this,
+  // fail the entire overload resolution immediately.
+  if (anyParamConstraintInconclusive) {
+    emitInconclusiveCandidatesError(getShared(), expr, baseName,
+                                    /*isCall=*/false,
+                                    /*isParamConstraint=*/true, evaluations);
+    return {};
+  }
+
+  // If all candidates are invalid, emit an error.
+  if (allInvalid) {
     if (isErroneous())
       return {};
     auto diag = getShared().emitError(
                     expr->getLoc(),
                     "cannot form a reference to overloaded declaration of '")
                 << baseName << "'" << expr->getRange();
-    for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
+    for (auto &[candidate, eval] : evaluations) {
       diag.attachNote(candidate->getLoc())
           << "candidate not viable: " << eval.takeDiag();
       auto func = cast<FnOp>(candidate->getIfOperation());
@@ -265,19 +414,28 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
   }
 
   // Ok, we have at least one valid candidate, so filter for the best matches.
-  SmallVector<ASTDecl *> newFnDecls;
-  const OverloadFitness *bestFitness =
-      selectBestCandidates(fnDecls, evaluations, newFnDecls);
-  if (newFnDecls.size() == 1) {
+  bool hasInconclusiveCandidates = filterForBestCandidates(evaluations);
+  // If any of the top candidates are inconclusive (function constraints),
+  // report the result specially.
+  if (hasInconclusiveCandidates) {
+    emitInconclusiveCandidatesError(getShared(), expr, baseName,
+                                    /*isCall=*/true,
+                                    /*isParamConstraint=*/false, evaluations);
+    return {};
+  }
+
+  OverloadFitness &bestFitness = evaluations[0].second;
+  if (evaluations.size() == 1) {
+    ASTDecl *selectedDecl = evaluations[0].first;
     // We don't have arguments, so can't need re-emission.
-    assert(!bestFitness->getArgsNeedingOrigins().any() &&
+    assert(!bestFitness.getArgsNeedingOrigins().any() &&
            "No arguments to require re-emission");
 
     // On success, wrap things up into one callee.
     ParamBindings newBindings(paramBindings.declScope);
-    for (TypedAttr bind : bestFitness->getParamBindings())
+    for (TypedAttr bind : bestFitness.getParamBindings())
       newBindings.addPrechecked(expr, bind);
-    return getCallee(newFnDecls[0], baseName, newBindings, expr);
+    return getCallee(selectedDecl, baseName, newBindings, expr);
   }
   if (isErroneous())
     return {};
@@ -288,13 +446,13 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
   diag << "cannot form a reference to overloaded declaration of '" << baseName
        << "'" << expr->getRange();
 
-  if (size_t minConversions = bestFitness->getNumImplicitConversions() / 2)
+  if (size_t minConversions = bestFitness.getNumImplicitConversions() / 2)
     diag << ", each candidate requires " << minConversions
          << " implicit conversion" << plural(minConversions)
          << ", disambiguate with an explicit cast" << expr->getRange();
   else
     diag.attachNote(expr->getLoc()) << "did you mean to call it?";
-  for (ASTDecl *candidate : newFnDecls) {
+  for (auto &[candidate, eval] : evaluations) {
     auto func = cast<FnOp>(candidate->getIfOperation());
     MojoInflightDiag &note = diag.attachNote(candidate->getLoc());
     if (func.getSynthetic()) {
@@ -390,8 +548,9 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
 
   CallOperands scratchOperands;
   // Evaluate the fitness of each candidate in our overload set.
-  SmallVector<OverloadFitness> evaluations;
-  bool anyValid = false;
+  SmallVector<std::pair<ASTDecl *, OverloadFitness>> evaluations;
+  bool allInvalid = true;
+  bool anyParamConstraintInconclusive = false;
   for (ASTDecl *candidate : fnDecls) {
     auto func = cast<FnOp>(candidate->getIfOperation());
 
@@ -406,14 +565,30 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     }
 
     auto desiredSignature = func.getFullSignature();
-    evaluations.push_back(OverloadFitness::evaluate(desiredSignature, candidate,
-                                                    *this, *operandsToUse,
-                                                    allowImplicitConversions));
-    anyValid |= evaluations.back().isValid();
+    evaluations.emplace_back(
+        candidate,
+        OverloadFitness::evaluate(desiredSignature, candidate, *this,
+                                  *operandsToUse, allowImplicitConversions));
+    OverloadFitness::Validity validity =
+        evaluations.back().second.getValidity();
+    allInvalid &= validity == OverloadFitness::Validity::kInvalid;
+    anyParamConstraintInconclusive |=
+        validity == OverloadFitness::Validity::kParamConstraintInconclusive;
+  }
+
+  // Check for param constraint inconclusiveness - if ANY candidate has this,
+  // fail the entire overload resolution immediately.
+  if (anyParamConstraintInconclusive) {
+    if (emitDiagnosticOnFailure && !isErroneous()) {
+      emitInconclusiveCandidatesError(getShared(), expr, baseName,
+                                      /*isCall=*/true,
+                                      /*isParamConstraint=*/true, evaluations);
+    }
+    return {};
   }
 
   // If all of the candidates are wrong, diagnose this as a failure.
-  if (!anyValid) {
+  if (allInvalid) {
     if (!emitDiagnosticOnFailure || isErroneous())
       return {};
 
@@ -505,13 +680,13 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     // If there is a single callee, emit a specific error about the call.
     if (fnDecls.size() == 1) {
       auto fnDecl = cast<FnOp>(fnDecls[0]->getIfOperation());
-      diag << ": " << evaluations[0].takeDiag();
+      diag << ": " << evaluations[0].second.takeDiag();
       diag.attachNote(fnDecl.getLoc()) << "function declared here";
       return {};
     }
 
     // Add a note for what is wrong with each candidate.
-    for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
+    for (auto &[candidate, eval] : evaluations) {
       diag.attachNote(candidate->getLoc())
           << "candidate not viable: " << eval.takeDiag();
       auto func = cast<FnOp>(candidate->getIfOperation());
@@ -526,18 +701,30 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
   }
 
   // Ok, we have at least one valid candidate, so filter for the best matches.
-  SmallVector<ASTDecl *> newFnDecls;
-  OverloadFitness *bestFitness =
-      selectBestCandidates(fnDecls, evaluations, newFnDecls);
+  bool hasInconclusiveCandidates = filterForBestCandidates(evaluations);
 
   // Notify the listener of the updated decl references for the call now that
   // invalid candidates have been filtered out.
-  if (!newFnDecls.empty())
-    getShared().notifyListenerOnRef(newFnDecls, baseName, expr, syntax);
+  if (!evaluations.empty()) {
+    SmallVector<ASTDecl *> bestDecls(llvm::make_first_range(evaluations));
+    getShared().notifyListenerOnRef(bestDecls, baseName, expr, syntax);
+  }
+
+  // If any of the top candidates are inconclusive (function constraints),
+  // report the result specially.
+  if (hasInconclusiveCandidates) {
+    if (emitDiagnosticOnFailure && !isErroneous()) {
+      emitInconclusiveCandidatesError(getShared(), expr, baseName,
+                                      /*isCall=*/true,
+                                      /*isParamConstraint=*/false, evaluations);
+    }
+    return {};
+  }
 
   // If we found exactly one viable candidate then we succeed.
-  if (newFnDecls.size() == 1) {
-    ASTDecl *selectedDecl = newFnDecls[0];
+  if (evaluations.size() == 1) {
+    ASTDecl *selectedDecl = evaluations[0].first;
+    OverloadFitness &bestFitness = evaluations[0].second;
     auto selectedFunc = cast<FnOp>(selectedDecl->getIfOperation());
 
     // If the target is static and there is a self operand, remove it from the
@@ -556,7 +743,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
       return getCallee(selectedDecl, baseName, newBindings, expr);
     };
 
-    PValue boundFunction = newBindings(*bestFitness);
+    PValue boundFunction = newBindings(bestFitness);
 
     if (emitDiagnosticOnFailure && syntax == CallSyntax::kImplicitConvert &&
         selectedFunc.getImplicitConversion() ==
@@ -580,13 +767,13 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     // (from PValue or SValues) to be passed as 'ref' arguments.  If this
     // happens, emit them now and then re-infer the correct origins.  If not,
     // we're done.
-    if (bestFitness->getArgsNeedingOrigins().any() &&
+    if (bestFitness.getArgsNeedingOrigins().any() &&
         // Parameter emission can always use comptime origins.
         emitter.builder) {
       // Emit one or more operands to memory.  We know this can't infinitely
       // loop because there is a forward progress guarantee here.
       if (failed(emitOperandsNeedingOriginsToMemory(
-              *bestFitness, cast<FnTypeGeneratorType>(boundFunction.getType()),
+              bestFitness, cast<FnTypeGeneratorType>(boundFunction.getType()),
               operands, emitter)))
         return {};
 
@@ -603,12 +790,15 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
   // Otherwise, we have multiple viable candidates that are ambiguous because
   // they all require the same number of implicit conversions.
   if (emitDiagnosticOnFailure && !isErroneous()) {
-    size_t minConversions = bestFitness->getNumImplicitConversions() / 2;
     auto diag = getShared().emitError(expr->getLoc(), "ambiguous call to '")
-                << baseName << "', each candidate requires " << minConversions
-                << " implicit conversion" << plural(minConversions)
-                << ", disambiguate with an explicit cast" << expr->getRange();
-    for (ASTDecl *candidate : newFnDecls) {
+                << baseName << "'" << expr->getRange();
+    if (size_t minConversions =
+            evaluations[0].second.getNumImplicitConversions() / 2) {
+      diag << ", each candidate requires " << minConversions
+           << " implicit conversion" << plural(minConversions)
+           << ", disambiguate with an explicit cast";
+    }
+    for (auto &[candidate, eval] : evaluations) {
       auto func = cast<FnOp>(candidate->getIfOperation());
       MojoInflightDiag &note = diag.attachNote(candidate->getLoc());
       if (func.getSynthetic()) {
@@ -1097,8 +1287,19 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
   auto fitness = OverloadFitness::evaluate(calleeSig, /*indirect*/ nullptr,
                                            bindings, operands,
                                            /*allowImplicitConversions=*/true);
-  if (!fitness.isValid()) {
+  if (fitness.getValidity() != OverloadFitness::Validity::kValid) {
     // If not, diagnose it with an error.
+    if (fitness.isInconclusive()) {
+      SmallVector<std::pair<ASTDecl *, OverloadFitness>> bestCandidates;
+      bestCandidates.emplace_back(nullptr, std::move(fitness));
+      emitInconclusiveCandidatesError(
+          shared, callExpr, {}, /*isCall=*/true,
+          /*isParamConstraint=*/fitness.getValidity() ==
+              OverloadFitness::Validity::kParamConstraintInconclusive,
+          bestCandidates);
+      dest.resetForError(*this);
+      return {};
+    }
     emitError(callExpr->getLoc(), "invalid indirect call: ")
         << fitness.takeDiag();
     dest.resetForError(*this);

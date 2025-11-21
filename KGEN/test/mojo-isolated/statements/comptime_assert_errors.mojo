@@ -33,7 +33,7 @@ struct NotFn[x: Bool]:
     __comptime_assert x
 
 
-# expected-note @below {{function declared here}}
+# expected-note @below {{cannot prove constraint}}
 # expected-note @below {{constraint declared here}}
 fn requires_natural[x: Int]() where x >= 0:
     pass
@@ -47,15 +47,18 @@ fn test_assert_injects_assumption_correctly[x: Int]():
         # This is OK.
         requires_natural[x]()
     else:
-        # expected-error @below {{unable to satisfy constraint}}
+        # expected-error @below {{invalid call to 'requires_natural': lacking evidence to prove correctness}}
+        # expected-note @below {{provide evidence for the constraint here to aid in candidate selection}}
         requires_natural[x]()
 
-    # expected-error @below {{unable to satisfy constraint}}
+    # expected-error @below {{invalid call to 'requires_natural': lacking evidence to prove correctness}}
+    # expected-note @below {{provide evidence for the constraint here to aid in candidate selection}}
     requires_natural[x]()
 
 
 fn test_newly_created_scope[x: Int]():
-    # expected-error @below {{unable to satisfy constraint}}
+    # expected-error @below {{invalid call to 'requires_natural': lacking evidence to prove correctness}}
+    # expected-note @below {{provide evidence for the constraint here to aid in candidate selection}}
     alias y = requires_natural[x]()
 
     # COM: This assert should not validate the above statement.

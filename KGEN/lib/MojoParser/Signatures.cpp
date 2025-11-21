@@ -982,13 +982,14 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
       evaluator.setDeclBinding(newDecl, defaultVal);
       // Only report direct violations. Unprovable constraints are allowed
       // since they may depend on other parameters.
-      if (failed(LIT::checkConstraints(
+      if (LIT::checkConstraints(
               declScope, paramConstraints,
               [&](ArrayRef<ConstraintAttr> constraints) {
                 constraintEmitter.emitError(
                     arg.loc, "default value violated constraint");
               },
-              /*emitUnprovableConstraints=*/nullptr, &evaluator))) {
+              /*unprovableConstraints=*/nullptr,
+              &evaluator) == ConstraintResult::Violated) {
         hasErrors = true;
       }
     }
