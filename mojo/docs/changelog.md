@@ -47,6 +47,10 @@ what we publish.
          ^
   ```
 
+- The `deinit` argument convention can now be applied to any argument of a
+  struct method, but the argument type still must be of the enclosing struct
+  type.
+
 ### Language changes
 
 - The compiler will now warn on unqualified access to struct parameters, e.g.

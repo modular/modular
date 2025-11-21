@@ -11,12 +11,9 @@ to look inside of the compiler to clarify questions they have about the
 semantics of particular operations or compiler builtins. For Mojo, that is
 not the case for many people working on the standard library. As a result,
 the exact semantics of some important compiler builtins, such as
-`lit.ownership.mark_destroyed`, are not fully known to a large number of
-people working on the standard library. For example, the fact that
-`lit.ownership.mark_destroyed` still runs the destructors of fields was a
-surprise to many at the stdlib meeting. This creates issues where Modular
-employees have to catch misuses. These language-internal dialects are, like
-Mojo itself, subject to enhancements, breaking changes, and even complete
+`lit.ownership.mark_initialized`, are not fully known to a large number of
+people working on the standard library. These language-internal dialects are,
+like Mojo itself, subject to enhancements, breaking changes, and even complete
 removal. This presents a problem since the stdlib is correctness-critical code,
 and when people who don't understand the API contract of a construct use it
 in correctness-critical code, issues are bound to happen.
@@ -43,8 +40,7 @@ arguments (potentially as Mojo function syntax), a description of the
 operation, pre-conditions, post-conditions, and clear hazards. Clear hazards
 would ways in which the operation can cause UB (ex: is what happens with a
 null pointer well defined?), conditions under which the operation will force
-the program to abort or other like "`lit.ownership.mark_destroyed`
-still runs the destructors of fields" which may be surprising behavior.
+the program to abort or other cases which may be surprising behavior.
 
 For MLIR types, information about what a type is intended to do, what
 parameters the type has (and their types), the size of the instantiated type
@@ -94,10 +90,12 @@ x86 CPU among other things. If there is a way to query the data layout
 information, that would save us a lot of effort in parts of std that interact
 with libc.
 
-### `lit.ownership.mark_destroyed`/`lit.ownership.mark_initialized`
+### `lit.ownership.mark_initialized`
 
-There was already confusion about how this works, and it's used all over the
-place in the stdlib, so I consider this critical to document.
+This operation acts like a "virtual store" of valid data to the memory location
+of its argument. This is conventionally used in places where unsafe code is
+doing construction of a value a field at a time, but needs to "bless" the whole
+object as being constructed.
 
 ### `lit.ref.from_pointer`
 

@@ -410,16 +410,13 @@ struct Tuple[*element_types: Copyable & Movable](
         return self._compare(other) >= 0
 
     @always_inline("nodebug")
-    fn reverse(var self, out result: Tuple[*Reversed[*Self.element_types]]):
+    fn reverse(deinit self, out result: Tuple[*Reversed[*Self.element_types]]):
         """Return a new tuple with the elements in reverse order.
 
         Returns:
             A new tuple with the elements in reverse order.
         """
-        # Mark 'self.storage' as being initialized so we can work on it.
-        __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(result.storage)
-        )
+        # Mark 'result' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(result)
         )
@@ -434,15 +431,12 @@ struct Tuple[*element_types: Copyable & Movable](
                 )
             )
 
-        # I believe this is needed otherwise you'll double free
-        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(self))
-
     @always_inline("nodebug")
     fn concat[
         *other_element_types: Copyable & Movable
     ](
-        var self,
-        var other: Tuple[*other_element_types],
+        deinit self,
+        deinit other: Tuple[*other_element_types],
         out result: Tuple[
             *Concatenated[Self.element_types, other_element_types]
         ],
@@ -458,10 +452,7 @@ struct Tuple[*element_types: Copyable & Movable](
         Returns:
             A new tuple with the concatenated elements.
         """
-        # Mark 'self.storage' as being initialized so we can work on it.
-        __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(result.storage)
-        )
+        # Mark 'result' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(result)
         )
@@ -485,7 +476,3 @@ struct Tuple[*element_types: Copyable & Movable](
                     ]
                 ](UnsafePointer(to=other[i]))
             )
-
-        # I believe this is needed otherwise you'll double free
-        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(self))
-        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(other))
