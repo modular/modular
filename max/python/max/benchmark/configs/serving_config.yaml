@@ -90,15 +90,10 @@ benchmark_config:
   metadata: []  # Key-value pairs for metadata (format: ["key=value", ...])
 
   # LoRA-specific parameters (serving workloads)
-  num_loras: 0
-  lora_rank: 16
-  lora_output_dir: "/tmp/loras"
-  lora_server_path: "/tmp/loras"
   lora_paths: []
-  lora_request_ratio: 0.5
+  lora_uniform_traffic_ratio: 0.0
+  per_lora_traffic_ratio: []
   max_concurrent_lora_ops: 1
-  max_num_loras: 10
-  lora_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]
 
   # Batch job dataset parameters
   batch_job_image_dir: null  # When set, use file references instead of embedded images
