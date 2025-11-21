@@ -310,7 +310,6 @@ kgen.generator export @main() {
   kgen.return
 }
 
-
 // -----
 
 kgen.generator @g<T: i1>() -> index {

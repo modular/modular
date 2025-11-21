@@ -273,6 +273,9 @@ private:
   /// and then instantiating the body for each value of the sequence.
   ElaborationState processParamForOp(PImplNode *parent, ParamForOp op);
 
+  ElaborationState processCodeGenReachableOp(PImplNode *inode,
+                                             CodeGenReachableOp op);
+
   //===--------------------------------------------------------------------===//
   // Worklist
   //===--------------------------------------------------------------------===//

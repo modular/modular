@@ -283,3 +283,25 @@ kgen.generator @metadata_caller() {
   kgen.call @metadata<2>() : () -> ()
   kgen.return
 }
+
+// -----
+
+// COM: TODO - this error message currently is missing
+//             the complete call graph info.
+kgen.generator @g<T: i1>() -> index {
+  %0 = kgen.call @f<:i1 T>() : () -> index
+  kgen.return %0 : index
+}
+
+// expected-error @+1 {{function instantiation failed}}
+kgen.generator @f<T: i1>() -> index {
+  %0 = kgen.param.constant = <42>
+  // expected-note @+1 {{codegen unreachable: materializing code that is not codegen reachable is not allowed}}
+  kgen.codegen.reachable <not(T)>, "materializing code that is not codegen reachable is not allowed"
+  kgen.return %0 : index
+}
+
+kgen.generator export @main() {
+  %0 = kgen.call @g<:i1 1>() : () -> index
+  kgen.return
+}
