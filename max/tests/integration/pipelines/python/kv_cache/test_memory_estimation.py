@@ -36,6 +36,34 @@ def test_basic() -> None:
         )
         == 1024
     )
+    assert (
+        params.estimated_memory_size(
+            available_cache_memory=GIB,
+            max_batch_size=INF,
+            max_seq_len=INF,
+        )
+        == GIB
+    )
+
+
+def test_unaligned() -> None:
+    params = create_params()
+    assert (
+        params.compute_num_device_blocks(
+            available_cache_memory=GIB + 7,
+            max_batch_size=INF,
+            max_seq_len=INF,
+        )
+        == 1024
+    )
+    assert (
+        params.estimated_memory_size(
+            available_cache_memory=GIB + 7,
+            max_batch_size=INF,
+            max_seq_len=INF,
+        )
+        == GIB
+    )
 
 
 def test_big_mem() -> None:
@@ -47,6 +75,14 @@ def test_big_mem() -> None:
             max_seq_len=INF,
         )
         == 17 * 1024
+    )
+    assert (
+        params.estimated_memory_size(
+            available_cache_memory=17 * GIB,
+            max_batch_size=INF,
+            max_seq_len=INF,
+        )
+        == 17 * GIB
     )
 
 
@@ -71,6 +107,14 @@ def test_tp2() -> None:
             max_seq_len=INF,
         )
         == 1024
+    )
+    assert (
+        params.estimated_memory_size(
+            available_cache_memory=GIB,
+            max_batch_size=INF,
+            max_seq_len=INF,
+        )
+        == GIB
     )
 
 
@@ -97,6 +141,14 @@ def test_dp2() -> None:
         )
         == 512
     )
+    assert (
+        params.estimated_memory_size(
+            available_cache_memory=GIB,
+            max_batch_size=INF,
+            max_seq_len=INF,
+        )
+        == GIB
+    )
 
 
 def test_weird_page_size() -> None:
@@ -108,6 +160,14 @@ def test_weird_page_size() -> None:
             max_seq_len=INF,
         )
         == 168
+    )
+    assert (
+        params.estimated_memory_size(
+            available_cache_memory=GIB,
+            max_batch_size=INF,
+            max_seq_len=INF,
+        )
+        == 1069350912
     )
 
 
