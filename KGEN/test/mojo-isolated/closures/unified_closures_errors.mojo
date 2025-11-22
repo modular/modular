@@ -49,11 +49,9 @@ fn aThing() -> Int:
 
 
 fn definesClosure():
-    # expected-error @below {{ambiguous captured value: aThing}}
+    # expected-error @below {{ambiguous captured value: 'aThing'}}
     fn aClosure() unified {var aThing}:
         pass
-
-
 
 
 @register_passable
@@ -77,3 +75,17 @@ def foo(bar: Bar):
     # TODO: Rename Wrappers (MOCO-2541)
     # expected-error @below {{cannot bind type 'fn(number: Int) -> Int_wrapper_copyable[!kgen.closure<@"unified_closures_errors::foo(unified_closures_errors::Bar)", "closure" register_passable>, {}]' to trait 'DevicePassable'}}
     takeDevicePassable[type_of(closure)](closure)
+
+
+# expected-note @below {{function declared here}}
+fn changeIt(mut aString: String):
+    pass
+
+
+def nestedCaptureAll(mut aString: String):
+    fn aFinalThing(x:Int) unified {read}:
+        # expected-error @below {{invalid call to 'changeIt': argument #0 must be mutable in order to pass to a mutating argument}}
+        changeIt(aString)
+
+        fn aChildThing(x:Int) unified {var}:
+            changeIt(aString)

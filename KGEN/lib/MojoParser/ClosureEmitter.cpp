@@ -2092,32 +2092,91 @@ ASTDecl *ClosureEmitter::addCaptureValue(SharedState &shared, ASTDecl &closure,
                                          emitter);
 }
 
+// Lookup the decl in the named decls that have been collected thus far. This
+// may be an incomplete list because we have not finished resolving the scope.
+static FailureOr<ASTDecl *> partialLookup(StringAttr name, ASTDecl &scope,
+                                          llvm::SMLoc loc) {
+  for (auto [declName, list] : scope.getDeclsInScope()) {
+    if (name == declName) {
+      if (list.size() != 1) {
+        scope.getShared().emitError(loc, "ambiguous captured value: ") << name;
+        return failure();
+      }
+      return list.front();
+    }
+  }
+  return nullptr;
+}
+
+// Search the scope and its parents for a decl with the name without resolving
+// anything.
+static FailureOr<ASTDecl *> findCapture(SharedState &shared, StringRef name,
+                                        llvm::SMLoc loc, ASTDecl &scope) {
+  auto nameAttr = StringAttr::get(shared.getContext(), name);
+  ASTDecl *current = &scope;
+  do {
+    FailureOr<ASTDecl *> result = partialLookup(nameAttr, *current, loc);
+    if (failed(result))
+      return failure();
+    if (result.value())
+      return result.value();
+  } while ((current = current->getParentDecl()));
+  return nullptr;
+}
+
 ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
                                          StringRef name,
                                          CaptureConvention parsedConvention,
                                          IREmitter &emitter,
                                          ASTDecl *signatureDecl) {
+  // Check if already emitted.
   SharedState &shared = emitter.shared;
+  if (shared.captureInstanceExistsInScope(closure, name)) {
+    auto nameAttr = StringAttr::get(shared.getContext(), name);
+    ArrayRef<ASTDecl *> existing = closure.lookupInCurrentScope(nameAttr);
+    assert(existing.size() == 1 &&
+           "if the capture instance exists in the scope then it should have "
+           "been registed in the scope");
+    return existing.front();
+  }
+  // If this is a nested closure, emit the parent capture first.
   FnOp funcOp = cast<FnOp>(closure.getIfOperation());
-  LookupResult lookup = shared.lookupAndResolveDecl(
-      name, location, *closure.getParentDecl(), true);
-  if (!lookup.isSuccess()) {
-    shared.emitError(location, "reference to an unknown value: ") << name;
-    return nullptr;
+  ASTDecl *fnParentDecl = closure.getParentDecl()->getNearestDeclOfType<FnOp>();
+  auto parentFn = cast<FnOp>(fnParentDecl->getIfOperation());
+  ASTDecl *result = nullptr;
+  if (parentFn.getFuncTypeGenerator().isUnified())
+    result = addCaptureValue(shared, *fnParentDecl, name, location);
+
+  if (!result) {
+    auto hitMaybe = partialLookup(StringAttr::get(shared.getContext(), name),
+                                  closure, location);
+    if (failed(hitMaybe))
+      return nullptr;
+    // No need to emit a capture instance since this closure defines the value.
+    if (hitMaybe.value())
+      return hitMaybe.value();
+
+    // otherwise, this is a capture. Find the def.
+    auto maybeResult =
+        findCapture(shared, name, location, *closure.getParentDecl());
+    if (failed(maybeResult))
+      return nullptr;
+    result = maybeResult.value();
+    if (!result) {
+      shared.emitError(location, "reference to an unknown value: ") << name;
+      return nullptr;
+    }
+    if (auto pval = result->getIfIRValue().getIfPValue()) {
+      shared.emitError(location, "value ")
+          << name << " is a parameter and does not need a capture convention";
+      return nullptr;
+    }
   }
-  ArrayRef<ASTDecl *> results = lookup.getIfSuccess();
-  if (results.size() > 1) {
-    shared.emitError(location, "ambiguous captured value: ") << name;
-    return nullptr;
-  }
-  ASTDecl *result = results.front();
-  if (auto pval = result->getIfIRValue().getIfPValue()) {
-    shared.emitError(location, "value ")
-        << name << " is a parameter and does not need a capture convention";
-    return nullptr;
-  }
+
   CValue valueInParent =
       ASTDeclToCValue(result, *emitter.builder, funcOp->getLoc());
+  emitter.builder->setInsertionPoint(closure.getIfOperation());
+
   CaptureConvention convention;
   /// The captureValue is a map of the valueInParent. For example, the
   /// valueInParent may be an immutable borrowed value. If this value is
@@ -2128,7 +2187,6 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
   CValue captureValue;
   // Switch the DI Scope to the enclosing function before emitting the
   // load so the debug information is accurate.
-  auto parentFn = funcOp->getParentOfType<FnOp>();
   DebugInfo::DIBuilder::ScopeGuard diGuard;
   if (shared.diBuilder)
     diGuard = shared.diBuilder->pushScopeGuard(parentFn.getLocScope());
@@ -2173,8 +2231,11 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
       if (auto refType = dyn_cast<RefType>(valueInParent.getType().mlirType)) {
         OriginType originType = refType.getOriginType();
         if (originType.isMutableKnown(false)) {
+          Location fusedLoc =
+              FusedLoc::get(funcOp.getLoc().getContext(), funcOp.getLoc(),
+                            parentFn.getSubprogramScope());
           auto refImmutOp = LIT::RefImmutOp::create(
-              *emitter.builder, funcOp.getLoc(), valueInParent.getMlirValue());
+              *emitter.builder, fusedLoc, valueInParent.getMlirValue());
           captureValue = MBValue(refImmutOp->getResult(0));
         }
       }
