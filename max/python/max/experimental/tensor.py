@@ -1397,6 +1397,8 @@ class ComputeGraph:
             tensor.storage = storage
             tensor.real = True
 
+        # Remove strong references to inputs to allow garbage collection
+        del inputs
         # Reset the graph to a new empty graph with only inputs
         ComputeGraph.__init__(
             self,
