@@ -18,7 +18,7 @@ import weakref
 from max.experimental.tensor import Tensor
 
 
-def test_anonymous_tensors():
+def test_anonymous_tensors() -> None:
     def build_graph():
         return Tensor.ones((2, 2)) + 3.0
 
@@ -29,7 +29,7 @@ def test_anonymous_tensors():
     assert val == "4.0"
 
 
-def test_tensor_lifecycle_garbage_collection():
+def test_tensor_lifecycle_garbage_collection() -> None:
     t = Tensor.ones((10, 10))
     t_ref = weakref.ref(t)
 
