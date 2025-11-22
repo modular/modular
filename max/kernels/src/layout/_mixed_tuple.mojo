@@ -204,7 +204,7 @@ fn Idx[value: Int]() -> ComptimeInt[value]:
     return ComptimeInt[value]()
 
 
-@fieldwise_init
+@fieldwise_init("implicit")
 struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
     """A struct representing tuple-like data with compile-time and runtime elements.
 
@@ -267,14 +267,11 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         return Self.__len__()
 
     @always_inline("nodebug")
-    fn __init__(
-        out self, var *args: * Self.element_types, __list_literal__: () = ()
-    ):
+    fn __init__(out self, var *args: * Self.element_types):
         """Construct tuple from variadic arguments.
 
         Args:
             args: Values for each element.
-            __list_literal__: List literal marker (unused).
         """
         self = Self(storage=args^)
 

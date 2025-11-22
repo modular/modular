@@ -13,7 +13,7 @@
 
 from sys import align_of
 
-from builtin.variadics import VariadicOf
+from builtin.variadics import VariadicOf, variadic_size
 
 from ._mixed_layout import MixedLayout
 from ._mixed_tuple import ComptimeInt, Idx, MixedTuple, MixedTupleLike
@@ -54,16 +54,18 @@ struct MixedLayoutTensor[
         self.ptr = span.unsafe_ptr().address_space_cast[Self.address_space]()
         self.layout = layout^
 
-    fn __getitem__[
-        index_type: MixedTupleLike
-    ](self, arg: index_type) -> Scalar[Self.dtype]:
+    @always_inline("nodebug")
+    fn __getitem__(
+        self, tuple: MixedTuple
+    ) -> Scalar[Self.dtype] where variadic_size(
+        tuple.element_types
+    ) == variadic_size(Self.shape_types):
         return self.ptr[
-            self.layout[linear_idx_type = Self.linear_idx_type](arg)
+            self.layout[linear_idx_type = Self.linear_idx_type](tuple)
         ]
 
-    fn __setitem__[
-        index_type: MixedTupleLike
-    ](
+    @always_inline("nodebug")
+    fn __setitem__(
         self: MixedLayoutTensor[
             mut=True,
             dtype = Self.dtype,
@@ -72,11 +74,13 @@ struct MixedLayoutTensor[
             address_space = Self.address_space,
             linear_idx_type = Self.linear_idx_type,
         ],
-        arg: index_type,
+        tuple: MixedTuple,
         value: Scalar[Self.dtype],
+    ) where variadic_size(tuple.element_types) == variadic_size(
+        Self.shape_types
     ):
         self.ptr[
-            self.layout[linear_idx_type = Self.linear_idx_type](arg)
+            self.layout[linear_idx_type = Self.linear_idx_type](tuple)
         ] = value
 
 

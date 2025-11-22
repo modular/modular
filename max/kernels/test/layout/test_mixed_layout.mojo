@@ -24,14 +24,15 @@ def main():
 fn test_size_cosize() raises:
     # Row-major 3x4: last element (2,3) -> 11, cosize = 12
     var layout1 = MixedLayout(
-        shape=[Idx[3](), Idx[4]()], stride=[Idx[4](), Idx[1]()]
+        shape=(Idx[3](), Idx[4]()),
+        stride=(Idx[4](), Idx[1]()),
     )
     assert_equal(layout1.size(), 12)
     assert_equal(layout1.cosize(), 12)
 
     # Layout with gaps: last element (1,1) -> 11, cosize = 12
     var layout2 = MixedLayout(
-        shape=[Idx[2](), Idx[2]()], stride=[Idx[10](), Idx[1]()]
+        shape=(Idx[2](), Idx[2]()), stride=(Idx[10](), Idx[1]())
     )
     assert_equal(layout2.size(), 4)
     assert_equal(layout2.cosize(), 12)
@@ -39,8 +40,8 @@ fn test_size_cosize() raises:
 
 fn test_crd2idx() raises:
     var layout = MixedLayout(
-        shape=[Idx[4](), Idx[2]()],
-        stride=[Idx[1](), Idx[4]()],
+        shape=(Idx[4](), Idx[2]()),
+        stride=(Idx[1](), Idx[4]()),
     )
 
     # Multi-dimensional coordinates
