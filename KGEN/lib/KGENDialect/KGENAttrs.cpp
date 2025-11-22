@@ -3909,6 +3909,12 @@ static std::optional<SugarKind> canElideSugarFor(TypedAttr attr) {
   if (isa<ParamDeclRefAttr>(attr))
     return SugarKind::AlwaysInlineBuiltin;
 
+  // Never sugar low-level MLIR integer literals.  They are internal
+  // implementation details of low-level types, not something we want to expose
+  // to Mojo programmers.
+  if (isa<IntegerAttr>(attr))
+    return SugarKind::AlwaysInlineBuiltin;
+
   // Otherwise, see if the LIT type knows how to elide itself.  LIT::StructType
   // knows how to print literals for Int, IntegerLiteral, etc.
   if (auto sugarItf = dyn_cast<SugaredTypeInterface>(attr.getType()))
