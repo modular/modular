@@ -22,6 +22,7 @@ import random
 import socket
 import time
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import uuid4
 
@@ -62,7 +63,7 @@ def available_port(
     raise RuntimeError("No available port found in the specified range.")
 
 
-def _validate_device_type(devices: list[Device]) -> None:
+def _validate_device_type(devices: Sequence[Device]) -> None:
     is_gpu = False
     is_cpu = False
     for d in devices:
@@ -101,7 +102,7 @@ def _validate_device_type(devices: list[Device]) -> None:
 
 
 def _validate_tensor_shape(
-    tensors: list[Tensor], total_num_pages: int
+    tensors: Sequence[Tensor], total_num_pages: int
 ) -> tuple[int, int]:
     # Validate all tensors have the same shape
     first_tensor = tensors[0]
@@ -374,7 +375,7 @@ class KVTransferEngine:
     def __init__(
         self,
         name: str,
-        tensors: list[list[Tensor]],
+        tensors: Sequence[Sequence[Tensor]],
         *,
         total_num_pages: int,
     ) -> None:
