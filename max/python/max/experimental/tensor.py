@@ -1308,7 +1308,6 @@ class ComputeGraph:
     #: Keeps weak references to intermediate unrealized tensor values, which may
     #: never need to be realized.
     unrealized: weakref.WeakValueDictionary[int, Tensor]
-    
 
     def __init__(
         self,
