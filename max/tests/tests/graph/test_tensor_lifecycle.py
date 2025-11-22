@@ -35,13 +35,10 @@ def test_tensor_lifecycle_garbage_collection() -> None:
 
     # Trigger execution. 't' is migrated to the fresh graph.
     str(t + 1.0)
-
-    del t
-    gc.collect()
-
-    # 't' is currently held by the idle graph's safety list.
-    # Trigger one more execution to flush the list.
+    
     t = Tensor.zeros((1,))
+    # Old 't' is currently held by the idle graph's safety list.
+    # Trigger one more execution to flush the list.
     str(t)
     gc.collect()
 
