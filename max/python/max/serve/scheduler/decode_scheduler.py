@@ -94,9 +94,10 @@ class DecodeScheduler(Scheduler):
             raise ValueError(
                 "DecodeScheduler does not support data parallelism"
             )
+
         self.transfer_engine = KVTransferEngine(
             name=f"decode_agent_{uuid.uuid4()}",
-            tensors=self.paged_manager._replica_managers[0].device_tensors,
+            tensors=self.paged_manager.device_tensors,
             total_num_pages=self.paged_manager.total_num_pages,
         )
 

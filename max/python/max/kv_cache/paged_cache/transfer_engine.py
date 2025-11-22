@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import itertools
 import logging
 import os
 import random
@@ -74,9 +75,6 @@ def _validate_device_type(devices: list[Device]) -> None:
         raise ValueError(
             "Mixed device tensors detected. All tensors must be either on CPU or GPU, not both."
         )
-
-    if is_gpu and len(devices) != len(set(d.id for d in devices)):
-        raise ValueError("All tensors must be on different GPUs.")
 
     if is_cpu and len(devices) != 1:
         raise ValueError("CPU transfer engine must have exactly one tensor.")
@@ -293,8 +291,8 @@ class KVTransferEngineMetadata(
     memory_type: nixl.MemoryType
     """Memory type of the transfer engine."""
 
-    agents_meta: list[TensorAgentMetadata]
-    """Metadata for each tensor/agent."""
+    agents_meta: list[list[TensorAgentMetadata]]
+    """Metadata for each replica's agents: [replica][tp_shard]."""
 
 
 class TransferReqData(
@@ -314,7 +312,7 @@ class TransferReqData(
     """Transfer name."""
 
     transfer_ids: list[int]
-    """Transfer IDs (one per tensor)."""
+    """Transfer IDs (one per TP shard in the replica)."""
 
     src_idxs: list[int]
     """Length of source indices can differ from len(transfer_ids)."""
@@ -322,11 +320,18 @@ class TransferReqData(
     dst_idxs: list[int]
     """Length of destination indices can differ from len(transfer_ids)."""
 
+    src_replica_idx: int
+    """Index of the source replica this transfer is from."""
+
+    dst_replica_idx: int
+    """Index of the destination replica this transfer is to."""
+
 
 class KVTransferEngine:
-    """KVCache Transfer Engine.
+    """KVCache Transfer Engine with support for Data Parallelism (DP) and Tensor Parallelism (TP).
 
-    Currently this is only tested on CPU and supports single or multiple Paged tensors.
+    The engine accepts a 2D list of tensors: list[list[Tensor]] where the outer list
+    represents DP replicas and the inner list represents TP shards within each replica.
 
     The TransferEngine communicates with other TransferEngines in other threads
     or processes. However, individual TransferEngines themselves are not
@@ -336,11 +341,11 @@ class KVTransferEngine:
     name: str
     """Name of transfer engine / nixl agent."""
 
-    tensor_agents: list[TensorAgent]
-    """List of TensorAgent objects containing all per-tensor data."""
+    tensor_agents: list[list[TensorAgent]]
+    """2D list of TensorAgent objects: [replica][tp_shard]."""
 
     total_num_pages: int
-    """Total number of pages in each tensor."""
+    """Total number of pages in each tensor (same across all replicas)."""
 
     bytes_per_page: int
     """Bytes per page for each tensor."""
@@ -360,10 +365,16 @@ class KVTransferEngine:
     inflight_send_transfers: dict[str, TransferReqData]
     """Map of transfer names to send transfer request data."""
 
+    dp: int
+    """Number of DP replicas."""
+
+    tp: int
+    """Number of TP shards per replica."""
+
     def __init__(
         self,
         name: str,
-        tensors: Tensor | list[Tensor],
+        tensors: list[list[Tensor]],
         *,
         total_num_pages: int,
     ) -> None:
@@ -372,34 +383,79 @@ class KVTransferEngine:
                 f"Total number of pages {total_num_pages} must be greater than 0"
             )
 
-        tensors = [tensors] if isinstance(tensors, Tensor) else tensors
-        self.num_tensors = len(tensors)
+        # Validate 2D structure
+        if not tensors:
+            raise ValueError("tensors must contain at least one replica")
 
-        _validate_device_type([t.device for t in tensors])
-        self.bytes_per_page, elts_per_page = _validate_tensor_shape(
-            tensors, total_num_pages
-        )
+        if not all(replica_tensors for replica_tensors in tensors):
+            raise ValueError("Each replica must contain at least one tensor")
+
+        # Validate all replicas have same number of TP shards
+        self.tp = len(tensors[0])
+        for replica_idx, replica_tensors in enumerate(tensors):
+            if len(replica_tensors) != self.tp:
+                raise ValueError(
+                    f"All replicas must have the same number of tensors. "
+                    f"Replica 0 has {self.tp} tensors, "
+                    f"but replica {replica_idx} has {len(replica_tensors)} tensors"
+                )
+
+        self.dp = len(tensors)
+
+        # Validate each replica independently
+        bytes_per_page_list = []
+        elts_per_page_list = []
+        memory_types = []
+
+        for replica_tensors in tensors:
+            _validate_device_type([t.device for t in replica_tensors])
+            bytes_per_page, elts_per_page = _validate_tensor_shape(
+                replica_tensors, total_num_pages
+            )
+            bytes_per_page_list.append(bytes_per_page)
+            elts_per_page_list.append(elts_per_page)
+
+            is_cpu = replica_tensors[0].device.is_host
+            memory_type = (
+                nixl.MemoryType.DRAM if is_cpu else nixl.MemoryType.VRAM
+            )
+            memory_types.append(memory_type)
+
+        # Validate all replicas have same bytes_per_page and memory_type
+        if len(set(bytes_per_page_list)) != 1:
+            raise ValueError(
+                f"All replicas must have the same bytes_per_page. "
+                f"Found: {bytes_per_page_list}"
+            )
+
+        if len(set(memory_types)) != 1:
+            raise ValueError(
+                f"All replicas must have the same memory type. "
+                f"Found: {memory_types}"
+            )
 
         # Set memory type and total pages
         self.total_num_pages = total_num_pages
-        is_cpu = tensors[0].device.is_host
-        self.memory_type = (
-            nixl.MemoryType.DRAM if is_cpu else nixl.MemoryType.VRAM
-        )
+        self.bytes_per_page = bytes_per_page_list[0]
+        self.memory_type = memory_types[0]
+        elts_per_page = elts_per_page_list[0]
 
-        # Create agents for each tensor
+        # Create agents for each tensor in 2D structure
         self.name = name
         self.tensor_agents = []
-        for i, tensor in enumerate(tensors):
-            tensor_agent = TensorAgent.create_agent(
-                agent_name=f"{name}_{i}",
-                listen_port=available_port(),
-                tensor=tensor,
-                total_num_pages=total_num_pages,
-                elts_per_page=elts_per_page,
-                memory_type=self.memory_type,
-            )
-            self.tensor_agents.append(tensor_agent)
+        for replica_idx, replica_tensors in enumerate(tensors):
+            replica_agents = []
+            for tp_idx, tensor in enumerate(replica_tensors):
+                tensor_agent = TensorAgent.create_agent(
+                    agent_name=f"{name}_{replica_idx}_{tp_idx}",
+                    listen_port=available_port(),
+                    tensor=tensor,
+                    total_num_pages=total_num_pages,
+                    elts_per_page=elts_per_page,
+                    memory_type=self.memory_type,
+                )
+                replica_agents.append(tensor_agent)
+            self.tensor_agents.append(replica_agents)
 
         # Remote connections
         self.remote_connections = {}
@@ -415,12 +471,15 @@ class KVTransferEngine:
 
     @property
     def metadata(self) -> KVTransferEngineMetadata:
-        """Get metadata for the current engine.
+        """Get metadata for all replicas.
 
         Returns:
-            Metadata for the current engine.
+            Metadata for the entire engine (all replicas).
         """
-        agents_meta = [ta.to_metadata() for ta in self.tensor_agents]
+        agents_meta = [
+            [ta.to_metadata() for ta in replica_agents]
+            for replica_agents in self.tensor_agents
+        ]
 
         return KVTransferEngineMetadata(
             name=self.name,
@@ -431,17 +490,17 @@ class KVTransferEngine:
         )
 
     def connect(self, remote: KVTransferEngineMetadata) -> None:
-        """Connect to a remote engine.
+        """Connect to a remote engine (all replicas).
 
         Args:
-            remote: Metadata for the remote engine.
+            remote: Metadata for the remote engine (all replicas).
         """
         if remote.name in self.remote_connections:
             raise ValueError(f"Agent {remote.name} already connected")
 
-        if self.num_tensors != len(remote.agents_meta):
+        if self.dp != len(remote.agents_meta):
             raise ValueError(
-                f"Number of tensors mismatch: {self.num_tensors} != {len(remote.agents_meta)}"
+                f"Number of replicas mismatch: {self.dp} != {len(remote.agents_meta)}"
             )
 
         if self.bytes_per_page != remote.bytes_per_page:
@@ -449,42 +508,67 @@ class KVTransferEngine:
                 f"Bytes per page mismatch: {self.bytes_per_page} != {remote.bytes_per_page}"
             )
 
-        for i, (local_ta, remote_agent_meta) in enumerate(
-            zip(self.tensor_agents, remote.agents_meta, strict=True)
+        # Connect all replicas pairwise
+        for local_agents, remote_agents_meta in itertools.product(
+            self.tensor_agents, remote.agents_meta
         ):
-            loaded_bytes = local_ta.agent.load_remote_metadata(
-                remote_agent_meta.metadata
-            )
-            try:
-                loaded_remote_name = loaded_bytes.decode()
-            except UnicodeDecodeError as e:
-                raise ValueError(
-                    f"Metadata loading failed for agent {i}. Expected string, found {loaded_bytes!r}"
-                ) from e
-            if loaded_remote_name != remote_agent_meta.agent_name:
-                raise ValueError(
-                    f"Metadata loading failed for agent {i}. Expected {remote_agent_meta.agent_name}, got {loaded_remote_name}"
+            # Connect each TP shard within the replica
+            for local_ta, remote_agent_meta in zip(
+                local_agents,
+                remote_agents_meta,
+                strict=True,
+            ):
+                loaded_bytes = local_ta.agent.load_remote_metadata(
+                    remote_agent_meta.metadata
                 )
+                try:
+                    loaded_remote_name = loaded_bytes.decode()
+                except UnicodeDecodeError as e:
+                    raise ValueError(
+                        f"Metadata loading failed. "
+                        f"Expected string, found {loaded_bytes!r}"
+                    ) from e
+                if loaded_remote_name != remote_agent_meta.agent_name:
+                    raise ValueError(
+                        f"Metadata loading failed. "
+                        f"Expected {remote_agent_meta.agent_name}, got {loaded_remote_name}"
+                    )
 
         self.remote_connections[remote.name] = remote
 
         # Update the remote agent to engine mapping
-        for agent_meta in remote.agents_meta:
-            self.remote_agent_to_engine[agent_meta.agent_name] = remote.name
+        for replica_agents_meta in remote.agents_meta:
+            for agent_meta in replica_agents_meta:
+                self.remote_agent_to_engine[agent_meta.agent_name] = remote.name
 
     def initiate_send_transfer(
         self,
         remote_metadata: KVTransferEngineMetadata,
         src_idxs: list[int],
         dst_idxs: list[int],
+        src_replica_idx: int,
+        dst_replica_idx: int,
     ) -> TransferReqData:
-        """Initiate a transfer from current engine to remote engine for all tensors.
+        """Initiate a transfer from current engine to remote engine.
+
+        The same page indices are broadcast to all TP shards within the source and destination replicas.
 
         Args:
             remote_metadata: Metadata for the remote engine.
             src_idxs: List of indices of the source pages in the current engine.
             dst_idxs: List of indices of the destination pages in the remote engine.
+            src_replica_idx: Index of the source replica to transfer from.
+            dst_replica_idx: Index of the destination replica to transfer to.
         """
+        if not (0 <= src_replica_idx < self.dp):
+            raise ValueError(
+                f"src_replica_idx {src_replica_idx} must be between 0 and {self.dp - 1}"
+            )
+
+        if not (0 <= dst_replica_idx < len(remote_metadata.agents_meta)):
+            raise ValueError(
+                f"dst_replica_idx {dst_replica_idx} must be between 0 and {len(remote_metadata.agents_meta) - 1}"
+            )
 
         if remote_metadata.name not in self.remote_connections:
             raise ValueError(
@@ -516,11 +600,14 @@ class KVTransferEngine:
                     f"Destination index {dst_idx} must be between 0 and {remote.total_num_pages - 1}"
                 )
 
-        # Create transfers for all tensors
+        # Create transfers for all TP shards in the specified source replica
         transfer_name = str(uuid4())
         transfer_ids = []
 
-        for tensor_idx, ta in enumerate(self.tensor_agents):
+        # Get the remote destination replica's agent metadata
+        remote_replica_agents_meta = remote.agents_meta[dst_replica_idx]
+
+        for tp_idx, ta in enumerate(self.tensor_agents[src_replica_idx]):
             # Prepare source descriptor list
             descs_src: list[tuple[int, int, int]] = []
             for src_idx in src_idxs:
@@ -532,7 +619,7 @@ class KVTransferEngine:
 
             # Prepare destination descriptor list
             descs_dst: list[tuple[int, int, int]] = []
-            remote_agent_meta = remote.agents_meta[tensor_idx]
+            remote_agent_meta = remote_replica_agents_meta[tp_idx]
             for dst_idx in dst_idxs:
                 dst_addr = (
                     remote_agent_meta.base_addr + dst_idx * self.bytes_per_page
@@ -558,7 +645,7 @@ class KVTransferEngine:
 
             if status not in [nixl.Status.SUCCESS, nixl.Status.IN_PROG]:
                 raise ValueError(
-                    f"Transfer request failed with status {status} for tensor {tensor_idx}"
+                    f"Transfer request failed with status {status} for TP shard {tp_idx}"
                 )
 
             transfer_ids.append(transfer_id)
@@ -570,6 +657,8 @@ class KVTransferEngine:
             transfer_ids=transfer_ids,
             src_idxs=src_idxs,
             dst_idxs=dst_idxs,
+            src_replica_idx=src_replica_idx,
+            dst_replica_idx=dst_replica_idx,
         )
         self.inflight_send_transfers[transfer_name] = transfer_req
         return transfer_req
@@ -590,8 +679,12 @@ class KVTransferEngine:
         assert self._is_sender_of(transfer_req)
 
         is_complete = True
-        for tensor_idx, transfer_id in enumerate(transfer_req.transfer_ids):
-            agent = self.tensor_agents[tensor_idx].agent
+        src_replica_idx = transfer_req.src_replica_idx
+        tp_agents = self.tensor_agents[src_replica_idx]
+        for ta, transfer_id in zip(
+            tp_agents, transfer_req.transfer_ids, strict=True
+        ):
+            agent = ta.agent
             status = agent.get_transfer_status(transfer_id)
 
             if status == nixl.Status.SUCCESS:
@@ -601,7 +694,7 @@ class KVTransferEngine:
                 break
             else:
                 raise ValueError(
-                    f"Transfer request failed with status {status} for tensor {tensor_idx}"
+                    f"Transfer request failed with status {status} in source replica {src_replica_idx}"
                 )
 
         return is_complete
@@ -611,7 +704,10 @@ class KVTransferEngine:
         assert not self._is_sender_of(transfer_req)
 
         # Check what recv completion notifications have been received
-        for ta in self.tensor_agents:
+        # We only check agents in the specific destination replica for this transfer
+        dst_replica_idx = transfer_req.dst_replica_idx
+        tp_agents = self.tensor_agents[dst_replica_idx]
+        for ta in tp_agents:
             notifs = ta.agent.get_notifs()
             for remote_agent_name, notifications in notifs.items():
                 engine_name = self.remote_agent_to_engine[remote_agent_name]
@@ -621,12 +717,11 @@ class KVTransferEngine:
                         notif_decoded
                     ] += 1
 
-        # A recv is complete when we get num_agents notifications about it
-        num_agents = len(self.tensor_agents)
+        # A recv is complete when we get num_agents_per_replica notifications about it
         transfer_name = transfer_req.transfer_name
         return (
             self.completed_recv_transfers[transfer_req.src_name][transfer_name]
-            == num_agents
+            == self.tp
         )
 
     def is_complete(self, transfer_req: TransferReqData) -> bool:
@@ -681,8 +776,9 @@ class KVTransferEngine:
 
         del self.inflight_send_transfers[transfer_name]
 
-        for tensor_idx, transfer_id in enumerate(transfer_req.transfer_ids):
-            agent = self.tensor_agents[tensor_idx].agent
+        src_replica_idx = transfer_req.src_replica_idx
+        for tp_idx, transfer_id in enumerate(transfer_req.transfer_ids):
+            agent = self.tensor_agents[src_replica_idx][tp_idx].agent
             status = agent.release_transfer_request(transfer_id)
             if status != nixl.Status.SUCCESS:
                 raise ValueError(
@@ -726,22 +822,29 @@ class KVTransferEngine:
         # Invalidate metadata of other agents
         for remote_name in self.remote_connections:
             remote = self.remote_connections[remote_name]
-            # Invalidate for each agent pair
-            for i, (ta, remote_agent_meta) in enumerate(
-                zip(self.tensor_agents, remote.agents_meta, strict=True)
+            # Invalidate for each agent pair (all replicas)
+            for local_agents, remote_agents_meta in itertools.product(
+                self.tensor_agents, remote.agents_meta
             ):
-                status = ta.agent.invalidate_remote_metadata(
-                    remote_agent_meta.agent_name
+                # Connect each TP shard within the replica
+                for local_ta, remote_agent_meta in zip(
+                    local_agents,
+                    remote_agents_meta,
+                    strict=True,
+                ):
+                    status = local_ta.agent.invalidate_remote_metadata(
+                        remote_agent_meta.agent_name
+                    )
+                    if status != nixl.Status.SUCCESS:
+                        raise ValueError(
+                            f"Failed to invalidate metadata: {status}"
+                        )
+
+        # Deregister NIXL memory for all tensors (all replicas)
+        for replica_agents in self.tensor_agents:
+            for ta in replica_agents:
+                status = ta.agent.deregister_memory(
+                    ta.reg_dlist, [ta.ucx_backend]
                 )
                 if status != nixl.Status.SUCCESS:
-                    raise ValueError(
-                        f"Failed to invalidate metadata for agent {i}: {status}"
-                    )
-
-        # Deregister NIXL memory for all tensors
-        for i, ta in enumerate(self.tensor_agents):
-            status = ta.agent.deregister_memory(ta.reg_dlist, [ta.ucx_backend])
-            if status != nixl.Status.SUCCESS:
-                raise ValueError(
-                    f"Failed to deregister memory for tensor {i}: {status}"
-                )
+                    raise ValueError(f"Failed to deregister memory: {status}")

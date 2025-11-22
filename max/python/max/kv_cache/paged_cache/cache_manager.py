@@ -503,3 +503,7 @@ class PagedKVCacheManager:
         return self._replica_managers[replica_idx].block_manager.get_req_blocks(
             request_id
         )
+
+    @property
+    def device_tensors(self) -> list[list[Tensor]]:
+        return [manager.device_tensors for manager in self._replica_managers]

@@ -77,9 +77,10 @@ class PrefillScheduler(Scheduler):
             raise ValueError(
                 "PrefillScheduler does not support data parallelism"
             )
+
         self.transfer_engine = KVTransferEngine(
             name=f"prefill_agent_{uuid.uuid4()}",
-            tensors=paged_cache._replica_managers[0].device_tensors,
+            tensors=paged_cache.device_tensors,
             total_num_pages=paged_cache.total_num_pages,
         )
 
@@ -200,6 +201,8 @@ class PrefillScheduler(Scheduler):
                 remote_metadata,
                 src_idxs,
                 dst_idxs,
+                src_replica_idx=0,
+                dst_replica_idx=0,
             )
             self.active_transfers[req_id] = (context, transfer_data)
 
