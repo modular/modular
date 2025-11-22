@@ -38,8 +38,9 @@ def transfer_routine_sender(
         Tensor.from_numpy(tensor_1_data).to(device_1),
     ]
 
+    # DP=1, TP=2
     engine_1 = KVTransferEngine(
-        "engine_1", tensors_1, total_num_pages=total_num_pages
+        "engine_1", [tensors_1], total_num_pages=total_num_pages
     )
 
     sender_md_queue.put(engine_1.metadata)
@@ -49,7 +50,7 @@ def transfer_routine_sender(
     # Perform transfers
     start_time = time.time()
     transfer_req = engine_1.initiate_send_transfer(
-        remote_md, src_idxs, dst_idxs
+        remote_md, src_idxs, dst_idxs, src_replica_idx=0, dst_replica_idx=0
     )
     transfer_queue.put(transfer_req)
     engine_1.sync_and_release(transfer_req)
@@ -100,8 +101,9 @@ def transfer_routine_receiver(
         Tensor.from_numpy(tensor_1_data).to(device_3),
     ]
 
+    # DP=1, TP=2
     engine_2 = KVTransferEngine(
-        "engine_2", tensors_2, total_num_pages=total_num_pages
+        "engine_2", [tensors_2], total_num_pages=total_num_pages
     )
 
     receiver_md_queue.put(engine_2.metadata)

@@ -33,9 +33,9 @@ def transfer_routine_sender(
     blocks_np = np.full(total_bytes, 42, dtype=np.int8)
     blocks = Tensor.from_numpy(blocks_np).to(device)
 
-    # Create engine
+    # Create engine (DP=1, TP=1)
     engine = KVTransferEngine(
-        "engine_1", [blocks], total_num_pages=total_num_pages
+        "engine_1", [[blocks]], total_num_pages=total_num_pages
     )
 
     # Connect with peer
@@ -48,7 +48,9 @@ def transfer_routine_sender(
     transfer_reqs: list[TransferReqData] = []
 
     for idx in range(total_num_pages):
-        transfer_req = engine.initiate_send_transfer(remote_md, [idx], [idx])
+        transfer_req = engine.initiate_send_transfer(
+            remote_md, [idx], [idx], src_replica_idx=0, dst_replica_idx=0
+        )
         transfer_queue.put(transfer_req)
         transfer_reqs.append(transfer_req)
 
@@ -85,9 +87,9 @@ def transfer_routine_receiver(
     blocks_np = np.full(total_bytes, 99, dtype=np.int8)
     blocks = Tensor.from_numpy(blocks_np).to(device)
 
-    # Create engine
+    # Create engine (DP=1, TP=1)
     engine = KVTransferEngine(
-        "engine_2", [blocks], total_num_pages=total_num_pages
+        "engine_2", [[blocks]], total_num_pages=total_num_pages
     )
 
     # Connect with peer

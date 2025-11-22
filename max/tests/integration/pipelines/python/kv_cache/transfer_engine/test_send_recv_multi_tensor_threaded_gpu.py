@@ -37,9 +37,10 @@ def transfer_routine_sender(
         Tensor.from_numpy(t1).to(device_1),
     ]
 
+    # DP=1, TP=2 (2 GPUs in one replica)
     engine_1 = KVTransferEngine(
         "engine_1",
-        tensors_1,
+        [tensors_1],
         total_num_pages=total_num_pages,
     )
 
@@ -51,6 +52,8 @@ def transfer_routine_sender(
         remote_md,
         src_idxs=[0],
         dst_idxs=[0],
+        src_replica_idx=0,
+        dst_replica_idx=0,
     )
     transfer_queue_0.put(transfer_0)
 
@@ -58,6 +61,8 @@ def transfer_routine_sender(
         remote_md,
         src_idxs=[3, 4],
         dst_idxs=[3, 4],
+        src_replica_idx=0,
+        dst_replica_idx=0,
     )
     transfer_queue_1.put(transfer_1)
 
@@ -95,9 +100,10 @@ def transfer_routine_receiver(
         Tensor.from_numpy(t1).to(device_3),
     ]
 
+    # DP=1, TP=2 (2 GPUs in one replica)
     engine_2 = KVTransferEngine(
         "engine_2",
-        tensors_2,
+        [tensors_2],
         total_num_pages=total_num_pages,
     )
 

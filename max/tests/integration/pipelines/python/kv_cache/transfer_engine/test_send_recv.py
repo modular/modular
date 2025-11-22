@@ -28,8 +28,12 @@ def transfer_routine_sender(
     queue: Queue,
     src_idxs: list[int],
     dst_idxs: list[int],
+    src_replica_idx: int,
+    dst_replica_idx: int,
 ) -> None:
-    transfer_req = engine.initiate_send_transfer(remote, src_idxs, dst_idxs)
+    transfer_req = engine.initiate_send_transfer(
+        remote, src_idxs, dst_idxs, src_replica_idx, dst_replica_idx
+    )
     queue.put(transfer_req)
     engine.sync_and_release(transfer_req)
 
@@ -52,14 +56,15 @@ def test_send_recv_basic(device: Device) -> None:
         device
     )
 
+    # DP=1, TP=1
     engine_1 = KVTransferEngine(
         "engine_1",
-        blocks_1,
+        [[blocks_1]],  # Wrap single tensor in 2D list
         total_num_pages=total_num_pages,
     )
     engine_2 = KVTransferEngine(
         "engine_2",
-        blocks_2,
+        [[blocks_2]],  # Wrap single tensor in 2D list
         total_num_pages=total_num_pages,
     )
 
@@ -69,9 +74,19 @@ def test_send_recv_basic(device: Device) -> None:
     queue: Queue[TransferReqData] = Queue()
     src_idxs = [2, 2]
     dst_idxs = [1, 0]
+    src_replica_idx = 0
+    dst_replica_idx = 0
     thread_1 = Thread(
         target=transfer_routine_sender,
-        args=(engine_1, engine_2.metadata, queue, src_idxs, dst_idxs),
+        args=(
+            engine_1,
+            engine_2.metadata,
+            queue,
+            src_idxs,
+            dst_idxs,
+            src_replica_idx,
+            dst_replica_idx,
+        ),
     )
     thread_2 = Thread(target=transfer_routine_receiver, args=(engine_2, queue))
 

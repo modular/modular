@@ -42,9 +42,9 @@ def test_send_recv_basic() -> None:
         )
         blocks = Tensor.from_numpy(blocks_np).to(device)
 
-        # Create engine
+        # Create engine (DP=1, TP=1)
         engine = KVTransferEngine(
-            "engine_1", blocks, total_num_pages=total_num_pages
+            "engine_1", [[blocks]], total_num_pages=total_num_pages
         )
 
         # Connect with peer
@@ -54,7 +54,7 @@ def test_send_recv_basic() -> None:
 
         # Perform transfer
         transfer_req = engine.initiate_send_transfer(
-            remote_md, src_idxs, dst_idxs
+            remote_md, src_idxs, dst_idxs, src_replica_idx=0, dst_replica_idx=0
         )
         transfer_queue.put(transfer_req)
 
@@ -93,9 +93,9 @@ def test_send_recv_basic() -> None:
         )
         blocks = Tensor.from_numpy(blocks_np).to(device)
 
-        # Create engine
+        # Create engine (DP=1, TP=1)
         engine = KVTransferEngine(
-            "engine_2", blocks, total_num_pages=total_num_pages
+            "engine_2", [[blocks]], total_num_pages=total_num_pages
         )
 
         # Connect with peer

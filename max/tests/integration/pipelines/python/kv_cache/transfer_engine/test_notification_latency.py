@@ -43,9 +43,10 @@ def test_notification_delivery_is_prompt() -> None:
             np.ones((num_blocks, bytes_per_block), dtype=np.int8)
         ).to(acc)
 
+        # DP=1, TP=1
         engine = KVTransferEngine(
             name="latency_sender",
-            tensors=[blocks],
+            tensors=[[blocks]],
             total_num_pages=blocks.shape[0],
         )
 
@@ -58,7 +59,7 @@ def test_notification_delivery_is_prompt() -> None:
         src_idxs = [0, 1, 2]
         dst_idxs = [0, 1, 2]
         transfer_req = engine.initiate_send_transfer(
-            remote_md, src_idxs, dst_idxs
+            remote_md, src_idxs, dst_idxs, src_replica_idx=0, dst_replica_idx=0
         )
         transfer_queue.put(transfer_req)
 
@@ -82,9 +83,10 @@ def test_notification_delivery_is_prompt() -> None:
             np.ones((num_blocks, bytes_per_block), dtype=np.int8)
         ).to(acc)
 
+        # DP=1, TP=1
         engine = KVTransferEngine(
             name="latency_receiver",
-            tensors=[blocks],
+            tensors=[[blocks]],
             total_num_pages=blocks.shape[0],
         )
 

@@ -37,10 +37,10 @@ def transfer_routine_sender(
     blocks_np = np.full(total_bytes, 42, dtype=np.int8)
     blocks = Tensor.from_numpy(blocks_np).to(device)
 
-    # Create engine
+    # Create engine (DP=1, TP=1)
     engine = KVTransferEngine(
         "engine_1",
-        blocks,
+        [[blocks]],
         total_num_pages=total_num_pages,
     )
 
@@ -51,7 +51,9 @@ def transfer_routine_sender(
 
     # Perform transfer
     t0 = time.time()
-    transfer_req = engine.initiate_send_transfer(remote_md, src_idxs, dst_idxs)
+    transfer_req = engine.initiate_send_transfer(
+        remote_md, src_idxs, dst_idxs, src_replica_idx=0, dst_replica_idx=0
+    )
     transfer_queue.put(transfer_req)
     engine.sync_and_release(transfer_req)
     t1 = time.time()
@@ -92,10 +94,10 @@ def transfer_routine_receiver(
     blocks_np = np.full(total_bytes, 99, dtype=np.int8)
     blocks = Tensor.from_numpy(blocks_np).to(device)
 
-    # Create engine
+    # Create engine (DP=1, TP=1)
     engine = KVTransferEngine(
         "engine_2",
-        blocks,
+        [[blocks]],
         total_num_pages=total_num_pages,
     )
 
