@@ -64,6 +64,10 @@ static ArrayElementsAttr convertSIMDToVectorAttr(SIMDAttr simd, VectorType type,
 }
 
 OpFoldResult POP::foldCastToBuiltin(TypedAttr input, Type resultType) {
+  if (auto cast = dyn_cast_if_present<CastFromBuiltinAttr>(input))
+    if (cast.getArg().getType() == resultType)
+      return cast.getArg();
+
   auto simd = dyn_cast_if_present<POP::SIMDAttr>(input);
   if (!simd)
     return {};
@@ -104,6 +108,10 @@ OpFoldResult POP::foldCastToBuiltin(TypedAttr input, Type resultType) {
 }
 
 OpFoldResult POP::foldCastFromBuiltin(TypedAttr val, SIMDType resultType) {
+  if (auto cast = dyn_cast_if_present<CastToBuiltinAttr>(val))
+    if (cast.getArg().getType() == resultType)
+      return cast.getArg();
+
   // Ensure the incoming value is an expected constant kind.
   if (!isa<IntArrayElementsAttr, FloatArrayElementsAttr, IndexArrayElementsAttr,
            IntegerAttr, FloatAttr>(val))
