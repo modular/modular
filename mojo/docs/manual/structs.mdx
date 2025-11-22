@@ -107,6 +107,8 @@ For example, here's the standard way to call a function:
 ```mojo title="Calling a function"
 def process_pair(pair: MyPair):
     ...
+
+process_pair(MyPair(2, 4))
 ```
 
 Because `process_pair` expects a `MyPair` instance, Mojo infers that
