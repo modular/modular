@@ -19,7 +19,7 @@ from max.experimental.tensor import Tensor
 
 
 def test_anonymous_tensors() -> None:
-    def build_graph():
+    def build_graph() -> Tensor:
         return Tensor.ones((2, 2)) + 3.0
 
     z = build_graph()
