@@ -1376,8 +1376,10 @@ class ComputeGraph:
     """
 
     graph: graph.Graph
-    #: Keeps a strong reference to tensor data that we need to compute graph values
-    sources: dict[_core.Value[Any], Tensor]
+    #: Keeps a weak reference to tensor data that we need to compute graph values
+    sources: weakref.WeakValueDictionary[_core.Value[Any], Tensor]
+    #: Keeps a strong reference to tensors that are part of the current graph
+    _current_graph_refs: list[Tensor]
     #: Keeps weak references to intermediate unrealized tensor values, which may
     #: never need to be realized.
     unrealized: weakref.WeakValueDictionary[int, Tensor]
@@ -1389,7 +1391,8 @@ class ComputeGraph:
         seed: int = 0,
     ):
         self.context = context or mlir.Context()
-        self.sources = {}
+        self.sources = weakref.WeakValueDictionary()
+        self._current_graph_refs = []
 
         self.unrealized = weakref.WeakValueDictionary()
         self.graph = graph.Graph("main", input_types=[], context=self.context)
@@ -1495,6 +1498,7 @@ class ComputeGraph:
                 block.add_argument(type, _location())
             )
         self.sources[tensor._value._mlir_value] = tensor
+        self._current_graph_refs.append(tensor)
 
     def add_unrealized(self, tensor: Tensor) -> None:
         self.unrealized[id(tensor)] = tensor
