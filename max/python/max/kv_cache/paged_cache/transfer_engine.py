@@ -21,11 +21,12 @@ import random
 import socket
 import time
 from collections import defaultdict
+from dataclasses import dataclass
 from uuid import uuid4
 
 import msgspec
 from max._core import nixl
-from max.driver.tensor import Tensor
+from max.driver import Device, Tensor
 
 logger = logging.getLogger("max.pipelines")
 
@@ -60,6 +61,82 @@ def available_port(
     raise RuntimeError("No available port found in the specified range.")
 
 
+def _validate_device_type(devices: list[Device]) -> None:
+    is_gpu = False
+    is_cpu = False
+    for d in devices:
+        if d.is_host:
+            is_cpu = True
+        else:
+            is_gpu = True
+
+    if is_cpu and is_gpu:
+        raise ValueError(
+            "Mixed device tensors detected. All tensors must be either on CPU or GPU, not both."
+        )
+
+    if is_gpu and len(devices) != len(set(d.id for d in devices)):
+        raise ValueError("All tensors must be on different GPUs.")
+
+    if is_cpu and len(devices) != 1:
+        raise ValueError("CPU transfer engine must have exactly one tensor.")
+
+    first_device = devices[0]
+    if first_device.api == "hip":
+        raise NotImplementedError("Currently UCX does not support HIP devices.")
+
+    if not first_device.is_host and (
+        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT" not in os.environ
+        and "BAZEL_TEST" not in os.environ
+    ):
+        # See GEX-2445 for more details.
+        # We intentionally make falling back to the slower CUDA_COPY transport
+        # a hard error. This check is best effort. Just because it is not
+        # tripped does not guarantee that the we will end up using CUDA_IPC.
+        # Note that we will use BufferCache regardless when running under
+        # bazel test.
+        raise ValueError(
+            "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT must be set when using TransferEngine with GPU memory. "
+            "This flag enables the BufferCache which is required for the fast CUDA_IPC transport. "
+            "Try rerunning your command with MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT=99"
+        )
+
+
+def _validate_tensor_shape(
+    tensors: list[Tensor], total_num_pages: int
+) -> tuple[int, int]:
+    # Validate all tensors have the same shape
+    first_tensor = tensors[0]
+    if len(tensors) > 1:
+        first_shape = first_tensor.num_elements
+        first_dtype = first_tensor.dtype
+
+        for i, tensor in enumerate(tensors[1:], 1):
+            if tensor.num_elements != first_shape:
+                raise ValueError(
+                    f"All tensors must have the same shape. Tensor 0 has {first_shape} elements, but Tensor {i} has {tensor.num_elements} elements"
+                )
+            if tensor.dtype != first_dtype:
+                raise ValueError(
+                    f"All tensors must have the same dtype. Tensor 0 has {first_dtype}, but Tensor {i} has {tensor.dtype}"
+                )
+
+    for i, tensor in enumerate(tensors):
+        if tensor.num_elements % total_num_pages != 0:
+            raise ValueError(
+                f"Tensor {i} num elements {tensor.num_elements} must be divisible by total number of pages {total_num_pages}"
+            )
+
+    # Calculate bytes per page
+    bytes_per_page = (
+        first_tensor.num_elements
+        * first_tensor.dtype.size_in_bytes
+        // total_num_pages
+    )
+    elts_per_page = first_tensor.num_elements // total_num_pages
+    return bytes_per_page, elts_per_page
+
+
 class TensorAgentMetadata(
     msgspec.Struct, tag=True, kw_only=True, omit_defaults=True
 ):
@@ -68,13 +145,20 @@ class TensorAgentMetadata(
     This is used for serialization and communication between engines.
     """
 
-    metadata: bytes  # Metadata for this agent
-    agent_name: str  # Agent name for this tensor
-    bytes_per_page: int  # Bytes per page for this tensor
-    base_addr: int  # Base memory address for this tensor
-    device_id: int  # Device ID for this tensor
+    agent_name: str
+    """Name of this agent."""
+
+    metadata: bytes
+    """Metadata for this agent."""
+
+    base_addr: int
+    """Base memory address for this tensor."""
+
+    device_id: int
+    """Device ID for this tensor."""
 
 
+@dataclass
 class TensorAgent:
     """Manages a single tensor and its associated NIXL agent for transfers.
 
@@ -82,34 +166,109 @@ class TensorAgent:
     the serializable metadata for communication between engines.
     """
 
-    def __init__(
-        self,
-        agent: nixl.Agent,
+    agent: nixl.Agent
+    """NIXL agent for this tensor."""
+
+    agent_name: str
+    """Name of this agent."""
+
+    tensor: Tensor
+    """Tensor for this agent."""
+
+    base_addr: int
+    """Base memory address for this tensor."""
+
+    ucx_backend: int
+    """UCX backend for this tensor."""
+
+    device_id: int
+    """Device ID for this tensor."""
+
+    agent_metadata: bytes
+    """Metadata for this agent."""
+
+    reg_dlist: nixl.RegistrationDescriptorList
+    """Registration descriptor list for this tensor."""
+
+    @classmethod
+    def create_agent(
+        cls,
         agent_name: str,
+        listen_port: int,
         tensor: Tensor,
-        base_addr: int,
-        ucx_backend: int,
-        bytes_per_page: int,
-        device_id: int,
-        agent_metadata: bytes,
-        reg_dlist: nixl.RegistrationDescriptorList,
-    ):
-        self.agent = agent
-        self.agent_name = agent_name
-        self.tensor = tensor
-        self.base_addr = base_addr
-        self.ucx_backend = ucx_backend
-        self.bytes_per_page = bytes_per_page
-        self.device_id = device_id
-        self.agent_metadata = agent_metadata
-        self.reg_dlist = reg_dlist
+        total_num_pages: int,
+        elts_per_page: int,
+        memory_type: nixl.MemoryType,
+    ) -> TensorAgent:
+        # Create NIXL agent
+        agent = nixl.Agent(
+            agent_name,
+            nixl.AgentConfig(
+                # Always use progress thread.
+                # - It helps with async notification delivery.
+                # - It enables overlapping transfers from multiple agents.
+                use_prog_thread=True,
+                use_listen_thread=True,
+                listen_port=listen_port,
+            ),
+        )
+
+        # Reshape tensor to 2D view
+        tensor_2d = tensor.view(tensor.dtype, (total_num_pages, elts_per_page))
+
+        # Check UCX availability
+        if "ucx" not in agent.get_available_plugins():
+            raise RuntimeError(
+                f"UCX not currently available for agent {agent_name}, please ensure it is supported by your system."
+            )
+
+        # Configure UCX backend
+        device = tensor.device
+        ucx_params = agent.get_plugin_params("ucx")[0]
+        if not device.is_host:
+            ucx_params["gpu_device_id"] = str(device.id)
+
+        # Create UCX backend
+        ucx_backend = agent.create_backend(
+            type="ucx",
+            init_params=ucx_params,
+        )
+
+        # Register memory
+        base_addr = tensor._data_ptr()
+        num_bytes = tensor.num_elements * tensor.dtype.size_in_bytes
+
+        descs = [(base_addr, num_bytes, device.id, "")]
+        reg_dlist = nixl.RegistrationDescriptorList(
+            type=memory_type, descs=descs
+        )
+
+        status = agent.register_memory(reg_dlist, [ucx_backend])
+        if status != nixl.Status.SUCCESS:
+            raise ValueError(
+                f"Failed to register memory for {agent_name}: {status}"
+            )
+
+        # Get metadata after registration
+        agent_metadata = agent.get_local_metadata()
+
+        # Create TensorAgent and add to list
+        return TensorAgent(
+            agent=agent,
+            agent_name=agent_name,
+            tensor=tensor_2d,
+            base_addr=base_addr,
+            ucx_backend=ucx_backend,
+            device_id=device.id,
+            agent_metadata=agent_metadata,
+            reg_dlist=reg_dlist,
+        )
 
     def to_metadata(self) -> TensorAgentMetadata:
         """Convert to serializable metadata for communication."""
         return TensorAgentMetadata(
-            metadata=self.agent_metadata,
             agent_name=self.agent_name,
-            bytes_per_page=self.bytes_per_page,
+            metadata=self.agent_metadata,
             base_addr=self.base_addr,
             device_id=self.device_id,
         )
@@ -122,10 +281,20 @@ class KVTransferEngineMetadata(
 
     This is safe to send between threads/processes."""
 
-    name: str  # Base name of the transfer engine
+    name: str
+    """Base name of the transfer engine."""
+
     total_num_pages: int
+    """Total number of pages in each tensor."""
+
+    bytes_per_page: int
+    """Bytes per page for each tensor."""
+
     memory_type: nixl.MemoryType
-    agents_meta: list[TensorAgentMetadata]  # Metadata for each tensor/agent
+    """Memory type of the transfer engine."""
+
+    agents_meta: list[TensorAgentMetadata]
+    """Metadata for each tensor/agent."""
 
 
 class TransferReqData(
@@ -135,16 +304,23 @@ class TransferReqData(
 
     This is safe to send between threads/processes."""
 
-    dst_name: str  # Base name of destination engine
-    src_name: str  # Base name of source engine
-    transfer_name: str  # Transfer name
-    transfer_ids: list[int]  # Transfer IDs (one per tensor)
-    src_idxs: list[
-        int
-    ]  # Length of source indices can differ from len(transfer_ids)
-    dst_idxs: list[
-        int
-    ]  # Length of destination indices can differ from len(transfer_ids)
+    dst_name: str
+    """Base name of destination engine."""
+
+    src_name: str
+    """Base name of source engine."""
+
+    transfer_name: str
+    """Transfer name."""
+
+    transfer_ids: list[int]
+    """Transfer IDs (one per tensor)."""
+
+    src_idxs: list[int]
+    """Length of source indices can differ from len(transfer_ids)."""
+
+    dst_idxs: list[int]
+    """Length of destination indices can differ from len(transfer_ids)."""
 
 
 class KVTransferEngine:
@@ -165,6 +341,9 @@ class KVTransferEngine:
 
     total_num_pages: int
     """Total number of pages in each tensor."""
+
+    bytes_per_page: int
+    """Bytes per page for each tensor."""
 
     memory_type: nixl.MemoryType
     """Type of memory being managed (e.g. DRAM)."""
@@ -187,7 +366,6 @@ class KVTransferEngine:
         tensors: Tensor | list[Tensor],
         *,
         total_num_pages: int,
-        listen_port: int | None = None,
     ) -> None:
         if total_num_pages <= 0:
             raise ValueError(
@@ -196,164 +374,30 @@ class KVTransferEngine:
 
         tensors = [tensors] if isinstance(tensors, Tensor) else tensors
         self.num_tensors = len(tensors)
-        is_gpu = False
-        is_cpu = False
-        for t in tensors:
-            if t.device.is_host:
-                is_cpu = True
-            else:
-                is_gpu = True
 
-            if is_cpu and is_gpu:
-                raise ValueError(
-                    "Mixed device tensors detected. All tensors must be either on CPU or GPU, not both."
-                )
-
-        if is_gpu:
-            if len(tensors) != len(set(t.device.id for t in tensors)):
-                raise ValueError("All tensors must be on different GPUs.")
-
-        if is_cpu:
-            if len(tensors) != 1:
-                raise ValueError(
-                    "CPU transfer engine must have exactly one tensor."
-                )
-
-        # Validate all tensors have the same shape
-        if self.num_tensors > 1:
-            first_shape = tensors[0].num_elements
-            for i, tensor in enumerate(tensors[1:], 1):
-                if tensor.num_elements != first_shape:
-                    raise ValueError(
-                        f"All tensors must have the same shape. Tensor 0 has {first_shape} elements, but tensor {i} has {tensor.num_elements} elements"
-                    )
-
-        for i, tensor in enumerate(tensors):
-            if tensor.num_elements % total_num_pages != 0:
-                raise ValueError(
-                    f"Tensor {i} num elements {tensor.num_elements} must be divisible by total number of pages {total_num_pages}"
-                )
-
-        device = tensors[0].device
-        if device.api == "hip":
-            raise NotImplementedError(
-                "Currently UCX does not support HIP devices."
-            )
-
-        # Initialize the transfer engine
-        self.name = name
-        self.tensor_agents = []
+        _validate_device_type([t.device for t in tensors])
+        self.bytes_per_page, elts_per_page = _validate_tensor_shape(
+            tensors, total_num_pages
+        )
 
         # Set memory type and total pages
         self.total_num_pages = total_num_pages
+        is_cpu = tensors[0].device.is_host
         self.memory_type = (
             nixl.MemoryType.DRAM if is_cpu else nixl.MemoryType.VRAM
         )
 
-        # Create agents and process each tensor
+        # Create agents for each tensor
+        self.name = name
+        self.tensor_agents = []
         for i, tensor in enumerate(tensors):
-            # Create agent name
-            agent_name = f"{name}_{i}" if self.num_tensors > 1 else name
-
-            # Create NIXL agent
-            agent = nixl.Agent(
-                agent_name,
-                nixl.AgentConfig(
-                    # Always use progress thread.
-                    # - It helps with async notification delivery.
-                    # - It enables overlapping transfers from multiple agents.
-                    use_prog_thread=True,
-                    use_listen_thread=True,
-                    listen_port=listen_port + i
-                    if listen_port
-                    else available_port(),
-                ),
-            )
-
-            # Calculate bytes per page
-            bytes_per_page = (
-                tensor.num_elements
-                * tensor.dtype.size_in_bytes
-                // total_num_pages
-            )
-            elts_per_page = tensor.num_elements // total_num_pages
-
-            # Reshape tensor to 2D view
-            tensor_2d = tensor.view(
-                tensor.dtype, (self.total_num_pages, elts_per_page)
-            )
-
-            # Check UCX availability
-            if "ucx" not in agent.get_available_plugins():
-                raise RuntimeError(
-                    f"UCX not currently available for agent {agent_name}, please ensure it is supported by your system."
-                )
-
-            # Configure UCX backend
-            device = tensor.device
-            ucx_params = agent.get_plugin_params("ucx")[0]
-            if not device.is_host:
-                ucx_params["gpu_device_id"] = str(device.id)
-
-            # Create UCX backend
-            ucx_backend = agent.create_backend(
-                type="ucx",
-                init_params=ucx_params,
-            )
-
-            if not device.is_host and (
-                "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT"
-                not in os.environ
-                and "BAZEL_TEST" not in os.environ
-            ):
-                # See GEX-2445 for more details.
-                # We intentionally make falling back to the slower CUDA_COPY transport
-                # a hard error. This check is best effort. Just because it is not
-                # tripped does not guarantee that the we will end up using CUDA_IPC.
-                # Note that we will use BufferCache regardless when running under
-                # bazel test.
-                raise ValueError(
-                    "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT must be set when using TransferEngine with GPU memory. "
-                    "This flag enables the BufferCache which is required for the fast CUDA_IPC transport. "
-                    "Try rerunning your command with MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT=99"
-                )
-
-            # Register memory
-            base_addr = tensor._data_ptr()
-            num_bytes = tensor.num_elements * tensor.dtype.size_in_bytes
-
-            reg_dlist = nixl.RegistrationDescriptorList(
-                type=self.memory_type,
-                descs=[
-                    (
-                        base_addr,
-                        num_bytes,
-                        device.id,
-                        "",
-                    )
-                ],
-            )
-
-            status = agent.register_memory(reg_dlist, [ucx_backend])
-            if status != nixl.Status.SUCCESS:
-                raise ValueError(
-                    f"Failed to register memory for tensor {i}: {status}"
-                )
-
-            # Get metadata after registration
-            agent_metadata = agent.get_local_metadata()
-
-            # Create TensorAgent and add to list
-            tensor_agent = TensorAgent(
-                agent=agent,
-                agent_name=agent_name,
-                tensor=tensor_2d,
-                base_addr=base_addr,
-                ucx_backend=ucx_backend,
-                bytes_per_page=bytes_per_page,
-                device_id=device.id,
-                agent_metadata=agent_metadata,
-                reg_dlist=reg_dlist,
+            tensor_agent = TensorAgent.create_agent(
+                agent_name=f"{name}_{i}",
+                listen_port=available_port(),
+                tensor=tensor,
+                total_num_pages=total_num_pages,
+                elts_per_page=elts_per_page,
+                memory_type=self.memory_type,
             )
             self.tensor_agents.append(tensor_agent)
 
@@ -381,6 +425,7 @@ class KVTransferEngine:
         return KVTransferEngineMetadata(
             name=self.name,
             total_num_pages=self.total_num_pages,
+            bytes_per_page=self.bytes_per_page,
             memory_type=self.memory_type,
             agents_meta=agents_meta,
         )
@@ -399,14 +444,14 @@ class KVTransferEngine:
                 f"Number of tensors mismatch: {self.num_tensors} != {len(remote.agents_meta)}"
             )
 
+        if self.bytes_per_page != remote.bytes_per_page:
+            raise ValueError(
+                f"Bytes per page mismatch: {self.bytes_per_page} != {remote.bytes_per_page}"
+            )
+
         for i, (local_ta, remote_agent_meta) in enumerate(
             zip(self.tensor_agents, remote.agents_meta, strict=True)
         ):
-            if local_ta.bytes_per_page != remote_agent_meta.bytes_per_page:
-                raise ValueError(
-                    f"Bytes per page mismatch for tensor {i}: {local_ta.bytes_per_page} != {remote_agent_meta.bytes_per_page}"
-                )
-
             loaded_bytes = local_ta.agent.load_remote_metadata(
                 remote_agent_meta.metadata
             )
@@ -479,8 +524,8 @@ class KVTransferEngine:
             # Prepare source descriptor list
             descs_src: list[tuple[int, int, int]] = []
             for src_idx in src_idxs:
-                src_addr = ta.base_addr + src_idx * ta.bytes_per_page
-                descs_src.append((src_addr, ta.bytes_per_page, ta.device_id))
+                src_addr = ta.base_addr + src_idx * self.bytes_per_page
+                descs_src.append((src_addr, self.bytes_per_page, ta.device_id))
             transfer_dlist_src = nixl.TransferDescriptorList(
                 type=self.memory_type, descs=descs_src
             )
@@ -490,10 +535,10 @@ class KVTransferEngine:
             remote_agent_meta = remote.agents_meta[tensor_idx]
             for dst_idx in dst_idxs:
                 dst_addr = (
-                    remote_agent_meta.base_addr + dst_idx * ta.bytes_per_page
+                    remote_agent_meta.base_addr + dst_idx * self.bytes_per_page
                 )
                 descs_dst.append(
-                    (dst_addr, ta.bytes_per_page, remote_agent_meta.device_id)
+                    (dst_addr, self.bytes_per_page, remote_agent_meta.device_id)
                 )
             transfer_dlist_dst = nixl.TransferDescriptorList(
                 type=remote.memory_type, descs=descs_dst
