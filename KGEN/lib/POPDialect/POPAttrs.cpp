@@ -1958,9 +1958,10 @@ LogicalResult SIMDXorAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 //===----------------------------------------------------------------------===//
 
 TypedAttr SIMDCmpAttr::get(MLIRContext *ctx, NormalizedCmpPredicate cc,
-                           TypedAttr lhs, TypedAttr rhs, Type outType) {
+                           TypedAttr lhs, TypedAttr rhs, Type outTypeS) {
+  auto outType = cast<SIMDType>(outTypeS);
   // Fold if possible; we must know the DTypes to do this.
-  if (auto outDType = cast<SIMDType>(outType).getResolvedDType(),
+  if (auto outDType = outType.getResolvedDType(),
       inDType = cast<SIMDType>(lhs.getType()).getResolvedDType();
       outDType && inDType && outDType->isBool()) {
     bool isSignedCompare = inDType->isSInt();
@@ -1988,6 +1989,36 @@ TypedAttr SIMDCmpAttr::get(MLIRContext *ctx, NormalizedCmpPredicate cc,
                                                    intCompare, boolCompare)) {
       if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
         return ret;
+    }
+
+    // If either input is a cast_from_builtin, then the width is 1 and we can
+    // perform this as a ParameterOperatorAttr comparison to crush the
+    // conversions away.
+    if (outType.isScalar()) {
+      Type builtinType;
+      if (auto cast = dyn_cast_if_present<CastFromBuiltinAttr>(lhs))
+        builtinType = cast.getArg().getType();
+      else if (auto cast = dyn_cast_if_present<CastFromBuiltinAttr>(rhs))
+        builtinType = cast.getArg().getType();
+      if (builtinType) {
+        lhs = CastToBuiltinAttr::get(lhs, builtinType);
+        rhs = CastToBuiltinAttr::get(rhs, builtinType);
+        POC cmpPred;
+        switch (cc) {
+        case NormalizedCmpPredicate::EQ:
+          cmpPred = POC::EQ;
+          break;
+        case NormalizedCmpPredicate::LT:
+          cmpPred = POC::LT;
+          break;
+        case NormalizedCmpPredicate::LE:
+          cmpPred = POC::LE;
+          break;
+        }
+        // Get as i1 and then convert to SsIMD<i1, 1>
+        auto i1Val = ParamOperatorAttr::get(cmpPred, {lhs, rhs});
+        return CastFromBuiltinAttr::get(i1Val, outType);
+      }
     }
   }
   return Base::get(ctx, cc, lhs, rhs, outType);

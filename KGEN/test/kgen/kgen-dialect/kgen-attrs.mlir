@@ -324,3 +324,14 @@ kgen.generator @closureSymbol(){
   // CHECK: e = #pop<simd true> : !pop.scalar<bool>
   e = #pop.simd_cmp<le, #pop<simd 42> : !pop.scalar<si32>, #pop<simd 42> : !pop.scalar<si32>> : !pop.scalar<bool>
 } : () -> ()
+
+// CHECK-LABEL: @simd_cmp_folding
+kgen.generator @simd_cmp_folding<dt: dtype>() {
+  // CHECK-NEXT: kgen.param.if <eq(:ui8 #pop.dtype_to_ui8<dtype>, 1)> {
+  kgen.param.if <#pop.cast_to_builtin<#pop.simd_cmp<eq, #pop.cast_from_builtin<#pop.dtype_to_ui8<dtype> : ui8> : !pop.scalar<ui8>, #pop<simd 1> : !pop.scalar<ui8>> : !pop.scalar<bool>>> {
+    kgen.param.yield
+  } else {
+    kgen.param.yield
+  }
+  kgen.unreachable
+}
