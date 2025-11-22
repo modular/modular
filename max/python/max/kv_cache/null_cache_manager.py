@@ -77,11 +77,11 @@ class NullKVCacheManager:
 
         logger.info("Using NullKVCacheManager for compile-only mode")
 
-    def get_replica(self, context: TextGenerationContext) -> int:
+    def get_replica(self, request_id: RequestID) -> int:
         """Gets the replica index for a request context.
 
         Args:
-            context: The text generation context containing the request.
+            request_id: The request ID to get the replica for.
 
         Returns:
             Always returns 0, as the null cache manager operates in single-replica mode.

@@ -51,13 +51,15 @@ class PrefillRequest(
         id: Unique identifier for this request
         context: The input context containing the request data and state
         transfer_engine_name: Name of the transfer engine to use for KV cache transfers
-        block_ids: List of block IDs allocated for KV cache storage
+        dst_block_ids: List of block IDs allocated for KV cache storage on Decode
+        dst_replica_idx: The replica the request is on Decode
     """
 
     id: RequestID
     context: TextContext | TextAndVisionContext
     transfer_engine_name: str
-    block_ids: list[int]
+    dst_block_ids: list[int]
+    dst_replica_idx: int
 
 
 class PrefillResponse(
