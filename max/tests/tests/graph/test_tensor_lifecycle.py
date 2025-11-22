@@ -35,7 +35,7 @@ def test_tensor_lifecycle_garbage_collection() -> None:
 
     # Trigger execution. 't' is migrated to the fresh graph.
     str(t + 1.0)
-    
+
     t = t * 2
     # Old 't' is currently held by the idle graph's safety list.
     # Trigger one more execution to flush the list.
