@@ -25,8 +25,8 @@ def test_anonymous_tensors() -> None:
     z = build_graph()
     gc.collect()
 
-    val = str(z[0, 0].item())
-    assert val == "4.0"
+    val = z[0, 0].item()
+    assert val == 4.0
 
 
 def test_tensor_lifecycle_garbage_collection() -> None:
@@ -39,7 +39,8 @@ def test_tensor_lifecycle_garbage_collection() -> None:
     t = t * 2
     # Old 't' is currently held by the idle graph's safety list.
     # Trigger one more execution to flush the list.
-    str(t)
-    gc.collect()
+    val = t[0, 0].item()
+    assert val == 2.0
 
+    gc.collect()
     assert t_ref() is None
