@@ -338,6 +338,13 @@ struct PParamNode : public ParamNodeBase {
   /// ParamNodeRuntime.
   void andThenAsync(AsyncValue::Waiter &&waiter);
 
+  /// Construct the async value. This will notify waiters.
+  void emplace();
+
+  /// Construct the async value to error state. This is used when we want to
+  /// abandon uncompleted tasks.
+  void setToError();
+
 private:
   /// The runtime manages the set of tasks kicked off in a given process. The
   /// ParamNode alerts the runtime upon creation and completion of tasks so that

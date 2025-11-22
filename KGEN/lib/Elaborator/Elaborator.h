@@ -65,6 +65,12 @@ struct ExpansionGraph {
   std::atomic<size_t> numOutstandingResources = 1;
   /// If quiesce() has been called, the chain it returned. Otherwise null.
   AsyncValueRef<Chain> quiesceChain;
+
+  // A flag to indicate whether we should erase the InstatnatedOpInterfaces
+  // in the ImplNodes of this graph after elaboration is done.
+  // Set to true if elaboration failed to erase those ops which are not tracked
+  // in the MLIR module to avoid memory leak.
+  bool eraseNodeInst = false;
 };
 
 //===----------------------------------------------------------------------===//

@@ -147,13 +147,6 @@ struct ParamNodeBase {
   /// invocation.
   StringAttr getMangledName();
 
-  /// Construct the async value. This will notify waiters.
-  void emplace();
-
-  /// Construct the async value to error state. This is used when we want to
-  /// abandon uncompleted tasks.
-  void setToError();
-
   /// An async value is ready if the underlying async value is in Active or
   /// Error state.
   bool getIsError() const { return done == DoneState::ERROR; }

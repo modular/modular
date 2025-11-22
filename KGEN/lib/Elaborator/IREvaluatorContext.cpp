@@ -31,17 +31,7 @@ void ImplNodeBase::initialize(InstantiatedOpInterface inst,
 // ParamNodeBase
 //===----------------------------------------------------------------------===//
 
-void ParamNodeBase::emplace() {
-  if (done.exchange(DoneState::DONE) == DoneState::NOT_DONE)
-    paramCh.copy().emplace();
-}
-
 AsyncValueRef<Chain> ParamNodeBase::copy() const { return paramCh.copy(); }
-
-void ParamNodeBase::setToError() {
-  if (done.exchange(DoneState::ERROR) == DoneState::NOT_DONE)
-    paramCh.copy().emplace();
-}
 
 StringAttr ParamNodeBase::getMangledName() {
   // Check cached result.
