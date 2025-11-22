@@ -121,7 +121,7 @@ def top_k():
     var b = Bench()
     var flops = ThroughputMeasure(BenchMetric.flops, els * log2_floor(K))
     var elements = ThroughputMeasure(BenchMetric.elements, els)
-    var metrics = List(flops, elements)
+    var metrics = [flops, elements]
 
     @parameter
     def top_k_cpu():
@@ -177,7 +177,7 @@ def matmul():
     var bench = Bench()
     var flops = ThroughputMeasure(BenchMetric.flops, FLOPS)
     var elements = ThroughputMeasure(BenchMetric.elements, M * N)
-    var metrics = List(flops, elements)
+    var metrics = [flops, elements]
 
     @parameter
     def matmul_cpu():
@@ -242,7 +242,7 @@ def tensor_core_mma():
     var bench = Bench()
     var flops = ThroughputMeasure(BenchMetric.flops, FLOPS)
     var elements = ThroughputMeasure(BenchMetric.elements, M * N)
-    var metrics = List(flops, elements)
+    var metrics = [flops, elements]
 
     alias perform_validation = False
 

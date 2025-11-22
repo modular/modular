@@ -30,7 +30,7 @@ alias wgmma_shape[wgmma_n: Int] = Index(64, wgmma_n, 16)
 
 def main():
     with DeviceContext() as ctx:
-        alias wgmma_n = List[Int](128, 256)
+        alias wgmma_n: List[Int] = [128, 256]
 
         @parameter
         for i in range(len(wgmma_n)):

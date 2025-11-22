@@ -141,7 +141,7 @@ fn test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
     var simple_func = ctx.compile_function[occupancy_test_kernel]()
 
     # Test with different block sizes
-    var block_sizes = List[Int](32, 64, 128, 256, 512, 1024)
+    var block_sizes: List[Int] = [32, 64, 128, 256, 512, 1024]
 
     print("\nTesting occupancy with different block sizes (no shared memory):")
     for i in range(len(block_sizes)):
@@ -171,9 +171,14 @@ fn test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
     var shared_func = ctx.compile_function[shared_memory_kernel]()
 
     print("\nTesting occupancy with different shared memory sizes:")
-    var shared_memory_sizes = List[Int](
-        0, 1024, 4096, 8192, 16384, 32768
-    )  # bytes
+    var shared_memory_sizes: List[Int] = [
+        0,
+        1024,
+        4096,
+        8192,
+        16384,
+        32768,
+    ]  # bytes
 
     for i in range(len(shared_memory_sizes)):
         var shared_mem_size = shared_memory_sizes[i]

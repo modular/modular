@@ -268,7 +268,7 @@ def main():
                     static[2048](),
                 )
 
-                alias BK_list = List[Int](BK, BK * 2)
+                alias BK_list: List[Int] = [BK, BK * 2]
 
                 @parameter
                 for _BK in BK_list:

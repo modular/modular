@@ -152,7 +152,7 @@ def test_matmul_sm100_epilogue[
     random(a_host.tensor)
     random(b_host.tensor)
 
-    var scales = List[Int32](-2, -1, 0, 1, 2)
+    var scales: List[Int32] = [-2, -1, 0, 1, 2]
 
     for i in range(M):
         for j in range(N):

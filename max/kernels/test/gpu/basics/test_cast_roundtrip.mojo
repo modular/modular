@@ -62,7 +62,7 @@ fn run_vec_add(ctx: DeviceContext) raises:
         block_dim=(block_dim),
     )
 
-    var expected = List[Float32](
+    var expected: List[Float32] = [
         0.0,
         1.0,
         2.0,
@@ -73,7 +73,7 @@ fn run_vec_add(ctx: DeviceContext) raises:
         -0.0,
         8.0,
         9.0,
-    )
+    ]
     with out_device.map_to_host() as out_host:
         for i in range(10):
             print("at index", i, "the value is", out_host[i])

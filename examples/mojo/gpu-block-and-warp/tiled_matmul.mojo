@@ -315,8 +315,8 @@ def main():
         alias TOLERANCE: Float32 = 1e-5
 
         # Check a few key positions manually for validation
-        var test_coords_i = List[Int](0, 0, 1, 1, 3)
-        var test_coords_j = List[Int](0, 1, 0, 1, 3)
+        var test_coords_i: List[Int] = [0, 0, 1, 1, 3]
+        var test_coords_j: List[Int] = [0, 1, 0, 1, 3]
 
         for idx in range(len(test_coords_i)):
             var i = test_coords_i[idx]

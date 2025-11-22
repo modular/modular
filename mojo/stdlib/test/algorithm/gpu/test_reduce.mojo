@@ -229,22 +229,22 @@ def test_reduce():
         reduce_inner_test[reduce_add](
             IndexList[3](2, 3, 257),
             Float32(0),
-            List[Float32](257.0, 514.0, 771.0, 1028.0, 1285.0, 1542.0),
+            [Float32(257.0), 514.0, 771.0, 1028.0, 1285.0, 1542.0],
             ctx,
         )
 
         reduce_inner_test[reduce_add](
             IndexList[2](5, 257),
             Float32(0),
-            List[Float32](257.0, 514.0, 771.0, 1028.0, 1285.0),
+            [Float32(257.0), 514.0, 771.0, 1028.0, 1285.0],
             ctx,
         )
 
         reduce_inner_test[reduce_add](
             IndexList[4](2, 2, 2, 1029),
             Float32(0),
-            List[Float32](
-                1029.0,
+            [
+                Float32(1029.0),
                 2058.0,
                 3087.0,
                 4116.0,
@@ -252,21 +252,21 @@ def test_reduce():
                 6174.0,
                 7203.0,
                 8232.0,
-            ),
+            ],
             ctx,
         )
 
         reduce_inner_test[reduce_add](
             IndexList[3](5, 3, 2),
             Float32(0),
-            List[Float32](
-                15.0,
+            [
+                Float32(15.0),
                 16.0,
                 17.0,
                 18.0,
                 19.0,
                 20.0,
-            ),
+            ],
             ctx,
             axis=0,
         )
@@ -274,8 +274,8 @@ def test_reduce():
         reduce_inner_test[reduce_add](
             IndexList[3](5, 3, 2),
             Float32(0),
-            List[Float32](
-                4.0,
+            [
+                Float32(4.0),
                 5.0,
                 10.0,
                 11.0,
@@ -285,7 +285,7 @@ def test_reduce():
                 23.0,
                 28.0,
                 29.0,
-            ),
+            ],
             ctx,
             axis=1,
         )
@@ -293,15 +293,15 @@ def test_reduce():
         reduce_inner_test[reduce_max](
             IndexList[2](5, 3),
             Float32.MIN,
-            List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
+            [Float32(1.0), 2.0, 3.0, 4.0, 5.0],
             ctx,
         )
 
         fused_reduce_inner_test[fused_reduce_add_max, 2, DType.float32](
             IndexList[2](5, 3),
             StaticTuple[Float32, 2](Float32.MIN, 0.0),
-            List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
-            List[Float32](3.0, 6.0, 9.0, 12.0, 15.0),
+            [Float32(1.0), 2.0, 3.0, 4.0, 5.0],
+            [Float32(3.0), 6.0, 9.0, 12.0, 15.0],
             ctx,
         )
 
@@ -309,15 +309,15 @@ def test_reduce():
         reduce_inner_test[reduce_max](
             IndexList[2](5, 5),
             BFloat16.MIN,
-            List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
+            [Float32(1.0), 2.0, 3.0, 4.0, 5.0],
             ctx,
         )
 
         fused_reduce_inner_test[fused_reduce_add_max, 2, DType.bfloat16](
             IndexList[2](5, 3),
             StaticTuple[BFloat16, 2](BFloat16.MIN, 0.0),
-            List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
-            List[Float32](3.0, 6.0, 9.0, 12.0, 15.0),
+            [Float32(1.0), 2.0, 3.0, 4.0, 5.0],
+            [Float32(3.0), 6.0, 9.0, 12.0, 15.0],
             ctx,
         )
 
@@ -325,15 +325,15 @@ def test_reduce():
         reduce_inner_test[reduce_max](
             IndexList[2](5, 5),
             Float16.MIN,
-            List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
+            [Float32(1.0), 2.0, 3.0, 4.0, 5.0],
             ctx,
         )
 
         fused_reduce_inner_test[fused_reduce_add_max, 2, DType.float16](
             IndexList[2](5, 3),
             StaticTuple[Float16, 2](Float16.MIN, 0.0),
-            List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
-            List[Float32](3.0, 6.0, 9.0, 12.0, 15.0),
+            [Float32(1.0), 2.0, 3.0, 4.0, 5.0],
+            [Float32(3.0), 6.0, 9.0, 12.0, 15.0],
             ctx,
         )
 
@@ -341,14 +341,14 @@ def test_reduce():
         reduce_inner_test[reduce_max](
             IndexList[2](5, 5),
             Int64.MIN,
-            List[Int64](1, 2, 3, 4, 5),
+            [Int64(1), 2, 3, 4, 5],
             ctx,
         )
         fused_reduce_inner_test[fused_reduce_add_max, 2, DType.int64](
             IndexList[2](5, 3),
             StaticTuple[Int64, 2](Int64.MIN, 0),
-            List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
-            List[Float32](3.0, 6.0, 9.0, 12.0, 15.0),
+            [Float32(1.0), 2.0, 3.0, 4.0, 5.0],
+            [Float32(3.0), 6.0, 9.0, 12.0, 15.0],
             ctx,
         )
         # Add offset to ensure upper and lower 32 bits of element are non-zero
@@ -356,27 +356,27 @@ def test_reduce():
         reduce_inner_test[reduce_max](
             IndexList[2](5, 5),
             Int64.MIN,
-            List[Int64](offset, offset + 1, offset + 2, offset + 3, offset + 4),
+            [Int64(offset), offset + 1, offset + 2, offset + 3, offset + 4],
             ctx,
             offset=offset,
         )
         fused_reduce_inner_test[fused_reduce_add_max, 2, DType.int64](
             IndexList[2](5, 3),
             StaticTuple[Int64, 2](Int64.MIN, 0),
-            List[Float32](
+            [
                 Float32(offset),
                 Float32(offset + 1.0),
                 Float32(offset + 2.0),
                 Float32(offset + 3.0),
                 Float32(offset + 4.0),
-            ),
-            List[Float32](
+            ],
+            [
                 Float32(offset * 3 + 3.0),
                 Float32(offset * 3 + 6.0),
                 Float32(offset * 3 + 9.0),
                 Float32(offset * 3 + 12.0),
                 Float32(offset * 3 + 15.0),
-            ),
+            ],
             ctx,
             offset=offset,
         )
@@ -385,7 +385,7 @@ def test_reduce():
         reduce_inner_test[reduce_max](
             IndexList[2](5, 5),
             Scalar[DType.bool].MIN,
-            List[Scalar[DType.bool]](True, False, True, False, True),
+            [Scalar[DType.bool](True), False, True, False, True],
             ctx,
         )
 

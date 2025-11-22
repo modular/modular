@@ -308,28 +308,28 @@ def main():
             num_experts=1,
             expert_shape = Index(256, 256),
             use_epilogue=True,
-        ](1, List[Int](128), List[Int](0), ctx)
+        ](1, [128], [0], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=1,
             expert_shape = Index(512, 1024),
-        ](1, List[Int](256), List[Int](0), ctx)
+        ](1, [256], [0], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=4,
             expert_shape = Index(4096, 7168),
-        ](2, List[Int](128, 256), List[Int](0, 2), ctx)
+        ](2, [128, 256], [0, 2], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=6,
             expert_shape = Index(7168, 2048),
-        ](4, List[Int](20, 1500, 300, 28), List[Int](0, 3, 2, 4), ctx)
+        ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
@@ -337,14 +337,14 @@ def main():
             num_experts=6,
             expert_shape = Index(1280, 1024),
             use_epilogue=True,
-        ](4, List[Int](20, 1500, 300, 28), List[Int](0, 3, 2, 4), ctx)
+        ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.float32,
             num_experts=6,
             expert_shape = Index(7168, 2048),
-        ](4, List[Int](20, 1500, 300, 28), List[Int](0, 3, 2, 4), ctx)
+        ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
@@ -352,18 +352,18 @@ def main():
             num_experts=6,
             expert_shape = Index(1280, 1024),
             use_epilogue=True,
-        ](4, List[Int](20, 1500, 300, 28), List[Int](0, 3, 2, 4), ctx)
+        ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=4,
             expert_shape = Index(4096, 7168),
-        ](2, List[Int](2, 62), List[Int](0, 2), ctx)
+        ](2, [2, 62], [0, 2], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=6,
             expert_shape = Index(7168, 2048),
-        ](4, List[Int](20, 1, 3, 40), List[Int](0, 3, 2, 4), ctx)
+        ](4, [20, 1, 3, 40], [0, 3, 2, 4], ctx)

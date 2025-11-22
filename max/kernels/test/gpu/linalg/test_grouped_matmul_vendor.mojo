@@ -340,14 +340,14 @@ def main():
             DType.bfloat16,
             num_experts=1,
             expert_shape = Index(256, 256),
-        ](1, List[Int](128), List[Int](0), ctx)
+        ](1, [128], [0], ctx)
 
         test_vendor[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=1,
             expert_shape = Index(512, 1024),
-        ](1, List[Int](256), List[Int](0), ctx)
+        ](1, [256], [0], ctx)
 
         # Multiple matmuls selecting part of experts
         test_vendor[
@@ -355,7 +355,7 @@ def main():
             DType.bfloat16,
             num_experts=4,
             expert_shape = Index(768, 1024),
-        ](2, List[Int](128, 256), List[Int](0, 2), ctx)
+        ](2, [128, 256], [0, 2], ctx)
 
         # Multiple matmuls selecting part of experts
         # num_tokens not multiple of tile size
@@ -364,7 +364,7 @@ def main():
             DType.bfloat16,
             num_experts=6,
             expert_shape = Index(1280, 1024),
-        ](4, List[Int](27, 1500, 300, 150), List[Int](0, 3, 2, 4), ctx)
+        ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Multiple matmuls selecting part of experts
         # num_tokens not multiple of tile size
@@ -374,7 +374,7 @@ def main():
             DType.bfloat16,
             num_experts=6,
             expert_shape = Index(192, 1024),
-        ](4, List[Int](27, 1500, 300, 150), List[Int](0, 3, 2, 4), ctx)
+        ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Test that expert id of -1 results in 0s in the output
         test_vendor[
@@ -382,7 +382,7 @@ def main():
             DType.bfloat16,
             num_experts=2,
             expert_shape = Index(256, 512),
-        ](2, List[Int](64, 128), List[Int](0, -1), ctx)
+        ](2, [64, 128], [0, -1], ctx)
 
         # Test negative lora_id behavior with vendor matmul
         test_negative_lora_id_vendor[
@@ -390,7 +390,7 @@ def main():
             DType.bfloat16,
             num_experts=2,
             expert_shape = Index(256, 512),
-        ](2, List[Int](64, 128), List[Int](0, -1), ctx)
+        ](2, [64, 128], [0, -1], ctx)
 
         # Additional test cases for different data types
         test_vendor[
@@ -398,7 +398,7 @@ def main():
             DType.float32,
             num_experts=3,
             expert_shape = Index(384, 768),
-        ](2, List[Int](100, 200), List[Int](1, 2), ctx)
+        ](2, [100, 200], [1, 2], ctx)
 
         # Test with mixed valid and invalid expert ids
         test_vendor[
@@ -406,6 +406,6 @@ def main():
             DType.bfloat16,
             num_experts=4,
             expert_shape = Index(512, 512),
-        ](3, List[Int](50, 100, 75), List[Int](0, -1, 2), ctx)
+        ](3, [50, 100, 75], [0, -1, 2], ctx)
 
         print("\n✅ All vendor grouped matmul tests passed!")

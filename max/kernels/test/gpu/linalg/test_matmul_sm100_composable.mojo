@@ -178,8 +178,7 @@ def main():
             BK=64,
         ](ctx, dynamic(1024), static[2048](), static[2048]())
 
-        alias BK_list = List[Int](64, 128)
-        # alias BK_list = List[Int](64, 128)
+        alias BK_list: List[Int] = [64, 128]
 
         @parameter
         for BK in BK_list:

@@ -115,9 +115,24 @@ def test_external_constant_mem(ctx: DeviceContext):
         ]()
         data[thread_idx.x] = static_constant[thread_idx.x]
 
-    var constant_memory = List[Float32](
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
-    )
+    var constant_memory: List[Float32] = [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+    ]
 
     var res_device = ctx.enqueue_create_buffer[DType.float32](16)
     res_device.enqueue_fill(0)
@@ -127,13 +142,13 @@ def test_external_constant_mem(ctx: DeviceContext):
         res_device,
         grid_dim=1,
         block_dim=16,
-        constant_memory=List[ConstantMemoryMapping](
+        constant_memory=[
             ConstantMemoryMapping(
                 "static_constant",
                 constant_memory.unsafe_ptr().bitcast[NoneType](),
                 constant_memory.byte_length(),
             )
-        ),
+        ],
     )
 
     _ = constant_memory^

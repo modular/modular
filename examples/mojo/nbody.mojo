@@ -101,7 +101,7 @@ alias Neptune = Planet(
     5.15138902046611451e-05 * SOLAR_MASS,
 )
 
-alias INITIAL_SYSTEM = List[Planet](Sun, Jupiter, Saturn, Uranus, Neptune)
+alias INITIAL_SYSTEM: List[Planet] = [Sun, Jupiter, Saturn, Uranus, Neptune]
 
 
 @always_inline

@@ -232,7 +232,7 @@ def test_block_k(ctx: DeviceContext):
         )
         test[config](ctx, m, n, k)
 
-    alias block_ks = List[Int](32, 64, 128, 256)
+    alias block_ks: List[Int] = [32, 64, 128, 256]
 
     @parameter
     for i in range(len(block_ks)):
@@ -249,7 +249,7 @@ def test_warp_k_partitions(ctx: DeviceContext):
         in_type: DType, out_type: DType
     ](m: ValOrDim, n: ValOrDim, k: ValOrDim):
         alias config_type = MatmulConfig[in_type, in_type, out_type, True]
-        alias configs = List[config_type](
+        alias configs: List[config_type] = [
             # TEST: num_warps=(1, 4, 1).
             config_type(
                 block_tile_shape=Index(16, 128, 128),
@@ -272,7 +272,7 @@ def test_warp_k_partitions(ctx: DeviceContext):
                 warp_tile_shape=Index(16, 64, 64),
                 num_warp_k_partitions=2,
             ),
-        )
+        ]
 
         @parameter
         for i in range(len(configs)):
