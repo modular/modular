@@ -1332,6 +1332,10 @@ void KGEN::printAsMojoStringLiteral(StringRef name, raw_ostream &out) {
 }
 
 void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
+  // Use an alias for this attribute if available.
+  if (succeeded(p.printAlias(value)))
+    return;
+
   // If the attribute's type provides a pretty printing hook, try to use it.
   if (auto typeItf = dyn_cast<ParameterTypeInterface>(value.getType()))
     if (succeeded(typeItf.printValue(p, value)))
@@ -1457,13 +1461,12 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
   }
 
   if (auto sugar = dyn_cast<SugarAttr>(value)) {
-    p << "sugar";
     switch (sugar.getKind()) {
     case SugarKind::Alias:
-      p << "_alias(";
+      p << "sugar_alias(";
       break;
     case SugarKind::AlwaysInlineBuiltin:
-      p << "_builtin(";
+      p << "sugar_builtin(";
       break;
     }
     printParamValue(p, sugar.getSugared());

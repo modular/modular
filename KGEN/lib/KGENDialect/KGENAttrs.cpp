@@ -3881,6 +3881,22 @@ void LLVMBitcodeLibArrayAttr::externalize(
 // SugarAttr
 //===----------------------------------------------------------------------===//
 
+mlir::OpAsmAliasResult SugarAttr::getAlias(raw_ostream &os) const {
+  // If this is a ParamType wrapping a simple SugarAttr then use an alias based
+  // on the alias name to significantly compact the type reference.
+  if (getKind() == SugarKind::Alias)
+    if (auto dre = dyn_cast<ParamDeclRefAttr>(getSugared())) {
+      auto name = dre.getName().strref();
+      // Remove mangling.
+      name = name.take_front(name.find('`'));
+      if (!name.empty()) {
+        os << "alias_" << name;
+        return mlir::OpAsmAliasResult::OverridableAlias;
+      }
+    }
+  return mlir::OpAsmAliasResult::NoAlias;
+}
+
 /// Return the strongest form of sugar that the specified result should be
 /// elided for.
 ///

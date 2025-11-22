@@ -64,19 +64,19 @@ fn take_kw_param_infer[B: AnyTrivialRegType](a: MyInt, b: B):
 
 # CHECK-LABEL: lit.fn @"test_kw_args_param_infer
 fn test_kw_args_param_infer(x: Int, f: float, s: MyInt):
-    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType,AnyTrivialRegType]{{.*}}"<:type {{.*}}Int{{.*}}, :type scalar<f64>>(%x, %f)
+    # CHECK: lit.call {{.*}}@"take_kw_param_infer[AnyTrivialRegType,AnyTrivialRegType]{{.*}}"<:type !Int, :type scalar<f64>>(%x, %f)
     take_kw_param_infer(x, b=f)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType,AnyTrivialRegType]{{.*}}"<:type {{.*}}Int{{.*}}, :type scalar<f64>>(%x, %f)
+    # CHECK: lit.call {{.*}}@"take_kw_param_infer[AnyTrivialRegType,AnyTrivialRegType]{{.*}}"<:type !Int, :type scalar<f64>>(%x, %f)
     take_kw_param_infer[Int](b=f, a=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType,AnyTrivialRegType]{{.*}}"<:type {{.*}}!Int{{.*}}, :type {{.*}}scalar<f64>{{.*}}>(%x, %f)
+    # CHECK: lit.call {{.*}}@"take_kw_param_infer[AnyTrivialRegType,AnyTrivialRegType]{{.*}}"<:type !Int, :type #alias_float>(%x, %f)
     take_kw_param_infer[Int, float](b=f, a=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType]{{.*}}<:type !Int>(%s, %x)
+    # CHECK: lit.call {{.*}}@"take_kw_param_infer[AnyTrivialRegType]{{.*}}<:type !Int>(%s, %x)
     take_kw_param_infer(s, b=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType]{{.*}}<:type !Int>(%s, %x)
+    # CHECK: lit.call {{.*}}@"take_kw_param_infer[AnyTrivialRegType]{{.*}}<:type !Int>(%s, %x)
     take_kw_param_infer(b=x, a=s)
 
 

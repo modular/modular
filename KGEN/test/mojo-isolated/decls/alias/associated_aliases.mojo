@@ -65,7 +65,7 @@ struct StructWithMatchingDependentAlias2(TraitWithDependentAlias):
 # CHECK-LABEL: lit.fn @"getNFromTraitWithAlias
 fn getNFromTraitWithAlias[T: TraitWithAlias](t: T) -> ZInt:
     # CHECK-NEXT: lit.alias.decl [[X:.*]]: !ZInt = <{{.*}}#kgen.get_witness<:!TraitWithAlias T, "associated_aliases::TraitWithAlias", "N">
-    # CHECK-NEXT: kgen.param.constant: !ZInt = <{{.*}}#kgen.get_witness<:!TraitWithAlias T, "associated_aliases::TraitWithAlias", "N">
+    # CHECK-NEXT: kgen.param.constant: !ZInt = <#alias_X>
     comptime X = T.N
     return X
 

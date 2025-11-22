@@ -71,7 +71,7 @@ fn metatypes():
     # COM: Test inferring from a non-materializable type.
     comptime nm_alias = NMType()
     # CHECK: [[DNMVAL:%.*]] = lit.var.decl "anonymous*"
-    # CHECK-NEXT: [[NMVAL:%.*]] = kgen.param.materialize: !NMType = <sugar_alias{{.*}}apply(:!lit.generator<() -> !NMType> @metatypes::@NMType::@"__init__()"){{.*}}>
+    # CHECK-NEXT: [[NMVAL:%.*]] = kgen.param.materialize: !NMType = <#alias_nm_alias>
     # CHECK-NEXT: lit.ref.store [[NMVAL]], [[DNMVAL]]
     # CHECK-NEXT: [[IMMUT:%.*]] = lit.ref.immut [[DNMVAL]]
     # CHECK-NEXT: [[MVAL:%.*]] = lit.call {{.*}}@Thing::@"__init__{{.*}}([[IMMUT]])
