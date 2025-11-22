@@ -22,6 +22,10 @@ from test_common.pipeline_model_dummy import (
 )
 from test_common.registry import prepare_registry
 
+pytest.mark.skip(
+    reason="TODO MODELS-890: Reenable these tests when we do not call out to HuggingFace / move to HF workflow",
+)
+
 
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
