@@ -95,7 +95,7 @@ fn pop_cast_to_builtin_ui8(x: UInt8._mlir_type) -> __mlir_type.ui8:
 
 # CHECK-LABEL: lit.fn @"fold_pop_cast_to_builtin_ui8
 fn fold_pop_cast_to_builtin_ui8() -> UInt8T[MLIR_UI8_139]:
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@UInt8T<:ui8 sugar_builtin(apply(:!lit.generator<("x": !pop.scalar<ui8>) -> ui8> @builtin_function_folder_pop_ops::@"pop_cast_to_builtin_ui8(__mlir_type.!pop.scalar<ui8>)", #alias_POP_UI8_139), 139)>, mut *"a`1">
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@UInt8T<:ui8 139>, mut *"a`1">
     var a = UInt8T[pop_cast_to_builtin_ui8(POP_UI8_139)]()
     return a
 
