@@ -16,6 +16,7 @@ include "KGEN/KGENDialect/KGENTypeInterfaces.td"
 include "KGEN/Interpreter/InterpreterInterface.td"
 include "Support/MDialect/MTypeInterfaces.td"
 include "mlir/IR/AttrTypeBase.td"
+include "mlir/IR/OpAsmInterface.td"
 
 // Base class for other typedefs. Provides dialact-specific defaults.
 class KGENType<string name, string typeMnemonic, list<Trait> traits = []>
@@ -27,7 +28,7 @@ class KGENType<string name, string typeMnemonic, list<Trait> traits = []>
 // ParamType
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamType : KGENType<"Param", "param"> {
+def KGEN_ParamType : KGENType<"Param", "param", [OpAsmTypeInterface]> {
   let summary = "Type specified by a parameter expression (type domain)";
   let description = [{
     This is a symbolic type represented with a parameter expression that is
@@ -54,6 +55,8 @@ def KGEN_ParamType : KGENType<"Param", "param"> {
     /// A specific builder used to build the type from a bytecode context,
     /// providing a slightly different context from the normal builder.
     static ParamType getFromBytecode(TypedAttr param);
+
+    mlir::OpAsmAliasResult getAlias(raw_ostream &os) const;
   }];
 }
 

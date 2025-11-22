@@ -599,7 +599,7 @@ fn test_param_if_cond[cond: Bool]() -> Int:
   # CHECK-SAME: :!pop.float_literal #pop.float_literal<2|1>{{.*}}:!pop.int_literal 3>
   comptime j = 2.0 if cond else 3
 
-  # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = <sugar_alias(*"i`", cond(#lit.struct.extract<:!Bool cond, "_mlir_value">, {2}, {3}))>
+  # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = <#alias_i>
   return i
 
 # CHECK-LABEL: lit.fn @"callable_mv[fn(::Int, /) -> ::Int](::Int)"

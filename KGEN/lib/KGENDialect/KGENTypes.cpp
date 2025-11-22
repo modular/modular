@@ -128,6 +128,24 @@ ParamType ParamType::getFromBytecode(TypedAttr param) {
   return Base::get(param.getContext(), param);
 }
 
+mlir::OpAsmAliasResult ParamType::getAlias(raw_ostream &os) const {
+  // If this is a ParamType wrapping a simple SugarAttr then use an alias based
+  // on the alias name to significantly compact the type reference.
+  if (auto sugar = dyn_cast<SugarAttr>(getParam())) {
+    if (sugar.getKind() == SugarKind::Alias)
+      if (auto dre = dyn_cast<ParamDeclRefAttr>(sugar.getSugared())) {
+        auto name = dre.getName().strref();
+        // Remove mangling.
+        name = name.take_front(name.find('`'));
+        if (!name.empty()) {
+          os << "alias_" << name;
+          return mlir::OpAsmAliasResult::OverridableAlias;
+        }
+      }
+  }
+  return mlir::OpAsmAliasResult::NoAlias;
+}
+
 //===----------------------------------------------------------------------===//
 // TypeValueType
 //===----------------------------------------------------------------------===//

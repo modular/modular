@@ -2101,7 +2101,8 @@ def KGEN_LLVMBitcodeLibArrayAttr : ArrayOfAttr<KGENDialect,
 // SugarAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_SugarAttr : KGENAttr<"Sugar", "sugar", [TypedAttrInterface]> {
+def KGEN_SugarAttr : KGENAttr<"Sugar", "sugar",
+                              [TypedAttrInterface, OpAsmAttrInterface]> {
   let summary = "Syntax sugar for some other attribute.";
   let description = [{
     The `#kgen.sugar` attribute represents a syntax sugar overlaid on some other
@@ -2139,6 +2140,7 @@ def KGEN_SugarAttr : KGENAttr<"Sugar", "sugar", [TypedAttrInterface]> {
     static Type strip(Type value, bool keepApplies = false);
 
     Type getType() const;
+    mlir::OpAsmAliasResult getAlias(raw_ostream &os) const;
   }];
 }
 
