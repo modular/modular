@@ -37,6 +37,7 @@
 #include "mlir/IR/Verifier.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/SCCIterator.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 
 using namespace M;
@@ -142,6 +143,18 @@ void ImplNode::setToError(ErrorTree &&err) {
   error = std::move(err);
 }
 
+void ParamNode::emplace() {
+  if (done.exchange(DoneState::DONE) == DoneState::NOT_DONE)
+    paramCh.copy().emplace();
+}
+
+void ParamNode::setToError() {
+  if (done.exchange(DoneState::ERROR) == DoneState::NOT_DONE) {
+    state.markDone();
+    paramCh.copy().emplace();
+  }
+}
+
 void ParamNode::andThenAsync(AsyncValue::Waiter &&waiter) {
   expansionGraph->didAddTask();
   paramCh.andThenAsync([waiter = std::move(waiter), this]() mutable {
@@ -151,10 +164,18 @@ void ParamNode::andThenAsync(AsyncValue::Waiter &&waiter) {
 }
 
 ExpansionGraph::~ExpansionGraph() {
+  auto resetState = llvm::make_scope_exit([&] {
+    if (eraseNodeInst) {
+      for (auto &[_, node] : nodes.get())
+        node->impl.inst.erase();
+    }
+  });
+
   if (--numOutstandingResources == 0) {
     quiesceChain.copy().emplace();
     return;
   }
+
   // If we have outstanding tasks at destruction time, set all outstanding
   // tasks to the error state and await completion.
   for (auto &[key, node] : nodes.get())
@@ -492,6 +513,8 @@ ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
       specializeGenerator(parent, node, loc, /*addWaiter=*/true);
   if (result.shouldSkipNode())
     return FuncOp();
+  if (result.isError())
+    return ErrorTree(loc, "failed to elaborate callee function");
   return node->getFirstConcreteFunc();
 }
 
@@ -527,7 +550,10 @@ Elaborator::getConcreteStructTypeReference(ImplNode *parent, Location loc,
       calleeNode->andThenAsync(
           [this, parent] { completeImplNodeProcessing(parent); });
     }
+  } else if (result.isError()) {
+    return ErrorTree(gen.getLoc(), "struct type instantiation failed");
   }
+
   return TypeInstanceRefAttr::get(
       SymbolRefAttr::get(loc->getContext(), calleeNode->getMangledName()),
       genref.getType());
@@ -1431,12 +1457,24 @@ void Elaborator::completeImplNodeProcessing(ImplNode *inode) {
 void Elaborator::processImplNodeTask(ImplNode *inode) {
   // Process the node. If processing the node got pre-empted, then return. It
   // will get scheduled again later.
+  // If processImplNode returns success, it means the node is either fully
+  // processed or in error state, no more to do here so we can complete it.
+  // Otherwise, it means the node is being suspended and will be resumed later
+  // once its blocker is done.
   if (succeeded(processImplNode(inode))) {
-    g.numWorkItems.fetch_add(1);
+    // Only increment numWorkItems if inode is not in error state because we
+    // don't put an errored-out node's dependencies back onto the worklist. This
+    // also means the worklist does not keep track of error nodes. If we put it
+    // onto the worklist and signal the worklist below, this can cause
+    // numWorkItems become 0 multiple times and lead to g.worklistCh to be
+    // emplaced multiple times which is illegal.
+    if (!inode->parent->getIsError())
+      g.numWorkItems.fetch_add(1);
     completeImplNodeProcessing(inode);
   }
   // Signal the worklist that the work is complete.
-  signalWorklist();
+  if (!inode->parent->getIsError())
+    signalWorklist();
 }
 
 void Elaborator::scheduleImplNode(ImplNode *inode) {
@@ -1576,7 +1614,11 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
                                                  bool addWaiter) {
   switch (genNode->state.markInProgress()) {
   case ParamNodeState::DONE:
+    if (genNode->getIsError())
+      return ElaborationState::error();
+
     return ElaborationState::advance();
+
   case ParamNodeState::IN_PROGRESS:
     // If the worker hit a parameter node that is already in progress, this
     // could mean two things:
@@ -2606,7 +2648,6 @@ LogicalResult Elaborator::run(
     ErrorTreeOrSuccess err = genNode->collectErrorsOrSuccess();
     if (err.isError()) {
       failed = true;
-
       emitLimitedError(
           [&]() {
             return err.takeError().emit(
@@ -2618,9 +2659,7 @@ LogicalResult Elaborator::run(
   }
 
   if (failed) {
-    for (ImplNode *node : llvm::make_second_range(concreteNodes.get()))
-      node->inst.erase();
-
+    g.eraseNodeInst = true;
     return failure();
   }
 
@@ -2636,8 +2675,7 @@ LogicalResult Elaborator::run(
         },
         errorLimit);
 
-    for (ImplNode *node : llvm::make_second_range(concreteNodes.get()))
-      node->inst.erase();
+    g.eraseNodeInst = true;
     return failure();
   }
 
@@ -2651,6 +2689,7 @@ LogicalResult Elaborator::run(
   if (compiledOffloadOr.isError()) {
     ErrorTree compileOffloadError(theModule->getLoc(),
                                   compiledOffloadOr.takeError());
+
     emitLimitedError(
         [&]() {
           return std::move(compileOffloadError)
@@ -2659,9 +2698,7 @@ LogicalResult Elaborator::run(
         },
         errorLimit);
 
-    for (ImplNode *node : llvm::make_second_range(concreteNodes.get()))
-      node->inst.erase();
-
+    g.eraseNodeInst = true;
     handler.emitDiagnostics([&](Diagnostic &diag) {
       // Emit diagnostics using another diagnostic handler that should be set.
       theModule->getContext()->getDiagEngine().emit(std::move(diag));

@@ -93,6 +93,16 @@ void PImplNode::setToError(ErrorTree &&err) {
   error = std::move(err);
 }
 
+void PParamNode::emplace() {
+  if (done.exchange(DoneState::DONE) == DoneState::NOT_DONE)
+    paramCh.copy().emplace();
+}
+
+void PParamNode::setToError() {
+  if (done.exchange(DoneState::ERROR) == DoneState::NOT_DONE)
+    paramCh.copy().emplace();
+}
+
 void PParamNode::andThenAsync(AsyncValue::Waiter &&waiter) {
   expansionGraph->didAddTask();
   paramCh.andThenAsync([waiter = std::move(waiter), this]() mutable {
