@@ -127,11 +127,11 @@ fn merge_ragged_tensors[
                     IndexList[1](batch_id + 1), total_size
                 )
 
-    alias compile_target = _current_target() if is_cpu[
+    comptime compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
-    alias target_simd_width = simd_width_of[dtype, target=compile_target]()
-    alias kernel_simd_width = 1 if rank == 1 else target_simd_width
+    comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
+    comptime kernel_simd_width = 1 if rank == 1 else target_simd_width
 
     elementwise[
         func=merge_fn,

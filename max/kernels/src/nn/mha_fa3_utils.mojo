@@ -73,8 +73,8 @@ from builtin.device_passable import DevicePassable
 
 @register_passable("trivial")
 trait OptionalPointer(Copyable):
-    alias dtype: DType
-    alias is_null: Bool
+    comptime dtype: DType
+    comptime is_null: Bool
 
     @always_inline
     fn value(self) -> UnsafePointer[Scalar[Self.dtype]]:
@@ -83,8 +83,8 @@ trait OptionalPointer(Copyable):
 
 @register_passable("trivial")
 struct NonNullPointer[dtype_: DType](OptionalPointer):
-    alias dtype: DType = Self.dtype_
-    alias is_null: Bool = False
+    comptime dtype: DType = Self.dtype_
+    comptime is_null: Bool = False
 
     var ptr: UnsafePointer[Scalar[Self.dtype]]
 
@@ -110,8 +110,8 @@ struct NonNullPointer[dtype_: DType](OptionalPointer):
 
 @register_passable("trivial")
 struct NullPointer[dtype_: DType](OptionalPointer):
-    alias dtype: DType = Self.dtype_
-    alias is_null: Bool = True
+    comptime dtype: DType = Self.dtype_
+    comptime is_null: Bool = True
 
     @always_inline
     fn __init__(out self):
@@ -142,7 +142,7 @@ struct Pack[
     var max_seq_len: Self.MaxSeqLenType
     var partition: Self.PartitionType
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -203,11 +203,11 @@ struct MHAPosition[
     var prompt_offset: UInt32  # when decoding, this is the position_idx
     var prompt_idx: UInt32
 
-    alias q_stride: Int = Self.depth if Self.decoding else Self.depth * Self.q_num_heads
-    alias q_output_gmem_layout = Layout(
+    comptime q_stride: Int = Self.depth if Self.decoding else Self.depth * Self.q_num_heads
+    comptime q_output_gmem_layout = Layout(
         IntTuple(Self.BM, Self.depth), IntTuple(Self.q_stride, 1)
     )
-    alias split_gmem_layout = Layout(
+    comptime split_gmem_layout = Layout(
         IntTuple(Self.BM // 2, Self.depth), IntTuple(Self.q_stride, 1)
     )
 
@@ -676,7 +676,7 @@ fn _get_position[
     ret = {q_row, q_col, q_offset, num_keys, start_pos, seq_info}
 
 
-alias QTMATile[
+comptime QTMATile[
     dtype: DType,
     swizzle_mode: TensorMapSwizzle,
     *,
@@ -717,10 +717,10 @@ fn q_out_tma[
         decoding=decoding,
     ],
 ) raises:
-    alias tile_cols: Int = 64 if decoding else padded_depth
-    alias matrix_cols: Int = depth if decoding else depth * q_num_heads
+    comptime tile_cols: Int = 64 if decoding else padded_depth
+    comptime matrix_cols: Int = depth if decoding else depth * q_num_heads
 
-    alias layout = Layout.row_major(UNKNOWN_VALUE, matrix_cols)
+    comptime layout = Layout.row_major(UNKNOWN_VALUE, matrix_cols)
     rt_layout = RuntimeLayout[layout].row_major(IndexList[2](rows, matrix_cols))
     var tensor = LayoutTensor[dtype, layout, MutAnyOrigin](ptr, rt_layout)
 
@@ -772,7 +772,9 @@ fn _apply_mask[
         element_layout=element_layout,
     ],
 ):
-    alias num_groups_per_thread = min(2, ceildiv(group, 8)) if decoding else 2
+    comptime num_groups_per_thread = min(
+        2, ceildiv(group, 8)
+    ) if decoding else 2
     var batch_cache_valid_length: UInt32
 
     @parameter
@@ -785,7 +787,7 @@ fn _apply_mask[
     else:
         batch_cache_valid_length = 0
 
-    alias p_frag_simdwidth = element_layout.size()
+    comptime p_frag_simdwidth = element_layout.size()
     # Vectorize by 2.
     var fragment_row: UInt32 = lane // 4
     var fragment_col: UInt32 = (lane * p_frag_simdwidth % WN) % 8
@@ -997,24 +999,24 @@ fn produce[
     num_keys_arg: UInt32,
     kv_input_row_offsets: KVInputRowOffsetsType,
 ):
-    alias decoding: Bool = _is_decoding[MaxSeqLenType]()
-    alias PositionType = MHAPosition[
+    comptime decoding: Bool = _is_decoding[MaxSeqLenType]()
+    comptime PositionType = MHAPosition[
         BM, BN, depth, padded_depth, num_heads, group, decoding
     ]
-    alias persistent = SchedulerType.may_advance
+    comptime persistent = SchedulerType.may_advance
 
-    alias q_smem_layout_producer = q_tma_op.layout
-    alias q_smem_layout_consumer = tile_layout_k_major[
+    comptime q_smem_layout_producer = q_tma_op.layout
+    comptime q_smem_layout_consumer = tile_layout_k_major[
         DType.bfloat16, BM, padded_depth, swizzle_mode=swizzle_mode
     ]()
-    alias k_smem_layout = k_tma_op.layout
-    alias v_smem_layout = v_tma_op.layout
+    comptime k_smem_layout = k_tma_op.layout
+    comptime v_smem_layout = v_tma_op.layout
 
-    alias q_size = q_smem_layout_consumer.size()
-    alias q_smem_size = (2 * q_size if persistent else q_size)
+    comptime q_size = q_smem_layout_consumer.size()
+    comptime q_smem_size = (2 * q_size if persistent else q_size)
 
-    alias q_copy_rows = max(group, 8) if decoding else Int(BM)
-    alias qk_bytes = (q_copy_rows + BN) * padded_depth * size_of[qkv_type]()
+    comptime q_copy_rows = max(group, 8) if decoding else Int(BM)
+    comptime qk_bytes = (q_copy_rows + BN) * padded_depth * size_of[qkv_type]()
 
     tile_state = tile_state_arg
     position = initial_position
@@ -1034,7 +1036,7 @@ fn produce[
     ]:
         # alias stride = q_smem_layout_consumer.stride[1][1].value()
         # alias depth_offset = depth_idx * stride
-        alias depth_offset = q_smem_layout_consumer(
+        comptime depth_offset = q_smem_layout_consumer(
             IntTuple(0, 64 * depth_idx)
         ) if decoding else 0
         return {q_smem + depth_offset + q_size * q_idx}
@@ -1053,7 +1055,7 @@ fn produce[
             alignment=128,
         ],
     ):
-        alias sz = BN * padded_depth
+        comptime sz = BN * padded_depth
         k_smem = {kv_smem + sz * idx}
 
     @parameter
@@ -1070,7 +1072,7 @@ fn produce[
             alignment=128,
         ],
     ):
-        alias sz = BN * padded_depth
+        comptime sz = BN * padded_depth
         v_smem = {kv_smem + sz * idx}
 
     @parameter
@@ -1087,7 +1089,7 @@ fn produce[
         @parameter
         if wait:
             consumed_mbar_kv[write_idx].wait(write_phase)
-            alias bytes = BN * padded_depth * size_of[qkv_type]()
+            comptime bytes = BN * padded_depth * size_of[qkv_type]()
             p_mbar.expect_bytes(bytes)
         k_tma_op.async_copy(k_sub, p_mbar, (UInt(col), UInt(row)))
         state.step()
@@ -1103,7 +1105,7 @@ fn produce[
         ref p_mbar = produced_mbar_kv[write_idx]
         v_sub = v_tile(write_idx)
         consumed_mbar_kv[write_idx].wait(write_phase)
-        alias bytes = BN * padded_depth * size_of[qkv_type]()
+        comptime bytes = BN * padded_depth * size_of[qkv_type]()
         p_mbar.expect_bytes(bytes)
         v_tma_op.async_copy(v_sub, p_mbar, (UInt(col), UInt(row)))
         state.step()
@@ -1340,7 +1342,7 @@ fn output_reg_to_smem[
         Layout.row_major(BM, padded_depth),
         address_space = AddressSpace.SHARED,
     ](q_smem)
-    alias use_stmatrix = accum_type is DType.float32 and padded_depth % 16 == 0 and size_of[
+    comptime use_stmatrix = accum_type is DType.float32 and padded_depth % 16 == 0 and size_of[
         output_type
     ]() == 2 and o_frag_size % 8 == 0
 
@@ -1354,7 +1356,7 @@ fn output_reg_to_smem[
             accum_smem_tile,
         )
     else:
-        alias mma_thread_layout = Layout.row_major(8, 4)
+        comptime mma_thread_layout = Layout.row_major(8, 4)
         accum_smem_warp_tile = accum_smem_tile.tile[16, BN](Int(warp_y), Int(0))
         copy_local_to_shared[thread_layout=mma_thread_layout, swizzle=swizzle](
             accum_smem_warp_tile.vectorize[1, 2](),

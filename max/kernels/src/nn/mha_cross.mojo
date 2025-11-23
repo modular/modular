@@ -58,8 +58,8 @@ fn _bmm0_bs[
     # prompt_length
     var y = global_idx.y
 
-    alias k_type = cache_t.dtype
-    alias kv_num_heads = cache_t.kv_params.num_heads
+    comptime k_type = cache_t.dtype
+    comptime kv_num_heads = cache_t.kv_params.num_heads
 
     var batch_head = block_idx.z
     var batch, head = divmod(batch_head, UInt(num_heads))
@@ -104,7 +104,7 @@ fn _bmm0_bs[
         )
 
         fn accum_fn[width: Int](offset: Int) unified {mut}:
-            alias alignment = align_of[SIMD[p_type, width]]()
+            comptime alignment = align_of[SIMD[p_type, width]]()
             var q_val = q.load[width=width, alignment=alignment](
                 y * UInt(num_heads) * UInt(depth) + UInt(offset)
             ).cast[k_type]()
@@ -153,8 +153,8 @@ fn _bmm1_bs[
     depth: Int,
     group: Int,
 ):
-    alias v_type = cache_t.dtype
-    alias kv_num_heads = cache_t.kv_params.num_heads
+    comptime v_type = cache_t.dtype
+    comptime kv_num_heads = cache_t.kv_params.num_heads
 
     # head_size
     var x = global_idx.x
@@ -261,26 +261,26 @@ fn mha_cross_gpu_naive[
         "Only support single and half precision.",
     ]()
 
-    alias config = MHAConfig[dtype](
+    comptime config = MHAConfig[dtype](
         UInt(Int(q.layout.shape[rank - 2])),
         UInt(Int(q.layout.shape[rank - 1])),
     )
 
-    alias num_heads = Int(config.num_heads)
-    alias depth = Int(config.depth)
-    alias kv_num_heads = cache_t.kv_params.num_heads
-    alias group = config.num_heads // kv_num_heads
+    comptime num_heads = Int(config.num_heads)
+    comptime depth = Int(config.depth)
+    comptime kv_num_heads = cache_t.kv_params.num_heads
+    comptime group = config.num_heads // kv_num_heads
     var kv_max_seq_len = Int(k.max_prompt_length())
     var batch_size = q_input_row_offsets.dim[0]() - 1
     var max_cache_size = Int(k.max_context_length())
 
-    alias q_type = q.dtype
-    alias k_type = cache_t.dtype
-    alias v_type = cache_t.dtype
+    comptime q_type = q.dtype
+    comptime k_type = cache_t.dtype
+    comptime v_type = cache_t.dtype
 
     # Assume self attention if the query sequence length isn't passed.
     var num_keys = kv_max_seq_len + max_cache_size
-    alias p_type = get_accum_type[q_type]()
+    comptime p_type = get_accum_type[q_type]()
     var p_device = ctx.enqueue_create_buffer[p_type](
         batch_size * num_heads * q_max_seq_len * num_keys
     )
@@ -294,7 +294,7 @@ fn mha_cross_gpu_naive[
     )
     var q_device = DeviceBuffer[q_type](ctx, q.ptr, q.size(), owning=False)
 
-    alias kernel_0 = _bmm0_bs[
+    comptime kernel_0 = _bmm0_bs[
         q_layout = q.layout,
         kv_layout = kv_input_row_offsets.layout,
         type_of(k),
@@ -339,7 +339,7 @@ fn mha_cross_gpu_naive[
         ctx, output.ptr, output.size(), owning=False
     )
 
-    alias kernel_1 = _bmm1_bs[
+    comptime kernel_1 = _bmm1_bs[
         q_layout = q.layout,
         kv_layout = kv_input_row_offsets.layout,
         type_of(v),

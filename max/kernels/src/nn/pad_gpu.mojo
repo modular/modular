@@ -60,7 +60,7 @@ fn _fill_strides_indexlist[
 
     @parameter
     for idx in range(rank - 1):
-        alias axis = rank - idx - 2
+        comptime axis = rank - idx - 2
         var next_axis_stride = strides[axis + 1]
         var next_axis_dim = input_shape[axis + 1]
         var curr_axis_stride = next_axis_stride * next_axis_dim
@@ -75,8 +75,8 @@ fn _fill_gpu[
     count: Int,
     ctx: DeviceContext,
 ) raises:
-    alias block_dim = 256
-    alias kernel = _fill_gpu_kernel[dtype]
+    comptime block_dim = 256
+    comptime kernel = _fill_gpu_kernel[dtype]
     var ptr_device = DeviceBuffer[dtype](ctx, ptr, count, owning=False)
     ctx.enqueue_function_checked[kernel, kernel](
         ptr_device,
@@ -95,8 +95,8 @@ fn _memcpy_gpu[
     count: Int,
     ctx: DeviceContext,
 ) raises:
-    alias block_dim = 256
-    alias kernel = _copy_gpu_kernel[dtype]
+    comptime block_dim = 256
+    comptime kernel = _copy_gpu_kernel[dtype]
     var dst_device = DeviceBuffer[dtype](ctx, dst, count, owning=False)
     var src_device = DeviceBuffer[dtype](ctx, src, count, owning=False)
     ctx.enqueue_function_checked[kernel, kernel](

@@ -144,18 +144,18 @@ fn mha_sm90_dispatch[
         config.dtype == KVType.dtype and config.dtype == q_type,
         "config, kv, and q types must all match for FA3.",
     ]()
-    alias swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
+    comptime swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
     q = rebind[UnsafePointer[Scalar[KVType.dtype]]](q_arg)
-    alias decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
-    alias new_config = MHAConfig[config.dtype](
+    comptime decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
+    comptime new_config = MHAConfig[config.dtype](
         config.num_heads,
         config.depth,
         num_queries_per_block=OptionalReg[UInt](64),
         num_keys_per_block=OptionalReg[UInt](config.num_keys_per_block),
         BK=OptionalReg[UInt](config.BK),
     ) if decoding else config
-    alias BM = new_config.block_m()
-    alias BK = new_config.padded_depth
+    comptime BM = new_config.block_m()
+    comptime BK = new_config.padded_depth
     constrained[
         BM % 64 == 0,
         "SM90 requires BM%64==0, but BM==",
@@ -166,10 +166,10 @@ fn mha_sm90_dispatch[
         "H100 requires BK%64==0 as it uses 128B swizzles, but BK==",
         String(BK),
     ]()
-    alias BN = new_config.block_n()
+    comptime BN = new_config.block_n()
     # we add smem use for SharedMemBarrier synchronization
     # add the number of producer threads (i.e. 1 WARP_GROUP_SIZE)
-    alias num_threads = new_config.num_threads[True]()
+    comptime num_threads = new_config.num_threads[True]()
     constrained[num_threads % 128 == 0]()
 
     # Persistent kernels not currently supported with partitioning
@@ -177,7 +177,7 @@ fn mha_sm90_dispatch[
     # implying we don't have enough to make them persistent.
     # This also requires some tricky control flow handling to support,
     # which we haven't added yet.
-    alias persistent = 0 if PartitionType.do_partition else env_get_int[
+    comptime persistent = 0 if PartitionType.do_partition else env_get_int[
         "USE_EXPERIMENTAL_KERNELS", 0
     ]()
     constrained[new_config.algorithm == FlashAttentionAlgorithm(3)]()
@@ -188,10 +188,10 @@ fn mha_sm90_dispatch[
     # var max_num_prompt_tiles: UInt32 = ceildiv(max_prompt_len, BM)
     # var block_x: UInt32 = max_num_prompt_tiles * partition.num_partitions()
 
-    alias q_num_heads: Int = Int(new_config.num_heads)
-    alias num_scheduler_heads = q_num_heads // group if decoding else q_num_heads
+    comptime q_num_heads: Int = Int(new_config.num_heads)
+    comptime num_scheduler_heads = q_num_heads // group if decoding else q_num_heads
     # if decoding,
-    alias scheduler_tile_shape = 1 if decoding else BM
+    comptime scheduler_tile_shape = 1 if decoding else BM
     q_tma_op = rebind[
         QTMATile[
             KVType.dtype,
@@ -222,7 +222,7 @@ fn mha_sm90_dispatch[
     # materialize scheduler, call max prompt len
     @parameter
     if persistent == 0:
-        alias SchedulerType = TransientScheduler[
+        comptime SchedulerType = TransientScheduler[
             scheduler_tile_shape, num_scheduler_heads
         ]
         var scheduler: SchedulerType = SchedulerType()
@@ -269,7 +269,7 @@ fn mha_sm90_dispatch[
             ctx,
         )
     elif persistent == 2:
-        alias SchedulerType = TileScheduler[
+        comptime SchedulerType = TileScheduler[
             scheduler_tile_shape, num_scheduler_heads
         ]
         var scheduler: SchedulerType = SchedulerType()
@@ -316,7 +316,7 @@ fn mha_sm90_dispatch[
             ctx,
         )
     else:
-        alias SchedulerType = QueuedTileScheduler[
+        comptime SchedulerType = QueuedTileScheduler[
             scheduler_tile_shape, num_scheduler_heads, decoding=decoding
         ]
         var schedule = ctx.enqueue_create_buffer[DType.uint32](1)
@@ -433,7 +433,7 @@ fn _mha_sm90_sink_dispatch[
 ) raises:
     @parameter
     if sink:
-        alias SinkType = NonNullPointer[KVLUTType.dtype]
+        comptime SinkType = NonNullPointer[KVLUTType.dtype]
         var sink_ptr: SinkType = {sink_weights.value().ptr}
         _mha_sm90_kv_input_row_offset_dispatch[
             SchedulerType=SchedulerType,
@@ -470,8 +470,8 @@ fn _mha_sm90_sink_dispatch[
             ctx,
         )
     else:
-        alias SinkType = NullPointer[KVLUTType.dtype]
-        alias sink_ptr: SinkType = {}
+        comptime SinkType = NullPointer[KVLUTType.dtype]
+        comptime sink_ptr: SinkType = {}
         _mha_sm90_kv_input_row_offset_dispatch[
             SchedulerType=SchedulerType,
             KVLUTType=KVLUTType,
@@ -572,8 +572,8 @@ fn _mha_sm90_kv_input_row_offset_dispatch[
     score_mod: ScoreModType,
     ctx: DeviceContext,
 ) raises:
-    alias KVRowOffsetsNonNull = NonNullPointer[DType.uint32]
-    alias KVRowOffsetsNull = NullPointer[DType.uint32]
+    comptime KVRowOffsetsNonNull = NonNullPointer[DType.uint32]
+    comptime KVRowOffsetsNull = NullPointer[DType.uint32]
     if kv_input_row_offsets:
         var kv_row_offsets: KVRowOffsetsNonNull = {
             kv_input_row_offsets.value().ptr
@@ -709,7 +709,7 @@ fn _mha_sm90_valid_length_dispatch[
 ) raises:
     @parameter
     if ragged:
-        alias ValidLengthType = NonNullPointer[DType.uint32]
+        comptime ValidLengthType = NonNullPointer[DType.uint32]
         var valid_len: ValidLengthType = {valid_length}
         _mha_sm90_enqueue[
             SchedulerType=SchedulerType,
@@ -747,7 +747,7 @@ fn _mha_sm90_valid_length_dispatch[
             ctx,
         )
     else:
-        alias ValidLengthType = NullPointer[DType.uint32]
+        comptime ValidLengthType = NullPointer[DType.uint32]
         var valid_len: ValidLengthType = {}
         _mha_sm90_enqueue[
             SchedulerType=SchedulerType,
@@ -842,7 +842,7 @@ fn _mha_sm90_enqueue[
     ctx: DeviceContext,
 ) raises:
     # the pack contains all possibly 0-sized objects
-    alias kernel_sm90 = _mha_sm90[
+    comptime kernel_sm90 = _mha_sm90[
         KVLUTType,
         output_type,
         MaskType,
@@ -859,7 +859,7 @@ fn _mha_sm90_enqueue[
         PartitionType,
         swizzle_mode,
     ]
-    alias PackType = Pack[
+    comptime PackType = Pack[
         MaskType,
         ScoreModType,
         SchedulerType,
@@ -885,8 +885,8 @@ fn _mha_sm90_enqueue[
     )
     var block_x: UInt32 = max_num_prompt_tiles * partition.num_partitions()
 
-    alias smem_use = config.shared_mem_bytes[True, sm_90=True]()
-    alias num_threads = config.num_threads[True]()
+    comptime smem_use = config.shared_mem_bytes[True, sm_90=True]()
+    comptime num_threads = config.num_threads[True]()
     ctx.enqueue_function_checked[kernel_sm90, kernel_sm90](
         q_tma_op,
         k_tma_op,
@@ -978,22 +978,22 @@ fn _mha_sm90[
       TODO: use more optimized kernels for them
 
     """
-    alias kv_type = KVLUTType.dtype
-    alias decoding: Bool = _is_decoding[MaxSeqLenType]()
+    comptime kv_type = KVLUTType.dtype
+    comptime decoding: Bool = _is_decoding[MaxSeqLenType]()
 
-    alias simd_size = simd_width_of[kv_type]()
-    alias ragged = not ValidLengthType.is_null
+    comptime simd_size = simd_width_of[kv_type]()
+    comptime ragged = not ValidLengthType.is_null
 
-    alias num_warps_m = config.num_warps_m()
-    alias num_consumer_threads = config.num_consumer_threads()
-    alias BM = config.block_m()
-    alias BN = config.block_n()
-    alias num_heads = config.num_heads
-    alias depth = config.depth
+    comptime num_warps_m = config.num_warps_m()
+    comptime num_consumer_threads = config.num_consumer_threads()
+    comptime BM = config.block_m()
+    comptime BN = config.block_n()
+    comptime num_heads = config.num_heads
+    comptime depth = config.depth
     # num_consumer_threads ignores the producers
     # actual number of threads is num_consumer_threads + 128
-    alias num_consumer = num_consumer_threads // UInt(WARPGROUP_SIZE)
-    alias pipeline_stages = Int(config.num_pipeline_stages)
+    comptime num_consumer = num_consumer_threads // UInt(WARPGROUP_SIZE)
+    comptime pipeline_stages = Int(config.num_pipeline_stages)
     var tid: UInt32 = thread_idx.x
     var warp_group_idx: UInt32 = warp.broadcast(tid // WARPGROUP_SIZE)
 
@@ -1017,23 +1017,23 @@ fn _mha_sm90[
     # Coordinates of the current warp.
     var warp_y: UInt32 = warp_id  # // num_warps_n
 
-    alias q_smem_layout_consumer = tile_layout_k_major[
+    comptime q_smem_layout_consumer = tile_layout_k_major[
         DType.bfloat16,
         Int(BM),
         Int(config.padded_depth),
         swizzle_mode=swizzle_mode,
     ]()
-    alias k_smem_layout = k_tma_op.layout
-    alias v_smem_layout = v_tma_op.layout
+    comptime k_smem_layout = k_tma_op.layout
+    comptime v_smem_layout = v_tma_op.layout
     # for wgmma_0, we multiply BM x depth @ depth x BN -> BM x BN
     # for wgmma_1, we multiply BM x BN @ BN x depth -> BM x depth
     # For wgmma_0, we iterate over (depth//BK) tiles of size BKxBN
     # For wgmma_1, we iterate over (BN//BK) tiles of size BKxdepth
-    alias persistent = SchedulerType.may_advance
+    comptime persistent = SchedulerType.may_advance
 
     # The entire query block (BM x depth) is tiled in shared memory.
-    alias q_size = q_smem_layout_consumer.size()
-    alias q_smem_size = 2 * q_size if persistent else q_size
+    comptime q_size = q_smem_layout_consumer.size()
+    comptime q_smem_size = 2 * q_size if persistent else q_size
     q_smem = external_memory[
         Scalar[kv_type],
         address_space = AddressSpace.SHARED,
@@ -1041,7 +1041,7 @@ fn _mha_sm90[
         name="mha_dynamic_shared_memory",
     ]()
     # We have `num_pipeline_stages` instances of each
-    alias kv_smem_size = config.kv_smem_size(True)
+    comptime kv_smem_size = config.kv_smem_size(True)
     kv_smem = q_smem + q_smem_size
 
     # var head_idx: UInt32 = block_idx.y
@@ -1050,29 +1050,29 @@ fn _mha_sm90[
     # q tile has valid shape q_tile_num_rows x depth
     # q_tile_num_rows could be less than BM when seqlen % BM != 0
 
-    alias MMA_M = 16  # per warp
-    alias MMA_N0 = BN
-    alias MMA_N1 = config.padded_depth
-    alias MMA_K = 16
-    alias WM = config.WM
-    alias num_m_mmas = WM // MMA_M
+    comptime MMA_M = 16  # per warp
+    comptime MMA_N0 = BN
+    comptime MMA_N1 = config.padded_depth
+    comptime MMA_K = 16
+    comptime WM = config.WM
+    comptime num_m_mmas = WM // MMA_M
     constrained[num_m_mmas == 1, "FIXME: life this constraint"]()
     # alias WN = config.WN
     # alias num_n_mmas = WN // MMA_N
-    alias num_n_mmas = 1
+    comptime num_n_mmas = 1
     # alias num_k_mmas = BK // MMA_K
 
-    alias accum_type = get_accum_type[kv_type]()
-    alias p_frag_size = MMA_M * Int(MMA_N0) // WARP_SIZE
-    alias o_frag_size = MMA_M * Int(MMA_N1) // WARP_SIZE
-    alias frag_simdwidth = 2
+    comptime accum_type = get_accum_type[kv_type]()
+    comptime p_frag_size = MMA_M * Int(MMA_N0) // WARP_SIZE
+    comptime o_frag_size = MMA_M * Int(MMA_N1) // WARP_SIZE
+    comptime frag_simdwidth = 2
 
-    alias a_frag_size = MMA_M * MMA_K // WARP_SIZE
+    comptime a_frag_size = MMA_M * MMA_K // WARP_SIZE
     # MMA_N0 // MMA_K
-    alias frag_ratio = p_frag_size // a_frag_size
+    comptime frag_ratio = p_frag_size // a_frag_size
 
     # the first mma is BMxdepth @ depthxBN
-    alias wgmma_0 = TensorCoreAsync[
+    comptime wgmma_0 = TensorCoreAsync[
         accum_type,
         kv_type,
         kv_type,
@@ -1082,7 +1082,7 @@ fn _mha_sm90[
         transpose_b=True,
     ]()
     # the second mma is BMxBN @ BNxdepth
-    alias wgmma_1 = TensorCoreAsync[
+    comptime wgmma_1 = TensorCoreAsync[
         accum_type,
         kv_type,
         kv_type,
@@ -1092,7 +1092,7 @@ fn _mha_sm90[
         transpose_b=False,
     ]()
 
-    alias num_row_blocks_per_mma = 2
+    comptime num_row_blocks_per_mma = 2
     # a wgmma.m64n32k16 `D` fragment looks like
     #
     # 0,1  4,5   8, 9  12,13
@@ -1124,11 +1124,11 @@ fn _mha_sm90[
     #     ),
     # )
     # Vectorizing the layout:
-    alias element_layout = Layout.row_major(1, frag_simdwidth)
-    alias vec_output_row_shape = IntTuple(
+    comptime element_layout = Layout.row_major(1, frag_simdwidth)
+    comptime vec_output_row_shape = IntTuple(
         num_row_blocks_per_mma, Int(num_m_mmas)
     )
-    alias p_vec_output_layout = Layout(
+    comptime p_vec_output_layout = Layout(
         IntTuple(
             vec_output_row_shape,
             IntTuple(
@@ -1144,7 +1144,7 @@ fn _mha_sm90[
             ),
         ),
     )
-    alias o_vec_output_layout = Layout(
+    comptime o_vec_output_layout = Layout(
         IntTuple(
             vec_output_row_shape,
             IntTuple(
@@ -1160,17 +1160,17 @@ fn _mha_sm90[
             ),
         ),
     )
-    alias num_rows_per_warp = p_vec_output_layout[0].size()
-    alias num_cols_p = p_vec_output_layout[1].size()
-    alias num_cols_output = o_vec_output_layout[1].size()
+    comptime num_rows_per_warp = p_vec_output_layout[0].size()
+    comptime num_cols_p = p_vec_output_layout[1].size()
+    comptime num_cols_output = o_vec_output_layout[1].size()
 
     # Rowwise max and sum for online softmax
-    alias accum_simd_width = simd_width_of[accum_type]()
-    alias row_alignment = align_of[SIMD[accum_type, accum_simd_width]]()
+    comptime accum_simd_width = simd_width_of[accum_type]()
+    comptime row_alignment = align_of[SIMD[accum_type, accum_simd_width]]()
     # Account for group query.
-    alias kv_num_heads = num_heads // UInt(group)
+    comptime kv_num_heads = num_heads // UInt(group)
 
-    alias mma_thread_layout = Layout.row_major(8, 4)
+    comptime mma_thread_layout = Layout.row_major(8, 4)
 
     # Handle sink_weights
     var sink_weights_ptr = UnsafePointer[Scalar[kv_type]]()
@@ -1187,12 +1187,12 @@ fn _mha_sm90[
     consumed_mbar_q = produced_mbar_q + 2
     block_idx_ptr = (consumed_mbar_q + 2).bitcast[UInt32]()
 
-    alias USE_TMA = True
+    comptime USE_TMA = True
     # https://github.com/Dao-AILab/flash-attention/blob/3b5047d2ce742848f45d44b143d511f211eba2d2/hopper/flash_fwd_kernel_sm90.h#L81-L82
-    alias num_producer_regs = 56 if num_consumer == 1 else (
+    comptime num_producer_regs = 56 if num_consumer == 1 else (
         (24 if USE_TMA else 56) if num_consumer == 2 else 32
     )
-    alias num_consumer_regs = 256 if num_consumer == 1 else (
+    comptime num_consumer_regs = 256 if num_consumer == 1 else (
         (240 if USE_TMA else 224) if num_consumer == 2 else 160
     )
     # alias num_producer_regs = 56
@@ -1254,7 +1254,7 @@ fn _mha_sm90[
                 produced_mbar_q[i].init(1)
                 consumed_mbar_q[i].init(num_consumer_threads)
 
-    alias PositionType = MHAPosition[
+    comptime PositionType = MHAPosition[
         Int(BM),
         Int(BN),
         Int(config.depth),
@@ -1278,7 +1278,7 @@ fn _mha_sm90[
             alignment=128,
         ],
     ):
-        alias sz = BN * config.padded_depth
+        comptime sz = BN * config.padded_depth
         k_smem = {kv_smem + sz * idx}
 
     @parameter
@@ -1295,7 +1295,7 @@ fn _mha_sm90[
             alignment=128,
         ],
     ):
-        alias sz = BN * config.padded_depth
+        comptime sz = BN * config.padded_depth
         v_smem = {kv_smem + sz * idx}
 
     @parameter
@@ -1388,10 +1388,10 @@ fn _mha_sm90[
         # layout is
         # shape  = (2, num_m_mmas) x (2, num_n_mmas)
         # stride = (2, 4*num_n_mmas) x (1, 4)
-        alias s_reg_tile_layout = Layout.row_major(
+        comptime s_reg_tile_layout = Layout.row_major(
             Int(num_m_mmas * num_n_mmas), p_frag_size
         )
-        alias o_reg_tile_layout = Layout.row_major(
+        comptime o_reg_tile_layout = Layout.row_major(
             Int(num_m_mmas * num_n_mmas), o_frag_size
         )
         p_reg_tile = LayoutTensor[
@@ -1410,7 +1410,7 @@ fn _mha_sm90[
             .stack_allocation()
             .fill(0)
         )
-        alias p_reg_tile_layout = Layout.row_major(
+        comptime p_reg_tile_layout = Layout.row_major(
             Int(num_m_mmas * num_n_mmas * UInt(frag_ratio)), a_frag_size
         )
         p_frag = LayoutTensor[
@@ -1608,11 +1608,11 @@ fn _mha_sm90[
                 )
             output_gmem_tile = position.q_out_gmem_tensor(output_ptr)
 
-            alias swizzle = make_swizzle[
+            comptime swizzle = make_swizzle[
                 num_rows = MMA_M // 2, row_size = Int(BN), access_size=8
             ]()
             # Reuse a_smem for c tile in smem
-            alias q_tile_size: UInt32 = q_smem_size // 2
+            comptime q_tile_size: UInt32 = q_smem_size // 2
 
             # ensure all threads have finished reading `q_smem`
             named_barrier[num_consumer_threads]()

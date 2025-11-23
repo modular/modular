@@ -146,7 +146,7 @@ fn welford_warp_reduce[
     res_m2 = thread_m2
     res_count = thread_count
 
-    alias limit = log2_floor(WARP_SIZE)
+    comptime limit = log2_floor(WARP_SIZE)
 
     @parameter
     for mask in reversed(range(limit)):
@@ -274,8 +274,8 @@ fn layer_norm_gpu_warp_tiling[
     epsilon: Scalar[dtype],
 ):
     constrained[beta.rank == 1, "beta must have rank 1"]()
-    alias align = align_of[SIMD[dtype, Int(simd_width)]]()
-    alias accum_type = get_accum_type[dtype]()
+    comptime align = align_of[SIMD[dtype, Int(simd_width)]]()
+    comptime accum_type = get_accum_type[dtype]()
 
     var num_cols = shape[1]
     var tid: UInt = thread_idx.x
@@ -352,8 +352,8 @@ fn layer_norm_gpu_block[
     epsilon: Scalar[dtype],
 ):
     constrained[beta.rank == 1, "beta must have rank 1"]()
-    alias align = align_of[SIMD[dtype, Int(simd_width)]]()
-    alias accum_type = get_accum_type[dtype]()
+    comptime align = align_of[SIMD[dtype, Int(simd_width)]]()
+    comptime accum_type = get_accum_type[dtype]()
 
     var num_cols = UInt(shape[1])
     var tid = thread_idx.x
@@ -464,7 +464,7 @@ fn layer_norm_gpu[
     if last_dim == 0:
         return
 
-    alias rank_rs = 2
+    comptime rank_rs = 2
     var flattened_shape = layer_norm_reshape[rank_rs](shape)
     var rows = flattened_shape[0]
     var cols = flattened_shape[1]
@@ -488,8 +488,8 @@ fn layer_norm_gpu[
         indices[rank - 1] = col
         output_fn[simd_width, rank, alignment](indices.canonicalize(), val)
 
-    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
-    alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = rows
     var block_dim = min(
@@ -502,7 +502,7 @@ fn layer_norm_gpu[
         # registers, we do warp tiling, which is a single pass to do mean/var
         # computation and normalization.
         if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
-            alias kernel = layer_norm_gpu_warp_tiling[
+            comptime kernel = layer_norm_gpu_warp_tiling[
                 mut = beta.mut,
                 origin = beta.origin,
                 layout = beta.layout,
@@ -520,7 +520,7 @@ fn layer_norm_gpu[
                 attributes=pdl_launch_attributes(),
             )
         else:
-            alias kernel = layer_norm_gpu_block[
+            comptime kernel = layer_norm_gpu_block[
                 mut = beta.mut,
                 origin = beta.origin,
                 layout = beta.layout,
@@ -538,7 +538,7 @@ fn layer_norm_gpu[
                 attributes=pdl_launch_attributes(),
             )
     else:
-        alias kernel = layer_norm_gpu_block[
+        comptime kernel = layer_norm_gpu_block[
             mut = beta.mut,
             origin = beta.origin,
             layout = beta.layout,
@@ -601,7 +601,7 @@ fn layer_norm_cpu[
         epsilon: The eps value to use in the layernorm calculation.
     """
     constrained[beta.rank == 1, "beta must have rank 1"]()
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
 
     for row in range(num_rows):
 
@@ -836,7 +836,7 @@ fn _rms_norm_warp_tiling_subkernel[
     num_cols: Int,
 ) -> SIMD[dtype, simd_width]:
     constrained[gamma.rank == 1, "gamma must have rank 1"]()
-    alias align = align_of[SIMD[dtype, simd_width]]()
+    comptime align = align_of[SIMD[dtype, simd_width]]()
 
     # To utilize simd vector load.
     var thread_m2: Scalar[accum_type] = (vec_data**2).reduce_add()
@@ -896,9 +896,9 @@ fn rms_norm_gpu_warp_tiling_128[
     num_cols: Int,
 ):
     constrained[gamma.rank == 1, "gamma must have rank 1"]()
-    alias half_warp_size = WARP_SIZE // 2
-    alias align = align_of[SIMD[dtype, simd_width]]()
-    alias accum_type = get_accum_type[dtype]()
+    comptime half_warp_size = WARP_SIZE // 2
+    comptime align = align_of[SIMD[dtype, simd_width]]()
+    comptime accum_type = get_accum_type[dtype]()
 
     var eps_accum = epsilon.cast[accum_type]()
     var weight_offset_accum = weight_offset.cast[accum_type]()
@@ -957,8 +957,8 @@ fn rms_norm_gpu_warp_tiling[
 ):
     constrained[gamma.rank == 1, "gamma must have rank 1"]()
 
-    alias align = align_of[SIMD[dtype, simd_width]]()
-    alias accum_type = get_accum_type[dtype]()
+    comptime align = align_of[SIMD[dtype, simd_width]]()
+    comptime accum_type = get_accum_type[dtype]()
 
     var eps_accum = epsilon.cast[accum_type]()
     var weight_offset_accum = weight_offset.cast[accum_type]()
@@ -1009,8 +1009,8 @@ fn _rms_norm_gpu_block_subkernel[
 ):
     constrained[gamma.rank == 1, "gamma must have rank 1"]()
 
-    alias align = align_of[SIMD[dtype, simd_width]]()
-    alias accum_type = get_accum_type[dtype]()
+    comptime align = align_of[SIMD[dtype, simd_width]]()
+    comptime accum_type = get_accum_type[dtype]()
 
     var tid = thread_idx.x
     var row = block_idx.x
@@ -1147,8 +1147,8 @@ fn rms_norm_gpu[
         indices[rank - 1] = col
         return input_fn[simd_width](indices.canonicalize())
 
-    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
-    alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = rows
     var block_dim = min(
@@ -1162,12 +1162,12 @@ fn rms_norm_gpu[
         # computation and normalization.
         if cols <= 128 and dtype == DType.bfloat16:
             # Experimentally determined to be the best - tapers off at 2.
-            alias warps_per_block = 2
+            comptime warps_per_block = 2
             # Each warp handles 2 rows, so total rows per block is warps_per_block * 2.
             block_dim = warps_per_block * WARP_SIZE
             grid_dim = ceildiv(rows, warps_per_block * 2)
 
-            alias kernel = rms_norm_gpu_warp_tiling_128[
+            comptime kernel = rms_norm_gpu_warp_tiling_128[
                 mut = gamma.mut,
                 origin = gamma.origin,
                 layout = gamma.layout,
@@ -1188,7 +1188,7 @@ fn rms_norm_gpu[
                 attributes=pdl_launch_attributes(),
             )
         elif cols <= (WARP_SIZE * simd_width * max_warps_per_block):
-            alias kernel = rms_norm_gpu_warp_tiling[
+            comptime kernel = rms_norm_gpu_warp_tiling[
                 mut = gamma.mut,
                 origin = gamma.origin,
                 layout = gamma.layout,
@@ -1208,7 +1208,7 @@ fn rms_norm_gpu[
                 attributes=pdl_launch_attributes(),
             )
         else:
-            alias kernel = rms_norm_gpu_block[
+            comptime kernel = rms_norm_gpu_block[
                 mut = gamma.mut,
                 origin = gamma.origin,
                 layout = gamma.layout,
@@ -1228,7 +1228,7 @@ fn rms_norm_gpu[
                 attributes=pdl_launch_attributes(),
             )
     else:
-        alias kernel = rms_norm_gpu_block[
+        comptime kernel = rms_norm_gpu_block[
             mut = gamma.mut,
             origin = gamma.origin,
             layout = gamma.layout,
@@ -1264,13 +1264,13 @@ fn rms_norm_cpu[
 ):
     constrained[gamma.rank == 1, "gamma must have rank 1"]()
 
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
 
     var num_rows = out_shape[0]
     var num_cols = out_shape[1]
 
     var simd_loop_end = align_down(num_cols, simd_width)
-    alias intermediate_type = get_accum_type[dtype]()
+    comptime intermediate_type = get_accum_type[dtype]()
 
     # PyTorch converts the input to float32 before computing the RMS norm
     # https://github.com/meta-llama/llama/blob/689c7f261b9c5514636ecc3c5fefefcbb3e6eed7/llama/model.py#L76
@@ -1478,8 +1478,8 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
     constrained[gamma1.rank == 1, "gamma1 must have rank 1"]()
     constrained[gamma2.rank == 1, "gamma2 must have rank 1"]()
 
-    alias align = align_of[SIMD[dtype, simd_width]]()
-    alias accum_type = get_accum_type[dtype]()
+    comptime align = align_of[SIMD[dtype, simd_width]]()
+    comptime accum_type = get_accum_type[dtype]()
 
     var eps_accum1 = epsilon1.cast[accum_type]()
     var weight_offset_accum1 = weight_offset1.cast[accum_type]()
@@ -1691,8 +1691,8 @@ fn rms_norm_fused_residual_add_gpu[
         indices[rank - 1] = col
         return residual_input_fn[simd_width](indices.canonicalize())
 
-    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
-    alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = rows
     var block_dim = min(
@@ -1705,7 +1705,7 @@ fn rms_norm_fused_residual_add_gpu[
         # registers we do warp tiling which is a single pass to do mean/var
         # computation and normalization.
         if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
-            alias kernel = rms_norm_fused_residual_add_gpu_warp_tiling[
+            comptime kernel = rms_norm_fused_residual_add_gpu_warp_tiling[
                 mut1 = gamma1.mut,
                 origin1 = gamma1.origin,
                 layout1 = gamma1.layout,
@@ -1737,7 +1737,7 @@ fn rms_norm_fused_residual_add_gpu[
                 ceildiv(cols, simd_width) * simd_width * size_of[dtype]()
             )
 
-            alias kernel = rms_norm_fused_residual_add_gpu_block[
+            comptime kernel = rms_norm_fused_residual_add_gpu_block[
                 mut1 = gamma1.mut,
                 origin1 = gamma1.origin,
                 layout1 = gamma1.layout,
@@ -1772,7 +1772,7 @@ fn rms_norm_fused_residual_add_gpu[
     else:
         var shared_mem_size = Int(cols * size_of[dtype]())
 
-        alias kernel = rms_norm_fused_residual_add_gpu_block[
+        comptime kernel = rms_norm_fused_residual_add_gpu_block[
             mut1 = gamma1.mut,
             origin1 = gamma1.origin,
             layout1 = gamma1.layout,
@@ -2172,8 +2172,8 @@ fn group_norm_gpu_warp_tiling[
     spatial: Int,
 ):
     constrained[output.rank == 2, "output.rank must be 2"]()
-    alias align = align_of[SIMD[dtype, simd_width]]()
-    alias accum_type = get_accum_type[dtype]()
+    comptime align = align_of[SIMD[dtype, simd_width]]()
+    comptime accum_type = get_accum_type[dtype]()
 
     var idx = Int(thread_idx.x) * simd_width
 
@@ -2250,8 +2250,8 @@ fn group_norm_gpu_block[
     spatial: Int,
 ):
     constrained[output.rank == 2, "output.rank must be 2"]()
-    alias align = align_of[SIMD[dtype, Int(simd_width)]]()
-    alias accum_type = get_accum_type[dtype]()
+    comptime align = align_of[SIMD[dtype, Int(simd_width)]]()
+    comptime accum_type = get_accum_type[dtype]()
 
     var tid = thread_idx.x
     var row = block_idx.x
@@ -2349,7 +2349,7 @@ fn group_norm_gpu[
     ctx: DeviceContext,
 ) raises:
     constrained[output.rank == rank, "output.rank must be the same as rank"]()
-    alias accum_type = get_accum_type[dtype]()
+    comptime accum_type = get_accum_type[dtype]()
 
     var N = shape[0]
     var C = shape[1]
@@ -2393,7 +2393,7 @@ fn group_norm_gpu[
 
         return input_fn[simd_width, rank](indices)
 
-    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
     if num_cols < simd_width:
         raise Error(
             "group_norm_gpu requires num_cols >= simd_width; got num_cols="
@@ -2402,7 +2402,7 @@ fn group_norm_gpu[
             + String(simd_width)
         )
 
-    alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = num_rows
     var block_dim = min(
@@ -2415,7 +2415,7 @@ fn group_norm_gpu[
         # registers, we do warp tiling, which is a single pass to do mean/var
         # computation and normalization.
         if num_cols <= (WARP_SIZE * simd_width * max_warps_per_block):
-            alias kernel = group_norm_gpu_warp_tiling[
+            comptime kernel = group_norm_gpu_warp_tiling[
                 mut = output_rs.mut,
                 origin = output_rs.origin,
                 layout = output_rs.layout,
@@ -2436,7 +2436,7 @@ fn group_norm_gpu[
                 attributes=pdl_launch_attributes(),
             )
         else:
-            alias kernel = group_norm_gpu_block[
+            comptime kernel = group_norm_gpu_block[
                 mut = output_rs.mut,
                 origin = output_rs.origin,
                 layout = output_rs.layout,
@@ -2457,7 +2457,7 @@ fn group_norm_gpu[
                 attributes=pdl_launch_attributes(),
             )
     else:
-        alias kernel = group_norm_gpu_block[
+        comptime kernel = group_norm_gpu_block[
             mut = output_rs.mut,
             origin = output_rs.origin,
             layout = output_rs.layout,

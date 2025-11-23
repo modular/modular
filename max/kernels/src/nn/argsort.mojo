@@ -116,7 +116,7 @@ fn _argsort_gpu_impl[
     debug_assert(n.is_power_of_two(), "n must be a power of two")
 
     # Define block size for GPU kernel execution
-    alias BLOCK_SIZE = 256
+    comptime BLOCK_SIZE = 256
 
     # Bitonic sort algorithm implementation
     @__llvm_metadata(
@@ -173,7 +173,7 @@ fn _argsort_gpu_impl[
         var j = k // 2
         while j > 0:
             # Launch GPU kernel for each stage of the bitonic sort
-            alias kernel = bitonic_sort_step[
+            comptime kernel = bitonic_sort_step[
                 indices.dtype, input.dtype, indices.layout, input.layout
             ]
             ctx.enqueue_function_checked[kernel, kernel](

@@ -152,7 +152,7 @@ fn _fused_qkv_matmul_kv_cache[
     )
 
 
-alias embed_fn_type = fn[dtype: DType, width: Int] (
+comptime embed_fn_type = fn[dtype: DType, width: Int] (
     IndexList[4], SIMD[dtype, width]
 ) capturing -> SIMD[dtype, width]
 
@@ -189,8 +189,8 @@ fn _fused_qkv_matmul_kv_cache_impl[
             projections are written in-place to k_cache and v_cache.
         context: The DeviceContext. This is unused if is_cpu[target]().
     """
-    alias cache_t = collection_t.CacheType
-    alias cache_dtype = cache_t.dtype
+    comptime cache_t = collection_t.CacheType
+    comptime cache_dtype = cache_t.dtype
 
     constrained[
         cache_dtype == dtype,
@@ -200,9 +200,9 @@ fn _fused_qkv_matmul_kv_cache_impl[
         String(dtype),
     ]()
 
-    alias kv_params = cache_t.kv_params
-    alias N = Int(weight.layout.shape[0])
-    alias K = Int(weight.layout.shape[1])
+    comptime kv_params = cache_t.kv_params
+    comptime N = Int(weight.layout.shape[0])
+    comptime K = Int(weight.layout.shape[1])
 
     var SEQ_LEN = UInt(hidden_state.dim[1]())
 
@@ -273,10 +273,10 @@ fn _matmul_common[
 ) raises:
     var BS = hidden_state.dim[0]()
     var SEQ_LEN = hidden_state.dim[1]()
-    alias N = Int(weight.layout.shape[0])
-    alias K = Int(weight.layout.shape[1])
+    comptime N = Int(weight.layout.shape[0])
+    comptime K = Int(weight.layout.shape[1])
 
-    alias hidden_state_layout = Layout.row_major(
+    comptime hidden_state_layout = Layout.row_major(
         UNKNOWN_VALUE, Int(hidden_state.layout.shape[2])
     )
     var hidden_state_2d = LayoutTensor[
@@ -290,7 +290,7 @@ fn _matmul_common[
         ),
     )
 
-    alias c_layout = Layout.row_major(UNKNOWN_VALUE, N)
+    comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
     var c_nd: LayoutTensor[dtype, c_layout, MutAnyOrigin]
 
     @parameter
@@ -557,7 +557,7 @@ fn _flash_attention_dispatch[
                 q, k, v, mask, scale, output, sink_weights
             )
         else:
-            alias use_score_mod = not _type_is_eq[
+            comptime use_score_mod = not _type_is_eq[
                 score_mod_t, IdentityScoreMod
             ]()
             gpu_flash_attention[use_score_mod=use_score_mod](
@@ -621,7 +621,7 @@ fn _flash_attention_dispatch_materialized_mask[
                     sink_weights,
                 )
             else:
-                alias use_score_mod = not _type_is_eq[
+                comptime use_score_mod = not _type_is_eq[
                     score_mod_t, IdentityScoreMod
                 ]()
                 gpu_flash_attention[use_score_mod=use_score_mod, sink=sink](
@@ -701,10 +701,10 @@ def rms_norm_kv_cache_ragged_continuous_batching[
     output dtype or not. We set it to `True` by default.
     """
     # Rank of ragged tensors of shape (total_seq_len, num_heads, head_dim).
-    alias rank = 3 if per_head_norm else 2
+    comptime rank = 3 if per_head_norm else 2
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var kv_params = k_cache.kv_params
-    alias rms_norm_cols = Int(gamma.layout.shape[0])
+    comptime rms_norm_cols = Int(gamma.layout.shape[0])
 
     constrained[
         gamma.layout.shape[0] != UNKNOWN_VALUE, "Need static shape for gamma"
@@ -866,10 +866,10 @@ def rms_norm_kv_cache_ragged_paged[
     output dtype or not. We set it to `True` by default.
     """
     # Rank of ragged tensors of shape (total_seq_len, num_heads, head_dim).
-    alias rank = 3 if per_head_norm else 2
+    comptime rank = 3 if per_head_norm else 2
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var kv_params = k_cache.kv_params
-    alias rms_norm_cols = Int(gamma.layout.shape[0])
+    comptime rms_norm_cols = Int(gamma.layout.shape[0])
 
     constrained[
         gamma.layout.shape[0] != UNKNOWN_VALUE, "Need static shape for gamma"
@@ -1000,7 +1000,7 @@ def _print_cache[
     is_print_compact: Bool,
 ) -> None:
     """Prints a cache buffer, abbreviating output with ellipses."""
-    alias kv_params = collection_t.CacheType.kv_params
+    comptime kv_params = collection_t.CacheType.kv_params
 
     # Only abbreviate output when `is_print_compact` is set.
     var num_to_print: Int = 7 if is_print_compact else Int.MAX
@@ -1372,10 +1372,10 @@ fn generic_get_paged_cache[
         blocks.static_spec.shape.get[3](),
     ],
 ):
-    alias page_size = blocks.static_spec.shape.get[3]()
-    alias head_dim = blocks.static_spec.shape.get[5]()
-    alias num_heads = blocks.static_spec.shape.get[4]()
-    alias is_mla = blocks.static_spec.shape.get[1]() == 1
+    comptime page_size = blocks.static_spec.shape.get[3]()
+    comptime head_dim = blocks.static_spec.shape.get[5]()
+    comptime num_heads = blocks.static_spec.shape.get[4]()
+    comptime is_mla = blocks.static_spec.shape.get[1]() == 1
     return generic_get_paged_cache[
         dtype,
         KVCacheStaticParams(UInt(num_heads), UInt(head_dim), is_mla),

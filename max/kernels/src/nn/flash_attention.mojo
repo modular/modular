@@ -91,9 +91,9 @@ struct _MatmulConfig:
 
 
 struct _Matmul[dtype: DType, simd_width: Int]:
-    alias _matmul_config = _MatmulConfig._get_config()
+    comptime _matmul_config = _MatmulConfig._get_config()
 
-    alias _input_fn_type = fn[simd_width: Int] (
+    comptime _input_fn_type = fn[simd_width: Int] (
         x: Int, y: Int
     ) capturing -> SIMD[Self.dtype, simd_width]
 
@@ -254,10 +254,10 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         # Use a conservative SIMD width for transposing. Using a wider native
         # SIMD width has not been observed to improve performance and causes
         # code size to unnecessarily increase.
-        alias transpose_width = 4
-        alias tile_sizes = VariadicList[Int](transpose_width, 1)
+        comptime transpose_width = 4
+        comptime tile_sizes = VariadicList[Int](transpose_width, 1)
 
-        alias layout = Layout.row_major(transpose_width, transpose_width)
+        comptime layout = Layout.row_major(transpose_width, transpose_width)
         var transpose_stack = InlineArray[Scalar[Self.dtype], layout.size()](
             uninitialized=True
         )
@@ -382,8 +382,8 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                     accum_reduce[nn] = accum[nn].reduce_add[target_width]()
                 return accum_reduce
 
-            alias unroll_factor = 2
-            alias unroll_simd_width = Self.simd_width * unroll_factor
+            comptime unroll_factor = 2
+            comptime unroll_simd_width = Self.simd_width * unroll_factor
 
             var unroll_loop_end = align_down(K, unroll_simd_width)
             var unroll_accum = InlineArray[
@@ -520,9 +520,9 @@ struct _FlashAttentionConfig[
         self.o_block_n = 128
 
         # Set a target size for the output block array.
-        alias output_target_size = 8192
+        comptime output_target_size = 8192
 
-        alias depth_static_dim = Self.output_static_shape[Self.rank - 1]
+        comptime depth_static_dim = Self.output_static_shape[Self.rank - 1]
 
         @parameter
         if depth_static_dim != UNKNOWN_VALUE:
@@ -570,11 +570,11 @@ struct _FlashAttention[
     *,
     simd_width: Int = simd_width_of[dtype](),
 ]:
-    alias _matmul = _Matmul[Self.dtype, Self.simd_width]
-    alias _config = _FlashAttentionConfig[
+    comptime _matmul = _Matmul[Self.dtype, Self.simd_width]
+    comptime _config = _FlashAttentionConfig[
         Self.dtype, Self.rank, Self.simd_width, Self.padded_output_shape
     ]()
-    alias _depth_static_dim = Self.padded_output_shape[Self.rank - 1]
+    comptime _depth_static_dim = Self.padded_output_shape[Self.rank - 1]
 
     @staticmethod
     fn _online_softmax[
@@ -600,7 +600,7 @@ struct _FlashAttention[
         if do_sink:
             sink_logit = sink_weight.value()
 
-        alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+        comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
         for m in range(count_m):
             var qk_row = LayoutTensor[Self.dtype, layout_1d](
                 qk_row_ptr,
@@ -737,7 +737,7 @@ struct _FlashAttention[
                 Self.dtype,
                 alignment = align_of[SIMD[Self.dtype, Self.simd_width]](),
             ]()
-            alias layout = Layout.row_major(Self._config.block_m)
+            comptime layout = Layout.row_major(Self._config.block_m)
             var max_vals_stack = InlineArray[
                 Scalar[Self.dtype], Self._config.block_m
             ](uninitialized=True)
@@ -1128,7 +1128,7 @@ fn flash_attention_split_kv[
         "flash_attention_split_kv",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
-        alias kv_rank = rank + 1
+        comptime kv_rank = rank + 1
 
         var kv_cache_len = v_cache_shape[3]
 
@@ -1228,13 +1228,13 @@ fn _flash_attention_kv_cache[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ):
-    alias kv_params = cache_t.kv_params
+    comptime kv_params = cache_t.kv_params
 
     var max_seq_len = q.dim[1]()
     var num_batches = q.dim[0]()
-    alias num_heads = Int(q.layout.shape[2])
-    alias head_size = cache_t.kv_params.head_size
-    alias output_shape = IndexList[4](
+    comptime num_heads = Int(q.layout.shape[2])
+    comptime head_size = cache_t.kv_params.head_size
+    comptime output_shape = IndexList[4](
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, Int(head_size)
     )
 
@@ -1294,9 +1294,9 @@ fn _flash_attention_kv_cache[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ):
-    alias num_kv_heads = cache_t.kv_params.num_heads
-    alias depth_dim = cache_t.kv_params.head_size
-    alias cache_type = cache_t.dtype
+    comptime num_kv_heads = cache_t.kv_params.num_heads
+    comptime depth_dim = cache_t.kv_params.head_size
+    comptime cache_type = cache_t.dtype
 
     constrained[
         cache_type == dtype,
@@ -1490,12 +1490,12 @@ fn flash_attention_kv_cache[
         var out_idx = output._offset(flat_idx)
         return output.ptr + out_idx
 
-    alias mask_rank = 4
+    comptime mask_rank = 4
     var num_batches = q_input_row_offsets.dim[0]() - 1
     var max_seq_len = k.max_prompt_length()
-    alias num_heads = Int(q.layout.shape[q.rank - 2])
-    alias head_size = cache_t.kv_params.head_size
-    alias output_shape = IndexList[4](
+    comptime num_heads = Int(q.layout.shape[q.rank - 2])
+    comptime head_size = cache_t.kv_params.head_size
+    comptime output_shape = IndexList[4](
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, Int(head_size)
     )
 

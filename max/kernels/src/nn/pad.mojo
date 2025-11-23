@@ -37,7 +37,7 @@ from utils import IndexList, StaticTuple
 fn _fill[
     dtype: DType
 ](dst: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], count: Int):
-    alias layout = Layout.row_major(UNKNOWN_VALUE)
+    comptime layout = Layout.row_major(UNKNOWN_VALUE)
     _ = LayoutTensor[dtype, layout](
         dst, RuntimeLayout[layout].row_major(IndexList[1](count))
     ).fill(value)
@@ -55,14 +55,14 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
              .....
     """
 
-    alias Element = IndexList[Self.n_loops]
-    alias IteratorType[
+    comptime Element = IndexList[Self.n_loops]
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
     var cur: Self.Element
 
-    alias LoopBoundSpec = InlineArray[IndexList[2], Self.n_loops]
+    comptime LoopBoundSpec = InlineArray[IndexList[2], Self.n_loops]
     var loop_bounds: Self.LoopBoundSpec
     var early_stop: Bool
 

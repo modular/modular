@@ -237,7 +237,7 @@ fn softmax_2_pass[
     var running_max = running_info[0]
     var running_sum = running_info[1]
 
-    alias unroll_factor = 8  # TODO: search
+    comptime unroll_factor = 8  # TODO: search
     _softmax_2_pass_step2[simd_width, unroll_factor, dtype](
         output, input, running_max, running_sum
     )
@@ -271,7 +271,7 @@ fn _softmax_3_pass_step_2[
     #   Output[i] = pre_update_func(Input[i] - max_val)
     #   accum += post_update_func(Output[i])
     # end for
-    alias outer_simd_width = simd_width
+    comptime outer_simd_width = simd_width
 
     var accum_scalar: Scalar[dtype] = 0
     var accum_simd: SIMD[dtype, outer_simd_width] = 0
@@ -407,7 +407,7 @@ fn _softmax_3_pass_base[
     var max_val = max_buff[0][0]
 
     # STEP 2
-    alias unroll_factor = 8  # TODO: search
+    comptime unroll_factor = 8  # TODO: search
     var accum = _softmax_3_pass_step_2[
         simd_width,
         unroll_factor,
@@ -664,7 +664,7 @@ fn softmax_kernel[
         sink_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ],
 ):
-    alias axis = rank - 1
+    comptime axis = rank - 1
 
     var row_size = UInt(shape[axis])
     var num_rows = UInt(shape.flattened_length()) // row_size
@@ -806,12 +806,12 @@ fn _softmax_gpu[
     ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
         return rebind[SIMD[_dtype, width]](input_fn[width, rank](idx))
 
-    alias BLOCK_SIZE = 128
+    comptime BLOCK_SIZE = 128
     var num_rows = shape.flattened_length() // shape[axis]
     var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
-    alias sm_overprovision_factor = 32  # tunable
+    comptime sm_overprovision_factor = 32  # tunable
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
-    alias kernel = softmax_kernel[
+    comptime kernel = softmax_kernel[
         BLOCK_SIZE,
         input_fn_wrapper,
         dtype,
@@ -903,29 +903,29 @@ fn _online_softmax_kernel[
         "fragment_transpose must be False on NVIDIA",
     ]()
 
-    alias mma_shape = IndexList[3](16, 8, 8) if is_nvidia_gpu() else IndexList[
-        3
-    ](16, 16, 16)
-    alias num_seqs = input.shape[0]()
-    alias seqlen = input.shape[1]()
+    comptime mma_shape = IndexList[3](
+        16, 8, 8
+    ) if is_nvidia_gpu() else IndexList[3](16, 16, 16)
+    comptime num_seqs = input.shape[0]()
+    comptime seqlen = input.shape[1]()
 
     constrained[
         WM == num_seqs, "Only consider WM equal to number of rows in test."
     ]()
 
-    alias num_m_mmas = WM // mma_shape[0]
-    alias num_n_mmas = WN // mma_shape[1]
+    comptime num_m_mmas = WM // mma_shape[0]
+    comptime num_n_mmas = WN // mma_shape[1]
 
     # TODO: This is a temporary hack, hopefully we can come up with a better way.
-    alias mma_fragment_groups = 2 if is_nvidia_gpu() else 1
+    comptime mma_fragment_groups = 2 if is_nvidia_gpu() else 1
 
     # Each 16x8 mma tile has two 8x8 units and corresponds to 8x4 thread layout
     # in a single warp.
-    alias num_mma_units = num_m_mmas * num_n_mmas * mma_fragment_groups
-    alias score_layout_by_mma_unit = Layout.row_major(
+    comptime num_mma_units = num_m_mmas * num_n_mmas * mma_fragment_groups
+    comptime score_layout_by_mma_unit = Layout.row_major(
         num_m_mmas * mma_fragment_groups, num_n_mmas
     )
-    alias warp_layout = Layout.row_major(8, 4) if is_nvidia_gpu() else (
+    comptime warp_layout = Layout.row_major(8, 4) if is_nvidia_gpu() else (
         Layout.col_major(16, 4) if fragment_transpose else Layout.row_major(
             4, 16
         )
@@ -933,10 +933,10 @@ fn _online_softmax_kernel[
 
     # Only consider 2 iterations in this test. The number of warps is based on
     # half sequence length.
-    alias num_rowwise_warps = seqlen // 2 // WN
-    alias block_layout_by_warp = Layout.row_major(1, num_rowwise_warps)
+    comptime num_rowwise_warps = seqlen // 2 // WN
+    comptime block_layout_by_warp = Layout.row_major(1, num_rowwise_warps)
 
-    alias frag_size = get_fragment_size[mma_shape]()[2]
+    comptime frag_size = get_fragment_size[mma_shape]()[2]
 
     var warp_id = get_warp_id()
     var lane = lane_id()
@@ -960,11 +960,11 @@ fn _online_softmax_kernel[
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
-    alias fragment_layout = Layout.row_major(1, 2) if is_nvidia_gpu() else (
+    comptime fragment_layout = Layout.row_major(1, 2) if is_nvidia_gpu() else (
         Layout.row_major(1, 4) if fragment_transpose else Layout.row_major(4, 1)
     )
-    alias simdwidth_row = fragment_layout.shape[0].value()
-    alias simdwidth_col = fragment_layout.shape[1].value()
+    comptime simdwidth_row = fragment_layout.shape[0].value()
+    comptime simdwidth_col = fragment_layout.shape[1].value()
 
     @parameter
     if is_nvidia_gpu():
@@ -996,10 +996,10 @@ fn _online_softmax_kernel[
         Layout.row_major(num_mma_units, frag_size // mma_fragment_groups)
     ]().vectorize[1, frag_size // mma_fragment_groups]()
 
-    alias frag_num_rows = 2 if is_nvidia_gpu() else (
+    comptime frag_num_rows = 2 if is_nvidia_gpu() else (
         1 if fragment_transpose else 4
     )
-    alias row_alignment = align_of[SIMD[dtype, simd_width_of[dtype]()]]()
+    comptime row_alignment = align_of[SIMD[dtype, simd_width_of[dtype]()]]()
     var rowmax = stack_allocation[
         num_m_mmas * frag_num_rows, dtype, alignment=row_alignment
     ]()
@@ -1118,8 +1118,8 @@ fn _online_softmax_iter_for_mma_output[
     rowmax: UnsafePointer[Scalar[dtype], **_],
     rowsum: UnsafePointer[Scalar[dtype], **_],
 ):
-    alias num_colwise_warps = block_layout_by_warp.shape[0].value()
-    alias num_rowwise_warps = block_layout_by_warp.shape[1].value()
+    comptime num_colwise_warps = block_layout_by_warp.shape[0].value()
+    comptime num_rowwise_warps = block_layout_by_warp.shape[1].value()
 
     var tid = thread_idx.x
     var lane = lane_id()
@@ -1132,19 +1132,19 @@ fn _online_softmax_iter_for_mma_output[
     # Each mma fragment is a 2D tile e.g. (1, x) for nvidia and (x, 1) for AMD.
 
     # TODO: fragment_layout should ideally be inferred from the shape of output_reg_tile or score_reg_tile
-    alias frag_type = score_reg_tile.element_type
-    alias frag_num_rows = fragment_layout.shape[0].value()
-    alias frag_num_cols = fragment_layout.shape[1].value()
+    comptime frag_type = score_reg_tile.element_type
+    comptime frag_num_rows = fragment_layout.shape[0].value()
+    comptime frag_num_cols = fragment_layout.shape[1].value()
 
-    alias frag_is_row_vector = frag_num_rows == 1
+    comptime frag_is_row_vector = frag_num_rows == 1
 
     # Number of mma unit tiles in the score matrix.
     # 2*num_m_mmas
-    alias num_colwise_tiles = score_layout_by_mma_unit.shape[0].value()
+    comptime num_colwise_tiles = score_layout_by_mma_unit.shape[0].value()
     # num_n_mmas
-    alias num_rowwise_tiles = score_layout_by_mma_unit.shape[1].value()
+    comptime num_rowwise_tiles = score_layout_by_mma_unit.shape[1].value()
     # The online softmax attributes for each thread's elements (fragments).
-    alias num_rows_per_thread = num_colwise_tiles * frag_num_rows
+    comptime num_rows_per_thread = num_colwise_tiles * frag_num_rows
 
     var score_frag_rowmax = LayoutTensor[
         dtype,
@@ -1185,13 +1185,13 @@ fn _online_softmax_iter_for_mma_output[
             score_frag_rowmax[col_tile, row] = rowmax_tensor[col_tile, row]
             score_frag_rowsum[col_tile, row] = 0
 
-    alias num_shuffles_per_row = log2_floor(warp_layout.shape[1].value())
+    comptime num_shuffles_per_row = log2_floor(warp_layout.shape[1].value())
 
-    alias num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
-    alias num_colwise_lanes = UInt32(warp_layout.shape[0].value())
-    alias rowwise_lanes_stride = UInt32(warp_layout.stride[1].value())
+    comptime num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
+    comptime num_colwise_lanes = UInt32(warp_layout.shape[0].value())
+    comptime rowwise_lanes_stride = UInt32(warp_layout.stride[1].value())
 
-    alias exp_function = _exp2_concrete if use_exp2 else _exp_concrete
+    comptime exp_function = _exp2_concrete if use_exp2 else _exp_concrete
 
     # Online softmax
     @parameter
@@ -1199,7 +1199,7 @@ fn _online_softmax_iter_for_mma_output[
 
         @parameter
         for row_tile in range(num_rowwise_tiles):
-            alias tile_id = col_tile + row_tile * num_colwise_tiles
+            comptime tile_id = col_tile + row_tile * num_colwise_tiles
 
             # Assume this is a rowwise vector for now see above constraint.
             var frag = score_reg_tile[tile_id, 0]
@@ -1315,7 +1315,7 @@ fn _online_softmax_iter_for_mma_output[
         # Softmax numerator based on mma results.
         @parameter
         for row_tile in range(num_rowwise_tiles):
-            alias tile_id = col_tile + num_colwise_tiles * row_tile
+            comptime tile_id = col_tile + num_colwise_tiles * row_tile
 
             @parameter
             if frag_is_row_vector:
@@ -1339,7 +1339,7 @@ fn _online_softmax_iter_for_mma_output[
         # Sum softmax numerator from a thread's fragments.
         @parameter
         for row_tile in range(num_rowwise_tiles):
-            alias tile_id = col_tile + num_colwise_tiles * row_tile
+            comptime tile_id = col_tile + num_colwise_tiles * row_tile
             var frag = score_reg_tile[tile_id, 0]
 
             @parameter
@@ -1430,9 +1430,9 @@ fn _online_softmax_iter_for_mma_output[
                     score_frag_rowsum[col_tile, row]
                 )
 
-    alias num_output_replications = output_reg_tile.layout.shape[0].value() // (
-        num_colwise_tiles * num_rowwise_tiles
-    )
+    comptime num_output_replications = output_reg_tile.layout.shape[
+        0
+    ].value() // (num_colwise_tiles * num_rowwise_tiles)
     # if num_output_replications != 1, then `warp_split_k` and it must equal `num_warps_n`.
     # FIXME: require `warp_split_k` when delaying inter-warp communication.
     constrained[
@@ -1450,9 +1450,11 @@ fn _online_softmax_iter_for_mma_output[
 
             @parameter
             for row_tile in range(num_rowwise_tiles):
-                alias tile_id = col_tile + row_tile * num_colwise_tiles + k * num_colwise_tiles * num_rowwise_tiles
+                comptime tile_id = col_tile + row_tile * num_colwise_tiles + k * num_colwise_tiles * num_rowwise_tiles
 
-                alias output_frag_type = type_of(output_reg_tile).element_type
+                comptime output_frag_type = type_of(
+                    output_reg_tile
+                ).element_type
 
                 @parameter
                 if frag_is_row_vector:
@@ -1533,12 +1535,12 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     rowsum: UnsafePointer[Scalar[dtype], **_],
 ):
     # Here, we use naming conventions aligning with MHA's
-    alias num_m_mmas = score_layout_by_mma_unit.shape[0].value()
-    alias num_n_mmas = score_layout_by_mma_unit.shape[1].value()
-    alias num_warps_m = block_layout_by_warp.shape[0].value()
-    alias num_warps_n = block_layout_by_warp.shape[1].value()
-    alias num_lanes_m = UInt32(warp_layout.shape[0].value())
-    alias num_lanes_n = UInt32(warp_layout.shape[1].value())
+    comptime num_m_mmas = score_layout_by_mma_unit.shape[0].value()
+    comptime num_n_mmas = score_layout_by_mma_unit.shape[1].value()
+    comptime num_warps_m = block_layout_by_warp.shape[0].value()
+    comptime num_warps_n = block_layout_by_warp.shape[1].value()
+    comptime num_lanes_m = UInt32(warp_layout.shape[0].value())
+    comptime num_lanes_n = UInt32(warp_layout.shape[1].value())
 
     @parameter
     if num_warps_n == 1:
@@ -1547,7 +1549,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     # var output_reg_vecs = output_reg_tile.tile[
     #     num_warps_n * num_m_mmas * num_n_mmas, p_frag_size // 2
     # ](0, 0).vectorize[1, p_frag_size // 2]()
-    alias frag_size = output_reg_tile.element_layout.size()
+    comptime frag_size = output_reg_tile.element_layout.size()
     constrained[
         WM * WN == UInt((2 * frag_size) * WARP_SIZE * num_m_mmas * num_n_mmas)
     ]()
@@ -1560,10 +1562,10 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     var lane = lane_id()
     var warp_y, warp_x = divmod(tid // UInt(WARP_SIZE), UInt(num_warps_n))
 
-    alias fragment_layout = Layout.row_major(
+    comptime fragment_layout = Layout.row_major(
         1, 2
     ) if is_nvidia_gpu() else Layout.row_major(4, 1)
-    alias frag_num_rows = fragment_layout.shape[0].value()
+    comptime frag_num_rows = fragment_layout.shape[0].value()
 
     # Write output reg to smem
     # Each warp has `num_warps_n` output register tiles
@@ -1593,8 +1595,8 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     #    constant when writing, and iterate across it when reducing.
     # 3-4. ((WM*WN)//frag_size) x frag_size: the two trailing dimensions of
     #    output_reg_tile
-    alias warp_tile_size = WM * WN  # ((WM*WN)//frag_size) x frag_size
-    alias row_warp_tile_size = (num_warps_n - 1) * Int(warp_tile_size)
+    comptime warp_tile_size = WM * WN  # ((WM*WN)//frag_size) x frag_size
+    comptime row_warp_tile_size = (num_warps_n - 1) * Int(warp_tile_size)
     # Makes sure arithmetic is optimized away when `num_warps_m == 1`.
     var o_smem_ptr = (
         o_smem_ptr_base
@@ -1607,14 +1609,14 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     # NOTE: we must ensure that `output_reg_tile` is only ever indexed by constants.
     var out_reg_tile = output_reg_tile.tile[num_m_mmas * num_n_mmas, 1](0, 0)
 
-    alias o_smem_layout = Layout.row_major(
+    comptime o_smem_layout = Layout.row_major(
         Int(WM * WN // UInt(2 * frag_size)), frag_size
     )
 
-    alias exp_function = _exp2_concrete if use_exp2 else _exp_concrete
+    comptime exp_function = _exp2_concrete if use_exp2 else _exp_concrete
 
-    alias layout = Layout.row_major(num_m_mmas, frag_num_rows)
-    alias TensorType = LayoutTensor[
+    comptime layout = Layout.row_major(num_m_mmas, frag_num_rows)
+    comptime TensorType = LayoutTensor[
         dtype, layout, MutAnyOrigin, address_space = AddressSpace.LOCAL
     ]
     var interwarp_frag_rowmax = TensorType.stack_allocation()
@@ -1774,8 +1776,8 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
 
         @parameter
         for row_tile in range(num_n_mmas):
-            alias tile_id = col_tile + row_tile * num_m_mmas
-            alias output_frag_type = type_of(output_reg_tile).element_type
+            comptime tile_id = col_tile + row_tile * num_m_mmas
+            comptime output_frag_type = type_of(output_reg_tile).element_type
 
             @parameter
             for row in range(frag_num_rows):
@@ -1810,7 +1812,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
             # |  3  | 3, 0 | 3, 1 | 3, 2 |      |
             # -----------------------------------
             # `N\X` refer to `warp_n`, `warp_x`
-            alias row = warp_n
+            comptime row = warp_n
             var col = warp_x - UInt(1 if warp_x > UInt(warp_n) else 0)
             var o_smem_ptr_write = o_smem_ptr + (
                 row * (num_warps_n - 1) + Int(col)
@@ -1842,7 +1844,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     @parameter
     for warp_n in range(num_warps_n - 1):
         var row = warp_x
-        alias col = warp_n
+        comptime col = warp_n
         var o_smem_ptr_reduce = (
             o_smem_ptr
             + (row * UInt(num_warps_n - 1) + UInt(col)) * warp_tile_size
@@ -1906,14 +1908,14 @@ fn _rowmax_online_softmax[
     # Each mma fragment is a 2D tile e.g. (1, x) for nvidia and (x, 1) for AMD.
 
     # TODO: fragment_layout should ideally be inferred from the shape of output_reg_tile or score_reg_tile
-    alias frag_size = fragment_layout.size()
+    comptime frag_size = fragment_layout.size()
     # alias frag_num_rows = fragment_layout.shape[0].value() # sm90 1
-    alias frag_num_cols = fragment_layout.shape[1].value()  # sm90 2
-    alias frag_num_rows = accum_frag_layout.size()
+    comptime frag_num_cols = fragment_layout.shape[1].value()  # sm90 2
+    comptime frag_num_rows = accum_frag_layout.size()
     constrained[frag_num_rows == fragment_layout.shape[0].value()]()
 
-    alias num_colwise_tiles = reg_tile_layout[0].size()
-    alias num_rowwise_tiles = reg_tile_layout[1].size()
+    comptime num_colwise_tiles = reg_tile_layout[0].size()
+    comptime num_rowwise_tiles = reg_tile_layout[1].size()
     # The online softmax attributes for each thread's elements (fragments).
     constrained[
         rowmax_tensor.element_layout.size() == frag_num_rows,
@@ -1924,9 +1926,9 @@ fn _rowmax_online_softmax[
     ]()
     score_frag_rowmax = type_of(rowmax_tensor).stack_allocation()
 
-    alias num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
+    comptime num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
 
-    alias exp_function = _exp2_concrete if use_exp2 else _exp_concrete
+    comptime exp_function = _exp2_concrete if use_exp2 else _exp_concrete
 
     # Online softmax
     @parameter
@@ -2003,12 +2005,12 @@ fn _rowsum[
     # represents number elements per thread in a row or column
     # Each mma fragment is a 2D tile e.g. (1, x) for nvidia and (x, 1) for AMD.
 
-    alias frag_num_rows = score_frag_rowsum.element_layout.size()
+    comptime frag_num_rows = score_frag_rowsum.element_layout.size()
 
-    alias num_colwise_tiles = reg_tile_layout[0].size()
-    alias num_rowwise_tiles = reg_tile_layout[1].size()
+    comptime num_colwise_tiles = reg_tile_layout[0].size()
+    comptime num_rowwise_tiles = reg_tile_layout[1].size()
     # The online softmax attributes for each thread's elements (fragments).
-    alias num_rows_per_thread = num_colwise_tiles * frag_num_rows
+    comptime num_rows_per_thread = num_colwise_tiles * frag_num_rows
 
     score_frag_rowsum = type_of(score_frag_rowsum).stack_allocation()
 
@@ -2019,7 +2021,7 @@ fn _rowsum[
             frag_num_rows
         ]()
 
-    alias num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
+    comptime num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
 
     @parameter
     for row_tile in range(1, num_rowwise_tiles):
@@ -2060,8 +2062,8 @@ fn _online_softmax_correction[
         element_layout=accum_frag_layout,
     ],
 ):
-    alias num_colwise_tiles = row_accum_layout.size()
-    alias exp_function = _exp2_concrete if use_exp2 else _exp_concrete
+    comptime num_colwise_tiles = row_accum_layout.size()
+    comptime exp_function = _exp2_concrete if use_exp2 else _exp_concrete
 
     @parameter
     for col_tile in range(num_colwise_tiles):

@@ -127,7 +127,7 @@ fn TopKMaskLogitsKernel[
     var logits_ptr = logits.ptr + bx * d
     var masked_logits_ptr = masked_logits.ptr + bx * d
 
-    alias row_layout = Layout.row_major(1, UNKNOWN_VALUE)
+    comptime row_layout = Layout.row_major(1, UNKNOWN_VALUE)
     var logits_row = LayoutTensor[dtype, row_layout, MutAnyOrigin](
         logits_ptr, RuntimeLayout[row_layout]({1, d}, {d, 1})
     )
@@ -286,7 +286,7 @@ fn topk_mask_logits[
 
     @parameter
     fn launch_kernel[vec_size: Int]() raises:
-        alias kernel = TopKMaskLogitsKernel[
+        comptime kernel = TopKMaskLogitsKernel[
             block_size,
             vec_size,
             dtype,
@@ -462,12 +462,12 @@ fn _warp_reduce_value_count[T: DType](val: ValueCount[T]) -> ValueCount[T]:
     """
     var result = val
 
-    alias limit = log2_floor(WARP_SIZE)
+    comptime limit = log2_floor(WARP_SIZE)
 
     # Reduce across warp lanes using shuffle_down.
     @parameter
     for i in reversed(range(limit)):
-        alias offset = 1 << i
+        comptime offset = 1 << i
         result.value += warp.shuffle_down(result.value, offset)
         result.count += warp.shuffle_down(Int32(result.count), offset)
     return result
@@ -495,14 +495,14 @@ fn _block_reduce_value_count[
         If broadcast=True, all threads get the same result.
         If broadcast=False, only thread 0 has the valid result.
     """
-    alias MAX_BLOCK_SIZE = 1024
+    comptime MAX_BLOCK_SIZE = 1024
     constrained[
         MAX_BLOCK_SIZE % WARP_SIZE == 0,
         "block size must be a multiple of the warp size",
     ]()
 
-    alias value_width = simd_width_of[Scalar[T]]()
-    alias count_width = simd_width_of[DType.int32]()
+    comptime value_width = simd_width_of[Scalar[T]]()
+    comptime count_width = simd_width_of[DType.int32]()
 
     var value_sram = stack_allocation[
         (MAX_BLOCK_SIZE // WARP_SIZE) * value_width,
@@ -516,7 +516,7 @@ fn _block_reduce_value_count[
     ]()
 
     var warp = warp_id()
-    alias num_warps_needed = MAX_BLOCK_SIZE // WARP_SIZE
+    comptime num_warps_needed = MAX_BLOCK_SIZE // WARP_SIZE
 
     var warp_accum = _warp_reduce_value_count(val)
 
@@ -618,7 +618,7 @@ fn TopKSamplingFromProbKernel[
     if indices:
         row_idx = Int(indices.load(bx))
 
-    alias row_layout = Layout.row_major(1, UNKNOWN_VALUE)
+    comptime row_layout = Layout.row_major(1, UNKNOWN_VALUE)
     var probs_ptr = probs.ptr + row_idx * d
     var probs_row = LayoutTensor[dtype, row_layout, MutAnyOrigin](
         probs_ptr, RuntimeLayout[row_layout]({1, d}, {d, 1})
@@ -816,7 +816,7 @@ fn topk_sampling_from_prob[
 
     @parameter
     fn launch_kernel[vec_size: Int, deterministic: Bool]() raises:
-        alias kernel = TopKSamplingFromProbKernel[
+        comptime kernel = TopKSamplingFromProbKernel[
             block_size,
             vec_size,
             dtype,

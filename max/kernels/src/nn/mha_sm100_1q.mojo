@@ -118,7 +118,7 @@ from utils.index import Index
 from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
 
-alias logger = Logger()
+comptime logger = Logger()
 
 
 struct RegisterAccumulatorDescription:
@@ -144,13 +144,13 @@ struct RegisterAccumulatorLayout[
     *,
     frag_simdwidth: Int = 2,
 ]:
-    alias frag_size: Int = Self.MMA_M * Self.MMA_N // Self.consumer_group_size
-    alias num_row_blocks_per_mma = 2
-    alias element_layout: Layout = Layout.row_major(1, Self.frag_simdwidth)
-    alias rows_of_frags_layout: Layout = Layout.row_major(
+    comptime frag_size: Int = Self.MMA_M * Self.MMA_N // Self.consumer_group_size
+    comptime num_row_blocks_per_mma = 2
+    comptime element_layout: Layout = Layout.row_major(1, Self.frag_simdwidth)
+    comptime rows_of_frags_layout: Layout = Layout.row_major(
         Self.num_m_mmas * Self.num_n_mmas, Self.frag_size
     )
-    alias vec_output_layout: Layout = Layout(
+    comptime vec_output_layout: Layout = Layout(
         IntTuple(
             IntTuple(Self.num_row_blocks_per_mma, Self.num_m_mmas),
             IntTuple(
@@ -191,23 +191,23 @@ struct MMAOperandOffsetFn[
     WMMA_MN: Int,
     WMMA_K: Int,
 ]:
-    alias layout = tile_layout_k_major[
+    comptime layout = tile_layout_k_major[
         Self.dtype, Self.BMN, Self.BK, Self.swizzle
     ]() if Self.is_k_major else tile_layout_mn_major[
         Self.dtype, Self.BMN, Self.BK, Self.swizzle
     ]()
-    alias layout_size: Int = Self.layout.size()
+    comptime layout_size: Int = Self.layout.size()
 
-    alias canonical_K = Self.swizzle.bytes() // size_of[
+    comptime canonical_K = Self.swizzle.bytes() // size_of[
         Self.dtype
     ]() if Self.swizzle != TensorMapSwizzle.SWIZZLE_NONE else Self.BK
-    alias canonical_layout_flat = tile_layout_k_major[
+    comptime canonical_layout_flat = tile_layout_k_major[
         Self.dtype, Self.BMN, Self.canonical_K, Self.swizzle
     ]() if Self.is_k_major else Self.layout
-    alias canonical_layout = tile_to_descriptor[
+    comptime canonical_layout = tile_to_descriptor[
         Self.dtype, Self.canonical_layout_flat, Self.is_k_major
     ]()
-    alias canonical_layout_size = Self.canonical_layout.size()
+    comptime canonical_layout_size = Self.canonical_layout.size()
 
     @always_inline
     fn __init__(out self):
@@ -216,8 +216,8 @@ struct MMAOperandOffsetFn[
 
 @register_passable("trivial")
 trait DescriptorPair:
-    alias a_t: MMAOperandDescriptor
-    alias b_t: MMAOperandDescriptor
+    comptime a_t: MMAOperandDescriptor
+    comptime b_t: MMAOperandDescriptor
 
     @always_inline
     fn get_a(self) -> Self.a_t:
@@ -248,8 +248,8 @@ trait WriteableMMAOperandDescriptor:
 
 @register_passable("trivial")
 trait DescriptorPairTS:
-    alias a_t: WriteableMMAOperandDescriptor
-    alias b_t: MMAOperandDescriptor
+    comptime a_t: WriteableMMAOperandDescriptor
+    comptime b_t: MMAOperandDescriptor
 
     @always_inline
     fn get_a(self) -> Self.a_t:
@@ -278,10 +278,10 @@ fn local_tensor_type[
 
 @register_passable("trivial")
 trait AccumulatorTile(ImplicitlyCopyable, Movable):
-    alias dtype: DType
-    alias element_layout: Layout
-    alias vec_output_layout: Layout
-    alias rows_of_frags_layout: Layout
+    comptime dtype: DType
+    comptime element_layout: Layout
+    comptime vec_output_layout: Layout
+    comptime rows_of_frags_layout: Layout
 
     @staticmethod
     @always_inline
@@ -331,9 +331,9 @@ trait AccumulatorTile(ImplicitlyCopyable, Movable):
 
 @register_passable("trivial")
 struct UMMADescriptorSS[operand_type: DType](DescriptorPair):
-    alias operand_t = Self.operand_type
-    alias a_t = MMASmemDescriptor
-    alias b_t = MMASmemDescriptor
+    comptime operand_t = Self.operand_type
+    comptime a_t = MMASmemDescriptor
+    comptime b_t = MMASmemDescriptor
 
     var a: Self.a_t
     var b: Self.b_t
@@ -361,7 +361,7 @@ fn _tmem_offset(dtype_size: Int, *, MMA_N: Int, m_mma: Int, n_mma: Int) -> Int:
 
 @always_inline
 fn _tmem_offset[dtype: DType, *, MMA_N: Int, m_mma: Int, n_mma: Int]() -> Int:
-    alias linear = _tmem_offset(
+    comptime linear = _tmem_offset(
         size_of[dtype](), MMA_N=MMA_N, m_mma=m_mma, n_mma=n_mma
     )
     return linear
@@ -376,18 +376,18 @@ struct TMemAccumulator[
     num_n_mmas: Int,
     num_softmax_threads: Int,
 ](AccumulatorTile):
-    alias dtype: DType = Self.dtype_
-    alias layout_t = RegisterAccumulatorLayout[
+    comptime dtype: DType = Self.dtype_
+    comptime layout_t = RegisterAccumulatorLayout[
         Self.MMA_M,
         Self.MMA_N,
         Self.num_m_mmas,
         Self.num_n_mmas,
         Self.num_softmax_threads,
     ]
-    alias vec_output_layout = Self.layout_t.vec_output_layout
-    alias element_layout = Self.layout_t.element_layout
-    alias rows_of_frags_layout = Self.layout_t.rows_of_frags_layout
-    alias frag_size = Self.layout_t.frag_size
+    comptime vec_output_layout = Self.layout_t.vec_output_layout
+    comptime element_layout = Self.layout_t.element_layout
+    comptime rows_of_frags_layout = Self.layout_t.rows_of_frags_layout
+    comptime frag_size = Self.layout_t.frag_size
 
     var tmem_addr: UInt32
 
@@ -485,7 +485,7 @@ struct TMemAccumulator[
         if m_mma == 0 and n_mma == 0:
             return self.tmem_addr
         else:
-            alias linear = _tmem_offset[
+            comptime linear = _tmem_offset[
                 Self.dtype, MMA_N = Self.MMA_N, m_mma=m_mma, n_mma=n_mma
             ]()
 
@@ -518,21 +518,21 @@ struct TMemAccumulator[
         src: type_of(Self._empty_tensor()),
     ):
         frags = Self.rows_of_frags(src).vectorize[1, Self.frag_size]()
-        alias dtype_size = size_of[Self.dtype]()
+        comptime dtype_size = size_of[Self.dtype]()
         constrained[dtype_size == 4]()
-        alias frag_size_b32 = Self.frag_size * dtype_size // 4
+        comptime frag_size_b32 = Self.frag_size * dtype_size // 4
         # 16 x 256b results in repeated 8x4<1x2> pattern
         # each repetition thus fills 8 columns
         # and writes 4 values per thread.
-        alias repeat = frag_size_b32 // 4
+        comptime repeat = frag_size_b32 // 4
 
         @parameter
         for m_mma in range(Self.num_m_mmas):
 
             @parameter
             for n_mma in range(Self.num_n_mmas):
-                alias mma_id = n_mma * Self.num_m_mmas + m_mma
-                alias tmem_offset = _tmem_offset(
+                comptime mma_id = n_mma * Self.num_m_mmas + m_mma
+                comptime tmem_offset = _tmem_offset(
                     dtype_size,
                     MMA_N=Self.MMA_N,
                     m_mma=m_mma,
@@ -556,13 +556,13 @@ struct TMemAccumulator[
         dst: type_of(Self._empty_tensor()),
     ):
         frags = Self.rows_of_frags(dst).vectorize[1, Self.frag_size]()
-        alias dtype_size = size_of[Self.dtype]()
+        comptime dtype_size = size_of[Self.dtype]()
         constrained[dtype_size == 4]()
-        alias frag_size_b32 = (Self.frag_size * dtype_size) // 4
+        comptime frag_size_b32 = (Self.frag_size * dtype_size) // 4
         # 16 x 256b results in repeated 8x4<1x2> pattern
         # each repetition thus loads 8 columns
         # and loads 4 values per thread.
-        alias repeat = frag_size_b32 // 4
+        comptime repeat = frag_size_b32 // 4
         constrained[
             Self.vec_output_layout.size() * Self.element_layout.size()
             == type_of(dst).layout.size() * type_of(dst).element_layout.size()
@@ -576,8 +576,8 @@ struct TMemAccumulator[
 
             @parameter
             for n_mma in range(Self.num_n_mmas):
-                alias mma_id = n_mma * Self.num_m_mmas + m_mma
-                alias tmem_offset = _tmem_offset(
+                comptime mma_id = n_mma * Self.num_m_mmas + m_mma
+                comptime tmem_offset = _tmem_offset(
                     dtype_size,
                     MMA_N=Self.MMA_N,
                     m_mma=m_mma,
@@ -612,16 +612,16 @@ struct TMemOperand[
 ](WriteableMMAOperandDescriptor):
     var tmem_addr: UInt32
 
-    alias reg_layout = RegisterAccumulatorLayout[
+    comptime reg_layout = RegisterAccumulatorLayout[
         Self.MMA_M,
         Self.MMA_N,
         Self.num_m_mmas,
         Self.num_n_mmas,
         Self.num_softmax_threads,
     ]
-    alias frag_size = Self.reg_layout.frag_size
-    alias vec_output_layout = Self.reg_layout.vec_output_layout
-    alias reg_tile_t = type_of(
+    comptime frag_size = Self.reg_layout.frag_size
+    comptime vec_output_layout = Self.reg_layout.vec_output_layout
+    comptime reg_tile_t = type_of(
         local_tensor_type[
             Self.dtype, Self.vec_output_layout, Self.reg_layout.element_layout
         ]()
@@ -640,7 +640,7 @@ struct TMemOperand[
         if m_mma == 0 and k_mma == 0:
             return self.tmem_addr
         else:
-            alias linear = _tmem_offset[
+            comptime linear = _tmem_offset[
                 DType.bfloat16, MMA_N = Self.MMA_K, m_mma=m_mma, n_mma=k_mma
             ]()
             return self.tmem_addr + linear
@@ -661,7 +661,7 @@ struct TMemOperand[
         ],
     ):
         # src has row of frags layout
-        alias num_frags = src_layout[0].size()
+        comptime num_frags = src_layout[0].size()
         constrained[num_frags == Self.num_m_mmas * Self.num_n_mmas]()
         constrained[Self.num_n_mmas == 1]()
         constrained[
@@ -672,19 +672,19 @@ struct TMemOperand[
             + String(src_layout),
         ]()
         constrained[src_element_layout.size() == 1]()
-        alias src_size = size_of[src_type]()
-        alias dst_size = size_of[Self.dtype]()
-        alias frag_size_b32 = (Self.frag_size * dst_size) // 4
+        comptime src_size = size_of[src_type]()
+        comptime dst_size = size_of[Self.dtype]()
+        comptime frag_size_b32 = (Self.frag_size * dst_size) // 4
         # 16 x 256b results in repeated 8x4<1xN> pattern, where
-        alias N = 32 // (4 * src_size)
-        alias bytes = 4 * dst_size * N
-        alias bits = 8 * bytes
+        comptime N = 32 // (4 * src_size)
+        comptime bytes = 4 * dst_size * N
+        comptime bits = 8 * bytes
         # e.g., N = 2 for fp32
         #
         # each repetition thus loads 8 columns
         # and loads 4 values per thread.
         # width == (repeat * bits * datapaths) // (32 * 32)
-        alias repeat = 64 * frag_size_b32 // bits
+        comptime repeat = 64 * frag_size_b32 // bits
         # We need to reshape into a row of frags
         constrained[
             Self.num_m_mmas * Self.num_n_mmas * Self.frag_size
@@ -739,7 +739,7 @@ struct TMemOperand[
         ],
     ):
         # src has row of frags layout
-        alias num_frags = dst_layout[0].size()
+        comptime num_frags = dst_layout[0].size()
         constrained[num_frags == Self.num_m_mmas * Self.num_n_mmas]()
         constrained[Self.frag_size == dst_layout[1].size()]()
         constrained[dst_element_layout.size() == 1]()
@@ -747,19 +747,19 @@ struct TMemOperand[
         # 16 x 256b results in repeated 8x4<1x2> pattern
         # each repetition thus loads 8 columns
         # and loads 4 values per thread.
-        alias src_size = size_of[Self.dtype]()
-        alias dst_size = size_of[dst_type]()
-        alias frag_size_b32 = (Self.frag_size * src_size) // 4
+        comptime src_size = size_of[Self.dtype]()
+        comptime dst_size = size_of[dst_type]()
+        comptime frag_size_b32 = (Self.frag_size * src_size) // 4
         # 16 x 256b results in repeated 8x4<1xN> pattern, where
-        alias N = 32 // (4 * dst_size)
-        alias bytes = 4 * src_size * N
-        alias bits = 8 * bytes
+        comptime N = 32 // (4 * dst_size)
+        comptime bytes = 4 * src_size * N
+        comptime bits = 8 * bytes
         # e.g., N = 2 for fp32
         #
         # each repetition thus loads 8 columns
         # and loads 4 values per thread.
         # width == (repeat * bits * datapaths) // (32 * 32)
-        alias repeat = 64 * frag_size_b32 // bits
+        comptime repeat = 64 * frag_size_b32 // bits
         #
         frags = dst.vectorize[1, Self.frag_size]()
         # assume src loaded with 256 bits
@@ -798,8 +798,8 @@ struct UMMADescriptorTS[
     MMA_K: Int,
     consumer_group_size: Int,
 ](DescriptorPairTS):
-    alias operand_t = Self.operand_type
-    alias a_t = TMemOperand[
+    comptime operand_t = Self.operand_type
+    comptime a_t = TMemOperand[
         Self.operand_type,
         Self.num_m_mmas,
         Self.num_n_mmas,
@@ -808,7 +808,7 @@ struct UMMADescriptorTS[
         Self.MMA_K,
         Self.consumer_group_size,
     ]
-    alias b_t = MMASmemDescriptor
+    comptime b_t = MMASmemDescriptor
 
     var a: Self.a_t
     var b: Self.b_t
@@ -845,22 +845,22 @@ struct SM100TensorAccumulatorSS[
     cta_group: Int = 1,
     pipeline_stages: Int = 1,
 ]:
-    alias operand_t: DType = Self.operand_type
-    alias accum_t: DType = Self.accum_type
+    comptime operand_t: DType = Self.operand_type
+    comptime accum_t: DType = Self.accum_type
 
-    alias MMA_K = 16
+    comptime MMA_K = 16
 
-    alias num_m_mmas = Self.BM // Self.MMA_M
-    alias num_n_mmas = Self.BN // Self.MMA_N
-    alias num_k_mmas = Self.compute_BK // Self.MMA_K
+    comptime num_m_mmas = Self.BM // Self.MMA_M
+    comptime num_n_mmas = Self.BN // Self.MMA_N
+    comptime num_k_mmas = Self.compute_BK // Self.MMA_K
 
-    alias num_m_blocks_per_warp = 2 * Self.BM // Self.num_softmax_threads
+    comptime num_m_blocks_per_warp = 2 * Self.BM // Self.num_softmax_threads
 
-    alias smem_ptr_t = UnsafePointer[
+    comptime smem_ptr_t = UnsafePointer[
         Scalar[Self.operand_t], address_space = AddressSpace.SHARED
     ]
 
-    alias a_offset = MMAOperandOffsetFn[
+    comptime a_offset = MMAOperandOffsetFn[
         Self.operand_t,
         Self.BM,
         Self.BK,
@@ -869,7 +869,7 @@ struct SM100TensorAccumulatorSS[
         Self.MMA_M,
         Self.MMA_K,
     ]()
-    alias b_offset = MMAOperandOffsetFn[
+    comptime b_offset = MMAOperandOffsetFn[
         Self.operand_t,
         Self.BN,
         Self.BK,
@@ -879,7 +879,7 @@ struct SM100TensorAccumulatorSS[
         Self.MMA_K,
     ]()
 
-    alias idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
+    comptime idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
         Self.accum_t,
         Self.operand_t,
         Self.operand_t,
@@ -887,10 +887,10 @@ struct SM100TensorAccumulatorSS[
         transpose_b = Self.transpose_b,
     ]()
 
-    alias ab_t: DescriptorPair = UMMADescriptorSS[Self.operand_t]
-    alias a_t: MMAOperandDescriptor = Self.ab_t.a_t
-    alias b_t: MMAOperandDescriptor = Self.ab_t.b_t
-    alias c_t: AccumulatorTile = TMemAccumulator[
+    comptime ab_t: DescriptorPair = UMMADescriptorSS[Self.operand_t]
+    comptime a_t: MMAOperandDescriptor = Self.ab_t.a_t
+    comptime b_t: MMAOperandDescriptor = Self.ab_t.b_t
+    comptime c_t: AccumulatorTile = TMemAccumulator[
         Self.accum_t,
         Self.BM // Self.num_m_blocks_per_warp,
         Self.MMA_N,
@@ -954,22 +954,26 @@ struct SM100TensorAccumulatorSS[
         ],
     ) -> Self.ab_t:
         Self.check_constraints()
-        alias a_canonical_layout = Self.a_offset.canonical_layout
-        alias a_type = Self.operand_t
-        alias aSBO = a_canonical_layout[0].stride[1].value() * size_of[a_type]()
-        alias aLBO = a_canonical_layout[1].stride[1].value() * size_of[a_type]()
+        comptime a_canonical_layout = Self.a_offset.canonical_layout
+        comptime a_type = Self.operand_t
+        comptime aSBO = a_canonical_layout[0].stride[1].value() * size_of[
+            a_type
+        ]()
+        comptime aLBO = a_canonical_layout[1].stride[1].value() * size_of[
+            a_type
+        ]()
         adesc_base = MMASmemDescriptor.create[aSBO, aLBO, Self.swizzle_a](p_a)
 
-        alias b_canonical_layout = Self.b_offset.canonical_layout
-        alias b_type = Self.operand_t
-        alias b_stride01 = b_canonical_layout[0].stride[1].value()
-        alias b_stride11 = b_canonical_layout[1].stride[1].value()
-        alias bSBO = (b_stride01 if Self.transpose_b else b_stride11) * size_of[
-            b_type
-        ]()
-        alias bLBO = (b_stride11 if Self.transpose_b else b_stride01) * size_of[
-            b_type
-        ]()
+        comptime b_canonical_layout = Self.b_offset.canonical_layout
+        comptime b_type = Self.operand_t
+        comptime b_stride01 = b_canonical_layout[0].stride[1].value()
+        comptime b_stride11 = b_canonical_layout[1].stride[1].value()
+        comptime bSBO = (
+            b_stride01 if Self.transpose_b else b_stride11
+        ) * size_of[b_type]()
+        comptime bLBO = (
+            b_stride11 if Self.transpose_b else b_stride01
+        ) * size_of[b_type]()
         bdesc_base = MMASmemDescriptor.create[bSBO, bLBO, Self.swizzle_b](p_b)
 
         return Self.ab_t(adesc_base, bdesc_base)
@@ -989,17 +993,17 @@ struct SM100TensorAccumulatorSS[
 
             @parameter
             for m_mma in range(Self.num_m_mmas):
-                alias a_offset = Self.a_offset.layout(
+                comptime a_offset = Self.a_offset.layout(
                     IntTuple(Self.MMA_M * m_mma, Self.MMA_K * k_mma)
                 )
-                alias a_offset_bytes = a_offset * size_of[Self.operand_t]()
+                comptime a_offset_bytes = a_offset * size_of[Self.operand_t]()
                 a_desc = a + a_offset_bytes
 
                 @parameter
                 for n_mma in range(Self.num_n_mmas):
                     c_tmem = c.offset[m_mma, n_mma]()
 
-                    alias b_offset = Self.b_offset.layout(
+                    comptime b_offset = Self.b_offset.layout(
                         IntTuple(Self.MMA_N * n_mma, Self.MMA_K * k_mma)
                     ) * size_of[Self.operand_t]()
                     b_desc = b + b_offset
@@ -1081,21 +1085,21 @@ struct SM100TensorAccumulatorTS[
     transpose_b: Bool = True,
     cta_group: Int = 1,
 ]:
-    alias operand_t: DType = Self.operand_type
-    alias accum_t: DType = Self.accum_type
+    comptime operand_t: DType = Self.operand_type
+    comptime accum_t: DType = Self.accum_type
 
-    alias MMA_K = 16
-    alias smem_ptr_t = UnsafePointer[
+    comptime MMA_K = 16
+    comptime smem_ptr_t = UnsafePointer[
         Scalar[Self.operand_t], address_space = AddressSpace.SHARED
     ]
 
-    alias num_m_mmas = Self.BM // Self.MMA_M
-    alias num_n_mmas = Self.BN // Self.MMA_N
-    alias num_k_mmas = Self.BK // Self.MMA_K
-    alias c_frag_size = Self.MMA_M * Self.MMA_N // Self.num_softmax_threads
-    alias a_frag_size = Self.MMA_M * Self.MMA_K // Self.num_softmax_threads
-    alias num_m_blocks_per_warp = 2 * Self.BM // Self.num_softmax_threads
-    alias ab_t: DescriptorPairTS = UMMADescriptorTS[
+    comptime num_m_mmas = Self.BM // Self.MMA_M
+    comptime num_n_mmas = Self.BN // Self.MMA_N
+    comptime num_k_mmas = Self.BK // Self.MMA_K
+    comptime c_frag_size = Self.MMA_M * Self.MMA_N // Self.num_softmax_threads
+    comptime a_frag_size = Self.MMA_M * Self.MMA_K // Self.num_softmax_threads
+    comptime num_m_blocks_per_warp = 2 * Self.BM // Self.num_softmax_threads
+    comptime ab_t: DescriptorPairTS = UMMADescriptorTS[
         Self.operand_t,
         Self.num_m_blocks_per_warp,
         Self.num_n_mmas,
@@ -1104,10 +1108,10 @@ struct SM100TensorAccumulatorTS[
         MMA_K = Self.MMA_K,
         consumer_group_size = Self.num_softmax_threads,
     ]
-    alias a_t: WriteableMMAOperandDescriptor = Self.ab_t.a_t
-    alias b_t: MMAOperandDescriptor = Self.ab_t.b_t
+    comptime a_t: WriteableMMAOperandDescriptor = Self.ab_t.a_t
+    comptime b_t: MMAOperandDescriptor = Self.ab_t.b_t
 
-    alias b_offset = MMAOperandOffsetFn[
+    comptime b_offset = MMAOperandOffsetFn[
         Self.operand_t,
         Self.BN,
         Self.BK,
@@ -1116,7 +1120,7 @@ struct SM100TensorAccumulatorTS[
         Self.MMA_N,
         Self.MMA_K,
     ]()
-    alias c_t: AccumulatorTile = TMemAccumulator[
+    comptime c_t: AccumulatorTile = TMemAccumulator[
         Self.accum_t,
         Self.BM // Self.num_m_blocks_per_warp,
         Self.MMA_N,
@@ -1125,7 +1129,7 @@ struct SM100TensorAccumulatorTS[
         Self.num_softmax_threads,
     ]
 
-    alias idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
+    comptime idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
         Self.accum_t,
         Self.operand_t,
         Self.operand_t,
@@ -1186,16 +1190,16 @@ struct SM100TensorAccumulatorTS[
         ],
     ) -> Self.ab_t.b_t:
         Self.check_constraints()
-        alias b_canonical_layout = Self.b_offset.canonical_layout
-        alias b_type = Self.operand_t
-        alias b_stride01 = b_canonical_layout[0].stride[1].value()
-        alias b_stride11 = b_canonical_layout[1].stride[1].value()
-        alias bSBO = (b_stride01 if Self.transpose_b else b_stride11) * size_of[
-            b_type
-        ]()
-        alias bLBO = (b_stride11 if Self.transpose_b else b_stride01) * size_of[
-            b_type
-        ]()
+        comptime b_canonical_layout = Self.b_offset.canonical_layout
+        comptime b_type = Self.operand_t
+        comptime b_stride01 = b_canonical_layout[0].stride[1].value()
+        comptime b_stride11 = b_canonical_layout[1].stride[1].value()
+        comptime bSBO = (
+            b_stride01 if Self.transpose_b else b_stride11
+        ) * size_of[b_type]()
+        comptime bLBO = (
+            b_stride11 if Self.transpose_b else b_stride01
+        ) * size_of[b_type]()
 
         return MMASmemDescriptor.create[bSBO, bLBO, Self.swizzle_b](p_b)
 
@@ -1217,7 +1221,7 @@ struct SM100TensorAccumulatorTS[
                 @parameter
                 for n_mma in range(Self.num_n_mmas):
                     c_tmem = c.offset[m_mma=m_mma, n_mma=n_mma]()
-                    alias b_offset = Self.b_offset.layout(
+                    comptime b_offset = Self.b_offset.layout(
                         IntTuple(Self.MMA_N * n_mma, Self.MMA_K * k_mma)
                     ) * size_of[Self.operand_t]()
                     b_desc = b + b_offset
@@ -1318,16 +1322,16 @@ fn mha_sm100_dispatch[
         LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ],
 ) raises:
-    alias decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
-    alias new_config = MHAConfig[config.dtype](
+    comptime decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
+    comptime new_config = MHAConfig[config.dtype](
         config.num_heads,
         config.depth,
         num_queries_per_block=OptionalReg[UInt](64),
         num_keys_per_block=OptionalReg[UInt](config.num_keys_per_block),
         BK=OptionalReg[UInt](config.BK),
     ) if decoding else config
-    alias BM = new_config.block_m()
-    alias BK = new_config.padded_depth
+    comptime BM = new_config.block_m()
+    comptime BK = new_config.padded_depth
     constrained[
         BM % 64 == 0,
         "SM90 requires BM%64==0, but BM==",
@@ -1338,9 +1342,9 @@ fn mha_sm100_dispatch[
         "B200 requires BK%64 as it uses 128B swizzles, but BK==",
         String(BK),
     ]()
-    alias BN = new_config.block_n()
+    comptime BN = new_config.block_n()
     # add the number of producer threads (i.e. 1 WARP_GROUP_SIZE)
-    alias num_threads = new_config.num_threads[True]()
+    comptime num_threads = new_config.num_threads[True]()
     constrained[
         num_threads % 128 == 0, "num_threads = " + String(num_threads)
     ]()
@@ -1363,12 +1367,12 @@ fn mha_sm100_dispatch[
     var max_num_prompt_tiles: UInt32 = ceildiv(max_prompt_len, BM)
     var block_x: UInt32 = max_num_prompt_tiles * partition.num_partitions()
 
-    alias num_scheduler_heads = config.num_heads // UInt(
+    comptime num_scheduler_heads = config.num_heads // UInt(
         group
     ) if decoding else config.num_heads
     # if decoding,
-    alias scheduler_tile_shape = 1 if decoding else BM
-    alias swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
+    comptime scheduler_tile_shape = 1 if decoding else BM
+    comptime swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
     q_tma_op = rebind[
         QTMATile[
             KVType.dtype,
@@ -1396,14 +1400,14 @@ fn mha_sm100_dispatch[
         Int(BN), Int(new_config.padded_depth), swizzle_mode, is_k_major=False
     ](ctx)
 
-    alias SchedulerType = TransientScheduler[
+    comptime SchedulerType = TransientScheduler[
         scheduler_tile_shape, num_scheduler_heads
     ]
     var scheduler: SchedulerType = SchedulerType()
 
     @parameter
     if sink:
-        alias SinkType = NonNullPointer[KVType.dtype]
+        comptime SinkType = NonNullPointer[KVType.dtype]
         var sink_ptr: SinkType = {
             rebind[UnsafePointer[Scalar[KVType.dtype]]](
                 sink_weights.value().ptr
@@ -1444,8 +1448,8 @@ fn mha_sm100_dispatch[
             ctx,
         )
     else:
-        alias SinkType = NullPointer[KVType.dtype]
-        alias sink_ptr: SinkType = {}
+        comptime SinkType = NullPointer[KVType.dtype]
+        comptime sink_ptr: SinkType = {}
         _mha_sm100_kv_input_row_offset_dispatch[
             SchedulerType=SchedulerType,
             KVLUTType=KVType,
@@ -1540,8 +1544,8 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
     score_mod: ScoreModType,
     ctx: DeviceContext,
 ) raises:
-    alias KVRowOffsetsNonNull = NonNullPointer[DType.uint32]
-    alias KVRowOffsetsNull = NullPointer[DType.uint32]
+    comptime KVRowOffsetsNonNull = NonNullPointer[DType.uint32]
+    comptime KVRowOffsetsNull = NullPointer[DType.uint32]
     if kv_input_row_offsets:
         var kv_row_offsets: KVRowOffsetsNonNull = {
             kv_input_row_offsets.value().ptr
@@ -1677,7 +1681,7 @@ fn _mha_sm100_valid_length_dispatch[
 ) raises:
     @parameter
     if ragged:
-        alias ValidLengthType = NonNullPointer[DType.uint32]
+        comptime ValidLengthType = NonNullPointer[DType.uint32]
         var valid_len: ValidLengthType = {valid_length}
         _mha_sm100_enqueue[
             SchedulerType=SchedulerType,
@@ -1715,7 +1719,7 @@ fn _mha_sm100_valid_length_dispatch[
             ctx,
         )
     else:
-        alias ValidLengthType = NullPointer[DType.uint32]
+        comptime ValidLengthType = NullPointer[DType.uint32]
         var valid_len: ValidLengthType = {}
         _mha_sm100_enqueue[
             SchedulerType=SchedulerType,
@@ -1810,7 +1814,7 @@ fn _mha_sm100_enqueue[
     ctx: DeviceContext,
 ) raises:
     # the pack contains all possibly 0-sized objects
-    alias kernel_sm100 = _mha_sm100[
+    comptime kernel_sm100 = _mha_sm100[
         KVLUTType,
         output_type,
         MaskType,
@@ -1827,7 +1831,7 @@ fn _mha_sm100_enqueue[
         PartitionType,
         swizzle_mode,
     ]
-    alias PackType = Pack[
+    comptime PackType = Pack[
         MaskType,
         ScoreModType,
         SchedulerType,
@@ -1853,19 +1857,19 @@ fn _mha_sm100_enqueue[
     )
     var block_x: UInt32 = max_num_prompt_tiles * partition.num_partitions()
 
-    alias max_tmem_cols = 512
-    alias BN = config.block_n()
-    alias num_s = (
+    comptime max_tmem_cols = 512
+    comptime BN = config.block_n()
+    comptime num_s = (
         max_tmem_cols - (Int(BN) // 2) - Int(config.padded_depth)
     ) // Int(BN)
     # we add smem use for SharedMemBarrier synchronization
     # 2*8 for mma mbars
-    alias extra_B200_smem = (2 * num_s + 3) * 8
-    alias smem_use = config.shared_mem_bytes[True, sm_90=True]() + UInt(
+    comptime extra_B200_smem = (2 * num_s + 3) * 8
+    comptime smem_use = config.shared_mem_bytes[True, sm_90=True]() + UInt(
         extra_B200_smem
     )
-    alias num_threads = config.num_threads[True]()
-    alias decoding = _is_decoding[MaxSeqLenType]()
+    comptime num_threads = config.num_threads[True]()
+    comptime decoding = _is_decoding[MaxSeqLenType]()
     logger.info("------ Dispatching to SM100 FMHA-1Q ------")
     logger.info(
         "QKV Type: ",
@@ -1972,46 +1976,46 @@ fn _mha_sm100[
       TODO: use more optimized kernels for them
 
     """
-    alias kv_type = KVLUTType.dtype
+    comptime kv_type = KVLUTType.dtype
     constrained[kv_type == config.dtype]()
-    alias decoding: Bool = _is_decoding[MaxSeqLenType]()
+    comptime decoding: Bool = _is_decoding[MaxSeqLenType]()
 
-    alias simd_size: Int = simd_width_of[kv_type]()
+    comptime simd_size: Int = simd_width_of[kv_type]()
 
-    alias num_softmax_threads: Int = Int(config.num_consumer_threads())
-    alias num_softmax_warps = num_softmax_threads // 32
+    comptime num_softmax_threads: Int = Int(config.num_consumer_threads())
+    comptime num_softmax_warps = num_softmax_threads // 32
 
-    alias cta_group = 1
-    alias BM: Int = Int(config.block_m())
-    alias BN: Int = Int(config.block_n())
-    alias BK: Int = Int(config.padded_depth)
-    alias depth: Int = Int(config.depth)
-    alias padded_depth: Int = Int(config.padded_depth)
+    comptime cta_group = 1
+    comptime BM: Int = Int(config.block_m())
+    comptime BN: Int = Int(config.block_n())
+    comptime BK: Int = Int(config.padded_depth)
+    comptime depth: Int = Int(config.depth)
+    comptime padded_depth: Int = Int(config.padded_depth)
     # alias mma_shape = Index(64, depth, 16)
     # alias mma_shape = Index(128 if (BM % 128) == 0 else 64, depth, 16)
     # MMA_M here is defined as per-warp
     # alias MMA_M = 64
-    alias MMA_M: Int = 128 if (BM % 128) == 0 else 64
-    alias MMA_N0: Int = BN
-    alias MMA_N1: Int = Int(config.padded_depth)
-    alias MMA_K: Int = 16
+    comptime MMA_M: Int = 128 if (BM % 128) == 0 else 64
+    comptime MMA_N0: Int = BN
+    comptime MMA_N1: Int = Int(config.padded_depth)
+    comptime MMA_K: Int = 16
     # alias WM = BM // num_softmax_warps
     # alias WN = BN
     # alias num_m_mmas = BM // MMA_M  # WM // MMA_M
     # mmas are now handled separately from in-register processing
     # in-register processing is divided up by warps, mmas are not
-    alias num_row_fragments = num_softmax_threads // 128
+    comptime num_row_fragments = num_softmax_threads // 128
     constrained[(32 % num_row_fragments) == 0]()
-    alias row_fragment_size = min(32 // num_row_fragments, BM // 4)
+    comptime row_fragment_size = min(32 // num_row_fragments, BM // 4)
     constrained[num_row_fragments * row_fragment_size <= 32]()
-    alias WM = row_fragment_size
+    comptime WM = row_fragment_size
     # if we have BM = 128, then we have
     # a 16x(BN//8) grid of 8x4<1x2>
     # this gives us 16 blocks to partition among rows.
     # Because we can load a minimum of 16 lanes at a time,
     # we prefer at least 2x blocks per warp, meaning we
     # can divide up to 8 ways.
-    alias num_m_blocks_per_warp = BM // (16 * num_softmax_warps)
+    comptime num_m_blocks_per_warp = BM // (16 * num_softmax_warps)
     # before we had num_m_mmas * MMA_M = BM
     # now, we have num_m_blocks_per_warp * 16*num_softmax_warps == BM
     # num_m_blocks_per_warp is like `num_m_mmas`, but for non-mma consumers.
@@ -2033,25 +2037,25 @@ fn _mha_sm100[
     # num_softmax_warps = BM // (16 * num_m_blocks_per_warp)
     # -> BM // WM = BM // (16 * num_m_blocks_per_warp)
     # -> WM = (16 * num_m_blocks_per_warp)
-    alias num_m_mmas = 1
-    alias num_n_mmas = 1
-    alias num_k_mmas = BK // MMA_K
+    comptime num_m_mmas = 1
+    comptime num_n_mmas = 1
+    comptime num_k_mmas = BK // MMA_K
     # alias num_warps_m = BM // WM  # 4 * num_softmax
     # alias num_warps_n = BN // WN  # 1
-    alias num_heads: Int = Int(config.num_heads)
+    comptime num_heads: Int = Int(config.num_heads)
     # num_softmax_threads ignores the producers
     # actual number of threads is num_softmax_threads + 128
-    alias pipeline_stages = Int(config.num_pipeline_stages)
+    comptime pipeline_stages = Int(config.num_pipeline_stages)
     var tid: UInt32 = thread_idx.x
     # warp group idx concept is still useful for sm100
     # because sets of 4 warps access tmem;
     # warp group idx gives index into sets of 16 lanes
     var warp_group_idx: UInt32 = warp.broadcast(tid // 128)
     # warp_group_tid = tid % 128
-    alias accum_type = get_accum_type[kv_type]()
-    alias max_tmem_cols = 512
-    alias num_s = (max_tmem_cols - (MMA_N0 // 2) - MMA_N1) // MMA_N0
-    alias UMMA0Type = SM100TensorAccumulatorSS[
+    comptime accum_type = get_accum_type[kv_type]()
+    comptime max_tmem_cols = 512
+    comptime num_s = (max_tmem_cols - (MMA_N0 // 2) - MMA_N1) // MMA_N0
+    comptime UMMA0Type = SM100TensorAccumulatorSS[
         kv_type,
         accum_type,
         MMA_M=MMA_M,  # 128
@@ -2068,7 +2072,7 @@ fn _mha_sm100[
     ]
     # Second WGMMA is a
     # BM x BN tile of p_frag @ BN x depth tile of V
-    alias UMMA1Type = SM100TensorAccumulatorTS[
+    comptime UMMA1Type = SM100TensorAccumulatorTS[
         kv_type,
         accum_type,
         MMA_M=MMA_M,
@@ -2093,7 +2097,7 @@ fn _mha_sm100[
 
     # first umma is BM x BK @ BK x BN
     # The entire query block (BM x depth) is tiled in shared memory.
-    alias q_smem_size = BM * padded_depth
+    comptime q_smem_size = BM * padded_depth
     q_smem = external_memory[
         Scalar[kv_type],
         address_space = AddressSpace.SHARED,
@@ -2102,7 +2106,7 @@ fn _mha_sm100[
     ]()
 
     # We have `num_pipeline_stages` instances of each
-    alias kv_smem_size = config.kv_smem_size(True)
+    comptime kv_smem_size = config.kv_smem_size(True)
     kv_smem = q_smem + q_smem_size
 
     # var head_idx: UInt32 = block_idx.y
@@ -2114,15 +2118,15 @@ fn _mha_sm100[
     # p_frag_size is 2 * WM//8 * MMA_N//8
     # that is, we have a (WM//8) x (MMA_N//8) grid of 8x4<1x2> blocks
     # Each such block has 2 elements.
-    alias p_frag_size = BM * MMA_N0 // (
+    comptime p_frag_size = BM * MMA_N0 // (
         num_softmax_threads * num_m_blocks_per_warp
     )
-    alias o_frag_size = BM * MMA_N1 // (
+    comptime o_frag_size = BM * MMA_N1 // (
         num_softmax_threads * num_m_blocks_per_warp
     )
     constrained[p_frag_size == 2 * (WM // 8) * (MMA_N0 // 8)]()
     constrained[o_frag_size == 2 * (WM // 8) * (MMA_N1 // 8)]()
-    alias frag_simdwidth = 2
+    comptime frag_simdwidth = 2
     constrained[
         BN * num_k_mmas * BM * MMA_K
         == BK
@@ -2132,7 +2136,7 @@ fn _mha_sm100[
         * num_m_blocks_per_warp
     ]()
 
-    alias num_row_blocks_per_mma = 2
+    comptime num_row_blocks_per_mma = 2
     # a umma.m64n32k16 `D` fragment looks like
     #
     # 0,1  4,5   8, 9  12,13
@@ -2164,9 +2168,9 @@ fn _mha_sm100[
     #     ),
     # )
     # Vectorizing the layout:
-    alias element_layout = Layout.row_major(1, frag_simdwidth)
-    alias vec_output_row_shape = IntTuple(num_row_blocks_per_mma, num_m_mmas)
-    alias p_vec_output_layout = Layout(
+    comptime element_layout = Layout.row_major(1, frag_simdwidth)
+    comptime vec_output_row_shape = IntTuple(num_row_blocks_per_mma, num_m_mmas)
+    comptime p_vec_output_layout = Layout(
         IntTuple(
             vec_output_row_shape,
             IntTuple(
@@ -2182,7 +2186,7 @@ fn _mha_sm100[
             ),
         ),
     )
-    alias o_vec_output_layout = Layout(
+    comptime o_vec_output_layout = Layout(
         IntTuple(
             vec_output_row_shape,
             IntTuple(
@@ -2198,20 +2202,20 @@ fn _mha_sm100[
             ),
         ),
     )
-    alias num_rows_per_warp = p_vec_output_layout[0].size()
-    alias num_cols_p = p_vec_output_layout[1].size()
-    alias num_cols_output = o_vec_output_layout[1].size()
+    comptime num_rows_per_warp = p_vec_output_layout[0].size()
+    comptime num_cols_p = p_vec_output_layout[1].size()
+    comptime num_cols_output = o_vec_output_layout[1].size()
 
     # Rowwise max and sum for online softmax
-    alias accum_simd_width = simd_width_of[accum_type]()
-    alias row_alignment = align_of[SIMD[accum_type, accum_simd_width]]()
+    comptime accum_simd_width = simd_width_of[accum_type]()
+    comptime row_alignment = align_of[SIMD[accum_type, accum_simd_width]]()
     # Account for group query.
-    alias kv_num_heads = num_heads // group
+    comptime kv_num_heads = num_heads // group
 
     # var lane_predicate = elect_one_sync() # not needed with async_copy
 
-    alias mma_thread_layout = Layout.row_major(8, 4)
-    alias ragged = not ValidLengthType.is_null
+    comptime mma_thread_layout = Layout.row_major(8, 4)
+    comptime ragged = not ValidLengthType.is_null
 
     # Handle sink_weights
     var sink_weights_ptr = UnsafePointer[Scalar[kv_type]]()
@@ -2230,12 +2234,12 @@ fn _mha_sm100[
     umma_1 = UMMA1Type(mma_mbar + 2 * num_s)
     ptr_tmem_addr = (mma_mbar + 2 * num_s + 2).bitcast[UInt32]()  # 8
 
-    alias USE_TMA = True
+    comptime USE_TMA = True
     # https://github.com/Dao-AILab/flash-attention/blob/3b5047d2ce742848f45d44b143d511f211eba2d2/hopper/flash_fwd_kernel_sm90.h#L81-L82
-    alias num_producer_regs = 56 if num_softmax_warps == 4 else (
+    comptime num_producer_regs = 56 if num_softmax_warps == 4 else (
         (24 if USE_TMA else 56) if num_softmax_warps == 8 else 32
     )
-    alias num_softmax_regs = 256 if num_softmax_warps == 4 else (
+    comptime num_softmax_regs = 256 if num_softmax_warps == 4 else (
         (240 if USE_TMA else 224) if num_softmax_warps == 8 else 160
     )
     # alias num_producer_regs = 56
@@ -2273,7 +2277,7 @@ fn _mha_sm100[
         umma_0.init()
         umma_1.init()
 
-    alias PositionType = MHAPosition[
+    comptime PositionType = MHAPosition[
         BM,
         BN,
         depth,
@@ -2356,7 +2360,7 @@ fn _mha_sm100[
                 if kv_tile_start_row >= end:
                     return
 
-            alias tmem_cols = num_s * MMA_N0 + (MMA_N0 // 2) + MMA_N1
+            comptime tmem_cols = num_s * MMA_N0 + (MMA_N0 // 2) + MMA_N1
             constrained[tmem_cols <= max_tmem_cols]()
             tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
 
@@ -2535,7 +2539,7 @@ fn _mha_sm100[
         @parameter
         if num_softmax_threads > 128:
             warp_y = 2 * (warp_y % 4) + (warp_y // 4)
-        alias warp_x: UInt32 = 0
+        comptime warp_x: UInt32 = 0
         constrained[num_softmax_warps == 4 or num_softmax_warps == 8]()
 
         # Mask global memory iterator.
@@ -2563,14 +2567,14 @@ fn _mha_sm100[
             MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
-        alias VecPType = LayoutTensor[
+        comptime VecPType = LayoutTensor[
             accum_type,
             p_vec_output_layout,
             MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
             element_layout=element_layout,
         ]
-        alias VecOType = LayoutTensor[
+        comptime VecOType = LayoutTensor[
             accum_type,
             o_vec_output_layout,
             MutAnyOrigin,
@@ -2677,11 +2681,11 @@ fn _mha_sm100[
                 output_type.is_half_float(), "we don't support Float32 output"
             ]()
             constrained[size_of[kv_type]() == size_of[output_type]()]()
-            alias swizzle = make_swizzle[
+            comptime swizzle = make_swizzle[
                 num_rows = WM // 2, row_size=BN, access_size=8
             ]()
             # Reuse a_smem for c tile in smem
-            alias q_tile_size: UInt32 = q_smem_size // 2
+            comptime q_tile_size: UInt32 = q_smem_size // 2
             accum_smem_tile = LayoutTensor[
                 output_type,
                 Layout.row_major(BM, Int(config.padded_depth)),

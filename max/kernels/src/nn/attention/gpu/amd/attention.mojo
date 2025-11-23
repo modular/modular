@@ -70,13 +70,13 @@ from .utils import (
 
 trait AttentionConfig(ImplicitlyCopyable):
     # share shared memory for k and v
-    alias shared_kv: Bool
+    comptime shared_kv: Bool
     # shared memory for the full tile vs BK blocks
-    alias full_kv: Bool
+    comptime full_kv: Bool
     # pad the depth for v smem
-    alias depth_padded: Bool
+    comptime depth_padded: Bool
     # double buffer
-    alias double_buffer: Bool
+    comptime double_buffer: Bool
 
     @staticmethod
     @always_inline
@@ -137,11 +137,11 @@ fn _mask_apply[
     not_last_iter: Bool,
     cache_start_pos: UInt32 = 0,
 ):
-    alias output_frag_size = fragment_layout.size()
+    comptime output_frag_size = fragment_layout.size()
 
-    alias rowwise_stride = fragment_layout.shape[0].value()
-    alias colwise_stride = fragment_layout.shape[1].value()
-    alias frag_is_row_vector = rowwise_stride == 1
+    comptime rowwise_stride = fragment_layout.shape[0].value()
+    comptime colwise_stride = fragment_layout.shape[1].value()
+    comptime frag_is_row_vector = rowwise_stride == 1
     constrained[
         frag_is_row_vector,
         "fragment layout is not a row vector",
@@ -167,7 +167,7 @@ fn _mask_apply[
 
         @parameter
         for n_mma in range(num_n_mmas):
-            alias mma_id = n_mma * num_m_mmas + m_mma
+            comptime mma_id = n_mma * num_m_mmas + m_mma
             p_reg_vectorized[mma_id, 0] = (
                 p_reg_vectorized[mma_id, 0] * scale_log2e
             )
@@ -194,7 +194,7 @@ fn _mask_apply[
 
                 @parameter
                 for j in range(output_frag_size):
-                    alias fragment_col = fragment_layout(j)
+                    comptime fragment_col = fragment_layout(j)
                     var group_idx = lane_row
                     var q_head_idx = (
                         block_idx.y * UInt(group) + UInt(group_idx)
@@ -223,7 +223,7 @@ fn _mask_apply[
 
                 @parameter
                 for j in range(output_frag_size):
-                    alias fragment_col = fragment_layout(j)
+                    comptime fragment_col = fragment_layout(j)
 
                     var bound_x = num_keys if token_gen else seq_len
 
@@ -254,54 +254,56 @@ struct Attention[
     cache_depth: Int = Int(config.depth),
     output_depth: Int = Int(config.depth),
 ]:
-    alias BM = Self.config.block_m()
-    alias BN = Self.config.block_n()
-    alias BK = Self.config.block_k()
-    alias WM = Self.config.warp_m()
-    alias WN = Self.config.warp_n()
-    alias num_threads = Self.config.num_threads()
-    alias num_heads = Self.config.num_heads
-    alias num_warps_n = Self.BN // Self.WN
-    alias num_warps_m = Self.BM // Self.WM
-    alias depth = Self.config.depth
-    alias accum_type = get_accum_type[Self.q_type]()
+    comptime BM = Self.config.block_m()
+    comptime BN = Self.config.block_n()
+    comptime BK = Self.config.block_k()
+    comptime WM = Self.config.warp_m()
+    comptime WN = Self.config.warp_n()
+    comptime num_threads = Self.config.num_threads()
+    comptime num_heads = Self.config.num_heads
+    comptime num_warps_n = Self.BN // Self.WN
+    comptime num_warps_m = Self.BM // Self.WM
+    comptime depth = Self.config.depth
+    comptime accum_type = get_accum_type[Self.q_type]()
 
-    alias mma_shape = Self.attention_config_t.get_mma_shape()
+    comptime mma_shape = Self.attention_config_t.get_mma_shape()
 
-    alias fragment_layout = get_fragment_layout[Self.mma_shape]()
-    alias output_frag_size = Self.fragment_layout.size()
-    alias fragment_layout_nested = get_nested_fragment_layout[Self.mma_shape]()
+    comptime fragment_layout = get_fragment_layout[Self.mma_shape]()
+    comptime output_frag_size = Self.fragment_layout.size()
+    comptime fragment_layout_nested = get_nested_fragment_layout[
+        Self.mma_shape
+    ]()
 
-    alias num_m_mmas = ceildiv(Self.WM, UInt(Self.mma_shape[0]))
-    alias num_n_mmas = ceildiv(Self.WN, UInt(Self.mma_shape[1]))
-    alias num_n_mmas_output = ceildiv(
+    comptime num_m_mmas = ceildiv(Self.WM, UInt(Self.mma_shape[0]))
+    comptime num_n_mmas = ceildiv(Self.WN, UInt(Self.mma_shape[1]))
+    comptime num_n_mmas_output = ceildiv(
         Self.output_depth // Int(Self.num_warps_n), Self.mma_shape[1]
     )
 
-    alias swap_a_b = True
-    alias use_exp2 = True
+    comptime swap_a_b = True
+    comptime use_exp2 = True
     # we want to load 16B of data for each fragment so k_group_size is set such that
     # k_group_size * num_matrix_fragments * size_of[Self.q_type]() = 16B
-    alias k_group_size = 16 // (
+    comptime k_group_size = 16 // (
         num_matrix_reg[Self.mma_shape[0], Self.mma_shape[2]]()
         * size_of[Self.q_type]()
     )
-    alias num_k_mmas2 = ceildiv(
+    comptime num_k_mmas2 = ceildiv(
         Self.BK, UInt(Self.mma_shape[2] * Self.k_group_size)
     )
 
-    alias warp_layout = get_warp_layout[Self.mma_shape]()
+    comptime warp_layout = get_warp_layout[Self.mma_shape]()
 
-    alias num_stages = 2
+    comptime num_stages = 2
 
-    alias OutputRegisterBufferType = OutputRegisterBuffer[
+    comptime OutputRegisterBufferType = OutputRegisterBuffer[
         Self.accum_type,
         Int(Self.num_m_mmas),
         Self.num_n_mmas_output,
         Self.output_frag_size,
     ]
 
-    alias PRegisterBufferType = PRegisterBuffer[
+    comptime PRegisterBufferType = PRegisterBuffer[
         Self.accum_type,
         Self.q_type,
         Int(Self.BM),
@@ -320,18 +322,18 @@ struct Attention[
         tr_load_enabled = Self.attention_config_t.double_buffer,
     ]
 
-    alias row_layout = Layout.row_major(
+    comptime row_layout = Layout.row_major(
         Int(Self.num_m_mmas), Self.fragment_layout.shape[0].value()
     )
 
-    alias RowMaxTensorType = LocalLayoutTensor[
+    comptime RowMaxTensorType = LocalLayoutTensor[
         Self.accum_type,
         Self.row_layout,
     ]
 
-    alias RowSumTensorType = Self.RowMaxTensorType
+    comptime RowSumTensorType = Self.RowMaxTensorType
 
-    alias GlobalMemoryManagerType = GlobalMemoryManager[
+    comptime GlobalMemoryManagerType = GlobalMemoryManager[
         Self.q_type,
         Self.BM,
         Self.BN,
@@ -344,7 +346,7 @@ struct Attention[
         Self.output_depth,
     ]
 
-    alias SharedMemoryManagerType = SharedMemoryManager[
+    comptime SharedMemoryManagerType = SharedMemoryManager[
         Self.attention_config_t.shared_kv,
         Self.attention_config_t.full_kv,
         Self.attention_config_t.depth_padded,
@@ -357,7 +359,7 @@ struct Attention[
         Self.token_gen,
     ]
 
-    alias QRegisterBufferType = QRegisterBuffer[
+    comptime QRegisterBufferType = QRegisterBuffer[
         dtype = Self.q_type,
         mma_shape = Self.mma_shape,
         k_group_size = Self.k_group_size,

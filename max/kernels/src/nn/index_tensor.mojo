@@ -66,7 +66,7 @@ fn index_tensor_shape[
     # Since we pass indices without the batch_dims dimensions (since they do
     # not need to be materialized), we need to construct the indices_shape as
     # follows for the purposes of calculating the index.tensor shape:
-    alias combined_indices_rank = batch_dims + indices_buf.rank
+    comptime combined_indices_rank = batch_dims + indices_buf.rank
     var indices_shape = IndexList[combined_indices_rank]()
 
     @parameter
@@ -228,7 +228,7 @@ fn _index_tensor_1d[
         batch_volume *= data_shape[i]
 
     # Flatten data to array of shape (batch_dim_size, data.shape[batch_dims:])
-    alias reshaped_data_rank = data.rank - batch_dims + 1
+    comptime reshaped_data_rank = data.rank - batch_dims + 1
     var reshaped_data_tuple = IndexList[reshaped_data_rank]()
 
     reshaped_data_tuple[0] = batch_volume
@@ -237,7 +237,7 @@ fn _index_tensor_1d[
         reshaped_data_tuple[counter] = data_shape[i]
         counter += 1
 
-    alias data_dyn_layout = Layout.row_major[data.rank]()
+    comptime data_dyn_layout = Layout.row_major[data.rank]()
     var reshaped_data = reshape.reshape[reshaped_data_rank](
         LayoutTensor[
             data.dtype, data_dyn_layout, address_space = data.address_space
@@ -252,7 +252,7 @@ fn _index_tensor_1d[
 
     # TODO: Find a heuristic to replace the magic number
     #       to also take into account the data size per line.
-    alias MIN_LINES = 32
+    comptime MIN_LINES = 32
     var num_threads = parallelism_level()
     var num_tasks = min(
         ceildiv(
@@ -340,10 +340,10 @@ fn _index_tensor_impl[
             output_idx, data.load[width=simd_width](data_idx)
         )
 
-    alias compile_target = _current_target() if is_cpu[
+    comptime compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
-    alias target_simd_width = simd_width_of[dtype, target=compile_target]()
+    comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
 
     # Only use SIMD if:
     #   - the input data is contiguous
@@ -419,7 +419,7 @@ fn _advanced_indexing_use_simd[
     # We can vectorize the assignment only if:
     # - The tensors we are reading and writing to are contiguous in inner dimension
     # - We are not directly indexing the inner dimension of input
-    alias inner_dim_not_indexed = (start_axis + num_index_tensors - 1) < (
+    comptime inner_dim_not_indexed = (start_axis + num_index_tensors - 1) < (
         input_rank - 1
     )
     var read_contiguous = read_strides[read_strides.size - 1] == 1
@@ -529,7 +529,7 @@ fn advanced_indexing_getitem[
                     input_dim - num_index_tensors + index_rank
                 ]
             else:
-                alias index_tensor_offset = input_dim - start_axis
+                comptime index_tensor_offset = input_dim - start_axis
                 var index_tensor_indices = IndexList[index_rank]()
 
                 @parameter
@@ -546,10 +546,12 @@ fn advanced_indexing_getitem[
             input_tensor_fn[width=width](input_index),
         )
 
-    alias compile_target = _current_target() if is_cpu[
+    comptime compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
-    alias target_simd_width = simd_width_of[input_type, target=compile_target]()
+    comptime target_simd_width = simd_width_of[
+        input_type, target=compile_target
+    ]()
     var use_simd = _advanced_indexing_use_simd[
         start_axis, num_index_tensors, input_rank
     ](
@@ -598,7 +600,7 @@ fn advanced_indexing_getitem_shape[
         input_shape: The shape of the input tensor in the operation.
         index_shape: The shape of the indexing tensors in the operation.
     """
-    alias output_rank = input_rank + index_rank - num_index_tensors
+    comptime output_rank = input_rank + index_rank - num_index_tensors
     var answer = IndexList[output_rank]()
 
     @parameter
@@ -713,7 +715,7 @@ fn advanced_indexing_setitem_inplace[
     """
 
     # First calculate
-    alias iteration_rank = input_tensor.rank + index_rank - num_index_tensors
+    comptime iteration_rank = input_tensor.rank + index_rank - num_index_tensors
     constrained[iteration_rank == updates_rank]()
     var iteration_shape = IndexList[iteration_rank]()
 
@@ -757,7 +759,7 @@ fn advanced_indexing_setitem_inplace[
                     i - num_index_tensors + index_rank
                 ]
             else:
-                alias index_tensor_offset = i - start_axis
+                comptime index_tensor_offset = i - start_axis
                 input_tensor_indices[i] = Int(
                     indices_fn[index_tensor_offset](index_tensor_indices)
                 )
@@ -771,11 +773,13 @@ fn advanced_indexing_setitem_inplace[
 
     # We can vectorize the assignment only if we are
     # not indexing in the last dimension of input.
-    alias last_indexed_dim = start_axis + num_index_tensors - 1
-    alias compile_target = _current_target() if is_cpu[
+    comptime last_indexed_dim = start_axis + num_index_tensors - 1
+    comptime compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
-    alias target_simd_width = simd_width_of[input_type, target=compile_target]()
+    comptime target_simd_width = simd_width_of[
+        input_type, target=compile_target
+    ]()
     var use_simd = _advanced_indexing_use_simd[
         start_axis, num_index_tensors, input_tensor.rank
     ](

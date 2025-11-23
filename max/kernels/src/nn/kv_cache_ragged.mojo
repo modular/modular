@@ -183,7 +183,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged[
             "head_size=" + String(kv_collection.kv_params.head_size),
         )
 
-    alias name = "mo.fused_qkv_matmul.ragged.paged.nhead_" + String(
+    comptime name = "mo.fused_qkv_matmul.ragged.paged.nhead_" + String(
         kv_collection.kv_params.num_heads
     ) + ".hdim_" + String(kv_collection.kv_params.head_size)
     with Trace[TraceLevel.OP, target=target](
@@ -261,7 +261,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
             "head_size=" + String(kv_collection.kv_params.head_size),
         )
 
-    alias name = "mo.fused_qkv_matmul.ragged.paged.bias.nhead_" + String(
+    comptime name = "mo.fused_qkv_matmul.ragged.paged.bias.nhead_" + String(
         kv_collection.kv_params.num_heads
     ) + ".hdim_" + String(kv_collection.kv_params.head_size)
     with Trace[TraceLevel.OP, target=target](
@@ -351,7 +351,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
             "head_size=" + String(kv_collection.kv_params.head_size),
         )
 
-    alias name = "mo.fused_qkv_matmul.ragged.paged.scale.nhead_" + String(
+    comptime name = "mo.fused_qkv_matmul.ragged.paged.scale.nhead_" + String(
         kv_collection.kv_params.num_heads
     ) + ".hdim_" + String(kv_collection.kv_params.head_size)
     with Trace[TraceLevel.OP, target=target](
@@ -626,8 +626,8 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
             Shape is (sum(seq_lens), num_heads * head_size)
         context: The DeviceContext. This is unused if is_cpu[target]().
     """
-    alias kv_type = cache_t.dtype
-    alias kv_params = cache_t.kv_params
+    comptime kv_type = cache_t.dtype
+    comptime kv_params = cache_t.kv_params
 
     constrained[
         kv_type == dtype, "Mismatch in dtype between Q and KV tensors"
@@ -759,8 +759,8 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
         bias: Bias to be added to the QKV Tensor. Tensor is concatenated q + k + v. Rank 1.
         context: The DeviceContext. This is unused if is_cpu[target]().
     """
-    alias kv_type = cache_t.dtype
-    alias kv_params = cache_t.kv_params
+    comptime kv_type = cache_t.dtype
+    comptime kv_params = cache_t.kv_params
 
     constrained[
         kv_type == dtype, "Mismatch in dtype between Q and KV tensors"
@@ -901,8 +901,8 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
             Shape is (sum(seq_lens), num_heads * head_size)
         context: The DeviceContext. This is unused if is_cpu[target]().
     """
-    alias kv_type = cache_t.dtype
-    alias kv_params = cache_t.kv_params
+    comptime kv_type = cache_t.dtype
+    comptime kv_params = cache_t.kv_params
 
     var q_dim = output.dim[1]()
     var k_dim = kv_params.head_size * kv_params.num_heads
@@ -913,13 +913,13 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
         return
 
     # Here we decide the quantization scheme for the QKV Tensor.
-    alias use_per_tensor = (
+    comptime use_per_tensor = (
         Int(input_scale.layout.shape[0]) == 1
         and Int(input_scale.layout.shape[1]) == 1
         and Int(weight_scale.layout.shape[0]) == 1
         and Int(weight_scale.layout.shape[1]) == 1
     )
-    alias use_per_channel = (
+    comptime use_per_channel = (
         Int(input_scale.layout.shape[0]) == 1
         and Int(weight_scale.layout.shape[1]) == 1
         and not use_per_tensor
@@ -1017,7 +1017,7 @@ fn _matmul_common[
     context: Optional[DeviceContext],
 ) raises:
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
-    alias N = Int(weight.layout.shape[0])
+    comptime N = Int(weight.layout.shape[0])
     var c_nd: LayoutTensor[
         output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
     ]
@@ -1073,7 +1073,7 @@ fn _qmatmul_common[
     constrained[is_gpu[target](), "GPTQ quantization only works on GPU."]()
 
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
-    alias N = Int(weight.layout.shape[0])
+    comptime N = Int(weight.layout.shape[0])
     var c_nd: LayoutTensor[
         dtype, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
     ]
@@ -1124,7 +1124,7 @@ fn _matmul_blockwise_scaled_fp8_common[
     ]()
 
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
-    alias N = Int(weight.layout.shape[0])
+    comptime N = Int(weight.layout.shape[0])
     var c_nd: LayoutTensor[
         output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
     ]
@@ -1291,7 +1291,7 @@ fn _matmul_kv_cache_ragged_impl[
         # Nothing to do.
         return
 
-    alias kv_params = cache_t.kv_params
+    comptime kv_params = cache_t.kv_params
 
     batch_size = input_row_offsets.dim[0]() - 1
 
@@ -1310,7 +1310,7 @@ fn _matmul_kv_cache_ragged_impl[
         idx: IndexList[2],
         val: SIMD[dtype, width],
     ):
-        alias kv_type = cache_t.dtype
+        comptime kv_type = cache_t.dtype
 
         constrained[
             kv_type == dtype,
@@ -1506,7 +1506,7 @@ fn _matmul_k_cache_ragged_impl[
         # Nothing to do.
         return
 
-    alias kv_params = cache_t.kv_params
+    comptime kv_params = cache_t.kv_params
 
     batch_size = input_row_offsets.dim[0]() - 1
 
@@ -1516,7 +1516,7 @@ fn _matmul_k_cache_ragged_impl[
     fn write_to_cache[
         dtype: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width],):
-        alias kv_type = cache_t.dtype
+        comptime kv_type = cache_t.dtype
 
         constrained[
             kv_type == dtype,
@@ -1677,7 +1677,7 @@ fn _matmul_k_cache_ragged_scale_impl[
         # Nothing to do.
         return
 
-    alias kv_params = cache_t.kv_params
+    comptime kv_params = cache_t.kv_params
 
     var batch_size = input_row_offsets.dim[0]() - 1
 
@@ -1687,7 +1687,7 @@ fn _matmul_k_cache_ragged_scale_impl[
     fn write_to_cache[
         dtype: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width],):
-        alias kv_type = cache_t.dtype
+        comptime kv_type = cache_t.dtype
 
         constrained[
             kv_type == dtype,
@@ -1866,7 +1866,7 @@ fn _unfused_qkv_matmul_ragged_paged_gguf_quantized_impl[
     k_cache = kv_collection.get_key_cache(layer_idx_cast)
     v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
-    alias cache_t = PagedKVCache[
+    comptime cache_t = PagedKVCache[
         DType.float32, kv_collection.kv_params, kv_collection.page_size
     ]
     k_cache_reg = rebind[cache_t](k_cache)
@@ -1967,7 +1967,7 @@ fn _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
     ],
     k_or_v_cache: cache_t,
 ) raises:
-    alias kv_params = cache_t.kv_params
+    comptime kv_params = cache_t.kv_params
 
     batch_size = input_row_offsets.dim[0]() - 1
 
@@ -1977,7 +1977,7 @@ fn _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
     fn write_to_cache_common[
         dtype: DType, cache_t: KVCacheT, width: Int
     ](k_or_v_cache: cache_t, idx: IndexList[2], val: SIMD[dtype, width],):
-        alias k_or_v_type = cache_t.dtype
+        comptime k_or_v_type = cache_t.dtype
 
         constrained[
             k_or_v_type == dtype,
@@ -2033,7 +2033,7 @@ fn _qmatmul_gguf_quantized_alloc_output[
     ],
 ) raises:
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
-    alias N = Int(weight.layout.shape[0])
+    comptime N = Int(weight.layout.shape[0])
     var c_nd: LayoutTensor[
         DType.float32, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
     ]
@@ -2250,7 +2250,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
         target
     ]() else context.get_device_context()
 
-    alias name = "mo.fused_qk_rope.ragged.paged.nhead_" + String(
+    comptime name = "mo.fused_qk_rope.ragged.paged.nhead_" + String(
         kv_collection.kv_params.num_heads
     ) + ".hdim_" + String(kv_collection.kv_params.head_size)
     with Trace[TraceLevel.OP, target=target](
@@ -2340,7 +2340,7 @@ fn generic_flash_attention_kv_cache_ragged[
         desc_parts.append("sink=False")
         return String(";").join(desc_parts)
 
-    alias name = "mo.mha.ragged." + collection_t.name_str + "." + mask_str + "." + score_mod_str + ".nhead_" + String(
+    comptime name = "mo.mha.ragged." + collection_t.name_str + "." + mask_str + "." + score_mod_str + ".nhead_" + String(
         collection_t.kv_params.num_heads
     ) + ".hdim_" + String(
         collection_t.kv_params.head_size
@@ -2418,7 +2418,7 @@ fn _flash_attention_dispatch[
                     sink_weights,
                 )
             else:
-                alias use_score_mod = not _type_is_eq[
+                comptime use_score_mod = not _type_is_eq[
                     score_mod_t, IdentityScoreMod
                 ]()
                 gpu_flash_attention[
@@ -2487,7 +2487,7 @@ fn generic_flash_attention_kv_cache_ragged_sink[
         desc_parts.append("sink=True")
         return String(";").join(desc_parts)
 
-    alias name = "mo.mha.ragged." + collection_t.name_str + "." + mask_str + "." + score_mod_str + ".nhead_" + String(
+    comptime name = "mo.mha.ragged." + collection_t.name_str + "." + mask_str + "." + score_mod_str + ".nhead_" + String(
         collection_t.kv_params.num_heads
     ) + ".hdim_" + String(
         collection_t.kv_params.head_size
@@ -2957,8 +2957,8 @@ fn generic_flare_mla_decompress_k_cache_ragged_paged[
     )
 
     # rebind k_latent_buffer with dynamic dim
-    alias latent_last_dim = Int(k_latent_buffer.layout.shape[1])
-    alias k_latent_layout = Layout.row_major(UNKNOWN_VALUE, latent_last_dim)
+    comptime latent_last_dim = Int(k_latent_buffer.layout.shape[1])
+    comptime k_latent_layout = Layout.row_major(UNKNOWN_VALUE, latent_last_dim)
     var k_latent_dynamic_shape = IndexList[2](
         buffer_length_int, latent_last_dim
     )
@@ -2969,8 +2969,8 @@ fn generic_flare_mla_decompress_k_cache_ragged_paged[
     )
 
     # rebind k_buffer with dynamic dim
-    alias k_last_dim = Int(k_buffer.layout.shape[1])
-    alias k_layout = Layout.row_major(UNKNOWN_VALUE, k_last_dim)
+    comptime k_last_dim = Int(k_buffer.layout.shape[1])
+    comptime k_layout = Layout.row_major(UNKNOWN_VALUE, k_last_dim)
     var k_dynamic_shape = IndexList[2](buffer_length_int, k_last_dim)
 
     var k_buffer_dynamic = LayoutTensor[dtype, k_layout](
@@ -3039,7 +3039,7 @@ fn _cross_attention_dispatch[
                 sink_weights,
             )
         else:
-            alias use_score_mod = not _type_is_eq[
+            comptime use_score_mod = not _type_is_eq[
                 score_mod_t, IdentityScoreMod
             ]()
             gpu_flash_attention[
@@ -3173,7 +3173,7 @@ fn generic_kv_cache_radd_dispatch[
     layer_idx: UInt32,
     ctx: Optional[DeviceContext],
 ) raises:
-    alias hidden_size = collection_t.kv_params.head_size * collection_t.kv_params.num_heads
+    comptime hidden_size = collection_t.kv_params.head_size * collection_t.kv_params.num_heads
 
     constrained[
         dtype == collection_t.dtype,
@@ -3244,15 +3244,15 @@ fn generic_kv_cache_radd_dispatch[
     @parameter
     if is_gpu[target]():
         debug_assert(ctx is not None, "ctx is None")
-        alias compile_target = get_gpu_target()
-        alias simd_width = simd_width_of[dtype, target=compile_target]()
+        comptime compile_target = get_gpu_target()
+        comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[do_radd, simd_width, target=target](
             a.runtime_layout.shape.value.canonicalize(), ctx.value()
         )
     else:
-        alias compile_target = _current_target()
-        alias simd_width = simd_width_of[dtype, target=compile_target]()
+        comptime compile_target = _current_target()
+        comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[do_radd, simd_width, target=target](
             a.runtime_layout.shape.value.canonicalize()
@@ -3307,14 +3307,18 @@ fn kv_cache_store_ragged[
     @parameter
     if is_gpu[target]():
         debug_assert(context is not None, "ctx is None")
-        alias compile_target = get_gpu_target()
-        alias simd_width = simd_width_of[cache_t.dtype, target=compile_target]()
+        comptime compile_target = get_gpu_target()
+        comptime simd_width = simd_width_of[
+            cache_t.dtype, target=compile_target
+        ]()
 
         elementwise[write_to_cache, simd_width, target=target](
             input_shape, context.value()
         )
     else:
-        alias compile_target = _current_target()
-        alias simd_width = simd_width_of[cache_t.dtype, target=compile_target]()
+        comptime compile_target = _current_target()
+        comptime simd_width = simd_width_of[
+            cache_t.dtype, target=compile_target
+        ]()
 
         elementwise[write_to_cache, simd_width, target=target](input_shape)

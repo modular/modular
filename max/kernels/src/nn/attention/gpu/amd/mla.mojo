@@ -32,13 +32,13 @@ from .mha_gfx942 import Attention, MHAAttentionConfig
 @fieldwise_init
 struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
     # share shared memory for k and v
-    alias shared_kv = True
+    comptime shared_kv = True
     # shared memory for the full tile vs BK blocks
-    alias full_kv = False
+    comptime full_kv = False
     # pad the depth for v smem
-    alias depth_padded = True
+    comptime depth_padded = True
     # double buffer
-    alias double_buffer = False
+    comptime double_buffer = False
 
     @staticmethod
     @always_inline
@@ -106,10 +106,10 @@ __extension Attention:
         # cache_num_heads: Int,
         # cache_depth: Int,
     ](mut self, k_rope: k_rope_t):
-        alias cache_num_heads = 1
-        alias cache_depth = 576
+        comptime cache_num_heads = 1
+        comptime cache_depth = 576
         constrained[Self.BN == Self.depth, "BN must be equal to depth"]()
-        alias simd_width = simd_width_of[Self.q_type]()
+        comptime simd_width = simd_width_of[Self.q_type]()
 
         constrained[Self.BK == 32, "BK must be 32"]()
 
@@ -173,7 +173,7 @@ __extension Attention:
                 num_stages = Self.num_stages,
             ](v_tile, self.smem_manager.get_v_ptr[v_tile.dtype]())
 
-            alias k_rope_gmem_layout = Layout(
+            comptime k_rope_gmem_layout = Layout(
                 IntTuple(Int(Self.BN), Int(cache_depth)),
                 IntTuple(Int(cache_num_heads * cache_depth), 1),
             )
@@ -183,8 +183,8 @@ __extension Attention:
                 {Int(cache_num_heads * cache_depth), 1},
             )
 
-            alias cache_group = self.num_heads // UInt(cache_num_heads)
-            alias rope_depth = q_depth - Int(Self.depth)
+            comptime cache_group = self.num_heads // UInt(cache_num_heads)
+            comptime rope_depth = q_depth - Int(Self.depth)
 
             var k_rope_tile = LayoutTensor[
                 k_rope_t.dtype,

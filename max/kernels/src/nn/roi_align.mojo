@@ -175,7 +175,7 @@ fn roi_align_nhwc[
 
     var pooled_height = output_height
     var pooled_width = output_width
-    alias offset = Float32(0.5 if aligned else 0.0)
+    comptime offset = Float32(0.5 if aligned else 0.0)
 
     for ri in range(n_regions):
         # Region coordinates and batch index

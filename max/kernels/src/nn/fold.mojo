@@ -101,10 +101,10 @@ fn fold[
 
     var kernel_w = kernel_size[1]
     var kernel_h = kernel_size[0]
-    alias dilation_w = dilation[1]
-    alias dilation_h = dilation[0]
-    alias stride_w = stride[1]
-    alias stride_h = stride[0]
+    comptime dilation_w = dilation[1]
+    comptime dilation_h = dilation[0]
+    comptime stride_w = stride[1]
+    comptime stride_h = stride[0]
 
     @always_inline
     @parameter

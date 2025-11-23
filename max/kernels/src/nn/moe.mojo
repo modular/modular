@@ -73,7 +73,7 @@ fn moe_create_indices_kernel[
     ],
     topk_ids: LayoutTensor[input_type, topk_ids_layout, MutAnyOrigin],
 ):
-    alias indices_type = DType.uint32
+    comptime indices_type = DType.uint32
     var num_tokens: Int = Int(topk_ids.runtime_layout.shape[0])
     var num_tokens_padded: Int = Int(indices_padded.runtime_layout.shape[0])
     var num_tokens_per_thread = ceildiv(num_tokens_padded, num_threads)
@@ -248,8 +248,8 @@ fn calculate_warp_offset[MaskType: DType](state: Bool) -> Tuple[UInt64, UInt64]:
 
 
 struct _BucketGroupParams[num_threads: Int, input_type: DType]:
-    alias MaskType = _uint_type_of_width[Self.num_threads]()
-    alias width = simd_width_of[Self.input_type]()
+    comptime MaskType = _uint_type_of_width[Self.num_threads]()
+    comptime width = simd_width_of[Self.input_type]()
 
     var expert: UInt
     var reads_per_iteration: Int
@@ -281,8 +281,8 @@ fn _count_expert_tokens[
     smem: LayoutTensor[DType.uint32, *_, **_],
     bg_params: _BucketGroupParams[num_threads, input_type],
 ) -> UInt64:
-    alias width = bg_params.width
-    alias MaskType = bg_params.MaskType
+    comptime width = bg_params.width
+    comptime MaskType = bg_params.MaskType
 
     var total_writes: UInt64 = 0
 
@@ -386,7 +386,7 @@ fn _copy_tokens_smem_to_gmem[
     bg_params: _BucketGroupParams[num_threads, input_type],
 ):
     var g_offset_copy = g_offset
-    alias width = bg_params.width
+    comptime width = bg_params.width
 
     var total_reads_rounded = align_up(
         Int(total_writes), bg_params.reads_per_iteration
@@ -441,8 +441,8 @@ fn _copy_tokens_to_gmem[
     g_offset: UInt32,
     bg_params: _BucketGroupParams[num_threads, input_type],
 ):
-    alias width = bg_params.width
-    alias MaskType = bg_params.MaskType
+    comptime width = bg_params.width
+    comptime MaskType = bg_params.MaskType
 
     var g_offset_copy = g_offset
 
@@ -583,8 +583,8 @@ fn moe_create_indices_bucket_group_kernel[
         "Only support 32 or 64 threads per warp",
     ]()
 
-    alias BucketParamsType = _BucketGroupParams[num_threads, input_type]
-    alias SmemVectorType = LayoutTensor[
+    comptime BucketParamsType = _BucketGroupParams[num_threads, input_type]
+    comptime SmemVectorType = LayoutTensor[
         DType.uint32,
         Layout.row_major(1, expected_count),
         MutAnyOrigin,
@@ -682,7 +682,7 @@ fn moe_create_indices[
             DType.uint32, Layout.row_major(1), MutAnyOrigin
         ](lock_buffer.unsafe_ptr())
 
-        alias topk_layout = Layout.row_major(1, UNKNOWN_VALUE)
+        comptime topk_layout = Layout.row_major(1, UNKNOWN_VALUE)
 
         var topk_2D = LayoutTensor[input_type, topk_layout, MutAnyOrigin](
             rebind[UnsafePointer[Scalar[input_type]]](topk_ids.ptr),
@@ -702,7 +702,7 @@ fn moe_create_indices[
             expert_usage_stats_host,
         )
 
-        alias kernel = moe_create_indices_bucket_group_kernel[
+        comptime kernel = moe_create_indices_bucket_group_kernel[
             input_type,
             token_expert_order.layout,
             expert_start_indices.layout,
