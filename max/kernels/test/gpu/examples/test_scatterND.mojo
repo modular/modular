@@ -24,7 +24,7 @@ from utils.index import Index
 
 # This is DeviceAttribute.MAX_THREADS_PER_BLOCK (in ONNXRT it is a global
 # with value of 256).
-alias MAX_THREADS_PER_BLOCK = 256
+comptime MAX_THREADS_PER_BLOCK = 256
 
 
 # TODO: Follow-up: Eliminate offsets calculations and use NDBuffers directly.
@@ -229,7 +229,7 @@ fn scatter_nd[
         num_indices *= indices.get_shape()[i]
 
     var num_updates_elements = count_copy
-    alias kernel = scatter_nd_gpu[dtype=dtype, indices_type=indices_type]
+    comptime kernel = scatter_nd_gpu[dtype=dtype, indices_type=indices_type]
 
     ctx.enqueue_function_checked[kernel, kernel](
         output_device,

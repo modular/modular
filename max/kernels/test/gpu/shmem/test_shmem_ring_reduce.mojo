@@ -23,14 +23,14 @@ from sys.ffi import c_int
 from sys.info import size_of
 from gpu.host import DeviceBuffer
 
-alias min_size = 1024 * 1024 * 32
-alias max_size = min_size * 16
-alias num_blocks = 32
-alias threads_per_block = 256
-alias iters = 4
-alias warmup_iters = 1
-alias step_factor = 2
-alias chunk_size = 1024 * 256
+comptime min_size = 1024 * 1024 * 32
+comptime max_size = min_size * 16
+comptime num_blocks = 32
+comptime threads_per_block = 256
+comptime iters = 4
+comptime warmup_iters = 1
+comptime step_factor = 2
+comptime chunk_size = 1024 * 256
 
 
 fn ring_reduce(

@@ -61,16 +61,16 @@ fn sgemm_double_buffer[
     a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
     b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
 ):
-    alias _uint = Scalar[itype]
+    comptime _uint = Scalar[itype]
 
-    alias simd_size = simd_width_of[c_type]()
+    comptime simd_size = simd_width_of[c_type]()
 
     var M = c.shape[0]()
     var N = c.shape[1]()
     var K = a.shape[1]()
 
-    alias num_warps_m = (BM // WM)
-    alias num_warps_n = (BN // WN)
+    comptime num_warps_m = (BM // WM)
+    comptime num_warps_n = (BN // WN)
 
     var tid = thread_idx.x
     var warp_id = tid // UInt(WARP_SIZE)
@@ -81,19 +81,19 @@ fn sgemm_double_buffer[
     var warp_y = warp_id // UInt(num_warps_n)
 
     # Warp shape in 2D.
-    alias warp_dim_x = WN // TN
-    alias warp_dim_y = WM // TM
+    comptime warp_dim_x = WN // TN
+    comptime warp_dim_y = WM // TM
     constrained[
         warp_dim_x * warp_dim_y == WARP_SIZE,
         "Warp 2d shape doesn't match 32 threads",
     ]()
 
     # Pad BM to avoid back conflict
-    alias pad_avoid_bank_conflict = 4
-    alias BM_padded = BM + pad_avoid_bank_conflict
+    comptime pad_avoid_bank_conflict = 4
+    comptime BM_padded = BM + pad_avoid_bank_conflict
 
     # Double buffer in shared memory.
-    alias a_smem_size = BK * BM_padded
+    comptime a_smem_size = BK * BM_padded
     var a_smem_tile = (
         LayoutTensor[
             a_type,
@@ -107,7 +107,7 @@ fn sgemm_double_buffer[
     )
 
     # Align the address by the maximum async copy size (16 bytes).
-    alias b_smem_size = BK * BN
+    comptime b_smem_size = BK * BN
     var b_smem_tile = (
         LayoutTensor[
             b_type,
@@ -125,8 +125,8 @@ fn sgemm_double_buffer[
 
     # Load A tile from global memory to shared.
     # Row major thread layout for coalesced access.
-    alias thread_loada_gmem_layout = Layout.row_major(NUM_THREADS // BK, BK)
-    alias thread_storea_smem_layout = Layout.col_major(BK, NUM_THREADS // BK)
+    comptime thread_loada_gmem_layout = Layout.row_major(NUM_THREADS // BK, BK)
+    comptime thread_storea_smem_layout = Layout.col_major(BK, NUM_THREADS // BK)
     copy_dram_to_sram_async[
         src_thread_layout=thread_loada_gmem_layout,
         dst_thread_layout=thread_storea_smem_layout,
@@ -134,7 +134,7 @@ fn sgemm_double_buffer[
 
     # Load B tile from global memory to shared.
     # Row major thread layout for coalesced access.
-    alias thread_layout_loadb = Layout.row_major(
+    comptime thread_layout_loadb = Layout.row_major(
         (NUM_THREADS // BN) * simd_size, BN // simd_size
     )
     copy_dram_to_sram_async[
@@ -153,7 +153,7 @@ fn sgemm_double_buffer[
     b_gmem_tile = b.tile[BK, BN](1, Int(block_idx.x))
 
     # Double buffer in registers (fragments in nvidia terms).
-    alias layout_a = Layout.row_major(TM)
+    comptime layout_a = Layout.row_major(TM)
     var a_reg = InlineArray[_, 2](
         LayoutTensor[
             a_type,
@@ -168,7 +168,7 @@ fn sgemm_double_buffer[
             address_space = AddressSpace.LOCAL,
         ].stack_allocation(),
     )
-    alias layout_b = Layout.row_major(TN)
+    comptime layout_b = Layout.row_major(TN)
     var b_reg = InlineArray[_, 2](
         LayoutTensor[
             b_type,
@@ -183,7 +183,7 @@ fn sgemm_double_buffer[
             address_space = AddressSpace.LOCAL,
         ].stack_allocation(),
     )
-    alias layout_c = Layout.row_major(TM, TN)
+    comptime layout_c = Layout.row_major(TM, TN)
     var c_reg = (
         LayoutTensor[
             c_type,
@@ -202,7 +202,7 @@ fn sgemm_double_buffer[
     # 1  3  5  7  9  11 13 15
     # 16 18 20 22 24 26 28 30
     # 17 19 21 23 25 27 29 31
-    alias thread_layout = Layout(
+    comptime thread_layout = Layout(
         IntTuple(IntTuple(2, 2), 8), IntTuple(IntTuple(1, 16), 2)
     ) if is_nvidia_gpu() else Layout(
         IntTuple(IntTuple(2, 2), 16), IntTuple(IntTuple(1, 32), 2)
@@ -298,21 +298,21 @@ fn sgemm_double_buffer[
 
 
 fn test(ctx: DeviceContext) raises:
-    alias NUM_THREADS = 256
-    alias M = 8192
-    alias N = 8192
-    alias K = 128
-    alias BM = 128
-    alias BN = 128
-    alias BK = 16
-    alias WM = 32
-    alias WN = 64 if has_nvidia_gpu_accelerator() else 128
-    alias TM = 8
-    alias TN = 8
+    comptime NUM_THREADS = 256
+    comptime M = 8192
+    comptime N = 8192
+    comptime K = 128
+    comptime BM = 128
+    comptime BN = 128
+    comptime BK = 16
+    comptime WM = 32
+    comptime WN = 64 if has_nvidia_gpu_accelerator() else 128
+    comptime TM = 8
+    comptime TN = 8
 
-    alias a_layout = Layout(IntTuple(M, K), IntTuple(K, 1))
-    alias b_layout = Layout(IntTuple(K, N), IntTuple(N, 1))
-    alias c_layout = Layout(IntTuple(M, N), IntTuple(N, 1))
+    comptime a_layout = Layout(IntTuple(M, K), IntTuple(K, 1))
+    comptime b_layout = Layout(IntTuple(K, N), IntTuple(N, 1))
+    comptime c_layout = Layout(IntTuple(M, N), IntTuple(N, 1))
 
     var a_host = alloc[Float32](M * K)
     var b_host = alloc[Float32](K * N)
@@ -337,7 +337,7 @@ fn test(ctx: DeviceContext) raises:
     var a_tensor = LayoutTensor[DType.float32, a_layout](a_device)
     var b_tensor = LayoutTensor[DType.float32, b_layout](b_device)
 
-    alias gemm = sgemm_double_buffer[
+    comptime gemm = sgemm_double_buffer[
         DType.float32,
         c_layout,
         DType.float32,
@@ -355,8 +355,8 @@ fn test(ctx: DeviceContext) raises:
         NUM_THREADS,
     ]
     if is_benchmark():
-        alias nrun = 200
-        alias nwarmup = 2
+        comptime nrun = 200
+        comptime nwarmup = 2
 
         @always_inline
         @parameter
@@ -391,8 +391,8 @@ fn test(ctx: DeviceContext) raises:
     var c_tensor_ref = LayoutTensor[DType.float32, c_layout](c_device_ref)
 
     # Naive gemm.
-    alias BLOCK_DIM = 16
-    alias gemm_naive = matmul_kernel_naive[
+    comptime BLOCK_DIM = 16
+    comptime gemm_naive = matmul_kernel_naive[
         DType.float32,
         DType.float32,
         DType.float32,

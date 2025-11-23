@@ -29,7 +29,7 @@ fn test_static_scaled_fp8_quant[
     out_dtype: DType,
     in_dtype: DType,
 ](ctx: DeviceContext, scale: Float32, m: ValOrDim, n: ValOrDim,) raises:
-    alias static_shape = DimList(m.dim, n.dim)
+    comptime static_shape = DimList(m.dim, n.dim)
     var dynamic_shape = DimList(m.value, n.value)
 
     var in_host = HostNDBuffer[in_dtype, 2, static_shape](dynamic_shape)
@@ -83,10 +83,10 @@ fn test_dynamic_fp8_quant[
     in_dtype: DType,
     group_size_or_per_token: Int,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim,) raises:
-    alias group_size = n.dim if group_size_or_per_token == -1 else group_size_or_per_token
+    comptime group_size = n.dim if group_size_or_per_token == -1 else group_size_or_per_token
 
-    alias static_shape = DimList(m.dim, n.dim)
-    alias static_scales_shape = DimList(n.dim // group_size, m.dim)
+    comptime static_shape = DimList(m.dim, n.dim)
+    comptime static_scales_shape = DimList(n.dim // group_size, m.dim)
     var dynamic_shape = DimList(m.value, n.value)
     var dynamic_scales_shape = DimList(n.value // group_size, m.value)
 
@@ -161,10 +161,10 @@ fn test_batched_dynamic_fp8_quant[
     in_dtype: DType,
     group_size_or_per_token: Int,
 ](ctx: DeviceContext, bs: ValOrDim, m: ValOrDim, k: ValOrDim,) raises:
-    alias group_size = k.dim if group_size_or_per_token == -1 else group_size_or_per_token
+    comptime group_size = k.dim if group_size_or_per_token == -1 else group_size_or_per_token
 
-    alias static_shape = DimList(bs.dim, m.dim, k.dim)
-    alias static_scales_shape = DimList(bs.dim, k.dim // group_size, m.dim)
+    comptime static_shape = DimList(bs.dim, m.dim, k.dim)
+    comptime static_scales_shape = DimList(bs.dim, k.dim // group_size, m.dim)
     var dynamic_shape = DimList(bs.value, m.value, k.value)
     var dynamic_scales_shape = DimList(bs.value, k.value // group_size, m.value)
 

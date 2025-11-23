@@ -20,7 +20,7 @@ from memory import stack_allocation
 
 from utils.index import Index
 
-alias BLOCK_DIM = 8
+comptime BLOCK_DIM = 8
 
 
 fn stencil1d(
@@ -79,11 +79,11 @@ fn stencil1d_smem(
 fn run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
     print("== run_stencil1d")
 
-    alias m = 64
-    alias coeff0 = 3
-    alias coeff1 = 2
-    alias coeff2 = 4
-    alias iterations = 4
+    comptime m = 64
+    comptime coeff0 = 3
+    comptime coeff1 = 2
+    comptime coeff2 = 4
+    comptime iterations = 4
 
     var a_host = alloc[Float32](m)
     var b_host = alloc[Float32](m)
@@ -98,7 +98,7 @@ fn run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias func_select = stencil1d_smem if smem == True else stencil1d
+    comptime func_select = stencil1d_smem if smem == True else stencil1d
 
     for _ in range(iterations):
         ctx.enqueue_function_checked[func_select, func_select](

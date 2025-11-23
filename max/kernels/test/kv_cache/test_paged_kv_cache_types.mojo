@@ -17,7 +17,7 @@ from memory import alloc
 
 from utils.index import IndexList
 
-alias kv_params = KVCacheStaticParams(num_heads=16, head_size=16)
+comptime kv_params = KVCacheStaticParams(num_heads=16, head_size=16)
 
 
 def do_test[page_size: Int, layout_block_size: Int]():
@@ -36,13 +36,13 @@ def do_test[page_size: Int, layout_block_size: Int]():
     var blocks = LayoutTensor[DType.float32, Layout.row_major[6]()](
         blocks_ptr, RuntimeLayout[Layout.row_major[6]()].row_major(shape)
     ).fill(0)
-    alias layout_1d = Layout(UNKNOWN_VALUE)
+    comptime layout_1d = Layout(UNKNOWN_VALUE)
     var cache_lengths_ptr = alloc[UInt32](batch_size)
     var cache_lengths = LayoutTensor[DType.uint32, layout_1d](
         cache_lengths_ptr,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
     ).fill(0)
-    alias layout_2d = Layout.row_major[2]()
+    comptime layout_2d = Layout.row_major[2]()
     var lookup_table_ptr = alloc[UInt32](batch_size * max_num_blocks)
     var lookup_table = LayoutTensor[DType.uint32, layout_2d](
         lookup_table_ptr,
@@ -88,7 +88,7 @@ def do_test[page_size: Int, layout_block_size: Int]():
         max_cache_length,
     )
 
-    alias layout = Layout(
+    comptime layout = Layout(
         IntTuple(layout_block_size, Int(kv_params.head_size)),
         IntTuple(Int(kv_params.num_heads * kv_params.head_size), 1),
     )

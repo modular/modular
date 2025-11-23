@@ -237,7 +237,7 @@ def main() -> None:
     )
 
     # Test configurations.
-    alias test_lengths = (
+    comptime test_lengths = (
         List[Int](8 * 1024, 8 * 1024),
         List[Int](128 * 1024, 8 * 1024),
         List[Int](8 * 1024, 256 * 1024),
@@ -257,8 +257,8 @@ def main() -> None:
 
     @parameter
     for test_idx in range(len(test_lengths)):
-        alias lengths = test_lengths[test_idx]
-        alias num_gpus = len(lengths)
+        comptime lengths = test_lengths[test_idx]
+        comptime num_gpus = len(lengths)
 
         if DeviceContext.number_of_devices() < num_gpus:
             continue

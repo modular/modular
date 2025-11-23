@@ -43,7 +43,7 @@ fn dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
         return x.k == static_k and x.n == static_n
 
     # First, filter by static params N and K
-    alias nk_idx_list = TuningTableAMD.query_index[rule_eq_nk]()
+    comptime nk_idx_list = TuningTableAMD.query_index[rule_eq_nk]()
 
     # equivalently:
     # - select n==static_n
@@ -58,8 +58,8 @@ fn dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
     fn get_m(x: TuningConfigAMD) -> Int:
         return x.m
 
-    alias m_values = TuningTableAMD.query_values[Int, get_m, nk_idx_list]()
-    alias expected_m_values: List[Int] = [1, 2, 16]
+    comptime m_values = TuningTableAMD.query_values[Int, get_m, nk_idx_list]()
+    comptime expected_m_values: List[Int] = [1, 2, 16]
     constrained[len(m_values) == len(expected_m_values)]()
 
     @parameter
@@ -84,7 +84,7 @@ fn dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
                 materialize[m_values[i]](),
                 sep="",
             )
-            alias idx_list = TuningTableAMD.query_index[
+            comptime idx_list = TuningTableAMD.query_index[
                 rule_m, domain=nk_idx_list
             ]()
 
@@ -110,14 +110,14 @@ fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
         return x.N == static_k and x.N == static_n
 
     # First, filter by static params N and K
-    alias nk_idx_list = TuningTableNvidia.query_index[rule_eq_nk]()
+    comptime nk_idx_list = TuningTableNvidia.query_index[rule_eq_nk]()
 
     """
     equivalently:
     - select n==static_n
-    alias n_idx_list = TuningTable.query_index[rule(n==static_n)]()
+    comptime n_idx_list = TuningTable.query_index[rule(n==static_n)]()
     - select k==static_k where n==static_n
-    alias nk_idx_list = TuningTable.query_index[rule(k==static_k), n_idx_list]()
+    comptime nk_idx_list = TuningTable.query_index[rule(k==static_k), n_idx_list]()
     """
 
     # Get unique the values of M in the config for the subset of NK indices.
@@ -127,9 +127,11 @@ fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
     fn get_m(x: TuningConfigNvidia) -> Int:
         return x.M
 
-    alias m_values = TuningTableNvidia.query_values[Int, get_m, nk_idx_list]()
+    comptime m_values = TuningTableNvidia.query_values[
+        Int, get_m, nk_idx_list
+    ]()
 
-    alias expected_m_values: List[Int] = [
+    comptime expected_m_values: List[Int] = [
         1,
         8,
         16,
@@ -164,7 +166,7 @@ fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
                 materialize[m_values[i]](),
                 sep="",
             )
-            alias idx_list = TuningTableNvidia.query_index[
+            comptime idx_list = TuningTableNvidia.query_index[
                 rule_m, domain=nk_idx_list
             ]()
 

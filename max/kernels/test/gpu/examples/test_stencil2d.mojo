@@ -20,7 +20,7 @@ from gpu.host import DeviceContext
 
 from utils.index import Index
 
-alias BLOCK_DIM = 4
+comptime BLOCK_DIM = 4
 
 
 fn stencil2d(
@@ -129,16 +129,16 @@ fn stencil2d_smem(
 fn run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
     print("== run_stencil2d")
 
-    alias m = 64
-    alias coeff0 = 3
-    alias coeff1 = 2
-    alias coeff2 = 4
-    alias coeff3 = 1
-    alias coeff4 = 5
-    alias iterations = 4
+    comptime m = 64
+    comptime coeff0 = 3
+    comptime coeff1 = 2
+    comptime coeff2 = 4
+    comptime coeff3 = 1
+    comptime coeff4 = 5
+    comptime iterations = 4
 
-    alias num_rows = 8
-    alias num_cols = 8
+    comptime num_rows = 8
+    comptime num_cols = 8
 
     var a_host = alloc[Float32](m)
     var b_host = alloc[Float32](m)
@@ -153,7 +153,7 @@ fn run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias func_select = stencil2d_smem if smem == True else stencil2d
+    comptime func_select = stencil2d_smem if smem == True else stencil2d
 
     for _ in range(iterations):
         ctx.enqueue_function_checked[func_select, func_select](

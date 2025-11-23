@@ -124,14 +124,14 @@ fn pipeline_test_kernel[
         alignment=16,
     ]()
 
-    alias CLUSTER_SIZE = cluster_shape[0] * cluster_shape[1]
+    comptime CLUSTER_SIZE = cluster_shape[0] * cluster_shape[1]
 
-    alias NUM_PRODUCER = 32
-    alias NUM_CONSUMERS_PER_CTA = 32
-    alias consumer_arv_count = NUM_PRODUCER + (
+    comptime NUM_PRODUCER = 32
+    comptime NUM_CONSUMERS_PER_CTA = 32
+    comptime consumer_arv_count = NUM_PRODUCER + (
         NUM_CONSUMERS_PER_CTA * CLUSTER_SIZE
     )
-    alias producer_arv_count = 1
+    comptime producer_arv_count = 1
 
     var is_first_block_in_cluster = (
         block_id_in_cluster.x == 0 and block_id_in_cluster.y == 0
@@ -194,11 +194,11 @@ fn pipeline_test_kernel[
 
 
 fn test_cluster_launch_control(ctx: DeviceContext) raises:
-    alias n = 4000
+    comptime n = 4000
 
     data = ctx.enqueue_create_buffer[DType.float32](n)
 
-    alias kernel = cluster_launch_control
+    comptime kernel = cluster_launch_control
     ctx.enqueue_function_checked[kernel, kernel](
         data,
         n,
@@ -220,7 +220,7 @@ fn test_cluster_launch_control(ctx: DeviceContext) raises:
 
 
 fn test_cluster_pipeline(ctx: DeviceContext) raises:
-    alias kernel = pipeline_test_kernel[1, StaticTuple[Int32, 3](2, 2, 1)]
+    comptime kernel = pipeline_test_kernel[1, StaticTuple[Int32, 3](2, 2, 1)]
     ctx.enqueue_function_checked[kernel, kernel](
         # Use more blocks than SMs to ensure cancel happens.
         grid_dim=(4, 4),

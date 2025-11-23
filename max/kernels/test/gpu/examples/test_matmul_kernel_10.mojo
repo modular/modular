@@ -37,7 +37,7 @@ from utils import StaticTuple
 from utils.index import Index
 from utils.numerics import isnan
 
-alias BLOCK_DIM = 8
+comptime BLOCK_DIM = 8
 
 
 # BM: The threadblock size for M dimension SMEM caching.
@@ -89,8 +89,8 @@ fn sgemm_warp_tiling_kernel[
     var warp_row = warp_idx // UInt(BN // WN)
 
     # Size of the warp sub-tile.
-    alias w_sub_m = WM // WMITER  # 64/2=32
-    alias w_sub_n = WN // WNITER  # 32/2=16
+    comptime w_sub_m = WM // WMITER  # 64/2=32
+    comptime w_sub_n = WN // WNITER  # 32/2=16
 
     # Placement of the thread in the warp sub-tile.
     var thread_Idx_In_warp = thread_idx.x % UInt(WARP_SIZE)  # [0, 31]
@@ -102,8 +102,8 @@ fn sgemm_warp_tiling_kernel[
     # Allocate space for the current blocktile in SMEM.
     # Pad the A tile in share memory to avoid bank conflicts.
     # Use 4 to comply with f4 alignment used in accumulation.
-    alias sram_bank_padding_size = 4
-    alias BM_padded = BM + sram_bank_padding_size
+    comptime sram_bank_padding_size = 4
+    comptime BM_padded = BM + sram_bank_padding_size
     var a_sram = NDBuffer[
         a_type,
         1,
@@ -131,10 +131,10 @@ fn sgemm_warp_tiling_kernel[
     # We load 128bit / 32bit = 4 elements per thread at each step.
     var inner_row_a = thread_idx.x // UInt(BK // 4)
     var inner_col_a = thread_idx.x % UInt(BK // 4)
-    alias row_stride_a = (NUM_THREADS * 4) // BK
+    comptime row_stride_a = (NUM_THREADS * 4) // BK
     var inner_row_b = thread_idx.x // UInt(BN // 4)
     var inner_co_ib = thread_idx.x % UInt(BN // 4)
-    alias row_stride_b = NUM_THREADS // (BN // 4)
+    comptime row_stride_b = NUM_THREADS // (BN // 4)
 
     # TODO: We want these to be register-allocated!
     # Allocate thread-local cache for results in register file.
@@ -293,7 +293,7 @@ fn sgemm_warp_tiling_kernel[
 
                     @parameter
                     if elementwise_lambda_fn:
-                        alias elementwise_lambda = elementwise_lambda_fn.value()
+                        comptime elementwise_lambda = elementwise_lambda_fn.value()
                         elementwise_lambda[c_type, 4](
                             Index(
                                 M_offset_warp
@@ -336,9 +336,9 @@ fn matmul_naive(
 fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     print("== run_matmul_kernel_10")
 
-    alias M = 4096
-    alias N = 4096
-    alias K = 4096
+    comptime M = 4096
+    comptime N = 4096
+    comptime K = 4096
 
     # TODO: Find best for target GPU.
     #       For A100 see below (based on siboehm repo).
@@ -353,18 +353,18 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     # alias K10_TN = 4
     # alias K10_TM = 4
     # Settings for A6000
-    alias K10_NUM_THREADS = 256 if has_amd_gpu_accelerator() else 128
-    alias K10_BN = 128
-    alias K10_BM = 256 if has_amd_gpu_accelerator() else 128
-    alias K10_BK = 16
-    alias K10_WN = 64
-    alias K10_WM = 128 if has_amd_gpu_accelerator() else 64
-    alias K10_WNITER = 4
-    alias K10_TN = 4
-    alias K10_TM = 8
+    comptime K10_NUM_THREADS = 256 if has_amd_gpu_accelerator() else 128
+    comptime K10_BN = 128
+    comptime K10_BM = 256 if has_amd_gpu_accelerator() else 128
+    comptime K10_BK = 16
+    comptime K10_WN = 64
+    comptime K10_WM = 128 if has_amd_gpu_accelerator() else 64
+    comptime K10_WNITER = 4
+    comptime K10_TN = 4
+    comptime K10_TM = 8
 
-    alias NUM_WARPS = K10_NUM_THREADS / WARP_SIZE
-    alias K10_WMITER = (K10_WM * K10_WN) // (
+    comptime NUM_WARPS = K10_NUM_THREADS / WARP_SIZE
+    comptime K10_WMITER = (K10_WM * K10_WN) // (
         WARP_SIZE * K10_TM * K10_TN * K10_WNITER
     )
 
@@ -460,7 +460,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         b_device.unsafe_ptr()
     )
 
-    alias sgemm_type = sgemm_warp_tiling_kernel[
+    comptime sgemm_type = sgemm_warp_tiling_kernel[
         DType.float32,
         DimList(M, N),
         DType.float32,

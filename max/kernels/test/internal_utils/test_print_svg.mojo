@@ -20,10 +20,10 @@ from layout.swizzle import Swizzle
 
 fn test_svg_nvidia_shape() raises:
     # nvidia tensor core a matrix fragment
-    alias layout = Layout.row_major(16, 16)
+    comptime layout = Layout.row_major(16, 16)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
     var tensor = LayoutTensor[DType.float32, layout](stack)
-    alias tensor_dist_type = type_of(
+    comptime tensor_dist_type = type_of(
         tensor.vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](0)
         .get_immutable()
@@ -63,7 +63,7 @@ fn test_svg_nvidia_shape() raises:
 
 fn test_svg_nvidia_tile() raises:
     # nvidia tensor core a matrix fragment
-    alias layout = Layout.row_major(16, 16)
+    comptime layout = Layout.row_major(16, 16)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
     var tensor = LayoutTensor[DType.float32, layout](stack)
     var tensor_dist = tensor.vectorize[2, 2]().tile[4, 4](0, 1)
@@ -76,7 +76,7 @@ fn test_svg_nvidia_tile() raises:
 
 fn test_svg_nvidia_tile_memory_bank() raises:
     # nvidia tensor core a matrix fragment
-    alias layout = Layout.row_major(16, 16)
+    comptime layout = Layout.row_major(16, 16)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
     var tensor = LayoutTensor[DType.float32, layout](stack)
     var tensor_dist = tensor.vectorize[2, 2]().tile[4, 4](0, 1)
@@ -89,7 +89,7 @@ fn test_svg_nvidia_tile_memory_bank() raises:
 
 fn test_svg_amd_shape_a() raises:
     # amd tensor core a matrix fragment
-    alias layout = Layout.row_major(16, 16)
+    comptime layout = Layout.row_major(16, 16)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
     var tensor = LayoutTensor[DType.float32, layout](stack)
     var tensor_dist = tensor.distribute[Layout.col_major(16, 4)](0)
@@ -102,7 +102,7 @@ fn test_svg_amd_shape_a() raises:
 
 fn test_svg_amd_shape_b() raises:
     # amd tensor core a matrix fragment
-    alias layout = Layout.row_major(16, 16)
+    comptime layout = Layout.row_major(16, 16)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
     var tensor = LayoutTensor[DType.float32, layout](stack)
     var tensor_dist = tensor.distribute[Layout.row_major(4, 16)](0)
@@ -115,7 +115,7 @@ fn test_svg_amd_shape_b() raises:
 
 fn test_svg_amd_shape_d() raises:
     # amd tensor core a matrix fragment
-    alias layout = Layout.row_major(16, 16)
+    comptime layout = Layout.row_major(16, 16)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
     var tensor = LayoutTensor[DType.float32, layout](stack)
     var tensor_dist = tensor.vectorize[4, 1]().distribute[
@@ -133,7 +133,7 @@ fn test_svg_amd_shape_d() raises:
 
 fn test_svg_wgmma_shape() raises:
     # wgmma tensor core a matrix fragment
-    alias layout = Layout(
+    comptime layout = Layout(
         IntTuple(IntTuple(8, 8), IntTuple(8, 2)),
         IntTuple(IntTuple(8, 64), IntTuple(1, 512)),
     )
@@ -172,9 +172,9 @@ fn test_svg_wgmma_shape() raises:
 
 
 fn test_svg_swizzle() raises:
-    alias layout = Layout.row_major(8, 8)
+    comptime layout = Layout.row_major(8, 8)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
-    alias swizzle = Swizzle(3, 0, 3)
+    comptime swizzle = Swizzle(3, 0, 3)
     var tensor = LayoutTensor[DType.float32, layout](stack)
 
     # the figure generated here is identical to

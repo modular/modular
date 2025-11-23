@@ -46,7 +46,7 @@ def execute_ragged_flash_attention():
 
     var batch_size = len(true_ce_prompt_lens)
 
-    alias layout_1d = Layout.row_major[1]()
+    comptime layout_1d = Layout.row_major[1]()
     var true_ce_row_offsets = LayoutTensor[DType.uint32, layout_1d](
         alloc[Scalar[DType.uint32]](batch_size + 1),
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
@@ -97,7 +97,7 @@ def execute_ragged_flash_attention():
 
     true_ce_row_offsets[batch_size] = true_ce_total_length
     mixed_ce_row_offsets[batch_size] = mixed_ce_total_length
-    alias layout_3d = Layout.row_major[3]()
+    comptime layout_3d = Layout.row_major[3]()
     var true_ce_q_ragged = LayoutTensor[type, layout_3d](
         alloc[Scalar[type]](
             true_ce_total_length * num_q_heads * Int(kv_params.head_size)
@@ -165,7 +165,7 @@ def execute_ragged_flash_attention():
     ).fill(0)
 
     # initialize our KVCache
-    alias layout_6d = Layout.row_major[6]()
+    comptime layout_6d = Layout.row_major[6]()
     var kv_block_paged = LayoutTensor[type, layout_6d](
         alloc[Scalar[type]](
             num_paged_blocks
@@ -188,7 +188,7 @@ def execute_ragged_flash_attention():
     ).fill(0)
     random(kv_block_paged)
 
-    alias layout_2d = Layout.row_major[2]()
+    comptime layout_2d = Layout.row_major[2]()
     var paged_lut = LayoutTensor[DType.uint32, layout_2d](
         alloc[Scalar[DType.uint32]](
             batch_size * ceildiv(true_ce_max_full_context_length, page_size)
