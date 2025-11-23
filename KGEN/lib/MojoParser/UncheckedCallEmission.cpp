@@ -853,18 +853,12 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // Promote PValue's if needed.
     return checkMValueAddrSpace(emitter.emitMRValue(argValAndExpr, ctx));
   case ArgConvention::ReadReg:
-    if (auto pVal = argValAndExpr.ir.getIfPValue())
-      return emitter.emitSRValue(argValAndExpr, ctx);
+    // If this is already an SValue, then use it.
+    if (argValAndExpr.ir.isSValue())
+      return argValAndExpr.ir.getSValueRegister();
 
-    // If this is an MBValue, the element must be register passable but not
-    // loaded.
-    if (argValAndExpr.ir.isMValue()) {
-      auto refVal = argValAndExpr.ir.getMValueReference();
-      return RefLoadOp::create(
-          *emitter.builder, argValAndExpr.expr->getLocation(emitter), refVal);
-    }
-    assert(argValAndExpr.ir.isSValue() && "unknown irvalue");
-    return argValAndExpr.ir.getSValueRegister();
+    // Otherwise, materialize or load the value.
+    return emitter.emitSRValue(argValAndExpr, ctx);
 
   case ArgConvention::ReadMem: {
     // Promote PValue's if needed.

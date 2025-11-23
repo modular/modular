@@ -1129,16 +1129,6 @@ AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
       assert(cValue);
     }
 
-    // At this point the canonical types line up, but the sugar may not.  Align
-    // the sugar so clients don't have to deal with it.
-    if (requiredType.mlirType != rvType.mlirType) {
-      auto rebindType = requiredType;
-      if (cValue.isMValue())
-        rebindType = cValue.getMValueType().getWithElement(requiredType);
-      cValue = rebindValue({cValue, expr}, rebindType);
-      if (!cValue)
-        return {};
-    }
     rvType = cValue.getRValueType();
   }
 

@@ -423,28 +423,46 @@ LIT::StructType::canElideSugarFor(TypedAttr attr) const {
     return {};
   };
 
+  // If the specified value is a struct with a single element, return the
+  // element.
+  auto getSingleEltStructAttr = [&](TypedAttr value) -> TypedAttr {
+    auto structAttr = sugarDynCast<LITStructAttr>(value);
+    if (!structAttr)
+      return {};
+    // If the struct has a single element, elide the braces.
+    if (structAttr.getValues().size() == 1)
+      return std::get<1>(structAttr.getValues().front());
+    return {};
+  };
+
   /// A StructAttr is due to an inline @always_inline("builtin") initializer.
   /// Elide it if we have the default type with a literal so we don't print
   /// Int(42), but print it if it is something weird like IntLiteral(42)
-  if (auto structAttr = dyn_cast<LITStructAttr>(attr)) {
-    // If the struct has a single element, elide the braces.
-    if (structAttr.getValues().size() == 1) {
-      auto typeName = getTypeName();
-      TypedAttr elt = std::get<1>(structAttr.getValues().front());
-      if (typeName == "Int" || typeName == "UInt")
-        if (isa<IntegerAttr>(elt))
-          return SugarKind::AlwaysInlineBuiltin;
+  if (auto elt = getSingleEltStructAttr(attr)) {
+    auto typeName = getTypeName();
+    if (typeName == "Int" || typeName == "UInt")
+      if (isa<IntegerAttr>(elt))
+        return SugarKind::AlwaysInlineBuiltin;
 
-      if (typeName == "Bool" || typeName == "DType") {
-        if (isa<IntegerAttr, DTypeConstantAttr>(elt))
+    if (typeName == "Bool" || typeName == "DType") {
+      if (isa<IntegerAttr, DTypeConstantAttr>(elt))
+        return SugarKind::Alias;
+    }
+
+    if (typeName == "Origin")
+      return SugarKind::Alias;
+
+    // Aggressively desugar address spaces with known values.
+    if (typeName == "AddressSpace") {
+      // We never need to sugar AddressSpace.GENERIC since AstPrinter knows
+      // about this.  We special case this because it is so common and would
+      // otherwise massively bloat the IR of all pointers and references.
+      if (auto addrElt =
+              sugarDynCastIfPresent<IntegerAttr>(getSingleEltStructAttr(elt))) {
+        if (addrElt.getValue().isZero())
           return SugarKind::Alias;
       }
-
-      if (typeName == "Origin")
-        return SugarKind::Alias;
-
-      if (typeName == "AddressSpace")
-        return canElideSugarFor(elt);
+      return canElideSugarFor(elt);
     }
   }
 
