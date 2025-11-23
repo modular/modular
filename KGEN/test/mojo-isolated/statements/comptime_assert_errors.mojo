@@ -59,7 +59,7 @@ fn test_assert_injects_assumption_correctly[x: Int]():
 fn test_newly_created_scope[x: Int]():
     # expected-error @below {{invalid call to 'requires_natural': lacking evidence to prove correctness}}
     # expected-note @below {{provide evidence for the constraint here to aid in candidate selection}}
-    alias y = requires_natural[x]()
+    comptime y = requires_natural[x]()
 
     # COM: This assert should not validate the above statement.
     __comptime_assert x >= 0
