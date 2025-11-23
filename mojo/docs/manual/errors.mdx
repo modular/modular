@@ -50,6 +50,16 @@ stack trace was not collected. Enable stack trace collection with environment va
 Unhandled exception caught during execution: integer overflow
 ```
 
+:::note
+
+In other languages, such as C++, "throwing" or "raising" may perform stack unwinding
+or other expensive operations. In Mojo, raising is as expensive as creating the thing
+you raise and returning a boolean, meaning that it has similar overhead to errors as
+values (C and Rust), but still enables "placement new" and other optimizations that 
+returning a tagged union (Rust) may prevent.
+
+:::
+
 ## Enable stack trace generation for errors
 
 By default, Mojo generates a stack trace when your program hits a segmentation
