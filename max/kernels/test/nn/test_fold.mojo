@@ -75,7 +75,7 @@ fn test[
 ) raises:
     print("== test_fold")
 
-    alias unknown_layout_3d = Layout.row_major(
+    comptime unknown_layout_3d = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
     )
     var input_layout = RuntimeLayout[unknown_layout_3d].row_major(input_shape)
@@ -86,7 +86,7 @@ fn test[
     )
     _copy_values_to_layout_tensor(input, input_values)
 
-    alias unknown_layout_4d = Layout.row_major(
+    comptime unknown_layout_4d = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
     )
     var runtime_layout_4d = RuntimeLayout[unknown_layout_4d].row_major(
@@ -174,7 +174,7 @@ fn _copy_values_to_layout_tensor[
 
 
 def main():
-    alias dtype = DType.float32
+    comptime dtype = DType.float32
     # fmt: off
     test[
         input_shape = IndexList[3](1, 6, 15),

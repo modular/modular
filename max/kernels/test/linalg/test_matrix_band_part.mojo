@@ -31,8 +31,8 @@ def matrix_band_part[
     num_upper: Int,
     exclude: Bool,
 ):
-    alias int_type = DType.int
-    alias cond_type = DType.bool
+    comptime int_type = DType.int
+    comptime cond_type = DType.bool
 
     var num_lower_buf = LayoutTensor[
         int_type, Layout.row_major(1), MutAnyOrigin
@@ -47,7 +47,7 @@ def matrix_band_part[
     num_lower_buf[0] = num_lower
     num_upper_buf[0] = num_upper
     exclude_buf[0] = exclude
-    alias rank = input.rank
+    comptime rank = input.rank
     var input_shape: IndexList[rank] = to_index_list[rank](input.layout.shape)
 
     @parameter
@@ -76,8 +76,8 @@ def matrix_band_part[
 
 
 def test_matrix_band_part():
-    alias layout = Layout.row_major(3, 3)
-    alias dtype = DType.float32
+    comptime layout = Layout.row_major(3, 3)
+    comptime dtype = DType.float32
 
     var input = LayoutTensor[dtype, layout, MutAnyOrigin].stack_allocation()
     var output = LayoutTensor[dtype, layout, MutAnyOrigin].stack_allocation()

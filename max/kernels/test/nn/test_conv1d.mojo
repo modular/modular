@@ -33,7 +33,7 @@ from nn.conv_utils import (
 
 from utils.index import Index, IndexList
 
-alias simd_size: Int = simd_width_of[DType.float32]()
+comptime simd_size: Int = simd_width_of[DType.float32]()
 
 
 # CHECK-LABEL: test_conv1d
@@ -53,9 +53,9 @@ fn test[
     print("== test_conv1d")
 
     var WO = (W + pad_w[0] + pad_w[1] - dilation * (S - 1) - 1) // stride + 1
-    alias HO = 1
-    alias H = 1
-    alias R = 1
+    comptime HO = 1
+    comptime H = 1
+    comptime R = 1
 
     var conv_shape = ConvShape[1](
         n=N,
@@ -83,15 +83,15 @@ fn test[
     rand[dtype](filter_ptr, S * C_per_group * F)
 
     # Find the tile size used in packing.
-    alias micro_kernel_height = get_direct_conv_micro_kernel_height()
-    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+    comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
+    comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
 
     var micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Buffers for direct conv.
-    alias layout_3d = Layout.row_major[3]()
-    alias layout_4d = Layout.row_major[4]()
+    comptime layout_3d = Layout.row_major[3]()
+    comptime layout_4d = Layout.row_major[4]()
     var input = LayoutTensor[dtype, layout_3d](
         input_ptr, RuntimeLayout[layout_3d].row_major(Index(N, W, C))
     )
@@ -136,7 +136,7 @@ fn test[
     )
 
     # Test direct conv
-    alias conv_attr = ConvInfoStatic[1]()
+    comptime conv_attr = ConvInfoStatic[1]()
 
     @parameter
     if filter_packed:
@@ -201,7 +201,7 @@ fn test[
 
 
 def main():
-    alias dtype = DType.float32
+    comptime dtype = DType.float32
     # No packing or padding.
     test[dtype, False](1, 5, 1, 4, 4, 2, 1, Index(0, 0), 1)
     test[dtype, False](1, 12, 12, 3, 64, 1, 1, Index(0, 0), 1)

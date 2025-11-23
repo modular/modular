@@ -20,8 +20,8 @@ fn test_broadcast_empty_shape():
     print("== test_broadcast_empty_shape")
 
     # parameters
-    alias input_layout = Layout.row_major(1)
-    alias output_layout = Layout.row_major(0)
+    comptime input_layout = Layout.row_major(1)
+    comptime output_layout = Layout.row_major(0)
 
     # Create a 1D tensor of layout (1), of the form [1]
     var input_stack = InlineArray[Scalar[DType.int], input_layout.size()](
@@ -51,8 +51,8 @@ fn test_broadcast_same_shape():
     print("== test_broadcast_same_shape")
 
     # parameters
-    alias input_layout = Layout.row_major(1, 2, 1)
-    alias output_layout = Layout.row_major(1, 2, 1)
+    comptime input_layout = Layout.row_major(1, 2, 1)
+    comptime output_layout = Layout.row_major(1, 2, 1)
 
     # Create a 3D tensor of shape (1, 2, 1), of the form
     # [[[1], [2]]]
@@ -89,8 +89,8 @@ fn test_broadcast_single_axis():
     print("== test_broadcast_single_axis")
 
     # parameters
-    alias input_layout = Layout.row_major(1, 2)
-    alias output_layout = Layout.row_major(3, 2)
+    comptime input_layout = Layout.row_major(1, 2)
+    comptime output_layout = Layout.row_major(3, 2)
 
     # Create a 2D tensor of shape (1, 2), of the form
     # [[1, 2]]
@@ -136,8 +136,8 @@ fn test_broadcast_multi_axes():
     print("== test_broadcast_multi_axes")
 
     # parameters
-    alias input_layout = Layout.row_major(1, 2, 1)
-    alias output_layout = Layout.row_major(2, 2, 3)
+    comptime input_layout = Layout.row_major(1, 2, 1)
+    comptime output_layout = Layout.row_major(2, 2, 3)
 
     # Create a 3D tensor of shape (1, 2, 1), of the form
     # [[[1], [2]]]
@@ -193,8 +193,8 @@ fn test_broadcast_multi_axes():
 
 fn test_broadcast_multi_axes_nested():
     # parameters
-    alias input_layout = Layout.row_major(2, 1, 2, 1, 2)
-    alias output_layout = Layout.row_major(2, 2, 2, 2, 2)
+    comptime input_layout = Layout.row_major(2, 1, 2, 1, 2)
+    comptime output_layout = Layout.row_major(2, 2, 2, 2, 2)
 
     # Create a 5D tensor of shape (2, 1, 2, 1, 2), of the form
     # [[[[[1, 2]], [[3, 4]]]], [[[[5, 6]], [[7, 8]]]]]

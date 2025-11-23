@@ -34,10 +34,10 @@ from utils.index import Index, IndexList
 # CHECK: 13.0 ,7.0 ,15.0 ,
 fn test_convtranspose_pads():
     print("== test_convtranspose_pads")
-    alias type = DType.float32
-    alias layout_unknown = Layout.row_major[5]()
+    comptime type = DType.float32
+    comptime layout_unknown = Layout.row_major[5]()
 
-    alias input_layout = Layout.row_major(1, 1, 3, 3, 1)
+    comptime input_layout = Layout.row_major(1, 1, 3, 3, 1)
     var input_stack = InlineArray[Scalar[type], input_layout.size()](
         uninitialized=True
     )
@@ -45,14 +45,14 @@ fn test_convtranspose_pads():
     for i in range(9):
         input.ptr[i] = i
 
-    alias filter_layout = Layout.row_major(1, 3, 3, 2, 1)
+    comptime filter_layout = Layout.row_major(1, 3, 3, 2, 1)
     var filter_stack = InlineArray[Scalar[type], filter_layout.size()](
         uninitialized=True
     )
     var filter = LayoutTensor[type, filter_layout](filter_stack)
     _ = filter.fill(1.0)
 
-    alias output_layout = Layout.row_major(1, 1, 7, 3, 2)
+    comptime output_layout = Layout.row_major(1, 1, 7, 3, 2)
     var output_stack = InlineArray[Scalar[type], output_layout.size()](
         uninitialized=True
     )
@@ -113,10 +113,10 @@ fn test_convtranspose_pads():
 # CHECK: 6.0 ,13.0 ,21.0 ,15.0 ,8.0 ,
 fn test_convtranspose():
     print("== test_convtranspose")
-    alias type = DType.float32
-    alias layout_unknown = Layout.row_major[5]()
+    comptime type = DType.float32
+    comptime layout_unknown = Layout.row_major[5]()
 
-    alias input_layout = Layout.row_major(1, 1, 3, 3, 1)
+    comptime input_layout = Layout.row_major(1, 1, 3, 3, 1)
     var input_stack = InlineArray[Scalar[type], input_layout.size()](
         uninitialized=True
     )
@@ -124,14 +124,14 @@ fn test_convtranspose():
     for i in range(9):
         input.ptr[i] = i
 
-    alias filter_layout = Layout.row_major(1, 3, 3, 2, 1)
+    comptime filter_layout = Layout.row_major(1, 3, 3, 2, 1)
     var filter_stack = InlineArray[Scalar[type], filter_layout.size()](
         uninitialized=True
     )
     var filter = LayoutTensor[type, filter_layout](filter_stack)
     _ = filter.fill(1.0)
 
-    alias output_layout = Layout.row_major(1, 1, 5, 5, 2)
+    comptime output_layout = Layout.row_major(1, 1, 5, 5, 2)
     var output_stack = InlineArray[Scalar[type], output_layout.size()](
         uninitialized=True
     )
@@ -187,10 +187,10 @@ fn test_convtranspose():
 # CHECK: 3.0 ,2.0 ,33.0 ,18.0 ,54.0 ,
 fn test_convtranspose_dilation():
     print("== test_convtranspose_dilation")
-    alias type = DType.float32
-    alias layout_unknown = Layout.row_major[5]()
+    comptime type = DType.float32
+    comptime layout_unknown = Layout.row_major[5]()
 
-    alias input_layout = Layout.row_major(1, 1, 3, 3, 1)
+    comptime input_layout = Layout.row_major(1, 1, 3, 3, 1)
     var input_stack = InlineArray[Scalar[type], input_layout.size()](
         uninitialized=True
     )
@@ -205,7 +205,7 @@ fn test_convtranspose_dilation():
     input.ptr[7] = 2
     input.ptr[8] = 6
 
-    alias filter_layout = Layout.row_major(1, 2, 2, 1, 1)
+    comptime filter_layout = Layout.row_major(1, 2, 2, 1, 1)
     var filter_stack = InlineArray[Scalar[type], filter_layout.size()](
         uninitialized=True
     )
@@ -215,7 +215,7 @@ fn test_convtranspose_dilation():
     filter.ptr[2] = 1
     filter.ptr[3] = 9
 
-    alias output_layout = Layout.row_major(1, 1, 5, 5, 1)
+    comptime output_layout = Layout.row_major(1, 1, 5, 5, 1)
     var output_stack = InlineArray[Scalar[type], output_layout.size()](
         uninitialized=True
     )
@@ -285,10 +285,10 @@ fn test_convtranspose_dilation():
 # CHECK: 0.0 ,0.0 ,0.0 ,0.0 ,0.0 ,0.0 ,0.0 ,0.0 ,
 fn test_convtranspose_attributes():
     print("== test_convtranspose_attributes")
-    alias type = DType.float32
-    alias layout_unknown = Layout.row_major[5]()
+    comptime type = DType.float32
+    comptime layout_unknown = Layout.row_major[5]()
 
-    alias input_layout = Layout.row_major(1, 1, 3, 3, 1)
+    comptime input_layout = Layout.row_major(1, 1, 3, 3, 1)
     var input_stack = InlineArray[Scalar[type], input_layout.size()](
         uninitialized=True
     )
@@ -296,14 +296,14 @@ fn test_convtranspose_attributes():
     for i in range(9):
         input.ptr[i] = i
 
-    alias filter_layout = Layout.row_major(1, 3, 3, 2, 1)
+    comptime filter_layout = Layout.row_major(1, 3, 3, 2, 1)
     var filter_stack = InlineArray[Scalar[type], filter_layout.size()](
         uninitialized=True
     )
     var filter = LayoutTensor[type, filter_layout](filter_stack)
     _ = filter.fill(1.0)
 
-    alias output_layout = Layout.row_major(1, 1, 10, 8, 2)
+    comptime output_layout = Layout.row_major(1, 1, 10, 8, 2)
     var output_stack = InlineArray[Scalar[type], output_layout.size()](
         uninitialized=True
     )

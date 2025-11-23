@@ -23,13 +23,13 @@ def main():
 
 
 fn test_distribute() raises:
-    alias thread_layout = row_major((Idx[2](), Idx[2]()))
+    comptime thread_layout = row_major((Idx[2](), Idx[2]()))
 
     var array = InlineArray[UInt32, 16](fill=-1)
     var ptr = array.unsafe_ptr()
 
-    alias data_layout_shape = MixedTuple[ComptimeInt[4], ComptimeInt[4]]
-    alias data_layout_stride = MixedTuple[ComptimeInt[4], ComptimeInt[1]]
+    comptime data_layout_shape = MixedTuple[ComptimeInt[4], ComptimeInt[4]]
+    comptime data_layout_stride = MixedTuple[ComptimeInt[4], ComptimeInt[1]]
     var layout_tensor = MixedLayoutTensor[dtype = DType.uint32](
         ptr=ptr,
         layout=MixedLayout(

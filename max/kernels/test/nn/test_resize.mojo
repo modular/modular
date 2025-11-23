@@ -65,7 +65,7 @@ def test_case_linear[
 def main():
     fn test_upsample_sizes_nearest_1() raises:
         print("== test_upsample_sizes_nearest_1")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 2, 2), [Scalar[dtype](1), 2, 3, 4]
         )
@@ -80,7 +80,7 @@ def main():
 
     fn test_downsample_sizes_nearest() raises:
         print("== test_downsample_sizes_nearest")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 2, 4), [Scalar[dtype](1), 2, 3, 4, 5, 6, 7, 8]
         )
@@ -96,7 +96,7 @@ def main():
 
     fn test_downsample_sizes_nearest_half_pixel_1D() raises:
         print("== test_downsample_sizes_nearest_half_pixel_1D")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 4, 4),
             [
@@ -130,7 +130,7 @@ def main():
 
     fn test_upsample_sizes_nearest_2() raises:
         print("== test_upsample_sizes_nearest_2")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 2, 2), [Scalar[dtype](1), 2, 3, 4]
         )
@@ -146,7 +146,7 @@ def main():
 
     fn test_upsample_sizes_nearest_floor_align_corners() raises:
         print("== test_upsample_sizes_nearest_floor_align_corners")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 4, 4),
             [
@@ -180,7 +180,7 @@ def main():
 
     fn test_upsample_sizes_nearest_round_half_up_asymmetric() raises:
         print("== test_upsample_sizes_nearest_round_half_up_asymmetric")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 4, 4),
             [
@@ -214,7 +214,7 @@ def main():
 
     fn test_upsample_sizes_nearest_ceil_half_pixel() raises:
         print("== test_upsample_sizes_nearest_ceil_half_pixel")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 4, 4),
             [
@@ -248,7 +248,7 @@ def main():
 
     fn test_upsample_sizes_linear() raises:
         print("== test_upsample_sizes_linear")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 2, 2),
             [Scalar[dtype](1), 2, 3, 4],
@@ -292,7 +292,7 @@ def main():
 
     fn test_upsample_sizes_linear_align_corners() raises:
         print("== test_upsample_sizes_linear_align_corners")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 2, 2),
             [Scalar[dtype](1), 2, 3, 4],
@@ -336,7 +336,7 @@ def main():
 
     fn test_downsample_sizes_linear() raises:
         print("== test_downsample_sizes_linear")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 2, 4),
             [Scalar[dtype](1), 2, 3, 4, 5, 6, 7, 8],
@@ -360,7 +360,7 @@ def main():
 
     fn test_downsample_sizes_linear_align_corners() raises:
         print("== test_downsample_sizes_linear_align_corners")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 2, 4), [Scalar[dtype](1), 2, 3, 4, 5, 6, 7, 8]
         )
@@ -385,7 +385,7 @@ def main():
 
     fn test_upsample_sizes_trilinear() raises:
         print("== test_upsample_sizes_trilinear")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 4, 2, 2),
             [
@@ -447,7 +447,7 @@ def main():
 
     fn test_downsample_sizes_linear_antialias() raises:
         print("== test_downsample_sizes_linear_antialias")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 4, 4),
             [
@@ -492,7 +492,7 @@ def main():
 
     fn test_no_resize() raises:
         print("== test_no_resize")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 2, 2),
             [Scalar[dtype](1), 1, 1, 1],

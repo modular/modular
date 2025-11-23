@@ -118,9 +118,9 @@ def main():
     rtol = 1e-3
     m, n = 80, 50
     min_mn = min(m, n)
-    alias a_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    alias v_layout = Layout(UNKNOWN_VALUE)
-    alias T = Float32
+    comptime a_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime v_layout = Layout(UNKNOWN_VALUE)
+    comptime T = Float32
     var a_ptr = UnsafePointer[T]().alloc(m * n)
     var a_ptr_copy = UnsafePointer[T]().alloc(m * n)
     var v_ptr = UnsafePointer[T]().alloc(min_mn)

@@ -32,7 +32,7 @@ from nn.conv_utils import (
 
 from utils.index import Index, IndexList
 
-alias simd_size: Int = simd_width_of[DType.float32]()
+comptime simd_size: Int = simd_width_of[DType.float32]()
 
 
 # CHECK-LABEL: test_conv3d
@@ -102,14 +102,14 @@ fn test[
     rand[dtype](filter_ptr, filter_size)
 
     # Find the tile size used in packing.
-    alias micro_kernel_height = get_direct_conv_micro_kernel_height()
-    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+    comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
+    comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
 
     var micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
-    alias layout_5d = Layout.row_major[5]()
-    alias layout_6d = Layout.row_major[6]()
+    comptime layout_5d = Layout.row_major[5]()
+    comptime layout_6d = Layout.row_major[6]()
 
     # Buffers for direct conv.
     var input = LayoutTensor[dtype, layout_5d](
@@ -157,7 +157,7 @@ fn test[
     )
 
     # Test direct conv
-    alias conv_attr = ConvInfoStatic[3]()
+    comptime conv_attr = ConvInfoStatic[3]()
 
     @parameter
     if filter_packed:
@@ -239,7 +239,7 @@ fn test[
 
 
 def main():
-    alias dtype = DType.float32
+    comptime dtype = DType.float32
 
     test[DType.float32, False](  # dtype, filter_packed
         1,  # N: batch size

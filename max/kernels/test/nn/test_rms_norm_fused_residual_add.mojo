@@ -39,7 +39,7 @@ fn run_rms_norm_fused_residual_add_gpu[
     var rows = shape.flattened_length() // cols
 
     # Allocate host memory
-    alias layout = Layout.row_major[rank]()
+    comptime layout = Layout.row_major[rank]()
     var data_heap = alloc[Scalar[dtype]](rows * cols)
     var data_h = LayoutTensor[dtype, layout](
         data_heap, RuntimeLayout[layout].row_major(shape)
@@ -60,7 +60,7 @@ fn run_rms_norm_fused_residual_add_gpu[
     var residual_fused_output_h = LayoutTensor[dtype, layout](
         residual_fused_output_heap, RuntimeLayout[layout].row_major(shape)
     ).fill(0)
-    alias layout_1d = Layout(UNKNOWN_VALUE)
+    comptime layout_1d = Layout(UNKNOWN_VALUE)
     var gamma1_heap = alloc[Scalar[dtype]](cols)
     var gamma1_h = LayoutTensor[dtype, layout_1d](
         gamma1_heap, RuntimeLayout[layout_1d].row_major(Index(cols))

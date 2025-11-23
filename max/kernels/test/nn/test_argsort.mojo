@@ -24,7 +24,7 @@ fn test_argsort[
 ]() raises:
     print("== test_argsort")
 
-    alias n = 16384
+    comptime n = 16384
 
     var input_ptr = UnsafePointer[Float32].alloc(n)
     var input = LayoutTensor[DType.float32, Layout.row_major(n)](input_ptr)

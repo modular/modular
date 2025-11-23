@@ -24,35 +24,37 @@ from testing import assert_equal
 
 from utils.index import Index
 
-alias type = DType.float32
-alias micro_kernel_height = 2
-alias micro_kernel_width = 2
-alias simd_size = simd_width_of[type]()
-alias micro_kernel_f_size = micro_kernel_width * simd_size
+comptime type = DType.float32
+comptime micro_kernel_height = 2
+comptime micro_kernel_width = 2
+comptime simd_size = simd_width_of[type]()
+comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
-alias N = 1
-alias H = 1
-alias W = 14
-alias C = 2 * simd_size
-alias R = 1
-alias S = 3
-alias F = 2 * micro_kernel_f_size
-alias stride_h = 1
-alias stride_w = 1
-alias pad_left = 1
-alias pad_right = 1
-alias pad_top = 0
-alias pad_bottom = 0
-alias dilation_h = 1
-alias dilation_w = 1
+comptime N = 1
+comptime H = 1
+comptime W = 14
+comptime C = 2 * simd_size
+comptime R = 1
+comptime S = 3
+comptime F = 2 * micro_kernel_f_size
+comptime stride_h = 1
+comptime stride_w = 1
+comptime pad_left = 1
+comptime pad_right = 1
+comptime pad_top = 0
+comptime pad_bottom = 0
+comptime dilation_h = 1
+comptime dilation_w = 1
 # alias HO = (H + pad_top + pad_bottom - dilation_h * (R - 1) - 1) // stride_h + 1
-alias HO = 1
-alias WO = (W + pad_left + pad_right - dilation_w * (S - 1) - 1) // stride_w + 1
-alias num_micro_tile = F // micro_kernel_f_size
+comptime HO = 1
+comptime WO = (
+    W + pad_left + pad_right - dilation_w * (S - 1) - 1
+) // stride_w + 1
+comptime num_micro_tile = F // micro_kernel_f_size
 
-alias output_shape = DimList(N, WO, F)
-alias input_shape = DimList(N, W, C)
-alias filter_shape = DimList(num_micro_tile, S, C, micro_kernel_f_size)
+comptime output_shape = DimList(N, WO, F)
+comptime input_shape = DimList(N, W, C)
+comptime filter_shape = DimList(num_micro_tile, S, C, micro_kernel_f_size)
 
 
 @export(ABI="C")

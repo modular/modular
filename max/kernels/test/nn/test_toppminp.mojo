@@ -23,16 +23,16 @@ from testing import assert_equal
 
 from utils import IndexList
 
-alias DEBUG_BENCH = False
-alias PRINT_OUTPUT = False
+comptime DEBUG_BENCH = False
+comptime PRINT_OUTPUT = False
 
 
 struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
     ImplicitlyCopyable, Movable
 ):
-    alias is_top_p = Self._is_top_p
-    alias dtype = Self._dtype
-    alias out_idx_type = Self._out_idx_type
+    comptime is_top_p = Self._is_top_p
+    comptime dtype = Self._dtype
+    comptime out_idx_type = Self._out_idx_type
     var batch_size: Int
     var vocab_size: Int
     var temperature: Scalar[Self.dtype]
@@ -69,8 +69,8 @@ fn time_kernel[
 
 @parameter
 fn fill_random[dtype: DType](mut buffer: LayoutTensor[mut=True, dtype, **_]):
-    alias min_val = -1e6
-    alias max_val = 1e6
+    comptime min_val = -1e6
+    comptime max_val = 1e6
     var total_elements = buffer.size()
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
@@ -113,7 +113,7 @@ fn test_is_sorted_descending[
                     sorted_flag[batch_id] = False
                     break
 
-    alias parallelism_grain_size = 1
+    comptime parallelism_grain_size = 1
     # Create shape with batch_size as the second dimension
     var shape = IndexList[1](
         batch_size,
@@ -156,10 +156,10 @@ fn test_case_sampling[
     ) capturing -> None,
 ](test_case: TestCase) raises:
     print_test_case(test_case)
-    alias rank = 2
-    alias dtype = test_case.dtype
-    alias out_idx_type = test_case.out_idx_type
-    alias is_top_p = test_case.is_top_p
+    comptime rank = 2
+    comptime dtype = test_case.dtype
+    comptime out_idx_type = test_case.out_idx_type
+    comptime is_top_p = test_case.is_top_p
     var batch_size = test_case.batch_size
     var vocab_size = test_case.vocab_size
     var temperature = rebind[Scalar[dtype]](test_case.temperature)
@@ -267,13 +267,13 @@ fn test_toppminp[
         mut LayoutTensor[mut=True, dtype, **_]
     ) capturing -> None,
 ]() raises:
-    alias test_case1 = TestCase[dtype, out_idx_type, _is_top_p=True](
+    comptime test_case1 = TestCase[dtype, out_idx_type, _is_top_p=True](
         batch_size=1, vocab_size=1024, temperature=1.0, p_threshold=0.9
     )
-    alias test_case2 = TestCase[dtype, out_idx_type, _is_top_p=True](
+    comptime test_case2 = TestCase[dtype, out_idx_type, _is_top_p=True](
         batch_size=16, vocab_size=32000, temperature=10.0, p_threshold=0.95
     )
-    alias test_case3 = TestCase[dtype, out_idx_type, _is_top_p=False](
+    comptime test_case3 = TestCase[dtype, out_idx_type, _is_top_p=False](
         batch_size=64,
         vocab_size=128256,
         temperature=0.7,

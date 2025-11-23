@@ -28,8 +28,8 @@ from testing import assert_almost_equal
 
 from utils import IndexList
 
-alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
-alias llama_num_q_heads = 32
+comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
+comptime llama_num_q_heads = 32
 
 
 def execute_ragged_flash_attention[
@@ -41,8 +41,10 @@ def execute_ragged_flash_attention[
     num_layers: Int,
     layer_idx: Int,
 ):
-    alias num_blocks = 32
-    alias CollectionType = ContinuousBatchingKVCacheCollection[dtype, kv_params]
+    comptime num_blocks = 32
+    comptime CollectionType = ContinuousBatchingKVCacheCollection[
+        dtype, kv_params
+    ]
 
     var batch_size = len(valid_lengths_list)
     debug_assert(
@@ -58,7 +60,7 @@ def execute_ragged_flash_attention[
         "expected valid_lengths and cache_lengths size to be equal",
     )
 
-    alias layout_1d = Layout.row_major[1]()
+    comptime layout_1d = Layout.row_major[1]()
     var input_row_offsets = LayoutTensor[DType.uint32, layout_1d](
         alloc[Scalar[DType.uint32]](batch_size + 1),
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
@@ -86,7 +88,7 @@ def execute_ragged_flash_attention[
         total_length += valid_lengths_list[i]
     input_row_offsets[batch_size] = total_length
 
-    alias layout_3d = Layout.row_major[3]()
+    comptime layout_3d = Layout.row_major[3]()
     var q_ragged = LayoutTensor[dtype, layout_3d](
         alloc[Scalar[dtype]](
             total_length * num_q_heads * Int(kv_params.head_size)
@@ -97,7 +99,7 @@ def execute_ragged_flash_attention[
     )
     random(q_ragged)
 
-    alias layout_4d = Layout.row_major[4]()
+    comptime layout_4d = Layout.row_major[4]()
     var q_padded = LayoutTensor[dtype, layout_4d](
         alloc[Scalar[dtype]](
             batch_size
@@ -158,7 +160,7 @@ def execute_ragged_flash_attention[
     ).fill(0)
 
     # initialize our KVCache
-    alias layout_6d = Layout.row_major[6]()
+    comptime layout_6d = Layout.row_major[6]()
     var kv_block = LayoutTensor[dtype, layout_6d](
         alloc[Scalar[dtype]](
             num_blocks
@@ -286,7 +288,7 @@ def execute_ragged_flash_attention[
     lookup_table.ptr.free()
 
 
-alias dtype = DType.float32
+comptime dtype = DType.float32
 
 
 def execute_flash_attention_suite():

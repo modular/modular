@@ -26,40 +26,44 @@ from nn.conv_utils import (
 
 from utils.index import Index
 
-alias N = 1
-alias H = 14
-alias W = 14
-alias C = 8
-alias R = 3
-alias S = 3
-alias F = 8
-alias stride_h = 1
-alias stride_w = 1
-alias pad_left = 1
-alias pad_right = 1
-alias pad_top = 1
-alias pad_bottom = 1
-alias dilation_h = 1
-alias dilation_w = 1
-alias HO = (H + pad_left + pad_right - dilation_h * (R - 1) - 1) // stride_h + 1
-alias WO = (W + pad_top + pad_bottom - dilation_w * (S - 1) - 1) // stride_w + 1
-alias num_groups = 1
+comptime N = 1
+comptime H = 14
+comptime W = 14
+comptime C = 8
+comptime R = 3
+comptime S = 3
+comptime F = 8
+comptime stride_h = 1
+comptime stride_w = 1
+comptime pad_left = 1
+comptime pad_right = 1
+comptime pad_top = 1
+comptime pad_bottom = 1
+comptime dilation_h = 1
+comptime dilation_w = 1
+comptime HO = (
+    H + pad_left + pad_right - dilation_h * (R - 1) - 1
+) // stride_h + 1
+comptime WO = (
+    W + pad_top + pad_bottom - dilation_w * (S - 1) - 1
+) // stride_w + 1
+comptime num_groups = 1
 
-alias conv_attr = ConvInfoStatic[2](
+comptime conv_attr = ConvInfoStatic[2](
     IntTuple(pad_bottom, pad_left, pad_top, pad_right),
     IntTuple(stride_h, stride_w),
     IntTuple(dilation_h, dilation_w),
     num_groups,
 )
 
-alias value_type = DType.float32
-alias simd_size = simd_width_of[value_type]()
-alias micro_kernel_shape = get_micro_kernel_shape[
+comptime value_type = DType.float32
+comptime simd_size = simd_width_of[value_type]()
+comptime micro_kernel_shape = get_micro_kernel_shape[
     2, WO, F, conv_attr, simd_size
 ]()
 # alias micro_kernel_width = get_direct_conv_micro_kernel_width()
-alias micro_kernel_f_size = micro_kernel_shape[1] * simd_size
-alias num_micro_tile = ceildiv(F, micro_kernel_f_size)
+comptime micro_kernel_f_size = micro_kernel_shape[1] * simd_size
+comptime num_micro_tile = ceildiv(F, micro_kernel_f_size)
 
 
 @export(ABI="C")

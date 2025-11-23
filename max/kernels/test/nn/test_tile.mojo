@@ -16,12 +16,12 @@ from nn.tile import tile
 
 from utils import IndexList
 
-alias layout_unknown_1d = Layout.row_major(UNKNOWN_VALUE)
-alias layout_unknown_2d = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-alias layout_unknown_3d = Layout.row_major(
+comptime layout_unknown_1d = Layout.row_major(UNKNOWN_VALUE)
+comptime layout_unknown_2d = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+comptime layout_unknown_3d = Layout.row_major(
     UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
 )
-alias layout_unknown_4d = Layout.row_major(
+comptime layout_unknown_4d = Layout.row_major(
     UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
 )
 
@@ -33,8 +33,8 @@ alias layout_unknown_4d = Layout.row_major(
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,
 fn test_tile_eg1() raises:
     print("== test_tile_eg1")
-    alias rank = 2
-    alias type = DType.float32
+    comptime rank = 2
+    comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
     var input = LayoutTensor[type, Layout.row_major(2, 2)](input_stack)
@@ -45,9 +45,9 @@ fn test_tile_eg1() raises:
     input[1, 1] = 3
 
     # rank_repeats is always 1
-    alias rank_repeats = 1
+    comptime rank_repeats = 1
     # type_repeats is always DType.int64
-    alias type_repeats = DType.int64
+    comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
     var repeats = LayoutTensor[type_repeats, Layout.row_major(2)](repeats_stack)
@@ -92,8 +92,8 @@ fn test_tile_eg1() raises:
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,
 fn test_tile_eg2() raises:
     print("== test_tile_eg2")
-    alias rank = 2
-    alias type = DType.float32
+    comptime rank = 2
+    comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
     var input = LayoutTensor[type, Layout.row_major(2, 2)](input_stack)
@@ -104,9 +104,9 @@ fn test_tile_eg2() raises:
     input[1, 1] = 3
 
     # rank_repeats is always 1
-    alias rank_repeats = 1
+    comptime rank_repeats = 1
     # type_repeats is always DType.int64
-    alias type_repeats = DType.int64
+    comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
     var repeats = LayoutTensor[type_repeats, Layout.row_major(2)](repeats_stack)
@@ -149,8 +149,8 @@ fn test_tile_eg2() raises:
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
 fn test_tile_eg3() raises:
     print("== test_tile_eg3")
-    alias rank = 2
-    alias type = DType.float32
+    comptime rank = 2
+    comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
     var input = LayoutTensor[type, Layout.row_major(2, 2)](input_stack)
@@ -161,9 +161,9 @@ fn test_tile_eg3() raises:
     input[1, 1] = 3
 
     # rank_repeats is always 1
-    alias rank_repeats = 1
+    comptime rank_repeats = 1
     # type_repeats is always DType.int64
-    alias type_repeats = DType.int64
+    comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
     var repeats = LayoutTensor[type_repeats, Layout.row_major(2)](repeats_stack)
@@ -210,8 +210,8 @@ fn test_tile_eg3() raises:
 # CHECK: 6.0 ,7.0 ,
 fn test_tile_eg4() raises:
     print("== test_tile_eg4")
-    alias rank = 3
-    alias type = DType.float32
+    comptime rank = 3
+    comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](uninitialized=True)
     var input = LayoutTensor[type, Layout.row_major(2, 2, 2)](input_stack)
@@ -227,9 +227,9 @@ fn test_tile_eg4() raises:
     input[1, 1, 1] = 7
 
     # rank_repeats is always 1
-    alias rank_repeats = 1
+    comptime rank_repeats = 1
     # type_repeats is always DType.int64
-    alias type_repeats = DType.int64
+    comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 3](uninitialized=True)
     var repeats = LayoutTensor[type_repeats, Layout.row_major(3)](repeats_stack)
@@ -279,8 +279,8 @@ fn test_tile_eg4() raises:
 # CHECK: 6.0 ,7.0 ,6.0 ,7.0 ,
 fn test_tile_eg5() raises:
     print("== test_tile_eg5")
-    alias rank = 3
-    alias type = DType.float32
+    comptime rank = 3
+    comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](uninitialized=True)
     var input = LayoutTensor[type, Layout.row_major(2, 2, 2)](input_stack)
@@ -296,9 +296,9 @@ fn test_tile_eg5() raises:
     input[1, 1, 1] = 7
 
     # rank_repeats is always 1
-    alias rank_repeats = 1
+    comptime rank_repeats = 1
     # type_repeats is always DType.int64
-    alias type_repeats = DType.int64
+    comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 3](uninitialized=True)
     var repeats = LayoutTensor[type_repeats, Layout.row_major(3)](repeats_stack)
@@ -342,8 +342,8 @@ fn test_tile_eg5() raises:
 # CHECK: 3.0 ,4.0 ,3.0 ,4.0 ,
 fn test_tile_eg6() raises:
     print("== test_tile_eg6")
-    alias rank = 2
-    alias type = DType.float32
+    comptime rank = 2
+    comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2](uninitialized=True)
 
@@ -355,9 +355,9 @@ fn test_tile_eg6() raises:
     input[1, 1] = 4
 
     # rank_repeats is always 1
-    alias rank_repeats = 1
+    comptime rank_repeats = 1
     # type_repeats is always DType.int64
-    alias type_repeats = DType.int64
+    comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
     var repeats = LayoutTensor[type_repeats, Layout.row_major(2)](repeats_stack)
@@ -400,8 +400,8 @@ fn test_tile_eg6() raises:
 # CHECK: 3.0 ,4.0 ,
 fn test_tile_eg7() raises:
     print("== test_tile_eg7")
-    alias rank = 2
-    alias type = DType.float32
+    comptime rank = 2
+    comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2](uninitialized=True)
     var input = LayoutTensor[type, Layout.row_major(2, 2)](input_stack)
@@ -412,9 +412,9 @@ fn test_tile_eg7() raises:
     input[1, 1] = 4
 
     # rank_repeats is always 1
-    alias rank_repeats = 1
+    comptime rank_repeats = 1
     # type_repeats is always DType.int64
-    alias type_repeats = DType.int64
+    comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
     var repeats = LayoutTensor[type_repeats, Layout.row_major(2)](repeats_stack)
@@ -457,8 +457,8 @@ fn test_tile_eg7() raises:
 # CHECK: 1.0 ,2.0 ,3.0 ,4.0 ,
 fn test_tile_eg8() raises:
     print("== test_tile_eg8")
-    alias rank = 2
-    alias type = DType.float32
+    comptime rank = 2
+    comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
     var input = LayoutTensor[type, Layout.row_major(1, 4)](input_stack)
@@ -469,9 +469,9 @@ fn test_tile_eg8() raises:
     input[0, 3] = 4
 
     # rank_repeats is always 1
-    alias rank_repeats = 1
+    comptime rank_repeats = 1
     # type_repeats is always DType.int64
-    alias type_repeats = DType.int64
+    comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
     var repeats = LayoutTensor[type_repeats, Layout.row_major(2)](repeats_stack)
@@ -530,8 +530,8 @@ fn test_tile_eg8() raises:
 # CHECK: 6.0 ,7.0 ,
 fn test_tile_eg9() raises:
     print("== test_tile_eg9")
-    alias rank = 3
-    alias type = DType.float32
+    comptime rank = 3
+    comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](uninitialized=True)
     var input = LayoutTensor[type, Layout.row_major(2, 2, 2)](input_stack)
@@ -547,9 +547,9 @@ fn test_tile_eg9() raises:
     input[1, 1, 1] = 7
 
     # rank_repeats is always 1
-    alias rank_repeats = 1
+    comptime rank_repeats = 1
     # type_repeats is always DType.int64
-    alias type_repeats = DType.int64
+    comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 3](uninitialized=True)
     var repeats = LayoutTensor[type_repeats, Layout.row_major(3)](repeats_stack)
@@ -620,8 +620,8 @@ fn test_tile_eg9() raises:
 # CHECK: 6.0 ,7.0 ,6.0 ,7.0 ,6.0 ,7.0 ,
 fn test_tile_eg10() raises:
     print("== test_tile_eg10")
-    alias rank = 3
-    alias type = DType.float32
+    comptime rank = 3
+    comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](uninitialized=True)
     var input = LayoutTensor[type, Layout.row_major(2, 2, 2)](input_stack)
@@ -637,9 +637,9 @@ fn test_tile_eg10() raises:
     input[1, 1, 1] = 7
 
     # rank_repeats is always 1
-    alias rank_repeats = 1
+    comptime rank_repeats = 1
     # type_repeats is always DType.int64
-    alias type_repeats = DType.int64
+    comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 3](uninitialized=True)
     var repeats = LayoutTensor[type_repeats, Layout.row_major(3)](repeats_stack)
@@ -717,8 +717,8 @@ fn test_tile_eg10() raises:
 # CHECK: 10.0 ,11.0 ,
 fn test_tile_eg11() raises:
     print("== test_tile_eg11")
-    alias rank = 3
-    alias type = DType.float32
+    comptime rank = 3
+    comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 3 * 2 * 2](uninitialized=True)
     var input = LayoutTensor[type, Layout.row_major(3, 2, 2)](input_stack)
@@ -739,9 +739,9 @@ fn test_tile_eg11() raises:
     input[2, 1, 1] = 11
 
     # rank_repeats is always 1
-    alias rank_repeats = 1
+    comptime rank_repeats = 1
     # type_repeats is always DType.int64
-    alias type_repeats = DType.int64
+    comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 3](uninitialized=True)
     var repeats = LayoutTensor[type_repeats, Layout.row_major(3)](repeats_stack)
@@ -792,8 +792,8 @@ fn test_tile_eg11() raises:
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
 fn test_tile_eg12() raises:
     print("== test_tile_eg12")
-    alias rank = 4
-    alias type = DType.float32
+    comptime rank = 4
+    comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2](uninitialized=True)
     var input = LayoutTensor[type, Layout.row_major(1, 1, 2, 2)](input_stack)
@@ -804,9 +804,9 @@ fn test_tile_eg12() raises:
     input[0, 0, 1, 1] = 3
 
     # rank_repeats is always 1
-    alias rank_repeats = 1
+    comptime rank_repeats = 1
     # type_repeats is always DType.int64
-    alias type_repeats = DType.int64
+    comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 4](uninitialized=True)
     var repeats = LayoutTensor[type_repeats, Layout.row_major(4)](repeats_stack)
@@ -877,8 +877,8 @@ fn test_tile_eg12() raises:
 # CHECK: 14.0 ,15.0 ,14.0 ,15.0 ,14.0 ,15.0 ,
 fn test_tile_eg13() raises:
     print("== test_tile_eg13")
-    alias rank = 4
-    alias type = DType.float32
+    comptime rank = 4
+    comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2 * 2 * 2](
         uninitialized=True
@@ -906,9 +906,9 @@ fn test_tile_eg13() raises:
     input[1, 1, 1, 1] = 15
 
     # rank_repeats is always 1
-    alias rank_repeats = 1
+    comptime rank_repeats = 1
     # type_repeats is always DType.int64
-    alias type_repeats = DType.int64
+    comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 4](uninitialized=True)
     var repeats = LayoutTensor[type_repeats, Layout.row_major(4)](repeats_stack)
@@ -997,8 +997,8 @@ fn test_tile_eg13() raises:
 # CHECK: 14.0 ,15.0 ,14.0 ,15.0 ,14.0 ,15.0 ,
 fn test_tile_eg14() raises:
     print("== test_tile_eg14")
-    alias rank = 4
-    alias type = DType.float32
+    comptime rank = 4
+    comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2 * 2 * 2](
         uninitialized=True
@@ -1026,9 +1026,9 @@ fn test_tile_eg14() raises:
     input[1, 1, 1, 1] = 15
 
     # rank_repeats is always 1
-    alias rank_repeats = 1
+    comptime rank_repeats = 1
     # type_repeats is always DType.int64
-    alias type_repeats = DType.int64
+    comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 4](uninitialized=True)
     var repeats = LayoutTensor[type_repeats, Layout.row_major(4)](repeats_stack)

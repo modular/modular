@@ -176,10 +176,10 @@ fn outputs_are_close[
 # CHECK-LABEL: test_conv2d_winograd
 fn test[dtype: DType, H: Int, W: Int]():  # Input Height/Width
     print("test_conv2d_winograd")
-    alias Kh: Int = 3  # Filter height
-    alias Kw: Int = 3  # Filter width
-    alias Oh: Int = H - Kh + 1  # Output height
-    alias Ow: Int = W - Kw + 1  # Output width
+    comptime Kh: Int = 3  # Filter height
+    comptime Kw: Int = 3  # Filter width
+    comptime Oh: Int = H - Kh + 1  # Output height
+    comptime Ow: Int = W - Kw + 1  # Output width
 
     # Allocate memory for input, filter, and both outputs
     var input_ptr = UnsafePointer[Scalar[dtype]].alloc(H * W)
@@ -205,14 +205,14 @@ fn test[dtype: DType, H: Int, W: Int]():  # Input Height/Width
     winograd_2d_convolution_3x3[dtype](input, filter, output_winograd)
 
     # Perform Naive convolution
-    alias output_shape = Index(1, 1, Oh, Ow, 1)
-    alias input_shape = Index(1, 1, H, W, 1)
-    alias filter_shape = Index(1, Kh, Kw, 1, 1)
-    alias pad_d = Index(0, 0)
-    alias pad_h = Index(0, 0)
-    alias pad_w = Index(0, 0)
-    alias stride = Index(1, 1, 1)
-    alias dilation = Index(1, 1, 1)
+    comptime output_shape = Index(1, 1, Oh, Ow, 1)
+    comptime input_shape = Index(1, 1, H, W, 1)
+    comptime filter_shape = Index(1, Kh, Kw, 1, 1)
+    comptime pad_d = Index(0, 0)
+    comptime pad_h = Index(0, 0)
+    comptime pad_w = Index(0, 0)
+    comptime stride = Index(1, 1, 1)
+    comptime dilation = Index(1, 1, 1)
 
     Naive2dConvolution[dtype, dtype, dtype].run(
         output_ptr_naive,
@@ -244,7 +244,7 @@ fn test[dtype: DType, H: Int, W: Int]():  # Input Height/Width
 
 
 def main():
-    alias dtype = DType.float32
+    comptime dtype = DType.float32
 
     # power of 2
     test[dtype, 4, 4]()

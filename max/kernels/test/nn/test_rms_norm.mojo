@@ -61,7 +61,7 @@ fn run_rms_norm_cpu[
 
     var param_shape = Index(cols)
 
-    alias layout = Layout.row_major[rank]()
+    comptime layout = Layout.row_major[rank]()
     var input_buf = LayoutTensor[dtype, layout](
         input_ptr, RuntimeLayout[layout].row_major(shape)
     )

@@ -111,8 +111,8 @@ fn test_transpose_4x4_ndbuffer():
 fn test_transpose_8x8_ndbuffer():
     print("== test_transpose_8x8_ndbuffer")
 
-    alias num_rows: Int = 8
-    alias num_cols: Int = 8
+    comptime num_rows: Int = 8
+    comptime num_cols: Int = 8
 
     var matrix = NDBuffer[
         DType.int,
@@ -141,8 +141,8 @@ fn test_transpose_8x8_ndbuffer():
 fn test_transpose_16x16_ndbuffer():
     print("== test_transpose_16x16_ndbuffer")
 
-    alias num_rows: Int = 16
-    alias num_cols: Int = 16
+    comptime num_rows: Int = 16
+    comptime num_cols: Int = 16
 
     var matrix = NDBuffer[
         DType.int,
@@ -171,7 +171,7 @@ fn test_transpose_16x16_ndbuffer():
 fn test_transpose_2d_identity_ndbuffer() raises:
     print("== test_transpose_2d_identity_ndbuffer")
 
-    alias in_shape = DimList(3, 3)
+    comptime in_shape = DimList(3, 3)
     # Create an input matrix of the form
     # [[1, 2, 3],
     #  [4, 5, 6],
@@ -199,7 +199,7 @@ fn test_transpose_2d_identity_ndbuffer() raises:
     # [[-1, -1, -1],
     #  [-1, -1, -1],
     #  [-1, -1, -1]]
-    alias out_shape = DimList(3, 3)
+    comptime out_shape = DimList(3, 3)
     var output = NDBuffer[
         DType.int, 2, MutAnyOrigin, out_shape
     ].stack_allocation()
@@ -237,7 +237,7 @@ fn test_transpose_2d_identity_ndbuffer() raises:
 fn test_transpose_2d_ndbuffer() raises:
     print("== test_transpose_2d_ndbuffer")
 
-    alias in_shape = DimList(3, 3)
+    comptime in_shape = DimList(3, 3)
     # Create an input matrix of the form
     # [[1, 2, 3],
     #  [4, 5, 6],
@@ -265,7 +265,7 @@ fn test_transpose_2d_ndbuffer() raises:
     # [[-1, -1, -1],
     #  [-1, -1, -1],
     #  [-1, -1, -1]]
-    alias out_shape = DimList(3, 3)
+    comptime out_shape = DimList(3, 3)
     var output = NDBuffer[
         DType.int, 2, MutAnyOrigin, out_shape
     ].stack_allocation()
@@ -303,7 +303,7 @@ fn test_transpose_2d_ndbuffer() raises:
 fn test_transpose_3d_identity_ndbuffer() raises:
     print("== test_transpose_3d_identity_ndbuffer")
 
-    alias in_shape = DimList(2, 2, 3)
+    comptime in_shape = DimList(2, 2, 3)
     # Create an input matrix of the form
     # [[[1, 2, 3],
     #   [4, 5, 6]],
@@ -337,7 +337,7 @@ fn test_transpose_3d_identity_ndbuffer() raises:
     #   [-1, -1, -1]],
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
-    alias out_shape = DimList(2, 2, 3)
+    comptime out_shape = DimList(2, 2, 3)
     var output = NDBuffer[
         DType.int, 3, MutAnyOrigin, out_shape
     ].stack_allocation()
@@ -382,7 +382,7 @@ fn test_transpose_3d_identity_ndbuffer() raises:
 fn test_transpose_3d_ndbuffer() raises:
     print("== test_transpose_3d_ndbuffer")
 
-    alias in_shape = DimList(2, 2, 3)
+    comptime in_shape = DimList(2, 2, 3)
     # Create an input matrix of the form
     # [[[1, 2, 3],
     #   [4, 5, 6]],
@@ -416,7 +416,7 @@ fn test_transpose_3d_ndbuffer() raises:
     #   [-1, -1, -1]],
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
-    alias out_shape = DimList(3, 2, 2)
+    comptime out_shape = DimList(3, 2, 2)
     var output = NDBuffer[
         DType.int, 3, MutAnyOrigin, out_shape
     ].stack_allocation()
@@ -463,7 +463,7 @@ fn test_transpose_3d_ndbuffer() raises:
 fn test_transpose_si64_ndbuffer() raises:
     print("== test_transpose_si64_ndbuffer")
 
-    alias in_shape = DimList(2, 2, 3)
+    comptime in_shape = DimList(2, 2, 3)
     # Create an input matrix of the form
     # [[[1, 2, 3],
     #   [4, 5, 6]],
@@ -497,7 +497,7 @@ fn test_transpose_si64_ndbuffer() raises:
     #   [-1, -1, -1]],
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
-    alias out_shape = DimList(3, 2, 2)
+    comptime out_shape = DimList(3, 2, 2)
     var output = NDBuffer[
         DType.int64, 3, MutAnyOrigin, out_shape
     ].stack_allocation()
@@ -674,7 +674,7 @@ fn test_transpose_4x4():
     #  [4, 5, 6, 7],
     # ...
     #  [12, 13, 14, 15]]
-    alias layout = Layout.row_major(4, 4)
+    comptime layout = Layout.row_major(4, 4)
     var stack = InlineArray[Scalar[DType.int], layout.size()](
         uninitialized=True
     )
@@ -752,10 +752,10 @@ fn test_transpose_4x4():
 fn test_transpose_8x8():
     print("== test_transpose_8x8")
 
-    alias num_rows: Int = 8
-    alias num_cols: Int = 8
+    comptime num_rows: Int = 8
+    comptime num_cols: Int = 8
 
-    alias layout = Layout.row_major(num_rows, num_cols)
+    comptime layout = Layout.row_major(num_rows, num_cols)
     var stack = InlineArray[Scalar[DType.int], layout.size()](
         uninitialized=True
     )
@@ -781,9 +781,9 @@ fn test_transpose_8x8():
 fn test_transpose_16x16():
     print("== test_transpose_16x16")
 
-    alias num_rows: Int = 16
-    alias num_cols: Int = 16
-    alias layout = Layout.row_major(num_rows, num_cols)
+    comptime num_rows: Int = 16
+    comptime num_cols: Int = 16
+    comptime layout = Layout.row_major(num_rows, num_cols)
     var stack = InlineArray[Scalar[DType.int], layout.size()](
         uninitialized=True
     )

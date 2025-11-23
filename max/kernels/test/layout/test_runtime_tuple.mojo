@@ -69,7 +69,7 @@ def test_prefix_product():
 def test_idx2crd():
     print("== test_idx2crd")
 
-    alias tuple = IntTuple(2, IntTuple(2, 4))
+    comptime tuple = IntTuple(2, IntTuple(2, 4))
 
     var r_tuple = RuntimeTuple[fill_like(tuple, UNKNOWN_VALUE)](2, 2, 4)
 
@@ -82,9 +82,9 @@ def test_idx2crd():
 
 def test_crd2idx():
     print("== test_crd2idx")
-    alias shape_t = IntTuple(4, 4)
-    alias stride_t = IntTuple(4, 1)
-    alias unk_r2_t = IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime shape_t = IntTuple(4, 4)
+    comptime stride_t = IntTuple(4, 1)
+    comptime unk_r2_t = IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     for i in range(4):
         for j in range(4):
@@ -102,8 +102,8 @@ def test_crd2idx():
 
 def test_shape_div():
     print("== test_shape_div")
-    alias shape_a_1 = IntTuple(4, 4)
-    alias shape_b_1 = IntTuple(2, 1)
+    comptime shape_a_1 = IntTuple(4, 4)
+    comptime shape_b_1 = IntTuple(2, 1)
     var shape_a_r_1 = RuntimeTuple[fill_like(shape_a_1, UNKNOWN_VALUE)](4, 4)
     var shape_b_r_1 = RuntimeTuple[fill_like(shape_b_1, UNKNOWN_VALUE)](2, 1)
     assert_equal(
@@ -112,8 +112,8 @@ def test_shape_div():
     )
     assert_equal(String(shape_div(shape_a_r_1, shape_b_r_1).S), "(-1, -1)")
 
-    alias shape_a_2 = IntTuple(3, 4)
-    alias shape_b_2 = 6
+    comptime shape_a_2 = IntTuple(3, 4)
+    comptime shape_b_2 = 6
     var shape_a_r_2 = RuntimeTuple[fill_like(shape_a_2, UNKNOWN_VALUE)](3, 4)
     var shape_b_r_2 = RuntimeTuple[fill_like(shape_b_2, UNKNOWN_VALUE)](6)
     assert_equal(

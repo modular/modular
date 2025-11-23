@@ -28,10 +28,10 @@ from testing import assert_equal
 def test_runtime_layout_const():
     print("== test_runtime_layout_const")
 
-    alias shape = IntTuple(UNKNOWN_VALUE, 8)
-    alias stride = IntTuple(8, 1)
+    comptime shape = IntTuple(UNKNOWN_VALUE, 8)
+    comptime stride = IntTuple(8, 1)
 
-    alias layout = Layout(shape, stride)
+    comptime layout = Layout(shape, stride)
 
     var shape_runtime = RuntimeTuple[layout.shape, element_type = DType.uint32](
         16, 8
@@ -50,7 +50,7 @@ def test_runtime_layout_const():
 
 def test_static_and_dynamic_size():
     print("== test_static_and_dynamic_size")
-    alias d_layout = Layout(IntTuple(UNKNOWN_VALUE, 4), IntTuple(4, 1))
+    comptime d_layout = Layout(IntTuple(UNKNOWN_VALUE, 4), IntTuple(4, 1))
     var layout = RuntimeLayout[
         d_layout, element_type = DType.uint32, linear_idx_type = DType.uint32
     ](
@@ -63,14 +63,14 @@ def test_static_and_dynamic_size():
 def test_tiled_layout_indexing():
     print("== test_tiled_layout_indexing")
 
-    alias shape = IntTuple(IntTuple(2, 2), IntTuple(2, 2))
-    alias stride = IntTuple(IntTuple(1, 8), IntTuple(2, 4))
+    comptime shape = IntTuple(IntTuple(2, 2), IntTuple(2, 2))
+    comptime stride = IntTuple(IntTuple(1, 8), IntTuple(2, 4))
 
-    alias d_tuple = IntTuple(
+    comptime d_tuple = IntTuple(
         IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE),
         IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE),
     )
-    alias d_layout = Layout(d_tuple, d_tuple)
+    comptime d_layout = Layout(d_tuple, d_tuple)
 
     var layout = RuntimeLayout[
         d_layout, element_type = DType.uint32, linear_idx_type = DType.uint32
@@ -96,14 +96,14 @@ def test_tiled_layout_indexing():
 def test_tiled_layout_indexing_linear_idx():
     print("== test_tiled_layout_indexing_linear_idx")
 
-    alias shape = IntTuple(IntTuple(2, 2), IntTuple(2, 2))
-    alias stride = IntTuple(IntTuple(1, 8), IntTuple(2, 4))
+    comptime shape = IntTuple(IntTuple(2, 2), IntTuple(2, 2))
+    comptime stride = IntTuple(IntTuple(1, 8), IntTuple(2, 4))
 
-    alias d_tuple = IntTuple(
+    comptime d_tuple = IntTuple(
         IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE),
         IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE),
     )
-    alias d_layout = Layout(d_tuple, d_tuple)
+    comptime d_layout = Layout(d_tuple, d_tuple)
 
     var layout = RuntimeLayout[
         d_layout, element_type = DType.uint32, linear_idx_type = DType.uint32
@@ -125,8 +125,8 @@ def test_tiled_layout_indexing_linear_idx():
 
 def test_sublayout_indexing():
     print("== test_sublayout_indexing")
-    alias layout_t = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    alias layout = RuntimeLayout[
+    comptime layout_t = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout = RuntimeLayout[
         layout_t, element_type = DType.uint32, linear_idx_type = DType.uint32
     ](
         RuntimeTuple[layout_t.shape, element_type = DType.uint32](8, 4),
@@ -138,7 +138,7 @@ def test_sublayout_indexing():
 
 def test_coalesce():
     print("== test_coalesce")
-    alias layout_t = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout_t = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     var layout = RuntimeLayout[
         layout_t, element_type = DType.uint32, linear_idx_type = DType.uint32
     ](
@@ -148,7 +148,7 @@ def test_coalesce():
     assert_equal(String(coalesce(layout)), "((8, 1):(1, 1))")
     assert_equal(String(coalesce_layout(layout_t)), "((-1, -1):(-1, 1))")
 
-    alias layout_t_2 = Layout(
+    comptime layout_t_2 = Layout(
         IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE, 8, 1),
         IntTuple(UNKNOWN_VALUE, 8, 1, 1),
     )
@@ -172,7 +172,7 @@ def test_coalesce():
 
 def test_make_layout():
     print("== test_make_layout")
-    alias layout_t = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout_t = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     var l_a = RuntimeLayout[
         layout_t, element_type = DType.uint32, linear_idx_type = DType.uint32
     ](

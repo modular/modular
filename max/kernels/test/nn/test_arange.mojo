@@ -49,7 +49,7 @@ def test_arange[
     print("Expected output shape: ")
     print(outshape)
 
-    alias max_output_size = 64
+    comptime max_output_size = 64
 
     if max_output_size < outshape[0]:
         print("Memory is larger than static limit, test failed")

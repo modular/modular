@@ -66,7 +66,7 @@ fn test_case_sampling[
     var input_ptr = UnsafePointer[Scalar[dtype]].alloc(
         Int(product(input_shape))
     )
-    alias layout = Layout.row_major[rank]()
+    comptime layout = Layout.row_major[rank]()
     var input = LayoutTensor[dtype, layout](
         input_ptr, RuntimeLayout[layout].row_major(input_shape)
     )
@@ -113,7 +113,7 @@ fn test_case_sampling[
     for i in range(batch_size):
         temperature_ptr[i] = temperature.cast[DType.float32]()
 
-    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var temperature_buf = OptionalReg(
         LayoutTensor[DType.float32, layout_1d, MutAnyOrigin](
             temperature_ptr,
@@ -349,7 +349,7 @@ def main():
 
     fn test_1d_sorted_sampling() raises:
         print("== test_1d_sorted_sampling")
-        alias rank = 1
+        comptime rank = 1
         test_case_sampling[1, DType.float32, fill_iota](
             5,
             0,
@@ -396,7 +396,7 @@ def main():
 
     fn test_1d_sorted_sampling_temp() raises:
         print("== test_1d_sorted_sampling_temp")
-        alias rank = 1
+        comptime rank = 1
         test_case_sampling[1, DType.float32, fill_rand](
             5, 0, IndexList[1](10), temperature=0.7
         )
