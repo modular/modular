@@ -75,18 +75,18 @@ fn bench_dispatch[
     n_ranks: Int,
     n_tokens_per_rank: Int,
 ](ctx: DeviceContext, mut b: Bench, my_rank: Int) raises:
-    alias input_type = token_dtype
-    alias combine_msg_bytes = size_of[input_type]() * hidden_size
+    comptime input_type = token_dtype
+    comptime combine_msg_bytes = size_of[input_type]() * hidden_size
 
-    alias group_size = 128
-    alias gpu_target = get_gpu_target()
-    alias gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
-    alias gpu_alignment = align_of[
+    comptime group_size = 128
+    comptime gpu_target = get_gpu_target()
+    comptime gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
+    comptime gpu_alignment = align_of[
         SIMD[DType.uint8, gpu_simd_width], target=gpu_target
     ]()
 
-    alias n_local_experts = n_experts // n_ranks
-    alias max_recv_tokens = n_experts * n_tokens_per_rank
+    comptime n_local_experts = n_experts // n_ranks
+    comptime max_recv_tokens = n_experts * n_tokens_per_rank
 
     var recv_count = shmem_malloc[DType.uint64](UInt(n_local_experts * n_ranks))
     var recv_count_buf = DeviceBuffer(
@@ -126,22 +126,24 @@ fn bench_dispatch[
         n_tokens_per_rank * top_k * hidden_size
     )
 
-    alias topk_ids_layout = Layout.row_major(UNKNOWN_VALUE, top_k)
-    alias input_tokens_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
-    alias output_layout = Layout.row_major(
+    comptime topk_ids_layout = Layout.row_major(UNKNOWN_VALUE, top_k)
+    comptime input_tokens_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
+    comptime output_layout = Layout.row_major(
         n_tokens_per_rank * n_ranks * n_local_experts, hidden_size
     )
 
-    alias output_scales_layout = Layout.row_major(
+    comptime output_scales_layout = Layout.row_major(
         hidden_size // group_size, max_recv_tokens
     )
 
-    alias row_offsets_layout = Layout.row_major(n_local_experts + 1)
-    alias expert_ids_layout = Layout.row_major(n_local_experts)
-    alias src_token_info_layout = Layout.row_major(
+    comptime row_offsets_layout = Layout.row_major(n_local_experts + 1)
+    comptime expert_ids_layout = Layout.row_major(n_local_experts)
+    comptime src_token_info_layout = Layout.row_major(
         n_tokens_per_rank * n_ranks * n_local_experts, 2
     )
-    alias output_2_layout = Layout.row_major(UNKNOWN_VALUE, top_k, hidden_size)
+    comptime output_2_layout = Layout.row_major(
+        UNKNOWN_VALUE, top_k, hidden_size
+    )
 
     var topk_ids_tensor = LayoutTensor[DType.int32, topk_ids_layout](
         device_topk_buf,
@@ -199,7 +201,7 @@ fn bench_dispatch[
         ),
     )
 
-    alias hw_info = ctx.default_device_info
+    comptime hw_info = ctx.default_device_info
 
     # Initialize the topk ids and input tokens using fixed seed,
     # so that we can reproduce the results later on other ranks.
@@ -243,7 +245,7 @@ fn bench_dispatch[
             UInt(n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes)
         )
 
-        alias dispatch = dispatch_kernel[
+        comptime dispatch = dispatch_kernel[
             input_type,
             hw_info.max_thread_block_size,
             input_tokens_layout,
@@ -259,7 +261,7 @@ fn bench_dispatch[
         var func = ctx.compile_function[dispatch]()
         shmem_module_init(func)
 
-        alias dispatch_cb = dispatch_cb_kernel[
+        comptime dispatch_cb = dispatch_cb_kernel[
             hw_info.max_thread_block_size,
             output_layout,
             row_offsets_layout,
@@ -275,7 +277,7 @@ fn bench_dispatch[
 
         var func_cb = ctx.compile_function[dispatch_cb]()
 
-        alias combine = combine_kernel[
+        comptime combine = combine_kernel[
             input_type,
             hw_info.max_thread_block_size,
             output_layout,
@@ -290,7 +292,7 @@ fn bench_dispatch[
         var func_combine = ctx.compile_function[combine]()
         shmem_module_init(func_combine)
 
-        alias combine_cb = combine_cb_kernel[
+        comptime combine_cb = combine_cb_kernel[
             input_type,
             hw_info.max_thread_block_size,
             output_2_layout,
@@ -485,11 +487,11 @@ fn bench_dispatch[
 
     @parameter
     if token_dtype == DType.bfloat16:
-        alias token_fmt_type = BF16TokenFormat[
+        comptime token_fmt_type = BF16TokenFormat[
             output_layout = Layout(), hidden_size, top_k, gpu_alignment
         ]
 
-        alias msg_bytes = token_fmt_type.msg_size()
+        comptime msg_bytes = token_fmt_type.msg_size()
 
         var send_buf = shmem_malloc[DType.uint8](
             UInt(n_tokens_per_rank * msg_bytes)
@@ -514,7 +516,7 @@ fn bench_dispatch[
         )
 
     else:
-        alias token_fmt_type = BlockwiseFP8TokenFormat[
+        comptime token_fmt_type = BlockwiseFP8TokenFormat[
             fp8_dtype=token_dtype,
             scales_dtype=scales_dtype,
             output_layout = Layout(),
@@ -546,14 +548,14 @@ fn bench_dispatch[
 
 
 def main():
-    alias hidden_size = env_get_int["hidden_size", 3584]()
-    alias top_k = env_get_int["top_k", 8]()
-    alias n_experts = env_get_int["n_experts", 256]()
-    alias n_ranks = env_get_int["n_ranks", 8]()
-    alias n_tokens_per_rank = env_get_int["n_tokens_per_rank", 128]()
-    alias num_gpus = env_get_int["num_gpus", 8]()
-    alias token_dtype = env_get_dtype["token_dtype", DType.float8_e4m3fn]()
-    alias scales_dtype = env_get_dtype["scales_dtype", DType.float32]()
+    comptime hidden_size = env_get_int["hidden_size", 3584]()
+    comptime top_k = env_get_int["top_k", 8]()
+    comptime n_experts = env_get_int["n_experts", 256]()
+    comptime n_ranks = env_get_int["n_ranks", 8]()
+    comptime n_tokens_per_rank = env_get_int["n_tokens_per_rank", 128]()
+    comptime num_gpus = env_get_int["num_gpus", 8]()
+    comptime token_dtype = env_get_dtype["token_dtype", DType.float8_e4m3fn]()
+    comptime scales_dtype = env_get_dtype["scales_dtype", DType.float32]()
 
     var m = Bench()
     var bencher_rank = m.check_mpirun()

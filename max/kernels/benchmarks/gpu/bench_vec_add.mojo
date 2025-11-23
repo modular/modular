@@ -38,7 +38,7 @@ fn vec_func(
 fn bench_vec_add(
     mut b: Bench, *, block_dim: Int, length: Int, context: DeviceContext
 ) raises:
-    alias dtype = DType.float32
+    comptime dtype = DType.float32
     var in0_host = UnsafePointer[Scalar[dtype]].alloc(length)
     var in1_host = UnsafePointer[Scalar[dtype]].alloc(length)
     var out_host = UnsafePointer[Scalar[dtype]].alloc(length)
@@ -94,7 +94,7 @@ fn bench_vec_add(
 
 
 def main():
-    alias block_dim = env_get_int["block_dim", 32]()
+    comptime block_dim = env_get_int["block_dim", 32]()
     var m = Bench()
     update_bench_config_args(m)
 

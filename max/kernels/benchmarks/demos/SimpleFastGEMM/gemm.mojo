@@ -27,19 +27,19 @@ from linalg.utils import (
 
 from utils.index import Index
 
-alias dtype = DType.float32
-alias simd_size = simd_width_of[dtype]()
-alias alignment = align_of[SIMD[dtype, simd_size]]()
+comptime dtype = DType.float32
+comptime simd_size = simd_width_of[dtype]()
+comptime alignment = align_of[SIMD[dtype, simd_size]]()
 
-alias kernel_shape = get_matmul_kernel_shape[dtype, dtype, dtype, False]()
-alias MR = kernel_shape.simd_rows
-alias NR = kernel_shape.simd_cols * simd_size
+comptime kernel_shape = get_matmul_kernel_shape[dtype, dtype, dtype, False]()
+comptime MR = kernel_shape.simd_rows
+comptime NR = kernel_shape.simd_cols * simd_size
 
 # AVX512 values
 # alias MR = 6
 # alias NR = 64
 
-alias prefetch_distance = get_matmul_prefetch_b_distance_k()
+comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
 
 
 fn print_mat(a_ptr: UnsafePointer[Scalar[dtype]], m: Int, n: Int):
@@ -80,7 +80,7 @@ fn kernel(
         alignment=alignment
     ]()
 
-    alias NR2 = NR // simd_size
+    comptime NR2 = NR // simd_size
 
     @parameter
     for idx0 in range(MR):

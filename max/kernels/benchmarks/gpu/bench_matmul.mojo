@@ -115,12 +115,12 @@ fn bench_matmul[
     fn get_size(shape: IndexList[2]) -> Int:
         return shape[0] * shape[1]
 
-    alias simd_size = 4
+    comptime simd_size = 4
     var stride_a = align_up(get_size(shape_a_dim), simd_size)
     var stride_b = align_up(get_size(shape_b_dim), simd_size)
     var stride_c = align_up(get_size(shape_c_dim), simd_size)
 
-    alias k128 = 512 * 1024 * 1024
+    comptime k128 = 512 * 1024 * 1024
     var cache_a = (
         align_up(k128, stride_a * size_of[dtype]()) // size_of[dtype]()
     )
@@ -137,7 +137,7 @@ fn bench_matmul[
     var buffer_c = ctx.enqueue_create_buffer[DType.bfloat16](cache_c)
 
     # TODO: remove init_on_gpu flag and the loading on CPU
-    alias init_on_gpu = True
+    comptime init_on_gpu = True
     var a_host = HostNDBuffer[dtype, 1](DimList(cache_a))
     var b_host = HostNDBuffer[dtype, 1](DimList(cache_b))
 
@@ -200,7 +200,7 @@ fn bench_matmul[
                 var y = val * x
                 return y
 
-            alias optional_lambda_fn = OptionalReg[
+            comptime optional_lambda_fn = OptionalReg[
                 elementwise_compute_lambda_type
             ](test_lambda_add_coords_prod) if epilogue else None
 
@@ -270,7 +270,7 @@ fn create_matmul_bench[
     k: ValOrDim,
     init_type: InitializationType,
 ) raises:
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
     var dynamic_b_shape = (n.value, k.value) if transpose_b else (
@@ -299,19 +299,19 @@ fn create_matmul_bench[
 
 
 def main():
-    alias dtype = env_get_dtype["dtype", DType.bfloat16]()
+    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     var M = Int(arg_parse("M", 1))
-    alias N = env_get_int["N", 1]()
-    alias K = env_get_int["K", 1]()
+    comptime N = env_get_int["N", 1]()
+    comptime K = env_get_int["K", 1]()
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
     )
-    alias cache_busting = True
-    alias transpose_b = True
-    alias use_vendor_blas = env_get_bool["use_vendor_blas", False]()
-    alias epilogue = env_get_bool["epilogue", False]()
-    alias register_based_epilogue = env_get_bool[
+    comptime cache_busting = True
+    comptime transpose_b = True
+    comptime use_vendor_blas = env_get_bool["use_vendor_blas", False]()
+    comptime epilogue = env_get_bool["epilogue", False]()
+    comptime register_based_epilogue = env_get_bool[
         "register_based_epilogue", True
     ]()
 

@@ -34,7 +34,7 @@ from utils.index import product
 
 fn align_of_simd[dtype: DType, simd_target: _TargetType]() -> Int:
     # TODO: move this utility function to a module.
-    alias pack_size = simd_width_of[dtype, target=simd_target]()
+    comptime pack_size = simd_width_of[dtype, target=simd_target]()
     return align_of[SIMD[dtype, pack_size]]()
 
 
@@ -50,12 +50,12 @@ fn run_reduce[
 
     var out_shape = shape
     out_shape[axis] = 1
-    alias init: Scalar[dtype] = Scalar[dtype](0.0)
+    comptime init: Scalar[dtype] = Scalar[dtype](0.0)
 
     var in_size = shape.flattened_length()
     var out_size = product(shape, rank - 1)
 
-    alias align = align_of_simd[dtype, simd_target = get_gpu_target()]()
+    comptime align = align_of_simd[dtype, simd_target = get_gpu_target()]()
     var expected_vals = UnsafePointer[Scalar[dtype]].alloc(
         out_size, alignment=align
     )
@@ -151,15 +151,15 @@ fn reduce_add[
 
 
 def main():
-    alias dtype = DType._from_str(env_get_string["dtype", "DType.float16"]())
+    comptime dtype = DType._from_str(env_get_string["dtype", "DType.float16"]())
 
-    alias shape_in_list = env_get_shape["shape", "1x1x4096"]()
-    alias shape = int_list_to_tuple[shape_in_list]()
-    alias axis = env_get_int["axis", 1]()
+    comptime shape_in_list = env_get_shape["shape", "1x1x4096"]()
+    comptime shape = int_list_to_tuple[shape_in_list]()
+    comptime axis = env_get_int["axis", 1]()
 
     var m = Bench()
     with DeviceContext() as ctx:
-        alias dims = shape
+        comptime dims = shape
         run_reduce[reduce_add, dtype](
             m,
             dims,

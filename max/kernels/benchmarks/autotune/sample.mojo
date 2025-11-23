@@ -59,10 +59,10 @@ fn bench_func[
 
 
 def main():
-    alias dtype = env_get_dtype["dtype", DType.float16]()
-    alias shape_int_list = env_get_shape["shape", "1024x1024x1024"]()
-    alias shape = int_list_to_tuple[shape_int_list]()
-    alias stages = env_get_int["stages", 0]()
+    comptime dtype = env_get_dtype["dtype", DType.float16]()
+    comptime shape_int_list = env_get_shape["shape", "1024x1024x1024"]()
+    comptime shape = int_list_to_tuple[shape_int_list]()
+    comptime stages = env_get_int["stages", 0]()
 
     var runtime_x = arg_parse("x", 0)
 

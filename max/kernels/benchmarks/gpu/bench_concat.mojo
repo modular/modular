@@ -34,10 +34,10 @@ fn bench_concat[
     ctx: DeviceContext,
     axis: Int,
 ) raises:
-    alias type = DType.float32
+    comptime type = DType.float32
     if num_inputs != len(shapes):
         raise Error("num_inputs does not match number of shapes provided")
-    alias layout = Layout.row_major[rank]()
+    comptime layout = Layout.row_major[rank]()
     var inputs = StaticTuple[
         LayoutTensor[type, layout, MutAnyOrigin], num_inputs
     ]()
@@ -141,17 +141,17 @@ fn bench_concat[
 
 
 def main():
-    alias num_inputs = env_get_int["num_inputs", 2]()
-    alias axis = env_get_int["axis", 0]()
-    alias W0 = env_get_int["W0", 1]()
-    alias X0 = env_get_int["X0", 1]()
-    alias Y0 = env_get_int["Y0", 1]()
-    alias Z0 = env_get_int["Z0", 1]()
+    comptime num_inputs = env_get_int["num_inputs", 2]()
+    comptime axis = env_get_int["axis", 0]()
+    comptime W0 = env_get_int["W0", 1]()
+    comptime X0 = env_get_int["X0", 1]()
+    comptime Y0 = env_get_int["Y0", 1]()
+    comptime Z0 = env_get_int["Z0", 1]()
 
-    alias W1 = env_get_int["W1", 1]()
-    alias X1 = env_get_int["X1", 1]()
-    alias Y1 = env_get_int["Y1", 1]()
-    alias Z1 = env_get_int["Z1", 1]()
+    comptime W1 = env_get_int["W1", 1]()
+    comptime X1 = env_get_int["X1", 1]()
+    comptime Y1 = env_get_int["Y1", 1]()
+    comptime Z1 = env_get_int["Z1", 1]()
 
     var b = Bench()
     with DeviceContext() as ctx:

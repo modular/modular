@@ -22,7 +22,7 @@ from microbenchmark import Benchmarkable
 
 from utils.index import Index
 
-alias alignment = 64
+comptime alignment = 64
 
 
 fn gemm_naive[

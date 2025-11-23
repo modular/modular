@@ -61,7 +61,7 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec):
     rand(v_ptr, kv_shape.flattened_length())
     rand(mask_ptr, mask_shape.flattened_length())
 
-    alias layout = Layout.row_major[3]()
+    comptime layout = Layout.row_major[3]()
     var q = LayoutTensor[dtype, layout](
         q_ptr, RuntimeLayout[layout].row_major(q_shape)
     )
@@ -99,7 +99,7 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec):
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return mask.load[width=simd_width](rebind[IndexList[3]](idx))
 
-    alias scale = 0.25
+    comptime scale = 0.25
 
     @always_inline
     @parameter
@@ -107,7 +107,7 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec):
         @always_inline
         @parameter
         fn iter_fn[depth_static_dim: Int]():
-            alias output_static_shape = IndexList[3](
+            comptime output_static_shape = IndexList[3](
                 UNKNOWN_VALUE, UNKNOWN_VALUE, depth_static_dim
             )
             flash_attention[input_k_fn, input_v_fn, mask_fn](
@@ -119,7 +119,7 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec):
                 scale=scale,
             )
 
-        alias depth_static_dims = VariadicList[Int](40, 64, 80, 128, 160)
+        comptime depth_static_dims = VariadicList[Int](40, 64, 80, 128, 160)
 
         @parameter
         for idx in range(len(depth_static_dims)):

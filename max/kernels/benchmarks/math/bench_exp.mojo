@@ -60,7 +60,7 @@ def bench_unary[
     ],
     dtype: DType,
 ](mut m: Bench, size: Int, op_name: String):
-    alias alignment = 64
+    comptime alignment = 64
     var input_ptr = UnsafePointer[Scalar[dtype],].alloc(
         size, alignment=alignment
     )
@@ -187,14 +187,14 @@ fn ldexp_libm[
 fn exp_sleef[
     dtype: DType, simd_width: Int
 ](d: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    alias inv_lg2 = SIMD[dtype, simd_width](1.4426950408889634)
-    alias lg2it = SIMD[dtype, simd_width](0.6931471805599453)
+    comptime inv_lg2 = SIMD[dtype, simd_width](1.4426950408889634)
+    comptime lg2it = SIMD[dtype, simd_width](0.6931471805599453)
 
     var q = floor(d.fma(inv_lg2, 0.5))
 
     ## upper and lower parts of log(2)
-    alias L2Uf = SIMD[dtype, simd_width](0.693145751953125)
-    alias L2Lf = SIMD[dtype, simd_width](1.428606765330187045e-06)
+    comptime L2Uf = SIMD[dtype, simd_width](0.693145751953125)
+    comptime L2Lf = SIMD[dtype, simd_width](1.428606765330187045e-06)
 
     var s = q.fma(-L2Uf, d)
     s = q.fma(-L2Lf, s)
@@ -214,7 +214,7 @@ fn exp_sleef[
 fn _exp_taylor0[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    alias coefficients: List[Scalar[dtype]] = [
+    comptime coefficients: List[Scalar[dtype]] = [
         1.0,
         1.0,
         0.5,
@@ -232,17 +232,17 @@ fn exp_mojo_opt[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     constrained[dtype.is_floating_point(), "must be a floating point value"]()
-    alias neg_ln2 = -0.69314718055966295651160180568695068359375
-    alias inv_lg2 = 1.442695040888963407359924681001892137426646
+    comptime neg_ln2 = -0.69314718055966295651160180568695068359375
+    comptime inv_lg2 = 1.442695040888963407359924681001892137426646
 
     # upper and lower parts of log(2)=[L2Uf,L2Lf]
-    alias L2Uf = 0.693145751953125
-    alias L2Lf = 1.428606765330187045e-06
+    comptime L2Uf = 0.693145751953125
+    comptime L2Lf = 1.428606765330187045e-06
 
-    alias min_val = SIMD[dtype, simd_width](-88.3762626647949)
-    alias max_val = SIMD[dtype, simd_width](88.3762626647950)
+    comptime min_val = SIMD[dtype, simd_width](-88.3762626647949)
+    comptime max_val = SIMD[dtype, simd_width](88.3762626647950)
 
-    alias im_type = DType.float64
+    comptime im_type = DType.float64
     var xc = x.clamp(min_val, max_val).cast[im_type]()
     var k = floor(xc.fma(inv_lg2, 0.5)).cast[im_type]()
 
@@ -260,14 +260,14 @@ fn exp_mojo_opt2[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     constrained[dtype.is_floating_point(), "must be a floating point value"]()
-    alias inv_lg2 = 1.44269504088896340736  # 1/log(2)
+    comptime inv_lg2 = 1.44269504088896340736  # 1/log(2)
 
     # upper and lower parts of log(2)=[L2Uf,L2Lf]
-    alias L2Uf = -0.693359375
-    alias L2Lf = -2.12194440e-4
+    comptime L2Uf = -0.693359375
+    comptime L2Lf = -2.12194440e-4
 
-    alias min_val = SIMD[dtype, simd_width](-87.3)
-    alias max_val = SIMD[dtype, simd_width](87.3)
+    comptime min_val = SIMD[dtype, simd_width](-87.3)
+    comptime max_val = SIMD[dtype, simd_width](87.3)
 
     var xc = x.clamp(min_val, max_val)
     var k = floor(xc * inv_lg2)
@@ -284,7 +284,7 @@ fn exp_mojo_opt2[
 fn _exp_taylor3[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    alias coefficients: List[Scalar[dtype]] = [
+    comptime coefficients: List[Scalar[dtype]] = [
         0.5,
         0.16666666666666666667,
         0.041666666666666666667,
@@ -300,14 +300,14 @@ fn exp_mojo_opt3[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     constrained[dtype.is_floating_point(), "must be a floating point value"]()
-    alias inv_lg2 = 1.44269504088896340736  # 1/log(2)
+    comptime inv_lg2 = 1.44269504088896340736  # 1/log(2)
 
     # upper and lower parts of log(2)=[L2Uf,L2Lf]
-    alias L2Uf = -0.693359375
-    alias L2Lf = -2.12194440e-4
+    comptime L2Uf = -0.693359375
+    comptime L2Lf = -2.12194440e-4
 
-    alias min_val = SIMD[dtype, simd_width](-87.3)
-    alias max_val = SIMD[dtype, simd_width](87.3)
+    comptime min_val = SIMD[dtype, simd_width](-87.3)
+    comptime max_val = SIMD[dtype, simd_width](87.3)
 
     var xc = x.clamp(min_val, max_val)
     var k = floor(xc * inv_lg2)
@@ -341,14 +341,14 @@ fn exp_mlas[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     constrained[dtype.is_floating_point(), "must be a floating point value"]()
-    alias neg_ln2 = -0.69314718055966295651160180568695068359375
-    alias inv_lg2 = 1.442695040888963407359924681001892137426646
+    comptime neg_ln2 = -0.69314718055966295651160180568695068359375
+    comptime inv_lg2 = 1.442695040888963407359924681001892137426646
 
-    alias neg_ln2_hi = -6.93145752e-1
-    alias neg_ln2_lo = -1.42860677e-6
+    comptime neg_ln2_hi = -6.93145752e-1
+    comptime neg_ln2_lo = -1.42860677e-6
 
-    alias min_val = -88.3762626647949
-    alias max_val = 88.3762626647950
+    comptime min_val = -88.3762626647949
+    comptime max_val = 88.3762626647950
 
     var xc = x.clamp(min_val, max_val)
     var k = floor(xc.fma(inv_lg2, 0.5))
@@ -371,14 +371,14 @@ fn mlas_llvm_ldexp[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     constrained[dtype.is_floating_point(), "must be a floating point value"]()
-    alias neg_ln2 = -0.69314718055966295651160180568695068359375
-    alias inv_lg2 = 1.442695040888963407359924681001892137426646
+    comptime neg_ln2 = -0.69314718055966295651160180568695068359375
+    comptime inv_lg2 = 1.442695040888963407359924681001892137426646
 
-    alias neg_ln2_hi = -6.93145752e-1
-    alias neg_ln2_lo = -1.42860677e-6
+    comptime neg_ln2_hi = -6.93145752e-1
+    comptime neg_ln2_lo = -1.42860677e-6
 
-    alias min_val = -88.3762626647949
-    alias max_val = 88.3762626647950
+    comptime min_val = -88.3762626647949
+    comptime max_val = 88.3762626647950
 
     var xc = x.clamp(min_val, max_val)
     var k = floor(xc.fma(inv_lg2, 0.5))
@@ -388,9 +388,9 @@ fn mlas_llvm_ldexp[
 
 
 def accuracy_test():
-    alias delta_min = -16
-    alias delta_max = 15
-    alias delta_range = delta_max - delta_min + 1
+    comptime delta_min = -16
+    comptime delta_max = 15
+    comptime delta_range = delta_max - delta_min + 1
 
     var deltas = NDBuffer[
         DType.int32, 1, MutAnyOrigin, delta_range

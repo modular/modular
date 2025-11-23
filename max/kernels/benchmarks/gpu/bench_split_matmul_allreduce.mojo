@@ -135,9 +135,9 @@ fn bench_matmul_all_reduce[
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
     # Create the list of NDBuffers.
-    alias A_static_shape = DimList(m.dim, k.dim)
-    alias B_static_shape = DimList(n.dim, k.dim)
-    alias C_static_shape = DimList(m.dim, n.dim)
+    comptime A_static_shape = DimList(m.dim, k.dim)
+    comptime B_static_shape = DimList(n.dim, k.dim)
+    comptime C_static_shape = DimList(m.dim, n.dim)
     var As = InlineArray[
         NDBuffer[dtype, 2, MutAnyOrigin, A_static_shape], ngpus
     ](fill={})
@@ -247,15 +247,15 @@ fn bench_matmul_all_reduce[
 
 
 def main():
-    alias dtype = env_get_dtype["dtype", DType.bfloat16]()
+    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     var M = Int(arg_parse("M", 8192))
-    alias N = env_get_int["N", 8192]()
-    alias K = env_get_int["K", 2048]()
-    alias num_gpus = env_get_int["NUM_GPUS", 4]()
-    alias partition_dim = env_get_int["DIM", 1]()
-    alias num_partitions = env_get_int["PARTITIONS", 1]()
-    alias overlap_with_dpl = env_get_bool["OVERLAP", False]()
+    comptime N = env_get_int["N", 8192]()
+    comptime K = env_get_int["K", 2048]()
+    comptime num_gpus = env_get_int["NUM_GPUS", 4]()
+    comptime partition_dim = env_get_int["DIM", 1]()
+    comptime num_partitions = env_get_int["PARTITIONS", 1]()
+    comptime overlap_with_dpl = env_get_bool["OVERLAP", False]()
 
     var m = Bench()
 

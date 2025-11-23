@@ -60,21 +60,21 @@ def execute_kv_cache_ragged_matmul[
     seq_len: Int,
     use_random_lengths: Bool,
 ):
-    alias CollectionType = ContinuousBatchingKVCacheCollection[
+    comptime CollectionType = ContinuousBatchingKVCacheCollection[
         dtype,
         KVCacheStaticParams(
             num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
         ),
     ]
 
-    alias hidden_size = num_q_heads * head_dim
-    alias combined_hidden_size = (num_q_heads + 2 * num_kv_heads) * head_dim
+    comptime hidden_size = num_q_heads * head_dim
+    comptime combined_hidden_size = (num_q_heads + 2 * num_kv_heads) * head_dim
     var num_blocks = batch_size + 1
-    alias max_seq_length_cache = 1024
-    alias num_layers = 1
-    alias cache_size = 10
-    alias is_context_encoding = True  # value is ignored for matmul kernel
-    alias layer_idx = 0
+    comptime max_seq_length_cache = 1024
+    comptime num_layers = 1
+    comptime cache_size = 10
+    comptime is_context_encoding = True  # value is ignored for matmul kernel
+    comptime layer_idx = 0
 
     var max_context_length = 0
     var max_prompt_length = 0
@@ -236,10 +236,10 @@ def execute_kv_cache_ragged_matmul[
 
 
 def main():
-    alias dtype = env_get_dtype["dtype", DType.bfloat16]()
-    alias head_dim = env_get_int["head_dim", 128]()
-    alias num_q_heads = env_get_int["num_q_heads", 128]()
-    alias num_kv_heads = env_get_int["num_kv_heads", 128]()
+    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
+    comptime head_dim = env_get_int["head_dim", 128]()
+    comptime num_q_heads = env_get_int["num_q_heads", 128]()
+    comptime num_kv_heads = env_get_int["num_kv_heads", 128]()
 
     var batch_size = arg_parse("batch_size", 1)
     var use_random_lengths = arg_parse("use_random_lengths", False)

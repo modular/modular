@@ -48,8 +48,8 @@ fn run_mha[
     ctx: DeviceContext,
 ) raises:
     # Query, key, value dimensions.
-    alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
-    alias kv_num_heads = num_heads // group
+    comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
+    comptime kv_num_heads = num_heads // group
 
     # Q, K, V shapes.
     var q_size = batch_size * num_heads * seq_len * depth
@@ -72,7 +72,7 @@ fn run_mha[
     rand[qkv_type](v_ptr, v_size)
 
     # Initialize causal mask
-    alias layout_4d = Layout.row_major[4]()
+    comptime layout_4d = Layout.row_major[4]()
     var mask = LayoutTensor[mask_type, layout_4d](
         mask_ptr,
         RuntimeLayout[layout_4d].row_major(
@@ -103,7 +103,7 @@ fn run_mha[
     ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
     # Construct device buffers.
-    alias q_layout = Layout.row_major(
+    comptime q_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
     )
     var q_device = LayoutTensor[qkv_type, q_layout](
@@ -112,7 +112,7 @@ fn run_mha[
             Index(batch_size, seq_len, num_heads, depth)
         ),
     )
-    alias k_layout = Layout.row_major(
+    comptime k_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
     )
     var k_device = LayoutTensor[qkv_type, k_layout](
@@ -121,7 +121,7 @@ fn run_mha[
             Index(batch_size, num_keys, kv_num_heads, depth)
         ),
     )
-    alias v_layout = Layout.row_major(
+    comptime v_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
     )
     var v_device = LayoutTensor[qkv_type, v_layout](
@@ -136,7 +136,7 @@ fn run_mha[
             Index(batch_size, num_heads, seq_len, num_keys)
         ),
     )
-    alias output_layout = Layout.row_major(
+    comptime output_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
     )
     var output_device = LayoutTensor[qkv_type, output_layout](
@@ -201,7 +201,7 @@ fn run_mha[
 
     if verify:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
-        alias output_ref_layout = Layout.row_major(
+        comptime output_ref_layout = Layout.row_major(
             UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
         )
         var output_ref_device = LayoutTensor[qkv_type, output_ref_layout](
@@ -283,11 +283,11 @@ struct MHA_cfg(ImplicitlyCopyable, Movable):
 
 
 def main():
-    alias qkv_type = env_get_dtype["qkv_type", DType.bfloat16]()
-    alias mask_type = env_get_dtype["mask_type", DType.float32]()
-    alias depth = env_get_int["depth", 128]()
-    alias num_heads = env_get_int["num_heads", 32]()
-    alias group = env_get_int["group", 1]()
+    comptime qkv_type = env_get_dtype["qkv_type", DType.bfloat16]()
+    comptime mask_type = env_get_dtype["mask_type", DType.float32]()
+    comptime depth = env_get_int["depth", 128]()
+    comptime num_heads = env_get_int["num_heads", 32]()
+    comptime group = env_get_int["group", 1]()
 
     var seq_len = Int(arg_parse("seq_len", 64))
     var num_keys = Int(arg_parse("num_keys", 64))
@@ -296,7 +296,7 @@ def main():
     var bench = arg_parse("benchmark", True)
     var verify = arg_parse("verify", True)
 
-    alias cfg = MHA_cfg(
+    comptime cfg = MHA_cfg(
         qkv_type=qkv_type,
         mask_type=mask_type,
         depth=depth,
