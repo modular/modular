@@ -39,7 +39,7 @@ struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
     # Whether work tile is completely OOB.
     var is_valid_tile: Bool
 
-    alias INVALID_WORK_INFO = Self(0, 0, 0, 0, False)
+    comptime INVALID_WORK_INFO = Self(0, 0, 0, 0, False)
 
     @always_inline
     fn is_valid(self) -> Bool:
@@ -79,16 +79,16 @@ struct TileScheduler[
     block_swizzle_size: Int = 8,
     num_split_k: Int = 1,
 ]:
-    alias UnderlyingScheduler = B200TileScheduler[
+    comptime UnderlyingScheduler = B200TileScheduler[
         Self.num_stages,
         Self.cluster_shape,
         Self.rasterize_order,
         Self.block_swizzle_size,
     ]
-    alias BM = Self.reduction_tile_shape[0]
-    alias MMA_N = Self.reduction_tile_shape[1]
-    alias BK = Self.reduction_tile_shape[2]
-    alias ROW_SIZE = Self.MMA_N if Self.BM == 128 else Self.MMA_N // 2
+    comptime BM = Self.reduction_tile_shape[0]
+    comptime MMA_N = Self.reduction_tile_shape[1]
+    comptime BK = Self.reduction_tile_shape[2]
+    comptime ROW_SIZE = Self.MMA_N if Self.BM == 128 else Self.MMA_N // 2
 
     var locks_ptr: UnsafePointer[Int32]
     var scheduler: Self.UnderlyingScheduler
@@ -214,7 +214,7 @@ struct TileScheduler[
         layout: Layout,
         width: Int,
     ]() -> Layout:
-        alias new_shape = IntTuple(layout.shape[0].value(), width)
+        comptime new_shape = IntTuple(layout.shape[0].value(), width)
         return Layout(new_shape, layout.stride)
 
     @always_inline
@@ -244,7 +244,7 @@ struct TileScheduler[
                 width += widths[i]
             return width
 
-        alias current_width = _get_current_width(widths, curr_stage)
+        comptime current_width = _get_current_width(widths, curr_stage)
 
         return type_of(result)(tensor.ptr + current_width)
 
@@ -263,19 +263,19 @@ struct TileScheduler[
         epilogue_thread_idx: UInt,
         reduction_tile_idx: UInt32,
     ):
-        alias data_paths = 16  # same as lanes
-        alias bits = 256
+        comptime data_paths = 16  # same as lanes
+        comptime bits = 256
         # only load from TMEM when not using split-k
-        alias total_rep = Self.ROW_SIZE // 8
+        comptime total_rep = Self.ROW_SIZE // 8
 
         # 128 is a magic number that is provided by the NVCC backend.
         # register size that is greater than that will not compile.
-        alias widths_per_stage = Self._get_widths_per_stage[128]()
-        alias widths = widths_per_stage[0]
-        alias num_widths = widths_per_stage[1]
+        comptime widths_per_stage = Self._get_widths_per_stage[128]()
+        comptime widths = widths_per_stage[0]
+        comptime num_widths = widths_per_stage[1]
 
         # alias stage_rep = width_per_stage // 8
-        alias fragment_size = (data_paths * (bits // 32)) // WARP_SIZE
+        comptime fragment_size = (data_paths * (bits // 32)) // WARP_SIZE
         # alias stage_frag_size = stage_rep * fragment_size
 
         var local_warp_id = epilogue_thread_idx // UInt(WARP_SIZE)
@@ -285,8 +285,8 @@ struct TileScheduler[
             reduction_workspace, reduction_tile_idx
         )
 
-        alias REDUCTION_BM = Self.BM // 4 if Self.BM == 128 else Self.BM // 2
-        alias REDUCTION_BN = Self.MMA_N if Self.BM == 128 else Self.MMA_N // 2
+        comptime REDUCTION_BM = Self.BM // 4 if Self.BM == 128 else Self.BM // 2
+        comptime REDUCTION_BN = Self.MMA_N if Self.BM == 128 else Self.MMA_N // 2
         var warp_id_x = local_warp_id if Self.BM == 128 else local_warp_id % 2
         var warp_id_y = 0 if Self.BM == 128 else local_warp_id // 2
 
@@ -299,9 +299,9 @@ struct TileScheduler[
 
         @parameter
         for stage in range(num_widths):
-            alias stage_width = widths[stage]
-            alias stage_rep = stage_width // 8
-            alias stage_frag_size = stage_rep * fragment_size
+            comptime stage_width = widths[stage]
+            comptime stage_rep = stage_width // 8
+            comptime stage_frag_size = stage_rep * fragment_size
 
             var stage_frag_upper = tcgen05_ld[
                 datapaths=data_paths,
@@ -337,15 +337,15 @@ struct TileScheduler[
                 1, 2
             ]().distribute[Layout.row_major(8, 4)](lane_id())
 
-            alias num_m = reduction_frag_upper.layout.shape[0].value()
-            alias num_n = reduction_frag_upper.layout.shape[1].value()
+            comptime num_m = reduction_frag_upper.layout.shape[0].value()
+            comptime num_n = reduction_frag_upper.layout.shape[1].value()
 
             @parameter
             for m in range(num_m):
 
                 @parameter
                 for n in range(num_n):
-                    alias i = m * num_n + n
+                    comptime i = m * num_n + n
 
                     var v2_upper = rebind[reduction_frag_upper.element_type](
                         SIMD[accum_type, 2](

@@ -95,19 +95,19 @@ struct HopperMatmulSM90Kernel_SMem[
     bank-conflict-free access patterns for tensor core operations.
     """
 
-    alias SMM = SharedMemoryManager[]
+    comptime SMM = SharedMemoryManager[]
 
     # Tile iterator types - manage cycling through pipeline stages
-    alias ATileArray = Self.SMM.TileArray[
+    comptime ATileArray = Self.SMM.TileArray[
         Self.a_type, Self.a_layout, Self.num_pipeline_stages
     ]
-    alias BTileArray = Self.SMM.TileArray[
+    comptime BTileArray = Self.SMM.TileArray[
         Self.b_type, Self.b_layout, Self.num_pipeline_stages
     ]
-    alias CTile = Self.SMM.Tile[Self.c_type, Self.c_layout]
+    comptime CTile = Self.SMM.Tile[Self.c_type, Self.c_layout]
 
     # Pipeline barrier types - for producer/consumer synchronization
-    alias PipelineBarrier = PipelineBarrier[Self.num_pipeline_stages]
+    comptime PipelineBarrier = PipelineBarrier[Self.num_pipeline_stages]
 
     # Tile iterators - cycle through pipeline stages
     var a_tiles: Self.ATileArray
@@ -214,36 +214,36 @@ struct HopperMatmulSM90Kernel[
         hilbert_swizzle: Use Hilbert curve for thread block scheduling
     """
 
-    alias BM = Self.block_tile_shape[0]
-    alias BN = Self.block_tile_shape[1]
-    alias BK = Self.block_tile_shape[2]
+    comptime BM = Self.block_tile_shape[0]
+    comptime BN = Self.block_tile_shape[1]
+    comptime BK = Self.block_tile_shape[2]
 
-    alias num_consumer = (Self.num_threads // 128) - 1
-    alias num_consumer_threads = Self.num_consumer * 128
+    comptime num_consumer = (Self.num_threads // 128) - 1
+    comptime num_consumer_threads = Self.num_consumer * 128
 
-    alias num_m_mmas = Self.BM // Self.wgmma_shape[0] // Self.num_consumer
-    alias num_n_mmas = Self.BN // Self.wgmma_shape[1]
+    comptime num_m_mmas = Self.BM // Self.wgmma_shape[0] // Self.num_consumer
+    comptime num_n_mmas = Self.BN // Self.wgmma_shape[1]
 
-    alias accum_type = get_accum_type[Self.a_type]()
-    alias c_frag_size = Self.wgmma_shape[0] * Self.wgmma_shape[1] // 128
+    comptime accum_type = get_accum_type[Self.a_type]()
+    comptime c_frag_size = Self.wgmma_shape[0] * Self.wgmma_shape[1] // 128
 
-    alias a_smem_layout = tile_layout_k_major[
+    comptime a_smem_layout = tile_layout_k_major[
         Self.a_type, Self.BM, Self.BK, Self.a_swizzle
     ]()
-    alias b_smem_layout = tile_layout_k_major[
+    comptime b_smem_layout = tile_layout_k_major[
         Self.b_type, Self.BN, Self.BK, Self.b_swizzle
     ]()
 
-    alias AccumRegTileType = RegTileType[
+    comptime AccumRegTileType = RegTileType[
         Self.accum_type,
         Layout.row_major(Self.num_m_mmas * Self.num_n_mmas, Self.c_frag_size),
     ]
 
-    alias cluster_size = Int(
+    comptime cluster_size = Int(
         Self.cluster_shape[0] * Self.cluster_shape[1] * Self.cluster_shape[2]
     )
 
-    alias SMem = HopperMatmulSM90Kernel_SMem[
+    comptime SMem = HopperMatmulSM90Kernel_SMem[
         Self.a_type,
         Self.a_smem_layout,
         Self.b_type,
@@ -253,7 +253,7 @@ struct HopperMatmulSM90Kernel[
         Self.num_pipeline_stages,
     ]
 
-    alias RingBuffer[tma_transfer: Bool = True] = RingBuffer[
+    comptime RingBuffer[tma_transfer: Bool = True] = RingBuffer[
         Self.a_type,
         Self.b_type,
         Self.a_smem_layout,
@@ -264,11 +264,11 @@ struct HopperMatmulSM90Kernel[
         tma_transfer,
     ]
 
-    alias RingBufferConsumer[
+    comptime RingBufferConsumer[
         origin: Origin[True], tma_transfer: Bool
     ] = RingBufferConsumer[origin, Self.RingBuffer[tma_transfer]]
 
-    alias WgmmaOp = TensorCoreAsync[
+    comptime WgmmaOp = TensorCoreAsync[
         Self.accum_type,
         Self.a_type,
         Self.b_type,
@@ -343,8 +343,8 @@ struct HopperMatmulSM90Kernel[
     @staticmethod
     @always_inline
     fn multicast_mask(rank_m: UInt, rank_n: UInt) -> Tuple[Int32, Int32]:
-        alias CLUSTER_N = Self.cluster_shape[0]
-        alias CLUSTER_M = Self.cluster_shape[1]
+        comptime CLUSTER_N = Self.cluster_shape[0]
+        comptime CLUSTER_M = Self.cluster_shape[1]
 
         # Setup multicast masks for cluster-wide data distribution
         var multicast_column_mask = 0
@@ -431,7 +431,7 @@ struct HopperMatmulSM90Kernel[
         Returns:
             Number of registers deallocated.
         """
-        alias num_regs = 24 if Self.num_consumer <= 2 else 32
+        comptime num_regs = 24 if Self.num_consumer <= 2 else 32
         warpgroup_reg_dealloc[num_regs]()
         return num_regs
 
@@ -475,7 +475,7 @@ struct HopperMatmulSM90Kernel[
         Returns:
             Swizzled block indices.
         """
-        alias use_cluster = Self.cluster_size > 1
+        comptime use_cluster = Self.cluster_size > 1
 
         @parameter
         if not use_cluster:
@@ -685,9 +685,11 @@ struct HopperMatmulSM90Kernel[
                         )
 
         # Calculate how many full pipeline iterations we need
-        alias num_full_k_iters = ceildiv(num_k_iters, Self.num_pipeline_stages)
+        comptime num_full_k_iters = ceildiv(
+            num_k_iters, Self.num_pipeline_stages
+        )
         # Handle uneven division: the last iteration may have fewer stages
-        alias num_remaining_k_iters = num_k_iters % Self.num_pipeline_stages
+        comptime num_remaining_k_iters = num_k_iters % Self.num_pipeline_stages
 
         @parameter
         if num_remaining_k_iters == 0:
@@ -740,8 +742,8 @@ struct HopperMatmulSM90Kernel[
             c: Output matrix C.
             lut_ptr: Lookup table for Hilbert curve block scheduling (optional).
         """
-        alias K = Self.b_layout.shape[1].value()
-        alias num_k_iters = ceildiv(K, Self.BK)
+        comptime K = Self.b_layout.shape[1].value()
+        comptime num_k_iters = ceildiv(K, Self.BK)
 
         # Initialize WgmmaOp and SMem first
         var wgmma_op = Self.WgmmaOp()
@@ -849,8 +851,8 @@ struct HopperMatmulSM90Kernel[
     ):
         """Split-K variant of the kernel for better load balancing on small problems.
         """
-        alias K = Self.b_layout.shape[1].value()
-        alias num_k_iters = K // Self.BK
+        comptime K = Self.b_layout.shape[1].value()
+        comptime num_k_iters = K // Self.BK
 
         # FIXME: this seems to trip some logits tests
         # constrained[(K % Self.BK) == 0, "K must be divisible by BK"]()
@@ -879,11 +881,13 @@ struct HopperMatmulSM90Kernel[
 
         Self.pipeline_init()
 
-        alias N = Self.b_layout.shape[0].value()
-        alias M = Self.a_layout.shape[0].value()
-        alias NUM_TILES = ceildiv(M, Self.BM) * ceildiv(N, Self.BN)
+        comptime N = Self.b_layout.shape[0].value()
+        comptime M = Self.a_layout.shape[0].value()
+        comptime NUM_TILES = ceildiv(M, Self.BM) * ceildiv(N, Self.BN)
 
-        alias workspace_layout = Layout.row_major(NUM_TILES, Self.BM, Self.BN)
+        comptime workspace_layout = Layout.row_major(
+            NUM_TILES, Self.BM, Self.BN
+        )
         var reduction_workspace = LayoutTensor(
             workspace_buffer.data,
             RuntimeLayout[workspace_layout].row_major(
@@ -891,8 +895,8 @@ struct HopperMatmulSM90Kernel[
             ),
         )
 
-        alias CLUSTER_N = UInt(Self.cluster_shape[0])
-        alias CLUSTER_M = UInt(Self.cluster_shape[1])
+        comptime CLUSTER_N = UInt(Self.cluster_shape[0])
+        comptime CLUSTER_M = UInt(Self.cluster_shape[1])
 
         var scheduler = SplitKTileScheduler[
             Index(N, K),
@@ -919,7 +923,7 @@ struct HopperMatmulSM90Kernel[
                     var m_coord = work_tile_info.m * Self.BM
                     var n_coord = work_tile_info.n * Self.BN
 
-                    alias work_k_tile_count = num_k_iters // splits
+                    comptime work_k_tile_count = num_k_iters // splits
                     var work_k_tile_start = work_tile_info.get_k_start()
 
                     Self.producer_main_loop[num_k_iters=work_k_tile_count](
@@ -950,7 +954,7 @@ struct HopperMatmulSM90Kernel[
             # Enter consumer mode
             with ring_buffer.consumer() as consumer:
                 while work_tile_info.is_valid():
-                    alias work_k_tile_count = num_k_iters // splits
+                    comptime work_k_tile_count = num_k_iters // splits
 
                     Self.consumer_main_loop[num_k_iters=work_k_tile_count](
                         wgmma_op,
@@ -1023,8 +1027,8 @@ struct HopperMatmulSM90Kernel[
         This variant handles multiple experts where each expert processes a subset of tokens.
         The a_offsets array indicates token boundaries for each expert.
         """
-        alias K = Self.b_layout.shape[1].value()
-        alias num_k_iters = K // Self.BK
+        comptime K = Self.b_layout.shape[1].value()
+        comptime num_k_iters = K // Self.BK
 
         # FIXME: this seems to trip some logits tests
         # constrained[(K % Self.BK) == 0, "K must be divisible by BK"]()
@@ -1069,11 +1073,11 @@ struct HopperMatmulSM90Kernel[
         # but we still need to zero out the output for this case.
         var skip_matmul = expert < 0
 
-        alias N = Self.c_layout.shape[1].value()
+        comptime N = Self.c_layout.shape[1].value()
         var b_start_row = expert * N
 
-        alias CLUSTER_N = UInt(Self.cluster_shape[0])
-        alias CLUSTER_M = UInt(Self.cluster_shape[1])
+        comptime CLUSTER_N = UInt(Self.cluster_shape[0])
+        comptime CLUSTER_M = UInt(Self.cluster_shape[1])
 
         # Split thread blocks into producer and consumer warp groups
         if warp_group_idx == 0:
@@ -1131,10 +1135,10 @@ struct HopperMatmulSM90Kernel[
             )
 
             # C layout for current expert
-            alias c_gmem_layout = Layout(
+            comptime c_gmem_layout = Layout(
                 IntTuple(UNKNOWN_VALUE, N), IntTuple(N, 1)
             )
-            alias c_gmem_type = LayoutTensor[
+            comptime c_gmem_type = LayoutTensor[
                 Self.c_type,
                 c_gmem_layout,
                 MutAnyOrigin,
@@ -1156,7 +1160,7 @@ struct HopperMatmulSM90Kernel[
             ](idx: IndexList[2], val: SIMD[dtype, width]):
                 @parameter
                 if Self.elementwise_lambda_fn:
-                    alias elementwise_epilogue = Self.elementwise_lambda_fn.value()
+                    comptime elementwise_epilogue = Self.elementwise_lambda_fn.value()
                     var batch_idx = IndexList[2](
                         Int(a_start_row + idx[0]), idx[1]
                     )
@@ -1217,8 +1221,10 @@ struct HopperMatmulSM90Kernel[
 
         var fp8_promotion_iter = 0
 
-        alias num_full_k_iters = ceildiv(num_k_iters, Self.num_pipeline_stages)
-        alias num_remaining_k_iters = num_k_iters % Self.num_pipeline_stages
+        comptime num_full_k_iters = ceildiv(
+            num_k_iters, Self.num_pipeline_stages
+        )
+        comptime num_remaining_k_iters = num_k_iters % Self.num_pipeline_stages
 
         # `num_pipeline_stages_to_unroll` determines how many pipeline stages should be unroll in the consumer loop;
         # if num_k_iters % pipeline_stages != 0 then for the last loop, we only unroll (num_k_iters % pipeline_stages) pipeline stages
@@ -1290,8 +1296,8 @@ struct HopperMatmulSM90Kernel[
             "Only support 2D layout in CUDA Core promotion",
         ]()
 
-        alias num_mma = c_reg_tile.layout.shape[0].value()
-        alias c_frag_size = c_reg_tile.layout.shape[1].value()
+        comptime num_mma = c_reg_tile.layout.shape[0].value()
+        comptime c_frag_size = c_reg_tile.layout.shape[1].value()
 
         # Add tensor core results to higher-precision accumulator
         @parameter
@@ -1314,7 +1320,7 @@ struct HopperMatmulSM90Kernel[
     ):
         warpgroup_fence(c_reg_tile)
         wgmma_op.arrive()
-        alias scale_c = 0 if Self.a_type is DType.float8_e4m3fn else 1
+        comptime scale_c = 0 if Self.a_type is DType.float8_e4m3fn else 1
         wgmma_op.wgmma[Self.num_consumer, scale_c=scale_c](
             a_tile,
             b_tile,

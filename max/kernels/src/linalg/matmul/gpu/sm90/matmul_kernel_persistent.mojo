@@ -52,8 +52,8 @@ __extension HopperMatmulSM90Kernel:
         c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
         problem_shape: IndexList[3],
     ):
-        alias K = b_layout.shape[1].value()
-        alias num_k_iters = ceildiv(K, Self.BK)
+        comptime K = b_layout.shape[1].value()
+        comptime num_k_iters = ceildiv(K, Self.BK)
 
         # Initialize WgmmaOp and SMem first
         var wgmma_op = Self.WgmmaOp()
@@ -79,8 +79,8 @@ __extension HopperMatmulSM90Kernel:
 
         Self.pipeline_init()
 
-        alias N = b_layout.shape[0].value()
-        alias M = a_layout.shape[0].value()
+        comptime N = b_layout.shape[0].value()
+        comptime M = a_layout.shape[0].value()
         var scheduler = TileScheduler[
             Index(M, N, K), block_tile_shape, grid_shape, schedule=schedule
         ](problem_shape)
@@ -167,8 +167,8 @@ __extension HopperMatmulSM90Kernel:
     ):
         """Kernel using cp.async for A/B loading when K alignment doesn't meet TMA requirements.
         """
-        alias K = b_layout.shape[1].value()
-        alias num_k_iters = ceildiv(K, Self.BK)
+        comptime K = b_layout.shape[1].value()
+        comptime num_k_iters = ceildiv(K, Self.BK)
 
         # Initialize WgmmaOp and SMem first
         var wgmma_op = Self.WgmmaOp()
@@ -190,7 +190,7 @@ __extension HopperMatmulSM90Kernel:
         )
 
         # Create TileLoaderCPAsync loaders
-        alias k_align = find_K_alignment_upto_16B(K * size_of[a_type]())
+        comptime k_align = find_K_alignment_upto_16B(K * size_of[a_type]())
         var a_loader, b_loader = Self.build_cpasync_loaders[k_align](a, b)
 
         Self.pipeline_init()

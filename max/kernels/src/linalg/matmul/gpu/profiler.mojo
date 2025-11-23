@@ -18,11 +18,11 @@ from gpu.host import DeviceContext
 from gpu import sm_id
 
 
-alias MatmulWarpSpecializationWorkSpaceManager[
+comptime MatmulWarpSpecializationWorkSpaceManager[
     max_entries_per_warp: UInt32
 ] = BlackwellWarpProfilingWorkspaceManager[1, 1, 1, 4, max_entries_per_warp]
 
-alias MatmulProfileWarp[
+comptime MatmulProfileWarp[
     warp_role: UInt32, max_entries_per_warp: UInt32
 ] = BlackwellProfileWarp[
     MatmulWarpSpecializationWorkSpaceManager[max_entries_per_warp](),
@@ -53,16 +53,16 @@ struct BlackwellWarpProfilingWorkspaceManager[
     """
 
     # load, scheduler, mma, epilogue
-    alias total_warp_roles = 4
+    comptime total_warp_roles = 4
 
     # how many values will be recorded per entry
-    alias total_data_points = 7
+    comptime total_data_points = 7
 
     # this header shows what each value in an entry symbolizes in a csv friendly format
-    alias header = "time_start,time_end,sm_id,block_idx_x,block_idx_y,role,entry_idx\n"
+    comptime header = "time_start,time_end,sm_id,block_idx_x,block_idx_y,role,entry_idx\n"
 
-    alias sm_count = B200.sm_count
-    alias entries_per_sm = Self.total_warp_roles * Self.max_entries_per_warp
+    comptime sm_count = B200.sm_count
+    comptime entries_per_sm = Self.total_warp_roles * Self.max_entries_per_warp
 
     @staticmethod
     @parameter
@@ -126,7 +126,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
         workspace: Span[UInt64, MutAnyOrigin],
         timeline: Tuple[UInt64, UInt64],
     ):
-        alias total_threads = WARP_SIZE * Self._get_warp_count[warp_role]()
+        comptime total_threads = WARP_SIZE * Self._get_warp_count[warp_role]()
 
         var start_idx = Self._get_workspace_offset[warp_role](sm_idx, entry_idx)
 
@@ -191,7 +191,7 @@ struct BlackwellProfileWarp[
     and writes a single entry to the workspace.
     """
 
-    alias enable_profiling = Self.max_entries_per_warp > 0
+    comptime enable_profiling = Self.max_entries_per_warp > 0
 
     var timeline: Tuple[UInt64, UInt64]
     var workspace: Span[UInt64, MutAnyOrigin]

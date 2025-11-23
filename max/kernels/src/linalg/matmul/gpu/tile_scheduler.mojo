@@ -27,8 +27,8 @@ from ...utils_gpu import block_swizzle
 struct RasterOrder(Hashable, ImplicitlyCopyable, Movable, Stringable, Writable):
     var _value: Int32
 
-    alias AlongN = Self(0)
-    alias AlongM = Self(1)
+    comptime AlongN = Self(0)
+    comptime AlongM = Self(1)
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -65,7 +65,7 @@ struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
     # Whether work tile is completely OOB.
     var is_valid_tile: Bool
 
-    alias INVALID_WORK_INFO = Self(0, 0, 0, 0, False)
+    comptime INVALID_WORK_INFO = Self(0, 0, 0, 0, False)
 
     @always_inline
     fn __init__(
@@ -115,10 +115,10 @@ struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
 struct MatmulSchedule(ImplicitlyCopyable, Movable):
     var _value: Int32
 
-    alias NONE = Self(0)
-    alias TILE1D = Self(1)
-    alias TILE2D = Self(2)
-    alias DS_SCHEDULER = Self(3)
+    comptime NONE = Self(0)
+    comptime TILE1D = Self(1)
+    comptime TILE2D = Self(2)
+    comptime DS_SCHEDULER = Self(3)
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -146,12 +146,12 @@ struct TileScheduler[
     # grid_shape[0], [1] map to x, y, to N and M in output matrix.
     # tile_shape[0], [1] map to M and N
     # wave_shape[0], [1] map to M and N
-    alias wave_shape = Index[dtype = DType.uint32](
+    comptime wave_shape = Index[dtype = DType.uint32](
         Self.tile_shape[0] * Self.grid_shape[1],
         Self.tile_shape[1] * Self.grid_shape[0],
     )
     # This has to match the grid dimension for the kernel launch.
-    alias num_grids: UInt32 = Self.grid_shape[0] * Self.grid_shape[1]
+    comptime num_grids: UInt32 = Self.grid_shape[0] * Self.grid_shape[1]
     var idx: UInt32
     var prob_shape: IndexList[3]  # M x N x K
     var num_waves_m: UInt32
@@ -163,8 +163,8 @@ struct TileScheduler[
     var num_aligned_m_blocks: UInt32  # Number of blocks needed for the M dimension
     var num_blocks: UInt32  # Total number of blocks for non-masked types
 
-    alias kNum1DBlocksPerGroup: UInt32 = 16
-    alias kNumNBlocks: UInt32 = ceildiv(
+    comptime kNum1DBlocksPerGroup: UInt32 = 16
+    comptime kNumNBlocks: UInt32 = ceildiv(
         Self.problem_shape[1], Self.tile_shape[1]
     )
 
@@ -275,8 +275,8 @@ struct TileScheduler[
     @always_inline
     fn _index_to_mn_tile2d(self) -> Tuple[UInt, UInt]:
         # We consider a sweep on busy SMs a wave, not all SMs
-        alias log_num_grids = FastDiv[DType.uint32](Int(Self.num_grids))
-        alias log_grid_shape = FastDiv[DType.uint32](Int(Self.grid_shape[0]))
+        comptime log_num_grids = FastDiv[DType.uint32](Int(Self.num_grids))
+        comptime log_grid_shape = FastDiv[DType.uint32](Int(Self.grid_shape[0]))
 
         num_waves_executed = Int(self.idx) / log_num_grids
         idx_in_wave = Int(self.idx) % log_num_grids
@@ -337,8 +337,8 @@ struct TileScheduler[
 
         # Swizzle for better L2 usages
         var primary_num_blocks = num_m_blocks
-        alias secondary_num_blocks = Self.kNumNBlocks
-        alias num_blocks_per_group = secondary_num_blocks * Self.kNum1DBlocksPerGroup
+        comptime secondary_num_blocks = Self.kNumNBlocks
+        comptime num_blocks_per_group = secondary_num_blocks * Self.kNum1DBlocksPerGroup
         var group_idx = block_idx / num_blocks_per_group
         var first_block_idx = group_idx * Self.kNum1DBlocksPerGroup
         var in_group_idx = block_idx % num_blocks_per_group

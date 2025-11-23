@@ -69,7 +69,7 @@ struct TuningConfigSM90(TuningConfig):
 fn _get_tuning_list_bf16[mma_k: Int, BK: Int]() -> List[TuningConfigSM90]:
     # kprofile -s open-source/max/max/kernels/src/linalg/matmul/gpu/sm90/tuning.mojo.snippet open-source/max/max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml
     # ----------------BEGIN-TUNING-LIST-BF16----------------
-    alias config_list = [
+    comptime config_list = [
         # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
         # index: [0]
         TuningConfigSM90(

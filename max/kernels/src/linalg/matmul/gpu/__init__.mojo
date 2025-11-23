@@ -63,7 +63,7 @@ from .sm90.dispatch import matmul_dispatch_sm90
 from .sm100.dispatch import matmul_dispatch_sm100
 from .sm100.matmul import matmul_sm100_fallback
 
-alias logger = Logger()
+comptime logger = Logger()
 
 
 fn matmul_kernel[
@@ -178,7 +178,7 @@ fn matmul_kernel[
 
         @parameter
         if elementwise_lambda_fn:
-            alias elementwise_lambda = elementwise_lambda_fn.value()
+            comptime elementwise_lambda = elementwise_lambda_fn.value()
             elementwise_lambda[c_type, 1](
                 Index(row, col), result.cast[c_type]()
             )
@@ -229,7 +229,7 @@ fn matmul_kernel_naive[
 
     @parameter
     if elementwise_lambda_fn:
-        alias elementwise_lambda = elementwise_lambda_fn.value()
+        comptime elementwise_lambda = elementwise_lambda_fn.value()
         elementwise_lambda[c_type, 1](Index(x, y), accum.cast[c_type]())
     else:
         c[x, y] = accum.cast[c_type]()
@@ -256,7 +256,7 @@ fn _amdgpu_matmul_config_from_block_shape[
 ](block_shape: IndexList[2]) -> MatmulConfig[
     a_type, b_type, c_type, transpose_b
 ]:
-    alias max_num_warps: UInt = 4
+    comptime max_num_warps: UInt = 4
 
     var block_m = block_shape[0]
     var block_n = block_shape[1]
@@ -306,10 +306,10 @@ fn _amdgpu_matmul_config_from_block_shape[
 
 
 fn _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
-    alias sm_count = Int(GPUInfo.from_name[_accelerator_arch()]().sm_count)
+    comptime sm_count = Int(GPUInfo.from_name[_accelerator_arch()]().sm_count)
 
-    alias block_sizes_alias = [16, 32, 64, 96, 128, 160, 192, 224, 256]
-    alias len_block_sizes = len(block_sizes_alias)
+    comptime block_sizes_alias = [16, 32, 64, 96, 128, 160, 192, 224, 256]
+    comptime len_block_sizes = len(block_sizes_alias)
 
     var block_sizes = materialize[block_sizes_alias]()
     var emit_block_shape = InlineArray[Bool, len_block_sizes * len_block_sizes](
@@ -383,9 +383,9 @@ fn _matmul_gpu[
     b: NDBuffer[b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises:
-    alias a_shape = a.shape
-    alias b_shape = b.shape
-    alias c_shape = c.shape
+    comptime a_shape = a.shape
+    comptime b_shape = b.shape
+    comptime c_shape = c.shape
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
     var n = shape.N
@@ -403,13 +403,13 @@ fn _matmul_gpu[
         sep="",
     )
 
-    alias matmul_supported_format_nvidia = (
+    comptime matmul_supported_format_nvidia = (
         a_type in (DType.float32, DType.bfloat16)
         and b_type in (DType.float32, DType.bfloat16)
         and c_type in (DType.float32, DType.bfloat16)
     )
 
-    alias amd_float8_dtypes = (
+    comptime amd_float8_dtypes = (
         DType.float8_e4m3fn,
         DType.float8_e5m2,
     ) if ctx.default_device_info is MI355X else (
@@ -417,13 +417,13 @@ fn _matmul_gpu[
         DType.float8_e5m2fnuz,
     )
 
-    alias matmul_supported_format_amd = (
+    comptime matmul_supported_format_amd = (
         (a_type is DType.bfloat16 or a_type in amd_float8_dtypes)
         and b_type == a_type
         and c_type in (DType.float32, DType.bfloat16)
     )
 
-    alias matmul_supported_format = matmul_supported_format_amd if has_amd_gpu_accelerator() else matmul_supported_format_nvidia
+    comptime matmul_supported_format = matmul_supported_format_amd if has_amd_gpu_accelerator() else matmul_supported_format_nvidia
 
     # Only the H100 version of gemm supports the compute lambda
     # For the other kernels we wrap it around an epilogue lambda instead.
@@ -435,7 +435,7 @@ fn _matmul_gpu[
     ](coords: IndexList[2], val: SIMD[_dtype, _width]):
         @parameter
         if elementwise_compute_lambda_fn:
-            alias compute_lambda = elementwise_compute_lambda_fn.value()
+            comptime compute_lambda = elementwise_compute_lambda_fn.value()
             var output = compute_lambda(coords, val)
             constrained[
                 output.dtype == c.type,
@@ -445,7 +445,9 @@ fn _matmul_gpu[
                 coords, rebind[SIMD[c.type, _width]](output)
             )
 
-    alias elementwise_lambda_wrapper = OptionalReg[elementwise_epilogue_type](
+    comptime elementwise_lambda_wrapper = OptionalReg[
+        elementwise_epilogue_type
+    ](
         compute_lambda_wrapper
     ) if elementwise_compute_lambda_fn else elementwise_lambda_fn
 
@@ -471,7 +473,7 @@ fn _matmul_gpu[
     )
     # fmt: off
     # Require Static K, N in A, B, C
-    alias has_static_NK = b_shape.all_known[2]() \
+    comptime has_static_NK = b_shape.all_known[2]() \
                       and a_shape.has_value[1]() \
                       and c_shape.has_value[1]()
 
@@ -487,12 +489,12 @@ fn _matmul_gpu[
             config=config,
         ](c, a, b, ctx)
 
-    alias use_experimental_kernels = Bool(
+    comptime use_experimental_kernels = Bool(
         env_get_int["USE_EXPERIMENTAL_KERNELS", 0]()
     )
 
-    alias bf16_or_fp16 = (DType.bfloat16, DType.float16)
-    alias bf16_or_fp16_fp32 = (DType.bfloat16, DType.float16, DType.float32)
+    comptime bf16_or_fp16 = (DType.bfloat16, DType.float16)
+    comptime bf16_or_fp16_fp32 = (DType.bfloat16, DType.float16, DType.float32)
 
     @parameter
     if (
@@ -577,8 +579,8 @@ fn _matmul_gpu[
             if config:
                 return _multistage_gemm[config.value()]()
 
-            alias static_N = c_shape.get[1]()
-            alias static_K = a_shape.get[1]()
+            comptime static_N = c_shape.get[1]()
+            comptime static_K = a_shape.get[1]()
 
             @parameter
             if has_amd_gpu_accelerator():
@@ -592,7 +594,7 @@ fn _matmul_gpu[
                     num_k_partitions: Int = 1,
                     num_pipeline_stages: Int = 1,
                 ]() raises:
-                    alias config = MatmulConfig[
+                    comptime config = MatmulConfig[
                         a_type, b_type, c_type, transpose_b
                     ](
                         block_tile_shape=Index(
@@ -612,17 +614,17 @@ fn _matmul_gpu[
                 if not transpose_b:
                     return kernel_helper[128, 128, num_pipeline_stages=2]()
                 elif env_get_bool["AUTOTUNING_MODE", False]():
-                    alias block_m = env_get_int["TUNE_BM", 128]()
-                    alias block_n = env_get_int["TUNE_BN", 128]()
-                    alias num_k_partitions = env_get_int[
+                    comptime block_m = env_get_int["TUNE_BM", 128]()
+                    comptime block_n = env_get_int["TUNE_BN", 128]()
+                    comptime num_k_partitions = env_get_int[
                         "TUNE_NUM_K_PARTITIONS", 1
                     ]()
                     return kernel_helper[
                         block_m, block_n, num_k_partitions=num_k_partitions
                     ]()
 
-                alias sm_count = Int(ctx.default_device_info.sm_count)
-                alias block_shape_list = _amdgpu_matmul_build_block_shape_list[
+                comptime sm_count = Int(ctx.default_device_info.sm_count)
+                comptime block_shape_list = _amdgpu_matmul_build_block_shape_list[
                     static_N
                 ]()
 
@@ -634,10 +636,10 @@ fn _matmul_gpu[
 
                 @parameter
                 for i in range(len(block_shape_list)):
-                    alias block_shape = block_shape_list[i]
-                    alias block_m = block_shape[0]
-                    alias block_n = block_shape[1]
-                    alias n_blocks = ceildiv(static_N, block_n)
+                    comptime block_shape = block_shape_list[i]
+                    comptime block_m = block_shape[0]
+                    comptime block_n = block_shape[1]
+                    comptime n_blocks = ceildiv(static_N, block_n)
 
                     var m_blocks = ceildiv(m, block_m)
                     var total_blocks = m_blocks * n_blocks
@@ -651,14 +653,16 @@ fn _matmul_gpu[
                 @parameter
                 for i in range(len(block_shape_list)):
                     if best_idx == i:
-                        alias config = _amdgpu_matmul_config_from_block_shape[
+                        comptime config = _amdgpu_matmul_config_from_block_shape[
                             c_type,
                             a_type,
                             b_type,
                             transpose_b,
                             static_K,
                             pdl_level,
-                        ](block_shape_list[i])
+                        ](
+                            block_shape_list[i]
+                        )
                         return _multistage_gemm[config]()
 
                 return kernel_helper[128, 128]()
@@ -672,7 +676,7 @@ fn _matmul_gpu[
                     and ctx.default_device_info is A100
                     and transpose_b
                 ):
-                    alias Ms: List[Int32] = [
+                    comptime Ms: List[Int32] = [
                         16,
                         32,
                         64,
@@ -689,10 +693,10 @@ fn _matmul_gpu[
                         @parameter
                         for M in Ms:
                             if M <= m:
-                                alias key = String(
+                                comptime key = String(
                                     M, "_", static_N, "_", static_K
                                 )
-                                alias curr_config = create_matmul_configs_ampere[
+                                comptime curr_config = create_matmul_configs_ampere[
                                     key, a_type, b_type, c_type, transpose_b
                                 ]()
                                 if curr_config.num_pipeline_stages == 0:
@@ -702,7 +706,7 @@ fn _matmul_gpu[
                     except:
                         pass
 
-                alias kernels = MatmulKernels[
+                comptime kernels = MatmulKernels[
                     a_type, b_type, c_type, transpose_b
                 ]()
 
@@ -730,7 +734,7 @@ fn _matmul_gpu[
             ](c, a, b, ctx)
             return
 
-    alias vendor_blas_fallback_dtypes = (
+    comptime vendor_blas_fallback_dtypes = (
         DType.float32,
         DType.float16,
         DType.bfloat16,
@@ -756,13 +760,13 @@ fn _matmul_gpu[
             logger.warning("Vendor BLAS failed")
 
     logger.info("Executing: Naive MATMUL kernel")
-    alias BLOCK_DIM = 16
+    comptime BLOCK_DIM = 16
 
     var c_layout_tensor = from_ndbuffer_row_major(c)
     var a_layout_tensor = from_ndbuffer_row_major(a)
     var b_layout_tensor = from_ndbuffer_row_major(b)
 
-    alias kernel = matmul_kernel_naive[
+    comptime kernel = matmul_kernel_naive[
         c_type,
         a_type,
         b_type,
@@ -798,7 +802,7 @@ fn split_k_reduce[
     work_space: LayoutTensor[work_space_type, work_space_layout],
     ctx: DeviceContext,
 ) raises:
-    alias simd_width = simd_width_of[c_type, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[c_type, target = get_gpu_target()]()
     var num_partitions = work_space.dim[0]()
     var M = c.dim[0]()
     var N = c.dim[1]()
@@ -816,11 +820,11 @@ fn split_k_reduce[
                 Index(k, c_coord[0], c_coord[1])
             )
 
-        alias align = align_of[SIMD[c_type, simd_width]]()
+        comptime align = align_of[SIMD[c_type, simd_width]]()
 
         @parameter
         if elementwise_lambda_fn:
-            alias epilogue = elementwise_lambda_fn.value()
+            comptime epilogue = elementwise_lambda_fn.value()
             epilogue[alignment=align](
                 rebind[IndexList[2]](c_coord), vec.cast[c_type]()
             )
@@ -862,7 +866,7 @@ fn multistage_gemm[
     @parameter
     if has_amd_gpu_accelerator() and transpose_b:
         logger.info("Executing: AMD standard GEMM (no split-K)")
-        alias gemm_kernel_type = gemm_kernel_amd[
+        comptime gemm_kernel_type = gemm_kernel_amd[
             c_type,
             tensor_c.layout,
             a_type,
@@ -890,7 +894,7 @@ fn multistage_gemm[
 
     else:
         logger.info("Executing: standard GEMM (no split-K)")
-        alias gemm_kernel_type = multistage_gemm_kernel[
+        comptime gemm_kernel_type = multistage_gemm_kernel[
             c_type,
             tensor_c.layout,
             a_type,
@@ -953,12 +957,12 @@ fn multistage_gemm[
         logger.info(
             "Executing: split-K with parallel reduction (workspace-based)"
         )
-        alias work_space_type = config.split_k_reduction_type
+        comptime work_space_type = config.split_k_reduction_type
         var work_space_data = ctx.enqueue_create_buffer[work_space_type](
             Int(runtime_config.num_k_partitions * UInt(M) * UInt(N))
         )
-        alias static_N = tensor_c.layout.shape[1].value()
-        alias work_space_layout = Layout.row_major(
+        comptime static_N = tensor_c.layout.shape[1].value()
+        comptime work_space_layout = Layout.row_major(
             UNKNOWN_VALUE, UNKNOWN_VALUE, static_N
         )
         var work_space_runtime_layout = RuntimeLayout[
@@ -971,7 +975,7 @@ fn multistage_gemm[
             MutAnyOrigin,
         ](work_space_data, work_space_runtime_layout)
 
-        alias gemm_kernel_type = multistage_gemm_split_k_kernel[
+        comptime gemm_kernel_type = multistage_gemm_split_k_kernel[
             c_type,
             tensor_c.layout,
             a_type,
@@ -1022,7 +1026,7 @@ fn multistage_gemm[
     @parameter
     if has_amd_gpu_accelerator() and transpose_b:
         logger.info("Executing: AMD standard GEMM (no split-K)")
-        alias gemm_kernel_type = gemm_kernel_amd[
+        comptime gemm_kernel_type = gemm_kernel_amd[
             c_type,
             tensor_c.layout,
             a_type,
@@ -1049,7 +1053,7 @@ fn multistage_gemm[
 
     else:
         logger.info("Executing: standard GEMM (no split-K)")
-        alias gemm_kernel_type = multistage_gemm_kernel[
+        comptime gemm_kernel_type = multistage_gemm_kernel[
             c_type,
             tensor_c.layout,
             a_type,

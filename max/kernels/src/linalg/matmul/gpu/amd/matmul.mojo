@@ -57,7 +57,7 @@ from .._multistage_gemm_gpu import (
 )
 from itertools import product
 
-alias SMemWarpTileType[
+comptime SMemWarpTileType[
     _dtype: DType, layout: Layout, warp_rows: Int, warp_cols: Int
 ] = SMemTileType[_dtype, layout].TileType[warp_rows, warp_cols]
 """Type alias for warp-level shared memory tiles with specified dimensions."""
@@ -75,9 +75,9 @@ struct MmaOpAMD[
     out_frag_size: Int,
     swizzle: Swizzle,
 ]:
-    alias simd_width = simd_width_of[Self.in_type]()
-    alias alignment = align_of[SIMD[Self.in_type, Self.simd_width]]()
-    alias tensor_core_mma = TiledTensorCore[
+    comptime simd_width = simd_width_of[Self.in_type]()
+    comptime alignment = align_of[SIMD[Self.in_type, Self.simd_width]]()
+    comptime tensor_core_mma = TiledTensorCore[
         Self.out_type,
         Self.in_type,
         Self.shape,
@@ -85,11 +85,11 @@ struct MmaOpAMD[
         Self.transpose_b,
     ]()
 
-    alias reg_tile_layout[num_mmas: Int] = Layout.row_major(
+    comptime reg_tile_layout[num_mmas: Int] = Layout.row_major(
         num_mmas * Self.num_k_tiles, Self.simd_width
     )
 
-    alias RegTileType[num_mmas: Int] = RegTileType[
+    comptime RegTileType[num_mmas: Int] = RegTileType[
         Self.in_type, Self.reg_tile_layout[num_mmas]
     ]
 
@@ -99,10 +99,10 @@ struct MmaOpAMD[
 
     # FIXME: We didn't use to support 3D layouts, now we do.
     # This should really be Layout.row_major(num_m_mmas, num_n_mmas, out_frag_size)
-    alias out_reg_layout = Layout.row_major(
+    comptime out_reg_layout = Layout.row_major(
         Self.num_m_mmas * Self.num_n_mmas, Self.out_frag_size
     )
-    alias OutRegTileType = RegTileType[Self.out_type, Self.out_reg_layout]
+    comptime OutRegTileType = RegTileType[Self.out_type, Self.out_reg_layout]
 
     # Accumulation registers for result
     var out_reg_tile: Self.OutRegTileType
@@ -175,7 +175,7 @@ struct MMATileBuffers[
     # Tensor types for different memory regions
 
     # Shared memory tiles
-    alias SMemTileType = SMemTileType[Self._dtype, Self.smem_layout]
+    comptime SMemTileType = SMemTileType[Self._dtype, Self.smem_layout]
     var smem_tile: Self.SMemTileType
 
     # View on Shared memory tiles optimized for MmaOp
@@ -184,7 +184,7 @@ struct MMATileBuffers[
     ]
 
     # Register tile fragments for data movement from GMEM to SMEM
-    alias MMARegTileType = RegTileType[Self._dtype, Self.reg_tile_layout]
+    comptime MMARegTileType = RegTileType[Self._dtype, Self.reg_tile_layout]
     var load_reg_tile: Self.MMARegTileType
 
     @always_inline
@@ -215,7 +215,7 @@ struct MMATileBuffers[
 
         Uses structured thread cooperation to efficiently transfer data.
         """
-        alias simd_width = simd_width_of[Self._dtype]()
+        comptime simd_width = simd_width_of[Self._dtype]()
         copy_local_to_shared[Self.thread_layout, Self.swizzle, row_major=True](
             self.smem_tile.vectorize(),
             self.load_reg_tile.vectorize(),
@@ -296,57 +296,57 @@ fn gemm_kernel_amd[
     constrained[a_type == b_type, "a and b must have same type"]()
 
     # Type and shape aliases
-    alias accum_type = get_accum_type[a_type]()
+    comptime accum_type = get_accum_type[a_type]()
 
     # Block-level tile dimensions
-    alias BM = config.block_tile_shape[0]
-    alias BN = config.block_tile_shape[1]
-    alias BK = config.block_tile_shape[2] * Int(config.num_warp_k_partitions)
+    comptime BM = config.block_tile_shape[0]
+    comptime BN = config.block_tile_shape[1]
+    comptime BK = config.block_tile_shape[2] * Int(config.num_warp_k_partitions)
 
     # Warp-level tile dimensions
-    alias WM = config.warp_tile_shape[0]
-    alias WN = config.warp_tile_shape[1]
-    alias WK = config.warp_tile_shape[2]
+    comptime WM = config.warp_tile_shape[0]
+    comptime WN = config.warp_tile_shape[1]
+    comptime WK = config.warp_tile_shape[2]
 
     # Matrix multiply instruction dimensions
-    alias MMA_M = config.mma_shape[0]
-    alias MMA_N = config.mma_shape[1]
-    alias MMA_K = config.mma_shape[2]
+    comptime MMA_M = config.mma_shape[0]
+    comptime MMA_N = config.mma_shape[1]
+    comptime MMA_K = config.mma_shape[2]
 
     # SIMD and vectorization parameters
-    alias simd_width = simd_width_of[a_type]()
+    comptime simd_width = simd_width_of[a_type]()
 
     # Warp organization
-    alias num_warps_m = BM // WM
-    alias num_warps_n = BN // WN
-    alias num_warps_k = BK // WK
+    comptime num_warps_m = BM // WM
+    comptime num_warps_n = BN // WN
+    comptime num_warps_k = BK // WK
 
     # MMA instruction tiling
-    alias num_m_mmas = WM // MMA_M
-    alias num_n_mmas = WN // MMA_N
-    alias num_k_mmas = WK // MMA_K
+    comptime num_m_mmas = WM // MMA_M
+    comptime num_n_mmas = WN // MMA_N
+    comptime num_k_mmas = WK // MMA_K
 
     # K dimension tiling
-    alias frag_size = MMA_M * MMA_K // WARP_SIZE
-    alias c_frag_size = MMA_M * MMA_N // WARP_SIZE
-    alias k_group_size = simd_width // frag_size
-    alias k_tile_size = MMA_K * k_group_size
-    alias num_k_tiles = WK // k_tile_size
+    comptime frag_size = MMA_M * MMA_K // WARP_SIZE
+    comptime c_frag_size = MMA_M * MMA_N // WARP_SIZE
+    comptime k_group_size = simd_width // frag_size
+    comptime k_tile_size = MMA_K * k_group_size
+    comptime num_k_tiles = WK // k_tile_size
 
     # Matrix dimensions from input tensors
     var M = a.dim[0]()
 
-    alias N = b.shape[0 if transpose_b else 1]()
+    comptime N = b.shape[0 if transpose_b else 1]()
     constrained[N != UNKNOWN_VALUE, "N should be known at compile time"]()
 
     var K = b.dim[1 if transpose_b else 0]()
 
-    alias stride = b.stride[0 if transpose_b else 1]()
+    comptime stride = b.stride[0 if transpose_b else 1]()
     constrained[
         stride != UNKNOWN_VALUE, "stride should be known at compile time"
     ]()
 
-    alias c_stride = c.stride[0]()
+    comptime c_stride = c.stride[0]()
     constrained[
         c_stride != UNKNOWN_VALUE, "c_stride should be known at compile time"
     ]()
@@ -357,7 +357,7 @@ fn gemm_kernel_amd[
     var warp_k, warp_m = divmod(warp_km, num_warps_m)
 
     # Swizzle pattern for SMEM tiles
-    alias swizzle = Swizzle(3, 0, 1)
+    comptime swizzle = Swizzle(3, 0, 1)
 
     # SMEM tile layout
     @always_inline
@@ -388,9 +388,9 @@ fn gemm_kernel_amd[
         # └─────────────────────────────────────────────────────────────────────────┘
         # stride between blocks = block_rows x k_tile_size = 64 x 32 = 2048
 
-        alias base_layout = Layout.row_major(block_rows, k_tile_size)
-        alias num_repeats = block_cols // k_tile_size
-        alias tiler_layout = Layout.row_major(1, num_repeats)
+        comptime base_layout = Layout.row_major(block_rows, k_tile_size)
+        comptime num_repeats = block_cols // k_tile_size
+        comptime tiler_layout = Layout.row_major(1, num_repeats)
         return blocked_product(base_layout, tiler_layout, coalesce_output=True)
 
     # Helper function for thread layout
@@ -407,17 +407,21 @@ fn gemm_kernel_amd[
         # | T68 T69 T70 T71 | T84 T85 T86 T87 |
         # | T72 T73 T74 T75 | T88 T89 T90 T91 |
         # | T76 T77 T78 T79 | T92 T93 T94 T95 |
-        alias inner_block_size = 16
-        alias inner_block_cols = k_tile_size // simd_width
-        alias inner_block_rows = inner_block_size // inner_block_cols
+        comptime inner_block_size = 16
+        comptime inner_block_cols = k_tile_size // simd_width
+        comptime inner_block_rows = inner_block_size // inner_block_cols
 
-        alias base_layout = Layout.row_major(inner_block_rows, inner_block_cols)
+        comptime base_layout = Layout.row_major(
+            inner_block_rows, inner_block_cols
+        )
 
-        alias num_repeats_col = BK // k_tile_size
-        alias outer_block_size = num_repeats_col * inner_block_size
-        alias num_repeats_row = config.num_threads() // UInt(outer_block_size)
+        comptime num_repeats_col = BK // k_tile_size
+        comptime outer_block_size = num_repeats_col * inner_block_size
+        comptime num_repeats_row = config.num_threads() // UInt(
+            outer_block_size
+        )
 
-        alias tiler_layout = Layout.row_major(
+        comptime tiler_layout = Layout.row_major(
             Int(num_repeats_row),
             num_repeats_col,
         )
@@ -437,7 +441,7 @@ fn gemm_kernel_amd[
         swizzle=swizzle,
     ]()
 
-    alias thread_layout = get_thread_layout()
+    comptime thread_layout = get_thread_layout()
 
     # A tensor tiles manager
     var a_tiles = MMATileBuffers[
@@ -482,7 +486,7 @@ fn gemm_kernel_amd[
     )
 
     # SMem storage for Split-K Reduction
-    alias SplitKReductionSMem = WarpSplitKReductionSMem[
+    comptime SplitKReductionSMem = WarpSplitKReductionSMem[
         accum_type,
         BM,
         BN,
@@ -522,34 +526,34 @@ fn gemm_kernel_amd[
     @always_inline
     @parameter
     fn schedule_loop_body():
-        alias threads_per_row = BK // simd_width
-        alias rows_per_thread_block = config.num_threads() // UInt(
+        comptime threads_per_row = BK // simd_width
+        comptime rows_per_thread_block = config.num_threads() // UInt(
             threads_per_row
         )
-        alias a_loads_per_thread = BM // Int(rows_per_thread_block)
-        alias b_loads_per_thread = BN // Int(rows_per_thread_block)
+        comptime a_loads_per_thread = BM // Int(rows_per_thread_block)
+        comptime b_loads_per_thread = BN // Int(rows_per_thread_block)
 
-        alias num_mn_mmas = num_m_mmas + num_n_mmas
+        comptime num_mn_mmas = num_m_mmas + num_n_mmas
 
         # Compute the number of MMA and smem load/store operations for the loop body.
-        alias num_mma_ops = num_m_mmas * num_n_mmas * num_k_mmas
-        alias num_smem_store_ops = a_loads_per_thread + b_loads_per_thread
-        alias num_smem_load_ops = num_mn_mmas * num_k_tiles
+        comptime num_mma_ops = num_m_mmas * num_n_mmas * num_k_mmas
+        comptime num_smem_store_ops = a_loads_per_thread + b_loads_per_thread
+        comptime num_smem_load_ops = num_mn_mmas * num_k_tiles
 
         # Compute the number of MMA operations to distribute across the smem loads.
         # The distribution is dependent on the latency of the MMA operation: MMA operations
         # that have a shape 32x32x8 execute in twice the cycles of 16x16x16, so account
         # for that here. Also defensively guard against underflow of the remaining MMA
         # operations.
-        alias mmas_per_smem_load = min(
+        comptime mmas_per_smem_load = min(
             1 if MMA_M == MMA_N == 32 else 2, num_mma_ops // num_smem_load_ops
         )
-        alias num_remaining_mma_ops = num_mma_ops - num_smem_load_ops * mmas_per_smem_load
+        comptime num_remaining_mma_ops = num_mma_ops - num_smem_load_ops * mmas_per_smem_load
 
         # Distribute the remaining MMA operations across the smem stores and global
         # memory loads.
-        alias mmas_per_smem_store = num_remaining_mma_ops // num_smem_store_ops
-        alias mmas_per_smem_store_extra = num_remaining_mma_ops % num_smem_store_ops
+        comptime mmas_per_smem_store = num_remaining_mma_ops // num_smem_store_ops
+        comptime mmas_per_smem_store_extra = num_remaining_mma_ops % num_smem_store_ops
 
         @parameter
         for i in range(num_mn_mmas * (num_k_tiles - 1)):
@@ -560,7 +564,7 @@ fn gemm_kernel_amd[
 
         @parameter
         for i in range(num_smem_store_ops):
-            alias mmas_this_smem_store = (
+            comptime mmas_this_smem_store = (
                 mmas_per_smem_store + 1
             ) if i < mmas_per_smem_store_extra else mmas_per_smem_store
 
@@ -680,7 +684,9 @@ fn gemm_kernel_amd[
     var c_warp_tile = c_block_tile.tile[WM, WN](warp_m, warp_n)
 
     # Equivalent to Layout.col_major(MMA_M, WARP_SIZE // MMA_M)
-    alias output_thread_layout = Layout.col_major(MMA_M, MMA_N // c_frag_size)
+    comptime output_thread_layout = Layout.col_major(
+        MMA_M, MMA_N // c_frag_size
+    )
 
     constrained[
         c_warp_tile.layout.all_dims_known(),
@@ -690,7 +696,7 @@ fn gemm_kernel_amd[
     @parameter
     if Bool(elementwise_lambda_fn) or (N % BN != 0):
         # 3D view on the output register fragments, see FIXME note on out_reg_layout
-        alias out_frag_layout = Layout(
+        comptime out_frag_layout = Layout(
             IntTuple(num_m_mmas, num_n_mmas, c_frag_size),
             IntTuple(c_frag_size, num_m_mmas * c_frag_size, 1),
         )
@@ -784,8 +790,8 @@ fn write_output_fragments[
     var max_valid_frag_n = (N - thread_tile_n + MMA_N - 1) // MMA_N
 
     # Output fragment dimensions
-    alias frag_height = c_gmem_fragment.layout.shape[0].value()
-    alias frag_width = c_gmem_fragment.layout.shape[1].value()
+    comptime frag_height = c_gmem_fragment.layout.shape[0].value()
+    comptime frag_width = c_gmem_fragment.layout.shape[1].value()
 
     @parameter
     for frag_m, frag_n in product(range(frag_height), range(frag_width)):
@@ -800,7 +806,7 @@ fn write_output_fragments[
                     elementwise_lambda_fn is not None,
                     "elementwise_lambda_fn is not valid",
                 ]()
-                alias epilogue_fn = elementwise_lambda_fn.value()
+                comptime epilogue_fn = elementwise_lambda_fn.value()
 
                 # Compute global coordinates
                 var m = thread_tile_m + frag_m * MMA_M

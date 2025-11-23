@@ -71,20 +71,20 @@ struct MatmulTileWriter[
         elementwise_compute_lambda_type
     ] = None,
 ]:
-    alias N = Self.layout.shape[1].value()
-    alias frag_size = Self.wgmma_shape[0] * Self.wgmma_shape[
+    comptime N = Self.layout.shape[1].value()
+    comptime frag_size = Self.wgmma_shape[0] * Self.wgmma_shape[
         1
     ] // WARPGROUP_SIZE
-    alias num_m_mmas = Self.BM // Self.wgmma_shape[0] // Self.num_consumer
-    alias num_n_mmas = Self.BN // Self.wgmma_shape[1]
-    alias num_consumer_threads = Self.num_consumer * WARPGROUP_SIZE
-    alias simd_size = simd_width_of[Self.dtype]()
+    comptime num_m_mmas = Self.BM // Self.wgmma_shape[0] // Self.num_consumer
+    comptime num_n_mmas = Self.BN // Self.wgmma_shape[1]
+    comptime num_consumer_threads = Self.num_consumer * WARPGROUP_SIZE
+    comptime simd_size = simd_width_of[Self.dtype]()
 
     # Layout dimensions
-    alias WG_BM = Self.smem_tile_layout.shape[0].value()
-    alias WG_BN = Self.smem_tile_layout.shape[1].value()
+    comptime WG_BM = Self.smem_tile_layout.shape[0].value()
+    comptime WG_BN = Self.smem_tile_layout.shape[1].value()
 
-    alias CTensorType = LayoutTensor[
+    comptime CTensorType = LayoutTensor[
         Self.dtype,
         Self.layout,
         MutAnyOrigin,
@@ -95,7 +95,7 @@ struct MatmulTileWriter[
         masked = Self.masked,
         alignment = Self.alignment,
     ]
-    alias lambda_type = fn[dtype: DType, width: Int, *, alignment: Int = 1] (
+    comptime lambda_type = fn[dtype: DType, width: Int, *, alignment: Int = 1] (
         IndexList[2], mut SIMD[dtype, width]
     ) capturing -> None
 
@@ -152,9 +152,9 @@ struct MatmulTileWriter[
     ):
         """Apply epilogue operations (bias, activation) to shared memory data.
         """
-        alias epilogue = epilogue_fn
-        alias smem_swizzle = make_ldmatrix_swizzle[Self.dtype, Self.WG_BN]()
-        alias thread_layout = Layout.row_major(
+        comptime epilogue = epilogue_fn
+        comptime smem_swizzle = make_ldmatrix_swizzle[Self.dtype, Self.WG_BN]()
+        comptime thread_layout = Layout.row_major(
             Self.num_consumer_threads // (Self.WG_BN // Self.simd_size),
             Self.WG_BN // Self.simd_size,
         )
@@ -171,14 +171,14 @@ struct MatmulTileWriter[
             self.local_thread_idx
         )
 
-        alias num_elements_per_thread = output_fragment.layout.size()
+        comptime num_elements_per_thread = output_fragment.layout.size()
 
         @parameter
         for i in range(num_elements_per_thread):
-            alias smem_idx = shared_fragment.layout(i)
-            alias output_idx = output_fragment.layout(i)
-            alias row_offset = output_idx // Self.N
-            alias col_offset = output_idx % Self.N
+            comptime smem_idx = shared_fragment.layout(i)
+            comptime output_idx = output_fragment.layout(i)
+            comptime row_offset = output_idx // Self.N
+            comptime col_offset = output_idx % Self.N
             var row = UInt32(row_coord + row_offset)
             var col = UInt32(col_coord + col_offset)
 
@@ -256,10 +256,10 @@ struct MatmulTileWriter[
         """Use st.matrix instructions for optimized bf16 output."""
         var max_row, max_col = self._calculate_output_bounds()
 
-        alias TMA_BN = tma_layout.shape[
+        comptime TMA_BN = tma_layout.shape[
             1
         ].value() if Self.use_tma_store else Self.WG_BN
-        alias needs_x2 = Self.BN % Self.WG_BN != 0
+        comptime needs_x2 = Self.BN % Self.WG_BN != 0
 
         constrained[
             needs_x2 == (Self.frag_size % 4 == 0 and Self.frag_size % 8 != 0),
@@ -269,7 +269,7 @@ struct MatmulTileWriter[
             + String(Self.frag_size),
         ]()
 
-        alias fragment_writer_type[
+        comptime fragment_writer_type[
             sub_wg_id: Int, half_tile: Bool
         ] = FragmentToSMemWriter[
             tile_n_size=TMA_BN,
@@ -281,12 +281,12 @@ struct MatmulTileWriter[
             sub_wg_id=sub_wg_id,
         ]
 
-        alias num_column_tiles = ceildiv(Self.BN, Self.WG_BN)
-        alias last_tile = Self.BN // Self.WG_BN
+        comptime num_column_tiles = ceildiv(Self.BN, Self.WG_BN)
+        comptime last_tile = Self.BN // Self.WG_BN
 
         @parameter
         for tile_idx in range(num_column_tiles):
-            alias is_partial_tile = needs_x2 and tile_idx == last_tile
+            comptime is_partial_tile = needs_x2 and tile_idx == last_tile
 
             # Write fragments to shared memory
             var fragment_writer = fragment_writer_type[
@@ -323,7 +323,7 @@ struct MatmulTileWriter[
 
             @parameter
             if Self.elementwise_compute_lambda_fn:
-                alias compute_fn = Self.elementwise_compute_lambda_fn.value()
+                comptime compute_fn = Self.elementwise_compute_lambda_fn.value()
 
                 @parameter
                 fn _compute[
@@ -338,7 +338,7 @@ struct MatmulTileWriter[
 
             @parameter
             if Self.elementwise_lambda_fn:
-                alias epilogue_fn = Self.elementwise_lambda_fn.value()
+                comptime epilogue_fn = Self.elementwise_lambda_fn.value()
 
                 @parameter
                 fn _epilogue[
@@ -374,7 +374,7 @@ struct MatmulTileWriter[
 
                         tma_writer.write_tile(tma_tile, tma_coords)
                 else:
-                    alias thread_layout = Layout.row_major(
+                    comptime thread_layout = Layout.row_major(
                         Self.num_consumer_threads
                         // (Self.WG_BN // Self.simd_size),
                         Self.WG_BN // Self.simd_size,
@@ -412,14 +412,14 @@ struct MatmulTileWriter[
             Self.BM, Self.BN
         ](self.block_y, self.block_x)
 
-        alias TMA_BN = tma_layout.shape[
+        comptime TMA_BN = tma_layout.shape[
             1
         ].value() if Self.use_tma_store else Self.WG_BN
-        alias row_size_aligned = Self.N * size_of[Self.dtype]() % 16 == 0
+        comptime row_size_aligned = Self.N * size_of[Self.dtype]() % 16 == 0
 
         # Check if st.matrix optimization can be used
         # fmt: off
-        alias can_use_stmatrix = (
+        comptime can_use_stmatrix = (
             accum_type is DType.float32 and Self.dtype is DType.bfloat16  # F32→BF16
             and Self.frag_size % 4 == 0                               # Register count
             and Self.BM % Self.wgmma_shape[0] == 0                              # M alignment

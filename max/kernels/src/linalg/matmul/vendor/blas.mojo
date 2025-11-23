@@ -109,11 +109,11 @@ from collections import OptionalReg, Optional
 struct Backend(Equatable, ImplicitlyCopyable, Movable, Writable):
     var _value: Int32
 
-    alias AUTOMATIC = Self(0)
-    alias CUBLAS = Self(1)
-    alias CUBLASLT = Self(2)
-    alias ROCBLAS = Self(3)
-    alias HIPBLASLT = Self(4)
+    comptime AUTOMATIC = Self(0)
+    comptime CUBLAS = Self(1)
+    comptime CUBLASLT = Self(2)
+    comptime ROCBLAS = Self(3)
+    comptime HIPBLASLT = Self(4)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -169,11 +169,11 @@ fn _resolve_backend[
 struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
     ImplicitlyCopyable, Movable
 ):
-    alias resolved_backend = _resolve_backend[Self.backend]()
-    alias _cublas_type = UnsafePointer[cublasContext]
-    alias _rocblas_type = _rocblas.Handle
-    alias _hipblaslt_type = hipblasLtHandle_t
-    alias type = Variant[
+    comptime resolved_backend = _resolve_backend[Self.backend]()
+    comptime _cublas_type = UnsafePointer[cublasContext]
+    comptime _rocblas_type = _rocblas.Handle
+    comptime _hipblaslt_type = hipblasLtHandle_t
+    comptime type = Variant[
         Self._cublas_type,
         Self._rocblas_type,
         Self._hipblaslt_type,
@@ -269,7 +269,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
 # Matmul
 # ===----------------------------------------------------------------------===#
 
-alias _DEBUG_VENDOR_BLAS = False
+comptime _DEBUG_VENDOR_BLAS = False
 
 
 fn _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
@@ -980,9 +980,9 @@ fn _cublasLt_matmul[
             if a_scales_layout.rank() != 5 or b_scales_layout.rank() != 5:
                 raise Error("Invalid A/B scales dimensions.")
 
-            alias SF_VECTOR_SIZE = 32
-            alias atom_m = (32, 4)
-            alias atom_k = 4
+            comptime SF_VECTOR_SIZE = 32
+            comptime atom_m = (32, 4)
+            comptime atom_k = 4
             var sf_k = ceildiv(K, SF_VECTOR_SIZE)
 
             if (

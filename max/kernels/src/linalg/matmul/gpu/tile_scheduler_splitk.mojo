@@ -42,7 +42,7 @@ fn _check_scheduler_constraints[
     raster_order: RasterOrder,
     reduction_mode: ReductionMode,
 ]():
-    alias num_k_iters = ceildiv(prob_shape_nk[1], tile_shape[2])
+    comptime num_k_iters = ceildiv(prob_shape_nk[1], tile_shape[2])
 
     constrained[
         reduction_mode == ReductionMode.Deterministic,
@@ -67,10 +67,10 @@ struct ReductionMode(ImplicitlyCopyable, Movable):
     var _value: Int32
 
     # CTAs perform reduction in a serialized fashion so we will have deterministic numeric behavior
-    alias Deterministic = Self(0)
+    comptime Deterministic = Self(0)
 
     # CTAs perform reduction atomically but we will have nondeterministic numeric behavior
-    alias Nondeterministic = Self(1)
+    comptime Nondeterministic = Self(1)
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -114,19 +114,19 @@ struct SplitKTileScheduler[
 
     var locks_ptr: UnsafePointer[Int32]
 
-    alias k_tiles_per_output_tile = ceildiv(
+    comptime k_tiles_per_output_tile = ceildiv(
         Self.problem_shape_nk[1], Self.tile_shape[2]
     )
     # we don't support uneven splits so for num_iters per split can be compile time constant
-    alias k_tiles_per_split = ceildiv(
+    comptime k_tiles_per_split = ceildiv(
         Self.problem_shape_nk[1], Self.tile_shape[2]
     ) // Self.splits
     # cluster size is power of 2 (1, 2 ,4)
-    alias log_cluster_size = log2_floor(
+    comptime log_cluster_size = log2_floor(
         Self.cluster_shape[0] * Self.cluster_shape[1]
     )
 
-    alias WorkTileType[dtype: DType, layout: Layout] = LayoutTensor[
+    comptime WorkTileType[dtype: DType, layout: Layout] = LayoutTensor[
         dtype, layout, MutAnyOrigin
     ]
 
@@ -644,16 +644,16 @@ struct SplitKTileScheduler[
         warp_group_local_idx: UInt32,
         warp_group_thread_idx: UInt32,
     ):
-        alias BM = workspace_layout.shape[1].value()
-        alias BN = workspace_layout.shape[2].value()
+        comptime BM = workspace_layout.shape[1].value()
+        comptime BN = workspace_layout.shape[2].value()
 
         constrained[
             accum_type == DType.float32,
             "Only support float32 accumulator type",
         ]()
 
-        alias num_mma = c_reg_tile.layout.shape[0].value()
-        alias c_frag_size = c_reg_tile.layout.shape[1].value()
+        comptime num_mma = c_reg_tile.layout.shape[0].value()
+        comptime c_frag_size = c_reg_tile.layout.shape[1].value()
 
         var workspace_tile = self._get_workspace_tile_reshaped(
             reduction_workspace, reduction_tile_idx
@@ -694,16 +694,16 @@ struct SplitKTileScheduler[
         warp_group_local_idx: UInt32,
         warp_group_thread_idx: UInt32,
     ):
-        alias BM = workspace_layout.shape[1].value()
-        alias BN = workspace_layout.shape[2].value()
+        comptime BM = workspace_layout.shape[1].value()
+        comptime BN = workspace_layout.shape[2].value()
 
         constrained[
             accum_type == DType.float32,
             "Only support float32 accumulator type",
         ]()
 
-        alias num_mma = c_reg_tile.layout.shape[0].value()
-        alias c_frag_size = c_reg_tile.layout.shape[1].value()
+        comptime num_mma = c_reg_tile.layout.shape[0].value()
+        comptime c_frag_size = c_reg_tile.layout.shape[1].value()
 
         var workspace_tile = self._get_workspace_tile_reshaped(
             reduction_workspace, reduction_tile_idx
@@ -769,8 +769,8 @@ struct SplitKTileScheduler[
             ),
         ],
     ):
-        alias BM = workspace_layout.shape[1].value()
-        alias BN = workspace_layout.shape[2].value()
+        comptime BM = workspace_layout.shape[1].value()
+        comptime BN = workspace_layout.shape[2].value()
 
         return {
             reduction_workspace.ptr + reduction_tile_idx * BM * BN,

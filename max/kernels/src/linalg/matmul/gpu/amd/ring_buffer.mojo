@@ -53,12 +53,12 @@ struct ProducerTile[
 ]:
     """Context manager for producer access to a single ring buffer tile."""
 
-    alias ProducerViewType = ProducerView[
+    comptime ProducerViewType = ProducerView[
         Self.origin,
         Self.ring_buffer_type,
         Self.warps_processed_per_producer,
     ]
-    alias ProducerViewPtrType = Pointer[Self.ProducerViewType, Self.origin]
+    comptime ProducerViewPtrType = Pointer[Self.ProducerViewType, Self.origin]
 
     var producer_view_ptr: Self.ProducerViewPtrType
     var stage: Int
@@ -99,12 +99,12 @@ struct ConsumerTile[
 ]:
     """Context manager for consumer access to a single ring buffer tile."""
 
-    alias ConsumerViewType = ConsumerView[
+    comptime ConsumerViewType = ConsumerView[
         Self.origin,
         Self.ring_buffer_type,
         Self.warps_computed_per_consumer,
     ]
-    alias ConsumerViewPtrType = Pointer[Self.ConsumerViewType, Self.origin]
+    comptime ConsumerViewPtrType = Pointer[Self.ConsumerViewType, Self.origin]
 
     var consumer_view_ptr: Self.ConsumerViewPtrType
     var stage: Int
@@ -150,7 +150,7 @@ struct ProducerView[
 ]:
     """Producer view of the unified ring buffer."""
 
-    alias RingBufferPtrType = Pointer[Self.ring_buffer_type, Self.origin]
+    comptime RingBufferPtrType = Pointer[Self.ring_buffer_type, Self.origin]
 
     var ring_buffer_ptr: Self.RingBufferPtrType
     var phases: StaticTuple[
@@ -219,7 +219,7 @@ struct ProducerView[
         """Signal to consumers that tile is ready."""
         self.ring_buffer_ptr[].signal_producer_release(warp_tile_idx, stage)
 
-    alias ProducerTileType = ProducerTile[
+    comptime ProducerTileType = ProducerTile[
         Self.origin, Self.ring_buffer_type, Self.warps_processed_per_producer
     ]
 
@@ -253,7 +253,7 @@ struct ConsumerView[
 ]:
     """Consumer view of the unified ring buffer."""
 
-    alias RingBufferPtrType = Pointer[Self.ring_buffer_type, Self.origin]
+    comptime RingBufferPtrType = Pointer[Self.ring_buffer_type, Self.origin]
 
     var ring_buffer_ptr: Self.RingBufferPtrType
     var phases: StaticTuple[
@@ -321,7 +321,7 @@ struct ConsumerView[
         """Signal to producers that tile is free."""
         self.ring_buffer_ptr[].signal_consumer_release(warp_tile_idx, stage)
 
-    alias ConsumerTileType = ConsumerTile[
+    comptime ConsumerTileType = ConsumerTile[
         Self.origin,
         Self.ring_buffer_type,
         Self.warps_computed_per_consumer,
@@ -381,10 +381,10 @@ struct RingBuffer[
         sync_strategy_type: Synchronization strategy (SingleCounterSync or SplitCounterSync).
     """
 
-    alias block_warps = Self.block_rows // Self.warp_rows
-    alias total_tiles = Self.block_warps * Self.pipeline_stages
+    comptime block_warps = Self.block_rows // Self.warp_rows
+    comptime total_tiles = Self.block_warps * Self.pipeline_stages
 
-    alias SmemBufferType = SMemBuffer[
+    comptime SmemBufferType = SMemBuffer[
         Self.dtype,
         Self.layout,
         Self.pipeline_stages,
@@ -393,9 +393,13 @@ struct RingBuffer[
         Self.warp_rows,
         Self.warp_cols,
     ]
-    alias WarpTileType = Self.SmemBufferType.WarpTileType
-    alias SMemBuffersType = StaticTuple[Self.SmemBufferType, Self.tile_buffers]
-    alias WarpTileTupleType = StaticTuple[Self.WarpTileType, Self.tile_buffers]
+    comptime WarpTileType = Self.SmemBufferType.WarpTileType
+    comptime SMemBuffersType = StaticTuple[
+        Self.SmemBufferType, Self.tile_buffers
+    ]
+    comptime WarpTileTupleType = StaticTuple[
+        Self.WarpTileType, Self.tile_buffers
+    ]
 
     var smem_buffers: Self.SMemBuffersType
     var sync_strategy: Self.sync_strategy_type

@@ -37,7 +37,7 @@ from ..tile_scheduler_splitk import SplitKTileScheduler
 from .matmul_kernels import HopperMatmulSM90Kernel, find_K_alignment_upto_16B
 from .matmul_kernel_persistent import HopperMatmulSM90Kernel
 
-alias logger = Logger()
+comptime logger = Logger()
 
 
 fn _is_valid_cluster_shape[
@@ -62,7 +62,7 @@ fn _get_grid_shape[
 ](num_tiles_n: Int) -> IndexList[2]:
     # Hardcode values on purpose until we move this inside tile scheduler
     # in a more robust way.
-    alias h100_num_SMs = H100.sm_count
+    comptime h100_num_SMs = H100.sm_count
     num_blocks_n = min(num_tiles_n, h100_num_SMs)
     adjusted_grid_shape = Index(
         num_blocks_n,
@@ -189,15 +189,15 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     var b = from_ndbuffer_row_major(b_device)
     var c = from_ndbuffer_row_major(c_device)
 
-    alias N_static = c_shape.get[1]()
-    alias K_static = a_shape.get[1]()
+    comptime N_static = c_shape.get[1]()
+    comptime K_static = a_shape.get[1]()
     var M = c_device.dim[0]()
     var N = c_device.dim[1]()
     var K = a_device.dim[1]()
 
-    alias BM = config.block_tile_shape[0]
-    alias BN = config.block_tile_shape[1]
-    alias BK = config.block_tile_shape[2]
+    comptime BM = config.block_tile_shape[0]
+    comptime BN = config.block_tile_shape[1]
+    comptime BK = config.block_tile_shape[2]
 
     constrained[
         (a_type == b_type is DType.float8_e4m3fn)
@@ -220,7 +220,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         "Only support 1 consumer for BM=64",
     ]()
 
-    alias k_align = find_K_alignment_upto_16B(K_static * size_of[a_type]())
+    comptime k_align = find_K_alignment_upto_16B(K_static * size_of[a_type]())
     constrained[
         k_align in (4, 8, 16), "H100 matmul K dim must be multiple of 4B"
     ]()
@@ -238,7 +238,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
             grid_shape is not None,
             "Grid shape must be provided for DS scheduler",
         ]()
-        alias ds_grid_shape = grid_shape.value()
+        comptime ds_grid_shape = grid_shape.value()
         constrained[
             ds_grid_shape[0] <= H100.sm_count and ds_grid_shape[1] == 1,
             "Deepseek scheduler only accepts grid shape with 1 column",
@@ -260,37 +260,37 @@ fn _warp_specialize_gemm_with_multicasting_impl[
             ),
         ]()
 
-    alias grid_shape_adjusted = grid_shape.value() if grid_shape else _get_grid_shape[
+    comptime grid_shape_adjusted = grid_shape.value() if grid_shape else _get_grid_shape[
         config.cluster_shape
     ](
         ceildiv(N_static, BN)
     )
 
-    alias cluster_shape = StaticTuple[Int32, 3](
+    comptime cluster_shape = StaticTuple[Int32, 3](
         config.cluster_shape[0],
         config.cluster_shape[1],
         config.cluster_shape[2],
     )
 
-    alias CLUSTER_N = UInt(cluster_shape[0])
-    alias CLUSTER_M = UInt(cluster_shape[1])
+    comptime CLUSTER_N = UInt(cluster_shape[0])
+    comptime CLUSTER_M = UInt(cluster_shape[1])
 
-    alias c_smem_layout = _get_c_smem_layout[
+    comptime c_smem_layout = _get_c_smem_layout[
         config.block_tile_shape,
         a_type,
         b_type,
         c_type,
         Int(config.num_pipeline_stages),
     ]()
-    alias c_smem_tile = Index(
+    comptime c_smem_tile = Index(
         c_smem_layout.shape[0].value(),
         c_smem_layout.shape[1].value() // Int(config.num_consumer),
     )
 
-    alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
-    alias b_swizzle = TensorMapSwizzle.SWIZZLE_128B
+    comptime a_swizzle = TensorMapSwizzle.SWIZZLE_128B
+    comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     # make sure TMA_BN = 64 -> 128B swizzle, 32 -> 64B swizzle and etc.
-    alias c_swizzle = TensorMapSwizzle(
+    comptime c_swizzle = TensorMapSwizzle(
         min(log2_floor(c_smem_tile[1] // 8), 3)
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
@@ -318,11 +318,13 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         var grid_y = ceildiv(M, BM)
         lut_ptr = get_hilbert_lut_with_cache(ctx, grid_x, grid_y)
 
-    alias num_threads = WARPGROUP_SIZE * Int(
+    comptime num_threads = WARPGROUP_SIZE * Int(
         config.num_consumer
     ) + WARPGROUP_SIZE
 
-    alias matmul_kernel[hilbert_swizzle: Bool = False] = HopperMatmulSM90Kernel[
+    comptime matmul_kernel[
+        hilbert_swizzle: Bool = False
+    ] = HopperMatmulSM90Kernel[
         a_type,
         b_type,
         c_type,
@@ -348,7 +350,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         hilbert_swizzle=hilbert_swizzle,
     ]
 
-    alias smem_size = matmul_kernel[].SMem.storage_size()
+    comptime smem_size = matmul_kernel[].SMem.storage_size()
 
     constrained[
         smem_size <= H100.shared_memory_per_multiprocessor - 1024,
@@ -379,7 +381,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
 
         @parameter
         if schedule != MatmulSchedule.NONE:
-            alias kernel = matmul_kernel[].run_persistent[
+            comptime kernel = matmul_kernel[].run_persistent[
                 a_tma_op.layout,
                 b_tma_op.layout,
                 c_tma_op.layout,
@@ -405,7 +407,9 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                 attributes=pdl_launch_attributes(config.pdl_level()),
             )
         else:
-            alias kernel = matmul_kernel[hilbert_swizzle=hilbert_swizzle].run[
+            comptime kernel = matmul_kernel[
+                hilbert_swizzle=hilbert_swizzle
+            ].run[
                 a_tma_op.layout,
                 b_tma_op.layout,
                 c_tma_op.layout,
@@ -433,7 +437,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
 
     # Dispatch kernel using cp.async.ca when the stride is not multiple of 4B or 8B..
     else:
-        alias kernel = matmul_kernel[].run_unaligned[
+        comptime kernel = matmul_kernel[].run_unaligned[
             c_tma_op.desc_layout,
             c_tma_op.layout,
         ]
@@ -460,17 +464,17 @@ fn _get_c_smem_layout[
     c_type: DType,
     num_pipeline_stages: Int,
 ]() -> Layout:
-    alias BM = Int(block_tile_shape[0])
-    alias BN = Int(block_tile_shape[1])
-    alias BK = Int(block_tile_shape[2])
+    comptime BM = Int(block_tile_shape[0])
+    comptime BN = Int(block_tile_shape[1])
+    comptime BK = Int(block_tile_shape[2])
 
-    alias WG_BM = BM
-    alias MAX_WG_BN = 128
+    comptime WG_BM = BM
+    comptime MAX_WG_BN = 128
 
-    alias available_smem_size = Int(
+    comptime available_smem_size = Int(
         H100.shared_memory_per_multiprocessor - 1024
     )
-    alias pipeline_smem_size = Int(
+    comptime pipeline_smem_size = Int(
         num_pipeline_stages
         * (
             BM * BK * size_of[a_type]()
@@ -479,11 +483,13 @@ fn _get_c_smem_layout[
         )
     )
 
-    alias available_c_smem_size = Int(available_smem_size - pipeline_smem_size)
+    comptime available_c_smem_size = Int(
+        available_smem_size - pipeline_smem_size
+    )
     # We want the shared memory N to be at least 16 when using `stmatrix`
     # (c_type = bf16) because it would make TMA and masked copy from shared
     # memory to global memory easier.
-    alias MIN_WG_BN = 16 if size_of[c_type]() == 2 else BN // 4
+    comptime MIN_WG_BN = 16 if size_of[c_type]() == 2 else BN // 4
 
     @parameter
     if available_smem_size > (
@@ -499,7 +505,7 @@ fn _get_c_smem_layout[
                 WG_BN //= 2
             return WG_BN
 
-        alias max_wg_bn = _get_max_wg_bn()
+        comptime max_wg_bn = _get_max_wg_bn()
         return Layout.row_major(WG_BM, max_wg_bn)
     else:
         constrained[
@@ -544,12 +550,12 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     var c = from_ndbuffer_row_major(c_device)
 
     var M = c.dim[0]()
-    alias N = c_shape.get[1]()
-    alias K = a_shape.get[1]()
+    comptime N = c_shape.get[1]()
+    comptime K = a_shape.get[1]()
 
-    alias BM = config.block_tile_shape[0]
-    alias BN = config.block_tile_shape[1]
-    alias BK = config.block_tile_shape[2]
+    comptime BM = config.block_tile_shape[0]
+    comptime BN = config.block_tile_shape[1]
+    comptime BK = config.block_tile_shape[2]
 
     constrained[
         (a_type == b_type is DType.float8_e4m3fn)
@@ -577,31 +583,31 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     logger.info("cluster_shape:", config.cluster_shape)
     logger.info("mma_shape:", config.mma_shape)
 
-    alias cluster_shape = StaticTuple[Int32, 3](
+    comptime cluster_shape = StaticTuple[Int32, 3](
         config.cluster_shape[0],
         config.cluster_shape[1],
         config.cluster_shape[2],
     )
 
-    alias CLUSTER_N = UInt(cluster_shape[0])
-    alias CLUSTER_M = UInt(cluster_shape[1])
+    comptime CLUSTER_N = UInt(cluster_shape[0])
+    comptime CLUSTER_M = UInt(cluster_shape[1])
 
-    alias c_smem_layout = _get_c_smem_layout[
+    comptime c_smem_layout = _get_c_smem_layout[
         config.block_tile_shape,
         a_type,
         b_type,
         c_type,
         Int(config.num_pipeline_stages),
     ]()
-    alias c_smem_tile = Index(
+    comptime c_smem_tile = Index(
         c_smem_layout.shape[0].value(),
         c_smem_layout.shape[1].value() // Int(config.num_consumer),
     )
 
-    alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
-    alias b_swizzle = TensorMapSwizzle.SWIZZLE_128B
+    comptime a_swizzle = TensorMapSwizzle.SWIZZLE_128B
+    comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     # make sure TMA_BN = 64 -> 128B swizzle, 32 -> 64B swizzle and etc.
-    alias c_swizzle = TensorMapSwizzle(
+    comptime c_swizzle = TensorMapSwizzle(
         min(log2_floor(c_smem_tile[1] // 8), 3)
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
@@ -624,7 +630,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
     ](ctx, c)
 
-    alias scheduler = SplitKTileScheduler[
+    comptime scheduler = SplitKTileScheduler[
         Index(N, K),
         config.block_tile_shape,
         splits,
@@ -639,7 +645,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         raster_order,
     )
 
-    alias accum_type = DType.float32  # fix this
+    comptime accum_type = DType.float32  # fix this
 
     var NUM_TILES = scheduler.get_num_tiles(
         Index(M, N, K),
@@ -671,9 +677,9 @@ fn warp_specialize_gemm_with_multicasting_splitk[
 
     ctx.enqueue_memset(locks_ptr, 0)
 
-    alias num_threads = config.num_consumer * 128 + 128
+    comptime num_threads = config.num_consumer * 128 + 128
 
-    alias matmul_kernel = HopperMatmulSM90Kernel[
+    comptime matmul_kernel = HopperMatmulSM90Kernel[
         a_type,
         b_type,
         c_type,
@@ -698,14 +704,14 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
     ]
 
-    alias smem_size = matmul_kernel.SMem.storage_size()
+    comptime smem_size = matmul_kernel.SMem.storage_size()
 
     constrained[
         smem_size <= H100.shared_memory_per_multiprocessor - 1024,
         "requested SMEM size exceeds 227KB limit.",
     ]()
 
-    alias kernel = matmul_kernel.run_splitk[
+    comptime kernel = matmul_kernel.run_splitk[
         a_tma_op.layout,
         b_tma_op.layout,
         c_tma_op.layout,

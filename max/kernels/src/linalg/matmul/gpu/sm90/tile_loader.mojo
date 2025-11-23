@@ -47,7 +47,7 @@ trait TileLoader:
     to shared memory, abstracting over different hardware mechanisms.
     """
 
-    alias _dtype: DType
+    comptime _dtype: DType
 
     @always_inline
     fn load_tile(
@@ -94,9 +94,9 @@ struct TileLoaderTMA[
         use_partitioned_multicast: Whether to use partitioned multicast loading.
     """
 
-    alias _dtype = Self.dtype
+    comptime _dtype = Self.dtype
 
-    alias TMATensorTilePtr = Pointer[
+    comptime TMATensorTilePtr = Pointer[
         TMATensorTile[Self.dtype, Self.tile_layout, Self.desc_layout],
         Self.tma_origin,
     ]
@@ -146,8 +146,8 @@ struct TileLoaderTMA[
         # Switch coordinates to k-minor and multiply k by BK to match the CPAsync API.
         var coords = (_coords[1] * Self.BK, _coords[0])  # (m/n, k) -> (k, m/n)
 
-        alias tma_load_size = Self.desc_layout.size()
-        alias tma_rows = Self.desc_layout.shape[0].value()
+        comptime tma_load_size = Self.desc_layout.size()
+        comptime tma_rows = Self.desc_layout.shape[0].value()
 
         @parameter
         if Self.cluster_size > 1:
@@ -209,7 +209,7 @@ struct TileLoaderCPAsync[
         vector_size: Number of elements loaded per thread.
     """
 
-    alias _dtype = Self.dtype
+    comptime _dtype = Self.dtype
 
     var src: LayoutTensor[
         Self.dtype,
@@ -256,9 +256,9 @@ struct TileLoaderCPAsync[
             conversion to element offsets internally via the tile() method.
         """
         # Coalesce the destination layout for optimal memory access patterns
-        alias coalesced_dst_layout = coalesce(dst.layout)
-        alias BM = coalesced_dst_layout.shape[0].value()
-        alias BN = coalesced_dst_layout.shape[1].value()
+        comptime coalesced_dst_layout = coalesce(dst.layout)
+        comptime BM = coalesced_dst_layout.shape[0].value()
+        comptime BN = coalesced_dst_layout.shape[1].value()
 
         # Extract the requested tile from global memory and vectorize it
         var a_gmem_tile = self.src.tile[BM, BN](
@@ -327,8 +327,8 @@ fn async_copy_with_bound_check[
     ]()
 
     # Validate swizzle pattern alignment with tile dimensions
-    alias src_shape1 = src.layout.shape[1].value()
-    alias swizzle_bytes = swizzle_mode.bytes()
+    comptime src_shape1 = src.layout.shape[1].value()
+    comptime swizzle_bytes = swizzle_mode.bytes()
     constrained[
         src_shape1 * src.element_size * size_of[src.dtype]() == swizzle_bytes,
         String(
@@ -344,33 +344,33 @@ fn async_copy_with_bound_check[
     var dst_frag = dst.distribute[thread_layout](thread_idx.x)
 
     # Source matrix bounds for boundary checking
-    alias src_stride0 = src.layout.stride[0].value()
+    comptime src_stride0 = src.layout.stride[0].value()
     var src_bound0 = Int32(src.runtime_layout.shape.value[0])
     var src_bound1 = Int32(src.runtime_layout.shape.value[1]) * dst.element_size
 
     # Calculate base coordinates for this thread's destination fragment
     var dst_frag_offset = dst_frag.distance(dst.ptr)
-    alias dst_stride0 = dst.layout.stride[0].value()
+    comptime dst_stride0 = dst.layout.stride[0].value()
     var dst_frag_base_coord0, dst_frag_base_coord1 = divmod(
         Int32(dst_frag_offset), Int32(dst_stride0)
     )
 
     # Create swizzle pattern to avoid shared memory bank conflicts
-    alias swizzle = make_swizzle[
+    comptime swizzle = make_swizzle[
         8,
         Int(swizzle_bytes // size_of[dst.dtype]()),
         Int(simd_width_of[dst.dtype]()),
     ]()
 
-    alias num_vecs = dst_frag.layout.size()
+    comptime num_vecs = dst_frag.layout.size()
 
     # Process each vector element assigned to this thread
     @parameter
     for i in range(num_vecs):
         # Apply swizzling to the destination index to avoid bank conflicts
-        alias dst_idx = dst_frag.layout(i)
-        alias dst_idx_base = dst_idx % swizzle.size()
-        alias dst_idx_diff = dst_idx - dst_idx_base
+        comptime dst_idx = dst_frag.layout(i)
+        comptime dst_idx_base = dst_idx % swizzle.size()
+        comptime dst_idx_diff = dst_idx - dst_idx_base
         var dst_swizzled_idx = Int32(
             swizzle(dst_frag_offset + dst_idx_base) + dst_idx_diff
         )
@@ -378,12 +378,12 @@ fn async_copy_with_bound_check[
 
         # Calculate the 2D coordinates for this element
         # TODO: we should be able to use idx2crd for this.
-        alias dst_shifted_coord0 = dst_idx // dst_stride0
-        alias dst_shifted_coord1 = dst_idx % dst_stride0
+        comptime dst_shifted_coord0 = dst_idx // dst_stride0
+        comptime dst_shifted_coord1 = dst_idx % dst_stride0
         var dst_coord0 = dst_shifted_coord0 + dst_frag_base_coord0
         var dst_coord1 = dst_shifted_coord1 + dst_frag_base_coord1
 
-        alias size_bytes = dst.element_size * size_of[dst.dtype]()
+        comptime size_bytes = dst.element_size * size_of[dst.dtype]()
 
         # Calculate source pointer based on 2D coordinates
         var src_ptr = (

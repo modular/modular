@@ -130,7 +130,7 @@ fn tiled_matmul_run[
         a.type, b.type, c.type, config.kernel_cols
     ](global_tile_shape)
 
-    alias packed_shape = DimList.create_unknown[3]()
+    comptime packed_shape = DimList.create_unknown[3]()
     var matmul = TiledMatmul[
         config,
         transpose_b,
@@ -329,7 +329,7 @@ struct TiledMatmul[
         # size and tile_n.
         @parameter
         if not Self.b_packed:
-            alias secondary_tiles = VariadicList[Int](
+            comptime secondary_tiles = VariadicList[Int](
                 Self.config.kernel_cols,
                 2 * Self.config.simd_size,
                 Self.config.simd_size,
@@ -341,7 +341,7 @@ struct TiledMatmul[
                 0, valid_col_count, primary_tiles, Self.config.simd_size
             )
         else:
-            alias secondary_tiles_packed_b = VariadicList[Int](
+            comptime secondary_tiles_packed_b = VariadicList[Int](
                 Self.config.kernel_cols
             )
             var primary_tiles_packed_b = VariadicList[Int](tile_n)
@@ -411,7 +411,7 @@ fn _small_matmul[
     b: NDBuffer[_, 2, _, _],
     c: NDBuffer[mut=True, _, 2, _, _],
 ):
-    alias simd_width = simd_width_of[c.type]()
+    comptime simd_width = simd_width_of[c.type]()
 
     var M = a.dim[0]()
     var N = b.dim[0]() if transpose_b else b.dim[1]()
@@ -443,7 +443,7 @@ fn _small_matmul[
 
                 @parameter
                 if epilogue_wrapper:
-                    alias func = epilogue_wrapper.value()
+                    comptime func = epilogue_wrapper.value()
                     func[c.type, 1](Index(m, n), val)
                 else:
                     c[Index(m, n)] = val
@@ -465,7 +465,7 @@ fn _small_matmul[
         ](coords: IndexList[2], val: SIMD[_dtype, width]):
             @parameter
             if epilogue_wrapper:
-                alias func = epilogue_wrapper.value()
+                comptime func = epilogue_wrapper.value()
                 func[_dtype, width](coords, val)
             else:
                 c.store[width=width](coords, rebind[SIMD[c.type, width]](val))
@@ -568,7 +568,7 @@ fn _matmul_cpu_impl[
                 #       transpose_b=True.
                 # if b_packed=False and transpose_b = False:
                 #       We need apple_matmul with transpose_b=False.
-                alias apple_transpose = True if b_packed else transpose_b
+                comptime apple_transpose = True if b_packed else transpose_b
                 apple_matmul[
                     transpose_b=apple_transpose,
                     elementwise_lambda_fn=elementwise_lambda_fn,
@@ -581,9 +581,9 @@ fn _matmul_cpu_impl[
             num_threads if num_threads > 0 else parallelism_level(),
         )
 
-        alias use_i8mm = kernel_id == InnerKernelID.I8MM
-        alias simd_size = config.simd_size
-        alias alignment = align_of[SIMD[c.type, simd_size]]()
+        comptime use_i8mm = kernel_id == InnerKernelID.I8MM
+        comptime simd_size = config.simd_size
+        comptime alignment = align_of[SIMD[c.type, simd_size]]()
         var kh = align_up(k, 8)
         var mh = align_up(m, 2)
         var a_packed_ptr = UnsafePointer[Scalar[a.type]]()
@@ -633,7 +633,7 @@ fn _matmul_cpu_impl[
             ):
                 return
 
-            alias use_i8mm = kernel_id == InnerKernelID.I8MM
+            comptime use_i8mm = kernel_id == InnerKernelID.I8MM
 
             _submatmul_sequential_sync[
                 config, transpose_b, b_packed, elementwise_lambda_fn, kernel_id
@@ -682,12 +682,12 @@ fn matmul[
     kernel_type_m: Int,
     num_threads: Int = -1,
 ) raises:
-    alias kernel_id = select_inner_kernel[a.type, b.type, c.type]()
+    comptime kernel_id = select_inner_kernel[a.type, b.type, c.type]()
 
     @parameter
     @always_inline
     fn dispatch_on_kernel_type[kernel_type: Bool]() raises:
-        alias config = get_kernel_config[
+        comptime config = get_kernel_config[
             a.type,
             b.type,
             c.type,
@@ -779,7 +779,7 @@ fn _submatmul_sequential_sync[
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
 ):
-    alias simd_size = config.simd_size
+    comptime simd_size = config.simd_size
 
     fn elementwise_closure(offset: GemmShape, shape: GemmShape):
         @parameter
@@ -829,7 +829,7 @@ fn _submatmul_sequential_sync[
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
 ):
-    alias kernel_id = select_inner_kernel[a.type, b.type, c.type]()
+    comptime kernel_id = select_inner_kernel[a.type, b.type, c.type]()
 
     @parameter
     if kernel_id == InnerKernelID.DEFAULT:

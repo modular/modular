@@ -170,10 +170,10 @@ struct SingleCounterSync[
     - Consumers wait for phase N+1, increment counter by 1
     """
 
-    alias writes_per_warp_block = 1
-    alias block_warps = Self.block_rows // Self.warp_rows
-    alias total_tiles = Self.block_warps * Self.pipeline_stages
-    alias SyncCounterArray = SMemArrayType[Int32, Self.total_tiles]
+    comptime writes_per_warp_block = 1
+    comptime block_warps = Self.block_rows // Self.warp_rows
+    comptime total_tiles = Self.block_warps * Self.pipeline_stages
+    comptime SyncCounterArray = SMemArrayType[Int32, Self.total_tiles]
 
     var sync_counter: Self.SyncCounterArray
 
@@ -243,12 +243,12 @@ struct SplitCounterSync[
     - This asymmetry reflects the 1-producer-to-N-consumers relationship
     """
 
-    alias writes_per_warp_block = 1
-    alias block_warps = Self.block_rows // Self.warp_rows
-    alias total_tiles = Self.block_warps * Self.pipeline_stages
+    comptime writes_per_warp_block = 1
+    comptime block_warps = Self.block_rows // Self.warp_rows
+    comptime total_tiles = Self.block_warps * Self.pipeline_stages
 
-    alias ProducerCounterArray = SMemArrayType[Int32, Self.total_tiles]
-    alias ConsumerCounterArray = SMemArrayType[Int32, Self.total_tiles]
+    comptime ProducerCounterArray = SMemArrayType[Int32, Self.total_tiles]
+    comptime ConsumerCounterArray = SMemArrayType[Int32, Self.total_tiles]
 
     var producer_counters: Self.ProducerCounterArray
     var consumer_counters: Self.ConsumerCounterArray

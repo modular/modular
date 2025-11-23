@@ -43,7 +43,7 @@ struct MatmulConfig[
     var block_swizzle_size: Int
     var raster_order: RasterOrder
 
-    alias accum_type = get_accum_type[Self.a_type]()  # TODO: factor b_type
+    comptime accum_type = get_accum_type[Self.a_type]()  # TODO: factor b_type
 
     # Has default values or derivible from mandatory parameters
     var block_tile_shape: IndexList[3]
@@ -137,7 +137,7 @@ struct MatmulConfig[
         )
 
     fn _maximize_pipeline_stages_by_default(mut self):
-        alias b200_smem = B200.shared_memory_per_multiprocessor - 1024
+        comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
         var c_smem_bytes = (
             self.output_tile_shape[0]
@@ -310,13 +310,13 @@ fn choose_config[
 ](M: Int, N: Int, K: Int) -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
     constrained[a_type == b_type, "a_type and b_type must be the same"]()
 
-    alias num_SMs = B200.sm_count
+    comptime num_SMs = B200.sm_count
     # Nvidia mma instruction process 32B in K.
-    alias Kbytes_per_mma = 32
+    comptime Kbytes_per_mma = 32
     # We use 128B swizzle, tile size in K is 128B over element size.
-    alias BK = 128 // size_of[a_type]()
+    comptime BK = 128 // size_of[a_type]()
 
-    alias M_pivote = 32
+    comptime M_pivote = 32
 
     var cta_group = 1 if M < M_pivote else 2
     var swapAB = True if M < M_pivote else False
@@ -440,7 +440,7 @@ fn build_configs[
     K: Int,
     transpose_b: Bool = True,
 ]() -> Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]:
-    alias config_t = MatmulConfig[a_type, b_type, c_type, transpose_b]
+    comptime config_t = MatmulConfig[a_type, b_type, c_type, transpose_b]
 
     var set = Set[config_t]()
 
