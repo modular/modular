@@ -13,7 +13,7 @@ from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import IndexList
 
-alias logger = Logger()
+comptime logger = Logger()
 
 
 @compiler.register("use_splitk_reduction_scheme")
@@ -22,7 +22,7 @@ struct UseSplitkReductionScheme:
     fn execute(
         output: OutputTensor[dtype = DType.int32, rank=1],
     ):
-        alias split_k_reduction_scheme = env_get_int[
+        comptime split_k_reduction_scheme = env_get_int[
             "SPLITK_REDUCTION_SCHEME", 2
         ]()
         output[0] = split_k_reduction_scheme
