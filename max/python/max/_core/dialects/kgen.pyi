@@ -1162,23 +1162,18 @@ class SugarAttr(max._core.Attribute):
     fully expanded "canonical" version of the attribute.
     """
 
-    @overload
     def __init__(
         self,
         kind: SugarKind,
+        member_name: max._core.dialects.builtin.StringAttr,
         sugared: max._core.dialects.builtin.TypedAttr,
         expanded: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        kind: SugarKind,
-        sugared: max._core.dialects.builtin.TypedAttr,
-        expanded: max._core.dialects.builtin.TypedAttr,
-        canonical: max._core.dialects.builtin.TypedAttr,
+        canonical: max._core.dialects.builtin.TypedAttr = ...,
     ) -> None: ...
     @property
     def kind(self) -> SugarKind: ...
+    @property
+    def member_name(self) -> max._core.dialects.builtin.StringAttr: ...
     @property
     def sugared(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
@@ -1933,7 +1928,9 @@ class POCAttr(max._core.Attribute):
 class SugarKind(enum.Enum):
     aibuiltin = 0
 
-    alias = 1
+    member_alias = 1
+
+    alias = 2
 
 class TailKind(enum.Enum):
     none = 0
