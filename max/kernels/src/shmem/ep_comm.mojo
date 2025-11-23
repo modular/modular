@@ -49,26 +49,26 @@ from utils.numerics import get_accum_type
 
 from builtin.device_passable import DevicePassable
 
-alias RtTuple_2 = RuntimeTuple[
+comptime RtTuple_2 = RuntimeTuple[
     IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE), element_type = DType.int32
 ]
-alias RtTuple_3 = RuntimeTuple[
+comptime RtTuple_3 = RuntimeTuple[
     IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE),
     element_type = DType.int32,
 ]
-alias RtTuple_4 = RuntimeTuple[
+comptime RtTuple_4 = RuntimeTuple[
     IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE),
     element_type = DType.int32,
 ]
 
-alias EP_DATA_READY_FLAG = 1 << 10
+comptime EP_DATA_READY_FLAG = 1 << 10
 
 
 @register_passable("trivial")
 trait TokenFormat(DevicePassable):
-    alias hid_dim: Int
-    alias top_k: Int
-    alias alignment: Int
+    comptime hid_dim: Int
+    comptime top_k: Int
+    comptime alignment: Int
 
     @always_inline
     @staticmethod
@@ -132,16 +132,16 @@ trait TokenFormat(DevicePassable):
 struct BF16TokenFormat[
     output_layout: Layout, //, _hid_dim: Int, _top_k: Int, _alignment: Int
 ](TokenFormat):
-    alias hid_dim = Self._hid_dim
-    alias top_k = Self._top_k
-    alias alignment = Self._alignment
+    comptime hid_dim = Self._hid_dim
+    comptime top_k = Self._top_k
+    comptime alignment = Self._alignment
 
-    alias TensorType = LayoutTensor[
+    comptime TensorType = LayoutTensor[
         DType.bfloat16, Self.output_layout, MutAnyOrigin
     ]
     var output_tokens: Self.TensorType
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         """Convert the host type object to a device_type and store it at the
@@ -190,8 +190,8 @@ struct BF16TokenFormat[
         src_p: UnsafePointer[Scalar[src_type], mut=False],
         block_size: UInt,
     ) -> None:
-        alias src_width = simd_width_of[src_type]()
-        alias byte_width = src_width * size_of[BFloat16]()
+        comptime src_width = simd_width_of[src_type]()
+        comptime byte_width = src_width * size_of[BFloat16]()
 
         for i in range(thread_idx.x, Self.hid_dim // src_width, block_size):
             var loaded_vec = src_p.load[
@@ -208,8 +208,8 @@ struct BF16TokenFormat[
         buf_p: UnsafePointer[UInt8],
         token_index: Int,
     ) -> None:
-        alias bf16_width = simd_width_of[DType.bfloat16]()
-        alias byte_width = bf16_width * size_of[BFloat16]()
+        comptime bf16_width = simd_width_of[DType.bfloat16]()
+        comptime byte_width = bf16_width * size_of[BFloat16]()
         for i in range(lane_id(), Self.hid_dim // bf16_width, WARP_SIZE):
             self.output_tokens.aligned_store[width=bf16_width](
                 token_index,
@@ -236,22 +236,22 @@ struct BlockwiseFP8TokenFormat[
     _top_k: Int,
     _alignment: Int,
 ](TokenFormat):
-    alias hid_dim = Self._hid_dim
-    alias top_k = Self._top_k
-    alias alignment = Self._alignment
+    comptime hid_dim = Self._hid_dim
+    comptime top_k = Self._top_k
+    comptime alignment = Self._alignment
 
-    alias TensorType = LayoutTensor[
+    comptime TensorType = LayoutTensor[
         Self.fp8_dtype, Self.output_layout, MutAnyOrigin
     ]
-    alias ScalesTensorType = LayoutTensor[
+    comptime ScalesTensorType = LayoutTensor[
         Self.scales_dtype, Self.scales_layout, MutAnyOrigin
     ]
     var output_tokens: Self.TensorType
     var output_scales: Self.ScalesTensorType
 
-    alias group_size = 128
+    comptime group_size = 128
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         """Convert the host type object to a device_type and store it at the
@@ -333,15 +333,15 @@ struct BlockwiseFP8TokenFormat[
         src_p: UnsafePointer[Scalar[src_type], mut=False],
         block_size: UInt,
     ) -> None:
-        alias src_width = simd_width_of[src_type]()
-        alias byte_width = src_width * size_of[Self.fp8_dtype]()
+        comptime src_width = simd_width_of[src_type]()
+        comptime byte_width = src_width * size_of[Self.fp8_dtype]()
 
-        alias fp8_max = Scalar[Self.fp8_dtype].MAX_FINITE
-        alias fp8_max_t = Scalar[Self.fp8_dtype].MAX_FINITE.cast[
+        comptime fp8_max = Scalar[Self.fp8_dtype].MAX_FINITE
+        comptime fp8_max_t = Scalar[Self.fp8_dtype].MAX_FINITE.cast[
             Self.scales_dtype
         ]()
 
-        alias n_threads_per_group = Self.group_size // src_width
+        comptime n_threads_per_group = Self.group_size // src_width
         constrained[
             WARP_SIZE % n_threads_per_group == 0,
             "Each warp must process a multiple of quantization groups",
@@ -369,7 +369,7 @@ struct BlockwiseFP8TokenFormat[
             )
 
             # The first thread in each group stores the scale factor.
-            alias scale_bytes = size_of[Self.scales_dtype]()
+            comptime scale_bytes = size_of[Self.scales_dtype]()
             if lane_id() % UInt(n_threads_per_group) == 0:
                 scale_idx = i * src_width // Self.group_size
                 buf_p.store[width=scale_bytes, alignment=scale_bytes](
@@ -384,7 +384,7 @@ struct BlockwiseFP8TokenFormat[
         token_index: Int,
     ) -> None:
         # First we copy the FP8 quants.
-        alias fp8_width = simd_width_of[Self.fp8_dtype]()
+        comptime fp8_width = simd_width_of[Self.fp8_dtype]()
         for i in range(lane_id(), Self.hid_dim // fp8_width, WARP_SIZE):
             self.output_tokens.aligned_store[width=fp8_width](
                 token_index,
@@ -401,7 +401,7 @@ struct BlockwiseFP8TokenFormat[
             )
 
         # Unlike the output tensor, the scales tensor is stored in a transposed way.
-        alias scale_bytes = size_of[Self.scales_dtype]()
+        comptime scale_bytes = size_of[Self.scales_dtype]()
         for i in range(lane_id(), Self.hid_dim // Self.group_size, WARP_SIZE):
             self.output_scales.store(
                 i,
@@ -477,25 +477,25 @@ fn dispatch_kernel[
         my_rank: The rank of the current device.
     """
 
-    alias n_local_experts = n_experts // n_ranks
-    alias n_warps = num_threads // WARP_SIZE
-    alias n_comm_sms = n_sms - n_aux_sms
+    comptime n_local_experts = n_experts // n_ranks
+    comptime n_warps = num_threads // WARP_SIZE
+    comptime n_comm_sms = n_sms - n_aux_sms
     constrained[
         n_local_experts <= n_warps,
         "EP dispatch: number of experts per rank must be less than or equal to "
         + String(n_warps),
     ]()
 
-    alias top_k = topk_ids.shape[1]()
-    alias hid_dim = input_tokens.shape[1]()
-    alias msg_bytes = token_fmt_type.msg_size()
+    comptime top_k = topk_ids.shape[1]()
+    comptime hid_dim = input_tokens.shape[1]()
+    comptime msg_bytes = token_fmt_type.msg_size()
 
     var send_buf_layout = RuntimeLayout[
         Layout.row_major(max_tokens_per_rank, msg_bytes),
         element_type = DType.int32,
         linear_idx_type = DType.int32,
     ]()
-    alias recv_layout_static = Layout.row_major(
+    comptime recv_layout_static = Layout.row_major(
         n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes
     )
     var recv_buf_layout = RuntimeLayout[
@@ -627,7 +627,7 @@ fn dispatch_kernel[
             # we set the environment variable `NVSHMEM_IBGDA_RC_MAP_BY=warp` so that the RC
             # is selected by the warp ID using round-robin. We can then control the RC
             # for each expert by using the correct warp.
-            alias n_rc_groups = n_warps // n_local_experts
+            comptime n_rc_groups = n_warps // n_local_experts
             var rc_group_id = warp_id() // UInt(n_local_experts)
             var rc_map_offset: Int32 = (
                 block_idx.x * UInt(n_warps) + warp_id()
@@ -743,20 +743,20 @@ fn dispatch_cb_kernel[
         atomic_counter: The pointer to the atomic counter.
         my_rank: The rank of the current device.
     """
-    alias n_local_experts = n_experts // n_ranks
-    alias n_warps = num_threads // WARP_SIZE
-    alias n_comm_sms = n_sms - n_aux_sms
+    comptime n_local_experts = n_experts // n_ranks
+    comptime n_warps = num_threads // WARP_SIZE
+    comptime n_comm_sms = n_sms - n_aux_sms
 
-    alias top_k = token_fmt_type.top_k
-    alias hid_dim = token_fmt_type.hid_dim
-    alias msg_bytes = token_fmt_type.msg_size()
+    comptime top_k = token_fmt_type.top_k
+    comptime hid_dim = token_fmt_type.hid_dim
+    comptime msg_bytes = token_fmt_type.msg_size()
     constrained[
         n_local_experts <= n_warps,
         "EP dispatch: local experts per device should be less than "
         + String(WARP_SIZE),
     ]()
 
-    alias recv_layout_static = Layout.row_major(
+    comptime recv_layout_static = Layout.row_major(
         n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes
     )
     var recv_buf_layout = RuntimeLayout[
@@ -789,7 +789,7 @@ fn dispatch_cb_kernel[
         if local_expert_id >= UInt(n_local_experts):
             return
 
-        alias scan_round = ceildiv(n_ranks, WARP_SIZE)
+        comptime scan_round = ceildiv(n_ranks, WARP_SIZE)
         var prefix_sum_arr = stack_allocation[
             scan_round, DType.uint32, address_space = AddressSpace.LOCAL
         ]()
@@ -876,9 +876,9 @@ fn dispatch_cb_kernel[
     # each work group is responsible for copying tokens for a single expert from
     # a remote rank.
     else:
-        alias n_wg_per_sm = ceildiv(n_experts, n_comm_sms)
-        alias wg_size = n_warps // n_wg_per_sm
-        alias wg_threads = wg_size * WARP_SIZE
+        comptime n_wg_per_sm = ceildiv(n_experts, n_comm_sms)
+        comptime wg_size = n_warps // n_wg_per_sm
+        comptime wg_threads = wg_size * WARP_SIZE
 
         var wg_idx = warp_id() // UInt(wg_size)
         var global_wg_idx = (block_idx.x - UInt(n_aux_sms)) * UInt(
@@ -1008,13 +1008,13 @@ fn combine_kernel[
         atomic_counter: The pointer to the atomic counter.
         my_rank: The rank of the current device.
     """
-    alias n_local_experts = n_experts // n_ranks
-    alias n_warps = num_threads // WARP_SIZE
+    comptime n_local_experts = n_experts // n_ranks
+    comptime n_warps = num_threads // WARP_SIZE
 
-    alias src_simd_width = simd_width_of[input_type]()
-    alias byte_simd_width = simd_width_of[DType.uint8]()
+    comptime src_simd_width = simd_width_of[input_type]()
+    comptime byte_simd_width = simd_width_of[DType.uint8]()
 
-    alias hid_dim = input_tokens.shape[1]()
+    comptime hid_dim = input_tokens.shape[1]()
 
     constrained[
         msg_bytes == hid_dim * size_of[Scalar[input_type]](),
@@ -1026,7 +1026,7 @@ fn combine_kernel[
         + String(byte_simd_width),
     ]()
 
-    alias send_layout_static = Layout.row_major(
+    comptime send_layout_static = Layout.row_major(
         n_local_experts * n_ranks * max_tokens_per_rank, msg_bytes
     )
     var send_buf_layout = RuntimeLayout[
@@ -1068,7 +1068,7 @@ fn combine_kernel[
 
         # Info for where the tokens for the current expert and rank start and end
         # are stored in the atomic counter by the `dispatch_cb_kernel`.
-        alias DATA_READY_FLAG = 1024
+        comptime DATA_READY_FLAG = 1024
         var token_end_count = atomic_counter.load[
             width=2,
             alignment = align_of[SIMD[DType.int32, 2]](),
@@ -1083,7 +1083,7 @@ fn combine_kernel[
             var src_topk_idx = src_token_info[1]
 
             # First, all threads in the block copy the input token to the send buffer.
-            alias _align = align_of[SIMD[DType.uint8, byte_simd_width]]()
+            comptime _align = align_of[SIMD[DType.uint8, byte_simd_width]]()
             var curr_send_buf_ptr = send_buf_p.offset(
                 send_buf_layout(RtTuple_2(Int(token_idx), 0))
             )
@@ -1198,14 +1198,14 @@ fn combine_cb_kernel[
         my_rank: The rank of the current device.
     """
 
-    alias n_local_experts = n_experts // n_ranks
-    alias n_warps = num_threads // WARP_SIZE
-    alias n_red_sms = n_sms - n_aux_sms
+    comptime n_local_experts = n_experts // n_ranks
+    comptime n_warps = num_threads // WARP_SIZE
+    comptime n_red_sms = n_sms - n_aux_sms
 
-    alias dst_simd_width = simd_width_of[output_type]()
-    alias byte_simd_width = simd_width_of[DType.uint8]()
+    comptime dst_simd_width = simd_width_of[output_type]()
+    comptime byte_simd_width = simd_width_of[DType.uint8]()
 
-    alias hid_dim = output_tokens.shape[2]()
+    comptime hid_dim = output_tokens.shape[2]()
 
     constrained[
         msg_bytes == hid_dim * size_of[Scalar[output_type]](),
@@ -1228,7 +1228,7 @@ fn combine_cb_kernel[
         linear_idx_type = DType.int32,
     ]()
 
-    alias DATA_READY_FLAG = 1024
+    comptime DATA_READY_FLAG = 1024
 
     # `num_tokens` is the total number of tokens before the EP communication. The
     # actual number of tokens we receive is `num_tokens * top_k`.
@@ -1282,7 +1282,7 @@ fn combine_cb_kernel[
                 )
 
                 for i in range(tid, hid_dim // dst_simd_width, num_threads):
-                    alias _align = align_of[
+                    comptime _align = align_of[
                         SIMD[DType.uint8, byte_simd_width]
                     ]()
                     output_token_tensor.aligned_store[width=dst_simd_width](
@@ -1333,10 +1333,10 @@ fn fused_silu_kernel[
         input_tensor: The input tensor to perform the SILU operation.
         row_offsets: The row offsets to determine the actual number of received tokens.
     """
-    alias accum_dtype = get_accum_type[input_dtype]()
-    alias input_dim = input_tensor.shape[1]()
-    alias output_dim = output_tensor.shape[1]()
-    alias simd_width = simd_width_of[input_dtype]()
+    comptime accum_dtype = get_accum_type[input_dtype]()
+    comptime input_dim = input_tensor.shape[1]()
+    comptime output_dim = output_tensor.shape[1]()
+    comptime simd_width = simd_width_of[input_dtype]()
 
     # This should also make sure the input and output tensors has static shape.
     constrained[
@@ -1411,10 +1411,10 @@ fn fused_silu_fp8_kernel[
         input_tensor: The input tensor to perform the SILU operation.
         row_offsets: The row offsets to determine the actual number of received tokens.
     """
-    alias accum_dtype = get_accum_type[input_dtype]()
-    alias input_dim = input_tensor.shape[1]()
-    alias output_dim = output_tensor.shape[1]()
-    alias simd_width = simd_width_of[input_dtype]()
+    comptime accum_dtype = get_accum_type[input_dtype]()
+    comptime input_dim = input_tensor.shape[1]()
+    comptime output_dim = output_tensor.shape[1]()
+    comptime simd_width = simd_width_of[input_dtype]()
 
     constrained[
         input_dim == output_dim * 2,
@@ -1425,12 +1425,12 @@ fn fused_silu_fp8_kernel[
         "Output dimension must be divisible by the SIMD width.",
     ]()
 
-    alias n_threads_per_group = group_size // simd_width
+    comptime n_threads_per_group = group_size // simd_width
     constrained[
         WARP_SIZE % n_threads_per_group == 0,
         "Each warp must process a multiple of quantization groups",
     ]()
-    alias fp8_max_t = Scalar[fp8_dtype].MAX_FINITE.cast[accum_dtype]()
+    comptime fp8_max_t = Scalar[fp8_dtype].MAX_FINITE.cast[accum_dtype]()
 
     var tid = Int(thread_idx.x)
     var bid = Int(block_idx.x)

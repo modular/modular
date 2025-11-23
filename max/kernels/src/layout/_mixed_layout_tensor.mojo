@@ -134,19 +134,19 @@ fn distribute[
 
     @parameter
     for i in range(len(thread_layout.stride)):
-        alias stride_i = Int(thread_layout.stride[i].value())
-        alias shape_i = Int(thread_layout.shape[i].value())
+        comptime stride_i = Int(thread_layout.stride[i].value())
+        comptime shape_i = Int(thread_layout.shape[i].value())
         var thread_coord_i = (thread_id // stride_i) % shape_i
         offset += UInt(
             thread_coord_i * Int(data_layout_tensor.layout.stride[i].value())
         )
 
-    alias shape = MixedTuple(
+    comptime shape = MixedTuple(
         ComptimeInt[data_shape_0 // thread_shape_0](),
         ComptimeInt[data_shape_1 // thread_shape_1](),
     )
 
-    alias stride = MixedTuple(
+    comptime stride = MixedTuple(
         ComptimeInt[data_stride_0 * thread_shape_0](),
         ComptimeInt[data_stride_1 * thread_shape_1](),
     )

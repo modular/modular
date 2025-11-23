@@ -644,7 +644,7 @@ fn mgp_buffer_concat[
     inputs: StaticTuple[NDBuffer[DType.int8, 1, MutAnyOrigin], *_],
     call_ctx: DeviceContextPtr,
 ) raises:
-    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var output_lt = LayoutTensor[DType.int8, layout_1d](
         output.data,
         RuntimeLayout[layout_1d].row_major(IndexList[1](len(output))),
@@ -1116,7 +1116,7 @@ fn build_static_tensor_specs[
     address_space: AddressSpace,
     exclusive: Bool,
 ) -> StaticTensorSpec[dtype, rank]:
-    alias SpecType = StaticTensorSpec[dtype, rank]
+    comptime SpecType = StaticTensorSpec[dtype, rank]
 
     return SpecType(
         shape, strides, alignment, address_space, exclusive, None, None, None
@@ -1398,15 +1398,15 @@ fn test_my_int_reg2_to_index(x: MyIntReg2) -> Int:
 # AnyAsyncValueRef is a C++ struct. The runtime passes a reference to it.
 # Therefore, we alias it to OpaquePointer which will have the same bitwidth as
 # C++'s pointers.
-alias AnyAsyncValueRefPtr = OpaquePointer
+comptime AnyAsyncValueRefPtr = OpaquePointer
 
 # TensorBufferRef is a C++ struct. Primitives should always manipulate a
 # reference to it. Therefore, it is modeled here as an OpaquePointer.
-alias TensorBufferRefPtr = OpaquePointer
+comptime TensorBufferRefPtr = OpaquePointer
 
 # StateContext is a C++ struct. Primitives should always manipulate a reference
 # to it. Therefore, it is modeled here as an OpaquePointer.
-alias StateContextRef = OpaquePointer
+comptime StateContextRef = OpaquePointer
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1595,7 +1595,7 @@ fn mogg_tensor_init[
     """
     Helper for constructing a ManagedTensorSlice.
     """
-    alias static_spec = StaticTensorSpec[dtype, rank](
+    comptime static_spec = StaticTensorSpec[dtype, rank](
         static_shape,
         static_stride,
         alignment,

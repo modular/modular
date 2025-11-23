@@ -134,9 +134,11 @@ struct Struct_ep_init:
         constrained[is_gpu[target](), "EP is only supported on GPU."]()
         var gpu_ctx = context.get_device_context()
 
-        alias gpu_target = get_gpu_target()
-        alias gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
-        alias gpu_alignment = align_of[
+        comptime gpu_target = get_gpu_target()
+        comptime gpu_simd_width = simd_width_of[
+            DType.uint8, target=gpu_target
+        ]()
+        comptime gpu_alignment = align_of[
             SIMD[DType.uint8, gpu_simd_width], target=gpu_target
         ]()
 
@@ -146,7 +148,7 @@ struct Struct_ep_init:
         # Infer message sizes for dispatch phases
         @parameter
         if dispatch_dtype.is_float8():
-            alias token_fmt_type = BlockwiseFP8TokenFormat[
+            comptime token_fmt_type = BlockwiseFP8TokenFormat[
                 fp8_dtype=dispatch_dtype,
                 scales_dtype=dispatch_scale_dtype,
                 output_layout = Layout(),
@@ -158,7 +160,7 @@ struct Struct_ep_init:
             dispatch_msg_size = token_fmt_type.msg_size()
 
         else:
-            alias token_fmt_type = BF16TokenFormat[
+            comptime token_fmt_type = BF16TokenFormat[
                 output_layout = Layout(), hidden_size, top_k, gpu_alignment
             ]
             dispatch_msg_size = token_fmt_type.msg_size()
@@ -170,9 +172,9 @@ struct Struct_ep_init:
 
         # Calculate buffer sizes for combine phase
         # Combine messages only contain the processed token
-        alias combine_msg_size = hidden_size * size_of[combine_dtype]()
-        alias combine_send_size = n_experts * max_token_per_rank * combine_msg_size
-        alias combine_recv_size = top_k * max_token_per_rank * combine_msg_size
+        comptime combine_msg_size = hidden_size * size_of[combine_dtype]()
+        comptime combine_send_size = n_experts * max_token_per_rank * combine_msg_size
+        comptime combine_recv_size = top_k * max_token_per_rank * combine_msg_size
 
         # Initialize atomic counters to zero for synchronization
         # These counters coordinate work between different thread blocks.
@@ -308,19 +310,21 @@ struct Struct_ep_dispatch:
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
         var my_rank = Int32(shmem_my_pe())
-        alias hw_info = gpu_ctx.default_device_info
-        alias gpu_target = get_gpu_target()
-        alias gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
-        alias gpu_alignment = align_of[
+        comptime hw_info = gpu_ctx.default_device_info
+        comptime gpu_target = get_gpu_target()
+        comptime gpu_simd_width = simd_width_of[
+            DType.uint8, target=gpu_target
+        ]()
+        comptime gpu_alignment = align_of[
             SIMD[DType.uint8, gpu_simd_width], target=gpu_target
         ]()
-        alias token_fmt_type = BF16TokenFormat[
+        comptime token_fmt_type = BF16TokenFormat[
             output_layout = Layout(), hidden_size, top_k, gpu_alignment
         ]
 
-        alias n_ranks = n_gpus_per_node * n_nodes
+        comptime n_ranks = n_gpus_per_node * n_nodes
 
-        alias dispatch = dispatch_kernel[
+        comptime dispatch = dispatch_kernel[
             input_dtype,
             hw_info.max_thread_block_size,
             input_tokens_tensor.layout,
@@ -462,21 +466,23 @@ struct Struct_ep_dispatch_cb:
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
         var my_rank = Int32(shmem_my_pe())
-        alias hw_info = gpu_ctx.default_device_info
-        alias gpu_target = get_gpu_target()
-        alias gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
-        alias gpu_alignment = align_of[
+        comptime hw_info = gpu_ctx.default_device_info
+        comptime gpu_target = get_gpu_target()
+        comptime gpu_simd_width = simd_width_of[
+            DType.uint8, target=gpu_target
+        ]()
+        comptime gpu_alignment = align_of[
             SIMD[DType.uint8, gpu_simd_width], target=gpu_target
         ]()
 
-        alias n_ranks = n_gpus_per_node * n_nodes
+        comptime n_ranks = n_gpus_per_node * n_nodes
 
         constrained[dispatch_dtype == DType.bfloat16]()
         var format_handler = BF16TokenFormat[hidden_size, top_k, gpu_alignment](
             output_tokens_tensor.bitcast[DType.bfloat16]()
         )
 
-        alias dispatch_cb = dispatch_cb_kernel[
+        comptime dispatch_cb = dispatch_cb_kernel[
             hw_info.max_thread_block_size,
             output_tokens_tensor.layout,
             row_offsets_tensor.layout,
@@ -630,13 +636,15 @@ struct Struct_ep_dispatch_fp8:
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
         var my_rank = Int32(shmem_my_pe())
-        alias hw_info = gpu_ctx.default_device_info
-        alias gpu_target = get_gpu_target()
-        alias gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
-        alias gpu_alignment = align_of[
+        comptime hw_info = gpu_ctx.default_device_info
+        comptime gpu_target = get_gpu_target()
+        comptime gpu_simd_width = simd_width_of[
+            DType.uint8, target=gpu_target
+        ]()
+        comptime gpu_alignment = align_of[
             SIMD[DType.uint8, gpu_simd_width], target=gpu_target
         ]()
-        alias token_fmt_type = BlockwiseFP8TokenFormat[
+        comptime token_fmt_type = BlockwiseFP8TokenFormat[
             fp8_dtype=dispatch_dtype,
             scales_dtype=dispatch_scale_dtype,
             output_layout = Layout(),
@@ -646,9 +654,9 @@ struct Struct_ep_dispatch_fp8:
             gpu_alignment,
         ]
 
-        alias n_ranks = n_gpus_per_node * n_nodes
+        comptime n_ranks = n_gpus_per_node * n_nodes
 
-        alias dispatch = dispatch_kernel[
+        comptime dispatch = dispatch_kernel[
             input_dtype,
             hw_info.max_thread_block_size,
             input_tokens_tensor.layout,
@@ -804,20 +812,22 @@ struct Struct_ep_dispatch_cb_fp8:
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
         var my_rank = Int32(shmem_my_pe())
-        alias hw_info = gpu_ctx.default_device_info
-        alias gpu_target = get_gpu_target()
-        alias gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
-        alias gpu_alignment = align_of[
+        comptime hw_info = gpu_ctx.default_device_info
+        comptime gpu_target = get_gpu_target()
+        comptime gpu_simd_width = simd_width_of[
+            DType.uint8, target=gpu_target
+        ]()
+        comptime gpu_alignment = align_of[
             SIMD[DType.uint8, gpu_simd_width], target=gpu_target
         ]()
 
-        alias n_ranks = n_gpus_per_node * n_nodes
+        comptime n_ranks = n_gpus_per_node * n_nodes
 
         var format_handler = BlockwiseFP8TokenFormat[
             hidden_size, top_k, gpu_alignment
         ](output_tokens_tensor, output_scales_tensor)
 
-        alias dispatch_cb = dispatch_cb_kernel[
+        comptime dispatch_cb = dispatch_cb_kernel[
             hw_info.max_thread_block_size,
             output_tokens_tensor.layout,
             row_offsets_tensor.layout,
@@ -964,12 +974,12 @@ struct Struct_ep_combine:
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
         var my_rank = Int32(shmem_my_pe())
-        alias hw_info = gpu_ctx.default_device_info
-        alias combine_msg_size = hidden_size * size_of[combine_dtype]()
+        comptime hw_info = gpu_ctx.default_device_info
+        comptime combine_msg_size = hidden_size * size_of[combine_dtype]()
 
-        alias n_ranks = n_gpus_per_node * n_nodes
+        comptime n_ranks = n_gpus_per_node * n_nodes
 
-        alias combine = combine_kernel[
+        comptime combine = combine_kernel[
             combine_dtype,
             hw_info.max_thread_block_size,
             input_tokens_tensor.layout,
@@ -1098,12 +1108,12 @@ struct Struct_ep_combine_cb:
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
         var my_rank = Int32(shmem_my_pe())
-        alias hw_info = gpu_ctx.default_device_info
-        alias combine_msg_size = hidden_size * size_of[combine_dtype]()
+        comptime hw_info = gpu_ctx.default_device_info
+        comptime combine_msg_size = hidden_size * size_of[combine_dtype]()
 
-        alias n_ranks = n_gpus_per_node * n_nodes
+        comptime n_ranks = n_gpus_per_node * n_nodes
 
-        alias combine_cb = combine_cb_kernel[
+        comptime combine_cb = combine_cb_kernel[
             combine_dtype,
             hw_info.max_thread_block_size,
             output_tokens_tensor.layout,
@@ -1205,9 +1215,9 @@ struct Struct_ep_fused_silu:
         var row_offsets_tensor = row_offsets.to_layout_tensor().get_immutable()
 
         var gpu_ctx = context.get_device_context()
-        alias hw_info = gpu_ctx.default_device_info
+        comptime hw_info = gpu_ctx.default_device_info
 
-        alias fused_silu = fused_silu_kernel[
+        comptime fused_silu = fused_silu_kernel[
             output_dtype,
             input_dtype,
             output_tensor.layout,
@@ -1273,7 +1283,7 @@ struct Struct_ep_fused_silu_fp8:
         # Ensure this kernel only runs on GPU targets
         constrained[is_gpu[target](), "EP is only supported on GPU."]()
 
-        alias group_size = 128
+        comptime group_size = 128
 
         var output_tensor = output.to_layout_tensor()
         var scales_tensor = scales.to_layout_tensor()
@@ -1281,9 +1291,9 @@ struct Struct_ep_fused_silu_fp8:
         var row_offsets_tensor = row_offsets.to_layout_tensor().get_immutable()
 
         var gpu_ctx = context.get_device_context()
-        alias hw_info = gpu_ctx.default_device_info
+        comptime hw_info = gpu_ctx.default_device_info
 
-        alias fused_silu_fp8 = fused_silu_fp8_kernel[
+        comptime fused_silu_fp8 = fused_silu_fp8_kernel[
             fp8_dtype,
             scales_dtype,
             input_dtype,

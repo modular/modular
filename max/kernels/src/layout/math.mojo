@@ -57,10 +57,10 @@ fn outer_product_acc(
     constrained[lhs.rank == 1, "Only rank 1 lhs is allowed."]()
     constrained[rhs.rank == 1, "Only rank 1 rhs is allowed."]()
 
-    alias dtype = res.dtype
+    comptime dtype = res.dtype
 
-    alias M = res.shape[0]()
-    alias N = res.shape[1]()
+    comptime M = res.shape[0]()
+    comptime N = res.shape[1]()
 
     constrained[lhs.shape[0]() == M, "lhs shape mismatch"]()
     constrained[rhs.shape[0]() == N, "rhs shape mismatch"]()
@@ -316,7 +316,7 @@ fn max[
 
     @parameter
     for i in range(res_tensor.layout.size()):
-        alias idx = x.layout(i)
+        comptime idx = x.layout(i)
         res_tensor.ptr[idx] = b_max(x.ptr[idx], y.ptr[idx])
     return res_tensor
 
@@ -406,7 +406,7 @@ fn mean[
     Raises:
         May raise on GPU targets when a device error occurs.
     """
-    alias simd_width = simd_width_of[dst.dtype]()
+    comptime simd_width = simd_width_of[dst.dtype]()
     sum[reduce_axis](src, dst)
 
     var n = src.dim[reduce_axis]()

@@ -101,7 +101,7 @@ fn naive_grouped_matmul[
 ) raises:
     constrained[transpose_b, "Only support transposed B in grouped matmul."]()
 
-    alias kernel = naive_grouped_matmul_kernel[
+    comptime kernel = naive_grouped_matmul_kernel[
         c_type,
         c_shape,
         a_type,
@@ -166,7 +166,7 @@ fn naive_grouped_matmul_kernel[
     if n >= UInt(N) or m >= UInt(M):
         return
 
-    alias accum_type = get_accum_type[a_type]()
+    comptime accum_type = get_accum_type[a_type]()
 
     var accum = Scalar[accum_type](0.0)
 
@@ -182,7 +182,7 @@ fn naive_grouped_matmul_kernel[
 
     @parameter
     if elementwise_lambda_fn:
-        alias elementwise_lambda = elementwise_lambda_fn.value()
+        comptime elementwise_lambda = elementwise_lambda_fn.value()
         elementwise_lambda[c_type, 1](
             Index(a_start_row + m, n), accum.cast[c_type]()
         )
@@ -197,14 +197,14 @@ fn naive_epilogue[
     *,
     elementwise_lambda_fn: elementwise_epilogue_type,
 ](c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape], ctx: DeviceContext,) raises:
-    alias kernel = naive_epilogue_kernel[
+    comptime kernel = naive_epilogue_kernel[
         c_type,
         c_shape,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
     var M = c.dim[0]()
     var N = c.dim[1]()
-    alias simd_size = simd_width_of[c_type]()
+    comptime simd_size = simd_width_of[c_type]()
     var block_dim = (128 // simd_size, simd_size, 1)
     ctx.enqueue_function_checked[kernel, kernel](
         c,
@@ -219,11 +219,11 @@ fn naive_epilogue_kernel[
     *,
     elementwise_lambda_fn: elementwise_epilogue_type,
 ](c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],):
-    alias simd_size = simd_width_of[c_type]()
-    alias alignment = align_of[SIMD[c_type, simd_size]]()
+    comptime simd_size = simd_width_of[c_type]()
+    comptime alignment = align_of[SIMD[c_type, simd_size]]()
     var n = global_idx.x * UInt(simd_size)
     var m = global_idx.y
-    alias N = c_shape.get[1]()
+    comptime N = c_shape.get[1]()
     var M = c.dim[0]()
 
     # note that the most naive implementation of simd_size=1 won't work because
@@ -277,18 +277,18 @@ fn grouped_matmul_kernel_sm100[
     constrained[num_threads == 128 or num_threads == 256]()
 
     M = a_offsets[Int(block_idx.z + 1)] - a_offsets[Int(block_idx.z)]
-    alias N = c.layout.shape[1].value()
-    alias K = b_layout.shape[1].value()
+    comptime N = c.layout.shape[1].value()
+    comptime K = b_layout.shape[1].value()
 
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
-    alias MMA_M = mma_shape[0]  # BM
-    alias MMA_N = mma_shape[1]  # BN
-    alias MMA_K = mma_shape[2]  # 16
-    alias num_m_mmas = BM // MMA_M
-    alias num_n_mmas = BN // MMA_N
-    alias num_k_mmas = BK // MMA_K
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
+    comptime MMA_M = mma_shape[0]  # BM
+    comptime MMA_N = mma_shape[1]  # BN
+    comptime MMA_K = mma_shape[2]  # 16
+    comptime num_m_mmas = BM // MMA_M
+    comptime num_n_mmas = BN // MMA_N
+    comptime num_k_mmas = BK // MMA_K
 
     a_start_row = a_offsets[Int(block_idx.z)]
     expert = expert_ids[Int(block_idx.z)]
@@ -304,16 +304,16 @@ fn grouped_matmul_kernel_sm100[
     # we don't do the whole mma_shape_A vibes, rather, we directly declare it
     # tile_layout_k_major is cutlass equiv of tile_to_mma_shape
     # and sA_layout gets computed directly, by hand
-    alias a_smem_layout = tile_layout_k_major[
+    comptime a_smem_layout = tile_layout_k_major[
         a_type, BM, BK, swizzle_mode=a_swizzle
     ]()
-    alias b_smem_layout = tile_layout_k_major[
+    comptime b_smem_layout = tile_layout_k_major[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
-    alias sub_a_smem_layout = tile_layout_k_major[
+    comptime sub_a_smem_layout = tile_layout_k_major[
         a_type, BM, 64, swizzle_mode=a_swizzle
     ]()
-    alias sub_b_smem_layout = tile_layout_k_major[
+    comptime sub_b_smem_layout = tile_layout_k_major[
         b_type, BN, 64, swizzle_mode=b_swizzle
     ]()
 
@@ -329,36 +329,36 @@ fn grouped_matmul_kernel_sm100[
     )
 
     # a_smem_layout is a description of how tile is arranged in memory, and LayoutTensor is a pointer to memory + a layout, taking in a_smem as its pointer
-    alias a_smem_tile_t = LayoutTensor[
+    comptime a_smem_tile_t = LayoutTensor[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
-    alias b_smem_tile_t = LayoutTensor[
+    comptime b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
-    alias sub_a_smem_tile_t = LayoutTensor[
+    comptime sub_a_smem_tile_t = LayoutTensor[
         a_type,
         sub_a_smem_layout,
         MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
-    alias sub_b_smem_tile_t = LayoutTensor[
+    comptime sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
         MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
-    alias a_size = a_smem_layout.size()
-    alias b_size = b_smem_layout.size()
+    comptime a_size = a_smem_layout.size()
+    comptime b_size = b_smem_layout.size()
 
     constrained[
         ((a_size * size_of[a_type]()) % 128) == 0, "preserve alignment"
@@ -374,16 +374,16 @@ fn grouped_matmul_kernel_sm100[
     # Shared memory pointer to hold tensor memory address, after last smem pointer and expected smem size
     var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
 
-    alias accum_type = get_accum_type[a_type]()
+    comptime accum_type = get_accum_type[a_type]()
 
-    alias c_frag_size = MMA_M * MMA_N // num_threads  # MMA_M * MMA_N is the size of the accumulator, num_threads is the number of threads in the warp, c_frag_size is the num of elements in the accumulator per thread
+    comptime c_frag_size = MMA_M * MMA_N // num_threads  # MMA_M * MMA_N is the size of the accumulator, num_threads is the number of threads in the warp, c_frag_size is the num of elements in the accumulator per thread
     var c_frag = SIMD[
         accum_type, c_frag_size
     ]()  # array of accumulator elements
 
-    alias a_expected_bytes = a_size * size_of[a_type]()
-    alias b_expected_bytes = b_size * size_of[b_type]()
-    alias expected_bytes = a_expected_bytes + b_expected_bytes
+    comptime a_expected_bytes = a_size * size_of[a_type]()
+    comptime b_expected_bytes = b_size * size_of[b_type]()
+    comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
     tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
     mma_mbar = tma_mbar + 1
@@ -397,7 +397,7 @@ fn grouped_matmul_kernel_sm100[
 
     var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
     var elect_one_thread = thread_idx.x == 0
-    alias max_tmem_cols = 512
+    comptime max_tmem_cols = 512
 
     # allocate all 2^18 bytes of smem for tcgen05, all 512 cols allocated
     if elect_one_warp:
@@ -434,9 +434,9 @@ fn grouped_matmul_kernel_sm100[
             for j in range(
                 BK // 64
             ):  # so we do the copy in 64 chunks or 64 elements at a time (BK // 64). but hmm, we said that the K atom can only be 32 bytes (16 elements)
-                alias k = 64 * j
-                alias a_offset = a_smem_layout(IntTuple(0, k))
-                alias b_offset = b_smem_layout(IntTuple(0, k))
+                comptime k = 64 * j
+                comptime a_offset = a_smem_layout(IntTuple(0, k))
+                comptime b_offset = b_smem_layout(IntTuple(0, k))
                 constrained[((a_offset * size_of[a_type]()) % 128) == 0]()
                 constrained[((b_offset * size_of[b_type]()) % 128) == 0]()
                 sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
@@ -491,11 +491,11 @@ fn grouped_matmul_kernel_sm100[
         tcgen05_release_allocation_lock[1]()
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
-    alias num_warps = num_threads // WARP_SIZE
+    comptime num_warps = num_threads // WARP_SIZE
     warp_id = thread_idx.x // UInt(WARP_SIZE)
 
-    alias c_gmem_layout = Layout(IntTuple(UNKNOWN_VALUE, N), IntTuple(N, 1))
-    alias c_gmem_type = LayoutTensor[
+    comptime c_gmem_layout = Layout(IntTuple(UNKNOWN_VALUE, N), IntTuple(N, 1))
+    comptime c_gmem_type = LayoutTensor[
         c_type,
         c_gmem_layout,
         MutAnyOrigin,
@@ -515,14 +515,14 @@ fn grouped_matmul_kernel_sm100[
     ctile, ctile_coords, _ = c_by_expert.tile_with_offset[BM, BN](
         Int(block_idx.y), Int(block_idx.x)
     )
-    alias c_coord_type = type_of(ctile_coords)
+    comptime c_coord_type = type_of(ctile_coords)
 
     @parameter
     for m_mma in range(num_m_mmas):
 
         @parameter
         for n_mma in range(num_n_mmas):
-            alias mma_id = n_mma * num_m_mmas + m_mma
+            comptime mma_id = n_mma * num_m_mmas + m_mma
 
             c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
                 ctile.tile_with_offset[MMA_M // num_warps, MMA_N](
@@ -542,20 +542,20 @@ fn grouped_matmul_kernel_sm100[
                 c_gmem_warp_tile_coords + new_c_gmem_frag_coords
             )
 
-            alias num_vecs_m = c_gmem_frag.layout.shape[0].value()
-            alias num_vecs_n = c_gmem_frag.layout.shape[1].value()
+            comptime num_vecs_m = c_gmem_frag.layout.shape[0].value()
+            comptime num_vecs_n = c_gmem_frag.layout.shape[1].value()
 
             @parameter
             for n_vec in range(num_vecs_n):
 
                 @parameter
                 for m_vec in range(num_vecs_m):
-                    alias i_vec = n_vec * num_vecs_m + m_vec
-                    alias dst_idx = type_of(c_gmem_frag).layout(
+                    comptime i_vec = n_vec * num_vecs_m + m_vec
+                    comptime dst_idx = type_of(c_gmem_frag).layout(
                         IntTuple(m_vec, n_vec)
                     )
-                    alias dst_m_offset = dst_idx // N
-                    alias dst_n_offset = dst_idx % N
+                    comptime dst_m_offset = dst_idx // N
+                    comptime dst_n_offset = dst_idx % N
                     var m = UInt32(c_gmem_frag_coords[0] + dst_m_offset)
                     var n = UInt32(c_gmem_frag_coords[1] + dst_n_offset)
 
@@ -566,8 +566,8 @@ fn grouped_matmul_kernel_sm100[
 
                         @parameter
                         if elementwise_lambda_fn:
-                            alias alignment = align_of[SIMD[c_type, 2]]()
-                            alias epilogue = elementwise_lambda_fn.value()
+                            comptime alignment = align_of[SIMD[c_type, 2]]()
+                            comptime epilogue = elementwise_lambda_fn.value()
                             epilogue[alignment=alignment](
                                 (Int(a_start_row + m), Int(n)), c_mn
                             )
@@ -599,21 +599,21 @@ fn grouped_matmul_sm100[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    alias num_experts = b.shape.get[0]()
-    alias N = b.shape.get[1]()
-    alias K = b.shape.get[2]()
+    comptime num_experts = b.shape.get[0]()
+    comptime N = b.shape.get[1]()
+    comptime K = b.shape.get[2]()
 
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
     constrained[K % BK == 0]()
     constrained[BK == 64]()
 
     # hard coded 64 for BK
 
-    alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
-    alias b_swizzle = TensorMapSwizzle.SWIZZLE_128B
-    alias c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
+    comptime a_swizzle = TensorMapSwizzle.SWIZZLE_128B
+    comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
+    comptime c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
     # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
     a_tensor = from_ndbuffer_row_major(a)
     a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](
@@ -632,10 +632,12 @@ fn grouped_matmul_sm100[
     ](ctx, b_tensor)
     c_tensor = from_ndbuffer_row_major(c)
 
-    alias block_dim = 128
-    alias smem_use = (BM * size_of[a_type]() + BN * size_of[b_type]()) * BK + 24
+    comptime block_dim = 128
+    comptime smem_use = (
+        BM * size_of[a_type]() + BN * size_of[b_type]()
+    ) * BK + 24
 
-    alias kernel = grouped_matmul_kernel_sm100[
+    comptime kernel = grouped_matmul_kernel_sm100[
         a_type,
         b_type,
         c_type,
@@ -693,10 +695,10 @@ fn grouped_matmul_amd_kernel_launcher[
     num_active_experts: Int,
 ):
     var M = a_offsets[Int(block_idx.z + 1)] - a_offsets[Int(block_idx.z)]
-    alias N = c_tensor.shape[1]()
-    alias K = b_tensor.shape[1]()
+    comptime N = c_tensor.shape[1]()
+    comptime K = b_tensor.shape[1]()
 
-    alias num_experts = b_tensor.shape[0]()
+    comptime num_experts = b_tensor.shape[0]()
     var expert_id = expert_ids[Int(block_idx.z)]
     var a_start_row = a_offsets[Int(block_idx.z)]
 
@@ -704,9 +706,9 @@ fn grouped_matmul_amd_kernel_launcher[
     var b_ptr = b_tensor.ptr + expert_id * N * K
     var c_ptr = c_tensor.ptr + a_start_row * N
 
-    alias c_layout = Layout.row_major(UNKNOWN_VALUE, N)
-    alias a_layout = Layout.row_major(UNKNOWN_VALUE, K)
-    alias b_layout = Layout.row_major(
+    comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
+    comptime a_layout = Layout.row_major(UNKNOWN_VALUE, K)
+    comptime b_layout = Layout.row_major(
         N, K
     ) if transpose_b else Layout.row_major(K, N)
 
@@ -738,7 +740,7 @@ fn grouped_matmul_amd_kernel_launcher[
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         @parameter
         if elementwise_lambda_fn:
-            alias elementwise_epilogue = elementwise_lambda_fn.value()
+            comptime elementwise_epilogue = elementwise_lambda_fn.value()
             var batch_idx = IndexList[2](Int(a_start_row + idx[0]), idx[1])
             elementwise_epilogue(batch_idx, val)
 
@@ -771,12 +773,12 @@ fn grouped_matmul_amd_kernel_launcher[
 
         @parameter
         if elementwise_lambda_fn:
-            alias epilogue = elementwise_lambda_fn.value()
+            comptime epilogue = elementwise_lambda_fn.value()
 
-            alias BM = config.block_tile_shape[0]
-            alias BN = config.block_tile_shape[1]
-            alias vec_width = simd_width_of[c_type]()
-            alias alignment = align_of[SIMD[c_type, vec_width]]()
+            comptime BM = config.block_tile_shape[0]
+            comptime BN = config.block_tile_shape[1]
+            comptime vec_width = simd_width_of[c_type]()
+            comptime alignment = align_of[SIMD[c_type, vec_width]]()
 
             var block_m = Int(block_idx.y)
             var block_n = Int(block_idx.x)
@@ -785,8 +787,8 @@ fn grouped_matmul_amd_kernel_launcher[
             if UInt32(block_m * BM) >= UInt32(M):
                 return
 
-            alias threads_per_block = 256
-            alias elements_per_thread = ceildiv(BM * BN, threads_per_block)
+            comptime threads_per_block = 256
+            comptime elements_per_thread = ceildiv(BM * BN, threads_per_block)
 
             var tid = Int(thread_idx.x)
             var thread_start = tid * elements_per_thread
@@ -847,7 +849,7 @@ fn dispatch_amd_matmul_by_block_shape[
 
     @parameter
     if use_heuristic:
-        alias block_shape_list = _amdgpu_matmul_build_block_shape_list[N]()
+        comptime block_shape_list = _amdgpu_matmul_build_block_shape_list[N]()
 
         # Auto-tune block shape selection: Find the configuration that minimizes
         # SM idle time by scoring how evenly work distributes across all SMs.
@@ -858,10 +860,10 @@ fn dispatch_amd_matmul_by_block_shape[
 
         @parameter
         for i in range(len(block_shape_list)):
-            alias block_shape = block_shape_list[i]
-            alias block_m = block_shape[0]
-            alias block_n = block_shape[1]
-            alias n_blocks = ceildiv(N, block_n)
+            comptime block_shape = block_shape_list[i]
+            comptime block_m = block_shape[0]
+            comptime block_n = block_shape[1]
+            comptime n_blocks = ceildiv(N, block_n)
 
             var m_blocks = ceildiv(M, block_m)
             var total_blocks = m_blocks * n_blocks
@@ -876,7 +878,7 @@ fn dispatch_amd_matmul_by_block_shape[
         @parameter
         for i in range(len(block_shape_list)):
             if best_idx == i:
-                alias config = _amdgpu_matmul_config_from_block_shape[
+                comptime config = _amdgpu_matmul_config_from_block_shape[
                     c_type,
                     a_type,
                     b_type,
@@ -895,7 +897,7 @@ fn dispatch_amd_matmul_by_block_shape[
         block_n: Int,
         block_k: Int,
     ]() raises:
-        alias default_config = MatmulConfig[
+        comptime default_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
         ](
             block_tile_shape=Index(block_m, block_n, block_k),
@@ -945,17 +947,17 @@ fn grouped_matmul_amd[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    alias num_experts = b.shape.get[0]()
-    alias N = b.shape.get[1]()
-    alias K = b.shape.get[2]()
+    comptime num_experts = b.shape.get[0]()
+    comptime N = b.shape.get[1]()
+    comptime K = b.shape.get[2]()
 
     var total_M = 0
     for i in range(num_active_experts):
         total_M += Int(a_offsets[i + 1] - a_offsets[i])
 
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
     constrained[K % BK == 0]()
 
     var a_tensor = from_ndbuffer_row_major(a)
@@ -967,7 +969,7 @@ fn grouped_matmul_amd[
     ](b.data)
     var c_tensor = from_ndbuffer_row_major(c)
 
-    alias block_dim = 256
+    comptime block_dim = 256
 
     @always_inline
     @parameter
@@ -983,7 +985,7 @@ fn grouped_matmul_amd[
     fn launch_kernel[
         config: MatmulConfig[a_type, b_type, c_type, transpose_b]
     ]() raises:
-        alias kernel = grouped_matmul_amd_kernel_launcher[
+        comptime kernel = grouped_matmul_amd_kernel_launcher[
             c_type,
             a_type,
             b_type,
@@ -1045,18 +1047,18 @@ fn grouped_matmul[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    alias is_expert_shape_static = b_shape.all_known[3]() and a_shape.has_value[
-        1
-    ]() and c_shape.has_value[1]()
-    alias is_sm90_kernel_applicable = ctx.default_device_info is H100 and is_expert_shape_static
-    alias is_sm100_kernel_applicable = ctx.default_device_info is B200 and is_expert_shape_static
-    alias is_amd_kernel_applicable = has_amd_gpu_accelerator() and is_expert_shape_static
+    comptime is_expert_shape_static = b_shape.all_known[
+        3
+    ]() and a_shape.has_value[1]() and c_shape.has_value[1]()
+    comptime is_sm90_kernel_applicable = ctx.default_device_info is H100 and is_expert_shape_static
+    comptime is_sm100_kernel_applicable = ctx.default_device_info is B200 and is_expert_shape_static
+    comptime is_amd_kernel_applicable = has_amd_gpu_accelerator() and is_expert_shape_static
 
     @parameter
     if is_sm90_kernel_applicable:
-        alias static_N = c.shape.get[1]()
-        alias BN = _find_largest_bn_for_sm90_matmul[a_type, static_N]()
-        alias wgmma_shape = IndexList[3](64, BN, 16)
+        comptime static_N = c.shape.get[1]()
+        comptime BN = _find_largest_bn_for_sm90_matmul[a_type, static_N]()
+        comptime wgmma_shape = IndexList[3](64, BN, 16)
 
         grouped_matmul_sm90[
             wgmma_shape=wgmma_shape, elementwise_lambda_fn=elementwise_lambda_fn
@@ -1071,9 +1073,9 @@ fn grouped_matmul[
             ctx,
         )
     elif is_sm100_kernel_applicable:
-        alias N = b.shape.get[1]()
-        alias K = b.shape.get[2]()
-        alias contiguous_bytes = K * size_of[a_type]()
+        comptime N = b.shape.get[1]()
+        comptime K = b.shape.get[2]()
+        comptime contiguous_bytes = K * size_of[a_type]()
 
         fn get_swizzle_mode(contiguous_bytes: Int) -> TensorMapSwizzle:
             if contiguous_bytes >= TensorMapSwizzle.SWIZZLE_128B.bytes():
@@ -1085,22 +1087,22 @@ fn grouped_matmul[
             else:
                 return TensorMapSwizzle.SWIZZLE_NONE
 
-        alias a_swizzle = get_swizzle_mode(contiguous_bytes)
-        alias b_swizzle = a_swizzle
-        alias BK = (a_swizzle.bytes() // size_of[a_type]())
-        alias _MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
-        alias MMA_K = min(_MMA_K, K)
+        comptime a_swizzle = get_swizzle_mode(contiguous_bytes)
+        comptime b_swizzle = a_swizzle
+        comptime BK = (a_swizzle.bytes() // size_of[a_type]())
+        comptime _MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
+        comptime MMA_K = min(_MMA_K, K)
         # For cta_group = 2, N must be divisible by 256 to ensure correct tiling and memory alignment for the kernel.
-        alias cta_group = 2 if N % 256 == 0 else 1
-        alias block_tile_shape = Index(128, 32 // cta_group, BK)
-        alias umma_shape = Index(
+        comptime cta_group = 2 if N % 256 == 0 else 1
+        comptime block_tile_shape = Index(128, 32 // cta_group, BK)
+        comptime umma_shape = Index(
             block_tile_shape[0] * cta_group,
             block_tile_shape[1] * cta_group,
             MMA_K,
         )
-        alias cluster_shape = Index(cta_group, 1, 1)
-        alias transpose_b = True
-        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        comptime cluster_shape = Index(cta_group, 1, 1)
+        comptime transpose_b = True
+        comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             block_tile_shape=block_tile_shape,
             mma_shape=umma_shape,
             cluster_shape=cluster_shape,

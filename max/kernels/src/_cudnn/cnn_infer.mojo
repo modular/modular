@@ -39,7 +39,7 @@ from .infer import (
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_CUDNN_CNN_INFER_LIBRARY_PATHS: List[Path] = [
+comptime CUDA_CUDNN_CNN_INFER_LIBRARY_PATHS: List[Path] = [
     "libcudnn.so",
     "libcudnn.so.9",
     "libcudnn.so.8",
@@ -63,7 +63,7 @@ fn _on_error_msg() -> Error:
     )
 
 
-alias CUDA_CUDNN_CNN_INFER_LIBRARY = _Global[
+comptime CUDA_CUDNN_CNN_INFER_LIBRARY = _Global[
     "CUDA_CUDNN_CNN_INFER_LIBRARY", _init_dylib, on_error_msg=_on_error_msg
 ]
 
@@ -89,13 +89,13 @@ fn _get_dylib_function[
 # Bindings
 # ===-----------------------------------------------------------------------===#
 
-alias cudnnTensorStruct = OpaquePointer
-alias cudnnConvolutionStruct = OpaquePointer
-alias cudnnFilterStruct = OpaquePointer
-alias cudnnActivationStruct = OpaquePointer
-alias cudnnFusedOpsPlanStruct = OpaquePointer
-alias cudnnFusedOpsVariantParamStruct = NoneType
-alias cudnnFusedOpsConstParamStruct = NoneType
+comptime cudnnTensorStruct = OpaquePointer
+comptime cudnnConvolutionStruct = OpaquePointer
+comptime cudnnFilterStruct = OpaquePointer
+comptime cudnnActivationStruct = OpaquePointer
+comptime cudnnFusedOpsPlanStruct = OpaquePointer
+comptime cudnnFusedOpsVariantParamStruct = NoneType
+comptime cudnnFusedOpsConstParamStruct = NoneType
 
 
 fn cudnnGetConvolutionMathType(
@@ -264,11 +264,11 @@ fn cudnnSetConvolutionGroupCount(
     ]()(conv_desc, group_count)
 
 
-alias cudnnFusedOpsVariantParamPack_t = UnsafePointer[
+comptime cudnnFusedOpsVariantParamPack_t = UnsafePointer[
     cudnnFusedOpsVariantParamStruct
 ]
 
-alias cudnnConvolutionFwdAlgoPerf_t = cudnnConvolutionFwdAlgoPerfStruct
+comptime cudnnConvolutionFwdAlgoPerf_t = cudnnConvolutionFwdAlgoPerfStruct
 
 
 @register_passable("trivial")
@@ -346,45 +346,45 @@ fn cudnnGetConvolution2dDescriptor(
 @register_passable("trivial")
 struct cudnnFusedOpsConstParamLabel_t(Equatable, Writable):
     var _value: Int8
-    alias CUDNN_PARAM_XDESC = Self(0)
-    alias CUDNN_PARAM_XDATA_PLACEHOLDER = Self(1)
-    alias CUDNN_PARAM_BN_MODE = Self(2)
-    alias CUDNN_PARAM_BN_EQSCALEBIAS_DESC = Self(3)
-    alias CUDNN_PARAM_BN_EQSCALE_PLACEHOLDER = Self(4)
-    alias CUDNN_PARAM_BN_EQBIAS_PLACEHOLDER = Self(5)
-    alias CUDNN_PARAM_ACTIVATION_DESC = Self(6)
-    alias CUDNN_PARAM_CONV_DESC = Self(7)
-    alias CUDNN_PARAM_WDESC = Self(8)
-    alias CUDNN_PARAM_WDATA_PLACEHOLDER = Self(9)
-    alias CUDNN_PARAM_DWDESC = Self(10)
-    alias CUDNN_PARAM_DWDATA_PLACEHOLDER = Self(11)
-    alias CUDNN_PARAM_YDESC = Self(12)
-    alias CUDNN_PARAM_YDATA_PLACEHOLDER = Self(13)
-    alias CUDNN_PARAM_DYDESC = Self(14)
-    alias CUDNN_PARAM_DYDATA_PLACEHOLDER = Self(15)
-    alias CUDNN_PARAM_YSTATS_DESC = Self(16)
-    alias CUDNN_PARAM_YSUM_PLACEHOLDER = Self(17)
-    alias CUDNN_PARAM_YSQSUM_PLACEHOLDER = Self(18)
-    alias CUDNN_PARAM_BN_SCALEBIAS_MEANVAR_DESC = Self(19)
-    alias CUDNN_PARAM_BN_SCALE_PLACEHOLDER = Self(20)
-    alias CUDNN_PARAM_BN_BIAS_PLACEHOLDER = Self(21)
-    alias CUDNN_PARAM_BN_SAVED_MEAN_PLACEHOLDER = Self(22)
-    alias CUDNN_PARAM_BN_SAVED_INVSTD_PLACEHOLDER = Self(23)
-    alias CUDNN_PARAM_BN_RUNNING_MEAN_PLACEHOLDER = Self(24)
-    alias CUDNN_PARAM_BN_RUNNING_VAR_PLACEHOLDER = Self(25)
-    alias CUDNN_PARAM_ZDESC = Self(26)
-    alias CUDNN_PARAM_ZDATA_PLACEHOLDER = Self(27)
-    alias CUDNN_PARAM_BN_Z_EQSCALEBIAS_DESC = Self(28)
-    alias CUDNN_PARAM_BN_Z_EQSCALE_PLACEHOLDER = Self(29)
-    alias CUDNN_PARAM_BN_Z_EQBIAS_PLACEHOLDER = Self(30)
-    alias CUDNN_PARAM_ACTIVATION_BITMASK_DESC = Self(31)
-    alias CUDNN_PARAM_ACTIVATION_BITMASK_PLACEHOLDER = Self(32)
-    alias CUDNN_PARAM_DXDESC = Self(33)
-    alias CUDNN_PARAM_DXDATA_PLACEHOLDER = Self(34)
-    alias CUDNN_PARAM_DZDESC = Self(35)
-    alias CUDNN_PARAM_DZDATA_PLACEHOLDER = Self(36)
-    alias CUDNN_PARAM_BN_DSCALE_PLACEHOLDER = Self(37)
-    alias CUDNN_PARAM_BN_DBIAS_PLACEHOLDER = Self(38)
+    comptime CUDNN_PARAM_XDESC = Self(0)
+    comptime CUDNN_PARAM_XDATA_PLACEHOLDER = Self(1)
+    comptime CUDNN_PARAM_BN_MODE = Self(2)
+    comptime CUDNN_PARAM_BN_EQSCALEBIAS_DESC = Self(3)
+    comptime CUDNN_PARAM_BN_EQSCALE_PLACEHOLDER = Self(4)
+    comptime CUDNN_PARAM_BN_EQBIAS_PLACEHOLDER = Self(5)
+    comptime CUDNN_PARAM_ACTIVATION_DESC = Self(6)
+    comptime CUDNN_PARAM_CONV_DESC = Self(7)
+    comptime CUDNN_PARAM_WDESC = Self(8)
+    comptime CUDNN_PARAM_WDATA_PLACEHOLDER = Self(9)
+    comptime CUDNN_PARAM_DWDESC = Self(10)
+    comptime CUDNN_PARAM_DWDATA_PLACEHOLDER = Self(11)
+    comptime CUDNN_PARAM_YDESC = Self(12)
+    comptime CUDNN_PARAM_YDATA_PLACEHOLDER = Self(13)
+    comptime CUDNN_PARAM_DYDESC = Self(14)
+    comptime CUDNN_PARAM_DYDATA_PLACEHOLDER = Self(15)
+    comptime CUDNN_PARAM_YSTATS_DESC = Self(16)
+    comptime CUDNN_PARAM_YSUM_PLACEHOLDER = Self(17)
+    comptime CUDNN_PARAM_YSQSUM_PLACEHOLDER = Self(18)
+    comptime CUDNN_PARAM_BN_SCALEBIAS_MEANVAR_DESC = Self(19)
+    comptime CUDNN_PARAM_BN_SCALE_PLACEHOLDER = Self(20)
+    comptime CUDNN_PARAM_BN_BIAS_PLACEHOLDER = Self(21)
+    comptime CUDNN_PARAM_BN_SAVED_MEAN_PLACEHOLDER = Self(22)
+    comptime CUDNN_PARAM_BN_SAVED_INVSTD_PLACEHOLDER = Self(23)
+    comptime CUDNN_PARAM_BN_RUNNING_MEAN_PLACEHOLDER = Self(24)
+    comptime CUDNN_PARAM_BN_RUNNING_VAR_PLACEHOLDER = Self(25)
+    comptime CUDNN_PARAM_ZDESC = Self(26)
+    comptime CUDNN_PARAM_ZDATA_PLACEHOLDER = Self(27)
+    comptime CUDNN_PARAM_BN_Z_EQSCALEBIAS_DESC = Self(28)
+    comptime CUDNN_PARAM_BN_Z_EQSCALE_PLACEHOLDER = Self(29)
+    comptime CUDNN_PARAM_BN_Z_EQBIAS_PLACEHOLDER = Self(30)
+    comptime CUDNN_PARAM_ACTIVATION_BITMASK_DESC = Self(31)
+    comptime CUDNN_PARAM_ACTIVATION_BITMASK_PLACEHOLDER = Self(32)
+    comptime CUDNN_PARAM_DXDESC = Self(33)
+    comptime CUDNN_PARAM_DXDATA_PLACEHOLDER = Self(34)
+    comptime CUDNN_PARAM_DZDESC = Self(35)
+    comptime CUDNN_PARAM_DZDATA_PLACEHOLDER = Self(36)
+    comptime CUDNN_PARAM_BN_DSCALE_PLACEHOLDER = Self(37)
+    comptime CUDNN_PARAM_BN_DBIAS_PLACEHOLDER = Self(38)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -505,8 +505,8 @@ fn cudnnSetConvolutionReorderType(
 @register_passable("trivial")
 struct cudnnReorderType_t(Equatable, Identifiable, Writable):
     var _value: Int8
-    alias CUDNN_DEFAULT_REORDER = Self(0)
-    alias CUDNN_NO_REORDER = Self(1)
+    comptime CUDNN_DEFAULT_REORDER = Self(0)
+    comptime CUDNN_NO_REORDER = Self(1)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -537,7 +537,7 @@ struct cudnnReorderType_t(Equatable, Identifiable, Writable):
         return Int(self._value)
 
 
-alias cudnnConvolutionBwdDataAlgoPerf_t = cudnnConvolutionBwdDataAlgoPerfStruct
+comptime cudnnConvolutionBwdDataAlgoPerf_t = cudnnConvolutionBwdDataAlgoPerfStruct
 
 
 fn cudnnGetConvolution2dForwardOutputDim(
@@ -597,7 +597,7 @@ fn cudnnFindConvolutionForwardAlgorithm(
     )
 
 
-alias cudnnFusedOpsConstParamPack_t = UnsafePointer[
+comptime cudnnFusedOpsConstParamPack_t = UnsafePointer[
     cudnnFusedOpsConstParamStruct
 ]
 
@@ -640,13 +640,13 @@ fn cudnnGetConvolutionForwardAlgorithm_v7(
 @register_passable("trivial")
 struct cudnnFusedOps_t(Equatable, Identifiable, Writable):
     var _value: Int8
-    alias CUDNN_FUSED_SCALE_BIAS_ACTIVATION_CONV_BNSTATS = Self(0)
-    alias CUDNN_FUSED_SCALE_BIAS_ACTIVATION_WGRAD = Self(1)
-    alias CUDNN_FUSED_BN_FINALIZE_STATISTICS_TRAINING = Self(2)
-    alias CUDNN_FUSED_BN_FINALIZE_STATISTICS_INFERENCE = Self(3)
-    alias CUDNN_FUSED_CONV_SCALE_BIAS_ADD_ACTIVATION = Self(4)
-    alias CUDNN_FUSED_SCALE_BIAS_ADD_ACTIVATION_GEN_BITMASK = Self(5)
-    alias CUDNN_FUSED_DACTIVATION_FORK_DBATCHNORM = Self(6)
+    comptime CUDNN_FUSED_SCALE_BIAS_ACTIVATION_CONV_BNSTATS = Self(0)
+    comptime CUDNN_FUSED_SCALE_BIAS_ACTIVATION_WGRAD = Self(1)
+    comptime CUDNN_FUSED_BN_FINALIZE_STATISTICS_TRAINING = Self(2)
+    comptime CUDNN_FUSED_BN_FINALIZE_STATISTICS_INFERENCE = Self(3)
+    comptime CUDNN_FUSED_CONV_SCALE_BIAS_ADD_ACTIVATION = Self(4)
+    comptime CUDNN_FUSED_SCALE_BIAS_ADD_ACTIVATION_GEN_BITMASK = Self(5)
+    comptime CUDNN_FUSED_DACTIVATION_FORK_DBATCHNORM = Self(6)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -713,9 +713,9 @@ fn cudnnDestroyConvolutionDescriptor(
 @register_passable("trivial")
 struct cudnnFusedOpsPointerPlaceHolder_t(Equatable, Identifiable, Writable):
     var _value: Int8
-    alias CUDNN_PTR_NULL = Self(0)
-    alias CUDNN_PTR_ELEM_ALIGNED = Self(1)
-    alias CUDNN_PTR_16B_ALIGNED = Self(2)
+    comptime CUDNN_PTR_NULL = Self(0)
+    comptime CUDNN_PTR_ELEM_ALIGNED = Self(1)
+    comptime CUDNN_PTR_16B_ALIGNED = Self(2)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -748,9 +748,9 @@ struct cudnnFusedOpsPointerPlaceHolder_t(Equatable, Identifiable, Writable):
         return Int(self._value)
 
 
-alias cudnnFusedOpsPlan_t = UnsafePointer[cudnnFusedOpsPlanStruct]
+comptime cudnnFusedOpsPlan_t = UnsafePointer[cudnnFusedOpsPlanStruct]
 
-alias cudnnConvolutionDescriptor_t = UnsafePointer[cudnnConvolutionStruct]
+comptime cudnnConvolutionDescriptor_t = UnsafePointer[cudnnConvolutionStruct]
 
 
 fn cudnnConvolutionForward(
@@ -819,34 +819,34 @@ fn cudnnGetConvolutionReorderType(
 @register_passable("trivial")
 struct cudnnFusedOpsVariantParamLabel_t(Equatable, Writable):
     var _value: Int8
-    alias CUDNN_PTR_XDATA = Self(0)
-    alias CUDNN_PTR_BN_EQSCALE = Self(1)
-    alias CUDNN_PTR_BN_EQBIAS = Self(2)
-    alias CUDNN_PTR_WDATA = Self(3)
-    alias CUDNN_PTR_DWDATA = Self(4)
-    alias CUDNN_PTR_YDATA = Self(5)
-    alias CUDNN_PTR_DYDATA = Self(6)
-    alias CUDNN_PTR_YSUM = Self(7)
-    alias CUDNN_PTR_YSQSUM = Self(8)
-    alias CUDNN_PTR_WORKSPACE = Self(9)
-    alias CUDNN_PTR_BN_SCALE = Self(10)
-    alias CUDNN_PTR_BN_BIAS = Self(11)
-    alias CUDNN_PTR_BN_SAVED_MEAN = Self(12)
-    alias CUDNN_PTR_BN_SAVED_INVSTD = Self(13)
-    alias CUDNN_PTR_BN_RUNNING_MEAN = Self(14)
-    alias CUDNN_PTR_BN_RUNNING_VAR = Self(15)
-    alias CUDNN_PTR_ZDATA = Self(16)
-    alias CUDNN_PTR_BN_Z_EQSCALE = Self(17)
-    alias CUDNN_PTR_BN_Z_EQBIAS = Self(18)
-    alias CUDNN_PTR_ACTIVATION_BITMASK = Self(19)
-    alias CUDNN_PTR_DXDATA = Self(20)
-    alias CUDNN_PTR_DZDATA = Self(21)
-    alias CUDNN_PTR_BN_DSCALE = Self(22)
-    alias CUDNN_PTR_BN_DBIAS = Self(23)
-    alias CUDNN_SCALAR_SIZE_T_WORKSPACE_SIZE_IN_BYTES = Self(24)
-    alias CUDNN_SCALAR_INT64_T_BN_ACCUMULATION_COUNT = Self(25)
-    alias CUDNN_SCALAR_DOUBLE_BN_EXP_AVG_FACTOR = Self(26)
-    alias CUDNN_SCALAR_DOUBLE_BN_EPSILON = Self(27)
+    comptime CUDNN_PTR_XDATA = Self(0)
+    comptime CUDNN_PTR_BN_EQSCALE = Self(1)
+    comptime CUDNN_PTR_BN_EQBIAS = Self(2)
+    comptime CUDNN_PTR_WDATA = Self(3)
+    comptime CUDNN_PTR_DWDATA = Self(4)
+    comptime CUDNN_PTR_YDATA = Self(5)
+    comptime CUDNN_PTR_DYDATA = Self(6)
+    comptime CUDNN_PTR_YSUM = Self(7)
+    comptime CUDNN_PTR_YSQSUM = Self(8)
+    comptime CUDNN_PTR_WORKSPACE = Self(9)
+    comptime CUDNN_PTR_BN_SCALE = Self(10)
+    comptime CUDNN_PTR_BN_BIAS = Self(11)
+    comptime CUDNN_PTR_BN_SAVED_MEAN = Self(12)
+    comptime CUDNN_PTR_BN_SAVED_INVSTD = Self(13)
+    comptime CUDNN_PTR_BN_RUNNING_MEAN = Self(14)
+    comptime CUDNN_PTR_BN_RUNNING_VAR = Self(15)
+    comptime CUDNN_PTR_ZDATA = Self(16)
+    comptime CUDNN_PTR_BN_Z_EQSCALE = Self(17)
+    comptime CUDNN_PTR_BN_Z_EQBIAS = Self(18)
+    comptime CUDNN_PTR_ACTIVATION_BITMASK = Self(19)
+    comptime CUDNN_PTR_DXDATA = Self(20)
+    comptime CUDNN_PTR_DZDATA = Self(21)
+    comptime CUDNN_PTR_BN_DSCALE = Self(22)
+    comptime CUDNN_PTR_BN_DBIAS = Self(23)
+    comptime CUDNN_SCALAR_SIZE_T_WORKSPACE_SIZE_IN_BYTES = Self(24)
+    comptime CUDNN_SCALAR_INT64_T_BN_ACCUMULATION_COUNT = Self(25)
+    comptime CUDNN_SCALAR_DOUBLE_BN_EXP_AVG_FACTOR = Self(26)
+    comptime CUDNN_SCALAR_DOUBLE_BN_EPSILON = Self(27)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -1327,8 +1327,8 @@ fn cudnnGetConvolutionForwardAlgorithmMaxCount(
 @register_passable("trivial")
 struct cudnnConvolutionMode_t(Equatable, Identifiable, Writable):
     var _value: Int8
-    alias CUDNN_CONVOLUTION = Self(0)
-    alias CUDNN_CROSS_CORRELATION = Self(1)
+    comptime CUDNN_CONVOLUTION = Self(0)
+    comptime CUDNN_CROSS_CORRELATION = Self(1)
 
     fn __init__(out self, value: Int):
         self._value = value

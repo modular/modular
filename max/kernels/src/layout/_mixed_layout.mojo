@@ -191,7 +191,7 @@ fn unflatten[
     Returns:
         A nested tuple with the structure of structure_types and values from flat_tuple.
     """
-    alias Offsets = _FlattenedOffsets[*structure_types]
+    comptime Offsets = _FlattenedOffsets[*structure_types]
     var result_tuple: Tuple[*structure_types]
 
     __mlir_op.`lit.ownership.mark_initialized`(
@@ -201,14 +201,14 @@ fn unflatten[
     @parameter
     for i in range(variadic_size(structure_types)):
         var result_ptr = UnsafePointer(to=result_tuple[i])
-        alias T = structure_types[i]
-        alias offset = Offsets[i].STATIC_VALUE
+        comptime T = structure_types[i]
+        comptime offset = Offsets[i].STATIC_VALUE
 
         @parameter
         if T.IS_TUPLE:
             # For nested tuples, we need to recursively unflatten
             # Extract the slice of flat_tuple that corresponds to this nested element
-            alias count = variadic_size(_Flattened[*T.VariadicType])
+            comptime count = variadic_size(_Flattened[*T.VariadicType])
 
             # Build a tuple containing just the elements for this nested structure
             var nested_flat: Tuple[*_Flattened[*T.VariadicType]]
@@ -246,9 +246,9 @@ fn row_major(
     # For now, we keep both shape and strides flat (not nested)
 
     var flat_shape = tuple.flatten()
-    alias FlatTypes = _Flattened[*tuple.element_types]
-    alias RowMajorTypes = _RowMajor[*tuple.element_types]
-    alias flat_rank = variadic_size(FlatTypes)
+    comptime FlatTypes = _Flattened[*tuple.element_types]
+    comptime RowMajorTypes = _RowMajor[*tuple.element_types]
+    comptime flat_rank = variadic_size(FlatTypes)
 
     var flat_strides: Tuple[*RowMajorTypes]
 
@@ -267,11 +267,11 @@ fn row_major(
         @parameter
         if i == 0:
             # Rightmost dimension always has stride 1
-            alias StrideType = RowMajorTypes[idx]
+            comptime StrideType = RowMajorTypes[idx]
             stride_ptr.init_pointee_copy(rebind[StrideType](Idx[1]()))
         else:
             # Calculate stride as product of shape[idx+1] * stride[idx+1]
-            alias StrideType = RowMajorTypes[idx]
+            comptime StrideType = RowMajorTypes[idx]
 
             @parameter
             if StrideType.STATIC_VALUE != -1:

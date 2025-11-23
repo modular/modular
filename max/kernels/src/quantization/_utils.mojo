@@ -18,7 +18,7 @@ from sys.intrinsics import llvm_intrinsic
 fn roundeven_to_int32[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[DType.int32, simd_width]:
-    alias native_width = simd_width_of[dtype]()
+    comptime native_width = simd_width_of[dtype]()
 
     # Use the AVX512 instruction `vcvtps2dq` with embedded rounding control
     # set to do rounding to nearest with ties to even (roundeven). This

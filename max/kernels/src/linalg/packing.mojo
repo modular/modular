@@ -175,7 +175,7 @@ struct PackMatrixRows[
         #  with un-transposed data.
         @parameter
         for idx in range(Self.simd_size):
-            alias inner_row_idx = idx
+            comptime inner_row_idx = idx
             # Check that the current row has valid data.
             if skip_row_bound or (inner_row_idx < read_bound[0]):
                 var row_global_index = Index(
@@ -387,7 +387,7 @@ struct PackMatrixCols[
                     if true.
         """
 
-        alias unroll_factor = get_packB_unroll_factor()
+        comptime unroll_factor = get_packB_unroll_factor()
 
         @always_inline
         @parameter
@@ -454,7 +454,7 @@ struct PackMatrixCols[
         """
         constrained[Self.use_vnni]()
 
-        alias vnni_cols = 4
+        comptime vnni_cols = 4
 
         var kc = self.valid_data_dim[0]
         var nc = self.valid_data_dim[1]
@@ -479,13 +479,13 @@ struct PackMatrixCols[
                         )
 
     fn _pack_i8mm(self):
-        alias i8mm_rows = 2
-        alias i8mm_cols = 8
+        comptime i8mm_rows = 2
+        comptime i8mm_cols = 8
 
         constrained[Self.use_i8mm]()
         var kc = self.valid_data_dim[0]
         var nc = self.valid_data_dim[1]
-        alias nr = Self.column_inner_size // 2
+        comptime nr = Self.column_inner_size // 2
         for i in range(0, self.pack_tile_dim[0], i8mm_cols):
             for j in range(self.pack_tile_dim[1] // nr):
                 for p in range(0, nr, i8mm_rows):
@@ -513,7 +513,7 @@ struct PackMatrixCols[
         Each iteration copies a block of shape (unroll_factor, simd_size)."""
         constrained[not Self.use_vnni and not Self.use_i8mm]()
         var valid_row_count = min(self.valid_data_dim[0], self.pack_tile_dim[0])
-        alias unroll_factor = get_packB_unroll_factor()
+        comptime unroll_factor = get_packB_unroll_factor()
 
         var row_idx: Int = 0
         var col_idx: Int
@@ -574,7 +574,7 @@ fn _pack_matmul_b_shape_func_impl[
     @parameter
     @always_inline
     fn dispatch_on_kernel_type[kernel_type: Bool]():
-        alias config = get_kernel_config[
+        comptime config = get_kernel_config[
             a_type,
             b_type,
             c_type,
@@ -601,9 +601,9 @@ fn _pack_matmul_b_shape_func_impl[
     # apple_gemv), so assign the transposed B dimensions.
     @parameter
     if not use_apple_accelerate_lib[c_type, a_type, b_type]():
-        alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
-        alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
-        alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
+        comptime use_vnni = use_vnni_fn[a_type, b_type, c_type]()
+        comptime use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+        comptime factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
         output[0] = align_up(output[0], factor)
         output[1] = align_up(output[1], tile_n_k[0])
     else:
@@ -670,10 +670,10 @@ fn pack_b[
     var dst_flat = dst.flatten()
     var dst_offset: Int = 0
 
-    alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
-    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
-    alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
-    alias inner_size2 = inner_size // 2 if use_i8mm else inner_size
+    comptime use_vnni = use_vnni_fn[a_type, b_type, c_type]()
+    comptime use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+    comptime factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
+    comptime inner_size2 = inner_size // 2 if use_i8mm else inner_size
 
     @parameter
     if not transpose_b:
@@ -821,7 +821,7 @@ fn _pack_b_ndbuffer_impl[
         @parameter
         @always_inline
         fn dispatch_on_kernel_type[kernel_type: Bool]():
-            alias config = get_kernel_config[
+            comptime config = get_kernel_config[
                 a_type,
                 b_type,
                 c_type,
@@ -992,11 +992,11 @@ struct BTileGenerator[
             A view of the packed tile.
 
         """
-        alias use_vnni = use_vnni_fn[Self.a_type, Self.b_type, Self.c_type]()
-        alias use_i8mm = use_i8mm_fn[Self.a_type, Self.b_type, Self.c_type]()
+        comptime use_vnni = use_vnni_fn[Self.a_type, Self.b_type, Self.c_type]()
+        comptime use_i8mm = use_i8mm_fn[Self.a_type, Self.b_type, Self.c_type]()
 
-        alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
-        alias inner_size2 = inner_size // 2 if use_i8mm else inner_size
+        comptime factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
+        comptime inner_size2 = inner_size // 2 if use_i8mm else inner_size
 
         var k = align_up(tile_dim_nk[1], factor)
         var tile_shape_nopack = DimList(
@@ -1056,7 +1056,7 @@ struct BTileGenerator[
             # tile_k is constant.
 
             var factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
-            alias inner_size2 = inner_size // 2 if use_i8mm else inner_size
+            comptime inner_size2 = inner_size // 2 if use_i8mm else inner_size
 
             var tile_k = self.tile_n_k[1]
             var tile_k2 = align_up(

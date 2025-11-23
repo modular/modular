@@ -25,8 +25,8 @@ from buffer.buffer import NDBuffer
 struct RasterOrder(ImplicitlyCopyable, Movable):
     var _value: Int32
 
-    alias AlongN = Self(0)
-    alias AlongM = Self(1)
+    comptime AlongN = Self(0)
+    comptime AlongM = Self(1)
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -105,14 +105,14 @@ struct TileScheduler[
     var group_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin]
     var current_iter: Int32  # Tracks the scheduler's progress across kernel launches
     var current_group_idx: UInt32
-    alias tile_n = Self.tile_shape[1] * Self.cta_group
-    alias div_block_n = FastDiv[DType.uint32](Self.tile_n)
+    comptime tile_n = Self.tile_shape[1] * Self.cta_group
+    comptime div_block_n = FastDiv[DType.uint32](Self.tile_n)
     var current_n_cumsum: UInt32
     var block_idx_start: UInt32
 
-    alias num_m_blocks: UInt32 = ceildiv(Self.M, Self.tile_shape[0])
+    comptime num_m_blocks: UInt32 = ceildiv(Self.M, Self.tile_shape[0])
 
-    alias kNum1DBlocksPerGroup: UInt32 = 16
+    comptime kNum1DBlocksPerGroup: UInt32 = 16
 
     @always_inline
     fn __init__(
@@ -131,7 +131,7 @@ struct TileScheduler[
             + " and cluster M size = "
             + String(Self.cluster[0]),
         ]()
-        alias cluster_m_size = Self.cluster[0] * Self.tile_shape[0]
+        comptime cluster_m_size = Self.cluster[0] * Self.tile_shape[0]
         constrained[
             Self.cluster[0] == 1 or Self.M % cluster_m_size == 0,
             "Problem shape M must be divisible by cluster M size. Got "
@@ -216,7 +216,7 @@ struct TileScheduler[
         Calculates swizzled (m_block_idx, n_block_idx) based on the overall block_idx.
         Returns a tuple (m_block_idx, n_block_idx).
         """
-        alias primary_num_blocks: UInt32 = Self.num_m_blocks
+        comptime primary_num_blocks: UInt32 = Self.num_m_blocks
         if not Self.swizzle:
             return (
                 block_idx % primary_num_blocks,
@@ -236,7 +236,7 @@ struct TileScheduler[
         var div_num_blocks_per_group = FastDiv[DType.uint32](
             Int(num_blocks_per_group)
         )
-        alias uint_type = div_num_blocks_per_group.uint_type
+        comptime uint_type = div_num_blocks_per_group.uint_type
         var group_idx = UInt32(
             rebind[Scalar[uint_type]](block_idx) / div_num_blocks_per_group
         )
@@ -248,7 +248,7 @@ struct TileScheduler[
         var div_num_blocks_in_group = FastDiv[DType.uint32](
             Int(num_blocks_in_group)
         )
-        alias uint_type2 = div_num_blocks_in_group.uint_type
+        comptime uint_type2 = div_num_blocks_in_group.uint_type
         m_block_idx = first_block_idx + UInt32(
             rebind[Scalar[uint_type2]](in_group_idx) % div_num_blocks_in_group
         )

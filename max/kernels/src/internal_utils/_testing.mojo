@@ -199,7 +199,7 @@ fn _assert_with_measure_impl[
     location: OptionalReg[_SourceLocation] = None,
     threshold: OptionalReg[Float64] = None,
 ) raises:
-    alias sqrt_eps = exp2(-0.5 * FPUtils[dtype].mantissa_width()).cast[
+    comptime sqrt_eps = exp2(-0.5 * FPUtils[dtype].mantissa_width()).cast[
         DType.float64
     ]()
     var m = measure(

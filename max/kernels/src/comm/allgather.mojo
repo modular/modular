@@ -114,7 +114,7 @@ fn _allgather_p2p_kernel[
     Each GPU directly reads from all other GPUs and writes to its output buffers.
     Uses round-robin access pattern to balance NVLink traffic.
     """
-    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
 
     var global_tid = global_idx.x
     var stride = grid_dim.x * UInt(BLOCK_SIZE)
@@ -177,7 +177,7 @@ fn _allgather_p2p[
         list_of_in_ptrs[i] = input_buffers[i].data
         lengths[i] = input_buffers[i].num_elements()
 
-    alias BLOCK_SIZE = 256
+    comptime BLOCK_SIZE = 256
 
     # Launch kernel on each GPU.
     for gpu_idx in range(ngpus):
@@ -196,7 +196,7 @@ fn _allgather_p2p[
         for i in range(ngpus):
             max_length = max(max_length, lengths[i])
 
-        alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+        comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
         # Use ceildiv for max_length to ensure we have enough threads.
         var grid_size = min(
             max_num_blocks,
@@ -204,7 +204,7 @@ fn _allgather_p2p[
         )
 
         # Launch kernel.
-        alias allgather_p2p_kernel = _allgather_p2p_kernel[
+        comptime allgather_p2p_kernel = _allgather_p2p_kernel[
             dtype,
             rank,
             ngpus,

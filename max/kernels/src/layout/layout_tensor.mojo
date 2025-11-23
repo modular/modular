@@ -133,7 +133,7 @@ fn _project_on_axis[
     return p_t
 
 
-alias _swizzle_signature = fn[dtype: DType] (Scalar[dtype]) -> Scalar[dtype]
+comptime _swizzle_signature = fn[dtype: DType] (Scalar[dtype]) -> Scalar[dtype]
 
 
 fn _get_slice_size(layout: Layout, slc: Slice, dim: Int) -> Int:
@@ -204,7 +204,7 @@ fn _tile_is_masked[layout: Layout, *tile_sizes: Int]() -> Bool:
 
     @parameter
     for axis in range(layout.rank()):
-        alias dim = product(layout.shape[axis])
+        comptime dim = product(layout.shape[axis])
 
         @parameter
         if dim % tile_sizes[axis] != 0:
@@ -248,8 +248,8 @@ fn _distribute_is_masked[
 
     @parameter
     for i in range(layout.rank()):
-        alias layout_dim = Int(product(layout.shape[i]))
-        alias thread_dim = Int(product(threads_layout.shape[i]))
+        comptime layout_dim = Int(product(layout.shape[i]))
+        comptime thread_dim = Int(product(threads_layout.shape[i]))
 
         @parameter
         if layout_dim % thread_dim != 0:
@@ -314,7 +314,7 @@ struct LayoutTensor[
     """
 
     # `trait DevicePassable` implementation, to allow LayoutTensor to be passed directly to kernels
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -359,7 +359,7 @@ struct LayoutTensor[
         """
         return Self.get_type_name()
 
-    alias rank = Self.layout.rank()
+    comptime rank = Self.layout.rank()
     """The number of dimensions in the tensor's layout."""
 
     var ptr: UnsafePointer[
@@ -373,9 +373,9 @@ struct LayoutTensor[
     This pointer respects the specified address space, alignment, mutability,
     and origin tracking for memory safety and performance optimization."""
 
-    alias storage_size = size_of[Self.dtype]() * Self.layout.size()
+    comptime storage_size = size_of[Self.dtype]() * Self.layout.size()
 
-    alias RuntimeLayoutType = RuntimeLayout[
+    comptime RuntimeLayoutType = RuntimeLayout[
         Self.layout,
         element_type = Self.layout_int_type,
         linear_idx_type = Self.linear_idx_type,
@@ -388,7 +388,7 @@ struct LayoutTensor[
     efficient mapping between logical tensor coordinates and physical memory
     locations."""
 
-    alias RuntimeElementLayoutType = RuntimeLayout[
+    comptime RuntimeElementLayoutType = RuntimeLayout[
         Self.element_layout,
         element_type = DType.int32,
         linear_idx_type = Self.linear_idx_type,
@@ -400,18 +400,18 @@ struct LayoutTensor[
     Used when elements themselves have structure, such as in blocked or tiled
     layouts."""
 
-    alias element_size = Self.element_layout.size()
+    comptime element_size = Self.element_layout.size()
     """The number of scalar values in each element of the tensor."""
 
-    alias element_type = SIMD[Self.dtype, Self.element_size]
+    comptime element_type = SIMD[Self.dtype, Self.element_size]
     """The SIMD vector type used for vectorized operations on tensor elements."""
 
-    alias num_strides: Int = Self.RuntimeLayoutType.StrideType.scalar_length
-    alias idx_list_t[rank: Int = Self.rank] = IndexList[
+    comptime num_strides: Int = Self.RuntimeLayoutType.StrideType.scalar_length
+    comptime idx_list_t[rank: Int = Self.rank] = IndexList[
         rank, element_type = Self.linear_idx_type
     ]
 
-    alias GenericAddressSpaceLayoutTensor = LayoutTensor[
+    comptime GenericAddressSpaceLayoutTensor = LayoutTensor[
         mut = Self.mut,
         Self.dtype,
         Self.layout,
@@ -592,7 +592,7 @@ struct LayoutTensor[
             DType.int32, target_linear_idx_type = Self.linear_idx_type
         ]()
 
-    alias GenericLayoutTensorType = LayoutTensor[
+    comptime GenericLayoutTensorType = LayoutTensor[
         Self.dtype,
         Self.layout,
         Self.origin,
@@ -626,7 +626,7 @@ struct LayoutTensor[
         from gpu.host import DeviceContext, DeviceBuffer
         from layout import Layout, LayoutTensor
 
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
 
         var ctx = DeviceContext()
         # Allocate buffers
@@ -641,7 +641,7 @@ struct LayoutTensor[
         ctx.enqueue_copy(dev_buf, host_buf)
 
         # Create LayoutTensor to use on device
-        alias layout = Layout.row_major(4, 4)
+        comptime layout = Layout.row_major(4, 4)
         var tensor = LayoutTensor[dtype, layout](dev_buf)
         ...
         ```
@@ -672,12 +672,12 @@ struct LayoutTensor[
         from gpu.host import DeviceContext, HostBuffer
         from layout import Layout, LayoutTensor
 
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
 
         var ctx = DeviceContext()
         var dev_buf = ctx.enqueue_create_host_buffer[dtype](8)
 
-        alias layout = Layout.row_major(4, 4)
+        comptime layout = Layout.row_major(4, 4)
         var tensor = LayoutTensor[dtype, layout](dev_buf)
         ```
 
@@ -841,7 +841,7 @@ struct LayoutTensor[
             self.runtime_element_layout,
         }
 
-    alias BitcastType[
+    comptime BitcastType[
         new_dtype: DType,
         /,
         address_space: AddressSpace = Self.address_space,
@@ -886,7 +886,7 @@ struct LayoutTensor[
             self.runtime_layout,
         )
 
-    alias OriginCastType[
+    comptime OriginCastType[
         mut: Bool,
         origin: Origin[mut],
     ] = LayoutTensor[
@@ -901,8 +901,8 @@ struct LayoutTensor[
         alignment = Self.alignment,
     ]
 
-    alias MutableAnyType = Self.OriginCastType[True, MutAnyOrigin]
-    alias _AsMut = Self.OriginCastType[True, _]
+    comptime MutableAnyType = Self.OriginCastType[True, MutAnyOrigin]
+    comptime _AsMut = Self.OriginCastType[True, _]
 
     @always_inline("nodebug")
     fn as_any_origin(
@@ -962,7 +962,7 @@ struct LayoutTensor[
         ]()
         result = abort[type_of(result)]()
 
-    alias AddressSpaceCastType[
+    comptime AddressSpaceCastType[
         address_space: AddressSpace = Self.address_space,
     ] = LayoutTensor[
         Self.dtype,
@@ -1081,7 +1081,7 @@ struct LayoutTensor[
 
         @parameter
         for i in range(self.layout.size()):
-            alias idx = self.layout(i)
+            comptime idx = self.layout(i)
             self.ptr.mut_cast[True]().store(
                 idx, func(self.ptr.load[width = Self.element_size](idx))
             )
@@ -1193,10 +1193,10 @@ struct LayoutTensor[
 
             @parameter
             for i in range(self.layout.size()):
-                alias other_size = other.layout.size()
+                comptime other_size = other.layout.size()
 
-                alias lhs_idx = self.layout(i)
-                alias rhs_idx = other.layout(i % other_size)
+                comptime lhs_idx = self.layout(i)
+                comptime rhs_idx = other.layout(i % other_size)
 
                 self.ptr.mut_cast[True]().store(
                     lhs_idx,
@@ -1209,8 +1209,8 @@ struct LayoutTensor[
 
         @parameter
         for i in range(self.layout.size()):
-            alias lhs_idx = self.layout(i)
-            alias rhs_idx = other.layout(i)
+            comptime lhs_idx = self.layout(i)
+            comptime rhs_idx = other.layout(i)
             self.ptr.mut_cast[True]().store(
                 lhs_idx,
                 func(
@@ -1869,7 +1869,7 @@ struct LayoutTensor[
         Returns:
             The element at the specified position with the tensor's data type.
         """
-        alias arg_count = args.__len__()
+        comptime arg_count = args.__len__()
 
         constrained[
             Self.rank == arg_count or Self.num_strides == arg_count,
@@ -1929,7 +1929,7 @@ struct LayoutTensor[
             will result in undefined behavior.
         """
 
-        alias arg_count = args.__len__()
+        comptime arg_count = args.__len__()
 
         constrained[
             Self.rank == arg_count or Self.num_strides == arg_count,
@@ -2139,7 +2139,7 @@ struct LayoutTensor[
             result in undefined behavior.
         """
 
-        alias _alignment = align_of[SIMD[Self.dtype, width]]()
+        comptime _alignment = align_of[SIMD[Self.dtype, width]]()
         return self.ptr.load[width=width, alignment=_alignment](
             self._offset(m, n)
         )
@@ -2269,7 +2269,7 @@ struct LayoutTensor[
         - This operation modifies the tensor's data in-place.
         """
 
-        alias _alignment = align_of[SIMD[Self.dtype, width]]()
+        comptime _alignment = align_of[SIMD[Self.dtype, width]]()
         return self.ptr.store[alignment=_alignment](self._offset(m, n), val)
 
     @always_inline("nodebug")
@@ -2283,7 +2283,7 @@ struct LayoutTensor[
 
         @parameter
         if Self.layout.all_dims_known():
-            alias size = Self.layout.size()
+            comptime size = Self.layout.size()
             return size
         else:
             return self.runtime_layout.size()
@@ -2369,7 +2369,7 @@ struct LayoutTensor[
             ]()
         )
 
-    alias StackTensorType = LayoutTensor[
+    comptime StackTensorType = LayoutTensor[
         Self.dtype,
         Self.layout,
         MutAnyOrigin,
@@ -2447,8 +2447,8 @@ struct LayoutTensor[
     fn _get_rank_offset[
         num_strides: Int, rank: Int, //, rank_idx: Int
     ](stride: IndexList[num_strides, **_], vals: IndexList[rank, **_]) -> Int:
-        alias sub_layout = Self.layout[rank_idx]
-        alias stride_idx = Self._get_rank_stride_offset(rank_idx)
+        comptime sub_layout = Self.layout[rank_idx]
+        comptime stride_idx = Self._get_rank_stride_offset(rank_idx)
 
         @parameter
         if len(sub_layout) == 1:
@@ -2467,8 +2467,8 @@ struct LayoutTensor[
 
         @parameter
         for rank_idx in range(Self.rank):
-            alias sub_layout = flatten(Self.layout.shape[rank_idx])
-            alias sub_layout_size = len(sub_layout)
+            comptime sub_layout = flatten(Self.layout.shape[rank_idx])
+            comptime sub_layout_size = len(sub_layout)
             constrained[sub_layout_size > 0]()
 
             @parameter
@@ -2482,7 +2482,7 @@ struct LayoutTensor[
 
                 @parameter
                 for i in range(sub_layout_size - 1):
-                    alias sz: Int = sub_layout[i].value()
+                    comptime sz: Int = sub_layout[i].value()
                     constrained[
                         sz != UNKNOWN_VALUE,
                         (
@@ -2565,7 +2565,9 @@ struct LayoutTensor[
         """
 
         # FIXME: having to specify the origin is kind of weird
-        alias shape = Self._to_static[Self.layout.shape, Self.layout_int_type]()
+        comptime shape = Self._to_static[
+            Self.layout.shape, Self.layout_int_type
+        ]()
         return shape[idx]
 
     @always_inline
@@ -2609,7 +2611,7 @@ struct LayoutTensor[
         """
 
         # FIXME: having to specify the origin is kind of weird
-        alias stride = Self._to_static[
+        comptime stride = Self._to_static[
             Self.layout.stride, Self.linear_idx_type
         ]()
         return stride[idx]
@@ -2723,7 +2725,9 @@ struct LayoutTensor[
             ),
         ]()
 
-        alias shape = Self._to_static[Self.layout.shape, Self.layout_int_type]()
+        comptime shape = Self._to_static[
+            Self.layout.shape, Self.layout_int_type
+        ]()
 
         @parameter
         if not Self.layout.shape[idx].all_known() or Self.masked:
@@ -2731,7 +2735,7 @@ struct LayoutTensor[
         else:
             return shape[idx]
 
-    alias CoalesceType[element_layout: Layout] = LayoutTensor[
+    comptime CoalesceType[element_layout: Layout] = LayoutTensor[
         Self.dtype,
         coalesce(Self.layout),
         Self.origin,
@@ -2778,7 +2782,7 @@ struct LayoutTensor[
 
     @staticmethod
     fn _divide_tiles[*tile_sizes: Int]() -> Layout:
-        alias tiler = MakeTileLayoutList[*tile_sizes]()
+        comptime tiler = MakeTileLayoutList[*tile_sizes]()
         return zipped_divide(Self.layout, materialize[tiler]())
 
     @staticmethod
@@ -2863,7 +2867,7 @@ struct LayoutTensor[
             i += 1
         return zipped_divide(Self.layout, tiler)
 
-    alias TileType[*tile_sizes: Int] = LayoutTensor[
+    comptime TileType[*tile_sizes: Int] = LayoutTensor[
         Self.dtype,
         Self._compute_tile_layout[*tile_sizes]()[0],
         Self.origin,
@@ -2942,17 +2946,17 @@ struct LayoutTensor[
             based on the tensor's layout properties.
         """
 
-        alias num_tiles = stdlib.builtin.variadic_size(tile_sizes)
+        comptime num_tiles = stdlib.builtin.variadic_size(tile_sizes)
 
         # need to calculate this again because _tiled_layout[1] is required for the offset calculation
-        alias _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
+        comptime _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
 
         constrained[
             _tiled_layout[1].rank() == num_tiles,
             "Number of tiles should match the rank",
         ]()
 
-        alias tile_type = self.TileType[*tile_sizes]
+        comptime tile_type = self.TileType[*tile_sizes]
 
         var offset = 0
         var runtime_shape = tile_type.RuntimeLayoutType.ShapeType()
@@ -2965,7 +2969,7 @@ struct LayoutTensor[
 
             @parameter
             for i in range(num_tiles):
-                alias stride = product(_tiled_layout[1].stride[i])
+                comptime stride = product(_tiled_layout[1].stride[i])
                 offset += tile_coords[i] * stride
 
             var runtime_layout = tile_type.RuntimeLayoutType(
@@ -3006,7 +3010,7 @@ struct LayoutTensor[
 
             return tile_type(self.ptr.offset(offset), runtime_layout)
 
-    alias SIMDTileType[tile_size: Int] = Self.TileType[
+    comptime SIMDTileType[tile_size: Int] = Self.TileType[
         tile_size, simd_width_of[Self.dtype]()
     ]
 
@@ -3028,7 +3032,7 @@ struct LayoutTensor[
         """
         return self.tile[tile_size, simd_width_of[Self.dtype]()](tile_idx)
 
-    alias CornerCoordsType = IndexList[
+    comptime CornerCoordsType = IndexList[
         len(flatten(Self.layout.shape)),
         element_type = Self.layout_int_type,
     ]
@@ -3060,17 +3064,17 @@ struct LayoutTensor[
                 - The corner coordinates of the tile.
                 - The offset of the tile.
         """
-        alias num_tiles = stdlib.builtin.variadic_size(tile_sizes)
+        comptime num_tiles = stdlib.builtin.variadic_size(tile_sizes)
 
         # need to calculate this again because _tiled_layout[1] is required for the offset calculation
-        alias _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
+        comptime _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
 
         constrained[
             _tiled_layout[1].rank() == num_tiles,
             "Number of tiles should match the rank",
         ]()
 
-        alias tile_type = self.TileType[*tile_sizes]
+        comptime tile_type = self.TileType[*tile_sizes]
 
         # Static layout tiling
         # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
@@ -3086,7 +3090,7 @@ struct LayoutTensor[
 
             @parameter
             for i in range(num_tiles):
-                alias stride = Int(_tiled_layout[1].stride[i])
+                comptime stride = Int(_tiled_layout[1].stride[i])
                 offset += tile_coords[i] * stride
                 corner_coords[i] = tile_coords[i] * tile_sizes[i]
 
@@ -3136,7 +3140,7 @@ struct LayoutTensor[
                 offset,
             )
 
-    alias TiledIteratorType[
+    comptime TiledIteratorType[
         *tile_sizes: Int,
         axis: Int = 0,
     ] = LayoutTensorIter[
@@ -3214,14 +3218,14 @@ struct LayoutTensor[
         ```
         """
 
-        alias tiles_rank = stdlib.builtin.variadic_size(tile_sizes)
-        alias __tiled_layout = Self._compute_tile_layout[*tile_sizes]()
+        comptime tiles_rank = stdlib.builtin.variadic_size(tile_sizes)
+        comptime __tiled_layout = Self._compute_tile_layout[*tile_sizes]()
         constrained[
             __tiled_layout[1].rank() == tiles_rank,
             "Number of tiles should match the rank",
         ]()
 
-        alias tiled_iterator_type = Self.TiledIteratorType[
+        comptime tiled_iterator_type = Self.TiledIteratorType[
             *tile_sizes, axis=axis
         ]
 
@@ -3238,7 +3242,7 @@ struct LayoutTensor[
 
             @parameter
             for i in range(tiles_rank):
-                alias stride = Int(__tiled_layout[1].stride[i])
+                comptime stride = Int(__tiled_layout[1].stride[i])
                 ptr_offset += tile_coords[i] * stride
 
             # fmt: off
@@ -3246,14 +3250,14 @@ struct LayoutTensor[
             # A nested LayoutTensor may have shape=(16, 64) and stride=(1, 16)
             # In order to calculate the bound we only need to use the last
             # element in the IntTuple.
-            alias is_axis_val = Self.layout.shape[axis].is_value()
-            alias bound = Self.layout.shape[axis].value() * Self.layout.stride[axis].value() \
+            comptime is_axis_val = Self.layout.shape[axis].is_value()
+            comptime bound = Self.layout.shape[axis].value() * Self.layout.stride[axis].value() \
                 if is_axis_val \
                 else Self.layout.shape[axis][-1].value() * Self.layout.stride[axis][-1].value()
-            alias dim_bound = Self.shape[axis]() \
+            comptime dim_bound = Self.shape[axis]() \
                 if is_axis_val \
                 else product(Self.layout.shape[axis])
-            alias stride = __tiled_layout[1].stride[axis].value()
+            comptime stride = __tiled_layout[1].stride[axis].value()
             # fmt: on
 
             @parameter
@@ -3321,7 +3325,7 @@ struct LayoutTensor[
                 idx=tile_coords[axis],
             )
 
-    alias SplitElementType[
+    comptime SplitElementType[
         count: Int,
         axis: Int = 0,
     ] = LayoutTensor[
@@ -3335,7 +3339,7 @@ struct LayoutTensor[
         alignment = Self.alignment,
     ]
 
-    alias StaticSplitType[
+    comptime StaticSplitType[
         count: Int,
         axis: Int = 0,
     ] = StaticTuple[
@@ -3373,7 +3377,7 @@ struct LayoutTensor[
             "The input dimension must be divisible over the input count.",
         ]()
 
-        alias stride = Self.layout.stride[axis].value()
+        comptime stride = Self.layout.stride[axis].value()
         var tiles = Self.StaticSplitType[count, axis]()
 
         @parameter
@@ -3382,7 +3386,7 @@ struct LayoutTensor[
             # known at compile time. Otherwise we get compile time failure.
             # The compiler can't allocate LayoutTensor on stack if ptr is not known at compile time.
             # See MOCO-1081 for more details.
-            alias tile_size = Self.layout.shape[axis].value() // count
+            comptime tile_size = Self.layout.shape[axis].value() // count
             tiles[i] = LayoutTensor[
                 Self.dtype,
                 Self._compute_tile_layout[
@@ -3396,7 +3400,7 @@ struct LayoutTensor[
 
         return tiles
 
-    alias DynamicSplitType[
+    comptime DynamicSplitType[
         axis: Int = 0,
     ] = LayoutTensor[
         Self.dtype,
@@ -3472,10 +3476,10 @@ struct LayoutTensor[
             "Shouldn't split dynamic dimension.",
         ]()
 
-        alias axis_dim = Self.layout.shape[axis].value()
-        alias axis_stride = Self.layout.stride[axis].value()
-        alias flatten_rank = len(flatten(Self.layout.shape))
-        alias axis_in_flatten_tuple = runtime_shape.offset_until[axis]()
+        comptime axis_dim = Self.layout.shape[axis].value()
+        comptime axis_stride = Self.layout.stride[axis].value()
+        comptime flatten_rank = len(flatten(Self.layout.shape))
+        comptime axis_in_flatten_tuple = runtime_shape.offset_until[axis]()
 
         var runtime_shape = Self.DynamicSplitType[
             axis
@@ -3521,15 +3525,15 @@ struct LayoutTensor[
         var tile_shape = IndexList[
             Self.rank, element_type = Self.layout_int_type
         ]()
-        alias thread_shape = thread_layout.shape
-        alias thread_stride = thread_layout.stride
+        comptime thread_shape = thread_layout.shape
+        comptime thread_stride = thread_layout.stride
 
         # this would only work for rank-2 thread layout, need to extend this
         # to support thread layout such as Layout((2, 2), 2)
         @parameter
         for i in range(Self.rank):
-            alias thread_stride_i = Int(thread_stride[i])
-            alias thread_shape_i = Int(thread_shape[i])
+            comptime thread_stride_i = Int(thread_stride[i])
+            comptime thread_shape_i = Int(thread_shape[i])
             var tile_idx = (thread_id // UInt(thread_stride_i)) % UInt(
                 thread_shape_i
             )
@@ -3541,7 +3545,7 @@ struct LayoutTensor[
 
         return tile_shape
 
-    alias DistributeType[
+    comptime DistributeType[
         threads_layout: Layout,
         axis: OptionalReg[Int] = None,
     ] = LayoutTensor[
@@ -3644,12 +3648,12 @@ struct LayoutTensor[
             are organized in structured grids.
         """
 
-        alias distribute_type = Self.DistributeType[threads_layout, axis]
-        alias runtime_layout_type = distribute_type.RuntimeLayoutType
-        alias runtime_shape_type = runtime_layout_type.ShapeType
-        alias runtime_stride_type = runtime_layout_type.StrideType
+        comptime distribute_type = Self.DistributeType[threads_layout, axis]
+        comptime runtime_layout_type = distribute_type.RuntimeLayoutType
+        comptime runtime_shape_type = runtime_layout_type.ShapeType
+        comptime runtime_stride_type = runtime_layout_type.StrideType
 
-        alias distributed_layout = _compute_distribute_layout[
+        comptime distributed_layout = _compute_distribute_layout[
             Self.layout,
             threads_layout,
             axis,
@@ -3671,19 +3675,19 @@ struct LayoutTensor[
         # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
         @parameter
         if Self.layout.all_dims_known():
-            alias fragments_layout_stride = flatten(
+            comptime fragments_layout_stride = flatten(
                 distributed_layout[0].stride
             )
 
             # Only extract coordinates in the given axis.
             # Example: axis = 0 for 2x2 threads, we only need thread 0 and 1's
             # coordinates since thread 2 and 3 are getting the same tile.
-            alias thread_projected_stride = flatten(
+            comptime thread_projected_stride = flatten(
                 threads_layout.stride[
                     axis.value()
                 ] if axis else threads_layout.stride
             )
-            alias thread_projected_shape = flatten(
+            comptime thread_projected_shape = flatten(
                 threads_layout.shape[
                     axis.value()
                 ] if axis else threads_layout.shape
@@ -3693,9 +3697,9 @@ struct LayoutTensor[
 
             @parameter
             for i in range(len(fragments_layout_stride)):
-                alias fragments_stride_i = Int(fragments_layout_stride[i])
-                alias shape_i = Int(thread_projected_shape[i])
-                alias stride_i = Int(thread_projected_stride[i])
+                comptime fragments_stride_i = Int(fragments_layout_stride[i])
+                comptime shape_i = Int(thread_projected_shape[i])
+                comptime stride_i = Int(thread_projected_stride[i])
                 var thread_coord_i = (thread_id // UInt(stride_i)) % UInt(
                     shape_i
                 )
@@ -3707,7 +3711,7 @@ struct LayoutTensor[
 
             @parameter
             if swizzle:
-                alias swizzle_fn = swizzle.value()
+                comptime swizzle_fn = swizzle.value()
                 swizzled_offset = (
                     swizzle_fn(offset // self.element_size) * self.element_size
                 )
@@ -3735,12 +3739,12 @@ struct LayoutTensor[
             # Only extract coordinates in the given axis.
             # Example: axis = 0 for 2x2 threads, we only need thread 0 and 1's
             # coordinates since thread 2 and 3 are getting the same tile.
-            alias thread_projected_stride = flatten(
+            comptime thread_projected_stride = flatten(
                 threads_layout.stride[
                     axis.value()
                 ] if axis else threads_layout.stride
             )
-            alias thread_projected_shape = flatten(
+            comptime thread_projected_shape = flatten(
                 threads_layout.shape[
                     axis.value()
                 ] if axis else threads_layout.shape
@@ -3750,7 +3754,7 @@ struct LayoutTensor[
 
             @parameter
             for i in range(runtime_shape.scalar_length):
-                alias thread_shape_i = threads_layout[i].size()
+                comptime thread_shape_i = threads_layout[i].size()
                 runtime_stride.value[i] = (
                     self.runtime_layout.stride.value[i] * thread_shape_i
                 )
@@ -3760,8 +3764,8 @@ struct LayoutTensor[
                 var fragments_stride_i = Int(
                     self.runtime_layout.stride.value[i]
                 )
-                alias shape_i = Int(thread_projected_shape[i])
-                alias stride_i = Int(thread_projected_stride[i])
+                comptime shape_i = Int(thread_projected_shape[i])
+                comptime stride_i = Int(thread_projected_stride[i])
                 var thread_coord_i = (thread_id // UInt(stride_i)) % UInt(
                     shape_i
                 )
@@ -3773,7 +3777,7 @@ struct LayoutTensor[
 
             @parameter
             if swizzle:
-                alias swizzle_fn = swizzle.value()
+                comptime swizzle_fn = swizzle.value()
                 swizzled_offset = (
                     swizzle_fn(offset // self.element_size) * self.element_size
                 )
@@ -3823,8 +3827,8 @@ struct LayoutTensor[
                 - The corner coordinates of the tile.
                 - The offset of the tile.
         """
-        alias ret_tensor_type = Self.DistributeType[threads_layout, axis]
-        alias distributed_layout = _compute_distribute_layout[
+        comptime ret_tensor_type = Self.DistributeType[threads_layout, axis]
+        comptime distributed_layout = _compute_distribute_layout[
             Self.layout,
             threads_layout,
             axis,
@@ -3848,19 +3852,19 @@ struct LayoutTensor[
         # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
         @parameter
         if Self.layout.all_dims_known():
-            alias fragments_layout_stride = flatten(
+            comptime fragments_layout_stride = flatten(
                 distributed_layout[0].stride
             )
 
             # Only extract coordinates in the given axis.
             # Example: axis = 0 for 2x2 threads, we only need thread 0 and 1's
             # coordinates since thread 2 and 3 are getting the same tile.
-            alias thread_projected_stride = flatten(
+            comptime thread_projected_stride = flatten(
                 threads_layout.stride[
                     axis.value()
                 ] if axis else threads_layout.stride
             )
-            alias thread_projected_shape = flatten(
+            comptime thread_projected_shape = flatten(
                 threads_layout.shape[
                     axis.value()
                 ] if axis else threads_layout.shape
@@ -3868,9 +3872,9 @@ struct LayoutTensor[
 
             @parameter
             for i in range(len(fragments_layout_stride)):
-                alias fragments_stride_i = Int(fragments_layout_stride[i])
-                alias shape_i = Int(thread_projected_shape[i])
-                alias stride_i = Int(thread_projected_stride[i])
+                comptime fragments_stride_i = Int(fragments_layout_stride[i])
+                comptime shape_i = Int(thread_projected_shape[i])
+                comptime stride_i = Int(thread_projected_stride[i])
                 var thread_coord_i = (thread_id // UInt(stride_i)) % UInt(
                     shape_i
                 )
@@ -3883,7 +3887,7 @@ struct LayoutTensor[
 
             @parameter
             if swizzle:
-                alias swizzle_fn = swizzle.value()
+                comptime swizzle_fn = swizzle.value()
                 swizzled_offset = (
                     swizzle_fn(offset // self.element_size) * self.element_size
                 )
@@ -3921,12 +3925,12 @@ struct LayoutTensor[
             # Only extract coordinates in the given axis.
             # Example: axis = 0 for 2x2 threads, we only need thread 0 and 1's
             # coordinates since thread 2 and 3 are getting the same tile.
-            alias thread_projected_stride = flatten(
+            comptime thread_projected_stride = flatten(
                 threads_layout.stride[
                     axis.value()
                 ] if axis else threads_layout.stride
             )
-            alias thread_projected_shape = flatten(
+            comptime thread_projected_shape = flatten(
                 threads_layout.shape[
                     axis.value()
                 ] if axis else threads_layout.shape
@@ -3934,7 +3938,7 @@ struct LayoutTensor[
 
             @parameter
             for i in range(runtime_shape.scalar_length):
-                alias thread_shape_i = threads_layout[i].size()
+                comptime thread_shape_i = threads_layout[i].size()
                 runtime_stride.value[i] = (
                     self.runtime_layout.stride.value[i] * thread_shape_i
                 )
@@ -3942,8 +3946,8 @@ struct LayoutTensor[
             @parameter
             for i in range(len(flatten(Self.layout.stride))):
                 var fragments_stride_i = self.runtime_layout.stride.value[i]
-                alias shape_i = Int(thread_projected_shape[i])
-                alias stride_i = Int(thread_projected_stride[i])
+                comptime shape_i = Int(thread_projected_shape[i])
+                comptime stride_i = Int(thread_projected_stride[i])
                 var thread_coord_i = (thread_id // UInt(stride_i)) % UInt(
                     shape_i
                 )
@@ -3956,7 +3960,7 @@ struct LayoutTensor[
 
             @parameter
             if swizzle:
-                alias swizzle_fn = swizzle.value()
+                comptime swizzle_fn = swizzle.value()
                 swizzled_offset = (
                     swizzle_fn(offset // self.element_size) * self.element_size
                 )
@@ -3986,7 +3990,7 @@ struct LayoutTensor[
                     swizzled_offset,
                 )
 
-    alias ShapeVectorizedType[
+    comptime ShapeVectorizedType[
         origin: ImmutOrigin,
         vector_shape: IntTuple,
         linear_vectorize: Bool,
@@ -4067,7 +4071,7 @@ struct LayoutTensor[
             ),
         ]()
 
-        alias vectorized_type = Self.ShapeVectorizedType[
+        comptime vectorized_type = Self.ShapeVectorizedType[
             _origin, vector_shape, linear_vectorize
         ]
         runtime_shape = vectorized_type.RuntimeLayoutType.ShapeType()
@@ -4082,15 +4086,17 @@ struct LayoutTensor[
                 String(Self.layout.shape),
             ]()
 
-        alias tiler = Self._tuple_divide_tiler(vector_shape, linear_vectorize)
-        alias flat_vector_shape = flatten(tiler.shape)
+        comptime tiler = Self._tuple_divide_tiler(
+            vector_shape, linear_vectorize
+        )
+        comptime flat_vector_shape = flatten(tiler.shape)
 
         @parameter
         if vectorized_type.masked or not Self.layout.all_dims_known():
 
             @parameter
             for i in range(len(flat_vector_shape)):
-                alias vector_shape_i = Int(flat_vector_shape[i])
+                comptime vector_shape_i = Int(flat_vector_shape[i])
                 runtime_shape.value[i] = ceildiv(
                     self.runtime_layout.shape.value[i], vector_shape_i
                 )
@@ -4141,7 +4147,7 @@ struct LayoutTensor[
                 ),
             )
 
-    alias VectorizedType[*vector_shape: Int] = LayoutTensor[
+    comptime VectorizedType[*vector_shape: Int] = LayoutTensor[
         Self.dtype,
         coalesce(Self._compute_tile_layout[*vector_shape]()[1], keep_rank=True),
         Self.origin,
@@ -4207,8 +4213,8 @@ struct LayoutTensor[
             processor optimizations.
         """
 
-        alias shape = IntTuple(vector_shape)
-        alias _origin = origin_of()  # FIXME: MOCO-1912
+        comptime shape = IntTuple(vector_shape)
+        comptime _origin = origin_of()  # FIXME: MOCO-1912
         var ret = self._vectorize_2[
             _origin,
             shape,
@@ -4218,7 +4224,7 @@ struct LayoutTensor[
         # FIXME: this is ugly, is there a simpler way to do this?
         return rebind[Self.VectorizedType[*vector_shape]](ret)
 
-    alias SIMDVectorizedType = Self.VectorizedType[
+    comptime SIMDVectorizedType = Self.VectorizedType[
         1, simd_width_of[Self.dtype]()
     ]
 
@@ -4275,7 +4281,7 @@ struct LayoutTensor[
             sliced_layout.stride[0],
         )
 
-    alias SliceType[
+    comptime SliceType[
         d0_slice: Slice,
         d1_slice: Slice,
     ] = LayoutTensor[
@@ -4360,18 +4366,18 @@ struct LayoutTensor[
             "Slice should have no gaps",
         ]()
 
-        alias return_type = Self.SliceType[d0_slice, d1_slice]
-        alias stride_m = Int(return_type.layout.stride[0])
-        alias stride_n = Int(return_type.layout.stride[1])
+        comptime return_type = Self.SliceType[d0_slice, d1_slice]
+        comptime stride_m = Int(return_type.layout.stride[0])
+        comptime stride_n = Int(return_type.layout.stride[1])
 
-        alias d0_slice_start = d0_slice.start.or_else(0)
-        alias d1_slice_start = d1_slice.start.or_else(0)
+        comptime d0_slice_start = d0_slice.start.or_else(0)
+        comptime d1_slice_start = d1_slice.start.or_else(0)
 
         var offset = d0_slice_start * stride_m + d1_slice_start * stride_n
 
         return Self.SliceType[d0_slice, d1_slice](self.ptr.offset(offset))
 
-    alias SliceType2D[
+    comptime SliceType2D[
         d0_slice: Slice,
         d1_slice: Slice,
         slice_indices: IndexList[2],
@@ -4462,15 +4468,15 @@ struct LayoutTensor[
             slice_indices[0] < slice_indices[1],
             "Slice indices should be ordered",
         ]()
-        alias slice_type = Self.SliceType2D[
+        comptime slice_type = Self.SliceType2D[
             d0_slice, d1_slice, slice_indices, __offset_dims
         ]
 
-        alias stride_0 = Int(slice_type.layout.stride[0])
-        alias stride_1 = Int(slice_type.layout.stride[1])
+        comptime stride_0 = Int(slice_type.layout.stride[0])
+        comptime stride_1 = Int(slice_type.layout.stride[1])
 
-        alias d0_slice_start = d0_slice.start.or_else(0)
-        alias d1_slice_start = d1_slice.start.or_else(0)
+        comptime d0_slice_start = d0_slice.start.or_else(0)
+        comptime d1_slice_start = d1_slice.start.or_else(0)
 
         var slice_offset = d0_slice_start * stride_0 + d1_slice_start * stride_1
 
@@ -4478,9 +4484,9 @@ struct LayoutTensor[
 
         @parameter
         for i in range(Self.rank):
-            alias stride_i = Int(Self.layout.stride[i])
+            comptime stride_i = Int(Self.layout.stride[i])
 
-            alias offset_index = _not_in_tuple[i, 2, slice_indices]()
+            comptime offset_index = _not_in_tuple[i, 2, slice_indices]()
 
             @parameter
             if offset_index:
@@ -4491,7 +4497,7 @@ struct LayoutTensor[
             d0_slice, d1_slice, slice_indices, __offset_dims
         ](self.ptr.offset(slice_offset))
 
-    alias SliceType1D[
+    comptime SliceType1D[
         d0_slice: Slice,
         slice_indices: IndexList[1],
         __offset_dims: Int = Self.rank - 1,
@@ -4573,13 +4579,13 @@ struct LayoutTensor[
             "Slice should have no gaps",
         ]()
 
-        alias slice_type = Self.SliceType1D[
+        comptime slice_type = Self.SliceType1D[
             d0_slice, slice_indices, __offset_dims
         ]
 
-        alias stride_0 = Int(slice_type.layout.stride[0])
+        comptime stride_0 = Int(slice_type.layout.stride[0])
 
-        alias d0_slice_start = d0_slice.start.or_else(0)
+        comptime d0_slice_start = d0_slice.start.or_else(0)
 
         var slice_offset = d0_slice_start * stride_0
 
@@ -4587,9 +4593,9 @@ struct LayoutTensor[
 
         @parameter
         for i in range(Self.rank):
-            alias stride_i = Int(Self.layout.stride[i])
+            comptime stride_i = Int(Self.layout.stride[i])
 
-            alias offset_index = _not_in_tuple[i, 1, slice_indices]()
+            comptime offset_index = _not_in_tuple[i, 1, slice_indices]()
 
             @parameter
             if offset_index:
@@ -4600,7 +4606,7 @@ struct LayoutTensor[
             self.ptr.offset(slice_offset)
         )
 
-    alias TransposeType = LayoutTensor[
+    comptime TransposeType = LayoutTensor[
         Self.dtype,
         Self.layout.transpose(),
         Self.origin,
@@ -4661,7 +4667,7 @@ struct LayoutTensor[
         ]()
         return Self.TransposeType(self.ptr)
 
-    alias ReshapeType[
+    comptime ReshapeType[
         dst_layout: Layout,
     ] = LayoutTensor[
         Self.dtype,
@@ -4723,7 +4729,7 @@ struct LayoutTensor[
         ]()
         return Self.ReshapeType[dst_layout](self.ptr)
 
-    alias CompositionType[
+    comptime CompositionType[
         rhs_layout: Layout,
         dst_layout: Layout = composition(Self.layout, rhs_layout),
     ] = LayoutTensor[
@@ -4895,11 +4901,11 @@ struct LayoutTensor[
     #
     @always_inline
     fn _get_element_idx[elem_i: Int](self) -> Scalar[Self.linear_idx_type]:
-        alias element_size = Int(self.element_size)
+        comptime element_size = Int(self.element_size)
 
         @parameter
         if Self.layout.all_dims_known():
-            alias idx = make_layout(Self.element_layout, Self.layout)(
+            comptime idx = make_layout(Self.element_layout, Self.layout)(
                 elem_i * element_size
             )
             return idx
@@ -4970,13 +4976,13 @@ struct LayoutTensor[
             for copying between tensors with different shapes or strides.
         - The copy is performed element by element, not as a bulk memory copy.
         """
-        alias other_layout = other.layout
+        comptime other_layout = other.layout
 
-        alias dst_element_size = Int(self.element_size)
-        alias src_element_size = Int(other.element_size)
+        comptime dst_element_size = Int(self.element_size)
+        comptime src_element_size = Int(other.element_size)
 
-        alias dst_size = Self.layout.size()
-        alias src_size = other_layout.size()
+        comptime dst_size = Self.layout.size()
+        comptime src_size = other_layout.size()
 
         constrained[
             Self.layout.known_shape() and other_layout.known_shape(),
@@ -5082,18 +5088,18 @@ struct LayoutTensor[
         from gpu import thread_idx, block_idx, block_dim
         from gpu.memory import async_copy_wait_all
 
-        alias dtype = DType.float32
-        alias in_size = 128
-        alias block_size = 16
+        comptime dtype = DType.float32
+        comptime in_size = 128
+        comptime block_size = 16
         num_blocks = in_size // block_size
-        alias input_layout = Layout.row_major(in_size, in_size)
+        comptime input_layout = Layout.row_major(in_size, in_size)
 
         fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
             # extract a tile from the input tensor.
             var global_tile = tensor.tile[block_size, block_size](block_idx.x, block_idx.y)
 
             # allocate a shared memory tile
-            alias tile_layout = Layout.row_major(block_size, block_size)
+            comptime tile_layout = Layout.row_major(block_size, block_size)
             var shared_tile = LayoutTensor[
                 dtype,
                 tile_layout,
@@ -5103,7 +5109,7 @@ struct LayoutTensor[
 
             # Create per-thread tile fragments for copying
             var tid = thread_idx.y + thread_idx.x * block_dim.x
-            alias thread_layout = Layout.row_major(block_size, block_size)
+            comptime thread_layout = Layout.row_major(block_size, block_size)
             var global_fragment = global_tile.distribute[thread_layout](tid)
             var shared_fragment = shared_tile.distribute[thread_layout](tid)
 
@@ -5139,18 +5145,18 @@ struct LayoutTensor[
             src.dtype == Self.dtype, "src dtype must be the same as dst dtype."
         ]()
 
-        alias dst_size = Self.layout.size()
-        alias src_size = src.layout.size()
+        comptime dst_size = Self.layout.size()
+        comptime src_size = src.layout.size()
 
-        alias dst_element_size = Int(self.element_size)
-        alias src_element_size = Int(src.element_size)
+        comptime dst_element_size = Int(self.element_size)
+        comptime src_element_size = Int(src.element_size)
         constrained[
             dst_element_size == src_element_size,
             "copy_from_async should move data of the same element size",
         ]()
 
         # Eligibility for 4, 8, 16 bytes async load.
-        alias element_size_bytes = size_of[Self.dtype]() * src_element_size
+        comptime element_size_bytes = size_of[Self.dtype]() * src_element_size
         constrained[
             element_size_bytes == 4
             or element_size_bytes == 8
@@ -5159,13 +5165,13 @@ struct LayoutTensor[
         ]()
 
         # Share memory must always have static layout.
-        alias dst_dims_known = (
+        comptime dst_dims_known = (
             self.layout.all_dims_known()
             and self.element_layout.all_dims_known()
         )
         constrained[dst_dims_known, "dst tensor must have static layout"]()
 
-        alias src_dims_known = (
+        comptime src_dims_known = (
             src.layout.all_dims_known() and src.element_layout.all_dims_known()
         )
 
@@ -5175,8 +5181,8 @@ struct LayoutTensor[
         var src_ptr = src.ptr.address_space_cast[AddressSpace.GLOBAL]()
 
         # Coalesce element layouts to simplify vectorization condition.
-        alias coalesce_src_element_layout = coalesce(src.element_layout)
-        alias coalesce_dst_element_layout = coalesce(self.element_layout)
+        comptime coalesce_src_element_layout = coalesce(src.element_layout)
+        comptime coalesce_dst_element_layout = coalesce(self.element_layout)
 
         @parameter
         if (
@@ -5186,28 +5192,28 @@ struct LayoutTensor[
             and coalesce_dst_element_layout.rank() == 1
             and coalesce_dst_element_layout.stride[0] == 1
         ):
-            alias num_vecs = Self.layout.size()
+            comptime num_vecs = Self.layout.size()
 
             @parameter
             for i in range(num_vecs):
                 var src_idx: Scalar[src.linear_idx_type]
-                alias src_static_idx: Scalar[src.linear_idx_type] = src.layout(
-                    i
-                )
+                comptime src_static_idx: Scalar[
+                    src.linear_idx_type
+                ] = src.layout(i)
 
                 @parameter
                 if src_dims_known:
                     src_idx = src_static_idx
                 else:
                     src_idx = src.runtime_layout(i)
-                alias dst_idx = Self.layout(i)
+                comptime dst_idx = Self.layout(i)
                 var swizzled_idx: Scalar[self.linear_idx_type]
 
                 @parameter
                 if swizzle:
-                    alias swizzle_fn = swizzle.value()
-                    alias dst_idx_base = dst_idx % swizzle_fn.size()
-                    alias dst_idx_diff = dst_idx - dst_idx_base
+                    comptime swizzle_fn = swizzle.value()
+                    comptime dst_idx_base = dst_idx % swizzle_fn.size()
+                    comptime dst_idx_diff = dst_idx - dst_idx_base
                     swizzled_idx = (
                         swizzle_fn(base_offset + dst_idx_base)
                         + dst_idx_diff
@@ -5246,10 +5252,12 @@ struct LayoutTensor[
             @parameter
             for i in range(dst_size * dst_element_size):
                 var src_idx: Scalar[src.linear_idx_type]
-                alias src_static_idx = make_layout(
+                comptime src_static_idx = make_layout(
                     src.element_layout, src.layout
                 )(i)
-                alias dst_idx = make_layout(self.element_layout, self.layout)(i)
+                comptime dst_idx = make_layout(
+                    self.element_layout, self.layout
+                )(i)
 
                 @parameter
                 if src_dims_known:
@@ -5332,16 +5340,16 @@ struct LayoutTensor[
 
         @parameter
         if not use_runtime_layout:
-            alias num_elements = Self.layout.size()
+            comptime num_elements = Self.layout.size()
 
             # TODO: MSTDL-1352 we can use memory element to fill the tensor.
             @parameter
             for i in range(num_elements):
-                alias idx = Self.layout(i)
+                comptime idx = Self.layout(i)
 
                 @parameter
                 for j in range(Self.element_size):
-                    alias element_offset = Self.element_layout(j)
+                    comptime element_offset = Self.element_layout(j)
                     self.ptr[idx + element_offset] = val
         else:
             var num_elements = self.runtime_layout.size()
@@ -5354,7 +5362,7 @@ struct LayoutTensor[
 
                     @parameter
                     for j in range(Self.element_size):
-                        alias element_offset = Self.element_layout(j)
+                        comptime element_offset = Self.element_layout(j)
                         self.ptr[idx + element_offset] = val
                 else:
                     for j in range(self.runtime_element_layout.size()):
@@ -5451,7 +5459,7 @@ struct LayoutTensor[
 
             @parameter
             for idx in range(Self.element_size):
-                alias element_offset = self.element_layout(idx)
+                comptime element_offset = self.element_layout(idx)
                 vec[idx] = self.ptr.load(vec_offset + element_offset)
 
             writer.write(vec)
@@ -5596,11 +5604,11 @@ struct ThreadScope(ImplicitlyCopyable, Movable):
     var _value: Int32
     """The internal integer value representing the thread scope."""
 
-    alias BLOCK = Self(0)
+    comptime BLOCK = Self(0)
     """Represents operations at the thread block level, where all threads in a
     block participate."""
 
-    alias WARP = Self(1)
+    comptime WARP = Self(1)
     """Represents operations at the warp level, where only threads within the
     same warp participate."""
 
@@ -5822,7 +5830,7 @@ fn copy_dram_to_sram[
     """
     _copy_dram_to_sram_validate_args(dst, src)
 
-    alias num_busy_threads = src_thread_layout.size()
+    comptime num_busy_threads = src_thread_layout.size()
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     @parameter
@@ -5835,14 +5843,14 @@ fn copy_dram_to_sram[
         worker_idx
     )
 
-    alias simd_width = simd_width_of[dst.dtype]()
-    alias src_align = align_of[SIMD[src.dtype, simd_width]]()
-    alias dst_align = align_of[SIMD[dst.dtype, simd_width]]()
+    comptime simd_width = simd_width_of[dst.dtype]()
+    comptime src_align = align_of[SIMD[src.dtype, simd_width]]()
+    comptime dst_align = align_of[SIMD[dst.dtype, simd_width]]()
 
-    alias coalesce_src_element_layout = coalesce(src.element_layout)
-    alias coalesce_dst_element_layout = coalesce(dst.element_layout)
+    comptime coalesce_src_element_layout = coalesce(src.element_layout)
+    comptime coalesce_dst_element_layout = coalesce(dst.element_layout)
 
-    alias is_scalar = not (
+    comptime is_scalar = not (
         src.element_layout.all_dims_known()
         and coalesce_src_element_layout.rank() == 1
         and coalesce_src_element_layout.stride[0] == 1
@@ -5863,8 +5871,8 @@ fn copy_dram_to_sram[
 
         dst_fragments.copy_from(src_fragments)
     else:
-        alias num_stores_per_thread = dst_fragments.layout.size()
-        alias static_stride = src.layout.stride[0].value()
+        comptime num_stores_per_thread = dst_fragments.layout.size()
+        comptime static_stride = src.layout.stride[0].value()
 
         @parameter
         if src.layout.all_dims_known():
@@ -5881,9 +5889,9 @@ fn copy_dram_to_sram[
 
         @parameter
         for i in range(num_stores_per_thread):
-            alias src_static_idx = src_fragments.layout(i)
+            comptime src_static_idx = src_fragments.layout(i)
 
-            alias dst_idx = dst_fragments.layout(i)
+            comptime dst_idx = dst_fragments.layout(i)
 
             var src_idx: Scalar[src_fragments.linear_idx_type]
 
@@ -5950,7 +5958,7 @@ fn copy_dram_to_sram[
     ]()
     _copy_dram_to_sram_validate_args(dst, src_tensor)
 
-    alias num_busy_threads = src_thread_layout.size()
+    comptime num_busy_threads = src_thread_layout.size()
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     @parameter
@@ -5963,10 +5971,10 @@ fn copy_dram_to_sram[
         worker_idx
     )
 
-    alias simd_width = src_tensor.element_layout.size()
-    alias dst_align = align_of[SIMD[dst.dtype, simd_width]]()
+    comptime simd_width = src_tensor.element_layout.size()
+    comptime dst_align = align_of[SIMD[dst.dtype, simd_width]]()
 
-    alias num_stores_per_thread = dst_fragments.layout.size()
+    comptime num_stores_per_thread = dst_fragments.layout.size()
     var buffer = make_amd_buffer_resource(src_iter, bound)
     var src_frag_offset = src_fragments.distance(src_tensor.ptr) + Int(
         src_iter.offset
@@ -5978,12 +5986,12 @@ fn copy_dram_to_sram[
 
         @parameter
         if src_tensor.layout.all_dims_known():
-            alias frag_layout = src_fragments.layout(i)
+            comptime frag_layout = src_fragments.layout(i)
             src_frag_idx = frag_layout
         else:
             src_frag_idx = src_fragments.runtime_layout(i)
 
-        alias dst_frag_idx = dst_fragments.layout(i)
+        comptime dst_frag_idx = dst_fragments.layout(i)
         dst_fragments.ptr.store[alignment=dst_align](
             dst_frag_idx,
             buffer.load[src_tensor.dtype, simd_width](
@@ -6064,31 +6072,31 @@ fn cp_async_k_major[
     - K-major layout is particularly beneficial for matrix multiplication
         operations where the inner dimension (K) is accessed contiguously.
     """
-    alias dst_layout = dst.layout
+    comptime dst_layout = dst.layout
 
-    alias src_layout = src.layout
-    alias src_shape0 = src_layout.shape[0].value()
-    alias src_shape1 = src_layout.shape[1].value()
+    comptime src_layout = src.layout
+    comptime src_shape0 = src_layout.shape[0].value()
+    comptime src_shape1 = src_layout.shape[1].value()
 
-    alias desc_layout = _tma_desc_tile_layout[
+    comptime desc_layout = _tma_desc_tile_layout[
         dtype,
         2,
         Index(src_shape0, src_shape1),
         is_k_major=True,
         swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
     ]()
-    alias desc_shape0 = desc_layout.shape[0].value()
-    alias desc_shape1 = desc_layout.shape[1].value()
-    alias desc_size = desc_layout.size()
+    comptime desc_shape0 = desc_layout.shape[0].value()
+    comptime desc_shape1 = desc_layout.shape[1].value()
+    comptime desc_size = desc_layout.size()
 
     constrained[
         desc_shape0 == src_shape0, "k-major desc layout shouldn't alter 1st dim"
     ]()
 
-    alias num_tiles = src_shape1 // desc_shape1
-    alias simd_size = simd_width_of[dtype]()
+    comptime num_tiles = src_shape1 // desc_shape1
+    comptime simd_size = simd_width_of[dtype]()
     # single warp group
-    alias thread_layout = Layout.row_major(
+    comptime thread_layout = Layout.row_major(
         128 * simd_size // desc_shape1, desc_shape1 // simd_size
     )
 
@@ -6176,33 +6184,33 @@ fn cp_async_mn_major[
     - MN-major layout is particularly beneficial for operations where the outer
         dimensions are accessed contiguously, such as certain convolution operations.
     """
-    alias dst_layout = dst.layout
+    comptime dst_layout = dst.layout
 
-    alias src_layout = src.layout
-    alias src_shape0 = src_layout.shape[0].value()
-    alias src_shape1 = src_layout.shape[1].value()
+    comptime src_layout = src.layout
+    comptime src_shape0 = src_layout.shape[0].value()
+    comptime src_shape1 = src_layout.shape[1].value()
 
     # we can't use the tma desc layout, as if swizzle_granularity ==
     # `src_shape1`, the tma will want to fuse the rows into a large
     # description. We need to partition the copy among the 4 warps
     # of the warp group. Thus, we use the minimal desc layout.
-    alias core_matrix_num_rows = 8
-    alias swizzle_bytes = 128  # assume 128B swizzle
-    alias swizzle_granularity = swizzle_bytes // size_of[dtype]()
-    alias desc_layout = Layout.row_major(
+    comptime core_matrix_num_rows = 8
+    comptime swizzle_bytes = 128  # assume 128B swizzle
+    comptime swizzle_granularity = swizzle_bytes // size_of[dtype]()
+    comptime desc_layout = Layout.row_major(
         core_matrix_num_rows, swizzle_granularity
     )
-    alias desc_shape0 = desc_layout.shape[0].value()
-    alias desc_shape1 = desc_layout.shape[1].value()
-    alias desc_size = desc_layout.size()
+    comptime desc_shape0 = desc_layout.shape[0].value()
+    comptime desc_shape1 = desc_layout.shape[1].value()
+    comptime desc_size = desc_layout.size()
 
-    alias num_tiles0 = src_shape0 // desc_shape0
-    alias num_tiles1 = src_shape1 // desc_shape1
-    alias num_warps = 4  # single warp group
-    alias num_tiles_per_warp = (num_tiles0 * num_tiles1) // num_warps
+    comptime num_tiles0 = src_shape0 // desc_shape0
+    comptime num_tiles1 = src_shape1 // desc_shape1
+    comptime num_warps = 4  # single warp group
+    comptime num_tiles_per_warp = (num_tiles0 * num_tiles1) // num_warps
 
-    alias simd_size = simd_width_of[dtype]()
-    alias thread_layout_per_warp = Layout.row_major(
+    comptime simd_size = simd_width_of[dtype]()
+    comptime thread_layout_per_warp = Layout.row_major(
         gpu_memory.WARP_SIZE * simd_size // desc_shape1,
         desc_shape1 // simd_size,
     )
@@ -6450,7 +6458,7 @@ fn copy_dram_to_sram_async[
         String(dst_thread_layout.size()),
     ]()
 
-    alias num_busy_threads = src_thread_layout.size()
+    comptime num_busy_threads = src_thread_layout.size()
     var worker_idx = _get_worker_idx[ThreadScope.BLOCK, block_dim_count]()
 
     # We know at compile time that only partial threads copy based on the size
@@ -6460,11 +6468,11 @@ fn copy_dram_to_sram_async[
         if worker_idx >= UInt(num_busy_threads):
             return
 
-    alias row_size = dst.stride[0]()
+    comptime row_size = dst.stride[0]()
     # See make_ldmatrix_swizzle in Swizzle.mojo for `conflict_ways`.
     # TODO: use the above when MOCO-1048 is fixed.
-    alias bytes_32_banks = 128
-    alias conflict_ways = min(
+    comptime bytes_32_banks = 128
+    comptime conflict_ways = min(
         8 * row_size * size_of[dst.dtype]() // bytes_32_banks, 8
     )
     constrained[
@@ -6480,7 +6488,7 @@ fn copy_dram_to_sram_async[
         ),
     ]()
 
-    alias swizzle_option = None if not swizzle else (
+    comptime swizzle_option = None if not swizzle else (
         OptionalReg[Swizzle](
             make_ldmatrix_swizzle[
                 dst.dtype, row_size, log2_floor(dst_fragments.element_size)
@@ -6502,7 +6510,7 @@ fn copy_dram_to_sram_async[
         var src_frag_offset = src_fragments.distance(src.ptr)
 
         # Stride between two rows
-        alias static_row_stride = Scalar[src_fragments.linear_idx_type](
+        comptime static_row_stride = Scalar[src_fragments.linear_idx_type](
             src.layout.stride[0].value()
         )
         var row_stride = static_row_stride
@@ -6576,7 +6584,7 @@ fn copy_dram_to_sram_async[
     ](dst, src)
 
 
-alias binary_op_type = fn[dtype: DType, width: Int] (
+comptime binary_op_type = fn[dtype: DType, width: Int] (
     lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]
 ) -> SIMD[dtype, width]
 """
@@ -6670,7 +6678,7 @@ fn copy_sram_to_dram[
         src.layout.all_dims_known(), "Shared memory must have static layout"
     ]()
 
-    alias num_busy_threads = thread_layout.size()
+    comptime num_busy_threads = thread_layout.size()
     var worker_idx = _get_worker_idx[ThreadScope.BLOCK, block_dim_count]()
 
     @parameter
@@ -6692,7 +6700,7 @@ fn copy_sram_to_dram[
             "Only support FP32 -> half precision downcast during copy.",
         ]()
 
-        alias simd_size = simd_width_of[dst.dtype]()
+        comptime simd_size = simd_width_of[dst.dtype]()
         # TODO: generalize the copy to non-scalar case if possible.
         constrained[
             src.element_layout.size() == simd_size
@@ -6700,29 +6708,29 @@ fn copy_sram_to_dram[
             "Only FP32 -> half precision downcast for vectorized copy.",
         ]()
 
-        alias src_align = align_of[
+        comptime src_align = align_of[
             SIMD[src.dtype, simd_width_of[src.dtype]()]
         ]()
-        alias dst_align = align_of[SIMD[dst.dtype, simd_size]]()
+        comptime dst_align = align_of[SIMD[dst.dtype, simd_size]]()
 
         var src_frag_offset = src_fragments.distance(src.ptr)
 
-        alias num_stores_per_thread = dst_fragments.layout.size()
+        comptime num_stores_per_thread = dst_fragments.layout.size()
 
         @parameter
         if not dst_fragments.masked:
 
             @parameter
             for i in range(num_stores_per_thread):
-                alias src_idx = src_fragments.layout(i)
-                alias dst_idx = dst_fragments.layout(i)
+                comptime src_idx = src_fragments.layout(i)
+                comptime dst_idx = dst_fragments.layout(i)
                 var swizzled_idx = src_frag_offset + src_idx
 
                 @parameter
                 if swizzle:
-                    alias swizzle_fn = swizzle.value()
-                    alias src_idx_base = src_idx % swizzle_fn.size()
-                    alias src_idx_diff = src_idx - src_idx_base
+                    comptime swizzle_fn = swizzle.value()
+                    comptime src_idx_base = src_idx % swizzle_fn.size()
+                    comptime src_idx_diff = src_idx - src_idx_base
                     # `src_frag_offset + src_idx_base` should be a value already seen
                     # in the unrolled loop. Hopefully compiler can eliminate the duplicated
                     # xor computation.
@@ -6737,7 +6745,7 @@ fn copy_sram_to_dram[
 
                 @parameter
                 if binary_op:
-                    alias binop = binary_op.value()
+                    comptime binop = binary_op.value()
                     var dst_vec = dst_fragments.ptr.load[
                         width=simd_size, alignment=dst_align
                     ](dst_idx)
@@ -6745,7 +6753,7 @@ fn copy_sram_to_dram[
 
                 dst_fragments.ptr.store[alignment=dst_align](dst_idx, src_vec)
         else:
-            alias static_stride = dst.layout.stride[0].value()
+            comptime static_stride = dst.layout.stride[0].value()
 
             @parameter
             if dst.layout.all_dims_known():
@@ -6759,12 +6767,12 @@ fn copy_sram_to_dram[
 
             @parameter
             for i in range(num_stores_per_thread):
-                alias src_idx = src_fragments.layout(i)
+                comptime src_idx = src_fragments.layout(i)
 
-                alias dst_uint_dtype = _get_unsigned_type(
+                comptime dst_uint_dtype = _get_unsigned_type(
                     dst_fragments.layout, dst_fragments.address_space
                 )
-                alias dst_static_idx = dst_fragments.layout(i)
+                comptime dst_static_idx = dst_fragments.layout(i)
 
                 var dst_idx: Scalar[dst_fragments.linear_idx_type]
 
@@ -6778,9 +6786,9 @@ fn copy_sram_to_dram[
 
                 @parameter
                 if swizzle:
-                    alias swizzle_fn = swizzle.value()
-                    alias src_idx_base = src_idx % swizzle_fn.size()
-                    alias src_idx_diff = src_idx - src_idx_base
+                    comptime swizzle_fn = swizzle.value()
+                    comptime src_idx_base = src_idx % swizzle_fn.size()
+                    comptime src_idx_diff = src_idx - src_idx_base
                     # `src_frag_offset + src_idx_base` should be a value already seen
                     # in the unrolled loop. Hopefully compiler can eliminate the duplicated
                     # xor computation.
@@ -6800,7 +6808,7 @@ fn copy_sram_to_dram[
 
                     @parameter
                     if binary_op:
-                        alias binop = binary_op.value()
+                        comptime binop = binary_op.value()
                         var dst_vec = dst_fragments.ptr.load[
                             width=simd_size, alignment=dst_align
                         ](dst_idx)
@@ -6922,7 +6930,7 @@ fn copy_local_to_dram[
     """
     _copy_local_to_dram_validate_args(dst, src)
 
-    alias num_busy_threads = dst_thread_layout.size()
+    comptime num_busy_threads = dst_thread_layout.size()
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     @parameter
@@ -6937,7 +6945,7 @@ fn copy_local_to_dram[
         dst_fragments.copy_from(src)
     else:
         var dst_frag_offset = dst_fragments.distance(dst.ptr)
-        alias static_stride = dst.layout.stride[0].value()
+        comptime static_stride = dst.layout.stride[0].value()
 
         @parameter
         if dst.layout.all_dims_known():
@@ -6948,15 +6956,15 @@ fn copy_local_to_dram[
             dst_fragments.linear_idx_type
         ]()
 
-        alias num_stores_per_thread = dst_fragments.layout.size()
+        comptime num_stores_per_thread = dst_fragments.layout.size()
 
         @parameter
         for i in range(num_stores_per_thread):
-            alias src_idx = src.layout(i)
-            alias dst_uint_dtype = _get_unsigned_type(
+            comptime src_idx = src.layout(i)
+            comptime dst_uint_dtype = _get_unsigned_type(
                 dst_fragments.layout, dst_fragments.address_space
             )
-            alias dst_static_idx = dst_fragments.layout(i)
+            comptime dst_static_idx = dst_fragments.layout(i)
 
             var dst_idx: Scalar[dst_fragments.linear_idx_type]
 
@@ -6973,7 +6981,7 @@ fn copy_local_to_dram[
                     src.ptr.offset(src_idx),
                     src.runtime_element_layout,
                 )
-                alias dst_element_type = Element[
+                comptime dst_element_type = Element[
                     dst.dtype, dst.element_layout, dst.linear_idx_type
                 ]
                 dst_element_type(
@@ -6992,17 +7000,17 @@ fn _copy_local_to_dram_static_row_major[
     dst_frag_offset: Int32,
     buffer: AMDBufferResource,
 ):
-    alias M = dst_fragments.shape[0]()
-    alias N = dst_fragments.shape[1]()
+    comptime M = dst_fragments.shape[0]()
+    comptime N = dst_fragments.shape[1]()
 
     @parameter
     for i in range(M):
 
         @parameter
         for j in range(N):
-            alias idx = Layout.col_major(M, N)([i, j])
-            alias src_frag_idx = src.layout(idx)
-            alias dst_frag_idx = Int32(dst_fragments.layout(idx))
+            comptime idx = Layout.col_major(M, N)([i, j])
+            comptime src_frag_idx = src.layout(idx)
+            comptime dst_frag_idx = Int32(dst_fragments.layout(idx))
 
             var src_element = Element[index_type = src.linear_idx_type].load(
                 src.ptr.offset(src_frag_idx),
@@ -7030,7 +7038,7 @@ fn _copy_local_to_dram[
 
     _copy_local_to_dram_validate_args(dst, src)
 
-    alias num_busy_threads = dst_thread_layout.size()
+    comptime num_busy_threads = dst_thread_layout.size()
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     @parameter
@@ -7044,7 +7052,7 @@ fn _copy_local_to_dram[
     var offset = (Int(dst.ptr) - base_ptr) // size_of[dst.dtype]()
     var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
 
-    alias dst_element_stride = dst_fragments.element_layout.stride[1].value()
+    comptime dst_element_stride = dst_fragments.element_layout.stride[1].value()
 
     @parameter
     if dst_element_stride == 1 and dst_fragments.layout.all_dims_known():
@@ -7055,12 +7063,12 @@ fn _copy_local_to_dram[
             buffer,
         )
     else:
-        alias num_stores_per_thread = dst_fragments.layout.size()
+        comptime num_stores_per_thread = dst_fragments.layout.size()
 
         @parameter
         for i in range(num_stores_per_thread):
-            alias src_idx = src.layout(i)
-            alias dst_static_idx = dst_fragments.layout(i)
+            comptime src_idx = src.layout(i)
+            comptime dst_static_idx = dst_fragments.layout(i)
             var dst_idx = dst_frag_offset
 
             @parameter
@@ -7084,7 +7092,7 @@ fn _copy_local_to_dram[
 
                 @parameter
                 for i in range(dst_fragments.element_layout.size()):
-                    alias element_offset = dst_fragments.element_layout(i)
+                    comptime element_offset = dst_fragments.element_layout(i)
                     var src = src_element.element_data[i].cast[dst.dtype]()
                     buffer.store(
                         Int32(dst_idx + element_offset),
@@ -7167,10 +7175,10 @@ fn _copy_dram_to_local[
     offset: OptionalReg[UInt] = None,
 ):
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
-    alias simd_width = src.element_layout.size()
+    comptime simd_width = src.element_layout.size()
     _copy_local_to_dram_validate_args(src, dst)
 
-    alias num_busy_threads = src_thread_layout.size()
+    comptime num_busy_threads = src_thread_layout.size()
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     @parameter
@@ -7180,8 +7188,8 @@ fn _copy_dram_to_local[
 
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
 
-    alias M = src_fragments.shape[0]()
-    alias N = src_fragments.shape[1]()
+    comptime M = src_fragments.shape[0]()
+    comptime N = src_fragments.shape[1]()
 
     constrained[
         src_fragments.layout.rank() == 2,
@@ -7206,8 +7214,8 @@ fn _copy_dram_to_local[
 
             @parameter
             for j in range(N):
-                alias dst_frag_idx = Layout.col_major(M, N)([i, j])
-                alias src_frag_idx = Int32(src_fragments.layout([i, j]))
+                comptime dst_frag_idx = Layout.col_major(M, N)([i, j])
+                comptime src_frag_idx = Int32(src_fragments.layout([i, j]))
                 dst[dst_frag_idx, 0] = rebind[dst.element_type](
                     buffer.load[
                         src.dtype, simd_width, cache_policy=cache_policy
@@ -7417,7 +7425,7 @@ fn copy_dram_to_local[
         src:  The source tensor in global memory (DRAM).
     """
 
-    alias num_busy_threads = src_thread_layout.size()
+    comptime num_busy_threads = src_thread_layout.size()
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     @parameter
@@ -7432,7 +7440,7 @@ fn copy_dram_to_local[
         dst.copy_from(src_fragments)
     else:
         var src_frag_offset = src_fragments.distance(src.ptr)
-        alias static_stride = src.layout.stride[0].value()
+        comptime static_stride = src.layout.stride[0].value()
 
         @parameter
         if src.layout.all_dims_known():
@@ -7443,15 +7451,15 @@ fn copy_dram_to_local[
             src_fragments.linear_idx_type
         ]()
 
-        alias num_stores_per_thread = src_fragments.layout.size()
+        comptime num_stores_per_thread = src_fragments.layout.size()
 
         @parameter
         for i in range(num_stores_per_thread):
-            alias dst_idx = dst.layout(i)
-            alias src_uint_dtype = _get_unsigned_type(
+            comptime dst_idx = dst.layout(i)
+            comptime src_uint_dtype = _get_unsigned_type(
                 src_fragments.layout, src_fragments.address_space
             )
-            alias src_static_idx = src_fragments.layout(i)
+            comptime src_static_idx = src_fragments.layout(i)
 
             var src_idx: Scalar[src_fragments.linear_idx_type]
 
@@ -7468,7 +7476,7 @@ fn copy_dram_to_local[
                     src_fragments.ptr.offset(src_idx),
                     src_fragments.runtime_element_layout,
                 )
-                alias dst_element_type = Element[
+                comptime dst_element_type = Element[
                     dst.dtype, dst.element_layout, dst.linear_idx_type
                 ]
                 dst_element_type(
@@ -7556,7 +7564,7 @@ fn copy_local_to_shared[
         "src address space must be LOCAL.",
     ]()
 
-    alias num_busy_threads = thread_layout.size()
+    comptime num_busy_threads = thread_layout.size()
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     @parameter
@@ -7580,18 +7588,18 @@ fn copy_local_to_shared[
 
         @parameter
         if swizzle:
-            alias swizzle_fn = swizzle.value()
-            alias num_vecs = src.layout.size()
-            alias align_src = align_of[SIMD[src.dtype, src.element_size]]()
-            alias align_dst = align_of[SIMD[dst.dtype, dst.element_size]]()
+            comptime swizzle_fn = swizzle.value()
+            comptime num_vecs = src.layout.size()
+            comptime align_src = align_of[SIMD[src.dtype, src.element_size]]()
+            comptime align_dst = align_of[SIMD[dst.dtype, dst.element_size]]()
             var dst_frag_offset = dst_frag.distance(dst.ptr)
 
             @parameter
             for i in range(num_vecs):
-                alias src_idx = src.layout(i)
-                alias dst_idx = dst_frag.layout(i)
-                alias dst_idx_base = dst_idx % swizzle_fn.size()
-                alias dst_idx_diff = dst_idx - dst_idx_base
+                comptime src_idx = src.layout(i)
+                comptime dst_idx = dst_frag.layout(i)
+                comptime dst_idx_base = dst_idx % swizzle_fn.size()
+                comptime dst_idx_diff = dst_idx - dst_idx_base
                 var swizzled_idx = (
                     swizzle_fn(dst_frag_offset + dst_idx_base) + dst_idx_diff
                 )
@@ -7611,8 +7619,8 @@ fn copy_local_to_shared[
         var dst_frag = dst.distribute[thread_layout, swizzle=swizzle](
             worker_idx
         )
-        alias M = product(dst_frag.layout.shape[0])
-        alias N = product(dst_frag.layout.shape[1])
+        comptime M = product(dst_frag.layout.shape[0])
+        comptime N = product(dst_frag.layout.shape[1])
 
         constrained[
             dst_frag.layout.rank() == 2,
@@ -7625,7 +7633,7 @@ fn copy_local_to_shared[
             @parameter
             for j in range(N):
                 # The order here needs to match the order of the loads in copy_dram_to_local
-                alias idx = Layout.col_major(M, N)([i, j])
+                comptime idx = Layout.col_major(M, N)([i, j])
                 var src_idx = src._get_element_idx[idx]()
                 var dst_idx = dst_frag._get_element_idx[idx]()
 
@@ -7742,9 +7750,9 @@ fn copy_local_to_local(dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
         # This path is to map 16x8x16 mma output (16x8) to 16x8x16 mma input (16x16).
         # Output fragment has layout [2 * num_m_mmas, 4]
         # Input  fragment has layout [num_m_mmas, 8]
-        alias num_mmas = src.layout.shape[0].value()
-        alias src_frag_size = src.layout.shape[1].value()
-        alias a_frag_layout = composition(
+        comptime num_mmas = src.layout.shape[0].value()
+        comptime src_frag_size = src.layout.shape[1].value()
+        comptime a_frag_layout = composition(
             src.layout,
             make_layout(Layout.row_major(num_mmas // 2, 2), src.layout[1]),
         )
@@ -7757,8 +7765,8 @@ fn copy_local_to_local(dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
 
         @parameter
         for i in range(dst_vectorized.layout.size()):
-            alias dst_idx = dst_vectorized.layout(i)
-            alias src_idx = src_vectorized.layout(i)
+            comptime dst_idx = dst_vectorized.layout(i)
+            comptime src_idx = src_vectorized.layout(i)
 
             dst_vectorized.ptr.store(
                 dst_idx,
@@ -7772,8 +7780,8 @@ fn copy_local_to_local(dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
 
         @parameter
         for i in range(dst.layout.size()):
-            alias dst_idx = dst.layout(i)
-            alias src_idx = src.layout(i)
+            comptime dst_idx = dst.layout(i)
+            comptime src_idx = src.layout(i)
             dst.ptr.store(dst_idx, src.ptr[src_idx].cast[dst.dtype]())
 
 
@@ -7824,12 +7832,12 @@ struct LayoutTensorIter[
     if needed for performance-critical operations.
     """
 
-    alias layout_uint_type = Scalar[
+    comptime layout_uint_type = Scalar[
         _unsigned_integral_type_of[Self.layout_int_type]()
     ]
     """The unsigned integer type used for layout, based on layout and address space."""
 
-    alias linear_uint_type = Scalar[
+    comptime linear_uint_type = Scalar[
         _unsigned_integral_type_of[Self.linear_idx_type]()
     ]
     """The unsigned integer type used for indexing into memory."""
@@ -7851,7 +7859,7 @@ struct LayoutTensorIter[
     var bound: Self.linear_uint_type
     """Upper bound of the memory region, limiting the iteration range."""
 
-    alias RuntimeLayoutType = RuntimeLayout[
+    comptime RuntimeLayoutType = RuntimeLayout[
         Self.layout,
         element_type = Self.layout_int_type,
         linear_idx_type = Self.linear_idx_type,
@@ -8011,7 +8019,7 @@ struct LayoutTensorIter[
         self.dimension_bound = dimension_bound
         self.idx = idx
 
-    alias LayoutTensorType = LayoutTensor[
+    comptime LayoutTensorType = LayoutTensor[
         Self.dtype,
         Self.layout,
         Self.origin,
@@ -8233,7 +8241,7 @@ struct LayoutTensorIter[
             offset=next_offset,
         )
 
-    alias ReshapeType[dst_layout: Layout] = LayoutTensorIter[
+    comptime ReshapeType[dst_layout: Layout] = LayoutTensorIter[
         Self.dtype,
         dst_layout,
         Self.origin,
@@ -8290,7 +8298,7 @@ struct LayoutTensorIter[
             idx=Int(self.idx),
         )
 
-    alias BitcasType[
+    comptime BitcasType[
         new_type: DType,
         *,
         address_space: AddressSpace = Self.address_space,

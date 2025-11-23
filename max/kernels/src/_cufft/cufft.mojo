@@ -24,7 +24,7 @@ from memory import (
     LegacyUnsafePointer as UnsafePointer,
 )
 
-alias cufftHandle = ffi.c_uint
+comptime cufftHandle = ffi.c_uint
 
 
 fn cufftCreate(handle: UnsafePointer[cufftHandle]) raises -> Status:

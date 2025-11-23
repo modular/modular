@@ -84,7 +84,7 @@ struct RuntimeTuple[
         element_type: Integer type of the underlying elements.
     """
 
-    alias scalar_length = len(flatten(Self.S))
+    comptime scalar_length = len(flatten(Self.S))
     """The total number of scalar elements in this RuntimeTuple after flattening nested tuples."""
 
     var value: IndexList[Self.scalar_length, element_type = Self.element_type]
@@ -99,11 +99,11 @@ struct RuntimeTuple[
         """
         self.value = {}
 
-        alias f = flatten(Self.S)
+        comptime f = flatten(Self.S)
 
         @parameter
         for i in range(Self.scalar_length):
-            alias v = f[i].value()
+            comptime v = f[i].value()
 
             @parameter
             if v != UNKNOWN_VALUE:
@@ -178,7 +178,7 @@ struct RuntimeTuple[
         Returns:
             The integer value of this RuntimeTuple.
         """
-        alias comptime_value: Scalar[Self.element_type] = Self.S.value()
+        comptime comptime_value: Scalar[Self.element_type] = Self.S.value()
 
         @parameter
         if comptime_value != UNKNOWN_VALUE:
@@ -202,7 +202,7 @@ struct RuntimeTuple[
         Returns:
             A new `RuntimeTuple` containing the element or sub-tuple at the specified index.
         """
-        alias offset = Self.offset_until[i]()
+        comptime offset = Self.offset_until[i]()
         res = {}
 
         @parameter
@@ -223,7 +223,7 @@ struct RuntimeTuple[
         Args:
             val: The new value to assign to the element.
         """
-        alias offset = Self.offset_until[i]()
+        comptime offset = Self.offset_until[i]()
         self.value[offset] = Int(val)
 
     @no_inline
@@ -265,7 +265,7 @@ struct RuntimeTuple[
         """
         result = {}
 
-        alias S_flat = flatten(Self.S)
+        comptime S_flat = flatten(Self.S)
 
         @parameter
         for i in range(Self.scalar_length):
@@ -274,7 +274,7 @@ struct RuntimeTuple[
             if S_flat[i] == UNKNOWN_VALUE:
                 result.value[i] = self.value[i]
 
-        alias R_flat = flatten(R)
+        comptime R_flat = flatten(R)
 
         @parameter
         for i in range(rhs.scalar_length):
@@ -317,7 +317,7 @@ struct RuntimeTuple[
         else:
             writer.write("(")
 
-            alias size = len(Self.S)
+            comptime size = len(Self.S)
 
             @parameter
             for i in range(size):
@@ -340,7 +340,7 @@ struct RuntimeTuple[
         Returns:
             The number of top-level elements in the tuple.
         """
-        alias l = len(Self.S)
+        comptime l = len(Self.S)
         return l
 
     @always_inline
@@ -585,7 +585,7 @@ fn crd2idx[
             ),
         ]()
         var r: Scalar[out_type] = 0
-        alias size = min(min(len(crd_t), len(shape_t)), len(stride_t))
+        comptime size = min(min(len(crd_t), len(shape_t)), len(stride_t))
 
         @parameter
         for i in range(size):
@@ -602,7 +602,7 @@ fn crd2idx[
             ]()
             var result: Scalar[out_type] = 0
 
-            alias last_elem_idx = len(shape_t) - 1
+            comptime last_elem_idx = len(shape_t) - 1
 
             @parameter
             for i in range(last_elem_idx):

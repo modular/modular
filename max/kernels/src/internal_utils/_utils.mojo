@@ -300,13 +300,13 @@ struct InitializationType(
     DevicePassable, Equatable, ImplicitlyCopyable, Movable
 ):
     var _value: Int
-    alias zero = InitializationType(0)
-    alias one = InitializationType(1)
-    alias uniform_distribution = InitializationType(2)
-    alias arange = InitializationType(3)
-    alias fill = InitializationType(4)
+    comptime zero = InitializationType(0)
+    comptime one = InitializationType(1)
+    comptime uniform_distribution = InitializationType(2)
+    comptime arange = InitializationType(3)
+    comptime fill = InitializationType(4)
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -440,16 +440,16 @@ fn parse_shape[name: StaticString]() -> List[Int]:
     Returns:
         A List[Int] parameter value.
     """
-    alias zero = "0".unsafe_ptr()[0]
-    alias x_ptr = "x".unsafe_ptr()[0]
-    alias name_unsafe_ptr = name.unsafe_ptr()
+    comptime zero = "0".unsafe_ptr()[0]
+    comptime x_ptr = "x".unsafe_ptr()[0]
+    comptime name_unsafe_ptr = name.unsafe_ptr()
 
     var vals: List[Int] = List[Int]()
     var sum: Int = 0
 
     @parameter
     for i in range(len(name)):
-        alias diff = Int(name_unsafe_ptr[i] - zero)
+        comptime diff = Int(name_unsafe_ptr[i] - zero)
         constrained[Bool(name_unsafe_ptr[i] == x_ptr) or Bool(0 <= diff <= 9)]()
 
         @parameter
@@ -479,8 +479,8 @@ fn env_get_shape[name: StaticString, default: StaticString]() -> List[Int]:
     Returns:
         A List[Int] parameter value.
     """
-    alias shape_str = env_get_string[name, default]()
-    alias shape: List[Int] = parse_shape[shape_str]()
+    comptime shape_str = env_get_string[name, default]()
+    comptime shape: List[Int] = parse_shape[shape_str]()
     return materialize[shape]()
 
 
@@ -489,7 +489,7 @@ fn int_list_to_tuple[x: List[Int]]() -> IndexList[len(x)]:
 
     @parameter
     for i in range(len(x)):
-        alias xi = x[i]
+        comptime xi = x[i]
         t[i] = xi
     return t
 
@@ -661,11 +661,11 @@ fn array_equal[
 struct Mode(ImplicitlyCopyable, Movable, Stringable):
     var _value: Int
     var handle: StaticString
-    alias NONE = Self(0x0, "none")
-    alias RUN = Self(0x1, "run")
-    alias BENCHMARK = Self(0x2, "benchmark")
-    alias VERIFY = Self(0x4, "verify")
-    alias SEP = "+"
+    comptime NONE = Self(0x0, "none")
+    comptime RUN = Self(0x1, "run")
+    comptime BENCHMARK = Self(0x2, "benchmark")
+    comptime VERIFY = Self(0x4, "verify")
+    comptime SEP = "+"
 
     fn __init__(out self, handle: String = "run+benchmark+verify") raises:
         var handle_lower = handle.lower().split(Self.SEP)
@@ -825,7 +825,7 @@ fn init_vector_launch[
     var num_blocks = ceildiv(ceildiv(length, 4), block_dim)
     # using num-threads = 1/4th of length to initialize the array
 
-    alias kernel = init_vector_gpu[dtype]
+    comptime kernel = init_vector_gpu[dtype]
     context.enqueue_function_checked[kernel, kernel](
         out_device,
         length,

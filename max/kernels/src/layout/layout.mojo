@@ -110,7 +110,7 @@ trait LayoutTrait(ImplicitlyCopyable):
     different layout implementations to be used interchangeably in algorithms.
     """
 
-    alias has_shape: Bool
+    comptime has_shape: Bool
     """Indicates whether the layout has a valid shape.
 
     Layouts and ComposedLayouts with at least one Layout have valid shapes
@@ -263,10 +263,10 @@ struct _LayoutIter[origin: ImmutOrigin](
         layout: Pointer to the `Layout` being iterated.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = Layout
+    comptime Element = Layout
     var index: Int
     var layout: Pointer[Layout, Self.origin]
 
@@ -346,7 +346,7 @@ struct Layout(
     for complex memory access patterns like blocked or tiled layouts.
     """
 
-    alias has_shape = True
+    comptime has_shape = True
     """Indicates whether the layout has a valid shape."""
 
     var shape: IntTuple
@@ -366,7 +366,7 @@ struct Layout(
     skipping 1 element.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _LayoutIter[ImmutOrigin.cast_from[iterable_origin]]
 
@@ -1046,7 +1046,7 @@ fn cosize(l: Layout) -> Int:
     return l.cosize()
 
 
-alias LayoutList = List[Layout]
+comptime LayoutList = List[Layout]
 
 
 @always_inline("nodebug")
@@ -1079,13 +1079,13 @@ fn MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
         A LayoutList containing layouts for each tile size.
     """
 
-    alias num_tiles = stdlib.builtin.variadic_size(tile_sizes)
+    comptime num_tiles = stdlib.builtin.variadic_size(tile_sizes)
 
     var layout_list = LayoutList(capacity=num_tiles)
 
     @parameter
     for i in range(num_tiles):
-        alias arg = tile_sizes[i]
+        comptime arg = tile_sizes[i]
         layout_list.append(Layout(arg, 1))
 
     return layout_list^
@@ -2027,14 +2027,14 @@ fn expand_modes_alike(
     from layout import Layout, IntTuple
     from layout.layout import expand_modes_alike
 
-    alias layout_0 = Layout(
+    comptime layout_0 = Layout(
         IntTuple(IntTuple(3, IntTuple(5, 2)), 4),
         IntTuple(IntTuple(1, IntTuple(24, 12)), 3),
     )
-    alias layout_1 = Layout(
+    comptime layout_1 = Layout(
         IntTuple(30, IntTuple(2, 2)), IntTuple(2, IntTuple(60, 1))
     )
-    alias uc = expand_modes_alike(layout_0, layout_1)
+    comptime uc = expand_modes_alike(layout_0, layout_1)
     print(uc[0])
     # (((3, (5, 2)), (2, 2)):((1, (24, 12)), (3, 6)))
     print(uc[1])

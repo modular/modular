@@ -18,9 +18,9 @@ from os import abort
 @register_passable("trivial")
 struct LibraryProperty(Equatable):
     var _value: Int32
-    alias MAJOR_VERSION = Self(0)
-    alias MINOR_VERSION = Self(1)
-    alias PATCH_LEVEL = Self(2)
+    comptime MAJOR_VERSION = Self(0)
+    comptime MINOR_VERSION = Self(1)
+    comptime PATCH_LEVEL = Self(2)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -46,23 +46,23 @@ struct LibraryProperty(Equatable):
 @register_passable("trivial")
 struct Status(Equatable, Identifiable, Stringable, Writable):
     var _value: Int8
-    alias CUFFT_INVALID_PLAN = Self(1)
-    alias CUFFT_SUCCESS = Self(0)
-    alias CUFFT_ALLOC_FAILED = Self(2)
-    alias CUFFT_INVALID_TYPE = Self(3)
-    alias CUFFT_INVALID_VALUE = Self(4)
-    alias CUFFT_INTERNAL_ERROR = Self(5)
-    alias CUFFT_EXEC_FAILED = Self(6)
-    alias CUFFT_SETUP_FAILED = Self(7)
-    alias CUFFT_INVALID_SIZE = Self(8)
-    alias CUFFT_UNALIGNED_DATA = Self(9)
-    alias CUFFT_INCOMPLETE_PARAMETER_LIST = Self(10)
-    alias CUFFT_INVALID_DEVICE = Self(11)
-    alias CUFFT_PARSE_ERROR = Self(12)
-    alias CUFFT_NO_WORKSPACE = Self(13)
-    alias CUFFT_NOT_IMPLEMENTED = Self(14)
-    alias CUFFT_LICENSE_ERROR = Self(15)
-    alias CUFFT_NOT_SUPPORTED = Self(16)
+    comptime CUFFT_INVALID_PLAN = Self(1)
+    comptime CUFFT_SUCCESS = Self(0)
+    comptime CUFFT_ALLOC_FAILED = Self(2)
+    comptime CUFFT_INVALID_TYPE = Self(3)
+    comptime CUFFT_INVALID_VALUE = Self(4)
+    comptime CUFFT_INTERNAL_ERROR = Self(5)
+    comptime CUFFT_EXEC_FAILED = Self(6)
+    comptime CUFFT_SETUP_FAILED = Self(7)
+    comptime CUFFT_INVALID_SIZE = Self(8)
+    comptime CUFFT_UNALIGNED_DATA = Self(9)
+    comptime CUFFT_INCOMPLETE_PARAMETER_LIST = Self(10)
+    comptime CUFFT_INVALID_DEVICE = Self(11)
+    comptime CUFFT_PARSE_ERROR = Self(12)
+    comptime CUFFT_NO_WORKSPACE = Self(13)
+    comptime CUFFT_NOT_IMPLEMENTED = Self(14)
+    comptime CUFFT_LICENSE_ERROR = Self(15)
+    comptime CUFFT_NOT_SUPPORTED = Self(16)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -130,12 +130,12 @@ struct Status(Equatable, Identifiable, Stringable, Writable):
 @register_passable("trivial")
 struct Type(Equatable, Identifiable, Stringable, Writable):
     var _value: Int8
-    alias CUFFT_R2C = Self(0x2A)
-    alias CUFFT_C2R = Self(0x2C)
-    alias CUFFT_C2C = Self(0x29)
-    alias CUFFT_D2Z = Self(0x6A)
-    alias CUFFT_Z2D = Self(0x6C)
-    alias CUFFT_Z2Z = Self(0x69)
+    comptime CUFFT_R2C = Self(0x2A)
+    comptime CUFFT_C2R = Self(0x2C)
+    comptime CUFFT_C2C = Self(0x29)
+    comptime CUFFT_D2Z = Self(0x6A)
+    comptime CUFFT_Z2D = Self(0x6C)
+    comptime CUFFT_Z2Z = Self(0x69)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -178,7 +178,7 @@ struct Type(Equatable, Identifiable, Stringable, Writable):
 @register_passable("trivial")
 struct Compatibility(Equatable, Identifiable, Stringable, Writable):
     var _value: Int8
-    alias CUFFT_COMPATIBILITY_FFTW_PADDING = Self(0)
+    comptime CUFFT_COMPATIBILITY_FFTW_PADDING = Self(0)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -211,8 +211,8 @@ struct Compatibility(Equatable, Identifiable, Stringable, Writable):
 @register_passable("trivial")
 struct Property(Equatable, Identifiable, Stringable, Writable):
     var _value: Int8
-    alias NVFFT_PLAN_PROPERTY_INT64_PATIENT_JIT = Self(0)
-    alias NVFFT_PLAN_PROPERTY_INT64_MAX_NUM_HOST_THREADS = Self(1)
+    comptime NVFFT_PLAN_PROPERTY_INT64_PATIENT_JIT = Self(0)
+    comptime NVFFT_PLAN_PROPERTY_INT64_MAX_NUM_HOST_THREADS = Self(1)
 
     fn __init__(out self, value: Int):
         self._value = value

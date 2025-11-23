@@ -65,7 +65,7 @@ struct RuntimeLayout[
     actual shape and stride values can be modified during execution.
     """
 
-    alias ShapeType = RuntimeTuple[
+    comptime ShapeType = RuntimeTuple[
         Self.layout.shape, element_type = Self.element_type
     ]
     var shape: Self.ShapeType
@@ -75,7 +75,7 @@ struct RuntimeLayout[
     unsigned. Must match the static layout's shape dimensions.
     """
 
-    alias StrideType = RuntimeTuple[
+    comptime StrideType = RuntimeTuple[
         Self.layout.stride, element_type = Self.linear_idx_type
     ]
     var stride: Self.StrideType
@@ -203,7 +203,7 @@ struct RuntimeLayout[
 
         @parameter
         for i in range(Self.layout.rank()):
-            alias dim_i = Int(Self.layout.shape[i])
+            comptime dim_i = Int(Self.layout.shape[i])
             if self.shape.value[i] != dim_i:
                 return True
         return False
@@ -426,8 +426,8 @@ fn coalesce[
 
     @parameter
     for i in range(len(flatten(l.shape))):
-        alias shape = Int(l.shape[i])
-        alias stride = Int(l.stride[i])
+        comptime shape = Int(l.shape[i])
+        comptime stride = Int(l.stride[i])
 
         # If dynamic, append new mode
         if UNKNOWN_VALUE in (shape, stride):
@@ -496,8 +496,8 @@ fn make_layout[
         element_type=linear_idx_type,
     ]()
 
-    alias a_length = len(flatten(l1.shape))
-    alias b_length = len(flatten(l2.shape))
+    comptime a_length = len(flatten(l1.shape))
+    comptime b_length = len(flatten(l2.shape))
 
     @parameter
     for i in range(a_length):

@@ -17,16 +17,16 @@ from os import abort
 @register_passable("trivial")
 struct Result(Equatable, Writable):
     var _value: Int32
-    alias SUCCESS = Self(0)
-    alias NOT_INITIALIZED = Self(1)
-    alias ALLOC_FAILED = Self(3)
-    alias INVALID_VALUE = Self(7)
-    alias ARCH_MISMATCH = Self(8)
-    alias MAPPING_ERROR = Self(11)
-    alias EXECUTION_FAILED = Self(13)
-    alias INTERNAL_ERROR = Self(14)
-    alias NOT_SUPPORTED = Self(15)
-    alias LICENSE_ERROR = Self(16)
+    comptime SUCCESS = Self(0)
+    comptime NOT_INITIALIZED = Self(1)
+    comptime ALLOC_FAILED = Self(3)
+    comptime INVALID_VALUE = Self(7)
+    comptime ARCH_MISMATCH = Self(8)
+    comptime MAPPING_ERROR = Self(11)
+    comptime EXECUTION_FAILED = Self(13)
+    comptime INTERNAL_ERROR = Self(14)
+    comptime NOT_SUPPORTED = Self(15)
+    comptime LICENSE_ERROR = Self(16)
 
     fn __init__(out self, value: Int):
         self._value = value

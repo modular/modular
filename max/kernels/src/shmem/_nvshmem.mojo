@@ -50,7 +50,7 @@ struct NVSHMEMIVersion:
         self.patch = 5
 
 
-alias NVSHMEM_LIBRARY = _Global["NVSHMEM_LIBRARY", _init_nvshmem_dylib]
+comptime NVSHMEM_LIBRARY = _Global["NVSHMEM_LIBRARY", _init_nvshmem_dylib]
 
 
 fn _init_nvshmem_dylib() -> OwnedDLHandle:
@@ -87,71 +87,71 @@ fn _get_nvshmem_function[
 # Types
 # ===-----------------------------------------------------------------------===#
 
-alias nvshmem_team_id_t = Int32
+comptime nvshmem_team_id_t = Int32
 
 # ===-----------------------------------------------------------------------===#
 # Constants
 # ===-----------------------------------------------------------------------===#
 
-alias NVSHMEM_SUCCESS = 0
+comptime NVSHMEM_SUCCESS = 0
 
-alias NVSHMEMX_INIT_WITH_MPI_COMM = 1 << 1
+comptime NVSHMEMX_INIT_WITH_MPI_COMM = 1 << 1
 
-alias CHANNEL_BUF_SIZE: c_int = 1 << 22
-alias CHANNEL_BUF_SIZE_LOG: c_int = 22
-alias CHANNEL_ENTRY_BYTES: c_int = 8
+comptime CHANNEL_BUF_SIZE: c_int = 1 << 22
+comptime CHANNEL_BUF_SIZE_LOG: c_int = 22
+comptime CHANNEL_ENTRY_BYTES: c_int = 8
 
-alias NVSHMEMX_ERROR_INTERNAL = 1
-alias NVSHMEM_MAX_NAME_LEN: c_int = 256
+comptime NVSHMEMX_ERROR_INTERNAL = 1
+comptime NVSHMEM_MAX_NAME_LEN: c_int = 256
 
-alias NVSHMEM_THREAD_SINGLE: c_int = 0
-alias NVSHMEM_THREAD_FUNNELED: c_int = 1
-alias NVSHMEM_THREAD_SERIALIZED: c_int = 2
-alias NVSHMEM_THREAD_MULTIPLE: c_int = 3
-alias NVSHMEM_THREAD_TYPE_SENTINEL: c_int = c_int.MAX
+comptime NVSHMEM_THREAD_SINGLE: c_int = 0
+comptime NVSHMEM_THREAD_FUNNELED: c_int = 1
+comptime NVSHMEM_THREAD_SERIALIZED: c_int = 2
+comptime NVSHMEM_THREAD_MULTIPLE: c_int = 3
+comptime NVSHMEM_THREAD_TYPE_SENTINEL: c_int = c_int.MAX
 
-alias NVSHMEM_CMP_EQ: c_int = 0
-alias NVSHMEM_CMP_NE: c_int = 1
-alias NVSHMEM_CMP_GT: c_int = 2
-alias NVSHMEM_CMP_LE: c_int = 3
-alias NVSHMEM_CMP_LT: c_int = 4
-alias NVSHMEM_CMP_GE: c_int = 5
-alias NVSHMEM_CMP_SENTINEL: c_int = c_int.MAX
+comptime NVSHMEM_CMP_EQ: c_int = 0
+comptime NVSHMEM_CMP_NE: c_int = 1
+comptime NVSHMEM_CMP_GT: c_int = 2
+comptime NVSHMEM_CMP_LE: c_int = 3
+comptime NVSHMEM_CMP_LT: c_int = 4
+comptime NVSHMEM_CMP_GE: c_int = 5
+comptime NVSHMEM_CMP_SENTINEL: c_int = c_int.MAX
 
-alias PROXY_GLOBAL_EXIT_INIT: c_int = 1
-alias PROXY_GLOBAL_EXIT_REQUESTED: c_int = 2
-alias PROXY_GLOBAL_EXIT_FINISHED: c_int = 3
-alias PROXY_GLOBAL_EXIT_MAX_STATE: c_int = c_int.MAX
+comptime PROXY_GLOBAL_EXIT_INIT: c_int = 1
+comptime PROXY_GLOBAL_EXIT_REQUESTED: c_int = 2
+comptime PROXY_GLOBAL_EXIT_FINISHED: c_int = 3
+comptime PROXY_GLOBAL_EXIT_MAX_STATE: c_int = c_int.MAX
 
-alias PROXY_DMA_REQ_BYTES: c_int = 32
-alias PROXY_AMO_REQ_BYTES: c_int = 40
-alias PROXY_INLINE_REQ_BYTES: c_int = 24
+comptime PROXY_DMA_REQ_BYTES: c_int = 32
+comptime PROXY_AMO_REQ_BYTES: c_int = 40
+comptime PROXY_INLINE_REQ_BYTES: c_int = 24
 
-alias NVSHMEM_STATUS_NOT_INITIALIZED: c_int = 0
-alias NVSHMEM_STATUS_IS_BOOTSTRAPPED: c_int = 1
-alias NVSHMEM_STATUS_IS_INITIALIZED: c_int = 2
-alias NVSHMEM_STATUS_LIMITED_MPG: c_int = 4
-alias NVSHMEM_STATUS_FULL_MPG: c_int = 5
-alias NVSHMEM_STATUS_INVALID: c_int = c_int.MAX
+comptime NVSHMEM_STATUS_NOT_INITIALIZED: c_int = 0
+comptime NVSHMEM_STATUS_IS_BOOTSTRAPPED: c_int = 1
+comptime NVSHMEM_STATUS_IS_INITIALIZED: c_int = 2
+comptime NVSHMEM_STATUS_LIMITED_MPG: c_int = 4
+comptime NVSHMEM_STATUS_FULL_MPG: c_int = 5
+comptime NVSHMEM_STATUS_INVALID: c_int = c_int.MAX
 
-alias NVSHMEM_SIGNAL_SET: c_int = 9
-alias NVSHMEM_SIGNAL_ADD: c_int = 10
+comptime NVSHMEM_SIGNAL_SET: c_int = 9
+comptime NVSHMEM_SIGNAL_ADD: c_int = 10
 
-alias NVSHMEM_TEAM_INVALID: nvshmem_team_id_t = -1
-alias NVSHMEM_TEAM_WORLD: nvshmem_team_id_t = 0
-alias NVSHMEM_TEAM_WORLD_INDEX: nvshmem_team_id_t = 0
-alias NVSHMEM_TEAM_SHARED: nvshmem_team_id_t = 1
-alias NVSHMEM_TEAM_SHARED_INDEX: nvshmem_team_id_t = 1
-alias NVSHMEMX_TEAM_NODE: nvshmem_team_id_t = 2
-alias NVSHMEM_TEAM_NODE_INDEX: nvshmem_team_id_t = 2
-alias NVSHMEMX_TEAM_SAME_MYPE_NODE: nvshmem_team_id_t = 3
-alias NVSHMEM_TEAM_SAME_MYPE_NODE_INDEX: nvshmem_team_id_t = 3
-alias NVSHMEMI_TEAM_SAME_GPU: nvshmem_team_id_t = 4
-alias NVSHMEM_TEAM_SAME_GPU_INDEX: nvshmem_team_id_t = 4
-alias NVSHMEMI_TEAM_GPU_LEADERS: nvshmem_team_id_t = 5
-alias NVSHMEM_TEAM_GPU_LEADERS_INDEX: nvshmem_team_id_t = 5
-alias NVSHMEM_TEAMS_MIN: nvshmem_team_id_t = 6
-alias NVSHMEM_TEAM_INDEX_MAX: nvshmem_team_id_t = nvshmem_team_id_t.MAX
+comptime NVSHMEM_TEAM_INVALID: nvshmem_team_id_t = -1
+comptime NVSHMEM_TEAM_WORLD: nvshmem_team_id_t = 0
+comptime NVSHMEM_TEAM_WORLD_INDEX: nvshmem_team_id_t = 0
+comptime NVSHMEM_TEAM_SHARED: nvshmem_team_id_t = 1
+comptime NVSHMEM_TEAM_SHARED_INDEX: nvshmem_team_id_t = 1
+comptime NVSHMEMX_TEAM_NODE: nvshmem_team_id_t = 2
+comptime NVSHMEM_TEAM_NODE_INDEX: nvshmem_team_id_t = 2
+comptime NVSHMEMX_TEAM_SAME_MYPE_NODE: nvshmem_team_id_t = 3
+comptime NVSHMEM_TEAM_SAME_MYPE_NODE_INDEX: nvshmem_team_id_t = 3
+comptime NVSHMEMI_TEAM_SAME_GPU: nvshmem_team_id_t = 4
+comptime NVSHMEM_TEAM_SAME_GPU_INDEX: nvshmem_team_id_t = 4
+comptime NVSHMEMI_TEAM_GPU_LEADERS: nvshmem_team_id_t = 5
+comptime NVSHMEM_TEAM_GPU_LEADERS_INDEX: nvshmem_team_id_t = 5
+comptime NVSHMEM_TEAMS_MIN: nvshmem_team_id_t = 6
+comptime NVSHMEM_TEAM_INDEX_MAX: nvshmem_team_id_t = nvshmem_team_id_t.MAX
 
 
 # Structs
@@ -485,7 +485,7 @@ fn nvshmem_put[
     nelems: c_size_t,
     pe: c_int,
 ):
-    alias symbol = _dtype_to_nvshmem_type[
+    comptime symbol = _dtype_to_nvshmem_type[
         _get_prefix[scope](), dtype, "_put", scope.value
     ]()
     external_call[symbol, NoneType](dest, source, nelems, pe)
@@ -500,7 +500,7 @@ fn nvshmem_put_nbi[
     nelems: c_size_t,
     pe: c_int,
 ):
-    alias symbol = _dtype_to_nvshmem_type[
+    comptime symbol = _dtype_to_nvshmem_type[
         _get_prefix[scope](), dtype, "_put_nbi", scope.value
     ]()
     external_call[symbol, NoneType](dest, source, nelems, pe)
@@ -509,7 +509,7 @@ fn nvshmem_put_nbi[
 fn nvshmem_p[
     dtype: DType
 ](dest: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], pe: c_int):
-    alias symbol = _dtype_to_nvshmem_type["nvshmem_", dtype, "_p"]()
+    comptime symbol = _dtype_to_nvshmem_type["nvshmem_", dtype, "_p"]()
     external_call[symbol, NoneType](dest, value, pe)
 
 
@@ -522,7 +522,7 @@ fn nvshmem_get[
     nelems: c_size_t,
     pe: c_int,
 ):
-    alias symbol = _dtype_to_nvshmem_type[
+    comptime symbol = _dtype_to_nvshmem_type[
         _get_prefix[scope](), dtype, "_get", scope.value
     ]()
     external_call[symbol, NoneType](dest, source, nelems, pe)
@@ -537,7 +537,7 @@ fn nvshmem_get_nbi[
     nelems: c_size_t,
     pe: c_int,
 ):
-    alias symbol = _dtype_to_nvshmem_type[
+    comptime symbol = _dtype_to_nvshmem_type[
         _get_prefix[scope](), dtype, "_get_nbi", scope.value
     ]()
     external_call[symbol, NoneType](dest, source, nelems, pe)
@@ -546,7 +546,7 @@ fn nvshmem_get_nbi[
 fn nvshmem_g[
     dtype: DType
 ](source: UnsafePointer[Scalar[dtype]], pe: c_int) -> Scalar[dtype]:
-    alias symbol = _dtype_to_nvshmem_type["nvshmem_", dtype, "_g"]()
+    comptime symbol = _dtype_to_nvshmem_type["nvshmem_", dtype, "_g"]()
     return external_call[symbol, Scalar[dtype]](source, pe)
 
 
@@ -574,7 +574,7 @@ fn nvshmem_put_signal_nbi[
     sig_op: c_int,
     pe: c_int,
 ):
-    alias symbol = _dtype_to_nvshmem_type[
+    comptime symbol = _dtype_to_nvshmem_type[
         "nvshmem_", dtype, "_put_signal_nbi"
     ]()
     external_call[symbol, NoneType](

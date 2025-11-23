@@ -231,7 +231,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
 
         @parameter
         for i in range(Self.__len__()):
-            alias T = Self.element_types[i]
+            comptime T = Self.element_types[i]
             count += T.__len__()
 
         return count
@@ -244,7 +244,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
             The number of elements in the tuple.
         """
 
-        alias result = stdlib.builtin.variadic_size(Self.element_types)
+        comptime result = stdlib.builtin.variadic_size(Self.element_types)
         return result
 
     @always_inline("nodebug")
@@ -368,7 +368,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
 
         @parameter
         for i in range(Self.__len__()):
-            alias T = Self.element_types[i]
+            comptime T = Self.element_types[i]
             var t_elem = t[i]
 
             @parameter
@@ -417,8 +417,8 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
 
         @parameter
         for i in range(Self.__len__()):
-            alias T = Self.element_types[i]
-            alias U = other_types[i]
+            comptime T = Self.element_types[i]
+            comptime U = other_types[i]
 
             @parameter
             if T.IS_TUPLE and U.IS_TUPLE:
@@ -460,8 +460,8 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
 
         @parameter
         for i in range(Self.__len__()):
-            alias T = Self.element_types[i]
-            alias U = other_types[i]
+            comptime T = Self.element_types[i]
+            comptime U = other_types[i]
 
             @parameter
             if T.IS_TUPLE and U.IS_TUPLE:
@@ -575,9 +575,9 @@ fn crd2idx[
     out_type: DType = DType.int64,
 ](crd: Index, shape: Shape, stride: Stride) -> Scalar[out_type]:
     """Calculate the index from a coordinate tuple."""
-    alias shape_len = Shape.__len__()
-    alias stride_len = Stride.__len__()
-    alias crd_len = Index.__len__()
+    comptime shape_len = Shape.__len__()
+    comptime stride_len = Stride.__len__()
+    comptime crd_len = Index.__len__()
 
     @parameter
     if Shape.IS_TUPLE and Stride.IS_TUPLE and shape_len == stride_len:
@@ -600,7 +600,7 @@ fn crd2idx[
         else:  # "int" tuple tuple
             var crd_int = 0 if crd_len == 0 else crd.value()
 
-            alias last_elem_idx = shape_len - 1
+            comptime last_elem_idx = shape_len - 1
 
             @parameter
             for i in range(last_elem_idx):
@@ -644,7 +644,7 @@ fn mixed_int_tuple_to_int_tuple[
 
     @parameter
     for i in range(MixedTuple[*element_types].__len__()):
-        alias T = element_types[i]
+        comptime T = element_types[i]
 
         @parameter
         if T.IS_TUPLE:
@@ -728,11 +728,11 @@ fn _get_flattened_helper[
         constrained[False, "flat_idx out of bounds"]()
         return abort[Int]()
 
-    alias T = element_types[i]
+    comptime T = element_types[i]
 
     @parameter
     if T.IS_TUPLE:
-        alias count = variadic_size(_Flattened[*T.VariadicType])
+        comptime count = variadic_size(_Flattened[*T.VariadicType])
 
         @parameter
         if flat_idx >= current_offset and flat_idx < current_offset + count:

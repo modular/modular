@@ -38,7 +38,7 @@ struct TuningConfigAMD(TuningConfig):
 
 
 # Put the tuning results in this file.
-alias configs_amd: List[TuningConfigAMD] = [
+comptime configs_amd: List[TuningConfigAMD] = [
     TuningConfigAMD(m=1, n=1, k=1, bm=11, bn=11),
     TuningConfigAMD(m=1, n=2, k=1, bm=11, bn=11),
     TuningConfigAMD(m=2, n=1, k=1, bm=22, bn=22),
@@ -47,4 +47,4 @@ alias configs_amd: List[TuningConfigAMD] = [
 ]
 
 # Make sure to register the above configs in the ConfigTable.
-alias TuningTableAMD = Table(configs_amd, "TuningTableAMD")
+comptime TuningTableAMD = Table(configs_amd, "TuningTableAMD")

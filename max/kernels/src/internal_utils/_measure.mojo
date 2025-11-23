@@ -80,7 +80,7 @@ fn kl_div[
 ) -> Scalar[
     out_type
 ]:
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
     var accum_simd = SIMD[out_type, simd_width](0)
     var accum_scalar = Scalar[out_type](0)
 
@@ -148,7 +148,7 @@ fn correlation[
     var uu = Scalar[out_type]()
     var vv = Scalar[out_type]()
 
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
     var uv_simd = SIMD[out_type, simd_width]()
     var uu_simd = SIMD[out_type, simd_width]()
     var vv_simd = SIMD[out_type, simd_width]()
@@ -221,7 +221,7 @@ fn uncentered_unweighted_correlation[
     var uv = _dot[out_type=out_type](u, v, len)
     var uu = _dot[out_type=out_type](u, u, len)
     var vv = _dot[out_type=out_type](v, v, len)
-    alias eps = Scalar[out_type](1e-6)
+    comptime eps = Scalar[out_type](1e-6)
     return uv / (sqrt(uu * vv) + eps)
 
 
@@ -360,7 +360,7 @@ fn _dot[
 ](x: UnsafePointer[Scalar[dtype]], y: type_of(x), len: Int) -> Scalar[out_type]:
     # loads are the expensive part, so we use the (probably) smaller
     # input type for determining simd width.
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
     var accum_simd = SIMD[out_type, simd_width](0)
     var accum_scalar = Scalar[out_type](0)
 

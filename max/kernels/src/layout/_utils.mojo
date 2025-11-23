@@ -34,11 +34,13 @@ struct ManagedLayoutTensor[
     layout: Layout,
     *,
 ]:
-    alias index_type: DType = _get_index_type(Self.layout, AddressSpace.GENERIC)
-    alias element_type: DType = _get_layout_type(
+    comptime index_type: DType = _get_index_type(
         Self.layout, AddressSpace.GENERIC
     )
-    alias layout_tensor_type = LayoutTensor[
+    comptime element_type: DType = _get_layout_type(
+        Self.layout, AddressSpace.GENERIC
+    )
+    comptime layout_tensor_type = LayoutTensor[
         Self.dtype,
         Self.layout,
         MutAnyOrigin,
@@ -236,7 +238,7 @@ fn load_to_simd(
         tensor.layout.all_dims_known(),
         "load_to_simd is supported only for tensors with known layout",
     ]()
-    alias size = type_of(res).size
+    comptime size = type_of(res).size
     return rebind[type_of(res)](
         tensor.reshape[Layout(size)]().vectorize[size]()[0]
     )
@@ -255,9 +257,9 @@ fn _get_bounds(tensor: LayoutTensor) -> Int:
     if tensor.dim[0]() == 0 or tensor.dim[1]() == 0:
         return 0
 
-    alias element_layout = tensor.element_layout
-    alias element_offset = element_layout(element_layout.size() - 1)
-    alias tensor_t = type_of(tensor)
+    comptime element_layout = tensor.element_layout
+    comptime element_offset = element_layout(element_layout.size() - 1)
+    comptime tensor_t = type_of(tensor)
     var strides = tensor.runtime_layout.stride.value
     var offset = tensor._get_offset(
         strides,
@@ -291,8 +293,8 @@ fn idx2crd[layout: Layout](idx: Int) -> IndexList[layout.rank()]:
 
     @parameter
     for i in range(layout.rank()):
-        alias stride = layout.stride[i].value()
-        alias shape = layout.shape[i].value()
+        comptime stride = layout.stride[i].value()
+        comptime shape = layout.shape[i].value()
         res[i] = (Int(idx) // stride) % shape
     return res
 
@@ -304,7 +306,7 @@ fn hash(tensor: LayoutTensor) -> Int:
         size_of[tensor.dtype]() == 2, "Only support 2 byte types for hash"
     ]()
     var hash_value: Int = 0
-    alias size = tensor.layout.size()
+    comptime size = tensor.layout.size()
 
     for i in range(tensor.dim[0]()):
         for j in range(tensor.dim[1]()):
