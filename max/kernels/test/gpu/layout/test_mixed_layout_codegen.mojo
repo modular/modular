@@ -64,7 +64,7 @@ fn kernel_mixed_dimensions(x: Int, ptr: UnsafePointer[Int32]):
 
 
 fn kernel_thread_idx(ptr: UnsafePointer[Int32]):
-    alias layout = MixedLayout(
+    comptime layout = MixedLayout(
         shape=(Idx[8](), Idx[2]()), stride=(Idx[1](), Idx[1]())
     )
     ptr[0] = Int32(

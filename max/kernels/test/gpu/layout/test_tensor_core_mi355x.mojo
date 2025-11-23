@@ -21,8 +21,8 @@ from test_tensor_core_amd_utils import test_load_and_mma_and_multiply_operands
 
 from utils.index import Index, IndexList
 
-alias fp8_dtype = DType.float8_e4m3fn
-alias bf8_dtype = DType.float8_e5m2
+comptime fp8_dtype = DType.float8_e4m3fn
+comptime bf8_dtype = DType.float8_e5m2
 
 # CHECK-LABEL: test_load_and_mma_f32_bf16_32x32x16
 # CHECK-LABEL: test_load_a

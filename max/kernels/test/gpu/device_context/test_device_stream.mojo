@@ -62,8 +62,8 @@ def test_create_stream_with_priority(ctx: DeviceContext):
     print("Test creating streams with different priority values.")
     var priority_range = ctx.stream_priority_range()
 
-    alias length = 256
-    alias multiplier = Float32(2.5)
+    comptime length = 256
+    comptime multiplier = Float32(2.5)
 
     # Create host and device buffers
     var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
@@ -150,8 +150,8 @@ def test_multiple_priority_streams(ctx: DeviceContext):
     )
     var priority_range = ctx.stream_priority_range()
 
-    alias length = 512
-    alias num_kernels = 4
+    comptime length = 512
+    comptime num_kernels = 4
 
     # Create input data
     var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
@@ -233,8 +233,8 @@ def test_concurrent_priority_streams(ctx: DeviceContext):
         )
         return
 
-    alias length = 1024
-    alias iterations = 10
+    comptime length = 1024
+    comptime iterations = 10
 
     # Create input data
     var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)

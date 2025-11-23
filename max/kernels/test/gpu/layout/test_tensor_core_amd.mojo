@@ -22,11 +22,11 @@ from test_tensor_core_amd_utils import test_load_and_mma_and_multiply_operands
 from testing import assert_equal
 from utils.index import Index, IndexList
 
-alias fp8_dtype = (
+comptime fp8_dtype = (
     DType.float8_e4m3fnuz if DeviceContext.default_device_info.compute
     <= MI300X.compute else DType.float8_e4m3fn
 )
-alias bf8_dtype = (
+comptime bf8_dtype = (
     DType.float8_e5m2fnuz if DeviceContext.default_device_info.compute
     <= MI300X.compute else DType.float8_e5m2
 )
@@ -2087,7 +2087,7 @@ fn test_load_b_tr(ctx: DeviceContext) raises:
             arange(smem)
 
         # reference fragments
-        alias warp_layout = Layout.row_major(2, 32) if mma_shape[
+        comptime warp_layout = Layout.row_major(2, 32) if mma_shape[
             0
         ] == 32 else Layout.row_major(4, 16)
         var frags = smem.vectorize[4, 1]().distribute[warp_layout](lane_id())
@@ -2099,7 +2099,7 @@ fn test_load_b_tr(ctx: DeviceContext) raises:
 
     var flag = ctx.enqueue_create_buffer[DType.bool](WARP_SIZE)
 
-    alias kernel_32_32_16 = kernel[IndexList[3](32, 32, 16)]
+    comptime kernel_32_32_16 = kernel[IndexList[3](32, 32, 16)]
     ctx.enqueue_function_checked[kernel_32_32_16, kernel_32_32_16](
         flag, grid_dim=(1), block_dim=(WARP_SIZE)
     )
@@ -2108,7 +2108,7 @@ fn test_load_b_tr(ctx: DeviceContext) raises:
             if not flag_host[i]:
                 assert_equal(flag_host[i], True, "frags_simd != frags_tr")
 
-    alias kernel_16_16_32 = kernel[IndexList[3](16, 16, 32)]
+    comptime kernel_16_16_32 = kernel[IndexList[3](16, 16, 32)]
     ctx.enqueue_function_checked[kernel_16_16_32, kernel_16_16_32](
         flag, grid_dim=(1), block_dim=(WARP_SIZE)
     )

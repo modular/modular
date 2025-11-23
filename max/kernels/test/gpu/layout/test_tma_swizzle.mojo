@@ -38,9 +38,9 @@ fn tma_swizzle_load_kernel[
     dst: LayoutTensor[dtype, layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, tile_layout, desc_layout],
 ):
-    alias tileM = tile_layout.shape[0].value()
-    alias tileN = tile_layout.shape[1].value()
-    alias expected_bytes = tile_layout.size() * size_of[dtype]()
+    comptime tileM = tile_layout.shape[0].value()
+    comptime tileN = tile_layout.shape[1].value()
+    comptime expected_bytes = tile_layout.size() * size_of[dtype]()
 
     tile = LayoutTensor[
         dtype,
@@ -86,7 +86,7 @@ def test_tma_swizzle[
         shape == tile_shape, "Only support same shape and tile shape."
     ]()
 
-    alias layout = Layout.row_major(shape[0], shape[1])
+    comptime layout = Layout.row_major(shape[0], shape[1])
     var src = ManagedLayoutTensor[dtype, layout](ctx)
     var dst = ManagedLayoutTensor[dtype, layout](ctx)
 
@@ -105,23 +105,23 @@ def test_tma_swizzle[
     ](ctx, src.device_tensor())
 
     # print test info
-    alias use_multiple_loads = (
+    comptime use_multiple_loads = (
         tma_tensor.layout.size() > tma_tensor.desc_layout.size()
     )
-    alias test_name = "test " + String(dtype) + (
+    comptime test_name = "test " + String(dtype) + (
         " multiple " if use_multiple_loads else " single "
     ) + "tma w/ " + String(swizzle_mode) + " k-major " + String(is_k_major)
     print(test_name)
 
     # Descriptor tile is the copy per tma instruction. One load could have multiple tma copies.
-    alias descM = type_of(tma_tensor).desc_layout.shape[0].value()
-    alias descN = type_of(tma_tensor).desc_layout.shape[1].value()
-    alias desc_tile_size = descM * descN
+    comptime descM = type_of(tma_tensor).desc_layout.shape[0].value()
+    comptime descN = type_of(tma_tensor).desc_layout.shape[1].value()
+    comptime desc_tile_size = descM * descN
     desc_tile = LayoutTensor[
         dtype, type_of(tma_tensor).desc_layout, MutAnyOrigin
     ].stack_allocation()
 
-    alias kernel = tma_swizzle_load_kernel[
+    comptime kernel = tma_swizzle_load_kernel[
         type_of(tma_tensor).dtype,
         layout,
         type_of(tma_tensor).layout,
@@ -137,7 +137,7 @@ def test_tma_swizzle[
     src_host = src.tensor()
     dst_host = dst.tensor()
 
-    alias swizzle = make_swizzle[dtype, swizzle_mode]()
+    comptime swizzle = make_swizzle[dtype, swizzle_mode]()
 
     dst_tile_ptr = dst_host.ptr
     for desc_tile_m in range(shape[0] // descM):

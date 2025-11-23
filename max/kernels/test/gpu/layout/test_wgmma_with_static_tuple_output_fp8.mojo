@@ -74,15 +74,15 @@ fn wgmma_kernel_ss[
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
-    alias num_output_regs = WMMA_M * WMMA_N // 128
+    comptime num_output_regs = WMMA_M * WMMA_N // 128
     var c_reg = StaticTuple[Float32, num_output_regs](0)
 
-    alias M = a_layout.shape[0].value()
-    alias K = a_layout.shape[1].value()
-    alias N = c_layout.shape[1].value()
+    comptime M = a_layout.shape[0].value()
+    comptime K = a_layout.shape[1].value()
+    comptime N = c_layout.shape[1].value()
 
-    alias b_tile_dim0 = N if transpose_b else WMMA_K
-    alias b_tile_dim1 = WMMA_K if transpose_b else N
+    comptime b_tile_dim0 = N if transpose_b else WMMA_K
+    comptime b_tile_dim1 = WMMA_K if transpose_b else N
 
     for k_i in range(K // WMMA_K):
         var a_gmem_tile = a_gmem.tile[M, WMMA_K](0, k_i)
@@ -141,9 +141,9 @@ fn wgmma_e4m3_e4m3_f32[
         sep="",
     )
 
-    alias static_a_shape = DimList(M, K)
-    alias static_b_shape = DimList(N, K) if transpose_b else DimList(K, N)
-    alias static_c_shape = DimList(M, N)
+    comptime static_a_shape = DimList(M, K)
+    comptime static_b_shape = DimList(N, K) if transpose_b else DimList(K, N)
+    comptime static_c_shape = DimList(M, N)
 
     var a_host = HostNDBuffer[DType.float8_e4m3fn, 2, static_a_shape]()
     var b_host = HostNDBuffer[DType.float8_e4m3fn, 2, static_b_shape]()
@@ -175,14 +175,14 @@ fn wgmma_e4m3_e4m3_f32[
     var a_tensor = from_ndbuffer_row_major(a_device.tensor)
     var b_tensor = from_ndbuffer_row_major(b_device.tensor)
 
-    alias a_smem_layout = tile_layout_k_major[
+    comptime a_smem_layout = tile_layout_k_major[
         DType.float8_e4m3fn, BM=M, BK=32
     ]()
-    alias b_smem_layout = tile_layout_k_major[
+    comptime b_smem_layout = tile_layout_k_major[
         DType.float8_e4m3fn, BM=N, BK=32
     ]()
 
-    alias kernel = wgmma_kernel_ss[
+    comptime kernel = wgmma_kernel_ss[
         DType.float8_e4m3fn,
         DType.float8_e4m3fn,
         c_type,

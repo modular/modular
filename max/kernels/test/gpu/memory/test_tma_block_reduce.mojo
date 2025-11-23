@@ -165,9 +165,9 @@ def test_tma_block_reduce[
     dtype: DType, use_tma: Bool
 ](ctx: DeviceContext, rows: Int, cols: Int, benchmark: Bool = False,):
     var n = rows * cols
-    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
-    alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
-    alias accum_type = get_accum_type[dtype]()
+    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    comptime accum_type = get_accum_type[dtype]()
 
     var h_data = UnsafePointer[Scalar[dtype]].alloc(n)
     var expected_sum = Scalar[accum_type](0)
@@ -202,7 +202,9 @@ def test_tma_block_reduce[
             )
             # Calculate shared memory size needed per row.
             var shared_mem_bytes = cols * size_of[dtype]()
-            alias kernel = tma_reduction_kernel[dtype, accum_type, simd_width]
+            comptime kernel = tma_reduction_kernel[
+                dtype, accum_type, simd_width
+            ]
             ctx.enqueue_function_checked[kernel, kernel,](
                 tma_desc,
                 rows,
@@ -226,7 +228,7 @@ def test_tma_block_reduce[
             ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
                 return data_buf.load[width=width](rebind[IndexList[2]](idx))
 
-            alias kernel = global_reduction_kernel[
+            comptime kernel = global_reduction_kernel[
                 dtype,
                 accum_type,
                 simd_width,
@@ -243,8 +245,8 @@ def test_tma_block_reduce[
 
     if benchmark:
         # Run kernel multiple times for benchmarking.
-        alias num_warmup = 5
-        alias num_iters = 100
+        comptime num_warmup = 5
+        comptime num_iters = 100
 
         # Warmup runs.
         for _ in range(num_warmup):
@@ -289,7 +291,7 @@ def test_tma_block_reduce[
 def main():
     var test_sizes = [128, 256, 512, 1024]
     var depths = [64, 128, 256]
-    alias dtype = DType.bfloat16
+    comptime dtype = DType.bfloat16
 
     # Parse command line arguments.
     var benchmark = False
@@ -298,7 +300,7 @@ def main():
         if args[i] == "--benchmark" or args[i] == "--benchmark=yes":
             benchmark = True
 
-    alias use_tma = True
+    comptime use_tma = True
 
     with DeviceContext() as ctx:
         for test_size in test_sizes:

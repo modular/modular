@@ -30,7 +30,7 @@ from matmul_kernels import (
     run_gemm_kernel_tc,
 )
 
-alias run_gemm_kernel_type = fn (
+comptime run_gemm_kernel_type = fn (
     mut m: Bench,
     ctx: DeviceContext,
     a: LayoutTensor,
@@ -152,15 +152,15 @@ struct test_matmul[
 
 
 def main():
-    alias N = 4096
-    alias M = N
-    alias K = M
+    comptime N = 4096
+    comptime M = N
+    comptime K = M
 
     var m = Bench()
     with DeviceContext() as ctx:
-        alias a_layout = Layout.row_major(M, K)
-        alias b_layout = Layout.row_major(K, N)
-        alias c_layout = Layout.row_major(M, N)
+        comptime a_layout = Layout.row_major(M, K)
+        comptime b_layout = Layout.row_major(K, N)
+        comptime c_layout = Layout.row_major(M, N)
 
         var test = test_matmul[
             DType.float32, a_layout, b_layout, c_layout, False
@@ -170,35 +170,35 @@ def main():
             DType.float32, a_layout, b_layout, c_layout, True
         ](m, ctx)
 
-        alias k1 = run_gemm_kernel_1[
+        comptime k1 = run_gemm_kernel_1[
             DType.float32, a_layout, b_layout, c_layout, 32, 32
         ]
 
-        alias k2 = run_gemm_kernel_2[
+        comptime k2 = run_gemm_kernel_2[
             DType.float32, a_layout, b_layout, c_layout, 32, 32
         ]
 
-        alias k3 = run_gemm_kernel_3[
+        comptime k3 = run_gemm_kernel_3[
             DType.float32, a_layout, b_layout, c_layout, 32, 32, 32
         ]
 
-        alias k4 = run_gemm_kernel_4[
+        comptime k4 = run_gemm_kernel_4[
             DType.float32, a_layout, b_layout, c_layout, 64, 64, 8, 8
         ]
 
-        alias k5 = run_gemm_kernel_5[
+        comptime k5 = run_gemm_kernel_5[
             DType.float32, a_layout, b_layout, c_layout, 128, 128, 8, 8, 8
         ]
 
-        alias k6 = run_gemm_kernel_6[
+        comptime k6 = run_gemm_kernel_6[
             DType.float32, a_layout, b_layout, c_layout, 128, 128, 8, 8, 8
         ]
 
-        alias MMA_M = 16
-        alias MMA_N = 8 if has_nvidia_gpu_accelerator() else 16
-        alias MMA_K = 8 if has_nvidia_gpu_accelerator() else 4
+        comptime MMA_M = 16
+        comptime MMA_N = 8 if has_nvidia_gpu_accelerator() else 16
+        comptime MMA_K = 8 if has_nvidia_gpu_accelerator() else 4
 
-        alias k_tc = run_gemm_kernel_tc[
+        comptime k_tc = run_gemm_kernel_tc[
             DType.float32,
             a_layout,
             b_layout,

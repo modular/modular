@@ -43,7 +43,7 @@ def test_is_compatible(ctx: DeviceContext):
 
 
 fn test_basic(ctx: DeviceContext) raises:
-    alias length = 1024
+    comptime length = 1024
 
     # Host memory buffers for input and output data
     var in0_host = UnsafePointer[Float32].alloc(length)
@@ -119,7 +119,7 @@ def test_id(ctx: DeviceContext):
 
 
 def test_print(ctx: DeviceContext):
-    alias size = 15
+    comptime size = 15
 
     var host_buffer = ctx.enqueue_create_host_buffer[DType.uint16](size)
     ctx.synchronize()
@@ -140,7 +140,7 @@ def test_print(ctx: DeviceContext):
     )
     assert_equal(String(dev_buffer), expected_dev)
 
-    alias large_size = 1001
+    comptime large_size = 1001
     var large_buffer = ctx.enqueue_create_host_buffer[DType.float32](large_size)
     ctx.synchronize()
 
@@ -154,7 +154,7 @@ def test_print(ctx: DeviceContext):
 
 @fieldwise_init
 struct ToLegacyUnsafePointer(Copyable, DevicePassable, Movable):
-    alias device_type: AnyType = LegacyUnsafePointer[Float32]
+    comptime device_type: AnyType = LegacyUnsafePointer[Float32]
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = Self.device_type()
@@ -170,7 +170,7 @@ struct ToLegacyUnsafePointer(Copyable, DevicePassable, Movable):
 
 @fieldwise_init
 struct ToUnsafePointer(Copyable, DevicePassable, Movable):
-    alias device_type: AnyType = UnsafePointerV2[Float32, MutAnyOrigin]
+    comptime device_type: AnyType = UnsafePointerV2[Float32, MutAnyOrigin]
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = Self.device_type()

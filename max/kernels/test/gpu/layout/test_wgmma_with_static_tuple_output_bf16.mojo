@@ -67,15 +67,15 @@ fn wgmma_kernel_ss[
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
-    alias num_output_regs = WMMA_M * WMMA_N // 128
+    comptime num_output_regs = WMMA_M * WMMA_N // 128
     var c_reg = StaticTuple[Float32, num_output_regs](0)
 
-    alias M = a_layout.shape[0].value()
-    alias K = a_layout.shape[1].value()
-    alias N = c_layout.shape[1].value()
+    comptime M = a_layout.shape[0].value()
+    comptime K = a_layout.shape[1].value()
+    comptime N = c_layout.shape[1].value()
 
-    alias b_tile_dim0 = N if transpose_b else WMMA_K
-    alias b_tile_dim1 = WMMA_K if transpose_b else N
+    comptime b_tile_dim0 = N if transpose_b else WMMA_K
+    comptime b_tile_dim1 = WMMA_K if transpose_b else N
 
     for k_i in range(K // WMMA_K):
         var a_gmem_tile = a_gmem.tile[M, WMMA_K](0, k_i)
@@ -138,11 +138,11 @@ fn wgmma_bf16_bf16_f32[
     var c = ManagedLayoutTensor[DType.bfloat16, Layout.row_major(M, N)](ctx)
     var c_ref = ManagedLayoutTensor[DType.bfloat16, Layout.row_major(M, N)](ctx)
 
-    alias a_smem_layout = tile_layout_k_major[DType.bfloat16, BM=M, BK=16]()
+    comptime a_smem_layout = tile_layout_k_major[DType.bfloat16, BM=M, BK=16]()
 
-    alias b_smem_layout = tile_layout_k_major[DType.bfloat16, BM=N, BK=16]()
+    comptime b_smem_layout = tile_layout_k_major[DType.bfloat16, BM=N, BK=16]()
 
-    alias kernel = wgmma_kernel_ss[
+    comptime kernel = wgmma_kernel_ss[
         DType.bfloat16,
         DType.bfloat16,
         DType.bfloat16,

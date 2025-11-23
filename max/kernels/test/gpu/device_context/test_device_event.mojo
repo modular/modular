@@ -59,8 +59,8 @@ fn heavy_kernel(
 def test_event_record_and_synchronize(ctx: DeviceContext):
     print("Test event recording and synchronization.")
 
-    alias length = 256
-    alias multiplier = Float32(3.0)
+    comptime length = 256
+    comptime multiplier = Float32(3.0)
 
     # Create buffers
     var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
@@ -111,9 +111,9 @@ def test_event_record_and_synchronize(ctx: DeviceContext):
 def test_stream_enqueue_wait_for(ctx: DeviceContext):
     print("Test stream waiting for events from other streams.")
 
-    alias length = 512
-    alias multiplier1 = Float32(2.0)
-    alias multiplier2 = Float32(3.0)
+    comptime length = 512
+    comptime multiplier1 = Float32(2.0)
+    comptime multiplier2 = Float32(3.0)
 
     # Create buffers
     var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
@@ -182,8 +182,8 @@ def test_stream_enqueue_wait_for(ctx: DeviceContext):
 def test_multiple_events_synchronization(ctx: DeviceContext):
     print("Test complex synchronization with multiple events.")
 
-    alias length = 256
-    alias num_streams = 4
+    comptime length = 256
+    comptime num_streams = 4
 
     # Create input data
     var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
@@ -241,7 +241,7 @@ def test_multiple_events_synchronization(ctx: DeviceContext):
 def test_event_dependency_chain(ctx: DeviceContext):
     print("Test creating a dependency chain using events.")
 
-    alias length = 128
+    comptime length = 128
 
     # Create input data
     var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
@@ -325,8 +325,8 @@ def test_event_across_context_streams(ctx: DeviceContext):
         "Test event synchronization between default stream and created streams."
     )
 
-    alias length = 256
-    alias multiplier = Float32(4.0)
+    comptime length = 256
+    comptime multiplier = Float32(4.0)
 
     # Create buffers
     var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)

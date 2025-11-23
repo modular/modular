@@ -34,8 +34,8 @@ fn tcgen05_st_ld_roundtrip_kernel[
         1, UInt32, address_space = AddressSpace.SHARED, alignment=16
     ]()
 
-    alias width = N
-    alias num_cols = 512
+    comptime width = N
+    comptime num_cols = 512
 
     if elect_one_warp:
         tcgen05_alloc[1](ptr_tmem_addr, num_cols)
@@ -78,14 +78,14 @@ fn tcgen05_st_ld_roundtrip_kernel[
 
 
 def test_tcgen05_st_ld_roundtrip(ctx: DeviceContext):
-    alias M = 128
-    alias N = 8
+    comptime M = 128
+    comptime N = 8
     var data = ManagedLayoutTensor[
         DType.float32,
         Layout.row_major(M, N),
     ](ctx)
 
-    alias kernel = tcgen05_st_ld_roundtrip_kernel[M, N]
+    comptime kernel = tcgen05_st_ld_roundtrip_kernel[M, N]
     ctx.enqueue_function_checked[kernel, kernel](
         data.device_tensor(),
         grid_dim=(1, 1),
@@ -106,12 +106,12 @@ def test_tcgen05_st_ld_roundtrip(ctx: DeviceContext):
 fn tcgen05_cp_ld_roundtrip_kernel[
     M: Int, N: Int
 ](data: LayoutTensor[DType.float32, Layout.row_major(M, N), MutAnyOrigin]):
-    alias M_smem = 128
-    alias N_smem = 8
-    alias SBO = 256
-    alias LBO = 128
+    comptime M_smem = 128
+    comptime N_smem = 8
+    comptime SBO = 256
+    comptime LBO = 128
 
-    alias smem_layout = Layout.row_major(M_smem, N_smem)
+    comptime smem_layout = Layout.row_major(M_smem, N_smem)
     var smem_tile = LayoutTensor[
         DType.float32,
         smem_layout,
@@ -195,9 +195,9 @@ fn tcgen05_cp_ld_roundtrip_kernel[
         1, UInt32, address_space = AddressSpace.SHARED, alignment=16
     ]()
 
-    alias width = N
-    alias num_cols = 32
-    alias bits = 256
+    comptime width = N
+    comptime num_cols = 32
+    comptime bits = 256
 
     if elect_one_warp:
         tcgen05_alloc[1](ptr_tmem_addr, num_cols)
@@ -232,13 +232,13 @@ fn tcgen05_cp_ld_roundtrip_kernel[
 
 
 def test_tcgen05_cp_ld_roundtrip(ctx: DeviceContext):
-    alias M = 32
-    alias N = 4
+    comptime M = 32
+    comptime N = 4
     var data = ManagedLayoutTensor[
         DType.float32,
         Layout.row_major(M, N),
     ](ctx)
-    alias kernel = tcgen05_cp_ld_roundtrip_kernel[M, N]
+    comptime kernel = tcgen05_cp_ld_roundtrip_kernel[M, N]
     ctx.enqueue_function_checked[kernel, kernel](
         data.device_tensor(),
         grid_dim=(1, 1),

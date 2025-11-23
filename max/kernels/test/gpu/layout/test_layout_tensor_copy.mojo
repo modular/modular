@@ -81,15 +81,15 @@ fn test_async_copy[
 ](ctx: DeviceContext) raises:
     print("=== test_async_copy")
 
-    alias managed_layout_tensor_type = ManagedLayoutTensor[
+    comptime managed_layout_tensor_type = ManagedLayoutTensor[
         DType.float32,
         layout,
     ]
 
-    alias element_type = managed_layout_tensor_type.element_type
-    alias idx_type = managed_layout_tensor_type.index_type
+    comptime element_type = managed_layout_tensor_type.element_type
+    comptime idx_type = managed_layout_tensor_type.index_type
 
-    alias runtime_layout = RuntimeLayout[
+    comptime runtime_layout = RuntimeLayout[
         layout, element_type=element_type, linear_idx_type=idx_type
     ].row_major(IndexList[2, element_type=element_type](M, N))
 
@@ -97,7 +97,7 @@ fn test_async_copy[
 
     arange(input.tensor())
 
-    alias kernel = async_copy_kernel[layout, BM, BN]
+    comptime kernel = async_copy_kernel[layout, BM, BN]
     ctx.enqueue_function_checked[kernel, kernel](
         input.device_tensor(), grid_dim=(N // BN, M // BM), block_dim=(BM, BN)
     )
@@ -155,7 +155,7 @@ fn swizzle_copy[
     a: LayoutTensor[dtype, layout, MutAnyOrigin],
     b: LayoutTensor[dtype, layout, MutAnyOrigin],
 ):
-    alias simd_size = simd_width_of[dtype]()
+    comptime simd_size = simd_width_of[dtype]()
 
     # Double buffer in shared memory.
     var a_smem_tile = (
@@ -169,7 +169,7 @@ fn swizzle_copy[
         .fill(0)
     )
 
-    alias thread_layout = Layout.row_major(
+    comptime thread_layout = Layout.row_major(
         num_threads * simd_size // BK, BK // simd_size
     )
 
@@ -203,19 +203,19 @@ fn test_swizzle_copy[
 ](ctx: DeviceContext) raises:
     print("=== test_swizzle_copy")
 
-    alias managed_layout_tensor_type = ManagedLayoutTensor[
+    comptime managed_layout_tensor_type = ManagedLayoutTensor[
         DType.float32,
         layout,
     ]
 
-    alias element_type = managed_layout_tensor_type.element_type
-    alias idx_type = managed_layout_tensor_type.index_type
+    comptime element_type = managed_layout_tensor_type.element_type
+    comptime idx_type = managed_layout_tensor_type.index_type
 
-    alias a_runtime_layout = RuntimeLayout[
+    comptime a_runtime_layout = RuntimeLayout[
         layout, element_type=element_type, linear_idx_type=idx_type
     ].row_major(IndexList[2, element_type=element_type](M - skew_M, K))
 
-    alias b_runtime_layout = RuntimeLayout[
+    comptime b_runtime_layout = RuntimeLayout[
         layout, element_type=element_type, linear_idx_type=idx_type
     ].row_major(IndexList[2, element_type=element_type](M, K))
 
@@ -230,7 +230,7 @@ fn test_swizzle_copy[
         layout,
     ](b_runtime_layout, ctx)
 
-    alias copy = swizzle_copy[
+    comptime copy = swizzle_copy[
         DType.float32,
         layout,
         BM,
@@ -375,8 +375,8 @@ fn test_partial_copy_dram_to_sram_async[
         layout,
     ](ctx)
 
-    alias num_threads = block_dim_x * block_dim_y * block_dim_z
-    alias kernel_type = partial_copy_dram_to_sram_async_kernel[
+    comptime num_threads = block_dim_x * block_dim_y * block_dim_z
+    comptime kernel_type = partial_copy_dram_to_sram_async_kernel[
         layout, thread_layout, num_threads, block_dim_count
     ]
     ctx.enqueue_function_checked[kernel_type, kernel_type](
@@ -483,8 +483,8 @@ fn test_copy_dram_to_sram[
         layout,
     ](ctx)
 
-    alias num_threads = block_dim_x * block_dim_y * block_dim_z
-    alias kernel_type = copy_dram_to_sram_kernel[
+    comptime num_threads = block_dim_x * block_dim_y * block_dim_z
+    comptime kernel_type = copy_dram_to_sram_kernel[
         layout, thread_layout, num_threads, block_dim_count
     ]
     ctx.enqueue_function_checked[kernel_type, kernel_type](
@@ -538,9 +538,9 @@ fn copy_sram_to_dram_kernel[
     block_dim_count: Int,
     binary_op: OptionalReg[binary_op_type] = None,
 ](input: LayoutTensor[dtype, layout, MutAnyOrigin]):
-    alias simd_size = simd_width_of[dtype]()
+    comptime simd_size = simd_width_of[dtype]()
 
-    alias thread_layout = Layout.row_major(
+    comptime thread_layout = Layout.row_major(
         num_threads // (M // simd_size), N // simd_size
     )
 
@@ -578,13 +578,13 @@ fn test_copy_sram_to_dram[
 ](ctx: DeviceContext) raises:
     print("=== test_copy_sram_to_dram")
 
-    alias managed_layout_tensor_type = ManagedLayoutTensor[
+    comptime managed_layout_tensor_type = ManagedLayoutTensor[
         dtype,
         layout,
     ]
 
-    alias element_type = managed_layout_tensor_type.element_type
-    alias idx_type = managed_layout_tensor_type.index_type
+    comptime element_type = managed_layout_tensor_type.element_type
+    comptime idx_type = managed_layout_tensor_type.index_type
 
     var runtime_layout = RuntimeLayout[
         layout,
@@ -600,8 +600,8 @@ fn test_copy_sram_to_dram[
     var input = managed_layout_tensor_type(runtime_layout, ctx)
     _ = input.tensor().fill(-1.0)
 
-    alias num_threads = block_dim_x * block_dim_y * block_dim_z
-    alias kernel_type = copy_sram_to_dram_kernel[
+    comptime num_threads = block_dim_x * block_dim_y * block_dim_z
+    comptime kernel_type = copy_sram_to_dram_kernel[
         dtype,
         input.layout,
         M,
@@ -711,7 +711,7 @@ fn copy_local_to_local_kernel[
     num_threads: Int,
     block_dim_count: Int,
 ](output: LayoutTensor[dtype, layout, MutAnyOrigin]):
-    alias simd_size = 2
+    comptime simd_size = 2
 
     var reg_tile0 = LayoutTensor[
         DType.float32,
@@ -761,14 +761,14 @@ fn test_copy_local_to_local[
 ](ctx: DeviceContext) raises:
     print("=== test_copy_local_to_local")
 
-    alias layout = Layout.row_major(WM, WN)
+    comptime layout = Layout.row_major(WM, WN)
     var output = ManagedLayoutTensor[
         dtype,
         layout,
     ](ctx)
 
-    alias num_threads = block_dim_x * block_dim_y * block_dim_z
-    alias kernel_type = copy_local_to_local_kernel[
+    comptime num_threads = block_dim_x * block_dim_y * block_dim_z
+    comptime kernel_type = copy_local_to_local_kernel[
         dtype, layout, WM, WN, MMA_M, MMA_N, num_threads, block_dim_count
     ]
     ctx.enqueue_function_checked[kernel_type, kernel_type](
@@ -852,9 +852,9 @@ fn copy_dram_to_local_kernel[
     input: LayoutTensor[DType.float32, layout, MutAnyOrigin],
     output: LayoutTensor[DType.float32, layout, MutAnyOrigin],
 ):
-    alias thread_layout = Layout.row_major(4, 2)
-    alias num_active_threads = thread_layout.size()
-    alias simd_width = 2
+    comptime thread_layout = Layout.row_major(4, 2)
+    comptime num_active_threads = thread_layout.size()
+    comptime simd_width = 2
 
     var reg_tile = (
         LayoutTensor[
@@ -908,8 +908,8 @@ fn test_copy_dram_to_local[
         layout,
     ](ctx)
 
-    alias num_threads = block_dim_x * block_dim_y * block_dim_z
-    alias kernel_type = copy_dram_to_local_kernel[
+    comptime num_threads = block_dim_x * block_dim_y * block_dim_z
+    comptime kernel_type = copy_dram_to_local_kernel[
         layout, num_threads, block_dim_count
     ]
     ctx.enqueue_function_checked[kernel_type, kernel_type](
@@ -1039,14 +1039,14 @@ fn test_copy_local_to_sram[
         sep="",
     )
 
-    alias layout = Layout.row_major(WM, WN)
+    comptime layout = Layout.row_major(WM, WN)
     var output = ManagedLayoutTensor[
         dtype,
         layout,
     ](ctx)
 
-    alias num_threads = block_dim_x * block_dim_y * block_dim_z
-    alias kernel_type = copy_local_to_sram_kernel[
+    comptime num_threads = block_dim_x * block_dim_y * block_dim_z
+    comptime kernel_type = copy_local_to_sram_kernel[
         dtype,
         layout,
         WM,

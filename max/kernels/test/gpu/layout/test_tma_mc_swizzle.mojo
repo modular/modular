@@ -44,18 +44,18 @@ fn tma_swizzle_multicast_load_kernel[
     dst: LayoutTensor[dtype, layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, subcluster_tile_layout, desc_layout],
 ):
-    alias cluster_tileM = cluster_tile_layout.shape[0].value()
-    alias cluster_tileN = cluster_tile_layout.shape[1].value()
-    alias expected_bytes = cluster_tile_layout.size() * size_of[dtype]()
+    comptime cluster_tileM = cluster_tile_layout.shape[0].value()
+    comptime cluster_tileN = cluster_tile_layout.shape[1].value()
+    comptime expected_bytes = cluster_tile_layout.size() * size_of[dtype]()
 
-    alias subcluster_tileM = subcluster_tile_layout.shape[0].value()
-    alias subcluster_tileN = subcluster_tile_layout.shape[1].value()
+    comptime subcluster_tileM = subcluster_tile_layout.shape[0].value()
+    comptime subcluster_tileN = subcluster_tile_layout.shape[1].value()
 
     var block_rank = block_rank_in_cluster()
     var rank_m = Int(block_rank // CLUSTER_N)
     var rank_n = Int(block_rank % CLUSTER_N)
 
-    alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
+    comptime CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
     var tma_multicast_mask = (1 << Int(CLUSTER_SIZE)) - 1
 
     tile = LayoutTensor[
@@ -123,13 +123,13 @@ def test_tma_multicast_swizzle[
     CLUSTER_N: UInt,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](ctx: DeviceContext):
-    alias tileM = cluster_tile_shape[0]
-    alias tileN = cluster_tile_shape[1]
-    alias subcluster_tile_shape = Index(
+    comptime tileM = cluster_tile_shape[0]
+    comptime tileN = cluster_tile_shape[1]
+    comptime subcluster_tile_shape = Index(
         tileM // Int(CLUSTER_M), tileN // Int(CLUSTER_N)
     )
 
-    alias layout = Layout.row_major(shape[0], shape[1])
+    comptime layout = Layout.row_major(shape[0], shape[1])
     var src = ManagedLayoutTensor[dtype, layout](ctx)
     var dst = ManagedLayoutTensor[dtype, layout](ctx)  # FIX THIS
 
@@ -146,15 +146,15 @@ def test_tma_multicast_swizzle[
     ](ctx, src.device_tensor())
 
     # print test info
-    alias use_multiple_loads = (
+    comptime use_multiple_loads = (
         tma_tensor.layout.size() > tma_tensor.desc_layout.size()
     )
-    alias test_name = "test " + String(dtype) + (
+    comptime test_name = "test " + String(dtype) + (
         " multiple " if use_multiple_loads else " single "
     ) + "tma w/ " + String(swizzle_mode) + " multicast"
     print(test_name)
 
-    alias kernel = tma_swizzle_multicast_load_kernel[
+    comptime kernel = tma_swizzle_multicast_load_kernel[
         dtype = type_of(tma_tensor).dtype,
         layout=layout,
         cluster_tile_layout = Layout.row_major(tileM, tileN),
@@ -176,9 +176,9 @@ def test_tma_multicast_swizzle[
 
     ctx.synchronize()
     # Descriptor tile is the copy per tma instruction. One load could have multiple tma copies.
-    alias descM = type_of(tma_tensor).desc_layout.shape[0].value()
-    alias descN = type_of(tma_tensor).desc_layout.shape[1].value()
-    alias desc_tile_size = descM * descN
+    comptime descM = type_of(tma_tensor).desc_layout.shape[0].value()
+    comptime descN = type_of(tma_tensor).desc_layout.shape[1].value()
+    comptime desc_tile_size = descM * descN
 
     desc_tile = LayoutTensor[
         dtype, type_of(tma_tensor).desc_layout, MutAnyOrigin
@@ -187,7 +187,7 @@ def test_tma_multicast_swizzle[
     src_host = src.tensor()
     dst_host = dst.tensor()
 
-    alias swizzle = make_swizzle[dtype, swizzle_mode]()
+    comptime swizzle = make_swizzle[dtype, swizzle_mode]()
 
     dest_tile = LayoutTensor[
         dtype, Layout.row_major(tileM, tileN), MutAnyOrigin

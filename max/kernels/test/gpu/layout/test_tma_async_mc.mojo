@@ -40,12 +40,12 @@ fn test_tma_mcast_load_kernel[
     dst: LayoutTensor[dtype, layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, tile_layout],
 ):
-    alias tileM = tile_layout.shape[0].value()
-    alias tileN = tile_layout.shape[1].value()
-    alias expected_bytes = tile_layout.size() * size_of[dtype]()
+    comptime tileM = tile_layout.shape[0].value()
+    comptime tileN = tile_layout.shape[1].value()
+    comptime expected_bytes = tile_layout.size() * size_of[dtype]()
 
     var block_rank = block_rank_in_cluster()
-    alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
+    comptime CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
 
     var rank_m = block_rank // CLUSTER_N
     var rank_n = block_rank % CLUSTER_N
@@ -114,12 +114,12 @@ def test_tma_multicast_load_row_major[
     CLUSTER_M: Int,
     CLUSTER_N: Int,
 ](ctx: DeviceContext):
-    alias src_M = src_layout.shape[0].value()
-    alias src_N = src_layout.shape[1].value()
-    alias tileM = tile_layout.shape[0].value()
-    alias tileN = tile_layout.shape[1].value()
-    alias dst_M = dst_layout.shape[0].value()
-    alias dst_N = dst_layout.shape[1].value()
+    comptime src_M = src_layout.shape[0].value()
+    comptime src_N = src_layout.shape[1].value()
+    comptime tileM = tile_layout.shape[0].value()
+    comptime tileN = tile_layout.shape[1].value()
+    comptime dst_M = dst_layout.shape[0].value()
+    comptime dst_N = dst_layout.shape[1].value()
 
     var src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
     var dst = ManagedLayoutTensor[DType.float32, dst_layout](ctx)
@@ -129,7 +129,7 @@ def test_tma_multicast_load_row_major[
     var tma_tensor = create_tma_tile[tileM, tileN](ctx, src.device_tensor())
     ctx.synchronize()
 
-    alias kernel = test_tma_mcast_load_kernel[
+    comptime kernel = test_tma_mcast_load_kernel[
         type_of(tma_tensor).dtype,
         dst_layout,  # dst layout
         type_of(tma_tensor).layout,  # smem layout
@@ -175,12 +175,12 @@ fn test_tma_sliced_multicast_load_kernel[
     dst: LayoutTensor[dtype, layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, tma_layout],
 ):
-    alias tileM = tile_layout.shape[0].value()
-    alias tileN = tile_layout.shape[1].value()
-    alias expected_bytes = tile_layout.size() * size_of[dtype]()
+    comptime tileM = tile_layout.shape[0].value()
+    comptime tileN = tile_layout.shape[1].value()
+    comptime expected_bytes = tile_layout.size() * size_of[dtype]()
 
     var block_rank = block_rank_in_cluster()
-    alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
+    comptime CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
 
     var rank_m = block_rank // CLUSTER_N
     var rank_n = block_rank % CLUSTER_N
@@ -251,12 +251,12 @@ def test_tma_sliced_multicast_load_row_major[
     CLUSTER_M: Int,
     CLUSTER_N: Int,
 ](ctx: DeviceContext):
-    alias src_M = src_layout.shape[0].value()
-    alias src_N = src_layout.shape[1].value()
-    alias tileM = tile_layout.shape[0].value()
-    alias tileN = tile_layout.shape[1].value()
-    alias dst_M = dst_layout.shape[0].value()
-    alias dst_N = dst_layout.shape[1].value()
+    comptime src_M = src_layout.shape[0].value()
+    comptime src_N = src_layout.shape[1].value()
+    comptime tileM = tile_layout.shape[0].value()
+    comptime tileN = tile_layout.shape[1].value()
+    comptime dst_M = dst_layout.shape[0].value()
+    comptime dst_N = dst_layout.shape[1].value()
 
     var src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
     var dst = ManagedLayoutTensor[DType.float32, dst_layout](ctx)
@@ -268,7 +268,7 @@ def test_tma_sliced_multicast_load_row_major[
     )
     ctx.synchronize()
 
-    alias kernel = test_tma_sliced_multicast_load_kernel[
+    comptime kernel = test_tma_sliced_multicast_load_kernel[
         type_of(tma_tensor).dtype,
         dst_layout,  # dst layout
         Layout.row_major(tileM, tileN),

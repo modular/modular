@@ -111,9 +111,9 @@ fn test_tma_load_kernel[
     dst: LayoutTensor[dtype, layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, tile_layout],
 ):
-    alias tileM = tile_layout.shape[0].value()
-    alias tileN = tile_layout.shape[1].value()
-    alias expected_bytes = tile_layout.size() * size_of[dtype]()
+    comptime tileM = tile_layout.shape[0].value()
+    comptime tileN = tile_layout.shape[1].value()
+    comptime expected_bytes = tile_layout.size() * size_of[dtype]()
 
     tile = LayoutTensor[
         dtype,
@@ -157,12 +157,12 @@ fn test_tma_multiple_loads_kernel[
     dst: LayoutTensor[dtype, layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, tile_layout],
 ):
-    alias tileM = tile_layout.shape[0].value()
-    alias tileN = tile_layout.shape[1].value()
-    alias expected_bytes = tile_layout.size() * size_of[dtype]()
+    comptime tileM = tile_layout.shape[0].value()
+    comptime tileN = tile_layout.shape[1].value()
+    comptime expected_bytes = tile_layout.size() * size_of[dtype]()
 
-    alias N = layout.shape[1].value()
-    alias num_iters = ceildiv(N, tileN)
+    comptime N = layout.shape[1].value()
+    comptime num_iters = ceildiv(N, tileN)
 
     tile = LayoutTensor[
         dtype,
@@ -211,7 +211,7 @@ def test_tma_ragged_store[
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     max_descriptor_length: Int = 256,
 ](ctx: DeviceContext):
-    alias total_size = smem_layout.size()
+    comptime total_size = smem_layout.size()
     var device_buffer = ctx.enqueue_create_buffer[dtype](total_size)
 
     var global_tensor = LayoutTensor[
@@ -231,7 +231,7 @@ def test_tma_ragged_store[
         global_tensor,
     )
 
-    alias desc_size_1 = product(desc_array._descriptor_shape[1]())
+    comptime desc_size_1 = product(desc_array._descriptor_shape[1]())
 
     var sequence_offsets = InlineArray[Int, number_of_sequences + 1](fill=0)
 
@@ -242,7 +242,7 @@ def test_tma_ragged_store[
         offset += sequence_length * desc_size_1
         sequence_offsets[i + 1] = offset
 
-    alias kernel = tma_ragged_store_kernel[
+    comptime kernel = tma_ragged_store_kernel[
         rank,
         dtype,
         remaining_dims,
@@ -266,7 +266,7 @@ def test_tma_ragged_store[
             for i in range(total_size):
                 assert_equal(host_buffer[i], Scalar[dtype](i))
         else:
-            alias swizzle = make_swizzle[dtype, swizzle_mode]()
+            comptime swizzle = make_swizzle[dtype, swizzle_mode]()
             for i in range(total_size):
                 var swz_offset = swizzle(i)
                 assert_equal(host_buffer[swz_offset], Scalar[dtype](i))
@@ -278,12 +278,12 @@ def test_tma_load_row_major[
     tile_layout: Layout,
     load_along_last_dim: Bool = False,
 ](ctx: DeviceContext):
-    alias M = src_layout.shape[0].value()
-    alias N = src_layout.shape[1].value()
-    alias tileM = tile_layout.shape[0].value()
-    alias tileN = tile_layout.shape[1].value()
-    alias M_roundup = align_up(M, tileM)
-    alias N_roundup = align_up(N, tileN)
+    comptime M = src_layout.shape[0].value()
+    comptime N = src_layout.shape[1].value()
+    comptime tileM = tile_layout.shape[0].value()
+    comptime tileN = tile_layout.shape[1].value()
+    comptime M_roundup = align_up(M, tileM)
+    comptime N_roundup = align_up(N, tileN)
 
     var src = ManagedLayoutTensor[dtype, src_layout](ctx)
     var dst = ManagedLayoutTensor[
@@ -301,7 +301,7 @@ def test_tma_load_row_major[
 
     @parameter
     if load_along_last_dim:
-        alias kernel = test_tma_multiple_loads_kernel[
+        comptime kernel = test_tma_multiple_loads_kernel[
             type_of(tma_tensor).dtype,
             Layout.row_major(M_roundup, N_roundup),  # dst layout
             type_of(tma_tensor).layout,  # smem layout
@@ -314,7 +314,7 @@ def test_tma_load_row_major[
             block_dim=(tileM * tileN),
         )
     else:
-        alias kernel = test_tma_load_kernel[
+        comptime kernel = test_tma_load_kernel[
             type_of(tma_tensor).dtype,
             Layout.row_major(M_roundup, N_roundup),  # dst layout
             type_of(tma_tensor).layout,  # smem layout
@@ -357,8 +357,8 @@ fn test_tma_async_store_kernel[
     tma_tile: TMATensorTile[dtype, tile_layout, desc_layout],
     src: LayoutTensor[dtype, layout, MutAnyOrigin],
 ):
-    alias tileM = tile_layout.shape[0].value()
-    alias tileN = tile_layout.shape[1].value()
+    comptime tileM = tile_layout.shape[0].value()
+    comptime tileN = tile_layout.shape[1].value()
     tile = LayoutTensor[
         dtype,
         tile_layout,
@@ -389,8 +389,8 @@ fn test_tma_async_multiple_store_kernel[
     tma_tile: TMATensorTile[dtype, tile_layout],
     src: LayoutTensor[dtype, layout, MutAnyOrigin],
 ):
-    alias tileM = tile_layout.shape[0].value()
-    alias tileN = tile_layout.shape[1].value()
+    comptime tileM = tile_layout.shape[0].value()
+    comptime tileN = tile_layout.shape[1].value()
     tile = LayoutTensor[
         dtype,
         tile_layout,
@@ -399,8 +399,8 @@ fn test_tma_async_multiple_store_kernel[
         alignment=128,
     ].stack_allocation[]()
 
-    alias N = layout.shape[1].value()
-    alias num_iters = ceildiv(N, tileN)
+    comptime N = layout.shape[1].value()
+    comptime num_iters = ceildiv(N, tileN)
 
     for i in range(num_iters):
         src_tile = src.tile[tileM, tileN](Int(block_idx.y), i)
@@ -424,12 +424,12 @@ def test_tma_async_store[
     dst_layout: Layout,
     load_along_last_dim: Bool = False,
 ](ctx: DeviceContext):
-    alias src_M = src_layout.shape[0].value()
-    alias src_N = src_layout.shape[1].value()
-    alias tileM = tile_layout.shape[0].value()
-    alias tileN = tile_layout.shape[1].value()
-    alias dst_M = dst_layout.shape[0].value()
-    alias dst_N = dst_layout.shape[1].value()
+    comptime src_M = src_layout.shape[0].value()
+    comptime src_N = src_layout.shape[1].value()
+    comptime tileM = tile_layout.shape[0].value()
+    comptime tileN = tile_layout.shape[1].value()
+    comptime dst_M = dst_layout.shape[0].value()
+    comptime dst_N = dst_layout.shape[1].value()
 
     var src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
     var dst = ManagedLayoutTensor[DType.float32, dst_layout](ctx)
@@ -441,7 +441,7 @@ def test_tma_async_store[
 
     @parameter
     if load_along_last_dim:
-        alias kernel = test_tma_async_multiple_store_kernel[
+        comptime kernel = test_tma_async_multiple_store_kernel[
             type_of(tma_tensor).dtype,
             type_of(tma_tensor).layout,
             type_of(tma_tensor).layout,
@@ -454,7 +454,7 @@ def test_tma_async_store[
             block_dim=(tileM * tileN),
         )
     else:
-        alias kernel = test_tma_async_store_kernel[
+        comptime kernel = test_tma_async_store_kernel[
             type_of(tma_tensor).dtype,
             type_of(tma_tensor).layout,
             type_of(tma_tensor).desc_layout,
@@ -492,8 +492,8 @@ fn test_tma_async_reduce_kernel[
     tma_tile: TMATensorTile[dtype, tile_layout],
     src: LayoutTensor[dtype, layout, MutAnyOrigin],
 ):
-    alias tileM = tile_layout.shape[0].value()
-    alias tileN = tile_layout.shape[1].value()
+    comptime tileM = tile_layout.shape[0].value()
+    comptime tileN = tile_layout.shape[1].value()
     tile = LayoutTensor[
         dtype,
         tile_layout,
@@ -524,8 +524,8 @@ fn test_tma_async_multiple_reduce_kernel[
     tma_tile: TMATensorTile[dtype, tile_layout],
     src: LayoutTensor[dtype, layout, MutAnyOrigin],
 ):
-    alias tileM = tile_layout.shape[0].value()
-    alias tileN = tile_layout.shape[1].value()
+    comptime tileM = tile_layout.shape[0].value()
+    comptime tileN = tile_layout.shape[1].value()
     tile = LayoutTensor[
         dtype,
         tile_layout,
@@ -534,8 +534,8 @@ fn test_tma_async_multiple_reduce_kernel[
         alignment=128,
     ].stack_allocation[]()
 
-    alias N = layout.shape[1].value()
-    alias num_iters = ceildiv(N, tileN)
+    comptime N = layout.shape[1].value()
+    comptime num_iters = ceildiv(N, tileN)
 
     for i in range(num_iters):
         src_tile = src.tile[tileM, tileN](Int(block_idx.y), i)
@@ -559,12 +559,12 @@ def test_tma_async_reduce[
     dst_layout: Layout,
     load_along_last_dim: Bool = False,
 ](ctx: DeviceContext):
-    alias src_M = src_layout.shape[0].value()
-    alias src_N = src_layout.shape[1].value()
-    alias tileM = tile_layout.shape[0].value()
-    alias tileN = tile_layout.shape[1].value()
-    alias dst_M = dst_layout.shape[0].value()
-    alias dst_N = dst_layout.shape[1].value()
+    comptime src_M = src_layout.shape[0].value()
+    comptime src_N = src_layout.shape[1].value()
+    comptime tileM = tile_layout.shape[0].value()
+    comptime tileN = tile_layout.shape[1].value()
+    comptime dst_M = dst_layout.shape[0].value()
+    comptime dst_N = dst_layout.shape[1].value()
 
     var src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
     var dst = ManagedLayoutTensor[DType.float32, dst_layout](ctx)
@@ -576,7 +576,7 @@ def test_tma_async_reduce[
 
     @parameter
     if load_along_last_dim:
-        alias kernel = test_tma_async_multiple_reduce_kernel[
+        comptime kernel = test_tma_async_multiple_reduce_kernel[
             type_of(tma_tensor).dtype,
             type_of(tma_tensor).layout,
             type_of(tma_tensor).layout,
@@ -589,7 +589,7 @@ def test_tma_async_reduce[
             block_dim=(tileM * tileN),
         )
     else:
-        alias kernel = test_tma_async_reduce_kernel[
+        comptime kernel = test_tma_async_reduce_kernel[
             type_of(tma_tensor).dtype,
             type_of(tma_tensor).layout,
             type_of(tma_tensor).layout,
@@ -636,12 +636,12 @@ fn test_tma_loads_two_buffers_kernel[
     a_tma_tile: TMATensorTile[dtype, a_tile_layout],
     b_tma_tile: TMATensorTile[dtype, b_tile_layout],
 ):
-    alias tileM = a_tile_layout.shape[0].value()
-    alias tileN = a_tile_layout.shape[1].value()
-    alias expected_bytes = a_tile_layout.size() * size_of[dtype]()
+    comptime tileM = a_tile_layout.shape[0].value()
+    comptime tileN = a_tile_layout.shape[1].value()
+    comptime expected_bytes = a_tile_layout.size() * size_of[dtype]()
 
-    alias N = a_layout.shape[1].value()
-    alias num_iters = ceildiv(N, tileN)
+    comptime N = a_layout.shape[1].value()
+    comptime num_iters = ceildiv(N, tileN)
 
     a_tile = LayoutTensor[
         dtype,
@@ -700,12 +700,12 @@ fn test_tma_loads_two_buffers_kernel[
 def test_tma_load_two_buffers_row_major[
     src_layout: Layout, tile_layout: Layout, load_along_last_dim: Bool = False
 ](ctx: DeviceContext):
-    alias M = src_layout.shape[0].value()
-    alias N = src_layout.shape[1].value()
-    alias tileM = tile_layout.shape[0].value()
-    alias tileN = tile_layout.shape[1].value()
-    alias M_roundup = align_up(M, tileM)
-    alias N_roundup = align_up(N, tileN)
+    comptime M = src_layout.shape[0].value()
+    comptime N = src_layout.shape[1].value()
+    comptime tileM = tile_layout.shape[0].value()
+    comptime tileN = tile_layout.shape[1].value()
+    comptime M_roundup = align_up(M, tileM)
+    comptime N_roundup = align_up(N, tileN)
 
     var a_src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
     var b_src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
@@ -724,7 +724,7 @@ def test_tma_load_two_buffers_row_major[
     var b_tma_tensor = create_tma_tile[tileM, tileN](ctx, b_src.device_tensor())
     ctx.synchronize()
 
-    alias kernel = test_tma_loads_two_buffers_kernel[
+    comptime kernel = test_tma_loads_two_buffers_kernel[
         type_of(a_tma_tensor).dtype,
         Layout.row_major(M_roundup, N_roundup),  # dst layout
         Layout.row_major(M_roundup, N_roundup),  # dst layout
@@ -795,12 +795,12 @@ fn test_tma_loads_and_store_two_buffers_kernel[
     a_tma_src_tile: TMATensorTile[dtype, a_tile_layout, a_desc_layout],
     b_tma_src_tile: TMATensorTile[dtype, b_tile_layout, b_desc_layout],
 ):
-    alias tileM = a_tile_layout.shape[0].value()
-    alias tileN = a_tile_layout.shape[1].value()
-    alias expected_bytes = a_tile_layout.size() * size_of[dtype]()
+    comptime tileM = a_tile_layout.shape[0].value()
+    comptime tileN = a_tile_layout.shape[1].value()
+    comptime expected_bytes = a_tile_layout.size() * size_of[dtype]()
 
-    alias N = a_layout.shape[1].value()
-    alias num_iters = ceildiv(N, tileN)
+    comptime N = a_layout.shape[1].value()
+    comptime num_iters = ceildiv(N, tileN)
 
     a_tile = LayoutTensor[
         dtype,
@@ -867,12 +867,12 @@ fn test_tma_loads_and_store_two_buffers_kernel[
 def test_tma_load_and_store_two_buffers_row_major[
     src_layout: Layout, tile_layout: Layout, dst_layout: Layout
 ](ctx: DeviceContext):
-    alias M = src_layout.shape[0].value()
-    alias N = src_layout.shape[1].value()
-    alias tileM = tile_layout.shape[0].value()
-    alias tileN = tile_layout.shape[1].value()
-    alias dst_M = dst_layout.shape[0].value()
-    alias dst_N = dst_layout.shape[1].value()
+    comptime M = src_layout.shape[0].value()
+    comptime N = src_layout.shape[1].value()
+    comptime tileM = tile_layout.shape[0].value()
+    comptime tileN = tile_layout.shape[1].value()
+    comptime dst_M = dst_layout.shape[0].value()
+    comptime dst_N = dst_layout.shape[1].value()
 
     var a_src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
     var b_src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
@@ -880,8 +880,8 @@ def test_tma_load_and_store_two_buffers_row_major[
     var b_dst = ManagedLayoutTensor[DType.float32, dst_layout](ctx)
 
     # Initialize destinations to known values.
-    alias a_dst_value = 1.5
-    alias b_dst_value = 1.25
+    comptime a_dst_value = 1.5
+    comptime b_dst_value = 1.25
 
     var a_dst_host = a_dst.tensor()
     var b_dst_host = b_dst.tensor()
@@ -908,7 +908,7 @@ def test_tma_load_and_store_two_buffers_row_major[
     )
     ctx.synchronize()
 
-    alias kernel = test_tma_loads_and_store_two_buffers_kernel[
+    comptime kernel = test_tma_loads_and_store_two_buffers_kernel[
         type_of(a_tma_src_tensor).dtype,
         type_of(a_tma_src_tensor).layout,  # smem layout
         type_of(a_tma_src_tensor).layout,  # smem layout
