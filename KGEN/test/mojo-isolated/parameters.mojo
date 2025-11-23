@@ -873,8 +873,7 @@ fn dont_interpret():
 
 # CHECK-LABEL: lit.fn @"testParameterEvaluator()"
 fn testParameterEvaluator():
-  # CHECK-NEXT: lit.alias.decl *"x{{.*}}" = <sugar_alias
-  # CHECK-SAME: #lit.struct.extract<:meta<!lit.struct<#Abstraction <:!Int {1}>>> @parameters::@Abstraction<:!Int {1}>, "val">, 1)>
+  # CHECK-NEXT: lit.alias.decl *"x{{.*}}" = <sugar_member_alias(!lit.struct<#Abstraction <:!Int {1}>>, "val", 1)>
   comptime x = Abstraction[1].val
   # CHECK-NEXT: %y = lit.var.decl "y"
   # CHECK-NEXT: %0 = lit.call @parameters::@Abstraction::@"push{{.*}}"<:!Int {1}, :!Int {2}>
@@ -1128,8 +1127,8 @@ struct SomeWrapper[t: WithAnAlias, a: AnyType, b: AnyType]:
 fn test_param_inference_contextual_fold():
     # CHECK: lit.call @{{.*}}SomeWrapper::@"__init__
     # CHECK-SAME: <:!WithAnAlias !SomeStruct,
-    # CHECK-SAME: :!AnyType sugar_alias(#lit.struct.extract<:!WithAnAlias !SomeStruct, "A">, !Int),
-    # CHECK-SAME: :!AnyType sugar_alias(#lit.struct.extract<:!WithAnAlias !SomeStruct, "A">, !Int)
+    # CHECK-SAME: :!AnyType sugar_member_alias(!SomeStruct, "A", !Int),
+    # CHECK-SAME: :!AnyType sugar_member_alias(!SomeStruct, "A", !Int)>
     sw = SomeWrapper[SomeStruct]()
 
 

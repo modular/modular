@@ -1027,7 +1027,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
       // Some param refs (eg to unqualified parameters of structs) are already
       // fully sugared.
       if (result.get() != sugared)
-        result = SugarAttr::get(SugarKind::Alias, sugared, result);
+        result = SugarAttr::getAlias(sugared, result);
     }
 
     return emitter.emitCResult(result.get(), expr, dest);
@@ -2032,10 +2032,8 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
       if (!value || spelling.starts_with('_'))
         return value;
 
-      auto sugaredMember = StructExtractAttr::get(
-          PValue(baseRVType), StringAttr::get(emitter.getContext(), spelling),
-          value.getType());
-      return SugarAttr::get(SugarKind::Alias, sugaredMember, value);
+      auto memberName = StringAttr::get(emitter.getContext(), spelling);
+      return SugarAttr::getMemberAlias(baseRVType, memberName, value);
     };
 
     // Handle accessing an alias in a struct or an extension.

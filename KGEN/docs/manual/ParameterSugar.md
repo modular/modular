@@ -199,7 +199,7 @@ version looks like:
 
     // Maintain alias sugar, e.g. print "UInt8" as UInt8 instead of SIMD[..].
     auto sugared = ParamDeclRefAttr::get(param.getParamDecl());
-    result = SugarAttr::get(SugarKind::Alias, sugared, result);
+    result = SugarAttr::getAlias(sugared, result);
     return result;
 ```
 

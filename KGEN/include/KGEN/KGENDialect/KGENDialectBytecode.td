@@ -319,6 +319,7 @@ def LLVMBitcodeLibArrayAttr : DialectAttribute<(attr
 
 def SugarAttr : DialectAttribute<(attr
   EnumAttr<"SugarKind">:$kind,
+  ConcreteOptionalAttribute<"StringAttr">:$memberName,
   TypedAttr:$sugared,
   TypedAttr:$expanded
 )>;

@@ -334,8 +334,14 @@ def KGEN_SugarKind : I32EnumAttr<"SugarKind",
     "What kind of sugar a SugarAttr was formed from", [
   /// This is an expansion of a call to an @always_inline("builtin") function.
   I32EnumAttrCase<"AlwaysInlineBuiltin", 0, "aibuiltin">,
+
+  /// This is sugar for a member access of the form "T.x".  The "sugared" field
+  /// contains the type being accessed and the memberName attr contains the
+  /// field name.
+  I32EnumAttrCase<"MemberAlias", 1, "member_alias">,
+
   /// This is an expansion of an alias reference "x" or "A.x".
-  I32EnumAttrCase<"Alias", 1, "alias">,
+  I32EnumAttrCase<"Alias", 2, "alias">,
 ]> {
   let cppNamespace = "M::KGEN";
   let genSpecializedAttr = 0;

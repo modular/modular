@@ -3923,10 +3923,21 @@ static std::optional<SugarKind> canElideSugarFor(TypedAttr attr) {
   return {};
 }
 
-static ParseResult parseSugarAttr(AsmParser &p, TypedAttr &sugared,
+static ParseResult parseSugarAttr(AsmParser &p, SugarKind &kind,
+                                  StringAttr &memberName, TypedAttr &sugared,
                                   TypedAttr &original, TypedAttr &canonical) {
+  FailureOr<SugarKind> kindResult = mlir::FieldParser<SugarKind>::parse(p);
+  if (failed(kindResult))
+    return failure();
+  kind = *kindResult;
+
+  if (kind == SugarKind::MemberAlias) {
+    if (p.parseComma() || p.parseAttribute(memberName))
+      return failure();
+  }
+
   Type type;
-  if (p.parseType(type) || p.parseComma() ||
+  if (p.parseComma() || p.parseType(type) || p.parseComma() ||
       parseParamValue(p, sugared, type) || p.parseComma() ||
       parseParamValue(p, original, type))
     return failure();
@@ -3935,8 +3946,15 @@ static ParseResult parseSugarAttr(AsmParser &p, TypedAttr &sugared,
   return success();
 }
 
-static void printSugarAttr(AsmPrinter &p, TypedAttr sugared, TypedAttr original,
+static void printSugarAttr(AsmPrinter &p, SugarKind kind, StringAttr memberName,
+                           TypedAttr sugared, TypedAttr original,
                            TypedAttr canonical) {
+  p.printStrippedAttrOrType(kind);
+  if (kind == SugarKind::MemberAlias) {
+    p << ", " << memberName;
+  }
+
+  p << ", ";
   p.printType(sugared.getType());
   p << ", ";
   printParamValue(p, sugared);
@@ -3945,8 +3963,23 @@ static void printSugarAttr(AsmPrinter &p, TypedAttr sugared, TypedAttr original,
   // The canonical value is rebuilt as needed.
 }
 
-TypedAttr SugarAttr::get(SugarKind kind, TypedAttr sugared,
-                         TypedAttr original) {
+TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
+                         StringAttr memberName, TypedAttr sugared,
+                         TypedAttr original, TypedAttr canonical) {
+  // The two operand types must match otherwise this won't round-trip
+  // correctly.
+  assert(sugared.getType() == original.getType() &&
+         "SugarAttr sugared and original types must match");
+  assert((kind == SugarKind::MemberAlias && memberName) ||
+         (kind != SugarKind::MemberAlias && !memberName) &&
+             "memberName should be specified for MemberAlias only");
+
+  // This method gets called by client doing general structural replacements,
+  // e.g. a parameter with an arbitrary attribute.  This can turn canonical
+  // forms to non-canonical and visa-versa, so always recompute the canonical
+  // pointer.
+  canonical = {};
+
   // If we shouldn't maintain type sugar for this, then just return the
   // original. We strip sugar for always_inline builtin calls that simplify down
   // to something simple like "42". We don't want to maintain the call sugar
@@ -3958,29 +3991,26 @@ TypedAttr SugarAttr::get(SugarKind kind, TypedAttr sugared,
     if ((int)*shouldElide >= (int)kind)
       return original;
 
-  auto canonical = getCanonicalAttr(original);
+  // Compute the canonical form.
+  canonical = getCanonicalAttr(original);
 
   // We will /never/ use the type sugar in the original form of a builtin
   // call, so we can strip it all away to simplify things.
   if (kind == SugarKind::AlwaysInlineBuiltin)
     original = ParamOperatorAttr::getRebind(canonical, sugared.getType());
 
-  // The two operand types must match otherwise this won't round-trip
-  // correctly.
-  assert(sugared.getType() == original.getType() &&
-         "SugarAttr sugared and original types must match");
-
-  return Base::get(sugared.getContext(), kind, sugared, original, canonical);
+  return Base::get(sugared.getContext(), kind, memberName, sugared, original,
+                   canonical);
 }
 
-TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
-                         TypedAttr sugared, TypedAttr original,
-                         TypedAttr canonical) {
-  // This method gets called by client doing general structural replacements,
-  // e.g. a parameter with an arbitrary attribute.  This can turn canonical
-  // forms to non-canonical and visa-versa, so always recompute the canonical
-  // pointer.
-  return get(kind, sugared, original);
+Type SugarAttr::getMemberAliasType() const {
+  return cast<TypeParamAttr>(getSugared()).getMlirType();
+}
+
+TypedAttr SugarAttr::getMemberAlias(Type type, StringAttr memberName,
+                                    TypedAttr original) {
+  return get(type.getContext(), SugarKind::MemberAlias, memberName,
+             TypeParamAttr::get(type, original.getType()), original);
 }
 
 Type SugarAttr::getType() const { return getSugared().getType(); }

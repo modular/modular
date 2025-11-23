@@ -56,7 +56,7 @@ struct StructWithMatchingDependentAlias1(TraitWithDependentAlias):
 struct StructWithMatchingDependentAlias2(TraitWithDependentAlias):
     # CHECK-NEXT: lit.alias.decl *"N`": !Int = <{1}>
     comptime N: Int = 1
-    # CHECK-NEXT: lit.alias.decl *"depend_on_N`1": @{{.*}}::@S<:!Int sugar_alias(#lit.struct.extract<:!mt_StructWithMatchingDependentAlias2 !StructWithMatchingDependentAlias2, "N">, {1})> =
+    # CHECK-NEXT: lit.alias.decl *"depend_on_N`1": @{{.*}}::@S<:!Int sugar_member_alias(!StructWithMatchingDependentAlias2, "N", {1})> =
     comptime depend_on_N = S[Self.N]()
 
 
