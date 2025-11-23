@@ -155,7 +155,7 @@ class SupportedArchitecture:
     default_encoding: SupportedEncoding
     """The default quantization encoding to use when no specific encoding is requested."""
 
-    supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]]
+    supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy] | None]
     """A dictionary mapping supported quantization encodings to their compatible KV cache strategies."""
 
     pipeline_model: type[PipelineModel[Any]]

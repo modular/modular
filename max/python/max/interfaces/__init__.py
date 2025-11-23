@@ -59,6 +59,11 @@ from .pipeline_variants import (
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
     VLMTextGenerationContext,
+    ImageGenerationContextType,
+    ImageGenerationInputs,
+    ImageGenerationMetadata,
+    ImageGenerationOutput,
+    ImageGenerationRequest,
 )
 from .queue import MAXPullQueue, MAXPushQueue, drain_queue, get_blocking
 from .request import Request, RequestID, RequestType
@@ -148,6 +153,11 @@ __all__ = [
     "TokenBuffer",
     "TokenSlice",
     "VLMTextGenerationContext",
+    "ImageGenerationContextType",
+    "ImageGenerationInputs",
+    "ImageGenerationMetadata",
+    "ImageGenerationOutput",
+    "ImageGenerationRequest",
     "drain_queue",
     "get_blocking",
     "msgpack_numpy_decoder",
