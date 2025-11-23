@@ -1098,15 +1098,28 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
       }
 
       if (keyword == "sugar_alias" || keyword == "sugar_builtin") {
-        TypedAttr sugared, original;
+        TypedAttr sugared, expanded;
         if (parseParamValue(p, sugared, type) || p.parseComma() ||
-            parseParamValue(p, original, type) || p.parseRParen())
+            parseParamValue(p, expanded, type) || p.parseRParen())
           return failure();
         auto kind = keyword == "sugar_alias" ? SugarKind::Alias
                                              : SugarKind::AlwaysInlineBuiltin;
-        value = SugarAttr::get(kind, sugared, original);
+        value = SugarAttr::get(sugared.getContext(), kind, /*memberName=*/{},
+                               sugared, expanded);
         return success();
       }
+      if (keyword == "sugar_member_alias") {
+        Type baseType;
+        StringAttr memberName;
+        TypedAttr expanded;
+        if (p.parseType(baseType) || p.parseComma() ||
+            p.parseAttribute(memberName) || p.parseComma() ||
+            parseParamValue(p, expanded, type) || p.parseRParen())
+          return failure();
+        value = SugarAttr::getMemberAlias(baseType, memberName, expanded);
+        return success();
+      }
+
       return p.emitError(loc, "unknown expression ") << keyword;
     }
 
@@ -1462,6 +1475,13 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
 
   if (auto sugar = dyn_cast<SugarAttr>(value)) {
     switch (sugar.getKind()) {
+    case SugarKind::MemberAlias:
+      p << "sugar_member_alias(";
+      p.printType(sugar.getMemberAliasType());
+      p << ", " << sugar.getMemberName() << ", ";
+      printParamValue(p, sugar.getExpanded(), sugar.getType());
+      p << ")";
+      return;
     case SugarKind::Alias:
       p << "sugar_alias(";
       break;
@@ -1469,9 +1489,9 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
       p << "sugar_builtin(";
       break;
     }
-    printParamValue(p, sugar.getSugared());
+    printParamValue(p, sugar.getSugared(), sugar.getType());
     p << ", ";
-    printParamValue(p, sugar.getExpanded());
+    printParamValue(p, sugar.getExpanded(), sugar.getType());
     p << ")";
     return;
   }

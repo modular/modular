@@ -947,7 +947,10 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       param = sugar.getSugared();
     else
       param = sugar.getExpanded();
-    return printParam(os, param, diagShared);
+    printParam(os, param, diagShared);
+    if (diagShared && sugar.getKind() == SugarKind::MemberAlias)
+      os << '.' << sugar.getMemberName().strref();
+    return;
   }
 
   // Handle other KGEN parameters that it knows about with an ugly fallback.

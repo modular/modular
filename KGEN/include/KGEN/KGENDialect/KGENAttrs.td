@@ -2113,24 +2113,21 @@ def KGEN_SugarAttr : KGENAttr<"Sugar", "sugar",
 
   let parameters = (ins
     "SugarKind":$kind,
-    "TypedAttr":$sugared,  // Fully sugared form.
-    "TypedAttr":$expanded, // One level expanded form, other sugar may exist.
-    "TypedAttr":$canonical // Recursively desugared form.
+    "StringAttr":$memberName, // Member name if this is a MemberAlias.
+    "TypedAttr":$sugared,     // Fully sugared form.
+    "TypedAttr":$expanded,    // One level expanded form, other sugar may exist.
+    "TypedAttr":$canonical    // Recursively desugared form.
   );
 
   let assemblyFormat =
-    "$kind `,` custom<SugarAttr>($sugared, $expanded, $canonical)";
+    "custom<SugarAttr>($kind, $memberName, $sugared, $expanded, $canonical)";
 
   let skipDefaultBuilders = 1;
   let builders = [
-    AttrBuilderWithInferredContext<(ins "SugarKind":$kind,
-                                    "TypedAttr":$sugared,
-                                    "TypedAttr":$expanded), "", "TypedAttr">,
-
     // Override the default builder used by the generated parser.
-    AttrBuilder<(ins "SugarKind":$kind, "TypedAttr":$sugared,
-                  "TypedAttr":$expanded, "TypedAttr":$canonical),
-                   "", "TypedAttr">,
+    AttrBuilder<(ins "SugarKind":$kind, "StringAttr":$memberName,
+                  "TypedAttr":$sugared, "TypedAttr":$expanded,
+                  CArg<"TypedAttr", "{}">:$canonical), "", "TypedAttr">,
   ];
 
   let extraClassDeclaration = [{
@@ -2141,6 +2138,20 @@ def KGEN_SugarAttr : KGENAttr<"Sugar", "sugar",
 
     Type getType() const;
     mlir::OpAsmAliasResult getAlias(raw_ostream &os) const;
+
+    /// For a MemberAlias sugar, return the base type.
+    Type getMemberAliasType() const;
+
+    static TypedAttr getAlias(TypedAttr sugared, TypedAttr expanded) {
+      return get(sugared.getContext(), SugarKind::Alias, {}, sugared, expanded);
+    }
+    static TypedAttr getAlwaysInlineBuiltin(TypedAttr sugared,
+                                            TypedAttr expanded) {
+      return get(sugared.getContext(), SugarKind::AlwaysInlineBuiltin, {},
+                 sugared, expanded);
+    }
+    static TypedAttr getMemberAlias(Type type, StringAttr memberName,
+                                    TypedAttr expanded);
   }];
 }
 

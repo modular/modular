@@ -151,7 +151,7 @@ __extension Container:
 fn test_self_alias_with_generic_1(container: Container[ZInt]):
     # Note how it's ZInt right here, it means the lookup worked.
     # CHECK: lit.alias.decl *"MyElementType`1": !ImplicitlyCopyable =
-    # CHECK-SAME: <sugar_alias(#lit.struct.extract<:meta<!lit.struct<#Container <:!ImplicitlyCopyable !ZInt>>> @struct_extensions_aliases::@Container<:!ImplicitlyCopyable !ZInt>, "ElementType">, !ZInt)>
+    # CHECK-SAME: <sugar_member_alias(!lit.struct<#Container <:!ImplicitlyCopyable !ZInt>>, "ElementType", !ZInt)>
     comptime MyElementType = Container[ZInt].ElementType
 
 

@@ -1116,7 +1116,7 @@ TypedAttr CallEmitter::emitCallInParamContext(
     // retain their canonical form because the canonical rep will discard it
     // all.
     auto sugaredCall = ParamOperatorAttr::get(POC::Apply, operands, resultType);
-    return SugarAttr::get(SugarKind::AlwaysInlineBuiltin, sugaredCall, result);
+    return SugarAttr::getAlwaysInlineBuiltin(sugaredCall, result);
   }
 
   TypedAttr result; // Memory-only types uses ApplyResultSlot.
