@@ -18,11 +18,11 @@ from subprocess import run
 
 # We can't check much more than this at the moment, because the license year
 # changes and the language is not mature enough to do regex yet.
-alias LICENSE = """# ===----------------------------------------------------------------------=== #
+comptime LICENSE = """# ===----------------------------------------------------------------------=== #
 # Copyright (c)"""
 
 # NOTE: This copyright year needs to be updated (m)annually
-alias LICENSE_TO_ADD = """# ===----------------------------------------------------------------------=== #
+comptime LICENSE_TO_ADD = """# ===----------------------------------------------------------------------=== #
 # Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
