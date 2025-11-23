@@ -553,10 +553,6 @@ class GeneratorAttr(max._core.Attribute):
 
     @overload
     def __init__(
-        self, body: max._core.dialects.builtin.TypedAttr, type: GeneratorType
-    ) -> None: ...
-    @overload
-    def __init__(
         self,
         input_param_types: Sequence[max._core.Type],
         body: max._core.dialects.builtin.TypedAttr,
@@ -1162,7 +1158,7 @@ class SugarAttr(max._core.Attribute):
     """
     The `#kgen.sugar` attribute represents a syntax sugar overlaid on some other
     value e.g. an alias or expanded builtin function call. It maintains the
-    original unexpanded attribute value as well as the "one level expanded" and
+    original sugared form as well as the "one level expanded" form, and
     fully expanded "canonical" version of the attribute.
     """
 
@@ -1171,27 +1167,24 @@ class SugarAttr(max._core.Attribute):
         self,
         kind: SugarKind,
         sugared: max._core.dialects.builtin.TypedAttr,
-        original: max._core.dialects.builtin.TypedAttr,
+        expanded: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
         self,
         kind: SugarKind,
         sugared: max._core.dialects.builtin.TypedAttr,
-        original: max._core.dialects.builtin.TypedAttr,
+        expanded: max._core.dialects.builtin.TypedAttr,
         canonical: max._core.dialects.builtin.TypedAttr,
-        type: max._core.Type,
     ) -> None: ...
     @property
     def kind(self) -> SugarKind: ...
     @property
     def sugared(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def original(self) -> max._core.dialects.builtin.TypedAttr: ...
+    def expanded(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def canonical(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
-    def type(self) -> max._core.Type | None: ...
 
 class SymbolConstantAttr(max._core.Attribute):
     """
@@ -1554,25 +1547,144 @@ class VariadicAttr(max._core.Attribute):
     @property
     def type(self) -> VariadicType: ...
 
-class VariadicMapAttr(max._core.Attribute):
+class VariadicConcatAttr(max._core.Attribute):
     """
-    The `#kgen.variadic.map` attribute is used to convert from a variadic of
-    (type) value to a variadic of (type) value by repeatedly applying the
-    provided generator on each element of the variadic.
+    The `#kgen.variadic.concat` attribute is used to concatenate a variadic of
+    variadic (type) value.
+
+    Example:
+    ```mlir
+    #kgen.variadic.concat<[[Int, Int], [Float, Float]]> : !variadic<!AnyType>
+    // ->
+    #kgen.variadic<[Int, Int, Float, Float]> : !variadic<!AnyType>
+    ```
     """
 
+    @overload
     def __init__(
         self,
         type: VariadicType,
-        variadic: max._core.dialects.builtin.TypedAttr,
-        generator: max._core.dialects.builtin.TypedAttr,
+        variadics: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type: VariadicType,
+        variadics: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def type(self) -> VariadicType: ...
     @property
+    def variadics(self) -> max._core.dialects.builtin.TypedAttr: ...
+
+class VariadicReduceAttr(max._core.Attribute):
+    """
+    The `#kgen.variadic.reduce` attribute is used to reduce a variadic of
+    (type) value to a (type) value by repeatedly applying the provided reducer
+    on each element of the variadic.
+    """
+
+    def __init__(
+        self,
+        type: max._core.Type,
+        base: max._core.dialects.builtin.TypedAttr,
+        variadic: max._core.dialects.builtin.TypedAttr,
+        generator: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+    @property
+    def base(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
     def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def generator(self) -> max._core.dialects.builtin.TypedAttr: ...
+
+class VariadicSizeAttr(max._core.Attribute):
+    @overload
+    def __init__(
+        self,
+        type: max._core.dialects.builtin.IndexType,
+        variadic: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type: max._core.dialects.builtin.IndexType,
+        variadic: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type(self) -> max._core.dialects.builtin.IndexType: ...
+    @property
+    def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
+
+class VariadicSplatAttr(max._core.Attribute):
+    """
+    The `#kgen.variadic.splat` creates a variadic by splatting the same value
+    to the given times.
+
+    Example:
+    ```mlir
+    #kgen.variadic.splat<Int, 5> : !variadic<!AnyType>
+    // ->
+    #kgen.variadic<[Int, Int, Int, Int, Int]> : !variadic<!AnyType>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self,
+        type: VariadicType,
+        element: max._core.dialects.builtin.TypedAttr,
+        count: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type: VariadicType,
+        element: max._core.dialects.builtin.TypedAttr,
+        count: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type(self) -> VariadicType: ...
+    @property
+    def element(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def count(self) -> max._core.dialects.builtin.TypedAttr: ...
+
+class VariadicZipAttr(max._core.Attribute):
+    """
+    The `#kgen.variadic.zip` attribute is used to zip a variadic of
+    variadic (type) value.
+
+    Example:
+    ```mlir
+    #kgen.variadic.zip<[[Int, Int], [Float, Float]]> : !variadic<!variadic<!AnyType>>
+    // ->
+    #kgen.variadic<[[Int, Float], [Int, Float]]> : !variadic<!variadic<!AnyType>>
+    ```
+
+    At the moment, when the provided variadics are of different lengths, we zip
+    till the shortest variadic are consumed. In the future, we might want to
+    extend the attribute to accept an "default" value for "zip_longest".
+    """
+
+    @overload
+    def __init__(
+        self,
+        type: VariadicType,
+        input_type_value: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type: VariadicType,
+        input_type_value: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type(self) -> VariadicType: ...
+    @property
+    def variadics(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class VariantAttr(max._core.Attribute):
     """
@@ -1643,15 +1755,17 @@ class ArgConvention(enum.Enum):
 
     owned_in_mem = 3
 
-    mut = 4
+    deinit_mem = 4
 
-    ref = 5
+    mut = 5
 
-    mutref = 6
+    ref = 6
 
-    byref_result = 7
+    mutref = 7
 
-    byref_error = 8
+    byref_result = 8
+
+    byref_error = 9
 
 class ArgConventionAttr(max._core.Attribute):
     def __init__(self, arg0: Context, arg1: ArgConvention, /) -> None: ...
@@ -3935,7 +4049,7 @@ class SugaredTypeInterface(Protocol):
 
     def can_elide_sugar_for(
         self, arg: max._core.dialects.builtin.TypedAttr, /
-    ) -> bool: ...
+    ) -> SugarKind | None: ...
     def get_cached_canonical_type(
         self, arg: max._core.Type, /
     ) -> max._core.Type | None: ...

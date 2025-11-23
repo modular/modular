@@ -23,7 +23,7 @@ from utils.index import Index
 
 
 fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
-    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
     var in_host = NDBuffer[
         dtype, 2, MutAnyOrigin, DimList(2, 8)
@@ -96,7 +96,7 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
 
 
 fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
-    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
     var in_host = NDBuffer[
         dtype, 2, MutAnyOrigin, DimList(3, 3)
     ].stack_allocation()
@@ -160,7 +160,7 @@ fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
 
 
 fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
-    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
     var in_host = NDBuffer[
         dtype, 3, MutAnyOrigin, DimList(2, 4, 5)
     ].stack_allocation()
@@ -262,8 +262,8 @@ fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
 
 def _test_elementwise_zero_dimension_3d(ctx: DeviceContext):
     """Test elementwise operations with zero dimension in 3D tensor."""
-    alias dtype = DType.float32
-    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime dtype = DType.float32
+    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
     var input_device_ptr = ctx.enqueue_create_buffer[dtype](1)
     var output_device_ptr = ctx.enqueue_create_buffer[dtype](1)

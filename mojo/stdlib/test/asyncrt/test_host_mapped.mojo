@@ -18,7 +18,7 @@ from testing import TestSuite
 def test_host_mapped():
     var ctx = create_test_device_context()
 
-    alias length = 20
+    comptime length = 20
 
     var in_buf = ctx.enqueue_create_buffer[DType.int64](length)
     var out_buf = ctx.enqueue_create_buffer[DType.int64](length)

@@ -28,7 +28,7 @@ fn gen_perm() -> IndexList[64]:
 
 
 def test_issue_1505():
-    alias p = gen_perm()
+    comptime p = gen_perm()
 
     # generate random data to prevent that everything gets simplified
     var data1 = SIMD[DType.uint8, 64]()

@@ -14,7 +14,7 @@
 
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import HostNDBuffer, assert_almost_equal
+from internal_utils import assert_almost_equal
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -39,11 +39,11 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
 
     # Set up test hyperparameters.
     alias batch_size = 2
-    alias start_positions = List[UInt32](0, 5)
+    alias start_positions: List[UInt32] = [0, 5]
     alias seq_len = 3
     alias max_seq_len = 16
     alias num_layers = 1
-    var lookup_table = List[UInt32](0, 1)
+    var lookup_table: List[UInt32] = [0, 1]
 
     fn _max[dtype: DType, items: List[Scalar[dtype]]]() -> Scalar[dtype]:
         constrained[len(items) > 0, "empty list in _max"]()
@@ -129,10 +129,18 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     )
 
     # Create query tensor as a view of the query buffer.
-    input_row_offsets = HostNDBuffer[DType.uint32, 1](DimList(batch_size + 1))
+    var stack = InlineArray[Scalar[DType.uint32], batch_size + 1](
+        uninitialized=True
+    )
+    input_row_offsets = LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)](
+        stack,
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+            IndexList[1](batch_size + 1)
+        ),
+    )
     for i in range(batch_size):
-        input_row_offsets.tensor[i] = i * seq_len
-    input_row_offsets.tensor[batch_size] = batch_size * seq_len
+        input_row_offsets[i] = i * seq_len
+    input_row_offsets[batch_size] = batch_size * seq_len
 
     q = LayoutTensor[
         dtype, Layout.row_major(batch_size * seq_len, num_heads, head_dim)
@@ -178,7 +186,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
         kv_collection.CacheType, interleaved=True, target = StaticString("cpu")
     ](
         q_proj=q,
-        input_row_offsets=input_row_offsets.to_layout_tensor(),
+        input_row_offsets=input_row_offsets,
         kv_collection=kv_collection,
         freqs_cis=freqs_cis_table,
         position_ids=None,

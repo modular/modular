@@ -167,8 +167,8 @@ struct SingleCounterSync[
     """
 
     alias writes_per_warp_block = 1
-    alias block_warps = block_rows // warp_rows
-    alias total_tiles = Self.block_warps * pipeline_stages
+    alias block_warps = Self.block_rows // Self.warp_rows
+    alias total_tiles = Self.block_warps * Self.pipeline_stages
     alias SyncCounterArray = SMemArrayType[Int32, Self.total_tiles]
 
     var sync_counter: Self.SyncCounterArray
@@ -186,7 +186,7 @@ struct SingleCounterSync[
 
     @always_inline
     fn get_staged_idx(self, tile_idx: Int, stage: Int) -> Int:
-        return tile_idx * pipeline_stages + stage
+        return tile_idx * Self.pipeline_stages + stage
 
     @always_inline
     fn wait_producer_acquire(self, tile_idx: Int, stage: Int, phase: Int32):
@@ -214,11 +214,11 @@ struct SingleCounterSync[
 
     @always_inline
     fn get_producer_phase_increment(self) -> Int32:
-        return Int32(Self.writes_per_warp_block + reads_per_warp_block)
+        return Int32(Self.writes_per_warp_block + Self.reads_per_warp_block)
 
     @always_inline
     fn get_consumer_phase_increment(self) -> Int32:
-        return Int32(Self.writes_per_warp_block + reads_per_warp_block)
+        return Int32(Self.writes_per_warp_block + Self.reads_per_warp_block)
 
 
 @register_passable("trivial")
@@ -240,8 +240,8 @@ struct SplitCounterSync[
     """
 
     alias writes_per_warp_block = 1
-    alias block_warps = block_rows // warp_rows
-    alias total_tiles = Self.block_warps * pipeline_stages
+    alias block_warps = Self.block_rows // Self.warp_rows
+    alias total_tiles = Self.block_warps * Self.pipeline_stages
 
     alias ProducerCounterArray = SMemArrayType[Int32, Self.total_tiles]
     alias ConsumerCounterArray = SMemArrayType[Int32, Self.total_tiles]
@@ -267,7 +267,7 @@ struct SplitCounterSync[
 
     @always_inline
     fn get_staged_idx(self, tile_idx: Int, stage: Int) -> Int:
-        return tile_idx * pipeline_stages + stage
+        return tile_idx * Self.pipeline_stages + stage
 
     @always_inline
     fn wait_producer_acquire(self, tile_idx: Int, stage: Int, phase: Int32):
@@ -301,7 +301,7 @@ struct SplitCounterSync[
     @always_inline
     fn get_producer_phase_increment(self) -> Int32:
         """Producer phase advances by reads_per_warp_block."""
-        return Int32(reads_per_warp_block)
+        return Int32(Self.reads_per_warp_block)
 
     @always_inline
     fn get_consumer_phase_increment(self) -> Int32:

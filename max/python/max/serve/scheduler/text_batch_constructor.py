@@ -24,7 +24,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.kv_cache import PagedKVCacheManager
+from max.kv_cache import InsufficientBlocksError, PagedKVCacheManager
 from max.pipelines.core.context import TextContext
 from max.pipelines.lib import LoRAManager
 from max.profiler import traced
@@ -292,32 +292,6 @@ class TextBatchConstructor:
                 f"Preempted a request due to lack of KV pages. This can affect the end-to-end performance. Consider increasing device-memory-utilization to provide more KV cache memory. Total preemption count: {self.total_preemption_count}."
             )
 
-    def _should_schedule_ce(self, replica_idx: int) -> bool:
-        """Returns True if the scheduler should schedule a context encoding batch."""
-        replica = self.replicas[replica_idx]
-
-        # Cannot schedule CE if there are no requests awaiting CE.
-        if len(replica.ce_reqs) == 0:
-            return False
-
-        # Cannot schedule CE if the TG batch is full.
-        if (
-            len(replica.tg_reqs)
-            >= self.scheduler_config.max_batch_size_tg_per_replica
-        ):
-            return False
-
-        # Must schedule CE if the TG batch is empty.
-        if len(replica.tg_reqs) == 0:
-            return True
-
-        if self.paged_cache is not None:
-            # If there are less than 10% free blocks, prioritize TG over CE.
-            if self.paged_cache.free_blocks_pct < 0.1:
-                return False
-
-        return True
-
     @traced
     def _create_tg_batch(self, replica_idx: int) -> ReplicaBatch:
         """Creates a non empty token generation batch"""
@@ -389,7 +363,11 @@ class TextBatchConstructor:
                     num_steps = min(num_steps, num_available_steps)
 
                 # Attempt to schedule the request.
-                is_scheduled = self.paged_cache.maybe_reserve(ctx, num_steps)
+                try:
+                    self.paged_cache.alloc(ctx, num_steps)
+                    is_scheduled = True
+                except InsufficientBlocksError:
+                    is_scheduled = False
 
                 # We were able to schedule this request
                 if is_scheduled:
@@ -485,6 +463,16 @@ class TextBatchConstructor:
         replica = self.replicas[replica_idx]
 
         ce_batch: dict[RequestID, TextContext] = {}
+
+        # Cannot schedule CE if there are no requests awaiting CE and
+        # cannot schedule CE if the TG batch is full.
+        if (
+            len(replica.ce_reqs) == 0
+            or len(replica.tg_reqs)
+            >= self.scheduler_config.max_batch_size_tg_per_replica
+        ):
+            return ReplicaBatch(batch=ce_batch, num_steps=1)
+
         input_tokens = 0
 
         if self.scheduler_config.enable_in_flight_batching and replica.tg_reqs:
@@ -532,15 +520,46 @@ class TextBatchConstructor:
             # Claim the cache slot for the request if it's a new request.
             if ctx.start_idx == 0:
                 if self.paged_cache is not None:
-                    self.paged_cache.external_claim(
-                        req_id, replica_idx=replica_idx
-                    )
+                    self.paged_cache.claim(req_id, replica_idx=replica_idx)
 
             if self.paged_cache is not None:
-                # Attempt to schedule the request.
-                scheduled = self.paged_cache.maybe_reserve(ctx, num_steps=1)
+                # Check if the CE request will fit in the KVCache
+                pct_blocks_used_after_ce_request = (
+                    self.paged_cache.get_pct_used_blocks_after_allocation(
+                        ctx,
+                        1,  # Number of steps to schedule
+                    )
+                )
+                pct_blocks_used_after_ce_request = max(
+                    0.0, min(pct_blocks_used_after_ce_request, 1.0)
+                )
 
-                # We were able to schedule this request
+                # Check if the percentage of blocks used after allocating for
+                # the CE request is within the allowed limit.
+                sufficient_free_blocks = (
+                    pct_blocks_used_after_ce_request
+                    <= self.scheduler_config.kvcache_ce_watermark
+                )
+                # If there are no active TG requests then we must schedule CE.
+                no_active_requests = (
+                    len(replica.tg_reqs) == 0 and len(ce_batch) == 0
+                )
+                scheduled = False
+                if sufficient_free_blocks or no_active_requests:
+                    # Attempt to schedule the request.
+                    try:
+                        self.paged_cache.alloc(ctx, num_steps=1)
+                        scheduled = True
+                    except InsufficientBlocksError:
+                        # If we cannot schedule this CE request and there are no
+                        # other active requests, we re-raise the exception since
+                        # this is a fatal error. This should never occur unless
+                        # a single request saturates the KV cache.
+                        if no_active_requests:
+                            raise
+                        scheduled = False
+
+                # We were not able to schedule this request
                 if not scheduled:
                     self._return_to_request_queue(ctx, replica_idx)
                     break
@@ -571,11 +590,10 @@ class TextBatchConstructor:
         """Constructs a batch for a single replica."""
         replica = self.replicas[replica_idx]
 
-        if self._should_schedule_ce(replica_idx):
-            ce_batch = self._try_create_ce_batch(replica_idx)
-            if len(ce_batch.batch) > 0:
-                return ce_batch
-            # failed to create a CE batch, try to create a TG batch instead
+        ce_batch = self._try_create_ce_batch(replica_idx)
+        if len(ce_batch.batch) > 0:
+            return ce_batch
+        # failed to create a CE batch, try to create a TG batch instead
 
         # if there are no active requests, we can't create a TG batch
         if not replica.tg_reqs:

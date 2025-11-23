@@ -51,6 +51,9 @@ class TokenGenerationSchedulerConfig:
     """Data-parallelism parameter. The degree to which the model is replicated
     is dependent on the model type."""
 
+    kvcache_ce_watermark: float = 0.95
+    """The maximum percentage of total KVCache memory that can be used after allocating a CE request. This parameter was found empirically."""
+
     @property
     def max_batch_size_tg_per_replica(self) -> int:
         return self.max_batch_size_tg // self.data_parallel_degree
@@ -112,4 +115,5 @@ class TokenGenerationSchedulerConfig:
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
             enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
             data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
+            kvcache_ce_watermark=pipeline_config.kvcache_ce_watermark,
         )

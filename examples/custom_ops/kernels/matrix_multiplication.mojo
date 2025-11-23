@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/tutorials/custom-ops-matmul.mdx
+# DOC: max/develop/custom-ops-matmul.mdx
 
 from math import ceildiv
 from sys.info import has_accelerator, has_amd_gpu_accelerator, simd_width_of
@@ -938,7 +938,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
             # In each case, the specific matrix multiplication function is
             # compiled and enqueued to run on the GPU.
             @parameter
-            if algorithm == "naive":
+            if Self.algorithm == "naive":
                 alias BM = 16
                 alias BN = 16
                 alias matmul_kernel = naive_matrix_multiplication[
@@ -956,7 +956,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(BN, BM),
                 )
-            elif algorithm == "coalescing":
+            elif Self.algorithm == "coalescing":
                 alias BM = OPTIMIZED_BLOCK_SIZE
                 alias BN = OPTIMIZED_BLOCK_SIZE
                 alias coalescing_matmul_kernel = coalescing_matrix_multiplication[
@@ -976,7 +976,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(BN, BM),
                 )
-            elif algorithm == "tiled":
+            elif Self.algorithm == "tiled":
                 alias BM = OPTIMIZED_BLOCK_SIZE
                 alias BN = OPTIMIZED_BLOCK_SIZE
                 alias BK = OPTIMIZED_BLOCK_SIZE
@@ -1000,7 +1000,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(BM * BN),
                 )
-            elif algorithm == "tiled_register":
+            elif Self.algorithm == "tiled_register":
                 alias BM = 64
                 alias BN = 64
                 alias BK = 8
@@ -1026,7 +1026,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(NUM_THREADS),
                 )
-            elif algorithm == "block_tiled":
+            elif Self.algorithm == "block_tiled":
                 alias BM = 128
                 alias BN = 128
                 alias BK = 8
@@ -1054,7 +1054,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(NUM_THREADS),
                 )
-            elif algorithm == "block_tiled_vectorized":
+            elif Self.algorithm == "block_tiled_vectorized":
                 alias BM = 128
                 alias BN = 128
                 alias BK = 8
@@ -1083,7 +1083,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(NUM_THREADS),
                 )
-            elif algorithm == "tensor_core":
+            elif Self.algorithm == "tensor_core":
 
                 @parameter
                 if has_accelerator():
@@ -1124,7 +1124,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 else:
                     raise Error("Tensor Cores are not available on this device")
             else:
-                raise Error("No known matmul algorithm:", algorithm)
+                raise Error("No known matmul algorithm:", Self.algorithm)
 
         else:
             naive_matrix_multiplication_cpu(output, a, b)

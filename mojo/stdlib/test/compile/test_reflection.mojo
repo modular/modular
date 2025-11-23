@@ -175,14 +175,14 @@ def test_get_type_name_unprintable():
 
 
 def test_get_type_name_alias():
-    alias T = Bar[5]
+    comptime T = Bar[5]
     var name = get_type_name[T]()
     assert_equal(
         name, "test_reflection.Bar[5, 1.29999995 : SIMD[DType.float32, 1]]"
     )
 
     # Also test parametric aliases (i.e. unbound parameters).
-    alias R = Bar[_]
+    comptime R = Bar[_]
     name = get_type_name[R]()
     assert_equal(
         name, "test_reflection.Bar[?, 1.29999995 : SIMD[DType.float32, 1]]"

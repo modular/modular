@@ -118,7 +118,7 @@ fn to_i64(val: Int64) -> __mlir_type.i64:
     )
 
 
-alias _dtype_to_llvm_type_f8[dtype: DType] = __mlir_type.`i8` if dtype in (
+comptime _dtype_to_llvm_type_f8[dtype: DType] = __mlir_type.`i8` if dtype in (
     DType.float8_e8m0fnu,
     DType.float8_e3m4,
     DType.float8_e4m3fn,
@@ -127,43 +127,43 @@ alias _dtype_to_llvm_type_f8[dtype: DType] = __mlir_type.`i8` if dtype in (
     DType.float8_e5m2fnuz,
 ) else __mlir_type.`!kgen.none`
 
-alias _dtype_to_llvm_type_bf16[
+comptime _dtype_to_llvm_type_bf16[
     dtype: DType
 ] = __mlir_type.`bf16` if dtype is DType.bfloat16 else _dtype_to_llvm_type_f8[
     dtype
 ]
 
-alias _dtype_to_llvm_type_f16[
+comptime _dtype_to_llvm_type_f16[
     dtype: DType
 ] = __mlir_type.`f16` if dtype is DType.float16 else _dtype_to_llvm_type_bf16[
     dtype
 ]
 
-alias _dtype_to_llvm_type_f32[
+comptime _dtype_to_llvm_type_f32[
     dtype: DType
 ] = __mlir_type.`f32` if dtype is DType.float32 else _dtype_to_llvm_type_f16[
     dtype
 ]
 
-alias _dtype_to_llvm_type_f64[
+comptime _dtype_to_llvm_type_f64[
     dtype: DType
 ] = __mlir_type.`f64` if dtype is DType.float64 else _dtype_to_llvm_type_f32[
     dtype
 ]
 
-alias _dtype_to_llvm_type_i32[dtype: DType] = __mlir_type.`i32` if dtype in (
+comptime _dtype_to_llvm_type_i32[dtype: DType] = __mlir_type.`i32` if dtype in (
     DType.int32,
     DType.uint32,
 ) else _dtype_to_llvm_type_f64[dtype]
 
-alias _dtype_to_llvm_type_i64[dtype: DType] = __mlir_type.`i64` if dtype in (
+comptime _dtype_to_llvm_type_i64[dtype: DType] = __mlir_type.`i64` if dtype in (
     DType.int64,
     DType.uint64,
 ) else _dtype_to_llvm_type_i32[dtype]
 
-alias dtype_to_llvm_type[dtype: DType] = _dtype_to_llvm_type_i64[dtype]
+comptime dtype_to_llvm_type[dtype: DType] = _dtype_to_llvm_type_i64[dtype]
 
-alias llvm_struct_splat[
+comptime llvm_struct_splat[
     field_type: AnyTrivialRegType, repeat: Int
 ] = __mlir_type[
     `!llvm.struct<(`,
@@ -177,7 +177,7 @@ alias llvm_struct_splat[
     `)>`,
 ]
 
-alias kgen_struct_splat[
+comptime kgen_struct_splat[
     field_type: AnyTrivialRegType, repeat: Int
 ] = __mlir_type[
     `!kgen.struct<(`,
@@ -191,11 +191,11 @@ alias kgen_struct_splat[
     `)>`,
 ]
 
-alias llvm_struct_dtype_splat_type[dtype: DType, n: Int] = llvm_struct_splat[
+comptime llvm_struct_dtype_splat_type[dtype: DType, n: Int] = llvm_struct_splat[
     dtype_to_llvm_type[dtype], n
 ]
 
-alias kgen_struct_dtype_splat_type[dtype: DType, n: Int] = kgen_struct_splat[
+comptime kgen_struct_dtype_splat_type[dtype: DType, n: Int] = kgen_struct_splat[
     Scalar[dtype]._mlir_type, n
 ]
 

@@ -20,7 +20,7 @@ from memory import (
 trait DevicePassable:
     """This trait marks types as passable to accelerator devices."""
 
-    alias device_type: AnyType
+    comptime device_type: AnyType
     """Indicate the type being used on accelerator devices."""
 
     fn _to_device_type(self, target: OpaquePointer):

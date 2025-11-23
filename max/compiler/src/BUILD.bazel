@@ -5,6 +5,6 @@ mojo_library(
     srcs = glob(["**/*.mojo"]),
     visibility = ["//visibility:public"],
     deps = [
-        "@mojo//:compiler_internal",
+        "//max:compiler_internal",
     ],
 )

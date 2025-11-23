@@ -89,7 +89,7 @@ struct BackToBackMatmulConfig[
                 * UInt(self.block_tile_shape[1])
                 * UInt(self.block_tile_shape[2])
             )
-        ) * size_of[src_type]()
+        ) * size_of[Self.src_type]()
 
     fn grid_dim(self, M: UInt) -> IndexList[3]:
         return Index(1, Int(ceildiv(M, UInt(self.block_tile_shape[0]))), 1)

@@ -16,10 +16,10 @@ from random import *
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
-alias INIT_LOOP_SIZE = 1000000
+comptime INIT_LOOP_SIZE = 1000000
 """Bench loop size for BitSet init tests."""
 
-alias OP_LOOP_SIZE = 1000
+comptime OP_LOOP_SIZE = 1000
 """Bench loop size for BitSet operation tests."""
 
 
@@ -186,69 +186,69 @@ fn bench_bitset_difference[width: Int](mut b: Bencher) raises:
 
 def main():
     seed()
-    alias widths = (1, 2, 4, 8, 16)
-    alias sizes = (10, 30, 50, 100, 1000)
+    comptime widths = (1, 2, 4, 8, 16)
+    comptime sizes = (10, 30, 50, 100, 1000)
     var m = Bench(BenchConfig(num_repetitions=1))
 
     @parameter
     for i in range(len(sizes)):
-        alias size = sizes[i]
+        comptime size = sizes[i]
         m.bench_function[bench_empty_bitset_init[size]](
             BenchId(String("bench_empty_bitset_init[", size, "]"))
         )
 
     @parameter
     for width_idx in range(0, len(widths)):
-        alias width = widths[width_idx]
+        comptime width = widths[width_idx]
         m.bench_function[bench_bitset_init_from[width]](
             BenchId(String("bench_bitset_init_from[", width, "]"))
         )
 
     @parameter
     for width_idx in range(0, len(widths)):
-        alias width = widths[width_idx]
+        comptime width = widths[width_idx]
         m.bench_function[bench_bitset_set[width]](
             BenchId(String("bench_bitset_set[", width, "]"))
         )
 
     @parameter
     for width_idx in range(0, len(widths)):
-        alias width = widths[width_idx]
+        comptime width = widths[width_idx]
         m.bench_function[bench_bitset_clear[width]](
             BenchId(String("bench_bitset_clear[", width, "]"))
         )
 
     @parameter
     for width_idx in range(0, len(widths)):
-        alias width = widths[width_idx]
+        comptime width = widths[width_idx]
         m.bench_function[bench_bitset_clear[width]](
             BenchId(String("bench_bitset_test[", width, "]"))
         )
 
     @parameter
     for width_idx in range(0, len(widths)):
-        alias width = widths[width_idx]
+        comptime width = widths[width_idx]
         m.bench_function[bench_bitset_clear[width]](
             BenchId(String("bench_bitset_toggle[", width, "]"))
         )
 
     @parameter
     for width_idx in range(0, len(widths)):
-        alias width = widths[width_idx]
+        comptime width = widths[width_idx]
         m.bench_function[bench_bitset_clear[width]](
             BenchId(String("bench_bitset_union[", width, "]"))
         )
 
     @parameter
     for width_idx in range(0, len(widths)):
-        alias width = widths[width_idx]
+        comptime width = widths[width_idx]
         m.bench_function[bench_bitset_clear[width]](
             BenchId(String("bench_bitset_intersection[", width, "]"))
         )
 
     @parameter
     for width_idx in range(0, len(widths)):
-        alias width = widths[width_idx]
+        comptime width = widths[width_idx]
         m.bench_function[bench_bitset_clear[width]](
             BenchId(String("bench_bitset_difference[", width, "]"))
         )

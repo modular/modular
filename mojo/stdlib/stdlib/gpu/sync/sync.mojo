@@ -39,11 +39,11 @@ from memory import LegacyUnsafePointer as UnsafePointer
 # barrier
 # ===-----------------------------------------------------------------------===#
 
-alias _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM = env_get_bool[
+comptime _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM = env_get_bool[
     "USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM", False
 ]()
 
-alias MaxHardwareBarriers = 16
+comptime MaxHardwareBarriers = 16
 
 
 @always_inline("nodebug")
@@ -78,8 +78,9 @@ fn named_barrier[
     constrained[
         is_nvidia_gpu(), "named barrier is only supported by NVIDIA GPUs"
     ]()
-    __mlir_op.`nvvm.barrier`[
-        _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1>}`
+    _ = __mlir_op.`nvvm.barrier`[
+        _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1, 1, 0>}`,
+        _type = __mlir_type.i32,
     ](to_i32(id), to_i32(num_threads))
 
 
@@ -141,7 +142,7 @@ fn barrier():
 
 @fieldwise_init
 @register_passable("trivial")
-struct AMDScheduleBarrierMask(EqualityComparable, Intable):
+struct AMDScheduleBarrierMask(Equatable, Intable):
     """Represents different instruction scheduling masks for AMDGPU scheduling instructions.
 
     These masks control which types of instructions can be reordered across a barrier for
@@ -152,40 +153,40 @@ struct AMDScheduleBarrierMask(EqualityComparable, Intable):
     var _value: Int32
     """Internal value storage for the barrier mask."""
 
-    alias NONE = Self(0)
+    comptime NONE = Self(0)
     """No instructions can cross the barrier. Most restrictive option."""
 
-    alias ALL_ALU = Self(1 << 0)
+    comptime ALL_ALU = Self(1 << 0)
     """Allows reordering of all arithmetic and logic instructions that don't involve memory operations."""
 
-    alias VALU = Self(1 << 1)
+    comptime VALU = Self(1 << 1)
     """Permits reordering of vector arithmetic/logic unit instructions only."""
 
-    alias SALU = Self(1 << 2)
+    comptime SALU = Self(1 << 2)
     """Permits reordering of scalar arithmetic/logic unit instructions only."""
 
-    alias MFMA = Self(1 << 3)
+    comptime MFMA = Self(1 << 3)
     """Allows reordering of matrix multiplication and WMMA instructions."""
 
-    alias ALL_VMEM = Self(1 << 4)
+    comptime ALL_VMEM = Self(1 << 4)
     """Enables reordering of all vector memory operations (reads and writes)."""
 
-    alias VMEM_READ = Self(1 << 5)
+    comptime VMEM_READ = Self(1 << 5)
     """Allows reordering of vector memory read operations only."""
 
-    alias VMEM_WRITE = Self(1 << 6)
+    comptime VMEM_WRITE = Self(1 << 6)
     """Allows reordering of vector memory write operations only."""
 
-    alias ALL_DS = Self(1 << 7)
+    comptime ALL_DS = Self(1 << 7)
     """Permits reordering of all Local Data Share (LDS) operations."""
 
-    alias DS_READ = Self(1 << 8)
+    comptime DS_READ = Self(1 << 8)
     """Enables reordering of LDS read operations only."""
 
-    alias DS_WRITE = Self(1 << 9)
+    comptime DS_WRITE = Self(1 << 9)
     """Enables reordering of LDS write operations only."""
 
-    alias TRANS = Self(1 << 10)
+    comptime TRANS = Self(1 << 10)
     """Allows reordering of transcendental instructions (sin, cos, exp, etc)."""
 
     fn __init__(out self, value: Int):
@@ -327,10 +328,10 @@ struct _WaitCountArg:
     # [V]M [E]XP [L]GKM counters and [U]NUSED ---> VV'UU'LLLL'U'EEE'VVVV
 
     # Constants
-    alias MAX: UInt32 = 0b1100_1111_0111_1111
-    alias MAX_VM_CNT: UInt32 = 0b111111
-    alias MAX_EXP_CNT: UInt32 = 0b111
-    alias MAX_LGKM_CNT: UInt32 = 0b1111
+    comptime MAX: UInt32 = 0b1100_1111_0111_1111
+    comptime MAX_VM_CNT: UInt32 = 0b111111
+    comptime MAX_EXP_CNT: UInt32 = 0b111
+    comptime MAX_LGKM_CNT: UInt32 = 0b1111
 
     @staticmethod
     fn from_vmcnt(cnt: UInt32) -> UInt32:
@@ -395,7 +396,7 @@ fn s_waitcnt[
     constrained[
         _is_amd_cdna(), "s_waitcnt is only supported on AMD CDNA GPUs"
     ]()
-    alias waitcnt_val = (
+    comptime waitcnt_val = (
         _WaitCountArg.from_vmcnt(vmcnt)
         | _WaitCountArg.from_expcnt(expcnt)
         | _WaitCountArg.from_lgkmcnt(lgkmcnt)
@@ -669,7 +670,7 @@ fn mbarrier_arrive_expect_tx_shared[
 
     @parameter
     if is_nvidia_gpu():
-        __mlir_op.`nvvm.mbarrier.arrive.expect_tx.shared`(
+        __mlir_op.`nvvm.mbarrier.arrive.expect_tx`(
             to_llvm_shared_mem_ptr(addr), to_i32(tx_count)
         )
     else:
@@ -734,7 +735,7 @@ fn mbarrier_arrive_expect_tx_relaxed[
 
     @parameter
     if is_nvidia_gpu():
-        alias asm = (
+        comptime asm = (
             """mbarrier.arrive.expect_tx.relaxed."""
             + scope.mnemonic()
             + """.shared::"""
@@ -780,7 +781,7 @@ fn mbarrier_try_wait_parity_shared[
 
     @parameter
     if is_nvidia_gpu():
-        __mlir_op.`nvvm.mbarrier.try_wait.parity.shared`(
+        __mlir_op.`nvvm.mbarrier.try_wait.parity`(
             to_llvm_shared_mem_ptr(addr), to_i32(phase), to_i32(ticks)
         )
     else:
@@ -872,7 +873,7 @@ fn cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
 
     @parameter
     fn get_asm() -> String:
-        alias base = "llvm.nvvm.cp.async.bulk.wait.group"
+        comptime base = "llvm.nvvm.cp.async.bulk.wait.group"
         if read:
             return base + ".read"
         return base

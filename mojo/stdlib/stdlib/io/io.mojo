@@ -57,7 +57,7 @@ struct _fdopen[mode: StaticString = "a"]:
         self.handle = fdopen(
             dup(stream_id.value),
             # Guarantee this is nul terminated.
-            get_static_string[mode]().unsafe_ptr().bitcast[c_char](),
+            get_static_string[Self.mode]().unsafe_ptr().bitcast[c_char](),
         )
 
     fn __enter__(self) -> Self:
@@ -253,18 +253,18 @@ fn _printf[
                     return UInt64(rebind[UInt](value))
                 return 0
 
-            alias args_len = len(VariadicList(types))
+            comptime args_len = len(VariadicList(types))
 
             var message = printf_begin()
             message = printf_append_string_n(
                 message, fmt.as_bytes(), args_len == 0
             )
-            alias k_args_per_group = 7
+            comptime k_args_per_group = 7
 
             @parameter
             for group in range(0, args_len, k_args_per_group):
-                alias bound = min(group + k_args_per_group, args_len)
-                alias num_args = bound - group
+                comptime bound = min(group + k_args_per_group, args_len)
+                comptime num_args = bound - group
 
                 var arguments = InlineArray[UInt64, k_args_per_group](fill=0)
 
@@ -376,7 +376,7 @@ fn print[
 
     if is_compile_time():
         var buffer = _WriteBufferStack(file)
-        alias length = values.__len__()
+        comptime length = values.__len__()
 
         @parameter
         for i in range(length):
@@ -393,7 +393,7 @@ fn print[
         @parameter
         if is_gpu():
             var buffer = _WriteBufferHeap()
-            alias length = values.__len__()
+            comptime length = values.__len__()
 
             @parameter
             for i in range(length):
@@ -404,23 +404,21 @@ fn print[
             end.write_to(buffer)
             buffer.nul_terminate()
 
+            var span = buffer.as_span()
+
             @parameter
             if is_nvidia_gpu():
-                _printf["%s"](buffer.data)
+                _printf["%s"](span.unsafe_ptr())
             elif is_amd_gpu():
                 var msg = printf_begin()
-                _ = printf_append_string_n(
-                    msg,
-                    Span(ptr=buffer.data, length=buffer.pos),
-                    is_last=True,
-                )
+                _ = printf_append_string_n(msg, span, is_last=True)
             else:
                 return CompilationTarget.unsupported_target_error[
                     operation="print"
                 ]()
         else:
             var buffer = _WriteBufferStack(file)
-            alias length = values.__len__()
+            comptime length = values.__len__()
 
             @parameter
             for i in range(length):

@@ -206,16 +206,16 @@ struct Int(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias BITWIDTH = Int(bit_width_of[DType.int]())
+    comptime BITWIDTH = Int(bit_width_of[DType.int]())
     """The bit width of the integer type."""
 
-    alias MAX = Int(Scalar[DType.int].MAX)
+    comptime MAX = Int(Scalar[DType.int].MAX)
     """Returns the maximum integer value."""
 
-    alias MIN = Int(Scalar[DType.int].MIN)
+    comptime MIN = Int(Scalar[DType.int].MIN)
     """Returns the minimum value of type."""
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
     """Int is remapped to the same type when passed to accelerator devices."""
 
     fn _to_device_type(self, target: OpaquePointer):
@@ -290,7 +290,6 @@ struct Int(
         self = value.__int__()
 
     @always_inline("builtin")
-    @implicit(deprecated=True)
     fn __init__(out self, value: UInt):
         """Construct Int from the given UInt value.
 

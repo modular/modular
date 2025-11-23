@@ -80,7 +80,7 @@ fn _horner_evaluate[
     Returns:
         The polynomial specified by the coefficients evaluated at value x.
     """
-    alias num_coefficients = len(coefficients)
+    comptime num_coefficients = len(coefficients)
     constrained[
         num_coefficients > 0,
         (
@@ -89,7 +89,7 @@ fn _horner_evaluate[
         ),
     ]()
 
-    alias c_last = coefficients[num_coefficients - 1]
+    comptime c_last = coefficients[num_coefficients - 1]
 
     @parameter
     if num_coefficients == 1:
@@ -97,13 +97,13 @@ fn _horner_evaluate[
         # cases we need to return c0.
         return c_last
 
-    alias c_second_from_last = coefficients[num_coefficients - 2]
+    comptime c_second_from_last = coefficients[num_coefficients - 2]
 
     var result = x.fma(c_last, c_second_from_last)
 
     @parameter
     for i in reversed(range(num_coefficients - 2)):
-        alias c = coefficients[i]
+        comptime c = coefficients[i]
         result = result.fma(x, c)
 
     return result

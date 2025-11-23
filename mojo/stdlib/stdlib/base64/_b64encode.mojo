@@ -27,17 +27,17 @@ https://arxiv.org/abs/1704.00605
 from math import iota
 from sys import llvm_intrinsic
 
-from memory import LegacyUnsafePointer as UnsafePointer, Span, bitcast, memcpy
+from memory import Span, bitcast, memcpy
 
 from utils import IndexList
 
-alias Bytes = SIMD[DType.uint8, _]
+comptime Bytes = SIMD[DType.uint8, _]
 
 
 fn _base64_simd_mask[
     simd_width: Int
 ](nb_value_to_load: Int) -> SIMD[DType.bool, simd_width]:
-    alias mask = iota[DType.uint8, simd_width]()
+    comptime mask = iota[DType.uint8, simd_width]()
     return mask.lt(UInt8(nb_value_to_load))
 
 
@@ -95,8 +95,8 @@ fn _6bit_to_byte[width: Int](input: Bytes[width]) -> Bytes[width]:
 # | 62          | +           | 11           | -19                     |
 # | 63          | /           | 12           | -16                     |
 # fmt: off
-alias UNUSED = 0
-alias OFFSETS = Bytes[16](
+comptime UNUSED = 0
+comptime OFFSETS = Bytes[16](
     71,                                     # a ... z
     -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, # 0 ... 9
     -19,                                    # +
@@ -104,8 +104,8 @@ alias OFFSETS = Bytes[16](
     65,                                     # A ... Z
     UNUSED, UNUSED
 )
-alias END_FIRST_RANGE = 25
-alias END_SECOND_RANGE = 51
+comptime END_FIRST_RANGE = 25
+comptime END_SECOND_RANGE = 51
 # fmt: on
 
 
@@ -142,7 +142,7 @@ fn _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load[
 fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load[
     max_size: Int
 ](nb_of_elements_to_load: Int) -> Int:
-    alias table = _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load[
+    comptime table = _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load[
         max_size
     ]()
     return Int(table[nb_of_elements_to_load])
@@ -177,7 +177,7 @@ fn _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equa
 fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign[
     max_size: Int
 ](nb_of_elements_to_load: Int) -> Int:
-    alias table = _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign[
+    comptime table = _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign[
         max_size
     ]()
     return Int(table[nb_of_elements_to_load])
@@ -186,7 +186,7 @@ fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign
 fn load_incomplete_simd[
     width: Int
 ](
-    pointer: UnsafePointer[UInt8, mut=False], nb_of_elements_to_load: Int
+    pointer: UnsafePointer[mut=False, UInt8], nb_of_elements_to_load: Int
 ) -> SIMD[DType.uint8, width]:
     var result = SIMD[DType.uint8, width](0)
     var tmp_buffer_pointer = UnsafePointer(to=result).bitcast[UInt8]()
@@ -196,9 +196,9 @@ fn load_incomplete_simd[
 
 @no_inline
 fn _b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
-    alias simd_width = sys.simd_byte_width()
-    alias input_simd_width = simd_width * 3 // 4
-    alias equal_vector = SIMD[DType.uint8, simd_width](ord("="))
+    comptime simd_width = sys.simd_byte_width()
+    comptime input_simd_width = simd_width * 3 // 4
+    comptime equal_vector = SIMD[DType.uint8, simd_width](ord("="))
 
     # 4 character bytes for each 3 bytes (or less) block
     result.resize(

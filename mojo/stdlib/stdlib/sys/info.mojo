@@ -26,7 +26,7 @@ from memory import LegacyOpaquePointer as OpaquePointer
 
 from .ffi import _external_call_const, external_call
 
-alias _TargetType = __mlir_type.`!kgen.target`
+comptime _TargetType = __mlir_type.`!kgen.target`
 
 
 @always_inline("nodebug")
@@ -68,8 +68,8 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
             can be specified to satisfy Mojo type checking.
         """
 
-        alias note_text = String(" Note: ", note.value() if note else "")
-        alias msg = "Current compilation target does not support"
+        comptime note_text = String(" Note: ", note.value() if note else "")
+        comptime msg = "Current compilation target does not support"
 
         @parameter
         if operation:
@@ -172,12 +172,6 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
         if is_triple["nvptx64-nvidia-cuda", Self.value]():
             # TODO: use `is_nvidia_gpu` when moved to into this struct.
             return "nvptx-short-ptr=true"
-        elif is_triple["amdgcn-amd-amdhsa", Self.value]() and (
-            Self._is_arch["gfx942"]() or Self._is_arch["gfx950"]()
-        ):
-            # TODO(MOCO-2748): work around incorrect code generation due to the
-            # AMDGPUUniformIntrinsicCombine pass.
-            return "amdgpu-enable-uniform-intrinsic-combine=false"
         else:
             return ""
 
@@ -398,7 +392,7 @@ fn platform_map[
     Example:
 
     ```mojo
-    alias EDEADLK = platform_alias["EDEADLK", linux=35, macos=11]()
+    comptime EDEADLK = platform_alias["EDEADLK", linux=35, macos=11]()
     ```
     """
 
@@ -880,7 +874,7 @@ fn simd_byte_width[target: _TargetType = _current_target()]() -> Int:
     Returns:
         The vector size (in bytes) of the host system.
     """
-    alias CHAR_BIT = 8
+    comptime CHAR_BIT = 8
     return simd_bit_width[target]() // CHAR_BIT
 
 
@@ -911,7 +905,7 @@ fn size_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     ```
     Note: `align_of` is in same module.
     """
-    alias mlir_type = __mlir_attr[
+    comptime mlir_type = __mlir_attr[
         `#kgen.param.expr<rebind, #kgen.type<!kgen.param<`,
         type,
         `>> : `,
@@ -962,7 +956,7 @@ fn align_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     Returns:
         The alignment of the type in bytes.
     """
-    alias mlir_type = __mlir_attr[
+    comptime mlir_type = __mlir_attr[
         `#kgen.param.expr<rebind, #kgen.type<!kgen.param<`,
         type,
         `>> : `,
@@ -1015,7 +1009,7 @@ fn bit_width_of[
     Returns:
         The size of the type in bits.
     """
-    alias CHAR_BIT = 8
+    comptime CHAR_BIT = 8
     return CHAR_BIT * size_of[type, target=target]()
 
 
@@ -1111,7 +1105,7 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
         "the operating system must be macOS",
     ]()
 
-    alias INITIAL_CAPACITY = 32
+    comptime INITIAL_CAPACITY = 32
 
     # Overallocate the string.
     var buf_len = Int(INITIAL_CAPACITY)
@@ -1128,7 +1122,7 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
         raise "Unable to query macOS version"
 
     # Truncate the string down to the actual length.
-    osver = osver[0:buf_len]
+    osver.resize(buf_len)
 
     var major = 0
     var minor = 0
@@ -1136,11 +1130,11 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
 
     if "." in osver:
         major = Int(osver[: osver.find(".")])
-        osver = osver[osver.find(".") + 1 :]
+        osver = String(osver[osver.find(".") + 1 :])
 
     if "." in osver:
         minor = Int(osver[: osver.find(".")])
-        osver = osver[osver.find(".") + 1 :]
+        osver = String(osver[osver.find(".") + 1 :])
 
     if "." in osver:
         patch = Int(osver[: osver.find(".")])

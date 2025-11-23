@@ -188,6 +188,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
                 huggingface_config.hidden_size
                 // huggingface_config.num_attention_heads
             ),
+            num_layers=Llama3Config.get_num_layers(huggingface_config),
             page_size=kv_cache_config.kv_cache_page_size,
             cache_strategy=kv_cache_config.cache_strategy,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,

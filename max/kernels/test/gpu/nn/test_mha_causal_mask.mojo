@@ -26,7 +26,7 @@ from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
 from nn.mha_utils import FlashAttentionAlgorithm, MHAConfig
-from testing import assert_almost_equal
+from testing import assert_almost_equal, assert_equal
 
 from utils.index import Index
 from utils.numerics import min_or_neg_inf
@@ -240,12 +240,9 @@ fn test[
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
     ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
-    alias output_ref_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
-    )
-    var output_device_ref = LayoutTensor[qkv_type, output_ref_layout](
+    var output_device_ref = LayoutTensor[qkv_type, output_layout](
         output_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_ref_layout].row_major(
+        RuntimeLayout[output_layout].row_major(
             Index(batch_size, seq_len, num_heads, depth)
         ),
     )
@@ -270,7 +267,6 @@ fn test[
 
     ctx.synchronize()
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
-    _ = output_ref_device_ptr
 
     var rtol = 1e-2
     for s in range(seq_len):
@@ -312,11 +308,39 @@ fn test[
 
                 assert_almost_equal(actual, expect, atol=1e-5, rtol=rtol)
 
+    for repeat in range(16):
+        # test reproducibility
+        flash_attention[config=config](
+            output_device_ref,
+            q_device,
+            k_device,
+            v_device,
+            CausalMask(),
+            IdentityScoreMod(),
+            scale,
+            ctx,
+            num_partitions=num_partitions,
+        )
+        ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
+        ctx.synchronize()
+        for s in range(seq_len):
+            for h in range(num_heads):
+                for d in range(depth):
+                    orig = flash_output_ptr.load(
+                        d + depth * (h + s * num_heads)
+                    )
+                    rep = output_ptr.load(d + depth * (h + s * num_heads))
+                    if rep != orig:
+                        print("repeat s h d =", repeat, s, h, d)
+                    assert_equal(rep, orig)
+                    output_ptr.store(d + depth * (h + s * num_heads), 123.4567)
+
     _ = q_device_ptr
     _ = k_device_ptr
     _ = v_device_ptr
     _ = mask_device_ptr
     _ = output_device_ptr
+    _ = output_ref_device_ptr
 
     q_ptr.free()
     k_ptr.free()

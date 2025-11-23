@@ -38,16 +38,16 @@ struct UMMAKind(Stringable, Writable):
 
     var _value: Int32
 
-    alias KIND_TF32 = Self(0)
+    comptime KIND_TF32 = Self(0)
     """tf32 type"""
 
-    alias KIND_F16 = Self(2)
+    comptime KIND_F16 = Self(2)
     """f16 type"""
 
-    alias KIND_F8F6F4 = Self(3)
+    comptime KIND_F8F6F4 = Self(3)
     """f8f6f4 type"""
 
-    alias KIND_I8 = Self(4)
+    comptime KIND_I8 = Self(4)
     """i8 type"""
 
     @always_inline("nodebug")
@@ -125,7 +125,7 @@ fn _constrained_mma_m[
     This function constrains the MMA M value to be within the valid range and returns the constrained value.
     """
 
-    alias using_pair_string = (
+    comptime using_pair_string = (
         " when using pair cta." if use_cta_pair else " when not using pair cta."
     )
 
@@ -160,12 +160,12 @@ fn _constrained_mma_n[
     This function constrains the MMA N value to be within the valid range and returns the constrained value.
     """
 
-    alias using_pair_string = (
+    comptime using_pair_string = (
         " when using pair cta." if use_cta_pair else " when not using pair cta."
     )
 
-    alias lower_bound = mma_n_range[0]
-    alias upper_bound = mma_n_range[1]
+    comptime lower_bound = mma_n_range[0]
+    comptime upper_bound = mma_n_range[1]
 
     constrained[
         mma_n >= lower_bound
@@ -198,8 +198,8 @@ fn _get_f16_mma_shape[
 
     This function returns the shape of the MMA instruction for F16 MMA kind.
     """
-    alias mma_m = output_shape[0]
-    alias mma_n = output_shape[1]
+    comptime mma_m = output_shape[0]
+    comptime mma_n = output_shape[1]
 
     @parameter
     if not use_cta_pair:
@@ -286,8 +286,8 @@ fn _get_tf32_mma_shape[
     This function returns the shape of the MMA instruction for TF32 MMA kind.
     """
 
-    alias mma_m = output_shape[0]
-    alias mma_n = output_shape[1]
+    comptime mma_m = output_shape[0]
+    comptime mma_n = output_shape[1]
 
     @parameter
     if not use_pair_cta:
@@ -374,8 +374,8 @@ fn _get_f8f6f4_mma_shape[
     This function returns the shape of the MMA instruction for F8F6F4 MMA kind.
     """
 
-    alias mma_m = output_shape[0]
-    alias mma_n = output_shape[1]
+    comptime mma_m = output_shape[0]
+    comptime mma_n = output_shape[1]
 
     @parameter
     if not use_pair_cta:
@@ -558,9 +558,9 @@ struct UMMAInsDescriptor[
             ),
         ]()
 
-        alias d_type_bit = Self._insert_bit[4](0x0, 0x1)
-        alias a_type_bit = Self._insert_bit[7](d_type_bit, 0x2)
-        alias desc = Self._insert_bit[10](a_type_bit, 0x2)
+        comptime d_type_bit = Self._insert_bit[4](0x0, 0x1)
+        comptime a_type_bit = Self._insert_bit[7](d_type_bit, 0x2)
+        comptime desc = Self._insert_bit[10](a_type_bit, 0x2)
 
         return desc
 
@@ -581,8 +581,8 @@ struct UMMAInsDescriptor[
             A 32-bit integer containing the descriptor bit layout.
         """
 
-        alias available_d_types = (DType.float32, DType.float16)
-        alias available_operand_types = (DType.bfloat16, DType.float16)
+        comptime available_d_types = (DType.float32, DType.float16)
+        comptime available_operand_types = (DType.bfloat16, DType.float16)
 
         constrained[
             d_type in available_d_types,
@@ -600,13 +600,13 @@ struct UMMAInsDescriptor[
             ),
         ]()
 
-        alias d_type_bit = Self._insert_bit[4](
+        comptime d_type_bit = Self._insert_bit[4](
             0x0, 1 if d_type == DType.float32 else 0
         )
-        alias a_type_bit = Self._insert_bit[7](
+        comptime a_type_bit = Self._insert_bit[7](
             d_type_bit, 1 if a_type == DType.bfloat16 else 0
         )
-        alias desc = Self._insert_bit[10](
+        comptime desc = Self._insert_bit[10](
             a_type_bit, 1 if b_type == DType.bfloat16 else 0
         )
 
@@ -629,8 +629,8 @@ struct UMMAInsDescriptor[
             A 32-bit integer containing the descriptor bit layout.
         """
 
-        alias available_d_types = (DType.float16, DType.float32)
-        alias available_operand_types = (
+        comptime available_d_types = (DType.float16, DType.float32)
+        comptime available_operand_types = (
             DType.float8_e4m3fn,
             DType.float8_e5m2,
         )
@@ -645,18 +645,18 @@ struct UMMAInsDescriptor[
             and b_type in available_operand_types,
             String(
                 "Currently only support E4M3 and E5M2 for UMMA kind: ",
-                mma_kind,
+                Self.mma_kind,
             ),
         ]()
 
-        alias d_type_bit = Self._insert_bit[4](
+        comptime d_type_bit = Self._insert_bit[4](
             0x0, 1 if d_type == DType.float32 else 0
         )
 
-        alias a_type_bit = Self._insert_bit[7](
+        comptime a_type_bit = Self._insert_bit[7](
             d_type_bit, 1 if a_type == DType.float8_e5m2 else 0
         )
-        alias desc = Self._insert_bit[10](
+        comptime desc = Self._insert_bit[10](
             a_type_bit, 1 if b_type == DType.float8_e5m2 else 0
         )
 
@@ -689,32 +689,32 @@ struct UMMAInsDescriptor[
             A 32-bit integer containing the complete descriptor bit layout.
         """
 
-        alias M_bit = Self._insert_bit[17](0x0, output_shape[1] >> 3)
-        alias desc = Self._insert_bit[24](M_bit, output_shape[0] >> 4)
+        comptime M_bit = Self._insert_bit[17](0x0, output_shape[1] >> 3)
+        comptime desc = Self._insert_bit[24](M_bit, output_shape[0] >> 4)
 
-        alias transpose_a_bit = Self._insert_bit[15](
+        comptime transpose_a_bit = Self._insert_bit[15](
             0x0, 1 if transpose_a else 0
         )
-        alias transpose_bit = Self._insert_bit[16](
+        comptime transpose_bit = Self._insert_bit[16](
             transpose_a_bit, 0 if transpose_b else 1
         )
 
         @parameter
-        if mma_kind == UMMAKind.KIND_TF32:
+        if Self.mma_kind == UMMAKind.KIND_TF32:
             return Self(
                 desc
                 | Self._create_tf32_desc[d_type, a_type, b_type]()
                 | transpose_bit
             )
 
-        elif mma_kind == UMMAKind.KIND_F16:
+        elif Self.mma_kind == UMMAKind.KIND_F16:
             return Self(
                 desc
                 | Self._create_f16_desc[d_type, a_type, b_type]()
                 | transpose_bit
             )
 
-        elif mma_kind == UMMAKind.KIND_F8F6F4:
+        elif Self.mma_kind == UMMAKind.KIND_F8F6F4:
             return Self(
                 desc
                 | Self._create_f8f6f4_desc[d_type, a_type, b_type]()
@@ -722,7 +722,9 @@ struct UMMAInsDescriptor[
             )
 
         else:
-            constrained[False, String("Unsupported UMMA kind: ", mma_kind)]()
+            constrained[
+                False, String("Unsupported UMMA kind: ", Self.mma_kind)
+            ]()
             return Self(0x0)
 
 
@@ -833,7 +835,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
                 constrained[False, String("Unsupported swizzle mode: ", mode)]()
                 return 0
 
-        alias swizzle = _convert_swizzle_enum[swizzle_mode._value]()
+        comptime swizzle = _convert_swizzle_enum[swizzle_mode._value]()
 
         # Extract 18 bits and ignore 4 LSB.
         var base_ptr = UInt32(Int(smem_ptr))
@@ -996,7 +998,7 @@ struct MMASmemDescriptorPair(ImplicitlyCopyable, Movable):
                 constrained[False, String("Unsupported swizzle mode: ", mode)]()
                 return 0
 
-        alias swizzle = _convert_swizzle_enum[swizzle_mode._value]()
+        comptime swizzle = _convert_swizzle_enum[swizzle_mode._value]()
 
         # Extract 18 bits and ignore 4 LSB.
         var base_ptr = UInt32(Int(smem_ptr))
@@ -1431,7 +1433,7 @@ fn mma_arrive[
         String("Unsupported cta group: ", cta_group),
     ]()
 
-    alias type = mbar_ptr.type
+    comptime type = mbar_ptr.type
     constrained[size_of[type]() == 8, "mbar_ptr must be 8 bytes"]()
 
     inlined_assembly[
@@ -1465,7 +1467,7 @@ fn mma_arrive_multicast[
         String("Unsupported cta group: ", cta_group),
     ]()
 
-    alias type = mbar_ptr.type
+    comptime type = mbar_ptr.type
     constrained[size_of[type]() == 8, "mbar_ptr must be 8 bytes"]()
 
     inlined_assembly[

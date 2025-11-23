@@ -13,7 +13,7 @@
 
 from collections import OptionalReg
 from math import ceildiv, iota
-from random import random_float64
+from random import random_float64, seed
 
 from algorithm.reduction import max as reduce_max
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
@@ -456,8 +456,8 @@ fn fill_iota[rank: Int, dtype: DType](mut buf: NDBuffer[mut=True, dtype, rank]):
 struct TestCase[_sampling: Bool, _largest: Bool = True](
     ImplicitlyCopyable, Movable
 ):
-    alias sampling = _sampling
-    alias largest = _largest
+    alias sampling = Self._sampling
+    alias largest = Self._largest
     var N: Int
     var K: Int
     var block_size: Int
@@ -482,16 +482,16 @@ struct TestCase[_sampling: Bool, _largest: Bool = True](
 struct TestCaseMultiRank[_sampling: Bool, rank: Int, _largest: Bool = True](
     ImplicitlyCopyable, Movable
 ):
-    alias sampling = _sampling
-    alias largest = _largest
-    var input_shape: IndexList[rank]
+    alias sampling = Self._sampling
+    alias largest = Self._largest
+    var input_shape: IndexList[Self.rank]
     var K: Int
     var block_size: OptionalReg[Int]
     var num_blocks_per_input: OptionalReg[Int]
 
     fn __init__(
         out self,
-        input_shape: IndexList[rank],
+        input_shape: IndexList[Self.rank],
         K: Int,
         block_size: OptionalReg[Int] = None,
         num_blocks_per_input: OptionalReg[Int] = None,
@@ -580,9 +580,12 @@ fn test_min_topk[dtype: DType](ctx: DeviceContext) raises:
         num_blocks_per_input=6,
     )
     print_test_case(test_case2)
+    # Changed from fill_random to fill_iota for deterministic test data.
+    # With random data, duplicate/similar values can cause GPU and CPU to
+    # produce different (but equally valid) index orderings.
     test_case_batched[
         dtype,
-        fill_random,
+        fill_iota,
     ](ctx, test_case2)
 
 
@@ -677,7 +680,8 @@ def main():
             num_blocks_per_input=6,
         )
         print_test_case(test_case3)
-        test_case_batched[dtype, fill_random](ctx, test_case3)
+        # Changed from fill_random to fill_iota for deterministic test data
+        test_case_batched[dtype, fill_iota](ctx, test_case3)
 
         alias test_case4 = TestCase[_sampling=True](
             N=1024,

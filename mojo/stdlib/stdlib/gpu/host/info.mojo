@@ -414,7 +414,7 @@ Place this function with other GPU target functions in this file (search for
 Define the GPU characteristics using the appropriate architecture family:
 
 ```mojo
-alias YourGPU = GPUInfo.from_family(
+comptime YourGPU = GPUInfo.from_family(
     family=NvidiaHopperFamily,  # Choose the appropriate family
     name="Your GPU",
     vendor=Vendor.NVIDIA_GPU,
@@ -564,11 +564,11 @@ from math import ceildiv, floor
 from os import abort
 from sys.info import CompilationTarget, _accelerator_arch, _TargetType
 
-alias _KB = 1024
-alias _K = 1024
+comptime _KB = 1024
+comptime _K = 1024
 
 # NVIDIA Architecture Families
-alias NvidiaMaxwellFamily = AcceleratorArchitectureFamily(
+comptime NvidiaMaxwellFamily = AcceleratorArchitectureFamily(
     warp_size=32,
     threads_per_multiprocessor=64 * 32,
     shared_memory_per_multiprocessor=96 * _KB,
@@ -576,7 +576,7 @@ alias NvidiaMaxwellFamily = AcceleratorArchitectureFamily(
     max_thread_block_size=_K,
 )
 
-alias NvidiaPascalFamily = AcceleratorArchitectureFamily(
+comptime NvidiaPascalFamily = AcceleratorArchitectureFamily(
     warp_size=32,
     threads_per_multiprocessor=64 * 32,
     shared_memory_per_multiprocessor=64 * _KB,
@@ -584,7 +584,7 @@ alias NvidiaPascalFamily = AcceleratorArchitectureFamily(
     max_thread_block_size=_K,
 )
 
-alias NvidiaTuringFamily = AcceleratorArchitectureFamily(
+comptime NvidiaTuringFamily = AcceleratorArchitectureFamily(
     warp_size=32,
     threads_per_multiprocessor=64 * 32,
     shared_memory_per_multiprocessor=64 * _KB,
@@ -597,7 +597,7 @@ alias NvidiaTuringFamily = AcceleratorArchitectureFamily(
 # - sm_86: Workstation/cloud (A10, RTX A-series)
 # - sm_87: Embedded/edge (Jetson Orin)
 
-alias NvidiaAmpereDatacenterFamily = AcceleratorArchitectureFamily(
+comptime NvidiaAmpereDatacenterFamily = AcceleratorArchitectureFamily(
     warp_size=32,
     threads_per_multiprocessor=64 * 32,
     shared_memory_per_multiprocessor=164 * _KB,
@@ -605,7 +605,7 @@ alias NvidiaAmpereDatacenterFamily = AcceleratorArchitectureFamily(
     max_thread_block_size=_K,
 )
 
-alias NvidiaAmpereWorkstationFamily = AcceleratorArchitectureFamily(
+comptime NvidiaAmpereWorkstationFamily = AcceleratorArchitectureFamily(
     warp_size=32,
     threads_per_multiprocessor=48 * 32,
     shared_memory_per_multiprocessor=100 * _KB,
@@ -613,7 +613,7 @@ alias NvidiaAmpereWorkstationFamily = AcceleratorArchitectureFamily(
     max_thread_block_size=_K,
 )
 
-alias NvidiaAmpereEmbeddedFamily = AcceleratorArchitectureFamily(
+comptime NvidiaAmpereEmbeddedFamily = AcceleratorArchitectureFamily(
     warp_size=32,
     threads_per_multiprocessor=48 * 32,
     shared_memory_per_multiprocessor=164 * _KB,
@@ -621,7 +621,7 @@ alias NvidiaAmpereEmbeddedFamily = AcceleratorArchitectureFamily(
     max_thread_block_size=_K,
 )
 
-alias NvidiaAdaFamily = AcceleratorArchitectureFamily(
+comptime NvidiaAdaFamily = AcceleratorArchitectureFamily(
     warp_size=32,
     threads_per_multiprocessor=48 * 32,
     shared_memory_per_multiprocessor=100 * _KB,
@@ -629,7 +629,7 @@ alias NvidiaAdaFamily = AcceleratorArchitectureFamily(
     max_thread_block_size=_K,
 )
 
-alias NvidiaHopperFamily = AcceleratorArchitectureFamily(
+comptime NvidiaHopperFamily = AcceleratorArchitectureFamily(
     warp_size=32,
     threads_per_multiprocessor=64 * 32,
     shared_memory_per_multiprocessor=228 * _KB,
@@ -637,7 +637,7 @@ alias NvidiaHopperFamily = AcceleratorArchitectureFamily(
     max_thread_block_size=_K,
 )
 
-alias NvidiaBlackwellFamily = AcceleratorArchitectureFamily(
+comptime NvidiaBlackwellFamily = AcceleratorArchitectureFamily(
     warp_size=32,
     threads_per_multiprocessor=64 * 32,
     shared_memory_per_multiprocessor=228 * _KB,
@@ -645,7 +645,7 @@ alias NvidiaBlackwellFamily = AcceleratorArchitectureFamily(
     max_thread_block_size=_K,
 )
 
-alias NvidiaBlackwellConsumerFamily = AcceleratorArchitectureFamily(
+comptime NvidiaBlackwellConsumerFamily = AcceleratorArchitectureFamily(
     warp_size=32,
     threads_per_multiprocessor=48 * 32,
     shared_memory_per_multiprocessor=100 * _KB,
@@ -654,7 +654,7 @@ alias NvidiaBlackwellConsumerFamily = AcceleratorArchitectureFamily(
 )
 
 # AMD Architecture Families
-alias AMDCDNA3Family = AcceleratorArchitectureFamily(
+comptime AMDCDNA3Family = AcceleratorArchitectureFamily(
     warp_size=64,
     threads_per_multiprocessor=64 * 32,
     shared_memory_per_multiprocessor=64 * _KB,
@@ -662,7 +662,7 @@ alias AMDCDNA3Family = AcceleratorArchitectureFamily(
     max_thread_block_size=_K,
 )
 
-alias AMDCDNA4Family = AcceleratorArchitectureFamily(
+comptime AMDCDNA4Family = AcceleratorArchitectureFamily(
     warp_size=64,
     threads_per_multiprocessor=64 * 32,
     shared_memory_per_multiprocessor=160 * _KB,
@@ -670,7 +670,7 @@ alias AMDCDNA4Family = AcceleratorArchitectureFamily(
     max_thread_block_size=_K,
 )
 
-alias AMDRDNAFamily = AcceleratorArchitectureFamily(
+comptime AMDRDNAFamily = AcceleratorArchitectureFamily(
     warp_size=32,
     threads_per_multiprocessor=32 * 32,
     shared_memory_per_multiprocessor=32 * _KB,
@@ -679,7 +679,7 @@ alias AMDRDNAFamily = AcceleratorArchitectureFamily(
 )
 
 # Apple Architecture Families
-alias AppleMetalFamily = AcceleratorArchitectureFamily(
+comptime AppleMetalFamily = AcceleratorArchitectureFamily(
     warp_size=32,
     threads_per_multiprocessor=32 * 32,
     shared_memory_per_multiprocessor=32 * _KB,
@@ -738,16 +738,16 @@ struct Vendor(Identifiable, Writable):
     var _value: Int8
     """The underlying integer value representing the vendor."""
 
-    alias NO_GPU = Self(0)
+    comptime NO_GPU = Self(0)
     """Represents no GPU or CPU-only execution."""
 
-    alias AMD_GPU = Self(1)
+    comptime AMD_GPU = Self(1)
     """Represents AMD GPU vendor."""
 
-    alias NVIDIA_GPU = Self(2)
+    comptime NVIDIA_GPU = Self(2)
     """Represents NVIDIA GPU vendor."""
 
-    alias APPLE_GPU = Self(3)
+    comptime APPLE_GPU = Self(3)
     """Represents Apple GPU vendor."""
 
     fn __eq__(self, other: Self) -> Bool:
@@ -837,7 +837,7 @@ fn _get_empty_target() -> _TargetType:
     ]
 
 
-alias NoGPU = GPUInfo(
+comptime NoGPU = GPUInfo(
     name="NoGPU",
     vendor=Vendor.NO_GPU,
     api="none",
@@ -920,7 +920,7 @@ fn _get_metal_m4_target() -> _TargetType:
     ]
 
 
-alias MetalM1 = GPUInfo.from_family(
+comptime MetalM1 = GPUInfo.from_family(
     family=AppleMetalFamily,
     name="M1",
     vendor=Vendor.APPLE_GPU,
@@ -931,7 +931,7 @@ alias MetalM1 = GPUInfo.from_family(
     sm_count=8,  # M1 has 8 GPU cores
 )
 
-alias MetalM2 = GPUInfo.from_family(
+comptime MetalM2 = GPUInfo.from_family(
     family=AppleMetalFamily,
     name="M2",
     vendor=Vendor.APPLE_GPU,
@@ -942,7 +942,7 @@ alias MetalM2 = GPUInfo.from_family(
     sm_count=10,  # M2 has 10 GPU cores
 )
 
-alias MetalM3 = GPUInfo.from_family(
+comptime MetalM3 = GPUInfo.from_family(
     family=AppleMetalFamily,
     name="M3",
     vendor=Vendor.APPLE_GPU,
@@ -953,7 +953,7 @@ alias MetalM3 = GPUInfo.from_family(
     sm_count=10,  # M3 has 10 GPU cores
 )
 
-alias MetalM4 = GPUInfo.from_family(
+comptime MetalM4 = GPUInfo.from_family(
     family=AppleMetalFamily,
     name="M4",
     vendor=Vendor.APPLE_GPU,
@@ -996,7 +996,7 @@ fn _get_a100_target() -> _TargetType:
     ]
 
 
-alias A100 = GPUInfo.from_family(
+comptime A100 = GPUInfo.from_family(
     family=NvidiaAmpereDatacenterFamily,
     name="A100",
     vendor=Vendor.NVIDIA_GPU,
@@ -1030,7 +1030,7 @@ fn _get_a10_target() -> _TargetType:
     ]
 
 
-alias A10 = GPUInfo.from_family(
+comptime A10 = GPUInfo.from_family(
     family=NvidiaAmpereWorkstationFamily,
     name="A10",
     vendor=Vendor.NVIDIA_GPU,
@@ -1064,7 +1064,7 @@ fn _get_orin_nano_target() -> _TargetType:
     ]
 
 
-alias OrinNano = GPUInfo.from_family(
+comptime OrinNano = GPUInfo.from_family(
     family=NvidiaAmpereEmbeddedFamily,
     name="Orin Nano",
     vendor=Vendor.NVIDIA_GPU,
@@ -1099,7 +1099,7 @@ fn _get_jetson_thor_target() -> _TargetType:
     ]
 
 
-alias JetsonThor = GPUInfo.from_family(
+comptime JetsonThor = GPUInfo.from_family(
     family=NvidiaBlackwellFamily,
     name="Jetson Thor",
     vendor=Vendor.NVIDIA_GPU,
@@ -1133,7 +1133,7 @@ fn _get_dgx_spark_target() -> _TargetType:
     ]
 
 
-alias DGXSpark = GPUInfo.from_family(
+comptime DGXSpark = GPUInfo.from_family(
     family=NvidiaBlackwellFamily,
     name="DGX Spark",
     vendor=Vendor.NVIDIA_GPU,
@@ -1167,7 +1167,7 @@ fn _get_l4_target() -> _TargetType:
     ]
 
 
-alias L4 = GPUInfo.from_family(
+comptime L4 = GPUInfo.from_family(
     family=NvidiaAdaFamily,
     name="L4",
     vendor=Vendor.NVIDIA_GPU,
@@ -1201,7 +1201,7 @@ fn _get_rtx4090m_target() -> _TargetType:
     ]
 
 
-alias RTX4090m = GPUInfo.from_family(
+comptime RTX4090m = GPUInfo.from_family(
     family=NvidiaAdaFamily,
     name="RTX4090m",
     vendor=Vendor.NVIDIA_GPU,
@@ -1235,7 +1235,7 @@ fn _get_rtx4090_target() -> _TargetType:
     ]
 
 
-alias RTX4090 = GPUInfo.from_family(
+comptime RTX4090 = GPUInfo.from_family(
     family=NvidiaAdaFamily,
     name="RTX4090",
     vendor=Vendor.NVIDIA_GPU,
@@ -1271,7 +1271,7 @@ fn _get_h100_target() -> _TargetType:
 
 
 # https://resources.nvidia.com/en-us-tensor-core/gtc22-whitepaper-hopper
-alias H100 = GPUInfo.from_family(
+comptime H100 = GPUInfo.from_family(
     family=NvidiaHopperFamily,
     name="H100",
     vendor=Vendor.NVIDIA_GPU,
@@ -1307,7 +1307,7 @@ fn _get_b100_target() -> _TargetType:
 
 # https://resources.nvidia.com/en-us-blackwell-architecture
 # TODO: Update once we have B100 access.
-alias B100 = GPUInfo.from_family(
+comptime B100 = GPUInfo.from_family(
     family=NvidiaBlackwellFamily,
     name="B100",
     vendor=Vendor.NVIDIA_GPU,
@@ -1318,7 +1318,7 @@ alias B100 = GPUInfo.from_family(
     sm_count=132,
 )
 
-alias B200 = GPUInfo.from_family(
+comptime B200 = GPUInfo.from_family(
     family=NvidiaBlackwellFamily,
     name="B200",
     vendor=Vendor.NVIDIA_GPU,
@@ -1353,7 +1353,7 @@ fn _get_rtx5090_target() -> _TargetType:
 
 
 # https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5090/
-alias RTX5090 = GPUInfo.from_family(
+comptime RTX5090 = GPUInfo.from_family(
     family=NvidiaBlackwellConsumerFamily,
     name="RTX5090",
     vendor=Vendor.NVIDIA_GPU,
@@ -1389,7 +1389,7 @@ fn _get_rtx3090_target() -> _TargetType:
 
 
 # https://www.nvidia.com/en-us/geforce/graphics-cards/30-series/rtx-3090-3090ti/
-alias RTX3090 = GPUInfo.from_family(
+comptime RTX3090 = GPUInfo.from_family(
     family=NvidiaAmpereWorkstationFamily,
     name="NVIDIA GeForce RTX 3090",
     vendor=Vendor.NVIDIA_GPU,
@@ -1422,7 +1422,7 @@ fn _get_gtx1080ti_target() -> _TargetType:
     ]
 
 
-alias GTX1080Ti = GPUInfo.from_family(
+comptime GTX1080Ti = GPUInfo.from_family(
     family=NvidiaPascalFamily,
     name="NVIDIA GeForce GTX 1080 Ti",
     vendor=Vendor.NVIDIA_GPU,
@@ -1459,7 +1459,7 @@ fn _get_gtx1060_target() -> _TargetType:
     ]
 
 
-alias GTX1060 = GPUInfo.from_family(
+comptime GTX1060 = GPUInfo.from_family(
     family=NvidiaPascalFamily,
     name="NVIDIA GeForce GTX 1060",
     vendor=Vendor.NVIDIA_GPU,
@@ -1492,7 +1492,7 @@ fn _get_gtx970_target() -> _TargetType:
     ]
 
 
-alias GTX970 = GPUInfo.from_family(
+comptime GTX970 = GPUInfo.from_family(
     family=NvidiaMaxwellFamily,
     name="NVIDIA GeForce GTX 970",
     vendor=Vendor.NVIDIA_GPU,
@@ -1527,7 +1527,7 @@ fn _get_teslap100_target() -> _TargetType:
     ]
 
 
-alias TeslaP100 = GPUInfo.from_family(
+comptime TeslaP100 = GPUInfo.from_family(
     family=NvidiaPascalFamily,
     name="NVIDIA Tesla P100",
     vendor=Vendor.NVIDIA_GPU,
@@ -1562,7 +1562,7 @@ fn _get_rtx2060_target() -> _TargetType:
     ]
 
 
-alias RTX2060 = GPUInfo.from_family(
+comptime RTX2060 = GPUInfo.from_family(
     family=NvidiaTuringFamily,
     name="RTX2060",
     vendor=Vendor.NVIDIA_GPU,
@@ -1596,7 +1596,7 @@ fn _get_mi300x_target() -> _TargetType:
     ]
 
 
-alias MI300X = GPUInfo.from_family(
+comptime MI300X = GPUInfo.from_family(
     family=AMDCDNA3Family,
     name="MI300X",
     vendor=Vendor.AMD_GPU,
@@ -1630,7 +1630,7 @@ fn _get_mi355x_target() -> _TargetType:
     ]
 
 
-alias MI355X = GPUInfo.from_family(
+comptime MI355X = GPUInfo.from_family(
     family=AMDCDNA4Family,
     name="MI355X",
     vendor=Vendor.AMD_GPU,
@@ -1817,7 +1817,7 @@ fn _get_860m_target() -> _TargetType:
     ]
 
 
-alias Radeon9070 = GPUInfo.from_family(
+comptime Radeon9070 = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 9070",
     vendor=Vendor.AMD_GPU,
@@ -1828,7 +1828,7 @@ alias Radeon9070 = GPUInfo.from_family(
     sm_count=64,
 )
 
-alias Radeon9060 = GPUInfo.from_family(
+comptime Radeon9060 = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 9060",
     vendor=Vendor.AMD_GPU,
@@ -1839,7 +1839,7 @@ alias Radeon9060 = GPUInfo.from_family(
     sm_count=32,
 )
 
-alias Radeon7900 = GPUInfo.from_family(
+comptime Radeon7900 = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 7900",
     vendor=Vendor.AMD_GPU,
@@ -1850,7 +1850,7 @@ alias Radeon7900 = GPUInfo.from_family(
     sm_count=96,
 )
 
-alias Radeon7800 = GPUInfo.from_family(
+comptime Radeon7800 = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 7800/7700",
     vendor=Vendor.AMD_GPU,
@@ -1861,7 +1861,7 @@ alias Radeon7800 = GPUInfo.from_family(
     sm_count=60,
 )
 
-alias Radeon7600 = GPUInfo.from_family(
+comptime Radeon7600 = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 7600",
     vendor=Vendor.AMD_GPU,
@@ -1872,7 +1872,7 @@ alias Radeon7600 = GPUInfo.from_family(
     sm_count=32,
 )
 
-alias Radeon6900 = GPUInfo.from_family(
+comptime Radeon6900 = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 6900",
     vendor=Vendor.AMD_GPU,
@@ -1884,7 +1884,7 @@ alias Radeon6900 = GPUInfo.from_family(
 )
 
 
-alias Radeon780m = GPUInfo.from_family(
+comptime Radeon780m = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 780M",
     vendor=Vendor.AMD_GPU,
@@ -1895,7 +1895,7 @@ alias Radeon780m = GPUInfo.from_family(
     sm_count=12,
 )
 
-alias Radeon880m = GPUInfo.from_family(
+comptime Radeon880m = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 880M",
     vendor=Vendor.AMD_GPU,
@@ -1906,7 +1906,7 @@ alias Radeon880m = GPUInfo.from_family(
     sm_count=12,
 )
 
-alias Radeon8060s = GPUInfo.from_family(
+comptime Radeon8060s = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 8060S",
     vendor=Vendor.AMD_GPU,
@@ -1917,7 +1917,7 @@ alias Radeon8060s = GPUInfo.from_family(
     sm_count=40,
 )
 
-alias Radeon860m = GPUInfo.from_family(
+comptime Radeon860m = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 860M",
     vendor=Vendor.AMD_GPU,
@@ -1936,7 +1936,7 @@ alias Radeon860m = GPUInfo.from_family(
 
 @fieldwise_init
 @register_passable
-struct GPUInfo(EqualityComparable, Identifiable, Stringable, Writable):
+struct GPUInfo(Equatable, Identifiable, Stringable, Writable):
     """Comprehensive information about a GPU architecture.
 
     This struct contains detailed specifications about GPU capabilities,
@@ -2211,7 +2211,7 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
     Returns:
         `GPUInfo` instance for the specified target architecture.
     """
-    alias target_arch = target_arch0.replace("sm_", "").replace(
+    comptime target_arch = target_arch0.replace("sm_", "").replace(
         "nvidia:", ""
     ).replace("amdgpu:", "").replace("metal:", "apple-m")
 

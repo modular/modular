@@ -214,9 +214,8 @@ fn test[
             )
 
             @always_inline
-            @__copy_capture(output_ref_ptr, bias_ptr)
             @parameter
-            fn body0[width: Int](offset: Int):
+            fn body0[width: Int](offset: Int) unified {var}:
                 output_ref_ptr.store(
                     offset,
                     10.0
@@ -226,15 +225,14 @@ fn test[
                     ),
                 )
 
-            vectorize[body0, simd_size](F)
+            vectorize[simd_size](F, body0)
 
     # Test epilogue
     @always_inline
     @parameter
     fn epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
         @always_inline
-        @parameter
-        fn body1[width: Int](idx: Int):
+        fn body1[width: Int](idx: Int) unified {mut}:
             var curr_coords = rebind[IndexList[rank + 2]](coords)
             curr_coords[rank + 1] += idx
 
@@ -246,7 +244,7 @@ fn test[
                 * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
             )
 
-        vectorize[body1, simd_size](f_size)
+        vectorize[simd_size](f_size, body1)
 
     @parameter
     if filter_packed:

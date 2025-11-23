@@ -157,8 +157,8 @@ def _test_inplace_dunder_methods(mut python: Python):
 
 
 def test_num_conversion():
-    alias n = UInt64(0xFEDC_BA09_8765_4321)
-    alias n_str = String(n)
+    comptime n = UInt64(0xFEDC_BA09_8765_4321)
+    comptime n_str = String(n)
     assert_equal(n_str, String(PythonObject(n)))
 
 
@@ -367,7 +367,7 @@ fn test_set() raises:
 fn test_none() raises:
     var n = Python.none()
     assert_equal(String(n), "None")
-    assert_true(n is None)
+    assert_true(n is PythonObject(None))
 
 
 fn test_getitem_raises() raises:
@@ -652,7 +652,7 @@ def test_attribute_access():
 
     # Test getting attributes that exist
     var attr_value = test_dict.__getattr__("get")
-    assert_true(attr_value is not None)
+    assert_true(attr_value is not PythonObject(None))
 
     # Test setting attributes on objects that support it
     var custom_obj = Python.evaluate("type('TestClass', (), {})()")

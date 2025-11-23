@@ -30,6 +30,7 @@ from typing import (
     TypeGuard,
     TypeVar,
     Union,
+    cast,
     get_args,
     get_origin,
     get_type_hints,
@@ -45,6 +46,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     ProfilingConfig,
     SamplingConfig,
+    SpeculativeConfig,
 )
 from typing_extensions import ParamSpec
 
@@ -243,6 +245,7 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     @config_to_flag(LoRAConfig)
     @config_to_flag(ProfilingConfig)
     @config_to_flag(SamplingConfig)
+    @config_to_flag(SpeculativeConfig)
     @click.option(
         "--devices",
         is_flag=False,
@@ -284,6 +287,28 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
         draft_devices = kwargs.pop("draft_devices")
         assert is_str_or_list_of_int(devices)
         assert is_str_or_list_of_int(draft_devices)
+
+        # Enable virtual device mode if target is set.
+        # This must happen BEFORE calling device_specs() which does validation.
+        if kwargs.get("target"):
+            from max.driver import (
+                calculate_virtual_device_count_from_cli,
+                set_virtual_device_api,
+                set_virtual_device_count,
+                set_virtual_device_target_arch,
+            )
+            from max.serve.config import parse_api_and_target_arch
+
+            api, target_arch = parse_api_and_target_arch(
+                cast(str, kwargs["target"])
+            )
+            set_virtual_device_api(api)
+            set_virtual_device_target_arch(target_arch)
+
+            virtual_count = calculate_virtual_device_count_from_cli(
+                devices, draft_devices
+            )
+            set_virtual_device_count(virtual_count)
 
         kwargs["device_specs"] = DevicesOptionType.device_specs(devices)
         kwargs["draft_device_specs"] = DevicesOptionType.device_specs(

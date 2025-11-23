@@ -26,12 +26,12 @@ from sys import argv
 struct _Indent[W: Writable, origin: ImmutOrigin](Writable):
     """Indents the given writable by the given level."""
 
-    alias IndentStr = "  "
+    comptime IndentStr = "  "
 
-    var writable: Pointer[W, origin]
+    var writable: Pointer[Self.W, Self.origin]
     var level: Int
 
-    fn __init__(out self, ref [origin]w: W, *, level: Int):
+    fn __init__(out self, ref [Self.origin]w: Self.W, *, level: Int):
         self.writable = Pointer(to=w)
         self.level = level
 
@@ -77,18 +77,18 @@ fn _writeln[
 
 
 @fieldwise_init
-struct TestResult(EqualityComparable, ImplicitlyCopyable, Movable, Writable):
+struct TestResult(Equatable, ImplicitlyCopyable, Movable, Writable):
     """A test result code."""
 
     var _value: Int
 
-    alias PASS = Self(0)
+    comptime PASS = Self(0)
     """The test passed."""
 
-    alias FAIL = Self(1)
+    comptime FAIL = Self(1)
     """The test failed."""
 
-    alias SKIP = Self(2)
+    comptime SKIP = Self(2)
     """The test was skipped."""
 
     fn __eq__(self, rhs: Self) -> Bool:
@@ -119,7 +119,7 @@ struct TestResult(EqualityComparable, ImplicitlyCopyable, Movable, Writable):
 struct TestReport(Copyable, Movable, Writable):
     """A report for a single unit test."""
 
-    alias _ErrorIndent = 3
+    comptime _ErrorIndent = 3
 
     var name: StaticString
     """The name of the test."""
@@ -322,7 +322,7 @@ struct TestSuiteReport(Copyable, Movable, Writable):
 struct _Test(Copyable & Movable):
     """A single test to run."""
 
-    alias fn_type = fn () raises
+    comptime fn_type = fn () raises
     var test_fn: Self.fn_type
     var name: StaticString
 
@@ -406,7 +406,7 @@ struct TestSuite(Movable):
 
         @parameter
         for idx in range(len(test_funcs)):
-            alias test_func = test_funcs[idx]
+            comptime test_func = test_funcs[idx]
 
             @parameter
             if get_function_name[test_func]().startswith("test_"):
@@ -478,7 +478,7 @@ struct TestSuite(Movable):
         Parameters:
             f: The function to skip.
         """
-        alias skipped_name = get_function_name[f]()
+        comptime skipped_name = get_function_name[f]()
         self.skip_list.add(skipped_name)
 
     fn _parse_filter_lists(mut self) raises:
@@ -534,7 +534,7 @@ struct TestSuite(Movable):
         return test.name not in self.allow_list.unsafe_value()
 
     fn _validate_skip_list(self) raises:
-        # TODO: _Test doesn't conform to EqualityComparable, so we can't use
+        # TODO: _Test doesn't conform to Equatable, so we can't use
         # `in` here. Also, we might wanna do this in O(1) time.
         for test_name in self.skip_list:
             var found = False

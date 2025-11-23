@@ -40,10 +40,13 @@ logger = logging.getLogger("max.pipelines")
 class NullKVCacheManager:
     """A no-op KV cache manager for compile-only mode.
 
-    This manager is used when compiling for virtual devices and does not
-    allocate any GPU memory. It provides dummy implementations of the
-    KV cache interface to allow graph construction without actual memory
-    allocation.
+    This manager is used when compiling models with virtual devices and does not
+    allocate any GPU memory. It provides dummy implementations of the KV cache
+    interface to allow graph construction and compilation without requiring
+    physical GPU hardware or actual memory allocation.
+
+    This is particularly useful for cross-compilation scenarios where you want to
+    compile models for GPU execution on a machine without a physical GPU present.
     """
 
     def __init__(
@@ -51,56 +54,48 @@ class NullKVCacheManager:
         params: KVCacheParams,
         max_batch_size: int,
         max_seq_len: int,
-        num_layers: int,
         devices: Sequence[Device],
         session: InferenceSession,
-        available_cache_memory: int,
-        page_size: int = 128,
     ) -> None:
-        """Initialize the null KV cache manager.
+        """Initializes the null KV cache manager.
 
         Args:
-            params: KV cache parameters
-            max_batch_size: Maximum batch size
-            max_seq_len: Maximum sequence length
-            num_layers: Number of model layers
-            devices: List of devices
-            session: Inference session
-            available_cache_memory: Available cache memory
-            page_size: Page size in tokens
+            params: The KV cache parameters for the pipeline.
+            max_batch_size: The maximum batch size to support.
+            max_seq_len: The maximum sequence length to support.
+            devices: The list of virtual devices.
+            session: The inference session for graph operations.
+            available_cache_memory: The nominal available cache memory in bytes.
         """
         self.params = params
         self.max_batch_size = max_batch_size
         self.max_seq_len = max_seq_len
-        self.num_layers = num_layers
         self.devices = devices
         self.session = session
-        self.available_cache_memory = available_cache_memory
-        self.page_size = page_size
         self._metrics = KVCacheMetrics()
         self._request_to_replica_idx: dict[RequestID, int] = {}
 
         logger.info("Using NullKVCacheManager for compile-only mode")
 
     def get_replica(self, context: TextGenerationContext) -> int:
-        """Get the replica index for a context.
+        """Gets the replica index for a request context.
 
         Args:
-            context: Text generation context
+            context: The text generation context containing the request.
 
         Returns:
-            Always returns 0 (single replica)
+            Always returns 0, as the null cache manager operates in single-replica mode.
         """
         return 0
 
     def get_or_recommend_replica(self, context: TextGenerationContext) -> int:
-        """Get or recommend a replica index for a context.
+        """Gets or recommends a replica index for a request context.
 
         Args:
-            context: Text generation context
+            context: The text generation context containing the request.
 
         Returns:
-            Always returns 0 (single replica)
+            Always returns 0, as the null cache manager operates in single-replica mode.
         """
         return 0
 
@@ -117,24 +112,15 @@ class NullKVCacheManager:
         """
         return [list(range(len(batch)))]
 
-    def maybe_reserve(
+    def alloc(
         self,
         data: TextGenerationContext,
         num_steps: int = 1,
-    ) -> bool:
-        """Reserve cache blocks (no-op for null manager).
-
-        Args:
-            data: Text generation context
-            num_steps: Number of steps to reserve
-
-        Returns:
-            Always returns True
-        """
+    ) -> None:
+        """Allocates blocks for a request to run for N steps."""
         self._request_to_replica_idx[data.request_id] = 0
-        return True
 
-    def fetch(
+    def get_runtime_inputs(
         self, batch: Sequence[TextGenerationContext], num_steps: int = 1
     ) -> list[RaggedKVCacheInputs]:
         """Fetch KV cache blocks (returns dummy tensors).
@@ -171,7 +157,7 @@ class NullKVCacheManager:
             )
         ]
 
-    def input_symbols(
+    def get_symbolic_inputs(
         self,
         devices: Sequence[Device] | None = None,
         num_layers: int | None = None,
@@ -188,7 +174,7 @@ class NullKVCacheManager:
         if devices is None:
             devices = self.devices
         if num_layers is None:
-            num_layers = self.num_layers
+            num_layers = self.params.num_layers
 
         # Create symbolic tensor types for graph construction
         # Block shape: [total_num_pages, kv_dim, num_layers, page_size, n_kv_heads_per_device, head_dim]
@@ -202,7 +188,7 @@ class NullKVCacheManager:
                     "total_num_pages",  # dynamic parameter
                     kv_dim,  # K and V (or just 1 for MLA)
                     num_layers,
-                    self.page_size,
+                    self.params.page_size,
                     self.params.n_kv_heads_per_device,
                     self.params.head_dim,
                 ],
@@ -246,7 +232,7 @@ class NullKVCacheManager:
         """
         self._request_to_replica_idx.pop(request_id, None)
 
-    def external_claim(
+    def claim(
         self, request_id: RequestID, replica_idx: int | None = None
     ) -> None:
         """Externally claim cache blocks (no-op for null manager).
@@ -319,58 +305,6 @@ class NullKVCacheManager:
     def reset_prefix_cache(self) -> None:
         """Reset prefix cache (no-op for null manager)."""
         pass
-
-    @classmethod
-    def estimated_memory_size(
-        cls,
-        params: KVCacheParams,
-        max_batch_size: int,
-        max_seq_len: int,
-        num_layers: int,
-        available_cache_memory: int,
-        devices: Sequence[Device],
-        **kwargs: Any,
-    ) -> int:
-        """Estimate memory size (returns 0 for null manager).
-
-        Args:
-            params: KV cache parameters
-            max_batch_size: Maximum batch size
-            max_seq_len: Maximum sequence length
-            num_layers: Number of layers
-            available_cache_memory: Available cache memory
-            devices: List of devices
-            **kwargs: Additional arguments
-
-        Returns:
-            Always returns 0 (no memory used)
-        """
-        return 0
-
-    @classmethod
-    def infer_optimal_batch_size(
-        cls,
-        params: KVCacheParams,
-        max_seq_len: int,
-        num_layers: int,
-        available_cache_memory: int,
-        devices: Sequence[Device],
-        **kwargs: Any,
-    ) -> int:
-        """Infer optimal batch size (returns 1 for null manager).
-
-        Args:
-            params: KV cache parameters
-            max_seq_len: Maximum sequence length
-            num_layers: Number of layers
-            available_cache_memory: Available cache memory
-            devices: List of devices
-            **kwargs: Additional arguments
-
-        Returns:
-            Always returns 1
-        """
-        return 1
 
     @property
     def free_blocks_pct(self) -> float:

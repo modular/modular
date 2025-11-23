@@ -50,10 +50,10 @@ struct ValOrDim[dim: Dim = Dim()](Defaultable):
 
     fn __init__(out self):
         constrained[
-            not dim.is_dynamic(),
+            not Self.dim.is_dynamic(),
             "Can't construct a dynamic dim with no runtime value",
         ]()
-        self.value = dim.get()
+        self.value = Self.dim.get()
 
     fn __init__(out self, v: Int):
         self.value = v
@@ -66,34 +66,38 @@ struct HostNDBuffer[
     /,
     shape: DimList = DimList.create_unknown[rank](),
 ](ImplicitlyCopyable, Movable):
-    var tensor: NDBuffer[dtype, rank, MutAnyOrigin, shape]
+    var tensor: NDBuffer[Self.dtype, Self.rank, MutAnyOrigin, Self.shape]
 
     @always_inline
     fn __init__(
         out self,
     ):
         constrained[
-            shape.all_known[rank](),
+            Self.shape.all_known[Self.rank](),
             (
                 "Must provided dynamic_shape as argument to constructor if not"
                 " all shapes are statically known"
             ),
         ]()
-        self.tensor = NDBuffer[dtype, rank, MutAnyOrigin, shape](
-            UnsafePointer[Scalar[dtype]].alloc(shape.product().get()),
+        self.tensor = NDBuffer[Self.dtype, Self.rank, MutAnyOrigin, Self.shape](
+            UnsafePointer[Scalar[Self.dtype]].alloc(Self.shape.product().get()),
         )
 
     @always_inline
-    fn __init__(out self, tensor: NDBuffer[dtype, rank, _, shape]):
+    fn __init__(
+        out self, tensor: NDBuffer[Self.dtype, Self.rank, _, Self.shape]
+    ):
         self.tensor = tensor
 
     @always_inline
     fn __init__(
         out self,
-        dynamic_shape: IndexList[rank, **_],
+        dynamic_shape: IndexList[Self.rank, **_],
     ):
-        self.tensor = NDBuffer[dtype, rank, _, shape](
-            UnsafePointer[Scalar[dtype]].alloc(product(dynamic_shape, rank)),
+        self.tensor = NDBuffer[Self.dtype, Self.rank, _, Self.shape](
+            UnsafePointer[Scalar[Self.dtype]].alloc(
+                product(dynamic_shape, Self.rank)
+            ),
             dynamic_shape,
         )
 
@@ -102,7 +106,7 @@ struct HostNDBuffer[
         out self,
         dynamic_shape: DimList,
     ):
-        self = Self(_make_tuple[rank](dynamic_shape))
+        self = Self(_make_tuple[Self.rank](dynamic_shape))
 
     @always_inline
     fn __del__(deinit self):
@@ -110,8 +114,8 @@ struct HostNDBuffer[
 
     def copy_to_device(
         self, ctx: DeviceContext
-    ) -> DeviceNDBuffer[dtype, rank, shape]:
-        var retval = DeviceNDBuffer[dtype, rank, shape](
+    ) -> DeviceNDBuffer[Self.dtype, Self.rank, Self.shape]:
+        var retval = DeviceNDBuffer[Self.dtype, Self.rank, Self.shape](
             self.tensor.dynamic_shape, ctx=ctx
         )
         ctx.enqueue_copy(retval.buffer, self.tensor.data)
@@ -120,7 +124,7 @@ struct HostNDBuffer[
     fn to_layout_tensor(
         self,
         out result: LayoutTensor[
-            dtype, Layout.row_major(IntTuple(shape)), MutAnyOrigin
+            Self.dtype, Layout.row_major(IntTuple(Self.shape)), MutAnyOrigin
         ],
     ):
         result = {
@@ -138,12 +142,12 @@ struct DeviceNDBuffer[
     /,
     shape: DimList = DimList.create_unknown[rank](),
 ](ImplicitlyCopyable, Movable):
-    var buffer: DeviceBuffer[dtype]
+    var buffer: DeviceBuffer[Self.dtype]
     var tensor: NDBuffer[
-        dtype,
-        rank,
+        Self.dtype,
+        Self.rank,
         MutAnyOrigin,
-        shape,
+        Self.shape,
     ]
 
     @always_inline
@@ -153,30 +157,32 @@ struct DeviceNDBuffer[
         ctx: DeviceContext,
     ) raises:
         constrained[
-            shape.all_known[rank](),
+            Self.shape.all_known[Self.rank](),
             (
                 "Must provided dynamic_shape as argument to constructor if not"
                 " all shapes are statically known"
             ),
         ]()
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-        self.buffer = ctx.enqueue_create_buffer[dtype](shape.product().get())
-        self.tensor = NDBuffer[dtype, rank, MutAnyOrigin, shape](
+        self.buffer = ctx.enqueue_create_buffer[Self.dtype](
+            Self.shape.product().get()
+        )
+        self.tensor = NDBuffer[Self.dtype, Self.rank, MutAnyOrigin, Self.shape](
             self.buffer.unsafe_ptr(),
         )
 
     @always_inline
     fn __init__(
         out self,
-        dynamic_shape: IndexList[rank, **_],
+        dynamic_shape: IndexList[Self.rank, **_],
         *,
         ctx: DeviceContext,
     ) raises:
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-        self.buffer = ctx.enqueue_create_buffer[dtype](
-            product(dynamic_shape, rank)
+        self.buffer = ctx.enqueue_create_buffer[Self.dtype](
+            product(dynamic_shape, Self.rank)
         )
-        self.tensor = NDBuffer[dtype, rank, MutAnyOrigin, shape](
+        self.tensor = NDBuffer[Self.dtype, Self.rank, MutAnyOrigin, Self.shape](
             self.buffer.unsafe_ptr(), dynamic_shape
         )
 
@@ -187,21 +193,23 @@ struct DeviceNDBuffer[
         *,
         ctx: DeviceContext,
     ) raises:
-        self = Self(_make_tuple[rank](dynamic_shape), ctx=ctx)
+        self = Self(_make_tuple[Self.rank](dynamic_shape), ctx=ctx)
 
     @always_inline
     fn __init__(
         out self,
-        dynamic_shape: IndexList[rank] = _make_tuple[rank](shape),
+        dynamic_shape: IndexList[Self.rank] = _make_tuple[Self.rank](
+            Self.shape
+        ),
         *,
-        stride: IndexList[rank],
+        stride: IndexList[Self.rank],
         ctx: DeviceContext,
     ) raises:
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-        self.buffer = ctx.enqueue_create_buffer[dtype](
-            product(dynamic_shape, rank)
+        self.buffer = ctx.enqueue_create_buffer[Self.dtype](
+            product(dynamic_shape, Self.rank)
         )
-        self.tensor = NDBuffer[dtype, rank, MutAnyOrigin, shape](
+        self.tensor = NDBuffer[Self.dtype, Self.rank, MutAnyOrigin, Self.shape](
             self.buffer.unsafe_ptr(), dynamic_shape, stride
         )
 
@@ -210,22 +218,28 @@ struct DeviceNDBuffer[
         out self,
         dynamic_shape: DimList,
         *,
-        stride: IndexList[rank],
+        stride: IndexList[Self.rank],
         ctx: DeviceContext,
     ) raises:
-        self = Self(_make_tuple[rank](dynamic_shape), stride=stride, ctx=ctx)
+        self = Self(
+            _make_tuple[Self.rank](dynamic_shape), stride=stride, ctx=ctx
+        )
 
     def copy_from_device(
         self, ctx: DeviceContext
-    ) -> HostNDBuffer[dtype, rank, shape]:
-        var retval = HostNDBuffer[dtype, rank, shape](self.tensor.dynamic_shape)
+    ) -> HostNDBuffer[Self.dtype, Self.rank, Self.shape]:
+        var retval = HostNDBuffer[Self.dtype, Self.rank, Self.shape](
+            self.tensor.dynamic_shape
+        )
         ctx.enqueue_copy(retval.tensor.data, self.buffer)
         return retval^
 
     fn to_layout_tensor(
         ref self,
         out result: LayoutTensor[
-            dtype, Layout.row_major(IntTuple(shape)), origin_of(self.buffer)
+            Self.dtype,
+            Layout.row_major(IntTuple(Self.shape)),
+            origin_of(self.buffer),
         ],
     ):
         result = {
@@ -239,19 +253,19 @@ struct DeviceNDBuffer[
 # TODO: add address_space: AddressSpace = AddressSpace.GENERIC
 @fieldwise_init
 struct TestTensor[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
-    var ndbuffer: NDBuffer[dtype, rank, MutAnyOrigin]
+    var ndbuffer: NDBuffer[Self.dtype, Self.rank, MutAnyOrigin]
     var shape: DimList
     var num_elements: Int
 
     fn __init__(
         out self,
         shape: DimList,
-        values: List[Scalar[dtype]] = List[Scalar[dtype]](),
+        values: List[Scalar[Self.dtype]] = List[Scalar[Self.dtype]](),
     ):
-        self.num_elements = Int(shape.product[rank]())
+        self.num_elements = Int(shape.product[Self.rank]())
         self.shape = shape
-        self.ndbuffer = NDBuffer[dtype, rank](
-            UnsafePointer[Scalar[dtype]].alloc(self.num_elements), shape
+        self.ndbuffer = NDBuffer[Self.dtype, Self.rank](
+            UnsafePointer[Scalar[Self.dtype]].alloc(self.num_elements), shape
         )
         if len(values) == 1:
             for i in range(self.num_elements):
@@ -265,8 +279,9 @@ struct TestTensor[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
     fn __copyinit__(out self, other: Self):
         self.num_elements = other.num_elements
         self.shape = other.shape
-        self.ndbuffer = NDBuffer[dtype, rank](
-            UnsafePointer[Scalar[dtype]].alloc(self.num_elements), self.shape
+        self.ndbuffer = NDBuffer[Self.dtype, Self.rank](
+            UnsafePointer[Scalar[Self.dtype]].alloc(self.num_elements),
+            self.shape,
         )
         for i in range(self.num_elements):
             self.ndbuffer.data[i] = other.ndbuffer.data[i]
@@ -274,13 +289,15 @@ struct TestTensor[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
     fn __del__(deinit self):
         self.ndbuffer.data.free()
 
-    fn to_managed_tensor_slice(self) -> DynamicTensor[dtype, rank]:
-        return DynamicTensor[dtype, rank](self.ndbuffer)
+    fn to_managed_tensor_slice(self) -> DynamicTensor[Self.dtype, Self.rank]:
+        return DynamicTensor[Self.dtype, Self.rank](
+            self.ndbuffer.data, self.ndbuffer.get_shape()
+        )
 
 
 @register_passable("trivial")
 struct InitializationType(
-    DevicePassable, EqualityComparable, ImplicitlyCopyable, Movable
+    DevicePassable, Equatable, ImplicitlyCopyable, Movable
 ):
     var _value: Int
     alias zero = InitializationType(0)

@@ -66,7 +66,7 @@ from ..intrinsics import Scope
 
 @fieldwise_init
 @register_passable("trivial")
-struct CacheOperation(EqualityComparable, Identifiable):
+struct CacheOperation(Equatable, Identifiable):
     """Represents different GPU cache operation policies.
 
     This struct defines various caching behaviors for GPU memory operations,
@@ -76,56 +76,56 @@ struct CacheOperation(EqualityComparable, Identifiable):
 
     var _value: Int
 
-    alias ALWAYS = Self(0)
+    comptime ALWAYS = Self(0)
     """Cache at all levels. This will be accessed again.
 
     Best for data that will be frequently reused across multiple threads.
     Provides fastest subsequent access but uses the most cache space.
     """
 
-    alias GLOBAL = Self(1)
+    comptime GLOBAL = Self(1)
     """Cache at global level.
 
     Caches data only in the L2 cache, bypassing L1.
     Good for data shared between different thread blocks.
     """
 
-    alias STREAMING = Self(2)
+    comptime STREAMING = Self(2)
     """Streaming, this is likely to be accessed once.
 
     Optimizes for streaming access patterns where data is only read once.
     May bypass certain cache levels for better throughput.
     """
 
-    alias LAST_USE = Self(4)
+    comptime LAST_USE = Self(4)
     """Indicates the cache line will not be used again.
 
     Hints to the cache that this data can be evicted after this access.
     Helps optimize cache utilization.
     """
 
-    alias VOLATILE = Self(8)
+    comptime VOLATILE = Self(8)
     """Don't cache, and fetch again.
 
     Forces reads/writes to bypass cache and go directly to memory.
     Useful for memory-mapped I/O or when cache coherency is required.
     """
 
-    alias WRITE_BACK = Self(16)
+    comptime WRITE_BACK = Self(16)
     """Write back at all coherent levels.
 
     Updates all cache levels and eventually writes to memory.
     Most efficient for multiple writes to same location.
     """
 
-    alias WRITE_THROUGH = Self(32)
+    comptime WRITE_THROUGH = Self(32)
     """Write through to system memory.
 
     Immediately writes updates to memory while updating cache.
     Provides stronger consistency but lower performance than write-back.
     """
 
-    alias WORKGROUP = Self(64)
+    comptime WORKGROUP = Self(64)
     """Workgroup level coherency.
 
     Caches data in the L1 cache and streams it to the wave.
@@ -201,7 +201,7 @@ struct CacheOperation(EqualityComparable, Identifiable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct CacheEviction(EqualityComparable, Identifiable):
+struct CacheEviction(Equatable, Identifiable):
     """Represents cache eviction policies for GPU memory operations.
 
     This struct defines different cache eviction priorities that control how data is
@@ -211,7 +211,7 @@ struct CacheEviction(EqualityComparable, Identifiable):
 
     var _value: Int
 
-    alias EVICT_NORMAL = Self(0)
+    comptime EVICT_NORMAL = Self(0)
     """Default cache eviction priority.
 
     Data cached with normal priority follows standard cache replacement policies.
@@ -219,7 +219,7 @@ struct CacheEviction(EqualityComparable, Identifiable):
     patterns where no special caching requirements exist.
     """
 
-    alias EVICT_FIRST = Self(1)
+    comptime EVICT_FIRST = Self(1)
     """Highest eviction priority - data will be evicted first.
 
     Data cached with this priority is marked as the first candidate for eviction
@@ -229,7 +229,7 @@ struct CacheEviction(EqualityComparable, Identifiable):
     - Data with low temporal locality
     """
 
-    alias EVICT_LAST = Self(2)
+    comptime EVICT_LAST = Self(2)
     """Lowest eviction priority - data will be evicted last.
 
     Data cached with this priority remains in cache until all higher priority data
@@ -239,7 +239,7 @@ struct CacheEviction(EqualityComparable, Identifiable):
     - Critical data structures that benefit from cache persistence
     """
 
-    alias EVICT_UNCHANGED = Self(3)
+    comptime EVICT_UNCHANGED = Self(3)
     """Preserves existing cache eviction priority.
 
     When this policy is used:
@@ -248,7 +248,7 @@ struct CacheEviction(EqualityComparable, Identifiable):
     - Useful for operations that should not affect caching behavior
     """
 
-    alias NO_ALLOCATE = Self(4)
+    comptime NO_ALLOCATE = Self(4)
     """Prevents cache allocation for accessed data.
 
     Data is not cached when using this policy. Optimal for:
@@ -310,7 +310,7 @@ struct CacheEviction(EqualityComparable, Identifiable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Fill(EqualityComparable, Identifiable):
+struct Fill(Equatable, Identifiable):
     """Represents memory fill patterns for GPU memory operations.
 
     This struct defines different fill patterns that can be used when allocating or
@@ -320,13 +320,13 @@ struct Fill(EqualityComparable, Identifiable):
 
     var _value: Int
 
-    alias NONE = Self(0)
+    comptime NONE = Self(0)
     """No fill pattern - memory is left uninitialized."""
 
-    alias ZERO = Self(1)
+    comptime ZERO = Self(1)
     """Fill memory with zeros."""
 
-    alias NAN = Self(2)
+    comptime NAN = Self(2)
     """Fill memory with NaN values. Useful for debugging floating point computations."""
 
     fn __eq__(self, other: Self) -> Bool:
@@ -377,9 +377,7 @@ struct Fill(EqualityComparable, Identifiable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Consistency(
-    EqualityComparable, Identifiable, ImplicitlyCopyable, Movable
-):
+struct Consistency(Equatable, Identifiable, ImplicitlyCopyable, Movable):
     """Represents memory consistency models for GPU memory operations.
 
     This struct defines different memory consistency levels that control how memory
@@ -389,25 +387,25 @@ struct Consistency(
 
     var _value: Int
 
-    alias WEAK = Self(0)
+    comptime WEAK = Self(0)
     """Weakest consistency model with minimal ordering guarantees.
 
     Provides maximum flexibility for hardware/compiler optimizations but requires
     careful synchronization by the programmer."""
 
-    alias RELAXED = Self(1)
+    comptime RELAXED = Self(1)
     """Relaxed consistency with basic ordering guarantees.
 
     Provides some ordering guarantees while still allowing optimizations.
     Suitable for operations that don't require strict ordering."""
 
-    alias ACQUIRE = Self(2)
+    comptime ACQUIRE = Self(2)
     """Acquire consistency for synchronization operations.
 
     Ensures all subsequent memory operations are ordered after this operation.
     Used in producer-consumer patterns."""
 
-    alias RELEASE = Self(3)
+    comptime RELEASE = Self(3)
     """Release consistency for synchronization operations.
 
     Ensures all previous memory operations are ordered before this operation.
@@ -469,7 +467,7 @@ struct Consistency(
 
 @fieldwise_init
 @register_passable("trivial")
-struct ReduceOp(EqualityComparable, Identifiable):
+struct ReduceOp(Equatable, Identifiable):
     """Represents reduction operations for parallel reduction algorithms.
 
     This struct defines different reduction operations that can be performed
@@ -479,32 +477,32 @@ struct ReduceOp(EqualityComparable, Identifiable):
 
     var _value: Int
 
-    alias ADD = Self(0)
+    comptime ADD = Self(0)
     """Addition reduction operation.
 
     Combines values by adding them together."""
 
-    alias MIN = Self(1)
+    comptime MIN = Self(1)
     """Minimum reduction operation.
 
     Finds the minimum value across all inputs."""
 
-    alias MAX = Self(2)
+    comptime MAX = Self(2)
     """Maximum reduction operation.
 
     Finds the maximum value across all inputs."""
 
-    alias AND = Self(3)
+    comptime AND = Self(3)
     """Bitwise AND reduction operation.
 
     Performs bitwise AND across all inputs."""
 
-    alias OR = Self(4)
+    comptime OR = Self(4)
     """Bitwise OR reduction operation.
 
     Performs bitwise OR across all inputs."""
 
-    alias XOR = Self(5)
+    comptime XOR = Self(5)
     """Bitwise XOR reduction operation.
 
     Performs bitwise XOR across all inputs."""
@@ -665,7 +663,7 @@ fn async_copy[
     if is_amd_gpu():
         # Use sync load and stores for now
         # TODO(KERN-1249): add async memcopy to AMD
-        alias n_scalars = size // size_of[dtype]()
+        comptime n_scalars = size // size_of[dtype]()
         var n_src_scalars = src_size // size_of[dtype]()
 
         @parameter
@@ -683,21 +681,21 @@ fn async_copy[
     # Cache always: cache data in L1 first, then copy to shared memory.
     # Cache global: bypass L1 cache
     # We always do the latter.
-    alias cache_op = CacheOperation.GLOBAL.mnemonic() if (
+    comptime cache_op = CacheOperation.GLOBAL.mnemonic() if (
         bypass_L1_16B and size == 16
     ) else CacheOperation.ALWAYS.mnemonic()
-    alias access_size = _int_to_str[size]()
+    comptime access_size = _int_to_str[size]()
 
-    alias cache_hint = ".L2::cache_hint" if eviction_policy is not CacheEviction.EVICT_NORMAL else StaticString(
+    comptime cache_hint = ".L2::cache_hint" if eviction_policy is not CacheEviction.EVICT_NORMAL else StaticString(
         ""
     )
     var cache_policy = _mark_eviction[eviction_policy]()
 
-    alias l2_prefetch_substr = ".L2::" + _int_to_str[
+    comptime l2_prefetch_substr = ".L2::" + _int_to_str[
         l2_prefetch.value()
     ]() + "B" if l2_prefetch else ""
 
-    alias cp_async_asm = "cp.async." + cache_op + ".shared.global" + cache_hint + l2_prefetch_substr
+    comptime cp_async_asm = "cp.async." + cache_op + ".shared.global" + cache_hint + l2_prefetch_substr
 
     @parameter
     if Bool(fill) and Bool(fill.value() == 0):
@@ -705,8 +703,8 @@ fn async_copy[
             not predicate, "Predicate bit has to be set False for zero fill."
         )
 
-        alias args_with_fill = " [$0], [$1], $2, $3"
-        alias asm = cp_async_asm + args_with_fill
+        comptime args_with_fill = " [$0], [$1], $2, $3"
+        comptime asm = cp_async_asm + args_with_fill
 
         @parameter
         if eviction_policy is CacheEviction.EVICT_NORMAL:
@@ -738,10 +736,10 @@ fn async_copy[
             return 0
 
         var fill_val = _i32_repr[fill.value()]()
-        alias header_asm = "{\n.reg .pred p;\nsetp.ne.b32 p, $0, 0;\n"
-        alias footer_asm = "@!p st.shared.v4.b32 [$1], {$4, $5, $6, $7};\n}\n"
-        alias args_with_fill = " [$1], [$2], $3"
-        alias copy_asm = header_asm + "@p " + cp_async_asm + args_with_fill
+        comptime header_asm = "{\n.reg .pred p;\nsetp.ne.b32 p, $0, 0;\n"
+        comptime footer_asm = "@!p st.shared.v4.b32 [$1], {$4, $5, $6, $7};\n}\n"
+        comptime args_with_fill = " [$1], [$2], $3"
+        comptime copy_asm = header_asm + "@p " + cp_async_asm + args_with_fill
 
         @parameter
         if eviction_policy is CacheEviction.EVICT_NORMAL:
@@ -781,8 +779,8 @@ fn async_copy[
             not predicate, "Predicate bit has to set False for no fill."
         )
 
-        alias args = " [$0], [$1], $2"
-        alias asm = cp_async_asm + args
+        comptime args = " [$0], [$1], $2"
+        comptime asm = cp_async_asm + args
 
         @parameter
         if eviction_policy is CacheEviction.EVICT_NORMAL:
@@ -1067,7 +1065,7 @@ fn cp_async_bulk_tensor_shared_cluster_global[
     constrained[rank <= 3, "Expecting rank-1 or rank-2 tensors"]()
 
     constrained[cta_group in (1, 2), "cta_group must be 1 or 2"]()
-    alias tma_asm = String(
+    comptime tma_asm = String(
         "cp.async.bulk.tensor.",
         rank,
         "d",
@@ -1223,7 +1221,7 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
     constrained[rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"]()
 
     constrained[cta_group in (1, 2), "cta_group must be 1 or 2"]()
-    alias tma_asm = String(
+    comptime tma_asm = String(
         "cp.async.bulk.tensor.",
         rank,
         "d",
@@ -1336,7 +1334,7 @@ fn cp_async_bulk_tensor_global_shared_cta[
     """
     constrained[rank in (1, 2, 3), "Expecting rank-1, 2, or 3 tensors"]()
 
-    alias cache_hint: Bool = eviction_policy is not CacheEviction.EVICT_NORMAL
+    comptime cache_hint: Bool = eviction_policy is not CacheEviction.EVICT_NORMAL
 
     @parameter
     if rank == 3:
@@ -1415,7 +1413,7 @@ fn cp_async_bulk_tensor_reduce[
     - The reduction operation is performed atomically to ensure correctness.
     """
     constrained[rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"]()
-    alias cache_hint: Bool = eviction_policy is not CacheEviction.EVICT_NORMAL
+    comptime cache_hint: Bool = eviction_policy is not CacheEviction.EVICT_NORMAL
 
     @parameter
     if rank == 2:
@@ -1503,8 +1501,8 @@ fn _load_impl[
     if prefetch_size:
         constrained[prefetch_size.value() in (64, 128, 256)]()
 
-    alias bytes_to_load = size_of[dtype]() * width
-    alias dtype_bitwidth = bit_width_of[dtype]()
+    comptime bytes_to_load = size_of[dtype]() * width
+    comptime dtype_bitwidth = bit_width_of[dtype]()
 
     @parameter
     if bytes_to_load < size_of[DType.uint32]():
@@ -1537,23 +1535,23 @@ fn _load_impl[
             ](ptr.bitcast[UInt32]())
         )
 
-    alias dtype_mnemonic = "u" + _int_to_str[dtype_bitwidth]()
-    alias cache_policy_mnemonic = cache_policy.mnemonic()
-    alias eviction_policy_mnemonic = (
+    comptime dtype_mnemonic = "u" + _int_to_str[dtype_bitwidth]()
+    comptime cache_policy_mnemonic = cache_policy.mnemonic()
+    comptime eviction_policy_mnemonic = (
         ".L1::" + eviction_policy.mnemonic()
     ) if eviction_policy != CacheEviction.EVICT_NORMAL else ""
-    alias pretch_size_mnemonic = (
+    comptime pretch_size_mnemonic = (
         ".L2::" + _int_to_str[prefetch_size.value()]() + "B"
     ) if prefetch_size else ""
-    alias cache_operation = ".nc" if read_only else ""
+    comptime cache_operation = ".nc" if read_only else ""
 
-    alias cache_policy_inst = (
+    comptime cache_policy_inst = (
         "" if cache_policy
         is CacheOperation.ALWAYS else ("." + cache_policy_mnemonic)
     )
-    alias v_width = ("" if width == 1 else ".v" + _int_to_str[width]())
+    comptime v_width = ("" if width == 1 else ".v" + _int_to_str[width]())
 
-    alias instruction_name = "ld.global" + cache_policy_inst + cache_operation + eviction_policy_mnemonic + pretch_size_mnemonic + v_width + "." + dtype_mnemonic
+    comptime instruction_name = "ld.global" + cache_policy_inst + cache_operation + eviction_policy_mnemonic + pretch_size_mnemonic + v_width + "." + dtype_mnemonic
 
     var res = SIMD[dtype, width]()
 
@@ -1743,7 +1741,7 @@ fn _get_multimem_ld_reduce_asm[
         in (Consistency.WEAK, Consistency.RELAXED, Consistency.ACQUIRE),
         "multimem.ld_reduce consistency must be in {weak, relaxed, acquire}",
     ]()
-    alias total_bits = count * output_width * size_of[dtype]() * 8
+    comptime total_bits = count * output_width * size_of[dtype]() * 8
     constrained[
         total_bits in (32, 64, 128),
         "total bit width must be 32, 64, or 128 bits",
@@ -1753,16 +1751,16 @@ fn _get_multimem_ld_reduce_asm[
         "float64 requires count=1 (no .vec qualifier allowed)",
     ]()
 
-    alias ss = ".global"
-    alias vec = ".v" + _int_to_str[count]() if count > 1 else ""
-    alias op = "." + reduction.mnemonic()
-    alias dtype_mnemonic = "." + _get_type_mnemonic[dtype]() + (
+    comptime ss = ".global"
+    comptime vec = ".v" + _int_to_str[count]() if count > 1 else ""
+    comptime op = "." + reduction.mnemonic()
+    comptime dtype_mnemonic = "." + _get_type_mnemonic[dtype]() + (
         "x" + _int_to_str[output_width]() if output_width > 1 else ""
     )
-    alias accum = (
+    comptime accum = (
         ".acc::" + _get_type_mnemonic[accum_type]()
     ) if accum_type is not dtype else ""
-    alias asm = "multimem.ld_reduce." + consistency.mnemonic() + "." + scope.mnemonic() + ss + op + accum + vec + dtype_mnemonic
+    comptime asm = "multimem.ld_reduce." + consistency.mnemonic() + "." + scope.mnemonic() + ss + op + accum + vec + dtype_mnemonic
     return asm
 
 
@@ -1810,7 +1808,7 @@ fn multimem_ld_reduce[
         - Type must be a floating point type.
         - float64 requires count=1 (no .vec qualifier allowed).
     """
-    alias total_bits = count * output_width * size_of[dtype]() * 8
+    comptime total_bits = count * output_width * size_of[dtype]() * 8
     constrained[
         total_bits in (32, 64, 128),
         "total bit width must be 32, 64, or 128 bits",
@@ -1820,7 +1818,7 @@ fn multimem_ld_reduce[
         "float64 requires count=1 (no .vec qualifier allowed)",
     ]()
 
-    alias asm = _get_multimem_ld_reduce_asm[
+    comptime asm = _get_multimem_ld_reduce_asm[
         dtype,
         count=count,
         reduction=reduction,
@@ -1930,12 +1928,12 @@ fn multimem_ld_reduce[
         - Type must be a floating point type.
         - float64 requires count=1 (no .vec qualifier allowed).
     """
-    alias output_width = 4 // size_of[dtype]()
-    alias count = simd_width // output_width
+    comptime output_width = 4 // size_of[dtype]()
+    comptime count = simd_width // output_width
     constrained[
         simd_width in (1, 2, 4, 8), "simd_width must be 1, 2, 4, or 8"
     ]()
-    alias total_bits = count * output_width * size_of[dtype]() * 8
+    comptime total_bits = count * output_width * size_of[dtype]() * 8
     constrained[
         total_bits in (32, 64, 128),
         "total bit width must be 32, 64, or 128 bits",
@@ -1985,7 +1983,7 @@ fn _get_multimem_st_asm[
         in (Consistency.WEAK, Consistency.RELAXED, Consistency.RELEASE),
         "multimem.st consistency must be in {weak, relaxed, release}",
     ]()
-    alias total_bits = count * width * size_of[dtype]() * 8
+    comptime total_bits = count * width * size_of[dtype]() * 8
     constrained[
         total_bits in (32, 64, 128),
         "total bit width must be 32, 64, or 128 bits",
@@ -1995,12 +1993,12 @@ fn _get_multimem_st_asm[
         "float64 requires count=1 (no .vec qualifier allowed)",
     ]()
 
-    alias ss = ".global"
-    alias vec = ".v" + _int_to_str[count]() if count > 1 else ""
-    alias dtype_mnemonic = "." + _get_type_mnemonic[dtype]() + (
+    comptime ss = ".global"
+    comptime vec = ".v" + _int_to_str[count]() if count > 1 else ""
+    comptime dtype_mnemonic = "." + _get_type_mnemonic[dtype]() + (
         "x" + _int_to_str[width]() if width > 1 else ""
     )
-    alias asm = "multimem.st." + consistency.mnemonic() + "." + scope.mnemonic() + ss + vec + dtype_mnemonic
+    comptime asm = "multimem.st." + consistency.mnemonic() + "." + scope.mnemonic() + ss + vec + dtype_mnemonic
     return asm
 
 
@@ -2065,7 +2063,7 @@ fn multimem_st[
     See Also:
         [PTX ISA Documentation](https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-multimem-ld-reduce-multimem-st-multimem-red).
     """
-    alias total_bits = count * width * size_of[dtype]() * 8
+    comptime total_bits = count * width * size_of[dtype]() * 8
     constrained[
         total_bits in (32, 64, 128),
         "total bit width must be 32, 64, or 128 bits",
@@ -2075,7 +2073,7 @@ fn multimem_st[
         "float64 requires count=1 (no .vec qualifier allowed)",
     ]()
 
-    alias asm = _get_multimem_st_asm[
+    comptime asm = _get_multimem_st_asm[
         dtype,
         count=count,
         scope=scope,

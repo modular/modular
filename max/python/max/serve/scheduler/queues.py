@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import queue
 from collections.abc import AsyncGenerator, Generator
 from typing import Any, Generic
@@ -34,7 +35,11 @@ from max.interfaces.queue import MAXPullQueue, MAXPushQueue
 from max.pipelines.architectures.qwen2_5vl.context import (
     Qwen2_5VLTextAndVisionContext,
 )
+from max.pipelines.architectures.qwen3vl_moe.context import (
+    Qwen3VLTextAndVisionContext,
+)
 from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
+from max.serve.process_control import ProcessMonitor
 from max.serve.queue.zmq_queue import ZmqConfig
 from max.serve.scheduler.base import sleep_with_backoff
 
@@ -49,7 +54,11 @@ def _get_request_type_from_pipeline_task(
         PipelineTask.EMBEDDINGS_GENERATION,
     ]:
         return (
-            TextContext | TextAndVisionContext | Qwen2_5VLTextAndVisionContext
+            # TODO: Add custom context types here automatically as they are supported.
+            TextContext
+            | TextAndVisionContext
+            | Qwen2_5VLTextAndVisionContext
+            | Qwen3VLTextAndVisionContext
         )
     elif pipeline_task in [PipelineTask.AUDIO_GENERATION]:
         return TTSContext
@@ -110,6 +119,7 @@ class EngineQueue(Generic[BaseContextType, PipelineOutputType]):
 
     def __init__(
         self,
+        worker_monitor: ProcessMonitor,
         scheduler_zmq_configs: SchedulerZmqConfigs,
     ) -> None:
         # Create Queues
@@ -120,6 +130,15 @@ class EngineQueue(Generic[BaseContextType, PipelineOutputType]):
         self.pending_out_queues: dict[
             RequestID, asyncio.Queue[SchedulerResult[PipelineOutputType]]
         ] = {}
+        self.worker_monitor = worker_monitor
+
+    def is_worker_healthy(self) -> bool:
+        """Is the worker healthy?
+
+        By default, verify health with ProcessControl.is_alive().  If a Process
+        is registered, used Process.is_alive() instead.
+        """
+        return self.worker_monitor.is_healthy()
 
     @contextlib.contextmanager
     def open_channel(
@@ -217,24 +236,40 @@ class EngineQueue(Generic[BaseContextType, PipelineOutputType]):
             Exception: If the worker process becomes unhealthy and cannot be recovered.
             asyncio.CancelledError: If the response worker task is cancelled.
         """
-        count_no_progress = 0
-        while True:
-            try:
-                response_dict = self.response_queue.get_nowait()
-                cancelled = set()
-                for request_id, response in response_dict.items():
-                    if request_id in self.pending_out_queues:
-                        await self.pending_out_queues[request_id].put(response)
-                    else:
-                        cancelled.add(request_id)
+        try:
+            count_no_progress = 0
+            while True:
+                try:
+                    response_dict = self.response_queue.get_nowait()
+                    cancelled = set()
+                    for request_id, response in response_dict.items():
+                        if request_id in self.pending_out_queues:
+                            await self.pending_out_queues[request_id].put(
+                                response
+                            )
+                        else:
+                            cancelled.add(request_id)
 
-                if cancelled:
-                    self.cancel_queue.put_nowait(list(cancelled))
+                    if cancelled:
+                        self.cancel_queue.put_nowait(list(cancelled))
 
-                count_no_progress = 0
-            except queue.Empty:
-                await sleep_with_backoff(count_no_progress)
-                count_no_progress += 1
-            except zmq.error.Again:
-                # the model worker disconnected from zmq (died)
-                raise Exception("zmq detected a dead model worker") from None
+                    count_no_progress = 0
+
+                except (queue.Empty, zmq.error.Again) as e:
+                    # If the worker dies this loop will keep running,
+                    # so we have to check the worker status.
+                    if (
+                        isinstance(e, zmq.error.Again)
+                        or not self.is_worker_healthy()
+                    ):
+                        logger.error("Model worker process is not healthy")
+                        self.worker_monitor.pc.set_canceled()
+                        raise Exception(
+                            "Worker stopped unexpectedly."
+                        ) from None
+
+                    await sleep_with_backoff(count_no_progress)
+                    count_no_progress += 1
+
+        finally:
+            logger.debug("Terminating response worker [self=%s]", os.getpid())

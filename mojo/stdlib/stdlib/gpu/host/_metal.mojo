@@ -20,7 +20,7 @@ struct _MTLDevice:
     pass
 
 
-alias MTLDevice = UnsafePointer[_MTLDevice]
+comptime MTLDevice = UnsafePointer[_MTLDevice]
 
 
 # Accessor function to get access to the underlying MTLDevice from an abstract DeviceContext.

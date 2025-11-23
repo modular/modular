@@ -84,10 +84,10 @@ struct RuntimeTuple[
         element_type: Integer type of the underlying elements.
     """
 
-    alias scalar_length = len(flatten(S))
+    alias scalar_length = len(flatten(Self.S))
     """The total number of scalar elements in this RuntimeTuple after flattening nested tuples."""
 
-    var value: IndexList[Self.scalar_length, element_type=element_type]
+    var value: IndexList[Self.scalar_length, element_type = Self.element_type]
     """Storage for the actual tuple values, implemented as an IndexList with the appropriate size and element type."""
 
     @always_inline
@@ -99,7 +99,7 @@ struct RuntimeTuple[
         """
         self.value = {}
 
-        alias f = flatten(S)
+        alias f = flatten(Self.S)
 
         @parameter
         for i in range(Self.scalar_length):
@@ -164,11 +164,11 @@ struct RuntimeTuple[
 
         @parameter
         for j in range(i):
-            result += len(flatten(S[j]))
+            result += len(flatten(Self.S[j]))
         return result
 
     @always_inline
-    fn get_int(self) -> Scalar[element_type]:
+    fn get_int(self) -> Scalar[Self.element_type]:
         """Returns the integer value of this RuntimeTuple.
 
         For tuples with a known compile-time value, returns that value.
@@ -178,7 +178,7 @@ struct RuntimeTuple[
         Returns:
             The integer value of this RuntimeTuple.
         """
-        alias comptime_value: Scalar[element_type] = S.value()
+        alias comptime_value: Scalar[Self.element_type] = Self.S.value()
 
         @parameter
         if comptime_value != UNKNOWN_VALUE:
@@ -189,7 +189,7 @@ struct RuntimeTuple[
     @always_inline
     fn __getitem__[
         i: Int
-    ](self, out res: RuntimeTuple[S[i], element_type=element_type]):
+    ](self, out res: RuntimeTuple[Self.S[i], element_type = Self.element_type]):
         """Retrieves the element at the specified index in the tuple.
 
         This method provides array-like indexing for RuntimeTuple, allowing access
@@ -210,7 +210,7 @@ struct RuntimeTuple[
             res.value[i] = self.value[i + offset]
 
     @always_inline
-    fn __setitem__[i: Int](mut self, val: Scalar[element_type]):
+    fn __setitem__[i: Int](mut self, val: Scalar[Self.element_type]):
         """Sets the value of the element at the specified index in the tuple.
 
         This method enables array-like assignment for RuntimeTuple elements,
@@ -243,8 +243,10 @@ struct RuntimeTuple[
         R: IntTuple
     ](
         self,
-        rhs: RuntimeTuple[R, element_type=element_type],
-        out result: RuntimeTuple[concat(S, R), element_type=element_type],
+        rhs: RuntimeTuple[R, element_type = Self.element_type],
+        out result: RuntimeTuple[
+            concat(Self.S, R), element_type = Self.element_type
+        ],
     ):
         """Concatenates two `RuntimeTuple`s together.
 
@@ -263,7 +265,7 @@ struct RuntimeTuple[
         """
         result = {}
 
-        alias S_flat = flatten(S)
+        alias S_flat = flatten(Self.S)
 
         @parameter
         for i in range(Self.scalar_length):
@@ -284,7 +286,9 @@ struct RuntimeTuple[
     @always_inline
     fn flatten(
         self,
-        out result: RuntimeTuple[flatten(S), element_type=element_type],
+        out result: RuntimeTuple[
+            flatten(Self.S), element_type = Self.element_type
+        ],
     ):
         """Flattens a potentially nested `RuntimeTuple` into a single-level tuple.
         This method converts a hierarchical structure of tuples into a flat representation,
@@ -308,12 +312,12 @@ struct RuntimeTuple[
         """
 
         @parameter
-        if S.is_value():
+        if Self.S.is_value():
             writer.write(self.value[0])
         else:
             writer.write("(")
 
-            alias size = len(S)
+            alias size = len(Self.S)
 
             @parameter
             for i in range(size):
@@ -336,13 +340,13 @@ struct RuntimeTuple[
         Returns:
             The number of top-level elements in the tuple.
         """
-        alias l = len(S)
+        alias l = len(Self.S)
         return l
 
     @always_inline
     fn cast[
         dtype: DType
-    ](self, out result: RuntimeTuple[S, element_type=dtype]):
+    ](self, out result: RuntimeTuple[Self.S, element_type=dtype]):
         """Casts the RuntimeTuple to use a different numeric type.
         This method creates a new RuntimeTuple with the same structure and values
         but using a different underlying numeric type for storage. This is useful
@@ -366,7 +370,7 @@ struct RuntimeTuple[
         Returns:
             The integer value of the tuple.
         """
-        constrained[S.is_value(), "tuple must be a single int value"]()
+        constrained[Self.S.is_value(), "tuple must be a single int value"]()
         return self.value[0]
 
 

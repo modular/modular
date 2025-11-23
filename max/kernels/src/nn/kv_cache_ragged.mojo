@@ -628,8 +628,6 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
     """
     alias kv_type = cache_t.dtype
     alias kv_params = cache_t.kv_params
-    alias N = Int(weight.layout.shape[0])
-    alias K = Int(weight.layout.shape[1])
 
     constrained[
         kv_type == dtype, "Mismatch in dtype between Q and KV tensors"
@@ -763,8 +761,6 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
     """
     alias kv_type = cache_t.dtype
     alias kv_params = cache_t.kv_params
-    alias N = Int(weight.layout.shape[0])
-    alias K = Int(weight.layout.shape[1])
 
     constrained[
         kv_type == dtype, "Mismatch in dtype between Q and KV tensors"
@@ -907,8 +903,6 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     """
     alias kv_type = cache_t.dtype
     alias kv_params = cache_t.kv_params
-    alias N = Int(weight.layout.shape[0])
-    alias K = Int(weight.layout.shape[1])
 
     var q_dim = output.dim[1]()
     var k_dim = kv_params.head_size * kv_params.num_heads
@@ -1024,7 +1018,6 @@ fn _matmul_common[
 ) raises:
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     alias N = Int(weight.layout.shape[0])
-    alias K = Int(weight.layout.shape[1])
     var c_nd: LayoutTensor[
         output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
     ]
@@ -1299,8 +1292,6 @@ fn _matmul_kv_cache_ragged_impl[
         return
 
     alias kv_params = cache_t.kv_params
-    alias N = UInt(Int(weight.layout.shape[0]))
-    alias K = UInt(Int(weight.layout.shape[1]))
 
     batch_size = input_row_offsets.dim[0]() - 1
 
@@ -1516,8 +1507,6 @@ fn _matmul_k_cache_ragged_impl[
         return
 
     alias kv_params = cache_t.kv_params
-    alias N = UInt(Int(weight.layout.shape[0]))
-    alias K = UInt(Int(weight.layout.shape[1]))
 
     batch_size = input_row_offsets.dim[0]() - 1
 
@@ -1689,8 +1678,6 @@ fn _matmul_k_cache_ragged_scale_impl[
         return
 
     alias kv_params = cache_t.kv_params
-    alias N = UInt(Int(weight.layout.shape[0]))
-    alias K = UInt(Int(weight.layout.shape[1]))
 
     var batch_size = input_row_offsets.dim[0]() - 1
 
@@ -1981,8 +1968,6 @@ fn _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
     k_or_v_cache: cache_t,
 ) raises:
     alias kv_params = cache_t.kv_params
-    alias N = UInt(Int(k_or_v_weight.layout.shape[0]))
-    alias K = UInt(Int(k_or_v_weight.layout.shape[1]))
 
     batch_size = input_row_offsets.dim[0]() - 1
 
@@ -2049,7 +2034,6 @@ fn _qmatmul_gguf_quantized_alloc_output[
 ) raises:
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     alias N = Int(weight.layout.shape[0])
-    alias K = Int(weight.layout.shape[1])
     var c_nd: LayoutTensor[
         DType.float32, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
     ]

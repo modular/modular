@@ -42,7 +42,7 @@ struct MyMemStruct[size: Int](Movable):
     var value: Int
 
     fn sizes(self) -> Tuple[Int, Int]:
-        return (size, self.value)
+        return (Self.size, self.value)
 
 
 fn indirect_with_rebind[X: Int](a: MyMemStruct[X]) -> Tuple[Int, Int]:

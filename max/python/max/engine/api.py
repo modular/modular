@@ -184,7 +184,7 @@ def _is_max_graph(obj: Any) -> bool:
 def _process_custom_extensions_object(
     custom_extension: CustomExtensionType,
 ) -> CustomExtensionType:
-    if isinstance(custom_extension, Path) or isinstance(custom_extension, str):
+    if isinstance(custom_extension, (Path, str)):
         if is_mojo_source_package_path(Path(custom_extension)):
             # Builds the source directory into a .mojopkg file.
             return _build_mojo_source_package(Path(custom_extension))
@@ -439,6 +439,15 @@ class InferenceSession:
                 raise ValueError(
                     f"Weight '{weight_name}' is not contiguous: {str(e)}"
                 ) from e
+
+        # Check if we're using virtual devices (compile-only mode)
+        # Import here to avoid circular dependency issues
+        from max.driver import is_virtual_device_mode
+
+        if is_virtual_device_mode():
+            # In compile-only mode with virtual devices, skip initialization
+            # Initialization requires device memory allocation which virtual devices don't support
+            return _model
 
         _model._load(weights_registry_real)
         return _model

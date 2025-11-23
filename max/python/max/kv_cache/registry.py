@@ -34,11 +34,9 @@ def load_kv_manager(
     params: KVCacheParams,
     max_batch_size: int | None,
     max_seq_len: int,
-    num_layers: int,
     devices: Sequence[Device],
     session: InferenceSession,
     available_cache_memory: int | None = None,
-    page_size: int | None = 512,
 ) -> PagedKVCacheManager | NullKVCacheManager:
     assert max_batch_size is not None, "Expected max_batch_size to be set"
     assert max_batch_size > 0, "max_batch_size must be greater than 0"
@@ -53,19 +51,12 @@ def load_kv_manager(
             params=params,
             max_batch_size=max_batch_size,
             max_seq_len=max_seq_len,
-            num_layers=num_layers,
             devices=devices,
             session=session,
-            available_cache_memory=available_cache_memory or 1024 * 1024 * 1024,
-            page_size=page_size or 512,
         )
 
     if params.cache_strategy == KVCacheStrategy.PAGED:
-        if page_size is None:
-            raise ValueError(
-                "Missing required argument page_size for KVCacheStrategy.PAGED"
-            )
-
+        page_size = params.page_size
         # TODO(KERN-1308) remove this validation as we generalize page_size
         if page_size % 128 != 0 or page_size < 128:
             raise ValueError(
@@ -79,13 +70,16 @@ def load_kv_manager(
 
         return PagedKVCacheManager(
             params=params,
+            total_num_pages=params.compute_num_device_blocks(
+                available_cache_memory=available_cache_memory,
+                max_batch_size=max_batch_size,
+                max_seq_len=max_seq_len,
+            ),
+            total_num_host_pages=params.compute_num_host_blocks(),
             max_batch_size=max_batch_size,
             max_seq_len=max_seq_len,
-            num_layers=num_layers,
             devices=devices,
             session=session,
-            available_cache_memory=available_cache_memory,
-            page_size=page_size,
         )
     else:
         raise ValueError(f"cache type: {params.cache_strategy} not supported.")
@@ -95,24 +89,15 @@ def estimate_kv_cache_size(
     params: KVCacheParams,
     max_batch_size: int | None,
     max_seq_len: int,
-    num_layers: int,
     available_cache_memory: int,
-    devices: Sequence[Device],
-    **kwargs: Any,
 ) -> int:
     assert max_batch_size is not None, "Expected max_batch_size to be set"
     assert max_batch_size > 0, "max_batch_size must be greater than 0"
-    if params.cache_strategy not in CACHE_MANAGER_REGISTRY:
-        raise ValueError(f"cache type: {params.cache_strategy} not supported.")
 
-    return CACHE_MANAGER_REGISTRY[params.cache_strategy].estimated_memory_size(
-        params=params,
+    return params.estimated_memory_size(
+        available_cache_memory=available_cache_memory,
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
-        num_layers=num_layers,
-        available_cache_memory=available_cache_memory,
-        devices=devices,
-        **kwargs,
     )
 
 

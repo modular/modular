@@ -94,8 +94,8 @@ fn lane_id() -> UInt:
         )
 
     elif is_amd_gpu():
-        alias none = Int32(-1)
-        alias zero = Int32(0)
+        comptime none = Int32(-1)
+        comptime zero = Int32(0)
         var t = llvm_intrinsic[
             "llvm.amdgcn.mbcnt.lo", Int32, has_side_effect=False
         ](none, zero)
@@ -223,13 +223,13 @@ struct _ThreadIdx(Defaultable):
             The `x`, `y`, or `z` coordinates of a thread within a block.
         """
         _verify_xyz[dim]()
-        alias intrinsic_name = Self._get_intrinsic_name[dim]()
+        comptime intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
             llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
         )
 
 
-alias thread_idx = _ThreadIdx()
+comptime thread_idx = _ThreadIdx()
 """Contains the thread index in the block, as `x`, `y`, and `z` values."""
 
 
@@ -271,13 +271,13 @@ struct _BlockIdx(Defaultable):
             The `x`, `y`, or `z` coordinates of a block within a grid.
         """
         _verify_xyz[dim]()
-        alias intrinsic_name = Self._get_intrinsic_name[dim]()
+        comptime intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
             llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
         )
 
 
-alias block_idx = _BlockIdx()
+comptime block_idx = _BlockIdx()
 """Contains the block index in the grid, as `x`, `y`, and `z` values."""
 
 
@@ -306,7 +306,7 @@ struct _BlockDim(Defaultable):
 
         @parameter
         if is_nvidia_gpu():
-            alias intrinsic_name = "llvm.nvvm.read.ptx.sreg.ntid." + dim
+            comptime intrinsic_name = "llvm.nvvm.read.ptx.sreg.ntid." + dim
             return UInt(
                 Int(
                     llvm_intrinsic[
@@ -346,7 +346,7 @@ struct _BlockDim(Defaultable):
             ]()
 
 
-alias block_dim = _BlockDim()
+comptime block_dim = _BlockDim()
 """Contains the dimensions of the block as `x`, `y`, and `z` values (for
 example, `block_dim.y`)"""
 
@@ -376,7 +376,7 @@ struct _GridDim(Defaultable):
 
         @parameter
         if is_nvidia_gpu():
-            alias intrinsic_name = "llvm.nvvm.read.ptx.sreg.nctaid." + dim
+            comptime intrinsic_name = "llvm.nvvm.read.ptx.sreg.nctaid." + dim
             return UInt(
                 Int(
                     llvm_intrinsic[
@@ -399,7 +399,7 @@ struct _GridDim(Defaultable):
 
             return _get_gcn_idx[_get_offset(), DType.uint32]()
         elif is_apple_gpu():
-            alias intrinsic_name = "llvm.air.threads_per_grid." + dim
+            comptime intrinsic_name = "llvm.air.threads_per_grid." + dim
             var gridDim = UInt(
                 Int(
                     llvm_intrinsic[
@@ -418,7 +418,7 @@ struct _GridDim(Defaultable):
             ]()
 
 
-alias grid_dim = _GridDim()
+comptime grid_dim = _GridDim()
 """Provides accessors for getting the `x`, `y`, and `z`
 dimensions of a grid."""
 
@@ -452,7 +452,7 @@ struct _GlobalIdx(Defaultable):
         return math.fma(b_idx, b_dim, t_idx)
 
 
-alias global_idx = _GlobalIdx()
+comptime global_idx = _GlobalIdx()
 """Contains the global offset of the kernel launch, as `x`, `y`, and `z`
 values."""
 
@@ -484,13 +484,13 @@ struct _ClusterDim(Defaultable):
         ]()
         _verify_xyz[dim]()
 
-        alias intrinsic_name = "llvm.nvvm.read.ptx.sreg.cluster.nctaid." + dim
+        comptime intrinsic_name = "llvm.nvvm.read.ptx.sreg.cluster.nctaid." + dim
         return UInt(
             Int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
         )
 
 
-alias cluster_dim = _ClusterDim()
+comptime cluster_dim = _ClusterDim()
 """Contains the dimensions of the cluster, as `x`, `y`, and `z` values."""
 
 
@@ -525,13 +525,13 @@ struct _ClusterIdx(Defaultable):
             "cluster_id is only supported on NVIDIA SM90+ GPUs",
         ]()
         _verify_xyz[dim]()
-        alias intrinsic_name = Self._get_intrinsic_name[dim]()
+        comptime intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
             Int(llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]())
         )
 
 
-alias cluster_idx = _ClusterIdx()
+comptime cluster_idx = _ClusterIdx()
 """Contains the cluster index in the grid, as `x`, `y`, and `z` values."""
 
 
@@ -566,11 +566,11 @@ struct _ClusterBlockIdx(Defaultable):
             "cluster_id is only supported on NVIDIA SM90+ GPUs",
         ]()
         _verify_xyz[dim]()
-        alias intrinsic_name = Self._get_intrinsic_name[dim]()
+        comptime intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
             Int(llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]())
         )
 
 
-alias block_id_in_cluster = _ClusterBlockIdx()
+comptime block_id_in_cluster = _ClusterBlockIdx()
 """Contains the block id of the threadblock within a cluster, as `x`, `y`, and `z` values."""

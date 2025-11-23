@@ -653,8 +653,8 @@ fn test_quantized[
     randint(
         b_host.tensor.data.bitcast[UInt32](),
         n.value * (k.value // pack_factor),
-        Int(UInt.MIN),
-        Int(UInt.MAX),
+        Int(UInt32.MIN),
+        Int(UInt32.MAX),
     )
 
     var a_device = DeviceNDBuffer[a_type, 2, static_a_shape](

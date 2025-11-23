@@ -39,10 +39,10 @@ struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = PythonObject
+    comptime Element = PythonObject
 
     var iterator: PythonObject
     """The iterator object that stores location."""
@@ -188,7 +188,6 @@ struct PythonObject(
     #   This initializer should not be necessary, we should need
     #   only the initializer from a `NoneType`.
     @doc_private
-    @implicit
     fn __init__(out self, none: NoneType._mlir_type):
         """Initialize a none value object from a `None` literal.
 
@@ -197,7 +196,6 @@ struct PythonObject(
         """
         self = Self(none=NoneType())
 
-    @implicit
     fn __init__(out self, none: NoneType):
         """Initialize a none value object from a `None` literal.
 

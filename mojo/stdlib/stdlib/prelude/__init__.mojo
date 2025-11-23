@@ -36,12 +36,11 @@ from builtin.anytype import AnyType, Some, UnknownDestructibility
 from builtin.bool import Bool, Boolable, ImplicitlyBoolable, all, any
 from builtin.breakpoint import breakpoint
 from builtin.builtin_slice import Slice, slice
-from builtin.comparable import Comparable
+from builtin.comparable import Comparable, Equatable
 from builtin.constrained import constrained
 from builtin.coroutine import AnyCoroutine, Coroutine, RaisingCoroutine
 from builtin.debug_assert import debug_assert
 from builtin.dtype import DType
-from builtin.equality_comparable import EqualityComparable
 from builtin.error import Error
 from builtin.float_literal import FloatLiteral
 from builtin.floatable import Floatable, FloatableRaising

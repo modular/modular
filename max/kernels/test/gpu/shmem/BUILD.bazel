@@ -13,16 +13,15 @@ lit_tests(
         "//conditions:default": {},
     }),
     exec_properties = {
-        "test.resources:gpu-memory": "4",
+        "test.resources:gpu-memory": "20",
     },
-    gpu_constraints = select({
-        "//:h100_gpu": ["//:has_multi_gpu"],
-        # "//:b200_gpu": ["//:has_multi_gpu"],    # TODO(KERN-2180): Fix timeout
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
+    gpu_constraints = [
+        "//:has_4_gpus",
+        "//:nvidia_gpu",
+    ],
     mojo_deps = [
-        "@mojo//:layout",
-        "@mojo//:shmem",
+        "//max:layout",
+        "//max:shmem",
         "@mojo//:stdlib",
     ],
     tags = [
@@ -53,8 +52,8 @@ lit_tests(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     mojo_deps = [
-        "@mojo//:layout",
-        "@mojo//:shmem",
+        "//max:layout",
+        "//max:shmem",
         "@mojo//:stdlib",
     ],
     tags = [

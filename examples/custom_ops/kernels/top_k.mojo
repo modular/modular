@@ -32,7 +32,7 @@ struct TopKElement[T: DType](ImplicitlyCopyable & Comparable & Movable):
     """Stores the value with it's index."""
 
     var idx: Int32
-    var val: Scalar[T]
+    var val: Scalar[Self.T]
 
     fn __eq__(self, rhs: Self) -> Bool:
         return self.val == rhs.val

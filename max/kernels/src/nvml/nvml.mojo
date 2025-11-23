@@ -39,10 +39,12 @@ alias CUDA_NVML_LIBRARY_EXT = ".so"
 
 fn _get_nvml_library_paths() raises -> List[Path]:
     var paths = List[Path]()
-    var common_path = CUDA_NVML_LIBRARY_DIR / (
-        CUDA_NVML_LIBRARY_BASE_NAME + CUDA_NVML_LIBRARY_EXT
-    )
-    paths.append(common_path)
+    var lib_name = CUDA_NVML_LIBRARY_BASE_NAME + CUDA_NVML_LIBRARY_EXT
+    # Look for libnvidia-ml.so
+    paths.append(CUDA_NVML_LIBRARY_DIR / lib_name)
+    # Look for libnvida-ml.so.1
+    paths.append(CUDA_NVML_LIBRARY_DIR / (lib_name + ".1"))
+    # Look for libnvidia-ml.so.<driver>.<major>.<minor>
     for fd in CUDA_NVML_LIBRARY_DIR.listdir():
         var path = CUDA_NVML_LIBRARY_DIR / fd
         if CUDA_NVML_LIBRARY_BASE_NAME in String(fd):
@@ -111,9 +113,7 @@ struct DriverVersion(ImplicitlyCopyable, Movable, StringableRaising):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Result(
-    EqualityComparable, ImplicitlyCopyable, Movable, Stringable, Writable
-):
+struct Result(Equatable, ImplicitlyCopyable, Movable, Stringable, Writable):
     var code: Int32
 
     alias SUCCESS = Self(0)
@@ -291,7 +291,7 @@ fn _check_error(err: Result) raises:
 
 @fieldwise_init
 @register_passable("trivial")
-struct EnableState(EqualityComparable, ImplicitlyCopyable, Movable):
+struct EnableState(Equatable, ImplicitlyCopyable, Movable):
     var code: Int32
 
     alias DISABLED = Self(0)
@@ -312,7 +312,7 @@ struct EnableState(EqualityComparable, ImplicitlyCopyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct ClockType(EqualityComparable, ImplicitlyCopyable, Movable):
+struct ClockType(Equatable, ImplicitlyCopyable, Movable):
     var code: Int32
 
     alias GRAPHICS = Self(0)
@@ -414,7 +414,7 @@ struct Device(Writable):
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
 
-        var clocks = List[UInt32](length=Int(UInt(num_clocks)), fill=0)
+        var clocks = List[UInt32](length=Int(num_clocks), fill=0)
 
         _check_error(
             _get_dylib_function[
@@ -455,7 +455,7 @@ struct Device(Writable):
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
 
-        var clocks = List[UInt32](length=Int(UInt(num_clocks)), fill=0)
+        var clocks = List[UInt32](length=Int(num_clocks), fill=0)
 
         _check_error(
             _get_dylib_function[

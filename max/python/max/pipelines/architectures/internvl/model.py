@@ -39,11 +39,7 @@ from max.kv_cache import (
     load_kv_manager,
 )
 from max.nn import ReturnLogits, Signals
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -306,11 +302,7 @@ class InternVLModel(
             max_seq_len=cls.calculate_max_seq_len(
                 pipeline_config, huggingface_config=huggingface_config
             ),
-            num_layers=InternVLConfig.get_num_layers(
-                huggingface_config=huggingface_config
-            ),
             available_cache_memory=available_cache_memory,
-            devices=devices,
         )
 
     @classmethod
@@ -565,7 +557,7 @@ class InternVLModel(
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = self.kv_manager.input_symbols()
+        kv_inputs = self.kv_manager.get_symbolic_inputs()
 
         # Construct Graph Inputs
         tokens_type = TensorType(
@@ -632,7 +624,7 @@ class InternVLModel(
             cache_dtype=self.encoding.cache_dtype,
         )
         n_devices = kv_params.n_devices
-        fetch_types = self.kv_manager.input_symbols()[0]
+        fetch_types = self.kv_manager.get_symbolic_inputs()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
         kv_caches_per_dev: list[PagedCacheValues] = []
         for i in range(n_devices):
@@ -955,11 +947,7 @@ class InternVLModel(
             max_seq_len=self.calculate_max_seq_len(
                 self.pipeline_config, huggingface_config=self.huggingface_config
             ),
-            num_layers=InternVLConfig.get_num_layers(
-                huggingface_config=self.huggingface_config
-            ),
             devices=self.devices,
             available_cache_memory=available_cache_memory,
-            page_size=self.kv_cache_config.kv_cache_page_size,
             session=session,
         )

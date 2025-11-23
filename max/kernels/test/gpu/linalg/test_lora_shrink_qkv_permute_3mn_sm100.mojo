@@ -205,21 +205,21 @@ def main():
             DType.bfloat16,
             num_experts=6,
             expert_shape = Index(192, 1024),
-        ](4, List[Int](27, 1500, 300, 150), List[Int](0, 3, 2, 4), ctx)
+        ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=1,
             expert_shape = Index(256, 256),
-        ](1, List[Int](128), List[Int](0), ctx)
+        ](1, [128], [0], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=1,
             expert_shape = Index(16, 256),
-        ](1, List[Int](128), List[Int](0), ctx)
+        ](1, [128], [0], ctx)
 
         # unaligned matmul
         test[
@@ -227,14 +227,14 @@ def main():
             DType.bfloat16,
             num_experts=1,
             expert_shape = Index(1024, 256),
-        ](1, List[Int](200), List[Int](0), ctx)
+        ](1, [200], [0], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=1,
             expert_shape = Index(512, 1024),
-        ](1, List[Int](256), List[Int](0), ctx)
+        ](1, [256], [0], ctx)
 
         # simple expert routing
         test[
@@ -242,7 +242,7 @@ def main():
             DType.bfloat16,
             num_experts=4,
             expert_shape = Index(256, 64),
-        ](1, List[Int](128), List[Int](2), ctx)
+        ](1, [128], [2], ctx)
 
         # simple aligned group routing
         test[
@@ -250,7 +250,7 @@ def main():
             DType.bfloat16,
             num_experts=4,
             expert_shape = Index(256, 64),
-        ](3, List[Int](32, 32 * 3, 32 * 7), List[Int](2, 0, 1), ctx)
+        ](3, [32, 32 * 3, 32 * 7], [2, 0, 1], ctx)
 
         # simple unaligned group routing
         test[
@@ -258,21 +258,21 @@ def main():
             DType.bfloat16,
             num_experts=4,
             expert_shape = Index(256, 64),
-        ](2, List[Int](10, 60), List[Int](2, 0), ctx)
+        ](2, [10, 60], [2, 0], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=4,
             expert_shape = Index(2880, 512),
-        ](2, List[Int](10, 60), List[Int](2, 0), ctx)
+        ](2, [10, 60], [2, 0], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=4,
             expert_shape = Index(5760, 512),
-        ](2, List[Int](10, 60), List[Int](2, 0), ctx)
+        ](2, [10, 60], [2, 0], ctx)
 
         # Multiple matmuls selecting part of experts
         test[
@@ -280,7 +280,7 @@ def main():
             DType.bfloat16,
             num_experts=4,
             expert_shape = Index(768, 1024),
-        ](2, List[Int](128, 256), List[Int](0, 2), ctx)
+        ](2, [128, 256], [0, 2], ctx)
 
         # Multiple matmuls selecting part of experts
         # num_tokens not multiple of tile size
@@ -289,7 +289,7 @@ def main():
             DType.bfloat16,
             num_experts=6,
             expert_shape = Index(1280, 1024),
-        ](4, List[Int](27, 1500, 300, 150), List[Int](0, 3, 2, 4), ctx)
+        ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Multiple matmuls selecting part of experts
         # num_tokens not multiple of tile size
@@ -299,21 +299,21 @@ def main():
             DType.bfloat16,
             num_experts=6,
             expert_shape = Index(192, 1024),
-        ](4, List[Int](27, 1500, 300, 150), List[Int](0, 3, 2, 4), ctx)
+        ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=6,
             expert_shape = Index(1280, 16),
-        ](4, List[Int](27, 1500, 300, 150), List[Int](0, 3, 2, 4), ctx)
+        ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=6,
             expert_shape = Index(16, 1024),
-        ](4, List[Int](27, 1500, 300, 150), List[Int](0, 3, 2, 4), ctx)
+        ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Multiple matmuls selecting part of experts with epilogue
         test[
@@ -321,4 +321,4 @@ def main():
             DType.bfloat16,
             num_experts=4,
             expert_shape = Index(768, 1024),
-        ](2, List[Int](128, 256), List[Int](0, 2), ctx)
+        ](2, [128, 256], [0, 2], ctx)

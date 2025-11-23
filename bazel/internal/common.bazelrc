@@ -88,10 +88,6 @@ common --experimental_propagate_custom_flag=@rules_cc//cc/toolchains/args/archiv
 # Always use llvm-ar which works fine for macOS
 common --@rules_cc//cc/toolchains/args/archiver_flags:use_libtool_on_macos=false
 
-# Disable layering check for third parties since we don't care about their
-# layers, and we're not using this ourselves yet.
-build --features=-layering_check --host_features=-layering_check
-
 build --remote_retries=2
 build --remote_timeout=10m
 # Buildbuddy cache optimization recommendations
@@ -132,6 +128,7 @@ common --incompatible_modify_execution_info_additive
 # Reduce the impact of transitions on rebuilding C++ files
 build --modify_execution_info=CppArchive=+supports-path-mapping
 build --modify_execution_info=CppCompile=+supports-path-mapping
+build --modify_execution_info=CppModuleMap=+supports-path-mapping
 build --modify_execution_info=Objc.*=+supports-path-mapping
 build --experimental_output_paths=strip
 
@@ -249,4 +246,4 @@ build:ci-remote-mi355 --config=remote-mi355
 # build:ci-remote-mi355 --test_keep_going=false
 
 # TODO: Remove once transitives are fixed
-common --incompatible_autoload_externally=@rules_shell,@com_google_protobuf,java_binary,+JavaInfo
+common --incompatible_autoload_externally=@rules_shell,@com_google_protobuf,java_binary,+JavaInfo,+@rules_cc

@@ -74,7 +74,7 @@ def test_list():
 
 
 struct WeirdList[T: AnyType]:
-    fn __init__(out self, var *values: T, __list_literal__: ()):
+    fn __init__(out self, var *values: Self.T, __list_literal__: ()):
         pass
 
 
@@ -1003,13 +1003,13 @@ def test_uninit_ctor():
 
 
 def _test_copyinit_trivial_types[dt: DType]():
-    alias sizes = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
+    comptime sizes = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
     assert_equal(len(sizes), 10)
     var test_current_size = 1
 
     @parameter
     for sizes_index in range(len(sizes)):
-        alias current_size = sizes[sizes_index]
+        comptime current_size = sizes[sizes_index]
         x = List[Scalar[dt]]()
         for i in range(current_size):
             x.append(i)
@@ -1025,7 +1025,7 @@ def _test_copyinit_trivial_types[dt: DType]():
 
 
 def test_copyinit_trivial_types_dtypes():
-    alias dtypes = (
+    comptime dtypes = (
         DType.int64,
         DType.int32,
         DType.float64,

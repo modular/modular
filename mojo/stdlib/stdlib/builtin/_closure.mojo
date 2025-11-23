@@ -22,11 +22,13 @@ struct __ParameterClosureCaptureList[
     @parameter
     @always_inline
     fn __init__(out self):
-        self.value = __mlir_op.`kgen.capture_list.create`[callee=fn_ref]()
+        self.value = __mlir_op.`kgen.capture_list.create`[
+            callee = Self.fn_ref
+        ]()
 
     @always_inline
     fn __copyinit__(out self, existing: Self):
-        self.value = __mlir_op.`kgen.capture_list.copy`[callee=fn_ref](
+        self.value = __mlir_op.`kgen.capture_list.copy`[callee = Self.fn_ref](
             existing.value
         )
 

@@ -75,55 +75,55 @@ struct MmaOpAMD[
     out_frag_size: Int,
     swizzle: Swizzle,
 ]:
-    alias simd_width = simd_width_of[in_type]()
-    alias alignment = align_of[SIMD[in_type, Self.simd_width]]()
+    alias simd_width = simd_width_of[Self.in_type]()
+    alias alignment = align_of[SIMD[Self.in_type, Self.simd_width]]()
     alias tensor_core_mma = TiledTensorCore[
-        out_type,
-        in_type,
-        shape,
-        k_group_size,
-        transpose_b,
+        Self.out_type,
+        Self.in_type,
+        Self.shape,
+        Self.k_group_size,
+        Self.transpose_b,
     ]()
 
     alias reg_tile_layout[num_mmas: Int] = Layout.row_major(
-        num_mmas * num_k_tiles, Self.simd_width
+        num_mmas * Self.num_k_tiles, Self.simd_width
     )
 
     alias RegTileType[num_mmas: Int] = RegTileType[
-        in_type, Self.reg_tile_layout[num_mmas]
+        Self.in_type, Self.reg_tile_layout[num_mmas]
     ]
 
     # Register-level storage for matrix data during computation
-    var _a_reg_tile: Self.RegTileType[num_m_mmas]
-    var _b_reg_tile: Self.RegTileType[num_n_mmas]
+    var _a_reg_tile: Self.RegTileType[Self.num_m_mmas]
+    var _b_reg_tile: Self.RegTileType[Self.num_n_mmas]
 
     # FIXME: We didn't use to support 3D layouts, now we do.
     # This should really be Layout.row_major(num_m_mmas, num_n_mmas, out_frag_size)
     alias out_reg_layout = Layout.row_major(
-        num_m_mmas * num_n_mmas, out_frag_size
+        Self.num_m_mmas * Self.num_n_mmas, Self.out_frag_size
     )
-    alias OutRegTileType = RegTileType[out_type, Self.out_reg_layout]
+    alias OutRegTileType = RegTileType[Self.out_type, Self.out_reg_layout]
 
     # Accumulation registers for result
     var out_reg_tile: Self.OutRegTileType
 
     @always_inline
     fn __init__(out self):
-        self._a_reg_tile = Self.RegTileType[num_m_mmas].stack_allocation()
-        self._b_reg_tile = Self.RegTileType[num_n_mmas].stack_allocation()
+        self._a_reg_tile = Self.RegTileType[Self.num_m_mmas].stack_allocation()
+        self._b_reg_tile = Self.RegTileType[Self.num_n_mmas].stack_allocation()
         self.out_reg_tile = Self.OutRegTileType.stack_allocation()
 
     @always_inline
     fn a_reg_tile(
         self, k_tile_idx: Int
-    ) -> Self.RegTileType[num_m_mmas].SIMDTileType[num_m_mmas]:
-        return self._a_reg_tile.simd_tile[num_m_mmas](k_tile_idx)
+    ) -> Self.RegTileType[Self.num_m_mmas].SIMDTileType[Self.num_m_mmas]:
+        return self._a_reg_tile.simd_tile[Self.num_m_mmas](k_tile_idx)
 
     @always_inline
     fn b_reg_tile(
         self, k_tile_idx: Int
-    ) -> Self.RegTileType[num_n_mmas].SIMDTileType[num_n_mmas]:
-        return self._b_reg_tile.simd_tile[num_n_mmas](k_tile_idx)
+    ) -> Self.RegTileType[Self.num_n_mmas].SIMDTileType[Self.num_n_mmas]:
+        return self._b_reg_tile.simd_tile[Self.num_n_mmas](k_tile_idx)
 
     @always_inline
     fn mma[k_tile_idx: Int](self):
@@ -137,12 +137,12 @@ struct MmaOpAMD[
     fn load_tile_fragment[
         k_tile_idx: Int
     ](self, a_smem_tiles: SMemWarpTileType, b_smem_tiles: SMemWarpTileType):
-        Self.tensor_core_mma.mma_op.load_a[swizzle=swizzle](
+        Self.tensor_core_mma.mma_op.load_a[swizzle = Self.swizzle](
             a_smem_tiles,
             self.a_reg_tile(k_tile_idx).vectorize(),
             UInt(k_tile_idx),
         )
-        Self.tensor_core_mma.mma_op.load_b[swizzle=swizzle](
+        Self.tensor_core_mma.mma_op.load_b[swizzle = Self.swizzle](
             b_smem_tiles,
             self.b_reg_tile(k_tile_idx).vectorize(),
             UInt(k_tile_idx),
@@ -175,22 +175,22 @@ struct MMATileBuffers[
     # Tensor types for different memory regions
 
     # Shared memory tiles
-    alias SMemTileType = SMemTileType[_dtype, smem_layout]
+    alias SMemTileType = SMemTileType[Self._dtype, Self.smem_layout]
     var smem_tile: Self.SMemTileType
 
     # View on Shared memory tiles optimized for MmaOp
     var smem_warp_tile: SMemWarpTileType[
-        _dtype, smem_layout, warp_rows, warp_cols
+        Self._dtype, Self.smem_layout, Self.warp_rows, Self.warp_cols
     ]
 
     # Register tile fragments for data movement from GMEM to SMEM
-    alias MMARegTileType = RegTileType[_dtype, reg_tile_layout]
+    alias MMARegTileType = RegTileType[Self._dtype, Self.reg_tile_layout]
     var load_reg_tile: Self.MMARegTileType
 
     @always_inline
     fn __init__(
         out self,
-        tensor: tensor_type,
+        tensor: Self.tensor_type,
         warp_idx: Int,
         warp_k_idx: Int,
         block_idx: Int,
@@ -204,9 +204,9 @@ struct MMATileBuffers[
             block_idx: The block index within the computation grid (used for warp tiling).
         """
         self.smem_tile = Self.SMemTileType.stack_allocation()
-        self.smem_warp_tile = self.smem_tile.tile[warp_rows, warp_cols](
-            warp_idx, warp_k_idx
-        )
+        self.smem_warp_tile = self.smem_tile.tile[
+            Self.warp_rows, Self.warp_cols
+        ](warp_idx, warp_k_idx)
         self.load_reg_tile = Self.MMARegTileType.stack_allocation()
 
     @always_inline
@@ -215,8 +215,8 @@ struct MMATileBuffers[
 
         Uses structured thread cooperation to efficiently transfer data.
         """
-        alias simd_width = simd_width_of[_dtype]()
-        copy_local_to_shared[thread_layout, swizzle, row_major=True](
+        alias simd_width = simd_width_of[Self._dtype]()
+        copy_local_to_shared[Self.thread_layout, Self.swizzle, row_major=True](
             self.smem_tile.vectorize(),
             self.load_reg_tile.vectorize(),
         )

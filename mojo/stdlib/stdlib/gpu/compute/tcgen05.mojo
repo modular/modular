@@ -24,7 +24,7 @@ from gpu.compute.mma import _str_iota  # TODO: move to a string module
 from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
 from memory import LegacyUnsafePointer as UnsafePointer, bitcast
 
-alias check_blackwell_constraint = constrained[
+comptime check_blackwell_constraint = constrained[
     _has_blackwell_tcgen05(),
     (
         "The tcgen05 instructions are only applicable on nVidia Blackwell"
@@ -184,12 +184,14 @@ fn tcgen05_ld[
         ),
     ]()
 
-    alias shape_str = String(datapaths) + "x" + String(bits)
-    alias num_str = String(repeat)
-    alias pack_str = ".pack::16b" if pack else ""
-    alias constraints_str = "=r," * width + "r"
-    alias output_args_str = "{" + _str_iota[width, prefix="$", sep=","]() + "}"
-    alias addr_str = "[$" + String(width) + "]"
+    comptime shape_str = String(datapaths) + "x" + String(bits)
+    comptime num_str = String(repeat)
+    comptime pack_str = ".pack::16b" if pack else ""
+    comptime constraints_str = "=r," * width + "r"
+    comptime output_args_str = "{" + _str_iota[
+        width, prefix="$", sep=","
+    ]() + "}"
+    comptime addr_str = "[$" + String(width) + "]"
 
     @parameter
     @always_inline("nodebug")
@@ -331,14 +333,16 @@ fn tcgen05_st[
         ),
     ]()
 
-    alias shape_str = String(datapaths) + "x" + String(bits)
-    alias num_str = String(repeat)
-    alias pack_str = ".unpack::16b" if pack else ""
-    alias constraints_str = "r," * width + "r"
-    alias addr_str = "[$" + String(width) + "]"
-    alias input_args_str = "{" + _str_iota[width, prefix="$", sep=","]() + "}"
+    comptime shape_str = String(datapaths) + "x" + String(bits)
+    comptime num_str = String(repeat)
+    comptime pack_str = ".unpack::16b" if pack else ""
+    comptime constraints_str = "r," * width + "r"
+    comptime addr_str = "[$" + String(width) + "]"
+    comptime input_args_str = "{" + _str_iota[
+        width, prefix="$", sep=","
+    ]() + "}"
 
-    alias asm_str = (
+    comptime asm_str = (
         "tcgen05.st.sync.aligned."
         + shape_str
         + "b.x"
@@ -574,7 +578,7 @@ fn tcgen05_cp[
         ),
     ]()
 
-    alias asm_str = (
+    comptime asm_str = (
         "tcgen05.cp.cta_group::"
         + String(cta_group)
         + "."

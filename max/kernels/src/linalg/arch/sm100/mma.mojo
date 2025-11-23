@@ -165,26 +165,29 @@ struct MmaOpSM100_SS[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = False,
 ](Defaultable):
-    var idesc: UMMAInsDescriptor[Self._get_umma_kind[a_type]()]
+    var idesc: UMMAInsDescriptor[Self._get_umma_kind[Self.a_type]()]
     var mask: UInt16
 
     @always_inline
     fn __init__(out self):
-        constrained[transpose_b, "MmaOpSM100 only supports transposed B"]()
+        constrained[Self.transpose_b, "MmaOpSM100 only supports transposed B"]()
         constrained[
-            cta_group in (1, 2), "MmaOpSM100 only supports cta_group 1 or 2"
+            Self.cta_group in (1, 2),
+            "MmaOpSM100 only supports cta_group 1 or 2",
         ]()
         constrained[
-            a_type == b_type,
+            Self.a_type == Self.b_type,
             "a_type and b_type must be the same",
         ]()
 
-        self.idesc = UMMAInsDescriptor[Self._get_umma_kind[a_type]()].create[
-            accum_type,
-            a_type,
-            b_type,
-            Index[dtype = DType.uint32](mma_shape[0], mma_shape[1]),
-            transpose_b=transpose_b,
+        self.idesc = UMMAInsDescriptor[
+            Self._get_umma_kind[Self.a_type]()
+        ].create[
+            Self.accum_type,
+            Self.a_type,
+            Self.b_type,
+            Index[dtype = DType.uint32](Self.mma_shape[0], Self.mma_shape[1]),
+            transpose_b = Self.transpose_b,
         ]()
 
         self.mask = 0
@@ -193,9 +196,9 @@ struct MmaOpSM100_SS[
         # We may get better asm if the mask if computed outside from TMA masks,
         # and passed to `commit`, need to verify.
         @parameter
-        if product(cluster_shape) > 1:
-            alias dim0_mask = cluster_mask_base[cluster_shape, 0]()
-            alias dim1_mask = cluster_mask_base[cluster_shape, 1]()
+        if product(Self.cluster_shape) > 1:
+            alias dim0_mask = cluster_mask_base[Self.cluster_shape, 0]()
+            alias dim1_mask = cluster_mask_base[Self.cluster_shape, 1]()
 
             # The mask includes ctas on the same row and column in the cluster
             # Example mask for cta (0, 1) is cluster (4,4)
@@ -204,7 +207,8 @@ struct MmaOpSM100_SS[
             #             o x o o
             #             o x o o
             self.mask = (
-                dim0_mask << (block_id_in_cluster.y * UInt(cluster_shape[0]))
+                dim0_mask
+                << (block_id_in_cluster.y * UInt(Self.cluster_shape[0]))
             ) | (dim1_mask << block_id_in_cluster.x)
 
             # Include peer cta's row
@@ -214,7 +218,7 @@ struct MmaOpSM100_SS[
             #             o x o o
             #             o x o o
             @parameter
-            if cta_group == 2:
+            if Self.cta_group == 2:
                 self.mask |= dim1_mask << (block_id_in_cluster.x ^ 1)
 
     @always_inline
@@ -246,17 +250,17 @@ struct MmaOpSM100_SS[
             b.dtype, extract_first_2_modes[b_coalesced_layout]()
         ]()
 
-        var a_desc = _create_mma_desc[a_canonical_layout, a_swizzle](a.ptr)
-        var b_desc = _create_mma_desc[b_canonical_layout, b_swizzle](b.ptr)
+        var a_desc = _create_mma_desc[a_canonical_layout, Self.a_swizzle](a.ptr)
+        var b_desc = _create_mma_desc[b_canonical_layout, Self.b_swizzle](b.ptr)
 
         @parameter
-        for k in range(0, block_tile_shape[2], mma_shape[2]):
-            alias a_offset = a.layout(IntTuple(0, k)) * size_of[a_type]()
-            alias b_offset = b.layout(IntTuple(0, k)) * size_of[b_type]()
+        for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
+            alias a_offset = a.layout(IntTuple(0, k)) * size_of[Self.a_type]()
+            alias b_offset = b.layout(IntTuple(0, k)) * size_of[Self.b_type]()
 
             var c_scale: UInt32 = 0 if (init_c and k == 0) else 1
 
-            mma[cta_group](
+            mma[Self.cta_group](
                 a_desc + a_offset,
                 b_desc + b_offset,
                 c_tmem,
@@ -270,10 +274,10 @@ struct MmaOpSM100_SS[
         ptr_mbar: UnsafePointer[address_space = AddressSpace.SHARED, *_, **_],
     ):
         @parameter
-        if product(cluster_shape) == 1:
-            mma_arrive[cta_group](ptr_mbar)
+        if product(Self.cluster_shape) == 1:
+            mma_arrive[Self.cta_group](ptr_mbar)
         else:
-            mma_arrive_multicast[cta_group](ptr_mbar, self.mask)
+            mma_arrive_multicast[Self.cta_group](ptr_mbar, self.mask)
 
     @always_inline
     fn wait(self):

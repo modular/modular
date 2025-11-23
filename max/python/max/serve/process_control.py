@@ -12,173 +12,288 @@
 # ===----------------------------------------------------------------------=== #
 
 import asyncio
+import ctypes
 import logging
+import math
 import multiprocessing
-import queue
-import sys
-from asyncio import Task
-from collections.abc import AsyncGenerator, Callable
-from concurrent.futures import Executor, ProcessPoolExecutor
-from contextlib import asynccontextmanager
+import multiprocessing.process
+import multiprocessing.synchronize
+import threading
+import time
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from functools import partial
-from threading import Event
-from typing import Any, ParamSpec, Protocol, TypeVar
+from typing import Any, Protocol
 
 logger = logging.getLogger("max.serve.process_control")
 
-if sys.version_info < (3, 11):
-    from exceptiongroup import BaseExceptionGroup
-    from taskgroup import TaskGroup
-else:
-    from asyncio import TaskGroup
 
-_P = ParamSpec("_P")
-_R = TypeVar("_R")
+class EventCreator(Protocol):
+    """Event Creator is intended to be compatible with
+    multiprocessing.get_context() and the threading module.
+    """
 
-
-class IPCContext(Protocol):
-    # maybe add more methods (see multiprocessing.SyncManager)
-    # Note: SyncManager returns queue.Queue subclass proxies
-    # NOT multiprocessing.queues.Queue objects
-    def Queue(self) -> queue.Queue[Any]: ...
-    def Event(self) -> Event: ...
+    def Event(
+        self,
+    ) -> threading.Event | multiprocessing.synchronize.Event: ...
 
 
-class ThreadingContext(IPCContext):
-    def Queue(self) -> queue.Queue[Any]:
-        return queue.Queue()
+class ProcessControl:
+    """Manage signals between process & process creator
 
-    def Event(self) -> Event:
-        return Event()
+    Parent -> Process communication:
+        - canceled: The creator politely signals to the process that it
+          should finish its work and exit. It is expected that the process
+          creator will use increasingly heavy handed tactics to stop the
+          process if the process does not stop of its own accord.
+
+    Process -> Parent communication:
+        - heartbeat: Process emits a signal demonstrating it is still making
+          progress.  This is the last timestamp at which the process work
+          working correctly. All the usual advice around trusing clocks
+          applies. Make sure that your health_fail_s is longer than heartbeat
+          period.
+
+        - started: Process has begun work
+
+        - completed: Process has completed its work and has stopped.  This is
+          intended to be used to support graceful shutdown.
+
+    The basic pattern for the target of a process is as follows:
+
+    def run(pc: process_control.ProcessControl):
+        pc.set_started()
+        while True:
+            pc.beat()
+            if pc.is_canceled():
+                break
+        pc.set_completed()
+
+    In addition to the explicit signalling between parent & process, the
+    process itself can be alive or dead. It is useful to list the possible
+    combinations of signal and process-liveness:
+        alive: Is the process running?
+        started: Has user code signaled that it has started?
+        completed: Has user code signaled that it is completed?
+        N N N - initial state
+        N N Y - should never happen
+        N Y N - process started, but is now dead
+        N Y Y - process started, completed, and is now dead
+        Y N N - process started, but no user code signaled anything
+        Y N Y - should never happen
+        Y Y N - process is actively working
+        Y Y Y - process has completed, is still alive, but *ought* exit soon
+
+    Basic process monitoring can be accomplished by polling is_started() and
+    is_canceled().  It can also be accomplished by waiting on started_event and
+    canceled_event directly. `pc.started_event.wait()`
+    """
+
+    def __init__(
+        self,
+        ctx: EventCreator,
+        name: str,
+        # TODO: we temporarily set it to 1 minute to handle long context input
+        health_fail_s: float = 60.0,
+    ) -> None:
+        self.name = name
+        self.started_event = ctx.Event()
+        self.completed_event = ctx.Event()
+        self.canceled_event = ctx.Event()
+
+        self._last_beat: (
+            multiprocessing.sharedctypes.Synchronized[int] | ctypes.c_int64
+        )
+        # Support both threading and multiprocessing contexts
+        if hasattr(ctx, "Value"):
+            self._last_beat = ctx.Value(ctypes.c_int64)
+        else:
+            self._last_beat = ctypes.c_int64()
+
+        self._last_beat.value = 0  # make sure this initializes to 0
+        self.health_fail_ns: int = int(health_fail_s * 1e9)
+
+    def beat(self) -> None:
+        self._last_beat.value = time.monotonic_ns()
+
+    def is_healthy(self) -> bool:
+        dt = time.monotonic_ns() - self._last_beat.value
+        return dt < self.health_fail_ns
+
+    def set_canceled(self) -> None:
+        self.canceled_event.set()
+
+    def is_canceled(self) -> bool:
+        return self.canceled_event.is_set()
+
+    def set_started(self) -> None:
+        self.started_event.set()
+
+    def is_started(self) -> bool:
+        return self.started_event.is_set()
+
+    def set_completed(self) -> None:
+        self.completed_event.set()
+
+    def is_completed(self) -> bool:
+        return self.completed_event.is_set()
 
 
-def event_wait_clear(event: Event, timeout: float | None) -> None:
-    if not event.wait(timeout):
-        raise TimeoutError()
-    event.clear()
+def forever() -> Iterable[None]:
+    while True:
+        yield
 
 
 @dataclass
-class ProcessManager:
-    """ProcessManager is helper object for subprocess or threading
+class ProcessMonitor:
+    """Utility functions for observing & stopping processes
 
-    You probably want to construct it using the factory methods
-    subprocess_manager or thread_manager which are async context managers
+    ProcessMonitor can wait for a process to enter a number of states. For
+    startup/shutdown operations, we expect the process to enter these states
+    within a finite, reasonable amount of time.  Awaiting these states are
+    governed by `poll_s` & `max_time_s`. These states are:
+        - until_started
+        - until_completed
+        - until_dead
+        - until_health
 
-    Uses a TaskGroup so that the worker task, ready check, heartbeat checks,
-    and any deeper nested context manager bodies succeed or fail together
+    Other states are expected to happen in exceptional circumstances & required
+    indefinite polling. Awaiting these states is governed by `unhealthy_poll_s`
+    and `unhealthy_max_time_s`. These states are:
+        - until_unhealthy
 
-    Example:
-        def work(health: Queue) -> int:
-            for _ in range(10):
-                time.sleep(1)
-                health.put(True)
-            return 123
-
-        async with subprocess_manager() as proc:
-            health = proc.ctx.Queue()
-            task = proc.start(work, health)
-            await proc.ready(lambda: health.get(timeout=10))
-            proc.watch_heartbeat(lambda: health.get(timeout=2))
-            res = await asyncio.wait_for(task, timeout=10)
-            assert res == 123
-
-    See test_process_control.py for more examples.
     """
 
-    name: str
-    ctx: IPCContext
-    pool: Executor
-    group: TaskGroup
-    task: Task[Any] | None = None
-    heartbeat: Task[None] | None = None
+    pc: ProcessControl
+    proc: multiprocessing.process.BaseProcess
 
-    def start(
-        self, func: Callable[_P, _R], *args: _P.args, **kwargs: _P.kwargs
-    ) -> Task[_R]:
-        """Launches func(*args) in self.pool
+    poll_s: float = 200e-3
+    max_time_s: float | None = 10.0
+    unhealthy_poll_s: float = 200e-3
+    unhealthy_max_time_s: float | None = None
+    use_heartbeat: bool = False
 
-        Creates a task to track the life cycle of the remote function call
-        Returns the task so you can cancel or await its completion
-        """
-        assert self.task is None
+    async def until_started(self) -> bool:
+        return await _until_true(
+            self.pc.is_started, self.poll_s, self.max_time_s
+        )
 
-        async def run_task() -> _R:
-            try:
-                loop = asyncio.get_event_loop()
-                funcwrap = partial(func, *args, **kwargs)
-                return await loop.run_in_executor(self.pool, funcwrap)
-            except SystemExit as e:
-                # Wrap SystemExit because special case handlings
-                # in TaskGroup and pytest are very troublesome
-                raise RuntimeError("Subprocess SystemExit") from e
+    async def until_completed(self) -> bool:
+        return await _until_true(
+            self.pc.is_completed, self.poll_s, self.max_time_s
+        )
 
-        self.task = self.group.create_task(run_task())
+    async def until_dead(self) -> bool:
+        is_dead = lambda: not self.proc.is_alive()
+        return await _until_true(is_dead, self.poll_s, self.max_time_s)
 
-        def task_done(_: Task[_R]) -> None:
-            if self.heartbeat is not None:
-                self.heartbeat.cancel()
+    async def until_healthy(self) -> bool:
+        return await _until_true(
+            self.pc.is_healthy, self.poll_s, self.max_time_s
+        )
 
-        self.task.add_done_callback(task_done)
+    async def until_dead_no_timeout(self) -> bool:
+        is_dead = lambda: not self.proc.is_alive()
+        return await _until_true(is_dead, self.unhealthy_poll_s, None)
 
-        return self.task
+    async def until_unhealthy(self) -> bool:
+        return await _until_true(
+            lambda: not self.pc.is_healthy(),
+            self.unhealthy_poll_s,
+            self.unhealthy_max_time_s,
+        )
 
-    async def ready(self, event: Event, timeout: float | None) -> None:
-        loop = asyncio.get_event_loop()
+    def is_healthy(self) -> bool:
+        if self.use_heartbeat:
+            return self.pc.is_healthy()
+
+        return self.proc.is_alive()
+
+    async def shutdown(self) -> None:
+        logger.info(f"Shutting down {self.pc.name}")
+        self.pc.set_canceled()
+        if not self.proc.is_alive():
+            logger.info(
+                f"Early exit. Process {self.pc.name} was already dead. exitcode: {self.proc.exitcode}"
+            )
+            return
+
+        loop = asyncio.get_running_loop()
+        completed_task = loop.create_task(self.until_completed())
+        dead_task = loop.create_task(self.until_dead())
+
+        await asyncio.wait(
+            [completed_task, dead_task], return_when=asyncio.FIRST_COMPLETED
+        )
+
+        if completed_task.done():
+            await self.until_dead()
+
+        # we have waited a polite amount of time.  Time to close things out.
+        completed_task.cancel()
+        dead_task.cancel()
+
+        if self.proc.is_alive():
+            logger.info("Process is still alive.  Killing")
+            self.proc.kill()
+            dead = await self.until_dead()
+        logger.info(f"Shut down {self.pc.name}")
+
+    async def shutdown_if_unhealthy(
+        self, cb: Callable[[], None] | None = None
+    ) -> None:
         try:
-            await loop.run_in_executor(None, event_wait_clear, event, timeout)
-        except TimeoutError:
-            raise TimeoutError(f"{self.name} failed to become ready") from None
-
-    def watch_heartbeat(self, event: Event, timeout: float) -> Task[None]:
-        assert self.heartbeat is None
-
-        async def run_task() -> None:
-            loop = asyncio.get_event_loop()
-            while True:
+            await self.until_unhealthy()
+        except asyncio.CancelledError:
+            # Cancellation happens when winding down a completed program
+            # Nothing interesting to see here.
+            pass
+        except:
+            logger.exception(
+                f"Error while checking process health: {self.pc.name}"
+            )
+        finally:
+            logger.info(f"Exiting health check task: {self.pc.name}")
+            if cb is not None:
                 try:
-                    await loop.run_in_executor(
-                        None, event_wait_clear, event, timeout
-                    )
-                except TimeoutError:
-                    raise TimeoutError(
-                        f"{self.name} failed heartbeat check"
-                    ) from None
+                    cb()
+                except:
+                    pass
+            await self.shutdown()
 
-        self.heartbeat = self.group.create_task(run_task())
-        return self.heartbeat
+    async def shutdown_if_dead(
+        self, cb: Callable[[], None] | None = None
+    ) -> None:
+        try:
+            await self.until_dead_no_timeout()
+        except asyncio.CancelledError:
+            # Cancellation happens when winding down a completed program
+            # Nothing interesting to see here.
+            pass
+        except:
+            logger.exception(
+                f"Error while checking process health: {self.pc.name}"
+            )
+        finally:
+            logger.info(f"Exiting health check task: {self.pc.name}")
+            if cb is not None:
+                try:
+                    cb()
+                except:
+                    pass
+            await self.shutdown()
 
-    def cancel(self) -> None:
-        if self.heartbeat and not self.heartbeat.done():
-            self.heartbeat.cancel()
-        if self.task and not self.task.done():
-            self.task.cancel()
 
-
-@asynccontextmanager
-async def subprocess_manager(name: str) -> AsyncGenerator[ProcessManager]:
-    """Factory for ProcessManager using multiprocessing.spawn"""
-    mp = multiprocessing.get_context("spawn")
-    with mp.Manager() as ctx:
-        with ProcessPoolExecutor(max_workers=1, mp_context=mp) as pool:
-            try:
-                async with TaskGroup() as group:
-                    proc = ProcessManager(name, ctx, pool, group)
-                    yield proc
-                    proc.cancel()
-            except BaseExceptionGroup as e:
-                # declutter logs by unpacking groups of 1
-                if len(e.exceptions) == 1:
-                    # preserve the "direct cause" chain for remote tracebacks
-                    raise e.exceptions[0] from e.exceptions[0].__cause__
-                raise
-            finally:
-                pool.shutdown(wait=False, cancel_futures=True)
-                # TODO: refactor ProcessPoolExecutor away for a few reasons
-                # - couple worker health (exit code) to task completion
-                # - remove life-cycle checks attempting to communicate via queues
-                # - use plain Task instead of context-manager nesting
-                # - send fd pipes without mp.Manager and resource_tracker warnings
-                # - add shutdown grace-period before sigkill
-                logger.info(f"Subprocess completed: {name}")
+async def _until_true(
+    is_done: Callable[[], bool], poll_s: float, max_time_s: float | None
+) -> bool:
+    """Poll a predicate until it is true or you exceed 'max_time_s'"""
+    steps: Iterable[Any]
+    if max_time_s is None:
+        steps = forever()
+    else:
+        steps = range(math.ceil(max_time_s / poll_s))
+    for _ in steps:
+        if is_done():
+            return True
+        await asyncio.sleep(poll_s)
+    return False

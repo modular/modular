@@ -33,7 +33,7 @@ from memory import LegacyUnsafePointer as UnsafePointer, bitcast
 
 @register_passable("trivial")
 struct Consistency(
-    EqualityComparable,
+    Equatable,
     Identifiable,
     ImplicitlyCopyable,
     Movable,
@@ -60,19 +60,19 @@ struct Consistency(
     This is the underlying value of the consistency model.
     """
 
-    alias NOT_ATOMIC = Self(0)
+    comptime NOT_ATOMIC = Self(0)
     """Not atomic."""
-    alias UNORDERED = Self(1)
+    comptime UNORDERED = Self(1)
     """Unordered."""
-    alias MONOTONIC = Self(2)
+    comptime MONOTONIC = Self(2)
     """Monotonic."""
-    alias ACQUIRE = Self(3)
+    comptime ACQUIRE = Self(3)
     """Acquire."""
-    alias RELEASE = Self(4)
+    comptime RELEASE = Self(4)
     """Release."""
-    alias ACQUIRE_RELEASE = Self(5)
+    comptime ACQUIRE_RELEASE = Self(5)
     """Acquire-release."""
-    alias SEQUENTIAL = Self(6)
+    comptime SEQUENTIAL = Self(6)
     """Sequentially consistent."""
 
     @always_inline
@@ -135,7 +135,7 @@ struct Consistency(
             A string representation of this consistency.
         """
 
-        alias prefix_len = len("Consistency.")
+        comptime prefix_len = len("Consistency.")
         return self.as_string_slice()[prefix_len:]
 
     fn as_string_slice(self) -> StaticString:
@@ -233,7 +233,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         scope: The memory synchronization scope.
     """
 
-    var value: Scalar[dtype]
+    var value: Scalar[Self.dtype]
     """The atomic value.
 
     This is the underlying value of the atomic. Access to the value can only
@@ -241,7 +241,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     """
 
     @always_inline
-    fn __init__(out self, value: Scalar[dtype]):
+    fn __init__(out self, value: Scalar[Self.dtype]):
         """Constructs a new atomic value.
 
         Args:
@@ -254,7 +254,9 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     fn load[
         *,
         ordering: Consistency = Consistency.SEQUENTIAL,
-    ](ptr: UnsafePointer[Scalar[dtype], mut=False, **_]) -> Scalar[dtype]:
+    ](ptr: UnsafePointer[Scalar[Self.dtype], mut=False, **_]) -> Scalar[
+        Self.dtype
+    ]:
         """Loads the current value from the atomic.
 
         Parameters:
@@ -272,13 +274,13 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
         return __mlir_op.`pop.load`[
             ordering = ordering.__mlir_attr(),
-            syncscope = _get_kgen_string[scope](),
+            syncscope = _get_kgen_string[Self.scope](),
         ](ptr.address)
 
     @always_inline
     fn load[
         *, ordering: Consistency = Consistency.SEQUENTIAL
-    ](self) -> Scalar[dtype]:
+    ](self) -> Scalar[Self.dtype]:
         """Loads the current value from the atomic.
 
         Parameters:
@@ -294,8 +296,9 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     fn fetch_add[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](
-        ptr: UnsafePointer[Scalar[dtype], mut=False, **_], rhs: Scalar[dtype]
-    ) -> Scalar[dtype]:
+        ptr: UnsafePointer[Scalar[Self.dtype], mut=False, **_],
+        rhs: Scalar[Self.dtype],
+    ) -> Scalar[Self.dtype]:
         """Performs atomic in-place add.
 
         Atomically replaces the current value with the result of arithmetic
@@ -324,21 +327,22 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         var res = __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op add>`,
             ordering = ordering.__mlir_attr(),
-            syncscope = _get_kgen_string[scope](),
-            _type = Scalar[dtype]._mlir_type,
+            syncscope = _get_kgen_string[Self.scope](),
+            _type = Scalar[Self.dtype]._mlir_type,
         ](
-            ptr.bitcast[Scalar[dtype]._mlir_type]().address,
+            ptr.bitcast[Scalar[Self.dtype]._mlir_type]().address,
             rhs._mlir_value,
         )
-        return Scalar[dtype](mlir_value=res)
+        return Scalar[Self.dtype](mlir_value=res)
 
     @staticmethod
     @always_inline
     fn _xchg[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](
-        ptr: UnsafePointer[Scalar[dtype], mut=True, **_], value: Scalar[dtype]
-    ) -> Scalar[dtype]:
+        ptr: UnsafePointer[Scalar[Self.dtype], mut=True, **_],
+        value: Scalar[Self.dtype],
+    ) -> Scalar[Self.dtype]:
         """Performs an atomic exchange.
         The operation is a read-modify-write operation. Memory
         is affected according to the value of order which is sequentially
@@ -363,18 +367,21 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         var res = __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op xchg>`,
             ordering = ordering.__mlir_attr(),
-            _type = Scalar[dtype]._mlir_type,
+            _type = Scalar[Self.dtype]._mlir_type,
         ](
-            ptr.bitcast[Scalar[dtype]._mlir_type]().address,
+            ptr.bitcast[Scalar[Self.dtype]._mlir_type]().address,
             value._mlir_value,
         )
-        return Scalar[dtype](mlir_value=res)
+        return Scalar[Self.dtype](mlir_value=res)
 
     @staticmethod
     @always_inline
     fn store[
         *, ordering: Consistency = Consistency.SEQUENTIAL
-    ](ptr: UnsafePointer[Scalar[dtype], mut=True, **_], value: Scalar[dtype]):
+    ](
+        ptr: UnsafePointer[Scalar[Self.dtype], mut=True, **_],
+        value: Scalar[Self.dtype],
+    ):
         """Performs atomic store.
         The operation is a read-modify-write operation. Memory
         is affected according to the value of order which is sequentially
@@ -395,16 +402,16 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         _ = __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op xchg>`,
             ordering = ordering.__mlir_attr(),
-            _type = Scalar[dtype]._mlir_type,
+            _type = Scalar[Self.dtype]._mlir_type,
         ](
-            ptr.bitcast[Scalar[dtype]._mlir_type]().address,
+            ptr.bitcast[Scalar[Self.dtype]._mlir_type]().address,
             value._mlir_value,
         )
 
     @always_inline
     fn fetch_add[
         *, ordering: Consistency = Consistency.SEQUENTIAL
-    ](self, rhs: Scalar[dtype]) -> Scalar[dtype]:
+    ](self, rhs: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
         """Performs atomic in-place add.
 
         Atomically replaces the current value with the result of arithmetic
@@ -426,7 +433,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         return Self.fetch_add[ordering=ordering](value_addr, rhs)
 
     @always_inline
-    fn __iadd__(mut self, rhs: Scalar[dtype]):
+    fn __iadd__(mut self, rhs: Scalar[Self.dtype]):
         """Performs atomic in-place add.
 
         Atomically replaces the current value with the result of arithmetic
@@ -443,7 +450,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @always_inline
     fn fetch_sub[
         *, ordering: Consistency = Consistency.SEQUENTIAL
-    ](mut self, rhs: Scalar[dtype]) -> Scalar[dtype]:
+    ](mut self, rhs: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
         """Performs atomic in-place sub.
 
         Atomically replaces the current value with the result of arithmetic
@@ -471,13 +478,13 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         var res = __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op sub>`,
             ordering = ordering.__mlir_attr(),
-            syncscope = _get_kgen_string[scope](),
-            _type = Scalar[dtype]._mlir_type,
+            syncscope = _get_kgen_string[Self.scope](),
+            _type = Scalar[Self.dtype]._mlir_type,
         ](value_addr.address, rhs._mlir_value)
-        return Scalar[dtype](mlir_value=res)
+        return Scalar[Self.dtype](mlir_value=res)
 
     @always_inline
-    fn __isub__(mut self, rhs: Scalar[dtype]):
+    fn __isub__(mut self, rhs: Scalar[Self.dtype]):
         """Performs atomic in-place sub.
 
         Atomically replaces the current value with the result of arithmetic
@@ -498,9 +505,9 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         failure_ordering: Consistency = Consistency.SEQUENTIAL,
         success_ordering: Consistency = Consistency.SEQUENTIAL,
     ](
-        ptr: UnsafePointer[Scalar[dtype], mut=False, **_],
-        mut expected: Scalar[dtype],
-        desired: Scalar[dtype],
+        ptr: UnsafePointer[Scalar[Self.dtype], mut=False, **_],
+        mut expected: Scalar[Self.dtype],
+        desired: Scalar[Self.dtype],
     ) -> Bool:
         """Atomically compares the value in ptr with that of the expected value.
         If the values are equal, then the ptr value is replaced with the
@@ -519,7 +526,9 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         Returns:
           True if ptr == expected and ptr was updated to desired. False otherwise.
         """
-        constrained[dtype.is_numeric(), "the input type must be arithmetic"]()
+        constrained[
+            Self.dtype.is_numeric(), "the input type must be arithmetic"
+        ]()
 
         if is_compile_time():
             if ptr[] == expected:
@@ -530,9 +539,9 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             return False
 
         @parameter
-        if dtype.is_integral():
+        if Self.dtype.is_integral():
             return _compare_exchange_integral_impl[
-                scope=scope,
+                scope = Self.scope,
                 failure_ordering=failure_ordering,
                 success_ordering=success_ordering,
             ](ptr, UnsafePointer(to=expected), desired)
@@ -541,7 +550,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         # values to their integral representation and perform the atomic
         # operation on that.
 
-        alias integral_type = _integral_type_of[dtype]()
+        comptime integral_type = _integral_type_of[Self.dtype]()
 
         var atomic_integral_ptr = ptr.bitcast[Scalar[integral_type]]()
         var expected_integral_ptr = UnsafePointer(to=expected).bitcast[
@@ -550,7 +559,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         var desired_integral = bitcast[integral_type](desired)
 
         return _compare_exchange_integral_impl[
-            scope=scope,
+            scope = Self.scope,
             failure_ordering=failure_ordering,
             success_ordering=success_ordering,
         ](atomic_integral_ptr, expected_integral_ptr, desired_integral)
@@ -560,7 +569,9 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         *,
         failure_ordering: Consistency = Consistency.SEQUENTIAL,
         success_ordering: Consistency = Consistency.SEQUENTIAL,
-    ](self, mut expected: Scalar[dtype], desired: Scalar[dtype]) -> Bool:
+    ](
+        self, mut expected: Scalar[Self.dtype], desired: Scalar[Self.dtype]
+    ) -> Bool:
         """Atomically compares the self value with that of the expected value.
         If the values are equal, then the self value is replaced with the
         desired value and True is returned. Otherwise, False is returned and
@@ -587,7 +598,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @always_inline
     fn max[
         *, ordering: Consistency = Consistency.SEQUENTIAL
-    ](ptr: UnsafePointer[Scalar[dtype], **_], rhs: Scalar[dtype]):
+    ](ptr: UnsafePointer[Scalar[Self.dtype], **_], rhs: Scalar[Self.dtype]):
         """Performs atomic in-place max on the pointer.
 
         Atomically replaces the current value pointer to by `ptr` by the result
@@ -605,14 +616,16 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             ptr: The source pointer.
             rhs: Value to max.
         """
-        constrained[dtype.is_numeric(), "the input type must be arithmetic"]()
+        constrained[
+            Self.dtype.is_numeric(), "the input type must be arithmetic"
+        ]()
 
-        _max_impl[scope=scope, ordering=ordering](ptr, rhs)
+        _max_impl[scope = Self.scope, ordering=ordering](ptr, rhs)
 
     @always_inline
     fn max[
         *, ordering: Consistency = Consistency.SEQUENTIAL
-    ](self, rhs: Scalar[dtype]):
+    ](self, rhs: Scalar[Self.dtype]):
         """Performs atomic in-place max.
 
         Atomically replaces the current value with the result of max of the
@@ -628,7 +641,9 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         Args:
             rhs: Value to max.
         """
-        constrained[dtype.is_numeric(), "the input type must be arithmetic"]()
+        constrained[
+            Self.dtype.is_numeric(), "the input type must be arithmetic"
+        ]()
 
         Self.max[ordering=ordering](UnsafePointer(to=self.value), rhs)
 
@@ -636,7 +651,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @always_inline
     fn min[
         *, ordering: Consistency = Consistency.SEQUENTIAL
-    ](ptr: UnsafePointer[Scalar[dtype], **_], rhs: Scalar[dtype]):
+    ](ptr: UnsafePointer[Scalar[Self.dtype], **_], rhs: Scalar[Self.dtype]):
         """Performs atomic in-place min on the pointer.
 
         Atomically replaces the current value pointer to by `ptr` by the result
@@ -654,14 +669,16 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             ptr: The source pointer.
             rhs: Value to min.
         """
-        constrained[dtype.is_numeric(), "the input type must be arithmetic"]()
+        constrained[
+            Self.dtype.is_numeric(), "the input type must be arithmetic"
+        ]()
 
-        _min_impl[scope=scope, ordering=ordering](ptr, rhs)
+        _min_impl[scope = Self.scope, ordering=ordering](ptr, rhs)
 
     @always_inline
     fn min[
         *, ordering: Consistency = Consistency.SEQUENTIAL
-    ](self, rhs: Scalar[dtype]):
+    ](self, rhs: Scalar[Self.dtype]):
         """Performs atomic in-place min.
 
         Atomically replaces the current value with the result of min of the
@@ -679,7 +696,9 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             rhs: Value to min.
         """
 
-        constrained[dtype.is_numeric(), "the input type must be arithmetic"]()
+        constrained[
+            Self.dtype.is_numeric(), "the input type must be arithmetic"
+        ]()
 
         Self.min[ordering=ordering](UnsafePointer(to=self.value), rhs)
 
@@ -765,8 +784,8 @@ fn _max_impl[
 ](ptr: UnsafePointer[Scalar[dtype], **_], rhs: Scalar[dtype]):
     @parameter
     if is_nvidia_gpu() and dtype.is_floating_point():
-        alias integral_type = _integral_type_of[dtype]()
-        alias unsigned_integral_type = _unsigned_integral_type_of[dtype]()
+        comptime integral_type = _integral_type_of[dtype]()
+        comptime unsigned_integral_type = _unsigned_integral_type_of[dtype]()
         if rhs >= 0:
             _max_impl_base[scope=scope, ordering=ordering](
                 ptr.bitcast[Scalar[integral_type]](),
@@ -791,8 +810,8 @@ fn _min_impl[
 ](ptr: UnsafePointer[Scalar[dtype], **_], rhs: Scalar[dtype]):
     @parameter
     if is_nvidia_gpu() and dtype.is_floating_point():
-        alias integral_type = _integral_type_of[dtype]()
-        alias unsigned_integral_type = _unsigned_integral_type_of[dtype]()
+        comptime integral_type = _integral_type_of[dtype]()
+        comptime unsigned_integral_type = _unsigned_integral_type_of[dtype]()
         if rhs >= 0:
             _min_impl_base[scope=scope, ordering=ordering](
                 ptr.bitcast[Scalar[integral_type]](),

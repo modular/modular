@@ -27,7 +27,7 @@ fn set_and_shift_kernel(
     num_elems: UInt,
     mype: Int32,
     npes: Int32,
-    use_nbi: Bool,
+    use_nbi: Int,
 ):
     var thread_idx = global_idx.x
 
@@ -42,7 +42,7 @@ fn set_and_shift_kernel(
     # one RMA message for every element, and it cannot leverage multiple threads
     # to copy the data to the destination GPU.
 
-    if use_nbi:
+    if use_nbi == 1:
         shmem_put_nbi[SHMEMScope.block](
             recv_data + block_offset,
             send_data + block_offset,
@@ -75,13 +75,13 @@ fn test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
 
     ctx.barrier_all()
 
-    ctx.enqueue_function[set_and_shift_kernel](
-        send_data.unsafe_ptr(),
-        recv_data.unsafe_ptr(),
+    ctx.enqueue_function_checked[set_and_shift_kernel, set_and_shift_kernel](
+        send_data,
+        recv_data,
         num_elems,
         mype,
         npes,
-        use_nbi,
+        Int(use_nbi),
         grid_dim=num_blocks,
         block_dim=threads_per_block,
     )

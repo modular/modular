@@ -422,10 +422,10 @@ struct ValueCount[T: DType](Defaultable, ImplicitlyCopyable, Movable):
         T: The DType of the value field.
     """
 
-    var value: Scalar[T]
+    var value: Scalar[Self.T]
     var count: Int32
 
-    fn __init__(out self, value: Scalar[T], count: Int32):
+    fn __init__(out self, value: Scalar[Self.T], count: Int32):
         # Initialize a ValueCount instance.
         self.value = value
         self.count = count

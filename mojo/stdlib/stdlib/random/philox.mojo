@@ -51,7 +51,7 @@ fn _mulhilow(a: UInt32, b: UInt32) -> SIMD[DType.uint32, 2]:
     return bitcast[DType.uint32, 2](res)
 
 
-struct Random[rounds: Int = 10]:
+struct Random[rounds: Int = 10](Copyable, Movable):
     """A high-performance random number generator using the Philox algorithm.
 
     The Philox algorithm is a counter-based random number generator designed for parallel
@@ -92,13 +92,13 @@ struct Random[rounds: Int = 10]:
         Returns:
             SIMD vector containing 4 random 32-bit unsigned integers.
         """
-        alias K_PHILOX_10 = SIMD[DType.uint32, 2](0x9E3779B9, 0xBB67AE85)
+        comptime K_PHILOX_10 = SIMD[DType.uint32, 2](0x9E3779B9, 0xBB67AE85)
 
         var counter = self._counter
         var key = self._key
 
         @parameter
-        for i in range(rounds - 1):
+        for i in range(Self.rounds - 1):
             counter = self._single_round(counter, key)
             key += K_PHILOX_10
         var res = self._single_round(counter, key)
@@ -113,7 +113,7 @@ struct Random[rounds: Int = 10]:
             SIMD vector containing 4 random float32 values in range [0,1).
         """
         # maximum value such that `MAX_INT * scale < 1.0` (with float rounding)
-        alias SCALE = 4.6566127342e-10
+        comptime SCALE = 4.6566127342e-10
         return (self.step() & 0x7FFFFFFF).cast[DType.float32]() * SCALE
 
     @always_inline
@@ -154,8 +154,8 @@ struct Random[rounds: Int = 10]:
         Returns:
             Mixed output as 4 32-bit values.
         """
-        alias K_PHILOX_SA = 0xD2511F53
-        alias K_PHILOX_SB = 0xCD9E8D57
+        comptime K_PHILOX_SA = 0xD2511F53
+        comptime K_PHILOX_SB = 0xCD9E8D57
 
         var res0 = _mulhilow(K_PHILOX_SA, counter[0])
         var res1 = _mulhilow(K_PHILOX_SB, counter[2])
@@ -167,7 +167,7 @@ struct Random[rounds: Int = 10]:
         )
 
 
-struct NormalRandom[rounds: Int = 10]:
+struct NormalRandom[rounds: Int = 10](Copyable, Movable):
     """A high-performance random number generator using the Box-Muller transform.
 
     The Box-Muller transform is a method for generating pairs of independent standard normal
@@ -179,7 +179,7 @@ struct NormalRandom[rounds: Int = 10]:
                performance. Default is 10.
     """
 
-    var _rng: Random[rounds]
+    var _rng: Random[Self.rounds]
 
     fn __init__(
         out self,
@@ -195,7 +195,7 @@ struct NormalRandom[rounds: Int = 10]:
             subsequence: Subsequence number for the RNG.
             offset: Offset value for the RNG.
         """
-        self._rng = Random[rounds](
+        self._rng = Random[Self.rounds](
             seed=seed, subsequence=subsequence, offset=offset
         )
 

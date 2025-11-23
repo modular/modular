@@ -30,20 +30,20 @@ alias PRINT_OUTPUT = False
 struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
     ImplicitlyCopyable, Movable
 ):
-    alias is_top_p = _is_top_p
-    alias dtype = _dtype
-    alias out_idx_type = _out_idx_type
+    alias is_top_p = Self._is_top_p
+    alias dtype = Self._dtype
+    alias out_idx_type = Self._out_idx_type
     var batch_size: Int
     var vocab_size: Int
-    var temperature: Scalar[_dtype]
-    var p_threshold: Scalar[_dtype]
+    var temperature: Scalar[Self.dtype]
+    var p_threshold: Scalar[Self.dtype]
 
     fn __init__(
         out self,
         batch_size: Int,
         vocab_size: Int,
-        temperature: Scalar[_dtype] = Scalar[_dtype](1.0),
-        p_threshold: Scalar[_dtype] = Scalar[_dtype](0.9),
+        temperature: Scalar[Self.dtype] = Scalar[Self.dtype](1.0),
+        p_threshold: Scalar[Self.dtype] = Scalar[Self.dtype](0.9),
     ):
         self.batch_size = batch_size
         self.vocab_size = vocab_size

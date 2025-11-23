@@ -37,7 +37,6 @@ from max.config import (
 class Backend(str, enum.Enum):
     vllm = "vllm"
     vllm_chat = "vllm-chat"
-    trt_llm = "trt-llm"
     modular = "modular"
     modular_chat = "modular-chat"
     sglang = "sglang"
@@ -217,7 +216,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "group_description": "Configuration for backend selection and API endpoints",
         },
     )
-    """Backend to use for benchmarking. Choices: vllm, vllm-chat, trt-llm, modular, modular-chat, sglang, sglang-chat"""
+    """Backend to use for benchmarking. Choices: vllm, vllm-chat, modular, modular-chat, sglang, sglang-chat"""
 
     base_url: str | None = field(
         default=None, metadata={"group": "Backend and API Configuration"}
@@ -489,7 +488,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         # Get base help and extend with serving-specific parameters
         base_help = BaseBenchmarkConfig.help()
         serving_help = {
-            "backend": "Backend to use for benchmarking. Choices: vllm, vllm-chat, trt-llm, modular, modular-chat, sglang, sglang-chat",
+            "backend": "Backend to use for benchmarking. Choices: vllm, vllm-chat, modular, modular-chat, sglang, sglang-chat",
             "base_url": "Server or API base url if not using http host and port.",
             "host": "Server host.",
             "port": "Server port.",

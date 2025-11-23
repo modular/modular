@@ -38,16 +38,16 @@ __extension SIMD:
 
 
 struct _SIMDStrategy[dtype: DType, size: Int](Movable, Strategy):
-    alias Value = SIMD[dtype, size]
+    comptime Value = SIMD[Self.dtype, Self.size]
 
-    var _min: Scalar[dtype]
-    var _max: Scalar[dtype]
+    var _min: Scalar[Self.dtype]
+    var _max: Scalar[Self.dtype]
 
     fn __init__(
         out self,
         *,
-        min: Scalar[dtype] = Scalar[dtype].MIN_FINITE,
-        max: Scalar[dtype] = Scalar[dtype].MAX_FINITE,
+        min: Scalar[Self.dtype] = Scalar[Self.dtype].MIN_FINITE,
+        max: Scalar[Self.dtype] = Scalar[Self.dtype].MAX_FINITE,
     ):
         self._min = min
         self._max = max
@@ -55,11 +55,13 @@ struct _SIMDStrategy[dtype: DType, size: Int](Movable, Strategy):
     # TODO: Provide better more consistent "corner case" values
     # e.g. 0, -1, 1, max, min, max-1, min+1, etc...
     fn value(mut self, mut rng: Rng) raises -> Self.Value:
-        var result = SIMD[dtype, size](0)
+        var result = SIMD[Self.dtype, Self.size](0)
 
         @parameter
-        for i in range(size):
-            result[i] = rng.rand_scalar[dtype](min=self._min, max=self._max)
+        for i in range(Self.size):
+            result[i] = rng.rand_scalar[Self.dtype](
+                min=self._min, max=self._max
+            )
         return result
 
 
@@ -97,21 +99,25 @@ __extension List:
 
 
 struct _ListStrategy[T: Strategy](Movable, Strategy):
-    alias Value = List[T.Value]
+    comptime Value = List[Self.T.Value]
 
-    var _strat: T
+    var _strat: Self.T
     var _min_len: Int
     var _max_len: Int
 
     fn __init__(
-        out self, var strategy: T, *, min_len: Int = 0, max_len: Int = Int.MAX
+        out self,
+        var strategy: Self.T,
+        *,
+        min_len: Int = 0,
+        max_len: Int = Int.MAX,
     ) raises:
         if min_len < 0 or min_len > max_len:
             raise Error("Invalid min/max for list length")
 
         # TODO: Make this configurable for other collection types via
         # a property test config value.
-        alias MAX_LIST_SIZE = 100
+        comptime MAX_LIST_SIZE = 100
 
         self._strat = strategy^
         self._min_len = min_len
@@ -120,7 +126,7 @@ struct _ListStrategy[T: Strategy](Movable, Strategy):
     # TODO: Provide more consistent "corner case" values.
     # Empty list, single element list, max size list, etc...
     fn value(mut self, mut rng: Rng) raises -> Self.Value:
-        var result = List[T.Value](capacity=self._min_len)
+        var result = List[Self.T.Value](capacity=self._min_len)
 
         while len(result) < self._min_len:
             result.append(self._strat.value(rng))

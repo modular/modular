@@ -17,10 +17,10 @@ def custom_op_example_py_binary(
         ] + extra_data,
         imports = ["."],
         mojo_deps = [
-            "@mojo//:compiler",
-            "@mojo//:layout",
+            "//max:compiler",
+            "//max:layout",
             "@mojo//:stdlib",
-            "@mojo//:tensor",
+            "//max:tensor",
         ],
         deps = [
             "//max/python/max/driver",

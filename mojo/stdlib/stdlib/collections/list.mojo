@@ -49,14 +49,14 @@ struct _ListIter[
         forward: The iteration direction. `False` is backwards.
     """
 
-    alias Element = T  # FIXME(MOCO-2068): shouldn't be needed.
+    comptime Element = Self.T  # FIXME(MOCO-2068): shouldn't be needed.
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
     var index: Int
-    var src: Pointer[List[Self.Element], origin]
+    var src: Pointer[List[Self.Element], Self.origin]
 
     @always_inline
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
@@ -65,14 +65,14 @@ struct _ListIter[
     @always_inline
     fn __has_next__(self) -> Bool:
         @parameter
-        if forward:
+        if Self.forward:
             return self.index < len(self.src[])
         else:
             return self.index > 0
 
-    fn __next_ref__(mut self) -> ref [origin] Self.Element:
+    fn __next_ref__(mut self) -> ref [Self.origin] Self.Element:
         @parameter
-        if forward:
+        if Self.forward:
             self.index += 1
             return self.src[][self.index - 1]
         else:
@@ -88,7 +88,7 @@ struct _ListIter[
         var iter_len: Int
 
         @parameter
-        if forward:
+        if Self.forward:
             iter_len = len(self.src[]) - self.index
         else:
             iter_len = self.index
@@ -248,16 +248,16 @@ struct List[T: Copyable & Movable](
     """
 
     # Fields
-    var _data: UnsafePointer[T, MutOrigin.external]
+    var _data: UnsafePointer[Self.T, MutOrigin.external]
     """The underlying storage for the list."""
     var _len: Int
     """The number of elements in the list."""
     var capacity: Int
     """The amount of elements that can fit in the list without resizing it."""
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
-    ]: Iterator = _ListIter[T, iterable_origin, True]
+    ]: Iterator = _ListIter[Self.T, iterable_origin, True]
 
     # asan annotation methods
     fn _annotate_new(self):
@@ -309,14 +309,14 @@ struct List[T: Copyable & Movable](
             capacity: The requested capacity of the list.
         """
         if capacity:
-            self._data = alloc[T](capacity)
+            self._data = alloc[Self.T](capacity)
         else:
             self._data = {}
         self._len = 0
         self.capacity = capacity
         self._annotate_new()
 
-    fn __init__(out self, *, length: Int, fill: T):
+    fn __init__(out self, *, length: Int, fill: Self.T):
         """Constructs a list with the given capacity.
 
         Args:
@@ -327,7 +327,7 @@ struct List[T: Copyable & Movable](
         self.resize(length, fill)
 
     @always_inline
-    fn __init__(out self, var *values: T, __list_literal__: () = ()):
+    fn __init__(out self, var *values: Self.T, __list_literal__: () = ()):
         """Constructs a list from the given values.
 
         Args:
@@ -336,7 +336,7 @@ struct List[T: Copyable & Movable](
         """
         self = Self(elements=values^)
 
-    fn __init__(out self, *, var elements: VariadicListMem[T, _]):
+    fn __init__(out self, *, var elements: VariadicListMem[Self.T, _]):
         """Constructs a list from the given values.
 
         Args:
@@ -350,7 +350,7 @@ struct List[T: Copyable & Movable](
 
         # Transfer all of the elements into the List.
         @parameter
-        fn init_elt(idx: Int, var elt: T):
+        fn init_elt(idx: Int, var elt: Self.T):
             (self._data + idx).init_pointee_move(elt^)
 
         elements^.consume_elements[init_elt]()
@@ -358,7 +358,7 @@ struct List[T: Copyable & Movable](
         # Remember how many elements we have.
         self._len = length
 
-    fn __init__(out self, span: Span[T]):
+    fn __init__(out self, span: Span[Self.T]):
         """Constructs a list from the a Span of values.
 
         Args:
@@ -371,7 +371,7 @@ struct List[T: Copyable & Movable](
     fn __init__[
         IterableType: Iterable
     ](out self, iterable: IterableType) where _type_is_eq_parse_time[
-        T, IterableType.IteratorType[origin_of(iterable)].Element
+        Self.T, IterableType.IteratorType[origin_of(iterable)].Element
     ]():
         """Constructs a list from an iterable of values.
 
@@ -384,7 +384,7 @@ struct List[T: Copyable & Movable](
         var lower, _ = iter(iterable).bounds()
         self = Self(capacity=lower)
         for value in iterable:
-            self.append(rebind[T](value).copy())
+            self.append(rebind[Self.T](value).copy())
 
     @always_inline
     fn __init__(out self, *, unsafe_uninit_length: Int):
@@ -413,7 +413,7 @@ struct List[T: Copyable & Movable](
         """Destroy all elements in the list and free its memory."""
 
         @parameter
-        if not T.__del__is_trivial:
+        if not Self.T.__del__is_trivial:
             for i in range(len(self)):
                 (self._data + i).destroy_pointee()
         self._annotate_delete()
@@ -425,13 +425,13 @@ struct List[T: Copyable & Movable](
 
     @always_inline
     fn __eq__[
-        U: EqualityComparable & Copyable & Movable, //
+        U: Equatable & Copyable & Movable, //
     ](self: List[U, *_], other: List[U, *_]) -> Bool:
         """Checks if two lists are equal.
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-               trait `EqualityComparable`.
+               trait `Equatable`.
 
         Args:
             other: The list to compare with.
@@ -458,13 +458,13 @@ struct List[T: Copyable & Movable](
 
     @always_inline
     fn __ne__[
-        U: EqualityComparable & Copyable & Movable, //
+        U: Equatable & Copyable & Movable, //
     ](self: List[U, *_], other: List[U, *_]) -> Bool:
         """Checks if two lists are not equal.
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-               trait `EqualityComparable`.
+               trait `Equatable`.
 
         Args:
             other: The list to compare with.
@@ -483,13 +483,13 @@ struct List[T: Copyable & Movable](
         return not (self == other)
 
     fn __contains__[
-        U: EqualityComparable & Copyable & Movable, //
+        U: Equatable & Copyable & Movable, //
     ](self: List[U, *_], value: U) -> Bool:
         """Verify if a given value is present in the list.
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-              trait `EqualityComparable`.
+              trait `Equatable`.
 
         Args:
             value: The value to find.
@@ -577,7 +577,7 @@ struct List[T: Copyable & Movable](
 
     fn __reversed__(
         ref self,
-    ) -> _ListIter[T, origin_of(self), False]:
+    ) -> _ListIter[Self.T, origin_of(self), False]:
         """Iterate backwards over the list, returning immutable references.
 
         Returns:
@@ -696,14 +696,14 @@ struct List[T: Copyable & Movable](
         Returns:
             The byte length of the List (`len(self) * size_of[T]()`).
         """
-        return len(self) * size_of[T]()
+        return len(self) * size_of[Self.T]()
 
     @no_inline
     fn _realloc(mut self, new_capacity: Int):
-        var new_data = alloc[T](new_capacity)
+        var new_data = alloc[Self.T](new_capacity)
 
         @parameter
-        if T.__moveinit__is_trivial:
+        if Self.T.__moveinit__is_trivial:
             memcpy(dest=new_data, src=self._data, count=len(self))
         else:
             for i in range(len(self)):
@@ -716,7 +716,7 @@ struct List[T: Copyable & Movable](
         self.capacity = new_capacity
         self._annotate_new()
 
-    fn append(mut self, var value: T):
+    fn append(mut self, var value: Self.T):
         """Appends a value to this list.
 
         Args:
@@ -732,7 +732,7 @@ struct List[T: Copyable & Movable](
         self._unsafe_next_uninit_ptr().init_pointee_move(value^)
         self._len += 1
 
-    fn insert(mut self, i: Int, var value: T):
+    fn insert(mut self, i: Int, var value: Self.T):
         """Inserts a value to the list at the given index.
         `a.insert(len(a), value)` is equivalent to `a.append(value)`.
 
@@ -761,7 +761,7 @@ struct List[T: Copyable & Movable](
             earlier_idx -= 1
             later_idx -= 1
 
-    fn extend(mut self, var other: List[T, *_]):
+    fn extend(mut self, var other: List[Self.T, *_]):
         """Extends this list by consuming the elements of `other`.
 
         Args:
@@ -778,7 +778,7 @@ struct List[T: Copyable & Movable](
         self._annotate_increase(other_len)
 
         @parameter
-        if T.__moveinit__is_trivial:
+        if Self.T.__moveinit__is_trivial:
             memcpy(dest=dest_ptr, src=src_ptr, count=other_len)
         else:
             for _ in range(other_len):
@@ -792,7 +792,7 @@ struct List[T: Copyable & Movable](
         # they don't get destroyed when it goes out of scope.
         other._len = 0
 
-    fn extend(mut self, elements: Span[T, _]):
+    fn extend(mut self, elements: Span[Self.T, _]):
         """Extend this list by copying elements from a `Span`.
 
         The resulting list will have the length `len(self) + len(elements)`.
@@ -811,7 +811,7 @@ struct List[T: Copyable & Movable](
         self._len = new_num_elts
 
         @parameter
-        if T.__copyinit__is_trivial:
+        if Self.T.__copyinit__is_trivial:
             memcpy(
                 dest=self.unsafe_ptr() + i,
                 src=elements.unsafe_ptr(),
@@ -892,7 +892,7 @@ struct List[T: Copyable & Movable](
         )
         self._len += len(value)
 
-    fn pop(mut self, i: Int = -1) -> T:
+    fn pop(mut self, i: Int = -1) -> Self.T:
         """Pops a value from the list at the given index.
 
         Args:
@@ -928,7 +928,7 @@ struct List[T: Copyable & Movable](
             return
         self._realloc(new_capacity)
 
-    fn resize(mut self, new_size: Int, value: T):
+    fn resize(mut self, new_size: Int, value: Self.T):
         """Resizes the list to the given new size.
 
         Args:
@@ -986,7 +986,7 @@ struct List[T: Copyable & Movable](
             )
 
         @parameter
-        if not T.__del__is_trivial:
+        if not Self.T.__del__is_trivial:
             for i in range(new_size, len(self)):
                 (self._data + i).destroy_pointee()
         var old_size: Int = self._len
@@ -1016,7 +1016,7 @@ struct List[T: Copyable & Movable](
 
     # TODO: Remove explicit self type when issue 1876 is resolved.
     fn index[
-        C: EqualityComparable & Copyable & Movable, //
+        C: Equatable & Copyable & Movable, //
     ](
         ref self: List[C, *_],
         value: C,
@@ -1035,7 +1035,7 @@ struct List[T: Copyable & Movable](
 
         Parameters:
             C: The type of the elements in the list. Must implement the
-                `EqualityComparable` trait.
+                `Equatable` trait.
 
         Returns:
             The index of the first occurrence of the value in the list.
@@ -1080,7 +1080,7 @@ struct List[T: Copyable & Movable](
         self._len = 0
         self._annotate_shrink(old_size)
 
-    fn steal_data(mut self) -> UnsafePointer[T, MutOrigin.external]:
+    fn steal_data(mut self) -> UnsafePointer[Self.T, MutOrigin.external]:
         """Take ownership of the underlying pointer from the list.
 
         Returns:
@@ -1116,7 +1116,7 @@ struct List[T: Copyable & Movable](
 
     fn __getitem__[
         origin: Origin, //
-    ](ref [origin]self, slice: ContiguousSlice) -> Span[T, origin]:
+    ](ref [origin]self, slice: ContiguousSlice) -> Span[Self.T, origin]:
         """Gets the sequence of elements at the specified positions.
 
         Parameters:
@@ -1129,11 +1129,11 @@ struct List[T: Copyable & Movable](
             A span over the specified slice.
         """
         var start, end = slice.indices(len(self))
-        return Span[T, origin](
+        return Span[Self.T, origin](
             ptr=self.unsafe_ptr() + start, length=end - start
         )
 
-    fn __getitem__[I: Indexer, //](ref self, idx: I) -> ref [self] T:
+    fn __getitem__[I: Indexer, //](ref self, idx: I) -> ref [self] Self.T:
         """Gets the list element at the given index.
 
         Args:
@@ -1181,7 +1181,7 @@ struct List[T: Copyable & Movable](
         return (self._data + idx)[]
 
     @always_inline
-    fn unsafe_set(mut self, idx: Int, var value: T):
+    fn unsafe_set(mut self, idx: Int, var value: Self.T):
         """Write a value to a given location without checking index bounds.
 
         Args:
@@ -1209,13 +1209,13 @@ struct List[T: Copyable & Movable](
         (self._data + idx).init_pointee_move(value^)
 
     fn count[
-        _T: EqualityComparable & Copyable & Movable, //
+        _T: Equatable & Copyable & Movable, //
     ](self: List[_T, *_], value: _T) -> Int:
         """Counts the number of occurrences of a value in the list.
 
         Parameters:
             _T: The type of the elements in the list. Must implement the
-                trait `EqualityComparable`.
+                trait `Equatable`.
 
         Args:
             value: The value to count.
@@ -1261,7 +1261,7 @@ struct List[T: Copyable & Movable](
     fn unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
     ](ref [origin, address_space]self) -> UnsafePointer[
-        T, origin, address_space=address_space
+        Self.T, origin, address_space=address_space
     ]:
         """Retrieves a pointer to the underlying memory.
 
@@ -1281,7 +1281,7 @@ struct List[T: Copyable & Movable](
     @always_inline
     fn _unsafe_next_uninit_ptr(
         ref self,
-    ) -> UnsafePointer[T, origin_of(self),]:
+    ) -> UnsafePointer[Self.T, origin_of(self)]:
         """Retrieves a pointer to the next uninitialized element position.
 
         Safety:

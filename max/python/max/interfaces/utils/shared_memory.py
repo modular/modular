@@ -73,7 +73,16 @@ def ndarray_to_shared_memory(arr: npt.NDArray[Any]) -> SharedMemoryArray | None:
         SharedMemoryArray if successful, None if shared memory is full or creation fails
     """
     # Check shared memory capacity.
-    if not can_allocate(arr.nbytes) or arr.nbytes == 0:
+    if not can_allocate(arr.nbytes):
+        logger.warning(
+            "Unable to allocate shared memory for array (size: %d bytes). "
+            "Consider increasing the shared memory watermark (set MODULAR_MAX_SHM_WATERMARK), "
+            "expanding /dev/shm capacity, or reducing concurrency.",
+            arr.nbytes,
+        )
+        return None
+
+    elif arr.nbytes == 0:
         return None
 
     try:

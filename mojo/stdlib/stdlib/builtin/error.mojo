@@ -23,7 +23,6 @@ from sys.ffi import c_char
 
 from memory import (
     ArcPointer,
-    LegacyUnsafePointer as UnsafePointer,
     OwnedPointer,
     memcpy,
 )
@@ -47,9 +46,7 @@ struct StackTrace(ImplicitlyCopyable, Stringable):
     @no_inline
     fn __init__(out self):
         """Construct an empty stack trace."""
-        self.value = ArcPointer(
-            OwnedPointer[UInt8](unsafe_from_raw_pointer=UnsafePointer[UInt8]())
-        )
+        self.value = ArcPointer(OwnedPointer[UInt8](unsafe_from_raw_pointer={}))
 
     @no_inline
     fn __init__(out self, *, depth: Int):
@@ -70,14 +67,14 @@ struct StackTrace(ImplicitlyCopyable, Stringable):
             self = StackTrace()
             return
 
-        var buffer = UnsafePointer[UInt8]()
+        var buffer = UnsafePointer[UInt8, MutOrigin.external]()
         var num_bytes = external_call["KGEN_CompilerRT_GetStackTrace", Int](
             UnsafePointer(to=buffer), depth
         )
         # When num_bytes is zero, the stack trace was not collected.
         if num_bytes == 0:
             self.value = ArcPointer(
-                OwnedPointer(unsafe_from_raw_pointer=UnsafePointer[UInt8]())
+                OwnedPointer[UInt8](unsafe_from_raw_pointer={})
             )
             return
 
@@ -134,7 +131,7 @@ struct Error(
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var data: UnsafePointer[UInt8, mut=False]
+    var data: UnsafePointer[UInt8, ImmutOrigin.external]
     """A pointer to the beginning of the string data being referenced."""
 
     var loaded_length: Int
@@ -157,7 +154,7 @@ struct Error(
     @always_inline
     fn __init__(out self):
         """Default constructor."""
-        self.data = UnsafePointer[UInt8]()
+        self.data = {}
         self.loaded_length = 0
         self.stack_trace = StackTrace(depth=-1)
 
@@ -170,7 +167,9 @@ struct Error(
             value: The error message.
 
         """
-        self.data = value.unsafe_ptr()
+        self.data = value.unsafe_ptr().unsafe_origin_cast[
+            ImmutOrigin.external
+        ]()
         self.loaded_length = value.byte_length()
         self.stack_trace = StackTrace(depth=0)
 
@@ -220,7 +219,7 @@ struct Error(
         """
         if existing.loaded_length < 0:
             var length = -existing.loaded_length
-            var dest = UnsafePointer[UInt8].alloc(length + 1)
+            var dest = alloc[UInt8](length + 1)
             memcpy(dest=dest, src=existing.data, count=length)
             dest[length] = 0
             self.data = dest
@@ -286,17 +285,17 @@ struct Error(
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn unsafe_cstr_ptr(self) -> UnsafePointer[c_char, mut=False]:
+    fn unsafe_cstr_ptr(self) -> UnsafePointer[c_char, ImmutOrigin.external]:
         """Retrieves a C-string-compatible pointer to the underlying memory.
 
-        The returned pointer is guaranteed to be NUL terminated, and not null.
+        The returned pointer is guaranteed to be NUL terminated.
 
         Returns:
             The pointer to the underlying memory.
         """
         return self.data.bitcast[c_char]()
 
-    fn as_string_slice(self) -> StringSlice[ImmutAnyOrigin]:
+    fn as_string_slice(self) -> StringSlice[ImmutOrigin.external]:
         """Returns a string slice of the data maybe owned by the Error.
 
         Returns:
@@ -304,11 +303,9 @@ struct Error(
 
         Notes:
             Since the data is not guaranteed to be owned by the Error, the
-            resulting StringSlice is given an ImmutAnyOrigin.
+            resulting StringSlice is given an ImmutOrigin.external.
         """
-        return StringSlice[ImmutAnyOrigin](
-            ptr=self.data, length=self.byte_length()
-        )
+        return StringSlice(ptr=self.data, length=self.byte_length())
 
     fn get_stack_trace(self) -> StackTrace:
         """Returns the stack trace of the error.

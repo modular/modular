@@ -163,7 +163,7 @@ def test_char_is_printable():
     assert_false(Codepoint.ord("स").is_ascii_printable())
 
 
-alias SIGNIFICANT_CODEPOINTS = List[Tuple[Int, List[Byte]]](
+comptime SIGNIFICANT_CODEPOINTS = List[Tuple[Int, List[Byte]]](
     # --------------------------
     # 1-byte (ASCII) codepoints
     # --------------------------
@@ -247,10 +247,10 @@ def test_char_utf8_byte_length():
 
 
 def test_char_comptime():
-    alias c1 = Codepoint.from_u32(32).value()
+    comptime c1 = Codepoint.from_u32(32).value()
 
     # Test that `utf8_byte_length()` works at compile time.
-    alias c1_bytes = c1.utf8_byte_length()
+    comptime c1_bytes = c1.utf8_byte_length()
     assert_equal(c1_bytes, 1)
 
 

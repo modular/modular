@@ -104,7 +104,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
 
             # Only transpose the B matrix if we are validating the results,
             # otherwise we can pretend the matrix is already transposed
-            if algorithm == "mma_tile_buffers" and perform_validation:
+            if Self.algorithm == "mma_tile_buffers" and perform_validation:
                 # Create transposed layout tensor using the transposed dimensions NxK
                 # Allocate device memory for transposed matrix
                 var b_transposed_buffer = gpu_ctx.enqueue_create_buffer[
@@ -152,7 +152,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
             # - "mma_tile_buffers": A matrix multiplication using tile buffers and AMD Tensor Core instructions.
 
             @parameter
-            if algorithm == "naive_tensor":
+            if Self.algorithm == "naive_tensor":
 
                 @parameter
                 if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
@@ -188,7 +188,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                         block_dim=(NUM_THREADS, 1),
                     )
-            elif algorithm == "basic_shared_mem":
+            elif Self.algorithm == "basic_shared_mem":
 
                 @parameter
                 if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
@@ -224,7 +224,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                         block_dim=(NUM_THREADS, 1),
                     )
-            elif algorithm == "multi_block_tiled":
+            elif Self.algorithm == "multi_block_tiled":
 
                 @parameter
                 if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
@@ -264,7 +264,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                         block_dim=(NUM_THREADS, 1),
                     )
-            elif algorithm == "scheduler_hints":
+            elif Self.algorithm == "scheduler_hints":
 
                 @parameter
                 if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
@@ -304,7 +304,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                         block_dim=(NUM_THREADS, 1),
                     )
-            elif algorithm == "double_buffer":
+            elif Self.algorithm == "double_buffer":
 
                 @parameter
                 if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
@@ -344,7 +344,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                         block_dim=(NUM_THREADS, 1),
                     )
-            elif algorithm == "mma_tile_buffers":
+            elif Self.algorithm == "mma_tile_buffers":
 
                 @parameter
                 if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
@@ -388,7 +388,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         block_dim=(NUM_THREADS, 1),
                     )
             else:
-                raise Error("No known matmul algorithm:", algorithm)
+                raise Error("No known matmul algorithm:", Self.algorithm)
 
             if perform_validation:
                 var reference_buf = gpu_ctx.enqueue_create_buffer[output.dtype](

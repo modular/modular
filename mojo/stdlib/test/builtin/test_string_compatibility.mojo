@@ -48,17 +48,17 @@ def test_literals():
 
 def test_alias_expressions():
     """Test string alias expressions."""
-    alias alias_concat = "foo" + "bar"
-    alias alias_concat_string = "foo" + String("bar")
-    alias alias_concat_static = StaticString("foo") + "bar"
+    comptime alias_concat = "foo" + "bar"
+    comptime alias_concat_string = "foo" + String("bar")
+    comptime alias_concat_static = StaticString("foo") + "bar"
 
-    alias alias_or = "foo" or "bar"
-    alias alias_or_string = "" or String("bar")
-    alias alias_or_static = StaticString("foo") or "bar"
+    comptime alias_or = "foo" or "bar"
+    comptime alias_or_string = "" or String("bar")
+    comptime alias_or_static = StaticString("foo") or "bar"
 
-    alias alias_if = "foo" if True else "bar"
-    alias alias_if_string = "foo" if False else String("bar")
-    alias alias_if_static = StaticString("foo") if True else "bar"
+    comptime alias_if = "foo" if True else "bar"
+    comptime alias_if_string = "foo" if False else String("bar")
+    comptime alias_if_static = StaticString("foo") if True else "bar"
 
     # Test materialization of alias expressions
     assert_equal(alias_concat, "foobar")

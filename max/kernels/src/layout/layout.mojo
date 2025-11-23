@@ -268,7 +268,7 @@ struct _LayoutIter[origin: ImmutOrigin](
     ]: Iterator = Self
     alias Element = Layout
     var index: Int
-    var layout: Pointer[Layout, origin]
+    var layout: Pointer[Layout, Self.origin]
 
     fn __next__(mut self) -> Self.Element:
         """Returns the next sub-layout in the iteration.
@@ -316,7 +316,7 @@ struct _LayoutIter[origin: ImmutOrigin](
 
 struct Layout(
     Defaultable,
-    EqualityComparable,
+    Equatable,
     ImplicitlyCopyable,
     Iterable,
     LayoutTrait,

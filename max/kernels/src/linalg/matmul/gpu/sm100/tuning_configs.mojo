@@ -122,7 +122,7 @@ struct TuningConfigSM100(TuningConfig):
 
 
 fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
-    return List(
+    return [
         TuningConfigSM100(
             M=3456,
             M_end=3456 + 64,
@@ -146,6 +146,20 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             rasterize_order=RasterOrder(1),
         ),
         # ------------ llama3-8b-tp2 ------------#
+        TuningConfigSM100(
+            M=87,
+            M_end=129,
+            N=3072,
+            K=4096,
+            mma_shape=Index(128, 48, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            num_accum_pipeline_stages=1,
+            num_clc_pipeline_stages=0,
+            k_group_size=2,
+        ),
         TuningConfigSM100(
             M=449,
             M_end=513,
@@ -222,7 +236,7 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
         ),
         TuningConfigSM100(
             M=9,
-            M_end=18,
+            M_end=17,
             N=4096,
             K=4096,
             mma_shape=Index(128, 16, 16),
@@ -236,7 +250,7 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             k_group_size=2,
         ),
         TuningConfigSM100(
-            M=19,
+            M=17,
             M_end=64,
             N=4096,
             K=4096,
@@ -310,7 +324,7 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             num_clc_pipeline_stages=2,
             k_group_size=2,
         ),
-    )
+    ]
 
 
 # ===----------------------------------------------------------------------=== #
@@ -320,7 +334,7 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
 
 fn _get_tuning_list_sm100_fp8[mma_k: Int, bk: Int]() -> List[TuningConfigSM100]:
     # ----------------BEGIN-TUNING-LIST-SM100-FP8----------------
-    alias config_list = List(
+    alias config_list = [
         # Automatically generated from [tuning_table_sm100_fp8.yaml]
         # index: [0]
         TuningConfigSM100(
@@ -1473,7 +1487,7 @@ fn _get_tuning_list_sm100_fp8[mma_k: Int, bk: Int]() -> List[TuningConfigSM100]:
             block_swizzle_size=8,
             rasterize_order=RasterOrder(1),
         ),
-    )
+    ]
     # ----------------END-TUNING-LIST-SM100-FP8----------------
 
     return materialize[config_list]()

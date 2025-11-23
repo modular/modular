@@ -6426,7 +6426,6 @@ class ReshapeOp(max._core.Operation):
     Returns a tensor with the same underlying data as `input`, but the shape of `newShape`.
 
     A static dimension set to `-1` will be automatically computed.
-    Using `-1` will result in an error if `newShapes` contains a zero sized dimensions.
 
     Shape restrictions:
     1. `newShape` must have known rank.

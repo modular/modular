@@ -23,7 +23,7 @@ from testing.prop import PropTest, PropTestConfig, Rng, Strategy
 
 @fieldwise_init
 struct SimpleStrategy(Movable, Strategy):
-    alias Value = Int
+    comptime Value = Int
 
     fn value(mut self, mut rng: Rng) raises -> Self.Value:
         return 42
@@ -40,9 +40,9 @@ def test_prop_test_runner_propagates_error():
 
 @fieldwise_init
 struct RecordingStrategy[origin: MutOrigin](Movable, Strategy):
-    alias Value = Int
+    comptime Value = Int
 
-    var list: UnsafePointer[List[Int], origin=origin]
+    var list: UnsafePointer[List[Int], origin = Self.origin]
 
     fn value(self, mut rng: Rng) raises -> Self.Value:
         var random = rng.rand_int()

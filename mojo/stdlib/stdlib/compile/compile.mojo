@@ -121,12 +121,12 @@ struct CompiledFunctionInfo[
     var capture_sizes: UnsafePointer[UInt64]
     """Pointer to the sizes of the variables captured by the function closure."""
 
-    alias populate = rebind[fn (OpaquePointer) capturing -> None](
+    comptime populate = rebind[fn (OpaquePointer) capturing -> None](
         __mlir_attr[
             `#kgen.compile_offload_closure<`,
-            target,
+            Self.target,
             `,`,
-            func,
+            Self.func,
             `> : `,
             _PopulateInfo,
         ].populate
@@ -180,12 +180,12 @@ struct CompiledFunctionInfo[
         return content in String(self)
 
 
-alias _EMISSION_KIND_ASM = 0
-alias _EMISSION_KIND_LLVM = 1
-alias _EMISSION_KIND_LLVM_OPT = 2
-alias _EMISSION_KIND_OBJECT = 3
-alias _EMISSION_KIND_LLVM_BITCODE = 4
-alias _EMISSION_KIND_LLVM_OPT_BITCODE = 5
+comptime _EMISSION_KIND_ASM = 0
+comptime _EMISSION_KIND_LLVM = 1
+comptime _EMISSION_KIND_LLVM_OPT = 2
+comptime _EMISSION_KIND_OBJECT = 3
+comptime _EMISSION_KIND_LLVM_BITCODE = 4
+comptime _EMISSION_KIND_LLVM_OPT_BITCODE = 5
 
 
 fn _get_emission_kind_id[emission_kind: StaticString]() -> Int:

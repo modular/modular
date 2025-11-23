@@ -78,7 +78,7 @@ fn _user_home_path(path: String) -> String:
     # Special POSIX syntax for ~[user-name]/path
     if len(path) > 1 and user_end > 1:
         try:
-            return pwd.getpwnam(path[1:user_end]).pw_dir
+            return pwd.getpwnam(String(path[1:user_end])).pw_dir
         except:
             return ""
     else:
@@ -223,7 +223,7 @@ fn dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
     """
     var fspath = path.__fspath__()
     var i = fspath.rfind(os.sep) + 1
-    var head = fspath[:i]
+    var head = String(fspath[:i])
     if head and head != os.sep * len(head):
         return String(head.rstrip(os.sep))
     return head
@@ -438,8 +438,8 @@ fn split[PathLike: os.PathLike, //](path: PathLike) -> Tuple[String, String]:
     var i = fspath.rfind(os.sep) + 1
     var head, tail = fspath[:i], fspath[i:]
     if head and head != String(os.sep) * len(head):
-        head = String(head.rstrip(sep))
-    return head, tail
+        head = head.rstrip(sep)
+    return String(head), String(tail)
 
 
 fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
@@ -465,7 +465,7 @@ fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
     var head = fspath[i:]
     if head and head != os.sep * len(head):
         return String(head.rstrip(os.sep))
-    return head
+    return String(head)
 
 
 # TODO uncomment this when unpacking is supported
@@ -573,20 +573,20 @@ fn splitroot[
         A tuple containing three strings: (drive, root, tail).
     """
     var p = path.__fspath__()
-    alias empty = ""
+    comptime empty = ""
 
     # Relative path, e.g.: 'foo'
-    if p[:1] != sep:
+    if p[:1] != StringSlice(sep):
         return empty, empty, p
 
     # Absolute path, e.g.: '/foo', '///foo', '////foo', etc.
-    elif p[1:2] != sep or p[2:3] == sep:
-        return empty, String(sep), p[1:]
+    elif p[1:2] != StringSlice(sep) or p[2:3] == StringSlice(sep):
+        return empty, String(sep), String(p[1:])
 
     # Precisely two leading slashes, e.g.: '//foo'. Implementation defined per POSIX, see
     # https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13
     else:
-        return empty, p[:2], p[2:]
+        return empty, String(p[:2]), String(p[2:])
 
 
 # ===----------------------------------------------------------------------=== #
@@ -603,7 +603,7 @@ fn _is_shell_special_variable(byte: Byte) -> Bool:
     Returns:
         True if the byte is a special shell variable and False otherwise.
     """
-    alias shell_variables = InlineArray[Int, 17](
+    comptime shell_variables = InlineArray[Int, 17](
         ord("*"),
         ord("#"),
         ord("$"),

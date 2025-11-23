@@ -371,7 +371,7 @@ def test_unsafe_subspan():
 
 def test_binary_search():
     def _test[dtype: DType]():
-        alias max_val = Int(Scalar[dtype].MAX)
+        comptime max_val = Int(Scalar[dtype].MAX)
         var data = List[Scalar[dtype]](unsafe_uninit_length=max_val + 1)
         iota(data)
 

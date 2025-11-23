@@ -29,7 +29,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     Boolable,
     Copyable,
     Defaultable,
-    EqualityComparable,
+    Equatable,
     Iterable,
     Movable,
     Sized,
@@ -56,12 +56,12 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         H: The type of the hasher in the underlying dictionary.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
-    ]: Iterator = _DictKeyIter[V, Int, H, iterable_origin]
+    ]: Iterator = _DictKeyIter[Self.V, Int, Self.H, iterable_origin]
 
     # Fields
-    var _data: Dict[V, Int, H]
+    var _data: Dict[Self.V, Int, Self.H]
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
@@ -69,9 +69,9 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
     fn __init__(out self):
         """Create a new, empty `Counter` object."""
-        self._data = Dict[V, Int, H]()
+        self._data = Dict[Self.V, Int, Self.H]()
 
-    fn __init__(out self, var *values: V):
+    fn __init__(out self, var *values: Self.V):
         """Create a new `Counter` from a list of values.
 
         Args:
@@ -85,11 +85,11 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         print(c["b"])  # print 2
         ```
         """
-        self._data = Dict[V, Int, H]()
+        self._data = Dict[Self.V, Int, Self.H]()
         for item in values:
             self._data[item.copy()] = self._data.get(item, 0) + 1
 
-    fn __init__(out self, items: List[V, *_]):
+    fn __init__(out self, items: List[Self.V, *_]):
         """Create a `Counter` from an input iterable.
 
         Args:
@@ -104,12 +104,12 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         print(c["b"]) # prints 2
         ```
         """
-        self._data = Dict[V, Int, H]()
+        self._data = Dict[Self.V, Int, Self.H]()
         for item in items:
             self._data[item.copy()] = self._data.get(item, 0) + 1
 
     @staticmethod
-    fn fromkeys(keys: List[V, *_], value: Int) -> Self:
+    fn fromkeys(keys: List[Self.V, *_], value: Int) -> Self:
         """Create a new `Counter` from a list of keys and a default value.
 
         Args:
@@ -123,7 +123,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             value >= 0,
             "value must be non-negative",
         )
-        var result = Counter[V, H]()
+        var result = Counter[Self.V, Self.H]()
         for key in keys:
             result[key] = value
         return result^
@@ -132,7 +132,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     # Operator dunders
     # ===------------------------------------------------------------------=== #
 
-    fn __getitem__(self, key: V) -> Int:
+    fn __getitem__(self, key: Self.V) -> Int:
         """Get the count of a key.
 
         Args:
@@ -143,7 +143,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return self.get(key, 0)
 
-    fn __setitem__(mut self, value: V, count: Int):
+    fn __setitem__(mut self, value: Self.V, count: Int):
         """Set a value in the keyword `Counter` by key.
 
         Args:
@@ -160,7 +160,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return rebind[Self.IteratorType[origin_of(self)]](self._data.__iter__())
 
-    fn __contains__(self, key: V) -> Bool:
+    fn __contains__(self, key: Self.V) -> Bool:
         """Check if a given key is in the `Counter` or not.
 
         Args:
@@ -207,7 +207,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         @parameter
         @always_inline
-        fn is_eq(keys: _DictKeyIter[V, Int, _]) -> Bool:
+        fn is_eq(keys: _DictKeyIter[Self.V, Int, _]) -> Bool:
             for e in keys:
                 if self.get(e, 0) != other.get(e, 0):
                     return False
@@ -232,7 +232,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         @parameter
         @always_inline
-        fn is_le(keys: _DictKeyIter[V, Int, _]) -> Bool:
+        fn is_le(keys: _DictKeyIter[Self.V, Int, _]) -> Bool:
             for e in keys:
                 if self.get(e, 0) > other.get(e, 0):
                     return False
@@ -256,7 +256,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         @parameter
         @always_inline
-        fn is_lt(keys: _DictKeyIter[V, Int, _]) -> Bool:
+        fn is_lt(keys: _DictKeyIter[Self.V, Int, _]) -> Bool:
             for e in keys:
                 if self.get(e, 0) >= other.get(e, 0):
                     return False
@@ -308,7 +308,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Returns:
             A new `Counter` with the counts from both `Counter`s added together.
         """
-        var result = Counter[V, H]()
+        var result = Counter[Self.V, Self.H]()
 
         result.update(self)
         result.update(other)
@@ -360,7 +360,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             A new `Counter` with the common elements and the minimum count of
             the two `Counter`s.
         """
-        var result = Counter[V, H]()
+        var result = Counter[Self.V, Self.H]()
 
         for key in self.keys():
             if key in other:
@@ -395,7 +395,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             A new `Counter` with all elements and the maximum count of the two
             `Counter`s.
         """
-        var result = Counter[V, H]()
+        var result = Counter[Self.V, Self.H]()
 
         for key in self.keys():
             var newcount = max(self.get(key, 0), other.get(key, 0))
@@ -440,7 +440,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Returns:
             A shallow copy of the `Counter`.
         """
-        var result = Counter[V, H]()
+        var result = Counter[Self.V, Self.H]()
         for item in self.items():
             if item.value > 0:
                 result[item.key] = item.value
@@ -453,7 +453,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Returns:
             A new `Counter` with stripped counts and negative counts.
         """
-        var result = Counter[V, H]()
+        var result = Counter[Self.V, Self.H]()
         for item in self.items():
             if item.value < 0:
                 result[item.key] = -item.value
@@ -463,7 +463,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     # Methods
     # ===------------------------------------------------------------------=== #
 
-    fn get(self, value: V) -> Optional[Int]:
+    fn get(self, value: Self.V) -> Optional[Int]:
         """Get a value from the `Counter`.
 
         Args:
@@ -475,7 +475,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return self._data.get(value)
 
-    fn get(self, value: V, default: Int) -> Int:
+    fn get(self, value: Self.V, default: Int) -> Int:
         """Get a value from the `Counter`.
 
         Args:
@@ -487,7 +487,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return self._data.get(value, default)
 
-    fn pop(mut self, value: V) raises -> Int:
+    fn pop(mut self, value: Self.V) raises -> Int:
         """Remove a value from the `Counter` by value.
 
         Args:
@@ -501,7 +501,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return self._data.pop(value)
 
-    fn pop(mut self, value: V, var default: Int) raises -> Int:
+    fn pop(mut self, value: Self.V, var default: Int) raises -> Int:
         """Remove a value from the `Counter` by value.
 
         Args:
@@ -519,7 +519,9 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return self._data.pop(value, default)
 
-    fn keys(ref self) -> _DictKeyIter[V, Int, H, origin_of(self._data)]:
+    fn keys(
+        ref self,
+    ) -> _DictKeyIter[Self.V, Int, Self.H, origin_of(self._data)]:
         """Iterate over the `Counter`'s keys as immutable references.
 
         Returns:
@@ -527,7 +529,9 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return self._data.keys()
 
-    fn values(ref self) -> _DictValueIter[V, Int, H, origin_of(self._data)]:
+    fn values(
+        ref self,
+    ) -> _DictValueIter[Self.V, Int, Self.H, origin_of(self._data)]:
         """Iterate over the `Counter`'s values as references.
 
         Returns:
@@ -535,7 +539,9 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return self._data.values()
 
-    fn items(self) -> _DictEntryIter[V, Int, H, origin_of(self._data)]:
+    fn items(
+        self,
+    ) -> _DictEntryIter[Self.V, Int, Self.H, origin_of(self._data)]:
         """Iterate over the `Counter`'s entries as immutable references.
 
         Returns:
@@ -547,7 +553,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """Remove all elements from the `Counter`."""
         self._data.clear()
 
-    fn popitem(mut self) raises -> CountTuple[V]:
+    fn popitem(mut self) raises -> CountTuple[Self.V]:
         """Remove and return an arbitrary (key, value) pair from the `Counter`.
 
         Returns:
@@ -557,7 +563,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             "KeyError" if the `Counter` is empty.
         """
         var item_ref = self._data.popitem()
-        return CountTuple[V](item_ref.key, UInt(item_ref.value))
+        return CountTuple[Self.V](item_ref.key, UInt(item_ref.value))
 
     # Special methods for counter
 
@@ -572,7 +578,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             total += count
         return UInt(total)
 
-    fn most_common(self, n: UInt) -> List[CountTuple[V]]:
+    fn most_common(self, n: UInt) -> List[CountTuple[Self.V]]:
         """Return a list of the `n` most common elements and their counts from
         the most common to the least.
 
@@ -582,27 +588,27 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Returns:
             A list of the `n` most common elements and their counts.
         """
-        var items: List[CountTuple[V]] = List[CountTuple[V]]()
+        var items: List[CountTuple[Self.V]] = List[CountTuple[Self.V]]()
         for item in self._data.items():
-            var t = CountTuple[V](item.key, UInt(item.value))
+            var t = CountTuple[Self.V](item.key, UInt(item.value))
             items.append(t^)
 
         @parameter
-        fn comparator(a: CountTuple[V], b: CountTuple[V]) -> Bool:
+        fn comparator(a: CountTuple[Self.V], b: CountTuple[Self.V]) -> Bool:
             return a < b
 
         sort[comparator](items)
         items.shrink(Int(n))
         return items^
 
-    fn elements(self) -> List[V]:
+    fn elements(self) -> List[Self.V]:
         """Return an iterator over elements repeating each as many times as its
         count.
 
         Returns:
             An iterator over the elements in the `Counter`.
         """
-        var elements: List[V] = List[V]()
+        var elements: List[Self.V] = List[Self.V]()
         for item in self._data.items():
             for _ in range(item.value):
                 elements.append(item.key.copy())
@@ -638,7 +644,7 @@ struct CountTuple[V: KeyElement](Comparable, Copyable, Movable):
     """
 
     # Fields
-    var _value: V
+    var _value: Self.V
     """ The value in the `Counter`."""
     var _count: Int
     """ The count of the value in the `Counter`."""
@@ -647,7 +653,7 @@ struct CountTuple[V: KeyElement](Comparable, Copyable, Movable):
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
 
-    fn __init__(out self, value: V, count: UInt):
+    fn __init__(out self, value: Self.V, count: UInt):
         """Create a new `CountTuple`.
 
         Args:
@@ -685,7 +691,7 @@ struct CountTuple[V: KeyElement](Comparable, Copyable, Movable):
         return self._count == other._count
 
     @always_inline
-    fn __getitem__(self, idx: Int) -> Variant[V, Int]:
+    fn __getitem__(self, idx: Int) -> Variant[Self.V, Int]:
         """Get an element in the `CountTuple`.
 
         Args:

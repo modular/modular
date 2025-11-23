@@ -49,7 +49,10 @@ from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo
 from .interfaces import PipelineModel
 from .pipeline_variants.text_generation import TextGenerationPipeline
-from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
+from .speculative_decoding import (
+    SpeculativeMethod,
+    StandaloneSpeculativeDecodingPipeline,
+)
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import TextTokenizer
 
@@ -59,7 +62,7 @@ PipelineTypes = Union[  # noqa: UP007 (This breaks a mypy check, unsure why)
     TextGenerationPipeline[TextContext],
     EmbeddingsPipeline,
     AudioGeneratorPipeline,
-    SpeculativeDecodingTextGenerationPipeline,
+    StandaloneSpeculativeDecodingPipeline,
     SpeechTokenGenerationPipeline,
 ]
 
@@ -69,13 +72,21 @@ def get_pipeline_for_task(
 ) -> (
     type[TextGenerationPipeline[TextContext]]
     | type[EmbeddingsPipeline]
-    | type[SpeculativeDecodingTextGenerationPipeline]
     | type[AudioGeneratorPipeline]
+    | type[StandaloneSpeculativeDecodingPipeline]
     | type[SpeechTokenGenerationPipeline]
 ):
     if task == PipelineTask.TEXT_GENERATION:
-        if pipeline_config.draft_model_config is not None:
-            return SpeculativeDecodingTextGenerationPipeline
+        if pipeline_config._speculative_config is not None:
+            assert (
+                pipeline_config._speculative_config.speculative_method
+                is not None
+            )
+            if (
+                pipeline_config._speculative_config.speculative_method
+                == SpeculativeMethod.STANDALONE
+            ):
+                return StandaloneSpeculativeDecodingPipeline
         else:
             return TextGenerationPipeline[TextContext]
     elif task == PipelineTask.EMBEDDINGS_GENERATION:
@@ -84,10 +95,6 @@ def get_pipeline_for_task(
         return AudioGeneratorPipeline
     elif task == PipelineTask.SPEECH_TOKEN_GENERATION:
         return SpeechTokenGenerationPipeline
-    else:
-        raise ValueError(
-            f"PipelineTask ({task}) does not have supported Pipeline"
-        )
 
 
 @dataclass(frozen=False)
@@ -195,7 +202,7 @@ class SupportedArchitecture:
 
     supports_empty_batches: bool = False
     """Whether the architecture can handle empty batches during inference.
-    
+
     When set to True, the pipeline can process requests with zero-sized batches
     without errors. This is useful for certain execution modes and expert parallelism.
     Most architectures do not require empty batch support and should leave this as False.
@@ -236,7 +243,7 @@ class PipelineRegistry:
         self.architectures[architecture.name] = architecture
 
     def retrieve_architecture(
-        self, huggingface_repo: HuggingFaceRepo
+        self, huggingface_repo: HuggingFaceRepo, use_module_v3: bool = False
     ) -> SupportedArchitecture | None:
         # Retrieve model architecture names
         hf_config = self.get_active_huggingface_config(
@@ -251,6 +258,8 @@ class PipelineRegistry:
             return None
 
         for architecture_name in architecture_names:
+            if use_module_v3:
+                architecture_name += "_ModuleV3"
             if architecture_name in self.architectures:
                 return self.architectures[architecture_name]
 
@@ -352,7 +361,8 @@ class PipelineRegistry:
             arch = self.architectures[override_architecture]
         else:
             arch = self.retrieve_architecture(
-                huggingface_repo=pipeline_config.model_config.huggingface_model_repo
+                huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
+                use_module_v3=pipeline_config.use_module_v3,
             )
 
         if arch is None:
@@ -409,7 +419,8 @@ class PipelineRegistry:
             arch = self.architectures[override_architecture]
         else:
             arch = self.retrieve_architecture(
-                huggingface_repo=pipeline_config.model_config.huggingface_model_repo
+                huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
+                use_module_v3=pipeline_config.use_module_v3,
             )
 
         # Load HuggingFace Config
@@ -462,15 +473,34 @@ class PipelineRegistry:
             ],
             tokenizer,
         )
+
+        # For speculative decoding, retrieve draft model's architecture
+        factory_kwargs: dict[str, Any] = {
+            "pipeline_config": pipeline_config,
+            "pipeline_model": arch.pipeline_model,
+            "eos_token_id": tokenizer.eos,
+            "weight_adapters": arch.weight_adapters,
+            "tokenizer": typed_tokenizer,
+        }
+
+        # If using speculative decoding, add draft model-specific parameters
+        if pipeline_config.draft_model_config is not None:
+            draft_arch = self.retrieve_architecture(
+                huggingface_repo=pipeline_config.draft_model_config.huggingface_weight_repo,
+                use_module_v3=pipeline_config.use_module_v3,
+            )
+            if draft_arch is None:
+                raise ValueError(
+                    f"MAX-Optimized architecture not found for draft model "
+                    f"'{pipeline_config.draft_model_config.model_path}'"
+                )
+            factory_kwargs["draft_pipeline_model"] = draft_arch.pipeline_model
+            factory_kwargs["draft_weight_adapters"] = draft_arch.weight_adapters
+
         pipeline_factory = cast(
             Callable[[], PipelineTypes],
             functools.partial(  # type: ignore
-                pipeline_class,
-                pipeline_config=pipeline_config,
-                pipeline_model=arch.pipeline_model,
-                eos_token_id=tokenizer.eos,
-                weight_adapters=arch.weight_adapters,
-                tokenizer=typed_tokenizer,
+                pipeline_class, **factory_kwargs
             ),
         )
 
@@ -497,7 +527,8 @@ class PipelineRegistry:
             ValueError: If no supported architecture is found for the given model repository.
         """
         if arch := self.retrieve_architecture(
-            huggingface_repo=pipeline_config.model_config.huggingface_model_repo
+            huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
+            use_module_v3=pipeline_config.use_module_v3,
         ):
             return arch.task
 

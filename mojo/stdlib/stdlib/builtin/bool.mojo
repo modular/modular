@@ -133,19 +133,19 @@ struct Bool(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias MIN = Bool(False)
+    comptime MIN = Bool(False)
     """The minimum value of a Bool."""
 
-    alias MAX = Bool(True)
+    comptime MAX = Bool(True)
     """The maximum value of a Bool."""
 
     # ===-------------------------------------------------------------------===#
     # Trivial bits for special functions.
     # ===-------------------------------------------------------------------===#
 
-    alias __del__is_trivial: Bool = True
-    alias __moveinit__is_trivial: Bool = True
-    alias __copyinit__is_trivial: Bool = True
+    comptime __del__is_trivial: Bool = True
+    comptime __moveinit__is_trivial: Bool = True
+    comptime __copyinit__is_trivial: Bool = True
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods

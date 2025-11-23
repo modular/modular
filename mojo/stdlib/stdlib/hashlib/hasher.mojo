@@ -15,8 +15,8 @@ from memory import Span
 from ._ahash import AHasher
 from ._fnv1a import Fnv1a
 
-alias default_hasher = AHasher[SIMD[DType.uint64, 4](0)]
-alias default_comp_time_hasher = Fnv1a
+comptime default_hasher = AHasher[SIMD[DType.uint64, 4](0)]
+comptime default_comp_time_hasher = Fnv1a
 
 
 trait Hasher:

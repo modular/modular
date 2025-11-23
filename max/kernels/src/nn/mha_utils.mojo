@@ -56,8 +56,8 @@ from utils.numerics import min_or_neg_inf
 # ===-----------------------------------------------------------------------===#
 
 
-alias is_sm90 = ":90" in _accelerator_arch()
-alias is_sm100 = ":100" in _accelerator_arch()
+alias is_sm90 = "sm_90" in _accelerator_arch()
+alias is_sm100 = "sm_100" in _accelerator_arch()
 alias is_sm90or100 = is_sm90 or is_sm100
 
 
@@ -268,14 +268,14 @@ struct MHAConfig[dtype: DType](ImplicitlyCopyable, Movable, Writable):
         self.padded_depth = UInt(align_up(depth, UInt(swizzle_granularity)))
         self.num_pipeline_stages = num_pipeline_stages
         self.k_group_size = k_group_size
-        self.algorithm = algorithm.init(dtype)
+        self.algorithm = algorithm.init(Self.dtype)
         self.swizzle_mode = swizzle_mode
         # Not all of these have to be `OptionalReg`, only
         # those that depend on `depth`.
         # Currently, all are `OptionalReg` for consistency.
         if (
             is_sm90or100
-            and dtype.is_half_float()
+            and Self.dtype.is_half_float()
             and self.algorithm == FlashAttentionAlgorithm(3)
         ):
             # BM
@@ -334,23 +334,23 @@ struct MHAConfig[dtype: DType](ImplicitlyCopyable, Movable, Writable):
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(
                 UInt(
-                    32 if dtype
+                    32 if Self.dtype
                     is DType.float32 else (
                         128 if has_amd_gpu_accelerator() else 64
                     )
                 )
             )
             var bk_arch_factor = 2 if num_pipeline_stages <= 2 else 1
-            var bk_type_factor = 1 if dtype is DType.float32 else 2
+            var bk_type_factor = 1 if Self.dtype is DType.float32 else 2
             self.BK = BK.or_else(
                 UInt(16 * bk_arch_factor * bk_type_factor)
             ) if has_nvidia_gpu_accelerator() else 32
             self.WN = WN.or_else(
-                32 if dtype is DType.float32 else self.num_keys_per_block
+                32 if Self.dtype is DType.float32 else self.num_keys_per_block
             )
         self.WM = WM.or_else(
             UInt(
-                32 if dtype
+                32 if Self.dtype
                 is DType.float32 else (32 if has_amd_gpu_accelerator() else 16)
             )
         )
@@ -755,7 +755,7 @@ trait OptionallyStaticInt(Copyable, Intable):
 # That is, if we have a static int, no argument should be passed.
 @register_passable("trivial")
 struct StaticInt[value: Int](Defaultable, OptionallyStaticInt):
-    alias static_value: OptionalReg[Int] = OptionalReg[Int](value)
+    alias static_value: OptionalReg[Int] = OptionalReg[Int](Self.value)
 
     @always_inline("nodebug")
     fn __init__(out self):
@@ -814,7 +814,7 @@ struct NoPartition[dtype: DType](
     Defaultable, ImplicitlyCopyable, MHAPartitionScheme, Movable
 ):
     alias do_partition: Bool = False
-    alias accum_dtype: DType = dtype
+    alias accum_dtype: DType = Self.dtype
 
     @always_inline
     fn __init__(out self):

@@ -208,9 +208,9 @@ fn map_reduce[
     Returns:
         The final reduced scalar value.
     """
-    alias unroll_factor = 8  # TODO: search
+    comptime unroll_factor = 8  # TODO: search
     # TODO: explicitly unroll like vectorize_unroll does.
-    alias unrolled_simd_width = simd_width * unroll_factor
+    comptime unrolled_simd_width = simd_width * unroll_factor
     var unrolled_vector_end = align_down(length, unrolled_simd_width)
     var vector_end = align_down(length, simd_width)
 
@@ -322,10 +322,10 @@ fn reduce_boolean[
     Returns:
         The computed reduction value.
     """
-    alias simd_width = simd_width_of[src.type]()
-    alias unroll_factor = 8  # TODO: search
+    comptime simd_width = simd_width_of[src.type]()
+    comptime unroll_factor = 8  # TODO: search
     # TODO: explicitly unroll like vectorize_unroll does.
-    alias unrolled_simd_width = simd_width * unroll_factor
+    comptime unrolled_simd_width = simd_width * unroll_factor
 
     var length = len(src)
     var unrolled_vector_end = align_down(length, unrolled_simd_width)
@@ -359,7 +359,7 @@ fn _reduce_3D[
 ](src: NDBuffer, dst: NDBuffer[mut=True, **_], init: Scalar[dst.type]) raises:
     """Performs a reduction across axis 1 of a 3D input buffer."""
 
-    alias simd_width = simd_width_of[dst.type]()
+    comptime simd_width = simd_width_of[dst.type]()
 
     var h = src.dim[0]()
     var w = src.dim[1]()
@@ -372,7 +372,7 @@ fn _reduce_3D[
         @__copy_capture(h, w)
         @parameter
         fn reduce_inner_axis() raises:
-            alias sz = src.shape.at[1]()
+            comptime sz = src.shape.at[1]()
             # TODO: parallelize
             for i in range(h):
                 var offset = src._offset(IndexList[src.rank](i, 0, 0))
@@ -396,19 +396,21 @@ fn _reduce_3D[
     # reuse the full cache line when an element of C is loaded.
     @parameter
     fn get_unroll_factor[simd_width: Int, dtype_size: Int]() -> Int:
-        alias cache_line_size = 64
-        alias unroll_factor = cache_line_size // (simd_width * dtype_size)
+        comptime cache_line_size = 64
+        comptime unroll_factor = cache_line_size // (simd_width * dtype_size)
         constrained[unroll_factor > 0, "unroll_factor must be > 0"]()
         return unroll_factor
 
-    alias unroll_factor = get_unroll_factor[simd_width, size_of[dst.type]()]()
-    alias usimd_width = unroll_factor * simd_width
+    comptime unroll_factor = get_unroll_factor[
+        simd_width, size_of[dst.type]()
+    ]()
+    comptime usimd_width = unroll_factor * simd_width
     for i in range(h):
 
         @always_inline
-        @__copy_capture(w)
-        @parameter
-        fn reduce_w_chunked[simd_width: Int](idx: Int):
+        fn reduce_w_chunked[
+            simd_width: Int
+        ](idx: Int) unified {var w, read i, read src, read dst, read init}:
             var accum = SIMD[init.dtype, simd_width](init)
             for j in range(w):
                 var chunk = src.load[width=simd_width](
@@ -417,7 +419,7 @@ fn _reduce_3D[
                 accum = map_fn(accum, chunk)
             dst.store(IndexList[dst.rank](i, idx), accum)
 
-        vectorize[reduce_w_chunked, usimd_width](c)
+        vectorize[usimd_width](c, reduce_w_chunked)
 
 
 @parameter
@@ -462,12 +464,12 @@ fn reduce[
     var w_dynamic = src.dim[reduce_axis]()
     var c_dynamic = prod_dims[reduce_axis + 1, src.rank](src)
 
-    alias h_static = src.shape.product[reduce_axis]()
-    alias w_static = src.shape.at[reduce_axis]()
-    alias c_static = src.shape.product[reduce_axis + 1, src.rank]()
+    comptime h_static = src.shape.product[reduce_axis]()
+    comptime w_static = src.shape.at[reduce_axis]()
+    comptime c_static = src.shape.product[reduce_axis + 1, src.rank]()
 
-    alias input_3d_shape = DimList(h_static, w_static, c_static)
-    alias output_2d_shape = DimList(h_static, c_static)
+    comptime input_3d_shape = DimList(h_static, w_static, c_static)
+    comptime output_2d_shape = DimList(h_static, c_static)
 
     var input_3d = NDBuffer[
         src.type,
@@ -658,7 +660,7 @@ fn _reduce_generator_cpu[
         reduce_dim: The dimension we are reducing.
     """
 
-    alias rank = shape.size
+    comptime rank = shape.size
 
     var reduce_dim_normalized = (
         rank + reduce_dim
@@ -791,7 +793,7 @@ fn _reduce_generator[
         context: The pointer to DeviceContext.
     """
 
-    alias num_reductions = 1
+    comptime num_reductions = 1
 
     @always_inline
     @parameter
@@ -860,9 +862,9 @@ fn _reduce_along_inner_dimension[
 
     var chunk_size = ceildiv(parallelism_size, num_workers)
 
-    alias unroll_factor = 8
-    alias simd_width = simd_width_of[init_type]()
-    alias unrolled_simd_width = simd_width * unroll_factor
+    comptime unroll_factor = 8
+    comptime simd_width = simd_width_of[init_type]()
+    comptime unrolled_simd_width = simd_width * unroll_factor
 
     var unrolled_simd_compatible_size = align_down(
         reduce_dim_size, unrolled_simd_width
@@ -1034,12 +1036,12 @@ fn _reduce_along_outer_dimension[
         init: The value to start the reduction from.
         reduce_dim: The dimension we are reducing.
     """
-    alias rank = shape.size
-    alias dtype = init.element_type
+    comptime rank = shape.size
+    comptime dtype = init.element_type
 
     # Compute the number of workers to allocate based on ALL work, not just
     # the dimensions we split across.
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
 
     var total_size: Int = shape.flattened_length()
     if total_size == 0:
@@ -1077,8 +1079,7 @@ fn _reduce_along_outer_dimension[
         for slice_idx in range(start_parallel_offset, end_parallel_offset):
 
             @always_inline
-            @parameter
-            fn reduce_chunk[simd_width: Int](inner_dim_idx: Int):
+            fn reduce_chunk[simd_width: Int](inner_dim_idx: Int) unified {read}:
                 var acc_simd_tup = StaticTuple[
                     SIMD[init_type, simd_width], num_reductions
                 ]()
@@ -1108,7 +1109,7 @@ fn _reduce_along_outer_dimension[
                     indices, acc_simd_tup
                 )
 
-            vectorize[reduce_chunk, simd_width](inner_dim)
+            vectorize[simd_width](inner_dim, reduce_chunk)
 
     @parameter
     if single_thread_blocking_override:
@@ -1767,7 +1768,7 @@ fn mean[
     Raises:
         If the operation fails.
     """
-    alias simd_width = simd_width_of[dst.dtype]()
+    comptime simd_width = simd_width_of[dst.dtype]()
     sum[reduce_axis](src, dst)
 
     var n = src.dim[reduce_axis]()
@@ -1777,26 +1778,26 @@ fn mean[
     if dst.type.is_integral():
 
         @always_inline
-        @__copy_capture(dst_1d, n)
-        @parameter
-        fn normalize_integral[simd_width: Int](idx: Int):
+        fn normalize_integral[
+            simd_width: Int
+        ](idx: Int) unified {var dst_1d, var n}:
             var elem = dst_1d.load[width=simd_width](idx)
             var to_store = elem // n
             dst_1d.store(idx, to_store)
 
-        vectorize[normalize_integral, simd_width](len(dst_1d))
+        vectorize[simd_width](len(dst_1d), normalize_integral)
     else:
         var n_recip = Scalar[dst.type](1) / n
 
         @always_inline
-        @__copy_capture(dst_1d, n, n_recip)
-        @parameter
-        fn normalize_floating[simd_width: Int](idx: Int):
+        fn normalize_floating[
+            simd_width: Int
+        ](idx: Int) unified {var dst_1d, var n_recip}:
             var elem = dst_1d.load[width=simd_width](idx)
             var to_store = elem * n_recip
             dst_1d.store(idx, to_store)
 
-        vectorize[normalize_floating, simd_width](len(dst_1d))
+        vectorize[simd_width](len(dst_1d), normalize_floating)
 
 
 @always_inline
@@ -2263,7 +2264,7 @@ fn cumsum(dst: NDBuffer[mut=True, rank=1], src: NDBuffer[dst.type, 1, *_]):
     debug_assert(len(src) != 0, "Input must not be empty")
     debug_assert(len(dst) != 0, "Output must not be empty")
 
-    alias simd_width = simd_width_of[dst.type]()
+    comptime simd_width = simd_width_of[dst.type]()
 
     # For length less than simd_width do serial cumulative sum.
     # Similarly, for the case when simd_width == 2 serial should be faster.
@@ -2280,7 +2281,7 @@ fn cumsum(dst: NDBuffer[mut=True, rank=1], src: NDBuffer[dst.type, 1, *_]):
     var div_size = align_down(len(dst), simd_width)
 
     # Number of inner-loop iterations (for shift previous result and add).
-    alias rep = log2_floor(simd_width)
+    comptime rep = log2_floor(simd_width)
 
     for i in range(0, div_size, simd_width):
         var x_simd = src.load[width=simd_width](i)

@@ -32,7 +32,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](Copyable, EqualityComparable, Hashable, Movable, Stringable, Writable):
+](Copyable, Equatable, Hashable, Movable, Stringable, Writable):
     """Static configuration of GPU matmul."""
 
     # Mandatory parameters
@@ -43,7 +43,7 @@ struct MatmulConfig[
     var block_swizzle_size: Int
     var raster_order: RasterOrder
 
-    alias accum_type = get_accum_type[a_type]()  # TODO: factor b_type
+    alias accum_type = get_accum_type[Self.a_type]()  # TODO: factor b_type
 
     # Has default values or derivible from mandatory parameters
     var block_tile_shape: IndexList[3]
@@ -63,7 +63,7 @@ struct MatmulConfig[
         out self,
         *,
         cta_group: Int = 2,
-        mma_shape: IndexList[3] = get_mma_shape[a_type, Self.accum_type](),
+        mma_shape: IndexList[3] = get_mma_shape[Self.a_type, Self.accum_type](),
         cluster_shape: IndexList[3] = Index(2, 1, 1),
         AB_swapped: Bool = False,
         num_split_k: Int = 1,
@@ -74,7 +74,7 @@ struct MatmulConfig[
         num_accum_pipeline_stages: UInt = 2,
         num_clc_pipeline_stages: UInt = 2,
     ):
-        constrained[a_type == b_type]()
+        constrained[Self.a_type == Self.b_type]()
 
         self.cta_group = cta_group
         self.mma_shape = mma_shape
@@ -86,7 +86,7 @@ struct MatmulConfig[
         self.block_tile_shape = Index(
             self.mma_shape[0] // self.cta_group,
             self.mma_shape[1] // self.cta_group,
-            128 // size_of[a_type](),
+            128 // size_of[Self.a_type](),
         )
 
         # If MMA_M is 256, each of the pair ctas has the entire MMA_N
@@ -143,7 +143,7 @@ struct MatmulConfig[
             self.output_tile_shape[0]
             * self.output_tile_shape[1]
             * Int(self.num_output_stages)
-            * size_of[c_type]()
+            * size_of[Self.c_type]()
         )
         # Add tmem addr (4) and tmem dealloc mbar(8)
         var output_smem_bytes = c_smem_bytes + 12
@@ -157,12 +157,12 @@ struct MatmulConfig[
         var a_smem_bytes_per_stage = (
             self.block_tile_shape[0]
             * self.block_tile_shape[2]
-            * size_of[a_type]()
+            * size_of[Self.a_type]()
         )
         var b_smem_bytes_per_stage = (
             self.block_tile_shape[1]
             * self.block_tile_shape[2]
-            * size_of[b_type]()
+            * size_of[Self.b_type]()
         )
         # Include 16 for consumer and producer mbar per stage
         var AB_smem_per_stage = (
@@ -181,7 +181,10 @@ struct MatmulConfig[
         )
 
     fn __eq__(
-        self, other: MatmulConfig[a_type, b_type, c_type, transpose_b]
+        self,
+        other: MatmulConfig[
+            Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
+        ],
     ) -> Bool:
         return (
             self.cta_group == other.cta_group
@@ -203,8 +206,12 @@ struct MatmulConfig[
             and self.num_split_k == other.num_split_k
         )
 
-    fn swap_AB_type(self) -> MatmulConfig[b_type, a_type, c_type, transpose_b]:
-        return MatmulConfig[b_type, a_type, c_type, transpose_b](
+    fn swap_AB_type(
+        self,
+    ) -> MatmulConfig[Self.b_type, Self.a_type, Self.c_type, Self.transpose_b]:
+        return MatmulConfig[
+            Self.b_type, Self.a_type, Self.c_type, Self.transpose_b
+        ](
             cta_group=self.cta_group,
             mma_shape=self.mma_shape,
             cluster_shape=self.cluster_shape,
@@ -223,8 +230,8 @@ struct MatmulConfig[
 
     fn write_to(self, mut writer: Some[Writer]):
         writer.write("kernel_")
-        writer.write(a_type, "_")
-        writer.write(c_type, "_")
+        writer.write(Self.a_type, "_")
+        writer.write(Self.c_type, "_")
         writer.write("cta", self.cta_group, "_")
         writer.write(
             "mma",
@@ -254,7 +261,7 @@ struct MatmulConfig[
         )
         writer.write("swap" if self.AB_swapped else "noswap", "_")
         writer.write("K_")
-        writer.write("K_" if transpose_b else "MN_")
+        writer.write("K_" if Self.transpose_b else "MN_")
         writer.write("asz", self.a_swizzle.bytes(), "_")
         writer.write("bsz", self.b_swizzle.bytes(), "_")
         writer.write("csz", self.c_swizzle.bytes(), "_")
@@ -273,10 +280,10 @@ struct MatmulConfig[
         Args:
             hasher: The hasher instance.
         """
-        hasher.update(a_type)
-        hasher.update(b_type)
-        hasher.update(c_type)
-        hasher.update(transpose_b)
+        hasher.update(Self.a_type)
+        hasher.update(Self.b_type)
+        hasher.update(Self.c_type)
+        hasher.update(Self.transpose_b)
         hasher.update(self.cta_group)
         hasher.update(self.mma_shape)
         hasher.update(self.block_tile_shape)
@@ -390,7 +397,7 @@ fn choose_config[
         # Traverse the tile sizes to find min load volume per wave.
         # TODO: consider the L2 resue across waves.
         var BM = mma_mn[0] // cta_group
-        for tile_size in List[Int](1, 2, 4, 8):
+        for tile_size in [1, 2, 4, 8]:
             var num_ctas_m = ceildiv(M, BM)
             # When tile_size is small, it's possible that a wave has more ctas
             # then num_ctas_m * tile_size and num_ctas_per_wave_m > num_ctas_m.

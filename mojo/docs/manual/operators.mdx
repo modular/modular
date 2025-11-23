@@ -1004,7 +1004,7 @@ defines all of the comparison methods, and authors are required to implement at
 least the "less-than" and "equal" methods, since the trait provides defaults
 for the rest. However, some types don't have a natural ordering (for example,
 complex numbers). For those types you can decide to implement the
-[`EqualityComparable`](/mojo/stdlib/builtin/equality_comparable/EqualityComparable)
+[`Equatable`](/mojo/stdlib/builtin/equality_comparable/Equatable)
 trait, which defines only the "equal" and "not equal" comparison methods, with
 "equal" being required to implement by conforming structs.
 
@@ -1022,7 +1022,7 @@ the table below.
 
 :::note
 
-The `Comparable` and `EqualityComparable` traits don't allow the comparison
+The `Comparable` and `Equatable` traits don't allow the comparison
 dunder methods to raise errors. Because using `def` to define a method implies
 that it can raise an error, you must use `fn` to implement the comparison
 methods declared by these traits. See [Functions](/mojo/manual/functions) for
@@ -1034,7 +1034,7 @@ more information on the differences between defining functions with `def` and
 As an example, consider implementing support for all of the comparison operator
 dunder methods for a custom `MyInt` struct by relying on the default
 implementations provided by the `Comparable` (and transitively the
-`EqualityComparable`) traits.
+`Equatable`) traits.
 
 ```mojo
 @fieldwise_init
@@ -1586,7 +1586,7 @@ c4 /= 2.0 => (1.702247191011236 - 0.6235955056179775i)
 
 The field of complex numbers is not an ordered field, so it doesn't make sense
 for us to implement the `Comparable` trait and the `>`, `>=`, `<`, and `<=`
-operators. However, we can implement the `EqualityComparable` trait and the `==`
+operators. However, we can implement the `Equatable` trait and the `==`
 and `!=` operators. (Of course, this suffers the same limitation of comparing
 floating point numbers for equality because of the limited precision of
 representing floating point numbers when performing arithmetic operations. But
@@ -1594,7 +1594,7 @@ we'll go ahead and implement the operators for completeness.)
 
 ```mojo
 struct Complex(
-    EqualityComparable,
+    Equatable,
     Formattable,
     Stringable,
 ):
@@ -1608,7 +1608,7 @@ struct Complex(
 
 :::note
 
-The `EqualityComparable` trait doesn't allow the `__eq__()` and `__ne__()`
+The `Equatable` trait doesn't allow the `__eq__()` and `__ne__()`
 methods to raise errors. Because defining a method with `def` implies that it
 can raise an error, we instead have to define these methods with `fn`. See
 [Functions](/mojo/manual/functions) for more information on the differences

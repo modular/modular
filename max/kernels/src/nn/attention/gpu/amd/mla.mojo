@@ -44,27 +44,29 @@ struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
     @always_inline
     fn q_head_idx() -> UInt:
         return block_idx.y if Self.token_gen else MHAAttentionConfig[
-            token_gen, config, 1
+            Self.token_gen, Self.config, 1
         ].q_head_idx()
 
     @staticmethod
     @always_inline
     fn q_tile_idx() -> UInt:
         return Self.q_head_idx() if Self.token_gen else MHAAttentionConfig[
-            token_gen, config, 1
+            Self.token_gen, Self.config, 1
         ].q_tile_idx()
 
     @staticmethod
     @always_inline
     fn kv_head_idx() -> UInt:
         return 0 if Self.token_gen else MHAAttentionConfig[
-            token_gen, config, 1
+            Self.token_gen, Self.config, 1
         ].kv_head_idx()
 
     @staticmethod
     @always_inline
     fn get_mma_shape() -> IndexList[3]:
-        return MHAAttentionConfig[token_gen, config, 1].get_mma_shape()
+        return MHAAttentionConfig[
+            Self.token_gen, Self.config, 1
+        ].get_mma_shape()
 
     @staticmethod
     @always_inline
@@ -73,10 +75,12 @@ struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
             q_depth
             * (
                 block_idx.y
-                + config.num_heads * Self.q_tile_idx() * config.block_m()
-            ) if not token_gen else q_depth
+                + Self.config.num_heads
+                * Self.q_tile_idx()
+                * Self.config.block_m()
+            ) if not Self.token_gen else q_depth
             * Self.q_tile_idx()
-            * config.block_m()
+            * Self.config.block_m()
         )
 
     @staticmethod
@@ -86,10 +90,12 @@ struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
             output_depth
             * (
                 block_idx.y
-                + config.num_heads * Self.q_tile_idx() * config.block_m()
-            ) if not token_gen else output_depth
+                + Self.config.num_heads
+                * Self.q_tile_idx()
+                * Self.config.block_m()
+            ) if not Self.token_gen else output_depth
             * Self.q_tile_idx()
-            * config.block_m()
+            * Self.config.block_m()
         )
 
 

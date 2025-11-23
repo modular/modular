@@ -511,18 +511,21 @@ class TextAndVisionContext(
 ):
     """A base class for model context, specifically for Vision model variants.
 
-    For example:
+    For example::
+
       - <vision_start_token_id> = 97
       - <vision_token_id> = 98
       - <vision_end_token_id> = 99
 
-    Token array:
+    Token array::
+
       -       idx: [  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 ]
       - token_ids: [ 51 52 53 54 97 98 98 98 98 99 55 56 57 58 97 98 98 98 98 99 59 60 61 62 ]
                                     ^-- img0 --^                  ^-- img1 --^
                                                        ^ start_idx=11 (image_idx=1)
 
-    Then we would have:
+    Then we would have::
+
       - ImageMetadata(start_idx=5, end_idx=9, ...)  # img0
       - ImageMetadata(start_idx=15, end_idx=19, ...)  # img1
 

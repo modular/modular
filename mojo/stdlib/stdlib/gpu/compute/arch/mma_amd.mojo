@@ -43,11 +43,11 @@ struct _AMD_F8F6F4_MATRIX_FORMAT:
     """
 
     var _value: Int32
-    alias float8_e4m3 = Self(0)
-    alias float8_e5m2 = Self(1)
-    alias float6_e2m3 = Self(2)
-    alias float6_e3m2 = Self(3)
-    alias float4_e2m1 = Self(4)
+    comptime float8_e4m3 = Self(0)
+    comptime float8_e5m2 = Self(1)
+    comptime float6_e2m3 = Self(2)
+    comptime float6_e3m2 = Self(3)
+    comptime float4_e2m1 = Self(4)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -61,18 +61,18 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         _mma_wmma_rdna(d, a, b, c)
         return
 
-    alias zero: UInt32 = 0
+    comptime zero: UInt32 = 0
 
     # CDNA3 supports the FNUZ float8 dtypes, and CDNA4 supports the Open
     # Compute Project (OCP) float8 dtypes.
-    alias fp8_dtype = get_amd_fp8_dtype()
-    alias bf8_dtype = get_amd_bf8_dtype()
+    comptime fp8_dtype = get_amd_fp8_dtype()
+    comptime bf8_dtype = get_amd_bf8_dtype()
 
     @parameter
     fn _f8f6f4_intrinsic() -> SIMD[d.dtype, d.size]:
         constrained[_cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"]()
 
-        alias intrinsic_name = "llvm.amdgcn.mfma.scale.f32.16x16x128.f8f6f4" if _has_shape[
+        comptime intrinsic_name = "llvm.amdgcn.mfma.scale.f32.16x16x128.f8f6f4" if _has_shape[
             (32, 32, 4, 4)
         ](
             a.size, b.size, c.size, d.size

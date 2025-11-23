@@ -122,7 +122,7 @@ fn matmul_dispatch_sm90[
 
 
 # llama-405B-FP8 gemm shapes
-alias llama_405b_fp8_list = List(
+alias llama_405b_fp8_list = [
     ##############################
     # N=16384 and K=2048
     TuningConfigSM90(
@@ -417,12 +417,12 @@ alias llama_405b_fp8_list = List(
         grid_shape=Index(8, H100.sm_count // 8),
         schedule=MatmulSchedule.TILE2D,
     ),
-)
+]
 
 alias llama_405b_fp8_table = Table(llama_405b_fp8_list, "llama_405b_fp8")
 
 # llama-8B-FP8 gemm shapes
-alias llama_8b_fp8_list = List(
+alias llama_8b_fp8_list = [
     ##############################
     # ignore N and K for this table.
     TuningConfigSM90(
@@ -464,7 +464,7 @@ alias llama_8b_fp8_list = List(
         grid_shape=Index(8, H100.sm_count // 8),
         schedule=MatmulSchedule.TILE2D,
     ),
-)
+]
 
 alias llama_8b_fp8_table = Table(llama_8b_fp8_list, "llama_8b_fp8")
 
@@ -722,7 +722,7 @@ fn matmul_dispatch_sm90_fp8[
 fn _get_miscellaneous_list[
     size_factor: Int, mma_k: Int, BK: Int
 ]() -> List[TuningConfigSM90]:
-    return List(
+    return [
         TuningConfigSM90(
             M=128,
             N=1536,
@@ -761,13 +761,13 @@ fn _get_miscellaneous_list[
             partitioned_multicast=False,
             schedule=MatmulSchedule.NONE,
         ),
-    )
+    ]
 
 
 fn _get_internvl_list[
     size_factor: Int, mma_k: Int, BK: Int
 ]() -> List[TuningConfigSM90]:
-    return List(
+    return [
         ##############################
         # static_N == 2560 and static_K == 5120:
         TuningConfigSM90(
@@ -1258,14 +1258,14 @@ fn _get_internvl_list[
             schedule=MatmulSchedule.DS_SCHEDULER,
             grid_shape=Index(128, 1),
         ),
-    )
+    ]
 
 
 # shapes for llama3.3.70b
 fn _get_llama_3_3_70b_list[
     size_factor: Int, mma_k: Int, BK: Int
 ]() -> List[TuningConfigSM90]:
-    return List(
+    return [
         # static_N == 2560 and static_K == 8192
         TuningConfigSM90(
             M=16,
@@ -1331,14 +1331,14 @@ fn _get_llama_3_3_70b_list[
             grid_shape=Index(10, H100.sm_count // 10),
             schedule=MatmulSchedule.TILE2D,
         ),
-    )
+    ]
 
 
 # shapes for gemma.3.27b
 fn _get_gemma_3_27b_list[
     size_factor: Int, mma_k: Int, BK: Int
 ]() -> List[TuningConfigSM90]:
-    return List(
+    return [
         TuningConfigSM90(
             M=16,
             N=5376,
@@ -2109,7 +2109,7 @@ fn _get_gemma_3_27b_list[
             grid_shape=Index(8, H100.sm_count // 8),
             schedule=MatmulSchedule(2),
         ),
-    )
+    ]
 
 
 fn matmul_dispatch_sm90_bf16_fp32[

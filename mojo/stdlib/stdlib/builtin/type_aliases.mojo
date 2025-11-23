@@ -15,50 +15,50 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-alias AnyTrivialRegType = __mlir_type.`!kgen.type`
+comptime AnyTrivialRegType = __mlir_type.`!kgen.type`
 """Represents any register passable Mojo data type."""
 
 
 @deprecated(use=ImmutOrigin)
-alias ImmutableOrigin = ImmutOrigin
+comptime ImmutableOrigin = ImmutOrigin
 """Immutable origin reference type."""
 
-alias ImmutOrigin = Origin[False]
+comptime ImmutOrigin = Origin[False]
 """Immutable origin reference type."""
 
 
 @deprecated(use=MutOrigin)
-alias MutableOrigin = MutOrigin
+comptime MutableOrigin = MutOrigin
 """Mutable origin reference type."""
 
-alias MutOrigin = Origin[True]
+comptime MutOrigin = Origin[True]
 """Mutable origin reference type."""
 
 
 @deprecated(use=ImmutAnyOrigin)
-alias ImmutableAnyOrigin = ImmutAnyOrigin
+comptime ImmutableAnyOrigin = ImmutAnyOrigin
 """The immutable origin that might access any memory value."""
 
-alias ImmutAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
+comptime ImmutAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
 """The immutable origin that might access any memory value."""
 
 
 @deprecated(use=MutAnyOrigin)
-alias MutableAnyOrigin = MutAnyOrigin
+comptime MutableAnyOrigin = MutAnyOrigin
 """The mutable origin that might access any memory value."""
 
-alias MutAnyOrigin = __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`
+comptime MutAnyOrigin = __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`
 """The mutable origin that might access any memory value."""
 
 # Static constants are a named subset of the global origin.
-alias StaticConstantOrigin = __mlir_attr[
+comptime StaticConstantOrigin = __mlir_attr[
     `#lit.origin.field<`,
     `#lit.static.origin : !lit.origin<0>`,
     `, "__constants__"> : !lit.origin<0>`,
 ]
 """An origin for strings and other always-immutable static constants."""
 
-alias OriginSet = __mlir_type.`!lit.origin.set`
+comptime OriginSet = __mlir_type.`!lit.origin.set`
 """A set of origin parameters."""
 
 
@@ -70,17 +70,17 @@ struct Origin[mut: Bool]:
         mut: Whether the origin is mutable.
     """
 
-    alias _mlir_type = __mlir_type[
+    comptime _mlir_type = __mlir_type[
         `!lit.origin<`,
-        mut._mlir_value,
+        Self.mut._mlir_value,
         `>`,
     ]
 
-    alias cast_from[o: Origin] = __mlir_attr[
+    comptime cast_from[o: Origin] = __mlir_attr[
         `#lit.origin.mutcast<`,
         o._mlir_origin,
         `> : !lit.origin<`,
-        mut._mlir_value,
+        Self.mut._mlir_value,
         `>`,
     ]
     """Cast an existing Origin to be of the specified mutability.
@@ -106,7 +106,7 @@ struct Origin[mut: Bool]:
     ```
     """
 
-    alias external = Self.cast_from[origin_of()]
+    comptime external = Self.cast_from[origin_of()]
     """An external origin of the given mutability. The external origin is
     guaranteed not to alias any existing origins.
 

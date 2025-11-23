@@ -38,11 +38,10 @@ fn apply[
     ],
     dtype: DType,
 ](input: NDBuffer[dtype, 1], output: NDBuffer[mut=True, dtype, 1]):
-    @parameter
-    fn _func[width: Int](idx: Int):
+    fn _func[width: Int](idx: Int) unified {mut}:
         output.store(idx, func(input.load[width=width](idx)))
 
-    vectorize[_func, simd_width_of[dtype]()](len(input))
+    vectorize[simd_width_of[dtype]()](len(input), _func)
 
 
 def bench_unary[
@@ -215,7 +214,7 @@ fn exp_sleef[
 fn _exp_taylor0[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    alias coefficients = List[Scalar[dtype]](
+    alias coefficients: List[Scalar[dtype]] = [
         1.0,
         1.0,
         0.5,
@@ -224,7 +223,7 @@ fn _exp_taylor0[
         0.0083333333333333333333,
         0.0013888888888888888889,
         0.00019841269841269841270,
-    )
+    ]
     return polynomial_evaluate[coefficients](x)
 
 
@@ -285,14 +284,14 @@ fn exp_mojo_opt2[
 fn _exp_taylor3[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    alias coefficients = List[Scalar[dtype]](
+    alias coefficients: List[Scalar[dtype]] = [
         0.5,
         0.16666666666666666667,
         0.041666666666666666667,
         0.0083333333333333333333,
         0.0013888888888888888889,
         0.00019841269841269841270,
-    )
+    ]
     return polynomial_evaluate[coefficients](x)
 
 
@@ -325,15 +324,15 @@ fn _exp_taylor_mlas[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     return polynomial_evaluate[
-        List[Scalar[dtype]](
-            1.0,
+        [
+            Scalar[dtype](1.0),
             1.0,
             0.499999851,
             0.16666472,
             0.0416695364,
             0.00837312452,
             0.00137805939,
-        ),
+        ],
     ](x)
 
 

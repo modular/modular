@@ -156,9 +156,10 @@ class DeepseekV3DecoderLayer(Module):
             and layer_idx >= config.first_k_dense_replace
             and layer_idx % config.moe_layer_freq == 0
         ):
-            if self.ep_manager is not None:
-                ep_config = self.ep_manager.config
-                ep_size = ep_config.n_gpus_per_node * ep_config.n_nodes
+            if config.ep_config is not None:
+                ep_size = (
+                    config.ep_config.n_gpus_per_node * config.ep_config.n_nodes
+                )
             else:
                 ep_size = 1
 
@@ -196,7 +197,7 @@ class DeepseekV3DecoderLayer(Module):
             else:
                 moe = MoE(**moe_kwargs)
 
-            if self.ep_manager is not None:
+            if config.ep_config is not None:
                 moe.sharding_strategy = ShardingStrategy.expert_parallel(
                     len(config.devices)
                 )
@@ -214,7 +215,7 @@ class DeepseekV3DecoderLayer(Module):
                 devices=config.devices,
                 float8_config=config.float8_config,
             )
-            if self.ep_manager is not None:
+            if config.ep_config is not None:
                 mlp.sharding_strategy = ShardingStrategy.replicate(
                     len(config.devices)
                 )
@@ -644,7 +645,7 @@ class DeepseekV3(Module):
             device=DeviceRef.CPU(),
         )
 
-        kv_inputs = kv_manager.input_symbols()
+        kv_inputs = kv_manager.get_symbolic_inputs()
 
         # Flatten kv types for each device
         flattened_kv_types: list[TensorType] = [

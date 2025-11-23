@@ -282,14 +282,14 @@ struct _IntTupleIter[origin: ImmutOrigin](Iterable, Iterator):
 
     alias Element = IntTuple
 
-    var src: Pointer[IntTuple, origin]
+    var src: Pointer[IntTuple, Self.origin]
     """Pointer to the source IntTuple being iterated."""
 
     var idx: Int
     """Current position in the iteration."""
 
     @always_inline("nodebug")
-    fn __init__(out self, src: Pointer[IntTuple, origin], idx: Int):
+    fn __init__(out self, src: Pointer[IntTuple, Self.origin], idx: Int):
         """Initialize the iterator with a source IntTuple and starting index."""
         self.src = src
         self.idx = idx
@@ -317,7 +317,7 @@ struct _IntTupleIter[origin: ImmutOrigin](Iterable, Iterator):
 
 struct IntTuple(
     Defaultable,
-    EqualityComparable,
+    Equatable,
     ImplicitlyCopyable,
     Intable,
     Iterable,

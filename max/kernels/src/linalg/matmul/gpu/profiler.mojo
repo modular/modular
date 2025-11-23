@@ -69,18 +69,18 @@ struct BlackwellWarpProfilingWorkspaceManager[
     fn _get_warp_count[warp_role: UInt32]() -> UInt32:
         @parameter
         if warp_role == 0:
-            return load_warps
+            return Self.load_warps
         elif warp_role == 1:
-            return scheduler_warps
+            return Self.scheduler_warps
         elif warp_role == 2:
-            return mma_warps
+            return Self.mma_warps
         else:
-            return epilogue_warps
+            return Self.epilogue_warps
 
     @staticmethod
     @parameter
     fn _calculate_entries_before_role[warp_role: UInt32]() -> UInt32:
-        return warp_role * max_entries_per_warp
+        return warp_role * Self.max_entries_per_warp
 
     @staticmethod
     @always_inline
@@ -191,7 +191,7 @@ struct BlackwellProfileWarp[
     and writes a single entry to the workspace.
     """
 
-    alias enable_profiling = max_entries_per_warp > 0
+    alias enable_profiling = Self.max_entries_per_warp > 0
 
     var timeline: Tuple[UInt64, UInt64]
     var workspace: Span[UInt64, MutAnyOrigin]
@@ -220,7 +220,7 @@ struct BlackwellProfileWarp[
         @parameter
         if Self.enable_profiling:
             self.timeline[1] = global_perf_counter_ns()
-            WorkspaceManager.write_to_workspace[warp_role](
+            Self.WorkspaceManager.write_to_workspace[Self.warp_role](
                 sm_id(),
                 self.entry_idx,
                 self.workspace,

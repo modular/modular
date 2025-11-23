@@ -85,7 +85,8 @@ cc_sysroot(
             "@rules_cc//cc/toolchains/args/random_seed:feature",
             "//bazel/internal/cc-toolchain/features:external_include_paths",
 
-            # NOTE: Order matters, opt flags come before user flags
+            # NOTE: Order matters, some flags must come before default flags
+            "//bazel/internal/cc-toolchain/features:parse_headers_shim",
             "//bazel/internal/cc-toolchain/features:opt_feature",
             "@rules_cc//cc/toolchains/args:experimental_replace_legacy_action_config_features",
             "//bazel/internal/cc-toolchain/features:supports_start_end_lib",  # https://github.com/bazelbuild/rules_cc/issues/322
@@ -98,6 +99,9 @@ cc_sysroot(
             "//bazel/internal/cc-toolchain/features:dbg_stub",
             "//bazel/internal/cc-toolchain/features:fastbuild_stub",
             "//bazel/internal/cc-toolchain/features:opt_stub",
+            "//bazel/internal/cc-toolchain/features:layering_check",
+            "//bazel/internal/cc-toolchain/features:use_module_maps",
+            "//bazel/internal/cc-toolchain/features:parse_headers",
             "@rules_cc//cc/toolchains/args/generate_linkmap:feature",
         ] + [
             "//bazel/internal/cc-toolchain/features:" + name
@@ -112,6 +116,8 @@ cc_sysroot(
             "@platforms//os:macos": [":macos_stack_frame"],
             "//conditions:default": [],
         }),
+        module_map = "//bazel/internal/cc-toolchain/tools:builtin_module_map",
+        supports_header_parsing = True,
         tags = [TOP_LEVEL_TAG],  # Used below, unclear why this is needed
         tool_map = "//bazel/internal/cc-toolchain/tools:{}_tools".format(platform),
     )

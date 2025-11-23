@@ -8,7 +8,7 @@ mojo_library(
     docs_base_path = "kernels",
     validate_missing_docs = False,
     deps = [
-        "@mojo//:linalg",
+        "//max:linalg",
         "@mojo//:stdlib",
     ],
 )

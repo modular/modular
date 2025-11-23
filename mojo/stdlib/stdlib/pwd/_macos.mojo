@@ -16,10 +16,10 @@ from sys.ffi import c_char, external_call
 from .pwd import Passwd
 from memory import LegacyUnsafePointer as UnsafePointer
 
-alias uid_t = Int32
-alias gid_t = Int32
-alias time_t = Int
-alias char = UnsafePointer[c_char]
+comptime uid_t = Int32
+comptime gid_t = Int32
+comptime time_t = Int
+comptime char = UnsafePointer[c_char]
 
 
 @register_passable("trivial")

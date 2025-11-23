@@ -19,7 +19,7 @@ from testing import TestSuite
 
 
 def test_init():
-    alias F32_2 = SIMD[DType.float32, 2]
+    comptime F32_2 = SIMD[DType.float32, 2]
     var x = ComplexFloat32(1, 2)
     assert_equal(x.re, 1)
     assert_equal(x.im, 2)
@@ -34,11 +34,11 @@ def test_init():
     assert_equal(y.re, 3)
     assert_equal(y.im, 0)
 
-    alias ComplexF32_2 = ComplexSIMD[DType.float32, 2]
+    comptime ComplexF32_2 = ComplexSIMD[DType.float32, 2]
     var z = ComplexF32_2(F32_2(1, 2))
     assert_equal(z.re, F32_2(1, 2))
     assert_equal(z.im, F32_2(0, 0))
-    alias F32_4 = SIMD[DType.float32, 4]
+    comptime F32_4 = SIMD[DType.float32, 4]
     z = ComplexF32_2(from_interleaved=F32_4(1, 2, 3, 4))
     assert_equal(z.re, F32_2(1, 3))
     assert_equal(z.im, F32_2(2, 4))

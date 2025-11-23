@@ -58,33 +58,35 @@ struct _MulParity:
 @fieldwise_init
 @register_passable("trivial")
 struct _MulResult[CarrierDType: DType]:
-    var integer_part: Scalar[CarrierDType]
+    var integer_part: Scalar[Self.CarrierDType]
     var is_integer: Bool
 
 
 @fieldwise_init
 @register_passable("trivial")
 struct FP[dtype: DType, CarrierDType: DType = FPUtils[dtype].uint_type]:
-    alias CarrierType = Scalar[Self.CarrierDType]
-    alias total_bits = size_of[dtype]() * 8
-    alias carrier_bits = size_of[Self.CarrierDType]() * 8
-    alias sig_bits = FPUtils[dtype].mantissa_width()
-    alias exp_bits = FPUtils[dtype].exponent_width()
-    alias neg_exp_bias = -FPUtils[dtype].exponent_bias()
-    alias min_normal_exp = Self.neg_exp_bias + 1
-    alias cache_bits = 64 if Self.CarrierDType == DType.uint32 else 128
-    alias min_k = -31 if Self.CarrierDType == DType.uint32 else -292
-    alias max_k = 46 if Self.CarrierDType == DType.uint32 else 326
-    alias divide_magic_number = InlineArray[UInt32, 2](6554, 656)
-    alias n_max = (
+    comptime CarrierType = Scalar[Self.CarrierDType]
+    comptime total_bits = size_of[Self.dtype]() * 8
+    comptime carrier_bits = size_of[Self.CarrierDType]() * 8
+    comptime sig_bits = FPUtils[Self.dtype].mantissa_width()
+    comptime exp_bits = FPUtils[Self.dtype].exponent_width()
+    comptime neg_exp_bias = -FPUtils[Self.dtype].exponent_bias()
+    comptime min_normal_exp = Self.neg_exp_bias + 1
+    comptime cache_bits = 64 if Self.CarrierDType == DType.uint32 else 128
+    comptime min_k = -31 if Self.CarrierDType == DType.uint32 else -292
+    comptime max_k = 46 if Self.CarrierDType == DType.uint32 else 326
+    comptime divide_magic_number = InlineArray[UInt32, 2](6554, 656)
+    comptime n_max = (
         (Scalar[Self.CarrierDType](2) << Self.sig_bits) + 1
     ) // 3 + 1 * 20
-    alias n_max_larger = (
+    comptime n_max_larger = (
         Scalar[Self.CarrierDType](2) << Self.sig_bits
     ) * Self.big_divisor - 1
-    alias kappa = _floor_log10_pow2(Self.carrier_bits - Self.sig_bits - 2) - 1
-    alias big_divisor = pow(10, Self.kappa + 1)
-    alias small_divisor = pow(10, Self.kappa)
+    comptime kappa = _floor_log10_pow2(
+        Self.carrier_bits - Self.sig_bits - 2
+    ) - 1
+    comptime big_divisor = pow(10, Self.kappa + 1)
+    comptime small_divisor = pow(10, Self.kappa)
 
 
 fn _write_float[
@@ -122,6 +124,11 @@ fn _write_float[
         return writer.write(
             float8_e4m3fnuz_to_str[Int(bitcast[DType.uint8](value))]
         )
+    elif dtype is DType.float8_e8m0fnu:
+        if isnan(value):
+            return writer.write("nan")
+        return writer.write("2**", Int(bitcast[DType.uint8](value)) - 127)
+
     else:
         # Upcast the float16 types to float32
         casted = value.cast[
@@ -398,7 +405,7 @@ fn _compute_endpoint[
 
 
 fn _print_bits[dtype: DType](x: Scalar[dtype]) -> String:
-    alias total_bits = size_of[dtype]() * 8
+    comptime total_bits = size_of[dtype]() * 8
     var output = String()
 
     @parameter
@@ -408,9 +415,9 @@ fn _print_bits[dtype: DType](x: Scalar[dtype]) -> String:
             if i % 8 == 0:
                 output.write(" ")
     else:
-        alias sig_bits = 23 if dtype is DType.float32 else 52
-        alias exp_bits = 8 if dtype is DType.float32 else 11
-        alias cast_type = DType.uint32 if dtype is DType.float32 else DType.uint64
+        comptime sig_bits = 23 if dtype is DType.float32 else 52
+        comptime exp_bits = 8 if dtype is DType.float32 else 11
+        comptime cast_type = DType.uint32 if dtype is DType.float32 else DType.uint64
         var casted = bitcast[cast_type](x)
         for i in reversed(range(total_bits)):
             output.write((casted >> i) & 1)
@@ -776,7 +783,7 @@ fn _is_left_endpoint_integer_shorter_interval[
 
 
 # fmt: off
-alias cache_f32 = InlineArray[UInt64, 78](
+comptime cache_f32 = InlineArray[UInt64, 78](
     0x81CEB32C4B43FCF5, 0xA2425FF75E14FC32,
     0xCAD2F7F5359A3B3F, 0xFD87B5F28300CA0E,
     0x9E74D1B791E07E49, 0xC612062576589DDB,
@@ -819,7 +826,7 @@ alias cache_f32 = InlineArray[UInt64, 78](
 )
 # fmt: on
 
-alias cache_f64 = InlineArray[UInt128, 619](
+comptime cache_f64 = InlineArray[UInt128, 619](
     _UInt128(0xFF77B1FCBEBCDC4F, 0x25E8E89C13BB0F7B),
     _UInt128(0x9FAACF3DF73609B1, 0x77B191618C54E9AD),
     _UInt128(0xC795830D75038C1D, 0xD59DF5B9EF6A2418),
@@ -1441,7 +1448,7 @@ alias cache_f64 = InlineArray[UInt128, 619](
     _UInt128(0xF70867153AA2DB38, 0xB8CBEE4FC66D1EA8),
 )
 
-alias float8_e5m2_to_str = InlineArray[StaticString, 256](
+comptime float8_e5m2_to_str = InlineArray[StaticString, 256](
     "0.0",
     "1.52587890625e-05",
     "3.0517578125e-05",
@@ -1700,7 +1707,7 @@ alias float8_e5m2_to_str = InlineArray[StaticString, 256](
     "nan",
 )
 
-alias float8_e4m3fn_to_str = InlineArray[StaticString, 256](
+comptime float8_e4m3fn_to_str = InlineArray[StaticString, 256](
     "0.0",
     "0.001953125",
     "0.00390625",
@@ -1959,7 +1966,7 @@ alias float8_e4m3fn_to_str = InlineArray[StaticString, 256](
     "nan",
 )
 
-alias float8_e5m2fnuz_to_str = InlineArray[StaticString, 256](
+comptime float8_e5m2fnuz_to_str = InlineArray[StaticString, 256](
     "0.0",
     "7.62939453125e-06",
     "1.52587890625e-05",
@@ -2218,7 +2225,7 @@ alias float8_e5m2fnuz_to_str = InlineArray[StaticString, 256](
     "-57344.0",
 )
 
-alias float8_e4m3fnuz_to_str = InlineArray[StaticString, 256](
+comptime float8_e4m3fnuz_to_str = InlineArray[StaticString, 256](
     "0.0",
     "0.0009765625",
     "0.001953125",

@@ -21,8 +21,8 @@ from memory import (
 )
 from testing import TestSuite
 
-alias T = DType.float64
-alias S = Scalar[T]
+comptime T = DType.float64
+comptime S = Scalar[T]
 
 
 @register_passable("trivial")
@@ -36,7 +36,7 @@ struct TwoS:
 
 
 struct OneS(DevicePassable):
-    alias device_type: AnyType = TwoS
+    comptime device_type: AnyType = TwoS
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = TwoS(self.s)
@@ -74,8 +74,8 @@ def test_function_unchecked():
 
 
 fn _run_test_function_unchecked(ctx: DeviceContext) raises:
-    alias length = 1024
-    alias block_dim = 32
+    comptime length = 1024
+    comptime block_dim = 32
 
     var scalar: S = 2
     var twos = TwoS(scalar)
@@ -120,8 +120,8 @@ def test_function_checked():
 
 
 fn _run_test_function_checked(ctx: DeviceContext) raises:
-    alias length = 1024
-    alias block_dim = 32
+    comptime length = 1024
+    comptime block_dim = 32
 
     var scalar: S = 2
     var ones = OneS(scalar)
@@ -168,8 +168,8 @@ def test_function_experimental():
 
 
 fn _run_test_function_experimental(ctx: DeviceContext) raises:
-    alias length = 1024
-    alias block_dim = 32
+    comptime length = 1024
+    comptime block_dim = 32
 
     var scalar: S = 2
     var ones = OneS(scalar)

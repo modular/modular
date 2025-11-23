@@ -46,7 +46,7 @@ fn exit(status: c_int):
 # stdio.h — input/output operations
 # ===-----------------------------------------------------------------------===#
 
-alias FILE_ptr = OpaquePointer[MutOrigin.external]
+comptime FILE_ptr = OpaquePointer[MutOrigin.external]
 
 
 @always_inline
@@ -92,11 +92,11 @@ struct BufferMode:
     Modes for use in `setvbuf` to control buffer output.
     """
 
-    alias buffered = 0
+    comptime buffered = 0
     """Equivalent to `_IOFBF`."""
-    alias line_buffered = 1
+    comptime line_buffered = 1
     """Equivalent to `_IOLBF`."""
-    alias unbuffered = 2
+    comptime unbuffered = 2
     """Equivalent to `_IONBF`."""
 
 
@@ -135,13 +135,13 @@ fn vfork() -> c_int:
 
 
 struct SignalCodes:
-    alias HUP = 1  # (hang up)
-    alias INT = 2  # (interrupt)
-    alias QUIT = 3  # (quit)
-    alias ABRT = 6  # (abort)
-    alias KILL = 9  # (non-catchable, non-ignorable kill)
-    alias ALRM = 14  # (alarm clock)
-    alias TERM = 15  # (software termination signal)
+    comptime HUP = 1  # (hang up)
+    comptime INT = 2  # (interrupt)
+    comptime QUIT = 3  # (quit)
+    comptime ABRT = 6  # (abort)
+    comptime KILL = 9  # (non-catchable, non-ignorable kill)
+    comptime ALRM = 14  # (alarm clock)
+    comptime TERM = 15  # (software termination signal)
 
 
 @always_inline
@@ -180,12 +180,12 @@ fn write(fd: c_int, buf: OpaquePointer[mut=False], nbyte: c_size_t) -> c_int:
 
 
 struct FcntlCommands:
-    alias F_GETFD: c_int = 1
-    alias F_SETFD: c_int = 2
+    comptime F_GETFD: c_int = 1
+    comptime F_SETFD: c_int = 2
 
 
 struct FcntlFDFlags:
-    alias FD_CLOEXEC: c_int = 1
+    comptime FD_CLOEXEC: c_int = 1
 
 
 @always_inline

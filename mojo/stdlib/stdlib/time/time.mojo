@@ -36,18 +36,18 @@ from sys import (
 # ===-----------------------------------------------------------------------===#
 
 # Enums used in time.h 's glibc
-alias _CLOCK_REALTIME = 0
-alias _CLOCK_MONOTONIC = 1 if CompilationTarget.is_linux() else 6
-alias _CLOCK_PROCESS_CPUTIME_ID = 2 if CompilationTarget.is_linux() else 12
-alias _CLOCK_THREAD_CPUTIME_ID = 3 if CompilationTarget.is_linux() else 16
-alias _CLOCK_MONOTONIC_RAW = 4
+comptime _CLOCK_REALTIME = 0
+comptime _CLOCK_MONOTONIC = 1 if CompilationTarget.is_linux() else 6
+comptime _CLOCK_PROCESS_CPUTIME_ID = 2 if CompilationTarget.is_linux() else 12
+comptime _CLOCK_THREAD_CPUTIME_ID = 3 if CompilationTarget.is_linux() else 16
+comptime _CLOCK_MONOTONIC_RAW = 4
 
 # Constants
-alias _NSEC_PER_USEC = 1000
-alias _NSEC_PER_MSEC = 1_000_000
-alias _USEC_PER_MSEC = 1000
-alias _MSEC_PER_SEC = 1000
-alias _NSEC_PER_SEC = _NSEC_PER_USEC * _USEC_PER_MSEC * _MSEC_PER_SEC
+comptime _NSEC_PER_USEC = 1000
+comptime _NSEC_PER_MSEC = 1_000_000
+comptime _USEC_PER_MSEC = 1000
+comptime _MSEC_PER_SEC = 1000
+comptime _NSEC_PER_SEC = _NSEC_PER_USEC * _USEC_PER_MSEC * _MSEC_PER_SEC
 
 
 @fieldwise_init
@@ -106,7 +106,7 @@ fn _gettime_as_nsec_unix(clockid: Int) -> UInt:
 @always_inline
 fn _gpu_clock() -> UInt:
     """Returns a 64-bit unsigned cycle counter."""
-    alias asm = _gpu_clock_inst()
+    comptime asm = _gpu_clock_inst()
     return UInt(Int(llvm_intrinsic[asm, Int64]()))
 
 
@@ -305,11 +305,11 @@ fn sleep(sec: Float64):
     @parameter
     if is_gpu():
         var nsec = sec * 1.0e9
-        alias intrinsic = _gpu_sleep_inst()
+        comptime intrinsic = _gpu_sleep_inst()
         llvm_intrinsic[intrinsic, NoneType](nsec.cast[DType.int32]())
         return
 
-    alias NANOSECONDS_IN_SECOND = 1_000_000_000
+    comptime NANOSECONDS_IN_SECOND = 1_000_000_000
     var total_secs = floor(sec)
     var tv_spec = _CTimeSpec(
         Int(total_secs),

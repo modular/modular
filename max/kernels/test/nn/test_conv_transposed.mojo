@@ -260,9 +260,9 @@ fn test_conv_transposed[
             )
 
             @always_inline
-            @__copy_capture(output_ref_ptr, bias_ptr)
-            @parameter
-            fn body0[width: Int](offset: Int):
+            fn body0[
+                width: Int
+            ](offset: Int) unified {var output_ref_ptr, var bias_ptr}:
                 output_ref_ptr.store(
                     offset,
                     10.0
@@ -272,7 +272,7 @@ fn test_conv_transposed[
                     ),
                 )
 
-            vectorize[body0, simd_size](F)
+            vectorize[simd_size](F, body0)
 
     # Test.
     alias conv_attr = ConvInfoStatic[input_layout.rank() - 2]()
@@ -283,8 +283,7 @@ fn test_conv_transposed[
     @parameter
     fn epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
         @always_inline
-        @parameter
-        fn body1[width: Int](idx: Int):
+        fn body1[width: Int](idx: Int) unified {var}:
             var curr_coords = rebind[IndexList[rank + 2]](coords)
             curr_coords[rank + 1] += idx
 
@@ -302,7 +301,7 @@ fn test_conv_transposed[
                 * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
             )
 
-        vectorize[body1, simd_size](f_size)
+        vectorize[simd_size](f_size, body1)
 
     ConvTransposedPacked[
         _,  # input origin

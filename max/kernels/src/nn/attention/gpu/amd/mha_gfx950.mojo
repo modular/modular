@@ -106,10 +106,10 @@ struct KVCacheIterator[
     cache_t: MHAOperand, tile_size: Int, kv_num_heads: Int, depth: Int
 ]:
     alias kv_gmem_layout = Layout(
-        IntTuple(Int(tile_size), Int(depth)),
-        IntTuple(Int(kv_num_heads * depth), 1),
+        IntTuple(Int(Self.tile_size), Int(Self.depth)),
+        IntTuple(Int(Self.kv_num_heads * Self.depth), 1),
     )
-    var cache: cache_t
+    var cache: Self.cache_t
     var end: Int
     var tile_start_row: Int
     var batch_idx: Int
@@ -117,7 +117,11 @@ struct KVCacheIterator[
 
     @always_inline
     fn __init__(
-        out self, cache: cache_t, batch_idx: Int, kv_head_idx: Int, end: Int
+        out self,
+        cache: Self.cache_t,
+        batch_idx: Int,
+        kv_head_idx: Int,
+        end: Int,
     ):
         self.cache = cache
         self.end = end
@@ -129,14 +133,14 @@ struct KVCacheIterator[
     fn next_unsafe(
         mut self,
         out result: LayoutTensor[
-            cache_t.dtype,
+            Self.cache_t.dtype,
             Self.kv_gmem_layout,
             MutAnyOrigin,
             masked=True,
         ],
     ):
         var kv_tile_num_rows = min(
-            Int(tile_size), Int(self.end - self.tile_start_row)
+            Int(Self.tile_size), Int(self.end - self.tile_start_row)
         )
         # kv cache gmem has to clip num rows as runtime layout
         var kv_runtime_layout = type_of(result.runtime_layout)(
@@ -148,17 +152,17 @@ struct KVCacheIterator[
             ),
         )
         var out = type_of(result)(
-            self.cache.block_paged_ptr[tile_size](
+            self.cache.block_paged_ptr[Self.tile_size](
                 self.batch_idx, self.tile_start_row, self.kv_head_idx, 0
             ),
             kv_runtime_layout,
         )
-        self.tile_start_row += tile_size
+        self.tile_start_row += Self.tile_size
         return out
 
     @always_inline
     fn increment(mut self):
-        self.tile_start_row += tile_size
+        self.tile_start_row += Self.tile_size
 
 
 @always_inline
@@ -288,11 +292,13 @@ struct KVBuffer[
     kv_num_heads: Int,
     transpose: Bool,
 ]:
-    alias MMA_N = mma_shape[1]
-    alias MMA_K = mma_shape[2]
-    alias num_mmas = ceildiv(WN if transpose else depth, Self.MMA_N)
-    alias num_k_mmas2 = ceildiv(BK, Int(Self.MMA_K * k_group_size))
-    alias simd_width = simd_width_of[kv_t.dtype]()
+    alias MMA_N = Self.mma_shape[1]
+    alias MMA_K = Self.mma_shape[2]
+    alias num_mmas = ceildiv(
+        Self.WN if Self.transpose else Self.depth, Self.MMA_N
+    )
+    alias num_k_mmas2 = ceildiv(Self.BK, Int(Self.MMA_K * Self.k_group_size))
+    alias simd_width = simd_width_of[Self.kv_t.dtype]()
 
     # Shared memory layout
     # Layout construction for standard memory access:
@@ -320,28 +326,28 @@ struct KVBuffer[
     # └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
     # stride between blocks = BN × simd_width = 128 × 8 = 1024
 
-    alias num_repeats = depth // BK
+    alias num_repeats = Self.depth // Self.BK
     # this shoul be 2, num_repeats x 32, BK but it gives error in tiling
     alias tiler_layout = Layout.row_major(1, Self.num_repeats)
-    alias base_layout = Layout.row_major(BN, BK)
+    alias base_layout = Layout.row_major(Self.BN, Self.BK)
     alias smem_layout = blocked_product(Self.base_layout, Self.tiler_layout)
     # alias smem_layout = Layout.row_major(BN, depth)
 
     # alias thread_layout = Layout.row_major(num_threads // 16, 16)
 
     alias MMATileType = LayoutTensor[
-        kv_t.dtype,
+        Self.kv_t.dtype,
         Layout.row_major(Self.num_mmas * Self.num_k_mmas2, Self.simd_width),
         MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ]
     var mma_tile: Self.MMATileType
 
-    alias wtile_dim0 = WN
-    alias wtile_dim1 = BK
+    alias wtile_dim0 = Self.WN
+    alias wtile_dim1 = Self.BK
 
     alias SharedIterType = LayoutTensorIter[
-        kv_t.dtype,
+        Self.kv_t.dtype,
         Self.smem_layout,
         MutAnyOrigin,
         address_space = AddressSpace.SHARED,
@@ -355,17 +361,19 @@ struct KVBuffer[
         Self.wtile_dim0, Self.wtile_dim1
     ]
 
-    var kv_cache_iter: KVCacheIterator[kv_t, BN, kv_num_heads, depth]
+    var kv_cache_iter: KVCacheIterator[
+        Self.kv_t, Self.BN, Self.kv_num_heads, Self.depth
+    ]
     var buffer_idx: Int
 
     @always_inline
     fn __init__(
         out self,
-        k_cache: kv_t,
+        k_cache: Self.kv_t,
         batch_idx: UInt,
         head_idx: UInt,
         shared_ptr: UnsafePointer[
-            Scalar[kv_t.dtype],
+            Scalar[Self.kv_t.dtype],
             address_space = AddressSpace.SHARED, **_,
         ],
         end: UInt,
@@ -389,31 +397,31 @@ struct KVBuffer[
         var num_loads = 0
 
         @parameter
-        if depth == 64:
-            var smem_warp_tile = smem_tile.tile[32, BK](
+        if Self.depth == 64:
+            var smem_warp_tile = smem_tile.tile[32, Self.BK](
                 Int(get_warp_id()) // 2, Int(get_warp_id()) % 2
             )
-            var gmem_warp_tile = global_tile.tile[32, BK](
+            var gmem_warp_tile = global_tile.tile[32, Self.BK](
                 Int(get_warp_id()) // 2, Int(get_warp_id()) % 2
             )
             # load from dram to sram directly
-            num_loads = copy_dram_to_sram_lds[swizzle=swizzle,](
+            num_loads = copy_dram_to_sram_lds[swizzle = Self.swizzle,](
                 smem_warp_tile,
                 gmem_warp_tile,
             )
         else:
-            alias num_warps = num_threads // WARP_SIZE
+            alias num_warps = Self.num_threads // WARP_SIZE
 
             @parameter
-            for depth_tile in range(depth // 128):
-                var smem_warp_tile = smem_tile.tile[BN, BK](
+            for depth_tile in range(Self.depth // 128):
+                var smem_warp_tile = smem_tile.tile[Self.BN, Self.BK](
                     0, Int(get_warp_id()) + Int(num_warps * depth_tile)
                 )
-                var gmem_warp_tile = global_tile.tile[BN, BK](
+                var gmem_warp_tile = global_tile.tile[Self.BN, Self.BK](
                     0, Int(get_warp_id()) + Int(num_warps * depth_tile)
                 )
                 # load from dram to sram directly
-                num_loads += copy_dram_to_sram_lds[swizzle=swizzle,](
+                num_loads += copy_dram_to_sram_lds[swizzle = Self.swizzle,](
                     smem_warp_tile,
                     gmem_warp_tile,
                 )
@@ -435,34 +443,36 @@ struct KVBuffer[
     @always_inline
     fn load_from_shared(self, buffer: UInt, bk_tile: UInt):
         @parameter
-        if transpose:
-            alias num_warps_n = BN // WN
+        if Self.transpose:
+            alias num_warps_n = Self.BN // Self.WN
             var warp_col = get_warp_id() % UInt(num_warps_n)
-            var smem_tile = self.smem_iter.next_unsafe(buffer)[].tile[BN, BK](
-                0, Int(bk_tile)
-            )
+            var smem_tile = self.smem_iter.next_unsafe(buffer)[].tile[
+                Self.BN, Self.BK
+            ](0, Int(bk_tile))
 
             var wtile_coord0 = Int(warp_col)
             var wtile_coord1 = 0
             var warp_tile = smem_tile.tile[Self.wtile_dim0, Self.wtile_dim1](
                 wtile_coord0, wtile_coord1
             )
-            var load_b_tile = load_b[Self.mma_shape, swizzle=swizzle](warp_tile)
+            var load_b_tile = load_b[Self.mma_shape, swizzle = Self.swizzle](
+                warp_tile
+            )
 
             self.mma_tile.vectorize[1, Self.simd_width]().copy_from(
                 load_b_tile.vectorize[1, Self.simd_width]()
             )
 
         else:
-            alias MMA_M = mma_shape[0]
-            alias MMA_K = mma_shape[2]
+            alias MMA_M = Self.mma_shape[0]
+            alias MMA_K = Self.mma_shape[2]
 
             @parameter
-            for k in range(BK // MMA_K):
+            for k in range(Self.BK // MMA_K):
                 var smem_tile = (
                     self.smem_iter.next_unsafe(buffer)[]
-                    .tile[BK, depth](Int(bk_tile), 0)
-                    .tile[MMA_K, depth](k, 0)
+                    .tile[Self.BK, Self.depth](Int(bk_tile), 0)
+                    .tile[MMA_K, Self.depth](k, 0)
                 )
                 var frags = (
                     type_of(self.mma_tile.split[Self.num_k_mmas2]()[k])
@@ -471,13 +481,13 @@ struct KVBuffer[
                 )
 
                 @parameter
-                for i in range(depth // MMA_M):
+                for i in range(Self.depth // MMA_M):
                     alias tile_layout = type_of(
                         smem_tile.tile[MMA_K, MMA_M](0, i)
                     ).layout
                     # TODO: KERN-2173, the offset calculation is a workaround
                     # a bug in tile, remove this once the bug is fixed
-                    alias tiles_per_bk = BK // MMA_M
+                    alias tiles_per_bk = Self.BK // MMA_M
                     alias stride = self.base_layout.size()
                     alias offset = (
                         MMA_M * (i % tiles_per_bk)

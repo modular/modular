@@ -91,9 +91,9 @@ struct KVCacheMHAOperand[
     KVCacheT type, but we need to solve some cyclic dependencies first.
     """
 
-    alias dtype = cache_t.dtype
-    alias page_size = cache_t.page_size_
-    var cache: cache_t
+    alias dtype = Self.cache_t.dtype
+    alias page_size = Self.cache_t.page_size_
+    var cache: Self.cache_t
 
     alias device_type: AnyType = Self
 
@@ -108,7 +108,7 @@ struct KVCacheMHAOperand[
     fn get_device_type_name() -> String:
         return Self.get_type_name()
 
-    fn __init__(out self, cache: cache_t):
+    fn __init__(out self, cache: Self.cache_t):
         self.cache = cache
 
     @always_inline
@@ -168,9 +168,9 @@ struct KVCacheMHAOperand[
 struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
     """An implementation for NDBuffer arguments to MHA kernels."""
 
-    alias dtype = dtype_
+    alias dtype = Self.dtype_
     alias page_size = 0
-    var buffer: LayoutTensor[Self.dtype, layout, MutAnyOrigin]
+    var buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin]
 
     alias device_type: AnyType = Self
 
@@ -187,7 +187,7 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
 
     fn __init__(
         out self,
-        buffer: LayoutTensor[Self.dtype, layout, MutAnyOrigin],
+        buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin],
     ):
         self.buffer = buffer
 
@@ -268,11 +268,11 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
 ):
     """An implementation for ragged NDBuffer arguments to MHA kernels."""
 
-    alias dtype = dtype_
+    alias dtype = Self.dtype_
     alias page_size = 0
-    var buffer: LayoutTensor[Self.dtype, layout, MutAnyOrigin]
+    var buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin]
     var cache_row_offsets: LayoutTensor[
-        DType.uint32, cache_layout, MutAnyOrigin
+        DType.uint32, Self.cache_layout, MutAnyOrigin
     ]
 
     alias device_type: AnyType = Self
@@ -290,9 +290,9 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
 
     fn __init__(
         out self,
-        buffer: LayoutTensor[Self.dtype, layout, MutAnyOrigin],
+        buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin],
         cache_row_offsets: LayoutTensor[
-            DType.uint32, cache_layout, MutAnyOrigin
+            DType.uint32, Self.cache_layout, MutAnyOrigin
         ],
     ):
         constrained[

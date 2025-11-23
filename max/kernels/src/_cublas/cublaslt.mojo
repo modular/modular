@@ -35,7 +35,7 @@ alias Context = NoneType
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_CUBLASLT_LIBRARY_PATHS = List[Path](
+alias CUDA_CUBLASLT_LIBRARY_PATHS: List[Path] = [
     "libcublasLt.so.13",
     "/usr/local/cuda-13.1/lib64/libcublasLt.so.13",
     "/usr/local/cuda-13.0/lib64/libcublasLt.so.13",
@@ -43,7 +43,7 @@ alias CUDA_CUBLASLT_LIBRARY_PATHS = List[Path](
     "libcublasLt.so.12",
     "/usr/local/cuda-12.8/lib64/libcublasLt.so.12",
     "/usr/local/cuda/lib64/libcublasLt.so.12",
-)
+]
 
 
 fn _on_error_msg() -> Error:
@@ -647,7 +647,7 @@ struct MatmulAlgorithmCapability:
 
     alias POINTER_ARRAY_BATCH_SUPPORT = Self(21)
     """support pointer array batch
-    
+
     int32_t, 0 means no support, supported otherwise.
     """
     alias FLOATING_POINT_EMULATION_SUPPORT = Self(22)

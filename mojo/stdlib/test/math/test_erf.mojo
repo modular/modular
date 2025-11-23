@@ -40,7 +40,7 @@ def test_erf_float64():
 def test_erf_libm():
     seed(0)
     var N = 8192
-    alias test_dtype = DType.float32
+    comptime test_dtype = DType.float32
 
     # generate input values and write them to file
     var x32 = UnsafePointer[Scalar[test_dtype]].alloc(N)

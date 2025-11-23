@@ -49,7 +49,7 @@ from builtin._location import __call_location, _SourceLocation
 # DEFAULT_LEVEL
 # ===-----------------------------------------------------------------------===#
 
-alias DEFAULT_LEVEL = Level._from_str(
+comptime DEFAULT_LEVEL = Level._from_str(
     env_get_string["LOGGING_LEVEL", "NOTSET"]()
 )
 
@@ -74,27 +74,27 @@ struct Level(
 
     var _value: Int
 
-    alias NOTSET = Self(0)
+    comptime NOTSET = Self(0)
     """Lowest level, used when no level is set."""
 
-    alias TRACE = Self(10)
+    comptime TRACE = Self(10)
     """Repetitive trace information, Indicates repeated execution or IO-coupled
     activity, typically only of interest when diagnosing hangs or ensuring a
     section of code is executing."""
 
-    alias DEBUG = Self(20)
+    comptime DEBUG = Self(20)
     """Detailed information, typically of interest only when diagnosing problems."""
 
-    alias INFO = Self(30)
+    comptime INFO = Self(30)
     """Confirmation that things are working as expected."""
 
-    alias WARNING = Self(40)
+    comptime WARNING = Self(40)
     """Indication that something unexpected happened, or may happen in the near future."""
 
-    alias ERROR = Self(50)
+    comptime ERROR = Self(50)
     """Due to a more serious problem, the software has not been able to perform some function."""
 
-    alias CRITICAL = Self(60)
+    comptime CRITICAL = Self(60)
     """A serious error indicating that the program itself may be unable to continue running."""
 
     fn __eq__(self, other: Self) -> Bool:
@@ -269,9 +269,9 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         """
 
         @parameter
-        if level == Level.NOTSET:
+        if Self.level == Level.NOTSET:
             return True
-        return level > target_level
+        return Self.level > target_level
 
     @always_inline
     fn trace[
@@ -295,7 +295,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
                 (defaults to a newline).
             location: The location of the error (defaults to `__call_location`).
         """
-        alias target_level = Level.TRACE
+        comptime target_level = Level.TRACE
 
         @parameter
         if not Self._is_disabled[target_level]():
@@ -328,7 +328,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
                 (defaults to a newline).
             location: The location of the error (defaults to `__call_location`).
         """
-        alias target_level = Level.DEBUG
+        comptime target_level = Level.DEBUG
 
         @parameter
         if not Self._is_disabled[target_level]():
@@ -361,7 +361,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
                 (defaults to a newline).
             location: The location of the error (defaults to `__call_location`).
         """
-        alias target_level = Level.INFO
+        comptime target_level = Level.INFO
 
         @parameter
         if not Self._is_disabled[target_level]():
@@ -394,7 +394,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
                 (defaults to a newline).
             location: The location of the error (defaults to `__call_location`).
         """
-        alias target_level = Level.WARNING
+        comptime target_level = Level.WARNING
 
         @parameter
         if not Self._is_disabled[target_level]():
@@ -427,7 +427,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
                 (defaults to a newline).
             location: The location of the error (defaults to `__call_location`).
         """
-        alias target_level = Level.ERROR
+        comptime target_level = Level.ERROR
 
         @parameter
         if not Self._is_disabled[target_level]():
@@ -461,7 +461,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             location: The location of the error (defaults to `__call_location`).
 
         """
-        alias target_level = Level.CRITICAL
+        comptime target_level = Level.CRITICAL
 
         @parameter
         if not Self._is_disabled[target_level]():
@@ -484,7 +484,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         sep: StaticString = " ",
         end: StaticString = "\n",
     ):
-        alias color = _level.color()
+        comptime color = _level.color()
 
         var file = self._fd
         var buffer = _WriteBufferStack(file)
@@ -497,7 +497,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         if self._source_location:
             buffer.write("[", location, "] ")
 
-        alias length = values.__len__()
+        comptime length = values.__len__()
 
         @parameter
         for i in range(length):

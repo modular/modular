@@ -25,11 +25,11 @@ from testing import assert_equal, TestSuite
 struct FillStrategy(ImplicitlyCopyable, Movable):
     var value: Int
 
-    alias LINSPACE = Self(0)
-    alias NEG_LINSPACE = Self(1)
-    alias SYMMETRIC_LINSPACE = Self(2)
-    alias ZEROS = Self(3)
-    alias ONES = Self(4)
+    comptime LINSPACE = Self(0)
+    comptime NEG_LINSPACE = Self(1)
+    comptime SYMMETRIC_LINSPACE = Self(2)
+    comptime ZEROS = Self(3)
+    comptime ONES = Self(4)
 
     fn __is__(self, other: Self) -> Bool:
         return self.value == other.value
@@ -54,9 +54,9 @@ fn reduce(
 
 
 fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
-    alias BLOCK_SIZE = 32
-    alias n = 1024
-    alias F32 = DType.float32
+    comptime BLOCK_SIZE = 32
+    comptime n = 1024
+    comptime F32 = DType.float32
 
     var vec_host = NDBuffer[F32, 1, MutAnyOrigin, DimList(n)].stack_allocation()
 
@@ -88,7 +88,7 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     var res_max_device = ctx.enqueue_create_buffer[F32](1)
     res_max_device.enqueue_fill(0)
 
-    alias kernel = reduce
+    comptime kernel = reduce
 
     ctx.enqueue_function_experimental[kernel](
         res_add_device,

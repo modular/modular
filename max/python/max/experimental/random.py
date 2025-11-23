@@ -13,7 +13,7 @@
 
 """Provides experimental random tensor generation utilities.
 
-.. warning::
+.. caution::
     This module contains experimental APIs that are subject to change or
     removal in future versions. Use with caution in production environments.
 
@@ -62,7 +62,7 @@ def uniform(  # noqa: ANN201
 ):
     """Creates a tensor filled with random values from a uniform distribution.
 
-    .. warning::
+    .. caution::
         This is an experimental API that may change in future versions.
 
     Generates a tensor with values uniformly distributed between the specified
@@ -115,7 +115,7 @@ def gaussian(  # noqa: ANN201
 ):
     """Creates a tensor filled with random values from a Gaussian (normal) distribution.
 
-    .. warning::
+    .. caution::
         This is an experimental API that may change in future versions.
 
     Generates a tensor with values sampled from a normal (Gaussian) distribution

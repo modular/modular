@@ -22,8 +22,8 @@ from utils import Index, IndexList
 
 @parameter
 def run_exp_approx_test[simd_width: Int](ctx: DeviceContext):
-    alias dtype = DType.float32
-    alias length = 256
+    comptime dtype = DType.float32
+    comptime length = 256
 
     var in_device = ctx.enqueue_create_buffer[dtype](length)
     var out_device = ctx.enqueue_create_buffer[dtype](length)

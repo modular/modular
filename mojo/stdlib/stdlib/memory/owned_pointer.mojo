@@ -19,8 +19,6 @@ from memory import OwnedPointer
 ```
 """
 
-from memory import LegacyUnsafePointer as UnsafePointer
-
 
 @register_passable
 struct OwnedPointer[T: AnyType]:
@@ -38,7 +36,7 @@ struct OwnedPointer[T: AnyType]:
         T: The type to be stored in the `OwnedPointer`.
     """
 
-    var _inner: UnsafePointer[T, address_space = AddressSpace.GENERIC]
+    var _inner: UnsafePointer[Self.T, MutOrigin.external]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -53,7 +51,7 @@ struct OwnedPointer[T: AnyType]:
         Args:
             value: The value to move into the `OwnedPointer`.
         """
-        self._inner = UnsafePointer[_T].alloc(1)
+        self._inner = alloc[_T](1)
         self._inner.init_pointee_move(value^)
 
     fn __init__[_T: Copyable](out self: OwnedPointer[_T], *, copy_value: _T):
@@ -66,7 +64,7 @@ struct OwnedPointer[T: AnyType]:
         Args:
             copy_value: The value to explicitly copy into the `OwnedPointer`.
         """
-        self._inner = UnsafePointer[_T].alloc(1)
+        self._inner = alloc[_T](1)
         self._inner.init_pointee_copy(copy_value)
 
     fn __init__[
@@ -81,7 +79,7 @@ struct OwnedPointer[T: AnyType]:
         Args:
             value: The value to copy into the `OwnedPointer`.
         """
-        self._inner = UnsafePointer[_T].alloc(1)
+        self._inner = alloc[_T](1)
         self._inner.init_pointee_copy(value)
 
     fn __init__[
@@ -97,13 +95,17 @@ struct OwnedPointer[T: AnyType]:
         """
         self = OwnedPointer[_T](copy_value=other[])
 
-    fn __init__(out self, *, unsafe_from_raw_pointer: UnsafePointer[T]):
+    fn __init__(
+        out self,
+        *,
+        unsafe_from_raw_pointer: UnsafePointer[Self.T, MutOrigin.external],
+    ):
         """Construct a new `OwnedPointer` by taking ownership of the provided `UnsafePointer`.
 
         Args:
             unsafe_from_raw_pointer: The `UnsafePointer` to take ownership of.
 
-        ### Safety
+        Safety:
 
         This function is unsafe as the provided `UnsafePointer` must be initialize with a single valid `T`
         initialliy allocated with this `OwnedPointer`'s backing allocator.
@@ -113,9 +115,11 @@ struct OwnedPointer[T: AnyType]:
         After using this constructor, the `UnsafePointer` is assumed to be owned by this `OwnedPointer`.
         In particular, the destructor method will call `T.__del__` and `UnsafePointer.free`.
         """
-        self._inner = unsafe_from_raw_pointer
+        self._inner = unsafe_from_raw_pointer.unsafe_origin_cast[
+            MutOrigin.external
+        ]()
 
-    fn __del__(deinit self: OwnedPointer[T]):
+    fn __del__(deinit self: OwnedPointer[Self.T]):
         """Destroy the OwnedPointer[]."""
         self._inner.destroy_pointee()
         self._inner.free()
@@ -126,7 +130,7 @@ struct OwnedPointer[T: AnyType]:
 
     fn __getitem__(
         ref [AddressSpace.GENERIC]self,
-    ) -> ref [self, AddressSpace.GENERIC] T:
+    ) -> ref [self, AddressSpace.GENERIC] Self.T:
         """Returns a reference to the pointers's underlying data with parametric mutability.
 
         Returns:
@@ -143,13 +147,20 @@ struct OwnedPointer[T: AnyType]:
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn unsafe_ptr(self) -> UnsafePointer[T]:
-        """UNSAFE: returns the backing pointer for this `OwnedPointer`.
+    fn unsafe_ptr[
+        mut: Bool,
+        origin: Origin[mut], //,
+    ](ref [origin]self) -> UnsafePointer[Self.T, origin]:
+        """Returns the backing pointer for this `OwnedPointer`.
+
+        Parameters:
+            mut: Whether the pointer is mutable.
+            origin: The origin of the pointer.
 
         Returns:
             An UnsafePointer to the backing allocation for this `OwnedPointer`.
         """
-        return self._inner
+        return self._inner.mut_cast[mut]().unsafe_origin_cast[origin]()
 
     fn take[_T: Movable](deinit self: OwnedPointer[_T]) -> _T:
         """Move the value within the `OwnedPointer` out of it, consuming the
@@ -168,11 +179,11 @@ struct OwnedPointer[T: AnyType]:
         self._inner.free()
         return r^
 
-    fn steal_data(deinit self) -> UnsafePointer[T]:
+    fn steal_data(deinit self) -> UnsafePointer[Self.T, MutOrigin.external]:
         """Take ownership over the heap allocated pointer backing this
         `OwnedPointer`.
 
-        ### Safety
+        Safety:
 
         This function is not unsafe to call, as a memory leak is not
         considered unsafe.

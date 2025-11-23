@@ -29,10 +29,10 @@ from utils import StaticTuple
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_CURAND_LIBRARY_PATHS = List[Path](
+alias CUDA_CURAND_LIBRARY_PATHS: List[Path] = [
     "libcurand.so.10",
     "/usr/local/cuda/lib64/libcurand.so.10",
-)
+]
 
 
 fn _on_error_msg() -> Error:
@@ -202,7 +202,7 @@ fn curandGetProperty(
 
 @fieldwise_init
 @register_passable("trivial")
-struct curandRngType(EqualityComparable, Identifiable, Writable):
+struct curandRngType(Equatable, Identifiable, Writable):
     """
     CURAND generator types
     ."""
@@ -550,7 +550,7 @@ alias curandGenerator_t = UnsafePointer[curandGenerator_st]
 
 @fieldwise_init
 @register_passable("trivial")
-struct curandMethod(EqualityComparable, Identifiable, Writable):
+struct curandMethod(Equatable, Identifiable, Writable):
     """\\cond UNHIDE_ENUMS ."""
 
     var _value: Int8
@@ -706,7 +706,7 @@ alias curandMethod_t = curandMethod
 
 @fieldwise_init
 @register_passable("trivial")
-struct curandStatus(EqualityComparable, Identifiable, Writable):
+struct curandStatus(Equatable, Identifiable, Writable):
     """
     CURAND function call status types
     ."""
@@ -779,7 +779,7 @@ struct curandStatus(EqualityComparable, Identifiable, Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct curandDirectionVectorSet(EqualityComparable, Identifiable, Writable):
+struct curandDirectionVectorSet(Equatable, Identifiable, Writable):
     """
     CURAND choice of direction vector set
     ."""
@@ -1242,7 +1242,7 @@ alias curandDirectionVectors64_t = StaticTuple[UInt64, 64]
 
 @fieldwise_init
 @register_passable("trivial")
-struct curandOrdering(EqualityComparable, Identifiable, Writable):
+struct curandOrdering(Equatable, Identifiable, Writable):
     """
     CURAND ordering of results in memory
     ."""

@@ -95,6 +95,9 @@ fn grouped_matmul_sm90[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
+    # Early-exit for empty inputs to avoid creating invalid TMA descriptors.
+    if num_active_experts == 0 or a.dim(0) == 0 or c.dim(0) == 0:
+        return
     alias num_experts = b.shape.get[0]()
     alias N = b.shape.get[1]()
     alias K = b.shape.get[2]()

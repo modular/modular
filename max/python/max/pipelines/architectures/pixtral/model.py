@@ -37,11 +37,7 @@ from max.kv_cache import (
     load_kv_manager,
 )
 from max.nn import Module, ReturnLogits
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -329,12 +325,8 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             max_seq_len=self.calculate_max_seq_len(
                 self.pipeline_config, huggingface_config=self.huggingface_config
             ),
-            num_layers=self.get_num_layers(
-                huggingface_config=self.huggingface_config
-            ),
             devices=self.devices,
             available_cache_memory=available_cache_memory,
-            page_size=self.kv_cache_config.kv_cache_page_size,
             session=session,
         )
 
@@ -360,11 +352,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             max_seq_len=cls.calculate_max_seq_len(
                 pipeline_config, huggingface_config=huggingface_config
             ),
-            num_layers=cls.get_num_layers(
-                huggingface_config=huggingface_config
-            ),
             available_cache_memory=available_cache_memory,
-            devices=devices,
         )
 
     def _get_state_dict(
@@ -395,7 +383,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = self.kv_manager.input_symbols()
+        kv_inputs = self.kv_manager.get_symbolic_inputs()
 
         input_ids_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=DeviceRef.GPU()

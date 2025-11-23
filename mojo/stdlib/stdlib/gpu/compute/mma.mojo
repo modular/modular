@@ -289,16 +289,16 @@ fn ld_matrix[
     ]()
 
     # The register width is fixed at 4 Bytes (32 bits)
-    alias register_btypes = 4
-    alias register_width = register_btypes // size_of[dtype]()
-    alias num_registers = simd_width // register_width
+    comptime register_btypes = 4
+    comptime register_width = register_btypes // size_of[dtype]()
+    comptime num_registers = simd_width // register_width
 
     # Full intrinsic is base + suffix
-    alias base = "llvm.nvvm.ldmatrix.sync.aligned.m8n8"
+    comptime base = "llvm.nvvm.ldmatrix.sync.aligned.m8n8"
 
     @parameter
     fn get_suffix() -> String:
-        alias sfx = ".b16.p3"
+        comptime sfx = ".b16.p3"
         if transpose:
             return ".trans" + sfx
         return sfx
@@ -310,14 +310,14 @@ fn ld_matrix[
     # and input simd_width being equal to 4
     @parameter
     if num_registers == 1:
-        alias ins = base + ".x1" + get_suffix()
+        comptime ins = base + ".x1" + get_suffix()
         var r = llvm_intrinsic[ins, UInt32](ptr)
         var r0 = bitcast[dtype, register_width](r[0])
 
         d = rebind[SIMD[dtype, simd_width]](r0)
 
     elif num_registers == 2:
-        alias ins = base + ".x2" + get_suffix()
+        comptime ins = base + ".x2" + get_suffix()
         var r = llvm_intrinsic[ins, _RegisterPackType[UInt32, UInt32]](ptr)
         var r0 = bitcast[dtype, register_width](r[0])
         var r1 = bitcast[dtype, register_width](r[1])
@@ -329,7 +329,7 @@ fn ld_matrix[
             num_registers == 4,
             "no valid implementation of ldmatrix instruction",
         ]()
-        alias ins = base + ".x4" + get_suffix()
+        comptime ins = base + ".x4" + get_suffix()
         var r = llvm_intrinsic[
             ins, _RegisterPackType[UInt32, UInt32, UInt32, UInt32]
         ](ptr)
@@ -396,26 +396,26 @@ fn st_matrix[
 
     constrained[dtype in (DType.bfloat16, DType.float32), ""]()
 
-    alias num_matrices = simd_width
+    comptime num_matrices = simd_width
 
-    alias base = "stmatrix.sync.aligned"
+    comptime base = "stmatrix.sync.aligned"
 
     @parameter
     fn get_suffix() -> String:
-        alias sfx = ".m8n8"
+        comptime sfx = ".m8n8"
         if transpose:
             return ".trans" + sfx
         return sfx
 
     @parameter
     if num_matrices == 1:
-        alias ins = base + get_suffix() + ".x1.shared.b16 [$0], {$1};\n"
+        comptime ins = base + get_suffix() + ".x1.shared.b16 [$0], {$1};\n"
         inlined_assembly[ins, NoneType, constraints="r,r"](
             Int32(Int(ptr)), d[0]
         )
 
     elif num_matrices == 2:
-        alias ins = base + get_suffix() + ".x2.shared.b16 [$0], {$1, $2};\n"
+        comptime ins = base + get_suffix() + ".x2.shared.b16 [$0], {$1, $2};\n"
         inlined_assembly[ins, NoneType, constraints="r,r,r"](
             Int32(Int(ptr)), d[0], d[1]
         )
@@ -426,7 +426,7 @@ fn st_matrix[
             "no valid implementation of stmatrix instruction",
         ]()
 
-        alias ins = base + get_suffix() + ".x4.shared.b16 [$0], {$1, $2, $3, $4};\n"
+        comptime ins = base + get_suffix() + ".x4.shared.b16 [$0], {$1, $2, $3, $4};\n"
         inlined_assembly[ins, NoneType, constraints="r,r,r,r,r"](
             Int32(Int(ptr)), d[0], d[1], d[2], d[3]
         )
@@ -515,7 +515,7 @@ struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor):
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     ](
         smem_ptr: UnsafePointer[
-            Scalar[dtype],
+            Scalar[Self.dtype],
             address_space = AddressSpace.SHARED, **_,
         ],
     ) -> Self:
@@ -543,7 +543,7 @@ struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor):
             else:
                 return (4 - mode).cast[DType.int64]()
 
-        alias swizzle = _convert_swizzle_enum[swizzle_mode._value]()
+        comptime swizzle = _convert_swizzle_enum[swizzle_mode._value]()
         var offset = Int64(0)
         var stride_dim = Int64(stride_byte_offset)
         var lead_dim = Int64(leading_byte_offset)
@@ -729,10 +729,10 @@ fn wgmma_async[
         mat_b_desc.desc._mlir_value
     )
 
-    alias layout_a_value = _get_kgen_string[layout_a]()
-    alias layout_b_value = _get_kgen_string[layout_b]()
+    comptime layout_a_value = _get_kgen_string[layout_a]()
+    comptime layout_b_value = _get_kgen_string[layout_b]()
 
-    alias type_d_value = __mlir_attr.`#nvvm.wgmma_type<f32>` if c_dtype is DType.float32 else _dtype_to_nvvm_wgmma_type[
+    comptime type_d_value = __mlir_attr.`#nvvm.wgmma_type<f32>` if c_dtype is DType.float32 else _dtype_to_nvvm_wgmma_type[
         c_dtype, a_type
     ]()
 
@@ -865,9 +865,9 @@ fn wgmma_async[
         mat_b_desc.desc._mlir_value
     )
 
-    alias layout_a_value = _get_kgen_string[layout_a]()
-    alias layout_b_value = _get_kgen_string[layout_b]()
-    alias type_d_value = __mlir_attr.`#nvvm.wgmma_type<f32>` if c_dtype is DType.float32 else _dtype_to_nvvm_wgmma_type[
+    comptime layout_a_value = _get_kgen_string[layout_a]()
+    comptime layout_b_value = _get_kgen_string[layout_b]()
+    comptime type_d_value = __mlir_attr.`#nvvm.wgmma_type<f32>` if c_dtype is DType.float32 else _dtype_to_nvvm_wgmma_type[
         c_dtype, a_type
     ]()
 
@@ -988,7 +988,7 @@ fn wgmma_async[
     var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
         mat_b_desc.desc._mlir_value
     )
-    alias trans_b = 1 if layout_b == "row" else 0
+    comptime trans_b = 1 if layout_b == "row" else 0
 
     @parameter
     if (
@@ -1022,10 +1022,10 @@ fn wgmma_async[
             )
         )
 
-        alias input_reg_spec = _str_iota[n // 2, prefix="$"]()
-        alias input_constraints_prefix = "=f," * (n // 2)
-        alias input_constraints_suffix = _str_iota[n // 2, sep=","]()
-        alias constraints = input_constraints_prefix + "r,r,r,r,l,n,n,n,n," + input_constraints_suffix
+        comptime input_reg_spec = _str_iota[n // 2, prefix="$"]()
+        comptime input_constraints_prefix = "=f," * (n // 2)
+        comptime input_constraints_suffix = _str_iota[n // 2, sep=","]()
+        comptime constraints = input_constraints_prefix + "r,r,r,r,l,n,n,n,n," + input_constraints_suffix
 
         # fmt: off
         @parameter

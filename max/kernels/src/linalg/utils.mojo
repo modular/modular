@@ -699,9 +699,9 @@ fn packA_i8mm[
     a_packed_ptr: UnsafePointer[Scalar[a_type]],
 ):
     @always_inline
-    @__copy_capture(k)
-    @parameter
-    fn packA_helper[nrow: Int](offset: Int):
+    fn packA_helper[
+        nrow: Int
+    ](offset: Int) unified {var k, var t0, read a_ptr, read a_packed_ptr}:
         var kl = align_down(k, 8)
         var kh = align_up(k, 8)
         var j = t0 + offset
@@ -724,7 +724,7 @@ fn packA_i8mm[
                 t0,
             )
 
-    vectorize[packA_helper, 2](t1 - t0)
+    vectorize[2](t1 - t0, packA_helper)
 
 
 @fieldwise_init

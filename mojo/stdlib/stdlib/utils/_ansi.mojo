@@ -18,15 +18,15 @@ struct Color(ImplicitlyCopyable, Movable, Writable):
 
     var color: StaticString
 
-    alias NONE = Self("")
-    alias RED = Self("\033[91m")
-    alias GREEN = Self("\033[92m")
-    alias YELLOW = Self("\033[93m")
-    alias BLUE = Self("\033[94m")
-    alias MAGENTA = Self("\033[95m")
-    alias CYAN = Self("\033[96m")
-    alias BOLD_WHITE = Self("\033[1;97m")
-    alias END = Self("\033[0m")
+    comptime NONE = Self("")
+    comptime RED = Self("\033[91m")
+    comptime GREEN = Self("\033[92m")
+    comptime YELLOW = Self("\033[93m")
+    comptime BLUE = Self("\033[94m")
+    comptime MAGENTA = Self("\033[95m")
+    comptime CYAN = Self("\033[96m")
+    comptime BOLD_WHITE = Self("\033[1;97m")
+    comptime END = Self("\033[0m")
 
     fn write_to(self, mut writer: Some[Writer]):
         writer.write(self.color)
@@ -36,9 +36,9 @@ struct Color(ImplicitlyCopyable, Movable, Writable):
 struct Text[W: Writable, origin: ImmutOrigin, //, color: Color](Writable):
     """Colors the given writable with the given `Color`."""
 
-    var writable: Pointer[W, origin]
+    var writable: Pointer[Self.W, Self.origin]
 
-    fn __init__(out self, ref [origin]w: W):
+    fn __init__(out self, ref [Self.origin]w: Self.W):
         self.writable = Pointer(to=w)
 
     fn write_to(self, mut writer: Some[Writer]):

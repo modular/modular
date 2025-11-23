@@ -33,7 +33,7 @@ modular_py_binary(
     srcs = ["mandelbrot.py"],
     data = ["mandelbrot_mojo.mojo"],
     mojo_deps = [
-        "@mojo//:layout",
+        "//max:layout",
     ],
     target_compatible_with = ["//:has_gpu"],
     deps = [

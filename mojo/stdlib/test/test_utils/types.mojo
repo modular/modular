@@ -43,11 +43,11 @@ struct MoveOnly[T: Movable](Movable):
         T: Can be any type satisfying the Movable trait.
     """
 
-    var data: T
+    var data: Self.T
     """Test data payload."""
 
     @implicit
-    fn __init__(out self, var i: T):
+    fn __init__(out self, var i: Self.T):
         """Construct a MoveOnly providing the payload data.
 
         Args:
@@ -68,7 +68,9 @@ struct ObservableMoveOnly[actions_origin: ImmutOrigin](Movable):
         actions_origin: Origin of the actions list for tracking operations.
     """
 
-    alias _U = UnsafePointer[List[String], mut=False, origin=actions_origin]
+    comptime _U = UnsafePointer[
+        List[String], mut=False, origin = Self.actions_origin
+    ]
     var actions: Self._U
     """Pointer to list tracking lifecycle operations."""
     var value: Int
@@ -180,16 +182,16 @@ struct CopyCounter[
         T: The type of value to wrap and count copies for.
     """
 
-    var value: T
+    var value: Self.T
     """The wrapped value."""
     var copy_count: Int
     """Number of times this instance has been copied."""
 
     fn __init__(out self):
         """Constructs a new instance with default value."""
-        self = Self(T())
+        self = Self(Self.T())
 
-    fn __init__(out self, s: T):
+    fn __init__(out self, s: Self.T):
         """Constructs a new instance with the given value.
 
         Args:
@@ -230,13 +232,13 @@ struct MoveCounter[T: Copyable & Movable](Copyable, Movable):
         T: The type of value to wrap and count moves for.
     """
 
-    var value: T
+    var value: Self.T
     """The wrapped value."""
     var move_count: Int
     """Number of times this instance has been moved."""
 
     @implicit
-    fn __init__(out self, var value: T):
+    fn __init__(out self, var value: Self.T):
         """Constructs a new instance of this type. This initial move is not counted.
 
         Args:
@@ -310,7 +312,7 @@ struct TriviallyCopyableMoveCounter(Copyable, Movable):
     """Number of times this instance has been moved."""
 
     # Copying this type is trivial, it doesn't care to track copies.
-    alias __copyinit__is_trivial = True
+    comptime __copyinit__is_trivial = True
 
     fn __moveinit__(out self, deinit existing: Self):
         """Moves from an existing instance and increments the count.
@@ -337,7 +339,7 @@ struct DelRecorder[recorder_origin: ImmutOrigin](ImplicitlyCopyable, Movable):
     var value: Int
     """Value to record when destroyed."""
     var destructor_recorder: UnsafePointer[
-        List[Int], mut=False, origin=recorder_origin
+        List[Int], mut=False, origin = Self.recorder_origin
     ]
     """Pointer to list for recording destructor calls."""
 
@@ -369,7 +371,7 @@ struct ObservableDel[origin: MutOrigin = MutAnyOrigin](
         origin: Origin of the target pointer.
     """
 
-    var target: UnsafePointer[Bool, origin=origin]
+    var target: UnsafePointer[Bool, origin = Self.origin]
     """Pointer to boolean flag set on destruction."""
 
     fn __del__(deinit self):
@@ -393,9 +395,9 @@ struct DelCounter[counter_origin: ImmutOrigin, *, trivial_del: Bool = False](
         trivial_del: Whether the destructor is trivial.
     """
 
-    alias __del__is_trivial = trivial_del
+    comptime __del__is_trivial = Self.trivial_del
 
-    var counter: UnsafePointer[Int, mut=False, origin=counter_origin]
+    var counter: UnsafePointer[Int, mut=False, origin = Self.counter_origin]
     """Pointer to counter incremented on destruction."""
 
     fn __del__(deinit self):

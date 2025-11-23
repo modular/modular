@@ -40,10 +40,10 @@ struct _CUevent_st:
     pass
 
 
-alias CUcontext = UnsafePointer[_CUctx_st]
-alias CUstream = UnsafePointer[_CUstream_st]
-alias CUmodule = UnsafePointer[_CUmod_st]
-alias CUevent = UnsafePointer[_CUevent_st]
+comptime CUcontext = UnsafePointer[_CUctx_st]
+comptime CUstream = UnsafePointer[_CUstream_st]
+comptime CUmodule = UnsafePointer[_CUmod_st]
+comptime CUevent = UnsafePointer[_CUevent_st]
 
 
 # Accessor function to get access to the underlying CUcontext from a abstract DeviceContext.

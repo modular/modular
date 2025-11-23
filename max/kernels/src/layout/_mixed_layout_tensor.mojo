@@ -26,29 +26,29 @@ struct MixedLayoutTensor[
     stride_types: VariadicOf[MixedTupleLike], //,
     alignment: Int = align_of[dtype](),
 ]:
-    var ptr: UnsafePointer[Scalar[dtype]]
+    var ptr: UnsafePointer[Scalar[Self.dtype]]
 
     var layout: MixedLayout[
-        shape_types=shape_types,
-        stride_types=stride_types,
+        shape_types = Self.shape_types,
+        stride_types = Self.stride_types,
     ]
 
     fn __init__(
         out self,
-        ptr: UnsafePointer[Scalar[dtype]],
-        layout: MixedLayout[shape_types, stride_types],
+        ptr: UnsafePointer[Scalar[Self.dtype]],
+        layout: MixedLayout[Self.shape_types, Self.stride_types],
     ):
         self.ptr = ptr
         self.layout = layout
 
     fn __getitem__[
         index_type: MixedTupleLike
-    ](self, arg: index_type) -> Scalar[dtype]:
+    ](self, arg: index_type) -> Scalar[Self.dtype]:
         return self.ptr[self.layout(arg)]
 
     fn __setitem__[
         index_type: MixedTupleLike
-    ](self, arg: index_type, value: Scalar[dtype]):
+    ](self, arg: index_type, value: Scalar[Self.dtype]):
         self.ptr[self.layout(arg)] = value
 
 

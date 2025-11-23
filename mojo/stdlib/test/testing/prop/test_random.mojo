@@ -61,7 +61,7 @@ def test_rng_rand_scalar():
         DType.float32,
         DType.float64,
     ]:
-        alias scalar = Scalar[dtype]
+        comptime scalar = Scalar[dtype]
 
         test_dtype[dtype](scalar.MIN_FINITE, scalar.MAX_FINITE)
 

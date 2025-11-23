@@ -69,8 +69,7 @@ fn mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
     alias scale_y = (max_y - min_y) / height
 
     @always_inline
-    @parameter
-    fn compute_vector[simd_width: Int](col: Int):
+    fn compute_vector[simd_width: Int](col: Int) unified {mut}:
         """Each time we operate on a `simd_width` vector of pixels."""
         if col >= width:
             return
@@ -83,7 +82,7 @@ fn mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
 
     # We vectorize the call to compute_vector where call gets a chunk of
     # pixels.
-    vectorize[compute_vector, simd_width_of[float_type]()](width)
+    vectorize[simd_width_of[float_type]()](width, compute_vector)
 
 
 fn run_mandelbrot(ctx: DeviceContext) raises:

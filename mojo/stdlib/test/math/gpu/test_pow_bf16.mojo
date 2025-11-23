@@ -21,18 +21,18 @@ from testing import assert_almost_equal, TestSuite
 
 from utils import Index, IndexList
 
-alias type = DType.float32
+comptime type = DType.float32
 
 
 def run_elementwise[do_bfloat_exp: Bool](exponent: Int, ctx: DeviceContext):
-    alias length = 256
-    alias pack_size = simd_width_of[type, target = get_gpu_target()]()
+    comptime length = 256
+    comptime pack_size = simd_width_of[type, target = get_gpu_target()]()
 
     var in_device = ctx.enqueue_create_buffer[type](length)
     var out_device = ctx.enqueue_create_buffer[type](length)
 
     # Add a small constant to avoid 0^-pow.
-    alias epsilon = 0.001
+    comptime epsilon = 0.001
     with in_device.map_to_host() as in_host:
         for i in range(length):
             in_host[i] = (Scalar[type](i) - length // 2) + epsilon

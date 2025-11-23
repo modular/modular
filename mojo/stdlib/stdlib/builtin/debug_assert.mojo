@@ -26,9 +26,8 @@ from sys.intrinsics import assume
 from sys.param_env import env_get_string
 
 from builtin._location import __call_location, _SourceLocation
-from memory import LegacyUnsafePointer as UnsafePointer
 
-alias ASSERT_MODE = env_get_string["ASSERT", "safe"]()
+comptime ASSERT_MODE = env_get_string["ASSERT", "safe"]()
 
 
 @no_inline
@@ -161,7 +160,8 @@ fn debug_assert[
 
         message.nul_terminate()
 
-        _debug_assert_msg(message.data, message.pos, __call_location())
+        var span = message.as_span()
+        _debug_assert_msg(span.unsafe_ptr(), len(span), __call_location())
 
 
 @always_inline
@@ -269,7 +269,8 @@ fn debug_assert[
 
         message.nul_terminate()
 
-        _debug_assert_msg(message.data, message.pos, __call_location())
+        var span = message.as_span()
+        _debug_assert_msg(span.unsafe_ptr(), len(span), __call_location())
 
     elif _use_compiler_assume:
         assume(cond)
@@ -378,7 +379,7 @@ fn debug_assert[
 
 @no_inline
 fn _debug_assert_msg(
-    message: UnsafePointer[Byte, mut=False], length: Int, loc: _SourceLocation
+    message: UnsafePointer[mut=False, Byte], length: Int, loc: _SourceLocation
 ):
     """Aborts with (or prints) the given message and location.
 
@@ -397,7 +398,7 @@ fn _debug_assert_msg(
             abort()
         return
 
-    alias fmt = "At: %s:%llu:%llu: block: [%llu,%llu,%llu] thread: [%llu,%llu,%llu] Assert Error: %s\n"
+    comptime fmt = "At: %s:%llu:%llu: block: [%llu,%llu,%llu] thread: [%llu,%llu,%llu] Assert Error: %s\n"
 
     @parameter
     if is_nvidia_gpu():

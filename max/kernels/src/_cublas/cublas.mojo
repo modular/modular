@@ -32,7 +32,7 @@ alias cublasContext = NoneType
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_CUBLAS_LIBRARY_PATHS = List[Path](
+alias CUDA_CUBLAS_LIBRARY_PATHS: List[Path] = [
     "libcublas.so.13",
     "/usr/local/cuda-13.1/lib64/libcublas.so.13",
     "/usr/local/cuda-13.0/lib64/libcublas.so.13",
@@ -40,7 +40,7 @@ alias CUDA_CUBLAS_LIBRARY_PATHS = List[Path](
     "libcublas.so.12",
     "/usr/local/cuda-12.8/lib64/libcublas.so.12",
     "/usr/local/cuda/lib64/libcublas.so.12",
-)
+]
 
 
 fn _on_error_msg() -> Error:

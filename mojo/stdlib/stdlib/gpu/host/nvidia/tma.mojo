@@ -50,31 +50,31 @@ struct TensorMapDataType:
 
     var _value: Int32
 
-    alias UINT8 = Self(0)
+    comptime UINT8 = Self(0)
     """Unsigned 8-bit integer."""
-    alias UINT16 = Self(1)
+    comptime UINT16 = Self(1)
     """Unsigned 16-bit integer."""
-    alias UINT32 = Self(2)
+    comptime UINT32 = Self(2)
     """Unsigned 32-bit integer."""
-    alias INT32 = Self(3)
+    comptime INT32 = Self(3)
     """Signed 32-bit integer."""
-    alias UINT64 = Self(4)
+    comptime UINT64 = Self(4)
     """Unsigned 64-bit integer."""
-    alias INT64 = Self(5)
+    comptime INT64 = Self(5)
     """Signed 64-bit integer."""
-    alias FLOAT16 = Self(6)
+    comptime FLOAT16 = Self(6)
     """IEEE 754 16-bit floating-point."""
-    alias FLOAT32 = Self(7)
+    comptime FLOAT32 = Self(7)
     """IEEE 754 32-bit floating-point."""
-    alias FLOAT64 = Self(8)
+    comptime FLOAT64 = Self(8)
     """IEEE 754 64-bit floating-point."""
-    alias BFLOAT16 = Self(9)
+    comptime BFLOAT16 = Self(9)
     """Brain floating-point 16-bit format."""
-    alias FLOAT32_FTZ = Self(10)
+    comptime FLOAT32_FTZ = Self(10)
     """32-bit float with flush-to-zero for denormals."""
-    alias TFLOAT32 = Self(11)
+    comptime TFLOAT32 = Self(11)
     """TensorFloat-32 format."""
-    alias TFLOAT32_FTZ = Self(12)
+    comptime TFLOAT32_FTZ = Self(12)
     """TensorFloat-32 with flush-to-zero for denormals."""
 
     @staticmethod
@@ -116,18 +116,18 @@ struct TensorMapInterleave:
 
     var _value: Int32
 
-    alias INTERLEAVE_NONE = Self(0)
+    comptime INTERLEAVE_NONE = Self(0)
     """No interleaving."""
-    alias INTERLEAVE_16B = Self(1)
+    comptime INTERLEAVE_16B = Self(1)
     """16-byte interleaving."""
-    alias INTERLEAVE_32B = Self(2)
+    comptime INTERLEAVE_32B = Self(2)
     """32-byte interleaving."""
 
 
 @fieldwise_init("implicit")
 @register_passable("trivial")
 struct TensorMapSwizzle(
-    EqualityComparable,
+    Equatable,
     ImplicitlyCopyable,
     Intable,
     Movable,
@@ -143,13 +143,13 @@ struct TensorMapSwizzle(
 
     var _value: Int32
 
-    alias SWIZZLE_NONE = Self(0)
+    comptime SWIZZLE_NONE = Self(0)
     """No swizzling applied."""
-    alias SWIZZLE_32B = Self(1)
+    comptime SWIZZLE_32B = Self(1)
     """32-byte swizzle pattern."""
-    alias SWIZZLE_64B = Self(2)
+    comptime SWIZZLE_64B = Self(2)
     """64-byte swizzle pattern."""
-    alias SWIZZLE_128B = Self(3)
+    comptime SWIZZLE_128B = Self(3)
     """128-byte swizzle pattern."""
 
     @always_inline("nodebug")
@@ -234,13 +234,13 @@ struct TensorMapL2Promotion:
 
     var _value: Int32
 
-    alias NONE = Self(0)
+    comptime NONE = Self(0)
     """No L2 promotion."""
-    alias L2_64B = Self(1)
+    comptime L2_64B = Self(1)
     """Promote 64 bytes to L2 cache."""
-    alias L2_128B = Self(2)
+    comptime L2_128B = Self(2)
     """Promote 128 bytes to L2 cache."""
-    alias L2_256B = Self(3)
+    comptime L2_256B = Self(3)
     """Promote 256 bytes to L2 cache."""
 
 
@@ -255,9 +255,9 @@ struct TensorMapFloatOOBFill:
 
     var _value: Int32
 
-    alias NONE = Self(0)
+    comptime NONE = Self(0)
     """No special out-of-bounds handling."""
-    alias NAN_REQUEST_ZERO_FMA = Self(1)
+    comptime NAN_REQUEST_ZERO_FMA = Self(1)
     """Fill out-of-bounds values with NaN, request zero for FMA operations."""
 
 
@@ -277,7 +277,7 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable, Movable):
     var data: StaticTuple[UInt8, 128]
     """The opaque 128-byte descriptor data."""
 
-    alias device_type: AnyType = TMADescriptor
+    comptime device_type: AnyType = TMADescriptor
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self

@@ -214,8 +214,8 @@ def test_normal_mean_stddev():
     var rng = NormalRandom(seed=42, subsequence=0, offset=0)
 
     # Test with specific mean and stddev
-    alias test_mean: Float32 = 10.0
-    alias test_stddev: Float32 = 2.0
+    comptime test_mean: Float32 = 10.0
+    comptime test_stddev: Float32 = 2.0
 
     # Generate many samples
     var num_samples = 500

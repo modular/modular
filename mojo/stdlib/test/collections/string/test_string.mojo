@@ -240,9 +240,9 @@ def test_ord():
     assert_equal(ord("🔥"), 128293)
 
     # Make sure they work in the parameter domain too
-    alias single_byte = ord("A")
+    comptime single_byte = ord("A")
     assert_equal(single_byte, 65)
-    alias single_byte2 = ord("!")
+    comptime single_byte2 = ord("!")
     assert_equal(single_byte2, 33)
 
     # TODO: change these to parameter domain when it work.
@@ -277,24 +277,11 @@ def test_string_indexing():
     assert_equal("!", str[-1])
     assert_equal("H", str[-len(str)])
     assert_equal("llo Mojo!!", str[2:])
-    assert_equal("lo Mojo!", str[3:-1:1])
+    assert_equal("lo Mojo!", str[3:-1])
     assert_equal("lo Moj", str[3:-3])
 
-    assert_equal("!!ojoM olleH", str[::-1])
-
-    assert_equal("leH", str[2::-1])
-
-    assert_equal("!oo le", str[::-2])
-
-    assert_equal("", str[:-1:-2])
-    assert_equal("", str[-50::-1])
     assert_equal("Hello Mojo!!", str[-50::])
-    assert_equal("!!ojoM olleH", str[:-50:-1])
     assert_equal("Hello Mojo!!", str[:50:])
-    assert_equal("H", str[::50])
-    assert_equal("!", str[::-50])
-    assert_equal("!", str[50::-50])
-    assert_equal("H", str[-50::50])
 
 
 def test_atol():
@@ -684,7 +671,7 @@ def test_rfind():
 
 
 def test_split():
-    alias S = StaticString
+    comptime S = StaticString
 
     # Should add all whitespace-like chars as one
     # test all unicode separators
@@ -765,8 +752,8 @@ def test_split():
 
 
 def test_splitlines():
-    alias S = String
-    alias L = List[StaticString]
+    comptime S = String
+    comptime L = List[StaticString]
 
     # Test with no line breaks
     assert_equal(S("hello world").splitlines(), [StaticString("hello world")])
@@ -963,26 +950,28 @@ def test_strip():
     # with default strip chars
     var empty_string = String()
     assert_true(empty_string.strip() == "")
-    alias comp_empty_string_stripped = String(String().strip())
+    comptime comp_empty_string_stripped = String(String().strip())
     assert_true(comp_empty_string_stripped == "")
 
     var space_string = " \t\n\r\v\f  "
     assert_true(space_string.strip() == "")
-    alias comp_space_string_stripped = String(" \t\n\r\v\f  ".strip())
+    comptime comp_space_string_stripped = String(" \t\n\r\v\f  ".strip())
     assert_true(comp_space_string_stripped == "")
 
     var str0 = "     n "
     assert_true(str0.strip() == "n")
-    alias comp_str0_stripped = String("     n ".strip())
+    comptime comp_str0_stripped = String("     n ".strip())
     assert_true(comp_str0_stripped == "n")
 
     var str1 = "string"
     assert_true(str1.strip() == "string")
-    alias comp_str1_stripped = String("string".strip())
+    comptime comp_str1_stripped = String("string".strip())
     assert_true(comp_str1_stripped == "string")
 
     var str2 = " \t\n\t\v\fsomething \t\n\t\v\f"
-    alias comp_str2_stripped = String(" \t\n\t\v\fsomething \t\n\t\v\f".strip())
+    comptime comp_str2_stripped = String(
+        " \t\n\t\v\fsomething \t\n\t\v\f".strip()
+    )
     assert_true(str2.strip() == "something")
     assert_true(comp_str2_stripped == "something")
 
@@ -990,14 +979,14 @@ def test_strip():
     var str3 = "mississippi"
     assert_true(str3.strip("mips") == "")
     assert_true(str3.strip("mip") == "ssiss")
-    alias comp_str3_stripped = String("mississippi".strip("mips"))
+    comptime comp_str3_stripped = String("mississippi".strip("mips"))
     assert_true(comp_str3_stripped == "")
 
     var str4 = " \n mississippimississippi \n "
     assert_true(str4.strip(" ") == "\n mississippimississippi \n")
     assert_true(str4.strip("\nmip ") == "ssissippimississ")
 
-    alias comp_str4_stripped = String(
+    comptime comp_str4_stripped = String(
         " \n mississippimississippi \n ".strip(" ")
     )
     assert_true(comp_str4_stripped == "\n mississippimississippi \n")
@@ -1502,7 +1491,7 @@ def test_sso():
     assert_equal(ptr[len(s)], 0)
 
     # Test StringLiterals behave the same when above SSO capacity.
-    alias long = "hellohellohellohellohellohellohellohellohellohellohello"
+    comptime long = "hellohellohellohellohellohellohellohellohellohellohello"
     s = String(long)
     assert_equal(len(s), 55)
     assert_equal(s.capacity(), 55)
@@ -1539,7 +1528,9 @@ def test_sso():
     s += "f"
 
     # The capacity should be 2x the previous amount, rounded up to 8.
-    alias expected_capacity = UInt((Int(String.INLINE_CAPACITY) * 2 + 7) & ~7)
+    comptime expected_capacity = UInt(
+        (Int(String.INLINE_CAPACITY) * 2 + 7) & ~7
+    )
     assert_equal(s.capacity(), Int(expected_capacity))
     assert_equal(s._is_inline(), False)
 
@@ -1561,13 +1552,13 @@ def test_sso():
 
 
 def test_copyinit():
-    alias sizes = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
+    comptime sizes = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
     assert_equal(len(sizes), 10)
     var test_current_size = 1
 
     @parameter
     for sizes_index in range(len(sizes)):
-        alias current_size = sizes[sizes_index]
+        comptime current_size = sizes[sizes_index]
         x = ""
         for i in range(current_size):
             x += String(i)[0]

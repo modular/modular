@@ -46,7 +46,7 @@ struct _OptimizationLevel(ImplicitlyCopyable, Intable, Stringable, Writable):
         level: The integer value of the optimization level.
     """
 
-    alias level = env_get_int["__OPTIMIZATION_LEVEL", 4]()
+    comptime level = env_get_int["__OPTIMIZATION_LEVEL", 4]()
 
     fn __int__(self) -> Int:
         """Returns the integer value of the optimization level.
@@ -71,7 +71,7 @@ struct _OptimizationLevel(ImplicitlyCopyable, Intable, Stringable, Writable):
         return String.write(self)
 
 
-alias OptimizationLevel = _OptimizationLevel()
+comptime OptimizationLevel = _OptimizationLevel()
 """Represents the optimization level used during compilation."""
 
 # ===----------------------------------------------------------------------=== #
@@ -90,7 +90,7 @@ struct _DebugLevel(ImplicitlyCopyable, Movable, Stringable, Writable):
         level: The string value of the debug level.
     """
 
-    alias level = env_get_string["__DEBUG_LEVEL", "none"]()
+    comptime level = env_get_string["__DEBUG_LEVEL", "none"]()
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -107,14 +107,14 @@ struct _DebugLevel(ImplicitlyCopyable, Movable, Stringable, Writable):
         return String.write(self)
 
 
-alias DebugLevel = _DebugLevel()
+comptime DebugLevel = _DebugLevel()
 """Represents the debug level used during compilation."""
 
 # ===----------------------------------------------------------------------=== #
 # SanitizeAddress
 # ===----------------------------------------------------------------------=== #
 
-alias SanitizeAddress = is_defined["__SANITIZE_ADDRESS"]() and env_get_int[
+comptime SanitizeAddress = is_defined["__SANITIZE_ADDRESS"]() and env_get_int[
     "__SANITIZE_ADDRESS"
 ]() == 1
 """True if address sanitizer is enabled at compile-time"""

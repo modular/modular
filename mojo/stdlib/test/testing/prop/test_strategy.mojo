@@ -32,7 +32,7 @@ struct TestStruct(Copyable, Movable):
 
 @fieldwise_init
 struct TestStructStrategy(Movable, Strategy):
-    alias Value = TestStruct
+    comptime Value = TestStruct
 
     var min: Int
     var max: Int

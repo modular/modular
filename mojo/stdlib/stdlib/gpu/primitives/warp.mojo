@@ -55,11 +55,11 @@ from memory import bitcast
 from ..compute.tensor_ops import tc_reduce
 
 # TODO (#24457): support shuffles with width != 32
-alias _WIDTH_MASK = WARP_SIZE - 1
-alias _FULL_MASK = UInt(2**WARP_SIZE - 1)
+comptime _WIDTH_MASK = WARP_SIZE - 1
+comptime _FULL_MASK = UInt(2**WARP_SIZE - 1)
 
 # shfl.sync.up.b32 prepares this mask differently from other shuffle intrinsics
-alias _WIDTH_MASK_SHUFFLE_UP = 0
+comptime _WIDTH_MASK_SHUFFLE_UP = 0
 
 
 # ===-----------------------------------------------------------------------===#
@@ -228,7 +228,7 @@ fn _shuffle_apple_helper[
             ](mask, packed, offset)
             return bitcast[dtype, simd_width](packed_shuf)
     else:
-        alias name = "llvm.air.simd_shuffle" + (
+        comptime name = "llvm.air.simd_shuffle" + (
             "" if op == "indexed" else "_" + op
         )
         return llvm_intrinsic[name, SIMD[dtype, simd_width]](val, arg)
@@ -701,11 +701,11 @@ fn lane_group_reduce[
     """
     var res = val
 
-    alias limit = log2_floor(num_lanes)
+    comptime limit = log2_floor(num_lanes)
 
     @parameter
     for i in reversed(range(limit)):
-        alias offset = 1 << i
+        comptime offset = 1 << i
         res = func(res, shuffle(res, offset * stride))
 
     return res
@@ -918,7 +918,7 @@ fn prefix_sum[
 
     @parameter
     for i in range(log2_floor(WARP_SIZE)):
-        alias offset = 1 << i
+        comptime offset = 1 << i
         var n = shuffle_up(res, offset)
         if lane >= UInt(offset):
             res += n
@@ -944,7 +944,7 @@ fn _has_redux_f32_support[dtype: DType, simd_width: Int]() -> Bool:
 
 @always_inline("nodebug")
 fn _redux_f32_max_min[direction: StaticString](val: SIMD) -> type_of(val):
-    alias instruction = StaticString("redux.sync.") + direction + ".NaN.f32"
+    comptime instruction = StaticString("redux.sync.") + direction + ".NaN.f32"
     return inlined_assembly[
         instruction + " $0, $1, $2;",
         type_of(val),
@@ -1216,7 +1216,9 @@ fn _vote_amd_helper[ret_type: DType](vote: Bool) -> Scalar[ret_type]:
         "Unsupported return type",
     ]()
 
-    alias instruction = String("llvm.amdgcn.ballot.i", bit_width_of[ret_type]())
+    comptime instruction = String(
+        "llvm.amdgcn.ballot.i", bit_width_of[ret_type]()
+    )
     return llvm_intrinsic[
         instruction,
         Scalar[ret_type],

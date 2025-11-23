@@ -132,7 +132,9 @@ struct TMALoad[
     tile_shape: IntTuple,
     swizzle_mode: SwizzleMode = SwizzleMode.NONE,
 ](CopyPolicy):
-    var descriptor: TMADescriptor[dtype, tile_shape, swizzle_mode]
+    var descriptor: TMADescriptor[
+        Self.dtype, Self.tile_shape, Self.swizzle_mode
+    ]
 
     alias smem_alignment = 128
 
@@ -145,11 +147,11 @@ struct TMALoad[
     fn get_type_name() -> String:
         return String(
             "TMALoad[dtype = ",
-            dtype,
+            Self.dtype,
             ", tile_shape = ",
-            tile_shape,
+            Self.tile_shape,
             ", swizzle_mode = ",
-            swizzle_mode,
+            Self.swizzle_mode,
             "]",
         )
 
@@ -160,15 +162,20 @@ struct TMALoad[
     @always_inline
     @implicit
     fn __init__(
-        out self, ref descriptor: TMADescriptor[dtype, tile_shape, swizzle_mode]
+        out self,
+        ref descriptor: TMADescriptor[
+            Self.dtype, Self.tile_shape, Self.swizzle_mode
+        ],
     ):
         self.descriptor = descriptor
 
     @staticmethod
     fn verify_destination_tensor(dst: LayoutTensor):
         constrained[
-            dtype == dst.dtype,
-            String("type mismatch: expected ", dtype, " passed in ", dst.dtype),
+            Self.dtype == dst.dtype,
+            String(
+                "type mismatch: expected ", Self.dtype, " passed in ", dst.dtype
+            ),
         ]()
 
         constrained[
@@ -211,7 +218,7 @@ struct TMALoad[
         @parameter
         for i in range(len(shape)):
             alias current_shape = product(shape[i])
-            alias current_stride = product(stride[i]) * size_of[dtype]()
+            alias current_stride = product(stride[i]) * size_of[Self.dtype]()
 
             @parameter
             if current_shape > 1 and current_stride % Self.smem_alignment != 0:
@@ -221,7 +228,7 @@ struct TMALoad[
 
     @staticmethod
     fn get_2D_smem_layout[m: Int, n: Int]() -> Layout:
-        alias desc_layout = Layout.row_major(tile_shape)
+        alias desc_layout = Layout.row_major(Self.tile_shape)
 
         alias blocked_smem_layout = blocked_product(
             desc_layout,
@@ -238,7 +245,9 @@ struct TMALoad[
     fn get_repeat_pattern[
         dst_layout: Layout, check_tma_compatibility: Bool = True
     ]() -> Layout:
-        alias descriptor_layout = Layout(tile_shape)  # uses column-major layout
+        alias descriptor_layout = Layout(
+            Self.tile_shape
+        )  # uses column-major layout
         alias repeat_pattern = zipped_divide(dst_layout, descriptor_layout)[1]
 
         constrained[

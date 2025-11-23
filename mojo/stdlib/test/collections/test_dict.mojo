@@ -41,7 +41,7 @@ def test_dict_literals():
 
 
 def test_dict_fromkeys():
-    alias keys = [String("a"), "b"]
+    comptime keys = [String("a"), "b"]
     var expected_dict = Dict[String, Int]()
     expected_dict["a"] = 1
     expected_dict["b"] = 1
@@ -57,7 +57,7 @@ def test_dict_fromkeys():
 
 
 def test_dict_fromkeys_optional():
-    alias keys = [String("a"), "b", "c"]
+    comptime keys = [String("a"), "b", "c"]
     var expected_dict: Dict[String, Optional[Int]] = {
         "a": None,
         "b": None,
@@ -645,7 +645,7 @@ fn test_dict_setdefault() raises:
 
 
 def test_compile_time_dict():
-    alias N = 10
+    comptime N = 10
 
     fn _get_dict() -> Dict[String, Int32, default_comp_time_hasher]:
         var res = Dict[String, Int32, default_comp_time_hasher]()
@@ -653,17 +653,17 @@ def test_compile_time_dict():
             res[String(i)] = i
         return res^
 
-    alias my_dict = _get_dict()
+    comptime my_dict = _get_dict()
 
     @parameter
     for i in range(N):
-        alias val = my_dict.get(String(i)).value()
+        comptime val = my_dict.get(String(i)).value()
         assert_equal(val, i)
 
 
 # FIXME: Dictionaries should be equatable when their keys/values are.
 def is_equal[
-    K: KeyElement, V: EqualityComparable & Copyable & Movable
+    K: KeyElement, V: Equatable & Copyable & Movable
 ](a: Dict[K, V], b: Dict[K, V]) -> Bool:
     if len(a) != len(b):
         return False

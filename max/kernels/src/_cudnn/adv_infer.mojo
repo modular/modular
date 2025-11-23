@@ -35,13 +35,13 @@ from .infer import (
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_CUDNN_ADV_INFER_LIBRARY_PATHS = List[Path](
+alias CUDA_CUDNN_ADV_INFER_LIBRARY_PATHS: List[Path] = [
     "libcudnn_adv_infer.so",
     "libcudnn_adv_infer.so.9",
     "libcudnn_adv_infer.so.8",
     "/usr/lib/x86_64-linux-gnu/libcudnn_adv_infer.so.9",
     "/usr/lib/x86_64-linux-gnu/libcudnn_adv_infer.so.8",
-)
+]
 
 alias CUDA_CUDNN_ADV_INFER_LIBRARY = _Global[
     "CUDA_CUDNN_ADV_INFER_LIBRARY", _init_dylib
@@ -225,7 +225,7 @@ fn cudnnGetRNNDescriptor_v6(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnForwardMode_t(EqualityComparable, Identifiable, Writable):
+struct cudnnForwardMode_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_FWD_MODE_INFERENCE = Self(0)
     alias CUDNN_FWD_MODE_TRAINING = Self(1)
@@ -779,7 +779,7 @@ fn cudnnGetRNNDescriptor_v8(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnSeqDataAxis_t(EqualityComparable, Identifiable, Writable):
+struct cudnnSeqDataAxis_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_SEQDATA_TIME_DIM = Self(0)
     alias CUDNN_SEQDATA_BATCH_DIM = Self(1)

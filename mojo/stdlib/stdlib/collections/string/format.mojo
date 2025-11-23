@@ -105,9 +105,11 @@ struct _FormatCurlyEntry(ImplicitlyCopyable, Movable):
     var format_spec: Optional[_FormatSpec]
     """The format specifier."""
     # TODO: ord("a") conversion flag not supported yet
-    alias supported_conversion_flags = SIMD[DType.uint8, 2](ord("s"), ord("r"))
+    comptime supported_conversion_flags = SIMD[DType.uint8, 2](
+        ord("s"), ord("r")
+    )
     """Currently supported conversion flags: `__str__` and `__repr__`."""
-    alias _FieldVariantType = Variant[String, Int, NoneType, Bool]
+    comptime _FieldVariantType = Variant[String, Int, NoneType, Bool]
     """Purpose of the `Variant` `Self.field`:
 
     - `Int` for manual indexing: (value field contains `0`).
@@ -119,7 +121,7 @@ struct _FormatCurlyEntry(ImplicitlyCopyable, Movable):
     var field: Self._FieldVariantType
     """Store the substitution field. See `Self._FieldVariantType` docstrings for
     more details."""
-    alias _args_t = VariadicPack[element_trait=_CurlyEntryFormattable, *_]
+    comptime _args_t = VariadicPack[element_trait=_CurlyEntryFormattable, *_]
     """Args types that are formattable by curly entry."""
 
     fn __init__(
@@ -194,7 +196,7 @@ struct _FormatCurlyEntry(ImplicitlyCopyable, Movable):
         Returns:
             The result.
         """
-        alias len_pos_args = type_of(args).__len__()
+        comptime len_pos_args = type_of(args).__len__()
         ref entries, size_estimation = Self._create_entries(
             fmt_src, len_pos_args
         )
@@ -231,10 +233,10 @@ struct _FormatCurlyEntry(ImplicitlyCopyable, Movable):
         var raised_manual_index = Optional[Int](None)
         var raised_automatic_index = Optional[Int](None)
         var raised_kwarg_field = Optional[String](None)
-        alias `}` = UInt8(ord("}"))
-        alias `{` = UInt8(ord("{"))
-        alias l_err = "there is a single curly { left unclosed or unescaped"
-        alias r_err = "there is a single curly } left unclosed or unescaped"
+        comptime `}` = UInt8(ord("}"))
+        comptime `{` = UInt8(ord("{"))
+        comptime l_err = "there is a single curly { left unclosed or unescaped"
+        comptime r_err = "there is a single curly } left unclosed or unescaped"
 
         var entries = List[Self]()
         var start = Optional[Int](None)
@@ -402,8 +404,8 @@ struct _FormatCurlyEntry(ImplicitlyCopyable, Movable):
         # performance benefits. This also needs to be able to check if the given
         # args[i] conforms to the trait needed by the conversion_flag to avoid
         # needing to constraint that every type needs to conform to every trait.
-        alias r_value = UInt8(ord("r"))
-        alias s_value = UInt8(ord("s"))
+        comptime r_value = UInt8(ord("r"))
+        comptime s_value = UInt8(ord("s"))
         # alias a_value = UInt8(ord("a")) # TODO
 
         @parameter
@@ -441,9 +443,9 @@ struct _FormatCurlyEntry(ImplicitlyCopyable, Movable):
                         self.format_spec.value().format(res, args[i])
                         return
                     else:
-                        alias argnum = "Argument number: "
-                        alias does_not = " does not implement the trait "
-                        alias needed = "needed for conversion_flag: "
+                        comptime argnum = "Argument number: "
+                        comptime does_not = " does not implement the trait "
+                        comptime needed = "needed for conversion_flag: "
                         raise Error(
                             String(
                                 argnum, i, does_not, needed, _chr_ascii(flag)
@@ -471,7 +473,7 @@ struct _FormatCurlyEntry(ImplicitlyCopyable, Movable):
 # ===-----------------------------------------------------------------------===#
 
 
-alias _CurlyEntryFormattable = Stringable & Representable
+comptime _CurlyEntryFormattable = Stringable & Representable
 """This trait is used by the `format()` method to support format specifiers.
 Currently, it is a composition of both `Stringable` and `Representable`
 traits i.e. a type to be formatted must implement both. In the future this
@@ -708,7 +710,7 @@ struct _FormatSpec(ImplicitlyCopyable, Movable):
         # >>> precision = 4
         # >>> value = decimal.Decimal('12.34567')
         # >>> 'result: {value:{width}.{precision}}'.format(...)
-        alias `:` = UInt8(ord(":"))
+        comptime `:` = UInt8(ord(":"))
         var f_len = fmt_str.byte_length()
         var f_ptr = fmt_str.unsafe_ptr()
         var colon_idx = -1

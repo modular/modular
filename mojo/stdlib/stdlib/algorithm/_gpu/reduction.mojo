@@ -37,6 +37,7 @@ from memory import stack_allocation
 from utils import IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
+from sys import env_get_int
 
 
 @always_inline
@@ -48,7 +49,7 @@ fn block_reduce[
     dtype: DType,
     simd_width: Int,
 ](val: SIMD[dtype, simd_width], init: Scalar[dtype]) -> Scalar[dtype]:
-    alias num_reductions = 1
+    comptime num_reductions = 1
 
     @always_inline
     @parameter
@@ -177,7 +178,7 @@ fn row_reduce[
     init: Scalar[dtype],
     row_size: Int,
 ) -> Scalar[accum_type]:
-    alias num_reductions = 1
+    comptime num_reductions = 1
 
     @always_inline
     @parameter
@@ -374,7 +375,7 @@ fn small_reduce_kernel[
     if PDLLevel() > PDLLevel.OFF:
         wait_on_dependent_grids()
 
-    alias warps_per_block = BLOCK_SIZE // WARP_SIZE
+    comptime warps_per_block = BLOCK_SIZE // WARP_SIZE
 
     # grid stride loop over rows
     # each block reduces as many rows as warps,
@@ -469,14 +470,14 @@ fn reduce_launch[
     init: StaticTuple[Scalar[dtype], num_reductions],
     ctx: DeviceContext,
 ) raises:
-    alias BLOCK_SIZE = 128
-    alias register_width = 32
-    alias sm_count = ctx.default_device_info.sm_count
+    comptime BLOCK_SIZE = env_get_int["MOJO_REDUCTION_BLOCK_SIZE", 128]()
+    comptime register_width = 32
+    comptime sm_count = ctx.default_device_info.sm_count
 
-    alias packing_factor = 1
+    comptime packing_factor = 1
 
     var num_rows = shape.flattened_length() // shape[axis] // packing_factor
-    alias sm_overprovision_factor = 32  # tunable
+    comptime sm_overprovision_factor = 32  # tunable
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
 
     # Do not launch gpu kernels with grid_dim = 0
@@ -486,7 +487,7 @@ fn reduce_launch[
     # When the row size is smaller than the warp so we can use
     # multiple warps within a block to reduce rows and save shared memory sync
     if shape[axis] < WARP_SIZE:
-        alias kernel = small_reduce_kernel[
+        comptime kernel = small_reduce_kernel[
             rank,
             num_reductions,
             BLOCK_SIZE,
@@ -505,7 +506,7 @@ fn reduce_launch[
             attributes=pdl_launch_attributes(),
         )
     else:
-        alias kernel = reduce_kernel[
+        comptime kernel = reduce_kernel[
             rank,
             num_reductions,
             BLOCK_SIZE,

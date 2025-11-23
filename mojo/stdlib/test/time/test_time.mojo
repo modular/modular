@@ -47,7 +47,7 @@ fn time_capturing_function(iters: Int) -> Int:
 
 
 def test_time():
-    alias ns_per_sec = 1_000_000_000
+    comptime ns_per_sec = 1_000_000_000
 
     assert_true(perf_counter() > 0)
     assert_true(perf_counter_ns() > 0)

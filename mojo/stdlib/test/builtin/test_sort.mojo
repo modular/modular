@@ -65,7 +65,7 @@ fn assert_sorted[T: Copyable & Movable & Comparable](mut list: List[T]) raises:
 
 
 fn test_sort_small_3() raises:
-    alias length = 3
+    comptime length = 3
 
     var list = List[Int]()
 
@@ -85,7 +85,7 @@ fn test_sort_small_3() raises:
 
 
 fn test_sort_small_5() raises:
-    alias length = 5
+    comptime length = 5
 
     var list = List[Int]()
 
@@ -113,7 +113,7 @@ def test_sort0():
 
 
 fn test_sort2() raises:
-    alias length = 2
+    comptime length = 2
     var list = List[Int]()
 
     list.append(-1)
@@ -136,7 +136,7 @@ fn test_sort2() raises:
 
 
 fn test_sort3() raises:
-    alias length = 3
+    comptime length = 3
     var list = List[Int]()
 
     list.append(-1)
@@ -161,7 +161,7 @@ fn test_sort3() raises:
 
 
 fn test_sort3_dupe_elements() raises:
-    alias length = 3
+    comptime length = 3
 
     fn test[
         cmp_fn: fn (Int, Int) capturing [_] -> Bool,
@@ -185,7 +185,7 @@ fn test_sort3_dupe_elements() raises:
 
 
 fn test_sort4() raises:
-    alias length = 4
+    comptime length = 4
     var list = List[Int]()
 
     list.append(-1)
@@ -212,7 +212,7 @@ fn test_sort4() raises:
 
 
 fn test_sort5() raises:
-    alias length = 5
+    comptime length = 5
     var list = List[Int]()
 
     for i in range(5):
@@ -238,7 +238,7 @@ fn test_sort5() raises:
 
 
 fn test_sort_reverse() raises:
-    alias length = 5
+    comptime length = 5
     var list = List[Int](capacity=length)
 
     for i in range(length):
@@ -252,7 +252,7 @@ fn test_sort_reverse() raises:
 
 
 fn test_sort_semi_random() raises:
-    alias length = 8
+    comptime length = 8
     var list = List[Int](capacity=length)
 
     for i in range(length):
@@ -269,7 +269,7 @@ fn test_sort_semi_random() raises:
 
 
 fn test_sort9() raises:
-    alias length = 9
+    comptime length = 9
     var list = List[Int](capacity=length)
 
     for i in range(length):
@@ -283,7 +283,7 @@ fn test_sort9() raises:
 
 
 fn test_sort103() raises:
-    alias length = 103
+    comptime length = 103
     var list = List[Int](capacity=length)
 
     for i in range(length):
@@ -306,7 +306,7 @@ fn test_sort103() raises:
 
 
 fn test_sort_any_103() raises:
-    alias length = 103
+    comptime length = 103
     var list = List[Float32](capacity=length)
 
     for i in range(length):
@@ -319,7 +319,7 @@ fn test_sort_any_103() raises:
 
 
 fn test_quick_sort_repeated_val() raises:
-    alias length = 36
+    comptime length = 36
     var list = List[Float32](capacity=length)
 
     for i in range(0, length // 4):
@@ -489,7 +489,7 @@ struct MyStruct(ImplicitlyCopyable, Movable):
 
 
 fn test_sort_custom() raises:
-    alias length = 103
+    comptime length = 103
 
     var list = List[MyStruct](capacity=length)
 
@@ -628,7 +628,10 @@ fn test_sort_scalar() raises:
     sort(listi32)
     assert_sorted(listi32)
 
-    var listf32 = random_numbers[DType.float32](50, max=Int(Float32.MAX))
+    # Note: We'd use Float32.MAX_FINITE here, but it doesn't fit in Int
+    # (random_numbers takes Int max). Float32.MAX returns inf, so we use Int.MAX
+    # which is safe and provides good coverage (9.2e18 >> typical float32 values)
+    var listf32 = random_numbers[DType.float32](50, max=Int.MAX)
     sort(listf32)
     assert_sorted(listf32)
 

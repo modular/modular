@@ -119,10 +119,11 @@ class TokenGenerationScheduler(Scheduler):
             SchedulerProgress: Indicates whether work was performed in this iteration.
         """
         # Drain the request queue and add to CE requests
+        # We are starting the time here to include the time it takes to drain the request queue, in batch creation time.
+        t0 = time.monotonic()
         self._retrieve_pending_requests()
 
         # Construct the batch to execute
-        t0 = time.monotonic()
         inputs = self.batch_constructor.construct_batch()
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0

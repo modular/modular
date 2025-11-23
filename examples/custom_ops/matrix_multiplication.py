@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/tutorials/custom-ops-matmul.mdx
+# DOC: max/develop/custom-ops-matmul.mdx
 
 from pathlib import Path
 

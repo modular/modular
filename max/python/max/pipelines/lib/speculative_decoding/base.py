@@ -10,20 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# mypy: disable-error-code="import-not-found"
-"""Speculative Decoding Text Generation Pipeline"""
+"""Speculative decoding pipelines with factory function and implementations."""
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from abc import ABC
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, final
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Tensor, load_devices, scan_available_devices
-from max.dtype import DType
+from max.driver import Device, Tensor, load_devices, scan_available_devices
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import (
@@ -35,7 +33,6 @@ from max.graph.weights import (
 from max.interfaces import (
     GenerationStatus,
     Pipeline,
-    PipelineOutputsDict,
     PipelineTokenizer,
     RequestID,
     TextGenerationInputs,
@@ -44,32 +41,26 @@ from max.interfaces import (
 )
 from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
 from max.nn import ReturnLogits
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheInputsSequence,
-)
 from max.pipelines.core import TextContext
 from max.profiler import traced
 from transformers import AutoConfig
 
-from .config_enums import RepoType
-from .hf_utils import download_weight_files
-from .interfaces import (
+from ..config_enums import RepoType
+from ..hf_utils import download_weight_files
+from ..interfaces import (
     GenerateMixin,
-    ModelInputs,
     ModelOutputs,
     PipelineModel,
 )
-from .ragged_token_merger import ragged_token_merger
-from .sampling import (
-    apply_logits_processors,
+from ..sampling import (
     rejection_sampler_with_residuals,
     token_sampler,
 )
-from .utils import upper_bounded_default
+from ..utils import upper_bounded_default
+from .ragged_token_merger import ragged_token_merger
 
 if TYPE_CHECKING:
-    from .config import PipelineConfig
+    from ..config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -145,12 +136,12 @@ class SpeculativeDecodingMetrics:
         )
 
 
-@final
-class SpeculativeDecodingTextGenerationPipeline(
+class SpeculativeDecodingPipelineBase(
     Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
     GenerateMixin[TextContext, TextGenerationRequest],
+    ABC,
 ):
-    """Generalized token generator pipeline with speculative decoding."""
+    """Base class for speculative decoding pipelines with shared logic."""
 
     def __init__(
         self,
@@ -163,6 +154,9 @@ class SpeculativeDecodingTextGenerationPipeline(
             npt.NDArray[np.integer[Any]],
             TextGenerationRequest,
         ],
+        draft_pipeline_model: type[PipelineModel[TextContext]] | None = None,
+        draft_weight_adapters: dict[WeightsFormat, WeightsAdapter]
+        | None = None,
     ) -> None:
         self._pipeline_config = pipeline_config
         self._tokenizer = tokenizer
@@ -195,7 +189,7 @@ class SpeculativeDecodingTextGenerationPipeline(
                 else:
                     self._eos_token_id = set([eos_token_id])
             else:
-                msg = f"eos_token_id in huggingface_config is neither int or list: {eos_tokens}"
+                msg = f"eos_token_id in huggingface_config, is neither int or list: {eos_tokens}"
                 logger.warning(msg)
                 self._eos_token_id = set([eos_token_id])
         else:
@@ -315,14 +309,7 @@ class SpeculativeDecodingTextGenerationPipeline(
             )
             draft_encoding = encodings[0]
 
-        # Get weight files
-        weight_files = draft_hf_repo.files_for_encoding(encoding=draft_encoding)
-
-        if not weight_files:
-            raise ValueError("could not identify weight_files for draft model.")
-
-        _draft_weights_format = list(weight_files.keys())[0]
-
+        # Use already-resolved weight paths from draft_model_config
         draft_weight_paths: list[Path] = []
         if (
             self.pipeline_config.draft_model_config.huggingface_weight_repo.repo_type
@@ -331,7 +318,10 @@ class SpeculativeDecodingTextGenerationPipeline(
             # Download weight files if not existent.
             draft_weight_paths = download_weight_files(
                 huggingface_model_id=self.pipeline_config.draft_model_config.model_path,
-                filenames=[str(x) for x in weight_files[_draft_weights_format]],
+                filenames=[
+                    str(x)
+                    for x in self.pipeline_config.draft_model_config.weight_path
+                ],
                 revision=self.pipeline_config.draft_model_config.huggingface_weight_revision,
                 max_workers=8,
             )
@@ -343,8 +333,23 @@ class SpeculativeDecodingTextGenerationPipeline(
             ]
 
         draft_weights = load_weights(draft_weight_paths)
+        _draft_weights_format = weights_format(draft_weight_paths)
+        assert self.pipeline_config._speculative_config is not None
 
-        self._draft_model = pipeline_model(
+        # Use draft model's pipeline model and weight adapters if provided
+        # Otherwise fall back to target model's (for backward compatibility)
+        actual_draft_pipeline_model = (
+            draft_pipeline_model
+            if draft_pipeline_model is not None
+            else pipeline_model
+        )
+        actual_draft_weight_adapters = (
+            draft_weight_adapters
+            if draft_weight_adapters is not None
+            else weight_adapters
+        )
+
+        self._draft_model = actual_draft_pipeline_model(
             pipeline_config=self.pipeline_config,
             session=draft_session,
             huggingface_config=draft_config,
@@ -352,7 +357,7 @@ class SpeculativeDecodingTextGenerationPipeline(
             devices=self.draft_devices,
             kv_cache_config=self.pipeline_config.draft_model_config.kv_cache_config,
             weights=draft_weights,
-            adapter=weight_adapters.get(_draft_weights_format),
+            adapter=actual_draft_weight_adapters.get(_draft_weights_format),
             return_logits=ReturnLogits.LAST_TOKEN,
         )
 
@@ -395,25 +400,12 @@ class SpeculativeDecodingTextGenerationPipeline(
             )
         )
 
-    @property
-    def pipeline_config(self) -> PipelineConfig:
-        return self._pipeline_config
+        self._draft_session = draft_session
+        self._target_session = target_session
 
-    @property
-    def tokenizer(
-        self,
-    ) -> PipelineTokenizer[
-        TextContext,
-        npt.NDArray[np.integer[Any]],
-        TextGenerationRequest,
-    ]:
-        return self._tokenizer
-
-    @property
-    def kv_managers(
-        self,
-    ) -> list[PagedKVCacheManager | NullKVCacheManager]:
-        return [self._draft_model.kv_manager, self._target_model.kv_manager]
+        self._num_draft_steps = (
+            self.pipeline_config._speculative_config.num_speculative_tokens
+        )
 
     @traced
     def calculate_num_steps(
@@ -438,67 +430,63 @@ class SpeculativeDecodingTextGenerationPipeline(
 
         return min(num_available_steps, num_steps)
 
-    @traced
-    def prepare_batch(
-        self,
-        model: PipelineModel[TextContext],
-        batch: list[TextContext],
-        num_steps: int,
-        return_n_logits: int,
-        is_draft: bool = False,
-        draft_inputs: ModelInputs | None = None,
-        merged_draft_tokens: Tensor | None = None,
-        merged_draft_offsets: Tensor | None = None,
-    ) -> tuple[ModelInputs, int]:
-        # Claim cache rows
-        for i, context in enumerate(batch):  # noqa: B007
-            # Calculate num_steps.
-            num_steps = self.calculate_num_steps(
-                model, model.huggingface_config, num_steps, context, is_draft
-            )
-            if not model.kv_manager.contains(context.request_id):
-                model.kv_manager.external_claim(context.request_id)
+    @property
+    def pipeline_config(self) -> PipelineConfig:
+        return self._pipeline_config
 
-        kv_cache_inputs = model.kv_manager.fetch(batch, num_steps)
-        if is_draft:
-            return (
-                model.prepare_initial_token_inputs(
-                    context_batch=batch,
-                    kv_cache_inputs=KVCacheInputsSequence(
-                        kv_cache_inputs=kv_cache_inputs
-                    ),
-                    return_n_logits=return_n_logits,
-                ),
-                num_steps,
-            )
-        else:
-            assert merged_draft_tokens is not None
-            assert merged_draft_offsets is not None
-            assert draft_inputs is not None
-            kv_cache_updated_inputs: KVCacheInputs
-            if isinstance(kv_cache_inputs, Sequence):
-                kv_cache_updated_inputs = KVCacheInputsSequence(
-                    kv_cache_inputs=kv_cache_inputs,
-                )
-            else:
-                kv_cache_updated_inputs = kv_cache_inputs
-            draft_inputs.update(
-                tokens=merged_draft_tokens,
-                input_row_offsets=merged_draft_offsets,
-                signal_buffers=getattr(
-                    self._target_model, "signal_buffers", []
-                ),
-                kv_cache_inputs=kv_cache_updated_inputs,
-                return_n_logits=Tensor.from_numpy(
-                    np.array([return_n_logits], dtype=np.int64)
-                ),
-            )
-            return (draft_inputs, num_steps)
+    @property
+    def tokenizer(
+        self,
+    ) -> PipelineTokenizer[
+        TextContext,
+        npt.NDArray[np.integer[Any]],
+        TextGenerationRequest,
+    ]:
+        return self._tokenizer
+
+    def _create_sampling_parameters(
+        self,
+        batch: list[TextContext],
+        device: Device,
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+        """Create sampling parameter tensors from context batch.
+
+        Args:
+            batch: List of context objects containing sampling parameters
+            device: Device to place the tensors on
+
+        Returns:
+            Tuple of (top_k, max_k, temperature, top_p, min_top_p, seed) tensors
+        """
+        top_k_np = np.array(
+            [context.sampling_params.top_k for context in batch], dtype=np.int64
+        )
+        top_k = Tensor.from_numpy(top_k_np).to(device)
+        max_k_np = np.array(np.max(top_k_np), dtype=np.int64)
+        max_k = Tensor.from_numpy(max_k_np)
+        temperature_np = np.array(
+            [context.sampling_params.temperature for context in batch],
+            dtype=np.float32,
+        )
+        temperature = Tensor.from_numpy(temperature_np).to(device)
+        top_p_np = np.array(
+            [context.sampling_params.top_p for context in batch],
+            dtype=np.float32,
+        )
+        top_p = Tensor.from_numpy(top_p_np).to(device)
+        # min_top_p must be provided as a scalar CPU tensor
+        min_top_p_np = np.array(np.min(top_p_np), dtype=np.float32)
+        min_top_p = Tensor.from_numpy(min_top_p_np)
+        seed_np = np.array(
+            [context.sampling_params.seed for context in batch], dtype=np.uint64
+        )
+        seed = Tensor.from_numpy(seed_np).to(device)
+
+        return (top_k, max_k, temperature, top_p, min_top_p, seed)
 
     @traced
     def sample_draft_logits(
         self,
-        batch: list[TextContext],
         model_outputs: ModelOutputs,
         prev_tokens: Tensor,
         prev_logits: Tensor,
@@ -526,236 +514,11 @@ class SpeculativeDecodingTextGenerationPipeline(
         assert isinstance(c, Tensor)
         return (a, b, c)
 
-    @traced
-    def generate_draft_tokens(
+    @property
+    def kv_managers(
         self,
-        batch: list[TextContext],
-        num_steps: int,
-        model_inputs: ModelInputs,
-    ) -> tuple[int, Tensor, Tensor, ModelInputs, Tensor]:
-        # Create sampling parameters once for the entire batch
-        top_k_np = np.array(
-            [context.sampling_params.top_k for context in batch], dtype=np.int64
-        )
-        top_k = Tensor.from_numpy(top_k_np).to(self.draft_devices[0])
-        max_k_np = np.array(np.max(top_k_np), dtype=np.int64)
-        max_k = Tensor.from_numpy(max_k_np)
-        temperature_np = np.array(
-            [context.sampling_params.temperature for context in batch],
-            dtype=np.float32,
-        )
-        temperature = Tensor.from_numpy(temperature_np).to(
-            self.draft_devices[0]
-        )
-        top_p_np = np.array(
-            [context.sampling_params.top_p for context in batch],
-            dtype=np.float32,
-        )
-        top_p = Tensor.from_numpy(top_p_np).to(self.draft_devices[0])
-        # min_top_p must be provided as a scalar CPU tensor
-        min_top_p_np = np.array(np.min(top_p_np), dtype=np.float32)
-        min_top_p = Tensor.from_numpy(min_top_p_np)
-        seed_np = np.array(
-            [context.sampling_params.seed for context in batch], dtype=np.uint64
-        )
-        seed = Tensor.from_numpy(seed_np).to(self.draft_devices[0])
-
-        # Generate tensor for generated tokens.
-        generated_tokens = Tensor.zeros(
-            (len(batch), 0), dtype=DType.int64, device=self.draft_devices[0]
-        )
-
-        generated_logits = Tensor.zeros(
-            (len(batch), 0), dtype=DType.float32, device=self.draft_devices[0]
-        )
-
-        # Multi-step execution
-        curr_step_inputs = model_inputs
-
-        # num_steps first so that slice indexing is contiguous
-        all_draft_logits = Tensor.zeros(
-            (num_steps, len(batch), self.vocab_size),
-            dtype=DType.float32,
-            device=self.draft_devices[0],
-        )
-
-        for i in range(num_steps):
-            # Execute the model and get next tokens.
-            model_outputs = self._draft_model.execute(
-                model_inputs=curr_step_inputs
-            )
-
-            all_draft_logits[i, :, :].inplace_copy_from(model_outputs.logits)
-
-            # Sample next_token
-            new_tokens, new_generated_tokens, new_generated_logits = (
-                self.sample_draft_logits(
-                    batch,
-                    model_outputs,
-                    generated_tokens,
-                    generated_logits,
-                    top_k,
-                    max_k,
-                    temperature,
-                    top_p,
-                    min_top_p,
-                    seed,
-                )
-            )
-            generated_tokens = new_generated_tokens
-            generated_logits = new_generated_logits
-
-            # Increment cache lengths.
-            assert isinstance(
-                curr_step_inputs.kv_cache_inputs, KVCacheInputsSequence
-            ), (
-                "prepare_batch instantiates and passes this as a KVCacheInputsSequence"
-            )
-            assert isinstance(
-                curr_step_inputs.kv_cache_inputs.kv_cache_inputs, list
-            ), "increment_cache_lengths instantiates and passes this as a list"
-            curr_step_inputs.kv_cache_inputs.kv_cache_inputs = (
-                self._draft_model.kv_manager.increment_cache_lengths(
-                    curr_step_inputs.kv_cache_inputs.kv_cache_inputs,
-                    curr_step_inputs,
-                )
-            )
-
-            # Prepare next token inputs.
-            curr_step_inputs = self._draft_model.prepare_next_token_inputs(
-                new_tokens, curr_step_inputs
-            )
-
-        # The kv cache manager for the target model uses these indices to set the lengths of the cache. We bump them manually here even though the tokens array has not been filled. They are reset when doing the final update of the contexts after both draft and target models have run
-        for i, context in enumerate(batch):  # noqa: B007
-            context.bump_token_indices(active_idx=num_steps, end_idx=num_steps)
-        return (
-            num_steps,
-            generated_tokens,
-            generated_logits,
-            model_inputs,
-            all_draft_logits,
-        )
-
-    @traced
-    def verify_draft_tokens_with_target_model(
-        self,
-        draft_inputs: ModelInputs,
-        context_batch: list[TextContext],
-        num_draft_tokens_generated: int,
-        draft_tokens: Tensor,
-        draft_logits: Tensor,
-        merged_draft_tokens: Tensor,
-        merged_draft_offsets: Tensor,
-        all_draft_logits: Tensor,
-    ) -> tuple[Tensor, Tensor, Tensor]:
-        # Prepare next token inputs for target model
-        target_inputs, _target_num_steps = self.prepare_batch(
-            self._target_model,
-            context_batch,
-            # I believe, num steps in this scenario is 1, as we are only
-            # generating one token beyond the draft tokens.
-            num_steps=1,
-            draft_inputs=draft_inputs,
-            return_n_logits=num_draft_tokens_generated + 1,
-            is_draft=False,
-            merged_draft_tokens=merged_draft_tokens,
-            merged_draft_offsets=merged_draft_offsets,
-        )
-
-        # Generate target tokens.
-        target_outputs = self._target_model.execute(model_inputs=target_inputs)
-
-        # Apply logits processors
-        apply_logits_processors(
-            context_batch=context_batch,
-            batch_logits=target_outputs.logits,
-            batch_logit_offsets=target_outputs.logit_offsets,
-        )
-        # Generate Final Samples
-        assert target_outputs.logit_offsets is not None
-        first_rejected_tokens, recovered_tokens, bonus_tokens = (
-            self._rejection_sampler(
-                draft_tokens,
-                draft_logits,
-                target_outputs.logits,
-                target_outputs.logit_offsets,
-                all_draft_logits,
-            )
-        )
-        assert isinstance(first_rejected_tokens, Tensor)
-        assert isinstance(recovered_tokens, Tensor)
-        assert isinstance(bonus_tokens, Tensor)
-
-        return first_rejected_tokens, recovered_tokens, bonus_tokens
-
-    @traced
-    def execute(
-        self,
-        inputs: TextGenerationInputs[TextContext],
-    ) -> PipelineOutputsDict[TextGenerationOutput]:
-        """Provided a batch, execute both the draft model for num_steps and the target model for num_steps + 1 tokens, accepting final tokens via rejection sampling, returning the variable list of token integers."""
-
-        # Flatten our batch for consistent indexing.
-        context_batch = list(inputs.batch.values())
-
-        # Generate draft tokens.
-        draft_inputs, draft_num_steps = self.prepare_batch(
-            self._draft_model,
-            context_batch,
-            inputs.num_steps,
-            return_n_logits=1,
-            is_draft=True,
-        )
-        (
-            num_draft_tokens_generated,
-            draft_tokens,
-            draft_logits,
-            model_inputs,
-            all_draft_logits,
-        ) = self.generate_draft_tokens(
-            context_batch, draft_num_steps, draft_inputs
-        )
-
-        # Merge draft tokens with target tokens
-        merged_tokens, merged_offsets = self._ragged_token_merger(
-            model_inputs.tokens,  # type: ignore
-            model_inputs.input_row_offsets,  # type: ignore
-            draft_tokens,
-        )
-
-        assert isinstance(merged_tokens, Tensor)
-        assert isinstance(merged_offsets, Tensor)
-        # Verify draft tokens with target model
-        first_rejected_tokens, recovered_tokens, bonus_tokens = (
-            self.verify_draft_tokens_with_target_model(
-                draft_inputs,
-                context_batch,
-                num_draft_tokens_generated,
-                draft_tokens,
-                draft_logits,
-                merged_tokens,
-                merged_offsets,
-                all_draft_logits,
-            )
-        )
-
-        self.update_contexts(
-            context_batch=context_batch,
-            first_rejected_tokens=first_rejected_tokens.to_numpy(),
-            recovered_tokens=recovered_tokens.to_numpy(),
-            bonus_tokens=bonus_tokens.to_numpy(),
-            draft_tokens=draft_tokens.to_numpy(),
-            num_draft_tokens_generated=num_draft_tokens_generated,
-        )
-
-        res = self.build_response(context_batch=context_batch)
-
-        # Maybe commit blocks into prefix cache
-        self._target_model.kv_manager.step(context_batch)
-        self._draft_model.kv_manager.step(context_batch)
-
-        return res
+    ) -> list[PagedKVCacheManager | NullKVCacheManager]:
+        return [self._draft_model.kv_manager, self._target_model.kv_manager]
 
     @property
     def metrics(self) -> SpeculativeDecodingMetrics:
@@ -788,7 +551,8 @@ class SpeculativeDecodingTextGenerationPipeline(
         Args:
             context_batch: The list of context objects
             first_rejected_tokens: Array indicating the indices of first rejected tokens
-            sampled_target_tokens: Array of sampled tokens from the target model
+            recovered_tokens: Array of recovered tokens from target model
+            bonus_tokens: Array of bonus tokens from target model
             draft_tokens: Array of draft tokens
             num_draft_tokens_generated: Number of tokens generated by the draft model
         """
@@ -842,7 +606,6 @@ class SpeculativeDecodingTextGenerationPipeline(
         """Build response from updated contexts.
 
         Args:
-            batch: The input batch dictionary mapping request IDs to contexts
             context_batch: The list of context objects
 
         Returns:

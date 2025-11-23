@@ -36,13 +36,13 @@ struct TileMask[
     element_size: IndexList[rank] = IndexList[rank](1),
     element_stride: IndexList[rank] = IndexList[rank](1),
 ](ImplicitlyCopyable, Movable):
-    var max_dim: IndexList[rank]
-    var offset: IndexList[rank]
+    var max_dim: IndexList[Self.rank]
+    var offset: IndexList[Self.rank]
 
     fn __init__(
         out self,
-        max_dim: IndexList[rank],
-        offset: IndexList[rank] = IndexList[rank](0),
+        max_dim: IndexList[Self.rank],
+        offset: IndexList[Self.rank] = IndexList[Self.rank](0),
     ):
         self.max_dim = max_dim
         self.offset = offset
@@ -51,22 +51,26 @@ struct TileMask[
     # accessed at the given `point` at this axis.
     #
     @always_inline
-    fn access_mask(self, point: IndexList[rank]) -> StaticTuple[Bool, rank]:
-        var mask = StaticTuple[Bool, rank]()
+    fn access_mask(
+        self, point: IndexList[Self.rank]
+    ) -> StaticTuple[Bool, Self.rank]:
+        var mask = StaticTuple[Bool, Self.rank]()
 
         @parameter
-        for axis in range(rank):
+        for axis in range(Self.rank):
 
             @parameter
-            if element_size[axis] == 1:
+            if Self.element_size[axis] == 1:
                 mask[axis] = (
-                    self.offset[axis] + point[axis] * element_stride[axis]
+                    self.offset[axis] + point[axis] * Self.element_stride[axis]
                 ) < self.max_dim[axis]
             else:
                 mask[axis] = (
                     self.offset[axis]
-                    + point[axis] * element_size[axis] * element_stride[axis]
-                    + element_size[axis]
+                    + point[axis]
+                    * Self.element_size[axis]
+                    * Self.element_stride[axis]
+                    + Self.element_size[axis]
                 ) < self.max_dim[axis]
 
         return mask
@@ -75,18 +79,20 @@ struct TileMask[
     #
     @always_inline
     fn access_size(
-        self, point: IndexList[rank], dim_mask: StaticTuple[Bool, rank]
-    ) -> IndexList[rank]:
-        var size = IndexList[rank]()
+        self,
+        point: IndexList[Self.rank],
+        dim_mask: StaticTuple[Bool, Self.rank],
+    ) -> IndexList[Self.rank]:
+        var size = IndexList[Self.rank]()
 
         @parameter
-        for i in range(rank):
+        for i in range(Self.rank):
             if dim_mask[i]:
-                size[i] = element_size[i]
+                size[i] = Self.element_size[i]
             else:
                 var start_index = (
                     self.offset[i]
-                    + point[i] * element_size[i] * element_stride[i]
+                    + point[i] * Self.element_size[i] * Self.element_stride[i]
                 )
                 size[i] = max(0, self.max_dim[i] - start_index)
 
@@ -311,10 +317,10 @@ fn _to_static_tuple[*sizes: Int, rank: Int]() -> IndexList[rank]:
 struct ElementLayout[rank: Int, shape: IndexList[rank]](
     Defaultable, ImplicitlyCopyable, Movable, Stringable, Writable
 ):
-    var stride: IndexList[rank]
+    var stride: IndexList[Self.rank]
 
     fn __init__(out self):
-        self.stride = IndexList[rank]()
+        self.stride = IndexList[Self.rank]()
 
     @no_inline
     fn __str__(self) -> String:
@@ -322,7 +328,7 @@ struct ElementLayout[rank: Int, shape: IndexList[rank]](
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
-        writer.write(shape, ":", self.stride)
+        writer.write(Self.shape, ":", self.stride)
 
 
 # Returns the linear index of an element, this is equivalent to concat

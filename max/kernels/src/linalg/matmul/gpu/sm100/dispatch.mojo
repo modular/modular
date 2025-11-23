@@ -1689,7 +1689,7 @@ fn matmul_dispatch_sm100_fp8[
     return DISPATCH_MISS
 
 
-fn _bf16_experimental[
+fn heuristic_and_outliers_dispatch_bf16[
     c_type: DType,
     a_type: DType,
     b_type: DType, //,
@@ -1740,7 +1740,6 @@ fn _bf16_experimental[
                 k_group_size=tuning_config.k_group_size,
                 num_split_k=tuning_config.num_split_k,
             )
-            # print("Using config: ", matmul_config)
             _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=matmul_config,
@@ -1798,18 +1797,28 @@ fn matmul_dispatch_sm100_bf16[
     alias MMA_K = 16
     alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
 
-    alias use_experimental_kernel = env_get_bool[
-        "USE_EXPERIMENTAL_KERNELS", False
-    ]()
+    alias llama3_8b_NK = [
+        # TP1
+        Index(6144, 4096),
+        Index(4096, 4096),
+        Index(28672, 4096),
+        Index(4096, 14336),
+        # TP2
+        Index(3072, 4096),
+        Index(4096, 2048),
+        Index(14336, 4096),
+        Index(4096, 7168),
+    ]
 
     @parameter
-    if use_experimental_kernel:
-        return _bf16_experimental[
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-        ](c, a, b, ctx)
+    if Index(static_N, static_K) in llama3_8b_NK:
+        if m <= 128:
+            return heuristic_and_outliers_dispatch_bf16[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
+            ](c, a, b, ctx)
 
     # gemma-3-27b-it-prefill (TP1)
     @parameter
@@ -2406,6 +2415,7 @@ fn _matmul_dispatch_sm100[
             transpose_b=transpose_b,
             config=config,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
         ](c_tensor, a_tensor, b_tensor, ctx)
         return
 
@@ -2444,6 +2454,7 @@ fn _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
             ](c_tensor, a_tensor, b_tensor, ctx)
 
             elementwise[epilogue_wrapper, simd_size, target="gpu"](

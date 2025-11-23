@@ -317,7 +317,10 @@ def execute_flash_attention[
         ManagedTensorSlice[
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](valid_length_device.tensor),
+        ](
+            valid_length_device.tensor.data,
+            valid_length_device.tensor.get_shape(),
+        ),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -347,7 +350,10 @@ def execute_flash_attention[
         ManagedTensorSlice[
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](valid_length_device.tensor),
+        ](
+            valid_length_device.tensor.data,
+            valid_length_device.tensor.get_shape(),
+        ),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )

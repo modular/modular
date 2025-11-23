@@ -47,20 +47,22 @@ struct Tensor[
     io_spec: IOSpec,
     static_spec: StaticTensorSpec[dtype, rank],
 ](ImplicitlyCopyable, Movable):
-    alias size = Int(static_spec.shape.product())
+    alias size = Int(Self.static_spec.shape.product())
 
-    var slice: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
-    var buffer: DeviceBuffer[dtype]
+    var slice: ManagedTensorSlice[
+        io_spec = Self.io_spec, static_spec = Self.static_spec
+    ]
+    var buffer: DeviceBuffer[Self.dtype]
 
     fn __init__(out self, ctx: DeviceContext) raises:
-        self.buffer = ctx.enqueue_create_buffer[dtype](Self.size)
+        self.buffer = ctx.enqueue_create_buffer[Self.dtype](Self.size)
 
         self.slice = ManagedTensorSlice[
-            io_spec=io_spec, static_spec=static_spec
+            io_spec = Self.io_spec, static_spec = Self.static_spec
         ](
             self.buffer.unsafe_ptr(),
-            Self.static_spec.shape.into_index_list[rank](),
-            Self.static_spec.strides.into_index_list[rank](),
+            Self.static_spec.shape.into_index_list[Self.rank](),
+            Self.static_spec.strides.into_index_list[Self.rank](),
         )
 
     fn rand(self) raises -> Self:
@@ -73,7 +75,7 @@ struct Tensor[
             iota(host_buffer.unsafe_ptr(), Self.size)
             return self
 
-    fn fill(self, value: Scalar[dtype]) raises -> Self:
+    fn fill(self, value: Scalar[Self.dtype]) raises -> Self:
         with self.buffer.map_to_host() as host_buffer:
             var ptr = host_buffer.unsafe_ptr()
             for i in range(Self.size):

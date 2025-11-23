@@ -15,11 +15,15 @@
 import functools
 from collections.abc import Iterable
 
+from typing_extensions import TypeVar
+
 from ...experimental.tensor import Tensor
 from .module import Module
 
+T = TypeVar("T", bound=Module, default=Module)
 
-class ModuleList(list[Module], Module):
+
+class ModuleList(list[T], Module):
     """A ``Module`` subclass which is locally a list container.
 
     ``ModuleList`` instances will use the stringified integer index of their
@@ -63,7 +67,7 @@ class ModuleList(list[Module], Module):
     __repr__ = Module.__repr__
 
 
-class Sequential(ModuleList):
+class Sequential(ModuleList[T]):
     """A ``Module`` subclass which holds a sequence of unary modules.
 
     A unary ``Module`` is one whose ``__call__()`` method has the signature::
@@ -93,7 +97,7 @@ class Sequential(ModuleList):
         assert result.shape == [5]
     """
 
-    def __init__(self, *modules: Module) -> None:
+    def __init__(self, *modules: T) -> None:
         """Constructs a sequential from a sequence of modules.
 
         Following PyTorch, ``Sequential`` takes its inputs as a variadic

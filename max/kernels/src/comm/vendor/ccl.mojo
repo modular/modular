@@ -21,19 +21,20 @@ from sys.ffi import _get_global_or_null, external_call
 from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import OwnedDLHandle, _Global
+from collections.optional import OptionalReg
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host._amdgpu_hip import HIP
 from gpu.host._nvidia_cuda import CUDA
-from comm.allreduce import MAX_GPUS
+from comm.allreduce import MAX_GPUS, elementwise_epilogue_type
 
 alias ncclComm_t = OpaquePointer
 
 
 @fieldwise_init
 @register_passable("trivial")
-struct ncclResult_t(EqualityComparable, Writable):
+struct ncclResult_t(Equatable, Writable):
     var _value: Int32
     alias ncclSuccess = Self(0)
 
@@ -69,20 +70,20 @@ struct ncclDataType_t:
         self._value = value
 
 
-alias RCCL_LIBRARY_PATHS = List[Path](
+alias RCCL_LIBRARY_PATHS: List[Path] = [
     "librccl.so",
     "librccl.so.1",
     "/opt/rocm/lib/librccl.so",
     "/opt/rocm/lib/librccl.so.1",
-)
+]
 
 
-alias NCCL_LIBRARY_PATHS = List[Path](
+alias NCCL_LIBRARY_PATHS: List[Path] = [
     "libnccl.so",
     "libnccl.so.2",
     "/usr/lib/x86_64-linux-gnu/libnccl.so",
     "/usr/lib/x86_64-linux-gnu/libnccl.so.2",
-)
+]
 
 
 # Unified CCL loader (selects RCCL/NCCL at compile time)
@@ -241,11 +242,16 @@ fn allreduce[
     dtype: DType,
     rank: Int,
     ngpus: Int,
+    output_lambda: OptionalReg[elementwise_epilogue_type] = None,
 ](
     inputs: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
     outputs: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
     list_of_ctx: List[DeviceContext],
 ) raises:
+    constrained[
+        not output_lambda,
+        "vendor_ccl allreduce does not support output epilogue lambdas yet",
+    ]()
     if ngpus < 1:
         raise Error("ngpus must be >= 1")
     if ngpus > MAX_GPUS:

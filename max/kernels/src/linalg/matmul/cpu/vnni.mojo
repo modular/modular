@@ -164,7 +164,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                         bitcast[a.type, simd_size * 4](a_val2),
                         bitcast[b_packed.type, simd_size * 4](b_val),
                     )
-                elif saturated_vnni:
+                elif Self.saturated_vnni:
                     c_val = dot_i8_to_i32_saturated_x86[simd_size](
                         c_val, a_val, b_val
                     )

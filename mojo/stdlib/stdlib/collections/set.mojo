@@ -53,18 +53,18 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         H: The type of the hasher used to hash keys.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
-    ]: Iterator = _DictKeyIter[T, NoneType, H, iterable_origin]
+    ]: Iterator = _DictKeyIter[Self.T, NoneType, Self.H, iterable_origin]
 
     # Fields
-    var _data: Dict[T, NoneType, H]
+    var _data: Dict[Self.T, NoneType, Self.H]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __init__(out self, *ts: T, __set_literal__: () = ()):
+    fn __init__(out self, *ts: Self.T, __set_literal__: () = ()):
         """Construct a set from initial elements.
 
         Args:
@@ -73,12 +73,12 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         # TODO: Reserve space in this set. Also, take the elements as 'owned'
         # and transfer them into the set to eliminate copyability.
-        self._data = Dict[T, NoneType, H]()
+        self._data = Dict[Self.T, NoneType, Self.H]()
         for t in ts:
             self.add(t)
 
     # TODO: Should take the list owned so we can transfer the elements out.
-    fn __init__(out self, elements: List[T, *_]):
+    fn __init__(out self, elements: List[Self.T, *_]):
         """Construct a set from a List of elements.
 
         Args:
@@ -92,7 +92,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __contains__(self, t: T) -> Bool:
+    fn __contains__(self, t: Self.T) -> Bool:
         """Whether or not the set contains an element.
 
         Args:
@@ -356,7 +356,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             _DictKeyIter(_DictEntryIter(0, 0, self._data))
         )
 
-    fn add(mut self, t: T):
+    fn add(mut self, t: Self.T):
         """Add an element to the set.
 
         Args:
@@ -364,7 +364,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         self._data[t.copy()] = None
 
-    fn remove(mut self, t: T) raises:
+    fn remove(mut self, t: Self.T) raises:
         """Remove an element from the set.
 
         Args:
@@ -375,7 +375,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         self._data.pop(t)
 
-    fn pop(mut self) raises -> T:
+    fn pop(mut self) raises -> Self.T:
         """Remove any one item from the set, and return it.
 
         As an implementation detail this will remove the first item
@@ -421,7 +421,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             A new set containing only the elements which appear in both
             this set and the `other` set.
         """
-        var result = Set[T, H]()
+        var result = Set[Self.T, Self.H]()
         for v in self:
             if v in other:
                 result.add(v)
@@ -438,7 +438,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             A new set containing elements that are in this set but not in
             the `other` set.
         """
-        var result = Set[T, H]()
+        var result = Set[Self.T, Self.H]()
         for e in self:
             if e not in other:
                 result.add(e)
@@ -544,7 +544,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Returns:
             A new set containing the symmetric difference of the two sets.
         """
-        var result = Set[T, H]()
+        var result = Set[Self.T, Self.H]()
 
         for element in self:
             if element not in other:
@@ -564,7 +564,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         self = self.symmetric_difference(other)
 
-    fn discard(mut self, value: T):
+    fn discard(mut self, value: Self.T):
         """Remove a value from the set if it exists. Pass otherwise.
 
         Args:

@@ -21,13 +21,11 @@ from typing import TYPE_CHECKING, Any, cast
 
 from max.driver import Device
 from max.dtype import DType
-from max.kv_cache import PagedKVCacheManager
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
-
 
 from .interfaces import KVCacheMixin, PipelineModel
 from .kv_cache_config import KVCacheConfig
@@ -50,9 +48,22 @@ class MemoryEstimator:
             raise
 
     @classmethod
-    def model_weights_size(cls, model_config: MAXModelConfig) -> int:
-        """Return the size of the model weights in bytes."""
-        return model_config.weights_size()
+    def model_weights_size(
+        cls,
+        pipeline_model: type[PipelineModel[Any]],
+        pipeline_config: PipelineConfig,
+    ) -> int:
+        """Calculate the size of the model weights in bytes.
+
+        Args:
+            pipeline_model: The model class.
+            pipeline_config: The pipeline configuration.
+
+        Returns:
+            Model weights size in bytes.
+        """
+
+        return pipeline_model.estimate_weights_size(pipeline_config)
 
     @classmethod
     def activation_memory_size(
@@ -95,7 +106,7 @@ class MemoryEstimator:
             Total static memory usage in bytes.
         """
         return cls.model_weights_size(
-            model_config
+            pipeline_model, pipeline_config
         ) + cls.activation_memory_size(
             pipeline_model, pipeline_config, model_config
         )
@@ -162,17 +173,12 @@ class MemoryEstimator:
             kv_cache_config=model_config.kv_cache_config,
             cache_dtype=model_config.quantization_encoding.cache_dtype,
         )
-        num_layers = kv_cache_model.get_num_layers(
-            huggingface_config=model_config.huggingface_config
-        )
 
-        # Available cache memory
-        memory_available = cls.available_kv_cache_memory(
+        kvcache_mem = cls.available_kv_cache_memory(
             pipeline_model, pipeline_config, model_config, devices
         )
-
-        return PagedKVCacheManager.max_supported_sequence_length(
-            params, num_layers, memory_available
+        return params.compute_max_seq_len_fitting_in_cache(
+            available_cache_memory=kvcache_mem
         )
 
     @classmethod
@@ -205,7 +211,9 @@ class MemoryEstimator:
                 )
             return
 
-        model_weights_size = cls.model_weights_size(model_config)
+        model_weights_size = cls.model_weights_size(
+            pipeline_model, pipeline_config
+        )
 
         # Get activation memory estimate from the model
         activation_memory_size = cls.activation_memory_size(

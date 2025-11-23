@@ -930,7 +930,7 @@ class LoRAManager:
 
                 self._alias_buffers[state_key] = state_dict[state_key].data
 
-    def input_symbols(self, device_ref: DeviceRef) -> list[TensorType]:
+    def get_symbolic_inputs(self, device_ref: DeviceRef) -> list[TensorType]:
         """
         Returns the input symbols needed for the graph inputs
 

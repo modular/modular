@@ -86,13 +86,13 @@ struct InlineArray[
     """
 
     # Fields
-    alias type = __mlir_type[
-        `!pop.array<`, size._mlir_value, `, `, Self.ElementType, `>`
+    comptime type = __mlir_type[
+        `!pop.array<`, Self.size._mlir_value, `, `, Self.ElementType, `>`
     ]
     var _array: Self.type
     """The underlying storage for the array."""
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: LegacyOpaquePointer):
         """Convert the host type object to a device_type and store it at the
@@ -111,7 +111,11 @@ struct InlineArray[
             The host type's name.
         """
         return String(
-            "InlineArray[", get_type_name[Self.ElementType](), ", ", size, "]"
+            "InlineArray[",
+            get_type_name[Self.ElementType](),
+            ", ",
+            Self.size,
+            "]",
         )
 
     @staticmethod
@@ -162,7 +166,7 @@ struct InlineArray[
             array elements will be uninitialized and accessing them before
             initialization is undefined behavior.
         """
-        _inline_array_construction_checks[size]()
+        _inline_array_construction_checks[Self.size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     fn __init__(
@@ -231,10 +235,10 @@ struct InlineArray[
             further improve compilation speed while still maintaining good
             runtime performance.
         """
-        _inline_array_construction_checks[size]()
+        _inline_array_construction_checks[Self.size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
-        alias unroll_end = math.align_down(size, batch_size)
+        comptime unroll_end = math.align_down(Self.size, batch_size)
 
         var ptr = self.unsafe_ptr()
 
@@ -247,11 +251,11 @@ struct InlineArray[
 
         # Fill the remainder
         @parameter
-        for _ in range(unroll_end, size):
+        for _ in range(unroll_end, Self.size):
             ptr.init_pointee_copy(fill)
             ptr += 1
         debug_assert(
-            ptr == self.unsafe_ptr().offset(size),
+            ptr == self.unsafe_ptr().offset(Self.size),
             "error during `InlineArray` initialization , please file a bug",
             " report.",
         )
@@ -274,7 +278,9 @@ struct InlineArray[
         var arr = InlineArray[Int, 3](1, 2, 3)  # [1, 2, 3]
         ```
         """
-        debug_assert(len(elems) == size, "No. of elems must match array size")
+        debug_assert(
+            len(elems) == Self.size, "No. of elems must match array size"
+        )
         self = Self(storage=elems^)
 
     @always_inline
@@ -298,20 +304,20 @@ struct InlineArray[
         """
 
         debug_assert(
-            len(storage) == size,
+            len(storage) == Self.size,
             "Expected variadic list of length ",
-            size,
+            Self.size,
             ", received ",
             len(storage),
         )
-        _inline_array_construction_checks[size]()
+        _inline_array_construction_checks[Self.size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
         var ptr = self.unsafe_ptr()
 
         # Move each element into the array storage.
         @parameter
-        for i in range(size):
+        for i in range(Self.size):
             # Safety: We own the elements in the variadic list.
             ptr.init_pointee_move_from(
                 UnsafePointer(to=storage[i]).unsafe_mut_cast[True]()
@@ -338,7 +344,7 @@ struct InlineArray[
 
         self = Self(uninitialized=True)
 
-        for idx in range(size):
+        for idx in range(Self.size):
             var ptr = self.unsafe_ptr() + idx
             ptr.init_pointee_copy(other.unsafe_get(idx))
 
@@ -354,7 +360,7 @@ struct InlineArray[
 
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
-        for idx in range(size):
+        for idx in range(Self.size):
             var other_ptr = other.unsafe_ptr() + idx
             (self.unsafe_ptr() + idx).init_pointee_move_from(other_ptr)
 
@@ -370,10 +376,10 @@ struct InlineArray[
         """
 
         @parameter
-        if not Bool(ElementType.__del__is_trivial):
+        if not Bool(Self.ElementType.__del__is_trivial):
 
             @parameter
-            for idx in range(size):
+            for idx in range(Self.size):
                 var ptr = self.unsafe_ptr() + idx
                 ptr.destroy_pointee()
 
@@ -446,9 +452,11 @@ struct InlineArray[
             counting backwards from the end of the array.
         """
         constrained[
-            -size <= index(idx) < size, "Index must be within bounds."
+            -Self.size <= index(idx) < Self.size, "Index must be within bounds."
         ]()
-        alias normalized_index = normalize_index["InlineArray"](idx, size)
+        comptime normalized_index = normalize_index["InlineArray"](
+            idx, Self.size
+        )
         return self.unsafe_get(normalized_index)
 
     # ===------------------------------------------------------------------=== #
@@ -473,7 +481,7 @@ struct InlineArray[
             The length is a compile-time constant value determined by the
             size parameter used when creating the array.
         """
-        return size
+        return Self.size
 
     # ===------------------------------------------------------------------===#
     # Methods
@@ -512,11 +520,11 @@ struct InlineArray[
         """
         var i = index(idx)
         debug_assert(
-            0 <= i < size,
+            0 <= i < Self.size,
             " InlineArray.unsafe_get() index out of bounds: ",
             i,
             " should be greater than or equal to 0 and less than ",
-            size,
+            Self.size,
         )
         var ptr = __mlir_op.`pop.array.gep`(
             UnsafePointer(to=self._array).address,
@@ -570,12 +578,12 @@ struct InlineArray[
 
     @always_inline
     fn __contains__[
-        T: EqualityComparable & Copyable & Movable, //
-    ](self: InlineArray[T, size], value: T) -> Bool:
+        T: Equatable & Copyable & Movable, //
+    ](self: InlineArray[T, Self.size], value: T) -> Bool:
         """Tests if a value is present in the array using the `in` operator.
 
         Parameters:
-            T: The element type, must implement both `EqualityComparable` and
+            T: The element type, must implement both `Equatable` and
                 `Copyable` and `Movable`.
 
         Args:
@@ -597,12 +605,12 @@ struct InlineArray[
             This method enables using the `in` operator to check if a value
             exists in the array. It performs a linear search comparing each
             element for equality with the given value. The element type must
-            implement the `EqualityComparable`, `Copyable` and `Movable` traits
+            implement the `Equatable`, `Copyable` and `Movable` traits
             to support equality comparison.
         """
 
         @parameter
-        for i in range(size):
+        for i in range(Self.size):
             if self[i] == value:
                 return True
         return False

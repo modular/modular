@@ -77,6 +77,7 @@ class MistralConfig(MAXModelConfig, MistralConfigBase):
                     // huggingface_config.num_attention_heads
                 )
             ),
+            num_layers=MistralConfig.get_num_layers(huggingface_config),
             cache_strategy=kv_cache_config.cache_strategy,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,

@@ -165,9 +165,7 @@ fn test_svg_wgmma_shape() raises:
 
     print_svg(
         tensor.get_immutable(),
-        List[type_of(tensor_dist.get_immutable())](
-            tensor_dist.get_immutable(), tensor_dist2.get_immutable()
-        ),
+        [tensor_dist.get_immutable(), tensor_dist2.get_immutable()],
         color_map,
         file_path=Path("./test_svg_wgmma_shape.svg"),
     )

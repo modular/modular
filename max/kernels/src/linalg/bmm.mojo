@@ -334,8 +334,7 @@ fn _small_batched_matmul[
                     var a_val = a_buf[indices]
 
                     @always_inline
-                    @parameter
-                    fn compute_fn[simd_width: Int](n: Int):
+                    fn compute_fn[simd_width: Int](n: Int) unified {mut}:
                         indices[rank - 1] = n
                         b_buf_index[rank - 1] = n
 
@@ -347,7 +346,7 @@ fn _small_batched_matmul[
                             + a_val.cast[c_type]() * b_val.cast[c_type](),
                         )
 
-                    vectorize[compute_fn, simd_width, unroll_factor=2](N)
+                    vectorize[simd_width, unroll_factor=2](N, compute_fn)
 
             @parameter
             if elementwise_epilogue_fn:
@@ -355,14 +354,13 @@ fn _small_batched_matmul[
                     indices[rank - 2] = m
 
                     @always_inline
-                    @parameter
-                    fn apply_epilogue[width: Int](n: Int):
+                    fn apply_epilogue[width: Int](n: Int) unified {mut}:
                         indices[rank - 1] = n
                         var val = c_buf.load[width=width](indices)
                         alias func = elementwise_epilogue_fn.value()
                         func[c_type, width, rank](indices, val)
 
-                    vectorize[apply_epilogue, simd_width](N)
+                    vectorize[simd_width](N, apply_epilogue)
 
     return
 

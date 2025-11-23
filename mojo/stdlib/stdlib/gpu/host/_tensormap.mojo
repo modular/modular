@@ -31,19 +31,19 @@ struct DataType:
 
     var _value: Int32
 
-    alias UINT8 = Self(0)
-    alias UINT16 = Self(1)
-    alias UINT32 = Self(2)
-    alias INT32 = Self(3)
-    alias UINT64 = Self(4)
-    alias INT64 = Self(5)
-    alias FLOAT16 = Self(6)
-    alias FLOAT32 = Self(7)
-    alias FLOAT64 = Self(8)
-    alias BFLOAT16 = Self(9)
-    alias FLOAT32_FTZ = Self(10)
-    alias TFLOAT32 = Self(11)
-    alias TFLOAT32_FTZ = Self(12)
+    comptime UINT8 = Self(0)
+    comptime UINT16 = Self(1)
+    comptime UINT32 = Self(2)
+    comptime INT32 = Self(3)
+    comptime UINT64 = Self(4)
+    comptime INT64 = Self(5)
+    comptime FLOAT16 = Self(6)
+    comptime FLOAT32 = Self(7)
+    comptime FLOAT64 = Self(8)
+    comptime BFLOAT16 = Self(9)
+    comptime FLOAT32_FTZ = Self(10)
+    comptime TFLOAT32 = Self(11)
+    comptime TFLOAT32_FTZ = Self(12)
 
     @staticmethod
     fn from_dtype[dtype: DType]() -> Self:
@@ -81,15 +81,15 @@ struct InterleaveMode:
 
     var _value: Int32
 
-    alias NONE = Self(0)
-    alias _16B = Self(1)
-    alias _32B = Self(2)
+    comptime NONE = Self(0)
+    comptime _16B = Self(1)
+    comptime _32B = Self(2)
 
 
 @fieldwise_init("implicit")
 @register_passable("trivial")
 struct SwizzleMode(
-    EqualityComparable,
+    Equatable,
     ImplicitlyCopyable,
     Intable,
     Movable,
@@ -105,10 +105,10 @@ struct SwizzleMode(
 
     var _value: Int32
 
-    alias NONE = Self(0)
-    alias _32B = Self(1)
-    alias _64B = Self(2)
-    alias _128B = Self(3)
+    comptime NONE = Self(0)
+    comptime _32B = Self(1)
+    comptime _64B = Self(2)
+    comptime _128B = Self(3)
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:
@@ -195,10 +195,10 @@ struct L2Promotion:
 
     var _value: Int32
 
-    alias NONE = Self(0)
-    alias _64B = Self(1)
-    alias _128B = Self(2)
-    alias _256B = Self(3)
+    comptime NONE = Self(0)
+    comptime _64B = Self(1)
+    comptime _128B = Self(2)
+    comptime _256B = Self(3)
 
 
 @fieldwise_init("implicit")
@@ -212,8 +212,8 @@ struct OOBFill:
 
     var _value: Int32
 
-    alias NONE = Self(0)
-    alias NAN_REQUEST_ZERO_FMA = Self(1)
+    comptime NONE = Self(0)
+    comptime NAN_REQUEST_ZERO_FMA = Self(1)
 
 
 # The TMA descriptor is a 128-byte opaque object filled by the driver API.

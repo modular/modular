@@ -21,7 +21,7 @@ from testing import TestSuite
 # Reusable testing data
 # ===----------------------------------------------------------------------=== #
 
-alias EVERY_CODEPOINT_LENGTH_STR = StringSlice("߷കൈ🔄!")
+comptime EVERY_CODEPOINT_LENGTH_STR = StringSlice("߷കൈ🔄!")
 """A string that contains at least one of 1-, 2-, 3-, and 4-byte UTF-8
 sequences.
 
@@ -82,7 +82,7 @@ def test_constructors():
 
 
 fn test_string_literal_byte_span() raises:
-    alias slc = "Hello".as_bytes()
+    comptime slc = "Hello".as_bytes()
 
     assert_equal(len(slc), 5)
     assert_equal(slc[0], ord("H"))
@@ -232,9 +232,9 @@ fn test_string_byte_span() raises:
 
 
 fn test_heap_string_from_string_slice() raises:
-    alias static_str = "Hello".as_string_slice()
+    comptime static_str = "Hello".as_string_slice()
 
-    alias heap_string = String(static_str)
+    comptime heap_string = String(static_str)
 
     assert_equal(heap_string, "Hello")
 
@@ -423,25 +423,25 @@ def test_find():
 
 
 def test_find_compile_time():
-    alias haystack = "abcdefg".as_string_slice()
-    alias haystack_with_special_chars = "abcdefg@#$".as_string_slice()
-    alias haystack_repeated_chars = "aaaaaaaaaaaaaaaaaaaaaaaa".as_string_slice()
+    comptime haystack = "abcdefg".as_string_slice()
+    comptime haystack_with_special_chars = "abcdefg@#$".as_string_slice()
+    comptime haystack_repeated_chars = "aaaaaaaaaaaaaaaaaaaaaaaa".as_string_slice()
 
-    alias c1 = haystack.find("a".as_string_slice())
-    alias c2 = haystack.find("ab".as_string_slice())
-    alias c3 = haystack.find("abc".as_string_slice())
-    alias c4 = haystack.find("bcd".as_string_slice())
-    alias c5 = haystack.find("de".as_string_slice())
-    alias c6 = haystack.find("fg".as_string_slice())
-    alias c7 = haystack.find("g".as_string_slice())
-    alias c8 = haystack.find("z".as_string_slice())
-    alias c9 = haystack.find("zzz".as_string_slice())
-    alias c10 = haystack.find("@#$".as_string_slice())
-    alias c11 = haystack_with_special_chars.find("@#$".as_string_slice())
-    alias c12 = haystack_repeated_chars.find("aaa".as_string_slice())
-    alias c13 = haystack_repeated_chars.find("AAa".as_string_slice())
-    alias c14 = haystack.find("hijklmnopqrstuvwxyz".as_string_slice())
-    alias c15 = String().as_string_slice().find("abc".as_string_slice())
+    comptime c1 = haystack.find("a".as_string_slice())
+    comptime c2 = haystack.find("ab".as_string_slice())
+    comptime c3 = haystack.find("abc".as_string_slice())
+    comptime c4 = haystack.find("bcd".as_string_slice())
+    comptime c5 = haystack.find("de".as_string_slice())
+    comptime c6 = haystack.find("fg".as_string_slice())
+    comptime c7 = haystack.find("g".as_string_slice())
+    comptime c8 = haystack.find("z".as_string_slice())
+    comptime c9 = haystack.find("zzz".as_string_slice())
+    comptime c10 = haystack.find("@#$".as_string_slice())
+    comptime c11 = haystack_with_special_chars.find("@#$".as_string_slice())
+    comptime c12 = haystack_repeated_chars.find("aaa".as_string_slice())
+    comptime c13 = haystack_repeated_chars.find("AAa".as_string_slice())
+    comptime c14 = haystack.find("hijklmnopqrstuvwxyz".as_string_slice())
+    comptime c15 = String().as_string_slice().find("abc".as_string_slice())
 
     assert_equal(c1, 0)
     assert_equal(c2, 0)
@@ -529,7 +529,7 @@ def test_comparison_operators():
 
 
 def test_split():
-    alias S = StaticString
+    comptime S = StaticString
 
     # Should add all whitespace-like chars as one
     # test all unicode separators
@@ -610,7 +610,7 @@ def test_split():
 
 
 def test_splitlines():
-    alias S = StaticString
+    comptime S = StaticString
 
     # Test with no line breaks
     assert_equal(S("hello world").splitlines(), [StaticString("hello world")])
@@ -725,26 +725,26 @@ def test_strip():
     # with default strip chars
     var empty_string = "".as_string_slice()
     assert_true(empty_string.strip() == "")
-    alias comp_empty_string_stripped = "".as_string_slice().strip()
+    comptime comp_empty_string_stripped = "".as_string_slice().strip()
     assert_true(comp_empty_string_stripped == "")
 
     var space_string = " \t\n\r\v\f  ".as_string_slice()
     assert_true(space_string.strip() == "")
-    alias comp_space_string_stripped = " \t\n\r\v\f  ".as_string_slice().strip()
+    comptime comp_space_string_stripped = " \t\n\r\v\f  ".as_string_slice().strip()
     assert_true(comp_space_string_stripped == "")
 
     var str0 = "     n ".as_string_slice()
     assert_true(str0.strip() == "n")
-    alias comp_str0_stripped = "     n ".as_string_slice().strip()
+    comptime comp_str0_stripped = "     n ".as_string_slice().strip()
     assert_true(comp_str0_stripped == "n")
 
     var str1 = "string".as_string_slice()
     assert_true(str1.strip() == "string")
-    alias comp_str1_stripped = ("string").strip()
+    comptime comp_str1_stripped = ("string").strip()
     assert_true(comp_str1_stripped == "string")
 
     var str2 = " \t\n\t\v\fsomething \t\n\t\v\f".as_string_slice()
-    alias comp_str2_stripped = (" \t\n\t\v\fsomething \t\n\t\v\f").strip()
+    comptime comp_str2_stripped = (" \t\n\t\v\fsomething \t\n\t\v\f").strip()
     assert_true(str2.strip() == "something")
     assert_true(comp_str2_stripped == "something")
 
@@ -752,14 +752,14 @@ def test_strip():
     var str3 = "mississippi".as_string_slice()
     assert_true(str3.strip("mips") == "")
     assert_true(str3.strip("mip") == "ssiss")
-    alias comp_str3_stripped = "mississippi".as_string_slice().strip("mips")
+    comptime comp_str3_stripped = "mississippi".as_string_slice().strip("mips")
     assert_true(comp_str3_stripped == "")
 
     var str4 = " \n mississippimississippi \n ".as_string_slice()
     assert_true(str4.strip(" ") == "\n mississippimississippi \n")
     assert_true(str4.strip("\nmip ") == "ssissippimississ")
 
-    alias comp_str4_stripped = (
+    comptime comp_str4_stripped = (
         " \n mississippimississippi \n ".as_string_slice().strip(" ")
     )
     assert_true(comp_str4_stripped == "\n mississippimississippi \n")
@@ -1033,7 +1033,7 @@ def test_string_slice_intern():
     assert_equal(get_static_string["hello"](), "hello")
     assert_equal(get_static_string[String("hello")](), "hello")
     assert_equal(get_static_string[String(42)](), "42")
-    alias simd = SIMD[DType.int64, 4](1, 2, 3, 4)
+    comptime simd = SIMD[DType.int64, 4](1, 2, 3, 4)
     assert_equal(get_static_string[String(simd)](), "[1, 2, 3, 4]")
     # Test get_static_string with multiple string arguments.
     assert_equal(get_static_string["a", "b", "c"](), "abc")

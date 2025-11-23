@@ -19,8 +19,8 @@ from gpu.host import DeviceContext
 from internal_utils._utils import ValOrDim, dynamic, static
 
 from utils import IndexList
-
 from .matmul.gpu import _matmul_gpu
+
 from memory import LegacyUnsafePointer as UnsafePointer
 
 alias elementwise_epilogue_type = fn[

@@ -14,7 +14,8 @@
 from buffer import DimList, NDBuffer
 from gpu import thread_idx
 from gpu.host import DeviceContext
-from internal_utils import HostNDBuffer
+from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from utils import IndexList
 
 
 @register_passable("trivial")
@@ -26,14 +27,16 @@ trait BaseT:
 @fieldwise_init
 @register_passable("trivial")
 struct ImplT(BaseT, ImplicitlyCopyable, Movable):
-    alias rank = 1
-    var values: NDBuffer[DType.float32, Self.rank, MutAnyOrigin]
+    var values: LayoutTensor[DType.float32, Layout(UNKNOWN_VALUE), MutAnyOrigin]
 
-    def __init__(out self, buf: NDBuffer[DType.float32, Self.rank]):
-        self.values = buf
+    def __init__(
+        out self,
+        buf: LayoutTensor[mut=True, DType.float32, Layout(UNKNOWN_VALUE)],
+    ):
+        self.values = buf.as_any_origin()
 
     fn get_val(self, idx: Int) -> Float32:
-        return self.values[idx]
+        return self.values[idx][0]
 
 
 def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int):
@@ -50,20 +53,32 @@ def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int):
 
 
 def trait_repro(ctx: DeviceContext):
-    var size = 5
-    var host_buf = HostNDBuffer[DType.float32, 1](DimList(size))
+    comptime size = 5
+    var stack = InlineArray[Float32, size](uninitialized=True)
+    var host_buf = LayoutTensor[DType.float32, Layout(UNKNOWN_VALUE)](
+        stack,
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](size)),
+    )
     for i in range(size):
-        host_buf.tensor[i] = i
+        host_buf[i] = i
 
-    var device_buf = host_buf.copy_to_device(ctx)
-    var device_nd = device_buf.tensor
+    var device_buf = ctx.enqueue_create_buffer[DType.float32](size)
+    with device_buf.map_to_host() as mapped:
+        for i in range(size):
+            mapped[i] = host_buf[i][0]
+    var device_nd = LayoutTensor[DType.float32, Layout(UNKNOWN_VALUE)](
+        device_buf,
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](size)),
+    )
     var thing = ImplT(device_nd)
     trait_repro_sub(thing, ctx, size)
-    device_buf.buffer.enqueue_copy_to(host_buf.tensor.data)
+    with device_buf.map_to_host() as mapped:
+        for i in range(size):
+            host_buf[i] = mapped[i]
     ctx.synchronize()
 
     for i in range(size):
-        print(host_buf.tensor[i])
+        print(host_buf[i])
 
     _ = device_buf^
 

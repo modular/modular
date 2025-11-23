@@ -243,7 +243,7 @@ fn byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
         - On NVIDIA: Maps to PRMT instruction
         - On AMD: Maps to PERM instruction.
     """
-    alias asm = _byte_permute_inst()
+    comptime asm = _byte_permute_inst()
 
     return llvm_intrinsic[asm, UInt32, has_side_effect=False](a, b, c)
 
@@ -486,9 +486,7 @@ fn get_ib_sts() -> Int32:
 
 
 @fieldwise_init
-struct Scope(
-    EqualityComparable, Identifiable, ImplicitlyCopyable, Movable, Writable
-):
+struct Scope(Equatable, Identifiable, ImplicitlyCopyable, Movable, Writable):
     """Represents memory synchronization scope levels for GPU memory operations.
 
     Defines different scopes of memory visibility and synchronization, from
@@ -501,25 +499,25 @@ struct Scope(
 
     var _value: Int
 
-    alias NONE = Self(0)
+    comptime NONE = Self(0)
     """No memory ordering guarantees. Operations may be reordered freely."""
 
-    alias THREAD = Self(1)
+    comptime THREAD = Self(1)
     """Thread-level scope. Memory operations are ordered within a single thread."""
 
-    alias WARP = Self(2)
+    comptime WARP = Self(2)
     """Warp-level scope. Memory operations are ordered within a warp of threads."""
 
-    alias BLOCK = Self(3)
+    comptime BLOCK = Self(3)
     """Block-level scope. Memory operations ordered within a thread block/CTA."""
 
-    alias CLUSTER = Self(4)
+    comptime CLUSTER = Self(4)
     """Cluster-level scope. Memory operations ordered within a thread block cluster."""
 
-    alias GPU = Self(5)
+    comptime GPU = Self(5)
     """GPU-level scope. Memory operations are ordered across all threads on the GPU."""
 
-    alias SYSTEM = Self(6)
+    comptime SYSTEM = Self(6)
     """System-wide scope. Memory operations ordered across the entire system."""
 
     fn __eq__(self, other: Self) -> Bool:
@@ -641,7 +639,7 @@ fn threadfence[scope: Scope = Scope.GPU]():
         is_nvidia_gpu(), "threadfence is only implemented on NVIDIA GPUs"
     ]()
 
-    alias suffix = "gl" if scope is Scope.GPU else scope.mnemonic()
+    comptime suffix = "gl" if scope is Scope.GPU else scope.mnemonic()
     llvm_intrinsic["llvm.nvvm.membar." + suffix, NoneType]()
 
 
@@ -651,7 +649,9 @@ fn threadfence[scope: Scope = Scope.GPU]():
 
 
 fn _get_type_suffix[dtype: DType]() -> StaticString:
-    alias str = get_static_string["u", _int_to_str[bit_width_of[dtype]()]()]()
+    comptime str = get_static_string[
+        "u", _int_to_str[bit_width_of[dtype]()]()
+    ]()
     return str
 
 
@@ -679,7 +679,7 @@ fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
     if dtype.is_half_float():
         return "h"
     if dtype.is_integral():
-        alias width = bit_width_of[dtype]()
+        comptime width = bit_width_of[dtype]()
         if width == 16:
             return "c"
         if width == 32:
@@ -710,8 +710,8 @@ struct _AirMemFlags:
     These values select **which address space's visibility** a fence operates on.
     """
 
-    alias Device = Int32(1)
-    alias ThreadGroup = Int32(2)
+    comptime Device = Int32(1)
+    comptime ThreadGroup = Int32(2)
 
 
 struct _AirScope:
@@ -720,16 +720,16 @@ struct _AirScope:
     established by a fence or an atomic op with scope.
     """
 
-    alias Workgroup = Int32(1)
-    alias Device = Int32(2)
-    alias SIMDGroup = Int32(4)
+    comptime Workgroup = Int32(1)
+    comptime Device = Int32(2)
+    comptime SIMDGroup = Int32(4)
 
 
 struct _AirMemOrder:
     """AIR memory ordering semantics for atomic operations and fences."""
 
-    alias Relaxed = Int32(0)
-    alias SeqCst = Int32(5)
+    comptime Relaxed = Int32(0)
+    comptime SeqCst = Int32(5)
 
 
 @always_inline
@@ -765,11 +765,11 @@ fn store_release[
 
     @parameter
     if is_nvidia_gpu():
-        alias mem_constraint = StaticString(",~{memory}") if memory else ""
-        alias constraints = _get_nvtx_register_constraint[
+        comptime mem_constraint = StaticString(",~{memory}") if memory else ""
+        comptime constraints = _get_nvtx_register_constraint[
             dtype
         ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
-        alias scope_str = scope.mnemonic()
+        comptime scope_str = scope.mnemonic()
         inlined_assembly[
             "st.release."
             + ((scope_str + ".") if scope_str else "")
@@ -785,16 +785,16 @@ fn store_release[
             ordering = Consistency.RELEASE.__mlir_attr(),
         ](value, ptr.address)
     elif is_apple_gpu():
-        alias mem_flags = _AirMemFlags.ThreadGroup if ptr.address_space == AddressSpace.SHARED else _AirMemFlags.Device
-        alias air_scope = _AirScope.Workgroup if scope is Scope.BLOCK else _AirScope.Device
+        comptime mem_flags = _AirMemFlags.ThreadGroup if ptr.address_space == AddressSpace.SHARED else _AirMemFlags.Device
+        comptime air_scope = _AirScope.Workgroup if scope is Scope.BLOCK else _AirScope.Device
         external_call["air.atomic.fence", NoneType](
             mem_flags,
             _AirMemOrder.SeqCst,
             air_scope,
         )
-        alias addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GENERIC else ptr.address_space
-        alias store_intrin_base = "air.atomic.local.store" if addr_space == AddressSpace.SHARED else "air.atomic.global.store"
-        alias store_intrin = store_intrin_base + "." + _get_air_atomic_suffix[
+        comptime addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GENERIC else ptr.address_space
+        comptime store_intrin_base = "air.atomic.local.store" if addr_space == AddressSpace.SHARED else "air.atomic.global.store"
+        comptime store_intrin = store_intrin_base + "." + _get_air_atomic_suffix[
             dtype
         ]()
         external_call[store_intrin, NoneType,](
@@ -836,11 +836,11 @@ fn store_relaxed[
 
     @parameter
     if is_nvidia_gpu():
-        alias mem_constraint = StaticString(",~{memory}") if memory else ""
-        alias constraints = _get_nvtx_register_constraint[
+        comptime mem_constraint = StaticString(",~{memory}") if memory else ""
+        comptime constraints = _get_nvtx_register_constraint[
             dtype
         ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
-        alias scope_str = scope.mnemonic()
+        comptime scope_str = scope.mnemonic()
         inlined_assembly[
             "st.relaxed."
             + ((scope_str + ".") if scope_str else "")
@@ -897,11 +897,11 @@ fn load_acquire[
 
     @parameter
     if is_nvidia_gpu():
-        alias mem_constraint = StaticString(",~{memory}") if memory else ""
-        alias constraints = "=" + _get_nvtx_register_constraint[
+        comptime mem_constraint = StaticString(",~{memory}") if memory else ""
+        comptime constraints = "=" + _get_nvtx_register_constraint[
             dtype
         ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
-        alias scope_str = scope.mnemonic()
+        comptime scope_str = scope.mnemonic()
         return inlined_assembly[
             "ld.acquire."
             + ((scope_str + ".") if scope_str else "")
@@ -917,11 +917,11 @@ fn load_acquire[
             ordering = Consistency.ACQUIRE.__mlir_attr(),
         ](ptr.address)
     elif is_apple_gpu():
-        alias addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GENERIC else ptr.address_space
-        alias mem_flags = _AirMemFlags.ThreadGroup if addr_space == AddressSpace.SHARED else _AirMemFlags.Device
-        alias air_scope = _AirScope.Workgroup if scope is Scope.BLOCK else _AirScope.Device
-        alias load_intrin_base = "air.atomic.local.load" if addr_space == AddressSpace.SHARED else "air.atomic.global.load"
-        alias load_intrin = load_intrin_base + "." + _get_air_atomic_suffix[
+        comptime addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GENERIC else ptr.address_space
+        comptime mem_flags = _AirMemFlags.ThreadGroup if addr_space == AddressSpace.SHARED else _AirMemFlags.Device
+        comptime air_scope = _AirScope.Workgroup if scope is Scope.BLOCK else _AirScope.Device
+        comptime load_intrin_base = "air.atomic.local.load" if addr_space == AddressSpace.SHARED else "air.atomic.global.load"
+        comptime load_intrin = load_intrin_base + "." + _get_air_atomic_suffix[
             dtype
         ]()
         var value = external_call[load_intrin, Scalar[dtype],](
@@ -971,11 +971,11 @@ fn load_relaxed[
 
     @parameter
     if is_nvidia_gpu():
-        alias mem_constraint = StaticString(",~{memory}") if memory else ""
-        alias constraints = "=" + _get_nvtx_register_constraint[
+        comptime mem_constraint = StaticString(",~{memory}") if memory else ""
+        comptime constraints = "=" + _get_nvtx_register_constraint[
             dtype
         ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
-        alias scope_str = scope.mnemonic()
+        comptime scope_str = scope.mnemonic()
         return inlined_assembly[
             "ld.relaxed."
             + ((scope_str + ".") if scope_str else "")
@@ -1024,8 +1024,8 @@ fn store_volatile[
     constrained[
         is_nvidia_gpu(), "store_volatile is not currently supported on AMD GPUs"
     ]()
-    alias mem_constraint = StaticString(",~{memory}") if memory else ""
-    alias constraints = _get_nvtx_register_constraint[
+    comptime mem_constraint = StaticString(",~{memory}") if memory else ""
+    comptime constraints = _get_nvtx_register_constraint[
         dtype
     ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
     inlined_assembly[
@@ -1064,8 +1064,8 @@ fn load_volatile[
     constrained[
         is_nvidia_gpu(), "load_volatile is not currently supported on AMD GPUs"
     ]()
-    alias mem_constraint = StaticString(",~{memory}") if memory else ""
-    alias constraints = "=" + _get_nvtx_register_constraint[
+    comptime mem_constraint = StaticString(",~{memory}") if memory else ""
+    comptime constraints = "=" + _get_nvtx_register_constraint[
         dtype
     ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
     return inlined_assembly[
@@ -1177,8 +1177,8 @@ struct AMDBufferResource:
             "The buffer_load function is only applicable on AMDGPU hardware.",
         ]()
 
-        alias bytes = size_of[dtype]() * width
-        alias aux = _cache_operation_to_amd_aux[cache_policy]()
+        comptime bytes = size_of[dtype]() * width
+        comptime aux = _cache_operation_to_amd_aux[cache_policy]()
 
         var vector_offset_bytes = vector_offset * size_of[dtype]()
         var scalar_offset_bytes = scalar_offset * size_of[dtype]()
@@ -1232,8 +1232,8 @@ struct AMDBufferResource:
             ),
         ]()
 
-        alias bytes = size_of[dtype]() * width
-        alias aux = _cache_operation_to_amd_aux[cache_policy]()
+        comptime bytes = size_of[dtype]() * width
+        comptime aux = _cache_operation_to_amd_aux[cache_policy]()
 
         var vector_offset_bytes = vector_offset * size_of[dtype]()
         var scalar_offset_bytes = scalar_offset * size_of[dtype]()
@@ -1290,8 +1290,8 @@ struct AMDBufferResource:
             "The buffer_store function is only applicable on AMDGPU hardware.",
         ]()
 
-        alias bytes = width * size_of[dtype]()
-        alias aux: Int32 = _cache_operation_to_amd_aux[cache_policy]()
+        comptime bytes = width * size_of[dtype]()
+        comptime aux: Int32 = _cache_operation_to_amd_aux[cache_policy]()
 
         var vector_offset_bytes = vector_offset * size_of[dtype]()
         var scalar_offset_bytes = scalar_offset * size_of[dtype]()
@@ -1447,7 +1447,7 @@ fn permlane_swap[
     constrained[bit_width_of[dtype]() == 32, "Unsupported dtype"]()
     constrained[stride in (16, 32), "Unsupported stride"]()
 
-    alias asm = "llvm.amdgcn.permlane" + String(stride) + ".swap"
+    comptime asm = "llvm.amdgcn.permlane" + String(stride) + ".swap"
     var result = llvm_intrinsic[
         asm,
         _RegisterPackType[Int32, Int32],

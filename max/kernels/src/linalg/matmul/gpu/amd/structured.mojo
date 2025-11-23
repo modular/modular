@@ -109,23 +109,26 @@ struct SMemBuffer[
     """Manages shared memory and returns 2D tile slices of the buffer."""
 
     alias SMemTileType = SMemTileType[
-        dtype, pipeline_layout[layout, pipeline_stages](), alignment=128
+        Self.dtype,
+        pipeline_layout[Self.layout, Self.pipeline_stages](),
+        alignment=128,
     ]
 
-    alias BlockTileType = Self.SMemTileType.TileType[BM, BN]
-    alias WarpTileType = Self.BlockTileType.TileType[WM, WN]
+    alias BlockTileType = Self.SMemTileType.TileType[Self.BM, Self.BN]
+    alias WarpTileType = Self.BlockTileType.TileType[Self.WM, Self.WN]
 
     var buffer: Self.SMemTileType
 
     @always_inline
     fn __init__(out self):
         constrained[
-            layout.rank() == 2,
+            Self.layout.rank() == 2,
             "layout must be 2D",
         ]()
 
         constrained[
-            prod(layout.shape[0]) == BM and prod(layout.shape[1]) == BN,
+            prod(Self.layout.shape[0]) == Self.BM
+            and prod(Self.layout.shape[1]) == Self.BN,
             (
                 "shared memory rows must match block_rows and columns must"
                 " match BN"
@@ -133,7 +136,7 @@ struct SMemBuffer[
         ]()
 
         constrained[
-            BM % WM == 0 and BN % WN == 0,
+            Self.BM % Self.WM == 0 and Self.BN % Self.WN == 0,
             "BM and BN must be a multiple of WM and WN",
         ]()
 
@@ -141,7 +144,7 @@ struct SMemBuffer[
 
     @always_inline
     fn get_tile(self, stage: Int) -> Self.BlockTileType:
-        return self.buffer.tile[BM, BN](0, stage)
+        return self.buffer.tile[Self.BM, Self.BN](0, stage)
 
 
 @register_passable("trivial")
@@ -180,18 +183,18 @@ struct AMDSharedMemoryBarrier:
 
 @register_passable("trivial")
 struct AMDWarpSharedMemoryBarrier[size: Int]:
-    var __repr: StaticTuple[Int32, size]
+    var __repr: StaticTuple[Int32, Self.size]
 
     @always_inline
     fn initialize(ref [AddressSpace.SHARED, MutAnyOrigin]self):
-        self.__repr = StaticTuple[Int32, size](fill=0)
+        self.__repr = StaticTuple[Int32, Self.size](fill=0)
 
     @always_inline
     fn value(ref [AddressSpace.SHARED]self) -> Int32:
         var sum: Int32 = 0
 
         @parameter
-        for i in range(size):
+        for i in range(Self.size):
             sum += self.__repr[i]
         return sum
 
@@ -220,15 +223,19 @@ struct MMAConfig[
     transpose_b: Bool = True,
 ]:
     alias mma = TensorCore[
-        OutType,
-        InType,
-        mma_shape,
-        transpose_b,
+        Self.OutType,
+        Self.InType,
+        Self.mma_shape,
+        Self.transpose_b,
     ]()
 
-    alias simd_width = simd_width_of[InType]()
-    alias registers_per_thread_a = num_matrix_reg[mma_shape[0], mma_shape[2]]()
-    alias registers_per_thread_b = num_matrix_reg[mma_shape[1], mma_shape[2]]()
+    alias simd_width = simd_width_of[Self.InType]()
+    alias registers_per_thread_a = num_matrix_reg[
+        Self.mma_shape[0], Self.mma_shape[2]
+    ]()
+    alias registers_per_thread_b = num_matrix_reg[
+        Self.mma_shape[1], Self.mma_shape[2]
+    ]()
 
     alias k_group_size_a = Self.simd_width // Self.registers_per_thread_a
     alias k_group_size_b = Self.simd_width // Self.registers_per_thread_b
@@ -236,12 +243,12 @@ struct MMAConfig[
     @staticmethod
     @always_inline
     fn adjusted_mma_k_shape_a() -> Int:
-        return mma_shape[2] * Self.k_group_size_a
+        return Self.mma_shape[2] * Self.k_group_size_a
 
     @staticmethod
     @always_inline
     fn adjusted_mma_k_shape_b() -> Int:
-        return mma_shape[2] * Self.k_group_size_b
+        return Self.mma_shape[2] * Self.k_group_size_b
 
 
 @register_passable("trivial")
@@ -276,19 +283,23 @@ struct AmdTileOperator[
         - The K dimension must align such that num_k_tiles is divisible by k_group_size
     """
 
-    alias simd_width = simd_width_of[InType]()
-    alias _type_alignment = align_of[SIMD[InType, Self.simd_width]]()
+    alias simd_width = simd_width_of[Self.InType]()
+    alias _type_alignment = align_of[SIMD[Self.InType, Self.simd_width]]()
 
     # Create tensor core instance
     alias tensor_core = TensorCore[
-        OutType,
-        InType,
-        mma_shape,
-        transpose_b,
+        Self.OutType,
+        Self.InType,
+        Self.mma_shape,
+        Self.transpose_b,
     ]()
 
-    alias num_m_mmas = prod(warp_block_layout_a.shape[0]) // mma_shape[0]
-    alias num_n_mmas = prod(warp_block_layout_b.shape[0]) // mma_shape[1]
+    alias num_m_mmas = prod(
+        Self.warp_block_layout_a.shape[0]
+    ) // Self.mma_shape[0]
+    alias num_n_mmas = prod(
+        Self.warp_block_layout_b.shape[0]
+    ) // Self.mma_shape[1]
 
     alias _out_frag_rows = Self.num_m_mmas * Self.num_n_mmas
     alias _out_frag_cols = Self.tensor_core.c_reg_type.size
@@ -297,11 +308,15 @@ struct AmdTileOperator[
         Self._out_frag_rows, Self._out_frag_cols
     )
 
-    alias WK = prod(warp_block_layout_a.shape[1])
-    alias num_k_tiles = Self.WK // mma_shape[2]
+    alias WK = prod(Self.warp_block_layout_a.shape[1])
+    alias num_k_tiles = Self.WK // Self.mma_shape[2]
 
-    alias _registers_per_thread_a = num_matrix_reg[mma_shape[0], mma_shape[2]]()
-    alias _registers_per_thread_b = num_matrix_reg[mma_shape[1], mma_shape[2]]()
+    alias _registers_per_thread_a = num_matrix_reg[
+        Self.mma_shape[0], Self.mma_shape[2]
+    ]()
+    alias _registers_per_thread_b = num_matrix_reg[
+        Self.mma_shape[1], Self.mma_shape[2]
+    ]()
     alias k_group_size_a = Self.simd_width // Self._registers_per_thread_a
     alias k_group_size_b = Self.simd_width // Self._registers_per_thread_b
 
@@ -310,7 +325,7 @@ struct AmdTileOperator[
 
     # Total number of K tiles for MMA operations
     alias total_k_tiles = Self.num_k_tiles
-    alias out_frag_size = mma_shape[0] * mma_shape[1] // WARP_SIZE
+    alias out_frag_size = Self.mma_shape[0] * Self.mma_shape[1] // WARP_SIZE
 
     alias _in_layout[
         num_mmas: Int,
@@ -318,15 +333,15 @@ struct AmdTileOperator[
     ] = Layout.row_major(_k_tiles_per_simd * num_mmas, Self.simd_width)
 
     alias ARegTileType = RegTileType[
-        InType, Self._in_layout[Self.num_m_mmas, Self._k_tiles_per_simd_a]
+        Self.InType, Self._in_layout[Self.num_m_mmas, Self._k_tiles_per_simd_a]
     ]
 
     alias BRegTileType = RegTileType[
-        InType, Self._in_layout[Self.num_n_mmas, Self._k_tiles_per_simd_b]
+        Self.InType, Self._in_layout[Self.num_n_mmas, Self._k_tiles_per_simd_b]
     ]
 
     alias OutRegTileType = LayoutTensor[
-        OutType,
+        Self.OutType,
         Self._out_layout,
         MutAnyOrigin,
         *_,
@@ -422,7 +437,7 @@ struct AmdTileOperator[
         # (tensor core loads k_group_size tiles at once)
         @parameter
         if fragment_idx == 0:
-            Self.tensor_core.load_a[swizzle=swizzle](
+            Self.tensor_core.load_a[swizzle = Self.swizzle](
                 smem_tile_a,
                 self._a_reg_tile.tile[Self.num_m_mmas, Self.simd_width](
                     group_idx, 0
@@ -430,7 +445,7 @@ struct AmdTileOperator[
                 UInt(group_idx),
             )
 
-            Self.tensor_core.load_b[swizzle=swizzle](
+            Self.tensor_core.load_b[swizzle = Self.swizzle](
                 smem_tile_b,
                 self._b_reg_tile.tile[Self.num_n_mmas, Self.simd_width](
                     group_idx, 0

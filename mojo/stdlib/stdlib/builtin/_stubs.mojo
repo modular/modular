@@ -19,10 +19,10 @@
 
 @register_passable("trivial")
 struct __MLIRType[T: AnyTrivialRegType](ImplicitlyCopyable, Movable):
-    var value: T
-    alias __del__is_trivial = True
-    alias __moveinit__is_trivial = True
-    alias __copyinit__is_trivial = True
+    var value: Self.T
+    comptime __del__is_trivial = True
+    comptime __moveinit__is_trivial = True
+    comptime __copyinit__is_trivial = True
 
 
 # ===-----------------------------------------------------------------------===#

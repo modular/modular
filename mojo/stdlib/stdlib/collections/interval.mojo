@@ -73,7 +73,7 @@ trait IntervalElement(Comparable, Copyable, Intable, Movable, Writable):
 
 struct Interval[T: IntervalElement](
     Boolable,
-    EqualityComparable,
+    Equatable,
     ImplicitlyCopyable,
     Movable,
     Representable,
@@ -89,13 +89,13 @@ struct Interval[T: IntervalElement](
         T: The type of the interval bounds.
     """
 
-    var start: T
+    var start: Self.T
     """The inclusive start of the interval."""
 
-    var end: T
+    var end: Self.T
     """The exclusive end of the interval."""
 
-    fn __init__(out self, start: T, end: T):
+    fn __init__(out self, start: Self.T, end: Self.T):
         """Initialize an interval with start and end values.
 
         Args:
@@ -109,7 +109,7 @@ struct Interval[T: IntervalElement](
         self.start = start.copy()
         self.end = end.copy()
 
-    fn __init__(out self, interval: Tuple[T, T], /):
+    fn __init__(out self, interval: Tuple[Self.T, Self.T], /):
         """Initialize an interval with a tuple of start and end values.
 
         Args:
@@ -187,7 +187,7 @@ struct Interval[T: IntervalElement](
         var end = self.end.copy() if self.end < other.end else other.end.copy()
         return Self(start, end)
 
-    fn __contains__(self, other: T) -> Bool:
+    fn __contains__(self, other: Self.T) -> Bool:
         """Returns whether a value is contained within this interval.
 
         Args:
@@ -325,13 +325,13 @@ struct _IntervalNode[
           and collection operations.
     """
 
-    var interval: Interval[T]
+    var interval: Interval[Self.T]
     """The interval contained in this node."""
 
-    var data: U
+    var data: Self.U
     """The data associated with this interval."""
 
-    var max_end: T
+    var max_end: Self.T
     """The maximum end value of this node."""
 
     var left: UnsafePointer[Self, MutOrigin.external]
@@ -348,9 +348,9 @@ struct _IntervalNode[
 
     fn __init__(
         out self,
-        start: T,
-        end: T,
-        data: U,
+        start: Self.T,
+        end: Self.T,
+        data: Self.U,
         *,
         left: Optional[UnsafePointer[Self, MutOrigin.external]] = None,
         right: Optional[UnsafePointer[Self, MutOrigin.external]] = None,
@@ -379,8 +379,8 @@ struct _IntervalNode[
 
     fn __init__(
         out self,
-        interval: Interval[T],
-        data: U,
+        interval: Interval[Self.T],
+        data: Self.U,
         *,
         left: Optional[UnsafePointer[Self, MutOrigin.external]] = None,
         right: Optional[UnsafePointer[Self, MutOrigin.external]] = None,
@@ -499,8 +499,8 @@ struct IntervalTree[
           and collection operations.
     """
 
-    alias _IntervalNodePointer = UnsafePointer[
-        _IntervalNode[T, U], MutOrigin.external
+    comptime _IntervalNodePointer = UnsafePointer[
+        _IntervalNode[Self.T, Self.U], MutOrigin.external
     ]
 
     var _root: Self._IntervalNodePointer
@@ -654,7 +654,7 @@ struct IntervalTree[
                 rotation_left_child[].left[].max_end,
             )
 
-    fn insert(mut self, interval: Tuple[T, T], data: U):
+    fn insert(mut self, interval: Tuple[Self.T, Self.T], data: Self.U):
         """Insert a new interval into the tree using a tuple representation.
 
         Args:
@@ -663,7 +663,7 @@ struct IntervalTree[
         """
         self.insert(Interval(interval[0], interval[1]), data)
 
-    fn insert(mut self, interval: Interval[T], data: U):
+    fn insert(mut self, interval: Interval[Self.T], data: Self.U):
         """Insert a new interval into the tree.
 
         This method inserts a new interval and its associated data into the interval tree.
@@ -676,7 +676,7 @@ struct IntervalTree[
         """
         # Allocate memory for a new node and initialize it with the interval
         # and data
-        var new_node = alloc[_IntervalNode[T, U]](1)
+        var new_node = alloc[_IntervalNode[Self.T, Self.U]](1)
         new_node.init_pointee_move(_IntervalNode(interval, data))
         self._len += 1
 
@@ -985,7 +985,7 @@ struct IntervalTree[
         if v:
             v[].parent = u[].parent
 
-    fn search(self, interval: Tuple[T, T]) raises -> List[U]:
+    fn search(self, interval: Tuple[Self.T, Self.T]) raises -> List[Self.U]:
         """Searches for intervals overlapping with the given tuple.
 
         Args:
@@ -999,7 +999,7 @@ struct IntervalTree[
         """
         return self.search(Interval(interval[0], interval[1]))
 
-    fn search(self, interval: Interval[T]) raises -> List[U]:
+    fn search(self, interval: Interval[Self.T]) raises -> List[Self.U]:
         """Searches for intervals overlapping with the given interval.
 
         Args:
@@ -1014,9 +1014,9 @@ struct IntervalTree[
         return self._search_helper(self._root, interval)
 
     fn _search_helper(
-        self, node: Self._IntervalNodePointer, interval: Interval[T]
-    ) raises -> List[U]:
-        var result = List[U]()
+        self, node: Self._IntervalNodePointer, interval: Interval[Self.T]
+    ) raises -> List[Self.U]:
+        var result = List[Self.U]()
         var work_list = Deque[Self._IntervalNodePointer]()
         work_list.append(node)
 

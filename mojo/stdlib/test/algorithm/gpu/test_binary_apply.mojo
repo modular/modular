@@ -36,7 +36,7 @@ fn vec_func[
 fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
     print("== run_binary_add")
 
-    alias length = 1024
+    comptime length = 1024
 
     var in0 = ctx.enqueue_create_buffer[DType.float32](length)
     var in1 = ctx.enqueue_create_buffer[DType.float32](length)
@@ -52,7 +52,7 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
         return capture + lhs + rhs
 
     var block_dim = 32
-    alias kernel = vec_func[add]
+    comptime kernel = vec_func[add]
     ctx.enqueue_function_checked[kernel, kernel](
         in0,
         in1,

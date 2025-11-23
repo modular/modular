@@ -39,6 +39,12 @@ from gpu.memory import (
 )
 from gpu.mma import st_matrix
 from gpu.mma_sm100 import *
+from gpu.primitives.grid_controls import (
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    PDLLevel,
+    wait_on_dependent_grids,
+)
 from gpu.sync import (
     named_barrier,
     named_barrier_arrive,
@@ -144,6 +150,62 @@ struct WarpRole(ImplicitlyCopyable, Movable):
     @always_inline
     fn is_scheduler() -> Bool:
         return Self.Scheduler == get_warp_id()
+
+
+struct B200MatmulSmem[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    transpose_b: Bool,
+    *,
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+]:
+    alias BM = Self.config.block_tile_shape[0]
+    alias BN = Self.config.block_tile_shape[1]
+    alias BK = Self.config.block_tile_shape[2]
+    alias OutputM = Self.config.output_tile_shape[0]
+    alias OutputN = Self.config.output_tile_shape[1]
+
+    alias AType = Scalar[Self.a_type]
+    alias BType = Scalar[Self.b_type]
+    alias CType = Scalar[Self.c_type]
+
+    alias a_smem_size = Self.BM * Self.BK * Int(Self.config.num_pipeline_stages)
+    alias b_smem_size = Self.BN * Self.BK * Int(Self.config.num_pipeline_stages)
+    alias c_smem_size = Self.OutputM * Self.OutputN * Int(
+        Self.config.num_output_stages
+    )
+    alias num_group_pipeline_stages = Self.config.num_pipeline_stages // Self.config.k_group_size
+
+    # AB pipelines
+    var a_smem: InlineArray[Self.AType, Self.a_smem_size]
+    var b_smem: InlineArray[Self.BType, Self.b_smem_size]
+    var c_smem: InlineArray[Self.CType, Self.c_smem_size]
+    var tma_mma_mbars: InlineArray[
+        SharedMemBarrier, Int(Self.num_group_pipeline_stages) * 2
+    ]
+    # ACCUM
+    var accum_mbars: InlineArray[
+        SharedMemBarrier, Int(Self.config.num_accum_pipeline_stages) * 2
+    ]
+
+    # CLC
+    var clc_mbars_full: InlineArray[
+        SharedMemBarrier, Int(Self.config.num_clc_pipeline_stages)
+    ]
+    var clc_mbars_empty: InlineArray[
+        SharedMemBarrier, Int(Self.config.num_clc_pipeline_stages)
+    ]
+    var clc_throttle_mbars: InlineArray[
+        SharedMemBarrier, Int(Self.config.num_clc_pipeline_stages) * 2
+    ]
+    var clc_response: InlineArray[
+        UInt128, Int(Self.config.num_clc_pipeline_stages)
+    ]
+
+    # TMEM
+    var tmem_dealloc_mbar: InlineArray[SharedMemBarrier, 1]
+    var tmem_addr: InlineArray[UInt32, 1]
 
 
 @always_inline
@@ -797,6 +859,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
 ](
     c_device: LayoutTensor[c_type, c_layout, *_, **_],
@@ -905,86 +968,11 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
 
     # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
     alias b200_smem = B200.shared_memory_per_multiprocessor - 1024
-    alias a_smem_bytes_per_stage = BM * BK * size_of[a_type]()
-    alias b_smem_bytes_per_stage = BN * BK * size_of[b_type]()
-    # A and B per pipeline stage
-    alias AB_smem_per_stage = a_smem_bytes_per_stage + b_smem_bytes_per_stage
 
-    # Support double-buffer for output stages.
-    alias c_smem_bytes = config.output_tile_shape[0] * config.output_tile_shape[
-        1
-    ] * Int(config.num_output_stages) * size_of[c_type]()
-
-    alias MBAR_BYTES = size_of[Int64]()  # 8 bytes per barrier
-    alias CLC_RESPONSE_BYTES = size_of[Int128]()  # 16 bytes per response
-    alias TMEM_ADDR_BYTES = size_of[
-        Int32
-    ]()  # 4 bytes or 32 bits for tensor memory address
-    # the 'N' dimension of tensor memory is 512
-    alias TMEM_N = 512
-    # Mainloop barrier
-    alias accum_full_mbar_bytes = MBAR_BYTES * Int(
-        config.num_accum_pipeline_stages
-    )
-    alias accum_empty_mbar_bytes = MBAR_BYTES * Int(
-        config.num_accum_pipeline_stages
-    )
-
-    alias clc_response_bytes = CLC_RESPONSE_BYTES * Int(
-        config.num_clc_pipeline_stages
-    )
-    alias clc_full_mbar_bytes = MBAR_BYTES * Int(config.num_clc_pipeline_stages)
-    alias clc_empty_mbar_bytes = MBAR_BYTES * Int(
-        config.num_clc_pipeline_stages
-    )
-    alias clc_throttle_full_mbar_bytes = MBAR_BYTES * Int(
-        config.num_clc_pipeline_stages
-    )
-    alias clc_throttle_empty_mbar_bytes = MBAR_BYTES * Int(
-        config.num_clc_pipeline_stages
-    )
-
-    alias tmem_addr_bytes = TMEM_ADDR_BYTES
-    alias tmem_dealloc_mbar_bytes = MBAR_BYTES
-
-    alias tmem_writeout_smem = c_smem_bytes + tmem_addr_bytes + tmem_dealloc_mbar_bytes
-    alias accum_smem = accum_full_mbar_bytes + accum_empty_mbar_bytes
-    alias clc_smem = (
-        clc_response_bytes
-        + clc_full_mbar_bytes
-        + clc_empty_mbar_bytes
-        + clc_throttle_full_mbar_bytes
-        + clc_throttle_empty_mbar_bytes
-    )
-    alias smem_leftover = (b200_smem) - (
-        clc_smem + accum_smem + tmem_writeout_smem
-    )
-
-    alias tma_mbar_bytes_per_stage = MBAR_BYTES
-    alias mma_mbar_bytes_per_stage = MBAR_BYTES
-
-    alias producer_consumer_smem_per_stage = (
-        AB_smem_per_stage + tma_mbar_bytes_per_stage + mma_mbar_bytes_per_stage
-    )
-
-    alias max_pipeline_stages = UInt(
-        smem_leftover // producer_consumer_smem_per_stage
-    )
-
-    constrained[
-        max_pipeline_stages >= 1, "Max pipeline stages must be at least 1"
-    ]()
-
-    # TODO: the config should have the correct number of stages.
-    # alias pipeline_stage = min(config.num_pipeline_stages, max_pipeline_stages)
-    # alias pipeline_stage = min(config.num_pipeline_stages, max_pipeline_stages)
-    alias producer_consumer_smem = producer_consumer_smem_per_stage * Int(
-        config.num_pipeline_stages
-    )
-
-    alias smem_size = (
-        clc_smem + accum_smem + producer_consumer_smem + tmem_writeout_smem
-    )
+    alias SmemType = B200MatmulSmem[
+        a_type, b_type, c_type, transpose_b, config=config
+    ]
+    alias smem_size = size_of[SmemType]()
 
     alias max_profiled_tiles = 0 if max_profiled_tiles_per_SM is None else max_profiled_tiles_per_SM.value()
     alias enable_profiling = max_profiled_tiles > 0
@@ -1008,6 +996,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         ),
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         register_based_epilogue=register_based_epilogue,
+        pdl_level=pdl_level,
         max_profiled_tiles_per_SM=max_profiled_tiles,
     ]
 
@@ -1057,6 +1046,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         ),
         shared_mem_bytes=smem_size,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(b200_smem),
+        attributes=pdl_launch_attributes(pdl_level),
     )
 
     @parameter
@@ -1981,6 +1971,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: UInt32 = 0,
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
@@ -2046,21 +2037,27 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         b_type, BN, BK, swizzle_mode = config.b_swizzle
     ]()
 
-    base_ptr_smem = external_memory[
-        Scalar[a_type],
+    alias SmemType = B200MatmulSmem[
+        a_type, b_type, c_type, transpose_b, config=config
+    ]
+
+    ref smem_storage = external_memory[
+        Scalar[DType.uint8],
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ]()
+    ]().bitcast[SmemType]()[]
 
-    alias a_smem_size = a_smem_layout.size() * Int(config.num_pipeline_stages)
-    alias b_smem_size = b_smem_layout.size() * Int(config.num_pipeline_stages)
-    alias c_smem_size = config.output_tile_shape[0] * config.output_tile_shape[
-        1
-    ] * Int(config.num_output_stages)
-
-    var a_smem_base = base_ptr_smem
-    var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()
-    var c_smem_base = (b_smem_base + b_smem_size).bitcast[Scalar[c_type]]()
+    ref a_smem_storage = smem_storage.a_smem
+    ref b_smem_storage = smem_storage.b_smem
+    ref c_smem_storage = smem_storage.c_smem
+    ref tma_mma_mbars_storage = smem_storage.tma_mma_mbars
+    ref accum_mbars_storage = smem_storage.accum_mbars
+    ref clc_mbars_full_storage = smem_storage.clc_mbars_full
+    ref clc_mbars_empty_storage = smem_storage.clc_mbars_empty
+    ref clc_response_storage = smem_storage.clc_response
+    ref clc_throttle_storage = smem_storage.clc_throttle_mbars
+    ref tmem_addr_storage = smem_storage.tmem_addr
+    ref tmem_dealloc_mbar_storage = smem_storage.tmem_dealloc_mbar
 
     var a_smem = LayoutTensorIter[
         a_type,
@@ -2069,8 +2066,8 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
-        a_smem_base,
-        a_smem_size,
+        a_smem_storage.unsafe_ptr(),
+        SmemType.a_smem_size,
     )
 
     var b_smem = LayoutTensorIter[
@@ -2080,8 +2077,8 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
-        b_smem_base,
-        b_smem_size,
+        b_smem_storage.unsafe_ptr(),
+        SmemType.b_smem_size,
     )
 
     var c_smem_iter = LayoutTensorIter[
@@ -2092,32 +2089,28 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](c_smem_base, c_smem_size)
+    ](
+        c_smem_storage.unsafe_ptr(),
+        SmemType.c_smem_size,
+    )
 
     # Load warp as producer and mma warp as consumer
     # Dependence on MMA input in SMEM.
     # Conumer phase = 1 so that producer's wait on consumer passes trivially
     # at the start when buffer is empty.
-    var load_mma_mbar_ptr = (c_smem_base + c_smem_size).bitcast[
-        SharedMemBarrier
-    ]()
     var load_mma_pipeline = ProducerConsumerPipeline[
         Int(config.num_pipeline_stages // config.k_group_size)
-    ](load_mma_mbar_ptr)
+    ](
+        tma_mma_mbars_storage.unsafe_ptr(),
+    )
 
     # MMA warp as producer and Output warp as consumer.
     # Dependence on MMA output in TMEM.
-    var mma_output_mbar_ptr = load_mma_mbar_ptr + 2 * Int(
-        config.num_pipeline_stages // config.k_group_size
-    )
     var mma_output_pipeline = ProducerConsumerPipeline[
         Int(config.num_accum_pipeline_stages)
-    ](mma_output_mbar_ptr)
-
-    var clc_full_mbar_ptr = mma_output_mbar_ptr + 2 * Int(
-        config.num_accum_pipeline_stages
+    ](
+        accum_mbars_storage.unsafe_ptr(),
     )
-    var clc_empty_mbar_ptr = clc_full_mbar_ptr + config.num_clc_pipeline_stages
 
     # Load warp as producer and scheduler warp as consumer.
     # No data dependence. Introduce dependence to prevent CLC goes too ahead.
@@ -2125,22 +2118,17 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     # there will be no guarantee they get balanced number of tiles.
     var load_clc_pipeline = ProducerConsumerPipeline[
         Int(config.num_clc_pipeline_stages)
-    ](clc_empty_mbar_ptr + config.num_clc_pipeline_stages)
+    ](
+        clc_throttle_storage.unsafe_ptr(),
+    )
 
-    var clc_response_ptr = (
-        clc_empty_mbar_ptr + 3 * Int(config.num_clc_pipeline_stages)
-    ).bitcast[Int128]()
+    var ptr_tmem_addr = tmem_addr_storage.unsafe_ptr()
 
-    var tmem_dealloc_mbar_ptr = (
-        clc_response_ptr + config.num_clc_pipeline_stages
-    ).bitcast[Int64]()
+    clc_response = clc_response_storage.unsafe_ptr()
+    clc_full_mbar = clc_mbars_full_storage.unsafe_ptr()
+    clc_empty_mbar = clc_mbars_empty_storage.unsafe_ptr()
 
-    var ptr_tmem_addr = (tmem_dealloc_mbar_ptr + 1).bitcast[UInt32]()
-
-    clc_response = clc_response_ptr.bitcast[UInt128]()
-    clc_full_mbar = clc_full_mbar_ptr.bitcast[SharedMemBarrier]()
-    clc_empty_mbar = clc_empty_mbar_ptr.bitcast[SharedMemBarrier]()
-    tmem_dealloc_mbar = tmem_dealloc_mbar_ptr.bitcast[SharedMemBarrier]()
+    tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
 
     alias accum_type = get_accum_type[a_type]()
 
@@ -2258,6 +2246,10 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         with MatmulProfilerType[0](workspace, 0):
             var required_clc_query = True
 
+            @parameter
+            if pdl_level > PDLLevel.OFF:
+                wait_on_dependent_grids()
+
             while work_info.is_valid():
                 # CLC throttle prevents each CTA from going a few waves ahead.
                 if is_first_cta_in_cluster and required_clc_query:
@@ -2314,6 +2306,10 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
         with MatmulProfilerType[1](workspace, 0):
             var required_clc_query = True
+
+            @parameter
+            if pdl_level > PDLLevel.OFF:
+                wait_on_dependent_grids()
 
             while work_info.is_valid():
                 if required_clc_query:
@@ -2410,6 +2406,10 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                             )
                     mma_output_pipeline.producer_step()
                 work_info = next_work_info
+
+            @parameter
+            if pdl_level > PDLLevel.OFF:
+                launch_dependent_grids()
 
             tcgen05_release_allocation_lock[config.cta_group]()
 
@@ -2560,21 +2560,27 @@ fn blackwell_tma_umma_warp_specialized_split_k_kernel[
         b_type, BN, BK, swizzle_mode = config.b_swizzle
     ]()
 
-    base_ptr_smem = external_memory[
-        Scalar[a_type],
+    alias SmemType = B200MatmulSmem[
+        a_type, b_type, c_type, transpose_b, config=config
+    ]
+
+    ref smem_storage = external_memory[
+        Scalar[DType.uint8],
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ]()
+    ]().bitcast[SmemType]()[]
 
-    alias a_smem_size = a_smem_layout.size() * Int(config.num_pipeline_stages)
-    alias b_smem_size = b_smem_layout.size() * Int(config.num_pipeline_stages)
-    alias c_smem_size = config.output_tile_shape[0] * config.output_tile_shape[
-        1
-    ] * Int(config.num_output_stages)
-
-    var a_smem_base = base_ptr_smem
-    var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()
-    var c_smem_base = (b_smem_base + b_smem_size).bitcast[Scalar[c_type]]()
+    ref a_smem_storage = smem_storage.a_smem
+    ref b_smem_storage = smem_storage.b_smem
+    ref c_smem_storage = smem_storage.c_smem
+    ref tma_mma_mbars_storage = smem_storage.tma_mma_mbars
+    ref clc_response_storage = smem_storage.clc_response
+    ref clc_mbars_full_storage = smem_storage.clc_mbars_full
+    ref clc_mbars_empty_storage = smem_storage.clc_mbars_empty
+    ref clc_throttle_storage = smem_storage.clc_throttle_mbars
+    ref accum_mbars_storage = smem_storage.accum_mbars
+    ref tmem_addr_storage = smem_storage.tmem_addr
+    ref tmem_dealloc_mbar_storage = smem_storage.tmem_dealloc_mbar
 
     var a_smem = LayoutTensorIter[
         a_type,
@@ -2583,8 +2589,8 @@ fn blackwell_tma_umma_warp_specialized_split_k_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
-        a_smem_base,
-        a_smem_size,
+        a_smem_storage.unsafe_ptr(),
+        SmemType.a_smem_size,
     )
 
     var b_smem = LayoutTensorIter[
@@ -2594,8 +2600,8 @@ fn blackwell_tma_umma_warp_specialized_split_k_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
-        b_smem_base,
-        b_smem_size,
+        b_smem_storage.unsafe_ptr(),
+        SmemType.b_smem_size,
     )
 
     var c_smem_iter = LayoutTensorIter[
@@ -2606,32 +2612,25 @@ fn blackwell_tma_umma_warp_specialized_split_k_kernel[
         MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](c_smem_base, c_smem_size)
+    ](c_smem_storage.unsafe_ptr(), SmemType.c_smem_size)
 
     # Load warp as producer and mma warp as consumer
     # Dependence on MMA input in SMEM.
     # Conumer phase = 1 so that producer's wait on consumer passes trivially
     # at the start when buffer is empty.
-    var load_mma_mbar_ptr = (c_smem_base + c_smem_size).bitcast[
-        SharedMemBarrier
-    ]()
     var load_mma_pipeline = ProducerConsumerPipeline[
         Int(config.num_pipeline_stages // config.k_group_size)
-    ](load_mma_mbar_ptr)
+    ](
+        tma_mma_mbars_storage.unsafe_ptr(),
+    )
 
     # MMA warp as producer and Output warp as consumer.
     # Dependence on MMA output in TMEM.
-    var mma_output_mbar_ptr = load_mma_mbar_ptr + 2 * Int(
-        config.num_pipeline_stages // config.k_group_size
-    )
     var mma_output_pipeline = ProducerConsumerPipeline[
         Int(config.num_accum_pipeline_stages)
-    ](mma_output_mbar_ptr)
-
-    var clc_full_mbar_ptr = mma_output_mbar_ptr + 2 * Int(
-        config.num_accum_pipeline_stages
+    ](
+        accum_mbars_storage.unsafe_ptr(),
     )
-    var clc_empty_mbar_ptr = clc_full_mbar_ptr + config.num_clc_pipeline_stages
 
     # Load warp as producer and scheduler warp as consumer.
     # No data dependence. Introduce dependence to prevent CLC goes too ahead.
@@ -2639,22 +2638,16 @@ fn blackwell_tma_umma_warp_specialized_split_k_kernel[
     # there will be no guarantee they get balanced number of tiles.
     var load_clc_pipeline = ProducerConsumerPipeline[
         Int(config.num_clc_pipeline_stages)
-    ](clc_empty_mbar_ptr + config.num_clc_pipeline_stages)
+    ](
+        clc_throttle_storage.unsafe_ptr(),
+    )
 
-    var clc_response_ptr = (
-        clc_empty_mbar_ptr + 3 * Int(config.num_clc_pipeline_stages)
-    ).bitcast[Int128]()
+    clc_response = clc_response_storage.unsafe_ptr()
+    clc_full_mbar = clc_mbars_full_storage.unsafe_ptr()
+    clc_empty_mbar = clc_mbars_empty_storage.unsafe_ptr()
+    ptr_tmem_addr = tmem_addr_storage.unsafe_ptr()
 
-    var tmem_dealloc_mbar_ptr = (
-        clc_response_ptr + config.num_clc_pipeline_stages
-    ).bitcast[Int64]()
-
-    var ptr_tmem_addr = (tmem_dealloc_mbar_ptr + 1).bitcast[UInt32]()
-
-    clc_response = clc_response_ptr.bitcast[UInt128]()
-    clc_full_mbar = clc_full_mbar_ptr.bitcast[SharedMemBarrier]()
-    clc_empty_mbar = clc_empty_mbar_ptr.bitcast[SharedMemBarrier]()
-    tmem_dealloc_mbar = tmem_dealloc_mbar_ptr.bitcast[SharedMemBarrier]()
+    tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
 
     var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
     var elect_one_thread = elect_one_sync_with_mask()
@@ -3002,6 +2995,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
 ](
     c_device: LayoutTensor[c_type, c_layout, *_, **_],
@@ -3049,6 +3043,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
                 config=new_config,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 register_based_epilogue=register_based_epilogue,
+                pdl_level=pdl_level,
                 max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
             ](c_device, b_device, a_device, ctx)
     else:
@@ -3080,6 +3075,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
                 config=config,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 register_based_epilogue=register_based_epilogue,
+                pdl_level=pdl_level,
                 max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
             ](c_device, a_device, b_device, ctx)
 
@@ -3201,86 +3197,11 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         swizzle_mode = config.c_swizzle,
     ](ctx, c_device)
 
-    # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
+    alias SmemType = B200MatmulSmem[
+        a_type, b_type, c_type, transpose_b, config=config
+    ]
+    alias smem_size = size_of[SmemType]()
     alias b200_smem = B200.shared_memory_per_multiprocessor - 1024
-    alias a_smem_bytes_per_stage = BM * BK * size_of[a_type]()
-    alias b_smem_bytes_per_stage = BN * BK * size_of[b_type]()
-    # A and B per pipeline stage
-    alias AB_smem_per_stage = a_smem_bytes_per_stage + b_smem_bytes_per_stage
-
-    # Support double-buffer for output stages.
-    alias c_smem_bytes = config.output_tile_shape[0] * config.output_tile_shape[
-        1
-    ] * Int(config.num_output_stages) * size_of[c_type]()
-
-    alias MBAR_BYTES = size_of[Int64]()  # 8 bytes per barrier
-    alias CLC_RESPONSE_BYTES = size_of[Int128]()  # 16 bytes per response
-    alias TMEM_ADDR_BYTES = size_of[
-        Int32
-    ]()  # 4 bytes or 32 bits for tensor memory address
-    # the 'N' dimension of tensor memory is 512
-    alias TMEM_N = 512
-    # the maximum different number of mma's that can be run in parallel is TMEM_N/MMA_N
-    alias max_accum_pipeline_stages = TMEM_N // next_power_of_two(MMA_N)
-    # Mainloop barrier
-    alias accum_full_mbar_bytes = MBAR_BYTES * max_accum_pipeline_stages
-    alias accum_empty_mbar_bytes = MBAR_BYTES * max_accum_pipeline_stages
-
-    alias clc_response_bytes = CLC_RESPONSE_BYTES * Int(
-        config.num_clc_pipeline_stages
-    )
-    alias clc_full_mbar_bytes = MBAR_BYTES * Int(config.num_clc_pipeline_stages)
-    alias clc_empty_mbar_bytes = MBAR_BYTES * Int(
-        config.num_clc_pipeline_stages
-    )
-    alias clc_throttle_full_mbar_bytes = MBAR_BYTES * Int(
-        config.num_clc_pipeline_stages
-    )
-    alias clc_throttle_empty_mbar_bytes = MBAR_BYTES * Int(
-        config.num_clc_pipeline_stages
-    )
-
-    alias tmem_addr_bytes = TMEM_ADDR_BYTES
-    alias tmem_dealloc_mbar_bytes = MBAR_BYTES
-
-    alias tmem_writeout_smem = c_smem_bytes + tmem_addr_bytes + tmem_dealloc_mbar_bytes
-    alias accum_smem = accum_full_mbar_bytes + accum_empty_mbar_bytes
-    alias clc_smem = (
-        clc_response_bytes
-        + clc_full_mbar_bytes
-        + clc_empty_mbar_bytes
-        + clc_throttle_full_mbar_bytes
-        + clc_throttle_empty_mbar_bytes
-    )
-    alias smem_leftover = (b200_smem) - (
-        clc_smem + accum_smem + tmem_writeout_smem
-    )
-
-    alias tma_mbar_bytes_per_stage = MBAR_BYTES
-    alias mma_mbar_bytes_per_stage = MBAR_BYTES
-
-    alias producer_consumer_smem_per_stage = (
-        AB_smem_per_stage + tma_mbar_bytes_per_stage + mma_mbar_bytes_per_stage
-    )
-
-    alias max_pipeline_stages = UInt(
-        smem_leftover // producer_consumer_smem_per_stage
-    )
-
-    constrained[
-        max_pipeline_stages >= 1, "Max pipeline stages must be at least 1"
-    ]()
-
-    # TODO: the config should have the correct number of stages.
-    # alias pipeline_stage = min(config.num_pipeline_stages, max_pipeline_stages)
-    # alias pipeline_stage = min(config.num_pipeline_stages, max_pipeline_stages)
-    alias producer_consumer_smem = producer_consumer_smem_per_stage * Int(
-        config.num_pipeline_stages
-    )
-
-    alias smem_size = (
-        clc_smem + accum_smem + producer_consumer_smem + tmem_writeout_smem
-    )
 
     alias max_profiled_tiles = 0 if max_profiled_tiles_per_SM is None else max_profiled_tiles_per_SM.value()
     alias enable_profiling = max_profiled_tiles > 0

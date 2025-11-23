@@ -299,8 +299,7 @@ fn apple_gemv[
             var acc_scalar = Scalar[c.type]()
 
             @always_inline
-            @parameter
-            fn compute_fn[width: Int](k: Int):
+            fn compute_fn[width: Int](k: Int) unified {mut}:
                 var a_val = a.load[width=width](0, k).cast[c.type]()
                 var b_val = (
                     b.load[width=width](n, k).cast[c.type]() if b_packed
@@ -323,7 +322,7 @@ fn apple_gemv[
                         acc_vector,
                     )
 
-            vectorize[compute_fn, simd_width](K)
+            vectorize[simd_width](K, compute_fn)
 
             var val = acc_vector.reduce_add() + acc_scalar
 

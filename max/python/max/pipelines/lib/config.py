@@ -43,6 +43,7 @@ from .registry import (
     get_pipeline_for_task,
 )
 from .sampling import SamplingConfig
+from .speculative_config import SpeculativeConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -196,6 +197,16 @@ class PipelineConfig(MAXConfig):
     force: bool = field(default=False)
     """Skip validation of user provided flags against the architecture's required arguments."""
 
+    kvcache_ce_watermark: float = 0.95
+    """Projected cache usage threshold for scheduling CE requests, considers current + incoming
+    request. CE is scheduled if either projected usage stays below this threshold OR no active
+    requests exist. Greater KVCache utilization (as controlled by this parameter) was
+    found to cause more preemptions.
+    """
+
+    use_module_v3: bool = False
+    """Whether to use the ModuleV3 architecture if it exists."""
+
     _model_config: MAXModelConfig = field(default_factory=MAXModelConfig)
     """The model config."""
 
@@ -210,6 +221,9 @@ class PipelineConfig(MAXConfig):
 
     _lora_config: LoRAConfig | None = None
     """The LoRA config."""
+
+    _speculative_config: SpeculativeConfig | None = None
+    """The SpeculativeConfig."""
 
     _config_file_section_name: str = "pipeline_config"
     """The section name to use when loading this config from a MAXConfig file.
@@ -279,6 +293,7 @@ class PipelineConfig(MAXConfig):
         # click PipelineConfig autogenerates defaults for all fields, including
         # required ones.
 
+    # TODO: It might be cleaner to have the draft model be a part of the SpeculativeConfig
     def _create_draft_model_config_if_needed(
         self, kwargs: dict[str, Any]
     ) -> None:
@@ -293,6 +308,26 @@ class PipelineConfig(MAXConfig):
         # params are provided, but model_path is not. We can't do this today
         # as our click PipelineConfig autogenerates defaults for all fields,
         # including required ones.
+
+    def _create_speculative_config_if_needed(
+        self, kwargs: dict[str, Any]
+    ) -> None:
+        """Extract speculative config kwargs and create SpeculativeConfig if any speculative parameters provided."""
+        speculative_kwargs = PipelineConfig._extract_kwargs_for_config(
+            kwargs, SpeculativeConfig
+        )
+        # Only create speculative config if speculative_method is explicitly set
+        if (
+            speculative_kwargs
+            and speculative_kwargs.get("speculative_method") is not None
+        ):
+            # Remove None values to use defaults
+            filtered_kwargs = {
+                k: v for k, v in speculative_kwargs.items() if v is not None
+            }
+            if filtered_kwargs:
+                self._speculative_config = SpeculativeConfig(**filtered_kwargs)
+                assert self._draft_model_config is not None
 
     def _process_remaining_config_classes(
         self, unmatched_kwargs: dict[str, Any]
@@ -407,6 +442,7 @@ class PipelineConfig(MAXConfig):
         # Process specialized config creation
         self._create_lora_config_if_needed(kwargs)
         self._create_draft_model_config_if_needed(kwargs)
+        self._create_speculative_config_if_needed(kwargs)
 
         # Check if any kwargs are meant for other MAXConfig classes
         unmatched_kwargs: dict[str, Any] = {}
@@ -658,12 +694,14 @@ class PipelineConfig(MAXConfig):
         """
         Validate the pipeline configs when used in speculative decoding mode.
         """
-        assert self.draft_model_config is not None  # keep mypy happy
+        assert self.draft_model_config is not None
+        assert self._speculative_config is not None
 
         # Validate that both the `draft_model` and target model `model_path` have the same
         # architecture
         draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.draft_model_config.huggingface_model_repo
+            huggingface_repo=self.draft_model_config.huggingface_model_repo,
+            use_module_v3=self.use_module_v3,
         )
 
         if not draft_arch:
@@ -672,48 +710,50 @@ class PipelineConfig(MAXConfig):
             )
 
         target_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model_config.huggingface_model_repo
+            huggingface_repo=self.model_config.huggingface_model_repo,
+            use_module_v3=self.use_module_v3,
         )
         if not target_arch:
             raise ValueError(
                 "MAX-Optimized architecture not found for target model (`model_path`)"
             )
 
-        if draft_arch != target_arch:
-            raise ValueError(
-                f"architecture for the draft_model ({draft_arch.name}) does not match the architecture retrieved for the target model ({target_arch.name})"
-            )
-
         # Validate that their tokenizers are identical.
-        draft_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
-            huggingface_repo=self.draft_model_config.huggingface_model_repo
-        )
-        target_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
-            huggingface_repo=self.model_config.huggingface_model_repo
-        )
+        if self._speculative_config.is_standalone():
+            if draft_arch != target_arch:
+                raise ValueError(
+                    f"architecture for the draft_model ({draft_arch.name}) does not match the architecture retrieved for the target model ({target_arch.name})"
+                )
 
-        # Compare Vocabularies
-        if draft_tokenizer.get_vocab() != target_tokenizer.get_vocab():
-            raise ValueError(
-                f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the vocabulary of the tokenizer for the target model ({self.model_config.model_path})"
+            draft_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
+                huggingface_repo=self.draft_model_config.huggingface_model_repo
+            )
+            target_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
+                huggingface_repo=self.model_config.huggingface_model_repo
             )
 
-        # Compare Tokenizer Configuration
-        if hasattr(draft_tokenizer, "_tokenizer") and hasattr(
-            target_tokenizer, "_tokenizer"
-        ):
-            if (
-                draft_tokenizer._tokenizer.__dict__
-                != target_tokenizer._tokenizer.__dict__
+            # Compare Vocabularies
+            if draft_tokenizer.get_vocab() != target_tokenizer.get_vocab():
+                raise ValueError(
+                    f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the vocabulary of the tokenizer for the target model ({self.model_config.model_path})"
+                )
+
+            # Compare Tokenizer Configuration
+            if hasattr(draft_tokenizer, "_tokenizer") and hasattr(
+                target_tokenizer, "_tokenizer"
             ):
-                raise ValueError(
-                    f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
-                )
-        else:
-            if draft_tokenizer.__dict__ != target_tokenizer.__dict__:
-                raise ValueError(
-                    f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
-                )
+                if (
+                    draft_tokenizer._tokenizer.__dict__
+                    != target_tokenizer._tokenizer.__dict__
+                ):
+                    raise ValueError(
+                        f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
+                    )
+            else:
+                if draft_tokenizer.__dict__ != target_tokenizer.__dict__:
+                    raise ValueError(
+                        f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
+                    )
 
         if self.enable_echo:
             raise ValueError(
@@ -747,7 +787,8 @@ class PipelineConfig(MAXConfig):
         reason."""
         # Retrieve the architecture
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=model_config.huggingface_model_repo
+            huggingface_repo=model_config.huggingface_model_repo,
+            use_module_v3=self.use_module_v3,
         )
 
         # If nothing is provided, we should not update any more params.
@@ -813,11 +854,14 @@ class PipelineConfig(MAXConfig):
             raise ValueError(
                 f"quantization_encoding of '{model_config.quantization_encoding}' not supported by MAX engine."
             )
-
         model_config.validate_and_resolve_with_resolved_quantization_encoding(
             supported_encodings=arch.supported_encodings,
             default_weights_format=arch.default_weights_format,
         )
+
+        # Resolve final pipeline-specific changes to the config before doing
+        # memory estimations.
+        arch.pipeline_model.finalize_pipeline_config(self)
 
         MemoryEstimator.estimate_memory_footprint(
             self, arch.pipeline_model, model_config, devices
@@ -857,7 +901,8 @@ class PipelineConfig(MAXConfig):
 
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model_config.huggingface_model_repo
+            huggingface_repo=self.model_config.huggingface_model_repo,
+            use_module_v3=self.use_module_v3,
         )
 
         if arch is None:
@@ -1000,7 +1045,8 @@ class PipelineConfig(MAXConfig):
         """
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model_config.huggingface_model_repo
+            huggingface_repo=self.model_config.huggingface_model_repo,
+            use_module_v3=self.use_module_v3,
         )
 
         if arch is None:
@@ -1011,7 +1057,8 @@ class PipelineConfig(MAXConfig):
 
         # Get pipeline task
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model_config.huggingface_model_repo
+            huggingface_repo=self.model_config.huggingface_model_repo,
+            use_module_v3=self.use_module_v3,
         )
         if arch is None:
             raise ValueError(
@@ -1072,6 +1119,7 @@ class PipelineConfig(MAXConfig):
             "max_batch_context_length": "Ensures that the sum of the context length in a batch does not exceed max_batch_context_length. If None, the sum of the context length in batch is not limited.",
             "pdl_level": "Level of overlap of kernel launch via programmatic dependent grid control. Default is 0.",
             "custom_architectures": "A list of custom architecture implementations to register. Each input can either be a raw module name or an import path followed by a colon and the module name.",
+            "kvcache_ce_watermark": "Projected cache usage threshold for scheduling CE requests, considers current + incoming request. CE is scheduled if either projected usage stays below this threshold OR no active requests exist. Greater KVCache utilization (as controlled by this parameter) was found to cause more preemptions. Default watermark value is 0.95.",
         }
 
     @property

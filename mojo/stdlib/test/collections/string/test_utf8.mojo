@@ -29,7 +29,7 @@ from testing import TestSuite
 # ===----------------------------------------------------------------------=== #
 
 
-alias GOOD_SEQUENCES = [
+comptime GOOD_SEQUENCES = [
     List("a".as_bytes()),
     List("\xc3\xb1".as_bytes()),
     List("\xe2\x82\xa1".as_bytes()),
@@ -43,7 +43,7 @@ alias GOOD_SEQUENCES = [
 ]
 
 
-alias BAD_SEQUENCES: List[List[Byte]] = [
+comptime BAD_SEQUENCES: List[List[Byte]] = [
     [0xC3, 0x28],  # continuation bytes does not start with 10xx
     [0xA0, 0xA1],  # first byte is continuation byte
     [0xE2, 0x28, 0xA1],  # second byte should be continuation byte
@@ -105,7 +105,7 @@ alias BAD_SEQUENCES: List[List[Byte]] = [
 
 
 def validate_utf8[span: Span[Byte]]() -> Bool:
-    alias comp_time = _is_valid_utf8_comptime(span)
+    comptime comp_time = _is_valid_utf8_comptime(span)
     var runtime = _is_valid_utf8_runtime(span)
     assert_equal(comp_time, runtime)
     return comp_time
@@ -119,7 +119,7 @@ def validate_utf8(span: Span[Byte]) -> Bool:
 
 
 def test_utf8_validation():
-    alias text = """Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam
+    comptime text = """Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam
     varius tellus quis tincidunt dictum. Donec eros orci, ultricies ac metus non
     , rutrum faucibus neque. Nunc ultricies turpis ut lacus consequat dapibus.
     Nulla nec risus a purus volutpat blandit. Donec sit amet massa velit. Aenean
@@ -148,7 +148,7 @@ def test_utf8_validation():
     """
     assert_true(validate_utf8[text.as_bytes()]())
 
-    alias positive: List[List[UInt8]] = [
+    comptime positive: List[List[UInt8]] = [
         [0x0],
         [0x00],
         [0x66],
@@ -170,7 +170,7 @@ def test_utf8_validation():
     for i in range(len(positive)):
         assert_true(validate_utf8[positive[i]]())
 
-    alias negative: List[List[UInt8]] = [
+    comptime negative: List[List[UInt8]] = [
         [0x80],
         [0xBF],
         [0xC0, 0x80],
@@ -270,11 +270,11 @@ def test_combination_10_good_10_bad_utf8_sequences():
 
 
 def test_count_utf8_continuation_bytes():
-    alias c = UInt8(0b1000_0000)
-    alias b1 = UInt8(0b0100_0000)
-    alias b2 = UInt8(0b1100_0000)
-    alias b3 = UInt8(0b1110_0000)
-    alias b4 = UInt8(0b1111_0000)
+    comptime c = UInt8(0b1000_0000)
+    comptime b1 = UInt8(0b0100_0000)
+    comptime b2 = UInt8(0b1100_0000)
+    comptime b3 = UInt8(0b1110_0000)
+    comptime b4 = UInt8(0b1111_0000)
 
     for i in range(c, b2):
         assert_true(_is_utf8_continuation_byte(i))

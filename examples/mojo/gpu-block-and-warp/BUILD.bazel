@@ -8,7 +8,7 @@ MOJO_SRCS = glob(["*.mojo"])
         srcs = [src],
         target_compatible_with = ["//:has_gpu"],
         deps = [
-            "@mojo//:layout",
+            "//max:layout",
             "@mojo//:stdlib",
         ],
     )

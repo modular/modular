@@ -587,7 +587,7 @@ class KVTransferEngine:
     def is_complete(self, transfer_req: TransferReqData) -> bool:
         """Checks if a given send or recv transfer is completed.
 
-        .. warning::
+        .. caution::
            This method is prone to infinite loops. For the transfer to progress,
            the remote engine MUST call wait_recv_complete. As such, the following
            code will hang:

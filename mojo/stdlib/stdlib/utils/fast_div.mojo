@@ -36,7 +36,7 @@ struct FastDiv[dtype: DType](Stringable, Writable):
         dtype: The data type for the division operation.
     """
 
-    alias uint_type = _uint_type_of_width[bit_width_of[dtype]()]()
+    comptime uint_type = _uint_type_of_width[bit_width_of[Self.dtype]()]()
 
     var _div: Scalar[Self.uint_type]
     var _mprime: Scalar[Self.uint_type]
@@ -57,7 +57,7 @@ struct FastDiv[dtype: DType](Stringable, Writable):
                 Defaults to 1.
         """
         constrained[
-            bit_width_of[dtype]() <= 32,
+            bit_width_of[Self.dtype]() <= 32,
             "larger types are not currently supported",
         ]()
         self._div = divisor
@@ -69,7 +69,7 @@ struct FastDiv[dtype: DType](Stringable, Writable):
         if not self._is_pow2:
             self._mprime = (
                 (
-                    (UInt64(1) << bit_width_of[dtype]())
+                    (UInt64(1) << bit_width_of[Self.dtype]())
                     * ((1 << self._log2_shift.cast[DType.uint64]()) - divisor)
                     / divisor
                 )

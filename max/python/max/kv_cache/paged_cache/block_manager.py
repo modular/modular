@@ -43,13 +43,13 @@ from max.support.math import ceildiv
 
 from .block_copy_engine import BlockCopyEngine
 from .block_pool import BlockPool
-from .block_utils import KVCacheBlock, hash_request_tokens
+from .block_utils import (
+    InsufficientBlocksError,
+    KVCacheBlock,
+    hash_request_tokens,
+)
 
 logger = logging.getLogger("max.pipelines")
-
-
-class InsufficientBlocksError(Exception):
-    pass
 
 
 class BlockManager:
@@ -198,6 +198,7 @@ class BlockManager:
 
         # Query prefix cache for full blocks.
         prefix_cache_blocks = self.get_full_blocks_from_prefix_cache(ctx)
+
         orig_start_idx = ctx.start_idx
 
         if len(prefix_cache_blocks) > 0:
@@ -223,6 +224,44 @@ class BlockManager:
             # Check that the cached_idx has increased.
             assert ctx.start_idx > orig_start_idx
 
+    @traced
+    def _count_full_blocks_from_prefix_cache(
+        self, desired_hashes: list[int]
+    ) -> int:
+        """Returns the count of device and host blocks with the desired hashes."""
+
+        # Count the number of device block hashes that are in the device prefix cache.
+        device_prefix_cache = self.device_block_pool.hash_to_committed_block
+
+        device_prefix_cache_hits = []
+        desired_host_hashes = []
+        for hash_value in desired_hashes:
+            if hash_value in device_prefix_cache:
+                # Device hashes with prefix cache hit
+                device_prefix_cache_hits.append(hash_value)
+            else:
+                # Record potential host hash
+                desired_host_hashes.append(hash_value)
+
+        device_prefix_cache_hit_count = len(device_prefix_cache_hits)
+
+        # Count the number of host block hashes that are in the host prefix cache.
+        host_prefix_cache_hit_count = 0
+        if self.host_block_pool is not None:
+            host_prefix_cache = self.host_block_pool.hash_to_committed_block
+            host_prefix_cache_hit = [
+                hash_value
+                for hash_value in desired_host_hashes
+                if hash_value in host_prefix_cache
+            ]
+            host_prefix_cache_hit_count = min(
+                len(host_prefix_cache_hit),
+                len(self.device_block_pool.free_block_queue),
+            )
+
+        return device_prefix_cache_hit_count + host_prefix_cache_hit_count
+
+    @traced
     def _get_full_blocks_from_device_prefix_cache(
         self,
         desired_hashes: list[int],
@@ -287,9 +326,31 @@ class BlockManager:
         return blocks
 
     @traced
+    def count_full_blocks_from_prefix_caches(
+        self, ctx: TextGenerationContext
+    ) -> int:
+        """Returns the number of computed (cached) blocks related to this request.
+        Note that only full blocks are counted.
+        """
+
+        assert self.enable_prefix_caching
+
+        req_hashes = self.req_to_hashes[ctx.request_id]
+        num_committed_blocks = (
+            self.req_to_committed_idx[ctx.request_id] // self.block_size
+        )
+        # we exclude the last inflight token to ensure that there is at least
+        # one prompt token to be encoded.
+        num_inflight_blocks = (ctx.current_length - 1) // self.block_size
+        uncommitted_hashes = req_hashes[
+            num_committed_blocks:num_inflight_blocks
+        ]
+
+        return self._count_full_blocks_from_prefix_cache(uncommitted_hashes)
+
+    @traced
     def get_full_blocks_from_prefix_cache(
-        self,
-        ctx: TextGenerationContext,
+        self, ctx: TextGenerationContext
     ) -> list[KVCacheBlock]:
         """Get the computed (cached) blocks for the request.
         Note that the computed blocks must be full.
@@ -324,7 +385,6 @@ class BlockManager:
         host_blocks = self._get_full_blocks_from_host_prefix_cache(
             uncommitted_hashes
         )
-
         return device_blocks + host_blocks
 
     @traced
@@ -412,9 +472,8 @@ class BlockManager:
             num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
 
         Raises:
-            InsufficientBlocksError: If there are insufficient free blocks to satisfy the allocation.
-            RuntimeError: If the request has a prompt length that exceeds the total capacity of the KVCache.
-            AssertionError: If the current blocks cannot accommodate the completed tokens.
+            InsufficientBlocksError: If there are insufficient free blocks to
+            satisfy the allocation.
         """
 
         # It is impossible to schedule this request, even if it was the only req
@@ -423,9 +482,9 @@ class BlockManager:
         # large max seq len or the KV cache is very small.
         total_kv_slots = self.total_num_blocks * self.block_size
         if ctx.current_length > total_kv_slots:
-            raise RuntimeError(
+            raise InsufficientBlocksError(
                 f"Insufficient KV pages for a single request with {ctx.current_length} tokens.\n"
-                f"The KVCache has {self.total_num_blocks} blocks with block size {self.block_size}. This is only enough to support {total_kv_slots} tokens.\n"
+                f"The KVCache has {self.total_num_blocks} pages with page size {self.block_size}. This is only enough to support {total_kv_slots} tokens.\n"
                 "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
             )
 
@@ -433,15 +492,12 @@ class BlockManager:
         self._metrics.input_tokens += ctx.active_length
 
         # Determine number of new blocks to allocate.
-        current_blocks = self.req_to_blocks[ctx.request_id]
-        num_current_blocks = len(current_blocks)
-        current_seq_len = ctx.current_length + num_steps - 1
-        num_required_blocks = ceildiv(current_seq_len, self.block_size)
-        num_new_blocks = num_required_blocks - num_current_blocks
-        num_new_blocks = max(num_new_blocks, 0)
+        num_new_blocks = self.num_blocks_to_allocate(ctx, num_steps)
 
         # Check that the number of completed tokens is less than or equal to the number of tokens we can
         # currently store in the reserved blocks.
+        current_blocks = self.req_to_blocks[ctx.request_id]
+        num_current_blocks = len(current_blocks)
         assert ctx.start_idx <= (num_current_blocks * self.block_size), (
             f"Expected at least {ceildiv(ctx.start_idx, self.block_size)} blocks to store KV for {ctx.start_idx} tokens, but only {num_current_blocks} are assigned. This should never happen."
         )
@@ -456,6 +512,40 @@ class BlockManager:
         for _ in range(num_new_blocks):
             new_block = self.allocate_device_block()
             current_blocks.append(new_block)
+
+    @traced
+    def num_blocks_to_allocate(
+        self, ctx: TextGenerationContext, num_steps: int = 1
+    ) -> int:
+        """Calculates the number of new blocks to allocate for a request.
+
+        Args:
+            ctx: The request context containing sequence information and token indices.
+            num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
+
+        Returns:
+            The number of new blocks to allocate.
+        """
+        current_blocks = self.req_to_blocks[ctx.request_id]
+        num_current_blocks = len(current_blocks)
+        current_seq_len = ctx.current_length + num_steps - 1
+        num_required_blocks = ceildiv(current_seq_len, self.block_size)
+        num_new_blocks = num_required_blocks - num_current_blocks
+
+        if self.enable_prefix_caching and ctx.active_length != 1:
+            self.assert_runtime_invariants(ctx)
+
+            # Compute block hashes. These hashes are used by the subsequent methods.
+            self.compute_hashes_for_request(ctx)
+
+            # Count the prefix caches for full blocks.
+            num_prefix_cache_blocks = self.count_full_blocks_from_prefix_caches(
+                ctx
+            )
+
+            num_new_blocks = num_new_blocks - num_prefix_cache_blocks
+
+        return max(num_new_blocks, 0)
 
     @traced
     def eagerly_offload_recently_committed_blocks(self) -> None:

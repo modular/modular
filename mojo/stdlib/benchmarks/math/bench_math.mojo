@@ -19,7 +19,7 @@ from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data
 # ===-----------------------------------------------------------------------===#
-alias input_type = Float32
+comptime input_type = Float32
 
 
 fn make_inputs(

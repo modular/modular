@@ -19,13 +19,13 @@ from math import ceil
 
 from sys import bit_width_of
 from bit import count_leading_zeros
-from memory import LegacyUnsafePointer as UnsafePointer, Span
+from memory import Span
 
 # ===-----------------------------------------------------------------------===#
 # sort
 # ===-----------------------------------------------------------------------===#
 
-alias insertion_sort_threshold = 32
+comptime insertion_sort_threshold = 32
 
 
 @always_inline
@@ -351,7 +351,7 @@ fn _stable_sort[
     origin: MutOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin]):
-    var temp_buff = UnsafePointer[T].alloc(len(span))
+    var temp_buff = alloc[T](len(span))
     var temp_buff_span = Span(ptr=temp_buff, length=len(span))
     _stable_sort_impl[cmp_fn](span, temp_buff_span)
     temp_buff.free()

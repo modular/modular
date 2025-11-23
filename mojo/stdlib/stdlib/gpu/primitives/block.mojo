@@ -147,7 +147,7 @@ fn _block_reduce[
     ]()
 
     # Allocate shared memory for inter-warp communication.
-    alias n_warps = block_size // WARP_SIZE
+    comptime n_warps = block_size // WARP_SIZE
 
     @parameter
     if n_warps == 1:
@@ -173,7 +173,7 @@ fn _block_reduce[
 
     # General case with bank conflict optimization
     # Add padding to avoid bank conflicts
-    alias padding = ceildiv(n_warps, WARP_SIZE) if n_warps > WARP_SIZE else 0
+    comptime padding = ceildiv(n_warps, WARP_SIZE) if n_warps > WARP_SIZE else 0
     return _block_reduce_with_padding[
         n_warps=n_warps,
         padding=padding,
@@ -384,7 +384,7 @@ fn prefix_sum[
 
     # Allocate shared memory for inter-warp communication
     # We need one slot per warp to store warp-level scan results
-    alias n_warps = block_size // WARP_SIZE
+    comptime n_warps = block_size // WARP_SIZE
     var warp_mem = stack_allocation[
         align_up(n_warps, WARP_SIZE), dtype, address_space = AddressSpace.SHARED
     ]()

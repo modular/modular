@@ -29,10 +29,7 @@ import numpy.typing as npt
 from llguidance import LLMatcher
 from max.driver import load_devices
 from max.engine import Model
-from max.graph.weights import (
-    WeightsAdapter,
-    WeightsFormat,
-)
+from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
     BatchLogitsProcessor,
     LogProbabilities,
@@ -213,12 +210,8 @@ class TextGenerationPipeline(
             ]
 
         # late imports to minimize header deps
-        from max.graph.weights import (
-            load_weights as _load_weights,
-        )
-        from max.graph.weights import (
-            weights_format as _weights_format,
-        )
+        from max.graph.weights import load_weights as _load_weights
+        from max.graph.weights import weights_format as _weights_format
 
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
@@ -451,7 +444,7 @@ class TextGenerationPipeline(
                 self.update_for_structured_output(context, bitmask, i)
 
             if not self._pipeline_model.kv_manager.contains(context.request_id):
-                self._pipeline_model.kv_manager.external_claim(
+                self._pipeline_model.kv_manager.claim(
                     context.request_id, replica_idx=replica_idx
                 )
 
@@ -464,7 +457,7 @@ class TextGenerationPipeline(
             num_steps = 1
 
         # Retrieve the KV Cache Inputs.
-        kv_cache_inputs = self._pipeline_model.kv_manager.fetch(
+        kv_cache_inputs = self._pipeline_model.kv_manager.get_runtime_inputs(
             flat_batch, num_steps
         )
 

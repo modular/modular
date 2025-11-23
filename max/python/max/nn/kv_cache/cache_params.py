@@ -13,10 +13,17 @@
 
 from __future__ import annotations
 
+import logging
+import math
 from dataclasses import dataclass
 from enum import Enum
+from functools import reduce
+from operator import mul
 
 from max.dtype import DType
+from max.support.human_readable_formatter import to_human_readable_bytes
+
+logger = logging.getLogger("max.pipelines")
 
 
 class KVCacheStrategy(str, Enum):
@@ -66,6 +73,9 @@ class KVCacheParams:
     head_dim: int
     """Dimensionality of each attention head."""
 
+    num_layers: int
+    """Number of layers in the model."""
+
     enable_prefix_caching: bool = False
     """Whether to enable prefix caching for efficient reuse of common prompt prefixes."""
 
@@ -78,7 +88,7 @@ class KVCacheParams:
     cache_strategy: KVCacheStrategy = KVCacheStrategy.PAGED
     """Strategy to use for managing the KV cache."""
 
-    page_size: int | None = None
+    page_size: int = 128
     """Number of tokens per page (block) when using the paged cache strategy.
 
     This value is expressed in tokens, not bytes. The byte footprint of a page is
@@ -170,6 +180,15 @@ class KVCacheParams:
             raise ValueError("Page size is required for paged cache strategy")
 
     @property
+    def tensor_parallel_degree(self) -> int:
+        """Returns the tensor parallel degree.
+
+        Returns:
+            The tensor parallel degree.
+        """
+        return self.n_devices // self.data_parallel_degree
+
+    @property
     def dtype_shorthand(self) -> str:
         """Returns a shorthand textual representation of the data type.
 
@@ -179,19 +198,188 @@ class KVCacheParams:
         return "bf16" if self.dtype == DType.bfloat16 else "f32"
 
     @property
-    def static_cache_shape(self) -> tuple[str, str, str, str, str]:
-        """Returns the dimension names for the static cache tensor shape.
+    def shape_per_block(self) -> list[int]:
+        """Returns the shape of each cache block.
 
         Returns:
-            A tuple of dimension names: (num_layers, batch_size, seq_len, n_kv_heads, head_dim).
+            The shape of the cache block.
+        """
+        # split k and v caches across a single dim
+        # 0 = key
+        # 1 = value
+        kv_dim = 2 if not self.is_mla else 1
+        return [
+            kv_dim,
+            self.num_layers,
+            self.page_size,
+            self.n_kv_heads_per_device,
+            self.head_dim,
+        ]
+
+    @property
+    def bytes_per_block(self) -> int:
+        """Returns the number of bytes per cache block.
+
+        When TP>1, each block is sharded across the devices in the tensor parallel group.
+        This method returns the total memory needed to store a block across these devices.
+
+        Returns:
+            The number of bytes per cache block.
         """
         return (
-            "num_layers",
-            "batch_size",
-            "seq_len",
-            "n_kv_heads",
-            "head_dim",
+            reduce(mul, self.shape_per_block, 1)
+            * self.dtype.size_in_bytes
+            * self.tensor_parallel_degree
         )
+
+    def compute_num_device_blocks(
+        self,
+        available_cache_memory: int,
+        max_batch_size: int | None,
+        max_seq_len: int | None,
+    ) -> int:
+        """Computes the number of blocks that can be allocated based on the available cache memory.
+
+        Args:
+            available_cache_memory: The amount of cache memory available across all devices.
+            max_batch_size: The maximum batch size, or None.
+            max_seq_len: The maximum sequence length, or None.
+
+        Returns:
+            The number of blocks that can be allocated.
+        """
+        # Compute upper bound of total number of pages required.
+        max_blocks_per_req: int | None = None
+        max_total_blocks: int | None = None
+        if max_seq_len is not None and max_batch_size is not None:
+            max_blocks_per_req = math.ceil(max_seq_len / self.page_size)
+            max_total_blocks = max_blocks_per_req * max_batch_size
+
+        # Compute total number of blocks allocatable based on available memory.
+        available_cache_memory_per_replica = (
+            available_cache_memory // self.data_parallel_degree
+        )
+        num_allocable_blocks = (
+            available_cache_memory_per_replica // self.bytes_per_block
+        )
+
+        if max_total_blocks is not None:
+            num_blocks = min(num_allocable_blocks, max_total_blocks)
+        else:
+            num_blocks = num_allocable_blocks
+
+        # Check if we are allocating sufficient blocks.
+        # If not, raise a warning or error.
+        single_page_size_bytes_str = to_human_readable_bytes(
+            self.bytes_per_block
+        )
+        cache_memory_str = to_human_readable_bytes(
+            available_cache_memory_per_replica
+        )
+        devices_per_replica = self.n_devices // self.data_parallel_degree
+        across_x_devices_str = (
+            f" across {devices_per_replica} devices"
+            if devices_per_replica > 1
+            else ""
+        )
+        if num_allocable_blocks == 0:
+            raise RuntimeError(
+                f"Insufficient cache memory to allocate even a single page.\n"
+                f"One page requires {single_page_size_bytes_str} but only "
+                f"{cache_memory_str} are available{across_x_devices_str}."
+            )
+
+        if max_batch_size is not None and max_batch_size > num_allocable_blocks:
+            memory_needed_str = to_human_readable_bytes(
+                max_batch_size * self.bytes_per_block
+            )
+            logger.warning(
+                f"Insufficient cache memory to support a batch containing {max_batch_size} "
+                f"requests with one token per request. Need to allocate at least {max_batch_size} "
+                f"pages ({memory_needed_str}), but only have enough memory for {num_allocable_blocks} "
+                f"pages ({cache_memory_str}{across_x_devices_str})."
+            )
+
+        if (
+            max_blocks_per_req is not None
+            and max_blocks_per_req > num_allocable_blocks
+        ):
+            memory_needed_str = to_human_readable_bytes(
+                max_blocks_per_req * self.bytes_per_block
+            )
+            logger.warning(
+                f"Insufficient cache memory to support a batch containing one request "
+                f"at the max sequence length of {max_seq_len} tokens. "
+                f"Need to allocate at least {max_blocks_per_req} "
+                f"pages ({memory_needed_str}), but only have enough memory for "
+                f"{num_allocable_blocks} pages ({cache_memory_str}{across_x_devices_str})."
+            )
+
+        return num_blocks
+
+    def estimated_memory_size(
+        self, available_cache_memory: int, max_batch_size: int, max_seq_len: int
+    ) -> int:
+        """Computes the estimated memory size of the KV cache.
+
+        Args:
+            available_cache_memory: The amount of cache memory available across all devices.
+            max_batch_size: The maximum batch size.
+            max_seq_len: The maximum sequence length.
+
+        Returns:
+            The estimated memory usage of the KV cache in bytes.
+        """
+        num_device_blocks = self.compute_num_device_blocks(
+            available_cache_memory=available_cache_memory,
+            max_batch_size=max_batch_size,
+            max_seq_len=max_seq_len,
+        )
+        return num_device_blocks * self.bytes_per_block
+
+    def compute_max_seq_len_fitting_in_cache(
+        self, available_cache_memory: int
+    ) -> int:
+        """Computes the maximum sequence length that can fit in the available cache memory.
+
+        Args:
+            available_cache_memory: The amount of cache memory available across all devices.
+
+        Returns:
+            The maximum sequence length that can fit in the available cache memory.
+        """
+        num_blocks = self.compute_num_device_blocks(
+            available_cache_memory=available_cache_memory,
+            max_batch_size=1,
+            # Do not limit the sequence length.
+            max_seq_len=None,
+        )
+        return num_blocks * self.page_size
+
+    def compute_num_host_blocks(self) -> int:
+        """Computes the number of blocks that can be allocated to the host.
+
+        Returns:
+            The number of blocks that can be allocated to the host.
+        """
+        if not self.enable_kvcache_swapping_to_host:
+            return 0
+        assert self.host_kvcache_swap_space_gb is not None
+        GiB = 1024 * 1024 * 1024
+        host_gb_per_replica = (
+            self.host_kvcache_swap_space_gb // self.data_parallel_degree
+        )
+        host_bytes_per_replica = host_gb_per_replica * GiB
+        num_host_blocks = int(host_bytes_per_replica // self.bytes_per_block)
+
+        if num_host_blocks == 0:
+            raise RuntimeError(
+                f"Insufficient cache memory to allocate even a single page.\n"
+                f"One page requires {to_human_readable_bytes(self.bytes_per_block)} but only "
+                f"{to_human_readable_bytes(host_gb_per_replica * GiB)} are available on host."
+            )
+
+        return num_host_blocks
 
     def copy_as_dp_1(self) -> KVCacheParams:
         """Creates a copy of the KVCacheParams with data parallelism disabled.
@@ -216,6 +404,7 @@ class KVCacheParams:
 
         return KVCacheParams(
             dtype=self.dtype,
+            num_layers=self.num_layers,
             n_kv_heads=self.n_kv_heads,
             head_dim=self.head_dim,
             enable_prefix_caching=self.enable_prefix_caching,

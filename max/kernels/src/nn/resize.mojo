@@ -120,7 +120,7 @@ struct Interpolator[mode: InterpolationMode](
     @always_inline
     fn filter_length() -> Int:
         @parameter
-        if mode == InterpolationMode.Linear:
+        if Self.mode == InterpolationMode.Linear:
             return 1
         else:
             constrained[False, "InterpolationMode not supported"]()
@@ -129,7 +129,7 @@ struct Interpolator[mode: InterpolationMode](
     @always_inline
     fn filter(self, x: Float32) -> Float32:
         @parameter
-        if mode == InterpolationMode.Linear:
+        if Self.mode == InterpolationMode.Linear:
             return linear_filter(x)
         else:
             constrained[False, "InterpolationMode not supported"]()

@@ -23,7 +23,6 @@ import sys
 from collections import OptionalReg
 from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv, clamp
-from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from pathlib import Path
 
@@ -77,25 +76,24 @@ fn map[
 
 @always_inline
 fn vectorize[
-    origins: OriginSet, //,
-    func: fn[width: Int] (Int) capturing [origins] -> None,
+    func: fn[width: Int] (idx: Int) unified -> None, //,
     simd_width: Int,
     /,
     *,
     unroll_factor: Int = 1,
-](size: Int):
+](size: Int, closure: func):
     """Simplifies SIMD optimized loops by mapping a function across a range from
     0 to `size`, incrementing by `simd_width` at each step. The remainder of
     `size % simd_width` will run in separate iterations.
 
     Parameters:
-        origins: The capture origins.
         func: The function that will be called in the loop body.
         simd_width: The SIMD vector width.
         unroll_factor: The unroll factor for the main loop (Default 1).
 
     Args:
         size: The upper limit for the loop.
+        closure: The captured state of the function bound to func.
 
     The below example demonstrates how you could improve the performance of a
     loop, by setting multiple values at the same time using SIMD registers on
@@ -106,20 +104,18 @@ fn vectorize[
     from sys import simd_width_of
 
     # The amount of elements to loop through
-    alias size = 10
+    comptime size = 10
     # How many Dtype.int32 elements fit into the SIMD register (4 on 128bit)
-    alias simd_width = simd_width_of[DType.int32]()  # assumed to be 4 in this example
+    comptime simd_width = simd_width_of[DType.int32]()  # assumed to be 4 in this example
 
     fn main():
-        var p = UnsafePointer[Int32].alloc(size)
+        var p = alloc[Int32](size)
 
-        # @parameter allows the closure to capture the `p` pointer
-        @parameter
-        fn closure[width: Int](i: Int):
+        fn closure[width: Int](i: Int) unified {mut}:
             print("storing", width, "els at pos", i)
             p.store[width=width](i, i)
 
-        vectorize[closure, simd_width](size)
+        vectorize[simd_width](size, closure)
         print(p.load[width=simd_width]())
         print(p.load[width=simd_width](simd_width))
     ```
@@ -165,7 +161,7 @@ fn vectorize[
     constrained[unroll_factor > 0, "unroll factor must be > 0"]()
     debug_assert(size >= 0, "size must be >= 0")
 
-    alias unrolled_simd_width = simd_width * unroll_factor
+    comptime unrolled_simd_width = simd_width * unroll_factor
     var simd_end = align_down(UInt(size), UInt(simd_width))
     var unrolled_end = align_down(UInt(size), UInt(unrolled_simd_width))
 
@@ -173,38 +169,39 @@ fn vectorize[
 
         @parameter
         for idx in range(unroll_factor):
-            func[simd_width](unrolled_idx + idx * simd_width)
+            closure[simd_width](unrolled_idx + idx * simd_width)
 
     @parameter
     if unroll_factor > 1:
         for simd_idx in range(unrolled_end, simd_end, simd_width):
-            func[simd_width](simd_idx)
+            closure[simd_width](simd_idx)
 
     for i in range(simd_end, size):
-        func[1](i)
+        closure[1](i)
 
 
 @always_inline
 fn vectorize[
-    origins: OriginSet, //,
-    func: fn[width: Int] (Int) capturing [origins] -> None,
+    func: fn[width: Int] (idx: Int) unified -> None, //,
     simd_width: Int,
     /,
     *,
     size: Int,
     unroll_factor: Int = size if sys.is_gpu() else 1,
-]():
+](closure: func):
     """Simplifies SIMD optimized loops by mapping a function across a range from
     0 to `size`, incrementing by `simd_width` at each step. The remainder of
     `size % simd_width` will run in a single iteration if it's an exponent of
     2.
 
     Parameters:
-        origins: The capture origins.
         func: The function that will be called in the loop body.
         simd_width: The SIMD vector width.
         size: The upper limit for the loop.
         unroll_factor: The unroll factor for the main loop (Default 1).
+
+    Args:
+        closure: The captured state of the function bound to func.
 
     The below example demonstrates how you could improve the performance of a
     loop, by setting multiple values at the same time using SIMD registers on
@@ -215,20 +212,19 @@ fn vectorize[
     from sys import simd_width_of
 
     # The amount of elements to loop through
-    alias size = 10
+    comptime size = 10
     # How many Dtype.int32 elements fit into the SIMD register (4 on 128bit)
-    alias simd_width = simd_width_of[DType.int32]()  # assumed to be 4 in this example
+    comptime simd_width = simd_width_of[DType.int32]()  # assumed to be 4 in this example
 
     fn main():
         var p = UnsafePointer[Int32].alloc(size)
 
-        # @parameter allows the closure to capture the `p` pointer
-        @parameter
-        fn closure[width: Int](i: Int):
+        # The closure can capture the `p` pointer with unified {mut}
+        fn closure[width: Int](i: Int) unified {mut}:
             print("storing", width, "els at pos", i)
             p.store[width=width](i, i)
 
-        vectorize[closure, simd_width](size)
+        vectorize[simd_width](size, closure)
         print(p.load[width=simd_width]())
         print(p.load[width=simd_width](simd_width))
     ```
@@ -252,7 +248,7 @@ fn vectorize[
     cost of binary size:
 
     ```
-    vectorize[closure, width, size=size, unroll_factor=2]()
+    vectorize[width, size=size, unroll_factor=2](closure)
     ```
 
     In the generated assembly the function calls will be repeated, resulting in
@@ -269,33 +265,33 @@ fn vectorize[
     constrained[unroll_factor > 0, "unroll factor must be > 0"]()
     constrained[size >= 0, "size must be >= 0"]()
 
-    alias unrolled_simd_width = simd_width * unroll_factor
-    alias simd_end = align_down(size, simd_width)
-    alias unrolled_end = align_down(size, unrolled_simd_width)
+    comptime unrolled_simd_width = simd_width * unroll_factor
+    comptime simd_end = align_down(size, simd_width)
+    comptime unrolled_end = align_down(size, unrolled_simd_width)
 
     @parameter
     for unrolled_idx in range(0, unrolled_end, unrolled_simd_width):
 
         @parameter
         for idx in range(unroll_factor):
-            func[simd_width](unrolled_idx + idx * simd_width)
+            closure[simd_width](unrolled_idx + idx * simd_width)
 
     @parameter
     if unroll_factor > 1:
         for simd_idx in range(unrolled_end, simd_end, simd_width):
-            func[simd_width](simd_idx)
+            closure[simd_width](simd_idx)
 
     @parameter
     if size > simd_end:
 
         @parameter
         if (size - simd_end).is_power_of_two():
-            func[size - simd_end](simd_end)
+            closure[size - simd_end](simd_end)
         else:
 
             @parameter
             for i in range(simd_end, size):
-                func[1](i)
+                closure[1](i)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -466,20 +462,22 @@ fn _parallelize_impl[
 # tile
 # ===-----------------------------------------------------------------------===#
 
-alias Static1DTileUnitFunc = fn[width: Int] (Int) capturing [_] -> None
+comptime Static1DTileUnitFunc = fn[width: Int] (Int) capturing [_] -> None
 """
 Signature of a 1d tiled function that performs some work with a static tile size
 and an offset. i.e. func<tile_size: Int> (offset: Int)
 """
 
-alias Dynamic1DTileUnitFunc = fn (Int, Int) capturing [_] -> None
+comptime Dynamic1DTileUnitFunc = fn (Int, Int) capturing [_] -> None
 """
 Signature of a 1d tiled function that performs some work with a dynamic tile size
   and an offset. i.e. func(offset: Int, tile_size: Int)
 """
 
 
-alias BinaryTile1DTileUnitFunc = fn[width: Int] (Int, Int) capturing [_] -> None
+comptime BinaryTile1DTileUnitFunc = fn[width: Int] (Int, Int) capturing [
+    _
+] -> None
 """
 Signature of a tiled function that performs some work with a dynamic tile size
 and a secondary static tile size.
@@ -593,11 +591,11 @@ fn tile[
           don't fit exactly within the upperbound.
     """
     var work_idx = offset
-    alias num_tiles = len(secondary_tile_size_list)
+    comptime num_tiles = len(secondary_tile_size_list)
 
     @parameter
     for i in range(num_tiles):
-        alias secondary_tile_size = secondary_tile_size_list[i]
+        comptime secondary_tile_size = secondary_tile_size_list[i]
         var primary_tile_size = primary_tile_size_list[i]
 
         while work_idx <= upperbound - primary_tile_size:
@@ -616,9 +614,9 @@ fn tile[
 # ===-----------------------------------------------------------------------===#
 
 
-alias Static2DTileUnitFunc = fn[tile_x: Int, tile_y: Int] (Int, Int) capturing [
-    _
-] -> None
+comptime Static2DTileUnitFunc = fn[tile_x: Int, tile_y: Int] (
+    Int, Int
+) capturing [_] -> None
 """
 Signature of a 2d tiled function that performs some work with a static tile size
 and an offset. i.e.
@@ -671,10 +669,10 @@ fn tile[
 # ===-----------------------------------------------------------------------===#
 
 # Signature of a function that unswitch can take.
-alias SwitchedFunction = fn[sw: Bool] () raises capturing [_] -> None
+comptime SwitchedFunction = fn[sw: Bool] () raises capturing [_] -> None
 
 # Version of unswitch supporting 2 predicates.
-alias SwitchedFunction2 = fn[sw0: Bool, sw1: Bool] () capturing [_] -> None
+comptime SwitchedFunction2 = fn[sw0: Bool, sw1: Bool] () capturing [_] -> None
 
 
 @always_inline
@@ -817,7 +815,7 @@ fn unswitch[
 # TileWithUnswitch
 # ===-----------------------------------------------------------------------===#
 
-alias Static1DTileUnswitchUnitFunc = fn[width: Int, sw: Bool] (
+comptime Static1DTileUnswitchUnitFunc = fn[width: Int, sw: Bool] (
     Int, Int
 ) capturing [_] -> None
 """
@@ -825,7 +823,7 @@ Signature of a tiled function that performs some work with a static tile size
   and an offset. i.e. func<tile_size: Int> (offset: Int)
 """
 
-alias Static1DTileUnitFuncWithFlag = fn[width: Int, flag: Bool] (
+comptime Static1DTileUnitFuncWithFlag = fn[width: Int, flag: Bool] (
     Int
 ) capturing [_] -> None
 
@@ -873,9 +871,9 @@ fn tile_and_unswitch[
         )
 
 
-alias Dynamic1DTileUnswitchUnitFunc = fn[sw: Bool] (Int, Int, Int) capturing [
-    _
-] -> None
+comptime Dynamic1DTileUnswitchUnitFunc = fn[sw: Bool] (
+    Int, Int, Int
+) capturing [_] -> None
 
 
 @always_inline
@@ -982,7 +980,7 @@ fn tile_middle_unswitch_boundaries[
         offset += right_tile_size
 
 
-alias Static1DTileUnitFuncWithFlags = fn[
+comptime Static1DTileUnitFuncWithFlags = fn[
     width: Int, left_flag: Bool, right_flag: Bool
 ] (Int) capturing [_] -> None
 
@@ -1016,8 +1014,8 @@ fn tile_middle_unswitch_boundaries[
         # tile_size = 6, it's better to use tile_sizes 4 and 3 than using
         # 6 and 1 since the it's tricky to handle padding with very small
         # tile size.
-        alias tile_size_lbound = min(tile_size, size // 2)
-        alias tile_size_rbound = min(tile_size, size - size // 2)
+        comptime tile_size_lbound = min(tile_size, size // 2)
+        comptime tile_size_rbound = min(tile_size, size - size // 2)
 
         var offset = 0
 
@@ -1030,10 +1028,10 @@ fn tile_middle_unswitch_boundaries[
         fn update_middle[_tile_size: Int](_offset: Int):
             work_fn[_tile_size, False, False](_offset)
 
-        alias num_middle_points = size - tile_size_lbound - tile_size_rbound
-        alias remainder = num_middle_points % tile_size
+        comptime num_middle_points = size - tile_size_lbound - tile_size_rbound
+        comptime remainder = num_middle_points % tile_size
         # `tile` can't handle zero tile size.
-        alias tile_size_remainder = remainder if remainder > 0 else 1
+        comptime tile_size_remainder = remainder if remainder > 0 else 1
 
         tile[update_middle, VariadicList[Int](tile_size, tile_size_remainder)](
             tile_size_lbound, size - tile_size_rbound
@@ -1378,9 +1376,9 @@ fn elementwise[
         )
 
     # Intern the kind string as a static string so we don't allocate.
-    alias d = _trace_description
-    alias desc = String("(", d, ")") if d else ""
-    alias kind = get_static_string["elementwise", desc]()
+    comptime d = _trace_description
+    comptime desc = String("(", d, ")") if d else ""
+    comptime kind = get_static_string["elementwise", desc]()
 
     with Trace[TraceLevel.OP, target=target](
         kind,
@@ -1434,7 +1432,7 @@ fn _elementwise_impl_cpu[
     *,
     use_blocking_impl: Bool = False,
 ](shape: IndexList[rank, **_]):
-    alias impl = _elementwise_impl_cpu_1d if rank == 1 else _elementwise_impl_cpu_nd
+    comptime impl = _elementwise_impl_cpu_1d if rank == 1 else _elementwise_impl_cpu_nd
     impl[func, simd_width, use_blocking_impl=use_blocking_impl](shape)
 
 
@@ -1463,7 +1461,7 @@ fn _elementwise_impl_cpu_1d[
     """
     constrained[rank == 1, "Specialization for 1D"]()
 
-    alias unroll_factor = 8  # TODO: Comeup with a cost heuristic.
+    comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
     var problem_size = shape.flattened_length()
 
@@ -1471,12 +1469,11 @@ fn _elementwise_impl_cpu_1d[
     if use_blocking_impl:
 
         @always_inline
-        @parameter
-        fn blocking_task_fun[simd_width: Int](idx: Int):
+        fn blocking_task_fun[simd_width: Int](idx: Int) unified {read}:
             func[simd_width, rank](idx)
 
-        vectorize[blocking_task_fun, simd_width, unroll_factor=unroll_factor](
-            problem_size
+        vectorize[simd_width, unroll_factor=unroll_factor](
+            problem_size, blocking_task_fun
         )
         return
 
@@ -1491,12 +1488,11 @@ fn _elementwise_impl_cpu_1d[
         var len = end_offset - start_offset
 
         @always_inline
-        @parameter
-        fn func_wrapper[simd_width: Int](idx: Int):
+        fn func_wrapper[simd_width: Int](idx: Int) unified {read start_offset}:
             var offset = start_offset + idx
             func[simd_width, rank](offset)
 
-        vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](len)
+        vectorize[simd_width, unroll_factor=unroll_factor](len, func_wrapper)
 
     sync_parallelize[task_func](num_workers)
 
@@ -1526,7 +1522,7 @@ fn _elementwise_impl_cpu_nd[
     """
     constrained[rank > 1, "Specialization for ND where N > 1"]()
 
-    alias unroll_factor = 8  # TODO: Comeup with a cost heuristic.
+    comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
     # Strategy: we parallelize over all dimensions except the innermost and
     # vectorize over the innermost dimension. We unroll the innermost dimension
@@ -1545,16 +1541,15 @@ fn _elementwise_impl_cpu_nd[
             var indices = _get_start_indices_of_nth_subvolume(i, shape)
 
             @always_inline
-            @parameter
-            fn func_wrapper[simd_width: Int](idx: Int):
+            fn func_wrapper[simd_width: Int](idx: Int) unified {mut indices}:
                 # The inner most dimension is vectorized, so we set it
                 # to the index offset.
                 indices[rank - 1] = idx
                 func[simd_width, rank](indices.canonicalize())
 
             # We vectorize over the innermost dimension.
-            vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](
-                shape[rank - 1]
+            vectorize[simd_width, unroll_factor=unroll_factor](
+                shape[rank - 1], func_wrapper
             )
 
         map[blocking_task_fn](total_size // shape[rank - 1])
@@ -1583,16 +1578,15 @@ fn _elementwise_impl_cpu_nd[
             )
 
             @always_inline
-            @parameter
-            fn func_wrapper[simd_width: Int](idx: Int):
+            fn func_wrapper[simd_width: Int](idx: Int) unified {mut indices}:
                 # The inner most dimension is vectorized, so we set it
                 # to the index offset.
                 indices[rank - 1] = idx
                 func[simd_width, rank](indices.canonicalize())
 
             # We vectorize over the innermost dimension.
-            vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](
-                shape[rank - 1]
+            vectorize[simd_width, unroll_factor=unroll_factor](
+                shape[rank - 1], func_wrapper
             )
 
     sync_parallelize[task_func](num_workers)
@@ -1621,13 +1615,15 @@ fn _elementwise_impl_gpu[
 
     # optimized implementation inspired by https://archive.md/Tye9y#selection-1101.2-1151.3
 
-    alias hw_info = ctx.default_device_info
+    comptime hw_info = ctx.default_device_info
 
-    alias registers_per_thread = 255
-    alias num_waves = 32
-    alias registers_per_block = hw_info.max_registers_per_block
-    alias sm_count = UInt(hw_info.sm_count)
-    alias threads_per_multiprocessor = UInt(hw_info.threads_per_multiprocessor)
+    comptime registers_per_thread = 255
+    comptime num_waves = 32
+    comptime registers_per_block = hw_info.max_registers_per_block
+    comptime sm_count = UInt(hw_info.sm_count)
+    comptime threads_per_multiprocessor = UInt(
+        hw_info.threads_per_multiprocessor
+    )
 
     constrained[
         sm_count > 0 and threads_per_multiprocessor > 0,
@@ -1643,10 +1639,10 @@ fn _elementwise_impl_gpu[
     if length == 0:
         return
 
-    alias block_size_unrounded = registers_per_block // registers_per_thread
+    comptime block_size_unrounded = registers_per_block // registers_per_thread
 
     # when testing other elementwise kernels, they appear to also use 128 as the block size on blackwell specifically
-    alias block_size = 128 if ctx.default_device_info is B200 else block_size_unrounded - (
+    comptime block_size = 128 if ctx.default_device_info is B200 else block_size_unrounded - (
         block_size_unrounded % 2
     )
 
@@ -1717,7 +1713,7 @@ fn _elementwise_impl_gpu[
             launch_dependent_grids()
 
     if shape[rank - 1] % Int(simd_width) == 0:
-        alias kernel = _elementwise_gpu_kernel[
+        comptime kernel = _elementwise_gpu_kernel[
             block_size = UInt(block_size), handle_uneven_simd=False
         ]
         ctx.enqueue_function_checked[kernel, kernel](
@@ -1726,7 +1722,7 @@ fn _elementwise_impl_gpu[
             attributes=pdl_launch_attributes(),
         )
     else:
-        alias kernel = _elementwise_gpu_kernel[
+        comptime kernel = _elementwise_gpu_kernel[
             block_size = UInt(block_size), handle_uneven_simd=True
         ]
         ctx.enqueue_function_checked[kernel, kernel](
@@ -1778,8 +1774,8 @@ fn parallelize_over_rows[
 # stencil
 # ===-----------------------------------------------------------------------===#
 
-alias stencil = _stencil_impl_cpu
-alias stencil_gpu = _stencil_impl_gpu
+comptime stencil = _stencil_impl_cpu
+comptime stencil_gpu = _stencil_impl_gpu
 
 
 fn _stencil_impl_cpu[
@@ -1852,7 +1848,7 @@ fn _stencil_impl_cpu[
     var parallelism_size = total_size // shape[rank - 1]
     var chunk_size = ceildiv(parallelism_size, num_workers)
 
-    alias unroll_factor = 8  # TODO: Comeup with a cost heuristic.
+    comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
     @always_inline
     @parameter
@@ -1872,8 +1868,9 @@ fn _stencil_impl_cpu[
             )
 
             @always_inline
-            @parameter
-            fn func_wrapper[simd_width: Int](idx: Int):
+            fn func_wrapper[
+                simd_width: Int
+            ](idx: Int) unified {mut indices, read input_shape}:
                 indices[rank - 1] = idx
                 var stencil_indices = IndexList[
                     stencil_rank, element_type = stencil_axis.element_type
@@ -1943,8 +1940,8 @@ fn _stencil_impl_cpu[
 
                 compute_finalize_fn[simd_width](indices, result)
 
-            vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](
-                shape[rank - 1]
+            vectorize[simd_width, unroll_factor=unroll_factor](
+                shape[rank - 1], func_wrapper
             )
 
     sync_parallelize[task_func](num_workers)

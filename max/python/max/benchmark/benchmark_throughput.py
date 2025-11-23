@@ -480,6 +480,7 @@ async def run_max_async(
             model_name=model_name,
             tokenizer=tokenizer,
             scheduler_zmq_configs=scheduler_zmq_configs,
+            worker_monitor=worker_monitor,
         ) as pipeline,
     ):
         # Start timing and create a progress bar.
@@ -603,10 +604,6 @@ def load_model_config(
         config_kwargs["max_num_steps"] = max_num_steps
 
     config = PipelineConfig(**config_kwargs)
-
-    if len(config.model_config.weight_path) == 0:
-        hf_file_kwargs = {}
-        hf_file_kwargs["encoding"] = config.model_config.quantization_encoding
 
     tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
         config, task=pipeline_task

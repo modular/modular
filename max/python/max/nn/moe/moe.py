@@ -481,7 +481,7 @@ class MoE(Module, Shardable):
 
         down_projs = ops.gather(
             down_projs, restore_token_order, axis=0
-        ).reshape([seq_len, self.num_experts_per_token, -1])
+        ).reshape([seq_len, self.num_experts_per_token, self.hidden_dim])
 
         if not self.apply_router_weight_first:
             # (seq_len, 1, n_expert) @ (seq_len, n_expert, hidden_dim) -> (seq_len, 1, hidden_dim)

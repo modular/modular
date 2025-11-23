@@ -339,3 +339,50 @@ class Settings(BaseSettings):
                 f"    telemetry_spawn_timeout: {self.telemetry_worker_spawn_timeout:.1f}s"
             )
         logger.info("")
+
+
+def parse_api_and_target_arch(compile_spec: str) -> tuple[str, str]:
+    """Parse the compile-only specification into API and target architecture.
+
+    Supports two formats:
+    1. <api> - Uses default target architecture for the API
+    2. <api>:<target_arch> - Uses explicit target architecture
+
+    Args:
+        compile_spec: The compile-only specification string
+
+    Returns:
+        A tuple of (api, target_arch)
+
+    Raises:
+        ValueError: If the API is invalid
+
+    Example:
+        >>> parse_api_and_target_arch("cuda")
+        ('cuda', 'sm_80')
+        >>> parse_api_and_target_arch("cuda:sm_90")
+        ('cuda', 'sm_90')
+    """
+    # Default target architectures for each API
+    default_target_archs = {
+        "cuda": "sm_80",  # Ampere (A100, RTX 30xx)
+        "hip": "gfx942",  # MI300X
+        "metal": "apple-m1",  # Apple Silicon
+    }
+
+    # Parse the compile-only value as <api> or <api>:<target_arch>
+    if ":" in compile_spec:
+        api, target_arch = compile_spec.split(":", 1)
+    else:
+        api = compile_spec
+        target_arch = default_target_archs.get(api, "")
+
+    # Validate API
+    valid_apis = ["cuda", "hip", "metal"]
+    if api not in valid_apis:
+        raise ValueError(
+            f"Invalid API in --target: '{api}'. "
+            f"Valid APIs are: {', '.join(valid_apis)}"
+        )
+
+    return api, target_arch

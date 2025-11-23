@@ -25,8 +25,8 @@ from testing import assert_equal
 
 
 fn mandelbrot_iter(row: Int, col: Int) -> Int:
-    alias height = 375
-    alias width = 500
+    comptime height = 375
+    comptime width = 500
 
     var xRange: Float32 = 2.0
     var yRange: Float32 = 1.5

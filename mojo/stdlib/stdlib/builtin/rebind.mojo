@@ -15,8 +15,6 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from memory import LegacyUnsafePointer as UnsafePointer
-
 
 @always_inline("nodebug")
 fn rebind[
@@ -105,7 +103,7 @@ fn rebind_var[
     __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(src))
 
 
-alias downcast[_Trait: type_of(AnyType), T: AnyType] = __mlir_attr[
+comptime downcast[_Trait: type_of(AnyType), T: AnyType] = __mlir_attr[
     `#kgen.downcast<`, T, `> : `, _Trait
 ]
 

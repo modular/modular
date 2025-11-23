@@ -65,7 +65,7 @@ fn _compute_kv_cache_dynamic_shape_strides[
 
 
 @register_passable("trivial")
-struct KVCacheStaticParams(EqualityComparable, ImplicitlyCopyable, Movable):
+struct KVCacheStaticParams(Equatable, ImplicitlyCopyable, Movable):
     var num_heads: UInt
     var head_size: UInt
     var is_mla: Bool
@@ -224,8 +224,8 @@ struct ContinuousBatchingKVCache[
     KERNELS.
     """
 
-    alias dtype = dtype_
-    alias kv_params = kv_params_
+    alias dtype = Self.dtype_
+    alias kv_params = Self.kv_params_
     alias page_size_ = 0
     # Shape is [num_blocks, max_seq_len, num_heads, head_size].
     alias blocks_shape = IntTuple(
@@ -479,14 +479,14 @@ struct PagedKVCache[
         page_size: The size of the page.
     """
 
-    alias dtype = dtype_
-    alias kv_params = kv_params_
-    alias page_size_ = page_size
+    alias dtype = Self.dtype_
+    alias kv_params = Self.kv_params_
+    alias page_size_ = Self.page_size
 
     # Shape is [total_num_blocks, page_size, num_heads, head_size].
     alias blocks_shape = IntTuple(
         UNKNOWN_VALUE,
-        page_size,
+        Self.page_size,
         Int(Self.kv_params.num_heads),
         Int(Self.kv_params.head_size),
     )
@@ -538,7 +538,7 @@ struct PagedKVCache[
         max_cache_length: UInt32,
     ):
         debug_assert(
-            blocks.dim[1]() == page_size,
+            blocks.dim[1]() == Self.page_size,
             "blocks.dim[1]() must be equal to page_size",
         )
         debug_assert(
@@ -559,7 +559,7 @@ struct PagedKVCache[
     @staticmethod
     fn max_tile_size() -> Int:
         """Returns the maximum tile size for the KVCache."""
-        return page_size
+        return Self.page_size
 
     @always_inline
     fn cache_lengths_nd(
@@ -732,7 +732,7 @@ struct PagedKVCache[
         head_dim_idx: Int = 0,
     ) -> UnsafePointer[Scalar[Self.dtype]]:
         constrained[
-            tile_size <= page_size and page_size % tile_size == 0,
+            tile_size <= Self.page_size and Self.page_size % tile_size == 0,
             (
                 "Invalid tile size for PagedKVCache. tile_size must be less"
                 " than or equal to the page size and divisible by the page size"
@@ -782,8 +782,8 @@ struct ContinuousBatchingKVCacheCollection[
     """
 
     alias name_str = "continuous_batching"
-    alias dtype = dtype_
-    alias kv_params = kv_params_
+    alias dtype = Self.dtype_
+    alias kv_params = Self.kv_params_
     alias CacheType = ContinuousBatchingKVCache[Self.dtype, Self.kv_params]
 
     # Shape is [num_blocks, 2, num_layers, max_seq_len, num_heads, head_size].
@@ -875,9 +875,9 @@ struct PagedKVCacheCollection[
     page_size: Int,
 ](KVCollectionT):
     alias name_str = "paged"
-    alias dtype = dtype_
-    alias kv_params = kv_params_
-    alias CacheType = PagedKVCache[Self.dtype, Self.kv_params, page_size]
+    alias dtype = Self.dtype_
+    alias kv_params = Self.kv_params_
+    alias CacheType = PagedKVCache[Self.dtype, Self.kv_params, Self.page_size]
 
     # Shape is [total_num_blocks, 2, num_layers, page_size, num_heads, head_size].
     # Matrix view is
@@ -886,7 +886,7 @@ struct PagedKVCacheCollection[
         UNKNOWN_VALUE,
         2 if not Self.kv_params.is_mla else 1,
         UNKNOWN_VALUE,
-        page_size,
+        Self.page_size,
         Int(Self.kv_params.num_heads),
         Int(Self.kv_params.head_size),
     )

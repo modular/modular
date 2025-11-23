@@ -18,8 +18,8 @@ from testing import TestSuite
 
 
 fn _test_multicast_memory(contexts: List[DeviceContext]) raises:
-    alias alloc_len = 128 * 1024
-    alias dtype = DType.int32
+    comptime alloc_len = 128 * 1024
+    comptime dtype = DType.int32
 
     var multicast_buf = DeviceMulticastBuffer[dtype](contexts.copy(), alloc_len)
 

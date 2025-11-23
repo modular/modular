@@ -63,6 +63,7 @@ class Qwen3Config(Llama3Config):
             head_dim=getattr(  # noqa: B009
                 huggingface_config, "head_dim"
             ),  # Use head_dim directly from config
+            num_layers=Qwen3Config.get_num_layers(huggingface_config),
             page_size=kv_cache_config.kv_cache_page_size,
             cache_strategy=kv_cache_config.cache_strategy,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,

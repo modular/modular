@@ -258,7 +258,7 @@ class Llama3(Transformer):
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = kv_manager.input_symbols()
+        kv_inputs = kv_manager.get_symbolic_inputs()
 
         # Construct Graph Inputs
         tokens_type = TensorType(
@@ -269,7 +269,7 @@ class Llama3(Transformer):
         )
         if lora_manager is not None:
             lora_ids, lora_ranks, lora_grouped_offsets, lora_input_slice_idx = (
-                lora_manager.input_symbols(device_ref)
+                lora_manager.get_symbolic_inputs(device_ref)
             )
             return (
                 tokens_type,

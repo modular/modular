@@ -8,8 +8,8 @@ mojo_library(
     validate_missing_docs = False,
     visibility = ["//visibility:public"],
     deps = [
-        "@mojo//:layout",
+        "//max:layout",
         #TODO: Remove once GEX-1879 and GEX-1842 are done
-        "@mojo//:register",
+        "//max:register",
     ],
 )

@@ -627,15 +627,15 @@ struct TopK_2[T: DType, largest: Bool = True](
     Defaultable, ImplicitlyCopyable, Movable
 ):
     var p: Int  # flattened index of the element
-    var u: Scalar[T]  # value of the element
+    var u: Scalar[Self.T]  # value of the element
 
     fn __init__(out self):
         self.p = -1
-        self.u = _topk_dead_val[T, largest]()
+        self.u = _topk_dead_val[Self.T, Self.largest]()
 
-    fn insert(mut self, elem: Scalar[T], elem_id: Int):
+    fn insert(mut self, elem: Scalar[Self.T], elem_id: Int):
         @parameter
-        if largest:
+        if Self.largest:
             if elem > self.u:
                 self.u = elem
                 self.p = elem_id

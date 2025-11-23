@@ -17,14 +17,14 @@ from sys.ffi import _get_global
 from sys.compile import SanitizeAddress
 
 
-fn _init_global_runtime() -> OpaquePointer[MutAnyOrigin]:
+fn _init_global_runtime() -> OpaquePointer[MutOrigin.external]:
     return external_call[
         "KGEN_CompilerRT_AsyncRT_CreateRuntime",
-        OpaquePointer[MutAnyOrigin],
+        OpaquePointer[MutOrigin.external],
     ](0)
 
 
-fn _destroy_global_runtime(ptr: OpaquePointer[MutAnyOrigin]):
+fn _destroy_global_runtime(ptr: OpaquePointer[MutOrigin.external]):
     """Destroy the global runtime if ever used."""
     external_call["KGEN_CompilerRT_AsyncRT_DestroyRuntime", NoneType](ptr)
 

@@ -82,7 +82,7 @@ trait OptionalPointer(Copyable):
 
 @register_passable("trivial")
 struct NonNullPointer[dtype_: DType](OptionalPointer):
-    alias dtype: DType = dtype_
+    alias dtype: DType = Self.dtype_
     alias is_null: Bool = False
 
     var ptr: UnsafePointer[Scalar[Self.dtype]]
@@ -109,7 +109,7 @@ struct NonNullPointer[dtype_: DType](OptionalPointer):
 
 @register_passable("trivial")
 struct NullPointer[dtype_: DType](OptionalPointer):
-    alias dtype: DType = dtype_
+    alias dtype: DType = Self.dtype_
     alias is_null: Bool = True
 
     @always_inline
@@ -132,14 +132,14 @@ struct Pack[
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
 ](Copyable, DevicePassable):
-    var mask: MaskType
-    var score_mod: ScoreModType
-    var scheduler: SchedulerType
-    var valid_length: ValidLengthType
-    var sink_weights: SinkType
-    var kv_input_row_offsets: KVRowOffsetsType
-    var max_seq_len: MaxSeqLenType
-    var partition: PartitionType
+    var mask: Self.MaskType
+    var score_mod: Self.ScoreModType
+    var scheduler: Self.SchedulerType
+    var valid_length: Self.ValidLengthType
+    var sink_weights: Self.SinkType
+    var kv_input_row_offsets: Self.KVRowOffsetsType
+    var max_seq_len: Self.MaxSeqLenType
+    var partition: Self.PartitionType
 
     alias device_type: AnyType = Self
 
@@ -157,14 +157,14 @@ struct Pack[
     @always_inline
     fn __init__(
         out self,
-        mask: MaskType,
-        score_mod: ScoreModType,
-        scheduler: SchedulerType,
-        valid_length: ValidLengthType,
-        sink_weights: SinkType,
-        kv_input_row_offsets: KVRowOffsetsType,
-        max_seq_len: MaxSeqLenType,
-        partition: PartitionType,
+        mask: Self.MaskType,
+        score_mod: Self.ScoreModType,
+        scheduler: Self.SchedulerType,
+        valid_length: Self.ValidLengthType,
+        sink_weights: Self.SinkType,
+        kv_input_row_offsets: Self.KVRowOffsetsType,
+        max_seq_len: Self.MaxSeqLenType,
+        partition: Self.PartitionType,
     ):
         self.mask = mask
         self.score_mod = score_mod
@@ -202,7 +202,7 @@ struct MHAPosition[
     var prompt_offset: UInt32  # when decoding, this is the position_idx
     var prompt_idx: UInt32
 
-    alias q_stride: Int = Self.depth if decoding else Self.depth * Self.q_num_heads
+    alias q_stride: Int = Self.depth if Self.decoding else Self.depth * Self.q_num_heads
     alias q_output_gmem_layout = Layout(
         IntTuple(Self.BM, Self.depth), IntTuple(Self.q_stride, 1)
     )
@@ -269,10 +269,10 @@ struct MHAPosition[
     @always_inline
     fn q_tile_num_rows(self) -> UInt32:
         @parameter
-        if decoding:
+        if Self.decoding:
             return Self.group
         else:
-            return min(BM, self.seq_len - self.prompt_offset)
+            return min(Self.BM, self.seq_len - self.prompt_offset)
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -298,7 +298,7 @@ struct MHAPosition[
             masked=True,
         ],
     ):
-        constrained[not decoding]()
+        constrained[not Self.decoding]()
         alias splitBM = Self.BM // 2
         num_rows = min(
             splitBM,
@@ -309,7 +309,9 @@ struct MHAPosition[
         gmem_block = {
             ptr + self.q_out_offset + idx * (Self.q_stride * splitBM),
             type_of(gmem_block.runtime_layout)(
-                type_of(gmem_block.runtime_layout.shape)(Int(num_rows), depth),
+                type_of(gmem_block.runtime_layout.shape)(
+                    Int(num_rows), Self.depth
+                ),
                 type_of(gmem_block.runtime_layout.stride)(Self.q_stride, 1),
             ),
         }
@@ -333,7 +335,7 @@ struct MHAPosition[
             ptr + self.q_out_offset,
             type_of(gmem_block.runtime_layout)(
                 type_of(gmem_block.runtime_layout.shape)(
-                    Int(self.q_tile_num_rows()), depth
+                    Int(self.q_tile_num_rows()), Self.depth
                 ),
                 type_of(gmem_block.runtime_layout.stride)(Self.q_stride, 1),
             ),
@@ -341,13 +343,13 @@ struct MHAPosition[
 
     @always_inline
     fn mask_status[
-        mask_t: MHAMask
-    ](self, mask: mask_t, kv_tile_start_row: UInt32) -> TileMaskStatus:
+        MaskType: MHAMask
+    ](self, mask: MaskType, kv_tile_start_row: UInt32) -> TileMaskStatus:
         @parameter
-        if decoding:
+        if Self.decoding:
 
             @parameter
-            if mask_t.check_mask_during_decoding:
+            if MaskType.check_mask_during_decoding:
                 # In context encoding, we have BM rows of Q
                 # In decoding, we have `group` rows, but these
                 # correspond to the same position w/ respect to the mask.
@@ -368,6 +370,14 @@ struct MHAPosition[
                 ),
                 Index[dtype = DType.int32](Int(Self.BM), Int(Self.BN)),
             )
+
+    @always_inline
+    fn get_q_row(self) -> UInt32:
+        @parameter
+        if Self.decoding:
+            return self.num_keys - 1
+        else:
+            return self.prompt_offset + self.start_pos
 
     @always_inline
     fn exp_sum_qk_max_ptr[
@@ -397,7 +407,7 @@ struct MHAPosition[
     ](self, partition: partition_t) -> Tuple[UInt32, UInt32]:
         @parameter
         if partition_t.do_partition:
-            start, end = get_start_and_end_for_partitions[BN](
+            start, end = get_start_and_end_for_partitions[Self.BN](
                 Int(self.num_keys),
                 Int(partition.num_partitions()),
                 Int(self.prompt_offset),

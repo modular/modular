@@ -59,7 +59,7 @@ fn dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
         return x.m
 
     alias m_values = TuningTableAMD.query_values[Int, get_m, nk_idx_list]()
-    alias expected_m_values = List[Int](1, 2, 16)
+    alias expected_m_values: List[Int] = [1, 2, 16]
     constrained[len(m_values) == len(expected_m_values)]()
 
     @parameter
@@ -129,9 +129,17 @@ fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
 
     alias m_values = TuningTableNvidia.query_values[Int, get_m, nk_idx_list]()
 
-    alias expected_m_values = List[Int](
-        1, 8, 16, 32, 64, 128, 256, 65536, 128000
-    )
+    alias expected_m_values: List[Int] = [
+        1,
+        8,
+        16,
+        32,
+        64,
+        128,
+        256,
+        65536,
+        128000,
+    ]
     constrained[len(m_values) == len(expected_m_values)]()
 
     @parameter

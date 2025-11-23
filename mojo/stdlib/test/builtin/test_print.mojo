@@ -60,7 +60,9 @@ struct PrintChecker(Movable):
         _ = self.tmp.seek(self.cursor)
         var result = self.tmp.read()[:-1]
         if result != expected:
-            raise _assert_equal_error(result, expected, msg, self.call_location)
+            raise _assert_equal_error(
+                String(result), expected, msg, self.call_location
+            )
         self.cursor += len(result) + 1
 
     fn check_line_starts_with(
@@ -74,7 +76,7 @@ struct PrintChecker(Movable):
             raise _assert_error(msg, self.call_location)
         if result[:prefix_len] != prefix:
             raise _assert_equal_error(
-                result[:prefix_len], prefix, msg, self.call_location
+                String(result[:prefix_len]), prefix, msg, self.call_location
             )
         self.cursor += len(result) + 1
 
