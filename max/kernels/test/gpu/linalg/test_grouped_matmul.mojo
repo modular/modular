@@ -62,12 +62,12 @@ fn test[
         print(expert_ids[i], end=" ")
     print()
 
-    alias a_type = in_type
-    alias b_type = in_type
-    alias c_type = out_type
+    comptime a_type = in_type
+    comptime b_type = in_type
+    comptime c_type = out_type
 
-    alias N = expert_shape[0]
-    alias K = expert_shape[1]
+    comptime N = expert_shape[0]
+    comptime K = expert_shape[1]
 
     # Total and max number of tokens
     total_num_tokens = 0
@@ -79,11 +79,11 @@ fn test[
         )
 
     # Create host A C buffers
-    alias static_a_shape = DimList(Dim(), K)
+    comptime static_a_shape = DimList(Dim(), K)
     var dynamic_a_shape = DimList(total_num_tokens, K)
     var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    alias actual_N = 3 * N if qkv_perm_dim else N
-    alias static_c_shape = DimList(Dim(), actual_N)
+    comptime actual_N = 3 * N if qkv_perm_dim else N
+    comptime static_c_shape = DimList(Dim(), actual_N)
     var dynamic_c_shape = DimList(total_num_tokens, actual_N)
 
     var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
@@ -93,7 +93,9 @@ fn test[
     )
 
     # Create host B buffers
-    alias static_b_shape = DimList(num_experts, 3 * N if qkv_perm_dim else N, K)
+    comptime static_b_shape = DimList(
+        num_experts, 3 * N if qkv_perm_dim else N, K
+    )
     var b_host = HostNDBuffer[b_type, 3, static_b_shape](static_b_shape)
     var expert_ids_host = HostNDBuffer[DType.int32, 1](num_experts)
 
@@ -187,7 +189,7 @@ fn test[
         ptr = c_dev_ndbuffer.data + new_j * total_num_tokens * N + i * N + new_k
         ptr.store[width=width, alignment=alignment](new_val.cast[out_type]())
 
-    alias elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
+    comptime elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
         perm_dim_fn
     ) if qkv_perm_dim else (
         OptionalReg[elementwise_epilogue_type](
@@ -284,12 +286,12 @@ fn test_negative_lora_id[
         print(expert_ids[i], end=" ")
     print()
 
-    alias a_type = in_type
-    alias b_type = in_type
-    alias c_type = out_type
+    comptime a_type = in_type
+    comptime b_type = in_type
+    comptime c_type = out_type
 
-    alias N = expert_shape[0]
-    alias K = expert_shape[1]
+    comptime N = expert_shape[0]
+    comptime K = expert_shape[1]
 
     # Total and max number of tokens
     total_num_tokens = 0
@@ -301,10 +303,10 @@ fn test_negative_lora_id[
         )
 
     # Create host A C buffers
-    alias static_a_shape = DimList(Dim(), K)
+    comptime static_a_shape = DimList(Dim(), K)
     var dynamic_a_shape = DimList(total_num_tokens, K)
     var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    alias static_c_shape = DimList(Dim(), N)
+    comptime static_c_shape = DimList(Dim(), N)
     var dynamic_c_shape = DimList(total_num_tokens, N)
     var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
     var a_offsets_host = HostNDBuffer[DType.uint32, 1, DimList(Dim())](
@@ -312,7 +314,7 @@ fn test_negative_lora_id[
     )
 
     # Create host B buffers
-    alias static_b_shape = DimList(num_experts, N, K)
+    comptime static_b_shape = DimList(num_experts, N, K)
     var b_host = HostNDBuffer[b_type, 3, static_b_shape](static_b_shape)
     var expert_ids_host = HostNDBuffer[DType.int32, 1](num_active_experts)
 
@@ -545,16 +547,16 @@ def main():
             has_epilogue=True,
         ](2, [128, 256], [0, 2], ctx)
 
-        alias ns = [16, 256]
-        alias ms = [16, 512]
+        comptime ns = [16, 256]
+        comptime ms = [16, 512]
 
         @parameter
         for n_idx in range(len(ns)):
 
             @parameter
             for m_idx in range(len(ms)):
-                alias n = ns[n_idx]
-                alias m = ms[m_idx]
+                comptime n = ns[n_idx]
+                comptime m = ms[m_idx]
 
                 @parameter
                 if m == 16 or n == 16:

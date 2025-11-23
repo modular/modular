@@ -38,7 +38,7 @@ def execute_gather_nd_test[
         ctx=ctx,
     )
     var data_device_tensor = data_device.to_layout_tensor()
-    alias data_layout = Layout.row_major[data_device_tensor.rank]()
+    comptime data_layout = Layout.row_major[data_device_tensor.rank]()
     var indices_device = DeviceNDBuffer[
         indices_host.dtype, indices_host.rank, indices_host.shape
     ](
@@ -46,8 +46,8 @@ def execute_gather_nd_test[
         ctx=ctx,
     )
     var indices_device_tensor = indices_device.to_layout_tensor()
-    alias indices_layout = Layout.row_major[indices_device_tensor.rank]()
-    alias output_rank = 1
+    comptime indices_layout = Layout.row_major[indices_device_tensor.rank]()
+    comptime output_rank = 1
 
     var output_shape = gather_nd_shape[
         output_rank,
@@ -77,7 +77,9 @@ def execute_gather_nd_test[
         ctx=ctx,
     )
     var actual_output_tensor = actual_output_device.to_layout_tensor()
-    alias actual_output_layout = Layout.row_major[actual_output_tensor.rank]()
+    comptime actual_output_layout = Layout.row_major[
+        actual_output_tensor.rank
+    ]()
     ctx.enqueue_copy(data_device.buffer, data_host_tensor.ptr)
     ctx.enqueue_copy(indices_device.buffer, indices_host_tensor.ptr)
 
@@ -113,13 +115,13 @@ def execute_gather_nd_test[
 
 fn test_gather_nd_oob(ctx: DeviceContext) raises:
     # Example 1
-    alias batch_dims = 0
-    alias data_rank = 2
-    alias data_type = DType.int32
+    comptime batch_dims = 0
+    comptime data_rank = 2
+    comptime data_type = DType.int32
     var data = HostNDBuffer[data_type, data_rank, DimList(2, 2)](
         IndexList[data_rank](2, 2)
     )
-    alias data_layout = Layout.row_major[data_rank]()
+    comptime data_layout = Layout.row_major[data_rank]()
     var data_tensor = data.to_layout_tensor()
 
     data_tensor[0, 0] = 0
@@ -127,7 +129,7 @@ fn test_gather_nd_oob(ctx: DeviceContext) raises:
     data_tensor[1, 0] = 2
     data_tensor[1, 1] = 3
 
-    alias indices_rank = 2
+    comptime indices_rank = 2
     var indices = HostNDBuffer[DType.int64, indices_rank, DimList(2, 2)](
         IndexList[indices_rank](2, 2)
     )

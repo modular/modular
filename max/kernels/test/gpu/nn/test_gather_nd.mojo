@@ -61,9 +61,9 @@ def execute_gather_nd_test[
     var indices_device_tensor = indices_device.to_layout_tensor()
     var actual_output_device_tensor = actual_output_device.to_layout_tensor()
 
-    alias data_layout = Layout.row_major[data_device_tensor.rank]()
-    alias indices_layout = Layout.row_major[indices_device_tensor.rank]()
-    alias actual_output_layout = Layout.row_major[
+    comptime data_layout = Layout.row_major[data_device_tensor.rank]()
+    comptime indices_layout = Layout.row_major[indices_device_tensor.rank]()
+    comptime actual_output_layout = Layout.row_major[
         actual_output_device_tensor.rank
     ]()
 
@@ -114,10 +114,10 @@ def execute_gather_nd_test[
 
 fn test_gather_nd_eg1(ctx: DeviceContext) raises:
     # Example 1
-    alias batch_dims = 0
-    alias data_rank = 2
-    alias data_type = DType.int32
-    alias data_layout = Layout.row_major[data_rank]()
+    comptime batch_dims = 0
+    comptime data_rank = 2
+    comptime data_type = DType.int32
+    comptime data_layout = Layout.row_major[data_rank]()
     var data = HostNDBuffer[data_type, data_rank, DimList(2, 2)](
         IndexList[data_rank](2, 2)
     )
@@ -129,8 +129,8 @@ fn test_gather_nd_eg1(ctx: DeviceContext) raises:
     data_tensor[1, 0] = 2
     data_tensor[1, 1] = 3
 
-    alias indices_rank = 2
-    alias indices_layout = Layout.row_major[indices_rank]()
+    comptime indices_rank = 2
+    comptime indices_layout = Layout.row_major[indices_rank]()
     var indices = HostNDBuffer[DType.int64, indices_rank, DimList(2, 2)](
         IndexList[indices_rank](2, 2)
     )
@@ -141,8 +141,8 @@ fn test_gather_nd_eg1(ctx: DeviceContext) raises:
     indices_tensor[1, 0] = 1
     indices_tensor[1, 1] = 1
 
-    alias output_rank = 1
-    alias layout_2d = Layout.row_major[2]()
+    comptime output_rank = 1
+    comptime layout_2d = Layout.row_major[2]()
     var output_shape = gather_nd_shape[
         output_rank,
         data_type,
@@ -172,10 +172,10 @@ fn test_gather_nd_eg1(ctx: DeviceContext) raises:
 
 fn test_gather_nd_eg2(ctx: DeviceContext) raises:
     # Example 2
-    alias batch_dims = 0
-    alias data_rank = 2
-    alias data_type = DType.int8
-    alias data_layout = Layout.row_major[data_rank]()
+    comptime batch_dims = 0
+    comptime data_rank = 2
+    comptime data_type = DType.int8
+    comptime data_layout = Layout.row_major[data_rank]()
 
     var data = HostNDBuffer[data_type, data_rank, DimList(2, 2)](
         IndexList[data_rank](2, 2)
@@ -186,8 +186,8 @@ fn test_gather_nd_eg2(ctx: DeviceContext) raises:
     data_tensor[1, 0] = 2
     data_tensor[1, 1] = 3
 
-    alias indices_rank = 2
-    alias indices_layout = Layout.row_major[indices_rank]()
+    comptime indices_rank = 2
+    comptime indices_layout = Layout.row_major[indices_rank]()
     var indices = HostNDBuffer[DType.int64, indices_rank, DimList(2, 1)](
         IndexList[indices_rank](2, 1)
     )
@@ -196,7 +196,7 @@ fn test_gather_nd_eg2(ctx: DeviceContext) raises:
     indices_tensor[0, 0] = 1
     indices_tensor[1, 0] = 0
 
-    alias output_rank = 2
+    comptime output_rank = 2
     var output_shape = gather_nd_shape[
         output_rank,
         data_type,
@@ -228,10 +228,10 @@ fn test_gather_nd_eg2(ctx: DeviceContext) raises:
 
 fn test_gather_nd_eg3(ctx: DeviceContext) raises:
     # Example 3
-    alias batch_dims = 0
-    alias data_rank = 3
-    alias data_type = DType.float32
-    alias data_layout = Layout.row_major[data_rank]()
+    comptime batch_dims = 0
+    comptime data_rank = 3
+    comptime data_type = DType.float32
+    comptime data_layout = Layout.row_major[data_rank]()
     var data = HostNDBuffer[data_type, data_rank, DimList(2, 2, 2)](
         IndexList[data_rank](2, 2, 2)
     )
@@ -246,8 +246,8 @@ fn test_gather_nd_eg3(ctx: DeviceContext) raises:
     data_tensor[1, 1, 0] = 6
     data_tensor[1, 1, 1] = 7
 
-    alias indices_rank = 2
-    alias indices_layout = Layout.row_major[indices_rank]()
+    comptime indices_rank = 2
+    comptime indices_layout = Layout.row_major[indices_rank]()
     var indices = HostNDBuffer[DType.int64, indices_rank, DimList(2, 2)](
         IndexList[indices_rank](2, 2)
     )
@@ -258,7 +258,7 @@ fn test_gather_nd_eg3(ctx: DeviceContext) raises:
     indices_tensor[1, 0] = 1
     indices_tensor[1, 1] = 0
 
-    alias output_rank = 2
+    comptime output_rank = 2
     var output_shape = gather_nd_shape[
         output_rank,
         data_type,
@@ -291,10 +291,10 @@ fn test_gather_nd_eg3(ctx: DeviceContext) raises:
 
 fn test_gather_nd_eg4(ctx: DeviceContext) raises:
     # Example 4
-    alias batch_dims = 0
-    alias data_rank = 3
-    alias data_type = DType.int8
-    alias data_layout = Layout.row_major[data_rank]()
+    comptime batch_dims = 0
+    comptime data_rank = 3
+    comptime data_type = DType.int8
+    comptime data_layout = Layout.row_major[data_rank]()
     var data = HostNDBuffer[data_type, data_rank, DimList(2, 2, 2)](
         IndexList[data_rank](2, 2, 2)
     )
@@ -309,8 +309,8 @@ fn test_gather_nd_eg4(ctx: DeviceContext) raises:
     data_tensor[1, 1, 0] = 6
     data_tensor[1, 1, 1] = 7
 
-    alias indices_rank = 3
-    alias indices_layout = Layout.row_major[indices_rank]()
+    comptime indices_rank = 3
+    comptime indices_layout = Layout.row_major[indices_rank]()
     var indices = HostNDBuffer[DType.int64, indices_rank, DimList(2, 1, 2)](
         IndexList[indices_rank](2, 1, 2)
     )
@@ -321,7 +321,7 @@ fn test_gather_nd_eg4(ctx: DeviceContext) raises:
     indices_tensor[1, 0, 0] = 1
     indices_tensor[1, 0, 1] = 0
 
-    alias output_rank = 3
+    comptime output_rank = 3
     var output_shape = gather_nd_shape[
         output_rank,
         data_type,
@@ -354,10 +354,10 @@ fn test_gather_nd_eg4(ctx: DeviceContext) raises:
 
 fn test_gather_nd_eg5(ctx: DeviceContext) raises:
     # Example 5
-    alias batch_dims = 1
-    alias data_rank = 3
-    alias data_type = DType.int32
-    alias data_layout = Layout.row_major[data_rank]()
+    comptime batch_dims = 1
+    comptime data_rank = 3
+    comptime data_type = DType.int32
+    comptime data_layout = Layout.row_major[data_rank]()
     var data = HostNDBuffer[data_type, data_rank, DimList(2, 2, 2)](
         IndexList[data_rank](2, 2, 2)
     )
@@ -372,8 +372,8 @@ fn test_gather_nd_eg5(ctx: DeviceContext) raises:
     data_tensor[1, 1, 0] = 6
     data_tensor[1, 1, 1] = 7
 
-    alias indices_rank = 2
-    alias indices_layout = Layout.row_major[indices_rank]()
+    comptime indices_rank = 2
+    comptime indices_layout = Layout.row_major[indices_rank]()
     var indices = HostNDBuffer[DType.int64, indices_rank, DimList(2, 1)](
         IndexList[indices_rank](2, 1)
     )
@@ -382,7 +382,7 @@ fn test_gather_nd_eg5(ctx: DeviceContext) raises:
     indices_tensor[0, 0] = 1
     indices_tensor[1, 0] = 0
 
-    alias output_rank = 2
+    comptime output_rank = 2
     var output_shape = gather_nd_shape[
         output_rank,
         data_type,
@@ -415,10 +415,10 @@ fn test_gather_nd_eg5(ctx: DeviceContext) raises:
 
 fn test_gather_nd_eg6(ctx: DeviceContext) raises:
     # Example 6
-    alias batch_dims = 2
-    alias data_rank = 3
-    alias data_type = DType.int8
-    alias data_layout = Layout.row_major[data_rank]()
+    comptime batch_dims = 2
+    comptime data_rank = 3
+    comptime data_type = DType.int8
+    comptime data_layout = Layout.row_major[data_rank]()
     var data = HostNDBuffer[data_type, data_rank, DimList(2, 3, 4)](
         IndexList[data_rank](2, 3, 4)
     )
@@ -454,8 +454,8 @@ fn test_gather_nd_eg6(ctx: DeviceContext) raises:
     data_tensor[1, 2, 2] = 23
     data_tensor[1, 2, 3] = 24
 
-    alias indices_rank = 4
-    alias indices_layout = Layout.row_major[indices_rank]()
+    comptime indices_rank = 4
+    comptime indices_layout = Layout.row_major[indices_rank]()
     var indices = HostNDBuffer[DType.int64, indices_rank, DimList(2, 3, 1, 1)](
         IndexList[indices_rank](
             2,
@@ -473,7 +473,7 @@ fn test_gather_nd_eg6(ctx: DeviceContext) raises:
     indices_tensor[1, 1, 0, 0] = 2
     indices_tensor[1, 2, 0, 0] = 2
 
-    alias output_rank = 3
+    comptime output_rank = 3
     var output_shape = gather_nd_shape[
         output_rank,
         data_type,
@@ -508,10 +508,10 @@ fn test_gather_nd_eg6(ctx: DeviceContext) raises:
 
 fn test_gather_nd_eg7(ctx: DeviceContext) raises:
     # Example 7
-    alias batch_dims = 0
-    alias data_rank = 3
-    alias data_type = DType.int8
-    alias data_layout = Layout.row_major[data_rank]()
+    comptime batch_dims = 0
+    comptime data_rank = 3
+    comptime data_type = DType.int8
+    comptime data_layout = Layout.row_major[data_rank]()
     var data = HostNDBuffer[data_type, data_rank, DimList(2, 2, 2)](
         IndexList[data_rank](2, 2, 2)
     )
@@ -526,8 +526,8 @@ fn test_gather_nd_eg7(ctx: DeviceContext) raises:
     data_tensor[1, 1, 0] = 6
     data_tensor[1, 1, 1] = 7
 
-    alias indices_rank = 3
-    alias indices_layout = Layout.row_major[indices_rank]()
+    comptime indices_rank = 3
+    comptime indices_layout = Layout.row_major[indices_rank]()
     var indices = HostNDBuffer[DType.int64, indices_rank, DimList(2, 1, 1)](
         IndexList[indices_rank](
             2,
@@ -540,7 +540,7 @@ fn test_gather_nd_eg7(ctx: DeviceContext) raises:
     indices_tensor[0, 0, 0] = 0
     indices_tensor[1, 0, 0] = 1
 
-    alias output_rank = 4
+    comptime output_rank = 4
     var output_shape = gather_nd_shape[
         output_rank,
         data_type,
@@ -577,10 +577,10 @@ fn test_gather_nd_eg7(ctx: DeviceContext) raises:
 
 fn test_gather_nd_eg8(ctx: DeviceContext) raises:
     # Example 2
-    alias batch_dims = 0
-    alias data_rank = 2
-    alias data_type = DType.int8
-    alias data_layout = Layout.row_major[data_rank]()
+    comptime batch_dims = 0
+    comptime data_rank = 2
+    comptime data_type = DType.int8
+    comptime data_layout = Layout.row_major[data_rank]()
     var data = HostNDBuffer[data_type, data_rank, DimList(2, 3)](
         IndexList[data_rank](2, 3)
     )
@@ -593,8 +593,8 @@ fn test_gather_nd_eg8(ctx: DeviceContext) raises:
     data_tensor[1, 1] = 4
     data_tensor[1, 2] = 5
 
-    alias indices_rank = 2
-    alias indices_layout = Layout.row_major[indices_rank]()
+    comptime indices_rank = 2
+    comptime indices_layout = Layout.row_major[indices_rank]()
     var indices = HostNDBuffer[DType.int64, indices_rank, DimList(2, 1)](
         IndexList[indices_rank](2, 1)
     )
@@ -603,7 +603,7 @@ fn test_gather_nd_eg8(ctx: DeviceContext) raises:
     indices_tensor[0, 0] = 1
     indices_tensor[1, 0] = 0
 
-    alias output_rank = 2
+    comptime output_rank = 2
     var output_shape = gather_nd_shape[
         output_rank,
         data_type,

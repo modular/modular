@@ -47,9 +47,9 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
         max_num_tokens_per_expert: Maximum tokens per expert (can be 0).
         ctx: Device context for GPU operations.
     """
-    alias in_type = DType.float8_e4m3fn
-    alias out_type = DType.bfloat16
-    alias BLOCK_SCALE_K = 128
+    comptime in_type = DType.float8_e4m3fn
+    comptime out_type = DType.bfloat16
+    comptime BLOCK_SCALE_K = 128
 
     print(
         "== test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case",
@@ -71,14 +71,14 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     var num_expert_ids = max(0, num_active_experts)
 
     # Create host buffers
-    alias static_a_shape = DimList(Dim(), K)
+    comptime static_a_shape = DimList(Dim(), K)
     var dynamic_a_shape = DimList(total_tokens, K)
     var a_host = HostNDBuffer[in_type, 2, static_a_shape](dynamic_a_shape)
 
-    alias static_b_shape = DimList(num_experts, N, K)
+    comptime static_b_shape = DimList(num_experts, N, K)
     var b_host = HostNDBuffer[in_type, 3, static_b_shape](static_b_shape)
 
-    alias static_c_shape = DimList(Dim(), N)
+    comptime static_c_shape = DimList(Dim(), N)
     var dynamic_c_shape = DimList(total_tokens, N)
     var c_host = HostNDBuffer[out_type, 2, static_c_shape](dynamic_c_shape)
 
@@ -97,13 +97,13 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
         expert_ids_host.tensor[i] = i % num_experts
 
     # Create scale buffers
-    alias static_a_scales_shape = DimList(K // BLOCK_SCALE_K, Dim())
+    comptime static_a_scales_shape = DimList(K // BLOCK_SCALE_K, Dim())
     var dynamic_a_scales_shape = DimList(K // BLOCK_SCALE_K, total_tokens)
     var a_scales_host = HostNDBuffer[DType.float32, 2, static_a_scales_shape](
         dynamic_a_scales_shape
     )
 
-    alias static_b_scales_shape = DimList(
+    comptime static_b_scales_shape = DimList(
         num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
     var b_scales_host = HostNDBuffer[DType.float32, 3, static_b_scales_shape](

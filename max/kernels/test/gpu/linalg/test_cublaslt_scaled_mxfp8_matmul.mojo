@@ -64,11 +64,11 @@ fn _convert_ref_scales_to_mxfp8_format[
     var N = n.value
     var K = k.value
 
-    alias SF_VECTOR_SIZE = 32
-    alias atom_m = (32, 4)
-    alias atom_k = 4
-    alias MN_SCALE = atom_m[0] * atom_m[1]
-    alias K_SCALE = SF_VECTOR_SIZE * atom_k
+    comptime SF_VECTOR_SIZE = 32
+    comptime atom_m = (32, 4)
+    comptime atom_k = 4
+    comptime MN_SCALE = atom_m[0] * atom_m[1]
+    comptime K_SCALE = SF_VECTOR_SIZE * atom_k
 
     # initialize a_scales_tensor and b_scales_tensor based on reference scales
     for m in range(M):
@@ -151,15 +151,15 @@ fn test_scaled_mxfp8_cublaslt[
     else:
         raise Error("Unknown scaling mode")
 
-    alias scales_type = DType.float8_e8m0fnu
-    alias ref_scales_type = DType.float32
+    comptime scales_type = DType.float8_e8m0fnu
+    comptime ref_scales_type = DType.float32
 
     # Initialize reference scales
-    alias REF_BLOCK_SCALE = 128
-    alias static_ref_a_scales_shape = DimList(
+    comptime REF_BLOCK_SCALE = 128
+    comptime static_ref_a_scales_shape = DimList(
         ceildiv(Int(k.dim), REF_BLOCK_SCALE), m.dim
     )
-    alias static_ref_b_scales_shape = DimList(
+    comptime static_ref_b_scales_shape = DimList(
         ceildiv(Int(n.dim), REF_BLOCK_SCALE),
         ceildiv(Int(k.dim), REF_BLOCK_SCALE),
     )
@@ -198,25 +198,25 @@ fn test_scaled_mxfp8_cublaslt[
         for j in range(b_scales_host_ref.tensor.dim(1)):
             b_scales_host_ref.tensor[i, j] = 1 << j
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim)
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(n.dim, k.dim)
+    comptime static_c_shape = DimList(m.dim, n.dim)
     var dynamic_a_shape = DimList(m.value, k.value)
     var dynamic_b_shape = DimList(n.value, k.value)
     var dynamic_c_shape = DimList(m.value, n.value)
 
-    alias SF_VECTOR_SIZE = 32
-    alias atom_m = (32, 4)
-    alias atom_k = 4
-    alias sf_k = ceildiv(k.dim, SF_VECTOR_SIZE)
-    alias static_a_scales_shape = DimList(
+    comptime SF_VECTOR_SIZE = 32
+    comptime atom_m = (32, 4)
+    comptime atom_k = 4
+    comptime sf_k = ceildiv(k.dim, SF_VECTOR_SIZE)
+    comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, atom_m[0] * atom_m[1]),
         ceildiv(sf_k, atom_k),
         Dim(atom_m[0]),
         Dim(atom_m[1]),
         Dim(atom_k),
     )
-    alias static_b_scales_shape = DimList(
+    comptime static_b_scales_shape = DimList(
         ceildiv(n.dim, atom_m[0] * atom_m[1]),
         ceildiv(sf_k, atom_k),
         Dim(atom_m[0]),

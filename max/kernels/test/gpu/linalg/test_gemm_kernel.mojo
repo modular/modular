@@ -110,7 +110,7 @@ fn gemm_kernel[
         .fill(0)
     )
 
-    alias warp_layout = Layout.row_major(8, 4)
+    comptime warp_layout = Layout.row_major(8, 4)
 
     for k_i in range(ceildiv(K, BK)):
         var a_tile_dram = mat_a.tile[BM, BK](Index(Int(block_idx.y), k_i))
@@ -163,18 +163,18 @@ fn gemm_kernel[
 
 
 fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
-    alias NUM_THREADS = 256
-    alias BM = 64
-    alias BN = 64
-    alias BK = 16
-    alias WM = 32
-    alias WN = 16
-    alias TM = 4
-    alias TN = 4
+    comptime NUM_THREADS = 256
+    comptime BM = 64
+    comptime BN = 64
+    comptime BK = 16
+    comptime WM = 32
+    comptime WN = 16
+    comptime TM = 4
+    comptime TN = 4
 
-    alias M = 1024
-    alias N = 1024
-    alias K = 128
+    comptime M = 1024
+    comptime N = 1024
+    comptime K = 128
 
     var a_host = UnsafePointer[Float32].alloc(M * K)
     var b_host = UnsafePointer[Float32].alloc(K * N)
@@ -205,7 +205,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         DType.float32, 2, MutAnyOrigin, DimList.create_unknown[2]()
     ](c_device.unsafe_ptr(), dynamic_shape=Index(N, M))
 
-    alias kernel = gemm_kernel[
+    comptime kernel = gemm_kernel[
         DType.float32,
         DimList.create_unknown[2](),
         DType.float32,
@@ -241,8 +241,8 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     var b_tensor = from_ndbuffer_row_major(mat_b)
 
     # Naive gemm.
-    alias BLOCK_DIM = 16
-    alias gemm_naive = matmul_kernel_naive[
+    comptime BLOCK_DIM = 16
+    comptime gemm_naive = matmul_kernel_naive[
         DType.float32,
         DType.float32,
         DType.float32,
@@ -271,8 +271,8 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         assert_almost_equal(c_host[i], c_host_ref[i])
 
     if is_benchmark():
-        alias nrun = 200
-        alias nwarmup = 2
+        comptime nrun = 200
+        comptime nwarmup = 2
 
         @always_inline
         @parameter

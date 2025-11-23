@@ -110,11 +110,11 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
             )
         )
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_c_shape = DimList(m.dim, n.dim)
     var dynamic_a_shape = DimList(m.value, k.value)
     var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
         k.value, n.value
@@ -157,7 +157,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
     ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
 
-    alias matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+    comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         cluster_shape=Index(
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
@@ -201,7 +201,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
     ctx.synchronize()
 
-    alias rtol = 1e-2
+    comptime rtol = 1e-2
     assert_almost_equal(
         c_host.tensor,
         c_host_ref.tensor,
@@ -222,12 +222,12 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 
 def main():
     with DeviceContext() as ctx:
-        alias dtype = DType.bfloat16
+        comptime dtype = DType.bfloat16
 
         @parameter
         for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
-            alias BK = (swizzle.bytes() // size_of[dtype]())
-            alias MMA_K = 16
+            comptime BK = (swizzle.bytes() // size_of[dtype]())
+            comptime MMA_K = 16
 
             # we support all range of mma_n_scales in range(1, 33) but the test will time out so we only test a subset
             @parameter
@@ -251,8 +251,8 @@ def main():
                     192,
                     256,
                 ]:
-                    alias block_tile_shape = Index(mma_m, mma_n, BK)
-                    alias umma_shape = Index(mma_m, mma_n, MMA_K)
+                    comptime block_tile_shape = Index(mma_m, mma_n, BK)
+                    comptime umma_shape = Index(mma_m, mma_n, MMA_K)
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
                         dtype,

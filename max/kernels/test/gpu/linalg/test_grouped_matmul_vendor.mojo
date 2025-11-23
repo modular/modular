@@ -50,12 +50,12 @@ fn test_vendor[
         print(expert_ids[i], end=" ")
     print()
 
-    alias a_type = in_type
-    alias b_type = in_type
-    alias c_type = out_type
+    comptime a_type = in_type
+    comptime b_type = in_type
+    comptime c_type = out_type
 
-    alias N = expert_shape[0]
-    alias K = expert_shape[1]
+    comptime N = expert_shape[0]
+    comptime K = expert_shape[1]
 
     # Total and max number of tokens
     total_num_tokens = 0
@@ -67,10 +67,10 @@ fn test_vendor[
         )
 
     # Create host A C buffers
-    alias static_a_shape = DimList(Dim(), K)
+    comptime static_a_shape = DimList(Dim(), K)
     var dynamic_a_shape = DimList(total_num_tokens, K)
     var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    alias static_c_shape = DimList(Dim(), N)
+    comptime static_c_shape = DimList(Dim(), N)
     var dynamic_c_shape = DimList(total_num_tokens, N)
     var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
     var c_ref_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
@@ -79,7 +79,7 @@ fn test_vendor[
     )
 
     # Create host B buffers
-    alias static_b_shape = DimList(num_experts, N, K)
+    comptime static_b_shape = DimList(num_experts, N, K)
     var b_host = HostNDBuffer[b_type, 3, static_b_shape](static_b_shape)
     var expert_ids_host = HostNDBuffer[DType.int32, 1](num_active_experts)
 
@@ -192,12 +192,12 @@ fn test_negative_lora_id_vendor[
         print(expert_ids[i], end=" ")
     print()
 
-    alias a_type = in_type
-    alias b_type = in_type
-    alias c_type = out_type
+    comptime a_type = in_type
+    comptime b_type = in_type
+    comptime c_type = out_type
 
-    alias N = expert_shape[0]
-    alias K = expert_shape[1]
+    comptime N = expert_shape[0]
+    comptime K = expert_shape[1]
 
     # Total and max number of tokens
     total_num_tokens = 0
@@ -209,10 +209,10 @@ fn test_negative_lora_id_vendor[
         )
 
     # Create host A C buffers
-    alias static_a_shape = DimList(Dim(), K)
+    comptime static_a_shape = DimList(Dim(), K)
     var dynamic_a_shape = DimList(total_num_tokens, K)
     var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    alias static_c_shape = DimList(Dim(), N)
+    comptime static_c_shape = DimList(Dim(), N)
     var dynamic_c_shape = DimList(total_num_tokens, N)
     var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
     var a_offsets_host = HostNDBuffer[DType.uint32, 1, DimList(Dim())](
@@ -220,7 +220,7 @@ fn test_negative_lora_id_vendor[
     )
 
     # Create host B buffers
-    alias static_b_shape = DimList(num_experts, N, K)
+    comptime static_b_shape = DimList(num_experts, N, K)
     var b_host = HostNDBuffer[b_type, 3, static_b_shape](static_b_shape)
     var expert_ids_host = HostNDBuffer[DType.int32, 1](num_active_experts)
 

@@ -39,9 +39,9 @@ fn test_fp8_multistage_gemm[
 ](ctx: DeviceContext) raises:
     print("test fp8 multistage matmul")
 
-    alias static_a_shape = DimList(M, K)
-    alias static_b_shape = DimList(N, K) if transpose_b else DimList(K, N)
-    alias static_c_shape = DimList(M, N)
+    comptime static_a_shape = DimList(M, K)
+    comptime static_b_shape = DimList(N, K) if transpose_b else DimList(K, N)
+    comptime static_c_shape = DimList(M, N)
 
     var a_host = HostNDBuffer[dtype, 2, static_a_shape]()
     var b_host = HostNDBuffer[dtype, 2, static_b_shape]()
@@ -77,10 +77,10 @@ fn test_fp8_multistage_gemm[
     var a_tensor = from_ndbuffer_row_major(a_device.tensor)
     var b_tensor = from_ndbuffer_row_major(b_device.tensor)
 
-    alias kernels = MatmulKernels[dtype, dtype, DType.float32, transpose_b]()
-    alias config = kernels.hopper_128x128_4
+    comptime kernels = MatmulKernels[dtype, dtype, DType.float32, transpose_b]()
+    comptime config = kernels.hopper_128x128_4
 
-    alias kernel = multistage_gemm_kernel[
+    comptime kernel = multistage_gemm_kernel[
         DType.float32,  # c_type
         c_tensor.layout,
         dtype,  # a_type
@@ -97,8 +97,8 @@ fn test_fp8_multistage_gemm[
         config=config,
     ]
 
-    alias BM = config.block_tile_shape[0]
-    alias BN = config.block_tile_shape[1]
+    comptime BM = config.block_tile_shape[0]
+    comptime BN = config.block_tile_shape[1]
 
     ctx.enqueue_function_checked[kernel, kernel](
         c_tensor,

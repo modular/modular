@@ -64,18 +64,18 @@ fn test_kernel[
         alignment=16,
     ]()
 
-    alias SCHEDULER_THREADS = 32
-    alias TMA_LOAD_THREADS = 32
-    alias MMA_THREADS = 32
-    alias EPILOGUE_THREADS = 128
-    alias CLUSTER_SIZE = cluster_shape[0] * cluster_shape[1]
-    alias clc_producer_arv_count = 1
-    alias clc_consumer_arv_count = SCHEDULER_THREADS + CLUSTER_SIZE * (
+    comptime SCHEDULER_THREADS = 32
+    comptime TMA_LOAD_THREADS = 32
+    comptime MMA_THREADS = 32
+    comptime EPILOGUE_THREADS = 128
+    comptime CLUSTER_SIZE = cluster_shape[0] * cluster_shape[1]
+    comptime clc_producer_arv_count = 1
+    comptime clc_consumer_arv_count = SCHEDULER_THREADS + CLUSTER_SIZE * (
         TMA_LOAD_THREADS + MMA_THREADS + EPILOGUE_THREADS
     )
 
-    alias clc_throttle_producer_arv_count = TMA_LOAD_THREADS
-    alias clc_throttle_consumer_arv_count = SCHEDULER_THREADS
+    comptime clc_throttle_producer_arv_count = TMA_LOAD_THREADS
+    comptime clc_throttle_consumer_arv_count = SCHEDULER_THREADS
 
     @parameter
     for i in range(num_stages):
@@ -204,15 +204,15 @@ fn test_kernel[
 
 
 fn test_tile_scheduler(ctx: DeviceContext) raises:
-    alias cluster_shape = StaticTuple[Int32, 3](2, 1, 1)
-    alias grid_dim = (88, 16, 1)
+    comptime cluster_shape = StaticTuple[Int32, 3](2, 1, 1)
+    comptime grid_dim = (88, 16, 1)
 
-    alias cluster_dim = StaticTuple[Int32, 3](
+    comptime cluster_dim = StaticTuple[Int32, 3](
         Int(grid_dim[0] // cluster_shape[0]),
         Int(grid_dim[1] // cluster_shape[1]),
         cluster_shape[2],
     )
-    alias kernel = test_kernel[2, cluster_shape]
+    comptime kernel = test_kernel[2, cluster_shape]
     # CHECK-DAG: work_info: (0, 4, 0, True)
     # CHECK-DAG: work_info: (0, 3, 0, True)
     # CHECK-DAG: work_info: (0, 1, 0, True)

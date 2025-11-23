@@ -146,7 +146,7 @@ def mha_operand_copy[
     # For `Q @ K'`, `is_k_major` is True.
     # For `P @ V`, `is_k_major` is False.
     # We emulate both, using the appropriate smem layout for the (wg/u)mma instructions.
-    alias head_size = kv_params.head_size
+    comptime head_size = kv_params.head_size
 
     # Create TMA tiles
     src_tma = src.create_tma_tile[
@@ -161,10 +161,10 @@ def mha_operand_copy[
     # Each of these, as well as `q_num_heads // kv_num_heads` represent multicast
     # opportunities.
     grid_x = 1
-    alias grid_y = kv_params.num_heads
+    comptime grid_y = kv_params.num_heads
     grid_z = batch_size
 
-    alias kernel = mha_operand_tma_copy_kernel[
+    comptime kernel = mha_operand_tma_copy_kernel[
         tile_m,
         Int(head_size),
         kv_t,
@@ -191,7 +191,7 @@ def test_mha_host_operand[
     kv_params: KVCacheStaticParams,
 ](src: kv_t, dst: kv_t, batch_size: Int):
     """Test function that compares two MHAOperands using block_paged_ptr."""
-    alias kv_row_stride = Int(kv_params.head_size * kv_params.num_heads)
+    comptime kv_row_stride = Int(kv_params.head_size * kv_params.num_heads)
     # Iterate over all batch entries and tokens
     for b in range(batch_size):
         seq_len = src.cache_length(b)
@@ -222,7 +222,7 @@ def test_continuous_kv_cache[
     tile_m: Int,
     kv_params: KVCacheStaticParams,
 ](ctx: DeviceContext, batch_size: Int, max_seq_len: Int, num_layers: Int,):
-    alias msg = "  Testing ContinuousBatchingKVCache with tile_m=" + String(
+    comptime msg = "  Testing ContinuousBatchingKVCache with tile_m=" + String(
         tile_m
     ) + ", head_size=" + String(kv_params.head_size)
     print(msg)
@@ -437,7 +437,7 @@ def test_paged_kv_cache[
     kv_params: KVCacheStaticParams,
     page_size: Int,
 ](ctx: DeviceContext, batch_size: Int, max_seq_len: Int, num_layers: Int,):
-    alias msg = "  Testing PagedKVCache with tile_m=" + String(
+    comptime msg = "  Testing PagedKVCache with tile_m=" + String(
         tile_m
     ) + ", head_size=" + String(kv_params.head_size)
     print(msg)
@@ -669,7 +669,7 @@ def test_ndbuffer[
     tile_m: Int,
     kv_params: KVCacheStaticParams,
 ](ctx: DeviceContext, batch_size: Int, max_seq_len: Int,):
-    alias msg = "  Testing NDBuffer with tile_m=" + String(
+    comptime msg = "  Testing NDBuffer with tile_m=" + String(
         tile_m
     ) + ", head_size=" + String(kv_params.head_size)
     print(msg)
@@ -743,7 +743,7 @@ def test_ndbuffer[
 def test_ragged[
     dtype: DType, tile_m: Int, kv_params: KVCacheStaticParams
 ](ctx: DeviceContext, batch_size: Int):
-    alias msg = "  Testing RaggedTensor with tile_m=" + String(
+    comptime msg = "  Testing RaggedTensor with tile_m=" + String(
         tile_m
     ) + ", head_size=" + String(kv_params.head_size)
     print(msg)
@@ -845,26 +845,26 @@ def test_ragged[
 def main():
     seed(42)
     with DeviceContext() as ctx:
-        alias batch_size = 4
-        alias max_seq_len = 1024
-        alias num_layers = 2
-        alias page_size = 512
-        alias dtype = DType.bfloat16
+        comptime batch_size = 4
+        comptime max_seq_len = 1024
+        comptime num_layers = 2
+        comptime page_size = 512
+        comptime dtype = DType.bfloat16
 
         print("Testing TMA copy with different tile configurations")
 
         @parameter
         for i in range(6, 9):
-            alias head_size = 1 << i  # 64, 128, 256
-            alias kv_params = KVCacheStaticParams(
+            comptime head_size = 1 << i  # 64, 128, 256
+            comptime kv_params = KVCacheStaticParams(
                 num_heads=8, head_size=UInt(head_size)
             )
 
             @parameter
             for j in range(6, 15 - i):
-                alias block_m = 1 << j  # 64, ..., (64 * 256) // block_m
+                comptime block_m = 1 << j  # 64, ..., (64 * 256) // block_m
 
-                alias msg = "\nTesting block_m=" + String(
+                comptime msg = "\nTesting block_m=" + String(
                     block_m
                 ) + ", head_size=" + String(head_size)
                 print(msg)

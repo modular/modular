@@ -59,15 +59,15 @@ def _init_device_ndbuffer_from_goldens[
 def execute_fused_qk_rope_ragged(
     ctx: DeviceContext,
 ):
-    alias num_q_heads = 32
-    alias kv_params = KVCacheStaticParams(num_heads=8, head_size=128)
-    alias dtype = DType.float32
-    alias num_paged_blocks = 32
-    alias page_size = 128
+    comptime num_q_heads = 32
+    comptime kv_params = KVCacheStaticParams(num_heads=8, head_size=128)
+    comptime dtype = DType.float32
+    comptime num_paged_blocks = 32
+    comptime page_size = 128
     var num_layers = 1
     var layer_idx = 0
 
-    alias max_seq_len = 1024
+    comptime max_seq_len = 1024
 
     var true_ce_prompt_lens = [100, 200, 300, 400]
     var mixed_ce_prompt_lens = [50, 100, 150, 100]
@@ -527,20 +527,20 @@ def execute_fused_qk_rope_ragged(
 # For KV cache, we confirm that the only the last 64 elements in each head are correctly roped,
 # and the first 512 elements are left unchanged.
 def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
-    alias num_q_heads = 16
-    alias q_head_size = 192
-    alias kv_params = KVCacheStaticParams(num_heads=1, head_size=576)
-    alias kv_params_64 = KVCacheStaticParams(num_heads=1, head_size=64)
-    alias dtype = DType.bfloat16
-    alias num_paged_blocks = 2
-    alias page_size = 128
-    alias rope_dim = 64
-    alias max_seq_len = 256
-    alias num_layers = 1
-    alias layer_idx = 0
+    comptime num_q_heads = 16
+    comptime q_head_size = 192
+    comptime kv_params = KVCacheStaticParams(num_heads=1, head_size=576)
+    comptime kv_params_64 = KVCacheStaticParams(num_heads=1, head_size=64)
+    comptime dtype = DType.bfloat16
+    comptime num_paged_blocks = 2
+    comptime page_size = 128
+    comptime rope_dim = 64
+    comptime max_seq_len = 256
+    comptime num_layers = 1
+    comptime layer_idx = 0
 
-    alias seq_len = 200
-    alias batch_size = 1
+    comptime seq_len = 200
+    comptime batch_size = 1
 
     # create a random query tensor and KV cache with above params
     var q_ragged_host = HostNDBuffer[

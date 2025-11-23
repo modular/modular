@@ -59,13 +59,13 @@ def test_vendor_blas[
 
     ctx.enqueue_copy(c_host, c_device)
 
-    alias BLOCK_DIM = 16
+    comptime BLOCK_DIM = 16
 
     var c_ref_tensor = from_ndbuffer_row_major(c_ref)
     var a_tensor = from_ndbuffer_row_major(a)
     var b_tensor = from_ndbuffer_row_major(b)
 
-    alias kernel = matmul_kernel_naive[
+    comptime kernel = matmul_kernel_naive[
         dtype,
         dtype,
         dtype,

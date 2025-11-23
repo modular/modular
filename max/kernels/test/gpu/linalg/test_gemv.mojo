@@ -57,12 +57,14 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias WARPS_PER_BLOCK = 1024 // WARP_SIZE
+    comptime WARPS_PER_BLOCK = 1024 // WARP_SIZE
 
     @always_inline
     @parameter
     fn run_func_gemv(ctx: DeviceContext) raises:
-        alias kernel = gemv_kernel[DType.float32, DType.float32, DType.float32]
+        comptime kernel = gemv_kernel[
+            DType.float32, DType.float32, DType.float32
+        ]
 
         ctx.enqueue_function_checked[kernel, kernel](
             c_device,
@@ -78,7 +80,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
     @always_inline
     @parameter
     fn run_func_gevm(ctx: DeviceContext) raises:
-        alias kernel = gevm_kernel[
+        comptime kernel = gevm_kernel[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -122,12 +124,12 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias BLOCK_DIM = 16
+    comptime BLOCK_DIM = 16
 
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        alias kernel = matmul_kernel[
+        comptime kernel = matmul_kernel[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -158,7 +160,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
 
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
-    alias errorTolerance = 1e-2
+    comptime errorTolerance = 1e-2
     var failed = False
     assert_almost_equal(
         c_host,
@@ -181,8 +183,8 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
 fn run_matvec_with_epilogue_fn(
     M: Int, N: Int, K: Int, *, ctx: DeviceContext
 ) raises:
-    alias c_stride = 5
-    alias seed_val = 42
+    comptime c_stride = 5
+    comptime seed_val = 42
 
     var iterations = 100
     var a_host = UnsafePointer[Float32].alloc(M * K)
@@ -229,12 +231,12 @@ fn run_matvec_with_epilogue_fn(
             ),
         )
 
-    alias WARPS_PER_BLOCK = 1024 // WARP_SIZE
+    comptime WARPS_PER_BLOCK = 1024 // WARP_SIZE
 
     @always_inline
     @parameter
     fn run_func_gemv(ctx: DeviceContext) raises:
-        alias kernel = gemv_kernel[
+        comptime kernel = gemv_kernel[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -256,7 +258,7 @@ fn run_matvec_with_epilogue_fn(
     @always_inline
     @parameter
     fn run_func_gevm(ctx: DeviceContext) raises:
-        alias kernel = gevm_kernel[
+        comptime kernel = gevm_kernel[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -306,12 +308,12 @@ fn run_matvec_with_epilogue_fn(
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias BLOCK_DIM = 16
+    comptime BLOCK_DIM = 16
 
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        alias kernel = matmul_kernel[
+        comptime kernel = matmul_kernel[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -343,7 +345,7 @@ fn run_matvec_with_epilogue_fn(
 
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
-    alias errorTolerance = 1e-2
+    comptime errorTolerance = 1e-2
     var failed = False
     assert_almost_equal(
         c_host,

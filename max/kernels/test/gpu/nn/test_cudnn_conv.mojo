@@ -55,7 +55,7 @@ fn test_conv_cudnn[
     var input_dim_flattened = input_dim.product().get()
     var filter_dim_flattened = filter_dim.product().get()
     var output_dim_flattened = output_dim.product().get()
-    alias filter_dim_nchw = DimList(
+    comptime filter_dim_nchw = DimList(
         filter_dim.get[3](),
         filter_dim.get[2](),
         filter_dim.get[0](),
@@ -74,10 +74,10 @@ fn test_conv_cudnn[
     random(filter_host.tensor)
 
     # Transpose filter to NCHW
-    alias R = filter_dim.get[0]()
-    alias S = filter_dim.get[1]()
-    alias C = filter_dim.get[2]()
-    alias F = filter_dim.get[3]()
+    comptime R = filter_dim.get[0]()
+    comptime S = filter_dim.get[1]()
+    comptime C = filter_dim.get[2]()
+    comptime F = filter_dim.get[3]()
     for r in range(R):
         for s in range(S):
             for c in range(C):
@@ -142,9 +142,9 @@ fn test_conv_cudnn[
     # verifying results
     output_host_buf = output_host.tensor
     output_ref_host_buf = output_ref_host.tensor
-    alias N = output_dim.get[0]()
-    alias Hout = output_dim.get[1]()
-    alias Wout = output_dim.get[2]()
+    comptime N = output_dim.get[0]()
+    comptime Hout = output_dim.get[1]()
+    comptime Wout = output_dim.get[2]()
     for n in range(N):
         for h in range(Hout):
             for w in range(Wout):
@@ -169,7 +169,7 @@ fn test_conv_cudnn[
 def main():
     with DeviceContext() as ctx:
         # Test configurations for data types.
-        alias dtype_configs = (DType.float32, DType.float16, DType.bfloat16)
+        comptime dtype_configs = (DType.float32, DType.float16, DType.bfloat16)
 
         test_conv_cudnn[
             DimList(1, 1, 550, 1024),  # input  (NHWC)
@@ -188,7 +188,7 @@ def main():
         # Test different data types.
         @parameter
         for i in range(len(dtype_configs)):
-            alias dtype = dtype_configs[i]
+            comptime dtype = dtype_configs[i]
 
             test_conv_cudnn[
                 DimList(1, 8, 8, 16),  # input  (NHWC)

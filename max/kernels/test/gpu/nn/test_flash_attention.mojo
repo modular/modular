@@ -97,8 +97,8 @@ fn test[
     ]()
 
     # Query, key, value dimensions.
-    alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
-    alias kv_num_heads = num_heads // group
+    comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
+    comptime kv_num_heads = num_heads // group
 
     # Q, K, V shapes.
     var q_size = batch_size * num_heads * seq_len * depth
@@ -157,7 +157,7 @@ fn test[
         rand[mask_type](mask_ptr, mask_size)
 
     # Construct buffers.
-    alias layout_4d = Layout.row_major[4]()
+    comptime layout_4d = Layout.row_major[4]()
     var q = LayoutTensor[qkv_type, layout_4d](
         q_ptr,
         RuntimeLayout[layout_4d].row_major(
@@ -219,7 +219,7 @@ fn test[
     ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
     # Construct device buffers.
-    alias q_layout = Layout.row_major(
+    comptime q_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
     )
     var q_device = LayoutTensor[qkv_type, q_layout](
@@ -228,7 +228,7 @@ fn test[
             Index(batch_size, seq_len, num_heads, depth)
         ),
     )
-    alias k_layout = Layout.row_major(
+    comptime k_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
     )
     var k_device = LayoutTensor[qkv_type, k_layout](
@@ -237,7 +237,7 @@ fn test[
             Index(batch_size, num_keys, kv_num_heads, depth)
         ),
     )
-    alias v_layout = Layout.row_major(
+    comptime v_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
     )
     var v_device = LayoutTensor[qkv_type, v_layout](
@@ -258,7 +258,7 @@ fn test[
             Index(batch_size, num_heads, seq_len, num_keys)
         ),
     )
-    alias output_layout = Layout.row_major(
+    comptime output_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
     )
     var output_device = LayoutTensor[qkv_type, output_layout](
@@ -268,8 +268,8 @@ fn test[
         ),
     )
 
-    alias q_tile_num_rows = 32
-    alias k_tile_num_rows = 128
+    comptime q_tile_num_rows = 32
+    comptime k_tile_num_rows = 128
 
     @parameter
     @always_inline
@@ -302,7 +302,7 @@ fn test[
             )
 
     if is_benchmark:
-        alias nrun = 50
+        comptime nrun = 50
 
         # Warmup
         kernel_launch(ctx)
@@ -321,7 +321,7 @@ fn test[
     @parameter
     if against_gpu_naive:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
-        alias output_ref_layout = Layout.row_major(
+        comptime output_ref_layout = Layout.row_major(
             UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
         )
         var output_ref_device = LayoutTensor[qkv_type, output_ref_layout](
@@ -419,11 +419,11 @@ fn test_context_encoding(ctx: DeviceContext) raises:
     # fp32 arbitrary depth and num_heads, baseline impl.
     test[3, DType.float32, DType.float32, 127, 2](111, 121, ctx)
 
-    alias depths = test_depth_supported_by_gpu(ctx.default_device_info)
+    comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
     @parameter
     for d in range(len(depths)):
-        alias depth = depths[d]
+        comptime depth = depths[d]
         # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
         test[
             4,
@@ -619,11 +619,11 @@ fn test_decoding[
     split_k: Bool,
     qkv_type: DType = DType.bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
-    alias depths = test_depth_supported_by_gpu(ctx.default_device_info)
+    comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
     @parameter
     for d in range(len(depths)):
-        alias depth = depths[d]
+        comptime depth = depths[d]
         test[
             3,
             qkv_type,
@@ -699,11 +699,11 @@ fn test_decoding_large_group[
     split_k: Bool = False,
     qkv_type: DType = DType.bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool = False) raises:
-    alias depths = test_depth_supported_by_gpu(ctx.default_device_info)
+    comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
     @parameter
     for d in range(len(depths)):
-        alias depth = depths[d]
+        comptime depth = depths[d]
         test[
             4,
             qkv_type,
@@ -720,15 +720,15 @@ fn test_decoding_large_group[
 
 fn test_flash_attention_sink_kernel(ctx: DeviceContext) raises:
     print("test_flash_attention_sink_kernel")
-    alias batch_size = 1
-    alias num_heads = 2
-    alias kv_heads = num_heads
-    alias seq_len = 8
-    alias num_keys = 64
-    alias depth = 128
-    alias qkv_type = DType.bfloat16  # fast path on A100/H100
-    alias mask_type = DType.float32
-    alias scale = Float32(0.0)  # force QK logits to exactly 0
+    comptime batch_size = 1
+    comptime num_heads = 2
+    comptime kv_heads = num_heads
+    comptime seq_len = 8
+    comptime num_keys = 64
+    comptime depth = 128
+    comptime qkv_type = DType.bfloat16  # fast path on A100/H100
+    comptime mask_type = DType.float32
+    comptime scale = Float32(0.0)  # force QK logits to exactly 0
 
     var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
         batch_size * seq_len * num_heads * depth
@@ -818,7 +818,7 @@ fn test_flash_attention_sink_kernel(ctx: DeviceContext) raises:
     ctx.enqueue_copy(m_dev, mask_ptr)
     ctx.enqueue_copy(sinks_dev, sinks_ptr)
 
-    alias q_layout = Layout.row_major(
+    comptime q_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
     )
     var q_device = LayoutTensor[qkv_type, q_layout](
@@ -827,7 +827,7 @@ fn test_flash_attention_sink_kernel(ctx: DeviceContext) raises:
             Index(batch_size, seq_len, num_heads, depth)
         ),
     )
-    alias k_layout = Layout.row_major(
+    comptime k_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, kv_heads, depth
     )
     var k_device = LayoutTensor[qkv_type, k_layout](
@@ -836,7 +836,7 @@ fn test_flash_attention_sink_kernel(ctx: DeviceContext) raises:
             Index(batch_size, num_keys, kv_heads, depth)
         ),
     )
-    alias v_layout = Layout.row_major(
+    comptime v_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, kv_heads, depth
     )
     var v_device = LayoutTensor[qkv_type, v_layout](
@@ -851,7 +851,7 @@ fn test_flash_attention_sink_kernel(ctx: DeviceContext) raises:
             Index(batch_size, seq_len, num_keys)
         ),
     )
-    alias output_layout = Layout.row_major(
+    comptime output_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
     )
     var out_device = LayoutTensor[qkv_type, output_layout](
@@ -860,7 +860,7 @@ fn test_flash_attention_sink_kernel(ctx: DeviceContext) raises:
             Index(batch_size, seq_len, num_heads, depth)
         ),
     )
-    alias sinks_layout = Layout.row_major(UNKNOWN_VALUE)
+    comptime sinks_layout = Layout.row_major(UNKNOWN_VALUE)
     var sinks_device = LayoutTensor[qkv_type, sinks_layout](
         sinks_dev.unsafe_ptr(),
         RuntimeLayout[sinks_layout].row_major(Index(num_heads)),

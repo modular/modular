@@ -22,7 +22,7 @@ from testing import assert_almost_equal
 
 from utils.index import IndexList
 
-alias dtype = DType.float32
+comptime dtype = DType.float32
 
 
 fn test_irfft_basic[
@@ -50,8 +50,8 @@ fn test_irfft_basic[
 
     # Input shape: [batch_size, input_size*2] because complex values are stored
     # as interleaved float32 (real, imag, real, imag, ...)
-    alias input_shape = DimList(batch_size, input_size * 2)
-    alias output_shape = DimList(batch_size, output_size)
+    comptime input_shape = DimList(batch_size, input_size * 2)
+    comptime output_shape = DimList(batch_size, output_size)
 
     # Create host buffers
     var input_host = HostNDBuffer[dtype, 2, input_shape](input_shape)
@@ -80,8 +80,8 @@ fn test_irfft_basic[
     ctx.enqueue_copy(input_dev.buffer, input_host.tensor.data)
 
     # Create LayoutTensors for the irfft call
-    alias layout_2d = Layout.row_major[2]()
-    alias alignment = 1
+    comptime layout_2d = Layout.row_major[2]()
+    comptime alignment = 1
 
     # Execute IRFFT
     irfft[dtype, dtype, alignment](

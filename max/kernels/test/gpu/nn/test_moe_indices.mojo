@@ -173,7 +173,7 @@ fn test_moe_create_indices[
         token_expert_order_length
     )
 
-    alias layout = Layout.row_major(UNKNOWN_VALUE)
+    comptime layout = Layout.row_major(UNKNOWN_VALUE)
 
     var token_expert_order = LayoutTensor[DType.uint32, layout, MutAnyOrigin](
         token_expert_order_buffer_device,

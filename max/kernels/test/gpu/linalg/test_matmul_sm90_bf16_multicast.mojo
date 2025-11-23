@@ -19,12 +19,12 @@ from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
 from utils.index import Index
 
 # Helper to calculate block_tile_shape based on dtype and wgmma_n
-alias block_tile_shape[wgmma_n: Int, a_dtype: DType] = Index(
+comptime block_tile_shape[wgmma_n: Int, a_dtype: DType] = Index(
     128, wgmma_n, 128
 ) if a_dtype is DType.float8_e4m3fn else Index(128, wgmma_n, 64)
 
 # Helper to calculate wgmma_shape based on dtype and wgmma_n
-alias wgmma_shape[wgmma_n: Int, a_dtype: DType] = Index(
+comptime wgmma_shape[wgmma_n: Int, a_dtype: DType] = Index(
     64, wgmma_n, 32
 ) if a_dtype is DType.float8_e4m3fn else Index(64, wgmma_n, 16)
 
