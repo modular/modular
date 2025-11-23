@@ -746,12 +746,23 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   /// Elide it if we have the default type with a literal so we don't print
   /// Int(42), but print it if it is something weird like IntLiteral(42)
   if (auto structAttr = dyn_cast<LITStructAttr>(param)) {
-    // If the struct has a single element, elide the braces.
-    if (diagShared && structAttr.getValues().size() == 1) {
+    // If the specified value is a struct with a single element, return the
+    // element.
+    auto getSingleEltStructAttr = [&](TypedAttr value) -> TypedAttr {
+      auto structAttr = dyn_cast<LITStructAttr>(value);
+      if (!structAttr)
+        return {};
+      // If the struct has a single element, elide the braces.
+      if (diagShared && structAttr.getValues().size() == 1)
+        return std::get<1>(structAttr.getValues().front());
+      return {};
+    };
+
+    if (auto elt = getSingleEltStructAttr(structAttr)) {
       StringRef typeName;
-      if (auto structType = dyn_cast<StructType>(structAttr.getType()))
+      if (auto structType = sugarDynCast<StructType>(structAttr.getType()))
         typeName = structType.getSymbol().getLeafReference().strref();
-      TypedAttr elt = std::get<1>(structAttr.getValues().front());
+
       if (typeName == "Int" || typeName == "UInt" || typeName == "Bool" ||
           typeName == "Origin") {
         if (auto extract = dyn_cast<LIT::StructExtractAttr>(elt))
@@ -766,8 +777,19 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
           return;
         }
       }
+      if (typeName == "AddressSpace") {
+        if (auto intAttr = sugarDynCastIfPresent<IntegerAttr>(
+                getSingleEltStructAttr(elt))) {
+          if (intAttr.getValue().isZero()) {
+            os << "AddressSpace.GENERIC";
+            return;
+          }
+        }
+      }
     }
 
+    // Otherwise do the default "memberwise" printing of a struct, because we
+    // don't know where it came from.
     ASTType(structAttr.getType()).print(os, diagShared);
     os << '(';
     // TODO: Could print keywords for the labels if there is a reason someday.
