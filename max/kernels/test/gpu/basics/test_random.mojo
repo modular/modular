@@ -26,9 +26,9 @@ from utils.index import Index, IndexList
 def run_elementwise[
     dtype: DType, distribution: String = "uniform"
 ](ctx: DeviceContext):
-    alias length = 256
+    comptime length = 256
 
-    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
     var out_host = NDBuffer[
         dtype, 1, MutAnyOrigin, DimList(length)

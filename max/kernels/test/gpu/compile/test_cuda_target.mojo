@@ -124,7 +124,7 @@ fn erf_elementwise(
     buf: UnsafePointer[Float32], len: Int, ctx: DeviceContext
 ) raises:
     # Each thread will process 4 * simd_width elements.
-    alias granularity = 4 * simd_width_of[DType.float32]()
+    comptime granularity = 4 * simd_width_of[DType.float32]()
     var tid = granularity * Int(global_idx.x)
 
     @always_inline
@@ -284,9 +284,9 @@ fn gemm(
     #
     # NOTE: A and C are column major, B is row major.
 
-    alias TILE_SZ_A = 128
-    alias TILE_SZ_B = 16
-    alias TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
+    comptime TILE_SZ_A = 128
+    comptime TILE_SZ_B = 16
+    comptime TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
 
     # Utilities for accessing flattened matrices.
     @always_inline
@@ -384,7 +384,7 @@ def test_gemm_sm90():
 fn test_warp_shuffle_up(val: Float32) -> Float32:
     var res = val
 
-    alias limit = log2_floor(WARP_SIZE)
+    comptime limit = log2_floor(WARP_SIZE)
 
     @parameter
     for mask in reversed(range(limit)):
@@ -415,7 +415,7 @@ def test_warp_shuffle_up_sm90():
 fn test_warp_shuffle_down(val: Int32) -> Int32:
     var res = val
 
-    alias limit = log2_floor(WARP_SIZE)
+    comptime limit = log2_floor(WARP_SIZE)
 
     @parameter
     for mask in reversed(range(limit)):
@@ -451,7 +451,7 @@ def test_warp_shuffle_down_sm90():
 fn warp_sum_reduce(val: Float32) -> Float32:
     var res = val
 
-    alias limit = log2_floor(WARP_SIZE)
+    comptime limit = log2_floor(WARP_SIZE)
 
     @parameter
     for mask in reversed(range(limit)):
@@ -484,7 +484,7 @@ fn block_reduce(val: Float32) -> Float32:
         WARP_SIZE, DType.float32, address_space = AddressSpace.SHARED
     ]()
 
-    alias warp_shift = log2_floor(WARP_SIZE)
+    comptime warp_shift = log2_floor(WARP_SIZE)
 
     var lane = lane_id()
     var warp = warp_id()

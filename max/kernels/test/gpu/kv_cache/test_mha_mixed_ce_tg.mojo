@@ -34,12 +34,12 @@ from utils import IndexList
 def execute_ragged_flash_attention(
     ctx: DeviceContext,
 ):
-    alias num_q_heads = 32
-    alias kv_params = KVCacheStaticParams(num_heads=8, head_size=128)
-    alias type = DType.float32
-    alias num_paged_blocks = 32
-    alias page_size = 128
-    alias PagedCollectionType = PagedKVCacheCollection[
+    comptime num_q_heads = 32
+    comptime kv_params = KVCacheStaticParams(num_heads=8, head_size=128)
+    comptime type = DType.float32
+    comptime num_paged_blocks = 32
+    comptime page_size = 128
+    comptime PagedCollectionType = PagedKVCacheCollection[
         type, kv_params, page_size
     ]
     var num_layers = 1

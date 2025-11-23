@@ -16,8 +16,8 @@ from gpu.host import DeviceContext
 from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
-alias buffer_size = 1024
-alias block_dim = 32
+comptime buffer_size = 1024
+comptime block_dim = 32
 
 
 def test_fill_thread_idx(ctx: DeviceContext):

@@ -53,17 +53,17 @@ fn fast_div_kernel[
     layout: Layout,
     divisor: Int,
 ](input: LayoutTensor[dtype, layout, MutAnyOrigin],):
-    alias fast_div = FastDiv[dtype](divisor)
+    comptime fast_div = FastDiv[dtype](divisor)
     var x = input[0]
     var result = rebind[Scalar[fast_div.uint_type]](x) / fast_div
     input[0] = result.cast[dtype]()
 
 
 def main():
-    alias dtype = DType.uint32
-    alias layout = Layout(IntTuple(1))
-    alias kernel_fast_div_4 = fast_div_kernel[dtype, layout, 4]
-    alias kernel_fast_div_3 = fast_div_kernel[dtype, layout, 3]
+    comptime dtype = DType.uint32
+    comptime layout = Layout(IntTuple(1))
+    comptime kernel_fast_div_4 = fast_div_kernel[dtype, layout, 4]
+    comptime kernel_fast_div_3 = fast_div_kernel[dtype, layout, 3]
 
     var asm = _compile_code[
         kernel_fast_div_4,

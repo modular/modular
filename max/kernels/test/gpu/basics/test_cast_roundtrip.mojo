@@ -34,7 +34,7 @@ fn id(
 fn run_vec_add(ctx: DeviceContext) raises:
     print("== run_vec_add")
 
-    alias length = 1024
+    comptime length = 1024
 
     var in_host = UnsafePointer[Float32].alloc(length)
 
@@ -53,7 +53,7 @@ fn run_vec_add(ctx: DeviceContext) raises:
 
     var block_dim = 32
 
-    alias kernel = id
+    comptime kernel = id
     ctx.enqueue_function_checked[kernel, kernel](
         in_device,
         out_device,

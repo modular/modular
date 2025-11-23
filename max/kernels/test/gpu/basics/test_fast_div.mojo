@@ -49,7 +49,7 @@ log2_shift: 6
 
 
 def run_elementwise[type: DType](ctx: DeviceContext):
-    alias length = 256
+    comptime length = 256
 
     var divisors = NDBuffer[
         type, 1, MutAnyOrigin, DimList(length)
@@ -74,7 +74,7 @@ def run_elementwise[type: DType](ctx: DeviceContext):
     fn func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
-        alias fast_div = FastDiv[DType.uint32](4)
+        comptime fast_div = FastDiv[DType.uint32](4)
         var idx = idx0[0]
 
         out_divisors_buffer[idx] = (idx / fast_div).cast[type]()

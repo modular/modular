@@ -34,9 +34,9 @@ from testing import assert_almost_equal, assert_equal
 
 from utils import IndexList
 
-alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
-alias kv_params_llama3_1b = KVCacheStaticParams(num_heads=8, head_size=64)
-alias llama_num_q_heads = 32
+comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
+comptime kv_params_llama3_1b = KVCacheStaticParams(num_heads=8, head_size=64)
+comptime llama_num_q_heads = 32
 
 
 def execute_ragged_flash_attention[
@@ -48,7 +48,7 @@ def execute_ragged_flash_attention[
     layer_idx: Int,
     ctx: DeviceContext,
 ):
-    alias page_size = 512
+    comptime page_size = 512
 
     var batch_size = len(valid_lengths)
     debug_assert(
@@ -390,13 +390,13 @@ def execute_ragged_flash_attention[
 
 
 def execute_flash_attention_suite(ctx: DeviceContext):
-    alias types = (DType.float32, DType.bfloat16)
+    comptime types = (DType.float32, DType.bfloat16)
 
     for bs in [1, 4, 16]:
 
         @parameter
         for type_idx in range(len(types)):
-            alias type = types[type_idx]
+            comptime type = types[type_idx]
             if bs == 16 and type == DType.float32:
                 # This fails for the MI300X
                 continue

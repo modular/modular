@@ -30,7 +30,7 @@ fn add_constant_fn(
 
 
 def run_add_constant(ctx: DeviceContext):
-    alias length = 1024
+    comptime length = 1024
 
     var in_device = ctx.enqueue_create_buffer[DType.float32](length)
     var out_device = ctx.enqueue_create_buffer[DType.float32](length)
@@ -40,9 +40,9 @@ def run_add_constant(ctx: DeviceContext):
             in_host[i] = i
 
     var block_dim = 32
-    alias constant = Float32(33)
+    comptime constant = Float32(33)
 
-    alias kernel = add_constant_fn
+    comptime kernel = add_constant_fn
     ctx.enqueue_function_checked[kernel, kernel](
         out_device,
         in_device,

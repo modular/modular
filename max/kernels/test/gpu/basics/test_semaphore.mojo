@@ -17,8 +17,8 @@ from gpu import block_idx, grid_dim, thread_idx
 from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
-alias NUM_BLOCKS = 32
-alias NUM_THREADS = 64
+comptime NUM_BLOCKS = 32
+comptime NUM_THREADS = 64
 
 
 fn test_named_barrier_semaphore_equal_kernel(
@@ -47,7 +47,7 @@ fn test_named_barrier_semaphore_equal(ctx: DeviceContext) raises:
     ctx.enqueue_memset(locks_data, 0)
     ctx.enqueue_memset(shared_data, NUM_BLOCKS)
 
-    alias kernel = test_named_barrier_semaphore_equal_kernel
+    comptime kernel = test_named_barrier_semaphore_equal_kernel
     ctx.enqueue_function_checked[kernel, kernel](
         locks_data,
         shared_data,
@@ -91,7 +91,7 @@ fn test_named_barrier_semaphore_less_than(ctx: DeviceContext) raises:
     ctx.enqueue_memset(locks_data, 0)
     ctx.enqueue_memset(shared_data, NUM_BLOCKS)
 
-    alias kernel = test_named_barrier_semaphore_less_than_kernel
+    comptime kernel = test_named_barrier_semaphore_less_than_kernel
     ctx.enqueue_function_checked[kernel, kernel](
         locks_data,
         shared_data,

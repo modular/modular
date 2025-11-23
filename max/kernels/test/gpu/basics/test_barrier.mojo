@@ -40,9 +40,9 @@ fn kernel[
 
 
 fn test_barrier[dtype: DType](ctx: DeviceContext) raises:
-    alias block_size = WARP_SIZE
-    alias buffer_size = block_size
-    alias constant_add: Scalar[dtype] = 42
+    comptime block_size = WARP_SIZE
+    comptime buffer_size = block_size
+    comptime constant_add: Scalar[dtype] = 42
     var input_host = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
     var output_host = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
     var shared_host = UnsafePointer[Scalar[dtype]].alloc(buffer_size)

@@ -51,7 +51,7 @@ fn producer_consumer_kernel[NUM_THREADS: Int]():
 
 
 def test_producer_consumer_kernel(ctx: DeviceContext):
-    alias kernel = producer_consumer_kernel[64]
+    comptime kernel = producer_consumer_kernel[64]
     ctx.enqueue_function_checked[kernel, kernel](
         grid_dim=(1),
         block_dim=(64),
@@ -125,7 +125,7 @@ fn producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
 
 
 def test_producer_consumer_pipeline_kernel(ctx: DeviceContext):
-    alias kernel = producer_consumer_pipeline_kernel[4]
+    comptime kernel = producer_consumer_pipeline_kernel[4]
     ctx.enqueue_function_checked[kernel, kernel](
         4,
         grid_dim=(1),
@@ -149,8 +149,8 @@ def test_producer_consumer_pipeline_kernel(ctx: DeviceContext):
 fn cpaysnc_producer_consumer_pipeline_kernel[
     num_stages: Int
 ](src: UnsafePointer[Float32], dst: UnsafePointer[Float32]):
-    alias size_per_copy = 16 // size_of[DType.float32]()
-    alias size_per_stage = size_per_copy * 128
+    comptime size_per_copy = 16 // size_of[DType.float32]()
+    comptime size_per_stage = size_per_copy * 128
 
     warpgroup_idx = thread_idx.x // 128
     warpgroup_tid = thread_idx.x % 128
@@ -233,9 +233,9 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
 def test_cpasync_producer_consumer_pipeline[
     num_stages: Int
 ](ctx: DeviceContext):
-    alias size_per_stage = 128 * (16 // size_of[DType.float32]())
-    alias size = num_stages * size_per_stage
-    alias shape1d = DimList(size)
+    comptime size_per_stage = 128 * (16 // size_of[DType.float32]())
+    comptime size = num_stages * size_per_stage
+    comptime shape1d = DimList(size)
 
     src_host = HostNDBuffer[DType.float32, 1, shape1d](shape1d)
     random(src_host.tensor)
@@ -246,7 +246,7 @@ def test_cpasync_producer_consumer_pipeline[
     dst_host = HostNDBuffer[DType.float32, 1, shape1d](shape1d)
     var dst_device = DeviceNDBuffer[DType.float32, 1, shape1d](shape1d, ctx=ctx)
 
-    alias kernel = cpaysnc_producer_consumer_pipeline_kernel[num_stages]
+    comptime kernel = cpaysnc_producer_consumer_pipeline_kernel[num_stages]
     ctx.enqueue_function_checked[kernel, kernel](
         src_device.buffer,
         dst_device.buffer,

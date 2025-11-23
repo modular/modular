@@ -19,7 +19,7 @@ from testing import *
 
 
 fn check_sm() -> Bool:
-    alias v = _is_sm_9x()
+    comptime v = _is_sm_9x()
     return v
 
 

@@ -36,7 +36,7 @@ fn test_kernel_with_list(ctx: DeviceContext) raises:
     # CHECK: (
     # CHECK: param0
     # CHECK: );
-    alias kernel = kernel_with_list
+    comptime kernel = kernel_with_list
     ctx.enqueue_function_checked[kernel, kernel, dump_asm=True](
         res_device, block_dim=(1), grid_dim=(1)
     )

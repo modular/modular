@@ -33,8 +33,8 @@ from testing import assert_almost_equal
 
 from utils import IndexList
 
-alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
-alias llama_num_q_heads = 32
+comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
+comptime llama_num_q_heads = 32
 
 
 def execute_ragged_flash_attention[
@@ -50,8 +50,10 @@ def execute_ragged_flash_attention[
     layer_idx: Int,
     ctx: DeviceContext,
 ):
-    alias num_blocks = 32
-    alias CollectionType = ContinuousBatchingKVCacheCollection[dtype, kv_params]
+    comptime num_blocks = 32
+    comptime CollectionType = ContinuousBatchingKVCacheCollection[
+        dtype, kv_params
+    ]
 
     var batch_size = len(valid_lengths)
     debug_assert(
@@ -335,13 +337,13 @@ def execute_ragged_flash_attention[
 
 
 def execute_flash_attention_suite(ctx: DeviceContext):
-    alias dtypes = (DType.float32, DType.bfloat16)
+    comptime dtypes = (DType.float32, DType.bfloat16)
 
     for bs in [1, 16]:
 
         @parameter
         for dtype_idx in range(len(dtypes)):
-            alias dtype = dtypes[dtype_idx]
+            comptime dtype = dtypes[dtype_idx]
 
             ce_cache_sizes = List[Int]()
             ce_seq_lens = List[Int]()

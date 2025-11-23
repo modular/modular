@@ -49,7 +49,7 @@ fn _kernel_launch_helper[
     var device_ptr = ctx.enqueue_create_buffer[dtype](buffer_size)
     ctx.enqueue_copy(device_ptr, host_ptr)
 
-    alias kernel = kernel_wrapper[dtype, simd_width, kernel_fn]
+    comptime kernel = kernel_wrapper[dtype, simd_width, kernel_fn]
     ctx.enqueue_function_checked[kernel, kernel](
         device_ptr, grid_dim=1, block_dim=block_size
     )
@@ -62,9 +62,9 @@ fn _kernel_launch_helper[
 fn _shuffle_idx_launch_helper[
     dtype: DType, simd_width: Int
 ](ctx: DeviceContext) raises:
-    alias block_size = WARP_SIZE
-    alias buffer_size = block_size * simd_width
-    alias constant_add: Scalar[dtype] = 42
+    comptime block_size = WARP_SIZE
+    comptime buffer_size = block_size * simd_width
+    comptime constant_add: Scalar[dtype] = 42
     var host_ptr = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
 
     for i in range(buffer_size):
@@ -72,7 +72,7 @@ fn _shuffle_idx_launch_helper[
 
     @parameter
     fn do_shuffle(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-        alias src_lane = 0
+        comptime src_lane = 0
         return shuffle_idx(val, src_lane)
 
     _kernel_launch_helper[dtype, simd_width, do_shuffle](
@@ -113,10 +113,10 @@ fn test_shuffle_idx_int64(ctx: DeviceContext) raises:
 fn _shuffle_up_launch_helper[
     dtype: DType, simd_width: Int
 ](ctx: DeviceContext) raises:
-    alias block_size = WARP_SIZE
-    alias buffer_size = block_size * simd_width
-    alias constant_add: Scalar[dtype] = 42
-    alias offset = WARP_SIZE // 2
+    comptime block_size = WARP_SIZE
+    comptime buffer_size = block_size * simd_width
+    comptime constant_add: Scalar[dtype] = 42
+    comptime offset = WARP_SIZE // 2
 
     var host_ptr = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
 
@@ -175,10 +175,10 @@ fn test_shuffle_up_int64(ctx: DeviceContext) raises:
 fn _shuffle_down_launch_helper[
     dtype: DType, simd_width: Int
 ](ctx: DeviceContext) raises:
-    alias block_size = WARP_SIZE
-    alias buffer_size = block_size * simd_width
-    alias constant_add: Scalar[dtype] = 42
-    alias offset = WARP_SIZE // 2
+    comptime block_size = WARP_SIZE
+    comptime buffer_size = block_size * simd_width
+    comptime constant_add: Scalar[dtype] = 42
+    comptime offset = WARP_SIZE // 2
 
     var host_ptr = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
 
@@ -237,10 +237,10 @@ fn test_shuffle_down_int64(ctx: DeviceContext) raises:
 fn _shuffle_xor_launch_helper[
     dtype: DType, simd_width: Int
 ](ctx: DeviceContext) raises:
-    alias block_size = WARP_SIZE
-    alias buffer_size = block_size * simd_width
-    alias constant_add: Scalar[dtype] = 42
-    alias offset = WARP_SIZE // 2
+    comptime block_size = WARP_SIZE
+    comptime buffer_size = block_size * simd_width
+    comptime constant_add: Scalar[dtype] = 42
+    comptime offset = WARP_SIZE // 2
 
     var host_ptr = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
 
@@ -292,9 +292,9 @@ fn _warp_reduce_launch_helper[
     dtype: DType,
     simd_width: Int,
 ](ctx: DeviceContext) raises:
-    alias block_size = WARP_SIZE
-    alias buffer_size = block_size * simd_width
-    alias offset = 1
+    comptime block_size = WARP_SIZE
+    comptime buffer_size = block_size * simd_width
+    comptime offset = 1
 
     var host_ptr = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
     for i in range(buffer_size):
@@ -348,8 +348,8 @@ fn _lane_group_reduce_launch_helper[
     stride: Int,
     broadcast: Bool = False,
 ](ctx: DeviceContext) raises:
-    alias block_size = WARP_SIZE
-    alias buffer_size = block_size * simd_width
+    comptime block_size = WARP_SIZE
+    comptime buffer_size = block_size * simd_width
 
     var host_ptr = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
     for i in range(buffer_size):

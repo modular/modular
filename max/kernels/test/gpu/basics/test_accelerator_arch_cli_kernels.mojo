@@ -22,17 +22,17 @@ from testing import *
 
 
 fn check_sm9x() -> Bool:
-    alias v = _is_sm_9x()
+    comptime v = _is_sm_9x()
     return v
 
 
 fn check_sm9x_or_newer() -> Bool:
-    alias v = _is_sm_9x_or_newer()
+    comptime v = _is_sm_9x_or_newer()
     return v
 
 
 def main():
-    alias accelerator_arch = _accelerator_arch()
+    comptime accelerator_arch = _accelerator_arch()
 
     # CHECK-NV80: ret i1 false
     # CHECK-NV90: ret i1 true
