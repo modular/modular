@@ -14,6 +14,7 @@
 include "KGEN/KGENDialect/KGENTypeInterfaces.td"
 include "KGEN/LITDialect/LITDialect.td"
 include "mlir/IR/AttrTypeBase.td"
+include "mlir/IR/OpAsmInterface.td"
 
 // Base class for other typedefs. Provides dialact-specific defaults.
 class LITType<string name, string typeMnemonic, list<Trait> traits = []>
@@ -173,7 +174,8 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
 def LIT_StructType : LITType<"Struct", "struct", [
     DeclareTypeInterfaceMethods<StructTypeInterface>,
     DeclareTypeInterfaceMethods<ParameterTypeInterface>,
-    DeclareTypeInterfaceMethods<SugaredTypeInterface>]> {
+    DeclareTypeInterfaceMethods<SugaredTypeInterface>,
+    OpAsmTypeInterface]> {
   let summary = "Reference to a type declaration.";
   let description = [{
     A `!lit.struct` type references a type declaration and binds parameter
@@ -215,13 +217,15 @@ def LIT_StructType : LITType<"Struct", "struct", [
   ];
 
   let extraClassDeclaration = [{
+    // Sugar support: non-parameterized types get aliases.
+    mlir::OpAsmAliasResult getAlias(raw_ostream &os) const;
+
     SymbolRefAttr getSymbol() const;
 
     /// Get the name of the referenced type, ignoring packages.
     StringAttr getName();
 
     /// Return an alias name if the StructType should be printed with an alias.
-    std::optional<StringRef> getAliasName();
     static std::optional<StringRef> getAliasName(SymbolRefAttr symbol);
 
     /// Bind parameter values to the struct type, returning a new struct type.
@@ -241,7 +245,7 @@ def LIT_StructType : LITType<"Struct", "struct", [
 //===----------------------------------------------------------------------===//
 
 def LIT_TraitType: LITType<"Trait", "trait",
-    [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+    [DeclareTypeInterfaceMethods<ParameterTypeInterface>, OpAsmTypeInterface]> {
   let summary = "Type of a trait value.";
   let description = [{
     The `!lit.trait` type represents the type of some lit.trait.decl values.
@@ -265,6 +269,9 @@ def LIT_TraitType: LITType<"Trait", "trait",
   ];
 
   let extraClassDeclaration = [{
+    // Sugar support: non-parameterized types get aliases.
+    mlir::OpAsmAliasResult getAlias(raw_ostream &os) const;
+
     /// Return whether the type is a metatype.
     bool isMetaType() { return true; }
 
@@ -331,7 +338,7 @@ def LIT_AnyTraitType : LITType<"AnyTrait", "anytrait",
 //===----------------------------------------------------------------------===//
 
 def LIT_MetaType : LITType<"Meta", "meta",
-    [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+    [DeclareTypeInterfaceMethods<ParameterTypeInterface>, OpAsmTypeInterface]> {
   let summary = "The singleton metatype of a type.";
   let description = [{
     The `!lit.meta` type represents a singleton metatype, which is a metatype
@@ -353,6 +360,11 @@ def LIT_MetaType : LITType<"Meta", "meta",
       return get(type.getContext(), type);
     }]>
   ];
+
+  let extraClassDeclaration = [{
+    // Sugar support: non-parameterized types get aliases.
+    mlir::OpAsmAliasResult getAlias(raw_ostream &os) const;
+  }];
 }
 
 //===----------------------------------------------------------------------===//
