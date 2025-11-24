@@ -257,6 +257,11 @@ fn packArgOverload(x: Int):
 fn first_and_rest[T: AnyTrivialRegType, *Ts: AnyType](*values: *Ts):
     pass
 
+
+fn unresolvedPackCall[*t : AnyType](var *args: *t):
+  # expected-error @below {{invalid call to 'examplePack': assigning 0 operands to an unresolvable variadic pack argument}}
+  var _ = examplePack[*t]()
+
 fn badPackCalls(value: Int):
   # expected-error @+1 {{invalid call to 'examplePack': callee with non-empty variadic pack argument expects 1 positional operand, but 2 were specified}}
   examplePack[Int](1, 2)

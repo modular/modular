@@ -47,6 +47,7 @@ struct DiagEmitter : public SharedStateUser {
   MojoInflightDiag wrongArgCountWithPack(size_t minRequiredArgs,
                                          size_t maxAllowedArgs,
                                          size_t numOperands) const;
+  MojoInflightDiag unresolvedPackCount(size_t numOperands) const;
   MojoInflightDiag wrongPosOnlyCount(size_t minRequiredArgs,
                                      size_t maxAllowedArgs, size_t numOperands,
                                      const Twine &argOrParam) const;
@@ -130,6 +131,12 @@ MojoInflightDiag DiagEmitter::wrongArgCountWithPack(size_t minRequiredArgs,
   emitWrongArgOrParamCount(diag, minRequiredArgs, maxAllowedArgs, numOperands,
                            "positional operand");
   return diag;
+}
+
+MojoInflightDiag DiagEmitter ::unresolvedPackCount(size_t numOperands) const {
+  return initDiag() << "assigning " << numOperands << " operand"
+                    << plural(numOperands)
+                    << " to an unresolvable variadic pack argument";
 }
 
 MojoInflightDiag DiagEmitter::wrongPosOnlyCount(size_t minRequiredArgs,
@@ -378,7 +385,7 @@ MojoInflightDiag DiagEmitter::badImplicitConversion(ASTType fromType,
 
 /// Calculate the minimum required and maximum allowed number of positional
 /// operands for a signature, assuming that the signature has a variadic pack;
-static std::pair<size_t, size_t>
+static std::optional<std::pair<size_t, size_t>>
 calculateRequiredPosOperandsForPacks(FnTypeGeneratorType signature) {
   // This function heavily assumes that a signature has at most
   // one pack variadic argument and that variadics are always the last
@@ -388,13 +395,13 @@ calculateRequiredPosOperandsForPacks(FnTypeGeneratorType signature) {
   // We don't require any positional operands (because this function does not
   // check for passing kinds).
   if (!numPosArgs)
-    return {0, numPosArgs};
+    return std::make_pair(0, numPosArgs);
 
   // If we have a variadic argument, it will consume all positional operands,
   // but it does not require any.
   size_t lastPosIdx = numPosArgs - 1;
   if (signature.isPosVarArg(lastPosIdx))
-    return {0, std::numeric_limits<size_t>::max()};
+    return std::make_pair(0, std::numeric_limits<size_t>::max());
 
   // If we have a non-empty variadic pack argument, we do require a certain
   // number of positional operands (since the value of positional packs cannot
@@ -411,15 +418,15 @@ calculateRequiredPosOperandsForPacks(FnTypeGeneratorType signature) {
     // directly as a parameter.  This is an unpack like situation.
     // TODO: This happens in error cases and needs to be re-evaluated.
     if (!packed)
-      return {0, numPosArgs - 1};
+      return std::nullopt;
 
     // NOTE: we adjust the number of user declared pos args since that
     // includes the pack itself (hence the "-1").
     size_t packSize = packed.getValues().size();
-    return {numPosArgs - 1 + packSize, numPosArgs - 1 + packSize};
+    return std::make_pair(numPosArgs - 1 + packSize, numPosArgs - 1 + packSize);
   }
 
-  return {0, numPosArgs};
+  return std::make_pair(0, numPosArgs);
 }
 
 /// Check the expected type against the provided operand. This identifies any
@@ -968,8 +975,15 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
   // Binding the parameters would determine the type of pack varargs. Given
   // this, we need to check again if we have missing or too many arguments.
-  auto [minPosOperands, maxPosOperands] =
+
+  std::optional<std::pair<size_t, size_t>> posNumBoundOr =
       calculateRequiredPosOperandsForPacks(signature);
+  // This means that we can not determine a concrete number of packed
+  // arguments, this is always an error.
+  if (!posNumBoundOr)
+    return emitDiagFor.unresolvedPackCount(numPosOperands);
+
+  auto [minPosOperands, maxPosOperands] = *posNumBoundOr;
   if (numPosOperands < minPosOperands || maxPosOperands < numPosOperands) {
     return emitDiagFor.wrongArgCountWithPack(minPosOperands, maxPosOperands,
                                              numPosOperands);
