@@ -33,7 +33,7 @@ fn plus_one(arg: PythonObject) raises -> PythonObject:
 
 
 fn parallel_wrapper(array: PythonObject) raises -> PythonObject:
-    alias do_parallelize = True
+    comptime do_parallelize = True
     var array_len = len(array)
     var array_len_div = math.ceildiv(array_len, num_physical_cores())
 
