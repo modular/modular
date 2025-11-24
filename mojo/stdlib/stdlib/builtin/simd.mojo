@@ -1830,19 +1830,14 @@ struct SIMD[dtype: DType, size: Int](
     fn __bool__(self) -> Bool:
         """Converts the SIMD scalar into a boolean value.
 
-        Constraints:
-            The size of the SIMD vector must be 1.
-
         Returns:
             True if the SIMD scalar is non-zero and False otherwise.
         """
 
-        @parameter
-        if Self.size == 1:
-            var res = self._refine[new_size=1]().cast[DType.bool]()
-            return Bool(mlir_value=res._mlir_value)
-        else:
-            return Bool(self.reduce_or())
+        var ne_zero = __mlir_op.`pop.cmp`[
+            pred = __mlir_attr.`#pop<cmp_pred ne>`
+        ](self._mlir_value, Self(0)._mlir_value)
+        return Bool(mlir_value=__mlir_op.`pop.simd.reduce_or`(ne_zero))
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:
