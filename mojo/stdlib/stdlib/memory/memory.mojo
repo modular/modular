@@ -25,7 +25,9 @@ from math import iota
 from sys import _libc as libc
 from sys import (
     align_of,
+    codegen_unreachable,
     external_call,
+    env_get_string,
     is_compile_time,
     is_gpu,
     llvm_intrinsic,
@@ -491,6 +493,15 @@ fn _malloc[
 ):
     @parameter
     if is_gpu():
+        comptime enable_gpu_malloc = env_get_string[
+            "ENABLE_GPU_MALLOC", "true"
+        ]()
+        # no runtime allocation on GPU
+        codegen_unreachable[
+            enable_gpu_malloc != "true",
+            "runtime allocation on GPU not allowed",
+        ]()
+
         comptime U = UnsafePointer[
             NoneType,
             MutOrigin.external,
