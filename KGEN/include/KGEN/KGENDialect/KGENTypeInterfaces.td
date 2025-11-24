@@ -107,9 +107,6 @@ def StructTypeInterface : TypeInterface<"StructTypeInterface"> {
       (ins "SymTabEvaluationContext &":$evaluationContext,
            "Location":$loc)>,
     InterfaceMethod<[{
-      Get an optional alias for this symbol reference.
-    }], "std::optional<StringRef>", "getAliasName">,
-    InterfaceMethod<[{
       Pretty print the symbol reference as a type.
     }], "void", "printSymbol", (ins "AsmPrinter &":$p)>,
     InterfaceMethod<[{

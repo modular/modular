@@ -280,13 +280,6 @@ SymbolRefAttr LIT::StructType::getSymbol() const {
   return getValue().getValue();
 }
 
-std::optional<StringRef> LIT::StructType::getAliasName() {
-  // Don't alias types with parameter references.
-  if (!getParamValues().empty())
-    return {};
-  return getAliasName(getSymbol());
-}
-
 std::optional<StringRef> LIT::StructType::getAliasName(SymbolRefAttr symbol) {
   // Use the leaf name as the alias name.
   StringRef leaf = symbol.getLeafReference().getValue();
@@ -340,6 +333,20 @@ parseStructTypeBody(AsmParser &p, SymbolAttr &symbol,
       parseStructTypeParams(p, paramValues))
     return failure();
   return success();
+}
+
+// Sugar support: non-parameterized types get aliases.
+mlir::OpAsmAliasResult LIT::StructType::getAlias(raw_ostream &os) const {
+  // Don't alias types with parameter references.  We will instead alias the
+  // symbol attribute.
+  //     We want "!Int" but "!lit.struct<#SIMD<...>>"
+  if (getParamValues().empty()) {
+    if (auto nameOpt = getAliasName(getSymbol())) {
+      os << *nameOpt;
+      return mlir::OpAsmAliasResult::OverridableAlias;
+    }
+  }
+  return mlir::OpAsmAliasResult::NoAlias;
 }
 
 static void printStructTypeBody(AsmPrinter &p, SymbolAttr symbol,
@@ -555,6 +562,22 @@ TypedAttr TraitType::getPValue() {
   return TypeParamAttr::get(*this, getMetaType());
 }
 
+// Sugar support: non-parameterized types get aliases.
+mlir::OpAsmAliasResult LIT::TraitType::getAlias(raw_ostream &os) const {
+  ArrayRef<SymbolRefAttr> symbols = getSymbols();
+  if (symbols.empty())
+    return mlir::OpAsmAliasResult::NoAlias;
+  SmallVector<StringRef> names;
+  for (SymbolRefAttr symbol : symbols) {
+    if (std::optional<StringRef> name = StructType::getAliasName(symbol))
+      names.push_back(*name);
+    else
+      return mlir::OpAsmAliasResult::NoAlias;
+  }
+  llvm::interleave(names, os, "_");
+  return mlir::OpAsmAliasResult::OverridableAlias;
+}
+
 //===----------------------------------------------------------------------===//
 // AnyTraitType
 //===----------------------------------------------------------------------===//
@@ -578,6 +601,21 @@ OptionalParseResult MetaType::parseValue(AsmParser &p, TypedAttr &value) const {
 
 LogicalResult MetaType::printValue(AsmPrinter &p, TypedAttr value) const {
   return printTypeValue(p, value);
+}
+
+mlir::OpAsmAliasResult MetaType::getAlias(raw_ostream &os) const {
+  if (auto meta = dyn_cast<StructMetaType>(*this)) {
+    // Don't alias metatypes that have parameter values, we want to alias things
+    // like !mt_Int but not things like SIMD.  We'll alias the symbol instead.
+    if (!meta.getParamValues().empty())
+      return mlir::OpAsmAliasResult::NoAlias;
+    if (std::optional<StringRef> name =
+            StructType::getAliasName(meta.getSymbol())) {
+      os << "mt_" << *name;
+      return mlir::OpAsmAliasResult::OverridableAlias;
+    }
+  }
+  return mlir::OpAsmAliasResult::NoAlias;
 }
 
 //===----------------------------------------------------------------------===//

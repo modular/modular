@@ -55,45 +55,6 @@ struct LITDialectFoldInterface : public mlir::DialectFoldInterface {
 struct LITOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
   using mlir::OpAsmDialectInterface::OpAsmDialectInterface;
 
-  AliasResult getAlias(Type type, raw_ostream &os) const override {
-    // Alias StructType if required.
-    if (auto ref = dyn_cast<StructType>(type)) {
-      if (std::optional<StringRef> aliasName = ref.getAliasName()) {
-        os << *aliasName;
-        return AliasResult::OverridableAlias;
-      }
-      return AliasResult::NoAlias;
-    }
-
-    if (auto trait = dyn_cast<TraitType>(type)) {
-      ArrayRef<SymbolRefAttr> symbols = trait.getSymbols();
-      if (symbols.empty())
-        return AliasResult::NoAlias;
-      SmallVector<StringRef> names;
-      for (SymbolRefAttr symbol : symbols) {
-        if (std::optional<StringRef> name = StructType::getAliasName(symbol))
-          names.push_back(*name);
-        else
-          return AliasResult::NoAlias;
-      }
-      llvm::interleave(names, os, "_");
-      return AliasResult::OverridableAlias;
-    }
-
-    if (auto meta = dyn_cast<StructMetaType>(type)) {
-      if (!meta.getParamValues().empty())
-        return AliasResult::NoAlias;
-      if (std::optional<StringRef> name =
-              StructType::getAliasName(meta.getSymbol())) {
-        os << "mt_" << *name;
-        return AliasResult::OverridableAlias;
-      }
-      return AliasResult::NoAlias;
-    }
-
-    return AliasResult::NoAlias;
-  }
-
   AliasResult getAlias(Attribute attr, raw_ostream &os) const override {
     if (!attr)
       return AliasResult::NoAlias;
