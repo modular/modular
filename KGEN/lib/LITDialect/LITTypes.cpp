@@ -351,20 +351,18 @@ mlir::OpAsmAliasResult LIT::StructType::getAlias(raw_ostream &os) const {
 
 static void printStructTypeBody(AsmPrinter &p, SymbolAttr symbol,
                                 ArrayRef<TypedAttr> paramValues) {
-  if (!paramValues.empty() && succeeded(p.printAlias(symbol)))
+  // Don't alias struct type with parameter references.  We will instead alias
+  // the symbol attribute.
+  //     We want "!Int" but "!lit.struct<#SIMD <...>>"
+  if (!paramValues.empty() && succeeded(p.printAlias(symbol))) {
+    // We must print a space here, because MLIR hard codes #FOO< syntax to be
+    // an "extended dialect attribute" where FOO is a dialect.  See
+    // mlir::Parser::parseExtendedAttr for more information.
+    // TODO: Consider printing params with []'s.
     p << ' ';
-  else
+  } else
     p << symbol.getValue();
   printParameterValues(p, paramValues);
-}
-
-void LIT::StructType::printSymbol(AsmPrinter &p) const {
-  // Use the alias printer if suitable.
-  if (succeeded(p.printAlias(*this)))
-    return;
-
-  p << getSymbol();
-  printParameterValues(p, getParamValues());
 }
 
 /// Get the name of the referenced type, ignoring packages.

@@ -103,19 +103,19 @@ fn implicit_conversions():
 
 # CHECK-LABEL: lit.fn @"test_type_equality()"
 fn test_type_equality():
-    # CHECK-NEXT: %[[PS_345:.*]] = lit.var.decl "ps_345" {{.*}}@PS<:!Int {3}, :!Int {4}, :!Int {5}>
+    # CHECK-NEXT: %[[PS_345:.*]] = lit.var.decl "ps_345" {{.*}}<#PS <:!Int {3}, :!Int {4}, :!Int {5}>
     # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {3}, :!Int {4}, :!Int {5}>(%[[PS_345]])
     var ps_345: PS[3, 4, 5] = PS[idInt[3], myIntAdd[2, 2], myDefaultAdd[4]]()
 
-    # CHECK-NEXT: %[[PS_215:.*]] = lit.var.decl "ps_215" {{.*}}@PS<:!Int {2}, :!Int {1}, :!Int {5}>
+    # CHECK-NEXT: %[[PS_215:.*]] = lit.var.decl "ps_215" {{.*}}<#PS <:!Int {2}, :!Int {1}, :!Int {5}>
     # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {2}, :!Int {1}, :!Int {5}>(%[[PS_215]])
     var ps_215: PS_21x[5] = PS[2, 1, 5]()
 
-    # CHECK-NEXT: %[[PS_216:.*]] = lit.var.decl "ps_216" {{.*}}@PS<:!Int {2}, :!Int {1}, :!Int {6}>
+    # CHECK-NEXT: %[[PS_216:.*]] = lit.var.decl "ps_216" {{.*}}<#PS <:!Int {2}, :!Int {1}, :!Int {6}>
     # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {2}, :!Int {1}, :!Int {6}>(%[[PS_216]])
     var ps_216: PS_21x[6] = PS_21xy[2, 3]()
 
-    # CHECK-NEXT: %[[PS_213:.*]] = lit.var.decl "ps_213" {{.*}}@PS<:!Int {2}, :!Int {1}, :!Int {3}>
+    # CHECK-NEXT: %[[PS_213:.*]] = lit.var.decl "ps_213" {{.*}}<#PS <:!Int {2}, :!Int {1}, :!Int {3}>
     # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {2}, :!Int {1}, :!Int {3}>(%[[PS_213]])
     var ps_213: PS_21x[myIntFMA[1, 3, 0]] = PS_xy3[2, 1]()
 
@@ -128,8 +128,8 @@ fn two_identical_inputs[T: AnyType](x: T, y: T):
 fn test_type_inference():
     # CHECK: lit.call @parametric_alias::@"two_identical_inputs
     # CHECK-SAME: <:!AnyType @parametric_alias::@PS<:!Int {2}, :!Int {1}, :!Int {5}>>
-    # CHECK-SAME: "x": !lit.ref<@parametric_alias::@PS<:!Int {2}, :!Int {1}, :!Int {5}>
-    # CHECK-SAME: "y": !lit.ref<@parametric_alias::@PS<:!Int {2}, :!Int {1}, :!Int {5}>
+    # CHECK-SAME: "x": !lit.ref<!lit.struct<#PS <:!Int {2}, :!Int {1}, :!Int {5}>>
+    # CHECK-SAME: "y": !lit.ref<!lit.struct<#PS <:!Int {2}, :!Int {1}, :!Int {5}>>
     two_identical_inputs(PS_21x[5](), PS[2, 1, 5]())
 
 

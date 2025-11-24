@@ -117,21 +117,21 @@ lit.fn @end_fn() {
 
 lit.fn @ref_immut<life: origin<1>>(%ref1: !lit.ref<@MyStruct, mut life>)
  -> !lit.ref<@MyStruct, muttoimm life> {
-  // CHECK: %0 = lit.ref.immut %ref1 : <@MyStruct, mut life>
-  %ref2 = lit.ref.immut %ref1: <@MyStruct, mut life>
-  // CHECK: kgen.return %0 : !lit.ref<@MyStruct, muttoimm life>
-  kgen.return %ref2: !lit.ref<@MyStruct, muttoimm life>
+  // CHECK: %0 = lit.ref.immut %ref1 : <!lit.struct<@MyStruct>, mut life>
+  %ref2 = lit.ref.immut %ref1: <!lit.struct<@MyStruct>, mut life>
+  // CHECK: kgen.return %0 : !lit.ref<!lit.struct<@MyStruct>, muttoimm life>
+  kgen.return %ref2: !lit.ref<!lit.struct<@MyStruct>, muttoimm life>
 }
 
 lit.fn @ref_pointer<life: origin<1>, ilife: origin<0>>
      (%ref1: !lit.ref<@MyStruct, mut life>) {
-  // CHECK: %0 = lit.ref.to_pointer %ref1 : <@MyStruct, mut life>
-  %ptr = lit.ref.to_pointer %ref1: <@MyStruct, mut life>
-  // CHECK: %1 = lit.ref.from_pointer %0 : <@MyStruct, imm ilife>
-  %ref2 = lit.ref.from_pointer %ptr: !lit.ref<@MyStruct, imm ilife>
+  // CHECK: %0 = lit.ref.to_pointer %ref1 : <!lit.struct<@MyStruct>, mut life>
+  %ptr = lit.ref.to_pointer %ref1: <!lit.struct<@MyStruct>, mut life>
+  // CHECK: %1 = lit.ref.from_pointer %0 : <!lit.struct<@MyStruct>, imm ilife>
+  %ref2 = lit.ref.from_pointer %ptr: !lit.ref<!lit.struct<@MyStruct>, imm ilife>
 
-  // CHECK: %2 = lit.ref.to_pointer %1 : <@MyStruct, imm ilife>
-  %ptr2 = lit.ref.to_pointer %ref2: !lit.ref<@MyStruct, imm ilife>
+  // CHECK: %2 = lit.ref.to_pointer %1 : <!lit.struct<@MyStruct>, imm ilife>
+  %ptr2 = lit.ref.to_pointer %ref2: !lit.ref<!lit.struct<@MyStruct>, imm ilife>
   lit.end_fn
 }
 
@@ -409,7 +409,7 @@ lit.fn @ref_it() {
 // CHECK-LABEL: lit.struct.decl @FuncParamStruct
 // CHECK-SAME: <c: !lit.generator<<type>(!kgen.param<*(0,0)>) -> ()>>
 lit.struct.decl @FuncParamStruct<c: !lit.generator<<type>(!kgen.param<*(0,0)>) -> ()>>  {
-  // CHECK: lit.fn @foo(%x: !kgen.pointer<@FuncParamStruct<:!lit.generator<<type>(!kgen.param<*(0,0)>) -> ()> c>>)
+  // CHECK: lit.fn @foo(%x: !kgen.pointer<!lit.struct<@FuncParamStruct<:!lit.generator<<type>(!kgen.param<*(0,0)>) -> ()> c>>>)
   lit.fn @foo(%x: !kgen.pointer<@FuncParamStruct<:!lit.generator<<type>(!kgen.param<*(0,0)>) -> ()> c>>) {
     lit.end_fn
   }
@@ -417,7 +417,7 @@ lit.struct.decl @FuncParamStruct<c: !lit.generator<<type>(!kgen.param<*(0,0)>) -
   lit.fn @bar(%x: !kgen.pointer<@FuncParamStruct<:!lit.generator<<type>(!kgen.param<*(0,0)>) -> ()> c>>) {
     // CHECK: call @FuncParamStruct::@foo<:!lit.generator<<type>(!kgen.param<*(0,0)>) -> ()> c>(%x)
     kgen.call @FuncParamStruct::@foo<:!lit.generator<<type>(!kgen.param<*(0,0)>) -> ()> c>(%x)
-    // CHECK-SAME: ("x": !kgen.pointer<@FuncParamStruct<:!lit.generator<<type>(!kgen.param<*(0,0)>) -> ()> c>>) -> ()
+    // CHECK-SAME: ("x": !kgen.pointer<!lit.struct<@FuncParamStruct<:!lit.generator<<type>(!kgen.param<*(0,0)>) -> ()> c>>>) -> ()
       : !lit.generator<("x": !kgen.pointer<@FuncParamStruct<:!lit.generator<<type>(!kgen.param<*(0,0)>) -> ()> c>>) -> ()>
     lit.end_fn
   }
@@ -505,9 +505,9 @@ lit.trait.decl @Closure<?, SELF: !Closure> {
 
 // CHECK: lit.fn @make_closure
 lit.fn @make_closure[imm Y, imm Z](%y: !lit.ref<!String, imm Y> owned_in_mem, %x:index, %z: !lit.ref<!String, imm Z> owned_in_mem) -> !kgen.none {
-  // CHECK-NEXT: lit.closure.init[#kgen.type<!kgen.closure<@make_closure, "foo" nonescaping>> : !lit.trait<@Closure>](%y[ref: imm Y], %x, %z[@String::@__copyinit__ !lit.generator<[2]("self": !lit.ref<@String, imm *[0,1]> read_mem, "other": !lit.ref<@String, mut *[0,0]> byref_result) -> !kgen.none>
-  // CHECK-SAME: , @String::@__moveinit__ !lit.generator<[2]("self": !lit.ref<@String, imm *[0,1]> read_mem, "other": !lit.ref<@String, mut *[0,0]> byref_result) -> !kgen.none>
-  // CHECK-SAME: , @String::@__del__ !lit.generator<[1]("self": !lit.ref<@String, mut *[0,0]> owned_in_mem) -> !kgen.none> move
+  // CHECK-NEXT: lit.closure.init[#kgen.type<!kgen.closure<@make_closure, "foo" nonescaping>> : !lit.trait<@Closure>](%y[ref: imm Y], %x, %z[@String::@__copyinit__ !lit.generator<[2]("self": !lit.ref<!lit.struct<@String>, imm *[0,1]> read_mem, "other": !lit.ref<!lit.struct<@String>, mut *[0,0]> byref_result) -> !kgen.none>
+  // CHECK-SAME: , @String::@__moveinit__ !lit.generator<[2]("self": !lit.ref<!lit.struct<@String>, imm *[0,1]> read_mem, "other": !lit.ref<!lit.struct<@String>, mut *[0,0]> byref_result) -> !kgen.none>
+  // CHECK-SAME: , @String::@__del__ !lit.generator<[1]("self": !lit.ref<!lit.struct<@String>, mut *[0,0]> owned_in_mem) -> !kgen.none> move
    %impl = lit.closure.init[#type_value](%y[ref: imm Y], %x, %z[@String::@__copyinit__ !lit.generator<[2]("self": !lit.ref<!String, imm *[0,1]> read_mem, "other": !lit.ref<!String, mut *[0,0]> byref_result) -> !kgen.none>,
                                                   @String::@__moveinit__ !lit.generator<[2]("self": !lit.ref<!String, imm *[0,1]> read_mem, "other": !lit.ref<!String, mut *[0,0]> byref_result) -> !kgen.none>,
                                                   @String::@__del__ !lit.generator<[1]("self": !lit.ref<!String, mut *[0,0]> owned_in_mem) -> !kgen.none> move])(%y2: index) -> index {
@@ -559,16 +559,16 @@ lit.struct.decl @Foo<PARAM: index>
 
 lit.fn @"bar"<PARAM: index>[mut R](?, %__result__: !lit.ref<@Foo<:index PARAM>, mut R> byref_result) -> !kgen.none {
   %foo = lit.var.decl "foo" var : !lit.ref<@Foo<:index PARAM>, mut FOO>
-  // CHECK: lit.closure.init[#kgen.type<!kgen.closure<@bar, "foo" nonescaping>> : !kgen.type](%foo[@Foo::@__copyinit__<PARAM, 2> !lit.generator<[2]("existing": !lit.ref<@Foo<*(0,0)>, imm *[0,0]> read_mem, "self": !lit.ref<@Foo<*(0,0)>, mut *[0,1]> byref_result) -> !kgen.none>, @
-  // CHECK-SAME: Foo::@__moveinit__<PARAM, 2> !lit.generator<[2]("existing": !lit.ref<@Foo<*(0,0)>, imm *[0,0]> read_mem, "self": !lit.ref<@Foo<*(0,0)>, mut *[0,1]> byref_result) -> !kgen.none>, @
-  // CHECK-SAME: Foo::@__del__<PARAM, 2> !lit.generator<[1]("self": !lit.ref<@Foo<*(0,0)>, imm *[0,0]> owned_in_mem) -> !kgen.none>])(%arg0[y2]: index) -> index {
+  // CHECK: lit.closure.init[#kgen.type<!kgen.closure<@bar, "foo" nonescaping>> : !kgen.type](%foo[@Foo::@__copyinit__<PARAM, 2> !lit.generator<[2]("existing": !lit.ref<!lit.struct<@Foo<*(0,0)>>, imm *[0,0]> read_mem, "self": !lit.ref<!lit.struct<@Foo<*(0,0)>>, mut *[0,1]> byref_result) -> !kgen.none>, @
+  // CHECK-SAME: Foo::@__moveinit__<PARAM, 2> !lit.generator<[2]("existing": !lit.ref<!lit.struct<@Foo<*(0,0)>>, imm *[0,0]> read_mem, "self": !lit.ref<!lit.struct<@Foo<*(0,0)>>, mut *[0,1]> byref_result) -> !kgen.none>, @
+  // CHECK-SAME: Foo::@__del__<PARAM, 2> !lit.generator<[1]("self": !lit.ref<!lit.struct<@Foo<*(0,0)>>, imm *[0,0]> owned_in_mem) -> !kgen.none>])(%arg0[y2]: index) -> index {
   // CHECK-NEXT: lit.end_fn
-  // CHECK-NEXT: } : (!lit.ref<@Foo<PARAM>, mut FOO>), !lit.ref<!kgen.closure<@bar, "foo" nonescaping>, mut C>
+  // CHECK-NEXT: } : (!lit.ref<!lit.struct<@Foo<PARAM>>, mut FOO>), !lit.ref<!kgen.closure<@bar, "foo" nonescaping>, mut C>
   %impl = lit.closure.init[#type_value](%foo[@Foo::@__copyinit__<PARAM, 2> !kgen.generator<!lit.generator<[2]("existing": !lit.ref<@Foo<:index *(0,0)>, imm *[0,0]> read_mem, "self": !lit.ref<@Foo<:index *(0,0)>, mut *[0,1]> byref_result) -> !kgen.none>>,
                                 @Foo::@__moveinit__<PARAM, 2> !kgen.generator<!lit.generator<[2]("existing": !lit.ref<@Foo<:index *(0,0)>, imm *[0,0]> read_mem, "self": !lit.ref<@Foo<:index *(0,0)>, mut *[0,1]> byref_result) -> !kgen.none>>,
                                 @Foo::@__del__<PARAM, 2> !kgen.generator<!lit.generator<[1]("self": !lit.ref<@Foo<:index *(0,0)>, imm *[0,0]> owned_in_mem) -> !kgen.none>>])(%y2: index) -> index {
     lit.end_fn
-  } : (!lit.ref<@Foo<:index PARAM>, mut FOO>), !lit.ref<!kgen.closure<@"bar", "foo" nonescaping>, mut C>
+  } : (!lit.ref<!lit.struct<@Foo<:index PARAM>>, mut FOO>), !lit.ref<!kgen.closure<@"bar", "foo" nonescaping>, mut C>
   %0 = lit.call @useIt[mut C]<:!kgen.type #type_value>(%impl) : !lit.generator<[1](!lit.ref<!Impl, mut C>) -> !kgen.none>
   lit.end_fn
 }

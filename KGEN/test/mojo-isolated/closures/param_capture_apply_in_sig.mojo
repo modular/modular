@@ -15,9 +15,9 @@ struct Foo[x: Int](ImplicitlyCopyable):
         return self.b
 
 
-# CHECK: lit.struct.decl @"`_CI_{{.*}}"<a: !Int, Y: {{.*}}Foo<:!Int a>
+# CHECK: lit.struct.decl @"`_CI_{{.*}}"<a: !Int, Y: !lit.struct<#Foo <:!Int a>>
 # CHECK: lit.fn @"__call__
-# CHECK-SAME: @Foo<:!Int apply(:{{.*}}@Foo::@"get{{.*}}"<:!Int a>), store_to_mem(Y))>
+# CHECK-SAME: #Foo <:!Int apply(:{{.*}}@Foo::@"get{{.*}}"<:!Int a>), store_to_mem(Y))>
 
 
 fn alias_ref_apply_in_sig[a: Int, Y: Foo[a]]():

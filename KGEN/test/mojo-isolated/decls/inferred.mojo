@@ -78,19 +78,19 @@ struct InferredStructConversion[
 fn test_inferred_params[x: Int, y: ParamType[x], z: DependentParam[x, y]]():
     # CHECK: inferred_param_from_arg{{.*}}<:!Int x>(%0)
     inferred_param_from_arg(y)
-    # CHECK: inferred_param_from_param{{.*}}<:!Int x, :[[PARAMTYPE:@.*ParamType]]<:!Int x> y>
+    # CHECK: inferred_param_from_param{{.*}}<:!Int x, :!lit.struct<#ParamType <:!Int x>> y>
     inferred_param_from_param[y]()
-    # CHECK: inferred_param_variadic{{.*}}<:!Int x, :variadic<[[PARAMTYPE]]<:!Int x>> [y, y]>
+    # CHECK: inferred_param_variadic{{.*}}<:!Int x, :variadic<!lit.struct<#ParamType <:!Int x>>> [y, y]>
     inferred_param_variadic[y, y]()
-    # CHECK: inferred_trait{{.*}}<:!SomeTrait [[PARAMTYPE]]<:!Int x>, :[[PARAMTYPE]]<:!Int x> y>
+    # CHECK: inferred_trait{{.*}}<:!SomeTrait @inferred::@ParamType<:!Int x>, :!lit.struct<#ParamType <:!Int x>> y>
     inferred_trait[y]()
-    # CHECK: inferred_with_default{{.*}}<:!Int x, :[[PARAMTYPE]]<:!Int x> y, :!Int {1}>
+    # CHECK: inferred_with_default{{.*}}<:!Int x, :!lit.struct<#ParamType <:!Int x>> y, :!Int {1}>()
     inferred_with_default[y]()
-    # CHECK: inferred_with_default{{.*}}<:!Int x, :[[PARAMTYPE]]<:!Int x> y, :!Int {2}>
+    # CHECK: inferred_with_default{{.*}}<:!Int x, :!lit.struct<#ParamType <:!Int x>> y, :!Int {2}>
     inferred_with_default[y, 2]()
-    # CHECK: inferred_dependent_param{{.*}}<:!Int x, :[[PARAMTYPE]]<:!Int x> y, :{{@.*DependentParam}}<:!Int x, :[[PARAMTYPE]]<:!Int x> y> z>
+    # CHECK: inferred_dependent_param{{.*}}<:!Int x, :!lit.struct<#ParamType <:!Int x>> y, :!lit.struct<#DependentParam <:!Int x, :!lit.struct<#ParamType <:!Int x>> y>> z>()
     inferred_dependent_param[z]()
-    # CHECK: inferred_dependent_param{{.*}}<:!Int x, :[[PARAMTYPE]]<:!Int x> y, :{{@.*DependentParam}}<:!Int x, :[[PARAMTYPE]]<:!Int x> y> z>
+    # CHECK: inferred_dependent_param{{.*}}<:!Int x, :!lit.struct<#ParamType <:!Int x>> y, :!lit.struct<#DependentParam <:!Int x, :!lit.struct<#ParamType <:!Int x>> y>> z>()
     inferred_dependent_param[x=x, z]()
 
     # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: !lit.generator<<"x": !Int, +>("z": !lit.struct<#ParamType <:!Int *(0,0)>>)
@@ -98,21 +98,21 @@ fn test_inferred_params[x: Int, y: ParamType[x], z: DependentParam[x, y]]():
     # CHECK: lit.call @inferred::@"inferred_partial{{.*}}"<:!Int x, :!Int {1}>(
     partially_bound(y)
 
-    # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: !lit.generator<<"x": !Int, +, "z": [[PARAMTYPE]]<:!Int *(0,0)>>
-    # CHECK-SAME: inferred_partial_dependent{{.*}}<:!Int ?, :!Int {1}, :[[PARAMTYPE]]<:!Int ?> ?>
+    # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: !lit.generator<<"x": !Int, +, "z": !lit.struct<#ParamType <:!Int *(0,0)>>
+    # CHECK-SAME: inferred_partial_dependent{{.*}}<:!Int ?, :!Int {1}, :!lit.struct<#ParamType <:!Int ?>> ?>>
     comptime partially_bound_dependent = inferred_partial_dependent[1]
-    # CHECK-NEXT: !lit.generator<() -> !kgen.none> = <{{.*}}inferred_partial_dependent{{.*}}<:!Int x, :!Int {1}, :@inferred::@ParamType<:!Int x> y>>
+    # CHECK-NEXT: !lit.generator<() -> !kgen.none> = <{{.*}}inferred_partial_dependent{{.*}}<:!Int x, :!Int {1}, :!lit.struct<#ParamType <:!Int x>> y>>
     comptime fully_bound = partially_bound_dependent[y]
 
-    # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: meta<!lit.struct<#InferredStruct <:!Int ?, :!Int {1}, :[[PARAMTYPE]]<:!Int ?> ?>,
-    # CHECK-SAME: <"x": !Int, +, "z": [[PARAMTYPE]]<:!Int *(0,0)>>>> = <{{.*}}@InferredStruct<:!Int ?, :!Int {1}, :[[PARAMTYPE]]<:!Int ?> ?>>
+    # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: meta<!lit.struct<#InferredStruct <:!Int ?, :!Int {1}, :!lit.struct<#ParamType <:!Int ?>> ?>,
+    # CHECK-SAME: <"x": !Int, +, "z": !lit.struct<#ParamType <:!Int *(0,0)>>>>> = <{{.*}}@InferredStruct<:!Int ?, :!Int {1}, :!lit.struct<#ParamType <:!Int ?>> ?>>
     comptime partially_bound_type = InferredStruct[1]
-    # CHECK-NEXT: partially_bound_explicit_inferred{{.*}} = <@inferred::@InferredStruct<:!Int {1}, :!Int {2}, :@inferred::@ParamType<:!Int {1}> ?>>
+    # CHECK-NEXT: partially_bound_explicit_inferred{{.*}} = <@inferred::@InferredStruct<:!Int {1}, :!Int {2}, :!lit.struct<#ParamType <:!Int {1}>> ?>>
     comptime partially_bound_explicit_inferred = InferredStruct[x=1, 2]
-    # CHECK-NEXT: fully_bound_type{{.*}}<@inferred::@InferredStruct<:!Int x, :!Int {1}, :@inferred::@ParamType<:!Int x> y>>
+    # CHECK-NEXT: fully_bound_type{{.*}}<@inferred::@InferredStruct<:!Int x, :!Int {1}, :!lit.struct<#ParamType <:!Int x>> y>>
     comptime fully_bound_type = partially_bound_type[y]
 
-    # CHECK-NEXT: InferredStructConversion<:!Int x, :type !Int, :[[PARAMTYPE]]<:!Int x> y>
+    # CHECK-NEXT: #InferredStructConversion <:!Int x, :type !Int, :!lit.struct<#ParamType <:!Int x>> y>>
     var inferred_type: InferredStructConversion[Int, y]
 
 

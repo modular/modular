@@ -130,16 +130,16 @@ kgen.generator @caller() {
 }
 
 // CHECK-LABEL: kgen.generator @ref_type<p: origin<0>, q: origin<1>>(
-// CHECK-SAME: %arg0: !lit.ref<@Foo, imm p>
-// CHECK-SAME: %arg1: !lit.ref<@Foo, mut q>)
+// CHECK-SAME: %arg0: !lit.ref<!lit.struct<@Foo>, imm p>
+// CHECK-SAME: %arg1: !lit.ref<!lit.struct<@Foo>, mut q>)
 kgen.generator @ref_type<p: !lit.origin<0>, q: !lit.origin<1>>
-(%a: !lit.ref<@Foo, imm p>, %b: !lit.ref<@Foo, mut q>) {
+(%a: !lit.ref<!lit.struct<@Foo>, imm p>, %b: !lit.ref<!lit.struct<@Foo>, mut q>) {
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @field_attr<life: origin<0>>(
-// CHECK-SAME: %arg0: !lit.ref<@Foo, imm life->field>
-// CHECK-SAME: %arg1: !lit.ref<@Foo, imm life->a->b->c>)
+// CHECK-SAME: %arg0: !lit.ref<!lit.struct<@Foo>, imm life->field>
+// CHECK-SAME: %arg1: !lit.ref<!lit.struct<@Foo>, imm life->a->b->c>)
 kgen.generator @field_attr<life: !lit.origin<0>>
 (%arg0: !lit.ref<@Foo, imm life->field>,
  %arg1: !lit.ref<@Foo, imm life->a->b->c>) {
@@ -150,8 +150,8 @@ kgen.generator @field_attr<life: !lit.origin<0>>
 }
 
 // CHECK-LABEL: kgen.generator @indirect_origin_attr<orig: origin<0>>(
-// CHECK-SAME: %arg0: !lit.ref<@Foo, imm orig[]->field>
-// CHECK-SAME: %arg1: !lit.ref<@Foo, imm orig[]->a[]>)
+// CHECK-SAME: %arg0: !lit.ref<!lit.struct<@Foo>, imm orig[]->field>
+// CHECK-SAME: %arg1: !lit.ref<!lit.struct<@Foo>, imm orig[]->a[]>)
 kgen.generator @indirect_origin_attr<orig: !lit.origin<0>>
 (%arg0: !lit.ref<@Foo, imm orig[]->field>,
  %arg1: !lit.ref<@Foo, imm orig[]->a[]>) {

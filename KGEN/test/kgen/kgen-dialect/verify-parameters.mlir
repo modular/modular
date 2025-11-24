@@ -86,7 +86,7 @@ kgen.generator @buffer<rank>() ->
 
 // CHECK-LABEL: kgen.generator @ref_it
 kgen.generator @ref_it() {
-  // CHECK-NEXT: apply(:() -> !lit.struct<@List<:@Int apply(:(index) -> !lit.struct<@Int> @make, *(1,0))
+  // CHECK-NEXT: apply(:() -> !lit.struct<@List<:!lit.struct<@Int> apply(:(index) -> !lit.struct<@Int> @make, *(1,0))
   kgen.param.declare fn: <index>() ->
      !lit.struct<@Buf<
        :@Int apply(:(index) -> !lit.struct<@Int> @make, *(0,0)),
@@ -125,7 +125,7 @@ lit.struct.decl @T<a> {
 
 // CHECK-LABEL: kgen.generator @f
 kgen.generator @f<a, b: @T<a>>() -> !kgen.type {
-  // CHECK-NEXT: ref: <index, @T<*(0,0)>, <apply(:() -> !kgen.type @f<*(1,0), :@T<*(1,0)> *(1,1)>)>() -> ()>() -> () = <?>
+  // CHECK-NEXT: ref: <index, !lit.struct<@T<*(0,0)>>, <apply(:() -> !kgen.type @f<*(1,0), :!lit.struct<@T<*(1,0)>> *(1,1)>)>() -> ()>() -> () = <?>
   kgen.param.declare ref: <index, @T<*(0,0)>, <apply(:() -> !kgen.type @f<*(1,0), :@T<*(1,0)> *(1,1)>)>() -> ()>() -> () = <?>
 
   // CHECK-NEXT: relative: <type, <*(1,0)>(!kgen.pointer<:!kgen.param<*(1,0)> *(0,0)>) -> ()>

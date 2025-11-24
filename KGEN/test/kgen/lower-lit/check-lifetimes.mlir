@@ -229,7 +229,7 @@ lit.fn @createConditionallyInitializedImmortalReferenceInRepl[mut topArg, mut lo
   pop.store %4, %3 : !kgen.pointer<pointer<!PythonObject>>
 
   // CHECK:  kgen.param.declare LOCAL_LIFETIME2: origin<1> = <#lit.any.origin>
-  // CHECK-NEXT:  %[[V3:.*]] = lit.ref.from_pointer.repl {{.*}} : <@PythonObject, mut LOCAL_LIFETIME2> {name = "np"}
+  // CHECK-NEXT:  %[[V3:.*]] = lit.ref.from_pointer.repl {{.*}} : <!lit.struct<@PythonObject>, mut LOCAL_LIFETIME2> {name = "np"}
   // CHECK-NEXT:  [[V4:%*.]] = lit.call @import_module[mut localError, mut LOCAL_LIFETIME2](%__error__, %[[V3]])
   // CHECK-NEXT:  hlcf.if [[V4]]
   // CHECK-NEXT:    mark_consumed %[[V3]]
@@ -256,7 +256,7 @@ lit.fn @createConditionallyInitializedImmortalReferenceInRepl[mut topArg, mut lo
   %14 = pop.aligned_alloc %index_4, %index_3 : <!PythonObject>
   pop.store %14, %13 : !kgen.pointer<pointer<!PythonObject>>
   // CHECK:  kgen.param.declare LOCAL_LIFETIME3: origin<1> = <#lit.any.origin>
-  // CHECK-NEXT:  %[[V8:.*]] = lit.ref.from_pointer.repl {{.*}} : <@PythonObject, mut LOCAL_LIFETIME3> {name = "np2"}
+  // CHECK-NEXT:  %[[V8:.*]] = lit.ref.from_pointer.repl {{.*}} : <!lit.struct<@PythonObject>, mut LOCAL_LIFETIME3> {name = "np2"}
   // CHECK-NEXT:  %[[V9:.*]] = lit.call @import_module[mut localError, mut LOCAL_LIFETIME3](%__error__, %[[V8]])
   // CHECK-NEXT:  hlcf.if %[[V9]]
   // CHECK-NEXT:    lit.call @PythonObject::@__del__[mut LOCAL_LIFETIME2](%[[V3]])
@@ -343,10 +343,10 @@ module {
 module {
   lit.fn @make_closure[imm Y, imm Z]() {
     // CHECK:       lit.call @use[imm W]
-    // CHECK-NEXT:   [[V7:%.*]] = kgen.rebind %arg0 : !lit.ref<@S, imm W> to !lit.ref<@S, mut (mutcast imm W)>
+    // CHECK-NEXT:   [[V7:%.*]] = kgen.rebind %arg0 : !lit.ref<!lit.struct<@S>, imm W> to !lit.ref<!lit.struct<@S>, mut (mutcast imm W)>
     // CHECK-NEXT:   lit.call @S::@__del__[mut (mutcast imm W)]([[V7]])
-    %0 = lit.closure.init[#type_value]()[imm W](%w: !lit.ref<@S, imm W> owned_in_mem, %a: index ) -> index {
-      %3 = lit.call @use[imm W](%w) : !lit.generator<[1](!lit.ref<@S, imm *[0,0]> read_mem) -> !kgen.none>
+    %0 = lit.closure.init[#type_value]()[imm W](%w: !lit.ref<!lit.struct<@S>, imm W> owned_in_mem, %a: index ) -> index {
+      %3 = lit.call @use[imm W](%w) : !lit.generator<[1](!lit.ref<!lit.struct<@S>, imm *[0,0]> read_mem) -> !kgen.none>
       kgen.return %a : index
     } : (), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, imm C>
     kgen.return

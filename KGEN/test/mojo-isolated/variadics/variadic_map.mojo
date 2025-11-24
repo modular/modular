@@ -20,7 +20,7 @@ fn unfoldable[*Ts: AnyType](int_tuple: Tuple[*Ts]) -> Tuple[*AnyToFloat[Ts]]:
 
 
 # CHECK: lit.fn @"foldable(::Tuple[::Int, ::Int, ::Int])"
-# CHECK-SAME: %__result__: !lit.ref<@stdlib::@builtin::@stubs::@Tuple<:variadic<!AnyType> [!FloatDyn, !FloatDyn, !FloatDyn]>
+# CHECK-SAME: %__result__: !lit.ref<!lit.struct<#Tuple <:variadic<!AnyType> [!FloatDyn, !FloatDyn, !FloatDyn]>>
 fn foldable(int_tuple: Tuple[Int, Int, Int]) -> type_of(unfoldable(int_tuple)):
     pass
 
@@ -45,7 +45,7 @@ fn unfoldable[*Ts: AnyType](t: Tuple[*Ts]) -> Tuple[*AnyToDepT[Ts]]:
 
 
 # CHECK: lit.fn @"foldable(::Tuple[::Int, ::FloatDyn, ::Int])"
-# CHECK-SAME: %__result__: !lit.ref<@stdlib::@builtin::@stubs::@Tuple<:variadic<!AnyType>
-# CHECK-SAME: [@variadic_map::@DepT<:!AnyType !Int>, @variadic_map::@DepT<:!AnyType !FloatDyn>, @variadic_map::@DepT<:!AnyType !Int>]>
+# CHECK-SAME: %__result__: !lit.ref<!lit.struct<#Tuple <:variadic<!AnyType>
+# CHECK-SAME: [{{.*}}@DepT<:!AnyType !Int>, {{.*}}@DepT<:!AnyType !FloatDyn>, {{.*}}@DepT<:!AnyType !Int>]>
 fn foldable(t: Tuple[Int, FloatDyn, Int]) -> type_of(unfoldable(t)):
     pass

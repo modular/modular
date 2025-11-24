@@ -104,7 +104,7 @@ fn partially_bound_kw():
     comptime FullyBound = PartiallyBound[x=2]
 
     # COM: Test emission of fully bound type.
-    # CHECK: expr_type{{.*}}@TwoParam<:!Int {2}, :!Int {1}>
+    # CHECK: expr_type{{.*}}#TwoParam <:!Int {2}, :!Int {1}>
     var expr_type: FullyBound
 
 
@@ -148,28 +148,28 @@ struct DependentParam[
 # CHECK-LABEL: lit.fn @"direct_binding
 fn direct_binding():
     # Test direct bind of StructType
-    # CHECK: alias.decl *"a{{.*}} meta<!lit.struct<[[DEP:.*]]<?, ?, :[[PT:.*]]<?> ?>, <"a": index, "b": index, "c": [[PT]]<*(0,1)>>
+    # CHECK: alias.decl *"a{{.*}} meta<!lit.struct<#DependentParam <?, ?, :!lit.struct<#ParamType <?>> ?>, <"a": index, "b": index, "c": !lit.struct<#ParamType <*(0,1)>>
     comptime a = DependentParam
-    # CHECK: alias.decl *"b{{.*}} meta<!lit.struct<[[DEP]]<1, ?, :[[PT]]<?> ?>, <"b": index, "c": [[PT]]<*(0,0)>>>
+    # CHECK: alias.decl *"b{{.*}} meta<!lit.struct<#DependentParam <1, ?, :!lit.struct<#ParamType <?>> ?>, <"b": index, "c": !lit.struct<#ParamType <*(0,0)>>>>
     comptime b = DependentParam[__mlir_attr.`1:index`]
-    # CHECK: alias.decl *"c{{.*}} meta<!lit.struct<[[DEP]]<1, 2, :[[PT]]<2> ?>, <"c": [[PT]]<2>>>
+    # CHECK: alias.decl *"c{{.*}} meta<!lit.struct<#DependentParam <1, 2, :!lit.struct<#ParamType <2>> ?>, <"c": !lit.struct<#ParamType <2>>>
     comptime c = DependentParam[__mlir_attr.`1:index`, __mlir_attr.`2:index`]
 
     # Test partial bind of StructType
-    # CHECK: alias.decl *"d{{.*}} meta<!lit.struct<[[DEP]]<1, 2, :[[PT]]<2> ?>, <"c": [[PT]]<2>>>
+    # CHECK: alias.decl *"d{{.*}} meta<!lit.struct<#DependentParam <1, 2, :!lit.struct<#ParamType <2>> ?>, <"c": !lit.struct<#ParamType <2>>>>
     comptime d = DependentParam[__mlir_attr.`1:index`][__mlir_attr.`2:index`]
 
 
 # CHECK: lit.fn @"indirect_binding
 fn indirect_binding():
-    # CHECK: alias.decl [[a:\*"a.*"]]: meta
+    # CHECK: lit.alias.decl [[a:\*"a.*"]]: meta
     comptime a = DependentParam
     # Test indirect binds.
-    # CHECK: alias.decl [[b:\*"b.*"]]: meta<!lit.struct<[[DEP]]<1, ?, :[[PT]]<?> ?>, <"b": index, "c": [[PT]]<*(0,0)>{{.*}}> = <@metatypes_param::@DependentParam<1, ?, :@metatypes_param::@ParamType<?> ?>>
+    # CHECK: lit.alias.decl [[b:\*"b.*"]]: meta<!lit.struct<#DependentParam <1, ?, :!lit.struct<#ParamType <?>> ?>, <"b": index, "c": !lit.struct<#ParamType <*(0,0)>>{{.*}}>> = <@metatypes_param::@DependentParam<1, ?, :!lit.struct<#ParamType <?>> ?>>
     comptime b = a[__mlir_attr.`1:index`]
-    # CHECK: alias.decl [[c:\*"c.*"]]: meta<!lit.struct<[[DEP]]<1, 2, :[[PT]]<2> ?>, <"c": [[PT]]<2>{{.*}}> = <@metatypes_param::@DependentParam<1, 2, :@metatypes_param::@ParamType<2> ?>>
+    # CHECK: lit.alias.decl [[c:\*"c.*"]]: meta<!lit.struct<#DependentParam <1, 2, :!lit.struct<#ParamType <2>> ?>, <"c": !lit.struct<#ParamType <2>>{{.*}}>> = <@metatypes_param::@DependentParam<1, 2, :!lit.struct<#ParamType <2>> ?>>
     comptime c = b[__mlir_attr.`2:index`]
-    # CHECK: alias.decl [[d:\*"d.*"]]: meta<!lit.struct<[[DEP]]<1, 2, :[[PT]]<2> *?>>> = <@metatypes_param::@DependentParam<1, 2, :@metatypes_param::@ParamType<2> *?>>
+    # CHECK: lit.alias.decl [[d:\*"d.*"]]: meta<!lit.struct<#DependentParam <1, 2, :!lit.struct<#ParamType <2>> *?>>> = <@metatypes_param::@DependentParam<1, 2, :!lit.struct<#ParamType <2>> *?>>
     comptime d = c[
         __mlir_attr[`#kgen.unknown : `, ParamType[__mlir_attr.`2:index`]]
     ]

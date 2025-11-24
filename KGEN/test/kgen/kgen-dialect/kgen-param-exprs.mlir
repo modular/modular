@@ -737,8 +737,8 @@ lit.struct.decl @B {}
 
 // CHECK-LABEL: @symbol_exprs
 kgen.generator @symbol_exprs() {
-  // CHECK: <eq(get_sizeof(@A, #kgen.target<{{.*}}>),
-  // CHECK-SAME: get_sizeof(@B, #kgen.target<{{.*}}>))>
+  // CHECK: <eq(get_sizeof(!lit.struct<@A>, #kgen.target<{{.*}}>),
+  // CHECK-SAME: get_sizeof(!lit.struct<@B>, #kgen.target<{{.*}}>))>
   %0 = kgen.param.constant: i1 = <eq(:index get_sizeof(@A, #target),
                                   get_sizeof(@B, #target))>
   kgen.return
@@ -975,7 +975,7 @@ kgen.generator @get_likage_name() {
 
 // CHECK-LABEL: @unification
 kgen.generator @unification() {
-  // CHECK: T0: type = <@unification>
+  // CHECK: T0: type = <!lit.struct<@unification>>
   kgen.param.declare T0: type = <rebind(:!metatype.type #kgen.type<!lit.struct<@unification>>)>
   kgen.return
 }

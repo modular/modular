@@ -130,7 +130,7 @@ trait CFMTraitParams:
 struct CFMStructParams[t1: AnyTrivialRegType, t2: AnyTrivialRegType](
     CFMTraitParams
 ):
-    # CHECK: lit.fn @"f1{{.*}}"<x: !CFMTraitParams>[{{.*}}](%self: !lit.ref<{{.*}}@CFMStructParams<:type [[T1:.*]], :type [[T2:.*]]>{{.*}}> read_mem)
+    # CHECK: lit.fn @"f1{{.*}}"<x: !CFMTraitParams>[{{.*}}](%self: !lit.ref<!lit.struct<#CFMStructParams <:type t1, :type t2>>{{.*}}> read_mem)
     fn f1[x: CFMTraitParams](self):
         pass
 

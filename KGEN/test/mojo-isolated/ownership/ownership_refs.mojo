@@ -24,11 +24,11 @@ struct MemExample(ImplicitlyCopyable, Movable):
   fn noop(self): pass
   fn mutate(mut self): pass
 
-# CHECK-LABEL: lit.fn @"borrow{{.*}}"<lt: {{.*}}Origin<:!Bool {:i1 0}>>(%a: !lit.ref<!MemExample, imm #lit.struct.extract<:@stdlib::@builtin::@stubs::@Origin<:!Bool {:i1 0}> lt, "_mlir_origin">>
+# CHECK-LABEL: lit.fn @"borrow{{.*}}"<lt: {{.*}}#Origin <:!Bool {:i1 0}>>>(%a: !lit.ref<!MemExample, imm #lit.struct.extract<:{{.*}}#Origin <:!Bool {:i1 0}>> lt, "_mlir_origin">>
 fn borrow[lt: ImmutOrigin](a: Pointer[MemExample, lt]._mlir_type):
   pass
 
-# CHECK-LABEL: lit.fn @"mutate{{.*}}"<lt: {{.*}}Origin<:!Bool {:i1 1}>>(%a: !lit.ref<!MemExample, mut #lit.struct.extract<:@stdlib::@builtin::@stubs::@Origin<:!Bool {:i1 1}> lt, "_mlir_origin">>
+# CHECK-LABEL: lit.fn @"mutate{{.*}}"<lt: {{.*}}#Origin <:!Bool {:i1 1}>>>(%a: !lit.ref<!MemExample, mut #lit.struct.extract<:{{.*}}#Origin <:!Bool {:i1 1}>> lt, "_mlir_origin">>
 fn mutate[lt: MutOrigin](a: Pointer[MemExample, lt]._mlir_type):
   pass
 
@@ -239,11 +239,11 @@ fn callByRefResultLifetime(mut x: MemExample, mut y: MemExample, z: MemExample):
   # CHECK: lit.var.decl "l1" var : !lit.ref<{{.*}}(mutcast mut *"x`")
   var l1 = returnOneArgLifetime(x)
 
-  # CHECK: lit.var.decl "l2" var : !lit.ref<@ownership_refs::@TwoLifetimes<{{.*}}(mutcast mut *"x`")}, {{.*}}(mutcast mut *"y`1")}>
+  # CHECK: lit.var.decl "l2" var : !lit.ref<{{.*}}#TwoLifetimes <{{.*}}(mutcast mut *"x`")}, {{.*}}(mutcast mut *"y`1")}>
   var l2 = returnTwoArgLifetimes(x, y)
-  # CHECK: %l3 = lit.var.decl "l3" var : !lit.ref<@ownership_refs::@TwoLifetimes<{{.*}}(mutcast mut *"x`")}, {{.*}}(mutcast mut *"x`")}>
+  # CHECK: %l3 = lit.var.decl "l3" var : !lit.ref<{{.*}}#TwoLifetimes <{{.*}}(mutcast mut *"x`")}, {{.*}}(mutcast mut *"x`")}>
   var l3 = returnTwoArgLifetimes(x, x)
-  # CHECK: %l4 = lit.var.decl "l4" var : !lit.ref<@ownership_refs::@TwoLifetimes<{{.*}}origin<0> = *"z`2"}, {{.*}}origin<0> = *"z`2"}
+  # CHECK: %l4 = lit.var.decl "l4" var : !lit.ref<{{.*}}#TwoLifetimes <{{.*}}origin<0> = *"z`2"}, {{.*}}origin<0> = *"z`2"}
   var l4 = returnTwoArgLifetimes(z, z)
 
   use_any(l1, l2, l3, l4)
@@ -473,7 +473,7 @@ fn test_higher_order_capture(var x: MemExample, var y: MemExample):
   higher_order_function[capture]()
 
 # CHECK-LABEL: lit.fn @"test_origin_ref_spec
-# CHECK-SAME: !lit.ref<!Int, mut #lit.struct.extract<{{.*}}@Origin<:!Bool {:i1 1}> our_origin, "_mlir_origin">> mutref)
+# CHECK-SAME: !lit.ref<!Int, mut #lit.struct.extract<{{.*}}#Origin <:!Bool {:i1 1}>> our_origin, "_mlir_origin">> mutref)
 fn test_origin_ref_spec[our_origin: Origin[True]](ref[our_origin] a: Int):
     pass
 

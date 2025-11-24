@@ -13,7 +13,7 @@
 
 # COM: Check that the closure impl parameter is bound to the struct parameter:
 # CHECK: lit.call {{.*}}@"`_CI_{{.*}}"::@"__init__{{.*}}<:origin<0> [[SELFO]], :!Int A>(%self, %__call_result_tmp__)
-# CHECK-SAME: !lit.generator<[2]({{.*}}"self": !lit.ref<@{{.*}}::@"`_CI_{{.*}}<:origin<0> *"self`2x", :!Int A>
+# CHECK-SAME: !lit.generator<[2]({{.*}}"self": !lit.ref<!lit.struct<#escaping0 <:origin<0> *"self`2x", :!Int A>
 
 
 @fieldwise_init
