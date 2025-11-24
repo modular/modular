@@ -351,7 +351,7 @@ class Qwen2_5VLModel(
         # vision_seq_len is the number of patches in all images and videos in the request
         pixel_values_types = [
             TensorType(
-                DType.float32,
+                DType.bfloat16,
                 shape=["vision_seq_len", vision_encoder.patch_embed.patch_dim],
                 device=DeviceRef.from_device(device),
             )
@@ -978,9 +978,16 @@ class Qwen2_5VLModel(
                 vision_data.concatenated_pixel_values
                 for vision_data in vision_datas
             ]
-            pixel_values_tensor = Tensor.from_numpy(
-                self._parallel_ops.concatenate(pixel_values_list)
-            )
+            concatenated = self._parallel_ops.concatenate(pixel_values_list)
+            pixel_values_tensor = Tensor.from_numpy(concatenated)
+
+            # If uint16, interpret as bfloat16 to work around lack of Numpy
+            # bfloat16 support.
+            if concatenated.dtype == np.uint16:
+                pixel_values_tensor = pixel_values_tensor.view(
+                    DType.bfloat16, pixel_values_tensor.shape
+                )
+
             pixel_values = pixel_values_tensor.to(self.devices)
 
         with Tracer("preparing_window_index"):

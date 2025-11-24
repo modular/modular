@@ -48,13 +48,53 @@ from .nn.data_processing import get_rope_index, mrope_pos_ids_3d
 logger = logging.getLogger("max.pipelines")
 
 
+# TODO: Make this a utility for vision models
+# Borrowed from internval/tokenizer.py
+def float32_to_bfloat16_as_uint16(
+    arr: npt.NDArray[np.float32],
+) -> npt.NDArray[np.uint16]:
+    """Convert float32 array to bfloat16 representation stored as uint16.
+
+    BFloat16 is the upper 16 bits of float32 with proper rounding.
+    This allows us to halve memory usage while maintaining the exponent range.
+
+    Args:
+        arr: Float32 numpy array
+
+    Returns:
+        Uint16 array containing bfloat16 bit representation with same shape
+    """
+    assert arr.dtype == np.float32, f"Expected float32, got {arr.dtype}"
+
+    # Flatten for processing.
+    original_shape = arr.shape
+    flat = arr.ravel()
+
+    # View as uint32 for bit manipulation.
+    uint32_view = flat.view(np.uint32)
+
+    # Round to nearest even.
+    round_bit = (uint32_view >> 16) & 1
+    lower_half = uint32_view & 0xFFFF
+    round_up = (lower_half > 0x8000) | (
+        (lower_half == 0x8000) & (round_bit == 1)
+    )
+    uint32_rounded = uint32_view + (round_up.astype(np.uint32) * 0x8000)
+
+    # Extract upper 16 bits as bfloat16.
+    bfloat16_bits = (uint32_rounded >> 16).astype(np.uint16)
+
+    # Restore original shape.
+    return bfloat16_bits.reshape(original_shape)
+
+
 def qwen2_5vl_image_preprocessing(
     image: Image.Image,
     *,
     patch_size: int = 14,
     temporal_patch_size: int = 2,
     merge_size: int = 2,
-) -> tuple[npt.NDArray[np.float32], tuple[int, int, int]]:
+) -> tuple[npt.NDArray[np.uint16], tuple[int, int, int]]:
     """Preprocess image for Qwen2.5VL vision model.
 
     This function assumes the image has already been processed by fetch_image
@@ -148,7 +188,9 @@ def qwen2_5vl_image_preprocessing(
     # Create grid dimensions (temporal, height, width)
     image_grid_thw = (grid_t, grid_h, grid_w)
 
-    return flatten_patches, image_grid_thw
+    flatten_patches_uint16 = float32_to_bfloat16_as_uint16(flatten_patches)
+
+    return flatten_patches_uint16, image_grid_thw
 
 
 class Qwen2_5VLImageProcessor:
@@ -180,7 +222,7 @@ class Qwen2_5VLImageProcessor:
         images: list[Image.Image] | Image.Image,
         return_tensors: str = "np",
         **kwargs,
-    ) -> tuple[dict[str, npt.NDArray[Any]], list[npt.NDArray[np.float32]]]:
+    ) -> tuple[dict[str, npt.NDArray[Any]], list[npt.NDArray[np.uint16]]]:
         """Process images for Qwen2.5VL.
 
         Args:
@@ -199,7 +241,7 @@ class Qwen2_5VLImageProcessor:
             images = [images]
 
         # Process each image
-        pixel_values_list: list[npt.NDArray[np.float32]] = []
+        pixel_values_list: list[npt.NDArray[np.uint16]] = []
         image_grid_thw_list: list[tuple[int, int, int]] = []
 
         for image in images:
@@ -228,7 +270,7 @@ class Qwen2_5VLImageProcessor:
         images: list[Image.Image] | Image.Image,
         return_tensors: str = "np",
         **kwargs,
-    ) -> tuple[dict[str, npt.NDArray[Any]], list[npt.NDArray[np.float32]]]:
+    ) -> tuple[dict[str, npt.NDArray[Any]], list[npt.NDArray[np.uint16]]]:
         """Alias for __call__ to match transformers interface."""
         return self.__call__(images, return_tensors=return_tensors, **kwargs)
 
@@ -435,7 +477,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
 
         # Step 2: Process images with custom image processor (if any)
         processed_images: dict[str, npt.NDArray[Any]] = {}
-        pixel_values_list: list[npt.NDArray[np.float32]] = []
+        pixel_values_list: list[npt.NDArray[np.uint16]] = []
 
         image_grid_thw = None
         if image_inputs:

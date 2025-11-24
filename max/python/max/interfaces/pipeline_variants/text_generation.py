@@ -752,8 +752,12 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         return [ctx.log_probabilities_echo for ctx in self.batch.values()]
 
 
-def hash_image(pixel_values: npt.NDArray[np.floating[Any]]) -> int:
-    """Compute the hash of an image."""
+def hash_image(pixel_values: npt.NDArray[Any]) -> int:
+    """Compute the hash of an image.
+
+    Supports any numpy array dtype (float32, uint16 for bfloat16 bits, etc.)
+    since vision models may use different storage formats on CPU.
+    """
     return hash(pixel_values.data.tobytes())
 
 
@@ -769,8 +773,15 @@ class ImageMetadata(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     end_idx: int
     """One after the index of the last <vision_token_id> special token for the image"""
 
-    pixel_values: npt.NDArray[np.floating[Any]]
-    """Pixel values for the image"""
+    pixel_values: npt.NDArray[Any]
+    """Pixel values for the image.
+
+    Can be various dtypes depending on the vision model:
+
+    - float32: Original precision
+    - uint16: BFloat16 bits stored as uint16 (workaround for NumPy's lack of
+      native bfloat16 support). Reinterpreted as bfloat16 on GPU.
+    """
 
     image_hash: int = -1
     """Hash of the image, for use in prefix caching"""
