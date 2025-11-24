@@ -92,6 +92,7 @@ class MoEFp8(MoE):
             expert_inputs[4],
             self.float8_config.input_scale,
             self.float8_config.weight_scale,
+            tokens_padded_per_expert=True,  # Each expert's tokens are padded.
         )
 
         silu_out_fp8, silu_out_scales = fused_silu_fp8(
@@ -111,6 +112,7 @@ class MoEFp8(MoE):
             expert_inputs[4],
             self.float8_config.input_scale,
             self.float8_config.weight_scale,
+            tokens_padded_per_expert=True,
         )
 
         self.ep_batch_manager.ep_combine(down_projs, device_id)

@@ -7083,6 +7083,7 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
         m_scale_granularity: Int,
         n_scale_granularity: Int,
         k_scale_granularity: Int,
+        tokens_padded_per_expert: Bool,
         target: StaticString,
     ](
         c: OutputTensor[dtype=c_type, rank=2],
@@ -7111,6 +7112,7 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
             n_scale_granularity,
             k_scale_granularity,
             transpose_b=True,
+            tokens_padded_per_expert=tokens_padded_per_expert,
             target=target,
         ](
             managed_tensor_slice_to_ndbuffer(c),

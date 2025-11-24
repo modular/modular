@@ -692,6 +692,7 @@ fn dispatch_cb_kernel[
     n_ranks: Int,
     max_tokens_per_rank: Int,
     token_fmt_type: TokenFormat,
+    expert_m_padding: Int = 0,
 ](
     format_handler: token_fmt_type,
     row_offsets: LayoutTensor[DType.uint32, row_offsets_layout, MutAnyOrigin],
@@ -723,6 +724,8 @@ fn dispatch_cb_kernel[
         max_tokens_per_rank: The maximum number of tokens per rank.
         token_fmt_type: Type conforming to TokenFormat trait that defines the
             token encoding scheme.
+        expert_m_padding: If non-zero, the number of tokens for each local
+            expert will be padded to the next multiple of `expert_m_padding`.
 
     Args:
         format_handler: Instance of token_fmt_type that performs token decoding
@@ -830,6 +833,12 @@ fn dispatch_cb_kernel[
         local_expert_token_count = warp.shuffle_idx(
             prefix_sum_arr[scan_round - 1], (n_ranks - 1) % WARP_SIZE
         )
+
+        @parameter
+        if expert_m_padding != 0:
+            local_expert_token_count = align_up(
+                Int(local_expert_token_count), expert_m_padding
+            )
 
         # Conduct a atomic add to get how many experts have already completed the
         # communication, and the offset where the previous expert end in the output

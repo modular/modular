@@ -827,6 +827,10 @@ struct Struct_ep_dispatch_cb_fp8:
             hidden_size, top_k, gpu_alignment
         ](output_tokens_tensor, output_scales_tensor)
 
+        # In order to use TMA, the scales of tokens for each expert must be
+        # alligned to 16 bytes.
+        comptime expert_m_padding = 16 // size_of[dispatch_scale_dtype]()
+
         comptime dispatch_cb = dispatch_cb_kernel[
             hw_info.max_thread_block_size,
             output_tokens_tensor.layout,
@@ -839,6 +843,7 @@ struct Struct_ep_dispatch_cb_fp8:
             n_ranks,
             max_token_per_rank,
             type_of(format_handler),
+            expert_m_padding=expert_m_padding,
         ]
 
         @always_inline

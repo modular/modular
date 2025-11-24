@@ -2260,6 +2260,7 @@ fn grouped_matmul_dynamic_scaled_fp8[
     n_scale_granularity: Int,
     k_scale_granularity: Int,
     transpose_b: Bool = False,
+    tokens_padded_per_expert: Bool = False,
     target: StaticString = "cpu",
 ](
     c: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, _],
@@ -2328,7 +2329,7 @@ fn grouped_matmul_dynamic_scaled_fp8[
         return
 
     @parameter
-    if ctx.default_device_info is B200:
+    if ctx.default_device_info is B200 and tokens_padded_per_expert:
         comptime umma_shape: IndexList[3] = Index(64, 64, 32)
 
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
