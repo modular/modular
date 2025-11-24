@@ -3417,7 +3417,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
     (GPU).
 
     A `DeviceContext` serves as the low-level interface to the
-    accelerator inside a MAX [custom operation](/max/custom-ops/) and provides
+    accelerator inside a MAX [custom operation](/max/develop/custom-ops/) and provides
     methods for allocating buffers on the device, copying data between host and
     device, and for compiling and running functions (also known as kernels) on
     the device.
