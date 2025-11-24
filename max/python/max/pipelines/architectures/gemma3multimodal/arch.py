@@ -21,10 +21,9 @@ from max.pipelines.lib import (
     SupportedEncoding,
     TextAndVisionTokenizer,
 )
-
 from weight_adapters import convert_safetensor_state_dict
-from .model import Gemma3_MultiModalModel
 
+from .model import Gemma3_MultiModalModel
 
 gemma3_multimodal_arch = SupportedArchitecture(
     name="Gemma3ForConditionalGeneration",

@@ -49,7 +49,7 @@ class Gemma3VisionEmbeddings(Module):
             has_bias=True,
             dtype=self.dtype,
             device=device,
-            permute=True
+            permute=True,
         )
 
         self.num_patches = (self.image_size // self.patch_size) ** 2
@@ -79,12 +79,8 @@ class Gemma3VisionEmbeddings(Module):
         patch_embeds = self.patch_embedding(pixel_values)
 
         # Flatten spatial dimensions and transpose ->  [batch_size, num_patches, embed_dim]
-        embeddings = ops.flatten(
-            patch_embeds, start_dim=2
-        )
-        embeddings = ops.transpose(
-            embeddings, 1, 2
-        )
+        embeddings = ops.flatten(patch_embeds, start_dim=2)
+        embeddings = ops.transpose(embeddings, 1, 2)
 
         max_nb_patches_h = max_im_h // self.patch_size
         max_nb_patches_w = max_im_w // self.patch_size
@@ -100,14 +96,10 @@ class Gemma3VisionEmbeddings(Module):
             dtype=DType.int32,
         )
         position_ids = ops.unsqueeze(position_ids, 0)  # [1, total_patches]
-        position_ids = ops.tile(
-            position_ids, [batch_size, 1]
-        )
+        position_ids = ops.tile(position_ids, [batch_size, 1])
 
         # Get position embeddings for the position IDs
-        position_embeds = self.position_embedding(
-            position_ids
-        )
+        position_embeds = self.position_embedding(position_ids)
 
         embeddings = embeddings + position_embeds
 

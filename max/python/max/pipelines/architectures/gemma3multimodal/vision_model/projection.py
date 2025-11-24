@@ -36,6 +36,7 @@ from ..model_config import Gemma3ForConditionalGenerationConfig
 
 class Gemma3MultiModalProjector(Module, Shardable):
     """Projects vision encoder outputs to text embedding space."""
+
     def __init__(
         self,
         config: Gemma3ForConditionalGenerationConfig,
@@ -67,15 +68,11 @@ class Gemma3MultiModalProjector(Module, Shardable):
             config.vision_config.image_size // config.vision_config.patch_size
         )
 
-        self.tokens_per_side = int(
-            config.mm_tokens_per_image**0.5
-        )
-        self.kernel_size = (
-            self.patches_per_image // self.tokens_per_side
-        )
+        self.tokens_per_side = int(config.mm_tokens_per_image**0.5)
+        self.kernel_size = self.patches_per_image // self.tokens_per_side
 
     def __call__(self, vision_outputs: Tensor) -> TensorValue:
-        """Process vision outputs through pooling, normalisation, and a 
+        """Process vision outputs through pooling, normalisation, and a
         projection weight"""
         batch_size, _, seq_length = vision_outputs.shape
 
@@ -100,7 +97,7 @@ class Gemma3MultiModalProjector(Module, Shardable):
             kernel_size=(self.kernel_size, self.kernel_size),
             stride=self.kernel_size,
         )
-        
+
         pooled_vision_outputs = ops.permute(pooled_vision_outputs, [0, 3, 1, 2])
         pooled_vision_outputs = pooled_vision_outputs.flatten(2)
         pooled_vision_outputs = pooled_vision_outputs.transpose(1, 2)
@@ -155,6 +152,7 @@ class Gemma3MultiModalProjector(Module, Shardable):
 
 class Gemma3VisionMLP(Module):
     """Two-layer MLP with GELU activation for vision encoder."""
+
     def __init__(
         self,
         config: Gemma3ForConditionalGenerationConfig,
@@ -186,7 +184,9 @@ class Gemma3VisionMLP(Module):
         """Expands hidden states to intermediate size, applies GELU activation,
         then projects back to hidden size."""
         x = self.fc1(x)
-        x = ops.gelu(x, getattr(self.config.vision_config, "hidden_act", "none"))
+        x = ops.gelu(
+            x, getattr(self.config.vision_config, "hidden_act", "none")
+        )
         x = self.fc2(x)
         return x
 

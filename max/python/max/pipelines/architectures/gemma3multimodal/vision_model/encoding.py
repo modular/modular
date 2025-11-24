@@ -28,13 +28,14 @@ from .projection import Gemma3VisionMLP
 
 class Gemma3VisionEncoderLayer(Module):
     """An individual layer of encoding within a stack of encoding layers"""
+
     def __init__(
         self,
         config: Gemma3ForConditionalGenerationConfig,
         layer_idx: int,
         device: DeviceRef | None = None,
     ):
-        """prepare the two normalisation layers, the self attention, and the 
+        """prepare the two normalisation layers, the self attention, and the
         multi-layer perceptrion"""
         self.config = config
         vision_config = config.vision_config
@@ -66,9 +67,7 @@ class Gemma3VisionEncoderLayer(Module):
     def __call__(
         self,
         hidden_states: Sequence[TensorValue],
-        signal_buffers: Sequence[
-            BufferValue
-        ], # TODO use this
+        signal_buffers: Sequence[BufferValue],  # TODO use this
     ) -> list[TensorValue]:
         """process the input hidden states through each of the sub-layers"""
         residual = hidden_states
@@ -162,6 +161,7 @@ class Gemma3VisionEncoderLayer(Module):
 
 class Gemma3VisionEncoder(Module):
     """Wrapper class for a stack of vision encoder layers"""
+
     def __init__(self, config: Gemma3ForConditionalGenerationConfig):
         """Intialise the stack of encoder layers based on config, and prepare
         sharding strategy"""

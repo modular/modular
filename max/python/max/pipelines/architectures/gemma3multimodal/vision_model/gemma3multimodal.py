@@ -294,8 +294,9 @@ class Gemma3LanguageModel(Module):
 
 class Gemma3VisionModel(Module):
     """The Gemma3 Multi-Modal model's vision component"""
+
     def __init__(self, config: Gemma3ForConditionalGenerationConfig) -> None:
-        """Initializes the necessary components for processing vision inputs and 
+        """Initializes the necessary components for processing vision inputs and
         projecting into language space, with multi-device functionality."""
         super().__init__()
         self.config = config

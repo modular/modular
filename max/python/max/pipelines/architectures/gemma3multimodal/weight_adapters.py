@@ -13,9 +13,6 @@
 
 from __future__ import annotations
 
-from max.driver import Tensor
-from max.dtype import DType
-from max.graph.shape import Shape
 from max.graph.weights import WeightData, Weights
 
 GEMMA3_LANGUAGE_SAFETENSOR_MAP: dict[str, str] = {
@@ -29,7 +26,9 @@ GEMMA3_MULTIMODAL_SAFETENSOR_MAP: dict[str, str] = {
 }
 
 
-def convert_safetensor_state_dict(state_dict: dict[str, Weights]) -> tuple[dict[str, WeightData], dict[str, WeightData]]:
+def convert_safetensor_state_dict(
+    state_dict: dict[str, Weights],
+) -> tuple[dict[str, WeightData], dict[str, WeightData]]:
     """Convert safetensor state dict to MAX format for the full model."""
     language_weights = _convert_safetensor_language_state_dict(state_dict)
     vision_weights = _convert_safetensor_vision_state_dict(state_dict)
@@ -38,7 +37,7 @@ def convert_safetensor_state_dict(state_dict: dict[str, Weights]) -> tuple[dict[
 
 
 def _convert_safetensor_language_state_dict(
-    state_dict: dict[str, Weights]
+    state_dict: dict[str, Weights],
 ) -> dict[str, WeightData]:
     """Convert safetensor state dict to MAX format for the language model."""
     new_state_dict: dict[str, WeightData] = {}
