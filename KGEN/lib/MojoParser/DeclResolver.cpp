@@ -362,6 +362,21 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
   }
 }
 
+void DeclResolver::aliasDeclInParent(ASTDecl *decl, StringAttr aliasName) {
+  ASTDecl *parentDecl = decl->getParentDecl();
+
+  // Lazy allocate declsInScope.
+  if (!parentDecl->declsInScope)
+    parentDecl->declsInScope.reset(new ASTDecl::DeclInScopeType());
+
+  // Add the decl to the parent's name table under the name aliasName.
+  TinyPtrVector<ASTDecl *> &entries = (*parentDecl->declsInScope)[aliasName];
+  entries.push_back(decl);
+
+  // Note: We intentionally do NOT call uniquifyNameAndAddToParentSymbolTable
+  // because the extension is already in the symbol table under its primary name
+}
+
 TraitType DeclResolver::getCanonicalTrait(TraitType trait) {
   if (TraitType canonical = traitCanonicalizationCache.lookup(trait))
     return canonical;
@@ -403,16 +418,17 @@ LogicalResult DeclResolver::tryAliasDecls(ArrayRef<ASTDecl *> decls,
 LogicalResult
 DeclResolver::aliasImportDecls(ArrayRef<ASTDecl *> decls, StringAttr name,
                                StringAttr declName, StringAttr moduleName,
-                               llvm::SMLoc aliasLoc, ASTDecl &context) {
+                               llvm::SMLoc aliasLoc, ASTDecl &context,
+                               bool allowMultipleWithSameName) {
   return aliasDeclsImpl(decls, name, aliasLoc, context,
-                        /*emitDiagnostics=*/true, moduleName, declName);
+                        /*emitDiagnostics=*/true, moduleName, declName,
+                        allowMultipleWithSameName);
 }
 
-LogicalResult
-DeclResolver::aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
-                             llvm::SMLoc aliasLoc, ASTDecl &context,
-                             bool emitDiagnostics, StringAttr moduleName,
-                             StringAttr declNameInModule) {
+LogicalResult DeclResolver::aliasDeclsImpl(
+    ArrayRef<ASTDecl *> decls, StringAttr name, llvm::SMLoc aliasLoc,
+    ASTDecl &context, bool emitDiagnostics, StringAttr moduleName,
+    StringAttr declNameInModule, bool allowMultipleWithSameName) {
   // Check to see if the decl is an import. We create new decls within the
   // context for these instead of aliasing, because import decls lazily replace
   // themselves with new decls (depending on what gets imported). That
@@ -451,6 +467,15 @@ DeclResolver::aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
   // the new entries we're bringing in.
   // Check to see if that's the case, and if so, replace the unresolved import
   // with the real decls from the target module.
+  //
+  // The `moduleName` argument tells us which module we're importing from, and
+  // is only present when we're resolving an import (not just creating an
+  // alias).
+  // Here, we look for that import.
+  // TODO(MOCO-522): This seems weird. This function shouldn't be making
+  // assumptions about what moduleName's existence means. Possibly rename
+  // moduleName or find some better way to represent this, or last resort, make
+  // it some arcana.
   if (moduleName) {
     // Find and remove all matching imports (in case of duplicate imports).
     // Keep in mind, the user may have imported the module twice, so we have to
@@ -471,12 +496,32 @@ DeclResolver::aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
         foundMatchingImport = true;
       }
     }
+
+    // TODO(MOCO-522): It feels like this function is doing a few too many
+    // things in too many odd cases, should split and revisit this abstraction.
+    bool shouldAdd = false;
     if (foundMatchingImport) {
       // Sure enough, we found an importOp that matches the module and decl
       // name, let's replace the import with the real decls.
-      for (ASTDecl *decl : decls)
-        entries.push_back(decl);
+      shouldAdd = true;
+    } else {
+      // No placeholder was removed, this can happen if someone is calling
+      // aliasDeclsImpl for things that were already imported, for example if
+      // we're importing a bunch of extensions when we've already imported them
+      // in the past.
+      // Now, check if the new decls can coexist with the existing ones.
+      if (allowMultipleWithSameName)
+        if (succeeded(canMergeSingleNamespaceDecls(decls, entries)))
+          shouldAdd = true;
     }
+    if (shouldAdd) {
+      // Add new decls, avoiding duplicates
+      for (ASTDecl *decl : decls) {
+        if (!llvm::is_contained(entries, decl))
+          entries.push_back(decl);
+      }
+    }
+
     return success();
   }
 
@@ -556,13 +601,14 @@ LogicalResult DeclResolver::importModule(ASTDecl &dest,
 
   return aliasImportDecls(&module, importName,
                           /*declName=*/StringAttr(), moduleName, importNameLoc,
-                          dest);
+                          dest, false);
 }
 
 LogicalResult DeclResolver::importDeclFromModule(
     ASTDecl &dest, PackageOp currentPackage, StringAttr moduleName,
     StringAttr sourceName, StringAttr destName, SMLoc loc, SMLoc sourceNameLoc,
     SMLoc destNameLoc, bool resolveTarget) {
+
   ASTDecl &module = shared.importModule(moduleName, currentPackage, loc);
   shared.notifyListenerOnModuleImport(module, moduleName, loc);
 
@@ -588,8 +634,61 @@ LogicalResult DeclResolver::importDeclFromModule(
   shared.notifyListenerOnRef(results, sourceName, sourceNameLoc);
   shared.notifyListenerOnRef(results, destName, destNameLoc);
 
-  return aliasImportDecls(results, destName, sourceName, moduleName,
-                          destNameLoc, dest);
+  // Import the desired declaration (struct, function, etc.) that the user
+  // specifically asked for.
+  if (failed(aliasImportDecls(results, destName, sourceName, moduleName,
+                              destNameLoc, dest, false)))
+    return failure();
+
+  // Also look for extensions in the source module.
+  // When importing any declaration from a module, import all extensions from
+  // that module so they're available in the destination scope.
+  // All extensions known to their parents as e.g. `extension:MyStruct` but
+  // also as `extension:` so asking for `extension:` will get all extensions.
+  StringAttr extensionNameAttr = StringAttr::get(getContext(), "extension:");
+  auto requestedModuleExts =
+      shared.lookupAndResolveDecl(extensionNameAttr, sourceNameLoc, module,
+                                  /*searchParentScopes=*/false,
+                                  /*resolveTarget=*/false);
+  if (requestedModuleExts.isSuccess()) {
+    ArrayRef<ASTDecl *> allExtensions = requestedModuleExts.getIfSuccess();
+    if (!allExtensions.empty()) {
+      shared.notifyListenerOnRef(allExtensions, extensionNameAttr,
+                                 sourceNameLoc);
+      shared.notifyListenerOnRef(allExtensions, extensionNameAttr, destNameLoc);
+
+      // Import under "extension:" for finding all extensions in a module
+      if (failed(aliasImportDecls(allExtensions, extensionNameAttr,
+                                  extensionNameAttr, moduleName, destNameLoc,
+                                  dest, true))) {
+        emitError(destNameLoc, "failed to import extensions from module '" +
+                                   moduleName.getValue() + "'");
+        return failure();
+      }
+      // Now that we have all the extensions, go through each one and register
+      // it under its specific name (e.g. "extension:SIMD") so
+      // collectTypeAndExtensions can find them.
+      for (ASTDecl *extensionDecl : allExtensions) {
+        auto extOp =
+            dyn_cast_or_null<ExtensionDeclOp>(extensionDecl->getIfOperation());
+        if (!extOp)
+          continue;
+        auto targetStructName = extOp.getTargetStructName().value();
+        StringAttr specificExtensionName = StringAttr::get(
+            getContext(), "extension:" + targetStructName.str());
+        if (failed(aliasImportDecls({extensionDecl}, specificExtensionName,
+                                    extensionNameAttr, moduleName, destNameLoc,
+                                    dest, true))) {
+          emitError(destNameLoc, "failed to import extension for '" +
+                                     targetStructName + "' from module '" +
+                                     moduleName.getValue() + "'");
+          return failure();
+        }
+      }
+    }
+  }
+
+  return success();
 }
 
 LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
@@ -618,9 +717,58 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
       continue;
     if (!isFullImport && name.getValue()[0] == '_')
       continue;
-    if (failed(aliasImportDecls(decls, name, name, moduleName, loc, context)))
+    if (failed(aliasImportDecls(decls, name, name, moduleName, loc, context,
+                                false)))
       result = failure();
   }
+
+  // Also import all extensions from the source module, similar to what
+  // importDeclFromModule does. This ensures that when doing wildcard imports,
+  // extensions are available in the destination scope.
+  // Extensions are registered under "extension:" so we can find all of them.
+  StringAttr extensionNameAttr = StringAttr::get(getContext(), "extension:");
+  auto moduleExtensions =
+      shared.lookupAndResolveDecl(extensionNameAttr, loc, module,
+                                  /*searchParentScopes=*/false,
+                                  /*resolveTarget=*/false);
+  if (moduleExtensions.isSuccess()) {
+    ArrayRef<ASTDecl *> allExtensions = moduleExtensions.getIfSuccess();
+    if (!allExtensions.empty()) {
+      shared.notifyListenerOnRef(allExtensions, extensionNameAttr, loc);
+
+      // Import under "extension:" for finding all extensions in a module
+      if (failed(aliasImportDecls(allExtensions, extensionNameAttr,
+                                  extensionNameAttr, moduleName, loc, context,
+                                  true))) {
+        emitError(loc, "failed to import extensions from module '" +
+                           moduleName.getValue() + "'");
+        return failure();
+      }
+
+      // Now register each extension under its specific name (e.g.
+      // "extension:SIMD") so collectTypeAndExtensions can find them.
+      for (ASTDecl *extensionDecl : allExtensions) {
+        auto extOp =
+            dyn_cast_or_null<ExtensionDeclOp>(extensionDecl->getIfOperation());
+        if (!extOp)
+          continue;
+        auto targetStructName = extOp.getTargetStructName();
+        if (!targetStructName)
+          continue;
+        StringAttr specificExtensionName = StringAttr::get(
+            getContext(), "extension:" + targetStructName.value().str());
+        if (failed(aliasImportDecls({extensionDecl}, specificExtensionName,
+                                    extensionNameAttr, moduleName, loc, context,
+                                    true))) {
+          emitError(loc, "failed to import extension for '" +
+                             targetStructName.value() + "' from module '" +
+                             moduleName.getValue() + "'");
+          return failure();
+        }
+      }
+    }
+  }
+
   return result;
 }
 
