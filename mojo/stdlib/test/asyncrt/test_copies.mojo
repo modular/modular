@@ -13,6 +13,7 @@
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu.host import DeviceBuffer, DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import TestSuite
 
 
@@ -161,9 +162,8 @@ fn _run_cpu_ctx_memcpy_async(
     print("_run_cpu_ctx_memcpy_async(", length, ")")
 
     var host_buf = cpu_ctx.enqueue_create_host_buffer[DType.int64](length)
-    var dev_buf = ctx.enqueue_create_buffer[DType.int64](length).enqueue_fill(
-        13
-    )
+    var dev_buf = ctx.enqueue_create_buffer[DType.int64](length)
+    dev_buf.enqueue_fill(13)
 
     for i in range(length):
         host_buf[i] = 2 * i
@@ -174,7 +174,7 @@ fn _run_cpu_ctx_memcpy_async(
         for i in range(length):
             expect_eq(dev_buf[i], 2 * i)
 
-    host_buf = host_buf.enqueue_fill(12)
+    host_buf.enqueue_fill(12)
     cpu_ctx.enqueue_copy(host_buf, dev_buf)
 
     for i in range(length):
@@ -187,7 +187,7 @@ def test_copies():
     print("-------")
     print("Running test_copies(" + ctx.name() + "):")
 
-    alias one_mb = 1024 * 1024
+    comptime one_mb = 1024 * 1024
 
     _run_memcpy(ctx, 64, True)
     _run_memcpy(ctx, one_mb, True)

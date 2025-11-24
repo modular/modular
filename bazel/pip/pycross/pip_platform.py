@@ -16,7 +16,7 @@ import functools
 from download import Download
 from packaging.tags import Tag, compatible_tags, cpython_tags, mac_platforms
 
-SUPPORTED_PYTHON_VERSIONS = {"3.10", "3.11", "3.12", "3.13"}
+SUPPORTED_PYTHON_VERSIONS = {"3.10", "3.11", "3.12", "3.13", "3.14"}
 SUPPORTED_PLATFORMS = {
     ("linux", "aarch64"),
     ("linux", "x86_64"),
@@ -102,7 +102,7 @@ class Platform:
     def tags(self) -> list[Tag]:
         if self.operating_system == "darwin":
             # NOTE: The version here must match the oldest macOS version we support for developers
-            platforms = list(mac_platforms(version=(12, 0), arch=self.arch))
+            platforms = list(mac_platforms(version=(13, 0), arch=self.arch))
         else:
             platforms = [x.format(arch=self.arch) for x in _LINUX_PLATFORM_TAGS]
             if self.arch == "x86_64":

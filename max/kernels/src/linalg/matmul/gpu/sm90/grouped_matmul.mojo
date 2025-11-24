@@ -20,15 +20,15 @@ from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
 from gpu.cluster import cluster_sync, cluster_sync_relaxed, elect_one_sync
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import (
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu import (
     block_id_in_cluster,
     block_idx,
     grid_dim,
     thread_idx,
 )
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
+from gpu.memory import external_memory, fence_mbarrier_init
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import LayoutTensorIter
@@ -86,15 +86,18 @@ fn grouped_matmul_sm90[
     ] = default_config_sm90[a_type, b_type, c_type, transpose_b, wgmma_shape](),
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
+    a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
     max_num_tokens_per_expert: Int,
-    b: NDBuffer[b_type, 3, MutableAnyOrigin, b_shape],
-    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
+    b: NDBuffer[b_type, 3, MutAnyOrigin, b_shape],
+    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
+    # Early-exit for empty inputs to avoid creating invalid TMA descriptors.
+    if num_active_experts == 0 or a.dim(0) == 0 or c.dim(0) == 0:
+        return
     alias num_experts = b.shape.get[0]()
     alias N = b.shape.get[1]()
     alias K = b.shape.get[2]()
@@ -137,7 +140,7 @@ fn grouped_matmul_sm90[
     b_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * N, K),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.GENERIC,
     ](b.data)
     b_tma_op = create_tma_tile[Index(BN, BK), swizzle_mode=b_swizzle](
@@ -150,7 +153,9 @@ fn grouped_matmul_sm90[
         ctx, c_tensor
     )
 
-    alias num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
+    alias num_threads = WARPGROUP_SIZE * Int(
+        config.num_consumer
+    ) + WARPGROUP_SIZE
     alias smem_size = Int(config.num_pipeline_stages) * (
         BM * BK * size_of[a_type]()
         + BN * BK * size_of[b_type]()

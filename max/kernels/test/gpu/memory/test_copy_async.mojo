@@ -14,9 +14,9 @@
 
 from gpu.host import get_gpu_target
 from gpu.host.compile import _compile_code
-from gpu.memory import AddressSpace, CacheEviction, async_copy
+from gpu.memory import CacheEviction, async_copy
 from gpu.sync import async_copy_arrive, mbarrier_init, mbarrier_test_wait
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 from testing import assert_true
 
 

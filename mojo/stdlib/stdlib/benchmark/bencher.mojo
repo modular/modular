@@ -13,7 +13,7 @@
 
 import time
 from collections import Dict, Optional
-from os import abort
+from os import abort, getenv
 from pathlib import Path
 from sys.arg import argv
 
@@ -21,7 +21,7 @@ from gpu.host import DeviceContext
 
 from utils.numerics import FlushDenormals
 
-from .benchmark import _run_impl, _RunOptions
+from .benchmark import _run_impl, _run_impl_fixed, _RunOptions
 
 
 @fieldwise_init
@@ -35,14 +35,18 @@ struct BenchMetric(ImplicitlyCopyable, Movable, Stringable, Writable):
     var unit: String
     """Metric's throughput rate unit (count/second)."""
 
-    alias elements = BenchMetric(0, "throughput", "GElems/s")
-    alias bytes = BenchMetric(1, "DataMovement", "GB/s")
-    alias flops = BenchMetric(2, "Arithmetic", "GFLOPS/s")
-    alias theoretical_flops = BenchMetric(
+    comptime elements = BenchMetric(0, "throughput", "GElems/s")
+    comptime bytes = BenchMetric(1, "DataMovement", "GB/s")
+    comptime flops = BenchMetric(2, "Arithmetic", "GFLOPS/s")
+    comptime theoretical_flops = BenchMetric(
         3, "TheoreticalArithmetic", "GFLOPS/s"
     )
 
-    alias DEFAULTS = List[BenchMetric](Self.elements, Self.bytes, Self.flops)
+    comptime DEFAULTS: List[BenchMetric] = [
+        Self.elements,
+        Self.bytes,
+        Self.flops,
+    ]
     """Default set of benchmark metrics."""
 
     fn __str__(self) -> String:
@@ -113,7 +117,7 @@ struct BenchMetric(ImplicitlyCopyable, Movable, Stringable, Writable):
             if m.check_name(name):
                 return m
 
-        alias sep = StaticString("-") * 80 + "\n"
+        comptime sep = StaticString("-") * 80 + "\n"
         var err = String(
             "\n",
             sep,
@@ -202,11 +206,11 @@ struct Format(ImplicitlyCopyable, Movable, Stringable, Writable):
     file.
     """
 
-    alias csv = Format(StaticString("csv"))
+    comptime csv = Format(StaticString("csv"))
     """Comma separated values with no alignment."""
-    alias tabular = Format(StaticString("tabular"))
+    comptime tabular = Format(StaticString("tabular"))
     """Comma separated values with dynamically aligned columns."""
-    alias table = Format(StaticString("table"))
+    comptime table = Format(StaticString("table"))
     """Table format with dynamically aligned columns."""
 
     var value: StaticString
@@ -305,9 +309,12 @@ struct BenchConfig(Copyable, Movable):
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias VERBOSE_TIMING_LABELS = List[String](
-        "min (ms)", "mean (ms)", "max (ms)", "duration (ms)"
-    )
+    comptime VERBOSE_TIMING_LABELS: List[String] = [
+        "min (ms)",
+        "mean (ms)",
+        "max (ms)",
+        "duration (ms)",
+    ]
     """Labels to print verbose timing results."""
 
     # TODO: to add median and stddev to verbose-timing
@@ -357,6 +364,7 @@ struct BenchConfig(Copyable, Movable):
         self.verbose_timing = False
         self.verbose_metric_names = True
 
+        # TODO: This function should move out of BenchConfig and be part of update_bench_config_args.
         @parameter
         fn argparse() raises:
             """Parse cmd line args to define benchmark configuration."""
@@ -451,7 +459,7 @@ struct BenchmarkInfo(Copyable, Movable):
         out self,
         name: String,
         var result: Report,
-        var measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        var measures: List[ThroughputMeasure] = {},
         verbose_timing: Bool = False,
     ):
         """Constructs a `BenchmarkInfo` object to return benchmark report and
@@ -477,8 +485,8 @@ struct Mode(ImplicitlyCopyable, Movable):
 
     var value: Int
     """Represents the mode type."""
-    alias Benchmark = Mode(0)
-    alias Test = Mode(1)
+    comptime Benchmark = Mode(0)
+    comptime Test = Mode(1)
 
     fn __eq__(self, other: Self) -> Bool:
         """Check if its Benchmark mode or test mode.
@@ -535,12 +543,14 @@ struct Bench(Stringable, Writable):
     bench.bench_with_input[IndexList[2], example](
         BenchId("top_k_custom", "gpu"),
         shape,
-        ThroughputMeasure(
+        [
+            ThroughputMeasure(
             BenchMetric.elements, shape.flattened_length()
-        ),
-        ThroughputMeasure(
-            BenchMetric.flops, shape.flattened_length() * 3 # number of ops
-        ),
+            ),
+            ThroughputMeasure(
+                BenchMetric.flops, shape.flattened_length() * 3 # number of ops
+            ),
+        ]
     )
     # Add more benchmarks like above to compare results
 
@@ -603,6 +613,45 @@ struct Bench(Stringable, Writable):
 
         argparse()
 
+    fn check_mpirun(mut self) raises -> Int:
+        """
+        Check environment to examine whether the benchmark is called via mpirun.
+        If so, use pe_rank=OMPI_COMM_WORLD_RANK as a suffix for output file.
+
+        Raises:
+            If the operation fails.
+
+        Returns:
+            An integer representing pe rank (default=-1).
+        """
+        var comm_world_size = Int(getenv("OMPI_COMM_WORLD_SIZE", "0"))
+        var pe_rank = Int(getenv("OMPI_COMM_WORLD_RANK", "-1"))
+        if comm_world_size > 0 and pe_rank >= 0:
+            # In case of running this binary with mpirun, all the outputs
+            # will be written to -o output_file unless a distinct suffix is
+            # added to each output.
+            self.append_output_suffix(suffix=String("_", pe_rank))
+        return pe_rank
+
+    fn append_output_suffix(mut self, suffix: String):
+        """
+        Append a suffix string to output file name.
+
+        Args:
+            suffix: Suffix string to append to output file name.
+        """
+        if self.config.out_file:
+            stem = String(self.config.out_file.value())
+            current_suffix = String("")
+            split = String(stem).split(".")
+            if len(split) > 1:
+                stem = String(".".join(split[:-1]))
+                current_suffix = String(split[-1])
+
+            self.config.out_file = Path(
+                ".".join(List[String](stem + suffix, current_suffix))
+            )
+
     fn bench_with_input[
         T: AnyType,
         bench_fn: fn (mut Bencher, T) raises capturing [_] -> None,
@@ -610,7 +659,7 @@ struct Bench(Stringable, Writable):
         mut self,
         bench_id: BenchId,
         input: T,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks an input function with input args of type AnyType.
 
@@ -638,34 +687,6 @@ struct Bench(Stringable, Writable):
             bench_fn(b, input)
 
         self.bench_function[input_closure](bench_id, measures)
-
-    fn bench_with_input[
-        T: AnyType,
-        bench_fn: fn (mut Bencher, T) raises capturing [_] -> None,
-    ](
-        mut self,
-        bench_id: BenchId,
-        input: T,
-        *measures: ThroughputMeasure,
-    ) raises:
-        """Benchmarks an input function with input args of type AnyType.
-
-        Parameters:
-            T: Benchmark function input type.
-            bench_fn: The function to be benchmarked.
-
-        Args:
-            bench_id: The benchmark Id object used for identification.
-            input: Represents the target function's input arguments.
-            measures: Variadic arg used to represent a list of ThroughputMeasure's.
-
-        Raises:
-            If the operation fails.
-        """
-        var measures_list = List[ThroughputMeasure]()
-        for m in measures:
-            measures_list.append(m)
-        self.bench_with_input[T, bench_fn](bench_id, input, measures_list)
 
     fn bench_with_input[
         T: AnyTrivialRegType,
@@ -702,34 +723,6 @@ struct Bench(Stringable, Writable):
             bench_fn(b, input)
 
         self.bench_function[input_closure](bench_id, measures)
-
-    fn bench_with_input[
-        T: AnyTrivialRegType,
-        bench_fn: fn (mut Bencher, T) raises capturing [_] -> None,
-    ](
-        mut self,
-        bench_id: BenchId,
-        input: T,
-        *measures: ThroughputMeasure,
-    ) raises:
-        """Benchmarks an input function with input args of type AnyTrivialRegType.
-
-        Parameters:
-            T: Benchmark function input type.
-            bench_fn: The function to be benchmarked.
-
-        Args:
-            bench_id: The benchmark Id object used for identification.
-            input: Represents the target function's input arguments.
-            measures: Variadic arg used to represent a list of ThroughputMeasure's.
-
-        Raises:
-            If the operation fails.
-        """
-        var measures_list = List[ThroughputMeasure]()
-        for m in measures:
-            measures_list.append(m)
-        self.bench_with_input[T, bench_fn](bench_id, input, measures_list)
 
     @always_inline
     fn bench_function[
@@ -738,6 +731,7 @@ struct Bench(Stringable, Writable):
         mut self,
         bench_id: BenchId,
         measures: List[ThroughputMeasure] = {},
+        fixed_iterations: Optional[Int] = None,
     ) raises:
         """Benchmarks or Tests an input function.
 
@@ -747,6 +741,7 @@ struct Bench(Stringable, Writable):
         Args:
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+            fixed_iterations: Just run a fixed number of iterations.
 
         Raises:
             If the operation fails.
@@ -767,6 +762,7 @@ struct Bench(Stringable, Writable):
 
         self.bench_function[bench_iter](bench_id, measures=measures)
 
+    # TODO: add a variant of the following function for with DeviceContext
     @always_inline
     fn bench_function[
         bench_fn: fn () capturing [_] -> None,
@@ -774,6 +770,7 @@ struct Bench(Stringable, Writable):
         mut self,
         bench_id: BenchId,
         measures: List[ThroughputMeasure] = {},
+        fixed_iterations: Optional[Int] = None,
     ) raises:
         """Benchmarks or Tests an input function.
 
@@ -783,6 +780,7 @@ struct Bench(Stringable, Writable):
         Args:
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+            fixed_iterations: Just run a fixed number of iterations.
 
         Raises:
             If the operation fails.
@@ -806,6 +804,7 @@ struct Bench(Stringable, Writable):
         mut self,
         bench_id: BenchId,
         measures: List[ThroughputMeasure] = {},
+        fixed_iterations: Optional[Int] = None,
     ) raises:
         """Benchmarks or Tests an input function.
 
@@ -815,6 +814,7 @@ struct Bench(Stringable, Writable):
         Args:
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+            fixed_iterations: Just run a fixed number of iterations.
 
         Raises:
             If the operation fails.
@@ -822,29 +822,11 @@ struct Bench(Stringable, Writable):
 
         if self.mode == Mode.Benchmark:
             for _ in range(self.config.num_repetitions):
-                self._bench[bench_fn](bench_id, measures.copy())
+                self._bench[bench_fn](
+                    bench_id, measures.copy(), fixed_iterations
+                )
         elif self.mode == Mode.Test:
             self._test[bench_fn]()
-
-    fn bench_function[
-        bench_fn: fn (mut Bencher) capturing [_] -> None
-    ](mut self, bench_id: BenchId, *measures: ThroughputMeasure) raises:
-        """Benchmarks or Tests an input function.
-
-        Parameters:
-            bench_fn: The function to be benchmarked.
-
-        Args:
-            bench_id: The benchmark Id object used for identification.
-            measures: Variadic arg used to represent a list of ThroughputMeasure's.
-
-        Raises:
-            If the operation fails.
-        """
-        var measures_list = List[ThroughputMeasure]()
-        for m in measures:
-            measures_list.append(m)
-        self.bench_function[bench_fn](bench_id, measures_list)
 
     # TODO (#31795): overload should not be needed
     fn bench_function[
@@ -853,6 +835,7 @@ struct Bench(Stringable, Writable):
         mut self,
         bench_id: BenchId,
         measures: List[ThroughputMeasure] = {},
+        fixed_iterations: Optional[Int] = None,
     ) raises:
         """Benchmarks or Tests an input function.
 
@@ -862,6 +845,7 @@ struct Bench(Stringable, Writable):
         Args:
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+            fixed_iterations: Just run a fixed number of iterations.
 
         Raises:
             If the operation fails.
@@ -884,26 +868,6 @@ struct Bench(Stringable, Writable):
 
         self.bench_function[abort_on_err](bench_id, measures)
 
-    fn bench_function[
-        bench_fn: fn (mut Bencher) raises capturing [_] -> None
-    ](mut self, bench_id: BenchId, *measures: ThroughputMeasure,) raises:
-        """Benchmarks or Tests an input function.
-
-        Parameters:
-            bench_fn: The function to be benchmarked.
-
-        Args:
-            bench_id: The benchmark Id object used for identification.
-            measures: Variadic arg used to represent a list of ThroughputMeasure's.
-
-        Raises:
-            If the operation fails.
-        """
-        var measures_list = List[ThroughputMeasure]()
-        for m in measures:
-            measures_list.append(m)
-        self.bench_function[bench_fn](bench_id, measures_list)
-
     fn _test[bench_fn: fn (mut Bencher) capturing [_] -> None](mut self) raises:
         """Tests an input function by executing it only once.
 
@@ -920,6 +884,7 @@ struct Bench(Stringable, Writable):
         mut self,
         bench_id: BenchId,
         var measures: List[ThroughputMeasure] = {},
+        fixed_iterations: Optional[Int] = None,
     ) raises:
         """Benchmarks an input function.
 
@@ -929,6 +894,7 @@ struct Bench(Stringable, Writable):
         Args:
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+            fixed_iterations: Just run a fixed number of iterations.
         """
 
         @parameter
@@ -960,22 +926,27 @@ struct Bench(Stringable, Writable):
 
         var full_name = bench_id.func_name
         if bench_id.input_id:
-            full_name.write("/", bench_id.input_id.value())
+            full_name.write("/input_id:", bench_id.input_id.value())
 
         if self.config.show_progress:
             print("Running", full_name)
         else:
             print(".", end="")
 
-        var res = _run_impl(
-            _RunOptions[benchmark_fn](
-                num_warmup_iters=self.config.num_warmup_iters,
-                max_iters=self.config.max_iters,
-                min_runtime_secs=self.config.min_runtime_secs,
-                max_runtime_secs=self.config.max_runtime_secs,
-                max_batch_size=self.config.max_batch_size,
+        var res: Report
+
+        if fixed_iterations:
+            res = _run_impl_fixed[benchmark_fn](fixed_iterations.value())
+        else:
+            res = _run_impl(
+                _RunOptions[benchmark_fn](
+                    num_warmup_iters=self.config.num_warmup_iters,
+                    max_iters=self.config.max_iters,
+                    min_runtime_secs=self.config.min_runtime_secs,
+                    max_runtime_secs=self.config.max_runtime_secs,
+                    max_batch_size=self.config.max_batch_size,
+                )
             )
-        )
 
         self.info_vec.append(
             BenchmarkInfo(
@@ -1038,9 +1009,9 @@ struct Bench(Stringable, Writable):
         Args:
             writer: The writer to write to.
         """
-        alias BENCH_LABEL = "name"
-        alias ITERS_LABEL = "iters"
-        alias MET_LABEL = "met (ms)"
+        comptime BENCH_LABEL = "name"
+        comptime ITERS_LABEL = "iters"
+        comptime MET_LABEL = "met (ms)"
 
         var name_width = self._get_max_name_width(BENCH_LABEL)
         var iters_width = self._get_max_iters_width(ITERS_LABEL)
@@ -1224,7 +1195,7 @@ struct Bench(Stringable, Writable):
         # If label is larger than any value, will pad to the label length
 
         var max_met = len(met_label)
-        alias ConfigType = type_of(self.config)
+        comptime ConfigType = type_of(self.config)
         # NOTE: We insert an explicit materialization for Int here to avoid
         # materialize a more expensive `VERBOSE_TIMING_LABELS[]` object.
         var max_min = materialize[len(ConfigType.VERBOSE_TIMING_LABELS[0])]()
@@ -1244,7 +1215,7 @@ struct Bench(Stringable, Writable):
             max_mean = max(max_mean, mean_len)
             max_max = max(max_max, len(String(result.max(unit=Unit.ms))))
             max_dur = max(max_dur, len(String(result.duration(unit=Unit.ms))))
-        return List[Int](max_met, max_min, max_mean, max_max, max_dur)
+        return [max_met, max_min, max_mean, max_max, max_dur]
 
 
 @fieldwise_init

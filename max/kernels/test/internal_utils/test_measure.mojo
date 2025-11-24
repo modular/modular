@@ -14,12 +14,13 @@
 from buffer import DimList
 from internal_utils import TestTensor, assert_with_measure, correlation, kl_div
 from itertools import product
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal
 
 
 def test_assert_with_custom_measure():
-    var t0 = TestTensor[DType.float32, 1](DimList(100), List[Float32](1))
-    var t1 = TestTensor[DType.float32, 1](DimList(100), List[Float32](1))
+    var t0 = TestTensor[DType.float32, 1](DimList(100), [Float32(1)])
+    var t1 = TestTensor[DType.float32, 1](DimList(100), [Float32(1)])
 
     fn always_zero[
         dtype: DType

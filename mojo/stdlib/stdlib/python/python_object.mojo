@@ -19,6 +19,7 @@ from python import PythonObject
 ```
 """
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys.ffi import c_double, c_long, c_size_t, c_ssize_t
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
@@ -28,40 +29,7 @@ from compile.reflection import get_type_name
 from ._cpython import CPython, GILAcquired, PyObject, PyObjectPtr, PyTypeObject
 from .bindings import PyMojoObject, _get_type_name, lookup_py_type_object
 from .python import Python
-
-
-trait ConvertibleToPython:
-    """A trait that indicates a type can be converted to a PythonObject, and
-    that specifies the behavior with a `to_python_object` method."""
-
-    fn to_python_object(var self) raises -> PythonObject:
-        """Convert a value to a PythonObject.
-
-        Returns:
-            A PythonObject representing the value.
-
-        Raises:
-            If the conversion to a PythonObject failed.
-        """
-        ...
-
-
-trait ConvertibleFromPython(Copyable, Movable):
-    """Denotes a type that can attempt construction from a read-only Python
-    object.
-    """
-
-    fn __init__(out self, obj: PythonObject) raises:
-        """Attempt to construct an instance of this object from a read-only
-        Python value.
-
-        Args:
-            obj: The Python object to convert from.
-
-        Raises:
-            If conversion was not successful.
-        """
-        ...
+from .conversions import ConvertibleToPython
 
 
 struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
@@ -71,10 +39,10 @@ struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = PythonObject
+    comptime Element = PythonObject
 
     var iterator: PythonObject
     """The iterator object that stores location."""
@@ -220,7 +188,6 @@ struct PythonObject(
     #   This initializer should not be necessary, we should need
     #   only the initializer from a `NoneType`.
     @doc_private
-    @implicit
     fn __init__(out self, none: NoneType._mlir_type):
         """Initialize a none value object from a `None` literal.
 
@@ -229,7 +196,6 @@ struct PythonObject(
         """
         self = Self(none=NoneType())
 
-    @implicit
     fn __init__(out self, none: NoneType):
         """Initialize a none value object from a `None` literal.
 

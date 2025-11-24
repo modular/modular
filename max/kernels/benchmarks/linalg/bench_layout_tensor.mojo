@@ -21,7 +21,7 @@ from algorithm import Static2DTileUnitFunc as Tile2DFunc
 from algorithm import sync_parallelize, vectorize
 from layout import *
 from layout.layout_tensor import LayoutTensor
-from memory import memset_zero
+from memory import LegacyUnsafePointer as UnsafePointer, memset_zero
 from python import Python
 
 alias M = 512  # rows of A and C
@@ -36,8 +36,8 @@ struct Matrix[rows: Int, cols: Int]:
 
     # Initialize zeroeing all values
     fn __init__(out self):
-        self.data = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-        memset_zero(self.data, rows * cols)
+        self.data = UnsafePointer[Scalar[dtype]].alloc(Self.rows * Self.cols)
+        memset_zero(self.data, Self.rows * Self.cols)
 
     # Initialize taking a pointer, don't set any elements
     fn __init__(out self, data: UnsafePointer[Scalar[dtype]]):
@@ -46,8 +46,8 @@ struct Matrix[rows: Int, cols: Int]:
     ## Initialize with random values
     @staticmethod
     fn rand() -> Self:
-        var data = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-        rand(data, rows * cols)
+        var data = UnsafePointer[Scalar[dtype]].alloc(Self.rows * Self.cols)
+        rand(data, Self.rows * Self.cols)
         return Self(data)
 
     fn __getitem__(self, y: Int, x: Int) -> Scalar[dtype]:
@@ -101,8 +101,11 @@ fn matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
                     var k = _k + y
                     var A_val = A[m, k]
 
-                    @parameter
-                    fn dot[simd_size: Int](n: Int):
+                    fn dot[
+                        simd_size: Int
+                    ](n: Int) unified {
+                        mut C, mut A_val, read B, mut m, mut x, mut k
+                    }:
                         var idx = n + x
                         C.store(
                             m,
@@ -113,8 +116,10 @@ fn matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
 
                     alias unroll_factor = tile_x // nelts
                     vectorize[
-                        dot, nelts, size=tile_x, unroll_factor=unroll_factor
-                    ]()
+                        nelts,
+                        size=tile_x,
+                        unroll_factor=unroll_factor,
+                    ](dot)
 
             tile[calc_tile, tile_n, tile_k](C.cols, B.rows)
 
@@ -151,8 +156,7 @@ fn matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
                     for k in range(tile_k):
                         var lhs_val = rebind[Scalar[dtype]](lhs_view[m, k])
 
-                        @parameter
-                        fn dot[simd_size: Int](n: Int):
+                        fn dot[simd_size: Int](n: Int) unified {mut}:
                             constrained[
                                 type_of(dst_view).layout.stride[1] == 1,
                                 "elements of dst should be contiguous",
@@ -171,11 +175,10 @@ fn matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
 
                         alias unroll_factor = tile_n // vec_size
                         vectorize[
-                            dot,
                             vec_size,
                             size=tile_n,
                             unroll_factor=unroll_factor,
-                        ]()
+                        ](dot)
 
     sync_parallelize[calc_row](M // tile_m)
 
@@ -208,7 +211,7 @@ fn matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
     @parameter
     fn calc_row(m_1: Int):
         var rhs_cache = LayoutTensor[
-            dtype, Layout.row_major(tile_k, tile_n), MutableAnyOrigin
+            dtype, Layout.row_major(tile_k, tile_n), MutAnyOrigin
         ].stack_allocation()
 
         for k_1 in range(K // tile_k):
@@ -226,8 +229,7 @@ fn matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
                     for k in range(tile_k):
                         var lhs_val = rebind[Scalar[dtype]](lhs_view[m, k])
 
-                        @parameter
-                        fn dot[simd_size: Int](n: Int):
+                        fn dot[simd_size: Int](n: Int) unified {mut}:
                             constrained[
                                 type_of(dst_view).layout.stride[1] == 1,
                                 "elements of dst should be contiguous",
@@ -243,11 +245,10 @@ fn matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
 
                         alias unroll_factor = tile_n // vec_size
                         vectorize[
-                            dot,
                             vec_size,
                             size=tile_n,
                             unroll_factor=unroll_factor,
-                        ]()
+                        ](dot)
 
     sync_parallelize[calc_row](M // tile_m)
 
@@ -274,10 +275,10 @@ fn matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
     @parameter
     fn calc_row(m_1: Int):
         var rhs_cache = LayoutTensor[
-            dtype, Layout.row_major(tile_n, tile_k), MutableAnyOrigin
+            dtype, Layout.row_major(tile_n, tile_k), MutAnyOrigin
         ].stack_allocation()
         var lhs_cache = LayoutTensor[
-            dtype, Layout.row_major(tile_m, tile_k), MutableAnyOrigin
+            dtype, Layout.row_major(tile_m, tile_k), MutAnyOrigin
         ].stack_allocation()
 
         for k_1 in range(K // tile_k):
@@ -293,8 +294,7 @@ fn matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
                     for n in range(tile_n):
                         var sum = SIMD[dtype, vec_size](0)
 
-                        @parameter
-                        fn dot[simd_size: Int](k: Int):
+                        fn dot[simd_size: Int](k: Int) unified {mut}:
                             sum = math.fma(
                                 lhs_cache.load[vec_size](m, k),
                                 rhs_cache.aligned_load[vec_size](n, k),
@@ -303,11 +303,10 @@ fn matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
 
                         alias unroll_factor = tile_k // vec_size
                         vectorize[
-                            dot,
                             vec_size,
                             size=tile_k,
                             unroll_factor=unroll_factor,
-                        ]()
+                        ](dot)
 
                         dst_view[m, n] += sum.reduce_add()
 

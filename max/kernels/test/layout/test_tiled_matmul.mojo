@@ -85,8 +85,7 @@ struct MMA_Vec(TiledOp):
         for m in range(M):
             for n in range(N):
 
-                @parameter
-                fn dot[width: Int](k: Int):
+                fn dot[width: Int](k: Int) unified {mut}:
                     dst.store[width](
                         m,
                         n,
@@ -97,7 +96,7 @@ struct MMA_Vec(TiledOp):
                         * rhs.load[width](n, k).cast[dst.dtype](),
                     )
 
-                vectorize[dot, width, size=K]()
+                vectorize[width, size=K](dot)
 
 
 fn gemm_l2_cache[
@@ -186,10 +185,10 @@ fn gemm_l1_cache[
     fn process_raw(m_1: Int):
         # Cache the current lhs tile and reuse it for all rhs tiles in the column
         var l1_lhs_cache = LayoutTensor[
-            dst.dtype, Layout(IntTuple(L1.m, L1.k)), MutableAnyOrigin
+            dst.dtype, Layout(IntTuple(L1.m, L1.k)), MutAnyOrigin
         ].stack_allocation()
         var l1_rhs_cache = LayoutTensor[
-            dst.dtype, Layout(IntTuple(L1.n, L1.k)), MutableAnyOrigin
+            dst.dtype, Layout(IntTuple(L1.n, L1.k)), MutAnyOrigin
         ].stack_allocation()
 
         for k_1 in range(l1_size.k):

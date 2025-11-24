@@ -15,23 +15,27 @@ from os import abort
 from pathlib import Path
 from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle
+from sys.ffi import _Global, OwnedDLHandle
 
 from gpu.host._nvidia_cuda import CUstream
 
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from utils import StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_CUDNN_LIBRARY_PATHS = List[Path](
+alias CUDA_CUDNN_LIBRARY_PATHS: List[Path] = [
     "libcudnn.so",
     "libcudnn.so.9",
     "libcudnn.so.8",
     "/usr/lib/x86_64-linux-gnu/libcudnn.so.9",
     "/usr/lib/x86_64-linux-gnu/libcudnn.so.8",
-)
+]
 
 
 fn _on_error_msg() -> Error:
@@ -54,7 +58,7 @@ alias CUDA_CUDNN_INFER_LIBRARY = _Global[
 ]
 
 
-fn _init_dylib() -> _OwnedDLHandle:
+fn _init_dylib() -> OwnedDLHandle:
     return _find_dylib[abort_on_failure=False](
         materialize[CUDA_CUDNN_LIBRARY_PATHS]()
     )
@@ -94,7 +98,7 @@ alias cudnnRuntimeTag_t = NoneType
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnSoftmaxMode_t(EqualityComparable, Identifiable, Writable):
+struct cudnnSoftmaxMode_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_SOFTMAX_MODE_INSTANCE = Self(0)
     alias CUDNN_SOFTMAX_MODE_CHANNEL = Self(1)
@@ -151,7 +155,7 @@ fn cudnnCreate(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnReduceTensorIndices_t(EqualityComparable, Identifiable, Writable):
+struct cudnnReduceTensorIndices_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_REDUCE_TENSOR_NO_INDICES = Self(0)
     alias CUDNN_REDUCE_TENSOR_FLATTENED_INDICES = Self(1)
@@ -331,7 +335,7 @@ fn cudnnSetPoolingNdDescriptor(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnReduceTensorOp_t(EqualityComparable, Writable):
+struct cudnnReduceTensorOp_t(Equatable, Writable):
     var _value: Int8
     alias CUDNN_REDUCE_TENSOR_ADD = Self(0)
     alias CUDNN_REDUCE_TENSOR_MUL = Self(1)
@@ -438,7 +442,7 @@ fn cudnnLRNCrossChannelForward(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnDeterminism_t(EqualityComparable, Identifiable, Writable):
+struct cudnnDeterminism_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_NON_DETERMINISTIC = Self(0)
     alias CUDNN_DETERMINISTIC = Self(1)
@@ -479,7 +483,7 @@ alias cudnnActivationDescriptor_t = UnsafePointer[cudnnActivationStruct]
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnStatus_t(EqualityComparable, Writable):
+struct cudnnStatus_t(Equatable, Writable):
     var _value: Int8
     alias CUDNN_STATUS_SUCCESS = Self(0)
     alias CUDNN_STATUS_NOT_INITIALIZED = Self(1)
@@ -554,7 +558,7 @@ struct cudnnStatus_t(EqualityComparable, Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnCTCLossAlgo_t(EqualityComparable, Identifiable, Writable):
+struct cudnnCTCLossAlgo_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_CTC_LOSS_ALGO_DETERMINISTIC = Self(0)
     alias CUDNN_CTC_LOSS_ALGO_NON_DETERMINISTIC = Self(1)
@@ -613,7 +617,7 @@ fn cudnnGetFilter4dDescriptor(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnTensorFormat_t(EqualityComparable, Identifiable, Writable):
+struct cudnnTensorFormat_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_TENSOR_NCHW = Self(0)
     alias CUDNN_TENSOR_NHWC = Self(1)
@@ -775,7 +779,7 @@ fn cudnnSetActivationDescriptor(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnNormAlgo_t(EqualityComparable, Identifiable, Writable):
+struct cudnnNormAlgo_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_NORM_ALGO_STANDARD = Self(0)
     alias CUDNN_NORM_ALGO_PERSIST = Self(1)
@@ -811,7 +815,7 @@ struct cudnnNormAlgo_t(EqualityComparable, Identifiable, Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnOpTensorOp_t(EqualityComparable, Identifiable, Writable):
+struct cudnnOpTensorOp_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_OP_TENSOR_ADD = Self(0)
     alias CUDNN_OP_TENSOR_MUL = Self(1)
@@ -1104,7 +1108,7 @@ fn cudnnDeriveBNTensorDescriptor(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnActivationMode_t(EqualityComparable, Identifiable, Writable):
+struct cudnnActivationMode_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_ACTIVATION_SIGMOID = Self(0)
     alias CUDNN_ACTIVATION_RELU = Self(1)
@@ -1183,9 +1187,7 @@ fn cudnnGetTensorSizeInBytes(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnConvolutionBwdDataAlgo_t(
-    EqualityComparable, Identifiable, Writable
-):
+struct cudnnConvolutionBwdDataAlgo_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_CONVOLUTION_BWD_DATA_ALGO_0 = Self(0)
     alias CUDNN_CONVOLUTION_BWD_DATA_ALGO_1 = Self(1)
@@ -1285,7 +1287,7 @@ alias cudnnLRNDescriptor_t = UnsafePointer[cudnnLRNStruct]
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnSamplerType_t(EqualityComparable, Identifiable, Writable):
+struct cudnnSamplerType_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_SAMPLER_BILINEAR = Self(0)
 
@@ -1345,7 +1347,7 @@ fn cudnnSpatialTfSamplerForward(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnNormMode_t(EqualityComparable, Identifiable, Writable):
+struct cudnnNormMode_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_NORM_PER_ACTIVATION = Self(0)
     alias CUDNN_NORM_PER_CHANNEL = Self(1)
@@ -1455,7 +1457,7 @@ fn cudnnGetPooling2dDescriptor(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnNormOps_t(EqualityComparable, Identifiable, Writable):
+struct cudnnNormOps_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_NORM_OPS_NORM = Self(0)
     alias CUDNN_NORM_OPS_NORM_ACTIVATION = Self(1)
@@ -1526,7 +1528,7 @@ alias cudnnSpatialTransformerDescriptor_t = UnsafePointer[
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnSoftmaxAlgorithm_t(EqualityComparable, Identifiable, Writable):
+struct cudnnSoftmaxAlgorithm_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_SOFTMAX_FAST = Self(0)
     alias CUDNN_SOFTMAX_ACCURATE = Self(1)
@@ -1609,7 +1611,7 @@ fn cudnnGetStream(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnBatchNormOps_t(EqualityComparable, Identifiable, Writable):
+struct cudnnBatchNormOps_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_BATCHNORM_OPS_BN = Self(0)
     alias CUDNN_BATCHNORM_OPS_BN_ACTIVATION = Self(1)
@@ -1648,7 +1650,7 @@ struct cudnnBatchNormOps_t(EqualityComparable, Identifiable, Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnConvolutionFwdAlgo_t(EqualityComparable, Writable):
+struct cudnnConvolutionFwdAlgo_t(Equatable, Writable):
     var _value: Int8
     alias CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM = Self(0)
     alias CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM = Self(1)
@@ -1895,7 +1897,7 @@ fn cudnnGetFilterSizeInBytes(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnLRNMode_t(EqualityComparable, Identifiable, Writable):
+struct cudnnLRNMode_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_LRN_CROSS_CHANNEL_DIM1 = Self(0)
 
@@ -2013,7 +2015,7 @@ fn cudnnGetAlgorithmDescriptor(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnFoldingDirection_t(EqualityComparable, Identifiable, Writable):
+struct cudnnFoldingDirection_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_TRANSFORM_FOLD = Self(0)
     alias CUDNN_TRANSFORM_UNFOLD = Self(1)
@@ -2070,7 +2072,7 @@ fn cudnnGetTensorNdDescriptor(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnErrQueryMode_t(EqualityComparable, Identifiable, Writable):
+struct cudnnErrQueryMode_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_ERRQUERY_RAWCODE = Self(0)
     alias CUDNN_ERRQUERY_NONBLOCKING = Self(1)
@@ -2224,7 +2226,7 @@ fn cudnnSetTensor4dDescriptorEx(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnBatchNormMode_t(EqualityComparable, Identifiable, Writable):
+struct cudnnBatchNormMode_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_BATCHNORM_PER_ACTIVATION = Self(0)
     alias CUDNN_BATCHNORM_SPATIAL = Self(1)
@@ -2307,7 +2309,7 @@ fn cudnnScaleTensor(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnSeverity_t(EqualityComparable, Identifiable, Writable):
+struct cudnnSeverity_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_SEV_FATAL = Self(0)
     alias CUDNN_SEV_ERROR = Self(1)
@@ -2352,7 +2354,7 @@ alias cudnnDebug_t = cudnnDebugStruct
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnMathType_t(EqualityComparable, Identifiable, Writable):
+struct cudnnMathType_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_DEFAULT_MATH = Self(0)
     alias CUDNN_TENSOR_OP_MATH = Self(1)
@@ -2394,7 +2396,7 @@ struct cudnnMathType_t(EqualityComparable, Identifiable, Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnNanPropagation_t(EqualityComparable, Identifiable, Writable):
+struct cudnnNanPropagation_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_NOT_PROPAGATE_NAN = Self(0)
     alias CUDNN_PROPAGATE_NAN = Self(1)
@@ -2433,7 +2435,7 @@ alias cudnnFilterDescriptor_t = UnsafePointer[cudnnFilterStruct]
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnRNNAlgo_t(EqualityComparable, Identifiable, Writable):
+struct cudnnRNNAlgo_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_RNN_ALGO_STANDARD = Self(0)
     alias CUDNN_RNN_ALGO_PERSIST_STATIC = Self(1)
@@ -2556,7 +2558,7 @@ fn cudnnGetAlgorithmSpaceSize(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnDataType_t(EqualityComparable, Writable):
+struct cudnnDataType_t(Equatable, Writable):
     var _value: Int8
     alias CUDNN_DATA_FLOAT = Self(0)
     alias CUDNN_DATA_DOUBLE = Self(1)
@@ -2751,7 +2753,7 @@ alias cudnnAlgorithm_t = cudnnAlgorithmUnionStruct
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnIndicesType_t(EqualityComparable, Identifiable, Writable):
+struct cudnnIndicesType_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_32BIT_INDICES = Self(0)
     alias CUDNN_64BIT_INDICES = Self(1)
@@ -3030,9 +3032,7 @@ fn cudnnNormalizationForwardInference(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnConvolutionBwdFilterAlgo_t(
-    EqualityComparable, Identifiable, Writable
-):
+struct cudnnConvolutionBwdFilterAlgo_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_CONVOLUTION_BWD_FILTER_ALGO_0 = Self(0)
     alias CUDNN_CONVOLUTION_BWD_FILTER_ALGO_1 = Self(1)
@@ -3186,7 +3186,7 @@ fn cudnnDestroyOpTensorDescriptor(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnPoolingMode_t(EqualityComparable, Identifiable, Writable):
+struct cudnnPoolingMode_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_POOLING_MAX = Self(0)
     alias CUDNN_POOLING_AVERAGE_COUNT_INCLUDE_PADDING = Self(1)
@@ -3281,7 +3281,7 @@ fn cudnnGetDropoutDescriptor(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnDivNormMode_t(EqualityComparable, Identifiable, Writable):
+struct cudnnDivNormMode_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_DIVNORM_PRECOMPUTED_MEANS = Self(0)
 

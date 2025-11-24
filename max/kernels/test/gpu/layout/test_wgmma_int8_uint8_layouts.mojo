@@ -11,11 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import barrier
+from gpu import barrier, warp_id, lane_id
 from gpu.host import DeviceContext
-from gpu.id import thread_idx
+from gpu import thread_idx
 from gpu.intrinsics import threadfence
-from gpu.memory import AddressSpace
 from gpu.mma import (
     WGMMADescriptor,
     wgmma_async,
@@ -42,23 +41,21 @@ fn wgmma_kernel[
     a_type: DType,
     b_type: DType,
 ](
-    operand_a: LayoutTensor[a_type, Layout.row_major(M, K), MutableAnyOrigin],
-    operand_b: LayoutTensor[b_type, Layout.row_major(K, N), MutableAnyOrigin],
-    result_c: LayoutTensor[
-        DType.int32, Layout.row_major(M, N), MutableAnyOrigin
-    ],
+    operand_a: LayoutTensor[a_type, Layout.row_major(M, K), MutAnyOrigin],
+    operand_b: LayoutTensor[b_type, Layout.row_major(K, N), MutAnyOrigin],
+    result_c: LayoutTensor[DType.int32, Layout.row_major(M, N), MutAnyOrigin],
 ):
     var smem_operand_a = LayoutTensor[
         a_type,
         smem_operand_a_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var smem_operand_b = LayoutTensor[
         b_type,
         smem_operand_b_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -93,8 +90,6 @@ fn wgmma_kernel[
         threadfence()
         wgmma_fence_aligned()
 
-    var warp_id = thread_idx.x // 32
-    var lan_id = thread_idx.x % 32
     # Refer to this layout:
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-D.png
     # Each warp updates a 16x8 tile, and within each tile,
@@ -102,9 +97,9 @@ fn wgmma_kernel[
     # is as follows:
     c0 = bitcast[DType.int32, 4](c_reg)
     var th_local_res = (
-        result_c.tile[16, 8](warp_id, 0)
+        result_c.tile[16, 8](Int(warp_id()), 0)
         .vectorize[1, 2]()
-        .distribute[Layout.row_major(8, 4)](lan_id)
+        .distribute[Layout.row_major(8, 4)](lane_id())
     )
     th_local_res[0, 0][0] = c0[0]
     th_local_res[0, 0][1] = c0[1]

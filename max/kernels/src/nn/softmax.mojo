@@ -13,6 +13,7 @@
 
 from collections import OptionalReg
 from math import align_down, ceildiv, exp, exp2, log
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
 
 import gpu.warp as warp
@@ -27,7 +28,6 @@ from gpu import WARP_SIZE, barrier, block_idx, grid_dim, lane_id, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceAttribute, DeviceContext
 from gpu.host.info import is_cpu, is_gpu
-from gpu.memory import AddressSpace
 from layout._utils import idx2crd
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
@@ -183,8 +183,7 @@ fn _softmax_2_pass_step2[
     #   end for
 
     @always_inline
-    @parameter
-    fn _step_2[simd_width: Int](idx: Int):
+    fn _step_2[simd_width: Int](idx: Int) unified {mut}:
         var running_max_simd = SIMD[dtype, simd_width](running_max)
         var running_sum_simd = SIMD[dtype, simd_width](running_sum)
         var input_val = input.load[width=simd_width](IndexList[1](idx))
@@ -193,7 +192,7 @@ fn _softmax_2_pass_step2[
             exp(input_val - running_max_simd) / running_sum_simd,
         )
 
-    vectorize[_step_2, simd_width, unroll_factor=unroll_factor](output.size())
+    vectorize[simd_width, unroll_factor=unroll_factor](output.size(), _step_2)
 
 
 fn softmax_2_pass[
@@ -278,8 +277,7 @@ fn _softmax_3_pass_step_2[
     var accum_simd: SIMD[dtype, outer_simd_width] = 0
 
     @always_inline
-    @parameter
-    fn step_2[simd_width: Int](idx: Int):
+    fn step_2[simd_width: Int](idx: Int) unified {mut}:
         var vin = input_fn_1d[simd_width](idx)
         var elem = vin - SIMD[dtype, simd_width](max_val)
 
@@ -290,7 +288,7 @@ fn _softmax_3_pass_step_2[
             accum_scalar, accum_simd, elem
         )
 
-    vectorize[step_2, simd_width, unroll_factor=unroll_factor](output.size())
+    vectorize[simd_width, unroll_factor=unroll_factor](output.size(), step_2)
     # Reduce the values from both the scalar and vector accum.
     return accum_scalar + accum_simd.reduce_add()
 
@@ -315,15 +313,13 @@ fn _softmax_3_pass_step_3[
     var accum_proc = accum_proc_func[dtype, 1](accum)
 
     @always_inline
-    @__copy_capture(accum_proc)
-    @parameter
-    fn step_3[simd_width: Int](idx: Int):
+    fn step_3[simd_width: Int](idx: Int) unified {var accum_proc, mut output}:
         var accum_simd = SIMD[dtype, simd_width](accum_proc)
         var elem = output.load[width=simd_width](IndexList[1](idx))
         elem = accum_apply_func[dtype, simd_width](elem, accum_simd)
         output.store[width=simd_width](IndexList[1](idx), elem)
 
-    vectorize[step_3, simd_width, unroll_factor=unroll_factor](output.size())
+    vectorize[simd_width, unroll_factor=unroll_factor](output.size(), step_3)
 
 
 fn _softmax_3_pass_base[
@@ -364,7 +360,7 @@ fn _softmax_3_pass_base[
     # STEP 1 - Calculate max
     # Allocate buffer for max_val
     var max_buff = LayoutTensor[
-        dtype, Layout.row_major(1), MutableAnyOrigin
+        dtype, Layout.row_major(1), MutAnyOrigin
     ].stack_allocation()
 
     # Use _reduce_generator to fuse input lambda with max-reduction
@@ -663,9 +659,9 @@ fn softmax_kernel[
     logsoftmax: Bool = False,
 ](
     shape: IndexList[rank],
-    output: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    output: LayoutTensor[dtype, layout, MutAnyOrigin],
     sink_weights: LayoutTensor[
-        sink_type, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        sink_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ],
 ):
     alias axis = rank - 1
@@ -676,13 +672,13 @@ fn softmax_kernel[
     var max_buf = LayoutTensor[
         accum_type,
         Layout.row_major(1),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     var exp_sum_buf = LayoutTensor[
         accum_type,
         Layout.row_major(1),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -797,9 +793,7 @@ fn _softmax_gpu[
     axis: Int,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[
-            sink_type, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
-        ]
+        LayoutTensor[sink_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     if axis != rank - 1:
@@ -899,8 +893,8 @@ fn _online_softmax_kernel[
     layout: Layout,
     fragment_transpose: Bool = False,
 ](
-    input: LayoutTensor[dtype, layout, MutableAnyOrigin],
-    output: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    input: LayoutTensor[dtype, layout, MutAnyOrigin],
+    output: LayoutTensor[dtype, layout, MutAnyOrigin],
 ):
     """This is only for online softmax validation, NOT a general kernel."""
 
@@ -962,7 +956,7 @@ fn _online_softmax_kernel[
     var p = LayoutTensor[
         dtype,
         Layout.row_major(num_m_mmas * num_n_mmas, frag_size),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
@@ -992,7 +986,7 @@ fn _online_softmax_kernel[
         LayoutTensor[
             dtype,
             Layout.row_major(num_m_mmas * num_n_mmas, frag_size),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -1016,7 +1010,7 @@ fn _online_softmax_kernel[
     var warp_scratch = LayoutTensor[
         dtype,
         Layout.row_major(2 * num_rowwise_warps, WM),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -1155,19 +1149,19 @@ fn _online_softmax_iter_for_mma_output[
     var score_frag_rowmax = LayoutTensor[
         dtype,
         Layout.row_major(num_colwise_tiles, frag_num_rows),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     var score_frag_rowsum = LayoutTensor[
         dtype,
         Layout.row_major(num_colwise_tiles, frag_num_rows),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     var correction = LayoutTensor[
         dtype,
         Layout.row_major(num_colwise_tiles, frag_num_rows),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
@@ -1621,7 +1615,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
 
     alias layout = Layout.row_major(num_m_mmas, frag_num_rows)
     alias TensorType = LayoutTensor[
-        dtype, layout, MutableAnyOrigin, address_space = AddressSpace.LOCAL
+        dtype, layout, MutAnyOrigin, address_space = AddressSpace.LOCAL
     ]
     var interwarp_frag_rowmax = TensorType.stack_allocation()
     var interwarp_frag_rowsum = TensorType.stack_allocation()
@@ -1882,21 +1876,21 @@ fn _rowmax_online_softmax[
     out score_frag_rowmax: LayoutTensor[
         dtype,
         row_accum_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         element_layout=accum_frag_layout,
     ],
     score_reg_tile: LayoutTensor[
         dtype,
         reg_tile_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         element_layout=fragment_layout,
     ],
     rowmax_tensor: LayoutTensor[
         dtype,
         row_accum_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         element_layout=accum_frag_layout,
     ],
@@ -1960,7 +1954,7 @@ fn _rowmax_online_softmax[
     @parameter
     for col_tile in range(num_colwise_tiles):
         # Every four threads have elements on the same row.
-        # Reduce max for T0-T3, T4-T7, etc for nvidia
+        # Reduce max for  T0-T3,  T4-T7, etc for nvidia
         #                T0-T15, T16-T31, etc for amd
         score_frag_rowmax[col_tile] = warp.lane_group_max_and_broadcast[
             Int(num_rowwise_lanes)
@@ -1993,14 +1987,14 @@ fn _rowsum[
     score_reg_tile: LayoutTensor[
         dtype,
         reg_tile_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         element_layout=fragment_layout,
     ],
     out score_frag_rowsum: LayoutTensor[
         dtype,
         Layout.row_major(reg_tile_layout[0].size()),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         element_layout = Layout.row_major(fragment_layout.shape[0].value()),
     ],
@@ -2018,7 +2012,7 @@ fn _rowsum[
 
     score_frag_rowsum = type_of(score_frag_rowsum).stack_allocation()
 
-    # Initialize local max with the running max, and local sum with zero.
+    # Initialize sum with first column
     @parameter
     for col_tile in range(num_colwise_tiles):
         score_frag_rowsum[col_tile] = score_reg_tile[col_tile, 0].reduce_add[
@@ -2054,14 +2048,14 @@ fn _online_softmax_correction[
     rowmax_tensor: LayoutTensor[
         dtype,
         row_accum_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         element_layout=accum_frag_layout,
     ],
     score_frag_rowmax: LayoutTensor[
         dtype,
         row_accum_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         element_layout=accum_frag_layout,
     ],

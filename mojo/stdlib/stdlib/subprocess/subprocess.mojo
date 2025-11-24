@@ -19,7 +19,7 @@ from sys._libc import FILE_ptr, pclose, popen
 from sys.ffi import c_char
 from sys.info import CompilationTarget
 
-from memory import Span
+from memory import LegacyUnsafePointer as UnsafePointer, Span
 
 
 struct _POpenHandle:
@@ -70,7 +70,7 @@ struct _POpenHandle:
 
             # Note: This will raise if the subprocess yields non-UTF-8 bytes.
             res += StringSlice(
-                from_utf8=Span(ptr=line.bitcast[Byte](), length=UInt(read))
+                from_utf8=Span(ptr=line.bitcast[Byte](), length=read)
             )
 
         if line:

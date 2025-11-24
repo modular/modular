@@ -14,7 +14,7 @@
 from pathlib import Path
 from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle
+from sys.ffi import _Global, OwnedDLHandle
 
 from .types import Status
 
@@ -22,12 +22,12 @@ from .types import Status
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias ROCM_ROCBLAS_LIBRARY_PATHS = List[Path](
+alias ROCM_ROCBLAS_LIBRARY_PATHS: List[Path] = [
     "librocblas.so.4",
     "librocblas.so.5",
     "/opt/rocm/lib/librocblas.so.4",
     "/opt/rocm/lib/librocblas.so.5",
-)
+]
 
 
 fn _on_error_msg() -> Error:
@@ -50,7 +50,7 @@ alias ROCM_ROCBLAS_LIBRARY = _Global[
 ]()
 
 
-fn _init_dylib() -> _OwnedDLHandle:
+fn _init_dylib() -> OwnedDLHandle:
     return _find_dylib[abort_on_failure=False](
         materialize[ROCM_ROCBLAS_LIBRARY_PATHS]()
     )

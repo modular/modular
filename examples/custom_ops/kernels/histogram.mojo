@@ -28,6 +28,9 @@ alias bin_width = Int(UInt8.MAX)
 
 
 fn _histogram_cpu(output: ManagedTensorSlice, input: ManagedTensorSlice):
+    for i in range(output.dim_size(0)):
+        output[i] = 0
+
     for i in range(input.dim_size(0)):
         output[Int(input[i])] += 1
 
@@ -46,7 +49,9 @@ fn _histogram_gpu(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](block_dim)
     )
     fn kernel(
-        output: UnsafePointer[Int64], input: UnsafePointer[UInt8], n: Int
+        output: UnsafePointer[Int64, MutAnyOrigin],
+        input: UnsafePointer[UInt8, MutAnyOrigin],
+        n: Int,
     ):
         var tid = global_idx.x
 
@@ -85,6 +90,9 @@ fn _histogram_gpu(
     var input_device = DeviceBuffer[input.dtype](
         ctx, input.unsafe_ptr(), input.size(), owning=False
     )
+
+    # Zero initialize the output buffer
+    ctx.enqueue_memset(output_device, 0)
 
     ctx.enqueue_function_checked[kernel, kernel](
         output_device,

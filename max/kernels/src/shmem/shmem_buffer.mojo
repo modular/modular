@@ -12,19 +12,42 @@
 # ===----------------------------------------------------------------------=== #
 
 from os import abort
-from sys import CompilationTarget, has_nvidia_gpu_accelerator, size_of
+from sys import (
+    CompilationTarget,
+    has_nvidia_gpu_accelerator,
+    has_amd_gpu_accelerator,
+    size_of,
+)
 from sys.ffi import external_call
 
 from gpu.host import DeviceContext, HostBuffer
 from gpu.host.device_context import _checked, _DeviceContextPtr
 
 from .shmem_api import shmem_free, shmem_malloc
+from memory import (
+    LegacyUnsafePointer as UnsafePointer,
+    LegacyOpaquePointer as OpaquePointer,
+)
+from builtin.device_passable import DevicePassable
 
 
-struct SHMEMBuffer[dtype: DType](Sized):
-    var _data: UnsafePointer[Scalar[dtype]]
+struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
+    var _data: UnsafePointer[Scalar[Self.dtype]]
     var _ctx_ptr: _DeviceContextPtr
     var _size: Int
+
+    alias device_type: AnyType = UnsafePointer[Scalar[Self.dtype]]
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self._data
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return String("SHMEMBuffer[", String(Self.dtype), "]")
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @doc_private
     @always_inline
@@ -34,17 +57,29 @@ struct SHMEMBuffer[dtype: DType](Sized):
         size: Int,
     ) raises:
         @parameter
-        if has_nvidia_gpu_accelerator():
-            self._data = shmem_malloc[dtype](UInt(size))
+        if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+            self._data = shmem_malloc[Self.dtype](UInt(size))
             self._ctx_ptr = ctx._handle
             self._size = size
         else:
             CompilationTarget.unsupported_target_error[
                 operation="SHMEMBuffer.__init__",
             ]()
-            self._data = UnsafePointer[Scalar[dtype]]()
+            self._data = UnsafePointer[Scalar[Self.dtype]]()
             self._ctx_ptr = ctx._handle
             self._size = size
+
+    @doc_private
+    @always_inline
+    fn __init__(
+        out self,
+        ctx: DeviceContext,
+        data: UnsafePointer[Scalar[Self.dtype]],
+        size: Int,
+    ):
+        self._data = data
+        self._ctx_ptr = ctx._handle
+        self._size = size
 
     fn __del__(deinit self):
         shmem_free(self._data)
@@ -52,10 +87,10 @@ struct SHMEMBuffer[dtype: DType](Sized):
     fn __len__(self) -> Int:
         return self._size
 
-    fn unsafe_ptr(self) -> UnsafePointer[Scalar[dtype]]:
+    fn unsafe_ptr(self) -> UnsafePointer[Scalar[Self.dtype]]:
         return self._data
 
-    fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[dtype]]) raises:
+    fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[Self.dtype]]) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
 
         This method schedules a memory copy operation from this device buffer to the
@@ -70,18 +105,18 @@ struct SHMEMBuffer[dtype: DType](Sized):
                 "AsyncRT_DeviceContext_DtoH_async_sized",
                 UnsafePointer[Byte],
                 _DeviceContextPtr,
-                UnsafePointer[Scalar[dtype]],
-                UnsafePointer[Scalar[dtype]],
+                UnsafePointer[Scalar[Self.dtype]],
+                UnsafePointer[Scalar[Self.dtype]],
                 Int,
             ](
                 self._ctx_ptr,
                 dst_ptr,
                 self._data,
-                self._size * size_of[dtype](),
+                self._size * size_of[Self.dtype](),
             )
         )
 
-    fn enqueue_copy_to(self, dst: HostBuffer[dtype]) raises:
+    fn enqueue_copy_to(self, dst: HostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
 
         This method schedules a memory copy operation from this device buffer to the
@@ -96,18 +131,20 @@ struct SHMEMBuffer[dtype: DType](Sized):
                 "AsyncRT_DeviceContext_DtoH_async_sized",
                 UnsafePointer[Byte],
                 _DeviceContextPtr,
-                UnsafePointer[Scalar[dtype]],
-                UnsafePointer[Scalar[dtype]],
+                UnsafePointer[Scalar[Self.dtype]],
+                UnsafePointer[Scalar[Self.dtype]],
                 Int,
             ](
                 self._ctx_ptr,
                 dst.unsafe_ptr(),
                 self._data,
-                self._size * size_of[dtype](),
+                self._size * size_of[Self.dtype](),
             )
         )
 
-    fn enqueue_copy_from(self, src_ptr: UnsafePointer[Scalar[dtype]]) raises:
+    fn enqueue_copy_from(
+        self, src_ptr: UnsafePointer[Scalar[Self.dtype]]
+    ) raises:
         """Enqueues an asynchronous copy from host memory to this buffer.
 
         This method schedules a memory copy operation from the specified host memory
@@ -122,18 +159,18 @@ struct SHMEMBuffer[dtype: DType](Sized):
                 "AsyncRT_DeviceContext_HtoD_async_sized",
                 UnsafePointer[Byte],
                 _DeviceContextPtr,
-                UnsafePointer[Scalar[dtype]],
-                UnsafePointer[Scalar[dtype]],
+                UnsafePointer[Scalar[Self.dtype]],
+                UnsafePointer[Scalar[Self.dtype]],
                 Int,
             ](
                 self._ctx_ptr,
                 self._data,
                 src_ptr,
-                self._size * size_of[dtype](),
+                self._size * size_of[Self.dtype](),
             )
         )
 
-    fn enqueue_copy_from(self, src: HostBuffer[dtype]) raises:
+    fn enqueue_copy_from(self, src: HostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from host memory to this buffer.
 
         This method schedules a memory copy operation from the specified host memory
@@ -148,13 +185,13 @@ struct SHMEMBuffer[dtype: DType](Sized):
                 "AsyncRT_DeviceContext_HtoD_async_sized",
                 UnsafePointer[Byte],
                 _DeviceContextPtr,
-                UnsafePointer[Scalar[dtype]],
-                UnsafePointer[Scalar[dtype]],
+                UnsafePointer[Scalar[Self.dtype]],
+                UnsafePointer[Scalar[Self.dtype]],
                 Int,
             ](
                 self._ctx_ptr,
                 self._data,
                 src.unsafe_ptr(),
-                self._size * size_of[dtype](),
+                self._size * size_of[Self.dtype](),
             )
         )

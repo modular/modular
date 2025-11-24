@@ -21,18 +21,18 @@ from sys import (
 )
 from sys.intrinsics import assume, likely, unlikely
 
-from memory import memset_zero
+from memory import LegacyUnsafePointer as UnsafePointer, memset_zero
 from testing import assert_equal
 from testing import TestSuite
 
-alias F32x4 = SIMD[DType.float32, 4]
-alias F32x8 = SIMD[DType.float32, 8]
-alias iota_4 = F32x4(0.0, 1.0, 2.0, 3.0)
-alias iota_8 = F32x8(0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0)
+comptime F32x4 = SIMD[DType.float32, 4]
+comptime F32x8 = SIMD[DType.float32, 8]
+comptime iota_4 = F32x4(0.0, 1.0, 2.0, 3.0)
+comptime iota_8 = F32x8(0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0)
 
 
 def test_intrinsic_comp_eval():
-    alias res = gcd(5, 4)
+    comptime res = gcd(5, 4)
     assert_equal(res, gcd(5, 4))
 
 
@@ -98,7 +98,7 @@ def test_masked_store():
 
 
 fn test_strided_load() raises:
-    alias size = 16
+    comptime size = 16
     var vector = UnsafePointer[Float32]().alloc(size)
 
     for i in range(size):
@@ -111,7 +111,7 @@ fn test_strided_load() raises:
 
 
 fn test_strided_store() raises:
-    alias size = 8
+    comptime size = 8
     var vector = UnsafePointer[Float32]().alloc(size)
     memset_zero(vector, size)
 

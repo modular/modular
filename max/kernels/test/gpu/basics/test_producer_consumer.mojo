@@ -17,12 +17,11 @@ from buffer.dimlist import DimList
 from gpu import barrier, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceContext
-from gpu.memory import AddressSpace, async_copy
+from gpu.memory import async_copy
 from gpu.sync import async_copy_arrive
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from layout.tma_async import PipelineState, SharedMemBarrier
-from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 from testing import assert_equal
 
 
@@ -31,7 +30,7 @@ fn producer_consumer_kernel[NUM_THREADS: Int]():
     var mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -71,13 +70,13 @@ fn producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
     var producer_mbar = stack_allocation[
         Q_SIZE,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
     var consumer_mbar = stack_allocation[
         Q_SIZE,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -166,7 +165,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
     # Initialize smem buffer
     if warpgroup_idx == 0:
         for i in range(num_stages):
-            offset = i * size_per_stage + thread_idx.x * UInt(size_per_copy)
+            offset = i * size_per_stage + Int(thread_idx.x) * size_per_copy
 
             @parameter
             for j in range(size_per_copy):
@@ -177,13 +176,13 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
     var produced_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
     var consumed_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -199,7 +198,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
     # producer group
     if warpgroup_idx == 0:
         for i in range(num_stages):
-            offset = i * size_per_stage + thread_idx.x * UInt(size_per_copy)
+            offset = i * size_per_stage + Int(thread_idx.x) * size_per_copy
             async_copy[16](
                 (src + offset).address_space_cast[AddressSpace.GLOBAL](),
                 smem + offset,
@@ -214,7 +213,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
         for i in range(num_stages):
             produced_mbar[i].wait(read_pipeline_states.phase())
 
-            offset = i * size_per_stage + warpgroup_tid * UInt(size_per_copy)
+            offset = i * size_per_stage + Int(warpgroup_tid) * size_per_copy
 
             @parameter
             for j in range(size_per_copy):
@@ -224,7 +223,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
 
         # write back to global memory.
         for i in range(num_stages):
-            offset = i * size_per_stage + warpgroup_tid * UInt(size_per_copy)
+            offset = i * size_per_stage + Int(warpgroup_tid) * size_per_copy
 
             @parameter
             for j in range(size_per_copy):

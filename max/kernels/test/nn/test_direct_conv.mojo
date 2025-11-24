@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from math import ceildiv, isclose
 from random import rand
 from sys.info import num_physical_cores, simd_width_of

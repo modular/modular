@@ -15,16 +15,17 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from memory import Pointer
 
-alias Variadic[type: AnyType] = __mlir_type[`!kgen.variadic<`, type, `>`]
+comptime Variadic[type: AnyType] = __mlir_type[`!kgen.variadic<`, type, `>`]
 """Represents a raw variadic sequence of values of the specified type."""
 
-alias VariadicOf[T: _AnyTypeMetaType] = __mlir_type[`!kgen.variadic<`, T, `>`]
+comptime VariadicOf[T: _AnyTypeMetaType] = __mlir_type[
+    `!kgen.variadic<`, T, `>`
+]
 """Represents a raw variadic sequence of types that satisfy the specified trait."""
 
 
-@always_inline("nodebug")
+@always_inline("builtin")
 fn variadic_size[T: AnyType](seq: Variadic[T]) -> Int:
     """Returns the length of a variadic sequence.
 
@@ -40,7 +41,7 @@ fn variadic_size[T: AnyType](seq: Variadic[T]) -> Int:
     return Int(mlir_value=__mlir_op.`pop.variadic.size`(seq))
 
 
-@always_inline("nodebug")
+@always_inline("builtin")
 fn variadic_size[T: _AnyTypeMetaType](seq: VariadicOf[T]) -> Int:
     """Returns the length of a variadic sequence.
 
@@ -71,19 +72,19 @@ struct _VariadicListIter[type: AnyTrivialRegType](
         type: The type of the elements in the list.
     """
 
-    alias Element = type
-    alias IteratorType[
+    comptime Element = Self.type
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
     var index: Int
-    var src: VariadicList[type]
+    var src: VariadicList[Self.type]
 
     @always_inline
     fn __has_next__(self) -> Bool:
         return self.index < len(self.src)
 
-    fn __next__(mut self) -> type:
+    fn __next__(mut self) -> Self.type:
         self.index += 1
         return self.src[self.index - 1]
 
@@ -137,18 +138,18 @@ struct VariadicList[type: AnyTrivialRegType](Iterable, Sized):
         type: The type of the elements in the list.
     """
 
-    alias _mlir_type = Variadic[type]
+    comptime _mlir_type = Variadic[Self.type]
 
     var value: Self._mlir_type
     """The underlying storage for the variadic list."""
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
-    ]: Iterator = _VariadicListIter[type]
+    ]: Iterator = _VariadicListIter[Self.type]
 
     @always_inline
     @implicit
-    fn __init__(out self, *value: type):
+    fn __init__(out self, *value: Self.type):
         """Constructs a VariadicList from a variadic list of arguments.
 
         Args:
@@ -179,7 +180,7 @@ struct VariadicList[type: AnyTrivialRegType](Iterable, Sized):
         return Int(mlir_value=__mlir_op.`pop.variadic.size`(self.value))
 
     @always_inline
-    fn __getitem__[I: Indexer](self, idx: I) -> type:
+    fn __getitem__[I: Indexer](self, idx: I) -> Self.type:
         """Gets a single element on the variadic list.
 
         Args:
@@ -208,7 +209,7 @@ struct _VariadicListMemIter[
     elt_is_mutable: Bool, //,
     elt_type: AnyType,
     elt_origin: Origin[elt_is_mutable],
-    list_origin: ImmutableOrigin,
+    list_origin: ImmutOrigin,
     is_owned: Bool,
 ]:
     """Iterator for VariadicListMem.
@@ -222,20 +223,22 @@ struct _VariadicListMemIter[
                   passed as an 'var' argument.
     """
 
-    alias variadic_list_type = VariadicListMem[
-        elt_type, elt_origin._mlir_origin, is_owned
+    comptime variadic_list_type = VariadicListMem[
+        Self.elt_type, Self.elt_origin._mlir_origin, Self.is_owned
     ]
 
-    alias Element = elt_type
+    comptime Element = Self.elt_type
 
     var index: Int
     var src: Pointer[
         Self.variadic_list_type,
-        list_origin,
+        Self.list_origin,
     ]
 
     fn __init__(
-        out self, index: Int, ref [list_origin]list: Self.variadic_list_type
+        out self,
+        index: Int,
+        ref [Self.list_origin]list: Self.variadic_list_type,
     ):
         self.index = index
         self.src = Pointer(to=list)
@@ -244,7 +247,9 @@ struct _VariadicListMemIter[
     fn __has_next__(self) -> Bool:
         return self.index < len(self.src[])
 
-    fn __next_ref__(mut self) -> ref [elt_origin._mlir_origin] elt_type:
+    fn __next_ref__(
+        mut self,
+    ) -> ref [Self.elt_origin._mlir_origin] Self.elt_type:
         self.index += 1
         return rebind[Self.variadic_list_type.reference_type](
             Pointer(to=self.src[][self.index - 1])
@@ -270,8 +275,8 @@ struct VariadicListMem[
                   passed as an 'var' argument.
     """
 
-    alias reference_type = Pointer[element_type, origin]
-    alias _mlir_type = Variadic[Self.reference_type._mlir_type]
+    comptime reference_type = Pointer[Self.element_type, Self.origin]
+    comptime _mlir_type = Variadic[Self.reference_type._mlir_type]
 
     var value: Self._mlir_type
     """The underlying storage, a variadic list of references to elements of the
@@ -310,17 +315,15 @@ struct VariadicListMem[
         # them.  We destroy in backwards order to match how arguments are
         # normally torn down when CheckLifetimes is left to its own devices.
         @parameter
-        if is_owned:
+        if Self.is_owned:
             for i in reversed(range(len(self))):
                 # Safety: We own the elements in this list.
-                UnsafePointer(to=self[i]).unsafe_mut_cast[
-                    True
-                ]().destroy_pointee()
+                UnsafePointer(to=self[i]).mut_cast[True]().destroy_pointee()
 
     fn consume_elements[
-        elt_handler: fn (idx: Int, var elt: element_type) capturing
+        elt_handler: fn (idx: Int, var elt: Self.element_type) capturing
     ](deinit self):
-        """Consume the variadic list by transfering ownership of each element
+        """Consume the variadic list by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
         variadic lists.
 
@@ -330,7 +333,7 @@ struct VariadicListMem[
         """
 
         constrained[
-            is_owned,
+            Self.is_owned,
             "consume_elements may only be called on owned variadic lists",
         ]()
 
@@ -368,8 +371,8 @@ struct VariadicListMem[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        Origin[elt_is_mutable].cast_from[origin_of(origin, self)]
-    ] element_type:
+        Origin[Self.elt_is_mutable].cast_from[origin_of(Self.origin, self)]
+    ] Self.element_type:
         """Gets a single element on the variadic list.
 
         Args:
@@ -385,7 +388,9 @@ struct VariadicListMem[
 
     fn __iter__(
         self,
-    ) -> _VariadicListMemIter[element_type, origin, origin_of(self), is_owned]:
+    ) -> _VariadicListMemIter[
+        Self.element_type, Self.origin, origin_of(self), Self.is_owned
+    ]:
         """Iterate over the list.
 
         Returns:
@@ -399,7 +404,7 @@ struct VariadicListMem[
 # ===-----------------------------------------------------------------------===#
 
 
-alias _AnyTypeMetaType = type_of(AnyType)
+comptime _AnyTypeMetaType = type_of(AnyType)
 
 
 @register_passable
@@ -462,13 +467,13 @@ struct VariadicPack[
         element_types: The list of types held by the argument pack.
     """
 
-    alias _mlir_type = __mlir_type[
+    comptime _mlir_type = __mlir_type[
         `!lit.ref.pack<:variadic<`,
-        element_trait,
+        Self.element_trait,
         `> `,
-        element_types,
+        Self.element_types,
         `, `,
-        origin._mlir_origin,
+        Self.origin._mlir_origin,
         `>`,
     ]
 
@@ -497,19 +502,17 @@ struct VariadicPack[
         """Destructor that releases elements if owned."""
 
         @parameter
-        if is_owned:
+        if Self.is_owned:
 
             @parameter
             for i in reversed(range(Self.__len__())):
                 # Safety: We own the elements in this pack.
-                UnsafePointer(to=self[i]).unsafe_mut_cast[
-                    True
-                ]().destroy_pointee()
+                UnsafePointer(to=self[i]).mut_cast[True]().destroy_pointee()
 
     fn consume_elements[
-        elt_handler: fn[idx: Int] (var elt: element_types[idx]) capturing
+        elt_handler: fn[idx: Int] (var elt: Self.element_types[idx]) capturing
     ](deinit self):
-        """Consume the variadic pack by transfering ownership of each element
+        """Consume the variadic pack by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
         variadic packs.
 
@@ -519,7 +522,7 @@ struct VariadicPack[
         """
 
         constrained[
-            is_owned,
+            Self.is_owned,
             "consume_elements may only be called on owned variadic packs",
         ]()
 
@@ -543,7 +546,7 @@ struct VariadicPack[
             The number of elements in the variadic pack.
         """
 
-        alias result = variadic_size(element_types)
+        comptime result = variadic_size(Self.element_types)
         return result
 
     @always_inline
@@ -560,7 +563,9 @@ struct VariadicPack[
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __getitem__[index: Int](self) -> ref [Self.origin] element_types[index]:
+    fn __getitem__[
+        index: Int
+    ](self) -> ref [Self.origin] Self.element_types[index]:
         """Return a reference to an element of the pack.
 
         Parameters:
@@ -579,12 +584,12 @@ struct VariadicPack[
     # C Pack Utilities
     # ===-------------------------------------------------------------------===#
 
-    alias _kgen_element_types = rebind[Variadic[AnyTrivialRegType]](
+    comptime _kgen_element_types = rebind[Variadic[AnyTrivialRegType]](
         Self.element_types
     )
     """This is the element_types list lowered to `variadic<type>` type for kgen.
     """
-    alias _variadic_pointer_types = __mlir_attr[
+    comptime _variadic_pointer_types = __mlir_attr[
         `#kgen.param.expr<variadic_ptr_map, `,
         Self._kgen_element_types,
         `, 0: index>: `,
@@ -594,7 +599,7 @@ struct VariadicPack[
     the !lit.ref.pack will lower to.  It exposes the pointers introduced by the
     references.
     """
-    alias _kgen_pack_with_pointer_type = __mlir_type[
+    comptime _kgen_pack_with_pointer_type = __mlir_type[
         `!kgen.pack<:variadic<type> `, Self._variadic_pointer_types, `>`
     ]
     """This is the !kgen.pack type with pointer elements."""
@@ -606,13 +611,13 @@ struct VariadicPack[
         pointers."""
         return rebind[Self._kgen_pack_with_pointer_type](self._value)
 
-    alias _variadic_with_pointers_removed = __mlir_attr[
+    comptime _variadic_with_pointers_removed = __mlir_attr[
         `#kgen.param.expr<variadic_ptrremove_map, `,
         Self._variadic_pointer_types,
         `>: `,
         Variadic[AnyTrivialRegType],
     ]
-    alias _loaded_kgen_pack_type = __mlir_type[
+    comptime _loaded_kgen_pack_type = __mlir_type[
         `!kgen.pack<:variadic<type> `, Self._variadic_with_pointers_removed, `>`
     ]
     """This is the `!kgen.pack` type that happens if one loads all the elements
@@ -627,3 +632,156 @@ struct VariadicPack[
         """This returns the stored KGEN pack after loading all of the elements.
         """
         return __mlir_op.`kgen.pack.load`(self.get_as_kgen_pack())
+
+
+# ===-----------------------------------------------------------------------===#
+# Utils
+# ===-----------------------------------------------------------------------===#
+
+comptime EmptyVariadic[T: type_of(AnyType)] = __mlir_attr[
+    `#kgen.variadic<>: !kgen.variadic<`, T, `>`
+]
+"""Empty comptime variadic of type values"""
+
+comptime MakeVariadic[T: type_of(AnyType), //, *Ts: T] = Ts
+"""Turn discrete type values (bound by `T`) into a single variadic"""
+
+# ===-----------------------------------------------------------------------===#
+# VariadicConcat
+# ===-----------------------------------------------------------------------===#
+
+comptime Concatenated[
+    T: type_of(AnyType), //, *Ts: VariadicOf[T]
+] = __mlir_attr[`#kgen.variadic.concat<`, Ts, `> :`, VariadicOf[T]]
+"""
+Represents the concatenation of multiple variadic sequences of types.
+"""
+
+# ===-----------------------------------------------------------------------===#
+# VariadicReduce
+# ===-----------------------------------------------------------------------===#
+
+comptime _ReduceVariadicIdxGeneratorTypeGenerator[
+    Prev: AnyType, From: type_of(AnyType)
+] = __mlir_type[
+    `!lit.generator<<"Prev": `,
+    +Prev,
+    `, "From": !kgen.variadic<`,
+    From,
+    `>, "Idx":`,
+    Int,
+    `>`,
+    +Prev,
+    `>`,
+]
+"""This specifies a generator to generate a generator type for the reducer.
+The generated generator type is [Prev: AnyType, Ts: VariadicOf[AnyType], idx: Int] -> Prev,
+"""
+
+comptime _IndexToIntWrap[
+    From: type_of(AnyType),
+    ReduceT: AnyType,
+    ToWrap: _ReduceVariadicIdxGeneratorTypeGenerator[ReduceT, From],
+    PrevV: ReduceT,
+    VA: VariadicOf[From],
+    idx: __mlir_type.index,
+] = ToWrap[PrevV, VA, Int(mlir_value=idx)]
+
+
+comptime _ReduceVariadicAndIdxToVariadic[
+    From: type_of(AnyType),
+    To: type_of(AnyType), //,
+    *,
+    BaseVal: VariadicOf[To],
+    Variadic: VariadicOf[From],
+    Reducer: _ReduceVariadicIdxGeneratorTypeGenerator[VariadicOf[To], From],
+] = __mlir_attr[
+    `#kgen.variadic.reduce<`,
+    BaseVal,
+    `,`,
+    Variadic,
+    `,`,
+    _IndexToIntWrap[From, VariadicOf[To], Reducer],
+    `> : `,
+    type_of(BaseVal),
+]
+"""Construct a new variadic of types using with a reducer. To reduce to a single
+type, one could reduce the input to a single element variadic instead.
+
+Parameters:
+    BaseVal: The initial value to reduce on
+    Variadic: The variadic to be reduced
+    Mapper: A `[BaseVal: VariadicOf[To], Ts: *From, idx: index] -> To` that does the reduction
+"""
+
+
+# ===-----------------------------------------------------------------------===#
+# VariadicMap
+# ===-----------------------------------------------------------------------===#
+
+comptime _VariadicIdxToTypeGeneratorTypeGenerator[
+    From: type_of(AnyType), To: type_of(AnyType)
+] = __mlir_type[
+    `!lit.generator<<"From": !kgen.variadic<`,
+    From,
+    `>, "Idx":`,
+    Int,
+    `>`,
+    To,
+    `>`,
+]
+"""This specifies a generator to generate a generator type for the mapper.
+The generated generator type is [Ts: VariadicOf[AnyType], idx: Int] -> AnyType,
+which maps the input variadic + index of the current element to another type.
+"""
+
+comptime _WrapVariadicIdxToTypeMapperToReducer[
+    F: type_of(AnyType),
+    T: type_of(AnyType),
+    Mapper: _VariadicIdxToTypeGeneratorTypeGenerator[F, T],
+    Prev: VariadicOf[T],
+    From: VariadicOf[F],
+    Idx: Int,
+] = Concatenated[Prev, MakeVariadic[Mapper[From, Idx]]]
+
+comptime _MapVariadicAndIdxToType[
+    From: type_of(AnyType), //,
+    *,
+    To: type_of(AnyType),
+    Variadic: VariadicOf[From],
+    Mapper: _VariadicIdxToTypeGeneratorTypeGenerator[From, To],
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal = EmptyVariadic[To],  # reduce from a empty variadic
+    Variadic=Variadic,
+    Reducer = _WrapVariadicIdxToTypeMapperToReducer[From, To, Mapper],
+]
+"""Construct a new variadic of types using a type-to-type mapper.
+
+Parameters:
+    To: A common trait bound for the mapped type
+    Variadic: The variadic to be mapped
+    Mapper: A `[Ts: *From, idx: index] -> To` that does the transform
+"""
+
+comptime _ReversedVariadic[
+    T: type_of(Copyable & Movable),
+    element_types: VariadicOf[T],
+    idx: Int,
+] = element_types[variadic_size(element_types) - 1 - idx]
+"""A generator that reverses a variadic sequence of types.
+
+Parameters:
+    element_types: The variadic sequence of types to reverse.
+    idx: The index of the type to generate in the reversed sequence.
+"""
+
+comptime Reversed[
+    T: type_of(Copyable & Movable), //, *element_types: T
+] = _MapVariadicAndIdxToType[
+    To=T, Variadic=element_types, Mapper = _ReversedVariadic[T]
+]
+"""A wrapper to reverse a variadic sequence of types.
+
+Parameters:
+    element_types: The variadic sequence of types to reverse.
+"""

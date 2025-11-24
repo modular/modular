@@ -26,5 +26,26 @@ _PLATFORM_CONSTRAINTS = {
             "@mojo//:test_utils",
         ],
     )
-    for src in glob(["*.mojo"])
+    for src in glob(
+        ["*.mojo"],
+        exclude = ["test_suite_cli.mojo"],
+    )
 ]
+
+mojo_test(
+    name = "test_suite_cli.mojo.test",
+    srcs = ["test_suite_cli.mojo"],
+    args = [
+        "--only",
+        "test_passing_1",
+        "test_skipped",
+    ],
+    copts = [
+        "--debug-level",
+        "full",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+        "@mojo//:test_utils",
+    ],
+)

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 fn kernel_with_list(res: UnsafePointer[Float32]):
@@ -24,7 +25,7 @@ fn kernel_with_list(res: UnsafePointer[Float32]):
 fn test_kernel_with_list(ctx: DeviceContext) raises:
     print("== test_kernel_with_list")
     var res_device = ctx.enqueue_create_buffer[DType.float32](1)
-    _ = res_device.enqueue_fill(0)
+    res_device.enqueue_fill(0)
     # CHECK: call.uni
     # CHECK: malloc,
     # CHECK: (

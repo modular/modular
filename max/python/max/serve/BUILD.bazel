@@ -1,0 +1,76 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "config",
+    srcs = ["config.py"],
+    imports = ["../.."],
+    deps = [
+        requirement("pydantic"),
+        requirement("pydantic-settings"),
+        "//max/python/max/serve/kvcache_agent",
+        "//max/python/max/serve/queue",
+        "//max/python/max/support",
+    ],
+)
+
+modular_py_library(
+    name = "process_control",
+    srcs = ["process_control.py"],
+    imports = ["../.."],
+)
+
+modular_py_library(
+    name = "exceptions",
+    srcs = ["exceptions.py"],
+    imports = ["../.."],
+)
+
+modular_py_library(
+    name = "serve",
+    srcs = glob(
+        ["*.py"],
+        exclude = [
+            "process_control.py",
+            "config.py",
+            "debug.py",
+            "exceptions.py",
+        ],
+    ),
+    imports = ["../.."],
+    deps = [
+        ":config",
+        ":debug",
+        ":exceptions",
+        ":process_control",
+        "//max/python/max/serve/mocks",
+        "//max/python/max/serve/parser",
+        "//max/python/max/serve/pipelines",
+        "//max/python/max/serve/recordreplay",
+        "//max/python/max/serve/router",
+        "//max/python/max/serve/scheduler",
+        "//max/python/max/serve/schemas",
+        "//max/python/max/serve/telemetry",
+        "//max/python/max/support",
+        requirement("fastapi"),
+        requirement("opentelemetry-api"),
+        requirement("prometheus-client"),
+        requirement("pydantic-settings"),
+        requirement("pyinstrument"),
+        requirement("sse-starlette"),
+        requirement("transformers"),
+        requirement("uvicorn"),
+        requirement("uvloop"),
+    ],
+)
+
+modular_py_library(
+    name = "debug",
+    srcs = ["debug.py"],
+    imports = ["../.."],
+    deps = [
+        requirement("fastapi"),
+        requirement("pydantic"),
+        requirement("pydantic-settings"),
+        requirement("pyinstrument"),
+    ],
+)

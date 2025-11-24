@@ -11,12 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
 from testing import assert_raises, assert_equal, assert_false, TestSuite
-
-
-def test_nonconforming_signature(x: Int):
-    raise Error("should not be run")
+from testing.suite import TestSuiteReport
 
 
 def nonconforming_name():
@@ -40,13 +36,27 @@ def test_skipped():
 
 
 def main():
-    var suite = TestSuite.discover_tests[__functions_in_module()]()
+    comptime funcs = __functions_in_module()
+    var suite = TestSuite.discover_tests[funcs]()
+
     suite.skip[test_skipped]()
+    suite.skip[nonconforming_name]()
+    with assert_raises(
+        contains=(
+            "trying to skip a test that is not registered in the suite:"
+            " nonconforming_name"
+        )
+    ):
+        suite^.run()
 
-    with assert_raises(contains="test not found in suite"):
-        suite.skip[nonconforming_name]()
-
-    var report = suite.generate_report()
+    suite = TestSuite.discover_tests[funcs]()
+    var report: TestSuiteReport
+    try:
+        suite.skip[test_skipped]()
+        report = suite.generate_report()
+    except e:
+        suite^.abandon()
+        raise e
 
     # Make sure running the suite fails, since we have a failing test.
     with assert_raises():
@@ -69,6 +79,21 @@ def main():
     assert_equal(report.reports[3].name, "test_skipped")
     assert_false(report.reports[3].error)
 
-    # Separately test disabling the suite; suppress the report to avoid spam.
-    var disabled_suite = TestSuite.discover_tests[__functions_in_module()]()
-    disabled_suite^.disable(quiet=True)
+    # Separately test skipping all tests; suppress the report to avoid spam.
+    var skip_all_suite = TestSuite.discover_tests[funcs]()
+    skip_all_suite^.run(quiet=True, skip_all=True)
+
+    # The `__functions_in_module()` reflection returns a Tuple, which we can't
+    # slice into, so we manually build a list of functions to test that
+    # discovery fails if a test function has a nonconforming signature.
+    def test_nonconforming_signature(x: Int):
+        raise Error("should not be run")
+
+    comptime failing_funcs = Tuple(
+        test_nonconforming_signature, funcs[1], funcs[2], funcs[3], funcs[4]
+    )
+    with assert_raises(
+        contains="'test_nonconforming_signature' has nonconforming signature"
+    ):
+        var suite = TestSuite.discover_tests[failing_funcs]()
+        suite^.abandon()

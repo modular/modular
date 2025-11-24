@@ -34,7 +34,7 @@ from utils import IndexList, StaticTuple
 struct Dim(
     CeilDivable,
     Defaultable,
-    EqualityComparable,
+    Equatable,
     ImplicitlyBoolable,
     Indexer,
     Intable,
@@ -48,7 +48,7 @@ struct Dim(
     present, the dimension is dynamic.
     """
 
-    alias _sentinel = -31337
+    comptime _sentinel = -31337
     """The sentinel value to use if the dimension is dynamic.  This value was
     chosen to be a visible-in-the-debugger sentinel.  We can't use Int.MIN
     because that value is target-dependent and won't fold in parameters."""

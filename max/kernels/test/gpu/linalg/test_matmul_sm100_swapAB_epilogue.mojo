@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
-from random import random_si64, random_float64
-from sys import align_of, size_of
+from random import random_si64, shuffle, seed
+from sys import align_of, size_of, argv
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
@@ -33,6 +33,13 @@ from linalg.matmul.gpu.sm100.config import MatmulConfig
 
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
+
+
+fn is_benchmark() -> Bool:
+    for arg in argv():
+        if arg == "--benchmark" or arg == "-benchmark":
+            return True
+    return False
 
 
 def test_matmul_sm100_epilogue[
@@ -51,7 +58,14 @@ def test_matmul_sm100_epilogue[
     test_lambda_fn: Bool = False,
     register_based_epilogue: Bool = False,
     swapAB: Bool = False,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
+    k_group_size: UInt = 1,
+](
+    ctx: DeviceContext,
+    m: ValOrDim,
+    n: ValOrDim,
+    k: ValOrDim,
+    is_benchmark: Bool = False,
+):
     var M = m.value
     var N = n.value
     var K = k.value
@@ -80,6 +94,8 @@ def test_matmul_sm100_epilogue[
             register_based_epilogue,
             " swapAB=",
             swapAB,
+            " k_group_size=",
+            k_group_size,
         )
     )
 
@@ -118,7 +134,7 @@ def test_matmul_sm100_epilogue[
     @parameter
     @always_inline
     @__copy_capture(c_tensor)
-    fn test_lambda_add_coords_summ[
+    fn test_lambda_add_coords_prod[
         _dtype: DType,
         width: Int,
         *,
@@ -128,14 +144,20 @@ def test_matmul_sm100_epilogue[
     ]:
         # this function helps us determine if the provided indexes are correct
         # while also testing arithmetic operations
-        return val + c_tensor.load[width=width](idx).cast[_dtype]()
+        var x = c_tensor.load[width=width](idx).cast[_dtype]()
+        var y = val * x
+        return y
 
+    seed(1234)
     random(a_host.tensor)
     random(b_host.tensor)
 
+    var scales = List[Int32](-2, -1, 0, 1, 2)
+
     for i in range(M):
         for j in range(N):
-            c_host.tensor[i, j] = Scalar[c_type](random_float64(-1, 1))
+            shuffle(scales)
+            c_host.tensor[i, j] = Scalar[c_type](scales[0])
             c_host_copy.tensor[i, j] = c_host.tensor[i, j]
 
     # Move operands to the Device
@@ -149,85 +171,102 @@ def test_matmul_sm100_epilogue[
         ),
         mma_shape=mma_shape,
         cta_group=cta_group,
+        AB_swapped=swapAB,
+        k_group_size=k_group_size,
     )
 
     alias optional_lambda_fn = OptionalReg[elementwise_compute_lambda_type](
-        test_lambda_add_coords_summ
+        test_lambda_add_coords_prod
     ) if test_lambda_fn else None
 
-    blackwell_matmul_tma_umma_warp_specialized[
-        transpose_b=transpose_b,
-        config=matmul_config,
-        elementwise_compute_lambda_fn=optional_lambda_fn,
-        register_based_epilogue=register_based_epilogue,
-        swapAB=swapAB,
-    ](
-        c_device.to_layout_tensor(),
-        a_device.to_layout_tensor(),
-        b_device.to_layout_tensor(),
-        ctx,
-    )
-
-    constrained[
-        a_type != DType.float8_e4m3fn or transpose_b,
-        (
-            "Testing is only supported for transposed_b==True when"
-            " a_type==float8_e4m3fn. Add the non-transposed case if needed."
-        ),
-    ]()
-
-    vendor_blas.matmul(
-        ctx,
-        c_device_ref.tensor,
-        a_device.tensor,
-        b_device.tensor,
-        c_row_major=True,
-        transpose_b=transpose_b,
-    )
-
-    ctx.synchronize()
-
-    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
-    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
-    ctx.synchronize()
-
-    var c_tensor_host = c_host_copy.tensor
+    var c_dev = c_device.to_layout_tensor()
+    var a_dev = a_device.to_layout_tensor()
+    var b_dev = b_device.to_layout_tensor()
 
     @parameter
     @always_inline
-    @__copy_capture(c_tensor_host)
-    fn test_lambda_add_coords_summ_local[
-        _dtype: DType,
-        width: Int,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
-        _dtype, width
-    ]:
-        return val + c_tensor_host.load[width=width](idx).cast[_dtype]()
+    @__copy_capture(c_dev, a_dev, b_dev)
+    fn kernel_launch(ctx: DeviceContext) raises:
+        blackwell_matmul_tma_umma_warp_specialized[
+            transpose_b=transpose_b,
+            config=matmul_config,
+            elementwise_compute_lambda_fn=optional_lambda_fn,
+            register_based_epilogue=register_based_epilogue,
+        ](c_dev, a_dev, b_dev, ctx)
 
-    @parameter
-    if optional_lambda_fn:
-        # Apply the compute lambda directly on the reference tensor
-        # alias compute_lambda = elementwise_compute_lambda_fn.value()
-        for i in range(M):
-            for j in range(N):
-                c_host_ref.tensor[
-                    Index(i, j)
-                ] = test_lambda_add_coords_summ_local(
-                    IndexList[2](i, j),
-                    c_host_ref.tensor[Index(i, j)],
-                )
+    if is_benchmark:
+        alias nrun = 50
 
-    alias rtol = 1e-2
-    assert_almost_equal(
-        c_host.tensor,
-        c_host_ref.tensor,
-        atol=0.0001,
-        rtol=rtol,
-    )
+        # Warmup
+        kernel_launch(ctx)
 
-    print("\n=== TEST PASSED ===\n")
+        var nstime = ctx.execution_time[kernel_launch](nrun) / nrun
+        var sectime = nstime / 1000000
+        print(nrun, "runs avg", sectime, "ms")
+    else:
+        kernel_launch(ctx)
+
+    if not is_benchmark:
+        constrained[
+            a_type != DType.float8_e4m3fn or transpose_b,
+            (
+                "Testing is only supported for transposed_b==True when"
+                " a_type==float8_e4m3fn. Add the non-transposed case if needed."
+            ),
+        ]()
+
+        vendor_blas.matmul(
+            ctx,
+            c_device_ref.tensor,
+            a_device.tensor,
+            b_device.tensor,
+            c_row_major=True,
+            transpose_b=transpose_b,
+        )
+
+        ctx.synchronize()
+
+        ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
+        ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+        ctx.synchronize()
+
+        var c_tensor_host = c_host_copy.tensor
+
+        @parameter
+        @always_inline
+        @__copy_capture(c_tensor_host)
+        fn test_lambda_add_coords_prod_local[
+            _dtype: DType,
+            width: Int,
+            *,
+            alignment: Int = align_of[SIMD[_dtype, width]](),
+        ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+            _dtype, width
+        ]:
+            return val * c_tensor_host.load[width=width](idx).cast[_dtype]()
+
+        @parameter
+        if optional_lambda_fn:
+            # Apply the compute lambda directly on the reference tensor
+            # alias compute_lambda = elementwise_compute_lambda_fn.value()
+            for i in range(M):
+                for j in range(N):
+                    c_host_ref.tensor[
+                        Index(i, j)
+                    ] = test_lambda_add_coords_prod_local(
+                        IndexList[2](i, j),
+                        c_host_ref.tensor[Index(i, j)],
+                    )
+
+        alias rtol = 1e-2
+        assert_almost_equal(
+            c_host.tensor,
+            c_host_ref.tensor,
+            atol=0.0001,
+            rtol=rtol,
+        )
+
+        print("\n=== TEST PASSED ===\n")
 
     _ = c_device
     _ = c_device_ref
@@ -243,96 +282,109 @@ def main():
     alias dtype = DType.bfloat16
     alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[dtype]())
     alias MMA_K = 16
+    var is_bench = is_benchmark()
 
     with DeviceContext() as ctx:
-        # swapAB with register based epilogue tests
-        # swapAB only supports MMA_M == 256
-        @parameter
-        for mma_n_scale in range(2, 17, 2):
-            alias block_tile_shape = Index(128, 8 * mma_n_scale, BK)
-
-            alias umma_shape = Index(256, 16 * mma_n_scale, MMA_K)
-
-            test_matmul_sm100_epilogue[
-                dtype,
-                dtype,
-                DType.bfloat16,
-                block_tile_shape,
-                umma_shape,
-                cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                cta_group=2,
-                test_lambda_fn=True,
-                register_based_epilogue=True,
-                swapAB=True,
-            ](
-                ctx,
-                dynamic(17),
-                static[2560](),
-                static[8192](),
-            )
-
-            test_matmul_sm100_epilogue[
-                dtype,
-                dtype,
-                DType.bfloat16,
-                block_tile_shape,
-                umma_shape,
-                cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                cta_group=2,
-                test_lambda_fn=True,
-                register_based_epilogue=True,
-                swapAB=True,
-            ](
-                ctx,
-                dynamic(17),
-                static[1024](),
-                static[1024](),
-            )
 
         @parameter
-        for mma_m_scale in range(1, 3):
-
+        for register_based_epilogue in [True, False]:
+            # swapAB with epilogue tests (2SM)
             @parameter
-            for mma_n_scale in range(2, 33, 2):
-                alias block_tile_shape = Index(
-                    64 * mma_m_scale, 8 * mma_n_scale, BK
-                )
-                alias umma_shape = Index(
-                    64 * mma_m_scale, 8 * mma_n_scale, MMA_K
-                )
+            for mma_m_scale in range(1, 3):
 
-                test_matmul_sm100_epilogue[
-                    dtype,
-                    dtype,
-                    DType.bfloat16,
-                    block_tile_shape,
-                    umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                    cta_group=1,
-                    test_lambda_fn=True,
-                    register_based_epilogue=True,
-                    swapAB=True,
-                ](
-                    ctx,
-                    dynamic(1000),
-                    static[1024](),
-                    static[1024](),
-                )
+                @parameter
+                for mma_n_scale in range(1, 17):
+                    alias block_tile_shape = Index(
+                        64 * mma_m_scale, 8 * mma_n_scale, BK
+                    )
+                    alias umma_shape = Index(
+                        128 * mma_m_scale, 16 * mma_n_scale, MMA_K
+                    )
 
-                test_matmul_sm100_epilogue[
-                    dtype,
-                    dtype,
-                    DType.bfloat16,
-                    block_tile_shape,
-                    umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](4, 2, 1),
-                    cta_group=1,
-                    test_lambda_fn=True,
-                    register_based_epilogue=True,
-                    swapAB=True,
-                ](
-                    ctx,
-                    dynamic(512),
-                    static[4096](),
-                    static[1024 + 16](),
-                )
+                    test_matmul_sm100_epilogue[
+                        dtype,
+                        dtype,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        cta_group=2,
+                        test_lambda_fn=True,
+                        register_based_epilogue=register_based_epilogue,
+                        swapAB=True,
+                        k_group_size=2,
+                    ](
+                        ctx,
+                        dynamic(100),
+                        static[2560](),
+                        static[8192](),
+                        is_benchmark=is_bench,
+                    )
+
+                    test_matmul_sm100_epilogue[
+                        dtype,
+                        dtype,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        cta_group=2,
+                        test_lambda_fn=True,
+                        register_based_epilogue=register_based_epilogue,
+                        swapAB=True,
+                    ](
+                        ctx,
+                        dynamic(17),
+                        static[1024](),
+                        static[1024](),
+                        is_benchmark=is_bench,
+                    )
+
+            # swapAB with epilogue tests (1SM)
+            # we support all range of mma_n_scales in range(1, 33) but the test will time out so we only test a subset
+            @parameter
+            for mma_m in [64, 128]:
+
+                @parameter
+                for mma_n in [8, 16, 32, 40, 48, 64, 88, 104, 128]:
+                    alias block_tile_shape = Index(mma_m, mma_n, BK)
+                    alias umma_shape = Index(mma_m, mma_n, MMA_K)
+
+                    test_matmul_sm100_epilogue[
+                        dtype,
+                        dtype,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        cta_group=1,
+                        test_lambda_fn=True,
+                        register_based_epilogue=register_based_epilogue,
+                        swapAB=True,
+                        k_group_size=2,
+                    ](
+                        ctx,
+                        dynamic(1000),
+                        static[1024](),
+                        static[1024](),
+                        is_benchmark=is_bench,
+                    )
+
+                    test_matmul_sm100_epilogue[
+                        dtype,
+                        dtype,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape = StaticTuple[Int32, 3](4, 2, 1),
+                        cta_group=1,
+                        test_lambda_fn=True,
+                        register_based_epilogue=register_based_epilogue,
+                        swapAB=True,
+                    ](
+                        ctx,
+                        dynamic(512),
+                        static[4096](),
+                        static[1024 + 16](),
+                        is_benchmark=is_bench,
+                    )

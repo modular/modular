@@ -32,7 +32,7 @@ def set_home(path: String):
 
 
 def test_expanduser():
-    alias user_path = get_user_path()
+    comptime user_path = get_user_path()
     var original_home = get_current_home()
     set_home(user_path)
 

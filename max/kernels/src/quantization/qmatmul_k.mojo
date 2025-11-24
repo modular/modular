@@ -25,7 +25,11 @@ from linalg.arch.cpu.vnni_intrinsics import (
 )
 from linalg.matmul import elementwise_epilogue_type
 from linalg.utils import partition_work
-from memory import bitcast, stack_allocation
+from memory import (
+    LegacyUnsafePointer as UnsafePointer,
+    bitcast,
+    stack_allocation,
+)
 from runtime.asyncrt import parallelism_level
 
 from utils.index import Index
@@ -74,13 +78,13 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     with this array's dimensions.
     """
 
-    alias _size = block_m * block_n
+    alias _size = Self.block_m * Self.block_n
     alias _simd_width = simd_width_of[DType.uint8]()
     alias _tuple_width = 4
-    alias _packed_stride = block_n * Self._tuple_width
+    alias _packed_stride = Self.block_n * Self._tuple_width
     alias _tile_n = Self._packed_stride // Self._simd_width
 
-    var bits: InlineArray[UInt8, Self._size * bit_width // 8]
+    var bits: InlineArray[UInt8, Self._size * Self.bit_width // 8]
 
     """
     For the 4-bit encoding, the following encoding is used (one lane of the
@@ -90,12 +94,12 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
     @always_inline
     fn _pack_int4(mut self, var src_ptr: UnsafePointer[UInt8, **_]):
-        constrained[bit_width == 4]()
-        constrained[(block_m % (2 * Self._tuple_width)) == 0]()
+        constrained[Self.bit_width == 4]()
+        constrained[(Self.block_m % (2 * Self._tuple_width)) == 0]()
 
         var bits_ptr = self.bits.unsafe_ptr()
 
-        for _m in range(0, block_m, 2 * Self._tuple_width):
+        for _m in range(0, Self.block_m, 2 * Self._tuple_width):
 
             @parameter
             for col in range(Self._tile_n):
@@ -117,12 +121,12 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
     @always_inline
     fn _unpack_int4(mut self, var dst_ptr: UnsafePointer[UInt8, **_]):
-        constrained[bit_width == 4]()
-        constrained[(block_m % (2 * Self._tuple_width)) == 0]()
+        constrained[Self.bit_width == 4]()
+        constrained[(Self.block_m % (2 * Self._tuple_width)) == 0]()
 
         var bits_ptr = self.bits.unsafe_ptr()
 
-        for _ in range(0, block_m, 2 * Self._tuple_width):
+        for _ in range(0, Self.block_m, 2 * Self._tuple_width):
 
             @parameter
             for col in range(Self._tile_n):
@@ -146,12 +150,12 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
     @always_inline
     fn _pack_int6(mut self, var src_ptr: UnsafePointer[UInt8, **_]):
-        constrained[bit_width == 6]()
-        constrained[(block_m % (4 * Self._tuple_width)) == 0]()
+        constrained[Self.bit_width == 6]()
+        constrained[(Self.block_m % (4 * Self._tuple_width)) == 0]()
 
         var bits_ptr = self.bits.unsafe_ptr()
 
-        for _m in range(0, block_m, 4 * Self._tuple_width):
+        for _m in range(0, Self.block_m, 4 * Self._tuple_width):
             var src_col_ptr = src_ptr
 
             @parameter
@@ -178,12 +182,12 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     fn _unpack_int6[
         zero_point: UInt8
     ](mut self, var dst_ptr: UnsafePointer[UInt8, **_]):
-        constrained[bit_width == 6]()
-        constrained[(block_m % (4 * Self._tuple_width)) == 0]()
+        constrained[Self.bit_width == 6]()
+        constrained[(Self.block_m % (4 * Self._tuple_width)) == 0]()
 
         var bits_ptr = self.bits.unsafe_ptr()
 
-        for _m in range(0, block_m, 4 * Self._tuple_width):
+        for _m in range(0, Self.block_m, 4 * Self._tuple_width):
             var dst_col_ptr = dst_ptr
 
             @parameter
@@ -215,9 +219,9 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         constrained[(Self._packed_stride % Self._simd_width) == 0]()
 
         @parameter
-        if bit_width == 4:
+        if Self.bit_width == 4:
             return self._pack_int4(src_ptr)
-        elif bit_width == 6:
+        elif Self.bit_width == 6:
             return self._pack_int6(src_ptr)
         else:
             constrained[False, "unsupported bit width"]()
@@ -230,36 +234,36 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         constrained[(Self._packed_stride % Self._simd_width) == 0]()
 
         @parameter
-        if bit_width == 4:
+        if Self.bit_width == 4:
             constrained[zero_point == 0, "zero point not implemented"]()
             return self._unpack_int4(dst_ptr)
-        elif bit_width == 6:
+        elif Self.bit_width == 6:
             return self._unpack_int6[zero_point](dst_ptr)
         else:
             constrained[False, "unsupported bit width"]()
 
 
 struct _block_Q4_K_packed[block_n: Int = 1]:
-    var base_scales: InlineArray[Float16, block_n]
-    var base_mins: InlineArray[Float16, block_n]
+    var base_scales: InlineArray[Float16, Self.block_n]
+    var base_mins: InlineArray[Float16, Self.block_n]
     var q_scales_and_mins: _packed_bit_array[
-        6, 2 * _block_Q4_K.group_count, block_n
+        6, 2 * _block_Q4_K.group_count, Self.block_n
     ]
-    var q_bits: _packed_bit_array[4, _block_QK_K.quantized_k, block_n]
+    var q_bits: _packed_bit_array[4, _block_QK_K.quantized_k, Self.block_n]
 
 
 struct _block_Q6_K_packed[block_n: Int = 1]:
-    var base_scales: InlineArray[Float16, block_n]
-    var q_scales: InlineArray[Int8, _block_Q6_K.group_count * block_n]
-    var q_bits: _packed_bit_array[6, _block_QK_K.quantized_k, block_n]
+    var base_scales: InlineArray[Float16, Self.block_n]
+    var q_scales: InlineArray[Int8, _block_Q6_K.group_count * Self.block_n]
+    var q_bits: _packed_bit_array[6, _block_QK_K.quantized_k, Self.block_n]
 
 
 struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
-    alias group_count = _block_QK_K.calc_group_count[group_size]()
+    alias group_count = _block_QK_K.calc_group_count[Self.group_size]()
 
-    var q_bits: InlineArray[Int8, _block_QK_K.quantized_k * tile_m]
-    var scales: InlineArray[Float32, tile_m]
-    var group_sums: InlineArray[Int16, Self.group_count * tile_m]
+    var q_bits: InlineArray[Int8, _block_QK_K.quantized_k * Self.tile_m]
+    var scales: InlineArray[Float32, Self.tile_m]
+    var group_sums: InlineArray[Int16, Self.group_count * Self.tile_m]
 
 
 fn _quantize_a_Q8_K[
@@ -394,8 +398,8 @@ fn _copy_column_q_bits_to_block[
 
 fn _pack_block_Q4_K[
     block_n: Int,
-    src_origin: MutableOrigin,
-    dst_origin: MutableOrigin,
+    src_origin: MutOrigin,
+    dst_origin: MutOrigin,
 ](
     var src_ptr: UnsafePointer[_block_Q4_K, origin=src_origin],
     stride: Int,
@@ -515,8 +519,8 @@ fn _pack_block_Q4_K[
 
 fn _pack_block_Q6_K[
     block_n: Int,
-    src_origin: MutableOrigin,
-    dst_origin: MutableOrigin,
+    src_origin: MutOrigin,
+    dst_origin: MutOrigin,
 ](
     var src_ptr: UnsafePointer[_block_Q6_K, origin=src_origin],
     stride: Int,
@@ -1151,7 +1155,12 @@ fn _matmul_Q4_K_columns[
 
     # Fast path for M=1 that avoids materializing the unpacked weights.
     if M == 1:
-        var b_q_bits_ptr = b_tile_ptr[].q_bits.bits.unsafe_ptr().as_any_origin()
+        var b_q_bits_ptr = (
+            b_tile_ptr[]
+            .q_bits.bits.unsafe_ptr()
+            .as_any_origin()
+            .as_legacy_pointer()
+        )
 
         @parameter
         fn matmul_group_packed(
@@ -1187,7 +1196,7 @@ fn _matmul_Q4_K_columns[
     @__copy_capture(b_tile_ptr, b_q_scales_and_mins_buf, b_q_bits)
     @always_inline
     fn process_rows[tile_m: Int](m: Int):
-        var b_q_bits_ptr = b_q_bits.as_any_origin()
+        var b_q_bits_ptr = b_q_bits.as_any_origin().as_legacy_pointer()
 
         @parameter
         fn matmul_group_unpacked(
@@ -1393,7 +1402,12 @@ fn _matmul_Q6_K_columns[
 
     # Fast path for M=1 that avoids materializing the unpacked weights.
     if M == 1:
-        var b_q_bits_ptr = b_tile_ptr[].q_bits.bits.unsafe_ptr().as_any_origin()
+        var b_q_bits_ptr = (
+            b_tile_ptr[]
+            .q_bits.bits.unsafe_ptr()
+            .as_any_origin()
+            .as_legacy_pointer()
+        )
 
         @parameter
         fn matmul_group_packed(
@@ -1421,7 +1435,7 @@ fn _matmul_Q6_K_columns[
     @__copy_capture(b_tile_ptr, b_q_bits)
     @always_inline
     fn process_rows[tile_m: Int](m: Int):
-        var b_q_bits_ptr = b_q_bits.as_any_origin()
+        var b_q_bits_ptr = b_q_bits.as_any_origin().as_legacy_pointer()
 
         @parameter
         fn matmul_group_unpacked(

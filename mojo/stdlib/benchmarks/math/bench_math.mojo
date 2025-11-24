@@ -19,14 +19,14 @@ from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data
 # ===-----------------------------------------------------------------------===#
-alias input_type = Float32
+comptime input_type = Float32
 
 
 fn make_inputs(
     begin: input_type, end: input_type, num: input_type
 ) -> List[input_type]:
     if num == 1:
-        return List[input_type](begin)
+        return [begin]
 
     var step = (end - begin) / (num - 1)
 
@@ -38,7 +38,7 @@ fn make_inputs(
 
 fn make_int_inputs(begin: Int, end: Int, num: Int) -> List[Int]:
     if num == 1:
-        return List[Int](begin)
+        return [begin]
 
     var step = (end - begin) // (num - 1)
 
@@ -70,6 +70,8 @@ fn bench_math[
 
     b.iter[call_fn]()
 
+    _ = inputs^
+
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark fma
@@ -91,6 +93,8 @@ fn bench_math3[
 
     b.iter[call_fn]()
 
+    _ = inputs^
+
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark lcm/gcd
@@ -102,11 +106,13 @@ fn bench_math2[math_f2p: fn (Int, Int, /) -> Int](mut b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn() raises:
-        for i, input_val in enumerate(int_inputs[: len(int_inputs) // 2]):
+        for i, input_val in enumerate(List(int_inputs[: len(int_inputs) // 2])):
             var result = keep(math_f2p(input_val, int_inputs[-(i + 1)]))
             keep(result)
 
     b.iter[call_fn]()
+
+    _ = int_inputs^
 
 
 # ===-----------------------------------------------------------------------===#

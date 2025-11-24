@@ -110,7 +110,7 @@ fn test_dynamic_fp8_quant[
 
     ctx.enqueue_copy(in_device.buffer, in_host.tensor.data)
 
-    quantize_dynamic_scaled_fp8[group_size_or_per_token, Int(n.dim)](
+    quantize_dynamic_scaled_fp8[group_size_or_per_token](
         out_device.tensor, scales_device.tensor, in_device.tensor, 1200.0, ctx
     )
 

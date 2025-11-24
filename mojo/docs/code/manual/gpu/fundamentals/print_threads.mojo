@@ -14,7 +14,7 @@
 from sys import exit, has_accelerator, has_apple_gpu_accelerator
 
 from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, global_idx, grid_dim, thread_idx
+from gpu import block_dim, block_idx, global_idx, grid_dim, thread_idx
 
 
 fn print_threads():
@@ -43,9 +43,13 @@ fn print_threads():
 
 def main():
     @parameter
-    if not has_accelerator() or has_apple_gpu_accelerator():
-        print("No supported GPU detected")
-        exit(0)
+    if not has_accelerator():
+        print("No compatible GPU found")
+    elif has_apple_gpu_accelerator():
+        print(
+            "Printing from a kernel is not currently supported on Apple silicon"
+            " GPUs"
+        )
     else:
         # Initialize GPU context for device 0 (default GPU device).
         ctx = DeviceContext()

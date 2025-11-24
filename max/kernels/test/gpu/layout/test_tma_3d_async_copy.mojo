@@ -15,15 +15,14 @@ from sys import size_of
 
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, grid_dim, thread_idx
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu import block_idx, grid_dim, thread_idx
 from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from testing import assert_equal
 
 from utils.index import Index
@@ -38,7 +37,7 @@ fn test_tma_3d_load_kernel[
     desc_layout: Layout,
     smem_layout: Layout,
 ](
-    dst: LayoutTensor[dtype, dst_layout, MutableAnyOrigin],
+    dst: LayoutTensor[dtype, dst_layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, cta_tile_layout, desc_layout],
 ):
     constrained[
@@ -66,8 +65,8 @@ fn test_tma_3d_load_kernel[
     smem_tile = LayoutTensor[
         dtype,
         smem_layout,
-        MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -76,7 +75,7 @@ fn test_tma_3d_load_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -109,7 +108,7 @@ fn test_tma_3d_load_kernel[
         smem_tile_i = smem_tile.tile[1, cta_tile_dim1, cta_tile_dim2](i)
 
         dst_tile = dst.tile[cta_tile_dim1, cta_tile_dim2](
-            idx * UInt(cta_tile_dim0) + UInt(i), 0
+            Int(idx * UInt(cta_tile_dim0) + UInt(i)), 0
         )
         if thread_idx.x == 0:
             dst_tile.copy_from(smem_tile_i)
@@ -187,7 +186,7 @@ def test_tma_3d_load_row_major[
     desc_tile = LayoutTensor[
         dtype,
         Layout.row_major(desc_tile_dim1, desc_tile_dim2),
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ].stack_allocation()
 
     var dest_ptr = dst_host.ptr

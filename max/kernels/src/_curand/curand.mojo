@@ -15,20 +15,24 @@ from os import abort
 from pathlib import Path
 from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle
+from sys.ffi import _Global, OwnedDLHandle
 
 from gpu.host._nvidia_cuda import CUstream
 
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from utils import StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_CURAND_LIBRARY_PATHS = List[Path](
+alias CUDA_CURAND_LIBRARY_PATHS: List[Path] = [
     "libcurand.so.10",
     "/usr/local/cuda/lib64/libcurand.so.10",
-)
+]
 
 
 fn _on_error_msg() -> Error:
@@ -51,7 +55,7 @@ alias CUDA_CURAND_LIBRARY = _Global[
 ]
 
 
-fn _init_dylib() -> _OwnedDLHandle:
+fn _init_dylib() -> OwnedDLHandle:
     return _find_dylib[abort_on_failure=False](
         materialize[CUDA_CURAND_LIBRARY_PATHS]()
     )
@@ -198,7 +202,7 @@ fn curandGetProperty(
 
 @fieldwise_init
 @register_passable("trivial")
-struct curandRngType(EqualityComparable, Identifiable, Writable):
+struct curandRngType(Equatable, Identifiable, Writable):
     """
     CURAND generator types
     ."""
@@ -546,7 +550,7 @@ alias curandGenerator_t = UnsafePointer[curandGenerator_st]
 
 @fieldwise_init
 @register_passable("trivial")
-struct curandMethod(EqualityComparable, Identifiable, Writable):
+struct curandMethod(Equatable, Identifiable, Writable):
     """\\cond UNHIDE_ENUMS ."""
 
     var _value: Int8
@@ -702,7 +706,7 @@ alias curandMethod_t = curandMethod
 
 @fieldwise_init
 @register_passable("trivial")
-struct curandStatus(EqualityComparable, Identifiable, Writable):
+struct curandStatus(Equatable, Identifiable, Writable):
     """
     CURAND function call status types
     ."""
@@ -775,7 +779,7 @@ struct curandStatus(EqualityComparable, Identifiable, Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct curandDirectionVectorSet(EqualityComparable, Identifiable, Writable):
+struct curandDirectionVectorSet(Equatable, Identifiable, Writable):
     """
     CURAND choice of direction vector set
     ."""
@@ -1238,7 +1242,7 @@ alias curandDirectionVectors64_t = StaticTuple[UInt64, 64]
 
 @fieldwise_init
 @register_passable("trivial")
-struct curandOrdering(EqualityComparable, Identifiable, Writable):
+struct curandOrdering(Equatable, Identifiable, Writable):
     """
     CURAND ordering of results in memory
     ."""

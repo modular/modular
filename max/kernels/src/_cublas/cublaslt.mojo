@@ -15,7 +15,7 @@ from os import abort
 from pathlib import Path
 from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle
+from sys.ffi import _Global, OwnedDLHandle
 
 from gpu.host._nvidia_cuda import _CUstream_st
 
@@ -24,6 +24,10 @@ from utils import StaticTuple
 from .cublas import ComputeType
 from .dtype import DataType, Property
 from .result import Result
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 
 alias Context = NoneType
 
@@ -31,11 +35,15 @@ alias Context = NoneType
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_CUBLASLT_LIBRARY_PATHS = List[Path](
+alias CUDA_CUBLASLT_LIBRARY_PATHS: List[Path] = [
+    "libcublasLt.so.13",
+    "/usr/local/cuda-13.1/lib64/libcublasLt.so.13",
+    "/usr/local/cuda-13.0/lib64/libcublasLt.so.13",
+    "/usr/local/cuda/lib64/libcublasLt.so.13",
     "libcublasLt.so.12",
     "/usr/local/cuda-12.8/lib64/libcublasLt.so.12",
     "/usr/local/cuda/lib64/libcublasLt.so.12",
-)
+]
 
 
 fn _on_error_msg() -> Error:
@@ -58,7 +66,7 @@ alias CUDA_CUBLASLT_LIBRARY = _Global[
 ]
 
 
-fn _init_dylib() -> _OwnedDLHandle:
+fn _init_dylib() -> OwnedDLHandle:
     return _find_dylib[abort_on_failure=False](
         materialize[CUDA_CUBLASLT_LIBRARY_PATHS]()
     )
@@ -634,6 +642,16 @@ struct MatmulAlgorithmCapability:
     """
     alias ATOMIC_SYNC = Self(20)
     """EXPERIMENTAL: support for synchronization via atomic counters
+    int32_t.
+    """
+
+    alias POINTER_ARRAY_BATCH_SUPPORT = Self(21)
+    """support pointer array batch
+
+    int32_t, 0 means no support, supported otherwise.
+    """
+    alias FLOATING_POINT_EMULATION_SUPPORT = Self(22)
+    """describes if the algorithm supports floating point emulation
 
     int32_t.
     """
@@ -687,6 +705,10 @@ struct MatmulAlgorithmCapability:
             return "MIN_ALIGNMENT_D_BYTES"
         if self == Self.ATOMIC_SYNC:
             return "ATOMIC_SYNC"
+        if self == Self.POINTER_ARRAY_BATCH_SUPPORT:
+            return "POINTER_ARRAY_BATCH_SUPPORT"
+        if self == Self.FLOATING_POINT_EMULATION_SUPPORT:
+            return "FLOATING_POINT_EMULATION_SUPPORT"
         return abort[String]("invalid MatmulAlgorithmCapability entry")
 
     fn __int__(self) raises -> Int:
@@ -2058,15 +2080,31 @@ struct cublasLtMatmulMatrixScale_t:
     Same as above, except that scaling factor tensor elements have type CUDA_R_8F_UE8M0 and the block size is 32
     elements
     """
-    alias MATRIX_SCALE_END = Self(3)
+    alias MATRIX_SCALE_OUTER_VEC_32F = Self(3)
+    """
+    Scaling factors are single-precision vectors. This mode is only applicable to matrices A and B, in which case the
+    vectors are expected to have M and N elements respectively, and each (i, j)-th element of product of A and B is
+    multiplied by i-th element of A scale and j-th element of B scale.
+    """
+    alias MATRIX_SCALE_VEC128_32F = Self(4)
+    """
+    Scaling factors are tensors that contain a dedicated FP32 scaling factor for each 128-element block in the
+    innermost dimension of the corresponding data tensor
+    """
+    alias MATRIX_SCALE_BLK128x128_32F = Self(5)
+    """
+    Scaling factors are tensors that contain a dedicated FP32 scaling factor for each 128x128-element block in the
+    the corresponding data tensor
+    """
+    alias MATRIX_SCALE_END = Self(6)
 
     fn __init__(out self, value: Int):
         self._value = value
 
-    fn __eq__(self, other: Self) raises -> Bool:
+    fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) raises -> Bool:
+    fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
@@ -2077,9 +2115,52 @@ struct cublasLtMatmulMatrixScale_t:
             return "MATRIX_SCALE_VEC16_UE4M3"
         if self == Self.MATRIX_SCALE_VEC32_UE8M0:
             return "MATRIX_SCALE_VEC32_UE8M0"
+        if self == Self.MATRIX_SCALE_OUTER_VEC_32F:
+            return "MATRIX_SCALE_OUTER_VEC_32F"
+        if self == Self.MATRIX_SCALE_VEC128_32F:
+            return "MATRIX_SCALE_VEC128_32F"
+        if self == Self.MATRIX_SCALE_BLK128x128_32F:
+            return "MATRIX_SCALE_BLK128x128_32F"
         if self == Self.MATRIX_SCALE_END:
             return "MATRIX_SCALE_END"
         return abort[String]("invalid MatmulMatrixScale entry")
+
+    fn __int__(self) raises -> Int:
+        return Int(self._value)
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct cublasLtBatchMode_t:
+    """Batch mode."""
+
+    var _value: Int32
+    alias STRIDED = Self(0)
+    """
+    The matrices of each instance of the batch are located at fixed offsets in number of elements from their locations
+    in the previous instance.
+    """
+    alias POINTER_ARRAY = Self(1)
+    """
+    The address of the matrix of each instance of the batch are read from arrays of pointers.
+    """
+
+    fn __init__(out self, value: Int):
+        self._value = value
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    @no_inline
+    fn __str__(self) raises -> String:
+        if self == Self.STRIDED:
+            return "BATCH_MODE_STRIDED"
+        if self == Self.POINTER_ARRAY:
+            return "BATCH_MODE_POINTER_ARRAY"
+        return abort[String]("invalid cublasLtBatchMode_t entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -2155,6 +2236,11 @@ struct LayoutAttribute:
     in memory in each element).
     """
 
+    alias BATCH_MODE = Self(8)
+    """Batch mode.
+    uint32_t, default: 0 - 0 means that batch mode is CUBLASLT_BATCH_MODE_STRIDED.
+    """
+
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2182,6 +2268,8 @@ struct LayoutAttribute:
             return "STRIDED_BATCH_OFFSET"
         if self == Self.PLANE_OFFSET:
             return "PLANE_OFFSET"
+        if self == Self.BATCH_MODE:
+            return "BATCH_MODE"
         return abort[String]("invalid LayoutAttribute entry")
 
     fn __int__(self) raises -> Int:

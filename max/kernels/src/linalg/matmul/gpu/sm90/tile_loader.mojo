@@ -33,9 +33,9 @@ from gpu.memory import (
 )
 from ....structuring import SharedMemBarrier, SMemBarrier, SMemTileType
 from layout.swizzle import make_swizzle
-from gpu.id import thread_idx
+from gpu import thread_idx
 from sys import simd_width_of
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.layout import coalesce
 
 
@@ -52,7 +52,7 @@ trait TileLoader:
     @always_inline
     fn load_tile(
         self,
-        dst: SMemTileType[Self._dtype, _, alignment=128],
+        dst: SMemTileType[Self._dtype, _, alignment=128, **_],
         mem_barrier: SMemBarrier,
         coords: Tuple[UInt, UInt],
     ):
@@ -97,7 +97,8 @@ struct TileLoaderTMA[
     alias _dtype = Self.dtype
 
     alias TMATensorTilePtr = Pointer[
-        TMATensorTile[dtype, tile_layout, desc_layout], tma_origin
+        TMATensorTile[Self.dtype, Self.tile_layout, Self.desc_layout],
+        Self.tma_origin,
     ]
     var tma_op: Self.TMATensorTilePtr
     var rank: UInt
@@ -124,7 +125,7 @@ struct TileLoaderTMA[
     @always_inline
     fn load_tile(
         self,
-        dst: SMemTileType[Self._dtype, _, alignment=128],
+        dst: SMemTileType[Self._dtype, _, alignment=128, **_],
         mem_barrier: SMemBarrier,
         _coords: Tuple[UInt, UInt],
     ):
@@ -143,17 +144,17 @@ struct TileLoaderTMA[
             (k_elements, row/col_elements) for TMA's K-major ordering.
         """
         # Switch coordinates to k-minor and multiply k by BK to match the CPAsync API.
-        var coords = (_coords[1] * BK, _coords[0])  # (m/n, k) -> (k, m/n)
+        var coords = (_coords[1] * Self.BK, _coords[0])  # (m/n, k) -> (k, m/n)
 
-        alias tma_load_size = desc_layout.size()
-        alias tma_rows = desc_layout.shape[0].value()
+        alias tma_load_size = Self.desc_layout.size()
+        alias tma_rows = Self.desc_layout.shape[0].value()
 
         @parameter
-        if cluster_size > 1:
+        if Self.cluster_size > 1:
             # Multi-block cluster: Use multicast to share data across blocks
 
             @parameter
-            if use_partitioned_multicast:
+            if Self.use_partitioned_multicast:
                 # Partitioned multicast: Each block loads a portion of the tile
                 # This is more efficient for large tiles as it distributes the load
                 self.tma_op[].async_multicast_load_partitioned[
@@ -211,9 +212,9 @@ struct TileLoaderCPAsync[
     alias _dtype = Self.dtype
 
     var src: LayoutTensor[
-        dtype,
-        src_layout,
-        MutableAnyOrigin,
+        Self.dtype,
+        Self.src_layout,
+        MutAnyOrigin,
         address_space = AddressSpace.GENERIC,
     ]
 
@@ -221,9 +222,9 @@ struct TileLoaderCPAsync[
     fn __init__(
         out self,
         src: LayoutTensor[
-            dtype,
-            src_layout,
-            MutableAnyOrigin,
+            Self.dtype,
+            Self.src_layout,
+            MutAnyOrigin,
             address_space = AddressSpace.GENERIC,
         ],
     ):
@@ -236,7 +237,7 @@ struct TileLoaderCPAsync[
 
     fn load_tile(
         self,
-        dst: SMemTileType[Self._dtype, _, alignment=128],
+        dst: SMemTileType[Self._dtype, _, alignment=128, **_],
         mem_barrier: SMemBarrier,
         coords: Tuple[UInt, UInt],
     ):
@@ -263,13 +264,13 @@ struct TileLoaderCPAsync[
         var a_gmem_tile = self.src.tile[BM, BN](
             Int(coords[0]),
             Int(coords[1]),
-        ).vectorize[1, vector_size]()
+        ).vectorize[1, Self.vector_size]()
 
         # Perform the async copy with bounds checking and swizzling
         async_copy_with_bound_check[
-            thread_layout,
-            swizzle_mode,
-        ](a_gmem_tile, dst.vectorize[1, vector_size]())
+            Self.thread_layout,
+            Self.swizzle_mode,
+        ](a_gmem_tile, dst.vectorize[1, Self.vector_size]())
 
 
 @always_inline
@@ -283,14 +284,14 @@ fn async_copy_with_bound_check[
     src: LayoutTensor[
         dtype,
         src_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.GENERIC,
         *_, **_,
     ],
     dst: LayoutTensor[
         dtype,
         dst_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         *_, **_,
     ],
@@ -350,8 +351,9 @@ fn async_copy_with_bound_check[
     # Calculate base coordinates for this thread's destination fragment
     var dst_frag_offset = dst_frag.distance(dst.ptr)
     alias dst_stride0 = dst.layout.stride[0].value()
-    var dst_frag_base_coord0 = Int32(dst_frag_offset // dst_stride0)
-    var dst_frag_base_coord1 = Int32(dst_frag_offset % dst_stride0)
+    var dst_frag_base_coord0, dst_frag_base_coord1 = divmod(
+        Int32(dst_frag_offset), Int32(dst_stride0)
+    )
 
     # Create swizzle pattern to avoid shared memory bank conflicts
     alias swizzle = make_swizzle[

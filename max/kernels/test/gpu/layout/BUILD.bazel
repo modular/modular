@@ -31,7 +31,6 @@ _H100_TESTS = [
     "test_wgmma_layouts.mojo",
     "test_wgmma_with_static_tuple_output_bf16.mojo",
     "test_wgmma_with_static_tuple_output_fp8.mojo",
-    "test_naive_blockwise_fp8_matmul.mojo",
 ]
 
 _EXTRA_CONSTRAINTS = {
@@ -105,12 +104,12 @@ _FILECHECK_TESTS = [
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:internal_utils",
-            "@mojo//:kv_cache",
-            "@mojo//:layout",
-            "@mojo//:linalg",
-            "@mojo//:nn",
-            "@mojo//:quantization",
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:layout",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
             "@mojo//:stdlib",
         ],
     )
@@ -138,11 +137,11 @@ _FILECHECK_TESTS = [
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:internal_utils",
-            "@mojo//:kv_cache",
-            "@mojo//:linalg",
-            "@mojo//:nn",
-            "@mojo//:quantization",
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
             "@mojo//:stdlib",
         ],
     )

@@ -190,7 +190,7 @@ write a simple kernel function that prints the thread block and thread indices.
 Add the following code to your `vector_addition.mojo` file:
 
 ```mojo title="vector_addition.mojo"
-from gpu.id import block_idx, thread_idx
+from gpu import block_idx, thread_idx
 
 fn print_threads():
     """Print thread IDs."""
@@ -228,10 +228,12 @@ of imports from the `sys` module so that your program looks like this:
 from sys import has_accelerator, has_apple_gpu_accelerator
 
 from gpu.host import DeviceContext
-from gpu.id import block_idx, thread_idx
+from gpu import block_idx, thread_idx
+
 
 fn print_threads():
     """Print thread IDs."""
+
     print("Block index: [",
         block_idx.x,
         "]\tThread index: [",
@@ -239,15 +241,20 @@ fn print_threads():
         "]"
     )
 
+
 def main():
     @parameter
-    if not has_accelerator() or has_apple_gpu_accelerator():
+    if not has_accelerator():
         print("No compatible GPU found")
+    elif has_apple_gpu_accelerator():
+        print(
+            "Printing from a kernel is not currently supported on Apple silicon"
+            " GPUs"
+        )
     else:
         ctx = DeviceContext()
         ctx.enqueue_function_checked[print_threads, print_threads](
-            grid_dim=2,
-            block_dim=64
+            grid_dim=2, block_dim=64
         )
         ctx.synchronize()
         print("Program finished")
@@ -278,7 +285,7 @@ silicon GPUs. If you run this program on macOS, you'll see only the following
 output:
 
 ```output
-No compatible GPU found
+Printing from a kernel is not currently supported on Apple silicon GPUs
 ```
 
 If you're completing this tutorial on macOS, go ahead and read the rest of this
@@ -509,7 +516,7 @@ this:
 
 ```mojo title="vector_addition.mojo"
 from gpu.host import DeviceContext
-from gpu.id import block_idx, thread_idx
+from gpu import block_idx, thread_idx
 from sys import has_accelerator
 
 # Vector data type and size
@@ -687,10 +694,10 @@ to create `LayoutTensor` views for each of the vectors:
 ## 9. Define the vector addition kernel function
 
 Now we're ready to write the kernel function. First, add the following imports
-(note that we've added `block_dim` to the list of imports from `gpu.id`):
+(note that we've added `block_dim` to the list of imports from `gpu`):
 
 ```mojo title="vector_addition.mojo"
-from gpu.id import block_dim, block_idx, thread_idx
+from gpu import block_dim, block_idx, thread_idx
 from math import ceildiv
 ```
 
@@ -705,9 +712,9 @@ alias num_blocks = ceildiv(vector_size, block_size)
 
 
 fn vector_addition(
-    lhs_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
-    rhs_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
-    out_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
+    lhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
+    rhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
+    out_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
 ):
     """Calculate the element-wise sum of two vectors on the GPU."""
 
@@ -740,7 +747,7 @@ on.
 
 :::note
 
-As a convenience, the [`gpu.id`](/mojo/stdlib/gpu/id) module includes a
+As a convenience, the [`gpu`](/mojo/stdlib/gpu) package includes a
 `global_idx` alias that contains the unique "global" `x`, `y`, and `z` indices
 of the thread within the grid of thread blocks. So for our one-dimensional grid
 of one-dimensional thread blocks, `global_idx.x` is equivalent to the value of
@@ -794,7 +801,7 @@ from math import ceildiv
 from sys import has_accelerator
 
 from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, thread_idx
+from gpu import block_dim, block_idx, thread_idx
 from layout import Layout, LayoutTensor
 
 # Vector data type and size
@@ -809,9 +816,9 @@ alias num_blocks = ceildiv(vector_size, block_size)
 
 
 fn vector_addition(
-    lhs_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
-    rhs_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
-    out_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
+    lhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
+    rhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
+    out_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
 ):
     """Calculate the element-wise sum of two vectors on the GPU."""
 

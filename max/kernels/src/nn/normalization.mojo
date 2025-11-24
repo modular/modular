@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down, ceildiv, rsqrt
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys.info import align_of, simd_width_of, size_of
 
 import gpu.warp as warp
@@ -35,7 +36,7 @@ from gpu import (
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
-from gpu.memory import AddressSpace, external_memory
+from gpu.memory import external_memory
 from layout import (
     UNKNOWN_VALUE,
     IntTuple,
@@ -639,9 +640,7 @@ fn layer_norm_cpu[
         )  # use biased estimator
         var norm_factor = rsqrt(var_val + epsilon)
 
-        @__copy_capture(norm_factor, mean_val, row)
-        @parameter
-        fn _normalize[simd_width: Int](col: Int):
+        fn _normalize[simd_width: Int](col: Int) unified {mut}:
             var out_val = input_fn[simd_width](row, col)
             var gamma_val = gamma_fn[simd_width, 1](col)
             var beta_col = beta.runtime_layout(
@@ -657,7 +656,7 @@ fn layer_norm_cpu[
                 row, col, rebind[SIMD[dtype, simd_width]](norm_val)
             )
 
-        vectorize[_normalize, simd_width](num_cols)
+        vectorize[simd_width](num_cols, _normalize)
 
 
 fn layer_norm_cpu[
@@ -1289,9 +1288,7 @@ fn rms_norm_cpu[
         var mean_val = _sum_to_mean(sum_val, num_cols)
         var norm_factor = rsqrt(mean_val + epsilon.cast[intermediate_type]())
 
-        @__copy_capture(norm_factor, weight_offset)
-        @parameter
-        fn _normalize[simd_width: Int](col: Int):
+        fn _normalize[simd_width: Int](col: Int) unified {mut}:
             var input_val = input_fn[simd_width](row, col).cast[
                 intermediate_type
             ]()
@@ -1314,7 +1311,7 @@ fn rms_norm_cpu[
 
             output_fn[simd_width, 1](row, col, norm_val)
 
-        vectorize[_normalize, simd_width](num_cols)
+        vectorize[simd_width](num_cols, _normalize)
 
 
 fn rms_norm_cpu[
@@ -2161,7 +2158,7 @@ fn group_norm_gpu_warp_tiling[
     origin: Origin[mut],
     layout: Layout, //,
     dtype: DType,
-    simd_width: UInt,
+    simd_width: Int,
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
@@ -2175,13 +2172,12 @@ fn group_norm_gpu_warp_tiling[
     spatial: Int,
 ):
     constrained[output.rank == 2, "output.rank must be 2"]()
-    alias align = align_of[SIMD[dtype, Int(simd_width)]]()
+    alias align = align_of[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
 
-    var tid = thread_idx.x
-    var idx = tid * simd_width
+    var idx = Int(thread_idx.x) * simd_width
 
-    var vec_data = SIMD[accum_type, Int(simd_width)]()
+    var vec_data = SIMD[accum_type, simd_width]()
     var group_size = channels_per_group * spatial
 
     var row = block_idx.x
@@ -2194,15 +2190,13 @@ fn group_norm_gpu_warp_tiling[
     var thread_count = Scalar[accum_type]()
 
     with PDL():
-        if idx + simd_width <= UInt(group_size):
-            vec_data = input_fn[Int(simd_width)](Int(row), Int(idx)).cast[
-                accum_type
-            ]()
+        if idx + simd_width <= group_size:
+            vec_data = input_fn[simd_width](Int(row), idx).cast[accum_type]()
 
             @parameter
             for i in range(simd_width):
                 welford_update(
-                    vec_data[Int(i)], thread_mean, thread_m2, thread_count
+                    vec_data[i], thread_mean, thread_m2, thread_count
                 )
 
         welford_block_all_reduce(
@@ -2212,24 +2206,24 @@ fn group_norm_gpu_warp_tiling[
         var row_var = row_m2 / row_count
         var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
 
-        if idx + simd_width <= UInt(group_size):
+        if idx + simd_width <= group_size:
             var g = row % UInt(num_groups)
             var c_base = g * UInt(channels_per_group)
-            var norm_val = SIMD[accum_type, Int(simd_width)]()
+            var norm_val = SIMD[accum_type, simd_width]()
             for i in range(simd_width):
-                var offset = (idx + i) // UInt(spatial)
-                var c = c_base + offset
+                var offset = (idx + i) // spatial
+                var c = c_base + UInt(offset)
                 var gamma_val = gamma_fn[1](Index(c))
                 var beta_val = beta_fn[1](Index(c))
-                norm_val[Int(i)] = (
-                    vec_data[Int(i)] - row_mean
+                norm_val[i] = (
+                    vec_data[i] - row_mean
                 ) * norm_factor * gamma_val.cast[accum_type]() + beta_val.cast[
                     accum_type
                 ]()
 
             var output_idx = output.runtime_layout(
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)](
-                    Index(row, idx)
+                    Index(row, UInt(idx))
                 )
             )
             output.ptr.store[alignment=align](
@@ -2426,7 +2420,7 @@ fn group_norm_gpu[
                 origin = output_rs.origin,
                 layout = output_rs.layout,
                 dtype=dtype,
-                simd_width = UInt(simd_width),
+                simd_width=simd_width,
                 input_fn=input_fn_2d,
                 gamma_fn=gamma_fn,
                 beta_fn=beta_fn,

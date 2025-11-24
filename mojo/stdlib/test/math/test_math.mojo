@@ -54,13 +54,13 @@ from utils.numerics import inf, isinf, isnan, nan, neg_inf
 fn test_sin() raises:
     assert_almost_equal(sin(Float32(1.0)), 0.841470956802)
 
-    alias s_45 = sin(pi / 4)
+    comptime s_45 = sin(pi / 4)
     assert_almost_equal(s_45, 0.7071067811865475)
 
-    alias s_30 = sin(pi / 6)
+    comptime s_30 = sin(pi / 6)
     assert_almost_equal(s_30, 0.5)
 
-    alias s_60 = sin(pi / 3)
+    comptime s_60 = sin(pi / 3)
     assert_almost_equal(s_60, 0.8660254037844387)
 
     # Compare the compile time values against the runtime values to make sure
@@ -75,13 +75,13 @@ fn test_cos() raises:
 
     assert_equal(cos(BFloat16(2.0)), -0.416015625)
 
-    alias c_45 = cos(pi / 4)
+    comptime c_45 = cos(pi / 4)
     assert_almost_equal(c_45, 0.7071067811865476)
 
-    alias c_30 = cos(pi / 6)
+    comptime c_30 = cos(pi / 6)
     assert_almost_equal(c_30, 0.8660254037844386)
 
-    alias c_60 = cos(pi / 3)
+    comptime c_60 = cos(pi / 3)
     assert_almost_equal(c_60, 0.4999999999999999)
 
     # Compare the compile time values against the runtime values to make sure
@@ -122,16 +122,16 @@ def test_copysign():
     # TODO: Add some test cases for SIMD vector with width > 1
 
 
-fn test_isclose_numerics[*, symm: Bool]() raises:
-    alias dtype = DType.float64
-    alias T = SIMD[dtype, 2]
+fn _test_isclose_numerics[*, symm: Bool]() raises:
+    comptime dtype = DType.float64
+    comptime T = SIMD[dtype, 2]
 
-    alias atol = 1e-8
-    alias rtol = 1e-5
+    comptime atol = 1e-8
+    comptime rtol = 1e-5
 
-    alias inf_ = inf[dtype]()
-    alias nan_ = nan[dtype]()
-    alias v = T(0.1, 0.2)
+    comptime inf_ = inf[dtype]()
+    comptime nan_ = nan[dtype]()
+    comptime v = T(0.1, 0.2)
 
     fn edge_val[symm: Bool](a: T, atol: T, rtol: T) -> T:
         """Creates a value at the tolerance boundary that should be considered close to `a`.
@@ -194,10 +194,10 @@ fn test_isclose_numerics[*, symm: Bool]() raises:
 
 def test_isclose():
     # floating-point
-    alias dtype = DType.float32
-    alias S = Scalar[dtype]
-    alias T = SIMD[dtype, 4]
-    alias nan_ = nan[dtype]()
+    comptime dtype = DType.float32
+    comptime S = Scalar[dtype]
+    comptime T = SIMD[dtype, 4]
+    comptime nan_ = nan[dtype]()
 
     assert_true(isclose(S(2), S(2)))
     assert_true(isclose(S(2), S(2), rtol=1e-9))
@@ -212,8 +212,8 @@ def test_isclose():
         all(isclose(T(1, 2, nan_, 3), T(1, 2, nan_, 4), equal_nan=True))
     )
 
-    test_isclose_numerics[symm=False]()
-    test_isclose_numerics[symm=True]()
+    _test_isclose_numerics[symm=False]()
+    _test_isclose_numerics[symm=True]()
 
 
 def test_ceil():
@@ -267,7 +267,7 @@ def test_exp2():
 
 
 def test_iota():
-    alias length = 103
+    comptime length = 103
     var offset = 2
 
     var vector = List[Int32](unsafe_uninit_length=length)
@@ -288,8 +288,8 @@ def test_iota():
         assert_equal(vector2[i], offset + i)
 
 
-alias F32x4 = SIMD[DType.float32, 4]
-alias F64x4 = SIMD[DType.float64, 4]
+comptime F32x4 = SIMD[DType.float32, 4]
+comptime F64x4 = SIMD[DType.float64, 4]
 
 
 def test_sqrt():
@@ -574,9 +574,9 @@ def test_ceildiv():
     assert_equal(ceildiv(53.6, 1.35), 40.0)
 
     # Test the IntLiteral overload.
-    alias a: type_of(1) = ceildiv(1, 7)
+    comptime a: type_of(1) = ceildiv(1, 7)
     assert_equal(a, 1)
-    alias b: type_of(-78) = ceildiv(548, -7)
+    comptime b: type_of(-78) = ceildiv(548, -7)
     assert_equal(b, -78)
 
     # Test the Int overload.
@@ -688,7 +688,7 @@ def test_atanh():
 
 
 def test_asin():
-    alias n = 1_000
+    comptime n = 1_000
     for i in range(n):
         var val = Float32(i) / (n * 2) - 1
         assert_almost_equal(
@@ -699,7 +699,7 @@ def test_asin():
 
 
 def test_erfc():
-    alias n = 10_000
+    comptime n = 10_000
     for i in range(n):
         var val = Float32(i) / (n * Float32(2) / 10) - 10
         assert_almost_equal(
@@ -709,7 +709,7 @@ def test_erfc():
 
 
 def test_cbrt():
-    alias n = 1_0000
+    comptime n = 1_0000
     for i in range(n):
         var val = Float32(i) / (n * Float32(2) / 10) - 10
         assert_almost_equal(
@@ -720,7 +720,7 @@ def test_cbrt():
 
 
 def test_acos():
-    alias n = 1_000
+    comptime n = 1_000
     for i in range(n):
         var val = Float32(i) / (n * 2) - 1
         assert_almost_equal(

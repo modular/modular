@@ -12,13 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
 from math import ceildiv
-from sys import align_of, env_get_bool, env_get_int, simd_width_of, size_of
+from sys import (
+    align_of,
+    env_get_bool,
+    env_get_int,
+    simd_width_of,
+    size_of,
+    has_nvidia_gpu_accelerator,
+)
 
 from algorithm import elementwise
 from buffer.buffer import NDBuffer
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext, get_gpu_target
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from logger import Logger
@@ -31,7 +38,7 @@ from ....utils import (
     elementwise_epilogue_type,
 )
 from ....utils_gpu import MatmulKernels
-from .config import MatmulConfig
+from .config import MatmulConfig, build_configs, choose_config
 from ...gpu import matmul_kernel_naive, gemv_gpu, multistage_gemm
 from ...vendor.matmul import matmul as matmul_vendor
 from ..tile_scheduler import RasterOrder
@@ -40,10 +47,16 @@ from .matmul import (
     matmul_sm100_fallback,
 )
 from internal_utils import Table
-from .tuning_configs import _get_tuning_list_sm100_fp8, TuningConfigSM100
+from .tuning_configs import (
+    _get_tuning_list_sm100_fp8,
+    TuningConfigSM100,
+    _get_tuning_list_sm100_bf16,
+)
 
 alias DISPATCH_MISS = 0
 alias DISPATCH_HIT = 1
+
+alias logger = Logger()
 
 
 @always_inline
@@ -401,6 +414,7 @@ fn matmul_dispatch_sm100[
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
     ] = None,
+    register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
@@ -415,38 +429,43 @@ fn matmul_dispatch_sm100[
         var c_tensor = from_ndbuffer_row_major(c)
         var a_tensor = from_ndbuffer_row_major(a)
         var b_tensor = from_ndbuffer_row_major(b)
+
         alias BM = env_get_int["TUNE_BM", 128]()
         alias BN = env_get_int["TUNE_BN", 64]()
         alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
+        alias MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
         alias CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 2]()
         alias CLUSTER_DIM_Y = env_get_int["TUNE_CLUSTER_DIM_Y", 1]()
         alias CLUSTER_DIM_Z = env_get_int["TUNE_CLUSTER_DIM_Z", 1]()
         alias CLUSTER_DIM = Index(CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z)
         alias BLOCK_SWIZZLE_SIZE = env_get_int["TUNE_BLOCK_SWIZZLE_SIZE", 0]()
         alias RASTERIZE_ORDER = env_get_int["TUNE_RASTER_ORDER", 1]()
+        alias CTA_GROUP = env_get_int["TUNE_CTA_GROUP", 2]()
+        alias K_GROUP_SIZE = env_get_int["TUNE_K_GROUP_SIZE", 1]()
+        alias AB_SWAPPED = env_get_bool["TUNE_AB_SWAPPED", False]()
         # alias PIPELINE_STAGE = env_get_int["TUNE_PIPELINE_STAGE", 4]()
-        alias block_tile_shape = Index(BM, BN, BK)
-        alias MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
-        alias UmmaShape = Index(BM * 2, BN * 2, MMA_K)
+
+        alias umma_shape = Index(BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
 
         alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-            mma_shape=UmmaShape,
+            mma_shape=umma_shape,
             cluster_shape=CLUSTER_DIM,
             block_swizzle_size=BLOCK_SWIZZLE_SIZE,
             raster_order=RasterOrder(RASTERIZE_ORDER),
+            cta_group=CTA_GROUP,
+            AB_swapped=AB_SWAPPED,
+            k_group_size=UInt(K_GROUP_SIZE),
         )
 
         return blackwell_matmul_tma_umma_warp_specialized[
             transpose_b=transpose_b,
             config=config,
-            # num_pipeline_stages = UInt(PIPELINE_STAGE),
+            register_based_epilogue=register_based_epilogue,
         ](c_tensor, a_tensor, b_tensor, ctx)
 
     var m = c.dim[0]()
     alias static_N = c.shape.get[1]()
     alias static_K = a.shape.get[1]()
-
-    var logger = Logger()
 
     var epilogue_type = String("None")
 
@@ -479,11 +498,29 @@ fn matmul_dispatch_sm100[
     alias MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
     alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
 
+    # 1. for m==1 our gemv matmul is faster than cublas for skinny bfloat16 matmuls
+    # 2. Our GEMV matmul dosen't support float8 yet.
+    # 3. static_N=1 is not supported on SM100 due to the output buffer TMA requirements. (`N * size_of(c_type) % 16 == 0`).
+    @parameter
+    if a_type is DType.bfloat16:
+        if static_N == 1 or m == 1:
+            logger.info("------ Executing GEMV Matmul------")
+            gemv_gpu[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_wrapper,
+            ](c, a, b, ctx)
+            return
+
     # SM100 kernel requirements:
     # 1. `N * size_of(c_type) % 16B == 0` for output buffer (TMA requirement)
     # 2. `c_type == DType.bfloat16` SM100 kernel only supports bfloat16 for output buffer
     @parameter
-    if c_type == DType.bfloat16 and static_N * size_of[c_type]() % 16 == 0:
+    if (
+        c_type == DType.bfloat16
+        and static_N * size_of[c_type]() % 16 == 0
+        and static_K * size_of[a_type]() % 16 == 0
+        and transpose_b
+    ):
         var status = DISPATCH_MISS
 
         @parameter
@@ -513,20 +550,6 @@ fn matmul_dispatch_sm100[
             logger.info("------ Executing MOJO SM100 Matmul------")
             return
 
-    # if it's not a hit to this point, then it means the shape is not tuned or supported for sm100 therefore we fallback to other options
-    # NOTE:
-    # 1. for m==1 our gemv matmul is faster than cublas for skinny bfloat16 matmuls
-    # 2. Our GEMV matmul dosen't support float8 yet.
-    # 3. static_N=1 is not supported on SM100 due to the output buffer TMA requirements. (`N * size_of(c_type) % 16 == 0`).
-    @parameter
-    if a_type is DType.bfloat16:
-        if static_N == 1 or m == 1:
-            logger.info("------ Executing GEMV Matmul------")
-            gemv_gpu[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
-            ](c, a, b, ctx)
-            return
     # fallback to vendor matmul for untuned shapes
     # We assume that this will always be a hit as in the worst case it will be a navie matmul.
     return _vendor_blas_matmul_sm100[
@@ -626,11 +649,14 @@ fn matmul_dispatch_sm100_fp8[
 
     alias nk_idx_list = tuning_table.query_index[rule_eq_nk]()
 
+    # TODO: re-enable the following tuning dispatch.
     # make sure the domain (nk_idx_list) is not empty!
-    @parameter
-    if nk_idx_list:
-        if _search[tuning_table, domain=nk_idx_list]() == DISPATCH_HIT:
-            return DISPATCH_HIT
+    if m > 128:
+
+        @parameter
+        if nk_idx_list:
+            if _search[tuning_table, domain=nk_idx_list]() == DISPATCH_HIT:
+                return DISPATCH_HIT
 
     @parameter
     fn matmul_swapab[static_m: Int]() raises -> Int:
@@ -646,6 +672,7 @@ fn matmul_dispatch_sm100_fp8[
         alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             mma_shape=umma_shape,
             cluster_shape=cluster_shape,
+            AB_swapped=True,
         )
         _matmul_dispatch_sm100[
             transpose_b=transpose_b,
@@ -653,7 +680,6 @@ fn matmul_dispatch_sm100_fp8[
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
-            swapAB=True,
         ](c, a, b, ctx)
         return DISPATCH_HIT
 
@@ -1663,6 +1689,89 @@ fn matmul_dispatch_sm100_fp8[
     return DISPATCH_MISS
 
 
+fn heuristic_and_outliers_dispatch_bf16[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType, //,
+    transpose_b: Bool = True,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: OptionalReg[
+        elementwise_compute_lambda_type
+    ] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: NDBuffer[mut=True, c_type, 2, _, _],
+    a: NDBuffer[a_type, 2, _, _],
+    b: NDBuffer[b_type, 2, _, _],
+    ctx: DeviceContext,
+) raises -> Int:
+    var m = c.dim[0]()
+    alias static_N = c.shape.get[1]()
+    alias static_K = a.shape.get[1]()
+
+    alias MMA_K = 16
+    alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
+
+    alias outliers = Table(
+        _get_tuning_list_sm100_bf16(), "bf16_heuristic_outliers"
+    )
+
+    @parameter
+    @always_inline
+    fn rule(x: TuningConfigSM100) -> Bool:
+        return x.K == static_K and x.N == static_N
+
+    alias outlier_configs = outliers.find[rule]()
+
+    @parameter
+    for tuning_config in outlier_configs:
+        if m >= tuning_config.M and m < tuning_config.M_end:
+            alias matmul_config = MatmulConfig[
+                a_type, b_type, c_type, transpose_b
+            ](
+                mma_shape=tuning_config.mma_shape,
+                cta_group=tuning_config.cta_group,
+                cluster_shape=tuning_config.cluster_shape,
+                block_swizzle_size=Int(tuning_config.block_swizzle_size),
+                raster_order=tuning_config.rasterize_order,
+                AB_swapped=tuning_config.swapAB,
+                num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
+                num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
+                k_group_size=tuning_config.k_group_size,
+                num_split_k=tuning_config.num_split_k,
+            )
+            _matmul_dispatch_sm100[
+                transpose_b=transpose_b,
+                config=matmul_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
+            ](c, a, b, ctx)
+
+            return DISPATCH_HIT
+
+    alias configs = build_configs[
+        a_type, b_type, c_type, static_N, static_K, transpose_b
+    ]()
+    var config_runtime = choose_config[a_type, b_type, c_type, transpose_b](
+        m, static_N, static_K
+    )
+
+    @parameter
+    for config in configs:
+        if config_runtime == config:
+            _matmul_dispatch_sm100[
+                transpose_b=transpose_b,
+                config=config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
+            ](c, a, b, ctx)
+            return DISPATCH_HIT
+
+    return DISPATCH_MISS
+
+
 # NOTE:
 # 1. SM100 matmul supports compute lambdas so we should just use normal and compute lambdas.
 fn matmul_dispatch_sm100_bf16[
@@ -1688,52 +1797,28 @@ fn matmul_dispatch_sm100_bf16[
     alias MMA_K = 16
     alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
 
-    @parameter
-    fn matmul_swapab[static_m: Int]() raises -> Int:
-        constrained[
-            static_m % 2 == 0,
-            "static_m must be even",
-        ]()
-        alias block_tile_shape = Index(128, static_m // 2, BK)
-        alias umma_shape = Index(
-            block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-        )
-        alias cluster_shape = Index(2, 1, 1)
-        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-            mma_shape=umma_shape,
-            cluster_shape=cluster_shape,
-        )
-        _matmul_dispatch_sm100[
-            transpose_b=transpose_b,
-            config=config,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-            swapAB=True,
-        ](c, a, b, ctx)
-        return DISPATCH_HIT
-
-    alias use_experimental_kernel = env_get_bool[
-        "USE_EXPERIMENTAL_KERNELS", False
-    ]()
+    alias llama3_8b_NK = [
+        # TP1
+        Index(6144, 4096),
+        Index(4096, 4096),
+        Index(28672, 4096),
+        Index(4096, 14336),
+        # TP2
+        Index(3072, 4096),
+        Index(4096, 2048),
+        Index(14336, 4096),
+        Index(4096, 7168),
+    ]
 
     @parameter
-    if (
-        use_experimental_kernel
-        and c_type == DType.bfloat16
-        # these are the profitable shapes that gemma-3-27b models might execute
-        and static_N in (4096, 8192, 43008, 5376)
-        and static_K in (4096, 5376, 21504)
-    ):
-        if m <= 128 and m * size_of[c_type]() % 16 == 0:
-            if m <= 16:
-                return matmul_swapab[16]()
-            elif m <= 32:
-                return matmul_swapab[32]()
-            elif m <= 64:
-                return matmul_swapab[64]()
-            else:
-                return matmul_swapab[128]()
+    if Index(static_N, static_K) in llama3_8b_NK:
+        if m <= 128:
+            return heuristic_and_outliers_dispatch_bf16[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
+            ](c, a, b, ctx)
 
     # gemma-3-27b-it-prefill (TP1)
     @parameter
@@ -1813,7 +1898,8 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
 
-    elif static_N == 5376 and static_K == 4096:
+    @parameter
+    if static_N == 5376 and static_K == 4096:
         if m == 2000:
             alias block_tile_shape = Index(128, 104, BK)
             alias umma_shape = Index(
@@ -1910,7 +1996,8 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
 
-    elif static_N == 43008 and static_K == 5376:
+    @parameter
+    if static_N == 43008 and static_K == 5376:
         if m == 2000:
             alias block_tile_shape = Index(128, 112, BK)
             alias umma_shape = Index(
@@ -1976,7 +2063,8 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
 
-    elif static_N == 5376 and static_K == 21504:
+    @parameter
+    if static_N == 5376 and static_K == 21504:
         if m == 2000:
             alias block_tile_shape = Index(128, 104, BK)
             alias umma_shape = Index(
@@ -2073,7 +2161,8 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
 
-    elif static_N == 262208 and static_K == 5376:
+    @parameter
+    if static_N == 262208 and static_K == 5376:
         if m == 1:
             alias block_tile_shape = Index(64, 128, BK)
             alias umma_shape = Index(
@@ -2174,7 +2263,9 @@ fn matmul_dispatch_sm100_bf16[
                 pdl_level=pdl_level,
             ](c, a, b, ctx)
             return DISPATCH_HIT
-    elif static_N == 4096 and static_K == 2048:
+
+    @parameter
+    if static_N == 4096 and static_K == 2048:
         if m == 512:
             alias block_tile_shape = Index(128, 56, BK)
             alias umma_shape = Index(
@@ -2222,8 +2313,6 @@ fn _vendor_blas_matmul_sm100[
     var m = shape.M
     var n = shape.N
     var k = shape.K
-
-    var logger = Logger()
 
     try:
         logger.info("Executing vendor BLAS (cuBLAS/cublasLt)")
@@ -2296,7 +2385,6 @@ fn _matmul_dispatch_sm100[
         elementwise_compute_lambda_type
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
-    swapAB: Bool = False,
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
     a: NDBuffer[a_type, 2, _, _],
@@ -2327,7 +2415,7 @@ fn _matmul_dispatch_sm100[
             transpose_b=transpose_b,
             config=config,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            swapAB=swapAB,
+            pdl_level=pdl_level,
         ](c_tensor, a_tensor, b_tensor, ctx)
         return
 
@@ -2335,11 +2423,13 @@ fn _matmul_dispatch_sm100[
         alias epilogue = elementwise_lambda_fn.value()
         # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
         # arch support 32B load/store to global memory, see KERN-2037.
-        alias simd_size = 32 // size_of[
-            c.type
-        ]() if ctx.default_device_info >= B200 else simd_width_of[
-            c.type, target = get_gpu_target()
-        ]()
+        alias use_32b_simd = (
+            has_nvidia_gpu_accelerator()
+            and ctx.default_device_info.compute >= B200.compute
+        )
+        alias simd_size = 32 // size_of[c.type]() if use_32b_simd else (
+            simd_width_of[c.type, target = get_gpu_target()]()
+        )
 
         @parameter
         @__copy_capture(c)
@@ -2364,7 +2454,7 @@ fn _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                swapAB=swapAB,
+                pdl_level=pdl_level,
             ](c_tensor, a_tensor, b_tensor, ctx)
 
             elementwise[epilogue_wrapper, simd_size, target="gpu"](
@@ -2388,7 +2478,6 @@ fn _matmul_dispatch_sm100[
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
-            swapAB=swapAB,
         ](c_tmp, a, b, ctx)
 
         _ = tmp_device_buffer^

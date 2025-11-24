@@ -18,6 +18,7 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from memory import memcpy
 from nn.fused_qk_rope import fused_qk_rope
 from testdata.fused_qk_rope_goldens import (
@@ -158,12 +159,29 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
     ctx.enqueue_copy(lookup_table_dev.buffer, lookup_table.unsafe_ptr())
 
     kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
-        blocks=kv_cache_block_dev.tensor,
-        cache_lengths=rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-            cache_lengths.tensor
+        blocks=LayoutTensor[
+            kv_cache_block_dev.dtype, Layout.row_major[6](), MutAnyOrigin
+        ](
+            kv_cache_block_dev.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()].row_major(
+                kv_cache_block_dev.to_layout_tensor().runtime_layout.shape.value
+            ),
         ),
-        lookup_table=rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-            lookup_table_dev.tensor
+        cache_lengths=LayoutTensor[
+            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                cache_lengths.to_layout_tensor().runtime_layout.shape.value
+            ),
+        ),
+        lookup_table=LayoutTensor[
+            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            lookup_table_dev.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                lookup_table_dev.to_layout_tensor().runtime_layout.shape.value
+            ),
         ),
         max_seq_length=seq_len,
         max_cache_length=max_cache_len_in_batch,

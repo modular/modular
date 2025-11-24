@@ -13,6 +13,7 @@
 
 
 from math import align_up, ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from os.atomic import Atomic
 from sys.info import simd_width_of
 
@@ -26,7 +27,6 @@ from gpu import (
     thread_idx,
 )
 from gpu.host.info import is_gpu
-from gpu.memory import AddressSpace
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel
@@ -51,27 +51,27 @@ fn moe_create_indices_kernel[
     topk_ids_layout: Layout,
 ](
     token_expert_order: LayoutTensor[
-        mut=True, DType.uint32, token_expert_order_layout, MutableAnyOrigin
+        mut=True, DType.uint32, token_expert_order_layout, MutAnyOrigin
     ],
     expert_start_indices: LayoutTensor[
-        mut=True, DType.uint32, expert_start_indices_layout, MutableAnyOrigin
+        mut=True, DType.uint32, expert_start_indices_layout, MutAnyOrigin
     ],
     restore_token_order: LayoutTensor[
-        mut=True, DType.uint32, restore_token_order_layout, MutableAnyOrigin
+        mut=True, DType.uint32, restore_token_order_layout, MutAnyOrigin
     ],
     expert_ids: LayoutTensor[
-        mut=True, DType.int32, expert_ids_layout, MutableAnyOrigin
+        mut=True, DType.int32, expert_ids_layout, MutAnyOrigin
     ],
     expert_usage_stats: LayoutTensor[
-        mut=True, DType.uint32, expert_usage_stats_layout, MutableAnyOrigin
+        mut=True, DType.uint32, expert_usage_stats_layout, MutAnyOrigin
     ],
     indices_padded: LayoutTensor[
-        mut=True, DType.uint32, indices_padded_layout, MutableAnyOrigin
+        mut=True, DType.uint32, indices_padded_layout, MutAnyOrigin
     ],
     topk_ids_padded: LayoutTensor[
-        mut=True, input_type, padded_input_layout, MutableAnyOrigin
+        mut=True, input_type, padded_input_layout, MutAnyOrigin
     ],
-    topk_ids: LayoutTensor[input_type, topk_ids_layout, MutableAnyOrigin],
+    topk_ids: LayoutTensor[input_type, topk_ids_layout, MutAnyOrigin],
 ):
     alias indices_type = DType.uint32
     var num_tokens: Int = Int(topk_ids.runtime_layout.shape[0])
@@ -97,11 +97,9 @@ fn moe_create_indices_kernel[
         indices_layout: Layout, input_layout: Layout
     ](
         indices: LayoutTensor[
-            mut=True, DType.uint32, indices_layout, MutableAnyOrigin
+            mut=True, DType.uint32, indices_layout, MutAnyOrigin
         ],
-        input: LayoutTensor[
-            mut=True, input_type, input_layout, MutableAnyOrigin
-        ],
+        input: LayoutTensor[mut=True, input_type, input_layout, MutAnyOrigin],
         n: Int,
         step: Int,
         stage: Int,
@@ -232,10 +230,291 @@ fn moe_create_indices_kernel[
         expert_usage_stats[1] = num_experts_used
 
 
+@always_inline
+fn calculate_warp_offset[MaskType: DType](state: Bool) -> Tuple[UInt64, UInt64]:
+    # sets bits to 1 for all threads that voted true
+    var mask = UInt64(warp.vote[MaskType](state))
+
+    # counts the number of bits that are set to 1
+    var writes = pop_count(mask)
+
+    # masks out all bits that are set to 1 for higher thread IDs
+    var preceding_mask = mask & ((UInt64(1) << thread_idx.x) - 1)
+
+    # counts the number of bits that are set to 1 in the preceding mask
+    var offset = pop_count(preceding_mask)
+
+    return writes, offset
+
+
+struct _BucketGroupParams[num_threads: Int, input_type: DType]:
+    alias MaskType = _uint_type_of_width[Self.num_threads]()
+    alias width = simd_width_of[Self.input_type]()
+
+    var expert: UInt
+    var reads_per_iteration: Int
+    var topk_ids_length: Int
+    var topk_ids_length_rounded: Int
+    var start_idx: Int
+    var remainder_start_idx: Int
+
+    fn __init__(out self, top_k_length: Int):
+        self.expert = block_idx.x
+        self.reads_per_iteration = Self.num_threads * Self.width
+        self.topk_ids_length = top_k_length
+        self.topk_ids_length_rounded = align_up(
+            self.topk_ids_length, self.reads_per_iteration
+        )
+        self.start_idx = Int(thread_idx.x) * Self.width
+        self.remainder_start_idx = (
+            self.topk_ids_length // Self.width
+        ) * Self.width + Int(thread_idx.x)
+
+
+@always_inline
+fn _count_expert_tokens[
+    num_threads: Int,
+    input_type: DType, //,
+    expected_count: Int,
+](
+    topk_ids: LayoutTensor[input_type, *_, **_],
+    smem: LayoutTensor[DType.uint32, *_, **_],
+    bg_params: _BucketGroupParams[num_threads, input_type],
+) -> UInt64:
+    alias width = bg_params.width
+    alias MaskType = bg_params.MaskType
+
+    var total_writes: UInt64 = 0
+
+    # Vectorized scan of expert IDs from global memory
+    # Each thread loads 'width' expert IDs and checks which match this block's expert
+    for idx in range(
+        bg_params.start_idx,
+        bg_params.topk_ids_length_rounded,
+        bg_params.reads_per_iteration,
+    ):
+        var g_vector: SIMD[input_type, width]
+
+        if idx + width <= bg_params.topk_ids_length:
+            g_vector = topk_ids.aligned_load[width=width](0, idx)
+        else:
+            g_vector = SIMD[input_type, width](bg_params.expert + 1)
+
+        # Use warp-level voting to efficiently count matching tokens
+        # All threads in the warp vote, and we count how many threads
+        # before us also voted true to determine our write offset
+        @parameter
+        for i in range(width):
+            var expert_id = g_vector[i]
+            var state = expert_id == bg_params.expert
+
+            var offset = total_writes
+
+            # if state is true this thread will write to smem
+            # but we need to know how many threads will write to smem before us
+            # to get the correct offset. So all threads vote and we tally the votes
+            # before us
+
+            var warp_writes, preceding_thread_writes = calculate_warp_offset[
+                MaskType
+            ](state)
+            total_writes += warp_writes
+            offset += preceding_thread_writes
+
+            # If this token matches, store its index in shared memory
+            if state and offset < expected_count:
+                smem[0, offset] = idx + i
+
+    var expert_id = (
+        topk_ids[
+            0, bg_params.remainder_start_idx
+        ] if bg_params.remainder_start_idx
+        < bg_params.topk_ids_length else bg_params.expert + 1
+    )
+    var state = expert_id == bg_params.expert
+
+    # Use same warp voting technique for remainder elements
+    var warp_writes, preceding_thread_writes = calculate_warp_offset[MaskType](
+        state
+    )
+    var offset = total_writes + preceding_thread_writes
+    total_writes += warp_writes
+
+    if state and offset < expected_count:
+        smem[0, offset] = bg_params.remainder_start_idx
+
+    return total_writes
+
+
+@always_inline
+fn _get_index_and_offset(
+    lock: LayoutTensor[DType.uint32, Layout.row_major(1), MutAnyOrigin],
+    total_writes: UInt64,
+) -> Tuple[UInt32, UInt32]:
+    var expert_idx_and_offsets: UInt32 = 0
+
+    # in order to write back to gmem we need to know the current available offset
+    # so we use atomics to get the next available offset
+
+    if thread_idx.x == 0:
+        # Pack expert index (8 bits) and offset (24 bits) into single atomic update
+        # Upper 8 bits: expert counter (which expert slot to use)
+        # Lower 24 bits: offset in token_expert_order array
+        expert_idx_and_offsets = Atomic.fetch_add(
+            lock.ptr, UInt32(total_writes) | 0x01000000
+        )
+
+    # Broadcast the atomic result to all threads in the warp
+    expert_idx_and_offsets = warp.broadcast(expert_idx_and_offsets)
+    var expert_idx = expert_idx_and_offsets >> 24
+    var base_g_offset = expert_idx_and_offsets & 0x00FFFFFF
+
+    return expert_idx, base_g_offset
+
+
+@always_inline
+fn _copy_tokens_smem_to_gmem[
+    num_threads: Int,
+    input_type: DType, //,
+    expected_count: Int,
+](
+    token_expert_order: LayoutTensor[DType.uint32, *_, **_],
+    restore_token_order: LayoutTensor[DType.uint32, *_, **_],
+    smem: LayoutTensor[DType.uint32, *_, **_],
+    g_offset: UInt32,
+    total_writes: UInt64,
+    bg_params: _BucketGroupParams[num_threads, input_type],
+):
+    var g_offset_copy = g_offset
+    alias width = bg_params.width
+
+    var total_reads_rounded = align_up(
+        Int(total_writes), bg_params.reads_per_iteration
+    )
+
+    var total_smem_reads = align_up(
+        expected_count, bg_params.reads_per_iteration
+    )
+    var rounded_smem_reads = min(total_smem_reads, total_reads_rounded)
+    var smem_writes = min(expected_count, total_writes)
+
+    for smem_idx in range(
+        bg_params.start_idx, rounded_smem_reads, bg_params.reads_per_iteration
+    ):
+        if smem_idx + width <= Int(smem_writes):
+            var source_vector = smem.aligned_load[width=width](0, smem_idx)
+
+            @parameter
+            for i in range(width):
+                token_expert_order[
+                    g_offset_copy + smem_idx + i
+                ] = source_vector[i]
+                restore_token_order[source_vector[i]] = (
+                    g_offset_copy + smem_idx + i
+                )
+
+    var start_idx = UInt((smem_writes // width) * width)
+
+    g_offset_copy += start_idx
+
+    if thread_idx.x < UInt(smem_writes - start_idx):
+        token_expert_order[Int(g_offset_copy + thread_idx.x)] = rebind[
+            SIMD[DType.uint32, token_expert_order.element_size]
+        ](smem[0, start_idx + thread_idx.x])
+
+        restore_token_order[smem[0, start_idx + thread_idx.x]] = (
+            g_offset_copy + thread_idx.x
+        )
+
+
+@always_inline
+fn _copy_tokens_to_gmem[
+    num_threads: Int,
+    input_type: DType, //,
+    expected_count: Int,
+](
+    topk_ids: LayoutTensor[input_type, *_, **_],
+    smem: LayoutTensor[DType.uint32, *_, **_],
+    token_expert_order: LayoutTensor[DType.uint32, *_, **_],
+    restore_token_order: LayoutTensor[DType.uint32, *_, **_],
+    total_writes: UInt64,
+    g_offset: UInt32,
+    bg_params: _BucketGroupParams[num_threads, input_type],
+):
+    alias width = bg_params.width
+    alias MaskType = bg_params.MaskType
+
+    var g_offset_copy = g_offset
+
+    # keep track of how many tokens we have come across
+    var tokens_seen: UInt64 = 0
+
+    # load all tokens in vectorized manner from global memory into registers
+    for idx in range(
+        bg_params.start_idx,
+        bg_params.topk_ids_length_rounded,
+        bg_params.reads_per_iteration,
+    ):
+        var g_vector: SIMD[input_type, width]
+
+        if idx + width <= bg_params.topk_ids_length:
+            g_vector = topk_ids.aligned_load[width=width](0, idx)
+        else:
+            g_vector = SIMD[input_type, width](bg_params.expert + 1)
+
+        @parameter
+        for i in range(width):
+            var expert_id = g_vector[i]
+            var state = expert_id == bg_params.expert
+
+            var warp_writes, preceding_thread_writes = calculate_warp_offset[
+                MaskType
+            ](state)
+            var thr_tokens_seen = (
+                tokens_seen + preceding_thread_writes + (1 if state else 0)
+            )
+
+            # we have already writeen expected_count tokens to global memory since they were in shared memory.
+            # so we only need to write the remaining tokens to global memory.
+            if thr_tokens_seen >= expected_count and state:
+                token_expert_order[
+                    g_offset_copy + UInt(preceding_thread_writes)
+                ] = (idx + i)
+                restore_token_order[idx + i] = g_offset_copy + UInt(
+                    preceding_thread_writes
+                )
+
+            tokens_seen += warp_writes
+            g_offset_copy += UInt(warp_writes)
+
+    # Handle remainder elements that couldn't be vectorized
+    var expert_id = (
+        topk_ids[
+            0, bg_params.remainder_start_idx
+        ] if bg_params.remainder_start_idx
+        < bg_params.topk_ids_length else bg_params.expert + 1
+    )
+    var state = expert_id == bg_params.expert
+
+    # Use same warp voting technique for remainder elements
+    var _, preceding_thread_writes = calculate_warp_offset[MaskType](state)
+    var temp_current_writes = (
+        tokens_seen + preceding_thread_writes + (1 if state else 0)
+    )
+
+    if temp_current_writes >= expected_count and state:
+        token_expert_order[
+            g_offset_copy + UInt(preceding_thread_writes)
+        ] = bg_params.remainder_start_idx
+        restore_token_order[
+            bg_params.remainder_start_idx
+        ] = g_offset_copy + UInt(preceding_thread_writes)
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
 )
-fn moe_create_indices_bucket_sort_kernel[
+fn moe_create_indices_bucket_group_kernel[
     input_type: DType,
     token_expert_order_layout: Layout,
     expert_start_indices_layout: Layout,
@@ -244,25 +523,25 @@ fn moe_create_indices_bucket_sort_kernel[
     expert_usage_stats_layout: Layout,
     topk_ids_layout: Layout,
     num_threads: Int = WARP_SIZE,
-    expected_count: Int = 8192,  # the max topk_ids size
+    expected_count: Int = 8192,
 ](
     token_expert_order: LayoutTensor[
-        mut=True, DType.uint32, token_expert_order_layout, MutableAnyOrigin
+        mut=True, DType.uint32, token_expert_order_layout, MutAnyOrigin
     ],
-    lock: LayoutTensor[DType.uint32, Layout.row_major(1), MutableAnyOrigin],
+    lock: LayoutTensor[DType.uint32, Layout.row_major(1), MutAnyOrigin],
     expert_start_indices: LayoutTensor[
-        mut=True, DType.uint32, expert_start_indices_layout, MutableAnyOrigin
+        mut=True, DType.uint32, expert_start_indices_layout, MutAnyOrigin
     ],
     restore_token_order: LayoutTensor[
-        mut=True, DType.uint32, restore_token_order_layout, MutableAnyOrigin
+        mut=True, DType.uint32, restore_token_order_layout, MutAnyOrigin
     ],
     expert_ids: LayoutTensor[
-        mut=True, DType.int32, expert_ids_layout, MutableAnyOrigin
+        mut=True, DType.int32, expert_ids_layout, MutAnyOrigin
     ],
     expert_usage_stats: LayoutTensor[
-        mut=True, DType.uint32, expert_usage_stats_layout, MutableAnyOrigin
+        mut=True, DType.uint32, expert_usage_stats_layout, MutAnyOrigin
     ],
-    topk_ids: LayoutTensor[input_type, topk_ids_layout, MutableAnyOrigin],
+    topk_ids: LayoutTensor[input_type, topk_ids_layout, MutAnyOrigin],
 ):
     """Create indices for MoE routing using bucket sort algorithm.
 
@@ -303,117 +582,38 @@ fn moe_create_indices_bucket_sort_kernel[
         num_threads in (32, 64),
         "Only support 32 or 64 threads per warp",
     ]()
-    alias mask_type = _uint_type_of_width[num_threads]()
 
-    # Allocate shared memory for temporary storage of matching token indices
+    alias BucketParamsType = _BucketGroupParams[num_threads, input_type]
     alias SmemVectorType = LayoutTensor[
         DType.uint32,
         Layout.row_major(1, expected_count),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
 
+    # Allocate shared memory for temporary storage of matching token indices
     var smem = SmemVectorType.stack_allocation()
 
-    alias token_expert_order_length = token_expert_order.layout.size()
-    alias width = simd_width_of[input_type]()
+    constrained[
+        expected_count % BucketParamsType.width == 0,
+        "Expected count must be a multiple of the simd width",
+    ]()
 
-    # Each GPU block is responsible for processing one expert
-    var expert = block_idx.x
+    var bucket_group_params = BucketParamsType(topk_ids.dim(1))
 
-    var reads_per_iteration = num_threads * width
-    var topk_ids_length = topk_ids.dim(1)
-    var topk_ids_length_rounded = align_up(topk_ids_length, reads_per_iteration)
-
-    # Track how many tokens match this expert
-    var total_writes: UInt64 = 0
-
-    var start_idx = thread_idx.x * UInt(width)
-
-    # Vectorized scan of expert IDs from global memory
-    # Each thread loads 'width' expert IDs and checks which match this block's expert
-    for idx in range(start_idx, topk_ids_length_rounded, reads_per_iteration):
-        var g_vector: SIMD[input_type, width]
-
-        if idx + width <= topk_ids_length:
-            g_vector = topk_ids.aligned_load[width=width](0, idx)
-        else:
-            g_vector = SIMD[input_type, width](expert + 1)
-
-        # Use warp-level voting to efficiently count matching tokens
-        # All threads in the warp vote, and we count how many threads
-        # before us also voted true to determine our write offset
-        @parameter
-        for i in range(width):
-            var expert_id = g_vector[i]
-            var state = expert_id == expert
-
-            var offset = total_writes
-
-            # if state is true this thread will write to smem
-            # but we need to know how many threads will write to smem before us
-            # to get the correct offset. So all threads vote and we tally the votes
-            # before us
-            var mask = UInt64(warp.vote[mask_type](state))
-
-            var writes = pop_count(mask)
-            total_writes += writes
-
-            # Count how many threads with lower IDs also matched
-            # This gives us our write position in shared memory
-            var preceding_mask = mask & ((UInt64(1) << thread_idx.x) - 1)
-            offset += pop_count(preceding_mask)
-
-            # If this token matches, store its index in shared memory
-            if state:
-                smem[0, offset] = idx + i
-
-    # Handle remainder elements that couldn't be vectorized
-    start_idx = UInt((topk_ids_length // width) * width + Int(thread_idx.x))
-
-    var expert_id = (
-        topk_ids[0, start_idx] if start_idx
-        < UInt(topk_ids_length) else expert + 1
+    # count tokens per expert and store as many we can in shared memory
+    var total_writes = _count_expert_tokens[expected_count](
+        topk_ids, smem, bucket_group_params
     )
-    var state = expert_id == expert
 
-    var offset = total_writes
-
-    # Use same warp voting technique for remainder elements
-    var mask = UInt64(warp.vote[mask_type](state))
-    var writes = pop_count(mask)
-    total_writes += writes
-
-    var preceding_mask = mask & ((UInt64(1) << thread_idx.x) - 1)
-    offset += pop_count(preceding_mask)
-
-    if state:
-        smem[0, offset] = start_idx
-
-    # Copy results from shared memory back to global memory
     if total_writes > 0:
-        var expert_idx_and_offsets: UInt32 = 0
-
-        # in order to write back to gmem we need to know the current available offset
-        # so we use atomics to get the next available offset
-
-        if thread_idx.x == 0:
-            # Pack expert index (8 bits) and offset (24 bits) into single atomic update
-            # Upper 8 bits: expert counter (which expert slot to use)
-            # Lower 24 bits: offset in token_expert_order array
-            expert_idx_and_offsets = Atomic.fetch_add(
-                lock.ptr, UInt32(total_writes) | 0x01000000
-            )
-
-        # Broadcast the atomic result to all threads in the warp
-        expert_idx_and_offsets = warp.broadcast(expert_idx_and_offsets)
-        var expert_idx = expert_idx_and_offsets >> 24
-        var g_offset = expert_idx_and_offsets & 0x00FFFFFF
+        # Copy all tokens in shared memory back to global memory
+        var expert_idx, g_offset = _get_index_and_offset(lock, total_writes)
 
         # Record which expert is active at this index
         # this signals this expert is being used
-        expert_ids[expert_idx] = expert
+        expert_ids[expert_idx] = bucket_group_params.expert
 
         # Store the ending index for this expert (start of next expert)
         # NOTE: expert_start_indices must be zero-initialized for this to work correctly
@@ -423,37 +623,26 @@ fn moe_create_indices_bucket_sort_kernel[
         if expert_idx == 0:
             expert_start_indices[expert_idx] = 0
 
-        var total_writes_rounded = align_up(
-            Int(total_writes), reads_per_iteration
+        # Copy all tokens in shared memory back to global memory
+        _copy_tokens_smem_to_gmem[expected_count](
+            token_expert_order,
+            restore_token_order,
+            smem,
+            g_offset,
+            total_writes,
+            bucket_group_params,
         )
 
-        start_idx = thread_idx.x * UInt(width)
-
-        for smem_idx in range(
-            start_idx, total_writes_rounded, reads_per_iteration
-        ):
-            if smem_idx + width <= Int(total_writes):
-                var source_vector = smem.aligned_load[width=width](0, smem_idx)
-
-                @parameter
-                for i in range(width):
-                    token_expert_order[g_offset + smem_idx + i] = source_vector[
-                        i
-                    ]
-                    restore_token_order[source_vector[i]] = (
-                        g_offset + smem_idx + i
-                    )
-
-        start_idx = UInt((total_writes // width) * width)
-
-        g_offset += start_idx
-
-        if thread_idx.x < UInt(Int(total_writes - start_idx)):
-            token_expert_order[Int(g_offset + thread_idx.x)] = smem[
-                0, start_idx + thread_idx.x
-            ]
-            restore_token_order[smem[0, start_idx + thread_idx.x]] = (
-                g_offset + thread_idx.x
+        # write the rest of the tokens not in shared memory into global memory
+        if total_writes > expected_count:
+            _copy_tokens_to_gmem[expected_count](
+                topk_ids,
+                smem,
+                token_expert_order,
+                restore_token_order,
+                total_writes,
+                g_offset,
+                bucket_group_params,
             )
 
         # update expert_usage_stats
@@ -468,6 +657,7 @@ fn moe_create_indices_bucket_sort_kernel[
 fn moe_create_indices[
     input_type: DType, //,
     target: StaticString,
+    expected_count: Int = 8192,
 ](
     token_expert_order: LayoutTensor[mut=True, DType.uint32, **_],
     expert_start_indices: LayoutTensor[mut=True, DType.uint32, **_],
@@ -486,16 +676,15 @@ fn moe_create_indices[
     with Trace[TraceLevel.OP, target=target](
         "mo.moe.create_indices", task_id=Int(context.get_device_context().id())
     ):
-        var lock_buffer = cuda_ctx.enqueue_create_buffer[DType.uint32](
-            1
-        ).enqueue_fill(0)
+        var lock_buffer = cuda_ctx.enqueue_create_buffer[DType.uint32](1)
+        lock_buffer.enqueue_fill(0)
         var lock = LayoutTensor[
-            DType.uint32, Layout.row_major(1), MutableAnyOrigin
+            DType.uint32, Layout.row_major(1), MutAnyOrigin
         ](lock_buffer.unsafe_ptr())
 
         alias topk_layout = Layout.row_major(1, UNKNOWN_VALUE)
 
-        var topk_2D = LayoutTensor[input_type, topk_layout, MutableAnyOrigin](
+        var topk_2D = LayoutTensor[input_type, topk_layout, MutAnyOrigin](
             rebind[UnsafePointer[Scalar[input_type]]](topk_ids.ptr),
             RuntimeLayout[topk_layout].row_major(
                 IndexList[2](1, topk_ids.dim(0))
@@ -506,13 +695,14 @@ fn moe_create_indices[
 
         var expert_usage_stats_host = cuda_ctx.enqueue_create_host_buffer[
             DType.uint32
-        ](2).enqueue_fill(0)
+        ](2)
+        expert_usage_stats_host.enqueue_fill(0)
         cuda_ctx.enqueue_copy[DType.uint32](
             rebind[UnsafePointer[UInt32]](expert_usage_stats.ptr),
             expert_usage_stats_host,
         )
 
-        alias kernel = moe_create_indices_bucket_sort_kernel[
+        alias kernel = moe_create_indices_bucket_group_kernel[
             input_type,
             token_expert_order.layout,
             expert_start_indices.layout,
@@ -520,6 +710,7 @@ fn moe_create_indices[
             expert_ids.layout,
             expert_usage_stats.layout,
             topk_layout,
+            expected_count=expected_count,
         ]
 
         cuda_ctx.enqueue_function_checked[kernel, kernel](

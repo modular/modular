@@ -98,12 +98,12 @@ fn update_frequency_data_kernel[
     new_tokens_layout: Layout,
 ](
     compressed_frequency_data: LayoutTensor[
-        mut=True, DType.int32, freq_data_layout, MutableAnyOrigin
+        mut=True, DType.int32, freq_data_layout, MutAnyOrigin
     ],
     frequency_offsets: LayoutTensor[
-        DType.uint32, freq_offsets_layout, MutableAnyOrigin
+        DType.uint32, freq_offsets_layout, MutAnyOrigin
     ],
-    new_tokens: LayoutTensor[token_type, new_tokens_layout, MutableAnyOrigin],
+    new_tokens: LayoutTensor[token_type, new_tokens_layout, MutAnyOrigin],
 ):
     """
     GPU kernel to update token frequency data in CSR format.

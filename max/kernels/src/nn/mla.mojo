@@ -15,6 +15,7 @@
 from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import (
     align_of,
     has_nvidia_gpu_accelerator,
@@ -94,7 +95,7 @@ from utils.static_tuple import StaticTuple
 
 from .mha_utils import get_start_and_end_for_partitions
 from .softmax import _online_softmax_iter_for_mma_output
-from .mla_amd import mla_prefill_single_batch_amd, mla_decoding_single_batch_amd
+from .attention.gpu.amd.mla import Attention, MLAAttentionConfig
 
 # ===-----------------------------------------------------------------------===#
 # GPU Multi-head Latent Attention (MLA) decoding implementations
@@ -111,11 +112,10 @@ fn flare_mla_decoding[
     dtype: DType,
     q_layout: Layout, //,
     use_score_mod: Bool = False,
-    config: MHAConfig = MHAConfig(
-        dtype,
+    config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[rank - 2])),
         UInt(Int(q_layout.shape[rank - 1])),
-    ),
+    },
     ragged: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
@@ -134,7 +134,7 @@ fn flare_mla_decoding[
     q_max_seq_len: OptionalReg[Int] = None,
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
     num_partitions: OptionalReg[Int] = None,
@@ -214,16 +214,17 @@ fn flare_mla_decoding[
         )
 
 
-# entrypoint for LayoutTensor[mut=True, , Layout.row_major[3](), MutableAnyOrigin]as K input, used by tests.
+# entrypoint for LayoutTensor[mut=True, , Layout.row_major[3](), MutAnyOrigin]as K input, used by tests.
 fn flare_mla_decoding[
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     dtype: DType,
     q_layout: Layout, //,
     use_score_mod: Bool = False,
-    config: MHAConfig = MHAConfig(
-        dtype, UInt(Int(q_layout.shape[2])), UInt(Int(q_layout.shape[3]))
-    ),
+    config: MHAConfig[dtype] = {
+        UInt(Int(q_layout.shape[2])),
+        UInt(Int(q_layout.shape[3])),
+    },
     decoding_warp_split_k: Bool = False,
 ](
     output: LayoutTensor[
@@ -246,7 +247,7 @@ fn flare_mla_decoding[
     var num_keys = k.dim[1]()
 
     var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[k.dtype, k.layout, MutableAnyOrigin](
+        LayoutTensor[k.dtype, k.layout, MutAnyOrigin](
             k.ptr,
             RuntimeLayout[k.layout].row_major(
                 k.runtime_layout.shape.value.canonicalize()
@@ -294,18 +295,17 @@ fn flare_mla_decoding_dispatch[
     q_layout: Layout, //,
     kv_num_heads: Int,
     use_score_mod: Bool = False,
-    config: MHAConfig = MHAConfig(
-        dtype,
+    config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[q_layout.rank() - 2])),
         UInt(Int(q_layout.shape[q_layout.rank() - 1])),
-    ),
+    },
     ragged: Bool = False,
-    # Work arounds to unify KVCache and LayoutTensor[mut=True, , Layout.row_major[3](), MutableAnyOrigin]inputs:
+    # Work arounds to unify KVCache and LayoutTensor[mut=True, , Layout.row_major[3](), MutAnyOrigin]inputs:
     # Differentiate two cases, KV cache's length is before adding the latest
     # tokens e.g. zero for CE, and KV NDBuffer's length is the latest length
     # e.g. prompt length for CE.
     _is_cache_length_accurate: Bool = False,
-    # valid_length is needed for KV cache inputs and is empty for LayoutTensor[mut=True, , Layout.row_major[3](), MutableAnyOrigin]inputs
+    # valid_length is needed for KV cache inputs and is empty for LayoutTensor[mut=True, , Layout.row_major[3](), MutAnyOrigin]inputs
     # to avoid overhead in benchmark.
     _use_valid_length: Bool = True,
     decoding_warp_split_k: Bool = False,
@@ -324,7 +324,7 @@ fn flare_mla_decoding_dispatch[
     ctx: DeviceContext,
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
     num_partitions: OptionalReg[Int] = None,
@@ -366,7 +366,7 @@ fn flare_mla_decoding_dispatch[
     @parameter
     if ragged:
         batch_size = valid_length.dim[0]() - 1
-    # This branch holds for both KVCache and LayoutTensor[mut=True, , Layout.row_major[3](), MutableAnyOrigin]inputs.
+    # This branch holds for both KVCache and LayoutTensor[mut=True, , Layout.row_major[3](), MutAnyOrigin]inputs.
     # Q is BSHD, S is either homogeneous or padded to same length.
     else:
         batch_size = q.dim[0]()
@@ -496,7 +496,7 @@ fn mla_decoding[
     valid_length: LayoutTensor[
         DType.uint32,
         valid_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ],  # valid length per batch
     mask: mask_t,
     score_mod: score_mod_t,
@@ -580,8 +580,7 @@ fn mla_decoding[
             Int(batch_idx),
         )
     elif is_amd_gpu():
-        alias config = MHAConfig(
-            q_type,
+        alias config = MHAConfig[q_type](
             num_heads,
             depth,
             num_queries_per_block=BM,
@@ -592,26 +591,34 @@ fn mla_decoding[
             num_pipeline_stages=num_pipeline_stages,
             k_group_size=group,
         )
-        mla_decoding_single_batch_amd[
-            depth_v = Int(depth_v),
-            group = Int(group),
-            config=config,
-            sink=False,
+
+        alias attention_config = MLAAttentionConfig[True, config]()
+
+        var attention = Attention[
+            config,
+            Int(group),
+            True,
+            False,
+            q_depth = Int(depth),
+            output_depth = Int(depth_v),
         ](
+            attention_config,
             output_ptr.offset(output_batch_offset),
             q_ptr.offset(q_batch_offset),
             k,
             k,
-            exp_sum_batch_ptr,
-            qk_max_batch_ptr,
-            seq_len,
-            num_keys,
-            num_partitions,
-            scale,
-            Int(batch_idx),
-            Int(0),
             mask,
             None,
+            Int(batch_idx),
+            scale,
+            seq_len,
+            num_keys,
+            0,
+        )
+        attention.mla_decoding(
+            exp_sum_batch_ptr,
+            qk_max_batch_ptr,
+            num_partitions,
         )
     else:
         return CompilationTarget.unsupported_target_error[
@@ -761,7 +768,7 @@ fn mla_decoding_single_batch[
     var p_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(Int(num_m_mmas * num_n_mmas), p_frag_size),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
@@ -771,7 +778,7 @@ fn mla_decoding_single_batch[
         LayoutTensor[
             accum_type,
             Layout.row_major(Int(num_output_rows_full), p_frag_size),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -1252,19 +1259,19 @@ fn flare_mla_prefill[
     q_max_seq_len: OptionalReg[Int] = None,
     softmax_info: OptionalReg[
         LayoutTensor[
-            mut=True, softmax_type, Layout.row_major[3](), MutableAnyOrigin
+            mut=True, softmax_type, Layout.row_major[3](), MutAnyOrigin
         ]
     ] = None,
     cache_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
     prev_output: OptionalReg[
-        LayoutTensor[output_type, Layout.row_major[rank](), MutableAnyOrigin]
+        LayoutTensor[output_type, Layout.row_major[rank](), MutAnyOrigin]
     ] = None,
     prev_softmax_info: OptionalReg[
-        LayoutTensor[softmax_type, Layout.row_major[3](), MutableAnyOrigin]
+        LayoutTensor[softmax_type, Layout.row_major[3](), MutAnyOrigin]
     ] = None,
 ) raises:
     """MLA prefill kernel that would only be called in the optimized compute
@@ -1320,7 +1327,7 @@ fn flare_mla_prefill[
             max_prompt_len = Int(k_rope.max_prompt_length())
 
         var k_operand = RaggedMHAOperand(
-            LayoutTensor[k.dtype, k.layout, MutableAnyOrigin](
+            LayoutTensor[k.dtype, k.layout, MutAnyOrigin](
                 k.ptr,
                 RuntimeLayout[k.layout].row_major(
                     k.runtime_layout.shape.value.canonicalize()
@@ -1329,7 +1336,7 @@ fn flare_mla_prefill[
             LayoutTensor[
                 cache_row_offsets.dtype,
                 cache_row_offsets.layout,
-                MutableAnyOrigin,
+                MutAnyOrigin,
             ](
                 cache_row_offsets.ptr,
                 RuntimeLayout[cache_row_offsets.layout].row_major(
@@ -1338,7 +1345,7 @@ fn flare_mla_prefill[
             ),
         )
         var v_operand = RaggedMHAOperand(
-            LayoutTensor[v.dtype, v.layout, MutableAnyOrigin](
+            LayoutTensor[v.dtype, v.layout, MutAnyOrigin](
                 v.ptr,
                 RuntimeLayout[v.layout].row_major(
                     v.runtime_layout.shape.value.canonicalize()
@@ -1347,7 +1354,7 @@ fn flare_mla_prefill[
             LayoutTensor[
                 cache_row_offsets.dtype,
                 cache_row_offsets.layout,
-                MutableAnyOrigin,
+                MutAnyOrigin,
             ](
                 cache_row_offsets.ptr,
                 RuntimeLayout[cache_row_offsets.layout].row_major(
@@ -1367,8 +1374,7 @@ fn flare_mla_prefill[
             128
         )  # BN = 64 for nvidia, 128 in the only supported BN for amd
 
-        alias mha_config = MHAConfig(
-            dtype,
+        alias mha_config = MHAConfig[dtype](
             UInt(Int(q_layout.shape[rank - 2])),  # num_heads
             UInt(Int(k.layout.shape[rank - 1])),  # depth
             num_keys_per_block=num_keys_per_block,
@@ -1402,7 +1408,7 @@ fn flare_mla_prefill[
         )
 
 
-# entrypoint for LayoutTensor[mut=True, , Layout.row_major[3](), MutableAnyOrigin]as K_rope input, used by tests.
+# entrypoint for LayoutTensor[mut=True, , Layout.row_major[3](), MutAnyOrigin]as K_rope input, used by tests.
 @always_inline
 fn flare_mla_prefill[
     rank: Int,
@@ -1435,12 +1441,12 @@ fn flare_mla_prefill[
     q_max_seq_len: OptionalReg[Int] = None,
     softmax_info: OptionalReg[
         LayoutTensor[
-            mut=True, softmax_type, Layout.row_major[3](), MutableAnyOrigin
+            mut=True, softmax_type, Layout.row_major[3](), MutAnyOrigin
         ]
     ] = None,
     cache_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
 ) raises:
@@ -1478,7 +1484,7 @@ fn flare_mla_prefill[
         var cache_row_offsets_lt = LayoutTensor[
             cache_row_offsets.dtype,
             cache_row_offsets.layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
         ](
             cache_row_offsets.ptr,
             RuntimeLayout[cache_row_offsets.layout].row_major(
@@ -1486,7 +1492,7 @@ fn flare_mla_prefill[
             ),
         )
         var k_operand = RaggedMHAOperand(
-            LayoutTensor[k.dtype, k.layout, MutableAnyOrigin](
+            LayoutTensor[k.dtype, k.layout, MutAnyOrigin](
                 k.ptr,
                 RuntimeLayout[k.layout].row_major(
                     k.runtime_layout.shape.value.canonicalize()
@@ -1495,7 +1501,7 @@ fn flare_mla_prefill[
             cache_row_offsets_lt,
         )
         var v_operand = RaggedMHAOperand(
-            LayoutTensor[v.dtype, v.layout, MutableAnyOrigin](
+            LayoutTensor[v.dtype, v.layout, MutAnyOrigin](
                 v.ptr,
                 RuntimeLayout[v.layout].row_major(
                     v.runtime_layout.shape.value.canonicalize()
@@ -1504,7 +1510,7 @@ fn flare_mla_prefill[
             cache_row_offsets_lt,
         )
         var k_rope_operand = LayoutTensorMHAOperand(
-            LayoutTensor[k_rope.dtype, k_rope.layout, MutableAnyOrigin,](
+            LayoutTensor[k_rope.dtype, k_rope.layout, MutAnyOrigin,](
                 k_rope.ptr,
                 RuntimeLayout[k_rope.layout].row_major(
                     k_rope.runtime_layout.shape.value.canonicalize()
@@ -1521,8 +1527,7 @@ fn flare_mla_prefill[
         ) if has_nvidia_gpu_accelerator() else UInt(
             128
         )  # BN = 64 for nvidia, 128 in the only supported BN for amd
-        alias mha_config = MHAConfig(
-            dtype,
+        alias mha_config = MHAConfig[dtype](
             UInt(Int(q_layout.shape[rank - 2])),
             UInt(Int(k.layout.shape[rank - 1])),
             num_keys_per_block=num_keys_per_block,
@@ -1552,9 +1557,7 @@ fn flare_mla_prefill[
             ctx,
             softmax_info,
             cache_offsets,
-            LayoutTensor[
-                output_type, Layout.row_major[rank](), MutableAnyOrigin
-            ](
+            LayoutTensor[output_type, Layout.row_major[rank](), MutAnyOrigin](
                 output.get_immutable().ptr,
                 RuntimeLayout[Layout.row_major[rank]()].row_major(
                     output.runtime_layout.shape.value.canonicalize()
@@ -1582,11 +1585,10 @@ fn flare_mla_prefill_dispatch[
     use_cascade_attention: Bool = False,
     q_depth: Int = 192,
     cache_depth: Int = 576,
-    config: MHAConfig = MHAConfig(
-        dtype,
+    config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[q_layout.rank() - 2])),
         UInt(Int(q_layout.shape[q_layout.rank() - 1])),
-    ),
+    },
     _ndbuffer_mha_operand: Bool = False,
 ](
     output: LayoutTensor[
@@ -1606,19 +1608,19 @@ fn flare_mla_prefill_dispatch[
     ctx: DeviceContext,
     softmax_info: OptionalReg[
         LayoutTensor[
-            mut=True, softmax_type, Layout.row_major[3](), MutableAnyOrigin
+            mut=True, softmax_type, Layout.row_major[3](), MutAnyOrigin
         ]
     ] = None,
     cache_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
     prev_output: OptionalReg[
-        LayoutTensor[output_type, Layout.row_major[rank](), MutableAnyOrigin]
+        LayoutTensor[output_type, Layout.row_major[rank](), MutAnyOrigin]
     ] = None,
     prev_softmax_info: OptionalReg[
-        LayoutTensor[softmax_type, Layout.row_major[3](), MutableAnyOrigin]
+        LayoutTensor[softmax_type, Layout.row_major[3](), MutAnyOrigin]
     ] = None,
 ) raises:
     alias num_heads = config.num_heads
@@ -1648,7 +1650,7 @@ fn flare_mla_prefill_dispatch[
     alias v_smem = BN * depth
 
     alias smem_use = (q_smem + k_smem + v_smem) * UInt(
-        config.dtype.size_of()
+        size_of[config.dtype]()
     ) if has_nvidia_gpu_accelerator() else 0
 
     var softmax_info_ptr = (
@@ -1768,11 +1770,11 @@ fn mla_prefill[
     valid_length: LayoutTensor[
         DType.uint32,
         valid_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ],
     cache_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ],
     mask: mask_t,
@@ -1854,24 +1856,24 @@ fn mla_prefill[
             Int(batch_idx),
         )
     elif is_amd_gpu():
-        mla_prefill_single_batch_amd[
-            config=config,
-            group=group,
-            q_depth=q_depth,
-            cache_depth=cache_depth,
-        ](
+        alias attention_config = MLAAttentionConfig[False, config]()
+        var attention = Attention[config, 1, False, False, q_depth=q_depth](
+            attention_config,
             output_ptr.offset(o_batch_offset),
             q_ptr.offset(q_batch_offset),
             k,
             v,
-            k_rope,
-            seq_len,
-            max_seq_len,
-            scale,
-            Int(batch_idx),
-            start_pos,
-            cache_start_pos,
             mask,
+            None,
+            Int(batch_idx),
+            scale,
+            seq_len,
+            num_keys,
+            Int(start_pos),
+            Int(cache_start_pos),
+        )
+        attention.mla_prefill(
+            k_rope,
         )
     else:
         return CompilationTarget.unsupported_target_error[
@@ -2053,7 +2055,7 @@ fn mla_prefill_single_batch[
     var p_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(Int(num_m_mmas * num_n_mmas), p_frag_size),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
@@ -2061,7 +2063,7 @@ fn mla_prefill_single_batch[
         LayoutTensor[
             accum_type,
             Layout.row_major(Int(num_m_mmas * num_n_mmas_output), p_frag_size),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -2630,7 +2632,7 @@ fn mla_prefill_single_batch[
         var prev_output_reg_tile = LayoutTensor[
             accum_type,
             Layout.row_major(Int(num_m_mmas * num_n_mmas_output), p_frag_size),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
 
@@ -2811,7 +2813,7 @@ fn set_buffer_lengths_to_zero[
     buffer_lengths_layout: Layout
 ](
     buffer_lengths: LayoutTensor[
-        DType.int32, buffer_lengths_layout, MutableAnyOrigin
+        DType.int32, buffer_lengths_layout, MutAnyOrigin
     ],
 ):
     alias MAX_CHUNKS = Int(buffer_lengths_layout.shape[0])
@@ -2893,22 +2895,22 @@ fn mla_prefill_plan_kernel[
     buffer_row_offsets: LayoutTensor[
         DType.uint32,
         buffer_row_offsets_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ],
     cache_offsets: LayoutTensor[
         DType.uint32,
         cache_offsets_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ],
     buffer_lengths: LayoutTensor[
         DType.int32,
         buffer_lengths_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ],
     input_row_offsets: LayoutTensor[
         DType.uint32,
         input_row_offsets_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ],
     k_cache: cache_t,
     buffer_token_size: UInt32,

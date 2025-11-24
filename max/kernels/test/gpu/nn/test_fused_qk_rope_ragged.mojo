@@ -19,7 +19,7 @@ from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from memory import memcpy
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_goldens import freqs_cis_table_input
@@ -141,13 +141,17 @@ def execute_fused_qk_rope_ragged(
     )
     true_ce_q_ragged_host = HostNDBuffer[
         dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](true_ce_total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](true_ce_total_length, num_q_heads, Int(kv_params.head_size)))
     random(true_ce_q_ragged_host.tensor)
     true_ce_q_ragged_device = true_ce_q_ragged_host.copy_to_device(ctx)
 
     mixed_ce_q_ragged_host = HostNDBuffer[
         dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](mixed_ce_total_length, num_q_heads, kv_params.head_size))
+    ](
+        IndexList[3](
+            mixed_ce_total_length, num_q_heads, Int(kv_params.head_size)
+        )
+    )
     for bs_idx in range(batch_size):
         true_ce_prompt_len = true_ce_prompt_lens[bs_idx]
         mixed_ce_prompt_len = mixed_ce_prompt_lens[bs_idx]
@@ -167,7 +171,7 @@ def execute_fused_qk_rope_ragged(
         memcpy(
             dest=mixed_ce_offset,
             src=true_ce_offset,
-            count=mixed_ce_prompt_len * num_q_heads * kv_params.head_size,
+            count=mixed_ce_prompt_len * num_q_heads * Int(kv_params.head_size),
         )
 
     mixed_ce_q_ragged_device = mixed_ce_q_ragged_host.copy_to_device(ctx)
@@ -179,11 +183,15 @@ def execute_fused_qk_rope_ragged(
     # initialize reference output
     mixed_ce_output_host = HostNDBuffer[
         dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](mixed_ce_total_length, num_q_heads, kv_params.head_size))
+    ](
+        IndexList[3](
+            mixed_ce_total_length, num_q_heads, Int(kv_params.head_size)
+        )
+    )
     mixed_ce_output_device = mixed_ce_output_host.copy_to_device(ctx)
     true_ce_output_host = HostNDBuffer[
         dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](true_ce_total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](true_ce_total_length, num_q_heads, Int(kv_params.head_size)))
     true_ce_output_device = true_ce_output_host.copy_to_device(ctx)
 
     # initialize our KVCache
@@ -193,8 +201,8 @@ def execute_fused_qk_rope_ragged(
             2,
             num_layers,
             page_size,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         )
     )
     mixed_ce_kv_block_paged_host = HostNDBuffer[dtype, 6](
@@ -203,8 +211,8 @@ def execute_fused_qk_rope_ragged(
             2,
             num_layers,
             page_size,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         )
     )
     random(true_ce_kv_block_paged_host.tensor)
@@ -239,9 +247,39 @@ def execute_fused_qk_rope_ragged(
     var true_ce_k_cache_collection = PagedKVCacheCollection[
         dtype, kv_params, page_size
     ](
-        true_ce_kv_block_paged_device.tensor,
-        true_ce_cache_lengths_device.tensor,
-        paged_lut_device.tensor,
+        LayoutTensor[
+            true_ce_kv_block_paged_device.dtype,
+            Layout.row_major[6](),
+            MutAnyOrigin,
+        ](
+            true_ce_kv_block_paged_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                true_ce_kv_block_paged_device.to_layout_tensor().runtime_layout.shape.value,
+                true_ce_kv_block_paged_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            true_ce_cache_lengths_device.dtype,
+            Layout(UNKNOWN_VALUE),
+            ImmutAnyOrigin,
+        ](
+            true_ce_cache_lengths_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                true_ce_cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
+                true_ce_cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            paged_lut_device.dtype,
+            Layout.row_major[2](),
+            ImmutAnyOrigin,
+        ](
+            paged_lut_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut_device.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         true_ce_max_prompt_length,
         true_ce_max_cache_length,
     )
@@ -249,9 +287,39 @@ def execute_fused_qk_rope_ragged(
     var mixed_ce_k_cache_collection = PagedKVCacheCollection[
         dtype, kv_params, page_size
     ](
-        mixed_ce_kv_block_paged_device.tensor,
-        mixed_ce_cache_lengths_device.tensor,
-        paged_lut_device.tensor,
+        LayoutTensor[
+            mixed_ce_kv_block_paged_device.dtype,
+            Layout.row_major[6](),
+            MutAnyOrigin,
+        ](
+            mixed_ce_kv_block_paged_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                mixed_ce_kv_block_paged_device.to_layout_tensor().runtime_layout.shape.value,
+                mixed_ce_kv_block_paged_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            mixed_ce_cache_lengths_device.dtype,
+            Layout(UNKNOWN_VALUE),
+            ImmutAnyOrigin,
+        ](
+            mixed_ce_cache_lengths_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                mixed_ce_cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
+                mixed_ce_cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            paged_lut_device.dtype,
+            Layout.row_major[2](),
+            ImmutAnyOrigin,
+        ](
+            paged_lut_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut_device.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         mixed_ce_max_prompt_length,
         mixed_ce_max_cache_length,
     )
@@ -304,9 +372,39 @@ def execute_fused_qk_rope_ragged(
     var true_ce_k_cache_collection_host = PagedKVCacheCollection[
         dtype, kv_params, page_size
     ](
-        true_ce_kv_block_paged_host.tensor,
-        true_ce_cache_lengths_host.tensor,
-        paged_lut_host.tensor,
+        LayoutTensor[
+            true_ce_kv_block_paged_host.dtype,
+            Layout.row_major[6](),
+            MutAnyOrigin,
+        ](
+            true_ce_kv_block_paged_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                true_ce_kv_block_paged_host.to_layout_tensor().runtime_layout.shape.value,
+                true_ce_kv_block_paged_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            true_ce_cache_lengths_host.dtype,
+            Layout(UNKNOWN_VALUE),
+            ImmutAnyOrigin,
+        ](
+            true_ce_cache_lengths_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                true_ce_cache_lengths_host.to_layout_tensor().runtime_layout.shape.value,
+                true_ce_cache_lengths_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            paged_lut_host.dtype,
+            Layout.row_major[2](),
+            ImmutAnyOrigin,
+        ](
+            paged_lut_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut_host.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         true_ce_max_prompt_length,
         true_ce_max_cache_length,
     )
@@ -317,9 +415,39 @@ def execute_fused_qk_rope_ragged(
     var mixed_ce_k_cache_collection_host = PagedKVCacheCollection[
         dtype, kv_params, page_size
     ](
-        mixed_ce_kv_block_paged_host.tensor,
-        mixed_ce_cache_lengths_host.tensor,
-        paged_lut_host.tensor,
+        LayoutTensor[
+            mixed_ce_kv_block_paged_host.dtype,
+            Layout.row_major[6](),
+            MutAnyOrigin,
+        ](
+            mixed_ce_kv_block_paged_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                mixed_ce_kv_block_paged_host.to_layout_tensor().runtime_layout.shape.value,
+                mixed_ce_kv_block_paged_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            mixed_ce_cache_lengths_host.dtype,
+            Layout(UNKNOWN_VALUE),
+            ImmutAnyOrigin,
+        ](
+            mixed_ce_cache_lengths_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                mixed_ce_cache_lengths_host.to_layout_tensor().runtime_layout.shape.value,
+                mixed_ce_cache_lengths_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            paged_lut_host.dtype,
+            Layout.row_major[2](),
+            ImmutAnyOrigin,
+        ](
+            paged_lut_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut_host.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         mixed_ce_max_prompt_length,
         mixed_ce_max_cache_length,
     )
@@ -339,14 +467,14 @@ def execute_fused_qk_rope_ragged(
                         mixed_ce_output_host.tensor[
                             mixed_ce_batch_start_idx + tok_idx,
                             head_idx,
-                            head_dim,
+                            Int(head_dim),
                         ],
                         true_ce_output_host.tensor[
                             true_ce_batch_start_idx
                             + mixed_ce_cache_len
                             + tok_idx,
                             head_idx,
-                            head_dim,
+                            Int(head_dim),
                         ],
                     )
 
@@ -360,15 +488,15 @@ def execute_fused_qk_rope_ragged(
                     assert_almost_equal(
                         true_ce_k_cache.load[width=1](
                             bs_idx,
-                            head_idx,
+                            Int(head_idx),
                             mixed_ce_cache_len + tok_idx,
-                            head_dim,
+                            Int(head_dim),
                         ),
                         mixed_ce_k_cache.load[width=1](
                             bs_idx,
-                            head_idx,
+                            Int(head_idx),
                             mixed_ce_cache_len + tok_idx,
-                            head_dim,
+                            Int(head_dim),
                         ),
                     )
 
@@ -447,8 +575,8 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
             2,
             num_layers,
             page_size,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         )
     )
     random(kv_block_paged_host.tensor)
@@ -463,7 +591,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
             2,
             num_layers,
             page_size,
-            kv_params.num_heads,
+            Int(kv_params.num_heads),
             rope_dim,
         )
     )
@@ -479,7 +607,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
                                     kv_idx,
                                     layer_idx,
                                     tok_idx,
-                                    head_idx,
+                                    Int(head_idx),
                                     0,
                                 )
                             ),
@@ -489,8 +617,8 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
                                     kv_idx,
                                     layer_idx,
                                     tok_idx,
-                                    head_idx,
-                                    kv_params.head_size - rope_dim,
+                                    Int(head_idx),
+                                    Int(kv_params.head_size - rope_dim),
                                 )
                             ),
                             count=rope_dim,
@@ -547,9 +675,39 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     var k_cache_collection = PagedKVCacheCollection[
         dtype, kv_params, page_size
     ](
-        kv_block_paged_device.tensor,
-        cache_lengths_device.tensor,
-        paged_lut_device.tensor,
+        LayoutTensor[
+            kv_block_paged_device.dtype,
+            Layout.row_major[6](),
+            MutAnyOrigin,
+        ](
+            kv_block_paged_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_paged_device.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_paged_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_device.dtype,
+            Layout(UNKNOWN_VALUE),
+            ImmutAnyOrigin,
+        ](
+            cache_lengths_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            paged_lut_device.dtype,
+            Layout.row_major[2](),
+            ImmutAnyOrigin,
+        ](
+            paged_lut_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut_device.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_prompt_length,
         max_cache_length,
     )
@@ -558,9 +716,39 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     var k_cache_collection_64 = PagedKVCacheCollection[
         dtype, kv_params_64, page_size
     ](
-        kv_block_paged_device_64.tensor,
-        cache_lengths_device.tensor,
-        paged_lut_device.tensor,
+        LayoutTensor[
+            kv_block_paged_device_64.dtype,
+            Layout.row_major[6](),
+            MutAnyOrigin,
+        ](
+            kv_block_paged_device_64.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_paged_device_64.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_paged_device_64.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_device.dtype,
+            Layout(UNKNOWN_VALUE),
+            ImmutAnyOrigin,
+        ](
+            cache_lengths_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            paged_lut_device.dtype,
+            Layout.row_major[2](),
+            ImmutAnyOrigin,
+        ](
+            paged_lut_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut_device.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_prompt_length,
         max_cache_length,
     )
@@ -622,8 +810,8 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
             2,
             num_layers,
             page_size,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         )
     )
     ctx.enqueue_copy(
@@ -653,16 +841,16 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
                                         kv_idx,
                                         layer_idx,
                                         tok_idx,
-                                        head_idx,
-                                        head_dim_idx,
+                                        Int(head_idx),
+                                        Int(head_dim_idx),
                                     ],
                                     kv_block_paged_host.tensor[
                                         page_idx,
                                         kv_idx,
                                         layer_idx,
                                         tok_idx,
-                                        head_idx,
-                                        head_dim_idx,
+                                        Int(head_idx),
+                                        Int(head_dim_idx),
                                     ],
                                 )
                             for head_dim_idx in range(rope_dim):
@@ -672,17 +860,19 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
                                         kv_idx,
                                         layer_idx,
                                         tok_idx,
-                                        head_idx,
-                                        kv_params.head_size
-                                        - rope_dim
-                                        + UInt(head_dim_idx),
+                                        Int(head_idx),
+                                        Int(
+                                            kv_params.head_size
+                                            - rope_dim
+                                            + UInt(head_dim_idx)
+                                        ),
                                     ],
                                     kv_block_paged_host_64.tensor[
                                         page_idx,
                                         kv_idx,
                                         layer_idx,
                                         tok_idx,
-                                        head_idx,
+                                        Int(head_idx),
                                         head_dim_idx,
                                     ],
                                 )

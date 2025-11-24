@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 
 import benchmark
 from benchmark import Unit, keep
-from gpu.memory import AddressSpace
 from layout import Layout, LayoutTensor, RuntimeLayout
 from memory import memcpy
 from nn.pad import _do_pad, _fill, pad_constant, pad_reflect

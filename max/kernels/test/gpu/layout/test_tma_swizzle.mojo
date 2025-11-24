@@ -15,15 +15,14 @@ from sys import size_of
 
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, thread_idx
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu import block_idx, thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import arange, random
 from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 
 from utils.index import Index, IndexList
 
@@ -36,7 +35,7 @@ fn tma_swizzle_load_kernel[
     tile_layout: Layout,
     desc_layout: Layout,
 ](
-    dst: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    dst: LayoutTensor[dtype, layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, tile_layout, desc_layout],
 ):
     alias tileM = tile_layout.shape[0].value()
@@ -46,15 +45,15 @@ fn tma_swizzle_load_kernel[
     tile = LayoutTensor[
         dtype,
         tile_layout,
-        MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -70,7 +69,7 @@ fn tma_swizzle_load_kernel[
     barrier()
     mbar[0].wait()
 
-    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
+    dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
 
     if thread_idx.x == 0:
         dst_tile.copy_from(tile)
@@ -119,7 +118,7 @@ def test_tma_swizzle[
     alias descN = type_of(tma_tensor).desc_layout.shape[1].value()
     alias desc_tile_size = descM * descN
     desc_tile = LayoutTensor[
-        dtype, type_of(tma_tensor).desc_layout, MutableAnyOrigin
+        dtype, type_of(tma_tensor).desc_layout, MutAnyOrigin
     ].stack_allocation()
 
     alias kernel = tma_swizzle_load_kernel[

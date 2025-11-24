@@ -18,8 +18,8 @@ from sys import size_of
 from buffer import NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, thread_idx
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu import block_idx, thread_idx
 from gpu.memory import fence_async_view_proxy
 from internal_utils import HostNDBuffer, random
 from kv_cache.types import (
@@ -27,11 +27,10 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.tma_async import SharedMemBarrier, TMANestedTensorTile
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from nn.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
@@ -79,8 +78,8 @@ fn mha_operand_tma_copy_kernel[
     smem_tile = LayoutTensor[
         kv_t.dtype,
         type_of(src_tma_tile).layout,
-        MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -88,7 +87,7 @@ fn mha_operand_tma_copy_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -151,10 +150,10 @@ def mha_operand_copy[
 
     # Create TMA tiles
     src_tma = src.create_tma_tile[
-        tile_m, head_size, swizzle_mode, is_k_major=is_k_major
+        tile_m, Int(head_size), swizzle_mode, is_k_major=is_k_major
     ](ctx)
     dst_tma = dst.create_tma_tile[
-        tile_m, head_size, swizzle_mode, is_k_major=is_k_major
+        tile_m, Int(head_size), swizzle_mode, is_k_major=is_k_major
     ](ctx)
 
     # Calculate grid dimensions
@@ -167,14 +166,14 @@ def mha_operand_copy[
 
     alias kernel = mha_operand_tma_copy_kernel[
         tile_m,
-        head_size,
+        Int(head_size),
         kv_t,
         swizzle_mode,
         is_k_major,
     ]
 
     # Launch kernel with block_dim=32
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         src_tma,
         dst_tma,
         src,
@@ -255,9 +254,33 @@ def test_continuous_kv_cache[
 
     # Create source and destination collections
     src_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
-        kv_block_device.tensor,
-        cache_lengths_device.tensor,
-        lookup_table_device.tensor,
+        LayoutTensor[
+            kv_block_device.dtype, Layout.row_major[6](), MutAnyOrigin
+        ](
+            kv_block_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_device.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            lookup_table_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            lookup_table_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                lookup_table_device.to_layout_tensor().runtime_layout.shape.value,
+                lookup_table_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         UInt32(max_seq_len),
         UInt32(max_seq_len),
     )
@@ -265,9 +288,31 @@ def test_continuous_kv_cache[
     # Test copying key cache at layer 0
     src_key = KVCacheMHAOperand(src_collection.get_key_cache(0))
     src_host_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
-        kv_block_host.tensor,
-        cache_lengths_host.tensor,
-        lookup_table_host.tensor,
+        LayoutTensor[kv_block_host.dtype, Layout.row_major[6](), MutAnyOrigin](
+            kv_block_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_host.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_host.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_host.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            lookup_table_host.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            lookup_table_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                lookup_table_host.to_layout_tensor().runtime_layout.shape.value,
+                lookup_table_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         UInt32(max_seq_len),
         UInt32(max_seq_len),
     )
@@ -279,9 +324,35 @@ def test_continuous_kv_cache[
         dst_block_device = dst_block_host.copy_to_device(ctx)
 
         dst_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
-            dst_block_device.tensor,
-            cache_lengths_device.tensor,
-            lookup_table_device.tensor,
+            LayoutTensor[
+                dst_block_device.dtype, Layout.row_major[6](), MutAnyOrigin
+            ](
+                dst_block_device.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()](
+                    dst_block_device.to_layout_tensor().runtime_layout.shape.value,
+                    dst_block_device.to_layout_tensor().runtime_layout.stride.value,
+                ),
+            ),
+            LayoutTensor[
+                cache_lengths_device.dtype,
+                Layout(UNKNOWN_VALUE),
+                ImmutAnyOrigin,
+            ](
+                cache_lengths_device.to_layout_tensor().ptr,
+                RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                    cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
+                    cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+                ),
+            ),
+            LayoutTensor[
+                lookup_table_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+            ](
+                lookup_table_device.to_layout_tensor().ptr,
+                RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                    lookup_table_device.to_layout_tensor().runtime_layout.shape.value,
+                    lookup_table_device.to_layout_tensor().runtime_layout.stride.value,
+                ),
+            ),
             UInt32(max_seq_len),
             UInt32(max_seq_len),
         )
@@ -312,9 +383,33 @@ def test_continuous_kv_cache[
         dst_host_collection = ContinuousBatchingKVCacheCollection[
             dtype, kv_params
         ](
-            dst_block_host.tensor,
-            cache_lengths_host.tensor,
-            lookup_table_host.tensor,
+            LayoutTensor[
+                dst_block_host.dtype, Layout.row_major[6](), MutAnyOrigin
+            ](
+                dst_block_host.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()](
+                    dst_block_host.to_layout_tensor().runtime_layout.shape.value,
+                    dst_block_host.to_layout_tensor().runtime_layout.stride.value,
+                ),
+            ),
+            LayoutTensor[
+                cache_lengths_host.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+            ](
+                cache_lengths_host.to_layout_tensor().ptr,
+                RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                    cache_lengths_host.to_layout_tensor().runtime_layout.shape.value,
+                    cache_lengths_host.to_layout_tensor().runtime_layout.stride.value,
+                ),
+            ),
+            LayoutTensor[
+                lookup_table_host.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+            ](
+                lookup_table_host.to_layout_tensor().ptr,
+                RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                    lookup_table_host.to_layout_tensor().runtime_layout.shape.value,
+                    lookup_table_host.to_layout_tensor().runtime_layout.stride.value,
+                ),
+            ),
             UInt32(max_seq_len),
             UInt32(max_seq_len),
         )
@@ -390,9 +485,33 @@ def test_paged_kv_cache[
 
     # Create source and destination collections
     src_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
-        kv_block_device.tensor,
-        cache_lengths_device.tensor,
-        paged_lut_device.tensor,
+        LayoutTensor[
+            kv_block_device.dtype, Layout.row_major[6](), MutAnyOrigin
+        ](
+            kv_block_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_device.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            paged_lut_device.dtype, Layout.row_major[2](), ImmutAnyOrigin
+        ](
+            paged_lut_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut_device.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         UInt32(max_seq_len),
         UInt32(max_seq_len),
     )
@@ -400,9 +519,31 @@ def test_paged_kv_cache[
 
     # Create host-side MHAOperands for verification
     src_host_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
-        kv_block_host.tensor,
-        cache_lengths_host.tensor,
-        paged_lut_host.tensor,
+        LayoutTensor[kv_block_host.dtype, Layout.row_major[6](), MutAnyOrigin](
+            kv_block_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_host.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_host.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_host.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            paged_lut_host.dtype, Layout.row_major[2](), ImmutAnyOrigin
+        ](
+            paged_lut_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut_host.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         UInt32(max_seq_len),
         UInt32(max_seq_len),
     )
@@ -415,9 +556,35 @@ def test_paged_kv_cache[
         dst_block_device = dst_block_host.copy_to_device(ctx)
 
         dst_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
-            dst_block_device.tensor,
-            cache_lengths_device.tensor,
-            paged_lut_device.tensor,
+            LayoutTensor[
+                dst_block_device.dtype, Layout.row_major[6](), MutAnyOrigin
+            ](
+                dst_block_device.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()](
+                    dst_block_device.to_layout_tensor().runtime_layout.shape.value,
+                    dst_block_device.to_layout_tensor().runtime_layout.stride.value,
+                ),
+            ),
+            LayoutTensor[
+                cache_lengths_device.dtype,
+                Layout(UNKNOWN_VALUE),
+                ImmutAnyOrigin,
+            ](
+                cache_lengths_device.to_layout_tensor().ptr,
+                RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                    cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
+                    cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+                ),
+            ),
+            LayoutTensor[
+                paged_lut_device.dtype, Layout.row_major[2](), ImmutAnyOrigin
+            ](
+                paged_lut_device.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()](
+                    paged_lut_device.to_layout_tensor().runtime_layout.shape.value,
+                    paged_lut_device.to_layout_tensor().runtime_layout.stride.value,
+                ),
+            ),
             UInt32(max_seq_len),
             UInt32(max_seq_len),
         )
@@ -448,9 +615,33 @@ def test_paged_kv_cache[
         dst_host_collection = PagedKVCacheCollection[
             dtype, kv_params, page_size
         ](
-            dst_block_host.tensor,
-            cache_lengths_host.tensor,
-            paged_lut_host.tensor,
+            LayoutTensor[
+                dst_block_host.dtype, Layout.row_major[6](), MutAnyOrigin
+            ](
+                dst_block_host.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()](
+                    dst_block_host.to_layout_tensor().runtime_layout.shape.value,
+                    dst_block_host.to_layout_tensor().runtime_layout.stride.value,
+                ),
+            ),
+            LayoutTensor[
+                cache_lengths_host.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+            ](
+                cache_lengths_host.to_layout_tensor().ptr,
+                RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                    cache_lengths_host.to_layout_tensor().runtime_layout.shape.value,
+                    cache_lengths_host.to_layout_tensor().runtime_layout.stride.value,
+                ),
+            ),
+            LayoutTensor[
+                paged_lut_host.dtype, Layout.row_major[2](), ImmutAnyOrigin
+            ](
+                paged_lut_host.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()](
+                    paged_lut_host.to_layout_tensor().runtime_layout.shape.value,
+                    paged_lut_host.to_layout_tensor().runtime_layout.stride.value,
+                ),
+            ),
             UInt32(max_seq_len),
             UInt32(max_seq_len),
         )

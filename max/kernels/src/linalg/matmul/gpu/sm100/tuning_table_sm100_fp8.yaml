@@ -11,7 +11,7 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 name: bench_matmul
-file: /home/davood/Desktop/repo/modular/open-source/max/max/kernels/benchmarks/gpu/bench_matmul.mojo
+file: /home/davood/Desktop/repo/modular/max/kernels/benchmarks/gpu/bench_matmul.mojo
 common: &common
 - name: bench_matmul
   AUTOTUNING_MODE: true

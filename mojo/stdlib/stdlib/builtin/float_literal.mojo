@@ -58,12 +58,12 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         """
         return {}
 
-    alias nan = FloatLiteral[__mlir_attr.`#pop.float_literal<nan>`]()
-    alias infinity = FloatLiteral[__mlir_attr.`#pop.float_literal<inf>`]()
-    alias negative_infinity = FloatLiteral[
+    comptime nan = FloatLiteral[__mlir_attr.`#pop.float_literal<nan>`]()
+    comptime infinity = FloatLiteral[__mlir_attr.`#pop.float_literal<inf>`]()
+    comptime negative_infinity = FloatLiteral[
         __mlir_attr.`#pop.float_literal<neg_inf>`
     ]()
-    alias negative_zero = FloatLiteral[
+    comptime negative_zero = FloatLiteral[
         __mlir_attr.`#pop.float_literal<neg_zero>`
     ]()
 
@@ -122,7 +122,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     ) -> IntLiteral[
         __mlir_attr[
             `#pop<float_to_int_literal<`,
-            value,
+            Self.value,
             `>> : !pop.int_literal`,
         ]
     ]:
@@ -199,7 +199,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     ) -> FloatLiteral[
         __mlir_attr[
             `#pop<float_literal_bin<add `,
-            value,
+            Self.value,
             `,`,
             rhs.value,
             `>> : !pop.float_literal`,
@@ -221,7 +221,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     ) -> FloatLiteral[
         __mlir_attr[
             `#pop<float_literal_bin<sub `,
-            value,
+            Self.value,
             `,`,
             rhs.value,
             `>> : !pop.float_literal`,
@@ -243,7 +243,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     ) -> FloatLiteral[
         __mlir_attr[
             `#pop<float_literal_bin<mul `,
-            value,
+            Self.value,
             `,`,
             rhs.value,
             `>> : !pop.float_literal`,
@@ -265,7 +265,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     ) -> FloatLiteral[
         __mlir_attr[
             `#pop<float_literal_bin<truediv `,
-            value,
+            Self.value,
             `,`,
             rhs.value,
             `>> : !pop.float_literal`,
@@ -288,7 +288,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     ) -> FloatLiteral[
         __mlir_attr[
             `#pop<float_literal_bin<floordiv `,
-            value,
+            Self.value,
             `,`,
             rhs.value,
             `>> : !pop.float_literal`,

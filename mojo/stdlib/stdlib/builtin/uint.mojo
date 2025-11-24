@@ -17,9 +17,11 @@ These are Mojo built-ins, so you don't need to import them.
 
 from hashlib.hasher import Hasher
 from math import CeilDivable
+from sys.info import bit_width_of
 
 from builtin.math import Absable, DivModable
 from builtin.device_passable import DevicePassable
+from memory import LegacyOpaquePointer as OpaquePointer
 
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -70,16 +72,16 @@ struct UInt(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias BITWIDTH = UInt(DType.uint.bit_width())
+    comptime BITWIDTH = UInt(bit_width_of[DType.uint]())
     """The bit width of the integer type."""
 
-    alias MAX = UInt(Scalar[DType.uint].MAX)
+    comptime MAX = UInt(Scalar[DType.uint].MAX)
     """Returns the maximum integer value."""
 
-    alias MIN = UInt(Scalar[DType.uint].MIN)
+    comptime MIN = UInt(Scalar[DType.uint].MIN)
     """Returns the minimum value of type."""
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
     """UInt is remapped to the same type when passed to accelerator devices."""
 
     fn _to_device_type(self, target: OpaquePointer):
@@ -150,7 +152,6 @@ struct UInt(
         self = value.__uint__()
 
     @always_inline("builtin")
-    @implicit(deprecated=True)
     fn __init__(out self, value: Int):
         """Construct UInt from the given Int value.
 

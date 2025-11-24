@@ -79,6 +79,13 @@ def test_char_formatting():
     assert_equal(String(Codepoint.from_u32(0x1F642).value()), "🙂")
 
 
+def test_char_writable():
+    var c1 = Codepoint(97)  # 'a'
+    var buffer = String()
+    buffer.write(c1)
+    assert_equal(buffer, String("a"))
+
+
 def test_char_properties():
     assert_true(Codepoint.from_u32(0).value().is_ascii())
     # Last ASCII codepoint.
@@ -156,7 +163,7 @@ def test_char_is_printable():
     assert_false(Codepoint.ord("स").is_ascii_printable())
 
 
-alias SIGNIFICANT_CODEPOINTS = List[Tuple[Int, List[Byte]]](
+comptime SIGNIFICANT_CODEPOINTS = List[Tuple[Int, List[Byte]]](
     # --------------------------
     # 1-byte (ASCII) codepoints
     # --------------------------
@@ -197,13 +204,13 @@ fn assert_utf8_bytes(codepoint: UInt32, var expected: List[Byte]) raises:
     var char = char_opt.value()
 
     # Allocate a length-4 buffer to write to.
-    var buffer = List[Byte](0, 0, 0, 0)
+    var buffer: List[Byte] = [0, 0, 0, 0]
     var written = char.unsafe_write_utf8(buffer.unsafe_ptr())
 
     # Check that the number of bytes written was as expected.
     assert_equal(
         written,
-        UInt(len(expected)),
+        len(expected),
         StaticString("wrong byte count written encoding codepoint: {}").format(
             codepoint
         ),
@@ -236,14 +243,14 @@ def test_char_utf8_byte_length():
             Codepoint.from_u32(codepoint).value().utf8_byte_length()
         )
 
-        assert_equal(computed_len, UInt(len(expected_utf8)))
+        assert_equal(computed_len, len(expected_utf8))
 
 
 def test_char_comptime():
-    alias c1 = Codepoint.from_u32(32).value()
+    comptime c1 = Codepoint.from_u32(32).value()
 
     # Test that `utf8_byte_length()` works at compile time.
-    alias c1_bytes = c1.utf8_byte_length()
+    comptime c1_bytes = c1.utf8_byte_length()
     assert_equal(c1_bytes, 1)
 
 

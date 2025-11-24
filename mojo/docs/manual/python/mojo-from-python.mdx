@@ -433,7 +433,10 @@ struct Person(Representable):
         return self_ptr[].name
 
     @staticmethod
-    fn set_age(self_ptr: UnsafePointer[Self], new_age: PythonObject) raises:
+    fn set_age(
+        self_ptr: UnsafePointer[mut=True, Self],
+        new_age: PythonObject,
+    ) raises:
         self_ptr[].age = Int(new_age)
     # highlight-end
 
@@ -642,6 +645,7 @@ ways:
 
   ```bash
   mojo build mojo_module.mojo --emit shared-lib -o mojo_module.so
+  ```
 
   This has the advantage that you can specify any other necessary build options
   manually (optimization or debug flags, import paths, etc.), providing an

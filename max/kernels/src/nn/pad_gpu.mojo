@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from memory import LegacyUnsafePointer as UnsafePointer
 from gpu import block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceContext, DeviceBuffer
 from layout.layout import Layout
@@ -120,7 +121,7 @@ struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
     var pad_with_constant: Bool
     var is_within_padding: Bool
     var next_pad_with_constant: Bool
-    var output_shape: IndexList[rank]
+    var output_shape: IndexList[Self.rank]
 
     """
     output_offset: The offset at which output data starts.
@@ -132,8 +133,8 @@ struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
     fn __init__(
         out self,
         axis: Int,
-        paddings: UnsafePointer[Scalar[paddings_type]],
-        output_shape: IndexList[rank],
+        paddings: UnsafePointer[Scalar[Self.paddings_type]],
+        output_shape: IndexList[Self.rank],
     ):
         var axis_dim = output_shape[axis]
         var pre_pad = Int(paddings[2 * axis])
@@ -179,9 +180,9 @@ struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
     @always_inline
     fn base(
         mut self,
-        output: UnsafePointer[Scalar[dtype]],
-        input: UnsafePointer[Scalar[dtype]],
-        constant: Scalar[dtype],
+        output: UnsafePointer[Scalar[Self.dtype]],
+        input: UnsafePointer[Scalar[Self.dtype]],
+        constant: Scalar[Self.dtype],
         axis_dim: Int,
         ctx: DeviceContext,
     ) raises:
@@ -359,10 +360,10 @@ fn pad_constant[
         )
 
     var input_strides_buf = LayoutTensor[
-        DType.int, Layout(rank), MutableAnyOrigin
+        DType.int, Layout(rank), MutAnyOrigin
     ].stack_allocation()
     var output_strides_buf = LayoutTensor[
-        DType.int, Layout(rank), MutableAnyOrigin
+        DType.int, Layout(rank), MutAnyOrigin
     ].stack_allocation()
     _fill_strides_indexlist[rank](input_shape, input_strides_buf)
     _fill_strides_indexlist[rank](output_shape, output_strides_buf)

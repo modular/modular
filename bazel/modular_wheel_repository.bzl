@@ -16,6 +16,7 @@ PYTHON_VERSIONS = [
     "311",
     "312",
     "313",
+    "314",
 ]
 
 def _rebuild_wheel(rctx):

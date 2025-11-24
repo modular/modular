@@ -19,10 +19,10 @@ from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
 from gpu.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, lane_id, thread_idx
-from gpu.id import warp_id as get_warp_id
-from gpu.memory import AddressSpace, external_memory
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu import block_idx, lane_id, thread_idx
+from gpu import warp_id as get_warp_id
+from gpu.memory import external_memory
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 from layout import Layout, LayoutTensor
@@ -32,6 +32,7 @@ from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from logger import Logger
+from memory import LegacyUnsafePointer as UnsafePointer
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -39,6 +40,8 @@ from utils.static_tuple import StaticTuple
 
 from ....arch.sm100 import MmaOpSM100_SS
 from ....utils import elementwise_epilogue_type
+
+alias logger = Logger()
 
 alias smem_layout_3D[layout: Layout] = Layout(
     IntTuple(
@@ -87,11 +90,11 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a_scales_tma_op: TMATensorTile[
         a_scales_type, a_scales_tile_layout, a_scales_desc_layout
     ],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutableAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
     constrained[transpose_b, "Only support transposed B"]()
@@ -163,21 +166,21 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     alias a_smem_tile_t = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
     alias b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
     alias a_scales_smem_tile_t = LayoutTensor[
         a_scales_type,
         a_scales_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
@@ -185,21 +188,21 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     alias a_smem_tile_t_3D = LayoutTensor[
         a_type,
         a_smem_layout_3D,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
     alias b_smem_tile_t_3D = LayoutTensor[
         b_type,
         b_smem_layout_3D,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
     alias a_scales_smem_tile_t_3D = LayoutTensor[
         a_scales_type,
         a_scales_smem_layout_3D,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
@@ -502,11 +505,11 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a_scales_tma_op: TMATensorTile[
         a_scales_type, a_scales_tile_layout, a_scales_desc_layout
     ],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutableAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
     # NOTE: This wrapper is necessary because batched blockwise scaling has a wrapper kernel
@@ -591,7 +594,7 @@ fn matmul_sm100_blockwise_scaled_fp8[
     alias a_layout_tensor_3D = LayoutTensor[
         a_type,
         _3D_layout[a.layout, a.rank],
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = a.address_space,
         element_layout = a.element_layout,
         layout_int_type = a.layout_int_type,
@@ -603,7 +606,7 @@ fn matmul_sm100_blockwise_scaled_fp8[
     alias b_layout_tensor_3D = LayoutTensor[
         b_type,
         _3D_layout[b.layout, b.rank],
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = b.address_space,
         element_layout = b.element_layout,
         layout_int_type = b.layout_int_type,
@@ -615,7 +618,7 @@ fn matmul_sm100_blockwise_scaled_fp8[
     alias a_scales_layout_tensor_3D = LayoutTensor[
         a_scales_type,
         _3D_layout[a_scales.layout, a_scales.rank],
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = a_scales.address_space,
         element_layout = a_scales.element_layout,
         layout_int_type = a_scales.layout_int_type,
@@ -678,7 +681,6 @@ fn matmul_sm100_blockwise_scaled_fp8[
             " by NVIDIA SM90+ TMA instructions!"
         )
 
-    var logger = Logger()
     logger.info(
         "Executing Basic 1D2D Blockwise Scaled FP8 GEMM (BLOCK_SCALE_SIZE ="
         " 128)"

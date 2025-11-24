@@ -82,6 +82,43 @@ cc_feature(
     overrides = "@rules_cc//cc/toolchains/features/legacy:generate_dsym_file",
 )
 
+# TODO: Try to replace with https://github.com/bazelbuild/rules_cc/pull/529
+cc_feature(
+    name = "use_module_maps",
+    args = [
+        "//bazel/internal/cc-toolchain/args:dependent_module_map_files",
+    ],
+    feature_name = "use_module_maps",
+    requires_any_of = [":module_maps"],
+)
+
+cc_feature(
+    name = "layering_check",
+    args = [
+        "//bazel/internal/cc-toolchain/args:layering_check_args",
+        "//bazel/internal/cc-toolchain/args:module_map_file_args",
+        "//bazel/internal/cc-toolchain/args:module_name_args",
+    ],
+    feature_name = "layering_check",
+    implies = [":use_module_maps"],
+    requires_any_of = ["//bazel/internal/cc-toolchain/features:modular_code"],  # NOTE: This is something that can't be added upstream
+)
+
+cc_feature(
+    name = "parse_headers",
+    feature_name = "parse_headers",
+    requires_any_of = ["//bazel/internal/cc-toolchain/features:modular_code"],  # NOTE: This is something that can't be added upstream
+)
+
+cc_feature(
+    name = "parse_headers_shim",
+    args = [
+        "//bazel/internal/cc-toolchain/args:parse_headers_args",
+    ],
+    feature_name = "_parse_headers_shim",
+    requires_any_of = [":parse_headers"],
+)
+
 # TODO: Remove after https://github.com/bazelbuild/rules_cc/pull/386
 cc_feature(
     name = "external_include_paths",

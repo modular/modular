@@ -21,6 +21,7 @@ from gpu import *
 from gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from memory import LegacyUnsafePointer as UnsafePointer
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
@@ -42,8 +43,8 @@ fn run_mha[
     num_keys: Int,
     batch_size: Int,
     num_partitions: Int,
-    bench_and_verify: Bool,
-    mode: String,
+    bench: Bool,
+    verify: Bool,
     ctx: DeviceContext,
 ) raises:
     # Query, key, value dimensions.
@@ -145,12 +146,9 @@ fn run_mha[
         ),
     )
 
-    alias q_tile_num_rows = 32
-    alias k_tile_num_rows = 128
-
     @parameter
     @always_inline
-    @__copy_capture(q_device, k_device, v_device, mask4d, output_device)
+    @__copy_capture(q_device, k_device, v_device, output_device)
     fn kernel_launch(ctx: DeviceContext) raises:
         flash_attention(
             output_device,
@@ -164,7 +162,7 @@ fn run_mha[
             num_partitions if num_partitions > 0 else OptionalReg[Int](None),
         )
 
-    if bench_and_verify:
+    if bench:
 
         @parameter
         @always_inline
@@ -177,7 +175,8 @@ fn run_mha[
             b.iter_custom[_kernel_launch](ctx)
 
         fn compute_flops() -> Int:
-            return 4 * batch_size * num_heads * seq_len * num_keys * depth
+            # Using causal mask, skip half of tiles.
+            return 2 * batch_size * num_heads * seq_len * num_keys * depth
 
         m.bench_function[bench_func](
             BenchId(
@@ -189,11 +188,10 @@ fn run_mha[
                 "/seq_len=", seq_len,
                 "/num_keys=", num_keys,
                 "/batch_size=", batch_size,
-                "/mode=", mode,
             ),
                 # fmt: on
             ),
-            ThroughputMeasure(BenchMetric.flops, compute_flops()),
+            [ThroughputMeasure(BenchMetric.flops, compute_flops())],
         )
     else:
         kernel_launch(ctx)
@@ -201,7 +199,7 @@ fn run_mha[
     ctx.synchronize()
     ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
 
-    if bench_and_verify:
+    if verify:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
         alias output_ref_layout = Layout.row_major(
             UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
@@ -295,8 +293,8 @@ def main():
     var num_keys = Int(arg_parse("num_keys", 64))
     var batch_size = Int(arg_parse("batch_size", 1))
     var num_partitions = Int(arg_parse("num_partitions", 1))
-    var mode = String(arg_parse("mode", "none"))
-    var bench_and_verify = arg_parse("benchmark_and_verify", True)
+    var bench = arg_parse("benchmark", True)
+    var verify = arg_parse("verify", True)
 
     alias cfg = MHA_cfg(
         qkv_type=qkv_type,
@@ -320,8 +318,8 @@ def main():
             num_keys,
             batch_size,
             num_partitions,
-            bench_and_verify,
-            mode,
+            bench,
+            verify,
             ctx,
         )
     m.dump_report()

@@ -1,5 +1,57 @@
+load("@rules_cc//cc/toolchains:tool.bzl", "cc_tool")
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
+load(":builtin_module_map.bzl", "builtin_module_map")
 load(":tools.bzl", "declare_tools")
+
+cc_tool(
+    name = "clang",
+    src = ":multi-platform-clang.sh",
+    data = [
+        "@clang-linux-aarch64//:bin/clang",
+        "@clang-linux-x86_64//:bin/clang",
+        "@clang-macos//:bin/clang",
+    ],
+    tags = ["manual"],
+)
+
+cc_tool(
+    name = "clang++".format(platform),
+    src = ":multi-platform-clang++.sh",
+    data = [
+        "@clang-linux-aarch64//:bin/clang++",
+        "@clang-linux-x86_64//:bin/clang++",
+        "@clang-macos//:bin/clang++",
+    ],
+    tags = ["manual"],
+)
+
+cc_tool(
+    name = "linker_driver".format(platform),
+    src = ":linker-driver.sh",
+    data = [
+        "@clang-linux-aarch64//:bin/clang",
+        "@clang-linux-aarch64//:bin/clang++",  # symlink to clang
+        "@clang-linux-aarch64//:bin/dsymutil",
+        "@clang-linux-aarch64//:ld",
+        "@clang-linux-aarch64//:lib",
+        "@clang-linux-x86_64//:bin/clang",
+        "@clang-linux-x86_64//:bin/clang++",  # symlink to clang
+        "@clang-linux-x86_64//:bin/dsymutil",
+        "@clang-linux-x86_64//:ld",
+        "@clang-linux-x86_64//:lib",
+        "@clang-macos//:bin/clang",
+        "@clang-macos//:bin/clang++",  # symlink to clang
+        "@clang-macos//:bin/dsymutil",
+        "@clang-macos//:ld",
+        "@clang-macos//:lib",
+    ],
+    tags = [
+        "manual",
+        # HACK: until our lld contains this fix https://github.com/llvm/llvm-project/commit/9234066476aa82cfac3cee564883a3124df4584e
+        # This tag is meaningless to us but changes this behavior https://github.com/bazelbuild/bazel/blob/4c664d9ba50e7d7aea66a0547a5bac3ca8d264e5/src/main/starlark/builtins_bzl/common/cc/link/finalize_link_action.bzl#L363
+        "requires_darwin",
+    ],
+)
 
 declare_tools()
 
@@ -28,3 +80,23 @@ declare_tools()
         "resource_directory",
     ]
 ]
+
+builtin_module_map(
+    name = "builtin_module_map",
+    include_directories = select({
+        "//:linux_aarch64": [
+            "@clang-linux-aarch64//:include_dir",
+            "@sysroot-jammy-aarch64//:root",
+        ],
+        "//:linux_x86_64": [
+            "@clang-linux-x86_64//:include_dir",
+            "@sysroot-jammy-x86_64//:root",
+        ],
+        "@platforms//os:macos": [
+            "@clang-macos//:include_dir",
+            "@sysroot-macos//:root",
+        ],
+    }),
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)

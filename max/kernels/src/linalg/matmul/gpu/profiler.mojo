@@ -15,7 +15,7 @@
 from time.time import global_perf_counter_ns
 from gpu import block_idx, thread_idx, WARP_SIZE
 from gpu.host import DeviceContext
-from gpu.id import sm_id
+from gpu import sm_id
 
 
 alias MatmulWarpSpecializationWorkSpaceManager[
@@ -69,18 +69,18 @@ struct BlackwellWarpProfilingWorkspaceManager[
     fn _get_warp_count[warp_role: UInt32]() -> UInt32:
         @parameter
         if warp_role == 0:
-            return load_warps
+            return Self.load_warps
         elif warp_role == 1:
-            return scheduler_warps
+            return Self.scheduler_warps
         elif warp_role == 2:
-            return mma_warps
+            return Self.mma_warps
         else:
-            return epilogue_warps
+            return Self.epilogue_warps
 
     @staticmethod
     @parameter
     fn _calculate_entries_before_role[warp_role: UInt32]() -> UInt32:
-        return warp_role * max_entries_per_warp
+        return warp_role * Self.max_entries_per_warp
 
     @staticmethod
     @always_inline
@@ -107,12 +107,11 @@ struct BlackwellWarpProfilingWorkspaceManager[
     @always_inline
     fn get_workspace(
         ctx: DeviceContext,
-    ) raises -> Span[UInt64, MutableAnyOrigin]:
+    ) raises -> Span[UInt64, MutAnyOrigin]:
         var length = Int(Self._calculate_buffer_length())
-        var device_buffer = ctx.enqueue_create_buffer[DType.uint64](
-            length
-        ).enqueue_fill(0)
-        return Span[UInt64, MutableAnyOrigin](
+        var device_buffer = ctx.enqueue_create_buffer[DType.uint64](length)
+        device_buffer.enqueue_fill(0)
+        return Span[UInt64, MutAnyOrigin](
             ptr=device_buffer.unsafe_ptr(),
             length=length,
         )
@@ -124,7 +123,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
     ](
         sm_idx: UInt32,
         entry_idx: UInt32,
-        workspace: Span[UInt64, MutableAnyOrigin],
+        workspace: Span[UInt64, MutAnyOrigin],
         timeline: Tuple[UInt64, UInt64],
     ):
         alias total_threads = WARP_SIZE * Self._get_warp_count[warp_role]()
@@ -144,7 +143,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
     @always_inline
     fn dump_workspace_as_csv(
         ctx: DeviceContext,
-        workspace: Span[UInt64, MutableAnyOrigin],
+        workspace: Span[UInt64, MutAnyOrigin],
         filename: StaticString,
     ) raises:
         var length = Int(Self._calculate_buffer_length())
@@ -192,10 +191,10 @@ struct BlackwellProfileWarp[
     and writes a single entry to the workspace.
     """
 
-    alias enable_profiling = max_entries_per_warp > 0
+    alias enable_profiling = Self.max_entries_per_warp > 0
 
     var timeline: Tuple[UInt64, UInt64]
-    var workspace: Span[UInt64, MutableAnyOrigin]
+    var workspace: Span[UInt64, MutAnyOrigin]
 
     # which entry is going to be written to the workspace for this warp
     var entry_idx: UInt32
@@ -203,7 +202,7 @@ struct BlackwellProfileWarp[
     @always_inline
     fn __init__(
         out self,
-        workspace: Span[UInt64, MutableAnyOrigin],
+        workspace: Span[UInt64, MutAnyOrigin],
         entry_idx: UInt32,
     ):
         self.timeline = (0, 0)
@@ -221,7 +220,7 @@ struct BlackwellProfileWarp[
         @parameter
         if Self.enable_profiling:
             self.timeline[1] = global_perf_counter_ns()
-            WorkspaceManager.write_to_workspace[warp_role](
+            Self.WorkspaceManager.write_to_workspace[Self.warp_role](
                 sm_id(),
                 self.entry_idx,
                 self.workspace,

@@ -1,14 +1,8 @@
 # Avoid PATH leaking into actions
 common --incompatible_strict_action_env
 
-# Force hermetic toolchain, make sure we don't accidentally used the default one
-common:linux --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
-common:linux --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
-
 # Don't fail on unknown GPUs, add needed GPUs to common.MODULE.bazel
 common --repo_env=MOJO_IGNORE_UNKNOWN_GPUS=1
-
-common --cxxopt=-std=c++20 --host_cxxopt=-std=c++20
 
 # Silence warnings in external dependencies used in tests
 build --per_file_copt=external/.*@-w --host_per_file_copt=external/.*@-w
@@ -30,5 +24,3 @@ build:public-cache --bes_backend=grpcs://modular-public.buildbuddy.io
 build:public-cache --bes_results_url=https://modular-public.buildbuddy.io/invocation/
 build:public-cache --build_metadata=VISIBILITY=PUBLIC
 build:public-cache --remote_cache=grpcs://modular-public.buildbuddy.io
-
-build:ci --remote_timeout=10m

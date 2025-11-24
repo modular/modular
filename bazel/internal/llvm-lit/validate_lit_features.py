@@ -50,12 +50,6 @@ _FEATURES_BY_PREFIX = {
         "neon_dotprod",
         "neon_matmul",
     },
-    "open-source/max/max/kernels/test/linalg": {
-        "avx2",
-        "intel_amx",
-        "neon_dotprod",
-        "neon_matmul",
-    },
 }
 
 

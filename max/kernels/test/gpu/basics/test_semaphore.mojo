@@ -13,7 +13,8 @@
 
 from gpu import NamedBarrierSemaphore
 from gpu.host import DeviceContext
-from gpu.id import block_idx, grid_dim, thread_idx
+from gpu import block_idx, grid_dim, thread_idx
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
 alias NUM_BLOCKS = 32
@@ -25,7 +26,7 @@ fn test_named_barrier_semaphore_equal_kernel(
     shared_ptr: UnsafePointer[Int32],
 ):
     var sema = NamedBarrierSemaphore[Int32(NUM_THREADS), 4, 1](
-        locks_ptr, thread_idx.x
+        locks_ptr, Int(thread_idx.x)
     )
 
     sema.wait_eq(0, block_idx.x)
@@ -69,7 +70,7 @@ fn test_named_barrier_semaphore_less_than_kernel(
     shared_ptr: UnsafePointer[Int32],
 ):
     var sema = NamedBarrierSemaphore[Int32(NUM_THREADS), 4, 1](
-        locks_ptr, thread_idx.x
+        locks_ptr, Int(thread_idx.x)
     )
 
     sema.wait_lt(0, block_idx.x)

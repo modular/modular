@@ -16,7 +16,7 @@ from collections import OptionalReg
 from buffer.buffer import NDBuffer
 from buffer.dimlist import Dim, DimList, _make_tuple
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer, random
+from internal_utils import DeviceNDBuffer, random
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig
@@ -39,11 +39,11 @@ fn shrink_qkv_permute_3mn_sm100[
     b_type: DType,
     b_shape: DimList,
 ](
-    c_lora: NDBuffer[mut=True, c_type, 3, MutableAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    b: NDBuffer[b_type, 3, MutableAnyOrigin, b_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
+    c_lora: NDBuffer[mut=True, c_type, 3, MutAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
+    b: NDBuffer[b_type, 3, MutAnyOrigin, b_shape],
+    a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -95,7 +95,7 @@ fn shrink_qkv_permute_3mn_sm100[
         mut=True,
         c_type,
         2,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         shape = DimList(Dim(), Dim(N_Total)),
         strides = DimList.create_unknown[2](),
     ]()  # data=null, shape/stride zeroed

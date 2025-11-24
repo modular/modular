@@ -13,9 +13,8 @@
 
 from gpu.cluster import block_rank_in_cluster, cluster_sync, elect_one_sync
 from gpu.host import DeviceContext
-from gpu.id import block_id_in_cluster, block_idx
-from gpu.id import warp_id as get_warp_id
-from gpu.memory import _GPUAddressSpace as AddressSpace
+from gpu import block_id_in_cluster, block_idx
+from gpu import warp_id as get_warp_id
 from gpu.memory import fence_mbarrier_init
 from gpu.sync import syncwarp
 from layout.tma_async import PipelineState, SharedMemBarrier

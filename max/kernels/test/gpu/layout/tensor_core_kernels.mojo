@@ -15,8 +15,7 @@ from io.io import _printf
 
 from gpu import WARP_SIZE, barrier
 from gpu.host import DeviceContext
-from gpu.id import thread_idx
-from gpu.memory import _GPUAddressSpace as AddressSpace
+from gpu import thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor, load_to_simd
@@ -34,8 +33,8 @@ fn mma_load_and_multiply[
     inst_shape: IndexList[3],
     transpose_b: Bool = False,
 ](
-    lhs: LayoutTensor[dtype, lhs_layout, MutableAnyOrigin],
-    rhs: LayoutTensor[dtype, rhs_layout, MutableAnyOrigin],
+    lhs: LayoutTensor[dtype, lhs_layout, MutAnyOrigin],
+    rhs: LayoutTensor[dtype, rhs_layout, MutAnyOrigin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
     var a_reg_tile = mma.load_a(lhs)
@@ -141,7 +140,7 @@ fn mma_write_operand_kernel[
     dtype: DType,
     layout: Layout,
     inst_shape: IndexList[3],
-](output: LayoutTensor[dst_dtype, layout, MutableAnyOrigin]):
+](output: LayoutTensor[dst_dtype, layout, MutAnyOrigin]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape]()
     var thread_reg_tile = mma.c_reg_tile_type.stack_allocation()
     var thread_reg_tile_v = thread_reg_tile.vectorize[1, mma.c_reg_type.size]()
@@ -216,21 +215,21 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
     inst_shape: IndexList[3],
     transpose_b: Bool = False,
 ](
-    lhs: LayoutTensor[dtype, lhs_layout, MutableAnyOrigin],
-    rhs: LayoutTensor[dtype, rhs_layout, MutableAnyOrigin],
+    lhs: LayoutTensor[dtype, lhs_layout, MutAnyOrigin],
+    rhs: LayoutTensor[dtype, rhs_layout, MutAnyOrigin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
     var a_smem = LayoutTensor[
         dtype,
         lhs.layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem = LayoutTensor[
         dtype,
         rhs.layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -245,7 +244,7 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
         LayoutTensor[
             dtype,
             Layout.row_major(1, a_simd_width),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -256,7 +255,7 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
         LayoutTensor[
             dtype,
             Layout.row_major(1, b_simd_width),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()

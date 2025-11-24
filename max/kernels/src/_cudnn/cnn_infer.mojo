@@ -11,11 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from os import abort
 from pathlib import Path
 from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle
+from sys.ffi import _Global, OwnedDLHandle
 
 from utils import StaticTuple
 
@@ -35,13 +39,13 @@ from .infer import (
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_CUDNN_CNN_INFER_LIBRARY_PATHS = List[Path](
+alias CUDA_CUDNN_CNN_INFER_LIBRARY_PATHS: List[Path] = [
     "libcudnn.so",
     "libcudnn.so.9",
     "libcudnn.so.8",
     "/usr/lib/x86_64-linux-gnu/libcudnn.so.9",
     "/usr/lib/x86_64-linux-gnu/libcudnn.so.8",
-)
+]
 
 
 fn _on_error_msg() -> Error:
@@ -64,7 +68,7 @@ alias CUDA_CUDNN_CNN_INFER_LIBRARY = _Global[
 ]
 
 
-fn _init_dylib() -> _OwnedDLHandle:
+fn _init_dylib() -> OwnedDLHandle:
     return _find_dylib[abort_on_failure=False](
         materialize[CUDA_CUDNN_CNN_INFER_LIBRARY_PATHS]()
     )
@@ -340,7 +344,7 @@ fn cudnnGetConvolution2dDescriptor(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnFusedOpsConstParamLabel_t(EqualityComparable, Writable):
+struct cudnnFusedOpsConstParamLabel_t(Equatable, Writable):
     var _value: Int8
     alias CUDNN_PARAM_XDESC = Self(0)
     alias CUDNN_PARAM_XDATA_PLACEHOLDER = Self(1)
@@ -499,7 +503,7 @@ fn cudnnSetConvolutionReorderType(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnReorderType_t(EqualityComparable, Identifiable, Writable):
+struct cudnnReorderType_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_DEFAULT_REORDER = Self(0)
     alias CUDNN_NO_REORDER = Self(1)
@@ -634,7 +638,7 @@ fn cudnnGetConvolutionForwardAlgorithm_v7(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnFusedOps_t(EqualityComparable, Identifiable, Writable):
+struct cudnnFusedOps_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_FUSED_SCALE_BIAS_ACTIVATION_CONV_BNSTATS = Self(0)
     alias CUDNN_FUSED_SCALE_BIAS_ACTIVATION_WGRAD = Self(1)
@@ -707,9 +711,7 @@ fn cudnnDestroyConvolutionDescriptor(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnFusedOpsPointerPlaceHolder_t(
-    EqualityComparable, Identifiable, Writable
-):
+struct cudnnFusedOpsPointerPlaceHolder_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_PTR_NULL = Self(0)
     alias CUDNN_PTR_ELEM_ALIGNED = Self(1)
@@ -815,7 +817,7 @@ fn cudnnGetConvolutionReorderType(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnFusedOpsVariantParamLabel_t(EqualityComparable, Writable):
+struct cudnnFusedOpsVariantParamLabel_t(Equatable, Writable):
     var _value: Int8
     alias CUDNN_PTR_XDATA = Self(0)
     alias CUDNN_PTR_BN_EQSCALE = Self(1)
@@ -1323,7 +1325,7 @@ fn cudnnGetConvolutionForwardAlgorithmMaxCount(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnConvolutionMode_t(EqualityComparable, Identifiable, Writable):
+struct cudnnConvolutionMode_t(Equatable, Identifiable, Writable):
     var _value: Int8
     alias CUDNN_CONVOLUTION = Self(0)
     alias CUDNN_CROSS_CORRELATION = Self(1)

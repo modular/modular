@@ -142,6 +142,7 @@ def test_nvidia_only_constraints() -> None:
         ":_env_python_3.11_x86_64-unknown-linux-gnu_nvidia_gpu",
         ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu",
         ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu",
+        ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu",
     ]
 
 
@@ -160,6 +161,7 @@ def test_amd_only_constraints() -> None:
         ":_env_python_3.11_x86_64-unknown-linux-gnu_amd_gpu",
         ":_env_python_3.12_x86_64-unknown-linux-gnu_amd_gpu",
         ":_env_python_3.13_x86_64-unknown-linux-gnu_amd_gpu",
+        ":_env_python_3.14_x86_64-unknown-linux-gnu_amd_gpu",
     ]
 
 
@@ -182,4 +184,6 @@ def test_multi_gpu_constraints() -> None:
         ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu",
         ":_env_python_3.13_x86_64-unknown-linux-gnu_amd_gpu",
         ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu",
+        ":_env_python_3.14_x86_64-unknown-linux-gnu_amd_gpu",
+        ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu",
     ]

@@ -102,7 +102,7 @@ fn assert_false[
 
 @always_inline
 fn assert_equal[
-    T: EqualityComparable & Stringable, //
+    T: Equatable & Stringable, //
 ](
     lhs: T,
     rhs: T,
@@ -164,7 +164,7 @@ fn assert_equal(
 
 @always_inline
 fn assert_equal[
-    T: Copyable & Movable & EqualityComparable & Representable, //
+    T: Copyable & Movable & Equatable & Representable, //
 ](
     lhs: List[T],
     rhs: List[T],
@@ -196,7 +196,7 @@ fn assert_equal[
 
 
 # TODO(MSTDL-1071):
-#   Once Mojo supports parametric traits, implement EqualityComparable for
+#   Once Mojo supports parametric traits, implement Equatable for
 #   StringSlice such that string slices with different origin types can be
 #   compared, then drop this overload.
 @always_inline
@@ -240,7 +240,7 @@ fn assert_equal[
 
 @always_inline
 fn assert_equal[
-    O: ImmutableOrigin,
+    O: ImmutOrigin,
 ](
     lhs: StringSlice[O],
     rhs: String,
@@ -273,7 +273,7 @@ fn assert_equal[
 
 @always_inline
 fn assert_equal[
-    O: ImmutableOrigin,
+    O: ImmutOrigin,
 ](
     lhs: String,
     rhs: StringSlice[O],
@@ -335,7 +335,7 @@ fn assert_equal_pyobj(
 
 @always_inline
 fn assert_not_equal[
-    T: EqualityComparable & Stringable, //
+    T: Equatable & Stringable, //
 ](
     lhs: T,
     rhs: T,
@@ -395,7 +395,7 @@ fn assert_not_equal(
 
 @always_inline
 fn assert_not_equal[
-    T: Copyable & Movable & EqualityComparable & Representable, //
+    T: Copyable & Movable & Equatable & Representable, //
 ](
     lhs: List[T],
     rhs: List[T],

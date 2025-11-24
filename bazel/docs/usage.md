@@ -165,8 +165,8 @@ mojo_filecheck_test(
     name = "test_shared_mem_barrier.mojo.test",
     srcs = ["test_shared_mem_barrier.mojo"],
     deps = [
-        "@mojo//:layout",
-        "@mojo//:linalg",
+        "//max:layout",
+        "//max:linalg",
         "@mojo//:stdlib",
     ],
 )

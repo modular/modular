@@ -1,0 +1,17 @@
+load("//bazel:api.bzl", "modular_py_library")
+
+modular_py_library(
+    name = "torch",
+    srcs = glob(["**/*.py"]),
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/mlir",
+        "//max/python/max/support",
+    ],
+)

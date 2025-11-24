@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from python import Python, PythonObject
 from python._cpython import Py_ssize_t, PyObjectPtr
 from python.bindings import PythonModuleBuilder
@@ -24,7 +25,7 @@ from testing import (
 )
 
 
-def test_dunder_methods(mut python: Python):
+def _test_dunder_methods(mut python: Python):
     var a = PythonObject(34)
     var b = PythonObject(10)
     var d = PythonObject(2)
@@ -139,7 +140,7 @@ def test_dunder_methods(mut python: Python):
     assert_equal_pyobj(c, -35)
 
 
-def test_inplace_dunder_methods(mut python: Python):
+def _test_inplace_dunder_methods(mut python: Python):
     # test dunder methods that don't fall back to their non-inplace counterparts
     var list_obj: PythonObject = [1, 2]
 
@@ -156,8 +157,8 @@ def test_inplace_dunder_methods(mut python: Python):
 
 
 def test_num_conversion():
-    alias n = UInt64(0xFEDC_BA09_8765_4321)
-    alias n_str = String(n)
+    comptime n = UInt64(0xFEDC_BA09_8765_4321)
+    comptime n_str = String(n)
     assert_equal(n_str, String(PythonObject(n)))
 
 
@@ -183,7 +184,7 @@ def test_boolean_operations():
     assert_false(Python.none().__bool__())
 
 
-fn test_string_conversions(mut python: Python) raises -> None:
+fn _test_string_conversions(mut python: Python) raises -> None:
     # static string
     var static_str: StaticString = "mojo"
     var py_str = PythonObject(static_str)
@@ -366,7 +367,7 @@ fn test_set() raises:
 fn test_none() raises:
     var n = Python.none()
     assert_equal(String(n), "None")
-    assert_true(n is None)
+    assert_true(n is PythonObject(None))
 
 
 fn test_getitem_raises() raises:
@@ -651,7 +652,7 @@ def test_attribute_access():
 
     # Test getting attributes that exist
     var attr_value = test_dict.__getattr__("get")
-    assert_true(attr_value is not None)
+    assert_true(attr_value is not PythonObject(None))
 
     # Test setting attributes on objects that support it
     var custom_obj = Python.evaluate("type('TestClass', (), {})()")
@@ -681,7 +682,7 @@ def test_copy():
     assert_true(list_original is list_copied)
 
 
-def test_python_eval_and_evaluate(mut python: Python):
+def _test_python_eval_and_evaluate(mut python: Python):
     # Test Python.eval() method
     var success = python.eval("x = 42")
     assert_true(success)
@@ -758,22 +759,22 @@ def test_error_handling():
 
 def test_with_python_dunder_methods():
     var python = Python()
-    test_dunder_methods(python)
+    _test_dunder_methods(python)
 
 
 def test_with_python_inplace_dunder_methods():
     var python = Python()
-    test_inplace_dunder_methods(python)
+    _test_inplace_dunder_methods(python)
 
 
 def test_with_python_string_conversions():
     var python = Python()
-    test_string_conversions(python)
+    _test_string_conversions(python)
 
 
 def test_with_python_eval_and_evaluate():
     var python = Python()
-    test_python_eval_and_evaluate(python)
+    _test_python_eval_and_evaluate(python)
 
 
 def test_python_object_string():

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 @parameter

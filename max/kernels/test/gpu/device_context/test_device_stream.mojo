@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv
 from gpu import global_idx
 from gpu.host import DeviceBuffer, DeviceContext, DeviceStream
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import (
     assert_equal,
     assert_false,
@@ -84,14 +86,14 @@ def test_create_stream_with_priority(ctx: DeviceContext):
     var low_priority_stream = ctx.create_stream(
         priority=priority_range.least, blocking=True
     )
-    var func = ctx.compile_function[simple_kernel]()
-    low_priority_stream.enqueue_function(
+    var func = ctx.compile_function_checked[simple_kernel, simple_kernel]()
+    low_priority_stream.enqueue_function_checked(
         func,
         input_device,
         output_device_low,
         length,
         multiplier,
-        grid_dim=((length + 31) // 32),
+        grid_dim=ceildiv(length, 32),
         block_dim=32,
     )
     low_priority_stream.synchronize()
@@ -100,13 +102,13 @@ def test_create_stream_with_priority(ctx: DeviceContext):
     var high_priority_stream = ctx.create_stream(
         priority=priority_range.greatest, blocking=False
     )
-    high_priority_stream.enqueue_function(
+    high_priority_stream.enqueue_function_checked(
         func,
         input_device,
         output_device_high,
         length,
         multiplier,
-        grid_dim=((length + 31) // 32),
+        grid_dim=ceildiv(length, 32),
         block_dim=32,
     )
     high_priority_stream.synchronize()
@@ -129,13 +131,13 @@ def test_create_stream_with_priority(ctx: DeviceContext):
             priority=mid_priority, blocking=True
         )
         var output_device_mid = ctx.enqueue_create_buffer[DType.float32](length)
-        mid_priority_stream.enqueue_function(
+        mid_priority_stream.enqueue_function_checked(
             func,
             input_device,
             output_device_mid,
             length,
             multiplier,
-            grid_dim=((length + 31) // 32),
+            grid_dim=ceildiv(length, 32),
             block_dim=32,
         )
         mid_priority_stream.synchronize()
@@ -190,17 +192,17 @@ def test_multiple_priority_streams(ctx: DeviceContext):
             current_priority += step
             multiplier_val += Float32(0.5)
 
-    var func = ctx.compile_function[simple_kernel]()
+    var func = ctx.compile_function_checked[simple_kernel, simple_kernel]()
 
     # Launch kernels concurrently on all streams
     for i in range(len(streams)):
-        streams[i].enqueue_function(
+        streams[i].enqueue_function_checked(
             func,
             input_device,
             output_devices[i],
             length,
             multipliers[i],
-            grid_dim=((length + 31) // 32),
+            grid_dim=ceildiv(length, 32),
             block_dim=32,
         )
 
@@ -254,11 +256,11 @@ def test_concurrent_priority_streams(ctx: DeviceContext):
     var high_output_device = ctx.enqueue_create_buffer[DType.float32](length)
     var low_output_device = ctx.enqueue_create_buffer[DType.float32](length)
 
-    var func = ctx.compile_function[simple_kernel]()
+    var func = ctx.compile_function_checked[simple_kernel, simple_kernel]()
     # Launch multiple kernels on both streams to test priority behavior
     for i in range(iterations):
         # Launch on low priority stream first
-        low_priority_stream.enqueue_function(
+        low_priority_stream.enqueue_function_checked(
             func,
             input_device,
             low_output_device,
@@ -269,7 +271,7 @@ def test_concurrent_priority_streams(ctx: DeviceContext):
         )
 
         # Then immediately launch on high priority stream
-        high_priority_stream.enqueue_function(
+        high_priority_stream.enqueue_function_checked(
             func,
             input_device,
             high_output_device,

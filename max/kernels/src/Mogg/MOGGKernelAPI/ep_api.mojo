@@ -16,19 +16,27 @@ Expert Parallelism (EP) Communication Kernel.
 """
 
 import compiler_internal as compiler
-from gpu.host import DeviceBuffer, get_gpu_target
+from gpu.grid_controls import pdl_launch_attributes
+from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from gpu.host.info import is_gpu
 from layout import Layout
+from memory import LegacyOpaquePointer as OpaquePointer
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from sys.info import align_of, simd_width_of, size_of
+from sys.ffi import external_call
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 from tensor import InputTensor, OutputTensor
 from tensor.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
 )
 
-from shmem import shmem_init_thread, shmem_module_init, shmem_malloc
+from shmem import (
+    shmem_init_thread,
+    shmem_malloc,
+    shmem_module_init,
+    shmem_my_pe,
+)
 from shmem.ep_comm import (
     BF16TokenFormat,
     BlockwiseFP8TokenFormat,
@@ -36,7 +44,38 @@ from shmem.ep_comm import (
     dispatch_cb_kernel,
     combine_kernel,
     combine_cb_kernel,
+    fused_silu_kernel,
+    fused_silu_fp8_kernel,
 )
+
+
+# This should eventually be moved to ffi.mojo with a more general global cache method
+# cache key is a string and cache value is a pointer.
+@always_inline
+fn global_cache_lookup(key: String) -> OpaquePointer:
+    return external_call["KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer](
+        key.unsafe_ptr(), key.byte_length()
+    )
+
+
+@always_inline
+fn global_cache_insert(key: String, value: OpaquePointer):
+    external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
+        StringSlice(key),
+        value,
+    )
+
+
+@always_inline
+fn unsafe_aliasing_address_to_device_buffer[
+    dtype: DType,
+](var addr: Int, size: Int, ctx: DeviceContext) -> DeviceBuffer[dtype]:
+    return DeviceBuffer[dtype](
+        ctx,
+        _unsafe_aliasing_address_to_pointer[Scalar[dtype]](addr),
+        size,
+        owning=False,
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -61,6 +100,7 @@ struct Struct_ep_init:
         target: StaticString,
     ](
         dev_ptrs: OutputTensor[dtype = DType.uint64, rank=2],
+        my_rank_tensor: OutputTensor[dtype = DType.int32, rank=1],
         atomic_counters_0: MutableInputTensor[dtype = DType.int32],
         atomic_counters_1: MutableInputTensor[dtype = DType.int32],
         context: DeviceContextPtr,
@@ -84,6 +124,7 @@ struct Struct_ep_init:
             dev_ptrs: Output tensor to store device pointers. Shape [2, 3] where:
                      - First dimension: buffer groups (0=dispatch, 1=combine)
                      - Second dimension: buffer types (0=send, 1=recv, 2=recv_count)
+            my_rank_tensor: Output tensor to store current device's rank.
             atomic_counters_0: Atomic counters for buffer group 0.
             atomic_counters_1: Atomic counters for buffer group 1.
             context: GPU device context
@@ -188,6 +229,10 @@ struct Struct_ep_init:
         dev_ptrs[1, 1] = UInt64(Int(combine_recv_p))
         dev_ptrs[1, 2] = UInt64(Int(combine_recv_count_p))
 
+        # Store current device's rank
+        var my_rank = Int32(shmem_my_pe())
+        my_rank_tensor[0] = my_rank
+
 
 # ===-----------------------------------------------------------------------===#
 # Expert Parallelism Dispatch Kernel
@@ -261,6 +306,7 @@ struct Struct_ep_dispatch:
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
+        var my_rank = Int32(shmem_my_pe())
         alias hw_info = gpu_ctx.default_device_info
         alias gpu_target = get_gpu_target()
         alias gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
@@ -298,6 +344,7 @@ struct Struct_ep_dispatch:
                 ";max_token_per_rank=", max_token_per_rank,
                 ";n_gpus_per_node=", n_gpus_per_node,
                 ";n_nodes=", n_nodes,
+                ";my_rank=", my_rank,
             )
             # fmt: on
 
@@ -306,28 +353,36 @@ struct Struct_ep_dispatch:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var func = gpu_ctx.compile_function[dispatch]()
-            shmem_module_init(func)
+            var func = gpu_ctx.compile_function_checked[dispatch, dispatch]()
+            var cached_module_key = String("EP_DISPATCH_INITED_DEV_", gpu_id)
 
-            var send_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
-                Int(send_ptrs[gpu_id])
-            )
-            var recv_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
-                Int(recv_ptrs[gpu_id])
-            )
-            var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
-                Int(recv_count_ptrs[gpu_id])
-            )
+            # Don't initialize the module repeatedly
+            if not Int(global_cache_lookup(cached_module_key)):
+                shmem_module_init(func)
+                global_cache_insert(
+                    cached_module_key,
+                    _unsafe_aliasing_address_to_pointer[NoneType](1),
+                )
 
-            gpu_ctx.enqueue_function(
+            var send_buf = unsafe_aliasing_address_to_device_buffer[
+                DType.uint8
+            ](Int(send_ptrs[gpu_id]), 1, gpu_ctx)
+            var recv_buf = unsafe_aliasing_address_to_device_buffer[
+                DType.uint8
+            ](Int(recv_ptrs[gpu_id]), 1, gpu_ctx)
+            var recv_count_p = unsafe_aliasing_address_to_device_buffer[
+                DType.uint64
+            ](Int(recv_count_ptrs[gpu_id]), 1, gpu_ctx)
+
+            gpu_ctx.enqueue_function_checked(
                 func,
                 input_tokens_tensor,
                 topk_ids_tensor,
-                send_buf_p,
-                recv_buf_p,
+                send_buf,
+                recv_buf,
                 recv_count_p,
-                atomic_counters_0._ptr,
-                Int32(gpu_id),
+                atomic_counters_0.to_layout_tensor().to_device_buffer(gpu_ctx),
+                my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )
@@ -403,6 +458,7 @@ struct Struct_ep_dispatch_cb:
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
+        var my_rank = Int32(shmem_my_pe())
         alias hw_info = gpu_ctx.default_device_info
         alias gpu_target = get_gpu_target()
         alias gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
@@ -443,6 +499,7 @@ struct Struct_ep_dispatch_cb:
                 ";max_token_per_rank=", max_token_per_rank,
                 ";n_gpus_per_node=", n_gpus_per_node,
                 ";n_nodes=", n_nodes,
+                ";my_rank=", my_rank,
             )
             # fmt: on
 
@@ -478,7 +535,7 @@ struct Struct_ep_dispatch_cb:
                 recv_buf_p_dev,
                 recv_count_p_dev,
                 atomic_counters_0_dev,
-                Int32(gpu_id),
+                my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )
@@ -569,6 +626,7 @@ struct Struct_ep_dispatch_fp8:
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
+        var my_rank = Int32(shmem_my_pe())
         alias hw_info = gpu_ctx.default_device_info
         alias gpu_target = get_gpu_target()
         alias gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
@@ -615,6 +673,7 @@ struct Struct_ep_dispatch_fp8:
                 ";max_token_per_rank=", max_token_per_rank,
                 ";n_gpus_per_node=", n_gpus_per_node,
                 ";n_nodes=", n_nodes,
+                ";my_rank=", my_rank,
             )
             # fmt: on
 
@@ -623,28 +682,36 @@ struct Struct_ep_dispatch_fp8:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var func = gpu_ctx.compile_function[dispatch]()
-            shmem_module_init(func)
+            var func = gpu_ctx.compile_function_checked[dispatch, dispatch]()
+            var cached_module_key = String("EP_DISPATCH_INITED_DEV_", gpu_id)
 
-            var send_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
-                Int(send_ptrs[gpu_id])
-            )
-            var recv_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
-                Int(recv_ptrs[gpu_id])
-            )
-            var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
-                Int(recv_count_ptrs[gpu_id])
-            )
+            # Don't initialize the module repeatedly
+            if not Int(global_cache_lookup(cached_module_key)):
+                shmem_module_init(func)
+                global_cache_insert(
+                    cached_module_key,
+                    _unsafe_aliasing_address_to_pointer[NoneType](1),
+                )
 
-            gpu_ctx.enqueue_function(
+            var send_buf = unsafe_aliasing_address_to_device_buffer[
+                DType.uint8
+            ](Int(send_ptrs[gpu_id]), 1, gpu_ctx)
+            var recv_buf = unsafe_aliasing_address_to_device_buffer[
+                DType.uint8
+            ](Int(recv_ptrs[gpu_id]), 1, gpu_ctx)
+            var recv_count_p = unsafe_aliasing_address_to_device_buffer[
+                DType.uint64
+            ](Int(recv_count_ptrs[gpu_id]), 1, gpu_ctx)
+
+            gpu_ctx.enqueue_function_checked(
                 func,
                 input_tokens_tensor,
                 topk_ids_tensor,
-                send_buf_p,
-                recv_buf_p,
+                send_buf,
+                recv_buf,
                 recv_count_p,
-                atomic_counters_0._ptr,
-                Int32(gpu_id),
+                atomic_counters_0.to_layout_tensor().to_device_buffer(gpu_ctx),
+                my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )
@@ -731,6 +798,7 @@ struct Struct_ep_dispatch_cb_fp8:
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
+        var my_rank = Int32(shmem_my_pe())
         alias hw_info = gpu_ctx.default_device_info
         alias gpu_target = get_gpu_target()
         alias gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
@@ -772,6 +840,7 @@ struct Struct_ep_dispatch_cb_fp8:
                 ";max_token_per_rank=", max_token_per_rank,
                 ";n_gpus_per_node=", n_gpus_per_node,
                 ";n_nodes=", n_nodes,
+                ";my_rank=", my_rank,
             )
             # fmt: on
 
@@ -807,7 +876,7 @@ struct Struct_ep_dispatch_cb_fp8:
                 recv_buf_p_dev,
                 recv_count_p_dev,
                 atomic_counters_0_dev,
-                Int32(gpu_id),
+                my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )
@@ -889,6 +958,7 @@ struct Struct_ep_combine:
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
+        var my_rank = Int32(shmem_my_pe())
         alias hw_info = gpu_ctx.default_device_info
         alias combine_msg_size = hidden_size * size_of[combine_dtype]()
 
@@ -919,6 +989,7 @@ struct Struct_ep_combine:
                 ";max_token_per_rank=", max_token_per_rank,
                 ";n_gpus_per_node=", n_gpus_per_node,
                 ";n_nodes=", n_nodes,
+                ";my_rank=", my_rank,
             )
             # fmt: on
 
@@ -927,28 +998,36 @@ struct Struct_ep_combine:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var func = gpu_ctx.compile_function[combine]()
-            shmem_module_init(func)
+            var func = gpu_ctx.compile_function_checked[combine, combine]()
+            var cached_module_key = String("EP_COMBINE_INITED_DEV_", gpu_id)
 
-            var send_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
-                Int(send_ptrs[gpu_id])
-            )
-            var recv_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
-                Int(recv_ptrs[gpu_id])
-            )
-            var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
-                Int(recv_count_ptrs[gpu_id])
-            )
+            # Don't initialize the module repeatedly
+            if not Int(global_cache_lookup(cached_module_key)):
+                shmem_module_init(func)
+                global_cache_insert(
+                    cached_module_key,
+                    _unsafe_aliasing_address_to_pointer[NoneType](1),
+                )
 
-            gpu_ctx.enqueue_function(
+            var send_buf = unsafe_aliasing_address_to_device_buffer[
+                DType.uint8
+            ](Int(send_ptrs[gpu_id]), 1, gpu_ctx)
+            var recv_buf = unsafe_aliasing_address_to_device_buffer[
+                DType.uint8
+            ](Int(recv_ptrs[gpu_id]), 1, gpu_ctx)
+            var recv_count_p = unsafe_aliasing_address_to_device_buffer[
+                DType.uint64
+            ](Int(recv_count_ptrs[gpu_id]), 1, gpu_ctx)
+
+            gpu_ctx.enqueue_function_checked(
                 func,
                 input_tokens_tensor,
                 src_info_tensor,
-                send_buf_p,
-                recv_buf_p,
+                send_buf,
+                recv_buf,
                 recv_count_p,
-                atomic_counters_1._ptr,
-                Int32(gpu_id),
+                atomic_counters_1.to_layout_tensor().to_device_buffer(gpu_ctx),
+                my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )
@@ -1011,6 +1090,7 @@ struct Struct_ep_combine_cb:
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
+        var my_rank = Int32(shmem_my_pe())
         alias hw_info = gpu_ctx.default_device_info
         alias combine_msg_size = hidden_size * size_of[combine_dtype]()
 
@@ -1041,6 +1121,7 @@ struct Struct_ep_combine_cb:
                 ";max_token_per_rank=", max_token_per_rank,
                 ";n_gpus_per_node=", n_gpus_per_node,
                 ";n_nodes=", n_nodes,
+                ";my_rank=", my_rank,
             )
             # fmt: on
 
@@ -1073,7 +1154,164 @@ struct Struct_ep_combine_cb:
                 recv_buf_p_dev,
                 recv_count_p_dev,
                 atomic_counters_1_dev,
-                Int32(gpu_id),
+                my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
+            )
+
+
+# ===-----------------------------------------------------------------------===#
+# Expert Parallelism Utils
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("ep.fused_silu")
+struct Struct_ep_fused_silu:
+    @always_inline
+    @staticmethod
+    fn execute[
+        output_dtype: DType,
+        input_dtype: DType, //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_dtype, rank=2],
+        input: InputTensor[dtype=input_dtype, rank=2],
+        row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        context: DeviceContextPtr,
+    ) raises:
+        """Execute the Expert Parallelism fused SILU kernel.
+
+        This function launches the fused_silu kernel to perform the SILU
+        operation for all the MLPs in the EP MoE module. We need to manually
+        implement the custom operation here is because after the EP dispatch
+        phase, the actual number of received tokens is not known to the host.
+
+        This kernel will read the row offsets to determine the actual number of
+        received tokens in the input tensor, and then only perform the SILU
+        operation on the received tokens.
+        """
+        # Ensure this kernel only runs on GPU targets
+        constrained[is_gpu[target](), "EP is only supported on GPU."]()
+
+        var output_tensor = output.to_layout_tensor()
+        var input_tensor = input.to_layout_tensor().get_immutable()
+        var row_offsets_tensor = row_offsets.to_layout_tensor().get_immutable()
+
+        var gpu_ctx = context.get_device_context()
+        alias hw_info = gpu_ctx.default_device_info
+
+        alias fused_silu = fused_silu_kernel[
+            output_dtype,
+            input_dtype,
+            output_tensor.layout,
+            input_tensor.layout,
+            row_offsets_tensor.layout,
+            hw_info.max_thread_block_size,
+            hw_info.sm_count,
+        ]
+
+        @always_inline
+        @parameter
+        fn description_fn() -> String:
+            # fmt: off
+            return String(
+                "output_dtype=", output_dtype,
+                ";input_dtype=", input_dtype,
+            )
+            # fmt: on
+
+        with Trace[TraceLevel.OP, target=target](
+            "ep.fused_silu",
+            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            task_id=get_safe_task_id(context),
+        ):
+            gpu_ctx.enqueue_function_checked[fused_silu, fused_silu](
+                output_tensor,
+                input_tensor,
+                row_offsets_tensor,
+                grid_dim=hw_info.sm_count,
+                block_dim=hw_info.max_thread_block_size,
+                attributes=pdl_launch_attributes(),
+            )
+
+
+@compiler.register("ep.fused_silu_fp8")
+struct Struct_ep_fused_silu_fp8:
+    @always_inline
+    @staticmethod
+    fn execute[
+        fp8_dtype: DType,
+        scales_dtype: DType,
+        input_dtype: DType,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=fp8_dtype, rank=2],
+        scales: OutputTensor[dtype=scales_dtype, rank=2],
+        input: InputTensor[dtype=input_dtype, rank=2],
+        row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        context: DeviceContextPtr,
+    ) raises:
+        """Execute the Expert Parallelism fused SILU kernel with FP8
+        quantization.
+
+        This function launches the fused_silu_fp8 kernel to perform the SILU
+        operation for all the MLPs in the EP MoE module.
+
+        This kernel will read the row offsets to determine the actual number of
+        received tokens in the input tensor, and then only perform the SILU
+        operation on the received tokens. Once the SILU operation is performed,
+        the output will be quantized to the FP8 format. The scales tensor
+        will be stored in a transposed way.
+        """
+        # Ensure this kernel only runs on GPU targets
+        constrained[is_gpu[target](), "EP is only supported on GPU."]()
+
+        alias group_size = 128
+
+        var output_tensor = output.to_layout_tensor()
+        var scales_tensor = scales.to_layout_tensor()
+        var input_tensor = input.to_layout_tensor().get_immutable()
+        var row_offsets_tensor = row_offsets.to_layout_tensor().get_immutable()
+
+        var gpu_ctx = context.get_device_context()
+        alias hw_info = gpu_ctx.default_device_info
+
+        alias fused_silu_fp8 = fused_silu_fp8_kernel[
+            fp8_dtype,
+            scales_dtype,
+            input_dtype,
+            output_tensor.layout,
+            scales_tensor.layout,
+            input_tensor.layout,
+            row_offsets_tensor.layout,
+            hw_info.max_thread_block_size,
+            hw_info.sm_count,
+            group_size,
+        ]
+
+        @always_inline
+        @parameter
+        fn description_fn() -> String:
+            # fmt: off
+            return String(
+                "fp8_dtype=", fp8_dtype,
+                ";scales_dtype=", scales_dtype,
+                ";input_dtype=", input_dtype,
+                ";group_size=", group_size,
+            )
+            # fmt: on
+
+        with Trace[TraceLevel.OP, target=target](
+            "ep.fused_silu_fp8",
+            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            task_id=get_safe_task_id(context),
+        ):
+            gpu_ctx.enqueue_function_checked[fused_silu_fp8, fused_silu_fp8](
+                output_tensor,
+                scales_tensor,
+                input_tensor,
+                row_offsets_tensor,
+                grid_dim=hw_info.sm_count,
+                block_dim=hw_info.max_thread_block_size,
+                attributes=pdl_launch_attributes(),
             )

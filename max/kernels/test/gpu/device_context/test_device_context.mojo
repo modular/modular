@@ -13,8 +13,14 @@
 
 from math import iota
 
+from builtin.device_passable import DevicePassable
 from gpu import *
 from gpu.host import DeviceBuffer, DeviceContext
+from memory import (
+    LegacyUnsafePointer as UnsafePointer,
+    LegacyOpaquePointer as OpaquePointer,
+    UnsafePointer as UnsafePointerV2,
+)
 from testing import assert_equal
 
 
@@ -146,6 +152,64 @@ def test_print(ctx: DeviceContext):
     assert_equal(String(large_buffer), expected_large)
 
 
+@fieldwise_init
+struct ToLegacyUnsafePointer(Copyable, DevicePassable, Movable):
+    alias device_type: AnyType = LegacyUnsafePointer[Float32]
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = Self.device_type()
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return ""
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return ""
+
+
+@fieldwise_init
+struct ToUnsafePointer(Copyable, DevicePassable, Movable):
+    alias device_type: AnyType = UnsafePointerV2[Float32, MutAnyOrigin]
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = Self.device_type()
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return ""
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return ""
+
+
+def test_kernel_pointer_conversions(ctx: DeviceContext):
+    fn kernel(
+        legacy: LegacyUnsafePointer[Float32],
+        unsafe_pointer: UnsafePointerV2[Float32, MutAnyOrigin],
+    ):
+        pass
+
+    # No conversion needed
+    ctx.enqueue_function_checked[kernel, kernel](
+        ToLegacyUnsafePointer(),
+        ToUnsafePointer(),
+        grid_dim=1,
+        block_dim=1,
+    )
+
+    # Converts from UnsafePointer <-> LegacyUnsafePointer
+    ctx.enqueue_function_checked[kernel, kernel](
+        ToUnsafePointer(),
+        ToLegacyUnsafePointer(),
+        grid_dim=1,
+        block_dim=1,
+    )
+
+    ctx.synchronize()
+
+
 def main():
     # Create an instance of the DeviceContext
     with DeviceContext() as ctx:
@@ -155,3 +219,4 @@ def main():
         test_move(ctx)
         test_id(ctx)
         test_print(ctx)
+        test_kernel_pointer_conversions(ctx)

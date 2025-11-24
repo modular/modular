@@ -14,19 +14,17 @@
 
 from gpu.host import ConstantMemoryMapping, DeviceContext
 from gpu.host.compile import _compile_code
-from gpu.id import thread_idx
-from gpu.memory import AddressSpace
-from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
+from gpu import thread_idx
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 from testing import assert_equal, assert_true
 
 
 def test_constant_memory_compile(ctx: DeviceContext):
     fn alloc[
         n: Int
-    ]() -> UnsafePointer[Float32, address_space = _GPUAddressSpace.CONSTANT]:
+    ]() -> UnsafePointer[Float32, address_space = AddressSpace.CONSTANT]:
         return stack_allocation[
-            n, Float32, address_space = _GPUAddressSpace.CONSTANT
+            n, Float32, address_space = AddressSpace.CONSTANT
         ]()
 
     assert_true(".const .align 4 .b8 " in _compile_code[alloc[20]]())
@@ -56,7 +54,7 @@ def test_constant_mem(ctx: DeviceContext):
         data[thread_idx.x] = val[thread_idx.x]
 
     var res_device = ctx.enqueue_create_buffer[DType.float32](16)
-    _ = res_device.enqueue_fill(0)
+    res_device.enqueue_fill(0)
 
     alias kernel = static_constant_kernel[16]
     ctx.enqueue_function_checked[kernel, kernel](
@@ -92,7 +90,7 @@ def test_constant_mem_via_func(ctx: DeviceContext):
         data[thread_idx.x] = val[thread_idx.x]
 
     var res_device = ctx.enqueue_create_buffer[DType.float32](16)
-    _ = res_device.enqueue_fill(0)
+    res_device.enqueue_fill(0)
 
     alias kernel = static_constant_kernel[_fill_impl[20]]
     ctx.enqueue_function_checked[kernel, kernel](
@@ -122,7 +120,7 @@ def test_external_constant_mem(ctx: DeviceContext):
     )
 
     var res_device = ctx.enqueue_create_buffer[DType.float32](16)
-    _ = res_device.enqueue_fill(0)
+    res_device.enqueue_fill(0)
 
     alias kernel = static_constant_kernel
     ctx.enqueue_function_checked[kernel, kernel](

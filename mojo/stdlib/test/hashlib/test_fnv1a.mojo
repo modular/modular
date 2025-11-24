@@ -56,7 +56,7 @@ def test_hash_byte_array():
 
 def test_avalanche():
     # test that values which differ just in one bit,
-    # produce significatly different hash values
+    # produce significantly different hash values
     var buffer = InlineArray[UInt8, 256](fill=0)
     var hashes = List[UInt64]()
     hashes.append(hash[HasherType=Fnv1a](buffer.unsafe_ptr(), 256))
@@ -176,7 +176,7 @@ def test_hash_simd_values():
 
 
 def test_hash_at_compile_time():
-    alias h = hash[HasherType=Fnv1a]("hello")
+    comptime h = hash[HasherType=Fnv1a]("hello")
     assert_equal(h, 11831194018420276491)
 
 

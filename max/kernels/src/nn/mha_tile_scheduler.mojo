@@ -12,13 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from os.atomic import Atomic
 
 import gpu.warp as warp
 from builtin.device_passable import DevicePassable
 from gpu.host.info import H100
-from gpu.id import block_idx, thread_idx
-from gpu.memory import AddressSpace
+from gpu import block_idx, thread_idx
 from gpu.sync import barrier, named_barrier
 from nn.mha_fa3_utils import NullPointer, OptionalPointer
 
@@ -164,7 +167,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
     var batch_size: UInt32
     # Maximum num tiles.
     var max_num_prompt_tiles: UInt32
-    var valid_length: ValidLengthType
+    var valid_length: Self.ValidLengthType
     var max_seq_len: UInt32
 
     @always_inline
@@ -172,7 +175,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
         out self,
         batch_size: UInt32,
         max_num_prompt_tiles: UInt32,
-        valid_length: ValidLengthType,
+        valid_length: Self.ValidLengthType,
         max_seq_len: UInt32,
     ):
         self.batch_size = batch_size
@@ -426,9 +429,9 @@ struct TransientScheduler[
     fn get_type_name() -> String:
         return (
             "TransientScheduler[tile_shape = "
-            + String(tile_shape)
+            + String(Self.tile_shape)
             + ", num_heads = "
-            + String(num_heads)
+            + String(Self.num_heads)
             + "]"
         )
 
@@ -443,7 +446,7 @@ struct TransientScheduler[
     @always_inline
     fn get_current_work_info(self) -> WorkInfo:
         return WorkInfo(
-            block_idx.x * tile_shape,
+            block_idx.x * Self.tile_shape,
             block_idx.y,
             block_idx.z,
             True,
@@ -511,7 +514,7 @@ struct TileScheduler[
     schedule: MHASchedule = MHASchedule.DEFAULT,
 ](Defaultable, ImplicitlyCopyable, MHATileScheduler, Movable):
     alias may_advance: Bool = True
-    alias mha_schedule: MHASchedule = schedule
+    alias mha_schedule: MHASchedule = Self.schedule
 
     alias device_type: AnyType = Self
 
@@ -522,13 +525,13 @@ struct TileScheduler[
     fn get_type_name() -> String:
         return (
             "TileScheduler[tile_shape = "
-            + String(tile_shape)
+            + String(Self.tile_shape)
             + ", num_heads = "
-            + String(num_heads)
+            + String(Self.num_heads)
             + ", num_ctas = "
-            + String(num_ctas)
+            + String(Self.num_ctas)
             + ", schedule = "
-            + String(schedule._value)
+            + String(Self.schedule._value)
             + "]"
         )
 
@@ -546,7 +549,9 @@ struct TileScheduler[
     ](
         self, ts: MHATileSummary[ValidLengthType], state: MHATileState
     ) -> WorkInfo:
-        return ts.get_current_work_info[tile_shape, num_heads, schedule](state)
+        return ts.get_current_work_info[
+            Self.tile_shape, Self.num_heads, Self.schedule
+        ](state)
 
     @always_inline
     fn fetch_next_work(
@@ -554,10 +559,10 @@ struct TileScheduler[
         ts: MHATileSummary,
         mut state: MHATileState,
     ) -> WorkInfo:
-        state.idx += num_ctas
-        return ts.get_current_work_info[tile_shape, num_heads, schedule](
-            state.idx
-        )
+        state.idx += Self.num_ctas
+        return ts.get_current_work_info[
+            Self.tile_shape, Self.num_heads, Self.schedule
+        ](state.idx)
 
     @always_inline
     fn advance[
@@ -570,10 +575,12 @@ struct TileScheduler[
         mut state: MHATileState,
         pipeline_idx: UInt32,
     ) -> OptionalReg[SeqInfo]:
-        state.idx += num_ctas
+        state.idx += Self.num_ctas
         if not state.is_valid(state.idx):
             return None
-        return ts.unsafe_seq_info[tile_shape, num_heads, schedule](state.idx)
+        return ts.unsafe_seq_info[
+            Self.tile_shape, Self.num_heads, Self.schedule
+        ](state.idx)
 
     @staticmethod
     @always_inline
@@ -584,9 +591,9 @@ struct TileScheduler[
         # size for persistent kernels, so that it doesn't
         # need to check the first `work_info` for validity.
         bx, by, bz = MHATileSummary[NullPointer[DType.uint32]].grid_dim[
-            num_heads
+            Self.num_heads
         ](max_num_prompt_tiles, batch_size)
-        size = min(Int(num_ctas), bx * by * bz)
+        size = min(Int(Self.num_ctas), bx * by * bz)
         return (size, 1, 1)
 
     @always_inline
@@ -607,9 +614,9 @@ struct TileScheduler[
     ](
         self, ts: MHATileSummary[ValidLengthType], state: MHATileState
     ) -> SeqInfo:
-        return ts.unsafe_seq_info[tile_shape, num_heads, Self.schedule](
-            state.idx
-        )
+        return ts.unsafe_seq_info[
+            Self.tile_shape, Self.num_heads, Self.schedule
+        ](state.idx)
 
 
 @register_passable("trivial")
@@ -630,7 +637,7 @@ struct QueuedTileScheduler[
     var gidx_ptr: UnsafePointer[UInt32, address_space = AddressSpace.GLOBAL]
 
     alias may_advance: Bool = True
-    alias mha_schedule: MHASchedule = schedule
+    alias mha_schedule: MHASchedule = Self.schedule
 
     @always_inline
     fn __init__(
@@ -645,7 +652,9 @@ struct QueuedTileScheduler[
     ](
         self, ts: MHATileSummary[ValidLengthType], state: MHATileState
     ) -> WorkInfo:
-        return ts.get_current_work_info[tile_shape, num_heads, schedule](state)
+        return ts.get_current_work_info[
+            Self.tile_shape, Self.num_heads, Self.schedule
+        ](state)
 
     @always_inline
     fn advance[
@@ -680,11 +689,11 @@ struct QueuedTileScheduler[
                         else:
                             break
                     var seq_info: SeqInfo = ts.unsafe_seq_info[
-                        tile_shape, num_heads, schedule
+                        Self.tile_shape, Self.num_heads, Self.schedule
                     ](idx)
 
                     @parameter
-                    if not decoding:
+                    if not Self.decoding:
                         if seq_info.is_valid():
 
                             @parameter
@@ -713,7 +722,9 @@ struct QueuedTileScheduler[
         state.idx = warp.broadcast(state.sidx_ptr.load(pipeline_idx))
         if not state.is_valid():
             return None
-        return ts.unsafe_seq_info[tile_shape, num_heads, schedule](state)
+        return ts.unsafe_seq_info[
+            Self.tile_shape, Self.num_heads, Self.schedule
+        ](state)
 
     @staticmethod
     @always_inline
@@ -724,9 +735,9 @@ struct QueuedTileScheduler[
         # size for persistent kernels, so that it doesn't
         # need to check the first `work_info` for validity.
         bx, by, bz = MHATileSummary[NullPointer[DType.uint32]].grid_dim[
-            num_heads
+            Self.num_heads
         ](max_num_prompt_tiles, batch_size)
-        size = min(Int(num_ctas), bx * by * bz)
+        size = min(Int(Self.num_ctas), bx * by * bz)
         return (size, 1, 1)
 
     @always_inline
@@ -751,9 +762,9 @@ struct QueuedTileScheduler[
     ](
         self, ts: MHATileSummary[ValidLengthType], state: MHATileState
     ) -> SeqInfo:
-        return ts.unsafe_seq_info[tile_shape, num_heads, Self.schedule](
-            state.idx
-        )
+        return ts.unsafe_seq_info[
+            Self.tile_shape, Self.num_heads, Self.schedule
+        ](state.idx)
 
     # `trait DevicePassable` implementation
     alias device_type: AnyType = Self
@@ -777,15 +788,15 @@ struct QueuedTileScheduler[
         """
         return String(
             "QueuedTileScheduler[tile_shape = ",
-            String(tile_shape),
+            String(Self.tile_shape),
             ", num_heads = ",
-            String(num_heads),
+            String(Self.num_heads),
             ", decoding = ",
-            String(decoding),
+            String(Self.decoding),
             ", num_ctas = ",
-            String(num_ctas),
+            String(Self.num_ctas),
             ", schedule = ",
-            String(schedule._value),
+            String(Self.schedule._value),
             "]",
         )
 

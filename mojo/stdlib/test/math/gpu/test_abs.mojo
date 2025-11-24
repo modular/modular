@@ -13,10 +13,11 @@
 
 from gpu.host import get_gpu_target
 from gpu.host.compile import _compile_code
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_true, TestSuite
 
-alias A100_TARGET = get_gpu_target["sm_80"]()
-alias MI300X_TARGET = get_gpu_target["mi300x"]()
+comptime A100_TARGET = get_gpu_target["sm_80"]()
+comptime MI300X_TARGET = get_gpu_target["mi300x"]()
 
 
 def test_abs():

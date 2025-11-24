@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up, ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from os.atomic import Atomic
 from sys import size_of
 
 from gpu import NamedBarrierSemaphore
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host.info import H100
-from gpu.id import block_idx, grid_dim, thread_idx
-from gpu.memory import AddressSpace
+from gpu import block_idx, grid_dim, thread_idx
 from layout import Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from stdlib.bit import log2_floor
@@ -114,16 +114,20 @@ struct SplitKTileScheduler[
 
     var locks_ptr: UnsafePointer[Int32]
 
-    alias k_tiles_per_output_tile = ceildiv(problem_shape_nk[1], tile_shape[2])
+    alias k_tiles_per_output_tile = ceildiv(
+        Self.problem_shape_nk[1], Self.tile_shape[2]
+    )
     # we don't support uneven splits so for num_iters per split can be compile time constant
     alias k_tiles_per_split = ceildiv(
-        problem_shape_nk[1], tile_shape[2]
-    ) // splits
+        Self.problem_shape_nk[1], Self.tile_shape[2]
+    ) // Self.splits
     # cluster size is power of 2 (1, 2 ,4)
-    alias log_cluster_size = log2_floor(cluster_shape[0] * cluster_shape[1])
+    alias log_cluster_size = log2_floor(
+        Self.cluster_shape[0] * Self.cluster_shape[1]
+    )
 
     alias WorkTileType[dtype: DType, layout: Layout] = LayoutTensor[
-        dtype, layout, MutableAnyOrigin
+        dtype, layout, MutAnyOrigin
     ]
 
     @always_inline
@@ -134,14 +138,14 @@ struct SplitKTileScheduler[
         locks_ptr: UnsafePointer[UInt8],
     ):
         _check_scheduler_constraints[
-            problem_shape_nk,
-            tile_shape,
-            splits,
-            num_consumer,
-            num_pipeline_stages,
-            cluster_shape,
-            raster_order,
-            reduction_mode,
+            Self.problem_shape_nk,
+            Self.tile_shape,
+            Self.splits,
+            Self.num_consumer,
+            Self.num_pipeline_stages,
+            Self.cluster_shape,
+            Self.raster_order,
+            Self.reduction_mode,
         ]()
 
         self.prob_shape = prob_shape
@@ -150,7 +154,7 @@ struct SplitKTileScheduler[
         self.locks_ptr = locks_ptr.bitcast[Int32]()
 
         var problem_blocks = Self.get_problem_blocks_shape(
-            prob_shape, tile_shape, cluster_shape
+            prob_shape, Self.tile_shape, Self.cluster_shape
         )
         var problem_blocks_m = align_up(
             UInt(problem_blocks[0]),
@@ -162,7 +166,7 @@ struct SplitKTileScheduler[
         )
 
         @parameter
-        if raster_order == RasterOrder.AlongN:
+        if Self.raster_order == RasterOrder.AlongN:
             self.current_work_linear_idx = (
                 block_idx.x + grid_dim.x * block_idx.y
             )
@@ -187,7 +191,7 @@ struct SplitKTileScheduler[
     @always_inline
     fn get_sm_num(self) -> UInt32:
         @parameter
-        if raster_order == RasterOrder.AlongN:
+        if Self.raster_order == RasterOrder.AlongN:
             return block_idx.x + grid_dim.x * block_idx.y
         else:
             return block_idx.x * grid_dim.y + block_idx.y
@@ -224,7 +228,10 @@ struct SplitKTileScheduler[
 
     @always_inline
     fn get_current_work_info(mut self) -> WorkInfo:
-        if self.current_work_linear_idx >= self.blocks_per_problem * splits:
+        if (
+            self.current_work_linear_idx
+            >= self.blocks_per_problem * Self.splits
+        ):
             return WorkInfo.INVALID_WORK_INFO
 
         var work_tile_info = WorkInfo()
@@ -318,7 +325,7 @@ struct SplitKTileScheduler[
 
         work_tile_info.k_start = self.k_tiles_per_split * split
         work_tile_info.num_k_tiles = (
-            ceildiv(problem_shape_nk[1], tile_shape[2]) // splits
+            ceildiv(Self.problem_shape_nk[1], Self.tile_shape[2]) // Self.splits
         )
 
         return linear_tile_id  # basically linear index of the output tile
@@ -420,28 +427,17 @@ struct SplitKTileScheduler[
         dyn_tile_shape: IndexList[3],
         dyn_cluster_shape: IndexList[2],
     ) -> Int:
-        var problem_blocks = Self.get_problem_blocks_shape(
-            problem_shape, dyn_tile_shape, dyn_cluster_shape
-        )
-
-        var problem_blocks_m = align_up(
-            UInt(problem_blocks[0]),
-            UInt(dyn_cluster_shape[0]),
-        )
-        var problem_blocks_n = align_up(
-            UInt(problem_blocks[1]),
-            UInt(dyn_cluster_shape[1]),
-        )
-
         constrained[
             accum_type == DType.float32,
             "Only support float32 accumulator type",
         ]()
 
-        var num_output_tiles = problem_blocks_m * problem_blocks_n
+        var num_output_tiles = Self.get_num_tiles(
+            problem_shape, dyn_tile_shape, dyn_cluster_shape
+        )
 
         var locks_workspace_bytes = (
-            num_output_tiles * UInt(size_of[Int32]()) * dyn_num_consumer
+            num_output_tiles * size_of[Int32]() * dyn_num_consumer
         )
 
         return Int(locks_workspace_bytes)
@@ -507,7 +503,7 @@ struct SplitKTileScheduler[
     ](
         self,
         reduction_workspace: Self.WorkTileType[accum_type, workspace_layout],
-        c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
+        c_reg_tile: RegTileType[accum_type, c_reg_layout],
         work_tile_info: WorkInfo,
         num_barriers: UInt32,
         warp_group_local_idx: UInt32,
@@ -521,9 +517,6 @@ struct SplitKTileScheduler[
         var lock_idx = (
             reduction_tile_idx * num_barriers
         ) + warp_group_local_idx
-
-        var num_peers = 0
-        var reduction_peer_offset = 0
 
         var warp_group_thread_idx = thread_idx.x % UInt(WARPGROUP_SIZE)
 
@@ -541,7 +534,7 @@ struct SplitKTileScheduler[
             else:
 
                 @parameter
-                if reduction_mode == ReductionMode.Deterministic:
+                if Self.reduction_mode == ReductionMode.Deterministic:
                     # Wait until the preceding split added its accumulators
                     Self.wait_eq(
                         self.locks_ptr,
@@ -606,7 +599,7 @@ struct SplitKTileScheduler[
         val: UInt32,
     ):
         var sema = NamedBarrierSemaphore[
-            Int32(WARPGROUP_SIZE), 4, Int32(num_consumer)
+            Int32(WARPGROUP_SIZE), 4, Int32(Self.num_consumer)
         ](lock_ptr.offset(lock_idx), barrier_group_thread_idx)
         sema.wait_eq(barrier_id, Int32(val))
 
@@ -620,7 +613,7 @@ struct SplitKTileScheduler[
         count: UInt32,
     ):
         var sema = NamedBarrierSemaphore[
-            Int32(WARPGROUP_SIZE), 4, Int32(num_consumer)
+            Int32(WARPGROUP_SIZE), 4, Int32(Self.num_consumer)
         ](lock_ptr.offset(lock_idx), barrier_group_thread_idx)
         sema.wait_lt(barrier_id, Int32(count))
 
@@ -634,7 +627,7 @@ struct SplitKTileScheduler[
         increment: UInt32,
     ):
         var sema = NamedBarrierSemaphore[
-            Int32(WARPGROUP_SIZE), 4, Int32(num_consumer)
+            Int32(WARPGROUP_SIZE), 4, Int32(Self.num_consumer)
         ](lock_ptr.offset(lock_idx), barrier_group_thread_idx)
         sema.arrive_set(barrier_id, Int32(increment))
 
@@ -646,7 +639,7 @@ struct SplitKTileScheduler[
     ](
         self,
         reduction_workspace: Self.WorkTileType[accum_type, workspace_layout],
-        c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
+        c_reg_tile: RegTileType[accum_type, c_reg_layout],
         reduction_tile_idx: UInt32,
         warp_group_local_idx: UInt32,
         warp_group_thread_idx: UInt32,
@@ -667,12 +660,12 @@ struct SplitKTileScheduler[
         )
 
         var tile_crd_idx = workspace_tile.tile_with_offset[
-            Int(BM // num_consumer), BN
+            Int(BM // Self.num_consumer), BN
         ](Int(warp_group_local_idx), 0)
         var work_space_tile_split = tile_crd_idx[0]
         var work_space_tile_reshaped = work_space_tile_split.reshape[
             Layout.row_major(
-                (Int(BM // num_consumer) * BN) // WARPGROUP_SIZE,
+                (Int(BM // Self.num_consumer) * BN) // WARPGROUP_SIZE,
                 WARPGROUP_SIZE,
             )
         ]()
@@ -696,7 +689,7 @@ struct SplitKTileScheduler[
     ](
         self,
         reduction_workspace: Self.WorkTileType[accum_type, workspace_layout],
-        c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
+        c_reg_tile: RegTileType[accum_type, c_reg_layout],
         reduction_tile_idx: UInt32,
         warp_group_local_idx: UInt32,
         warp_group_thread_idx: UInt32,
@@ -717,12 +710,12 @@ struct SplitKTileScheduler[
         )
 
         var tile_crd_idx = workspace_tile.tile_with_offset[
-            Int(BM // num_consumer), BN
+            Int(BM // Self.num_consumer), BN
         ](Int(warp_group_local_idx), 0)
         var work_space_tile_split = tile_crd_idx[0]
         var work_space_tile_reshaped = work_space_tile_split.reshape[
             Layout.row_major(
-                (Int(BM // num_consumer) * BN) // WARPGROUP_SIZE,
+                (Int(BM // Self.num_consumer) * BN) // WARPGROUP_SIZE,
                 WARPGROUP_SIZE,
             )
         ]()
@@ -744,7 +737,7 @@ struct SplitKTileScheduler[
                 if write_back:
 
                     @parameter
-                    if reduction_mode == ReductionMode.Nondeterministic:
+                    if Self.reduction_mode == ReductionMode.Nondeterministic:
                         var offset = (
                             mma_id * c_frag_size + i
                         ) * WARPGROUP_SIZE + warp_group_thread_idx

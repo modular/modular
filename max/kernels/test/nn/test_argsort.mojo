@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from layout import Layout, LayoutTensor
 from nn.argsort import argsort
 from testing import assert_true

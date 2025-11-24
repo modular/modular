@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# Use `kgen --emit-asm %s -o %t.asm` to exam the assembly code.
+# Use `kgen --emit=asm %s -o %t.asm` to exam the assembly code.
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import simd_width_of
 
 from buffer import NDBuffer
@@ -105,15 +106,15 @@ fn test_conv1d_register_tiling() raises:
     var output_stack = InlineArray[Scalar[type], Int(output_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[type, 3, _, output_shape](output_stack)
+    var output = NDBuffer[type, 3, _, output_shape](output_stack.unsafe_ptr())
     var input_stack = InlineArray[Scalar[type], Int(input_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[type, 3, _, input_shape](input_stack)
+    var input = NDBuffer[type, 3, _, input_shape](input_stack.unsafe_ptr())
     var filter_stack = InlineArray[Scalar[type], Int(filter_shape.product())](
         uninitialized=True
     )
-    var filter = NDBuffer[type, 4, _, filter_shape](filter_stack)
+    var filter = NDBuffer[type, 4, _, filter_shape](filter_stack.unsafe_ptr())
 
     output.fill(0.0)
     input.fill(1.0)

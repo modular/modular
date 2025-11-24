@@ -13,6 +13,7 @@
 
 from hashlib import default_comp_time_hasher
 from math import align_up
+from memory import LegacyUnsafePointer as UnsafePointer, bitcast
 from sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -27,10 +28,10 @@ from gpu.cluster import (
     elect_one_sync_with_mask,
 )
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_id_in_cluster, block_idx, lane_id, thread_idx
-from gpu.id import warp_id as get_warp_id
-from gpu.memory import AddressSpace, fence_async_view_proxy
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
+from gpu import warp_id as get_warp_id
+from gpu.memory import fence_async_view_proxy, external_memory
 from gpu.mma import st_matrix
 from gpu.mma_sm100 import *
 from gpu.sync import named_barrier
@@ -144,7 +145,7 @@ fn load_AB[
     a_smem: LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
         circular=False,
@@ -152,7 +153,7 @@ fn load_AB[
     b_smem: LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
         circular=False,
@@ -163,7 +164,7 @@ fn load_AB[
     tma_mbar: UnsafePointer[
         SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
-    producer_phase: PipelineState[num_pipeline_stages],
+    producer_phase: PipelineState[Int(num_pipeline_stages)],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
     work_tile_coord: Tuple[UInt, UInt],
     a_multicast_mask: UInt16,
@@ -195,36 +196,36 @@ fn load_AB[
     if elect_one_cta:
         tma_mbar[stage].expect_bytes(expected_bytes)
 
-    var a_gmem_slice_coord = (
-        peer_cta_coord[2] * a_tma_rows + work_tile_coord[0] * BM
-    )
+    var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
+        a_tma_rows
+    ) + work_tile_coord[0] * UInt(BM)
     var b_gmem_slice_coord = (
-        peer_cta_coord[1] * b_tma_rows
-        + peer_cta_coord[0] * BN
-        + work_tile_coord[1] * MMA_N
+        peer_cta_coord[1] * UInt(b_tma_rows)
+        + peer_cta_coord[0] * UInt(BN)
+        + work_tile_coord[1] * UInt(MMA_N)
     )
 
     var a_smem_tile = a_smem.next(stage)[]
     var b_smem_tile = b_smem.next(stage)[]
 
     var a_smem_slice = type_of(a_smem_tile)(
-        a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
+        a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
     )
     var b_smem_slice = type_of(b_smem_tile)(
-        b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
+        b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
     )
 
     a_tma_op.async_multicast_load[cta_group](
         a_smem_slice,
         tma_mbar[stage],
-        (UInt(iter_idx * BK), UInt(a_gmem_slice_coord)),
+        (iter_idx * UInt(BK), UInt(a_gmem_slice_coord)),
         a_multicast_mask,
     )
 
     b_tma_op.async_multicast_load[cta_group](
         b_smem_slice,
         tma_mbar[stage],
-        (UInt(iter_idx * BK), UInt(b_gmem_slice_coord)),
+        (iter_idx * UInt(BK), UInt(b_gmem_slice_coord)),
         b_multicast_mask,
     )
 
@@ -252,7 +253,7 @@ fn consumer_main_loop[
     a_smem_iter: LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
         circular=False,
@@ -260,7 +261,7 @@ fn consumer_main_loop[
     b_smem_iter: LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
         circular=False,
@@ -330,7 +331,7 @@ fn store_C[
     c_smem_tile: LayoutTensor[
         c_type,
         c_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
@@ -392,13 +393,13 @@ fn store_C[
     # Load c_frag_upper
     # Load once if MMA_N is power of 2, otherwise load twice
 
-    var c_upper_pow_2_main = SIMD[
+    var c_upper_pow_2_main: SIMD[
         accum_type, main_repetition * num_regs_per_thread
-    ](0)
+    ]
 
-    var c_lower_pow_2_main = SIMD[
+    var c_lower_pow_2_main: SIMD[
         accum_type, main_repetition * num_regs_per_thread
-    ](0)
+    ]
 
     # dummy registers in case there's no remainder. We still need to
     # satisfy power-of-2 when using SIMD.
@@ -442,7 +443,7 @@ fn store_C[
             dtype=accum_type,
             pack=False,
             width = c_upper_pow_2_rem.size,
-        ](tmem_addr + 128 | ((warp_id * WARP_SIZE) << 16))
+        ](tmem_addr + 128 | ((warp_id * UInt(WARP_SIZE)) << 16))
 
         c_lower_pow_2_rem = tcgen05_ld[
             datapaths=data_paths,
@@ -451,7 +452,7 @@ fn store_C[
             dtype=accum_type,
             pack=False,
             width = c_lower_pow_2_rem.size,
-        ](tmem_addr + 128 | ((warp_id * WARP_SIZE + 16) << 16))
+        ](tmem_addr + 128 | ((warp_id * UInt(WARP_SIZE) + 16) << 16))
 
     # Remainder load happens later, only if needed
     tcgen05_load_wait()
@@ -477,14 +478,14 @@ fn store_C[
 
     var split_coord_x = warp_id // 2 if MMA_M == 128 else 0
     var c_smem_split = c_smem_tile_reshaped.tile[C_SPLIT_ROWS, TMA_BN](
-        split_coord_x, 0
+        Int(split_coord_x), 0
     )
 
     @parameter
     for tma_n in range(NUM_ST_MATRIX):
         var c_smem_iter = c_smem_split.tile[BM, TMA_BN](tma_n, 0)
         var c_smem_warp_tile = c_smem_iter.tile[32, TMA_BN](
-            warp_id % 2 if MMA_M == 128 else warp_id, 0
+            Int(warp_id % 2 if MMA_M == 128 else warp_id), 0
         )
         var upper = c_smem_warp_tile.tile[16, TMA_BN](0, 0)
         var lower = c_smem_warp_tile.tile[16, TMA_BN](1, 0)
@@ -506,11 +507,11 @@ fn store_C[
                             UNKNOWN_VALUE,
                         ),
                     )
-                ](lane_id(), i, m_mma, 0)
+                ](Int(lane_id()), i, m_mma, 0)
                 # i,0,0
 
-                var d_reg_upper = SIMD[DType.bfloat16, 8](0)
-                var d_reg_lower = SIMD[DType.bfloat16, 8](0)
+                var d_reg_upper: SIMD[DType.bfloat16, 8]
+                var d_reg_lower: SIMD[DType.bfloat16, 8]
 
                 # if MMA_N is a power of 2, then just use the main load for all iterations
                 # if it's not a power of 2, then go till NUM_ST_MATRIX -1 using the main regists
@@ -552,23 +553,25 @@ fn store_C[
                     d_reg_lower_packed,
                 )
 
-    named_barrier[num_output_warps * WARP_SIZE]()
+    named_barrier[num_output_warps * UInt(WARP_SIZE)]()
 
     # SMEM -> GMEM: Direct TMA store
     # UMMA (tensor memory) → registers → shared memory → global memory
     # #           c_frag                   c_smem_tile      c_tma_op
 
     if elect_one_warp and thread_idx.x < UInt(NUM_TMA_TILES):
-        var row_start = block_idx.x * BM
-        var col_start = block_idx.y * MMA_N + thread_idx.x * TMA_BN
+        var row_start = block_idx.x * UInt(BM)
+        var col_start = block_idx.y * UInt(MMA_N) + thread_idx.x * UInt(TMA_BN)
 
         fence_async_view_proxy()
-        var c_smem_offset = c_smem_tile.ptr.offset(BM * TMA_BN * thread_idx.x)
+        var c_smem_offset = c_smem_tile.ptr.offset(
+            BM * TMA_BN * Int(thread_idx.x)
+        )
 
         var c_tma_tile = LayoutTensor[
             c_type,
             c_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
             alignment=128,
         ](c_smem_offset)
@@ -609,7 +612,7 @@ fn kernel_6[
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
-    num_iters: UInt,
+    num_iters: Int,
 ):
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
@@ -646,7 +649,7 @@ fn kernel_6[
     alias c_smem_tile_t = LayoutTensor[
         c_type,
         c_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
@@ -666,35 +669,35 @@ fn kernel_6[
     alias c_smem_size = c_smem_layout.size()
 
     var a_smem_base = base_ptr_smem  # need space for 4096 (64 x 64) elements by 2 bytes or 8192 total, which is 0x2000
-    var b_smem_base = (a_smem_base + a_smem_size * num_pipeline_stages).bitcast[
-        Scalar[b_type]
-    ]()
-    var c_smem_base = (b_smem_base + b_smem_size * num_pipeline_stages).bitcast[
-        Scalar[c_type]
-    ]()
+    var b_smem_base = (
+        a_smem_base + a_smem_size * Int(num_pipeline_stages)
+    ).bitcast[Scalar[b_type]]()
+    var c_smem_base = (
+        b_smem_base + b_smem_size * Int(num_pipeline_stages)
+    ).bitcast[Scalar[c_type]]()
 
     var a_smem = LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ](
         a_smem_base,
-        a_smem_size * num_pipeline_stages,
+        a_smem_size * Int(num_pipeline_stages),
     )
 
     var b_smem = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ](
         b_smem_base,
-        b_smem_size * num_pipeline_stages,
+        b_smem_size * Int(num_pipeline_stages),
     )
 
     var c_smem_tile = c_smem_tile_t(c_smem_base)
@@ -714,10 +717,10 @@ fn kernel_6[
     mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
     compute_barrier = compute_barrier_base.bitcast[SharedMemBarrier]()
 
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var warp_id = get_warp_id()
+    var elect_one_warp = warp_id == 0
     var elect_one_thread = elect_one_sync_with_mask()
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
-    var warp_id = get_warp_id()
     alias max_tmem_cols = 512
 
     if elect_one_warp:
@@ -743,8 +746,8 @@ fn kernel_6[
 
     cluster_sync()
 
-    var consumer_phase = PipelineState[num_pipeline_stages]()
-    var producer_phase = PipelineState[num_pipeline_stages](0, 1, 0)
+    var consumer_phase = PipelineState[Int(num_pipeline_stages)]()
+    var producer_phase = PipelineState[Int(num_pipeline_stages)](0, 1, 0)
 
     tmem_addr = ptr_tmem_addr[0]
 
@@ -769,8 +772,8 @@ fn kernel_6[
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (
-        UInt(rank_m % cta_group),
-        UInt(rank_m // cta_group),
+        rank_m % UInt(cta_group),
+        rank_m // UInt(cta_group),
         UInt(rank_n),
     )  # v,m,n
 
@@ -788,7 +791,7 @@ fn kernel_6[
 
     a_multicast_mask <<= rank_m
     b_multicast_mask <<= peer_cta_coord[0]
-    b_multicast_mask <<= rank_n * CLUSTER_M
+    b_multicast_mask <<= rank_n * UInt(CLUSTER_M)
 
     var self_mask = 1 << Int(block_rank_in_cluster())
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
@@ -813,7 +816,7 @@ fn kernel_6[
                     (UInt(block_idx.x), UInt(block_idx.y)),
                     a_multicast_mask,
                     b_multicast_mask,
-                    i,
+                    UInt(i),
                     elect_one_cta,
                 )
                 producer_phase.step()
@@ -836,7 +839,7 @@ fn kernel_6[
                 consumer_phase,
                 mma_op,
                 elect_one_warp,
-                i,
+                UInt(i),
             )
             consumer_phase.step()
 
@@ -970,7 +973,7 @@ fn blackwell_kernel_6[
         num_pipeline_stages = UInt(max_pipeline_stages),
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,

@@ -35,7 +35,7 @@ fn time_me_templated[
 fn time_templated_function[
     dtype: DType,
 ]() -> Int:
-    return time_function[time_me_templated[dtype]]()
+    return Int(time_function[time_me_templated[dtype]]())
 
 
 fn time_capturing_function(iters: Int) -> Int:
@@ -43,11 +43,11 @@ fn time_capturing_function(iters: Int) -> Int:
     fn time_fn():
         sleep(1.0)
 
-    return time_function[time_fn]()
+    return Int(time_function[time_fn]())
 
 
 def test_time():
-    alias ns_per_sec = 1_000_000_000
+    comptime ns_per_sec = 1_000_000_000
 
     assert_true(perf_counter() > 0)
     assert_true(perf_counter_ns() > 0)

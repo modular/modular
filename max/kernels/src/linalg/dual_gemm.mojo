@@ -50,7 +50,6 @@ from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 from memory import memset_zero, stack_allocation
-from memory.pointer import _GPUAddressSpace as AddressSpace
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
@@ -91,34 +90,34 @@ fn multistage_dual_mma[
     c0: LayoutTensor[
         c_type,
         c_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL, **_,
     ],
     c1: LayoutTensor[
         c_type,
         c_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL, **_,
     ],
-    a_iter_arg: LayoutTensorIter[_, a_layout, MutableAnyOrigin, **_],
-    b0_iter_arg: LayoutTensorIter[b_type, b_layout, MutableAnyOrigin, **_],
-    b1_iter_arg: LayoutTensorIter[b_type, b_layout, MutableAnyOrigin, **_],
+    a_iter_arg: LayoutTensorIter[_, a_layout, MutAnyOrigin, **_],
+    b0_iter_arg: LayoutTensorIter[b_type, b_layout, MutAnyOrigin, **_],
+    b1_iter_arg: LayoutTensorIter[b_type, b_layout, MutAnyOrigin, **_],
     a_smem_iter_arg: LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED, **_,
     ],
     mut b0_smem_iter: LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED, **_,
     ],
     mut b1_smem_iter: LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED, **_,
     ],
     num_iters: Int,
@@ -273,7 +272,7 @@ fn multistage_dual_mma[
         LayoutTensor[
             a_type,
             a_reg_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -287,7 +286,7 @@ fn multistage_dual_mma[
         LayoutTensor[
             b_type,
             b_reg_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -298,7 +297,7 @@ fn multistage_dual_mma[
         LayoutTensor[
             b_type,
             b_reg_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -474,10 +473,10 @@ fn multistage_dual_gemm_kernel[
     binary_lambda_fn: binary_fn_type,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b0: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    b1: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b0: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    b1: LayoutTensor[b_type, b_layout, MutAnyOrigin],
 ):
     # Hold on adding fp16 because it could have different precisions than bf16.
     constrained[
@@ -593,7 +592,7 @@ fn multistage_dual_gemm_kernel[
         LayoutTensor[
             accum_type,
             c_reg_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()  # ALIGN-TODO: alignment?
@@ -603,7 +602,7 @@ fn multistage_dual_gemm_kernel[
         LayoutTensor[
             accum_type,
             c_reg_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()  # ALIGN-TODO: alignment?
@@ -661,7 +660,7 @@ fn multistage_dual_gemm_kernel[
         var accum_smem_warp_tile = LayoutTensor[
             c_type,
             Layout.row_major(WM, HWN),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ](a_smem.bitcast[Scalar[c_type]]() + warp_id * UInt(WM) * UInt(HWN))
 
@@ -943,10 +942,10 @@ fn dual_gemm[
     ] = None,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    b0: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
-    b1: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
+    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
+    b0: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
+    b1: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
     ctx: DeviceContext,
 ) raises:
     # TODO: Autotune. Currently, these are a copy+paste of `_matmul_gpu`.
@@ -1182,10 +1181,10 @@ fn dual_gemv_kernel[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    b0: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
-    b1: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
+    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
+    b0: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
+    b1: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
 ):
     var m = UInt(c.dim(0))
     var n = UInt(b0.dim(0))
@@ -1319,10 +1318,10 @@ fn dual_gemv[
     binary_lambda_fn: binary_fn_type = swilu,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    b0: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
-    b1: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
+    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
+    b0: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
+    b1: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim(0)
@@ -1374,10 +1373,10 @@ fn swishGLU[
     b_shape: DimList, //,
     target: StaticString = "cpu",
 ](
-    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    b0: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
-    b1: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
-    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
+    b0: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
+    b1: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
+    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
     ctx: DeviceContextPtr,
 ) raises:
     """

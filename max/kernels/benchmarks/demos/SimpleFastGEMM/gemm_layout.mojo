@@ -19,6 +19,7 @@ from sys import align_of, simd_width_of
 import benchmark
 from buffer import NDBuffer
 from layout import *
+from memory import LegacyUnsafePointer as UnsafePointer
 
 alias MR = 6
 alias NR = 64
@@ -33,7 +34,7 @@ fn gemm_naive[
 ](
     c: NDBuffer[dtype, 2],  # M x N
     a: NDBuffer[dtype, 2],  # M x K
-    b: LayoutTensor[dtype, layout_b, MutableAnyOrigin],  # N x K
+    b: LayoutTensor[dtype, layout_b, MutAnyOrigin],  # N x K
 ):
     var M = c.dim(0)
     var N = b.dim(1)
@@ -146,7 +147,7 @@ fn gemm[
         # sync_parallelize[process_row](M // MR)
 
 
-# kgen --emit-asm open-source/max/max/kernels/benchmarks/demos/SimpleFastGEMM/gemm_layout.mojo >out.S
+# kgen --emit=asm max/kernels/benchmarks/demos/SimpleFastGEMM/gemm_layout.mojo >out.S
 @export(ABI="C")
 fn gemm_export_dynamic(
     a_ptr: UnsafePointer[Scalar[dtype]],

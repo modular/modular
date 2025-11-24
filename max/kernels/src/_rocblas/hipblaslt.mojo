@@ -15,10 +15,14 @@ from os import abort
 from pathlib import Path
 from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle
+from sys.ffi import _Global, OwnedDLHandle
 
 from gpu.host._amdgpu_hip import hipStream_t
 
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from utils import StaticTuple
 
 alias hipblasLtHandle_t = OpaquePointer
@@ -29,7 +33,7 @@ alias hipblasLtMatmulPreference_t = OpaquePointer
 
 @fieldwise_init
 @register_passable("trivial")
-struct Status(EqualityComparable, Writable):
+struct Status(Equatable, Writable):
     var _value: Int32
     alias SUCCESS = Self(0)
     alias NOT_INITIALIZED = Self(1)
@@ -235,17 +239,17 @@ struct hipblasLtMatmulHeuristicResult_t(Defaultable):
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias HIPBLASLT_LIBRARY_PATHS = List[Path](
+alias HIPBLASLT_LIBRARY_PATHS: List[Path] = [
     "libhipblaslt.so.0",
     "libhipblaslt.so.1",
     "/opt/rocm/lib/libhipblaslt.so.0",
     "/opt/rocm/lib/libhipblaslt.so.1",
-)
+]
 
 alias HIPBLASLT_LIBRARY = _Global["HIPBLASLT_LIBRARY", _init_dylib]
 
 
-fn _init_dylib() -> _OwnedDLHandle:
+fn _init_dylib() -> OwnedDLHandle:
     return _find_dylib["HIP BLAS LT"](materialize[HIPBLASLT_LIBRARY_PATHS]())
 
 

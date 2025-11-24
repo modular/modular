@@ -24,6 +24,7 @@ mpirun.
 # RUN: %mpirun -n $NUM_GPUS %t
 
 from gpu.host import DeviceBuffer, DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from os.path import dirname
 from pathlib import Path
 from shmem import *
@@ -50,7 +51,7 @@ def main():
 
         # SHMEMContext takes care of initializing device state into
         # `simple_shift_kernel` constant memory
-        ctx.enqueue_function[simple_shift_kernel](
+        ctx.enqueue_function_checked[simple_shift_kernel, simple_shift_kernel](
             target_device, grid_dim=1, block_dim=1
         )
         ctx.barrier_all()

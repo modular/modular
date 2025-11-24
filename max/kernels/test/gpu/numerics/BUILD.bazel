@@ -56,7 +56,7 @@ mojo_filecheck_test(
     tags = ["gpu"],
     target_compatible_with = ["//:amd_gpu"],
     deps = [
-        "@mojo//:linalg",
+        "//max:linalg",
         "@mojo//:stdlib",
     ],
 )

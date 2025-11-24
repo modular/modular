@@ -14,6 +14,7 @@
 from layout import *
 from layout.int_tuple import product
 from layout.layout_tensor import *
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
 
@@ -21,7 +22,7 @@ fn test_vectorize_2() raises:
     var tensor = LayoutTensor[
         DType.float32,
         Layout(IntTuple(IntTuple(16, 32), 4), IntTuple(IntTuple(32, 1), 512)),
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ].stack_allocation[stack_alignment=16]()
 
     var n = product(tensor.layout.shape)
@@ -46,7 +47,7 @@ fn test_vectorize_2() raises:
     var three_dim_tensor = LayoutTensor[
         DType.float32,
         Layout(IntTuple(16, 32, 4), IntTuple(32, 1, 512)),
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ].stack_allocation[stack_alignment=16]()
 
     n = product(three_dim_tensor.layout.shape)
@@ -73,7 +74,7 @@ fn test_vectorize_2() raises:
     var tensor2 = LayoutTensor[
         DType.float32,
         layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ].stack_allocation[stack_alignment=8]()
 
     n = product(tensor2.layout.shape)

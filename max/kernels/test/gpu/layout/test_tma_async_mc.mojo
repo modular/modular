@@ -16,7 +16,7 @@ from sys import size_of
 from gpu import barrier
 from gpu.cluster import block_rank_in_cluster, cluster_sync
 from gpu.host import DeviceContext, Dim
-from gpu.id import block_idx, thread_idx
+from gpu import block_idx, thread_idx
 from gpu.memory import fence_mbarrier_init
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
@@ -24,7 +24,6 @@ from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import copy_sram_to_dram
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from testing import assert_equal
 
 
@@ -38,7 +37,7 @@ fn test_tma_mcast_load_kernel[
     CLUSTER_M: UInt32,
     CLUSTER_N: UInt32,
 ](
-    dst: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    dst: LayoutTensor[dtype, layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, tile_layout],
 ):
     alias tileM = tile_layout.shape[0].value()
@@ -57,8 +56,8 @@ fn test_tma_mcast_load_kernel[
         LayoutTensor[
             dtype,
             tile_layout,
-            MutableAnyOrigin,
-            address_space = _GPUAddressSpace.SHARED,
+            MutAnyOrigin,
+            address_space = AddressSpace.SHARED,
             alignment=128,
         ]
         .stack_allocation()
@@ -70,7 +69,7 @@ fn test_tma_mcast_load_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:
@@ -104,7 +103,7 @@ fn test_tma_mcast_load_kernel[
     # we use another cluster_sync() to ensure that one of the two CTAs in the cluster doesn’t exit prematurely while the other is still waiting for the multicast load to complete.
     cluster_sync()
 
-    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
+    dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
     copy_sram_to_dram[thread_layout](dst_tile, tile)
 
 
@@ -173,7 +172,7 @@ fn test_tma_sliced_multicast_load_kernel[
     CLUSTER_N: UInt32,
     tma_layout: Layout,
 ](
-    dst: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    dst: LayoutTensor[dtype, layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, tma_layout],
 ):
     alias tileM = tile_layout.shape[0].value()
@@ -192,8 +191,8 @@ fn test_tma_sliced_multicast_load_kernel[
         LayoutTensor[
             dtype,
             tile_layout,
-            MutableAnyOrigin,
-            address_space = _GPUAddressSpace.SHARED,
+            MutAnyOrigin,
+            address_space = AddressSpace.SHARED,
             alignment=128,
         ]
         .stack_allocation()
@@ -205,7 +204,7 @@ fn test_tma_sliced_multicast_load_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:
@@ -241,7 +240,7 @@ fn test_tma_sliced_multicast_load_kernel[
     # we use another cluster_sync() to ensure that one of the two CTAs in the cluster doesn’t exit prematurely while the other is still waiting for the multicast load to complete.
     cluster_sync()
 
-    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
+    dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
     copy_sram_to_dram[thread_layout](dst_tile, tile)
 
 

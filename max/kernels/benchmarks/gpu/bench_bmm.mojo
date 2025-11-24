@@ -159,15 +159,15 @@ fn bench_bmm[
         c_host.tensor.num_elements()
     )
 
-    var a_device = NDBuffer[
-        dtype, 3, MutableAnyOrigin, batch_static_a_shape, _
-    ](a_device_buffer.unsafe_ptr(), batch_dynamic_a_shape)
-    var b_device = NDBuffer[
-        dtype, 3, MutableAnyOrigin, batch_static_b_shape, _
-    ](b_device_buffer.unsafe_ptr(), batch_dynamic_b_shape)
-    var c_device = NDBuffer[
-        dtype, 3, MutableAnyOrigin, batch_static_c_shape, _
-    ](c_device_buffer.unsafe_ptr(), batch_dynamic_c_shape)
+    var a_device = NDBuffer[dtype, 3, MutAnyOrigin, batch_static_a_shape, _](
+        a_device_buffer.unsafe_ptr(), batch_dynamic_a_shape
+    )
+    var b_device = NDBuffer[dtype, 3, MutAnyOrigin, batch_static_b_shape, _](
+        b_device_buffer.unsafe_ptr(), batch_dynamic_b_shape
+    )
+    var c_device = NDBuffer[dtype, 3, MutAnyOrigin, batch_static_c_shape, _](
+        c_device_buffer.unsafe_ptr(), batch_dynamic_c_shape
+    )
 
     # Initialize data on the device
 
@@ -302,10 +302,12 @@ fn bench_bmm[
             ](b, m, n, k)
         ),
         # TODO: Pick relevant benchmetric
-        ThroughputMeasure(
-            BenchMetric.flops,
-            2 * B * M * N * K,
-        ),
+        [
+            ThroughputMeasure(
+                BenchMetric.flops,
+                2 * B * M * N * K,
+            )
+        ],
     )
 
     # Retain our buffers till the end.

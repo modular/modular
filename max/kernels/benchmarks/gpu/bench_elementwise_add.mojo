@@ -19,6 +19,7 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from gpu.host import DeviceContext
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils import IndexList
 
 
@@ -70,7 +71,7 @@ fn bench_add[
         BenchId("add", String(shape)),
         shape,
         # TODO: Pick relevant benchmetric.
-        ThroughputMeasure(BenchMetric.elements, size * size_of[type]() * 3),
+        [ThroughputMeasure(BenchMetric.elements, size * size_of[type]() * 3)],
     )
 
     ctx.enqueue_copy(output_ptr_host, output_ptr)

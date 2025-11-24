@@ -238,7 +238,7 @@ fn make_ordered_layout(shape: IntTuple, order: IntTuple) -> Layout:
         IntTuple(2, 3, 4, 5),
         IntTuple(1, 4, 3, 2)
     )
-    # Result: Layout with shape (2,3,4,5) and stride (1,24,6,2)
+    # Result: Layout with shape (2,3,4,5) and stride (1,40,10,2)
     ```
     """
     var stride = compact_order(shape, order)
@@ -246,7 +246,7 @@ fn make_ordered_layout(shape: IntTuple, order: IntTuple) -> Layout:
 
 
 @fieldwise_init
-struct _LayoutIter[origin: ImmutableOrigin](
+struct _LayoutIter[origin: ImmutOrigin](
     ImplicitlyCopyable, Iterable, Iterator, Movable
 ):
     """Iterator for traversing Layout dimensions.
@@ -256,7 +256,7 @@ struct _LayoutIter[origin: ImmutableOrigin](
     and stride for that dimension.
 
     Parameters:
-        origin: The origin type for the `Layout` pointer, must be `ImmutableOrigin`.
+        origin: The origin type for the `Layout` pointer, must be `ImmutOrigin`.
 
     Attributes:
         index: Current position in the iteration.
@@ -268,7 +268,7 @@ struct _LayoutIter[origin: ImmutableOrigin](
     ]: Iterator = Self
     alias Element = Layout
     var index: Int
-    var layout: Pointer[Layout, origin]
+    var layout: Pointer[Layout, Self.origin]
 
     fn __next__(mut self) -> Self.Element:
         """Returns the next sub-layout in the iteration.
@@ -316,7 +316,7 @@ struct _LayoutIter[origin: ImmutableOrigin](
 
 struct Layout(
     Defaultable,
-    EqualityComparable,
+    Equatable,
     ImplicitlyCopyable,
     Iterable,
     LayoutTrait,
@@ -368,7 +368,7 @@ struct Layout(
 
     alias IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
-    ]: Iterator = _LayoutIter[ImmutableOrigin.cast_from[iterable_origin]]
+    ]: Iterator = _LayoutIter[ImmutOrigin.cast_from[iterable_origin]]
 
     # ===------------------------------------------------------------------===#
     # Initializers
@@ -1062,7 +1062,7 @@ fn MakeLayoutList(v0: Layout, v1: Layout) -> LayoutList:
     Returns:
         A LayoutList containing the two provided layouts.
     """
-    return LayoutList(v0, v1)
+    return [v0, v1]
 
 
 fn MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
@@ -2075,11 +2075,14 @@ fn right_inverse(layout: Layout) -> Layout:
     return Layout(shape, stride)
 
 
-fn upcast(layout: Layout, factor: Int) -> Layout:
+fn upcast[check: Bool = True](layout: Layout, factor: Int) -> Layout:
     """Fuses consecutive elements in a layout to create a coarser layout.
 
     This function is useful for converting between different data type granularities,
     such as from bytes to larger data types like bfloat16 or tf32.
+
+    Parameters:
+        check: Whether to check for incompatible factors.
 
     Args:
         layout: The layout to upcast.
@@ -2093,10 +2096,10 @@ fn upcast(layout: Layout, factor: Int) -> Layout:
             return layout
         else:
             var fac = IntTuple(factor)
-            var up_shape = shape_div(
-                layout.shape, shape_div(fac, layout.stride)
+            var up_shape = shape_div[check](
+                layout.shape, shape_div[check](fac, layout.stride)
             )
-            var up_stride = shape_div(layout.stride, fac)
+            var up_stride = shape_div[check](layout.stride, fac)
             return Layout(up_shape, up_stride)
     else:
         var res = Layout()

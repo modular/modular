@@ -37,7 +37,7 @@ from collections import OptionalReg
 from sys import is_compile_time, simd_width_of, size_of
 
 from bit import log2_floor
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 
 from .int_tuple import flatten
 from .layout import LayoutTrait
@@ -586,16 +586,16 @@ struct ComposedLayout[
         offset: Optional offset between layouts (default: 0).
     """
 
-    alias has_shape = LayoutA.has_shape or LayoutB.has_shape
+    alias has_shape = Self.LayoutA.has_shape or Self.LayoutB.has_shape
     """True if either layout has a shape."""
 
-    var layout_a: LayoutA
+    var layout_a: Self.LayoutA
     """The first layout to apply."""
-    var layout_b: LayoutB
+    var layout_b: Self.LayoutB
     """The second layout to apply."""
 
     @always_inline
-    fn __init__(out self, layout_a: LayoutA, layout_b: LayoutB):
+    fn __init__(out self, layout_a: Self.LayoutA, layout_b: Self.LayoutB):
         """Initialize ComposedLayout with two layouts.
 
         Args:
@@ -603,7 +603,7 @@ struct ComposedLayout[
             layout_b: The second layout.
         """
         constrained[
-            not offset or offset.value() >= 0,
+            not Self.offset or Self.offset.value() >= 0,
             "Requires non-negative offset if present",
         ]()
         self.layout_a = layout_a
@@ -631,7 +631,7 @@ struct ComposedLayout[
         Returns:
             The transformed index.
         """
-        var offset_val = offset.value() if offset else 0
+        var offset_val = Self.offset.value() if Self.offset else 0
         return self.layout_b(offset_val + self.layout_a(idx))
 
     @always_inline
@@ -649,7 +649,7 @@ struct ComposedLayout[
             The transformed index.
         """
         constrained[
-            not offset,
+            not Self.offset,
             "Static offset set; runtime offset not allowed.",
         ]()
         return self.layout_b(offset_val + self.layout_a(idx))

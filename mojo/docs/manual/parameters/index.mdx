@@ -181,12 +181,12 @@ like this:
 
 ```mojo
 struct GenericArray[ElementType: Copyable & Movable]:
-    var data: UnsafePointer[ElementType]
+    var data: UnsafePointer[Self.ElementType, MutOrigin.external]
     var size: Int
 
-    fn __init__(out self, var *elements: ElementType):
+    fn __init__(out self, var *elements: Self.ElementType):
         self.size = len(elements)
-        self.data = UnsafePointer[ElementType].alloc(self.size)
+        self.data = alloc[Self.ElementType](self.size)
         for i in range(self.size):
             (self.data + i).init_pointee_move(elements[i].copy())
 
@@ -195,7 +195,7 @@ struct GenericArray[ElementType: Copyable & Movable]:
             (self.data + i).destroy_pointee()
         self.data.free()
 
-    fn __getitem__(self, i: Int) raises -> ref [self] ElementType:
+    fn __getitem__(self, i: Int) raises -> ref [self] Self.ElementType:
         if i < self.size:
             return self.data[i]
         else:
@@ -242,12 +242,12 @@ struct GenericArray[ElementType: Copyable & Movable]:
     ...
 
     @staticmethod
-    fn splat(count: Int, value: ElementType) -> Self:
+    fn splat(count: Int, value: Self.ElementType) -> Self:
         # Create a new array with count instances of the given value
 ```
 
-Here, `Self` is equivalent to writing `GenericArray[ElementType]`. That is, you
-can call the `splat()` method like this:
+Here, `Self` is equivalent to writing `GenericArray[Self.ElementType]`. That is,
+you can call the `splat()` method like this:
 
 ```mojo
 GenericArray[Float64].splat(8, 0)
@@ -279,7 +279,7 @@ to `Writable` as well as `Movable`:
 ```mojo
 @fieldwise_init
 struct Container[ElementType: Movable]:
-    var element: ElementType
+    var element: Self.ElementType
 
     def __str__[
         StrElementType: Writable & Movable, //
@@ -350,14 +350,14 @@ struct SIMD[type: DType, size: Int]:
     var value: … # Some low-level MLIR stuff here
 
     # Create a new SIMD from a number of scalars
-    fn __init__(out self, *elems: SIMD[type, 1]):  ...
+    fn __init__(out self, *elems: SIMD[Self.type, 1]):  ...
 
     # Fill a SIMD with a duplicated scalar value.
     @staticmethod
-    fn splat(x: SIMD[type, 1]) -> SIMD[type, size]: ...
+    fn splat(x: SIMD[Self.type, 1]) -> SIMD[Self.type, Self.size]: ...
 
     # Cast the elements of the SIMD to a different elt type.
-    fn cast[target: DType](self) -> SIMD[target, size]: ...
+    fn cast[target: DType](self) -> SIMD[target, Self.size]: ...
 
     # Many standard operators are supported.
     fn __add__(self, rhs: Self) -> Self: ...
@@ -518,9 +518,9 @@ For example, consider the following struct:
 
 ```mojo
 struct One[Type: Writable & Copyable & Movable]:
-    var value: Type
+    var value: Self.Type
 
-    fn __init__(out self, value: Type):
+    fn __init__(out self, value: Self.Type):
         self.value = value.copy()
 
 
@@ -537,16 +537,16 @@ or static method:
 
 ```mojo
 struct Two[Type: Writable & Copyable & Movable]:
-    var val1: Type
-    var val2: Type
+    var val1: Self.Type
+    var val2: Self.Type
 
-    fn __init__(out self, one: One[Type], another: One[Type]):
+    fn __init__(out self, one: One[Self.Type], another: One[Self.Type]):
         self.val1 = one.value.copy()
         self.val2 = another.value.copy()
         print(String(self.val1), String(self.val2))
 
     @staticmethod
-    fn fire(thing1: One[Type], thing2: One[Type]):
+    fn fire(thing1: One[Self.Type], thing2: One[Self.Type]):
         print("🔥", String(thing1.value), String(thing2.value))
 
 def use_two():
@@ -636,7 +636,7 @@ parameters in a struct:
 ```mojo
 struct KwParamStruct[greeting: String = "Hello", name: String = "🔥mojo🔥"]:
     fn __init__(out self):
-        print(greeting, name)
+        print(Self.greeting, Self.name)
 
 fn use_kw_params():
     var a = KwParamStruct[]()                 # prints 'Hello 🔥mojo🔥'
@@ -724,7 +724,7 @@ define a `Span` that requires a mutable origin.
 def mutate_span(span: Span[mut=True, Byte]):
     for i in range(0, len(span), 2):
         if i + 1 < len(span):
-            span.swap_elements(UInt(i), UInt(i + 1))
+            span.swap_elements(i, i + 1)
 ```
 
 If the compiler can't infer the value of an infer-only parameter, and it's not
@@ -866,7 +866,7 @@ values:
 
 ```mojo
 @fieldwise_init
-struct Sentiment(EqualityComparable, ImplicitlyCopyable):
+struct Sentiment(Equatable, ImplicitlyCopyable):
     var _value: Int
 
     alias NEGATIVE = Sentiment(0)
@@ -1231,7 +1231,9 @@ For example, suppose we have a `Fudge` struct with three parameters:
 @fieldwise_init
 struct Fudge[sugar: Int, cream: Int, chocolate: Int = 7](Stringable):
     fn __str__(self) -> String:
-        return String.write("Fudge (", sugar, ",", cream, ",", chocolate, ")")
+        return String.write(
+            "Fudge (", Self.sugar, ",", Self.cream, ",", Self.chocolate, ")"
+        )
 ```
 
 We can write a function that takes a `Fudge` argument with just one bound

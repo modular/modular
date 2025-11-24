@@ -30,8 +30,8 @@ fn parallel_memcpy[
     dtype: DType
 ](
     *,
-    dest: UnsafePointer[Scalar[dtype]],
-    src: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[mut=True, Scalar[dtype]],
+    src: UnsafePointer[mut=False, Scalar[dtype]],
     count: Int,
     count_per_task: Int,
     num_tasks: Int,
@@ -73,8 +73,8 @@ fn parallel_memcpy[
     dtype: DType,
 ](
     *,
-    dest: UnsafePointer[Scalar[dtype]],
-    src: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[mut=True, Scalar[dtype]],
+    src: UnsafePointer[mut=False, Scalar[dtype]],
     count: Int,
 ):
     """Copies `count` elements from a memory buffer `src` to `dest` in parallel.
@@ -89,8 +89,8 @@ fn parallel_memcpy[
     """
 
     # TODO: Find a heuristic to replace the magic number.
-    alias min_work_per_task = 1024
-    alias min_work_for_parallel = 4 * min_work_per_task
+    comptime min_work_per_task = 1024
+    comptime min_work_for_parallel = 4 * min_work_per_task
 
     # If number of elements to be copied is less than minimum preset (4048),
     # then use default memcpy.

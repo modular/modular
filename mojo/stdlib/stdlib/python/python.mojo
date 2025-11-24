@@ -20,6 +20,7 @@ from python import Python
 """
 
 from collections.dict import OwnedKwargsDict
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys.ffi import _Global
 
@@ -33,7 +34,7 @@ from ._cpython import (
 )
 from .python_object import PythonObject
 
-alias _PYTHON_GLOBAL = _Global["Python", _PythonGlobal.__init__]
+comptime _PYTHON_GLOBAL = _Global["Python", _PythonGlobal.__init__]
 
 
 struct _PythonGlobal(Defaultable, Movable):
@@ -551,9 +552,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         return Self._tuple(values)
 
     @no_inline
-    fn as_string_slice(
-        self, obj: PythonObject
-    ) -> StringSlice[ImmutableAnyOrigin]:
+    fn as_string_slice(self, obj: PythonObject) -> StringSlice[ImmutAnyOrigin]:
         """Return a string representing the given Python object.
 
         Args:

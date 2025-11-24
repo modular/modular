@@ -24,7 +24,7 @@ from math import ceildiv, exp
 
 from compiler import register
 from gpu.host import DeviceContext
-from gpu.id import block_idx
+from gpu import block_idx
 from layout import Layout, LayoutTensor
 from layout.math import max
 from runtime.asyncrt import DeviceContextPtr
@@ -170,10 +170,10 @@ fn causal_conv1d_kernel[
     elements: Int,
     width: Int,
 ](
-    input: LayoutTensor[dtype, i_layout, MutableAnyOrigin],
-    weight: LayoutTensor[dtype, w_layout, MutableAnyOrigin],
-    bias: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
-    output: LayoutTensor[dtype, i_layout, MutableAnyOrigin],
+    input: LayoutTensor[dtype, i_layout, MutAnyOrigin],
+    weight: LayoutTensor[dtype, w_layout, MutAnyOrigin],
+    bias: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    output: LayoutTensor[dtype, i_layout, MutAnyOrigin],
 ):
     var seq_length = input.shape[2]()
 
@@ -204,7 +204,7 @@ fn causal_conv1d_kernel[
     var output_v = output.reshape[layout_2d]().vectorize[1, elements]()
 
     nChannels = input.shape[1]()
-    n_chunks = seq_length // kChunkSize + 1
+    n_chunks = seq_length // Int(kChunkSize) + 1
 
     if (tidx > 0) or (chunk_id > 0):
         prev_input_chunk = rebind[type_of(prev_input_chunk)](

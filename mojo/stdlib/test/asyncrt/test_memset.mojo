@@ -53,7 +53,8 @@ fn _run_memset_cascade[
     print("-")
     print("_run_memset_cascade(", length, ", ", val, ")")
 
-    var buf = ctx.enqueue_create_buffer[dtype](length).enqueue_fill(val)
+    var buf = ctx.enqueue_create_buffer[dtype](length)
+    buf.enqueue_fill(val)
 
     with buf.map_to_host() as buf:
         for i in range(length):
@@ -68,7 +69,7 @@ def test_memset():
     print("-------")
     print("Running test_memset(" + ctx.name() + "):")
 
-    alias one_mb = 1024 * 1024
+    comptime one_mb = 1024 * 1024
 
     _run_memset[DType.uint8](ctx, 64, 12)
     _run_memset[DType.uint8](ctx, one_mb, 13)

@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import TestSuite, assert_equal
 from test_utils import MoveCopyCounter, DelCounter
 
@@ -41,7 +42,7 @@ struct MyMemStruct[size: Int](Movable):
     var value: Int
 
     fn sizes(self) -> Tuple[Int, Int]:
-        return (size, self.value)
+        return (Self.size, self.value)
 
 
 fn indirect_with_rebind[X: Int](a: MyMemStruct[X]) -> Tuple[Int, Int]:

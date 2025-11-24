@@ -25,7 +25,7 @@ from sys.ffi import _external_call_const
 
 from builtin.dtype import _integral_type_of, _unsigned_integral_type_of
 from builtin.simd import _simd_apply
-from memory import bitcast
+from memory import LegacyUnsafePointer as UnsafePointer, bitcast
 
 # ===----------------------------------------------------------------------=== #
 # FPUtils
@@ -51,10 +51,10 @@ struct FPUtils[
         _constraint: Implements the constraint. Do not pass explicitly.
     """
 
-    alias integral_type = _integral_type_of[dtype]()
+    comptime integral_type = _integral_type_of[Self.dtype]()
     """The equivalent integer dtype of the float type."""
 
-    alias uint_type = _unsigned_integral_type_of[dtype]()
+    comptime uint_type = _unsigned_integral_type_of[Self.dtype]()
     """The equivalent uint dtype of the float type."""
 
     @staticmethod
@@ -65,7 +65,7 @@ struct FPUtils[
         Returns:
             The mantissa width.
         """
-        return DType.mantissa_width[dtype]()
+        return DType.mantissa_width[Self.dtype]()
 
     @staticmethod
     @always_inline("nodebug")
@@ -78,7 +78,7 @@ struct FPUtils[
         Returns:
             The max exponent.
         """
-        return DType.max_exponent[dtype]()
+        return DType.max_exponent[Self.dtype]()
 
     @staticmethod
     @always_inline("nodebug")
@@ -88,7 +88,7 @@ struct FPUtils[
         Returns:
             The exponent width.
         """
-        return DType.exponent_width[dtype]()
+        return DType.exponent_width[Self.dtype]()
 
     @staticmethod
     @always_inline
@@ -98,7 +98,7 @@ struct FPUtils[
         Returns:
             The exponent bias.
         """
-        return DType.exponent_bias[dtype]()
+        return DType.exponent_bias[Self.dtype]()
 
     @staticmethod
     @always_inline
@@ -161,14 +161,14 @@ struct FPUtils[
         Returns:
             The quiet NaN mask.
         """
-        alias mantissa_width_val = Self.mantissa_width()
+        comptime mantissa_width_val = Self.mantissa_width()
         return (1 << Self.exponent_width() - 1) << mantissa_width_val + (
             1 << (mantissa_width_val - 1)
         )
 
     @staticmethod
     @always_inline
-    fn bitcast_to_integer(value: Scalar[dtype]) -> Int:
+    fn bitcast_to_integer(value: Scalar[Self.dtype]) -> Int:
         """Bitcasts the floating-point value to an integer.
 
         Args:
@@ -181,7 +181,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn bitcast_to_uint(value: Scalar[dtype]) -> Scalar[Self.uint_type]:
+    fn bitcast_to_uint(value: Scalar[Self.dtype]) -> Scalar[Self.uint_type]:
         """Bitcasts the floating-point value to an integer.
 
         Args:
@@ -194,7 +194,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn bitcast_from_integer(value: Int) -> Scalar[dtype]:
+    fn bitcast_from_integer(value: Int) -> Scalar[Self.dtype]:
         """Bitcasts the floating-point value from an integer.
 
         Args:
@@ -203,11 +203,11 @@ struct FPUtils[
         Returns:
             An floating-point representation of the Int.
         """
-        return bitcast[dtype, 1](Scalar[Self.integral_type](value))
+        return bitcast[Self.dtype, 1](Scalar[Self.integral_type](value))
 
     @staticmethod
     @always_inline
-    fn get_sign(value: Scalar[dtype]) -> Bool:
+    fn get_sign(value: Scalar[Self.dtype]) -> Bool:
         """Returns the sign of the floating point value.
 
         Args:
@@ -220,7 +220,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn set_sign(value: Scalar[dtype], sign: Bool) -> Scalar[dtype]:
+    fn set_sign(value: Scalar[Self.dtype], sign: Bool) -> Scalar[Self.dtype]:
         """Sets the sign of the floating point value.
 
         Args:
@@ -239,7 +239,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn get_exponent(value: Scalar[dtype]) -> Int:
+    fn get_exponent(value: Scalar[Self.dtype]) -> Int:
         """Returns the exponent bits of the floating-point value.
 
         Args:
@@ -254,7 +254,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn get_exponent_biased(value: Scalar[dtype]) -> Int:
+    fn get_exponent_biased(value: Scalar[Self.dtype]) -> Int:
         """Returns the biased exponent of the floating-point value as an Int,
         this is how the value is stored before subtracting the exponent bias.
 
@@ -271,7 +271,9 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn set_exponent(value: Scalar[dtype], exponent: Int) -> Scalar[dtype]:
+    fn set_exponent(
+        value: Scalar[Self.dtype], exponent: Int
+    ) -> Scalar[Self.dtype]:
         """Sets the exponent bits of the floating-point value.
 
         Args:
@@ -288,7 +290,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn get_mantissa(value: Scalar[dtype]) -> Int:
+    fn get_mantissa(value: Scalar[Self.dtype]) -> Int:
         """Gets the mantissa bits of the floating-point value.
 
         Args:
@@ -301,7 +303,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn get_mantissa_uint(value: Scalar[dtype]) -> Scalar[Self.uint_type]:
+    fn get_mantissa_uint(value: Scalar[Self.dtype]) -> Scalar[Self.uint_type]:
         """Gets the mantissa bits of the floating-point value.
 
         Args:
@@ -314,7 +316,9 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn set_mantissa(value: Scalar[dtype], mantissa: Int) -> Scalar[dtype]:
+    fn set_mantissa(
+        value: Scalar[Self.dtype], mantissa: Int
+    ) -> Scalar[Self.dtype]:
         """Sets the mantissa bits of the floating-point value.
 
         Args:
@@ -331,7 +335,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn pack(sign: Bool, exponent: Int, mantissa: Int) -> Scalar[dtype]:
+    fn pack(sign: Bool, exponent: Int, mantissa: Int) -> Scalar[Self.dtype]:
         """Construct a floating-point value from its constituent sign, exponent,
         and mantissa.
 
@@ -343,7 +347,7 @@ struct FPUtils[
         Returns:
             Returns the floating-point value.
         """
-        var res: Scalar[dtype] = 0
+        var res: Scalar[Self.dtype] = 0
         res = Self.set_sign(res, sign)
         res = Self.set_exponent(res, exponent)
         res = Self.set_mantissa(res, mantissa)
@@ -407,7 +411,7 @@ struct FlushDenormals(Defaultable):
             _ = mxcsr
             return
 
-        alias ARM_FPCR_FZ = Int64(1) << 24
+        comptime ARM_FPCR_FZ = Int64(1) << 24
         var fpcr = self.state.cast[DType.int64]()
         if enable:
             fpcr |= ARM_FPCR_FZ
@@ -425,7 +429,7 @@ struct FlushDenormals(Defaultable):
         if CompilationTarget.has_sse4():
             return (state & 0x8000) != 0 and (state & 0x40) != 0
 
-        alias ARM_FPCR_FZ = Int32(1) << 24
+        comptime ARM_FPCR_FZ = Int32(1) << 24
         return (state & ARM_FPCR_FZ) != 0
 
     @always_inline
@@ -498,6 +502,10 @@ fn nan[dtype: DType]() -> Scalar[dtype]:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e5m2fnuz>`,
         )
+    elif dtype is DType.float8_e8m0fnu:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e8m0fnu>`,
+        )
     elif dtype is DType.bfloat16:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<bf16>`,
@@ -549,6 +557,8 @@ fn isnan[
         return SIMD[DType.bool, width](fill=False)
     elif dtype is DType.float8_e4m3fn:
         return (val.to_bits() & 0x7F).eq(0x7F)
+    elif dtype is DType.float8_e8m0fnu:
+        return val.to_bits().eq(0xFF)
     elif dtype is DType.float8_e5m2:
         # For the float8_e5m2 dtype NaN is limited to 0x7F and 0xFF values.
         # 7D, 7E, 7F are positive NaNs; FD, FE, FF are negative NaNs.
@@ -559,8 +569,8 @@ fn isnan[
         var bits = val.to_bits()
         return (bits & 0x7C00).eq(0x7C00) & (bits & 0x03FF).ne(0)
 
-    alias signaling_nan_test: UInt32 = 0x0001
-    alias quiet_nan_test: UInt32 = 0x0002
+    comptime signaling_nan_test: UInt32 = 0x0001
+    comptime quiet_nan_test: UInt32 = 0x0002
     return llvm_intrinsic[
         "llvm.is.fpclass", SIMD[DType.bool, width], has_side_effect=False
     ](val._mlir_value, signaling_nan_test | quiet_nan_test)
@@ -708,6 +718,8 @@ fn max_finite[dtype: DType]() -> Scalar[dtype]:
         return Scalar[dtype](
             ~Scalar[_unsigned_integral_type_of[dtype]()](0) >> 1
         )
+    elif dtype is DType.float4_e2m1fn:
+        return 0b0111
     elif dtype is DType.float8_e4m3fn:
         return 448
     elif dtype is DType.float8_e4m3fnuz:
@@ -845,8 +857,8 @@ fn isinf[
         # For the float8_e5m2 both 7C and FC are infinity.
         return (val.to_bits() & 0x7F).eq(0x7C)
 
-    alias negative_infinity_test: UInt32 = 0x0004
-    alias positive_infinity_test: UInt32 = 0x0200
+    comptime negative_infinity_test: UInt32 = 0x0004
+    comptime positive_infinity_test: UInt32 = 0x0200
     return llvm_intrinsic[
         "llvm.is.fpclass", SIMD[DType.bool, width], has_side_effect=False
     ](val._mlir_value, negative_infinity_test | positive_infinity_test)

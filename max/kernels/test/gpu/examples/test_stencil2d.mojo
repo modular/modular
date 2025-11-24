@@ -17,7 +17,6 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import barrier, block_dim, global_idx, thread_idx
 from gpu.host import DeviceContext
-from gpu.memory import AddressSpace
 
 from utils.index import Index
 
@@ -25,8 +24,8 @@ alias BLOCK_DIM = 4
 
 
 fn stencil2d(
-    a_ptr: UnsafePointer[Float32],
-    b_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
     arr_size: Int,
     num_rows: Int,
     num_cols: Int,
@@ -48,18 +47,19 @@ fn stencil2d(
         and tidy < UInt(num_rows - 1)
         and tidx < UInt(num_cols - 1)
     ):
-        b[tidy * UInt(num_cols) + tidx] = (
-            coeff0 * a[tidy * UInt(num_cols) + tidx - 1]
-            + coeff1 * a[tidy * UInt(num_cols) + tidx]
-            + coeff2 * a[tidy * UInt(num_cols) + tidx + 1]
-            + coeff3 * a[(tidy - 1) * UInt(num_cols) + tidx]
-            + coeff4 * a[(tidy + 1) * UInt(num_cols) + tidx]
+        var idx = Int(tidy * UInt(num_cols) + tidx)
+        b[idx] = (
+            coeff0 * a[idx - 1]
+            + coeff1 * a[idx]
+            + coeff2 * a[idx + 1]
+            + coeff3 * a[Int((tidy - 1) * UInt(num_cols) + tidx)]
+            + coeff4 * a[Int((tidy + 1) * UInt(num_cols) + tidx)]
         )
 
 
 fn stencil2d_smem(
-    a_ptr: UnsafePointer[Float32],
-    b_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
     arr_size: Int,
     num_rows: Int,
     num_cols: Int,
@@ -80,38 +80,32 @@ fn stencil2d_smem(
     var a_shared = NDBuffer[
         DType.float32,
         2,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         DimList(BLOCK_DIM + 2, BLOCK_DIM + 2),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     # Each element is loaded in shared memory.
-    a_shared[Index(lindex_y, lindex_x)] = a[tidy * UInt(num_cols) + tidx]
+    a_shared[Index(lindex_y, lindex_x)] = a[Int(tidy * UInt(num_cols) + tidx)]
 
     # First column also loads elements left and right to the block.
     if thread_idx.x == 0:
-        a_shared[Index(lindex_y, 0)] = (
-            a[tidy * UInt(num_cols) + (tidx - 1)] if 0
-            <= tidy * UInt(num_cols) + (tidx - 1)
-            < UInt(arr_size) else 0
-        )
+        var idx = Int(tidy * UInt(num_cols) + (tidx - 1))
+        a_shared[Index(lindex_y, 0)] = a[idx] if 0 <= idx < arr_size else 0
+
+        idx = Int(tidy * UInt(num_cols) + tidx + BLOCK_DIM)
         a_shared[Index(Int(lindex_y), BLOCK_DIM + 1)] = (
-            a[tidy * UInt(num_cols) + tidx + BLOCK_DIM] if 0
-            <= tidy * UInt(num_cols) + tidx + BLOCK_DIM
-            < UInt(arr_size) else 0
+            a[idx] if 0 <= idx < arr_size else 0
         )
 
     # First row also loads elements above and below the block.
     if thread_idx.y == 0:
-        a_shared[Index(0, lindex_x)] = (
-            a[(tidy - 1) * UInt(num_cols) + tidx] if 0
-            < (tidy - 1) * UInt(num_cols) + tidx
-            < UInt(arr_size) else 0
-        )
+        var idx = Int((tidy - 1) * UInt(num_cols) + tidx)
+        a_shared[Index(0, lindex_x)] = a[idx] if 0 < idx < arr_size else 0
+
+        idx = Int((tidy + BLOCK_DIM) * UInt(num_cols) + tidx)
         a_shared[Index(BLOCK_DIM + 1, lindex_x)] = (
-            a[(tidy + BLOCK_DIM) * UInt(num_cols) + tidx] if 0
-            <= (tidy + BLOCK_DIM) * UInt(num_cols) + tidx
-            < UInt(arr_size) else 0
+            a[idx] if 0 <= idx < arr_size else 0
         )
 
     barrier()
@@ -122,7 +116,7 @@ fn stencil2d_smem(
         and tidy < UInt(num_rows - 1)
         and tidx < UInt(num_cols - 1)
     ):
-        b[tidy * UInt(num_cols) + tidx] = (
+        b[Int(tidy * UInt(num_cols) + tidx)] = (
             coeff0 * a_shared[Index(lindex_y, lindex_x - 1)]
             + coeff1 * a_shared[Index(lindex_y, lindex_x)]
             + coeff2 * a_shared[Index(lindex_y, lindex_x + 1)]
@@ -146,8 +140,8 @@ fn run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
     alias num_rows = 8
     alias num_cols = 8
 
-    var a_host = UnsafePointer[Float32].alloc(m)
-    var b_host = UnsafePointer[Float32].alloc(m)
+    var a_host = alloc[Float32](m)
+    var b_host = alloc[Float32](m)
 
     for i in range(m):
         a_host[i] = i

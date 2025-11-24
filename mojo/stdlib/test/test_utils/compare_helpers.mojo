@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 
 # ===----------------------------------------------------------------------=== #
 # utils
@@ -41,6 +42,21 @@ fn compare[
     *,
     msg: String = "",
 ) -> SIMD[dtype, 4]:
+    """Compares two arrays and computes absolute and relative error statistics.
+
+    Parameters:
+        dtype: The data type of the arrays to compare.
+        verbose: Whether to print the error statistics.
+
+    Args:
+        x: First array to compare.
+        y: Second array to compare.
+        num_elements: Number of elements in each array.
+        msg: Optional message to print before the statistics.
+
+    Returns:
+        A SIMD vector containing [atol_min, atol_max, rtol_min, rtol_max].
+    """
     var atol = UnsafePointer[Scalar[dtype]].alloc(num_elements)
     var rtol = UnsafePointer[Scalar[dtype]].alloc(num_elements)
 

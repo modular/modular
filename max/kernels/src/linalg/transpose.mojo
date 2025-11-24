@@ -28,7 +28,7 @@ from layout import (
 )
 from layout.int_tuple import fill_like
 from layout.layout import is_row_major
-from memory import memcpy
+from memory import LegacyUnsafePointer as UnsafePointer, memcpy
 from runtime.asyncrt import parallelism_level
 
 from utils.index import IndexList, StaticTuple
@@ -1503,9 +1503,14 @@ fn _copy_with_strides[
         else:
 
             @always_inline
-            @__copy_capture(input_axis_stride, output_axis_stride)
-            @parameter
-            fn _copy[simd_width: Int](offset: Int):
+            fn _copy[
+                simd_width: Int
+            ](offset: Int) unified {
+                var input_axis_stride,
+                var output_axis_stride,
+                mut dst_ptr,
+                mut src_ptr,
+            }:
                 strided_store(
                     strided_load[simd_width](src_ptr, input_axis_stride),
                     dst_ptr,
@@ -1514,7 +1519,7 @@ fn _copy_with_strides[
                 src_ptr = src_ptr.offset(simd_width * input_axis_stride)
                 dst_ptr = dst_ptr.offset(simd_width * output_axis_stride)
 
-            vectorize[_copy, simd_width_of[dtype]()](axis_dim)
+            vectorize[simd_width_of[dtype]()](axis_dim, _copy)
 
         return
 

@@ -13,7 +13,11 @@
 
 from sys.info import CompilationTarget, _current_target
 
-from compile.reflection import get_linkage_name, get_type_name
+from compile.reflection import (
+    get_linkage_name,
+    get_type_name,
+    get_function_name,
+)
 from testing import assert_equal
 from testing import TestSuite
 
@@ -31,9 +35,9 @@ def test_get_linkage_name_nested():
     fn nested_func(x: Int) -> Int:
         return x
 
-    var name2 = get_linkage_name[nested_func]()
+    var name = get_linkage_name[nested_func]()
     assert_equal(
-        name2,
+        name,
         "test_reflection::test_get_linkage_name_nested()_nested_func(::Int)",
     )
 
@@ -50,6 +54,27 @@ def test_get_linkage_name_parameterized():
 def test_get_linkage_name_on_itself():
     var name = get_linkage_name[_current_target]()
     assert_equal(name, "stdlib::sys::info::_current_target()")
+
+
+def test_get_function_name():
+    var name = get_function_name[my_func]()
+    assert_equal(name, "my_func")
+
+
+def test_get_function_name_nested():
+    fn nested_func(x: Int) -> Int:
+        return x
+
+    var name2 = get_function_name[nested_func]()
+    assert_equal(name2, "nested_func")
+
+
+def test_get_function_name_parameterized():
+    var name = get_function_name[your_func]()
+    assert_equal(name, "your_func")
+
+    var name2 = get_function_name[your_func[7]]()
+    assert_equal(name2, "your_func")
 
 
 def test_get_type_name():
@@ -150,14 +175,14 @@ def test_get_type_name_unprintable():
 
 
 def test_get_type_name_alias():
-    alias T = Bar[5]
+    comptime T = Bar[5]
     var name = get_type_name[T]()
     assert_equal(
         name, "test_reflection.Bar[5, 1.29999995 : SIMD[DType.float32, 1]]"
     )
 
     # Also test parametric aliases (i.e. unbound parameters).
-    alias R = Bar[_]
+    comptime R = Bar[_]
     name = get_type_name[R]()
     assert_equal(
         name, "test_reflection.Bar[?, 1.29999995 : SIMD[DType.float32, 1]]"

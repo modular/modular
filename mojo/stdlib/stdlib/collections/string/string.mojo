@@ -22,7 +22,7 @@ Related types:
 - [`StringSlice`](/mojo/stdlib/collections/string/string_slice/). A non-owning
   view of string data, which can be either mutable or immutable.
 - [`StaticString`](/mojo/stdlib/collections/string/string_slice/#aliases). An
-  alias for an immutable constant `StringSlice`.
+  comptime for an immutable constant `StringSlice`.
 - [`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral/). A
   string literal. String literals are compile-time values. For use at runtime,
   you usually want wrap a `StringLiteral` in a `String` (for a mutable string)
@@ -83,11 +83,12 @@ from collections.string.string_slice import (
     _to_string_list,
     _unsafe_strlen,
 )
+from builtin.builtin_slice import ContiguousSlice
 from hashlib.hasher import Hasher
 from io.write import STACK_BUFFER_BYTES, _TotalWritableBytes, _WriteBufferStack
 from os import PathLike, abort
 from os.atomic import Atomic, Consistency, fence
-from sys import size_of
+from sys import size_of, bit_width_of
 from sys.ffi import c_char
 from sys.info import is_32bit
 
@@ -128,7 +129,7 @@ struct String(
     # form when '_capacity_or_data.is_inline()' is true. The inline form
     # clobbers these fields (except the top byte of the capacity field) with
     # the string data.
-    var _ptr_or_data: UnsafePointer[UInt8]
+    var _ptr_or_data: UnsafePointer[UInt8, MutOrigin.external]
     """The underlying storage for the string data."""
     var _len_or_data: Int
     """The number of bytes in the string data."""
@@ -136,14 +137,14 @@ struct String(
     """The capacity and bit flags for this String."""
 
     # Useful string aliases.
-    alias ASCII_LOWERCASE = "abcdefghijklmnopqrstuvwxyz"
-    alias ASCII_UPPERCASE = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    alias ASCII_LETTERS = Self.ASCII_LOWERCASE + Self.ASCII_UPPERCASE
-    alias DIGITS = "0123456789"
-    alias HEX_DIGITS = Self.DIGITS + "abcdef" + "ABCDEF"
-    alias OCT_DIGITS = "01234567"
-    alias PUNCTUATION = """!"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"""
-    alias PRINTABLE = Self.DIGITS + Self.ASCII_LETTERS + Self.PUNCTUATION + " \t\n\r\v\f"
+    comptime ASCII_LOWERCASE = "abcdefghijklmnopqrstuvwxyz"
+    comptime ASCII_UPPERCASE = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    comptime ASCII_LETTERS = Self.ASCII_LOWERCASE + Self.ASCII_UPPERCASE
+    comptime DIGITS = "0123456789"
+    comptime HEX_DIGITS = Self.DIGITS + "abcdef" + "ABCDEF"
+    comptime OCT_DIGITS = "01234567"
+    comptime PUNCTUATION = """!"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"""
+    comptime PRINTABLE = Self.DIGITS + Self.ASCII_LETTERS + Self.PUNCTUATION + " \t\n\r\v\f"
 
     # ===------------------------------------------------------------------=== #
     # String Implementation Details
@@ -151,23 +152,23 @@ struct String(
     # This is the number of bytes that can be stored inline in the string value.
     # 'String' is 3 words in size and we use the top byte of the capacity field
     # to store flags.
-    alias INLINE_CAPACITY = Int.BITWIDTH // 8 * 3 - 1
+    comptime INLINE_CAPACITY = Int.BITWIDTH // 8 * 3 - 1
     # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
     # is known to be an accessible 'nul' terminator.
-    alias FLAG_HAS_NUL_TERMINATOR = 1 << (Int.BITWIDTH - 3)
+    comptime FLAG_HAS_NUL_TERMINATOR = 1 << (Int.BITWIDTH - 3)
     # When FLAG_IS_REF_COUNTED is set, the string is pointing to a mutable buffer
     # that may have other references to it.
-    alias FLAG_IS_REF_COUNTED = 1 << (Int.BITWIDTH - 2)
+    comptime FLAG_IS_REF_COUNTED = 1 << (Int.BITWIDTH - 2)
     # When FLAG_IS_INLINE is set, the string is inline or "Short String
     # Optimized" (SSO). The first 23 bytes of the fields are treated as UTF-8
     # data
-    alias FLAG_IS_INLINE = 1 << (Int.BITWIDTH - 1)
+    comptime FLAG_IS_INLINE = 1 << (Int.BITWIDTH - 1)
     # gives us 5 bits for the length.
-    alias INLINE_LENGTH_START = Int.BITWIDTH - 8
-    alias INLINE_LENGTH_MASK = 0b1_1111 << Self.INLINE_LENGTH_START
+    comptime INLINE_LENGTH_START = Int.BITWIDTH - 8
+    comptime INLINE_LENGTH_MASK = 0b1_1111 << Self.INLINE_LENGTH_START
     # This is the size to offset the pointer by, to get access to the
     # atomic reference count prepended to the UTF-8 data.
-    alias REF_COUNT_SIZE = size_of[Atomic[DType.int]]()
+    comptime REF_COUNT_SIZE = size_of[Atomic[DType.int]]()
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
@@ -215,7 +216,9 @@ struct String(
         # Safety: This should be safe since we set `capacity_or_data` to 0.
         # Meaning any mutation will cause us to either reallocate or inline
         # the string.
-        self._ptr_or_data = data._slice._data.unsafe_mut_cast[True]()
+        self._ptr_or_data = data._slice._data.unsafe_mut_cast[
+            True
+        ]().unsafe_origin_cast[MutOrigin.external]()
         # Always use static constant representation initially, defer inlining
         # decision until mutation to avoid unnecessary memcpy.
         self._capacity_or_data = 0
@@ -231,7 +234,7 @@ struct String(
         self._len_or_data = Int(
             mlir_value=__mlir_op.`pop.string.size`(data.value)
         )
-        self._ptr_or_data = UnsafePointer(
+        self._ptr_or_data = UnsafePointer[_, MutOrigin.external](
             __mlir_op.`pop.string.address`(data.value)
         ).bitcast[Byte]()
         # Always use static constant representation initially, defer inlining
@@ -304,7 +307,7 @@ struct String(
         print(string) # "1, 2.0, three"
         ```
         """
-        alias length = args.__len__()
+        comptime length = args.__len__()
         var total_bytes = _TotalWritableBytes()
 
         @parameter
@@ -374,7 +377,7 @@ struct String(
         %# assert_equal(string, "1, 2.0, three")
         ```
         """
-        alias length = args.__len__()
+        comptime length = args.__len__()
         var total_bytes = _TotalWritableBytes()
 
         @parameter
@@ -426,7 +429,7 @@ struct String(
         Returns:
             A string formed by formatting the argument sequence.
         """
-        alias length = args.__len__()
+        comptime length = args.__len__()
         var total_bytes = _TotalWritableBytes()
 
         @parameter
@@ -472,7 +475,7 @@ struct String(
         Args:
             args: Sequence of arguments to write to this Writer.
         """
-        alias length = args.__len__()
+        comptime length = args.__len__()
         var total_bytes = _TotalWritableBytes()
         total_bytes.size += self.byte_length()
 
@@ -538,7 +541,7 @@ struct String(
     fn __init__(
         out self,
         *,
-        unsafe_from_utf8_ptr: UnsafePointer[c_char, mut=_, origin=_],
+        unsafe_from_utf8_ptr: UnsafePointer[mut=False, c_char],
     ):
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
@@ -553,7 +556,7 @@ struct String(
         self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     fn __init__(
-        out self, *, unsafe_from_utf8_ptr: UnsafePointer[UInt8, mut=_, origin=_]
+        out self, *, unsafe_from_utf8_ptr: UnsafePointer[mut=False, UInt8]
     ):
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
@@ -597,7 +600,7 @@ struct String(
     # Capacity Field Helpers
     # ===------------------------------------------------------------------=== #
 
-    # This includes getting and setting flags from the capcity field such as
+    # This includes getting and setting flags from the capacity field such as
     # null terminator, inline, and indirect. If indirect the length is also
     # stored in the capacity field.
 
@@ -684,9 +687,9 @@ struct String(
                 ptr.free()
 
     @staticmethod
-    fn _alloc(capacity: Int) -> UnsafePointer[Byte]:
+    fn _alloc(capacity: Int) -> UnsafePointer[Byte, MutOrigin.external]:
         """Allocate space for a new out-of-line string buffer."""
-        var ptr = UnsafePointer[Byte].alloc(capacity + Self.REF_COUNT_SIZE)
+        var ptr = alloc[Byte](capacity + Self.REF_COUNT_SIZE)
 
         # Initialize the Atomic refcount into the header.
         __get_address_as_uninit_lvalue(
@@ -732,7 +735,7 @@ struct String(
         var normalized_idx = normalize_index["String"](idx, len(self))
         return StringSlice(ptr=self.unsafe_ptr() + normalized_idx, length=1)
 
-    fn __getitem__(self, span: Slice) -> String:
+    fn __getitem__(self, span: ContiguousSlice) -> StringSlice[origin_of(self)]:
         """Gets the sequence of characters at the specified positions.
 
         Args:
@@ -743,24 +746,13 @@ struct String(
         """
         var start: Int
         var end: Int
-        var step: Int
         # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
 
-        start, end, step = span.indices(self.byte_length())
-        var r = range(start, end, step)
-        if step == 1:
-            return String(
-                StringSlice(
-                    ptr=self.unsafe_ptr() + start,
-                    length=len(r),
-                )
-            )
-
-        var result = String(capacity=len(r))
-        var ptr = self.unsafe_ptr()
-        for i in r:
-            result.append_byte(ptr[i])
-        return result^
+        start, end = span.indices(self.byte_length())
+        return StringSlice(
+            ptr=self.unsafe_ptr() + start,
+            length=end - start,
+        )
 
     fn __eq__(self, rhs: String) -> Bool:
         """Compares two Strings if they have the same values.
@@ -820,42 +812,6 @@ struct String(
             otherwise.
         """
         return self.as_string_slice() < rhs.as_string_slice()
-
-    @always_inline("nodebug")
-    fn __le__(self, rhs: String) -> Bool:
-        """Compare this String to the RHS using LE comparison.
-
-        Args:
-            rhs: The other String to compare against.
-
-        Returns:
-            True iff this String is less than or equal to the RHS String.
-        """
-        return not (rhs < self)
-
-    @always_inline("nodebug")
-    fn __gt__(self, rhs: String) -> Bool:
-        """Compare this String to the RHS using GT comparison.
-
-        Args:
-            rhs: The other String to compare against.
-
-        Returns:
-            True iff this String is strictly greater than the RHS String.
-        """
-        return rhs < self
-
-    @always_inline("nodebug")
-    fn __ge__(self, rhs: String) -> Bool:
-        """Compare this String to the RHS using GE comparison.
-
-        Args:
-            rhs: The other String to compare against.
-
-        Returns:
-            True iff this String is greater than or equal to the RHS String.
-        """
-        return not (self < rhs)
 
     @staticmethod
     fn _add(lhs: Span[Byte], rhs: Span[Byte]) -> String:
@@ -1081,7 +1037,7 @@ struct String(
 
     fn join[
         T: Copyable & Movable & Writable
-    ](self, elems: List[T, *_]) -> String:
+    ](self, elems: Span[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than
         `buffer_size`, otherwise will allocate once to the heap and write
@@ -1178,7 +1134,7 @@ struct String(
     @always_inline("nodebug")
     fn unsafe_ptr(
         self,
-    ) -> UnsafePointer[Byte, mut=False, origin = origin_of(self)]:
+    ) -> UnsafePointer[Byte, origin_of(self)]:
         """Retrieves a pointer to the underlying memory.
 
         Returns:
@@ -1200,7 +1156,7 @@ struct String(
 
     fn unsafe_ptr_mut(
         mut self, var capacity: Int = 0
-    ) -> UnsafePointer[Byte, mut=True, origin = origin_of(self)]:
+    ) -> UnsafePointer[Byte, origin_of(self)]:
         """Retrieves a mutable pointer to the unique underlying memory. Passing
         a larger capacity will reallocate the string to the new capacity if
         larger than the existing capacity, allowing you to write more data.
@@ -1223,7 +1179,7 @@ struct String(
 
     fn unsafe_cstr_ptr(
         mut self,
-    ) -> UnsafePointer[c_char, mut=False, origin = origin_of(self)]:
+    ) -> UnsafePointer[c_char, ImmutOrigin.cast_from[origin_of(self)]]:
         """Retrieves a C-string-compatible pointer to the underlying memory.
 
         The returned pointer is guaranteed to be null, or NUL terminated.
@@ -1792,36 +1748,91 @@ struct String(
     fn rjust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string right justified in a string of specified width.
 
+        Pads the string on the left with the specified fill character so that
+        the total length of the resulting string equals `width`. If the original
+        string is already longer than or equal to `width`, returns the original
+        string unchanged.
+
         Args:
-            width: The width of the field containing the string.
-            fillchar: Specifies the padding character.
+            width: The total width (in bytes) of the resulting string. This is
+                not the amount of padding, but the final length of the returned
+                string.
+            fillchar: The padding character to use (defaults to space). Must be
+                a single-byte character.
 
         Returns:
-            Returns right justified string, or self if width is not bigger than self length.
+            A right-justified string of length `width`, or the original string
+            if its length is already greater than or equal to `width`.
+
+        Examples:
+
+        ```mojo
+        var s = String("hello")
+        print(s.rjust(10))        # "     hello"
+        print(s.rjust(10, "*"))   # "*****hello"
+        print(s.rjust(3))         # "hello" (no padding)
+        ```
         """
         return self.as_string_slice().rjust(width, fillchar)
 
     fn ljust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string left justified in a string of specified width.
 
+        Pads the string on the right with the specified fill character so that
+        the total length of the resulting string equals `width`. If the original
+        string is already longer than or equal to `width`, returns the original
+        string unchanged.
+
         Args:
-            width: The width of the field containing the string.
-            fillchar: Specifies the padding character.
+            width: The total width (in bytes) of the resulting string. This is
+                not the amount of padding, but the final length of the returned
+                string.
+            fillchar: The padding character to use (defaults to space). Must be
+                a single-byte character.
 
         Returns:
-            Returns left justified string, or self if width is not bigger than self length.
+            A left-justified string of length `width`, or the original string
+            if its length is already greater than or equal to `width`.
+
+        Examples:
+
+        ```mojo
+        var s = String("hello")
+        print(s.ljust(10))        # "hello     "
+        print(s.ljust(10, "*"))   # "hello*****"
+        print(s.ljust(3))         # "hello" (no padding)
+        ```
         """
         return self.as_string_slice().ljust(width, fillchar)
 
     fn center(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string center justified in a string of specified width.
 
+        Pads the string on both sides with the specified fill character so that
+        the total length of the resulting string equals `width`. If the padding
+        needed is odd, the extra character goes on the right side. If the
+        original string is already longer than or equal to `width`, returns the
+        original string unchanged.
+
         Args:
-            width: The width of the field containing the string.
-            fillchar: Specifies the padding character.
+            width: The total width (in bytes) of the resulting string. This is
+                not the amount of padding, but the final length of the returned
+                string.
+            fillchar: The padding character to use (defaults to space). Must be
+                a single-byte character.
 
         Returns:
-            Returns center justified string, or self if width is not bigger than self length.
+            A center-justified string of length `width`, or the original string
+            if its length is already greater than or equal to `width`.
+
+        Examples:
+
+        ```mojo
+        var s = String("hello")
+        print(s.center(10))        # "  hello   "
+        print(s.center(11, "*"))   # "***hello***"
+        print(s.center(3))         # "hello" (no padding)
+        ```
         """
         return self.as_string_slice().center(width, fillchar)
 
@@ -1998,10 +2009,10 @@ fn _repr_ascii(c: UInt8) -> String:
     Returns:
         A string containing a representation of the given code point.
     """
-    alias ord_tab = ord("\t")
-    alias ord_new_line = ord("\n")
-    alias ord_carriage_return = ord("\r")
-    alias ord_back_slash = ord("\\")
+    comptime ord_tab = ord("\t")
+    comptime ord_new_line = ord("\n")
+    comptime ord_carriage_return = ord("\r")
+    comptime ord_back_slash = ord("\\")
 
     if c == ord_back_slash:
         return r"\\"
@@ -2030,7 +2041,7 @@ fn ascii(value: StringSlice) -> String:
     Returns:
         A string containing the ASCII representation of the object.
     """
-    alias ord_squote = ord("'")
+    comptime ord_squote = ord("'")
     var result = String()
     var use_dquote = False
     var data = value.as_bytes()
@@ -2108,9 +2119,9 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
 
     start, is_negative = _trim_and_handle_sign(str_slice, str_len)
 
-    alias ord_0 = ord("0")
-    alias ord_letter_min = (ord("a"), ord("A"))
-    alias ord_underscore = ord("_")
+    comptime ord_0 = ord("0")
+    comptime ord_letter_min = (ord("a"), ord("A"))
+    comptime ord_underscore = ord("_")
 
     if base == 0:
         var real_base_new_start = _identify_base(str_slice, start)
@@ -2335,7 +2346,7 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
     # See https://commaok.xyz/post/lookup_tables/ and
     # https://lemire.me/blog/2021/06/03/computing-the-number-of-digits-of-an-integer-even-faster/
     # for a description.
-    alias lookup_table = VariadicList[Int](
+    comptime lookup_table = VariadicList[Int](
         4294967296,
         8589934582,
         8589934582,
@@ -2370,7 +2381,9 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
         42949672960,
     )
     var n = UInt32(n0)
-    var log2 = Int((DType.uint32.bit_width() - 1) ^ count_leading_zeros(n | 1))
+    var log2 = Int(
+        (bit_width_of[DType.uint32]() - 1) ^ count_leading_zeros(n | 1)
+    )
     return (n0 + lookup_table[Int(log2)]) >> 32
 
 
@@ -2408,7 +2421,7 @@ fn _calc_initial_buffer_size[dtype: DType](n0: Scalar[dtype]) -> Int:
         var sign = 0 if n0 > 0 else 1
 
         @parameter
-        if is_32bit() or dtype.bit_width() <= 32:
+        if is_32bit() or bit_width_of[dtype]() <= 32:
             return sign + _calc_initial_buffer_size_int32(Int(n)) + 1
         else:
             return (

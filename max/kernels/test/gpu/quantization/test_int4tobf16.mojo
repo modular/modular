@@ -21,7 +21,7 @@ from sys.info import CompilationTarget, is_amd_gpu, is_apple_gpu
 from buffer import NDBuffer
 from gpu.host import DeviceContext
 from gpu.intrinsics import lop
-from gpu.memory import AddressSpace
+from memory import LegacyUnsafePointer as UnsafePointer
 from memory.unsafe import bitcast
 from testing import assert_equal
 
@@ -72,7 +72,7 @@ fn call_int4tobf16[
 
 def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext):
     var out_host = NDBuffer[
-        DType.bfloat16, 1, MutableAnyOrigin, 8
+        DType.bfloat16, 1, MutAnyOrigin, 8
     ].stack_allocation()
     var out_device = ctx.enqueue_create_buffer[DType.bfloat16](8)
 

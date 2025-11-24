@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import align_of, simd_width_of
 
 from algorithm.functional import vectorize
@@ -39,10 +40,8 @@ fn _bmm0_bs[
     p_ptr: UnsafePointer[Scalar[p_type]],
     q_ptr: UnsafePointer[Scalar[q_type]],
     k_cache: cache_t,
-    q_input_row_offsets: LayoutTensor[DType.uint32, q_layout, MutableAnyOrigin],
-    kv_input_row_offsets: LayoutTensor[
-        DType.uint32, kv_layout, MutableAnyOrigin
-    ],
+    q_input_row_offsets: LayoutTensor[DType.uint32, q_layout, MutAnyOrigin],
+    kv_input_row_offsets: LayoutTensor[DType.uint32, kv_layout, MutAnyOrigin],
     scale: Float32,
     batch_size: Int,
     q_max_seq_len: Int,
@@ -75,13 +74,13 @@ fn _bmm0_bs[
     q_seq_start = Int(q_input_row_offsets[batch])
     q_seq_end = Int(q_input_row_offsets[batch + 1])
     cur_query_len = q_seq_end - q_seq_start
-    q_offset = Int((q_seq_start * num_heads + head) * depth)
+    q_offset = (q_seq_start * num_heads + Int(head)) * depth
 
     kv_seq_start = Int(kv_input_row_offsets[batch])
     kv_seq_end = Int(kv_input_row_offsets[batch + 1])
     cur_kv_len = kv_seq_end - kv_seq_start
     # num_heads * kv_max_seq_len * batch * depth + depth * head
-    num_keys = cur_kv_len + k_cache.cache_length(batch)
+    num_keys = cur_kv_len + k_cache.cache_length(Int(batch))
 
     debug_assert(cur_kv_len <= kv_max_seq_len, "Invalid cur_kv_len")
     debug_assert(num_keys <= padded_num_keys, "Invalid max_cache_size")
@@ -100,10 +99,11 @@ fn _bmm0_bs[
     # Set total KV length: KV written previous to and during this forward.
     if x < UInt(num_keys) and y < UInt(cur_query_len):
         var accum_vec = SIMD[p_type, simd_width_of[p_type]()](0)
-        var k_ptr = k_cache.block_paged_ptr[tile_size=1](batch, x, kv_head, 0)
+        var k_ptr = k_cache.block_paged_ptr[tile_size=1](
+            Int(batch), Int(x), kv_head, 0
+        )
 
-        @parameter
-        fn accum_fn[width: Int](offset: Int):
+        fn accum_fn[width: Int](offset: Int) unified {mut}:
             alias alignment = align_of[SIMD[p_type, width]]()
             var q_val = q.load[width=width, alignment=alignment](
                 y * UInt(num_heads) * UInt(depth) + UInt(offset)
@@ -117,7 +117,7 @@ fn _bmm0_bs[
             else:
                 accum_vec += rebind[type_of(accum_vec)](qk_val)
 
-        vectorize[accum_fn, simd_width_of[p_type]()](depth)
+        vectorize[simd_width_of[p_type]()](depth, accum_fn)
         accum += accum_vec.reduce_add()
 
     var score_row = y
@@ -144,10 +144,8 @@ fn _bmm1_bs[
     output_ptr: UnsafePointer[Scalar[output_type]],
     p_ptr: UnsafePointer[Scalar[p_type]],
     v_cache: cache_t,
-    q_input_row_offsets: LayoutTensor[DType.uint32, q_layout, MutableAnyOrigin],
-    kv_input_row_offsets: LayoutTensor[
-        DType.uint32, kv_layout, MutableAnyOrigin
-    ],
+    q_input_row_offsets: LayoutTensor[DType.uint32, q_layout, MutAnyOrigin],
+    kv_input_row_offsets: LayoutTensor[DType.uint32, kv_layout, MutAnyOrigin],
     q_max_seq_len: Int,
     kv_max_seq_len: Int,
     max_cache_size: Int,
@@ -176,7 +174,7 @@ fn _bmm1_bs[
     q_seq_end = Int(q_input_row_offsets[batch + 1])
     cur_query_len = q_seq_end - q_seq_start
 
-    output_offset = Int((q_seq_start * num_heads + head) * depth)
+    output_offset = Int((q_seq_start * num_heads + Int(head)) * depth)
 
     kv_seq_start = Int(kv_input_row_offsets[batch])
     kv_seq_end = Int(kv_input_row_offsets[batch + 1])
@@ -195,8 +193,10 @@ fn _bmm1_bs[
 
     var accum = Float32(0.0)
 
-    for i in range(cur_kv_len + v_cache.cache_length(batch)):
-        var v_ptr = v_cache.block_paged_ptr[tile_size=1](batch, i, kv_head, x)
+    for i in range(cur_kv_len + v_cache.cache_length(Int(batch))):
+        var v_ptr = v_cache.block_paged_ptr[tile_size=1](
+            Int(batch), i, kv_head, Int(x)
+        )
         accum += (
             p[y * UInt(padded_num_keys) + UInt(i)].cast[v_type]() * v_ptr[0]
         ).cast[DType.float32]()
@@ -261,8 +261,7 @@ fn mha_cross_gpu_naive[
         "Only support single and half precision.",
     ]()
 
-    alias config = MHAConfig(
-        dtype,
+    alias config = MHAConfig[dtype](
         UInt(Int(q.layout.shape[rank - 2])),
         UInt(Int(q.layout.shape[rank - 1])),
     )

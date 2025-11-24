@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from collections import OptionalReg
 from math import iota
 from random import rand, seed
@@ -30,21 +31,23 @@ from utils.index import IndexList, product
 
 
 struct TestTensor[rank: Int, dtype: DType](Movable):
-    var storage: List[Scalar[dtype]]
-    var shape: IndexList[rank]
+    var storage: List[Scalar[Self.dtype]]
+    var shape: IndexList[Self.rank]
 
-    fn __init__(out self, shape: IndexList[rank]):
-        self.storage = List[Scalar[dtype]](
-            length=UInt(shape.flattened_length()), fill=0
+    fn __init__(out self, shape: IndexList[Self.rank]):
+        self.storage = List[Scalar[Self.dtype]](
+            length=shape.flattened_length(), fill=0
         )
         self.shape = shape
 
     fn to_layout_tensor(
         ref self,
-    ) -> LayoutTensor[dtype, Layout.row_major[rank](), origin_of(self.storage)]:
+    ) -> LayoutTensor[
+        Self.dtype, Layout.row_major[Self.rank](), origin_of(self.storage)
+    ]:
         return {
-            Span[Scalar[dtype]](self.storage),
-            RuntimeLayout[Layout.row_major[rank]()].row_major(self.shape),
+            Span[Scalar[Self.dtype]](self.storage),
+            RuntimeLayout[Layout.row_major[Self.rank]()].row_major(self.shape),
         }
 
 
@@ -112,7 +115,7 @@ fn test_case_sampling[
 
     alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var temperature_buf = OptionalReg(
-        LayoutTensor[DType.float32, layout_1d, MutableAnyOrigin](
+        LayoutTensor[DType.float32, layout_1d, MutAnyOrigin](
             temperature_ptr,
             RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
         )
@@ -122,7 +125,7 @@ fn test_case_sampling[
     for i in range(batch_size):
         seed_ptr[i] = 12
     var seed_buf = OptionalReg(
-        LayoutTensor[DType.uint64, layout_1d, MutableAnyOrigin](
+        LayoutTensor[DType.uint64, layout_1d, MutAnyOrigin](
             seed_ptr,
             RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
         )
@@ -368,7 +371,7 @@ def main():
         )
 
     # CHECK-LABEL: test_2d_sorted_sampling
-    # CHECK: 4,1,0,6,4,
+    # CHECK: 0,7,8,1,7,
     test_2d_sorted_sampling()
 
     fn test_3d_sorted_sampling() raises:
@@ -399,7 +402,7 @@ def main():
         )
 
     # CHECK-LABEL: test_1d_sorted_sampling_temp
-    # CHECK: 3,
+    # CHECK: 4,
     test_1d_sorted_sampling_temp()
 
     fn test_2d_sorted_sampling_temp() raises:
@@ -412,7 +415,7 @@ def main():
         )
 
     # CHECK-LABEL: test_2d_sorted_sampling_temp
-    # CHECK: 1,4,8,5,6,0,3,3,9,9,3,2,6,3,8,9,3,5,3,8,5,9,7,7,9,0,4,8,0,5,2,9,8,6,4,4,0,6,5,2,6,9,5,3,8,6,1,1,3,6,
+    # CHECK: 2,3,9,2,6,7,4,8,0,5,5,7,5,4,3,3,2,4,3,8,1,2,2,3,5,5,5,2,6,3,9,1,2,0,8,7,1,6,2,2,8,3,2,1,4,8,0,9,2,8,
     test_2d_sorted_sampling_temp()
 
     fn test_2d_sorted_sampling_temp_zero() raises:
@@ -425,7 +428,7 @@ def main():
         )
 
     # CHECK-LABEL: test_2d_sorted_sampling_temp_zero
-    # CHECK: 7,7,2,9,8,4,3,2,4,0,8,0,5,5,4,6,0,3,0,6,2,5,8,3,4,0,7,4,1,3,1,6,7,2,8,8,3,4,1,0,9,8,2,6,2,3,2,8,2,3,
+    # CHECK: 2,6,3,2,0,8,0,1,7,8,1,6,2,1,6,3,6,9,6,9,1,3,4,6,0,1,2,6,1,5,5,7,1,7,0,8,6,0,3,5,6,9,0,7,0,8,1,2,4,8,
     test_2d_sorted_sampling_temp_zero()
 
     fn test_deterministic_sampling() raises:
@@ -437,5 +440,5 @@ def main():
         )
 
     # CHECK-LABEL: test_deterministic_sampling
-    # CHECK: 3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,
+    # CHECK: 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
     test_deterministic_sampling()

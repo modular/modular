@@ -1,4 +1,4 @@
-[project]
+[workspace]
 authors = ["Modular <hello@modular.com>"]
 channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
 description = "Introduction to Mojo Tutorial: Conway's Game of Life"

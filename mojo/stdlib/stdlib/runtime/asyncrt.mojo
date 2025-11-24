@@ -19,6 +19,10 @@ from sys import external_call
 from builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
 from gpu.host import DeviceContext
 
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from utils import StaticTuple
 
 # ===-----------------------------------------------------------------------===#
@@ -53,7 +57,7 @@ struct _AsyncContext:
     to available.
     """
 
-    alias callback_fn_type = fn (_Chain) -> None
+    comptime callback_fn_type = fn (_Chain) -> None
 
     var callback: Self.callback_fn_type
     var chain: _Chain
@@ -190,13 +194,13 @@ struct Task[type: AnyType, origins: OriginSet]:
         origins: The set of origins for the coroutine wrapped by this task.
     """
 
-    var _handle: Coroutine[type, origins]
+    var _handle: Coroutine[Self.type, Self.origins]
     """The underlying coroutine that executes the task."""
 
-    var _result: type
+    var _result: Self.type
     """Storage for the result value produced by the task."""
 
-    fn __init__(out self, var handle: Coroutine[type, origins]):
+    fn __init__(out self, var handle: Coroutine[Self.type, Self.origins]):
         """Initialize a task with a coroutine.
 
         Takes ownership of the provided coroutine and sets up the task to receive
@@ -211,7 +215,7 @@ struct Task[type: AnyType, origins: OriginSet]:
         )
         self._handle._set_result_slot(UnsafePointer(to=self._result))
 
-    fn get(self) -> ref [self._result] type:
+    fn get(self) -> ref [self._result] Self.type:
         """Get the task's result value. Calling this on an incomplete task is
         undefined behavior.
 
@@ -229,7 +233,7 @@ struct Task[type: AnyType, origins: OriginSet]:
         self._handle^.force_destroy()
 
     @always_inline
-    fn __await__(self) -> ref [self.get()] type:
+    fn __await__(self) -> ref [self.get()] Self.type:
         """Suspend the current async function until the task completes and its
         result becomes available. This function must be force inlined into the
         calling async function.
@@ -252,7 +256,7 @@ struct Task[type: AnyType, origins: OriginSet]:
         _suspend_async[await_body]()
         return self.get()
 
-    fn wait(self) -> ref [self.get()] type:
+    fn wait(self) -> ref [self.get()] Self.type:
         """Block the current thread until the future value becomes available.
 
         This method is used in synchronous code to wait for an asynchronous task
@@ -283,7 +287,7 @@ struct TaskGroupContext(ImplicitlyCopyable, Movable):
     when they complete.
     """
 
-    alias tg_callback_fn_type = fn (mut TaskGroup) -> None
+    comptime tg_callback_fn_type = fn (mut TaskGroup) -> None
     """Type definition for callback functions that operate on TaskGroups."""
 
     var callback: Self.tg_callback_fn_type
@@ -495,11 +499,11 @@ struct DeviceContextPtrList[size: Int](Sized):
         size: The fixed number of `DeviceContextPtr` objects in the collection.
     """
 
-    var ptrs: StaticTuple[DeviceContextPtr, size]
+    var ptrs: StaticTuple[DeviceContextPtr, Self.size]
     """The underlying storage for the device context pointers."""
 
     @always_inline
-    fn __init__(out self, ptrs: StaticTuple[DeviceContextPtr, size]):
+    fn __init__(out self, ptrs: StaticTuple[DeviceContextPtr, Self.size]):
         """Initialize with a StaticTuple of `DeviceContextPtr` objects.
 
         Args:
@@ -538,4 +542,4 @@ struct DeviceContextPtrList[size: Int](Sized):
         Returns:
             The size of the collection as specified by the size parameter.
         """
-        return size
+        return Self.size

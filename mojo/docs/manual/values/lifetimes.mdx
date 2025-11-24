@@ -19,11 +19,12 @@ Specifically, an origin answers two questions:
 For example, consider the following code:
 
 ```mojo
-fn print_str(s: String):
+def print_str(s: String):
     print(s)
 
-name = "Joan"
-print_str(name)
+def main():
+    name: String = "Joan"
+    print_str(name)
 ```
 
 ```output
@@ -35,6 +36,13 @@ and logical storage space for a `String` value. When you pass `name` into the
 `print_str()` function, the function gets an immutable reference to the value.
 So both `name` and `s` refer to the same logical storage space, and have
 associated origin values that lets the Mojo compiler reason about them.
+
+Origin tracking and lifetime checking is done at compile time, so origins don't
+track the actual storage space allocated for the `name` variable, for example.
+Instead, origins track variables symbolically, so the compiler tracks that
+`print_str()` is called with a value owned by `name` in the caller's scope. By
+tracking how owned data flows through the program, the compiler can identify
+the lifetimes of values.
 
 Most of the time, origins are handled automatically by the compiler.
 However, in some cases you'll need to interact with origins directly:
@@ -64,12 +72,12 @@ values, so values aren't destroyed prematurely.
 ### Origin types
 
 Mojo supplies a struct and a set of aliases that you can use to specify
-origin types. As the names suggest, the `ImmutableOrigin` and
-`MutableOrigin` aliases represent immutable and mutable origins,
+origin types. As the names suggest, the `ImmutOrigin` and
+`MutOrigin` aliases represent immutable and mutable origins,
 respectively:
 
 ```mojo
-struct ImmutableRef[origin: ImmutableOrigin]:
+struct ImmutRef[origin: ImmutOrigin]:
     pass
 ```
 
@@ -121,7 +129,10 @@ few ways to specify origin values:
   associated with the value (or values) passed in.
 * Inferred origin. You can use inferred parameters to capture the origin of a
   value passed in to a function.
-* Wildcard origins. The `ImmutableAnyOrigin` and `MutableAnyOrigin` aliases are
+* External origins. The external origins, `MutOrigin.external` and
+  `ImmutOrigin.external` represent values that are not tracked by the lifetime
+  checker, such as dynamically-allocated memory.
+* Wildcard origins. The `ImmutAnyOrigin` and `MutAnyOrigin` aliases are
   special cases indicating a reference that might access any live value.
 
 #### Static origins
@@ -187,6 +198,16 @@ of two or more origins:
 
 `origin_of(a, b)`
 
+#### Origin unions
+
+The union of two or more origins creates a new origin that references all of
+the original origins for the purposes of lifetime extension (so a union of the
+origins of `a` and `b` extends both lifetimes).
+
+An origin union is mutable if and only if all of its constituent origins are
+mutable. For an example, see
+[Return values with union origins](#return-values-with-union-origins).
+
 #### Inferred origins
 
 Since origins are parameters, the compiler can *infer* an origin value from an
@@ -198,15 +219,27 @@ it.
 See the section on [`ref` arguments](#ref-arguments) for an example using an
 inferred origin.
 
-#### Origin unions
+#### External origins
 
-The union of two or more origins creates a new origin that references both of
-the original origins for the purposes of lifetime extension (so a union of the
-origins of `a` and `b` extends both lifetimes).
+The external origins, `MutOrigin.external` and `ImmutOrigin.external` represent
+values that do not alias any existing value. That is, they point to memory that
+is not owned by any other variable, and are therefore not tracked by the
+lifetime checker. For example, the
+[`alloc()`](/mojo/stdlib/memory/unsafe_pointer/alloc/) function returns an
+`UnsafePointer` to a new dynamically-allocated block of memory, with the origin
+`MutOrigin.external`. The origin indicates that the memory is not managed by the
+Mojo ownership system. When you use an unsafe API like this, you're responsible
+for managing the lifetime yourself: for example, a struct that allocates memory
+should generally free that memory in its destructor.
 
-An origin union is mutable if and only if all of its constituent origins are
-mutable. For an example, see
-[Return values with union origins](#return-values-with-union-origins).
+#### Wildcard origins
+
+The wildcard origins, `ImmutAnyOrigin` and `MutAnyOrigin`, are special cases
+indicating a reference that might access any live value. These were previously
+widely used for unsafe pointers. Using a pointer with a wildcard origin into a
+scope effectively disables Mojo's ASAP destruction for any values in that scope,
+as long as the pointer is live. Accordingly, the use of wildcard origins is
+discouraged, and should be used as a last resort.
 
 ## Working with references
 
@@ -272,7 +305,7 @@ specifier can be either:
   ```
 
 You can also name the origin explicitly. This is useful if you want to
-restrict the argument to either a `ImmutableOrigin` or `MutableOrigin`, or if
+restrict the argument to either a `ImmutOrigin` or `MutOrigin`, or if
 you want to bind a function's return value to the origin of an argument.
 
 For example, the `Span` type is a non-owning view of contiguous data (like a
@@ -295,7 +328,7 @@ def to_byte_span[
     return Span(list)
 
 def main():
-    list = List[Byte](77, 111, 106, 111)
+    list: List[Byte] = [77, 111, 106, 111]
     span = to_byte_span(list)
 ```
 
@@ -314,7 +347,7 @@ or immutable reference to a value. The syntax for a `ref` return value is:
 <code><strong>-> ref [</strong><var>origin_specifier(s)</var><strong>]</strong>
  <var>arg_type</var></code>
 
-Note that you **must** specify an origin specifier for a `ref` return value. The
+Note that you **must** provide an origin specifier for a `ref` return value. The
 values allowed for origin specifiers are the same as the ones listed for
 [`ref` arguments](#ref-arguments).
 

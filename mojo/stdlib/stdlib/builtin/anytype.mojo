@@ -109,7 +109,7 @@ trait AnyType:
         """
         ...
 
-    alias __del__is_trivial: Bool
+    comptime __del__is_trivial: Bool
     """A flag (often compiler generated) to indicate whether the implementation of `__del__` is trivial.
 
     The implementation of `__del__` is considered to be trivial if:
@@ -122,12 +122,12 @@ trait AnyType:
 
 # A temporary alias to help with the linear types transition, see
 # https://www.notion.so/modularai/Linear-Types-14a1044d37bb809ab074c990fe1a84e3.
-alias ImplicitlyDestructible = AnyType
+comptime ImplicitlyDestructible = AnyType
 
 
-alias __SomeImpl[Trait: AnyTrivialRegType, T: Trait] = T
+comptime __SomeImpl[Trait: AnyTrivialRegType, T: Trait] = T
 
-alias Some[Trait: AnyTrivialRegType] = __SomeImpl[Trait]
+comptime Some[Trait: AnyTrivialRegType] = __SomeImpl[Trait]
 """An alias allowing users to tersely express that a function argument is an
 instance of a type that implements a trait or trait composition.
 

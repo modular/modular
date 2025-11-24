@@ -13,6 +13,7 @@
 
 from collections import OptionalReg
 from math import align_up, ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer, bitcast
 from sys import align_of, simd_width_of, size_of
 
 from bit import next_power_of_two, prev_power_of_two
@@ -26,10 +27,10 @@ from gpu.cluster import (
     elect_one_sync_with_mask,
 )
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
-from gpu.id import block_id_in_cluster, block_idx, lane_id, thread_idx, grid_dim
-from gpu.id import warp_id as get_warp_id
+from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx, grid_dim
+from gpu import warp_id as get_warp_id
 from gpu.memory import (
     AddressSpace,
     external_memory,
@@ -142,20 +143,20 @@ fn load_AB[
     mma_shape: IndexList[3],
     cta_group: Int = 1,
 ](
-    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
     a_smem: LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
     b_smem: LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
@@ -258,14 +259,14 @@ fn consumer_main_loop[
     a_smem_iter: LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
     b_smem_iter: LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
@@ -400,12 +401,12 @@ fn multi_stage_store_C[
     c_iter: LayoutTensorIter[
         c_type,
         c_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
-    c: LayoutTensor[c_type, c_tensor_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
     accum_pipeline_consumer_state: PipelineState[
         Int(num_accum_pipeline_stages)
     ],
@@ -699,7 +700,7 @@ fn zero_output[
     *,
     output_tile_shape: IndexList[2],
 ](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     coord: Tuple[UInt32, UInt32],
     group_end_idx: UInt32,
 ):
@@ -775,11 +776,11 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 ](
     num_active_experts: Int,
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
-    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
-    b_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    b_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
-    c: LayoutTensor[c_type, c_tensor_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
     mnk: StaticTuple[UInt32, 3],
 ):
     constrained[c_type is not DType.float32, "c_type cannot be float32"]()
@@ -854,7 +855,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     var a_smem = LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
@@ -865,7 +866,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     var b_smem = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
@@ -876,7 +877,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     var c_smem_iter = LayoutTensorIter[
         c_type,
         Layout.row_major(output_tile_shape[0], output_tile_shape[1]),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](c_smem_base, c_smem_size)
@@ -1190,12 +1191,12 @@ fn grouped_matmul_sm100_persistent[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
+    a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
     max_num_tokens_per_expert: Int,
-    b: NDBuffer[b_type, 3, MutableAnyOrigin, b_shape],
-    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
+    b: NDBuffer[b_type, 3, MutAnyOrigin, b_shape],
+    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -1207,7 +1208,7 @@ fn grouped_matmul_sm100_persistent[
     a_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * M, K),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.GENERIC,
     ](b.data)
 
@@ -1264,9 +1265,9 @@ fn _grouped_matmul_sm100_persistent[
 ](
     c_device: LayoutTensor[c_type, c_layout, *_, **_],
     a_device: LayoutTensor[a_type, a_layout, *_, **_],
-    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
     b_device: LayoutTensor[b_type, b_layout, *_, **_],
-    b_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    b_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -1295,6 +1296,8 @@ fn _grouped_matmul_sm100_persistent[
     var M_maybe_swapped = a_device.dim[0]()
     var N_maybe_swapped = b_device.dim[0]()
     var K = a_device.dim[1]()
+    if M == 0 or N == 0 or K == 0:
+        return
 
     a_tma_op = create_tma_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle

@@ -48,8 +48,8 @@ fn is_ignored_file(filename: StringSlice) -> Bool:
 
     # Generated files
     if (
-        filename == "max/serve/schemas/kserve.py"
-        or filename == "max/serve/schemas/openai.py"
+        filename == "max/python/max/serve/schemas/kserve.py"
+        or filename == "max/python/max/serve/schemas/openai.py"
     ):
         return True
 
@@ -80,7 +80,9 @@ fn check_path(path: Path, mut files_without_license: List[Path]) raises:
 
     # Ignore #! in scripts
     if file_text.startswith("#!"):
-        has_license = "\n".join(file_text.splitlines()[1:]).startswith(LICENSE)
+        has_license = "\n".join(List(file_text.splitlines()[1:])).startswith(
+            LICENSE
+        )
     else:
         has_license = file_text.startswith(LICENSE)
 

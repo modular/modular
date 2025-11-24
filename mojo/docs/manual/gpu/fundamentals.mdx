@@ -12,7 +12,7 @@ different vendors.
 Key topics covered in this guide:
 
 - Understanding the CPU-GPU programming model.
-- Working with Mojo's GPU support through the Standard Library.
+- Working with Mojo's GPU support through the standard library.
 - Managing GPU devices and contexts using `DeviceContext`.
 - Writing and executing kernel functions for parallel computation.
 - Memory management and data transfer between CPU and GPU.
@@ -23,16 +23,16 @@ GPU](/max/faq#gpu-requirements) and the necessary development environment
 installed. And if you're new to GPU programming, we suggest you read the
 [Intro to GPU architectures](/mojo/manual/gpu/architecture).
 
-## Overview of GPU Programming in Mojo
+## Overview of GPU programming in Mojo
 
-The Mojo language, including its Standard Library and open source MAX kernels
+The Mojo language, including its standard library and open source MAX kernels
 library, allow you to develop GPU-enabled applications. See the [What are the
 GPU requirements?](/max/faq#gpu-requirements) section of the documentation for a
 list of currently supported GPUs and additional software requirements.
 
-### GPU support in the Mojo Standard Library
+### GPU support in the Mojo standard library
 
-The [`gpu`](/mojo/stdlib/gpu/) package of the Mojo Standard Library includes
+The [`gpu`](/mojo/stdlib/gpu/) package of the Mojo standard library includes
 several subpackages for interacting with GPUs, with the
 [`gpu.host`](/mojo/stdlib/gpu/host/) package providing most of the commonly used
 APIs. However, the [`sys`](/mojo/stdlib/sys/info/) package contains a few basic
@@ -111,15 +111,18 @@ later sections of this document.
 
 ```mojo title="scalar_add_checked.mojo"
 from math import iota
-from sys import exit
-from sys.info import has_accelerator
+from sys import exit, has_accelerator
 
 from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, thread_idx
+from gpu import block_dim, block_idx, thread_idx
 
 alias num_elements = 20
 
-fn scalar_add(vector: UnsafePointer[Float32], size: Int, scalar: Float32):
+fn scalar_add(
+    vector: UnsafePointer[Float32, MutAnyOrigin],
+    size: Int,
+    scalar: Float32,
+):
     """
     Kernel function to add a scalar to all elements of a vector.
 
@@ -313,11 +316,11 @@ threads executing the kernel using the following structures:
 
 | Struct alias | Description |
 | --- | --- |
-| [`grid_dim`](/mojo/stdlib/gpu/id/#grid_dim)  | Dimensions of the grid as `x`, `y`, and `z` values (for example, `grid_dim.y`). |
-| [`block_dim`](/mojo/stdlib/gpu/id/#block_dim)  | Dimensions of the thread block as `x`, `y`, and `z` values. |
-| [`block_idx`](/mojo/stdlib/gpu/id/#block_idx)  | Index of the block within the grid as `x`, `y`, and `z` values. |
-| [`thread_idx`](/mojo/stdlib/gpu/id/#thread_idx)  | Index of the thread within the block as `x`, `y`, and `z` values. |
-| [`global_idx`](/mojo/stdlib/gpu/id/#global_idx) | The global offset of the thread as `x`, `y`, and `z` values. That is, `global_idx.x = block_dim.x * block_idx.x + thread_idx.x`, `global_idx.y = block_dim.y * block_idx.y + thread_idx.y`, and `global_idx.z = block_dim.z * block_idx.z + thread_idx.z`. |
+| [`grid_dim`](/mojo/stdlib/gpu/primitives/id/#grid_dim)  | Dimensions of the grid as `x`, `y`, and `z` values (for example, `grid_dim.y`). |
+| [`block_dim`](/mojo/stdlib/gpu/primitives/id/#block_dim)  | Dimensions of the thread block as `x`, `y`, and `z` values. |
+| [`block_idx`](/mojo/stdlib/gpu/primitives/id/#block_idx)  | Index of the block within the grid as `x`, `y`, and `z` values. |
+| [`thread_idx`](/mojo/stdlib/gpu/primitives/id/#thread_idx)  | Index of the thread within the block as `x`, `y`, and `z` values. |
+| [`global_idx`](/mojo/stdlib/gpu/primitives/id/#global_idx) | The global offset of the thread as `x`, `y`, and `z` values. That is, `global_idx.x = block_dim.x * block_idx.x + thread_idx.x`, `global_idx.y = block_dim.y * block_idx.y + thread_idx.y`, and `global_idx.z = block_dim.z * block_idx.z + thread_idx.z`. |
 
 
 :::note
@@ -334,7 +337,7 @@ thread block index, thread index, and global index for each thread executed.
 from sys import exit, has_accelerator, has_apple_gpu_accelerator
 
 from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, global_idx, grid_dim, thread_idx
+from gpu import block_dim, block_idx, global_idx, grid_dim, thread_idx
 
 fn print_threads():
     """Print thread block and thread indices."""
@@ -361,9 +364,13 @@ fn print_threads():
 
 def main():
     @parameter
-    if not has_accelerator() or has_apple_gpu_accelerator():
-        print("No supported GPU detected")
-        exit(0)
+    if not has_accelerator():
+        print("No compatible GPU found")
+    elif has_apple_gpu_accelerator():
+        print(
+            "Printing from a kernel is not currently supported on Apple silicon"
+            " GPUs"
+        )
     else:
         # Initialize GPU context for device 0 (default GPU device).
         ctx = DeviceContext()
@@ -452,9 +459,9 @@ could perform a boundary check like this to ensure that it doesn't attempt to
 process out-of-bounds elements:
 
 ```mojo
-from gpu.id import global_idx
+from gpu import global_idx
 
-fn process_vector(vector: UnsafePointer[Float32], size: Int):
+fn process_vector(vector: UnsafePointer[Float32, MutAnyOrigin], size: Int):
     if global_idx.x < size:
         # Process vector[global_idx.x] in some way
 ```

@@ -14,6 +14,7 @@
 from math import *
 
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import TestSuite
 
 
@@ -95,11 +96,11 @@ def test_math():
                 SIMD[dtype, width]
             ) -> SIMD[dtype, width]
         ](ctx: DeviceContext) raises:
-            alias ls = stdlib.builtin.variadic_size(kernel_fns)
+            comptime ls = stdlib.builtin.variadic_size(kernel_fns)
 
             @parameter
             for idx in range(ls):
-                alias kernel_fn = kernel_fns[idx]
+                comptime kernel_fn = kernel_fns[idx]
                 run_func[DType.float32, kernel_fn[]](ctx)
                 run_func[DType.float16, kernel_fn[]](ctx)
 

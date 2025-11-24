@@ -20,6 +20,7 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from builtin._closure import __ownership_keepalive
 from gpu.host import DeviceContext
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from memory import LegacyUnsafePointer as UnsafePointer
 from nn.concat import _concat_gpu_elementwise
 
 from utils import IndexList, StaticTuple
@@ -38,10 +39,10 @@ fn bench_concat[
         raise Error("num_inputs does not match number of shapes provided")
     alias layout = Layout.row_major[rank]()
     var inputs = StaticTuple[
-        LayoutTensor[type, layout, MutableAnyOrigin], num_inputs
+        LayoutTensor[type, layout, MutAnyOrigin], num_inputs
     ]()
     var inputs_host = StaticTuple[
-        LayoutTensor[type, layout, MutableAnyOrigin], num_inputs
+        LayoutTensor[type, layout, MutAnyOrigin], num_inputs
     ]()
     var out_axis = 0
     var name = String()
@@ -53,7 +54,7 @@ fn bench_concat[
     inputs[0] = LayoutTensor[type, layout](
         input0_ptr, RuntimeLayout[layout].row_major(shape)
     ).as_any_origin()
-    inputs_host[0] = LayoutTensor[type, layout, MutableAnyOrigin](
+    inputs_host[0] = LayoutTensor[type, layout, MutAnyOrigin](
         UnsafePointer[Scalar[type]].alloc(size),
         RuntimeLayout[layout].row_major(shape),
     )
@@ -65,10 +66,10 @@ fn bench_concat[
     shape = shapes[1]
     size = shape.flattened_length()
     var input1_ptr = ctx.enqueue_create_buffer[type](size)
-    inputs[1] = LayoutTensor[type, layout, MutableAnyOrigin](
+    inputs[1] = LayoutTensor[type, layout, MutAnyOrigin](
         input1_ptr, RuntimeLayout[layout].row_major(shape)
     )
-    inputs_host[1] = LayoutTensor[type, layout, MutableAnyOrigin](
+    inputs_host[1] = LayoutTensor[type, layout, MutAnyOrigin](
         UnsafePointer[Scalar[type]].alloc(size),
         RuntimeLayout[layout].row_major(shape),
     )
@@ -110,10 +111,12 @@ fn bench_concat[
         BenchId("concat", name),
         out_shape,
         # TODO: Pick relevant benchmetric.
-        ThroughputMeasure(
-            BenchMetric.elements,
-            out_shape.flattened_length() * size_of[type]() * 2,
-        ),
+        [
+            ThroughputMeasure(
+                BenchMetric.elements,
+                out_shape.flattened_length() * size_of[type]() * 2,
+            )
+        ],
     )
 
     ctx.enqueue_copy(output_host.ptr, output_ptr)

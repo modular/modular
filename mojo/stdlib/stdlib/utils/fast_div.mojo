@@ -20,6 +20,7 @@ multiplications, significantly optimizing division performance.
 from bit import log2_ceil
 from builtin.dtype import _uint_type_of_width
 from gpu.intrinsics import mulhi
+from sys.info import bit_width_of
 
 
 @register_passable("trivial")
@@ -35,7 +36,7 @@ struct FastDiv[dtype: DType](Stringable, Writable):
         dtype: The data type for the division operation.
     """
 
-    alias uint_type = _uint_type_of_width[dtype.bit_width()]()
+    comptime uint_type = _uint_type_of_width[bit_width_of[Self.dtype]()]()
 
     var _div: Scalar[Self.uint_type]
     var _mprime: Scalar[Self.uint_type]
@@ -56,7 +57,7 @@ struct FastDiv[dtype: DType](Stringable, Writable):
                 Defaults to 1.
         """
         constrained[
-            dtype.bit_width() <= 32,
+            bit_width_of[Self.dtype]() <= 32,
             "larger types are not currently supported",
         ]()
         self._div = divisor
@@ -68,7 +69,7 @@ struct FastDiv[dtype: DType](Stringable, Writable):
         if not self._is_pow2:
             self._mprime = (
                 (
-                    (UInt64(1) << dtype.bit_width())
+                    (UInt64(1) << bit_width_of[Self.dtype]())
                     * ((1 << self._log2_shift.cast[DType.uint64]()) - divisor)
                     / divisor
                 )

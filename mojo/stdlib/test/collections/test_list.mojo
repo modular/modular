@@ -28,6 +28,8 @@ from testing import (
     assert_true,
     TestSuite,
 )
+from testing.prop import PropTest
+from testing.prop.strategy import List, SIMD
 
 
 def test_mojo_issue_698():
@@ -72,7 +74,7 @@ def test_list():
 
 
 struct WeirdList[T: AnyType]:
-    fn __init__(out self, var *values: T, __list_literal__: ()):
+    fn __init__(out self, var *values: Self.T, __list_literal__: ()):
         pass
 
 
@@ -153,9 +155,9 @@ def test_list_clear():
 
 def test_list_to_bool_conversion():
     assert_false(List[String]())
-    assert_true(List[String]("a"))
-    assert_true(List[String]("", "a"))
-    assert_true(List[String](""))
+    assert_true(List[String](["a"]))
+    assert_true(List[String](["", "a"]))
+    assert_true(List[String]([""]))
 
 
 def test_list_pop():
@@ -202,7 +204,7 @@ def test_list_variadic_constructor():
     # Test variadic construct copying behavior
     #
 
-    var l2 = List[CopyCounter](CopyCounter(), CopyCounter(), CopyCounter())
+    var l2 = [CopyCounter(), CopyCounter(), CopyCounter()]
 
     assert_equal(len(l2), 3)
     assert_equal(l2[0].copy_count, 0)
@@ -211,13 +213,29 @@ def test_list_variadic_constructor():
 
 
 def test_list_resize():
-    var l = List[Int](1)
+    var l: List[Int] = [1]
     assert_equal(1, len(l))
     l.resize(2, 0)
     assert_equal(2, len(l))
     assert_equal(l[1], 0)
     l.shrink(0)
     assert_equal(len(l), 0)
+
+
+# TODO: Rework to use property testing framework.
+def test_list_reverse_property_test():
+    @parameter
+    def properties(forward: List[Scalar[DType.int]]):
+        var rev = forward.copy()
+        rev.reverse()
+
+        assert_equal(len(forward), len(rev))
+        for a, b in zip(forward, reversed(rev)):
+            assert_equal(a, b)
+
+    PropTest().test[properties](
+        List[Scalar[DType.int]].strategy(Scalar[DType.int].strategy())
+    )
 
 
 def test_list_reverse():
@@ -479,30 +497,30 @@ def test_list_append():
     items.append(1)
     items.append(2)
     items.append(3)
-    assert_equal(items, List[UInt32](1, 2, 3))
+    assert_equal(items, [UInt32(1), 2, 3])
 
 
 def test_list_extend():
-    var items = List[UInt32](1, 2, 3)
+    var items = [UInt32(1), 2, 3]
     var copy = items.copy()
     items.extend(copy^)
-    assert_equal(items, List[UInt32](1, 2, 3, 1, 2, 3))
+    assert_equal(items, [UInt32(1), 2, 3, 1, 2, 3])
 
     items = [1, 2, 3]
     copy = [1, 2, 3]
 
     # Extend with span
     items.extend(Span(copy))
-    assert_equal(items, List[UInt32](1, 2, 3, 1, 2, 3))
+    assert_equal(items, [UInt32(1), 2, 3, 1, 2, 3])
 
     # Extend with whole SIMD
-    items = List[UInt32](1, 2, 3)
+    items: List[UInt32] = [1, 2, 3]
     items.extend(SIMD[DType.uint32, 4](1, 2, 3, 4))
-    assert_equal(items, List[UInt32](1, 2, 3, 1, 2, 3, 4))
+    assert_equal(items, [UInt32(1), 2, 3, 1, 2, 3, 4])
     # Extend with part of SIMD
-    items = List[UInt32](1, 2, 3)
+    items: List[UInt32] = [1, 2, 3]
     items.extend(SIMD[DType.uint32, 4](1, 2, 3, 4), count=3)
-    assert_equal(items, List[UInt32](1, 2, 3, 1, 2, 3))
+    assert_equal(items, [UInt32(1), 2, 3, 1, 2, 3])
 
 
 def test_list_extend_non_trivial():
@@ -540,7 +558,7 @@ def test_list_extend_non_trivial():
 
 def test_list_extend_trivial_copy_nontrivial_move():
     var v1 = List[TriviallyCopyableMoveCounter](capacity=1)
-    var v2 = List(TriviallyCopyableMoveCounter(0))
+    var v2 = [TriviallyCopyableMoveCounter(0)]
 
     assert_equal(v2[0].move_count, 1)
 
@@ -677,12 +695,12 @@ def test_list_iter_bounds():
 def test_list_span():
     var vs = [1, 2, 3]
 
-    var es = vs[1:]
+    var es = List(vs[1:])
     assert_equal(es[0], 2)
     assert_equal(es[1], 3)
     assert_equal(len(es), 2)
 
-    es = vs[:-1]
+    es = List(vs[:-1])
     assert_equal(es[0], 1)
     assert_equal(es[1], 2)
     assert_equal(len(es), 2)
@@ -697,7 +715,7 @@ def test_list_span():
     assert_equal(es[2], 1)
     assert_equal(len(es), 3)
 
-    es = vs[:]
+    es = List(vs[:])
     assert_equal(es[0], 1)
     assert_equal(es[1], 2)
     assert_equal(es[2], 3)
@@ -714,7 +732,7 @@ def test_list_span():
 
     assert_equal(0, len(vs[:-1:-2]))
     assert_equal(0, len(vs[-50::-1]))
-    es = vs[-50::]
+    es = List(vs[-50::])
     assert_equal(3, len(es))
     assert_equal(es[0], 1)
     assert_equal(es[1], 2)
@@ -724,7 +742,7 @@ def test_list_span():
     assert_equal(es[0], 3)
     assert_equal(es[1], 2)
     assert_equal(es[2], 1)
-    es = vs[:50:]
+    es = List(vs[:50:])
     assert_equal(3, len(es))
     assert_equal(es[0], 1)
     assert_equal(es[1], 2)
@@ -774,7 +792,7 @@ def test_list_realloc_trivial_copy_nontrivial_move():
 
 
 def test_list_boolable():
-    assert_true(List[Int](1))
+    assert_true(List[Int]([1]))
     assert_false(List[Int]())
 
 
@@ -849,7 +867,7 @@ def test_list_mult():
 
     l *= 0
     assert_equal(len(l), 0)
-    assert_equal(len(List[Int](1, 2, 3) * 0), 0)
+    assert_equal(len(List[Int]([1, 2, 3]) * 0), 0)
 
 
 def test_list_contains():
@@ -985,13 +1003,13 @@ def test_uninit_ctor():
 
 
 def _test_copyinit_trivial_types[dt: DType]():
-    alias sizes = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
+    comptime sizes = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
     assert_equal(len(sizes), 10)
     var test_current_size = 1
 
     @parameter
     for sizes_index in range(len(sizes)):
-        alias current_size = sizes[sizes_index]
+        comptime current_size = sizes[sizes_index]
         x = List[Scalar[dt]]()
         for i in range(current_size):
             x.append(i)
@@ -1007,7 +1025,7 @@ def _test_copyinit_trivial_types[dt: DType]():
 
 
 def test_copyinit_trivial_types_dtypes():
-    alias dtypes = (
+    comptime dtypes = (
         DType.int64,
         DType.int32,
         DType.float64,
@@ -1031,12 +1049,12 @@ def test_list_comprehension():
 
 
 def test_list_repr_wrap():
-    assert_equal(repr(List("Hello", "World")), "['Hello', 'World']")
+    assert_equal(repr(List[String](["Hello", "World"])), "['Hello', 'World']")
     assert_equal(
-        repr(List[UInt8](0, 1)),
+        repr(List[UInt8]([UInt8(0), 1])),
         "[SIMD[DType.uint8, 1](0), SIMD[DType.uint8, 1](1)]",
     )
-    var l = List(DType.int8, DType.int16)
+    var l = List[DType]([DType.int8, DType.int16])
     assert_equal(
         repr(l),
         "[DType.int8, DType.int16]",

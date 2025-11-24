@@ -23,11 +23,13 @@ fn test_svg_nvidia_shape() raises:
     alias layout = Layout.row_major(16, 16)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
     var tensor = LayoutTensor[DType.float32, layout](stack)
-    var tensor_dist = tensor.vectorize[1, 2]().distribute[
-        Layout.row_major(8, 4)
-    ](0)
+    alias tensor_dist_type = type_of(
+        tensor.vectorize[1, 2]()
+        .distribute[Layout.row_major(8, 4)](0)
+        .get_immutable()
+    )
 
-    var tensor_list = List[type_of(tensor_dist.get_immutable())]()
+    var tensor_list = List[tensor_dist_type]()
     for i in range(32):
         tensor_list.append(
             tensor.vectorize[1, 2]()
@@ -163,9 +165,7 @@ fn test_svg_wgmma_shape() raises:
 
     print_svg(
         tensor.get_immutable(),
-        List[type_of(tensor_dist.get_immutable())](
-            tensor_dist.get_immutable(), tensor_dist2.get_immutable()
-        ),
+        [tensor_dist.get_immutable(), tensor_dist2.get_immutable()],
         color_map,
         file_path=Path("./test_svg_wgmma_shape.svg"),
     )

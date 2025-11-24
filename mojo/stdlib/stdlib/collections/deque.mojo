@@ -42,22 +42,22 @@ struct Deque[ElementType: Copyable & Movable](
             Must implement the traits `Copyable` and `Movable`.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
-    ]: Iterator = _DequeIter[ElementType, iterable_origin]
+    ]: Iterator = _DequeIter[Self.ElementType, iterable_origin]
 
     # ===-------------------------------------------------------------------===#
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias default_capacity: Int = 64
+    comptime default_capacity: Int = 64
     """The default capacity of the deque: must be the power of 2."""
 
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _data: UnsafePointer[ElementType]
+    var _data: UnsafePointer[Self.ElementType, MutOrigin.external]
     """The underlying storage for the deque."""
 
     var _head: Int
@@ -89,7 +89,7 @@ struct Deque[ElementType: Copyable & Movable](
     fn __init__(
         out self,
         *,
-        var elements: Optional[List[ElementType]] = None,
+        var elements: Optional[List[Self.ElementType]] = None,
         capacity: Int = Self.default_capacity,
         min_capacity: Int = Self.default_capacity,
         maxlen: Int = -1,
@@ -124,7 +124,7 @@ struct Deque[ElementType: Copyable & Movable](
             deque_capacity = min(deque_capacity, max_deque_capacity)
 
         self._capacity = deque_capacity
-        self._data = UnsafePointer[ElementType].alloc(deque_capacity)
+        self._data = alloc[Self.ElementType](deque_capacity)
         self._head = 0
         self._tail = 0
         self._min_capacity = min_deque_capacity
@@ -134,7 +134,9 @@ struct Deque[ElementType: Copyable & Movable](
         if elements is not None:
             self.extend(elements.take())
 
-    fn __init__(out self, var *values: ElementType, __list_literal__: () = ()):
+    fn __init__(
+        out self, var *values: Self.ElementType, __list_literal__: () = ()
+    ):
         """Constructs a deque from the given values.
 
         Args:
@@ -143,7 +145,9 @@ struct Deque[ElementType: Copyable & Movable](
         """
         self = Self(elements=values^)
 
-    fn __init__(out self, *, var elements: VariadicListMem[ElementType, _]):
+    fn __init__(
+        out self, *, var elements: VariadicListMem[Self.ElementType, _]
+    ):
         """Constructs a deque from the given values.
 
         Args:
@@ -160,7 +164,7 @@ struct Deque[ElementType: Copyable & Movable](
 
         # Transfer all of the elements into the deque.
         @parameter
-        fn init_elt(idx: Int, var elt: ElementType):
+        fn init_elt(idx: Int, var elt: Self.ElementType):
             (self._data + idx).init_pointee_move(elt^)
 
         elements^.consume_elements[init_elt]()
@@ -258,13 +262,13 @@ struct Deque[ElementType: Copyable & Movable](
                 self.append(element.copy())
 
     fn __eq__[
-        T: EqualityComparable & Copyable & Movable, //
+        T: Equatable & Copyable & Movable, //
     ](self: Deque[T], other: Deque[T]) -> Bool:
         """Checks if two deques are equal.
 
         Parameters:
             T: The type of the elements in the deque.
-                Must implement the trait `EqualityComparable`.
+                Must implement the trait `Equatable`.
 
         Args:
             other: The deque to compare with.
@@ -283,13 +287,13 @@ struct Deque[ElementType: Copyable & Movable](
         return True
 
     fn __ne__[
-        T: EqualityComparable & Copyable & Movable, //
+        T: Equatable & Copyable & Movable, //
     ](self: Deque[T], other: Deque[T]) -> Bool:
         """Checks if two deques are not equal.
 
         Parameters:
             T: The type of the elements in the deque.
-                Must implement the trait `EqualityComparable`.
+                Must implement the trait `Equatable`.
 
         Args:
             other: The deque to compare with.
@@ -300,13 +304,13 @@ struct Deque[ElementType: Copyable & Movable](
         return not (self == other)
 
     fn __contains__[
-        T: EqualityComparable & Copyable & Movable, //
+        T: Equatable & Copyable & Movable, //
     ](self: Deque[T], value: T) -> Bool:
         """Verify if a given value is present in the deque.
 
         Parameters:
             T: The type of the elements in the deque.
-                Must implement the trait `EqualityComparable`.
+                Must implement the trait `Equatable`.
 
         Args:
             value: The value to find.
@@ -332,7 +336,7 @@ struct Deque[ElementType: Copyable & Movable](
 
     fn __reversed__(
         ref self,
-    ) -> _DequeIter[ElementType, origin_of(self), False]:
+    ) -> _DequeIter[Self.ElementType, origin_of(self), False]:
         """Iterate backwards over the deque, returning the references.
 
         Returns:
@@ -362,7 +366,7 @@ struct Deque[ElementType: Copyable & Movable](
         """
         return (self._tail - self._head) & (self._capacity - 1)
 
-    fn __getitem__(ref self, idx: Int) -> ref [self] ElementType:
+    fn __getitem__(ref self, idx: Int) -> ref [self] Self.ElementType:
         """Gets the deque element at the given index.
 
         Args:
@@ -466,7 +470,7 @@ struct Deque[ElementType: Copyable & Movable](
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn append(mut self, var value: ElementType):
+    fn append(mut self, var value: Self.ElementType):
         """Appends a value to the right side of the deque.
 
         Args:
@@ -483,7 +487,7 @@ struct Deque[ElementType: Copyable & Movable](
         if self._head == self._tail:
             self._realloc(self._capacity << 1)
 
-    fn appendleft(mut self, var value: ElementType):
+    fn appendleft(mut self, var value: Self.ElementType):
         """Appends a value to the left side of the deque.
 
         Args:
@@ -510,18 +514,18 @@ struct Deque[ElementType: Copyable & Movable](
             (self._data + offset).destroy_pointee()
         self._data.free()
         self._capacity = self._min_capacity
-        self._data = UnsafePointer[ElementType].alloc(self._capacity)
+        self._data = alloc[Self.ElementType](self._capacity)
         self._head = 0
         self._tail = 0
 
     fn count[
-        T: EqualityComparable & Copyable & Movable, //
+        T: Equatable & Copyable & Movable, //
     ](self: Deque[T], value: T) -> Int:
         """Counts the number of occurrences of a `value` in the deque.
 
         Parameters:
             T: The type of the elements in the deque.
-                Must implement the trait `EqualityComparable`.
+                Must implement the trait `Equatable`.
 
         Args:
             value: The value to count.
@@ -536,7 +540,7 @@ struct Deque[ElementType: Copyable & Movable](
                 count += 1
         return count
 
-    fn extend(mut self, var values: List[ElementType]):
+    fn extend(mut self, var values: List[Self.ElementType]):
         """Extends the right side of the deque by consuming elements of the list argument.
 
         Args:
@@ -571,7 +575,7 @@ struct Deque[ElementType: Copyable & Movable](
         # free the list backing buffer
         values_data.free()
 
-    fn extendleft(mut self, var values: List[ElementType]):
+    fn extendleft(mut self, var values: List[Self.ElementType]):
         """Extends the left side of the deque by consuming elements from the list argument.
 
         Acts as series of left appends resulting in reversed order of elements in the list argument.
@@ -608,7 +612,7 @@ struct Deque[ElementType: Copyable & Movable](
         values_data.free()
 
     fn index[
-        T: EqualityComparable & Copyable & Movable, //
+        T: Equatable & Copyable & Movable, //
     ](
         self: Deque[T],
         value: T,
@@ -620,7 +624,7 @@ struct Deque[ElementType: Copyable & Movable](
 
         Parameters:
             T: The type of the elements in the deque.
-                Must implement the `EqualityComparable` trait.
+                Must implement the `Equatable` trait.
 
         Args:
             value: The value to search for.
@@ -656,7 +660,7 @@ struct Deque[ElementType: Copyable & Movable](
                 return idx
         raise "ValueError: Given element is not in deque"
 
-    fn insert(mut self, idx: Int, var value: ElementType) raises:
+    fn insert(mut self, idx: Int, var value: Self.ElementType) raises:
         """Inserts the `value` into the deque at position `idx`.
 
         Args:
@@ -702,13 +706,13 @@ struct Deque[ElementType: Copyable & Movable](
             self._realloc(self._capacity << 1)
 
     fn remove[
-        T: EqualityComparable & Copyable & Movable, //
+        T: Equatable & Copyable & Movable, //
     ](mut self: Deque[T], value: T) raises:
         """Removes the first occurrence of the `value`.
 
         Parameters:
             T: The type of the elements in the deque.
-                Must implement the `EqualityComparable` trait.
+                Must implement the `Equatable` trait.
 
         Args:
             value: The value to remove.
@@ -750,7 +754,7 @@ struct Deque[ElementType: Copyable & Movable](
 
         raise "ValueError: Given element is not in deque"
 
-    fn peek(self) raises -> ElementType:
+    fn peek(self) raises -> Self.ElementType:
         """Inspect the last (rightmost) element of the deque without removing it.
 
         Returns:
@@ -764,7 +768,7 @@ struct Deque[ElementType: Copyable & Movable](
 
         return (self._data + self._physical_index(self._tail - 1))[].copy()
 
-    fn peekleft(self) raises -> ElementType:
+    fn peekleft(self) raises -> Self.ElementType:
         """Inspect the first (leftmost) element of the deque without removing it.
 
         Returns:
@@ -778,7 +782,7 @@ struct Deque[ElementType: Copyable & Movable](
 
         return (self._data + self._head)[].copy()
 
-    fn pop(mut self) raises -> ElementType:
+    fn pop(mut self) raises -> Self.ElementType:
         """Removes and returns the element from the right side of the deque.
 
         Returns:
@@ -802,7 +806,7 @@ struct Deque[ElementType: Copyable & Movable](
 
         return element^
 
-    fn popleft(mut self) raises -> ElementType:
+    fn popleft(mut self) raises -> Self.ElementType:
         """Removes and returns the element from the left side of the deque.
 
         Returns:
@@ -925,7 +929,7 @@ struct Deque[ElementType: Copyable & Movable](
         if new_capacity == n_total:
             new_capacity <<= 1
 
-        new_data = UnsafePointer[ElementType].alloc(new_capacity)
+        new_data = alloc[Self.ElementType](new_capacity)
 
         for i in range(n_retain):
             offset = self._physical_index(self._head + i)
@@ -954,7 +958,7 @@ struct Deque[ElementType: Copyable & Movable](
             head_len = deque_len
             tail_len = 0
 
-        new_data = UnsafePointer[ElementType].alloc(new_capacity)
+        new_data = alloc[Self.ElementType](new_capacity)
 
         src = self._data + self._head
         dsc = new_data
@@ -991,13 +995,13 @@ struct _DequeIter[
         forward: The iteration direction. `False` is backwards.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = T
+    comptime Element = Self.T
 
     var index: Int
-    var src: Pointer[Deque[T], origin]
+    var src: Pointer[Deque[Self.T], Self.origin]
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
@@ -1005,14 +1009,14 @@ struct _DequeIter[
     @always_inline
     fn __has_next__(self) -> Bool:
         @parameter
-        if forward:
+        if Self.forward:
             return self.index < len(self.src[])
         else:
             return self.index > 0
 
-    fn __next_ref__(mut self) -> ref [origin] Self.Element:
+    fn __next_ref__(mut self) -> ref [Self.origin] Self.Element:
         @parameter
-        if forward:
+        if Self.forward:
             var idx = self.index
             self.index += 1
             return self.src[][idx]
@@ -1028,7 +1032,7 @@ struct _DequeIter[
         var iter_len: Int
 
         @parameter
-        if forward:
+        if Self.forward:
             iter_len = len(self.src[]) - self.index
         else:
             iter_len = self.index

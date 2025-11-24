@@ -13,6 +13,7 @@
 
 from collections import OptionalReg
 from math import ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import align_of, is_nvidia_gpu, simd_width_of, size_of
 
 from bit import log2_floor
@@ -268,7 +269,7 @@ fn multistage_mma_q[
         LayoutTensor[
             a_type,
             a_reg_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -279,7 +280,7 @@ fn multistage_mma_q[
         LayoutTensor[
             a_type,
             b_reg_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -291,7 +292,7 @@ fn multistage_mma_q[
         LayoutTensor[
             scales_type,
             Layout.row_major(num_n_mmas, 1),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -485,9 +486,9 @@ fn multistage_qgemm_kernel[
     config: MatmulConfig[a_type, b_packed_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b_packed: LayoutTensor[b_packed_type, b_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b_packed: LayoutTensor[b_packed_type, b_layout, MutAnyOrigin],
 ):
     constrained[
         is_nvidia_gpu(),
@@ -607,7 +608,9 @@ fn multistage_qgemm_kernel[
     ](scales_smem + warp_k_part_id * scales_smem_size, scales_smem_size)
 
     # global memory iterator
-    var bk_start: Int = Int((K // BK // num_warp_k_partitions) * warp_k_part_id)
+    var bk_start: Int = Int(
+        (K // BK // Int(num_warp_k_partitions)) * Int(warp_k_part_id)
+    )
     var a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](block_idx[1], bk_start)
     var b_tile_coords = args_to_tuple[transpose_b](bk_start, block_idx[0])
     alias b_tile_axis = 1 if transpose_b else 0
@@ -616,8 +619,8 @@ fn multistage_qgemm_kernel[
     )
     alias groups_per_iter = ceildiv(BK, group_size)
     var bk_scales_start: Int = Int(
-        (K // (groups_per_iter * group_size) // num_warp_k_partitions)
-        * warp_k_part_id
+        (K // (groups_per_iter * group_size) // Int(num_warp_k_partitions))
+        * Int(warp_k_part_id)
     )
     var scales_gmem_iter = scales.tiled_iterator[
         ceildiv(BK, group_size), BN, axis=0
@@ -638,7 +641,7 @@ fn multistage_qgemm_kernel[
         LayoutTensor[
             accum_type,
             c_reg_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -664,7 +667,7 @@ fn multistage_qgemm_kernel[
         b_smem_iter,
         scales_smem_iter,
         scales_gmem_iter,
-        Int(ceildiv(K // num_warp_k_partitions, BK)),
+        Int(ceildiv(K // Int(num_warp_k_partitions), BK)),
     )
 
     # reduce within the threadblock
@@ -758,7 +761,7 @@ fn multistage_qgemm_kernel[
         var accum_smem_warp_tile = LayoutTensor[
             c_type,
             Layout.row_major(WM, WN),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ](a_smem.bitcast[Scalar[c_type]]() + Int(warp_id * UInt(WM) * UInt(WN)))
 
@@ -844,7 +847,7 @@ fn multistage_qgemm_kernel[
             var c_reg_tile_out = LayoutTensor[
                 c_type,
                 c_reg_tile.layout,
-                MutableAnyOrigin,
+                MutAnyOrigin,
                 address_space = AddressSpace.LOCAL,
             ].stack_allocation()
 
@@ -959,8 +962,8 @@ fn repack_Q4_0_for_sm8x[
     repack_layout: Layout,
     scales_type: DType,
 ](
-    q_weight: LayoutTensor[DType.uint8, q_layout, MutableAnyOrigin],
-    q_packed_weight: LayoutTensor[DType.uint8, repack_layout, MutableAnyOrigin],
+    q_weight: LayoutTensor[DType.uint8, q_layout, MutAnyOrigin],
+    q_packed_weight: LayoutTensor[DType.uint8, repack_layout, MutAnyOrigin],
 ):
     alias group_size = 32
     alias group_bytes = size_of[DType.float16]() + (group_size // 2)
@@ -1069,7 +1072,7 @@ fn repack_Q4_0_for_sm8x[
             Int(warp_x), Int(warp_y)
         )
 
-        if (BK_groups * block_idx[1] + i * 2 + warp_y) < K_groups:
+        if (BK_groups * block_idx[1] + i * 2 + Int(warp_y)) < K_groups:
             var frag_0: SIMD[DType.uint8, 16] = 0
             var frag_1: SIMD[DType.uint8, 16] = 0
             var raw_Q_tile = q_warp_tile.tile[repack_tile[0], group_bytes]()
@@ -1149,9 +1152,9 @@ fn repack_GPTQ_for_sm8x[
     *,
     perm_layout: Layout = Layout(),
 ](
-    in_tensor: LayoutTensor[DType.uint8, in_layout, MutableAnyOrigin],
-    out_tensor: LayoutTensor[DType.uint8, out_layout, MutableAnyOrigin],
-    perm_idx: LayoutTensor[DType.int32, perm_layout, MutableAnyOrigin],
+    in_tensor: LayoutTensor[DType.uint8, in_layout, MutAnyOrigin],
+    out_tensor: LayoutTensor[DType.uint8, out_layout, MutAnyOrigin],
+    perm_idx: LayoutTensor[DType.int32, perm_layout, MutAnyOrigin],
 ):
     alias raw_scales_type = DType.float16
     alias weights_bytes_per_group = group_size // 2
@@ -1283,7 +1286,7 @@ fn repack_GPTQ_for_sm8x[
             raw_weights_gmem_iter._incr()
             barrier()
 
-        if (BK_groups * block_idx[1] + i * 2 + warp_y) < K_groups:
+        if (BK_groups * block_idx[1] + i * 2 + Int(warp_y)) < K_groups:
             var repacked_warp_tile = repacked_weights_gmem_iter[].tile[
                 repack_tile[0], group_size // pack_factor
             ](Int(warp_x), Int(warp_y))
@@ -1297,7 +1300,7 @@ fn repack_GPTQ_for_sm8x[
                 if has_perm:
                     var p_block_idx = perm_idx.tile[BK](block_idx[1])
                     var p_group_idx = p_block_idx.tile[group_size](
-                        Int(2 * i + warp_y)
+                        Int(2 * i + Int(warp_y))
                     )
                     var p_Qtile_idx = p_group_idx.tile[repack_tile[1]](i_Q_tile)
                     var thd_idx = p_Qtile_idx.vectorize[2]().distribute[
@@ -1391,13 +1394,13 @@ fn q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
     alias pack_factor = 8
 
     # fmt: off
-    var a_usage = block_mnk[0] * block_mnk[2] * num_pipeline_stages * size_of[config.a_type]()
-    var b_usage = block_mnk[1] * block_mnk[2] * num_pipeline_stages * size_of[DType.uint32]() // pack_factor
+    var a_usage = block_mnk[0] * block_mnk[2] * Int(num_pipeline_stages) * size_of[config.a_type]()
+    var b_usage = block_mnk[1] * block_mnk[2] * Int(num_pipeline_stages) * size_of[DType.uint32]() // pack_factor
     var c_usage = block_mnk[0] * block_mnk[1] * size_of[DType.float32]()
     var num_scales_stages = ceildiv((num_pipeline_stages - 1) * UInt(block_mnk[2]), UInt(group_size)) + 1
     var scales_usage = block_mnk[1] * ceildiv(block_mnk[2], group_size
-    ) * num_scales_stages * size_of[config.a_type]()
-    var slice_k_reduction = UInt(block_mnk[0] * block_mnk[1] * (num_warp_k_partitions // 2) * size_of[DType.float32]())
+    ) * Int(num_scales_stages) * size_of[config.a_type]()
+    var slice_k_reduction = UInt(block_mnk[0] * block_mnk[1] * Int(num_warp_k_partitions // 2) * size_of[DType.float32]())
     # fmt: on
 
     var smem_usage = UInt(
@@ -2056,9 +2059,7 @@ fn gpu_qint4_repack_GPTQ[
     b: LayoutTensor[DType.uint8, **_],
     b_packed: LayoutTensor[DType.uint8, **_],
     perm_idx: OptionalReg[
-        LayoutTensor[
-            DType.int32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
-        ]
+        LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:

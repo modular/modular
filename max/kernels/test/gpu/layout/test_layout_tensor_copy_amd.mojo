@@ -15,8 +15,8 @@
 from gpu import barrier
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.compile import _compile_code
-from gpu.id import thread_idx
-from gpu.memory import AddressSpace, CacheOperation
+from gpu import thread_idx
+from gpu.memory import CacheOperation
 from layout import *
 from layout._fillers import arange
 from layout._utils import load_to_simd
@@ -25,6 +25,7 @@ from layout.layout_tensor import (
     copy_dram_to_local,
     copy_dram_to_sram,
 )
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import simd_width_of
 from utils import IndexList
 from benchmark import keep
@@ -54,7 +55,7 @@ fn copy_dram_to_sram_buffer_load_kernel[
     )
     alias layout_bmn = Layout.row_major(BM, BN)
     var smem = LayoutTensor[
-        dtype, layout_bmn, MutableAnyOrigin, address_space = AddressSpace.SHARED
+        dtype, layout_bmn, MutAnyOrigin, address_space = AddressSpace.SHARED
     ].stack_allocation()
     if thread_idx.x == 0:
         _ = smem.fill(-1)
@@ -142,7 +143,7 @@ fn copy_dram_to_local_buffer_load_kernel[
     var a_reg_tile = LayoutTensor[
         dtype,
         a_reg_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
@@ -215,7 +216,7 @@ fn test_codegen_copy_dram_to_local(ctx: DeviceContext) raises:
         var local_tensor = LayoutTensor[
             DType.bfloat16,
             Layout.row_major(16, 8),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
 

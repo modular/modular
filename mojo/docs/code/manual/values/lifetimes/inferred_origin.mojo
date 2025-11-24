@@ -23,5 +23,5 @@ def to_byte_span[
 
 
 def main():
-    list = List[Byte](77, 111, 106, 111)
+    list: List[Byte] = [77, 111, 106, 111]
     span = to_byte_span(list)

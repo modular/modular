@@ -13,7 +13,7 @@
 
 from math import ceildiv
 
-from gpu.id import block_idx, grid_dim, thread_idx
+from gpu import block_idx, grid_dim, thread_idx
 
 from utils.fast_div import FastDiv
 from utils.index import Index, IndexList
@@ -102,15 +102,15 @@ struct TileScheduler[
     swizzle: Bool = False,
 ]:
     var num_active_experts: Int
-    var group_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+    var group_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin]
     var current_iter: Int32  # Tracks the scheduler's progress across kernel launches
     var current_group_idx: UInt32
-    alias tile_n = tile_shape[1] * cta_group
+    alias tile_n = Self.tile_shape[1] * Self.cta_group
     alias div_block_n = FastDiv[DType.uint32](Self.tile_n)
     var current_n_cumsum: UInt32
     var block_idx_start: UInt32
 
-    alias num_m_blocks: UInt32 = ceildiv(M, tile_shape[0])
+    alias num_m_blocks: UInt32 = ceildiv(Self.M, Self.tile_shape[0])
 
     alias kNum1DBlocksPerGroup: UInt32 = 16
 
@@ -118,30 +118,30 @@ struct TileScheduler[
     fn __init__(
         out self,
         num_active_experts: Int,
-        group_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+        group_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
     ):
         constrained[
-            cluster[1] == cluster[2] == 1,
+            Self.cluster[1] == Self.cluster[2] == 1,
             "Currently multicasting along non-M dimension is not supported",
         ]()
         constrained[
-            cta_group == cluster[0],
+            Self.cta_group == Self.cluster[0],
             "cta_group must be equal to cluster M size. Got cta_group = "
-            + String(cta_group)
+            + String(Self.cta_group)
             + " and cluster M size = "
-            + String(cluster[0]),
+            + String(Self.cluster[0]),
         ]()
-        alias cluster_m_size = cluster[0] * tile_shape[0]
+        alias cluster_m_size = Self.cluster[0] * Self.tile_shape[0]
         constrained[
-            cluster[0] == 1 or M % cluster_m_size == 0,
+            Self.cluster[0] == 1 or Self.M % cluster_m_size == 0,
             "Problem shape M must be divisible by cluster M size. Got "
-            + String(M)
+            + String(Self.M)
             + " and cluster M size "
             + String(cluster_m_size)
             + " = cluster M size "
-            + String(cluster[0])
+            + String(Self.cluster[0])
             + " * tile M size "
-            + String(tile_shape[0]),
+            + String(Self.tile_shape[0]),
         ]()
 
         self.num_active_experts = num_active_experts

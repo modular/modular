@@ -13,12 +13,12 @@
 
 
 struct HeapArray(Writable):
-    var data: UnsafePointer[Int]
+    var data: UnsafePointer[Int, MutOrigin.external]
     var size: Int
 
     fn __init__(out self, *values: Int):
         self.size = len(values)
-        self.data = UnsafePointer[Int].alloc(self.size)
+        self.data = alloc[Int](self.size)
         for i in range(self.size):
             (self.data + i).init_pointee_copy(values[i])
 

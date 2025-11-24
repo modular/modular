@@ -1,0 +1,36 @@
+load("//bazel:api.bzl", "modular_py_library", "pkg_files", "requirement", "strip_prefix")
+
+modular_py_library(
+    name = "benchmark_shared",
+    srcs = glob(["**/*.py"]),
+    data = glob(["datasets/packaged_data/**/*"]) + [
+        "//max/python/max/benchmark:benchmark_config_yaml_files",
+    ],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//max/python/max/config",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/serve",
+        requirement("datasets"),
+        requirement("huggingface-hub"),
+        requirement("msgspec"),
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("prometheus-client"),
+        requirement("psutil"),
+        requirement("pyyaml"),
+        requirement("requests"),
+        requirement("safetensors"),
+        requirement("transformers"),
+        requirement("typing-extensions"),
+    ],
+)
+
+pkg_files(
+    name = "python_files",
+    srcs = glob(["**/*.py"]),
+    prefix = "benchmark/benchmark_shared",
+    strip_prefix = strip_prefix.from_pkg(""),
+    visibility = ["//visibility:public"],
+)

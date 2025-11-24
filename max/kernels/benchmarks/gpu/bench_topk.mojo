@@ -111,7 +111,7 @@ fn bench_topk_batched[
                     LayoutTensor[
                         K_device_buffer.dtype,
                         Layout.row_major(UNKNOWN_VALUE),
-                        MutableAnyOrigin,
+                        MutAnyOrigin,
                     ](
                         k_lt.ptr,
                         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
@@ -132,7 +132,8 @@ fn bench_topk_batched[
 
     var num_bytes = device_in.tensor.size() * size_of[dtype]()
     m.bench_function[bench_func](
-        BenchId(kernel_name), ThroughputMeasure(BenchMetric.bytes, num_bytes)
+        BenchId(kernel_name),
+        [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
     )
 
     # Copy results back to host
@@ -162,7 +163,7 @@ fn bench_topk_batched[
                 LayoutTensor[
                     K_device_buffer.dtype,  # or K_host_buffer?
                     Layout.row_major(UNKNOWN_VALUE),
-                    MutableAnyOrigin,
+                    MutAnyOrigin,
                 ](
                     k_lt.ptr,
                     RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
@@ -280,7 +281,7 @@ fn bench_topk_multi_rank[
                     LayoutTensor[
                         K_device_buffer.dtype,
                         Layout.row_major(UNKNOWN_VALUE),
-                        MutableAnyOrigin,
+                        MutAnyOrigin,
                     ](
                         k_lt.ptr,
                         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
@@ -298,7 +299,7 @@ fn bench_topk_multi_rank[
     var kernel_name = "topk-multirank"
     var num_bytes = device_in.tensor.size() * size_of[dtype]()
     m.bench_function[bench_func](
-        BenchId(kernel_name), ThroughputMeasure(BenchMetric.bytes, num_bytes)
+        BenchId(kernel_name), [ThroughputMeasure(BenchMetric.bytes, num_bytes)]
     )
 
     # Copy results back to host
@@ -325,7 +326,7 @@ fn bench_topk_multi_rank[
                 LayoutTensor[
                     K_host_buffer.dtype,
                     Layout.row_major(UNKNOWN_VALUE),
-                    MutableAnyOrigin,
+                    MutAnyOrigin,
                 ](
                     k_lt.ptr,
                     RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
@@ -393,8 +394,8 @@ fn fill_buffer[
 struct TestCase[_sampling: Bool, _largest: Bool = True](
     ImplicitlyCopyable, Movable
 ):
-    alias sampling = _sampling
-    alias largest = _largest
+    alias sampling = Self._sampling
+    alias largest = Self._largest
     var N: Int
     var K: Int
     var block_size: Int

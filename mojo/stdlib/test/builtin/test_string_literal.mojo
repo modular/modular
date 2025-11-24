@@ -29,11 +29,11 @@ def test_add():
 
 
 def test_mul():
-    alias `3`: Int = 3
-    alias `u3`: UInt = 3
-    alias static_concat_0 = "mojo" * 3
-    alias static_concat_1 = "mojo" * `3`
-    alias static_concat_2 = "mojo" * `u3`
+    comptime `3`: Int = 3
+    comptime `u3`: UInt = 3
+    comptime static_concat_0 = "mojo" * 3
+    comptime static_concat_1 = "mojo" * `3`
+    comptime static_concat_2 = "mojo" * Int(`u3`)
     assert_equal(static_concat_0, static_concat_1)
     assert_equal(static_concat_1, static_concat_2)
     assert_equal("mojomojomojo", static_concat_0)
@@ -254,7 +254,7 @@ def test_layout():
     # assert_equal(empty[0], 0)
 
     # Test non-empty StringLiteral C string
-    var ptr: UnsafePointer[c_char] = "hello".unsafe_cstr_ptr()
+    var ptr = "hello".unsafe_cstr_ptr()
     assert_equal(ptr[0], ord("h"))
     assert_equal(ptr[1], ord("e"))
     assert_equal(ptr[2], ord("l"))

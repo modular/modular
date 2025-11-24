@@ -21,7 +21,7 @@ from testing import TestSuite
 # Reusable testing data
 # ===----------------------------------------------------------------------=== #
 
-alias EVERY_CODEPOINT_LENGTH_STR = StringSlice("߷കൈ🔄!")
+comptime EVERY_CODEPOINT_LENGTH_STR = StringSlice("߷കൈ🔄!")
 """A string that contains at least one of 1-, 2-, 3-, and 4-byte UTF-8
 sequences.
 
@@ -55,7 +55,7 @@ fn test_string_slice_layout() raises:
     # `llvm::StringRef`
 
     # StringSlice should be two words in size.
-    assert_equal(size_of[StringSlice[MutableAnyOrigin]](), 2 * size_of[Int]())
+    assert_equal(size_of[StringSlice[MutAnyOrigin]](), 2 * size_of[Int]())
 
     var str_slice = StringSlice("")
 
@@ -82,7 +82,7 @@ def test_constructors():
 
 
 fn test_string_literal_byte_span() raises:
-    alias slc = "Hello".as_bytes()
+    comptime slc = "Hello".as_bytes()
 
     assert_equal(len(slc), 5)
     assert_equal(slc[0], ord("H"))
@@ -232,9 +232,9 @@ fn test_string_byte_span() raises:
 
 
 fn test_heap_string_from_string_slice() raises:
-    alias static_str = "Hello".as_string_slice()
+    comptime static_str = "Hello".as_string_slice()
 
-    alias heap_string = String(static_str)
+    comptime heap_string = String(static_str)
 
     assert_equal(heap_string, "Hello")
 
@@ -423,25 +423,25 @@ def test_find():
 
 
 def test_find_compile_time():
-    alias haystack = "abcdefg".as_string_slice()
-    alias haystack_with_special_chars = "abcdefg@#$".as_string_slice()
-    alias haystack_repeated_chars = "aaaaaaaaaaaaaaaaaaaaaaaa".as_string_slice()
+    comptime haystack = "abcdefg".as_string_slice()
+    comptime haystack_with_special_chars = "abcdefg@#$".as_string_slice()
+    comptime haystack_repeated_chars = "aaaaaaaaaaaaaaaaaaaaaaaa".as_string_slice()
 
-    alias c1 = haystack.find("a".as_string_slice())
-    alias c2 = haystack.find("ab".as_string_slice())
-    alias c3 = haystack.find("abc".as_string_slice())
-    alias c4 = haystack.find("bcd".as_string_slice())
-    alias c5 = haystack.find("de".as_string_slice())
-    alias c6 = haystack.find("fg".as_string_slice())
-    alias c7 = haystack.find("g".as_string_slice())
-    alias c8 = haystack.find("z".as_string_slice())
-    alias c9 = haystack.find("zzz".as_string_slice())
-    alias c10 = haystack.find("@#$".as_string_slice())
-    alias c11 = haystack_with_special_chars.find("@#$".as_string_slice())
-    alias c12 = haystack_repeated_chars.find("aaa".as_string_slice())
-    alias c13 = haystack_repeated_chars.find("AAa".as_string_slice())
-    alias c14 = haystack.find("hijklmnopqrstuvwxyz".as_string_slice())
-    alias c15 = String().as_string_slice().find("abc".as_string_slice())
+    comptime c1 = haystack.find("a".as_string_slice())
+    comptime c2 = haystack.find("ab".as_string_slice())
+    comptime c3 = haystack.find("abc".as_string_slice())
+    comptime c4 = haystack.find("bcd".as_string_slice())
+    comptime c5 = haystack.find("de".as_string_slice())
+    comptime c6 = haystack.find("fg".as_string_slice())
+    comptime c7 = haystack.find("g".as_string_slice())
+    comptime c8 = haystack.find("z".as_string_slice())
+    comptime c9 = haystack.find("zzz".as_string_slice())
+    comptime c10 = haystack.find("@#$".as_string_slice())
+    comptime c11 = haystack_with_special_chars.find("@#$".as_string_slice())
+    comptime c12 = haystack_repeated_chars.find("aaa".as_string_slice())
+    comptime c13 = haystack_repeated_chars.find("AAa".as_string_slice())
+    comptime c14 = haystack.find("hijklmnopqrstuvwxyz".as_string_slice())
+    comptime c15 = String().as_string_slice().find("abc".as_string_slice())
 
     assert_equal(c1, 0)
     assert_equal(c2, 0)
@@ -529,14 +529,13 @@ def test_comparison_operators():
 
 
 def test_split():
-    alias S = StaticString
-    alias L = List[StaticString]
+    comptime S = StaticString
 
     # Should add all whitespace-like chars as one
     # test all unicode separators
-    var next_line = List[UInt8](0xC2, 0x85)
-    var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
-    var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
+    var next_line = [UInt8(0xC2), 0x85]
+    var unicode_line_sep = [UInt8(0xE2), 0x80, 0xA8]
+    var unicode_paragraph_sep = [UInt8(0xE2), 0x80, 0xA9]
     # TODO add line and paragraph separator as StringLiteral once unicode
     # escape sequences are accepted
     var univ_sep_var = String(
@@ -554,13 +553,13 @@ def test_split():
         String(bytes=unicode_paragraph_sep),
     )
     var s = univ_sep_var + "hello" + univ_sep_var + "world" + univ_sep_var
-    assert_equal(StringSlice(s).split(), L("hello", "world"))
+    assert_equal(StringSlice(s).split(), [StaticString("hello"), "world"])
 
     # should split into empty strings between separators
-    assert_equal(S("1,,,3").split(","), L("1", "", "", "3"))
-    assert_equal(S(",,,").split(","), L("", "", "", ""))
-    assert_equal(S(" a b ").split(" "), L("", "a", "b", ""))
-    assert_equal(S("abababaaba").split("aba"), L("", "b", "", ""))
+    assert_equal(S("1,,,3").split(","), [StaticString("1"), "", "", "3"])
+    assert_equal(S(",,,").split(","), [StaticString(""), "", "", ""])
+    assert_equal(S(" a b ").split(" "), [StaticString(""), "a", "b", ""])
+    assert_equal(S("abababaaba").split("aba"), [StaticString(""), "b", "", ""])
     assert_true(len(S("").split()) == 0)
     assert_true(len(S(" ").split()) == 0)
     assert_true(len(S("").split(" ")) == 1)
@@ -571,72 +570,79 @@ def test_split():
     assert_true(len(S("   ").split(" ")) == 4)
 
     # should split into maxsplit + 1 items
-    assert_equal(S("1,2,3").split(",", 0), L("1,2,3"))
-    assert_equal(S("1,2,3").split(",", 1), L("1", "2,3"))
+    assert_equal(S("1,2,3").split(",", 0), [StaticString("1,2,3")])
+    assert_equal(S("1,2,3").split(",", 1), [StaticString("1"), "2,3"])
 
     # Split in middle
-    assert_equal(S("faang").split("n"), L("faa", "g"))
+    assert_equal(S("faang").split("n"), [StaticString("faa"), "g"])
 
     # No match from the delimiter
-    assert_equal(S("hello world").split("x"), L("hello world"))
+    assert_equal(S("hello world").split("x"), [StaticString("hello world")])
 
     # Multiple character delimiter
-    assert_equal(S("hello").split("ll"), L("he", "o"))
+    assert_equal(S("hello").split("ll"), [StaticString("he"), "o"])
 
-    res = L("", "bb", "", "", "", "bbb", "")
+    res = [StaticString(""), "bb", "", "", "", "bbb", ""]
     assert_equal(S("abbaaaabbba").split("a"), res)
     assert_equal(S("abbaaaabbba").split("a", 8), res)
     s1 = S("abbaaaabbba").split("a", 5)
-    assert_equal(s1, L("", "bb", "", "", "", "bbba"))
-    assert_equal(S("aaa").split("a", 0), L("aaa"))
-    assert_equal(S("a").split("a"), L("", ""))
-    assert_equal(S("1,2,3").split("3", 0), L("1,2,3"))
-    assert_equal(S("1,2,3").split("3", 1), L("1,2,", ""))
-    assert_equal(S("1,2,3,3").split("3", 2), L("1,2,", ",", ""))
-    assert_equal(S("1,2,3,3,3").split("3", 2), L("1,2,", ",", ",3"))
+    assert_equal(s1, [StaticString(""), "bb", "", "", "", "bbba"])
+    assert_equal(S("aaa").split("a", 0), [StaticString("aaa")])
+    assert_equal(S("a").split("a"), [StaticString(""), ""])
+    assert_equal(S("1,2,3").split("3", 0), [StaticString("1,2,3")])
+    assert_equal(S("1,2,3").split("3", 1), [StaticString("1,2,"), ""])
+    assert_equal(S("1,2,3,3").split("3", 2), [StaticString("1,2,"), ",", ""])
+    assert_equal(
+        S("1,2,3,3,3").split("3", 2), [StaticString("1,2,"), ",", ",3"]
+    )
 
-    assert_equal(S("Hello 🔥!").split(), L("Hello", "🔥!"))
+    assert_equal(S("Hello 🔥!").split(), [StaticString("Hello"), "🔥!"])
 
     s2 = S("Лорем ипсум долор сит амет").split(" ")
-    assert_equal(s2, L("Лорем", "ипсум", "долор", "сит", "амет"))
+    assert_equal(s2, [StaticString("Лорем"), "ипсум", "долор", "сит", "амет"])
     s3 = S("Лорем ипсум долор сит амет").split("м")
-    assert_equal(s3, L("Лоре", " ипсу", " долор сит а", "ет"))
+    assert_equal(s3, [StaticString("Лоре"), " ипсу", " долор сит а", "ет"])
 
-    assert_equal(S("123").split(""), L("", "1", "2", "3", ""))
+    assert_equal(S("123").split(""), [StaticString(""), "1", "2", "3", ""])
     assert_equal(S("").join(S("123").split("")), "123")
     assert_equal(S(",1,2,3,").split(","), S("123").split(""))
     assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
 
 
 def test_splitlines():
-    alias S = StaticString
-    alias L = List[StaticString]
+    comptime S = StaticString
 
     # Test with no line breaks
-    assert_equal(S("hello world").splitlines(), L("hello world"))
+    assert_equal(S("hello world").splitlines(), [StaticString("hello world")])
 
     # Test with line breaks
-    assert_equal(S("hello\nworld").splitlines(), L("hello", "world"))
-    assert_equal(S("hello\rworld").splitlines(), L("hello", "world"))
-    assert_equal(S("hello\r\nworld").splitlines(), L("hello", "world"))
+    assert_equal(
+        S("hello\nworld").splitlines(), [StaticString("hello"), "world"]
+    )
+    assert_equal(
+        S("hello\rworld").splitlines(), [StaticString("hello"), "world"]
+    )
+    assert_equal(
+        S("hello\r\nworld").splitlines(), [StaticString("hello"), "world"]
+    )
 
     # Test with multiple different line breaks
     s1 = S("hello\nworld\r\nmojo\rlanguage\r\n")
-    hello_mojo = L("hello", "world", "mojo", "language")
+    hello_mojo = [StaticString("hello"), "world", "mojo", "language"]
     assert_equal(s1.splitlines(), hello_mojo)
     assert_equal(
         s1.splitlines(keepends=True),
-        L("hello\n", "world\r\n", "mojo\r", "language\r\n"),
+        [StaticString("hello\n"), "world\r\n", "mojo\r", "language\r\n"],
     )
 
     # Test with an empty string
-    assert_equal(S("").splitlines(), L())
+    assert_equal(S("").splitlines(), [])
     # test \v \f \x1c \x1d
     s2 = S("hello\vworld\fmojo\x1clanguage\x1d")
     assert_equal(s2.splitlines(), hello_mojo)
     assert_equal(
         s2.splitlines(keepends=True),
-        L("hello\v", "world\f", "mojo\x1c", "language\x1d"),
+        [StaticString("hello\v"), "world\f", "mojo\x1c", "language\x1d"],
     )
 
     # test \x1c \x1d \x1e
@@ -644,7 +650,7 @@ def test_splitlines():
     assert_equal(s3.splitlines(), hello_mojo)
     assert_equal(
         s3.splitlines(keepends=True),
-        L("hello\x1c", "world\x1d", "mojo\x1e", "language\x1e"),
+        [StaticString("hello\x1c"), "world\x1d", "mojo\x1e", "language\x1e"],
     )
 
     # test \x85 \u2028 \u2029
@@ -659,7 +665,7 @@ def test_splitlines():
         assert_equal(item.splitlines(), hello_mojo)
         assert_equal(
             _to_string_list(item.splitlines(keepends=True)),
-            List("hello" + u, "world" + u, "mojo" + u, "language" + u),
+            ["hello" + u, "world" + u, "mojo" + u, "language" + u],
         )
 
 
@@ -719,26 +725,26 @@ def test_strip():
     # with default strip chars
     var empty_string = "".as_string_slice()
     assert_true(empty_string.strip() == "")
-    alias comp_empty_string_stripped = "".as_string_slice().strip()
+    comptime comp_empty_string_stripped = "".as_string_slice().strip()
     assert_true(comp_empty_string_stripped == "")
 
     var space_string = " \t\n\r\v\f  ".as_string_slice()
     assert_true(space_string.strip() == "")
-    alias comp_space_string_stripped = " \t\n\r\v\f  ".as_string_slice().strip()
+    comptime comp_space_string_stripped = " \t\n\r\v\f  ".as_string_slice().strip()
     assert_true(comp_space_string_stripped == "")
 
     var str0 = "     n ".as_string_slice()
     assert_true(str0.strip() == "n")
-    alias comp_str0_stripped = "     n ".as_string_slice().strip()
+    comptime comp_str0_stripped = "     n ".as_string_slice().strip()
     assert_true(comp_str0_stripped == "n")
 
     var str1 = "string".as_string_slice()
     assert_true(str1.strip() == "string")
-    alias comp_str1_stripped = ("string").strip()
+    comptime comp_str1_stripped = ("string").strip()
     assert_true(comp_str1_stripped == "string")
 
     var str2 = " \t\n\t\v\fsomething \t\n\t\v\f".as_string_slice()
-    alias comp_str2_stripped = (" \t\n\t\v\fsomething \t\n\t\v\f").strip()
+    comptime comp_str2_stripped = (" \t\n\t\v\fsomething \t\n\t\v\f").strip()
     assert_true(str2.strip() == "something")
     assert_true(comp_str2_stripped == "something")
 
@@ -746,14 +752,14 @@ def test_strip():
     var str3 = "mississippi".as_string_slice()
     assert_true(str3.strip("mips") == "")
     assert_true(str3.strip("mip") == "ssiss")
-    alias comp_str3_stripped = "mississippi".as_string_slice().strip("mips")
+    comptime comp_str3_stripped = "mississippi".as_string_slice().strip("mips")
     assert_true(comp_str3_stripped == "")
 
     var str4 = " \n mississippimississippi \n ".as_string_slice()
     assert_true(str4.strip(" ") == "\n mississippimississippi \n")
     assert_true(str4.strip("\nmip ") == "ssissippimississ")
 
-    alias comp_str4_stripped = (
+    comptime comp_str4_stripped = (
         " \n mississippimississippi \n ".as_string_slice().strip(" ")
     )
     assert_true(comp_str4_stripped == "\n mississippimississippi \n")
@@ -963,8 +969,8 @@ def test_string_slice_from_pointer():
     assert_equal(3, len(a))
     assert_equal(3, len(b))
     var c = "ABCD"
-    var d = StringSlice[origin_of(c)](unsafe_from_utf8_ptr=c.unsafe_cstr_ptr())
-    var e = StringSlice[origin_of(c)](unsafe_from_utf8_ptr=c.unsafe_ptr())
+    var d = StringSlice(unsafe_from_utf8_ptr=c.unsafe_cstr_ptr())
+    var e = StringSlice(unsafe_from_utf8_ptr=c.unsafe_ptr())
     assert_equal(4, len(c))
     assert_equal(4, len(d))
     assert_equal(4, len(e))
@@ -1027,7 +1033,7 @@ def test_string_slice_intern():
     assert_equal(get_static_string["hello"](), "hello")
     assert_equal(get_static_string[String("hello")](), "hello")
     assert_equal(get_static_string[String(42)](), "42")
-    alias simd = SIMD[DType.int64, 4](1, 2, 3, 4)
+    comptime simd = SIMD[DType.int64, 4](1, 2, 3, 4)
     assert_equal(get_static_string[String(simd)](), "[1, 2, 3, 4]")
     # Test get_static_string with multiple string arguments.
     assert_equal(get_static_string["a", "b", "c"](), "abc")

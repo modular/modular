@@ -12,6 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import Dim, DimList
+from collections import InlineArray
+from layout.layout import Layout
+from layout.layout_tensor import LayoutTensorIter
 from layout import *
 from layout._fillers import arange
 from layout.layout import (
@@ -35,6 +38,7 @@ from layout.layout import (
     upcast,
     zipped_divide,
 )
+from math import ceildiv
 from testing import assert_equal
 
 from utils import IndexList
@@ -895,7 +899,7 @@ def test_arange_nested_layout():
             IntTuple(IntTuple(16, 8), IntTuple(32, 2)),
             IntTuple(IntTuple(32, 1024), IntTuple(1, 512)),
         ),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         alignment=16,
     ].stack_allocation()
     arange(nested_tensor)
@@ -904,7 +908,7 @@ def test_arange_nested_layout():
     var simple_tensor = LayoutTensor[
         DType.float32,
         Layout.row_major(4, 4),
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ].stack_allocation()
     arange(simple_tensor)
 
@@ -922,7 +926,7 @@ def test_arange_nested_layout():
     var col_major_tensor = LayoutTensor[
         DType.float32,
         Layout.col_major(4, 4),
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ].stack_allocation()
     arange(col_major_tensor)
 
@@ -932,6 +936,40 @@ def test_arange_nested_layout():
     assert_equal(col_major_tensor[0, 1], 1.0)
     assert_equal(col_major_tensor[1, 0], 4.0)
     assert_equal(col_major_tensor[1, 1], 5.0)
+
+
+def test_layout_tensor_iterator_print():
+    """Test case for MSTDL-1984: Tensors generated from LayoutTensorIter won't print.
+    """
+    alias buf_size = 16
+    var storage = InlineArray[Int16, buf_size](uninitialized=True)
+    for i in range(buf_size):
+        storage[i] = i
+    alias tile_layout = Layout.row_major(2, 2)
+    var iter = LayoutTensorIter[
+        DType.int16,
+        tile_layout,
+        MutAnyOrigin,
+        masked=True,
+    ](storage.unsafe_ptr(), buf_size)
+
+    for i in range(ceildiv(buf_size, tile_layout.size())):
+        var tile = iter[]
+        # CHECK: 0 1
+        # CHECK-NEXT: 2 3
+        print(tile)
+        # CHECK: runtime_layout.size(): 4
+        print("  runtime_layout.size():", tile.runtime_layout.size())
+        iter += 1
+        # CHECK: 4 5
+        # CHECK-NEXT: 6 7
+        # CHECK: runtime_layout.size(): 4
+        # CHECK: 8 9
+        # CHECK-NEXT: 10 11
+        # CHECK: runtime_layout.size(): 4
+        # CHECK: 12 13
+        # CHECK-NEXT: 14 15
+        # CHECK: runtime_layout.size(): 4
 
 
 def main():
@@ -957,3 +995,4 @@ def main():
     test_transpose()
     test_iter()
     test_arange_nested_layout()
+    test_layout_tensor_iterator_print()

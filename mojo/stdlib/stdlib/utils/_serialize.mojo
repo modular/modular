@@ -11,12 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 
-alias _kStartTensorMarker = "["
-alias _kEndTensorMarker = "]"
-alias _kTensorFiller = "..., "
-alias _kCompactMaxElemsToPrint = 7
-alias _kCompactElemPerSide = _kCompactMaxElemsToPrint // 2
+comptime _kStartTensorMarker = "["
+comptime _kEndTensorMarker = "]"
+comptime _kTensorFiller = "..., "
+comptime _kCompactMaxElemsToPrint = 7
+comptime _kCompactElemPerSide = _kCompactMaxElemsToPrint // 2
 
 
 fn _serialize_elements_compact[

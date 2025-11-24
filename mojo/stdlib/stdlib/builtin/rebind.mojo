@@ -103,7 +103,7 @@ fn rebind_var[
     __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(src))
 
 
-alias downcast[_Trait: type_of(AnyType), T: AnyType] = __mlir_attr[
+comptime downcast[_Trait: type_of(AnyType), T: AnyType] = __mlir_attr[
     `#kgen.downcast<`, T, `> : `, _Trait
 ]
 

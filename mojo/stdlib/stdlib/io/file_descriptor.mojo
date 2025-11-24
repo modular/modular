@@ -67,7 +67,7 @@ struct FileDescriptor(Writer):
         Args:
             bytes: The byte span to write to this file.
         """
-        written = external_call["write", Int32](
+        written = external_call["write", c_ssize_t](
             self.value, bytes.unsafe_ptr(), len(bytes)
         )
         debug_assert(
@@ -130,7 +130,8 @@ struct FileDescriptor(Writer):
         """Checks whether a file descriptor refers to a terminal.
 
         Returns `True` if the file descriptor is open and connected to a
-        tty(-like) device, otherwise `False`.
+        tty(-like) device, otherwise `False`. On GPUs, the function always
+        returns `False`.
 
         Returns:
             `True` if the file descriptor is connected to a terminal, `False` otherwise.
@@ -144,4 +145,8 @@ struct FileDescriptor(Writer):
                 print("Output is redirected")
             ```
         """
+
+        @parameter
+        if is_gpu():
+            return False
         return _external_call_const["isatty", c_int](c_int(self.value)) != 0

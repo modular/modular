@@ -26,11 +26,13 @@ from utils.index import IndexList
 
 
 struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
-    alias num_elements = 2**levels - 1
-    var k_array: InlineArray[Scalar[k_dtype], Self.num_elements]
-    var v_array: InlineArray[Scalar[v_dtype], Self.num_elements]
+    alias num_elements = 2**Self.levels - 1
+    var k_array: InlineArray[Scalar[Self.k_dtype], Self.num_elements]
+    var v_array: InlineArray[Scalar[Self.v_dtype], Self.num_elements]
 
-    fn __init__(out self, *, fill_k: Scalar[k_dtype], fill_v: Scalar[v_dtype]):
+    fn __init__(
+        out self, *, fill_k: Scalar[Self.k_dtype], fill_v: Scalar[Self.v_dtype]
+    ):
         self.k_array = InlineArray[size = Self.num_elements](fill=fill_k)
         self.v_array = InlineArray[size = Self.num_elements](fill=fill_v)
 
@@ -43,7 +45,7 @@ struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
         var current_index = 0
 
         @parameter
-        for level in range(levels - 1):
+        for level in range(Self.levels - 1):
             # Must ensure:
             # arr[cur] < arr[left] && arr[cur] < arr[right]
             var left_index = current_index * 2 + 1
@@ -180,7 +182,7 @@ struct LogProbabilitiesRagged:
                 var output_token_index = global_idx.x
                 if output_token_index < UInt(num_output_tokens):
                     compute_log_probabilities_1tok[target, levels](
-                        output_token_index=output_token_index,
+                        output_token_index=Int(output_token_index),
                         lp_logits=lp_logits,
                         lp_tokens=lp_tokens,
                         logits=logits,

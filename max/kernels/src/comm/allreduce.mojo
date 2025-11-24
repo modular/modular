@@ -115,16 +115,28 @@ from gpu.grid_controls import (
     wait_on_dependent_grids,
 )
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from gpu.intrinsics import load_acquire, store_release, load_relaxed
-from gpu.memory import AddressSpace
-from gpu.memory import AddressSpace as GPUAddressSpace
-from gpu.memory import Consistency, ReduceOp, Scope, multimem_ld_reduce
-from memory import stack_allocation
+
+from gpu.intrinsics import (
+    load_acquire,
+    store_release,
+    load_relaxed,
+    Scope,
+    AMDBufferResource,
+)
+from gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
+from gpu.memory import CacheOperation
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    stack_allocation,
+)
 
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
 from internal_utils import TuningConfig, Table
 from gpu.host.info import GPUInfo
+
+from collections.optional import OptionalReg
 
 alias elementwise_epilogue_type = fn[
     dtype: DType, rank: Int, width: Int, *, alignment: Int
@@ -132,7 +144,7 @@ alias elementwise_epilogue_type = fn[
 
 # On AMD Systems, the loads from GLOBAL addressspace gives an improvement
 # to the performance.
-alias _target_address_space = GPUAddressSpace.GLOBAL if is_amd_gpu() else GPUAddressSpace.GENERIC
+alias _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else AddressSpace.GENERIC
 
 
 # NOTE: the above result was true on A100, but on H100 we need more SMs to
@@ -279,7 +291,7 @@ fn _naive_reduce_kernel_with_lambda[
     alignment: Int,
     output_lambda: elementwise_epilogue_type,
 ](
-    dst_buf: NDBuffer[dtype, rank, MutableAnyOrigin],
+    dst_buf: NDBuffer[dtype, rank, MutAnyOrigin],
     src_buf: UnsafePointer[Scalar[dtype]],
     num_elements: Int,
 ):
@@ -305,9 +317,9 @@ fn _allreduce_naive_single[
     num_buffers: Int = ngpus,
 ](
     list_of_in_bufs: InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], num_buffers
+        NDBuffer[dtype, rank, MutAnyOrigin], num_buffers
     ],
-    out_buf: NDBuffer[dtype, rank, MutableAnyOrigin],
+    out_buf: NDBuffer[dtype, rank, MutAnyOrigin],
     max_num_blocks: Int,
     ctx: DeviceContext,
 ) raises:
@@ -550,7 +562,7 @@ fn _load_reduce[
             scope = Scope.GPU,
             consistency = Consistency.RELAXED,
             accum_type=accum_type,
-        ]((ptrs[0] + elem_idx).address_space_cast[GPUAddressSpace.GLOBAL]())
+        ]((ptrs[0] + elem_idx).address_space_cast[AddressSpace.GLOBAL]())
     else:
         # Regular mode: manual accumulation
         var accum: SIMD[accum_type, simd_width]
@@ -590,7 +602,7 @@ fn _allreduce_2stage_kernel[
     pdl_level: PDLLevel = PDLLevel(),
     num_buffers: Int = ngpus,
 ](
-    result: NDBuffer[dtype, rank, MutableAnyOrigin],
+    result: NDBuffer[dtype, rank, MutAnyOrigin],
     src_ptrs: InlineArray[UnsafePointer[Scalar[dtype]], num_buffers],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
@@ -669,7 +681,7 @@ fn _allreduce_2stage_kernel[
         var target = (my_rank + i) % ngpus
         # Skip Signal header.
         tmps[i] = (
-            rank_sigs[target].address_space_cast[GPUAddressSpace.GENERIC]() + 1
+            rank_sigs[target].address_space_cast[AddressSpace.GENERIC]() + 1
         ).bitcast[Scalar[dtype]]()
 
     @parameter
@@ -750,7 +762,7 @@ fn _allreduce_1stage_kernel[
     output_lambda: elementwise_epilogue_type,
     num_buffers: Int = ngpus,
 ](
-    result: NDBuffer[dtype, rank, MutableAnyOrigin],
+    result: NDBuffer[dtype, rank, MutAnyOrigin],
     src_ptrs: InlineArray[UnsafePointer[Scalar[dtype]], num_buffers],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
@@ -831,9 +843,9 @@ fn _allreduce_p2p[
     num_buffers: Int = ngpus,
 ](
     list_of_in_bufs: InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], num_buffers
+        NDBuffer[dtype, rank, MutAnyOrigin], num_buffers
     ],
-    out_buf: NDBuffer[dtype, rank, MutableAnyOrigin],
+    out_buf: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     max_num_blocks: Int,
     ctx: DeviceContext,
@@ -865,6 +877,11 @@ fn _allreduce_p2p[
     """
     alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
     var num_elements = list_of_in_bufs[0].num_elements()
+
+    # Do nothing if there are no elements to reduce.
+    if num_elements == 0:
+        return
+
     if num_elements % simd_width != 0:
         raise Error(
             "non SIMD-width multiple number of elements unsupported by"
@@ -1003,7 +1020,7 @@ struct TuningConfigAllreduce(TuningConfig):
 
 
 alias allreduce_table = Table(
-    List(
+    [
         # default for sm90 (encoded with ngpus=-1, num_bytes=-1)
         TuningConfigAllreduce(
             ngpus=-1, num_bytes=-1, sm_version="sm_90a", num_blocks=216
@@ -1046,7 +1063,7 @@ alias allreduce_table = Table(
         TuningConfigAllreduce(
             ngpus=4, num_bytes=(1 << 27), sm_version="sm_100a", num_blocks=512
         ),
-    ),
+    ],
     "allreduce_table",
 )
 
@@ -1074,6 +1091,14 @@ fn _dispatch_max_num_blocks[
     alias default_idx = allreduce_table.query_index[rule_eq_arch_default]()
     constrained[len(default_idx)]()
     alias default_entry = allreduce_table.configs[default_idx[0]]
+    var default_num_blocks = default_entry.num_blocks
+
+    # Override defaults for specific AMD CDNA3 parts regardless of sm_version aliasing
+    alias arch = _accelerator_arch()
+    if "gfx950" in arch:  # MI355 family
+        default_num_blocks = 64
+    elif "gfx942" in arch:  # MI300 family
+        default_num_blocks = 32
 
     # narrowing the search space to matching sm_version and ngpus
     @parameter
@@ -1084,7 +1109,7 @@ fn _dispatch_max_num_blocks[
 
     @parameter
     if not search_domain:
-        return default_entry.num_blocks
+        return default_num_blocks
 
     # get all static num_bytes values in table within the search space
     @parameter
@@ -1115,7 +1140,7 @@ fn _dispatch_max_num_blocks[
             else:
                 break
 
-    return default_entry.num_blocks
+    return default_num_blocks
 
 
 fn get_sm_version() -> StaticString:
@@ -1128,16 +1153,16 @@ fn allreduce[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    output_lambda: elementwise_epilogue_type,
+    output_lambda: OptionalReg[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,
     use_quickreduce: Bool = False,
 ](
     input_buffers: InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], 1 if use_multimem else ngpus
+        NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
     ],
-    output_buffer: NDBuffer[dtype, rank, MutableAnyOrigin],
+    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
@@ -1197,8 +1222,28 @@ fn allreduce[
       - The `use_multimem` parameter requires P2P access between GPUs to be enabled.
     """
 
-    # TODO: check all devices have the same GPU sm_version
+    # Return early, if the input buffer is empty
+    var num_elements = input_buffers[0].num_elements()
+    if num_elements == 0:
+        return
 
+    @always_inline
+    @parameter
+    @__copy_capture(output_buffer)
+    fn default_output_lambda[
+        _dtype: DType,
+        _rank: Int,
+        _width: Int,
+        *,
+        _alignment: Int,
+    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
+        output_buffer.store[width=_width, alignment=_alignment](
+            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, _width]](val)
+        )
+
+    alias actual_output_lambda = default_output_lambda if not output_lambda else output_lambda.value()
+
+    # TODO: check all devices have the same GPU sm_version
     alias sm_version = get_sm_version()
     var max_num_blocks = _max_num_blocks.or_else(
         _dispatch_max_num_blocks[ngpus, sm_version](
@@ -1223,10 +1268,10 @@ fn allreduce[
             )
         return _allreduce_naive_single[
             ngpus=ngpus,
-            output_lambda=output_lambda,
+            output_lambda=actual_output_lambda,
             num_buffers=ngpus,
         ](
-            rebind[InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus]](
+            rebind[InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus]](
                 input_buffers
             ),
             output_buffer,
@@ -1236,7 +1281,7 @@ fn allreduce[
 
     return _allreduce_p2p[
         ngpus=ngpus,
-        output_lambda=output_lambda,
+        output_lambda=actual_output_lambda,
         pdl_level=pdl_level,
         use_quickreduce=use_quickreduce,
         num_buffers= 1 if use_multimem else ngpus,
@@ -1251,17 +1296,13 @@ fn allreduce_2stage_quickreduce_tile[
     BLOCK_SIZE: Int,
     output_lambda: elementwise_epilogue_type,
     atom_size: Int,
+    use_bufferio: Bool,
 ](
-    result_data: UnsafePointer[
+    result: NDBuffer[dtype, rank, MutAnyOrigin],
+    local_src: UnsafePointer[
         Scalar[dtype], address_space=_target_address_space
     ],
-    buffer_list: InlineArray[
-        UnsafePointer[Scalar[DType.uint8], address_space=_target_address_space],
-        ngpus,
-    ],
-    src_buffer: UnsafePointer[
-        Scalar[dtype], address_space=_target_address_space
-    ],
+    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
     my_rank: Int,
     tile: Int,
@@ -1295,19 +1336,27 @@ fn allreduce_2stage_quickreduce_tile[
     var tA = InlineArray[SIMD[dtype, simd_width], atom_size](uninitialized=True)
     var tR = InlineArray[SIMD[dtype, simd_width], atom_size](uninitialized=True)
     var tR_acc = InlineArray[SIMD[accum_type, simd_width], atom_size](fill=0)
-    var data_buf = InlineArray[
-        UnsafePointer[Scalar[dtype], address_space=_target_address_space],
-        ngpus,
-    ](uninitialized=True)
+
+    # Build typed views from rank_sigs once
     var flag_buf = InlineArray[
         UnsafePointer[Scalar[_flag_t], address_space=_target_address_space],
         ngpus,
     ](uninitialized=True)
 
+    var data_buf = InlineArray[
+        UnsafePointer[Scalar[dtype], address_space=_target_address_space],
+        ngpus,
+    ](uninitialized=True)
+
     @parameter
-    for r in range(ngpus):
-        data_buf[r] = buffer_list[r].bitcast[Scalar[dtype]]()
-        flag_buf[r] = buffer_list[r].bitcast[Scalar[_flag_t]]()
+    for rr in range(ngpus):
+        var payload_generic = (
+            (rank_sigs[rr].address_space_cast[AddressSpace.GENERIC]() + 1)
+            .bitcast[Scalar[DType.uint8]]()
+            .address_space_cast[_target_address_space]()
+        )
+        flag_buf[rr] = payload_generic.bitcast[Scalar[_flag_t]]()
+        data_buf[rr] = payload_generic.bitcast[Scalar[dtype]]()
 
     @parameter
     fn wait_for_flag(
@@ -1326,9 +1375,8 @@ fn allreduce_2stage_quickreduce_tile[
     @parameter
     @always_inline
     fn send(
-        send_buffer: UnsafePointer[
-            Scalar[dtype], address_space=_target_address_space
-        ],
+        r: Int,
+        base_index: Int,
         tA: InlineArray[SIMD[dtype, simd_width], atom_size],
         tile_offset: Int,
     ):
@@ -1336,22 +1384,43 @@ fn allreduce_2stage_quickreduce_tile[
         for i in range(rank_atoms):
             var atom_idx = Int(thread_idx.x) * simd_width + atom_stride * i
             var atom_data = tA[tile_offset + i]
-            send_buffer.store[alignment=alignment](atom_idx, atom_data)
+
+            @parameter
+            if use_bufferio:
+                AMDBufferResource(data_buf[r]).store[
+                    dtype,
+                    width=simd_width,
+                    cache_policy = CacheOperation.STREAMING,
+                ](Int32(base_index + atom_idx), atom_data)
+            else:
+                data_buf[r].store[alignment=alignment](
+                    base_index + atom_idx, atom_data
+                )
 
     @parameter
     @always_inline
     fn recv(
-        recv_buffer: UnsafePointer[
+        recv_ptr: UnsafePointer[
             Scalar[dtype], address_space=_target_address_space
         ],
+        base_index: Int,
         tile_offset: Int,
     ):
         @parameter
         for i in range(rank_atoms):
             var atom_idx = Int(thread_idx.x) * simd_width + atom_stride * i
-            tA[tile_offset + i] = recv_buffer.load[
-                width=simd_width, alignment=alignment, invariant=True
-            ](atom_idx)
+
+            @parameter
+            if use_bufferio:
+                tA[tile_offset + i] = AMDBufferResource(recv_ptr).load[
+                    dtype,
+                    width=simd_width,
+                    cache_policy = CacheOperation.STREAMING,
+                ](Int32(base_index + atom_idx))
+            else:
+                tA[tile_offset + i] = recv_ptr.load[
+                    width=simd_width, alignment=alignment, invariant=True
+                ](base_index + atom_idx)
 
     @parameter
     @always_inline
@@ -1360,15 +1429,26 @@ fn allreduce_2stage_quickreduce_tile[
         var src_offset = tile * tile_elems + Int(thread_idx.x) * simd_width
 
         @parameter
-        for i in range(atom_size):
-            tA[i] = src_buffer.load[
-                width=simd_width, alignment=alignment, invariant=True
-            ](src_offset + i * atom_stride)
+        if use_bufferio:
+
+            @parameter
+            for i in range(atom_size):
+                tA[i] = AMDBufferResource(local_src).load[
+                    dtype, width=simd_width
+                ](Int32(src_offset + i * atom_stride))
+        else:
+
+            @parameter
+            for i in range(atom_size):
+                tA[i] = local_src.load[
+                    width=simd_width, alignment=alignment, invariant=True
+                ](src_offset + i * atom_stride)
 
         @parameter
         for r in range(ngpus):
             send(
-                data_buf[r] + comm_data0_offset + my_rank * rank_tile_elems,
+                r,
+                comm_data0_offset + my_rank * rank_tile_elems,
                 tA,
                 r * rank_atoms,
             )
@@ -1387,16 +1467,23 @@ fn allreduce_2stage_quickreduce_tile[
     @parameter
     @always_inline
     fn phase1b_reduce():
-        if thread_idx.x < UInt(ngpus):
-            wait_for_flag(
-                flag_buf[my_rank] + comm_flags0_offset + thread_idx.x,
-                flag_color,
-            )
+        if thread_idx.x == UInt(0):
+
+            @parameter
+            for r in range(ngpus):
+                wait_for_flag(
+                    flag_buf[my_rank] + comm_flags0_offset + r,
+                    flag_color,
+                )
         barrier()
 
         @parameter
         for r in range(ngpus):
-            recv(data_buf[my_rank] + comm_data0_offset + r * rank_tile_elems, 0)
+            recv(
+                data_buf[my_rank],
+                comm_data0_offset + r * rank_tile_elems,
+                0,
+            )
 
             @parameter
             for i_red in range(rank_atoms):
@@ -1414,7 +1501,8 @@ fn allreduce_2stage_quickreduce_tile[
         @parameter
         for r in range(ngpus):
             send(
-                data_buf[r] + comm_data1_offset + my_rank * rank_tile_elems,
+                r,
+                comm_data1_offset + my_rank * rank_tile_elems,
                 tR,
                 0,
             )
@@ -1428,17 +1516,21 @@ fn allreduce_2stage_quickreduce_tile[
         # No additional barrier: thread 0 will wait on all flags below and
         # a barrier after the wait will synchronize the block.
 
-        if thread_idx.x < UInt(ngpus):
-            wait_for_flag(
-                flag_buf[my_rank] + comm_flags1_offset + thread_idx.x,
-                flag_color,
-            )
+        if thread_idx.x == UInt(0):
+
+            @parameter
+            for r in range(ngpus):
+                wait_for_flag(
+                    flag_buf[my_rank] + comm_flags1_offset + r,
+                    flag_color,
+                )
         barrier()
 
         @parameter
         for r in range(ngpus):
             recv(
-                data_buf[my_rank] + comm_data1_offset + r * rank_tile_elems,
+                data_buf[my_rank],
+                comm_data1_offset + r * rank_tile_elems,
                 r * rank_atoms,
             )
 
@@ -1449,7 +1541,9 @@ fn allreduce_2stage_quickreduce_tile[
     @parameter
     for i in range(atom_size):
         var elem_idx_out = dst_offset + i * atom_stride
-        result_data.store[alignment=alignment](elem_idx_out, tA[i])
+        output_lambda[width=simd_width, alignment=alignment](
+            result.get_nd_index(elem_idx_out), tA[i]
+        )
 
 
 @__llvm_metadata(
@@ -1464,7 +1558,7 @@ fn allreduce_2stage_quickreduce[
     output_lambda: elementwise_epilogue_type,
     atom_size: Int,
 ](
-    result: NDBuffer[dtype, rank, MutableAnyOrigin],
+    result: NDBuffer[dtype, rank, MutAnyOrigin],
     local_src: UnsafePointer[Scalar[dtype]],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
@@ -1494,37 +1588,47 @@ fn allreduce_2stage_quickreduce[
     alias simd_width = simd_width_of[dtype]()
     alias alignment = align_of[SIMD[dtype, simd_width]]()
 
-    # Build payload planes from rank_sigs once and pass to the tile kernel
-    var buffer_list = InlineArray[
-        UnsafePointer[Scalar[DType.uint8], address_space=_target_address_space],
-        ngpus,
-    ](uninitialized=True)
+    alias bytes_per_elem = size_of[Scalar[dtype]]()
+    alias flag_t_bytes = size_of[Scalar[_flag_t]]()
+    alias tile_elems = 256 * atom_size * simd_width
+    alias INT32_MAX = 2147483647
+
+    var data_offset_elems = (
+        2 * num_tiles_total * ngpus * flag_t_bytes
+    ) // bytes_per_elem
+    var max_index_elems = (
+        data_offset_elems + 2 * num_tiles_total * tile_elems - 1
+    )
+    var amd_index_fits = max_index_elems <= (INT32_MAX // bytes_per_elem)
 
     @parameter
-    for rr in range(ngpus):
-        # The '+ 1' skips the signal header (1 byte) to access the payload buffer.
-        var payload_generic = (
-            (rank_sigs[rr].address_space_cast[GPUAddressSpace.GENERIC]() + 1)
-            .bitcast[Scalar[DType.uint8]]()
-            .address_space_cast[_target_address_space]()
-        )
-        buffer_list[rr] = payload_generic
+    @always_inline
+    fn dispatch_on_bufferio[use_bufferio: Bool]():
+        for tile in range(block_idx.x, num_tiles_total, grid_dim.x):
+            allreduce_2stage_quickreduce_tile[
+                dtype,
+                rank,
+                ngpus,
+                BLOCK_SIZE=BLOCK_SIZE,
+                output_lambda=output_lambda,
+                atom_size=atom_size,
+                use_bufferio=use_bufferio,
+            ](
+                result,
+                local_src.address_space_cast[_target_address_space](),
+                rank_sigs,
+                num_elements,
+                my_rank,
+                tile,
+                num_tiles_total,
+                iteration,
+            )
 
-    for tile in range(block_idx.x, num_tiles_total, grid_dim.x):
-        allreduce_2stage_quickreduce_tile[
-            dtype,
-            rank,
-            ngpus,
-            BLOCK_SIZE=BLOCK_SIZE,
-            output_lambda=output_lambda,
-            atom_size=atom_size,
-        ](
-            result.data.address_space_cast[_target_address_space](),
-            buffer_list,
-            local_src.address_space_cast[_target_address_space](),
-            num_elements,
-            my_rank,
-            tile,
-            num_tiles_total,
-            iteration,
-        )
+    @parameter
+    if is_amd_gpu():
+        if amd_index_fits:
+            dispatch_on_bufferio[True]()
+        else:
+            dispatch_on_bufferio[False]()
+    else:
+        dispatch_on_bufferio[False]()

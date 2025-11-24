@@ -1,0 +1,18 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "graph",
+    srcs = glob(["**/*.py"]),
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/mlir",
+        "@mojo//:python",
+        requirement("numpy"),
+        requirement("pyyaml"),
+        requirement("typing-extensions"),
+    ],
+)

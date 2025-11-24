@@ -23,10 +23,10 @@ import math
 from math.math import _Expable
 from sys import llvm_intrinsic
 
-alias ComplexScalar = ComplexSIMD[size=1]
+comptime ComplexScalar = ComplexSIMD[size=1]
 """Represents a scalar complex value."""
-alias ComplexFloat32 = ComplexScalar[DType.float32]
-alias ComplexFloat64 = ComplexScalar[DType.float64]
+comptime ComplexFloat32 = ComplexScalar[DType.float32]
+comptime ComplexFloat64 = ComplexScalar[DType.float64]
 
 
 # ===-----------------------------------------------------------------------===#
@@ -36,7 +36,7 @@ alias ComplexFloat64 = ComplexScalar[DType.float64]
 
 @register_passable("trivial")
 struct ComplexSIMD[dtype: DType, size: Int](
-    EqualityComparable, Stringable, Writable, _Expable
+    Equatable, Stringable, Writable, _Expable
 ):
     """Represents a complex SIMD value.
 
@@ -51,8 +51,8 @@ struct ComplexSIMD[dtype: DType, size: Int](
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    alias type = dtype
-    alias element_type = SIMD[dtype, size]
+    comptime type = Self.dtype
+    comptime element_type = SIMD[Self.dtype, Self.size]
     var re: Self.element_type
     """The real part of the complex SIMD value."""
     var im: Self.element_type
@@ -72,26 +72,30 @@ struct ComplexSIMD[dtype: DType, size: Int](
         self.re = re
         self.im = im
 
-    fn __init__(out self, *, from_interleaved: SIMD[dtype, 2 * size]):
+    fn __init__(out self, *, from_interleaved: SIMD[Self.dtype, 2 * Self.size]):
         """Initializes a complex SIMD value.
 
         Args:
             from_interleaved: An interleaved vector of complex values e.g.
                 `[0, 1, 1, 0]` where the pattern is `[re0, im0, re1, im1]`.
         """
-        alias T = Tuple[Self.element_type, Self.element_type]
+        comptime T = Tuple[Self.element_type, Self.element_type]
         self.re, self.im = rebind[T](from_interleaved.deinterleave())
 
-    fn __init__(out self, *, from_deinterleaved: SIMD[dtype, 2 * size]):
+    fn __init__(
+        out self, *, from_deinterleaved: SIMD[Self.dtype, 2 * Self.size]
+    ):
         """Initializes a complex SIMD value.
 
         Args:
             from_deinterleaved: A deinterleaved vector of complex values e.g.
                 `[0, 1, 1, 0]` where the pattern is `[re0, re1, im0, im1]`.
         """
-        alias T = Self.element_type
-        self.re = rebind[T](from_deinterleaved.slice[size]())
-        self.im = rebind[T](from_deinterleaved.slice[size, offset=size]())
+        comptime T = Self.element_type
+        self.re = rebind[T](from_deinterleaved.slice[Self.size]())
+        self.im = rebind[T](
+            from_deinterleaved.slice[Self.size, offset = Self.size]()
+        )
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -134,11 +138,11 @@ struct ComplexSIMD[dtype: DType, size: Int](
 
         # Print an opening `[`.
         @parameter
-        if size > 1:
+        if Self.size > 1:
             writer.write("[")
 
         # Print each element.
-        for i in range(size):
+        for i in range(Self.size):
             var re = self.re[i]
             var im = self.im[i]
             # Print separators between each element.
@@ -152,11 +156,11 @@ struct ComplexSIMD[dtype: DType, size: Int](
 
         # Print a closing `]`.
         @parameter
-        if size > 1:
+        if Self.size > 1:
             writer.write("]")
 
     @always_inline
-    fn __abs__(self) -> SIMD[dtype, size]:
+    fn __abs__(self) -> SIMD[Self.dtype, Self.size]:
         """Returns the magnitude of the complex value.
 
         Returns:
@@ -196,7 +200,7 @@ struct ComplexSIMD[dtype: DType, size: Int](
         )
 
     @always_inline
-    fn __mul__(self, rhs: Scalar[dtype]) -> Self:
+    fn __mul__(self, rhs: Scalar[Self.dtype]) -> Self:
         """Multiplies a complex value to a scalar.
 
         Args:
@@ -208,7 +212,7 @@ struct ComplexSIMD[dtype: DType, size: Int](
         return Self(self.re * rhs, self.im * rhs)
 
     @always_inline
-    fn __rmul__(self, lhs: Scalar[dtype]) -> Self:
+    fn __rmul__(self, lhs: Scalar[Self.dtype]) -> Self:
         """Multiplies a complex value to a scalar.
 
         Args:
@@ -229,7 +233,7 @@ struct ComplexSIMD[dtype: DType, size: Int](
         self = self * rhs
 
     @always_inline
-    fn __imul__(mut self, rhs: Scalar[dtype]):
+    fn __imul__(mut self, rhs: Scalar[Self.dtype]):
         """Multiplies a complex value to a scalar inplace.
 
         Args:
@@ -301,18 +305,18 @@ struct ComplexSIMD[dtype: DType, size: Int](
         return Self(self.re, -self.im)
 
     @always_inline
-    fn norm(self) -> SIMD[dtype, size]:
+    fn norm(self) -> SIMD[Self.dtype, Self.size]:
         """Returns the magnitude of the complex value.
 
         Returns:
             Value of `sqrt(re*re + im*im)`.
         """
-        return llvm_intrinsic["llvm.sqrt", SIMD[dtype, size]](
+        return llvm_intrinsic["llvm.sqrt", SIMD[Self.dtype, Self.size]](
             self.squared_norm()
         )
 
     @always_inline
-    fn squared_norm(self) -> SIMD[dtype, size]:
+    fn squared_norm(self) -> SIMD[Self.dtype, Self.size]:
         """Returns the squared magnitude of the complex value.
 
         Returns:

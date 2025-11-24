@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys.intrinsics import _type_is_eq
 
 from algorithm.functional import unswitch
@@ -281,7 +282,7 @@ fn _matmul_common[
     var hidden_state_2d = LayoutTensor[
         dtype,
         hidden_state_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ](
         hidden_state.ptr,
         RuntimeLayout[hidden_state_layout].row_major(
@@ -290,18 +291,18 @@ fn _matmul_common[
     )
 
     alias c_layout = Layout.row_major(UNKNOWN_VALUE, N)
-    var c_nd: LayoutTensor[dtype, c_layout, MutableAnyOrigin]
+    var c_nd: LayoutTensor[dtype, c_layout, MutAnyOrigin]
 
     @parameter
     if is_cpu[target]():
         var c_ptr = UnsafePointer[Scalar[dtype]].alloc(BS * SEQ_LEN * N)
 
-        c_nd = LayoutTensor[dtype, c_layout, MutableAnyOrigin](
+        c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
             c_ptr,
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
     else:
-        c_nd = LayoutTensor[dtype, c_layout, MutableAnyOrigin](
+        c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
             UnsafePointer[Scalar[dtype]](),
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
@@ -411,7 +412,7 @@ fn generic_flash_attention_kv_cache_padded[
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     @always_inline
@@ -478,7 +479,7 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     @always_inline
@@ -539,7 +540,7 @@ fn _flash_attention_dispatch[
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     var k = kv_cache.get_key_cache(Int(layer_idx))
@@ -595,7 +596,7 @@ fn _flash_attention_dispatch_materialized_mask[
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     var k = kv_cache.get_key_cache(Int(layer_idx))
@@ -643,7 +644,7 @@ fn _flash_attention_dispatch_materialized_mask[
         _dispatch_flash_attention,
         Int(collection_t.kv_params.num_heads),
     ](
-        LayoutTensor[mask_nd.dtype, mask_nd.layout, MutableAnyOrigin](
+        LayoutTensor[mask_nd.dtype, mask_nd.layout, MutAnyOrigin](
             mask_nd.ptr,
             RuntimeLayout[mask_nd.layout].row_major(
                 mask_nd.runtime_layout.shape.value.canonicalize()
@@ -1104,40 +1105,51 @@ def print_kv_cache_cont_batch_generic_gpu[
     context: DeviceContextPtr,
 ):
     var blocks_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        kv_collection.blocks.num_elements()
+        kv_collection.blocks.size()
     )
-    var blocks_host_nd = type_of(kv_collection.blocks)(
-        blocks_ptr, kv_collection.blocks.dynamic_shape
+    var blocks_host_nd = LayoutTensor[
+        type_of(kv_collection.blocks).dtype, Layout.row_major[6](), MutAnyOrigin
+    ](
+        blocks_ptr,
+        RuntimeLayout[Layout.row_major[6]()].row_major(
+            kv_collection.blocks.runtime_layout.shape.value.canonicalize()
+        ),
     )
     var dev_ctx = context.get_device_context()
     dev_ctx.enqueue_copy(
-        blocks_host_nd.data,
-        kv_collection.blocks.data,
-        kv_collection.blocks.num_elements(),
+        blocks_host_nd.ptr,
+        kv_collection.blocks.ptr,
+        kv_collection.blocks.size(),
     )
 
     var cache_lengths_ptr = UnsafePointer[UInt32].alloc(
-        kv_collection.cache_lengths.num_elements()
+        kv_collection.cache_lengths.size()
     )
     var cache_lengths_host_nd = type_of(kv_collection.cache_lengths)(
-        cache_lengths_ptr, kv_collection.cache_lengths.dynamic_shape
+        cache_lengths_ptr,
+        RuntimeLayout[type_of(kv_collection.cache_lengths).layout].row_major(
+            kv_collection.cache_lengths.runtime_layout.shape.value.canonicalize(),
+        ),
     )
     dev_ctx.enqueue_copy(
-        cache_lengths_host_nd.data,
-        kv_collection.cache_lengths.data,
-        kv_collection.cache_lengths.num_elements(),
+        cache_lengths_host_nd.ptr,
+        kv_collection.cache_lengths.ptr,
+        kv_collection.cache_lengths.size(),
     )
 
     var lookup_table_ptr = UnsafePointer[UInt32].alloc(
-        kv_collection.lookup_table.num_elements()
+        kv_collection.lookup_table.size()
     )
     var lookup_table_host_nd = type_of(kv_collection.lookup_table)(
-        lookup_table_ptr, kv_collection.lookup_table.dynamic_shape
+        lookup_table_ptr,
+        RuntimeLayout[type_of(kv_collection.lookup_table).layout].row_major(
+            kv_collection.lookup_table.runtime_layout.shape.value.canonicalize(),
+        ),
     )
     dev_ctx.enqueue_copy(
-        lookup_table_host_nd.data,
-        kv_collection.lookup_table.data,
-        kv_collection.lookup_table.num_elements(),
+        lookup_table_host_nd.ptr,
+        kv_collection.lookup_table.ptr,
+        kv_collection.lookup_table.size(),
     )
 
     var host_kv_collection = type_of(kv_collection)(
@@ -1187,9 +1199,9 @@ def print_kv_cache_cont_batch_generic_gpu[
         is_print_compact,
     )
 
-    blocks_host_nd.data.free()
-    cache_lengths_host_nd.data.free()
-    lookup_table_host_nd.data.free()
+    blocks_host_nd.ptr.free()
+    cache_lengths_host_nd.ptr.free()
+    lookup_table_host_nd.ptr.free()
     valid_lengths_host_nd.ptr.free()
 
 
@@ -1208,38 +1220,49 @@ def print_kv_cache_paged_generic_gpu[
     context: DeviceContextPtr,
 ):
     var blocks_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        kv_collection.blocks.num_elements()
+        kv_collection.blocks.size()
     )
-    var blocks_host_nd = type_of(kv_collection.blocks)(
-        blocks_ptr, kv_collection.blocks.dynamic_shape
+    var blocks_host_nd = LayoutTensor[
+        type_of(kv_collection.blocks).dtype, Layout.row_major[6](), MutAnyOrigin
+    ](
+        blocks_ptr,
+        RuntimeLayout[Layout.row_major[6]()].row_major(
+            kv_collection.blocks.runtime_layout.shape.value.canonicalize(),
+        ),
     )
     var dev_ctx = context.get_device_context()
     dev_ctx.enqueue_copy(
-        blocks_host_nd.data,
-        kv_collection.blocks.data,
-        kv_collection.blocks.num_elements(),
+        blocks_host_nd.ptr,
+        kv_collection.blocks.ptr,
+        kv_collection.blocks.size(),
     )
     var cache_lengths_ptr = UnsafePointer[UInt32].alloc(
-        kv_collection.cache_lengths.num_elements()
+        kv_collection.cache_lengths.size()
     )
     var cache_lengths_host_nd = type_of(kv_collection.cache_lengths)(
-        cache_lengths_ptr, kv_collection.cache_lengths.dynamic_shape
+        cache_lengths_ptr,
+        RuntimeLayout[type_of(kv_collection.cache_lengths).layout].row_major(
+            kv_collection.cache_lengths.runtime_layout.shape.value.canonicalize(),
+        ),
     )
     dev_ctx.enqueue_copy(
-        cache_lengths_host_nd.data,
-        kv_collection.cache_lengths.data,
-        kv_collection.cache_lengths.num_elements(),
+        cache_lengths_host_nd.ptr,
+        kv_collection.cache_lengths.ptr,
+        kv_collection.cache_lengths.size(),
     )
     var lookup_table_ptr = UnsafePointer[UInt32].alloc(
-        kv_collection.lookup_table.num_elements()
+        kv_collection.lookup_table.size()
     )
     var lookup_table_host_nd = type_of(kv_collection.lookup_table)(
-        lookup_table_ptr, kv_collection.lookup_table.dynamic_shape
+        lookup_table_ptr,
+        RuntimeLayout[type_of(kv_collection.lookup_table).layout].row_major(
+            kv_collection.lookup_table.runtime_layout.shape.value.canonicalize(),
+        ),
     )
     dev_ctx.enqueue_copy(
-        lookup_table_host_nd.data,
-        kv_collection.lookup_table.data,
-        kv_collection.lookup_table.num_elements(),
+        lookup_table_host_nd.ptr,
+        kv_collection.lookup_table.ptr,
+        kv_collection.lookup_table.size(),
     )
     var host_kv_collection = type_of(kv_collection)(
         blocks_host_nd,
@@ -1287,9 +1310,9 @@ def print_kv_cache_paged_generic_gpu[
         is_print_compact,
     )
 
-    blocks_host_nd.data.free()
-    cache_lengths_host_nd.data.free()
-    lookup_table_host_nd.data.free()
+    blocks_host_nd.ptr.free()
+    cache_lengths_host_nd.ptr.free()
+    lookup_table_host_nd.ptr.free()
     valid_lengths_host_nd.ptr.free()
 
 
@@ -1301,20 +1324,20 @@ def print_kv_cache_paged_generic_gpu[
 fn _continuous_batch_kv_cache_collection[
     dtype: DType, //, kv_params: KVCacheStaticParams
 ](
-    blocks: NDBuffer[dtype, 6],
-    cache_lengths: NDBuffer[DType.uint32, 1],
-    lookup_table: NDBuffer[DType.uint32, 1],
-    max_lengths: NDBuffer[DType.uint32, 2],
+    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6]()],
+    cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
+    lookup_table: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
+    max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2]()],
     out result: ContinuousBatchingKVCacheCollection[dtype, kv_params],
 ):
     # Marshal NDBuffers into arguments expected by the
     # ContinuousKVCacheCollection constructor.
     return {
-        blocks = blocks,
-        cache_lengths = cache_lengths,
-        lookup_table = lookup_table,
-        max_seq_length = max_lengths[Index(0, 0)],
-        max_cache_length = max_lengths[Index(0, 1)],
+        blocks = blocks.as_any_origin(),
+        cache_lengths = cache_lengths.get_immutable().as_any_origin(),
+        lookup_table = lookup_table.get_immutable().as_any_origin(),
+        max_seq_length = max_lengths[0, 0][0],
+        max_cache_length = max_lengths[0, 1][0],
     }
 
 
@@ -1322,10 +1345,10 @@ fn _continuous_batch_kv_cache_collection[
 fn generic_get_continuous_cache[
     dtype: DType, kv_params: KVCacheStaticParams
 ](
-    blocks: NDBuffer[dtype, 6],
-    cache_lengths: NDBuffer[DType.uint32, 1],
-    lookup_table: NDBuffer[DType.uint32, 1],
-    max_lengths: NDBuffer[DType.uint32, 2],
+    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6]()],
+    cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
+    lookup_table: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
+    max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2]()],
 ) -> ContinuousBatchingKVCacheCollection[dtype, kv_params]:
     return _continuous_batch_kv_cache_collection[kv_params](
         blocks, cache_lengths, lookup_table, max_lengths
@@ -1358,43 +1381,48 @@ fn generic_get_paged_cache[
         KVCacheStaticParams(UInt(num_heads), UInt(head_dim), is_mla),
         page_size,
     ](
-        managed_tensor_slice_to_ndbuffer(blocks),
-        managed_tensor_slice_to_ndbuffer(cache_lengths),
-        managed_tensor_slice_to_ndbuffer(lookup_table),
-        managed_tensor_slice_to_ndbuffer(max_lengths),
+        LayoutTensor[blocks.dtype, Layout.row_major[6](), MutAnyOrigin](
+            blocks.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()].row_major(
+                blocks.to_layout_tensor().runtime_layout.shape.value
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                cache_lengths.to_layout_tensor().runtime_layout.shape.value
+            ),
+        ),
+        LayoutTensor[lookup_table.dtype, Layout.row_major[2](), ImmutAnyOrigin](
+            lookup_table.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()].row_major(
+                lookup_table.to_layout_tensor().runtime_layout.shape.value
+            ),
+        ),
+        LayoutTensor[max_lengths.dtype, Layout.row_major[2](), ImmutAnyOrigin](
+            max_lengths.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()].row_major(
+                max_lengths.to_layout_tensor().runtime_layout.shape.value
+            ),
+        ),
     )
 
 
 fn generic_get_paged_cache[
     dtype: DType, kv_params: KVCacheStaticParams, page_size: Int
 ](
-    blocks: NDBuffer[dtype, 6],
-    cache_lengths: NDBuffer[DType.uint32, 1],
-    lookup_table: NDBuffer[DType.uint32, 2],
-    max_lengths: NDBuffer[DType.uint32, 2],
+    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6]()],
+    cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
+    lookup_table: LayoutTensor[DType.uint32, Layout.row_major[2]()],
+    max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2]()],
     out result: PagedKVCacheCollection[dtype, kv_params, page_size],
 ):
     return {
-        blocks = blocks,
-        cache_lengths = cache_lengths,
-        lookup_table = lookup_table,
-        max_seq_length = max_lengths[Index(0, 0)],
-        max_cache_length = max_lengths[Index(0, 1)],
+        blocks = blocks.as_any_origin(),
+        cache_lengths = cache_lengths.get_immutable().as_any_origin(),
+        lookup_table = lookup_table.get_immutable().as_any_origin(),
+        max_seq_length = max_lengths[0, 0][0],
+        max_cache_length = max_lengths[0, 1][0],
     }
-
-
-@always_inline
-fn managed_tensor_slice_to_ndbuffer[
-    spec: StaticTensorSpec, //
-](tensor: ManagedTensorSlice[static_spec=spec]) -> NDBuffer[
-    spec.dtype,
-    spec.rank,
-    MutableAnyOrigin,
-    spec.shape,
-    spec.strides,
-    alignment2 = spec.alignment,
-    address_space = spec.address_space,
-    exclusive = spec.exclusive,
-]:
-    var ptr = tensor._ptr.address_space_cast[spec.address_space]()
-    return {ptr, tensor.shape(), tensor._runtime_strides}

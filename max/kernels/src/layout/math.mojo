@@ -250,7 +250,7 @@ fn max[
     out res: LayoutTensor[
         inp.dtype,
         _reduce_res_row_major_shape(axis, inp.layout),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = inp.address_space,
         element_layout = inp.element_layout,
         layout_int_type = inp.layout_int_type,
@@ -329,7 +329,7 @@ fn sum[
     out res: LayoutTensor[
         inp.dtype,
         _reduce_res_row_major_shape(axis, inp.layout),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = inp.address_space,
         element_layout = inp.element_layout,
         layout_int_type = inp.layout_int_type,
@@ -425,9 +425,9 @@ fn mean[
     if dst.dtype.is_integral():
 
         @always_inline
-        @__copy_capture(dst_1d, n)
-        @parameter
-        fn normalize_integral[simd_width: Int](idx: Int):
+        fn normalize_integral[
+            simd_width: Int
+        ](idx: Int) unified {var dst_1d, var n}:
             var idx_1d = dst_1d.runtime_layout(
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
             )
@@ -435,14 +435,14 @@ fn mean[
             var to_store = elem // n
             dst_1d.ptr.store(idx_1d, to_store)
 
-        vectorize[normalize_integral, simd_width](dst_1d.size())
+        vectorize[simd_width](dst_1d.size(), normalize_integral)
     else:
         var n_recip = Scalar[dst.dtype](1) / n
 
         @always_inline
-        @__copy_capture(dst_1d, n, n_recip)
-        @parameter
-        fn normalize_floating[simd_width: Int](idx: Int):
+        fn normalize_floating[
+            simd_width: Int
+        ](idx: Int) unified {var dst_1d, var n, var n_recip}:
             var idx_1d = dst_1d.runtime_layout(
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
             )
@@ -450,7 +450,7 @@ fn mean[
             var to_store = elem * n_recip
             dst_1d.ptr.store(idx_1d, to_store)
 
-        vectorize[normalize_floating, simd_width](dst_1d.size())
+        vectorize[simd_width](dst_1d.size(), normalize_floating)
 
 
 fn variance(

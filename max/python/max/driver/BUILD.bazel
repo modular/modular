@@ -1,0 +1,14 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "driver",
+    srcs = glob(["**/*.py"]),
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/_core_types",
+        "//max/python/max/dtype",
+        requirement("numpy"),
+    ],
+)

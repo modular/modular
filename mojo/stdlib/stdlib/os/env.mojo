@@ -20,6 +20,7 @@ from os import setenv
 """
 
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import CompilationTarget, external_call
 from sys.ffi import c_int
 

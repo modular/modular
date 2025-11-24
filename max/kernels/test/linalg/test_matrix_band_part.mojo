@@ -34,13 +34,13 @@ def matrix_band_part[
     alias cond_type = DType.bool
 
     var num_lower_buf = NDBuffer[
-        int_type, 1, MutableAnyOrigin, DimList(1)
+        int_type, 1, MutAnyOrigin, DimList(1)
     ].stack_allocation()
     var num_upper_buf = NDBuffer[
-        int_type, 1, MutableAnyOrigin, DimList(1)
+        int_type, 1, MutAnyOrigin, DimList(1)
     ].stack_allocation()
     var exclude_buf = NDBuffer[
-        cond_type, 1, MutableAnyOrigin, DimList(1)
+        cond_type, 1, MutAnyOrigin, DimList(1)
     ].stack_allocation()
 
     num_lower_buf[0] = num_lower
@@ -77,12 +77,8 @@ def test_matrix_band_part():
     alias shape = DimList(3, 3)
     alias dtype = DType.float32
 
-    var input = NDBuffer[
-        dtype, rank, MutableAnyOrigin, shape
-    ].stack_allocation()
-    var output = NDBuffer[
-        dtype, rank, MutableAnyOrigin, shape
-    ].stack_allocation()
+    var input = NDBuffer[dtype, rank, MutAnyOrigin, shape].stack_allocation()
+    var output = NDBuffer[dtype, rank, MutAnyOrigin, shape].stack_allocation()
 
     input[0, 0] = 1
     input[0, 1] = 2

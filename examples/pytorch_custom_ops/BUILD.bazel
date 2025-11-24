@@ -13,7 +13,7 @@ custom_op_example_py_binary(
         ":operations",
     ],
     extra_deps = [
-        "//SDK/lib/API/python/max/torch",
+        "//max/python/max/torch",
         requirement("torch"),
     ],
 )
@@ -25,7 +25,7 @@ custom_op_example_py_binary(
         ":operations",
     ],
     extra_deps = [
-        "//SDK/lib/API/python/max/torch",
+        "//max/python/max/torch",
         requirement("torch"),
         requirement("pillow"),
     ],
@@ -39,7 +39,7 @@ custom_op_example_py_binary(
         ":operations",
     ],
     extra_deps = [
-        "//SDK/lib/API/python/max/torch",
+        "//max/python/max/torch",
         requirement("torch"),
         requirement("transformers"),
         requirement("datasets"),
@@ -51,7 +51,7 @@ custom_op_example_py_binary(
     name = "graph",
     srcs = ["graph.py"],
     extra_deps = [
-        "//SDK/lib/API/python/max/torch",
+        "//max/python/max/torch",
         requirement("torch"),
     ],
 )
@@ -61,9 +61,9 @@ mojo_library(
     srcs = [":kernel_sources"],
     validate_missing_docs = False,
     deps = [
-        "@mojo//:compiler",
-        "@mojo//:layout",
+        "//max:compiler",
+        "//max:layout",
+        "//max:tensor",
         "@mojo//:stdlib",
-        "@mojo//:tensor",
     ],
 )

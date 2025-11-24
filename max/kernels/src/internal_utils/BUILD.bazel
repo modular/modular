@@ -7,7 +7,7 @@ mojo_library(
     srcs = glob(["**/*.mojo"]),
     validate_missing_docs = False,
     deps = [
+        "//max:tensor",
         "@mojo//:stdlib",
-        "@mojo//:tensor",
     ],
 )

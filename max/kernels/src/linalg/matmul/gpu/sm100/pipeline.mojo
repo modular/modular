@@ -14,8 +14,8 @@
 
 from sys import size_of
 
-from gpu.memory import AddressSpace
 from layout.tma_async import SharedMemBarrier
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 alias MbarPtr = UnsafePointer[
@@ -59,7 +59,7 @@ struct ProducerConsumerPipeline[num_stages: Int]:
             ptr: Pointer to shared memory barriers.
         """
         self.full = ptr
-        self.empty = ptr + num_stages
+        self.empty = ptr + Self.num_stages
         self._producer_stage = 0
         self._consumer_stage = 0
         # This ensures producer's wait_consumer() passes trivially at
@@ -131,7 +131,7 @@ struct ProducerConsumerPipeline[num_stages: Int]:
         """
         self._consumer_stage += 1
 
-        if self._consumer_stage == num_stages:
+        if self._consumer_stage == Self.num_stages:
             self._consumer_stage = 0
             self._consumer_phase ^= 1
 
@@ -144,7 +144,7 @@ struct ProducerConsumerPipeline[num_stages: Int]:
         """
         self._producer_stage += 1
 
-        if self._producer_stage == num_stages:
+        if self._producer_stage == Self.num_stages:
             self._producer_stage = 0
             self._producer_phase ^= 1
 
@@ -157,7 +157,7 @@ struct ProducerConsumerPipeline[num_stages: Int]:
             The total number of bytes needed for all pipeline barriers
             (2 * num_stages barriers).
         """
-        return 2 * num_stages * size_of[SharedMemBarrier]()
+        return 2 * Self.num_stages * size_of[SharedMemBarrier]()
 
     @always_inline
     fn init_mbars(
@@ -174,6 +174,6 @@ struct ProducerConsumerPipeline[num_stages: Int]:
         """
 
         @parameter
-        for i in range(num_stages):
+        for i in range(Self.num_stages):
             self.full[i].init(producer_arrive_count)
             self.empty[i].init(consumer_arrive_count)

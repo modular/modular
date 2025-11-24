@@ -18,7 +18,7 @@ from testing import assert_equal, TestSuite
 
 from utils import IndexList, StaticTuple
 
-alias num_reductions = 2
+comptime num_reductions = 2
 
 
 fn fused_reduce_inner_test[
@@ -132,7 +132,7 @@ fn reduce_inner_test[
     offset: Int = 1,
     axis: Int = rank - 1,
 ) raises:
-    alias num_reductions = 1
+    comptime num_reductions = 1
 
     var out_shape = shape
     out_shape[axis] = 1
@@ -222,7 +222,7 @@ def test_reduce():
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         constrained[reduction_idx < 2, "reduction idx OOB"]()
 
-        alias func = reduce_max if reduction_idx == 0 else reduce_add
+        comptime func = reduce_max if reduction_idx == 0 else reduce_add
         return func(x, y)
 
     with DeviceContext() as ctx:

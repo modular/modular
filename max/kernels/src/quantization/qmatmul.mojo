@@ -25,7 +25,11 @@ from linalg.arch.cpu.vnni_intrinsics import (
 )
 from linalg.matmul import elementwise_epilogue_type
 from linalg.utils import partition_work
-from memory import bitcast, stack_allocation
+from memory import (
+    LegacyUnsafePointer as UnsafePointer,
+    bitcast,
+    stack_allocation,
+)
 from runtime.asyncrt import parallelism_level
 
 from utils.index import Index

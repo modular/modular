@@ -19,6 +19,7 @@ from sys.intrinsics import PrefetchOptions
 
 import benchmark
 from buffer import NDBuffer
+from memory import LegacyUnsafePointer as UnsafePointer
 from linalg.utils import (
     get_matmul_kernel_shape,
     get_matmul_prefetch_b_distance_k,
@@ -75,9 +76,9 @@ fn kernel(
     var b = NDBuffer[dtype, 1](b_ptr, k * NR)
     var c = NDBuffer[dtype, 1](c_ptr, MR * n)
 
-    var c_local = NDBuffer[
-        dtype, 1, MutableAnyOrigin, MR * NR
-    ]().stack_allocation[alignment=alignment]()
+    var c_local = NDBuffer[dtype, 1, MutAnyOrigin, MR * NR]().stack_allocation[
+        alignment=alignment
+    ]()
 
     alias NR2 = NR // simd_size
 

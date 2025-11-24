@@ -14,6 +14,7 @@
 
 from layout import LayoutTensor
 from memory import memcpy
+from memory import LegacyUnsafePointer as UnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # _get_rightmost_broadcast_axis

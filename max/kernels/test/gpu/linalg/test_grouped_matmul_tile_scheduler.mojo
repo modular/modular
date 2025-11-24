@@ -13,7 +13,7 @@
 
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from gpu.id import block_idx
+from gpu import block_idx
 from linalg.grouped_matmul_tile_scheduler import TileScheduler
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from buffer import NDBuffer
@@ -23,7 +23,7 @@ from utils.index import Index
 
 fn test_kernel[
     swizzle: Bool, shape: DimList
-](group_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin, shape]):
+](group_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin, shape]):
     scheduler = TileScheduler[
         M=20,
         tile_shape = Index(4, 8, 16),

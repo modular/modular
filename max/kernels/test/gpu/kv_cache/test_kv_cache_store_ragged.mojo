@@ -40,8 +40,8 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     alias kv_params = KVCacheStaticParams(num_heads=num_kv_heads, head_size=64)
     alias num_layers = 2
     alias batch_size = 3
-    var valid_lengths = List[Int](100, 200, 300)
-    var cache_lengths = List[Int](100, 200, 300)
+    var valid_lengths: List[Int] = [100, 200, 300]
+    var cache_lengths: List[Int] = [100, 200, 300]
 
     debug_assert(
         len(valid_lengths) == len(cache_lengths),
@@ -133,14 +133,23 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     var kv_collection_paged_device = PagedKVCacheCollection[
         dtype, kv_params, page_size
     ](
-        rebind[NDBuffer[dtype, 6, MutableAnyOrigin]](
-            kv_block_managed.device_buffer()
+        LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+            kv_block_managed.device_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()].row_major(
+                kv_block_managed.device_tensor().runtime_layout.shape.value
+            ),
         ),
-        rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-            cache_lengths_managed.device_buffer()
+        LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+            cache_lengths_managed.device_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                cache_lengths_managed.device_tensor().runtime_layout.shape.value
+            ),
         ),
-        rebind[NDBuffer[DType.uint32, 2, MutableAnyOrigin]](
-            paged_lut_managed.device_buffer()
+        LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+            paged_lut_managed.device_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()].row_major(
+                paged_lut_managed.device_tensor().runtime_layout.shape.value,
+            ),
         ),
         max_prompt_length,
         max_full_context_length,
@@ -199,12 +208,23 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     var kv_collection_paged_host = PagedKVCacheCollection[
         dtype, kv_params, page_size
     ](
-        rebind[NDBuffer[dtype, 6, MutableAnyOrigin]](kv_block_managed.buffer()),
-        rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-            cache_lengths_managed.buffer()
+        LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+            kv_block_managed.tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()].row_major(
+                kv_block_managed.tensor().runtime_layout.shape.value
+            ),
         ),
-        rebind[NDBuffer[DType.uint32, 2, MutableAnyOrigin]](
-            paged_lut_managed.buffer()
+        LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+            cache_lengths_managed.tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                cache_lengths_managed.tensor().runtime_layout.shape.value
+            ),
+        ),
+        LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+            paged_lut_managed.tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()].row_major(
+                paged_lut_managed.tensor().runtime_layout.shape.value,
+            ),
         ),
         max_prompt_length,
         max_full_context_length,
@@ -235,7 +255,7 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
                         batch_idx,
                         head_idx,
                         cache_token_idx,
-                        head_dim_idx,
+                        Int(head_dim_idx),
                     )
 
                     # Verify the values match

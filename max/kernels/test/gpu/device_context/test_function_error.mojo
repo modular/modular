@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import OwnedPointer
+from memory import LegacyUnsafePointer as UnsafePointer, OwnedPointer
 from testing import *
 
 
@@ -40,7 +40,7 @@ def test_function_error(ctx: DeviceContext):
     except e:
         # This error should occur at the synchronize call as the kernel launches
         # async by default.
-        # CHECK: open-source/max/max/kernels/test/gpu/device_context/test_function_error.mojo:39:24
+        # CHECK: max/kernels/test/gpu/device_context/test_function_error.mojo:39:24
         print(e)
 
 

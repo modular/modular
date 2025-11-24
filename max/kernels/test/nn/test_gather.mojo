@@ -38,7 +38,7 @@ fn test_gather() raises:
         var input = LayoutTensor[
             DType.float32,
             Layout.row_major(num_rows, row_size),
-            MutableAnyOrigin,
+            MutAnyOrigin,
         ].stack_allocation[stack_alignment=64]()
 
         for i in range(num_rows):
@@ -50,7 +50,7 @@ fn test_gather() raises:
         var indices = LayoutTensor[
             indices_type,
             Layout(num_indices),
-            MutableAnyOrigin,
+            MutAnyOrigin,
         ].stack_allocation[stack_alignment=64]()
 
         for i in range(num_indices):
@@ -62,7 +62,7 @@ fn test_gather() raises:
         var output = LayoutTensor[
             DType.float32,
             Layout.row_major(num_indices, row_size),
-            MutableAnyOrigin,
+            MutAnyOrigin,
         ].stack_allocation[stack_alignment=64]()
 
         # Test gather
@@ -125,7 +125,7 @@ fn test_gather_3d() raises:
         var input = LayoutTensor[
             DType.float32,
             Layout.row_major(num_rows, row_size, 1),
-            MutableAnyOrigin,
+            MutAnyOrigin,
         ].stack_allocation[stack_alignment=64]()
 
         for i in range(num_rows):
@@ -137,7 +137,7 @@ fn test_gather_3d() raises:
         var indices = LayoutTensor[
             indices_type,
             Layout.row_major(num_indices, 1),
-            MutableAnyOrigin,
+            MutAnyOrigin,
         ].stack_allocation[stack_alignment=64]()
 
         for i in range(num_indices):
@@ -147,7 +147,7 @@ fn test_gather_3d() raises:
         var output = LayoutTensor[
             DType.float32,
             Layout.row_major(num_indices, 1, row_size, 1),
-            MutableAnyOrigin,
+            MutAnyOrigin,
         ].stack_allocation[stack_alignment=64]()
 
         # Test gather

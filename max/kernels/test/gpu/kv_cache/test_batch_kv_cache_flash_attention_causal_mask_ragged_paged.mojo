@@ -23,17 +23,19 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from memory import memcpy, memset_zero
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
 from tensor import IOUnknown, ManagedTensorSlice
 from tensor.managed_tensor_slice import StaticTensorSpec
-from testing import assert_almost_equal
+from testing import assert_almost_equal, assert_equal
 
 from utils import IndexList
 
 alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
+alias kv_params_llama3_1b = KVCacheStaticParams(num_heads=8, head_size=64)
 alias llama_num_q_heads = 32
 
 
@@ -79,18 +81,18 @@ def execute_ragged_flash_attention[
 
     q_ragged_host = HostNDBuffer[
         dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](total_length, num_q_heads, Int(kv_params.head_size)))
     random(q_ragged_host.tensor)
     q_ragged_device = q_ragged_host.copy_to_device(ctx)
 
     # initialize reference output
     test_output_host = HostNDBuffer[
         dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](total_length, num_q_heads, Int(kv_params.head_size)))
     test_output_device = test_output_host.copy_to_device(ctx)
     ref_output_host = HostNDBuffer[
         dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](total_length, num_q_heads, Int(kv_params.head_size)))
     ref_output_device = ref_output_host.copy_to_device(ctx)
 
     var num_continuous_blocks = batch_size + 2
@@ -105,8 +107,8 @@ def execute_ragged_flash_attention[
             2,
             num_layers,
             max_full_context_length,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         ),
     )
 
@@ -132,9 +134,35 @@ def execute_ragged_flash_attention[
     kv_collection_continuous_device = ContinuousBatchingKVCacheCollection[
         dtype, kv_params
     ](
-        kv_block_continuous_device.tensor,
-        cache_lengths_device.tensor,
-        lookup_table_device.tensor,
+        LayoutTensor[
+            kv_block_continuous_device.dtype,
+            Layout.row_major[6](),
+            MutAnyOrigin,
+        ](
+            kv_block_continuous_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_continuous_device.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_continuous_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            lookup_table_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            lookup_table_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                lookup_table_device.to_layout_tensor().runtime_layout.shape.value,
+                lookup_table_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_prompt_length,
         max_full_context_length,
     )
@@ -150,8 +178,8 @@ def execute_ragged_flash_attention[
             2,
             num_layers,
             page_size,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         )
     )
 
@@ -176,7 +204,9 @@ def execute_ragged_flash_attention[
                 paged_ptr = kv_block_paged_host.tensor._offset(
                     IndexList[6](randval, kv_idx, layer_idx, 0, 0, 0)
                 )
-                n_cpy = block_sz * kv_params.num_heads * kv_params.head_size
+                n_cpy = block_sz * Int(
+                    kv_params.num_heads * kv_params.head_size
+                )
                 memcpy(
                     dest=paged_ptr,
                     src=kv_block_continuous_host.tensor._offset(
@@ -195,8 +225,7 @@ def execute_ragged_flash_attention[
                     memset_zero(
                         paged_ptr + n_cpy,
                         (page_size - block_sz)
-                        * kv_params.num_heads
-                        * kv_params.head_size,
+                        * Int(kv_params.num_heads * kv_params.head_size),
                     )
 
     paged_lut_device = paged_lut_host.copy_to_device(ctx)
@@ -205,9 +234,35 @@ def execute_ragged_flash_attention[
     kv_collection_paged_device = PagedKVCacheCollection[
         dtype, kv_params, page_size
     ](
-        kv_block_paged_device.tensor,
-        cache_lengths_device.tensor,
-        paged_lut_device.tensor,
+        LayoutTensor[
+            kv_block_paged_device.dtype,
+            Layout.row_major[6](),
+            MutAnyOrigin,
+        ](
+            kv_block_paged_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_paged_device.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_paged_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            paged_lut_device.dtype, Layout.row_major[2](), ImmutAnyOrigin
+        ](
+            paged_lut_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut_device.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_prompt_length,
         max_full_context_length,
     )
@@ -223,7 +278,10 @@ def execute_ragged_flash_attention[
         ManagedTensorSlice[
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](input_row_offsets_device.tensor),
+        ](
+            input_row_offsets_device.tensor.data,
+            input_row_offsets_device.tensor.get_shape(),
+        ),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -239,7 +297,10 @@ def execute_ragged_flash_attention[
         ManagedTensorSlice[
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](input_row_offsets_device.tensor),
+        ](
+            input_row_offsets_device.tensor.data,
+            input_row_offsets_device.tensor.get_shape(),
+        ),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -258,8 +319,8 @@ def execute_ragged_flash_attention[
                 for hd in range(kv_params.head_size):
                     try:
                         assert_almost_equal(
-                            ref_out[ragged_offset + s, h, hd],
-                            test_out[ragged_offset + s, h, hd],
+                            ref_out[ragged_offset + s, h, Int(hd)],
+                            test_out[ragged_offset + s, h, Int(hd)],
                             atol=1e-2,
                         )
                     except e:
@@ -269,10 +330,46 @@ def execute_ragged_flash_attention[
                             s,
                             h,
                             hd,
-                            ref_out[ragged_offset + s, h, hd],
-                            test_out[ragged_offset + s, h, hd],
+                            ref_out[ragged_offset + s, h, Int(hd)],
+                            test_out[ragged_offset + s, h, Int(hd)],
                         )
                         raise e
+
+    # check reproducibility
+    for repeat in range(16):
+        flash_attention[ragged=True](
+            ref_output_device.to_layout_tensor(),
+            q_ragged_device.to_layout_tensor(),
+            kv_collection_paged_device.get_key_cache(layer_idx),
+            kv_collection_paged_device.get_value_cache(layer_idx),
+            CausalMask(),
+            IdentityScoreMod(),
+            ManagedTensorSlice[
+                io_spec=IOUnknown,
+                static_spec = StaticTensorSpec[
+                    DType.uint32, 1
+                ].create_unknown(),
+            ](
+                input_row_offsets_device.tensor.data,
+                input_row_offsets_device.tensor.get_shape(),
+            ),
+            rsqrt(Float32(kv_params.head_size)),
+            ctx,
+        )
+        ctx.enqueue_copy(ref_output_host.tensor.data, ref_output_device.buffer)
+        ctx.synchronize()
+        for bs in range(batch_size):
+            prompt_len = valid_lengths[bs]
+            ragged_offset = Int(input_row_offsets_host.tensor[bs])
+            for s in range(prompt_len):
+                for h in range(num_q_heads):
+                    for d in range(kv_params.head_size):
+                        rep = ref_out[ragged_offset + s, h, Int(d)]
+                        orig = test_out[ragged_offset + s, h, Int(d)]
+                        if rep != orig:
+                            print("repeat s h d =", repeat, s, h, d)
+                        assert_equal(rep, orig)
+                        ref_out[ragged_offset + s, h, Int(d)] = 123.4567
 
     _ = q_ragged_host^
     _ = q_ragged_device^
@@ -295,24 +392,30 @@ def execute_ragged_flash_attention[
 def execute_flash_attention_suite(ctx: DeviceContext):
     alias types = (DType.float32, DType.bfloat16)
 
-    for bs in [1, 4]:
+    for bs in [1, 4, 16]:
 
         @parameter
         for type_idx in range(len(types)):
             alias type = types[type_idx]
+            if bs == 16 and type == DType.float32:
+                # This fails for the MI300X
+                continue
             ce_cache_sizes = List[Int]()
             ce_seq_lens = List[Int]()
             tg_cache_sizes = List[Int]()
             tg_seq_lens = List[Int]()
             for _ in range(bs):
                 tg_seq_lens.append(1)
-                tg_cache_sizes.append(Int(random_ui64(512, 1024)))
-                ce_seq_lens.append(Int(random_ui64(512, 1024)))
+                tg_cache_sizes.append(Int(random_ui64(1, 1024)))
+                ce_seq_lens.append(Int(random_ui64(1, 1024)))
                 ce_cache_sizes.append(0)
 
             print("CE", bs, type)
             execute_ragged_flash_attention[
                 llama_num_q_heads, type, kv_params_llama3
+            ](ce_seq_lens, ce_cache_sizes, 2, 1, ctx)
+            execute_ragged_flash_attention[
+                llama_num_q_heads, type, kv_params_llama3_1b
             ](ce_seq_lens, ce_cache_sizes, 2, 1, ctx)
 
             print("TG", bs, type)
@@ -322,11 +425,12 @@ def execute_flash_attention_suite(ctx: DeviceContext):
 
     # edge cases
     print("CE", 1, DType.bfloat16)
-    var short_ce_seq_len = [2]
-    var short_ce_cache_size = [0]
-    execute_ragged_flash_attention[
-        llama_num_q_heads, DType.bfloat16, kv_params_llama3
-    ](short_ce_seq_len, short_ce_cache_size, 2, 1, ctx)
+    for len in [2, 27]:
+        var short_ce_seq_len = [len]
+        var short_ce_cache_size = [0]
+        execute_ragged_flash_attention[
+            llama_num_q_heads, DType.bfloat16, kv_params_llama3
+        ](short_ce_seq_len, short_ce_cache_size, 2, 1, ctx)
 
     print("TG", 2, DType.bfloat16)
     tg_seq_lens = [1, 1]

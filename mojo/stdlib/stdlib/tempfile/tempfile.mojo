@@ -26,11 +26,11 @@ from sys import CompilationTarget
 
 from memory import Span
 
-alias TMP_MAX = 10_000
+comptime TMP_MAX = 10_000
 
 
 fn _get_random_name(size: Int = 8) -> String:
-    alias characters = "abcdefghijklmnopqrstuvwxyz0123456789_"
+    comptime characters = "abcdefghijklmnopqrstuvwxyz0123456789_"
     var name = String(capacity=size)
     for _ in range(size):
         var rand_index = Int(
@@ -45,7 +45,7 @@ fn _candidate_tempdir_list() -> List[String]:
     _get_default_tempdir will try."""
 
     var dirlist = List[String]()
-    var possible_env_vars = List[StaticString]("TMPDIR", "TEMP", "TMP")
+    var possible_env_vars: List[StaticString] = ["TMPDIR", "TEMP", "TMP"]
     var dirname: String
 
     # First, try the environment.

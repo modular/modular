@@ -18,30 +18,20 @@ from utils._ansi import Color, Text
 from collections import Set
 
 from builtin._location import __call_location, _SourceLocation
-from compile.reflection import get_linkage_name
+from compile.reflection import get_function_name
 from sys.intrinsics import _type_is_eq
-from utils import Variant
+from sys import argv
 
 
-fn _get_test_func_name[
-    func_type: AnyType, //,
-    func: func_type,
-]() -> String:
-    """Get the name of a function."""
-
-    var name = get_linkage_name[func]()
-    return name.split("::")[-1].split("(", maxsplit=1)[0]
-
-
-struct _Indent[W: Writable, origin: ImmutableOrigin](Writable):
+struct _Indent[W: Writable, origin: ImmutOrigin](Writable):
     """Indents the given writable by the given level."""
 
-    alias IndentStr = "  "
+    comptime IndentStr = "  "
 
-    var writable: Pointer[W, origin]
+    var writable: Pointer[Self.W, Self.origin]
     var level: Int
 
-    fn __init__(out self, ref [origin]w: W, *, level: Int):
+    fn __init__(out self, ref [Self.origin]w: Self.W, *, level: Int):
         self.writable = Pointer(to=w)
         self.level = level
 
@@ -87,18 +77,18 @@ fn _writeln[
 
 
 @fieldwise_init
-struct TestResult(EqualityComparable, ImplicitlyCopyable, Movable, Writable):
+struct TestResult(Equatable, ImplicitlyCopyable, Movable, Writable):
     """A test result code."""
 
     var _value: Int
 
-    alias PASS = Self(0)
+    comptime PASS = Self(0)
     """The test passed."""
 
-    alias FAIL = Self(1)
+    comptime FAIL = Self(1)
     """The test failed."""
 
-    alias SKIP = Self(2)
+    comptime SKIP = Self(2)
     """The test was skipped."""
 
     fn __eq__(self, rhs: Self) -> Bool:
@@ -129,9 +119,9 @@ struct TestResult(EqualityComparable, ImplicitlyCopyable, Movable, Writable):
 struct TestReport(Copyable, Movable, Writable):
     """A report for a single unit test."""
 
-    alias _ErrorIndent = 3
+    comptime _ErrorIndent = 3
 
-    var name: String
+    var name: StaticString
     """The name of the test."""
 
     var duration_ns: UInt
@@ -144,7 +134,7 @@ struct TestReport(Copyable, Movable, Writable):
     """The error associated with a failing test."""
 
     @staticmethod
-    fn passed(*, var name: String, duration_ns: UInt) -> Self:
+    fn passed(*, name: StaticString, duration_ns: UInt) -> Self:
         """Create a passing test report.
 
         Args:
@@ -155,13 +145,15 @@ struct TestReport(Copyable, Movable, Writable):
             A new passing test report.
         """
         return {
-            name = name^,
+            name = name,
             duration_ns = duration_ns,
             result = TestResult.PASS,
         }
 
     @staticmethod
-    fn failed(*, var name: String, duration_ns: UInt, var error: Error) -> Self:
+    fn failed(
+        *, name: StaticString, duration_ns: UInt, var error: Error
+    ) -> Self:
         """Create a failing test report.
 
         Args:
@@ -173,14 +165,14 @@ struct TestReport(Copyable, Movable, Writable):
             A new failing test report.
         """
         return {
-            name = name^,
+            name = name,
             duration_ns = duration_ns,
             result = TestResult.FAIL,
             error = error^,
         }
 
     @staticmethod
-    fn skipped(*, var name: String) -> Self:
+    fn skipped(*, name: StaticString) -> Self:
         """Create a skipped test report.
 
         Args:
@@ -189,18 +181,18 @@ struct TestReport(Copyable, Movable, Writable):
         Returns:
             A new skipped test report.
         """
-        return {name = name^, duration_ns = 0, result = TestResult.SKIP}
+        return {name = name, duration_ns = 0, result = TestResult.SKIP}
 
     @doc_private
     fn __init__(
         out self,
         *,
-        var name: String,
+        name: StaticString,
         duration_ns: UInt,
         result: TestResult,
         var error: Error = {},
     ):
-        self.name = name^
+        self.name = name
         self.duration_ns = duration_ns
         self.result = result
         self.error = error^
@@ -330,12 +322,12 @@ struct TestSuiteReport(Copyable, Movable, Writable):
 struct _Test(Copyable & Movable):
     """A single test to run."""
 
-    alias fn_type = fn () raises
+    comptime fn_type = fn () raises
     var test_fn: Self.fn_type
-    var name: String
+    var name: StaticString
 
 
-@explicit_destroy("TestSuite must be destroyed via `run()` or `disable()`")
+@explicit_destroy("TestSuite must be destroyed via `run()`")
 struct TestSuite(Movable):
     """A suite of tests to run.
 
@@ -379,46 +371,65 @@ struct TestSuite(Movable):
     var location: _SourceLocation
     """The source location where the test suite was created."""
 
-    var skip_list: Set[String]
+    var skip_list: Set[StaticString]
     """The list of tests to skip in this suite."""
 
+    var allow_list: Optional[Set[StaticString]]
+    """The list of tests to allow in this suite."""
+
+    var cli_args: List[StaticString]
+    """The raw command line arguments passed to the test suite."""
+
     @always_inline
-    fn __init__(out self, *, location: Optional[_SourceLocation] = None):
+    fn __init__(
+        out self,
+        *,
+        location: Optional[_SourceLocation] = None,
+        var cli_args: Optional[List[StaticString]] = None,
+    ):
         """Create a new test suite.
 
         Args:
             location: The location of the test suite (defaults to
                 `__call_location`).
+            cli_args: The command line arguments to pass to the test suite
+                (defaults to `sys.argv()`).
         """
         self.tests = List[_Test]()
         self.location = location.or_else(__call_location())
-        # TODO: would be better if these were StaticString
-        self.skip_list = Set[String]()
+        self.skip_list = Set[StaticString]()
+        self.allow_list = None  # None means no allow list specified.
+        self.cli_args = cli_args.or_else(List[StaticString](argv()))
 
-    fn _register_tests[test_funcs: Tuple, /](mut self):
+    fn _register_tests[test_funcs: Tuple, /](mut self) raises:
         """Internal function to prevent all registrations from being inlined."""
 
         @parameter
         for idx in range(len(test_funcs)):
-            alias test_func = test_funcs[idx]
+            comptime test_func = test_funcs[idx]
 
             @parameter
-            if _type_is_eq[type_of(test_func), _Test.fn_type]():
+            if get_function_name[test_func]().startswith("test_"):
 
                 @parameter
-                if _get_test_func_name[test_func]().startswith("test_"):
+                if _type_is_eq[type_of(test_func), _Test.fn_type]():
                     self.test[rebind[_Test.fn_type](test_func)]()
-
-            # TODO: raise or notify the user if `test_*` function has
-            # nonconforming signature. This will need some other reflection,
-            # since `_get_test_func_name` currently cannot work on parametric
-            # functions.
+                else:
+                    raise Error(
+                        "test function '",
+                        get_function_name[test_func](),
+                        "' has nonconforming signature",
+                    )
 
     @always_inline
     @staticmethod
     fn discover_tests[
         test_funcs: Tuple, /
-    ](*, location: Optional[_SourceLocation] = None) -> Self:
+    ](
+        *,
+        location: Optional[_SourceLocation] = None,
+        var cli_args: Optional[List[StaticString]] = None,
+    ) raises -> Self:
         """Discover tests from the given list of functions, and register them.
 
         Parameters:
@@ -428,18 +439,26 @@ struct TestSuite(Movable):
         Args:
             location: The location of the test suite (defaults to
                 `__call_location`).
+            cli_args: The command line arguments to pass to the test suite
+                (defaults to `sys.argv()`).
+
+        Raises:
+            If test discovery fails (e.g. because of a nonconforming test
+            function signature).
 
         Returns:
             A new TestSuite with all discovered tests registered.
         """
 
-        var suite = Self(location=location.or_else(__call_location()))
-        suite._register_tests[test_funcs]()
+        var suite = Self(
+            location=location.or_else(__call_location()), cli_args=cli_args^
+        )
+        try:
+            suite._register_tests[test_funcs]()
+        except e:
+            suite^.abandon()
+            raise e
         return suite^
-
-    fn __del__(deinit self):
-        """Destructor for the test suite."""
-        pass
 
     fn test[f: _Test.fn_type](mut self):
         """Registers a test to be run.
@@ -447,39 +466,116 @@ struct TestSuite(Movable):
         Parameters:
             f: The function to run.
         """
-        self.tests.append(_Test(f, _get_test_func_name[f]()))
+        self.tests.append(_Test(f, get_function_name[f]()))
 
-    fn skip[f: _Test.fn_type](mut self) raises:
+    fn skip[f: _Test.fn_type](mut self):
         """Registers a test to be skipped.
 
         If attempting to skip a test that is not registered in the suite (either
-        explicitly or via automatic discovery), an error will be raised.
+        explicitly or via automatic discovery), an error will be raised when the
+        suite is run.
 
         Parameters:
             f: The function to skip.
-
-        Raises:
-            If the test is not found in the test suite.
         """
-        # TODO: _Test doesn't conform to EqualityComparable, so we can't use
-        # `in` here. Also, we might wanna do this in O(1) time.
+        comptime skipped_name = get_function_name[f]()
+        self.skip_list.add(skipped_name)
+
+    fn _parse_filter_lists(mut self) raises:
+        # TODO: We need a proper argument parsing library to do this right.
+        ref args = self.cli_args
+        var num_args = len(args)
+        if num_args <= 1:
+            return
+
+        if args[1] == "--only":
+            self.allow_list = Set[StaticString]()
+        elif args[1] == "--skip-all":
+            if num_args > 2:
+                raise Error("'--skip-all' does not take any arguments")
+            # --skip-all implies an empty allow list.
+            self.allow_list = Set[StaticString]()
+            return
+        elif args[1] != "--skip":
+            raise Error(
+                "invalid argument: ",
+                args[1],
+                " (expected '--only' or '--skip')",
+            )
+
+        if num_args == 2:
+            raise Error("expected test name(s) after '--only' or '--skip'")
+
+        # TODO: would be better if this was StaticString
+        var discovered_tests = Set[StaticString]()
         for test in self.tests:
-            if test.name == _get_test_func_name[f]():
-                self.skip_list.add(test.name)
-                return
-        raise Error("test not found in suite: ", _get_test_func_name[f]())
+            discovered_tests.add(test.name)
+
+        for idx in range(2, num_args):
+            var arg = args[idx]
+            if arg not in discovered_tests:
+                raise Error(
+                    "explicitly ",
+                    "allowed" if self.allow_list else "skipped",
+                    " test not found in suite: ",
+                    arg,
+                )
+            if self.allow_list:
+                self.allow_list[].add(arg)
+            else:
+                self.skip_list.add(arg)
 
     fn _should_skip(self, test: _Test) -> Bool:
-        return test.name in self.skip_list
+        if test.name in self.skip_list:
+            return True
+        if not self.allow_list:
+            return False
+        # SAFETY: We know that `self.allow_list` is not `None` here.
+        return test.name not in self.allow_list.unsafe_value()
 
-    fn generate_report(mut self) -> TestSuiteReport:
+    fn _validate_skip_list(self) raises:
+        # TODO: _Test doesn't conform to Equatable, so we can't use
+        # `in` here. Also, we might wanna do this in O(1) time.
+        for test_name in self.skip_list:
+            var found = False
+            for test in self.tests:
+                if test.name == test_name:
+                    found = True
+                    break
+            if not found:
+                raise Error(
+                    (
+                        "trying to skip a test that is not registered in the"
+                        " suite: "
+                    ),
+                    test_name,
+                )
+
+    fn generate_report(
+        mut self, skip_all: Bool = False
+    ) raises -> TestSuiteReport:
         """Runs the test suite and generates a report.
+
+        Args:
+            skip_all: Only collect tests, but don't execute them (defaults to
+                `False`).
+
+        Raises:
+            If an error occurs during test collection.
 
         Returns:
             A report containing the results of all tests.
         """
-        var reports = List[TestReport](capacity=len(self.tests))
+        self._validate_skip_list()
 
+        # We call `_parse_filter_lists` even if `skip_all` is true to make sure
+        # CLI arguments are parsed and checked. We should probably refactor this
+        # when we have a proper argument parsing library.
+        self._parse_filter_lists()
+        if skip_all:
+            self.allow_list = Set[StaticString]()
+
+        var reports = List[TestReport](capacity=len(self.tests))
         for test in self.tests:
             if self._should_skip(test):
                 reports.append(TestReport.skipped(name=test.name))
@@ -493,44 +589,39 @@ struct TestSuite(Movable):
                 error = {e^}
             var duration = perf_counter_ns() - start
 
-            var name = test.name.copy()
             if error:
                 reports.append(
                     TestReport.failed(
-                        name=name^, duration_ns=duration, error=error.take()
+                        name=test.name, duration_ns=duration, error=error.take()
                     )
                 )
             else:
                 reports.append(
-                    TestReport.passed(name=name^, duration_ns=duration)
+                    TestReport.passed(name=test.name, duration_ns=duration)
                 )
 
         return TestSuiteReport(reports=reports^, location=self.location)
 
-    fn run(deinit self, *, quiet: Bool = False) raises:
+    fn run(deinit self, *, quiet: Bool = False, skip_all: Bool = False) raises:
         """Runs the test suite and prints the results to the console.
 
         Args:
             quiet: Suppresses printing the report when the suite does not fail
                 (defaults to `False`).
+            skip_all: Only collect tests, but don't execute them (defaults to
+                `False`).
 
         Raises:
-            An error if a test in the test suite fails.
+            If a test in the test suite fails or if an error occurs during test
+            collection.
         """
-        var report = self.generate_report()
+        var report = self.generate_report(skip_all=skip_all)
+
         if report.failures > 0:
             raise Error(report)
         if not quiet:
             print(report)
 
-    fn disable(deinit self, *, quiet: Bool = False):
-        """Disables the test suite by skipping all tests.
-
-        Args:
-            quiet: Suppresses printing the report (defaults to `False`).
-        """
-        for test in self.tests:
-            self.skip_list.add(test.name)
-        var report = self.generate_report()
-        if not quiet:
-            print(report)
+    fn abandon(deinit self):
+        """Destroy a test suite without running any tests."""
+        pass

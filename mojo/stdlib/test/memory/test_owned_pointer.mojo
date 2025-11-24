@@ -34,9 +34,9 @@ def test_basic_ref():
 
 def test_from_unsafe_pointer_constructor():
     var deleted = False
-    var unsafe_ptr = UnsafePointer[ObservableDel].alloc(1)
+    var unsafe_ptr = alloc[ObservableDel](1)
     unsafe_ptr.init_pointee_move(
-        ObservableDel(UnsafePointer(to=deleted).as_immutable())
+        ObservableDel(UnsafePointer(to=deleted).as_any_origin())
     )
 
     var ptr = OwnedPointer(unsafe_from_raw_pointer=unsafe_ptr)
@@ -52,7 +52,7 @@ def test_owned_pointer_copy_constructor():
     assert_equal(1, b[])
     assert_equal(1, b2[])
 
-    assert_not_equal(b.unsafe_ptr(), b2.unsafe_ptr())
+    assert_false(b.unsafe_ptr() == b2.unsafe_ptr())
 
 
 def test_copying_constructor():

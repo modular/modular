@@ -28,16 +28,17 @@ from utils.numerics import min_or_neg_inf
 
 @fieldwise_init
 @register_passable("trivial")
-struct TopKElement[T: DType](
-    ImplicitlyCopyable & GreaterThanComparable & Movable
-):
+struct TopKElement[T: DType](ImplicitlyCopyable & Comparable & Movable):
     """Stores the value with it's index."""
 
     var idx: Int32
-    var val: Scalar[T]
+    var val: Scalar[Self.T]
 
-    fn __gt__(self, rhs: Self) -> Bool:
-        return self.val > rhs.val
+    fn __eq__(self, rhs: Self) -> Bool:
+        return self.val == rhs.val
+
+    fn __lt__(self, rhs: Self) -> Bool:
+        return self.val < rhs.val
 
 
 @register("top_k_custom")

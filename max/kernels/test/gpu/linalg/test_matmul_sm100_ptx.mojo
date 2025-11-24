@@ -20,7 +20,7 @@ from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from gpu.host.compile import _compile_code, get_gpu_target
 from gpu.host.info import B200
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,

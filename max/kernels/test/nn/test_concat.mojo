@@ -22,9 +22,9 @@ fn _tuple_to_list[
     elems_layout: Layout, //,
     dtype: DType,
 ](
-    elems: StaticTuple[LayoutTensor[dtype, elems_layout, MutableAnyOrigin], *_]
-) -> List[LayoutTensor[dtype, elems_layout, MutableAnyOrigin]]:
-    var output = List[LayoutTensor[dtype, elems_layout, MutableAnyOrigin]](
+    elems: StaticTuple[LayoutTensor[dtype, elems_layout, MutAnyOrigin], *_]
+) -> List[LayoutTensor[dtype, elems_layout, MutAnyOrigin]]:
+    var output = List[LayoutTensor[dtype, elems_layout, MutAnyOrigin]](
         capacity=len(elems)
     )
     for i in range(len(elems)):
@@ -54,13 +54,13 @@ def test_concat():
     var x1 = LayoutTensor[dtype, l1](x1_stack).fill(0)
     var x2 = LayoutTensor[dtype, l2](x2_stack).fill(1)
     var x3 = LayoutTensor[dtype, l3](x3_stack).fill(2)
-    var x1_dyn = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var x1_dyn = LayoutTensor[dtype, layout, MutAnyOrigin](
         x1.ptr, RuntimeLayout[layout].row_major(s1)
     )
-    var x2_dyn = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var x2_dyn = LayoutTensor[dtype, layout, MutAnyOrigin](
         x2.ptr, RuntimeLayout[layout].row_major(s2)
     )
-    var x3_dyn = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var x3_dyn = LayoutTensor[dtype, layout, MutAnyOrigin](
         x3.ptr, RuntimeLayout[layout].row_major(s3)
     )
 
@@ -74,9 +74,9 @@ def test_concat():
         output.ptr, RuntimeLayout[layout].row_major(out_shape)
     )
 
-    var input_tuple = StaticTuple[
-        LayoutTensor[dtype, layout, MutableAnyOrigin], 3
-    ](x1_dyn, x2_dyn, x3_dyn)
+    var input_tuple = StaticTuple[LayoutTensor[dtype, layout, MutAnyOrigin], 3](
+        x1_dyn, x2_dyn, x3_dyn
+    )
 
     @parameter
     @always_inline
@@ -133,13 +133,13 @@ def test_concat_parallel():
     var x3_stack = InlineArray[Scalar[dtype], l3.size()](uninitialized=True)
     var x3 = LayoutTensor[dtype, l3](x3_stack).fill(2)
     alias layout = Layout.row_major[rank]()
-    var x1_dyn = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var x1_dyn = LayoutTensor[dtype, layout, MutAnyOrigin](
         x1.ptr, RuntimeLayout[layout].row_major(s1)
     )
-    var x2_dyn = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var x2_dyn = LayoutTensor[dtype, layout, MutAnyOrigin](
         x2.ptr, RuntimeLayout[layout].row_major(s2)
     )
-    var x3_dyn = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var x3_dyn = LayoutTensor[dtype, layout, MutAnyOrigin](
         x3.ptr, RuntimeLayout[layout].row_major(s3)
     )
 
@@ -153,9 +153,9 @@ def test_concat_parallel():
         output.ptr, RuntimeLayout[layout].row_major(out_shape)
     )
 
-    var input_tuple = StaticTuple[
-        LayoutTensor[dtype, layout, MutableAnyOrigin], 3
-    ](x1_dyn, x2_dyn, x3_dyn)
+    var input_tuple = StaticTuple[LayoutTensor[dtype, layout, MutAnyOrigin], 3](
+        x1_dyn, x2_dyn, x3_dyn
+    )
 
     @parameter
     @always_inline
@@ -214,13 +214,13 @@ def test_concat_inner():
     var x2 = LayoutTensor[dtype, l2](x2_stack).fill(1)
     var x3 = LayoutTensor[dtype, l3](x3_stack).fill(2)
     alias layout = Layout.row_major[rank]()
-    var x1_dyn = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var x1_dyn = LayoutTensor[dtype, layout, MutAnyOrigin](
         x1.ptr, RuntimeLayout[layout].row_major(s1)
     )
-    var x2_dyn = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var x2_dyn = LayoutTensor[dtype, layout, MutAnyOrigin](
         x2.ptr, RuntimeLayout[layout].row_major(s2)
     )
-    var x3_dyn = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var x3_dyn = LayoutTensor[dtype, layout, MutAnyOrigin](
         x3.ptr, RuntimeLayout[layout].row_major(s3)
     )
 
@@ -234,9 +234,9 @@ def test_concat_inner():
         output.ptr, RuntimeLayout[layout].row_major(out_shape)
     )
 
-    var input_list = StaticTuple[
-        LayoutTensor[dtype, layout, MutableAnyOrigin], 3
-    ](x1_dyn, x2_dyn, x3_dyn)
+    var input_list = StaticTuple[LayoutTensor[dtype, layout, MutAnyOrigin], 3](
+        x1_dyn, x2_dyn, x3_dyn
+    )
 
     var input_vec = _tuple_to_list(input_list)
 

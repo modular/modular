@@ -60,8 +60,7 @@ from os import abort
 
 from buffer import DimList
 from builtin.range import _StridedRange
-from memory import memcpy
-from memory.pointer import _GPUAddressSpace
+from memory import LegacyUnsafePointer as UnsafePointer, memcpy
 from sys.intrinsics import _type_is_eq_parse_time
 
 from utils.numerics import max_finite
@@ -73,8 +72,8 @@ alias INT_TUPLE_VALIDATION = False
 fn _get_index_type(address_space: AddressSpace) -> DType:
     """Returns int32 for shared/constant GPU memory, index otherwise."""
     if address_space in (
-        _GPUAddressSpace.SHARED,
-        _GPUAddressSpace.CONSTANT,
+        AddressSpace.SHARED,
+        AddressSpace.CONSTANT,
     ):
         return DType.int32
     else:
@@ -274,7 +273,7 @@ that are not known at compile time or have not been specified.
 
 
 @register_passable("trivial")
-struct _IntTupleIter[origin: ImmutableOrigin](Iterable, Iterator):
+struct _IntTupleIter[origin: ImmutOrigin](Iterable, Iterator):
     """Iterator for traversing elements of an IntTuple."""
 
     alias IteratorType[
@@ -283,14 +282,14 @@ struct _IntTupleIter[origin: ImmutableOrigin](Iterable, Iterator):
 
     alias Element = IntTuple
 
-    var src: Pointer[IntTuple, origin]
+    var src: Pointer[IntTuple, Self.origin]
     """Pointer to the source IntTuple being iterated."""
 
     var idx: Int
     """Current position in the iteration."""
 
     @always_inline("nodebug")
-    fn __init__(out self, src: Pointer[IntTuple, origin], idx: Int):
+    fn __init__(out self, src: Pointer[IntTuple, Self.origin], idx: Int):
         """Initialize the iterator with a source IntTuple and starting index."""
         self.src = src
         self.idx = idx
@@ -318,7 +317,7 @@ struct _IntTupleIter[origin: ImmutableOrigin](Iterable, Iterator):
 
 struct IntTuple(
     Defaultable,
-    EqualityComparable,
+    Equatable,
     ImplicitlyCopyable,
     Intable,
     Iterable,
@@ -339,7 +338,7 @@ struct IntTuple(
 
     alias IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
-    ]: Iterator = _IntTupleIter[ImmutableOrigin.cast_from[iterable_origin]]
+    ]: Iterator = _IntTupleIter[ImmutOrigin.cast_from[iterable_origin]]
 
     var _store: IntArray
     """The underlying storage for the `IntTuple`.
@@ -377,7 +376,7 @@ struct IntTuple(
     @staticmethod
     @always_inline("nodebug")
     fn elements_size[
-        _origin: ImmutableOrigin, n: Int
+        _origin: ImmutOrigin, n: Int
     ](elements: InlineArray[Pointer[IntTuple, _origin], n], idx: Int) -> Int:
         """Calculate the total storage size needed for IntTuples at a specific index.
 
@@ -830,6 +829,24 @@ struct IntTuple(
         _ = result._fill(self)
         return result
 
+    fn product_flatten(self) -> IntTuple:
+        """Coalesces a nested `IntTuple` into a single-level `IntTuple`, by multiplying all the
+        values together.
+
+        Returns:
+            A new `IntTuple` containing the products of each top level tuple, in a flat structure.
+        """
+
+        var rank = len(self)
+
+        var tup = IntTuple(num_elems=rank)
+
+        for i in range(rank):
+            var product = product(self[i])
+            tup.replace_entry(i, int_value=product)
+
+        return tup
+
     fn all_known(self) -> Bool:
         """Check if all values in this tuple hierarchy are known (not `UNKNOWN_VALUE`).
 
@@ -1040,16 +1057,20 @@ struct IntTuple(
             The size of the tuple starting at the given offset.
         """
         var len = data[offset]
-        var size = 1
+        var size = 1 + len  # Header + all element slots
+
+        # Now add the sizes of nested tuple data
         for i in range(len):
             var val = data[offset + i + 1]
-            if val >= Self.MinimumValue:
-                size += 1
-            else:
-                # For nested tuples, val stores a negative offset relative to current position
+            if val < Self.MinimumValue:
+                # For nested tuples, also add the size of the nested tuple data
                 # Formula: sub_offset = (offset + i + 1) - (val - MinimumValue)
                 var sub_offset = offset + i + 1 - (val - Self.MinimumValue)
-                size += Self._calculate_tuple_size(data, sub_offset) + 1
+                # Ensure sub_offset is valid
+                if sub_offset < 0 or sub_offset >= data.size():
+                    continue
+                var nested_size = Self._calculate_tuple_size(data, sub_offset)
+                size += nested_size
         return size
 
     fn validate_structure(self):
@@ -1065,18 +1086,17 @@ struct IntTuple(
 
         @parameter
         if INT_TUPLE_VALIDATION:
-            if self._store.owning() > 0:
-                var data_size = self._store.size()
-                var computed_size = Self.tuple_size(self._store)
-                if data_size != computed_size:
-                    abort(
-                        String(
-                            "size validation failed: ",
-                            data_size,
-                            " != ",
-                            computed_size,
-                        )
+            # Basic structure validation: ensure size is at least header + elements
+            var len = self._store[0]
+            if self._store.size() < len + 1:
+                abort(
+                    String(
+                        "Invalid tuple structure: size ",
+                        self._store.size(),
+                        " is less than required ",
+                        len + 1,
                     )
+                )
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:
@@ -2279,7 +2299,7 @@ fn _prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
             return init.owned_copy()
 
 
-fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
+fn shape_div[check: Bool = False](a: IntTuple, b: IntTuple) -> IntTuple:
     """Performs division operation between shape tuples.
 
     Handles four cases:
@@ -2289,6 +2309,9 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
     3. int-tuple: Returns `shape_div(a, product(b))`
     4. int-int: Enforces the divisibility condition `a % b == 0 || b % a == 0` when possible
        Returns `a / b` with rounding away from `0` (that is, `1` or `-1` when `a < b`)
+
+    Parameters:
+        check: Whether to check for incompatible shapes.
 
     Args:
         a: The dividend `IntTuple`.
@@ -2314,19 +2337,19 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
                             "Tuple sizes don't match: ", len(a), " != ", len(b)
                         )
                     )
-            return apply_zip[shape_div](a, b)
+            return apply_zip[shape_div[check]](a, b)
         else:  # tuple "int"
             var vb = Int(b)
             var r = IntTuple()
             for v in a:
-                r.append(shape_div(v, vb))
+                r.append(shape_div[check](v, vb))
                 var prod_v = IntTuple(product(v))
-                vb = Int(shape_div(vb, prod_v))
+                vb = Int(shape_div[check](vb, prod_v))
             return r
     else:
         if is_tuple(b):  # "int" tuple
             var prod_b = IntTuple(product(b))
-            return shape_div(a, prod_b)
+            return shape_div[check](a, prod_b)
         else:  # "int" "int"
             var va = Int(a)
             var vb = Int(b)
@@ -2335,7 +2358,7 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
                 return UNKNOWN_VALUE
 
             @parameter
-            if INT_TUPLE_VALIDATION:
+            if INT_TUPLE_VALIDATION or check:
                 if not (va % vb == 0 or vb % va == 0):
                     abort(String("Incompatible shape values: ", va, " ", vb))
 
@@ -2851,12 +2874,15 @@ fn compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
     return to_nest(shape, flat_result)
 
 
-fn to_index_list[rank: Int](t: IntTuple) -> IndexList[rank]:
+fn to_index_list[
+    rank: Int, element_type: DType = DType.int64
+](t: IntTuple) -> IndexList[rank, element_type=element_type]:
     """
     Converts an IntTuple to a flattened IndexList with the same values.
 
     Parameters:
         rank: The rank of the resulting IndexList.
+        element_type: Element type, must be integer type.
 
     Args:
         t: The `IntTuple` defining the values.
@@ -2864,7 +2890,7 @@ fn to_index_list[rank: Int](t: IntTuple) -> IndexList[rank]:
     Returns:
         An IndexList filled with the values of t.
     """
-    var res = IndexList[rank]()
+    var res = IndexList[rank, element_type=element_type]()
     var flattened_t = t.flatten()
     for i in range(len(t)):
         res[i] = Int(flattened_t[i])

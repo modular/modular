@@ -50,16 +50,16 @@ struct ConvShape[rank: Int](ImplicitlyCopyable, Movable):
 
     var n: Int  # Input batch size.
 
-    var input_dims: IndexList[rank]  # Ex H and W for 2D
-    var output_dims: IndexList[rank]  # Ex HO and WO for 2D.
-    var filter_dims: IndexList[rank]  # Ex R and S for 2D.
+    var input_dims: IndexList[Self.rank]  # Ex H and W for 2D
+    var output_dims: IndexList[Self.rank]  # Ex HO and WO for 2D.
+    var filter_dims: IndexList[Self.rank]  # Ex R and S for 2D.
 
     var c: Int  # Input channel.
     var f: Int  # Output channel.
 
-    var stride: IndexList[rank]
+    var stride: IndexList[Self.rank]
 
-    var dilation: IndexList[rank]
+    var dilation: IndexList[Self.rank]
 
     # TODO: change paddings to
     # pad_lower: IndexList[rank]
@@ -75,8 +75,8 @@ struct ConvShape[rank: Int](ImplicitlyCopyable, Movable):
         """Input depth."""
 
         @parameter
-        if rank >= 3:
-            return self.input_dims[rank - 3]
+        if Self.rank >= 3:
+            return self.input_dims[Self.rank - 3]
         else:
             return 1
 
@@ -85,23 +85,23 @@ struct ConvShape[rank: Int](ImplicitlyCopyable, Movable):
         """Input height."""
 
         @parameter
-        if rank >= 2:
-            return self.input_dims[rank - 2]
+        if Self.rank >= 2:
+            return self.input_dims[Self.rank - 2]
         else:
             return 1
 
     @always_inline
     fn w(self) -> Int:
         """Input width."""
-        return self.input_dims[rank - 1]
+        return self.input_dims[Self.rank - 1]
 
     @always_inline
     fn do(self) -> Int:
         """Output depth."""
 
         @parameter
-        if rank >= 3:
-            return self.output_dims[rank - 3]
+        if Self.rank >= 3:
+            return self.output_dims[Self.rank - 3]
         else:
             return 1
 
@@ -110,23 +110,23 @@ struct ConvShape[rank: Int](ImplicitlyCopyable, Movable):
         """Output height."""
 
         @parameter
-        if rank >= 2:
-            return self.output_dims[rank - 2]
+        if Self.rank >= 2:
+            return self.output_dims[Self.rank - 2]
         else:
             return 1
 
     @always_inline
     fn wo(self) -> Int:
         """Output width."""
-        return self.output_dims[rank - 1]
+        return self.output_dims[Self.rank - 1]
 
     @always_inline
     fn q(self) -> Int:
         """Filter window depth."""
 
         @parameter
-        if rank >= 3:
-            return self.filter_dims[rank - 3]
+        if Self.rank >= 3:
+            return self.filter_dims[Self.rank - 3]
         else:
             return 1
 
@@ -135,15 +135,15 @@ struct ConvShape[rank: Int](ImplicitlyCopyable, Movable):
         """Filter window height."""
 
         @parameter
-        if rank >= 2:
-            return self.filter_dims[rank - 2]
+        if Self.rank >= 2:
+            return self.filter_dims[Self.rank - 2]
         else:
             return 1
 
     @always_inline
     fn s(self) -> Int:
         """Filter windown width."""
-        return self.filter_dims[rank - 1]
+        return self.filter_dims[Self.rank - 1]
 
     @always_inline
     fn filter_window_flat_size(self) -> Int:
@@ -158,7 +158,7 @@ struct ConvShape[rank: Int](ImplicitlyCopyable, Movable):
         return self.output_dims.flattened_length()
 
     @always_inline
-    fn output_space_dims(self) -> IndexList[rank]:
+    fn output_space_dims(self) -> IndexList[Self.rank]:
         return self.output_dims
 
     @always_inline
@@ -166,17 +166,17 @@ struct ConvShape[rank: Int](ImplicitlyCopyable, Movable):
         self, n: Int, output_flat_coord: Int
     ) -> Int:
         constrained[
-            rank == 1 or rank == 2 or rank == 3,
+            Self.rank == 1 or Self.rank == 2 or Self.rank == 3,
             "Only support 1d, 2d, and 3d convolution.",
         ]()
 
         @parameter
-        if rank == 1:
+        if Self.rank == 1:
             var w = output_flat_coord * self.stride[0] - self.pad_w[0]
 
             return self.c * w
 
-        elif rank == 2:
+        elif Self.rank == 2:
             # Unpack output coordinates
             var ho = output_flat_coord // self.wo()
             var wo = output_flat_coord % self.wo()
@@ -187,7 +187,7 @@ struct ConvShape[rank: Int](ImplicitlyCopyable, Movable):
 
             return self.c * (w + self.w() * (h + n * self.h()))
 
-        elif rank == 3:
+        elif Self.rank == 3:
             # Unpack output coordinates
             var doho = output_flat_coord // self.wo()
             var wo = output_flat_coord % self.wo()
@@ -481,11 +481,11 @@ struct ConvInfoStatic[rank: Int](Defaultable):
 
     @always_inline
     fn __init__(out self):
-        self.pad = IntTuple(num_elems=rank * 2)
+        self.pad = IntTuple(num_elems=Self.rank * 2)
         _ = self.pad._fill(UNKNOWN_VALUE)
-        self.stride = IntTuple(num_elems=rank)
+        self.stride = IntTuple(num_elems=Self.rank)
         _ = self.stride._fill(UNKNOWN_VALUE)
-        self.dilation = IntTuple(num_elems=rank)
+        self.dilation = IntTuple(num_elems=Self.rank)
         _ = self.dilation._fill(UNKNOWN_VALUE)
         self.num_groups = UNKNOWN_VALUE
 
@@ -499,7 +499,7 @@ struct ConvInfoStatic[rank: Int](Defaultable):
         filter_c: Int,
     ):
         constrained[
-            rank == 3 or rank == 2 or rank == 1,
+            Self.rank == 3 or Self.rank == 2 or Self.rank == 1,
             "Only support 1d/2d/3d/ conv attributes",
         ]()
 
@@ -507,7 +507,7 @@ struct ConvInfoStatic[rank: Int](Defaultable):
         if input_c != UNKNOWN_VALUE and filter_c != UNKNOWN_VALUE:
             num_groups = input_c // filter_c
 
-        self.pad = reorder_padding[rank](pad)
+        self.pad = reorder_padding[Self.rank](pad)
         self.stride = IntTuple(stride).flatten()
         self.dilation = IntTuple(dilation).flatten()
         self.num_groups = num_groups

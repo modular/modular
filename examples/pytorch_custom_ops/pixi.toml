@@ -14,7 +14,7 @@ torch-grayscale = "python torch-grayscale.py"
 whisper = "python whisper.py"
 
 [dependencies]
-modular = ">=25.6.0.dev2025080505,<26"
+modular = "*"
 pillow = ">=11.3.0,<12"
 numpy = ">=2.3.2,<3"
 pytorch = ">=2.7.1,<3"

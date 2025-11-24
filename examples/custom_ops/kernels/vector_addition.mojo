@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/tutorials/build-custom-ops.mdx
+# DOC: max/develop/build-custom-ops.mdx
 
 from math import ceildiv
 
@@ -56,7 +56,7 @@ fn _vector_addition_gpu(
     fn vector_addition_gpu_kernel(length: Int):
         var tid = block_dim.x * block_idx.x + thread_idx.x
         if tid < UInt(length):
-            var idx = IndexList[output.rank](tid)
+            var idx = IndexList[output.rank](Int(tid))
             var result = lhs.load[1](idx) + rhs.load[1](idx)
             output.store[1](idx, result)
 

@@ -18,6 +18,7 @@ from sys import (
     env_get_int,
     has_accelerator,
     has_amd_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
     simd_width_of,
     size_of,
 )
@@ -30,13 +31,16 @@ from gpu import barrier, block_dim, global_idx, thread_idx
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from gpu.host.info import A100, B200, H100, MI355X, GPUInfo
-from gpu.memory import AddressSpace
-from layout import LayoutTensor
+from layout import LayoutTensor, RuntimeLayout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
 from logger import Logger
-from memory import bitcast, stack_allocation
+from memory import (
+    LegacyUnsafePointer as UnsafePointer,
+    bitcast,
+    stack_allocation,
+)
 
 from utils import Index, IndexList
 from utils.numerics import get_accum_type
@@ -58,6 +62,8 @@ from .sm80.dispatch import create_matmul_configs_ampere
 from .sm90.dispatch import matmul_dispatch_sm90
 from .sm100.dispatch import matmul_dispatch_sm100
 from .sm100.matmul import matmul_sm100_fallback
+
+alias logger = Logger()
 
 
 fn matmul_kernel[
@@ -192,9 +198,9 @@ fn matmul_kernel_naive[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -370,6 +376,7 @@ fn _matmul_gpu[
         MatmulConfig[a_type, b_type, c_type, transpose_b]
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
+    register_based_epilogue: Bool = True,
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
     a: NDBuffer[a_type, 2, _, _],
@@ -384,7 +391,6 @@ fn _matmul_gpu[
     var n = shape.N
     var k = shape.K
 
-    var logger = Logger()
     logger.info("---- MATMUL GPU execution started ----")
     logger.info("MxNxK: ", m, "x", n, "x", k, sep="")
     logger.info("Data types: A=", a_type, " B=", b_type, " C=", c_type)
@@ -489,12 +495,16 @@ fn _matmul_gpu[
     alias bf16_or_fp16_fp32 = (DType.bfloat16, DType.float16, DType.float32)
 
     @parameter
-    if ctx.default_device_info > H100:
+    if (
+        has_nvidia_gpu_accelerator()
+        and ctx.default_device_info.compute > H100.compute
+    ):
         return matmul_dispatch_sm100[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_lambda_wrapper=elementwise_lambda_wrapper,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            register_based_epilogue=register_based_epilogue,
             pdl_level=pdl_level,
         ](c, a, b, ctx)
 
@@ -662,9 +672,18 @@ fn _matmul_gpu[
                     and ctx.default_device_info is A100
                     and transpose_b
                 ):
-                    alias Ms = List[Int32](
-                        16, 32, 64, 128, 256, 512, 768, 1024, 2048, 4096
-                    )
+                    alias Ms: List[Int32] = [
+                        16,
+                        32,
+                        64,
+                        128,
+                        256,
+                        512,
+                        768,
+                        1024,
+                        2048,
+                        4096,
+                    ]
                     try:
 
                         @parameter
@@ -707,6 +726,7 @@ fn _matmul_gpu[
             gemv_gpu[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
+                pdl_level=pdl_level,
             ](c, a, b, ctx)
             return
 
@@ -770,12 +790,12 @@ fn _matmul_gpu[
 fn split_k_reduce[
     c_type: DType,
     work_space_type: DType,
-    c_shape: DimList,
-    work_space_shape: DimList,
+    c_layout: Layout,
+    work_space_layout: Layout,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, c_shape],
-    work_space: NDBuffer[work_space_type, 3, _, work_space_shape],
+    c: LayoutTensor[mut=True, c_type, c_layout],
+    work_space: LayoutTensor[work_space_type, work_space_layout],
     ctx: DeviceContext,
 ) raises:
     alias simd_width = simd_width_of[c_type, target = get_gpu_target()]()
@@ -805,8 +825,8 @@ fn split_k_reduce[
                 rebind[IndexList[2]](c_coord), vec.cast[c_type]()
             )
         else:
-            c.store[width=simd_width, alignment=align](
-                rebind[IndexList[2]](c_coord), vec.cast[c_type]()
+            c.store[width=simd_width](
+                c_coord[0], c_coord[1], vec.cast[c_type]()
             )
 
     elementwise[_reduce, simd_width, target="gpu"](Index(M, N), ctx)
@@ -832,7 +852,6 @@ fn multistage_gemm[
     var M = c.dim[0]()
     var N = c.dim[1]()
 
-    var logger = Logger()
     logger.info("------ Dispatching to Multistage GEMM ------")
     logger.info(config)
 
@@ -922,7 +941,6 @@ fn multistage_gemm[
     var M = c.dim[0]()
     var N = c.dim[1]()
 
-    var logger = Logger()
     logger.info("------ Dispatching to Multistage GEMM ------")
     logger.info(config)
     logger.info("K partitions:", runtime_config.num_k_partitions)
@@ -939,10 +957,19 @@ fn multistage_gemm[
         var work_space_data = ctx.enqueue_create_buffer[work_space_type](
             Int(runtime_config.num_k_partitions * UInt(M) * UInt(N))
         )
-        var work_space = NDBuffer[work_space_type, 3](
-            work_space_data.unsafe_ptr(),
-            Index(Int(runtime_config.num_k_partitions), M, N),
+        alias static_N = tensor_c.layout.shape[1].value()
+        alias work_space_layout = Layout.row_major(
+            UNKNOWN_VALUE, UNKNOWN_VALUE, static_N
         )
+        var work_space_runtime_layout = RuntimeLayout[
+            work_space_layout
+        ].row_major(Index(runtime_config.num_k_partitions, M, N))
+
+        var tensor_work_space = LayoutTensor[
+            work_space_type,
+            work_space_layout,
+            MutAnyOrigin,
+        ](work_space_data, work_space_runtime_layout)
 
         alias gemm_kernel_type = multistage_gemm_split_k_kernel[
             c_type,
@@ -952,6 +979,7 @@ fn multistage_gemm[
             b_type,
             tensor_b.layout,
             work_space_type,
+            tensor_work_space.layout,
             transpose_b,
             config,
             elementwise_lambda_fn,
@@ -963,7 +991,7 @@ fn multistage_gemm[
                 tensor_c,
                 tensor_a,
                 tensor_b,
-                work_space,
+                tensor_work_space,
                 Int(runtime_config.num_k_partitions),
                 grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
                 block_dim=runtime_config.block_dim(),
@@ -973,7 +1001,7 @@ fn multistage_gemm[
                 tensor_c,
                 tensor_a,
                 tensor_b,
-                work_space,
+                tensor_work_space,
                 Int(runtime_config.num_k_partitions),
                 grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
                 block_dim=runtime_config.block_dim(),
@@ -983,13 +1011,9 @@ fn multistage_gemm[
                 ),
             )
 
-        split_k_reduce[
-            c_type,
-            work_space_type,
-            c_shape,
-            work_space.shape,
-            elementwise_lambda_fn,
-        ](c, work_space, ctx)
+        split_k_reduce[elementwise_lambda_fn=elementwise_lambda_fn](
+            tensor_c, tensor_work_space, ctx
+        )
 
         _ = work_space_data^
         return

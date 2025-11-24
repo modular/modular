@@ -17,7 +17,7 @@ These are Mojo built-ins, so you don't need to import them.
 
 
 struct Slice(
-    EqualityComparable,
+    Equatable,
     ImplicitlyCopyable,
     Movable,
     Representable,
@@ -202,6 +202,92 @@ struct Slice(
             end = length if positive_step else length - 1
 
         return (start.value(), end.value(), step)
+
+
+struct StridedSlice(ImplicitlyCopyable, Movable):
+    """Represents a slice expression that has a stride.
+
+    This type is used to support different behavior for strided vs unstrided
+    slicing.
+    """
+
+    var _inner: Slice
+
+    fn __init__(
+        out self, start: Optional[Int], end: Optional[Int], stride: Int
+    ):
+        """Construct slice given start, end, and stride values.
+
+        Args:
+            start: The start value.
+            end: The end value.
+            stride: The step value.
+        """
+
+        self._inner = Slice(start, end, stride)
+
+    fn indices(self, length: Int) -> Tuple[Int, Int, Int]:
+        """Returns a tuple of 3 integers representing start, end, and step
+        of the slice if applied to a container of given length.
+
+        Args:
+            length: The length of the target container.
+
+        Returns:
+            A tuple containing three integers for start, end, and step.
+        """
+        return self._inner.indices(length)
+
+
+struct ContiguousSlice(ImplicitlyCopyable, Movable):
+    """Represents a slice expression without a stride.
+
+    This type is used to support different behavior for strided vs unstrided
+    slicing.
+    """
+
+    var start: Optional[Int]
+    """The starting index of the slice."""
+    var end: Optional[Int]
+    """The end index of the slice."""
+
+    @always_inline
+    fn __init__(
+        out self, start: Optional[Int], end: Optional[Int], stride: NoneType
+    ):
+        """Construct slice given the start and end values.
+
+        Args:
+            start: The start value.
+            end: The end value.
+            stride: Always none. Disambiguates from slices with a stride.
+        """
+        self.start = start
+        self.end = end
+
+    fn indices(self, length: Int) -> Tuple[Int, Int]:
+        """Returns a tuple of 2 integers representing the start, and end
+        of the slice if applied to a container of the given length.
+
+        Args:
+            length: The length of the target container.
+
+        Returns:
+            A tuple containing two integers for start and and.
+        """
+        var start = self.start.or_else(0)
+        var end = self.end.or_else(length)
+        if start < 0:
+            start = max(0, start + length)
+        elif start >= length:
+            start = length
+
+        if end < 0:
+            end = max(0, end + length)
+        elif end >= length:
+            end = length
+
+        return start, end
 
 
 # ===-----------------------------------------------------------------------===#

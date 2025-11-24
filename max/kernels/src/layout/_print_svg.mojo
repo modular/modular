@@ -18,7 +18,7 @@ from layout.swizzle import Swizzle
 
 
 fn print_svg[
-    tensor_list_origin: ImmutableOrigin,
+    tensor_list_origin: ImmutOrigin,
     dtype: DType,
     layout: Layout,
     layout_int_type: DType,
@@ -52,7 +52,7 @@ fn print_svg[
 
 
 fn _print_svg_impl[
-    tensor_list_origin: ImmutableOrigin,
+    tensor_list_origin: ImmutOrigin,
     dtype: DType,
     layout: Layout,
     layout_int_type: DType,
@@ -94,7 +94,7 @@ fn _print_svg_impl[
             "Layout 0 should have the largest second dimension",
         )
 
-    var colors = List[StaticString]("#FFFFFF", "#4A90E2", "#E8F0FF")
+    var colors: List[StaticString] = ["#FFFFFF", "#4A90E2", "#E8F0FF"]
 
     var cell_size = 80
     var margin = 40

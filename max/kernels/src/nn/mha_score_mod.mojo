@@ -15,6 +15,7 @@ from math import exp2, iota
 
 from bit import prev_power_of_two
 
+from memory import LegacyOpaquePointer as OpaquePointer
 from utils.index import IndexList
 from builtin.device_passable import DevicePassable
 
@@ -81,10 +82,10 @@ struct AlibiScoreMod[
         var scale: SIMD[dtype, width]
 
         @parameter
-        if num_heads.is_power_of_two():
-            scale = exp2(-((head_idx + 1).cast[dtype]() * 8.0 / num_heads))
+        if Self.num_heads.is_power_of_two():
+            scale = exp2(-((head_idx + 1).cast[dtype]() * 8.0 / Self.num_heads))
         else:
-            alias floor_power_of_2 = prev_power_of_two(num_heads)
+            alias floor_power_of_2 = prev_power_of_two(Self.num_heads)
             if head_idx[0] < floor_power_of_2:
                 scale = exp2(
                     -((head_idx + 1).cast[dtype]() * 8.0 / floor_power_of_2)

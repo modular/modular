@@ -17,15 +17,15 @@ from time.time import _CTimeSpec
 
 from .fstat import stat_result
 
-alias dev_t = Int64
-alias mode_t = Int32
-alias nlink_t = Int64
+comptime dev_t = Int64
+comptime mode_t = Int32
+comptime nlink_t = Int64
 
-alias uid_t = Int32
-alias gid_t = Int32
-alias off_t = Int64
-alias blkcnt_t = Int64
-alias blksize_t = Int64
+comptime uid_t = Int32
+comptime gid_t = Int32
+comptime off_t = Int64
+comptime blkcnt_t = Int64
+comptime blksize_t = Int64
 
 
 struct _c_stat(Copyable, Defaultable, Movable, Stringable, Writable):

@@ -16,19 +16,88 @@ from sys import size_of
 
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.id import block_idx, thread_idx
+from gpu import block_idx, thread_idx
 from gpu.memory import ReduceOp, fence_async_view_proxy
 from gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
 from layout import Layout, LayoutTensor
 from layout._fillers import arange, random
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import copy_dram_to_sram, copy_sram_to_dram
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    create_tma_tile,
+    TensorMapArray,
+)
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from testing import assert_equal
 
-from utils.index import Index
+from utils.index import Index, IndexList
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from layout.swizzle import make_swizzle
+from layout.int_tuple import product
+
+
+@__llvm_arg_metadata(desc_array, `nvvm.grid_constant`)
+fn tma_ragged_store_kernel[
+    rank: Int,
+    dtype: DType,
+    remaining_desc_dims: IndexList[rank],
+    swizzle_mode: TensorMapSwizzle,
+    smem_size: Int,
+    number_of_offsets: Int,
+    max_descriptor_length: Int,
+](
+    desc_array: TensorMapArray[
+        dtype,
+        remaining_desc_dims,
+        swizzle_mode,
+        max_descriptor_length=max_descriptor_length,
+    ],
+    sequence_offsets: InlineArray[Int, number_of_offsets],
+):
+    var shared_ptr = stack_allocation[
+        smem_size,
+        Scalar[dtype],
+        address_space = AddressSpace.SHARED,
+    ]()
+
+    if thread_idx.x == 0:
+        for i in range(smem_size):
+            shared_ptr[i] = i
+
+    fence_async_view_proxy()
+
+    if thread_idx.x == 0:
+        var current_row = 0
+        var sequence_length = 0
+
+        @parameter
+        for offset_idx in range(number_of_offsets - 1):
+            shared_ptr += sequence_length
+
+            var current_offset = sequence_offsets[offset_idx]
+            var next_offset = sequence_offsets[offset_idx + 1]
+            sequence_length = next_offset - current_offset
+
+            var copy_length = desc_array.calculate_dim_repeat(sequence_length)
+
+            @parameter
+            if rank == 1:
+                desc_array.store_ragged_tile(
+                    copy_length, (0, current_row), shared_ptr
+                )
+            else:
+                desc_array.store_ragged_tile(
+                    copy_length,
+                    IndexList[rank + 1](0, 0, current_row),
+                    shared_ptr,
+                )
+
+            cp_async_bulk_commit_group()
+            current_row += copy_length
+
+    cp_async_bulk_wait_group[0]()
 
 
 # Test loading a single 2d tile.
@@ -39,7 +108,7 @@ fn test_tma_load_kernel[
     tile_layout: Layout,
     thread_layout: Layout,
 ](
-    dst: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    dst: LayoutTensor[dtype, layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, tile_layout],
 ):
     alias tileM = tile_layout.shape[0].value()
@@ -49,15 +118,15 @@ fn test_tma_load_kernel[
     tile = LayoutTensor[
         dtype,
         tile_layout,
-        MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -73,7 +142,7 @@ fn test_tma_load_kernel[
     barrier()
     mbar[0].wait()
 
-    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
+    dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
     copy_sram_to_dram[thread_layout](dst_tile, tile)
 
 
@@ -85,7 +154,7 @@ fn test_tma_multiple_loads_kernel[
     tile_layout: Layout,
     thread_layout: Layout,
 ](
-    dst: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    dst: LayoutTensor[dtype, layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, tile_layout],
 ):
     alias tileM = tile_layout.shape[0].value()
@@ -98,15 +167,15 @@ fn test_tma_multiple_loads_kernel[
     tile = LayoutTensor[
         dtype,
         tile_layout,
-        MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -128,8 +197,79 @@ fn test_tma_multiple_loads_kernel[
         mbar[0].wait(phase)
         phase ^= 1
 
-        dst_tile = dst.tile[tileM, tileN](block_idx.y, i)
+        dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), i)
         copy_sram_to_dram[thread_layout](dst_tile, tile)
+
+
+def test_tma_ragged_store[
+    rank: Int,
+    number_of_sequences: Int, //,
+    smem_layout: Layout,
+    remaining_dims: IndexList[rank],
+    dtype: DType,
+    sequence_lengths: InlineArray[Int, number_of_sequences],
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    max_descriptor_length: Int = 256,
+](ctx: DeviceContext):
+    alias total_size = smem_layout.size()
+    var device_buffer = ctx.enqueue_create_buffer[dtype](total_size)
+
+    var global_tensor = LayoutTensor[
+        dtype,
+        smem_layout,
+        MutAnyOrigin,
+        alignment=128,
+    ](device_buffer)
+
+    var desc_array = TensorMapArray[
+        dtype,
+        remaining_dims,
+        swizzle_mode=swizzle_mode,
+        max_descriptor_length=max_descriptor_length,
+    ](
+        ctx,
+        global_tensor,
+    )
+
+    alias desc_size_1 = product(desc_array._descriptor_shape[1]())
+
+    var sequence_offsets = InlineArray[Int, number_of_sequences + 1](fill=0)
+
+    var offset = 0
+
+    for i in range(number_of_sequences):
+        var sequence_length = sequence_lengths[i]
+        offset += sequence_length * desc_size_1
+        sequence_offsets[i + 1] = offset
+
+    alias kernel = tma_ragged_store_kernel[
+        rank,
+        dtype,
+        remaining_dims,
+        swizzle_mode,
+        smem_layout.size(),
+        number_of_sequences + 1,
+        max_descriptor_length,
+    ]
+
+    ctx.enqueue_function_checked[kernel, kernel](
+        desc_array,
+        sequence_offsets,
+        grid_dim=(1),
+        block_dim=(32),
+    )
+
+    with device_buffer.map_to_host() as host_buffer:
+
+        @parameter
+        if swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE:
+            for i in range(total_size):
+                assert_equal(host_buffer[i], Scalar[dtype](i))
+        else:
+            alias swizzle = make_swizzle[dtype, swizzle_mode]()
+            for i in range(total_size):
+                var swz_offset = swizzle(i)
+                assert_equal(host_buffer[swz_offset], Scalar[dtype](i))
 
 
 def test_tma_load_row_major[
@@ -215,19 +355,19 @@ fn test_tma_async_store_kernel[
     layout: Layout,
 ](
     tma_tile: TMATensorTile[dtype, tile_layout, desc_layout],
-    src: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    src: LayoutTensor[dtype, layout, MutAnyOrigin],
 ):
     alias tileM = tile_layout.shape[0].value()
     alias tileN = tile_layout.shape[1].value()
     tile = LayoutTensor[
         dtype,
         tile_layout,
-        MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation[]()
 
-    src_tile = src.tile[tileM, tileN](block_idx.y, block_idx.x)
+    src_tile = src.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
     copy_dram_to_sram[thread_layout](tile, src_tile)
 
     barrier()
@@ -247,15 +387,15 @@ fn test_tma_async_multiple_store_kernel[
     dtype: DType, tile_layout: Layout, thread_layout: Layout, layout: Layout
 ](
     tma_tile: TMATensorTile[dtype, tile_layout],
-    src: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    src: LayoutTensor[dtype, layout, MutAnyOrigin],
 ):
     alias tileM = tile_layout.shape[0].value()
     alias tileN = tile_layout.shape[1].value()
     tile = LayoutTensor[
         dtype,
         tile_layout,
-        MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation[]()
 
@@ -263,7 +403,7 @@ fn test_tma_async_multiple_store_kernel[
     alias num_iters = ceildiv(N, tileN)
 
     for i in range(num_iters):
-        src_tile = src.tile[tileM, tileN](block_idx.y, i)
+        src_tile = src.tile[tileM, tileN](Int(block_idx.y), i)
         copy_dram_to_sram[thread_layout](tile, src_tile)
 
         barrier()
@@ -350,19 +490,19 @@ fn test_tma_async_reduce_kernel[
     dtype: DType, tile_layout: Layout, thread_layout: Layout, layout: Layout
 ](
     tma_tile: TMATensorTile[dtype, tile_layout],
-    src: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    src: LayoutTensor[dtype, layout, MutAnyOrigin],
 ):
     alias tileM = tile_layout.shape[0].value()
     alias tileN = tile_layout.shape[1].value()
     tile = LayoutTensor[
         dtype,
         tile_layout,
-        MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation[]()
 
-    src_tile = src.tile[tileM, tileN](block_idx.y, block_idx.x)
+    src_tile = src.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
     copy_dram_to_sram[thread_layout](tile, src_tile)
 
     barrier()
@@ -382,15 +522,15 @@ fn test_tma_async_multiple_reduce_kernel[
     dtype: DType, tile_layout: Layout, thread_layout: Layout, layout: Layout
 ](
     tma_tile: TMATensorTile[dtype, tile_layout],
-    src: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    src: LayoutTensor[dtype, layout, MutAnyOrigin],
 ):
     alias tileM = tile_layout.shape[0].value()
     alias tileN = tile_layout.shape[1].value()
     tile = LayoutTensor[
         dtype,
         tile_layout,
-        MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation[]()
 
@@ -398,7 +538,7 @@ fn test_tma_async_multiple_reduce_kernel[
     alias num_iters = ceildiv(N, tileN)
 
     for i in range(num_iters):
-        src_tile = src.tile[tileM, tileN](block_idx.y, i)
+        src_tile = src.tile[tileM, tileN](Int(block_idx.y), i)
         copy_dram_to_sram[thread_layout](tile, src_tile)
 
         barrier()
@@ -491,8 +631,8 @@ fn test_tma_loads_two_buffers_kernel[
     a_thread_layout: Layout,
     b_thread_layout: Layout,
 ](
-    a_dst: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
-    b_dst: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
+    a_dst: LayoutTensor[dtype, a_layout, MutAnyOrigin],
+    b_dst: LayoutTensor[dtype, b_layout, MutAnyOrigin],
     a_tma_tile: TMATensorTile[dtype, a_tile_layout],
     b_tma_tile: TMATensorTile[dtype, b_tile_layout],
 ):
@@ -506,23 +646,23 @@ fn test_tma_loads_two_buffers_kernel[
     a_tile = LayoutTensor[
         dtype,
         a_tile_layout,
-        MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     b_tile = LayoutTensor[
         dtype,
         b_tile_layout,
-        MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -551,8 +691,8 @@ fn test_tma_loads_two_buffers_kernel[
         mbar[0].wait(phase)
         phase ^= 1
 
-        a_dst_tile = a_dst.tile[tileM, tileN](block_idx.y, i)
-        b_dst_tile = b_dst.tile[tileM, tileN](block_idx.y, i)
+        a_dst_tile = a_dst.tile[tileM, tileN](Int(block_idx.y), i)
+        b_dst_tile = b_dst.tile[tileM, tileN](Int(block_idx.y), i)
         copy_sram_to_dram[a_thread_layout](a_dst_tile, a_tile)
         copy_sram_to_dram[b_thread_layout](b_dst_tile, b_tile)
 
@@ -665,23 +805,23 @@ fn test_tma_loads_and_store_two_buffers_kernel[
     a_tile = LayoutTensor[
         dtype,
         a_tile_layout,
-        MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     b_tile = LayoutTensor[
         dtype,
         b_tile_layout,
-        MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -1040,4 +1180,93 @@ def main():
             src_layout = Layout.row_major(32, 64),
             tile_layout = Layout.row_major(16, 16),
             dst_layout = Layout.row_major(40, 64),
+        ](ctx)
+
+        print("test_2D_TMA_ragged_store")
+
+        test_tma_ragged_store[
+            Layout.row_major(384, 64),
+            IndexList[1](64),
+            DType.bfloat16,
+            InlineArray[Int, 4](256, 124, 3, 1),
+        ](ctx)
+
+        test_tma_ragged_store[
+            Layout.row_major(384, 64),
+            IndexList[1](64),
+            DType.bfloat16,
+            InlineArray[Int, 4](256, 124, 3, 1),
+            max_descriptor_length=32,
+        ](ctx)
+
+        test_tma_ragged_store[
+            Layout.row_major(384, 64),
+            IndexList[1](64),
+            DType.bfloat16,
+            InlineArray[Int, 2](256, 128),
+        ](ctx)
+
+        test_tma_ragged_store[
+            Layout.row_major(384, 64),
+            IndexList[1](64),
+            DType.bfloat16,
+            InlineArray[Int, 4](256, 124, 3, 1),
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+        ](ctx)
+
+        test_tma_ragged_store[
+            Layout.row_major(64, 32),
+            IndexList[1](32),
+            DType.bfloat16,
+            InlineArray[Int, 5](32, 16, 8, 4, 4),
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
+        ](ctx)
+
+        test_tma_ragged_store[
+            Layout.row_major(64, 16),
+            IndexList[1](16),
+            DType.bfloat16,
+            InlineArray[Int, 1](64),
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_32B,
+        ](ctx)
+
+        print("test_3D_TMA_ragged_store")
+
+        test_tma_ragged_store[
+            Layout.row_major(192, 2, 64),
+            IndexList[2](2, 64),
+            DType.bfloat16,
+            InlineArray[Int, 4](127, 1, 62, 2),
+        ](ctx)
+
+        test_tma_ragged_store[
+            Layout.row_major(192, 2, 64),
+            IndexList[2](2, 64),
+            DType.bfloat16,
+            InlineArray[Int, 4](127, 1, 62, 2),
+            max_descriptor_length=32,
+        ](ctx)
+
+        test_tma_ragged_store[
+            Layout.row_major(192, 2, 64),
+            IndexList[2](2, 64),
+            DType.bfloat16,
+            InlineArray[Int, 4](127, 1, 62, 2),
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+        ](ctx)
+
+        test_tma_ragged_store[
+            Layout.row_major(192, 4, 32),
+            IndexList[2](4, 32),
+            DType.bfloat16,
+            InlineArray[Int, 4](64, 32, 64, 32),
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
+        ](ctx)
+
+        test_tma_ragged_store[
+            Layout.row_major(192, 8, 16),
+            IndexList[2](8, 16),
+            DType.bfloat16,
+            InlineArray[Int, 4](64, 32, 64, 32),
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)

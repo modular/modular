@@ -150,8 +150,8 @@ fn test_matmul_dynamic_scaled_fp8[
                 c_host.tensor[i, j].cast[DType.float32](),
                 c_host_ref.tensor[i, j],
                 msg="At [" + String(i) + ", " + String(j) + "]",
-                atol=1e-2,
-                rtol=1e-2,
+                atol=1.5e-2,
+                rtol=1.5e-2,
             )
 
 

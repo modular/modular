@@ -10,24 +10,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# """This module includes traits abstracting WGMMA operand descriptors."""
+"""MMA operand descriptor trait (deprecated - use `gpu.compute.mma_operand_descriptor`).
 
+This module is deprecated. For new code, import from the `gpu.compute.mma_operand_descriptor`
+module instead:
 
-@register_passable("trivial")
-trait MMAOperandDescriptor(ImplicitlyCopyable, Movable):
-    """Trait for abstracting MMA (Matrix Multiply-Accumulate) operand descriptors.
+```mojo
+# Deprecated:
+from gpu.mma_operand_descriptor import MMAOperandDescriptor
 
-    This trait defines the interface for WGMMA operand descriptors used in GPU matrix operations.
-    """
+# Recommended:
+from gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
+```
 
-    @always_inline
-    fn __add__(self, offset: Int) -> Self:
-        """Adds an offset to the operand descriptor.
+This module provides the trait for MMA operand descriptors used in matrix
+multiply-accumulate operations.
+"""
 
-        Args:
-            offset: The offset to add to the descriptor.
-
-        Returns:
-            A new descriptor with the offset applied.
-        """
-        ...
+# Re-export all public symbols from compute.mma_operand_descriptor for backward compatibility
+from .compute.mma_operand_descriptor import MMAOperandDescriptor

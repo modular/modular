@@ -13,6 +13,7 @@
 
 
 from math import ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from random import rand
 from sys import argv, size_of
 
@@ -21,8 +22,8 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier, warp
 from gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TMADescriptor, create_tma_descriptor
-from gpu.id import block_idx, lane_id, thread_idx, warp_id
+from gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
+from gpu import block_idx, lane_id, thread_idx, warp_id
 from gpu.memory import (
     AddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
@@ -68,9 +69,9 @@ fn gemv_tma_kernel[
 ](
     descriptor_a: TMADescriptor,
     descriptor_b: TMADescriptor,
-    c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
-    a: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
+    c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
     M: UInt,
     N: UInt,
     K: UInt,
@@ -84,9 +85,9 @@ fn gemv_tma_kernel[
 
     alias accum_type = get_accum_type[dtype]()
 
-    alias a_smem_layout = Layout.row_major(BLOCK_SIZE_M, BLOCK_SIZE_K)
+    alias a_smem_layout = Layout.row_major(Int(BLOCK_SIZE_M), Int(BLOCK_SIZE_K))
 
-    alias b_smem_layout = Layout.row_major(BLOCK_SIZE_K)
+    alias b_smem_layout = Layout.row_major(Int(BLOCK_SIZE_K))
 
     var descriptor_a_ptr = UnsafePointer(to=descriptor_a).bitcast[NoneType]()
     var descriptor_b_ptr = UnsafePointer(to=descriptor_b).bitcast[NoneType]()
@@ -113,36 +114,38 @@ fn gemv_tma_kernel[
     var a_smem = LayoutTensorIter[
         dtype,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ](
         a_smem_base,
-        a_size * NUM_PIPELINE_STAGES,
+        a_size * Int(NUM_PIPELINE_STAGES),
     )
 
     var b_smem = LayoutTensorIter[
         dtype,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ](
         b_smem_base,
-        b_size * NUM_PIPELINE_STAGES,
+        b_size * Int(NUM_PIPELINE_STAGES),
     )
 
-    var tma_mbar_ptr = (b_smem_base + b_size * NUM_PIPELINE_STAGES).bitcast[
-        SharedMemBarrier
-    ]()
+    var tma_mbar_ptr = (
+        b_smem_base + b_size * Int(NUM_PIPELINE_STAGES)
+    ).bitcast[SharedMemBarrier]()
     var tma_mbar = UnsafePointer[
         SharedMemBarrier, address_space = AddressSpace.SHARED
     ](tma_mbar_ptr)
 
     # Initialize dot products for all rows before column processing.
-    var dot_products = InlineArray[Scalar[accum_type], ROWS_PER_WARP](fill=0)
+    var dot_products = InlineArray[Scalar[accum_type], Int(ROWS_PER_WARP)](
+        fill=0
+    )
 
     if thread_idx.x == 0:
 
@@ -153,8 +156,8 @@ fn gemv_tma_kernel[
     barrier()
 
     # Double buffering.
-    var consumer_phase = PipelineState[NUM_PIPELINE_STAGES]()
-    var producer_phase = PipelineState[NUM_PIPELINE_STAGES](0, 1, 0)
+    var consumer_phase = PipelineState[Int(NUM_PIPELINE_STAGES)]()
+    var producer_phase = PipelineState[Int(NUM_PIPELINE_STAGES)](0, 1, 0)
 
     for col_offset in range(0, K, BLOCK_SIZE_K):
         var current_block_size = min(BLOCK_SIZE_K, K - UInt(col_offset))
@@ -200,8 +203,8 @@ fn gemv_tma_kernel[
         var current_b_tile = b_smem.next_unsafe(Int(stage))[]
 
         for k_idx in range(0, current_block_size, WARP_SIZE):
-            if k_idx + lane_id() < current_block_size:
-                var col_idx = k_idx + lane_id()
+            var col_idx = k_idx + Int(lane_id())
+            if col_idx < Int(current_block_size):
                 var b_val = current_b_tile[col_idx]
 
                 @parameter
@@ -274,8 +277,11 @@ def gemv_tma[
     # Shared memory needed for NUM_PIPELINE_STAGES A and B working tiles.
     # +8 bytes for each of NUM_PIPELINE_STAGES barriers.
     alias smem_use = (
-        NUM_PIPELINE_STAGES * BLOCK_SIZE_M * BLOCK_SIZE_K * size_of[dtype]()
-        + NUM_PIPELINE_STAGES * BLOCK_SIZE_K * size_of[dtype]()
+        NUM_PIPELINE_STAGES
+        * BLOCK_SIZE_M
+        * Int(BLOCK_SIZE_K)
+        * size_of[dtype]()
+        + NUM_PIPELINE_STAGES * Int(BLOCK_SIZE_K) * size_of[dtype]()
         + 8 * NUM_PIPELINE_STAGES
     )
 

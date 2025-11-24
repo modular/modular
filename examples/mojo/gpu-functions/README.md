@@ -143,8 +143,8 @@ addition of each element in two vectors. Here's how it works in our
     lhs_buffer = ctx.enqueue_create_buffer[float_dtype](VECTOR_WIDTH)
     rhs_buffer = ctx.enqueue_create_buffer[float_dtype](VECTOR_WIDTH)
 
-    _ = lhs_buffer.enqueue_fill(1.25)
-    _ = rhs_buffer.enqueue_fill(2.5)
+    lhs_buffer.enqueue_fill(1.25)
+    rhs_buffer.enqueue_fill(2.5)
 
     lhs_tensor = lhs_tensor.move_to(gpu_device)
     rhs_tensor = rhs_tensor.move_to(gpu_device)

@@ -22,6 +22,10 @@ from os import listdir
 
 from collections import InlineArray, List
 from collections.string.string_slice import _unsafe_strlen
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from io import FileDescriptor
 from sys import CompilationTarget, external_call, is_gpu
 from sys.ffi import c_char, c_int
@@ -30,7 +34,7 @@ from .path import isdir, split
 from .pathlike import PathLike
 
 # TODO move this to a more accurate location once nt/posix like modules are in stdlib
-alias sep = "/"
+comptime sep = "/"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -38,11 +42,11 @@ alias sep = "/"
 # ===----------------------------------------------------------------------=== #
 
 
-alias SEEK_SET: UInt8 = 0
+comptime SEEK_SET: UInt8 = 0
 """Seek from the beginning of the file."""
-alias SEEK_CUR: UInt8 = 1
+comptime SEEK_CUR: UInt8 = 1
 """Seek from the current position."""
-alias SEEK_END: UInt8 = 2
+comptime SEEK_END: UInt8 = 2
 """Seek from the end of the file."""
 
 
@@ -52,7 +56,7 @@ alias SEEK_END: UInt8 = 2
 
 
 struct _dirent_linux(Copyable, Movable):
-    alias MAX_NAME_SIZE = 256
+    comptime MAX_NAME_SIZE = 256
     var d_ino: Int64
     """File serial number."""
     var d_off: Int64
@@ -66,7 +70,7 @@ struct _dirent_linux(Copyable, Movable):
 
 
 struct _dirent_macos(Copyable, Movable):
-    alias MAX_NAME_SIZE = 1024
+    comptime MAX_NAME_SIZE = 1024
     var d_ino: Int64
     """File serial number."""
     var d_off: Int64
@@ -137,7 +141,9 @@ struct _DirHandle:
             var name_ptr = name.unsafe_ptr().bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
                 ptr=name_ptr,
-                length=_unsafe_strlen(name_ptr, _dirent_linux.MAX_NAME_SIZE),
+                length=Int(
+                    _unsafe_strlen(name_ptr, _dirent_linux.MAX_NAME_SIZE)
+                ),
             )
             if name_str == "." or name_str == "..":
                 continue
@@ -163,7 +169,9 @@ struct _DirHandle:
             var name_ptr = name.unsafe_ptr().bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
                 ptr=name_ptr,
-                length=_unsafe_strlen(name_ptr, _dirent_macos.MAX_NAME_SIZE),
+                length=Int(
+                    _unsafe_strlen(name_ptr, _dirent_macos.MAX_NAME_SIZE)
+                ),
             )
             if name_str == "." or name_str == "..":
                 continue
@@ -434,7 +442,8 @@ fn isatty(fd: Int) -> Bool:
     """Checks whether a file descriptor refers to a terminal.
 
     Returns `True` if the file descriptor `fd` is open and connected to a
-    tty(-like) device, otherwise `False`.
+    tty(-like) device, otherwise `False`. On GPUs, the function always returns
+    `False`.
 
     Args:
         fd: A file descriptor.
@@ -453,4 +462,5 @@ fn isatty(fd: Int) -> Bool:
             print("Output is redirected")
         ```
     """
+
     return FileDescriptor(fd).isatty()

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys.info import _current_target, simd_width_of
 from sys.intrinsics import _type_is_eq
 
@@ -627,8 +628,6 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
     """
     alias kv_type = cache_t.dtype
     alias kv_params = cache_t.kv_params
-    alias N = Int(weight.layout.shape[0])
-    alias K = Int(weight.layout.shape[1])
 
     constrained[
         kv_type == dtype, "Mismatch in dtype between Q and KV tensors"
@@ -762,8 +761,6 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
     """
     alias kv_type = cache_t.dtype
     alias kv_params = cache_t.kv_params
-    alias N = Int(weight.layout.shape[0])
-    alias K = Int(weight.layout.shape[1])
 
     constrained[
         kv_type == dtype, "Mismatch in dtype between Q and KV tensors"
@@ -906,8 +903,6 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     """
     alias kv_type = cache_t.dtype
     alias kv_params = cache_t.kv_params
-    alias N = Int(weight.layout.shape[0])
-    alias K = Int(weight.layout.shape[1])
 
     var q_dim = output.dim[1]()
     var k_dim = kv_params.head_size * kv_params.num_heads
@@ -1023,9 +1018,8 @@ fn _matmul_common[
 ) raises:
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     alias N = Int(weight.layout.shape[0])
-    alias K = Int(weight.layout.shape[1])
     var c_nd: LayoutTensor[
-        output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutableAnyOrigin
+        output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
     ]
 
     @parameter
@@ -1081,7 +1075,7 @@ fn _qmatmul_common[
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     alias N = Int(weight.layout.shape[0])
     var c_nd: LayoutTensor[
-        dtype, Layout.row_major(UNKNOWN_VALUE, N), MutableAnyOrigin
+        dtype, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
     ]
 
     c_nd = {
@@ -1132,7 +1126,7 @@ fn _matmul_blockwise_scaled_fp8_common[
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     alias N = Int(weight.layout.shape[0])
     var c_nd: LayoutTensor[
-        output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutableAnyOrigin
+        output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
     ]
 
     c_nd = {
@@ -1298,8 +1292,6 @@ fn _matmul_kv_cache_ragged_impl[
         return
 
     alias kv_params = cache_t.kv_params
-    alias N = UInt(Int(weight.layout.shape[0]))
-    alias K = UInt(Int(weight.layout.shape[1]))
 
     batch_size = input_row_offsets.dim[0]() - 1
 
@@ -1515,8 +1507,6 @@ fn _matmul_k_cache_ragged_impl[
         return
 
     alias kv_params = cache_t.kv_params
-    alias N = UInt(Int(weight.layout.shape[0]))
-    alias K = UInt(Int(weight.layout.shape[1]))
 
     batch_size = input_row_offsets.dim[0]() - 1
 
@@ -1688,8 +1678,6 @@ fn _matmul_k_cache_ragged_scale_impl[
         return
 
     alias kv_params = cache_t.kv_params
-    alias N = UInt(Int(weight.layout.shape[0]))
-    alias K = UInt(Int(weight.layout.shape[1]))
 
     var batch_size = input_row_offsets.dim[0]() - 1
 
@@ -1980,8 +1968,6 @@ fn _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
     k_or_v_cache: cache_t,
 ) raises:
     alias kv_params = cache_t.kv_params
-    alias N = UInt(Int(k_or_v_weight.layout.shape[0]))
-    alias K = UInt(Int(k_or_v_weight.layout.shape[1]))
 
     batch_size = input_row_offsets.dim[0]() - 1
 
@@ -2048,9 +2034,8 @@ fn _qmatmul_gguf_quantized_alloc_output[
 ) raises:
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     alias N = Int(weight.layout.shape[0])
-    alias K = Int(weight.layout.shape[1])
     var c_nd: LayoutTensor[
-        DType.float32, Layout.row_major(UNKNOWN_VALUE, N), MutableAnyOrigin
+        DType.float32, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
     ]
 
     # The CPU matmul codepath uses the C buffer as a workspace
@@ -2182,7 +2167,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged[
                 kv_collection,
                 freqs_cis,
                 LayoutTensor[
-                    position_ids.dtype, Layout.row_major[2](), MutableAnyOrigin
+                    position_ids.dtype, Layout.row_major[2](), MutAnyOrigin
                 ](
                     position_ids.ptr,
                     RuntimeLayout[Layout.row_major[2]()].row_major(
@@ -2287,7 +2272,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
                 kv_collection,
                 freqs_cis,
                 LayoutTensor[
-                    position_ids.dtype, Layout.row_major[2](), MutableAnyOrigin
+                    position_ids.dtype, Layout.row_major[2](), MutAnyOrigin
                 ](
                     position_ids.ptr,
                     RuntimeLayout[Layout.row_major[2]()].row_major(
@@ -2401,7 +2386,7 @@ fn _flash_attention_dispatch[
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     var k = kv_cache.get_key_cache(Int(layer_idx))
@@ -2526,9 +2511,7 @@ fn generic_flash_attention_kv_cache_ragged_sink[
             scale,
             output,
             context,
-            LayoutTensor[
-                dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
-            ](
+            LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin](
                 sink_weights.ptr,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                     sink_weights.runtime_layout.shape.value.canonicalize(),
@@ -2703,10 +2686,10 @@ fn generic_flare_mla_prefill_kv_cache_ragged[
     ],
     context: DeviceContextPtr,
     prev_output: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major[3](), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major[3](), MutAnyOrigin]
     ] = None,
     prev_softmax_info: OptionalReg[
-        LayoutTensor[softmax_type, Layout.row_major[3](), MutableAnyOrigin]
+        LayoutTensor[softmax_type, Layout.row_major[3](), MutAnyOrigin]
     ] = None,
 ) raises:
     @always_inline
@@ -2807,10 +2790,10 @@ fn _flare_mla_prefill_kv_cache_ragged[
     ],
     context: DeviceContextPtr,
     prev_output: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major[3](), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major[3](), MutAnyOrigin]
     ] = None,
     prev_softmax_info: OptionalReg[
-        LayoutTensor[softmax_type, Layout.row_major[3](), MutableAnyOrigin]
+        LayoutTensor[softmax_type, Layout.row_major[3](), MutAnyOrigin]
     ] = None,
 ) raises:
     """Performs MLA prefill.
@@ -2861,7 +2844,7 @@ fn _flare_mla_prefill_kv_cache_ragged[
             scale,
             context.get_device_context(),
             softmax_info=LayoutTensor[
-                softmax_type, Layout.row_major[3](), MutableAnyOrigin
+                softmax_type, Layout.row_major[3](), MutAnyOrigin
             ](
                 softmax_info.ptr,
                 RuntimeLayout[Layout.row_major[3]()].row_major(
@@ -2871,7 +2854,7 @@ fn _flare_mla_prefill_kv_cache_ragged[
             cache_offsets=LayoutTensor[
                 cache_offsets.dtype,
                 Layout.row_major(UNKNOWN_VALUE),
-                MutableAnyOrigin,
+                MutAnyOrigin,
             ](
                 cache_offsets.ptr,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -3028,7 +3011,7 @@ fn _cross_attention_dispatch[
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     var k = kv_cache.get_key_cache(Int(layer_idx))
@@ -3075,7 +3058,7 @@ fn _cross_attention_dispatch[
                 LayoutTensor[
                     kv_input_row_offsets.dtype,
                     Layout.row_major(UNKNOWN_VALUE),
-                    MutableAnyOrigin,
+                    MutAnyOrigin,
                 ](
                     kv_input_row_offsets.ptr,
                     RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -3119,7 +3102,7 @@ fn generic_cross_attention_kv_cache[
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     @always_inline
@@ -3287,7 +3270,7 @@ fn kv_cache_store_ragged[
     cache: cache_t,
     input_shape: IndexList[3],
     input_row_offsets: LayoutTensor[
-        DType.uint32, input_row_offsets_layout, MutableAnyOrigin
+        DType.uint32, input_row_offsets_layout, MutAnyOrigin
     ],
     context: Optional[DeviceContext],
 ) raises:

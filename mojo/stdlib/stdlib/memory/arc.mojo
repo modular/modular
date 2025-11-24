@@ -25,9 +25,9 @@ from sys.info import size_of
 
 struct _ArcPointerInner[T: Movable]:
     var refcount: Atomic[DType.uint64]
-    var payload: T
+    var payload: Self.T
 
-    fn __init__(out self, var value: T):
+    fn __init__(out self, var value: Self.T):
         """Create an initialized instance of this with a refcount of 1."""
         self.refcount = Atomic(UInt64(1))
         self.payload = value^
@@ -104,23 +104,27 @@ struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable, Movable):
         T: The type of the stored value.
     """
 
-    alias _inner_type = _ArcPointerInner[T]
-    var _inner: UnsafePointer[Self._inner_type]
+    comptime _inner_type = _ArcPointerInner[Self.T]
+    var _inner: UnsafePointer[Self._inner_type, MutOrigin.external]
 
-    fn __init__(out self, var value: T):
+    fn __init__(out self, var value: Self.T):
         """Construct a new thread-safe, reference-counted smart pointer,
         and move the value into heap memory managed by the new pointer.
 
         Args:
             value: The value to manage.
         """
-        self._inner = UnsafePointer[Self._inner_type].alloc(1)
+        self._inner = alloc[Self._inner_type](1)
         # Cannot use init_pointee_move as _ArcPointerInner isn't movable.
         __get_address_as_uninit_lvalue(self._inner.address) = Self._inner_type(
             value^
         )
 
-    fn __init__(out self, *, unsafe_from_raw_pointer: UnsafePointer[T]):
+    fn __init__(
+        out self,
+        *,
+        unsafe_from_raw_pointer: UnsafePointer[Self.T, MutOrigin.external],
+    ):
         """Constructs an `ArcPointer` from a raw pointer.
 
         Args:
@@ -179,8 +183,8 @@ struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable, Movable):
     # to model the mutability and invalidation of the returned reference
     # correctly.
     fn __getitem__[
-        self_life: ImmutableOrigin
-    ](ref [self_life]self) -> ref [MutableOrigin.cast_from[self_life]] T:
+        self_life: ImmutOrigin
+    ](ref [self_life]self) -> ref [MutOrigin.cast_from[self_life]] Self.T:
         """Returns a mutable reference to the managed value.
 
         Parameters:
@@ -191,14 +195,25 @@ struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable, Movable):
         """
         return self._inner[].payload
 
-    fn unsafe_ptr(self) -> UnsafePointer[T]:
+    fn unsafe_ptr[
+        mut: Bool,
+        origin: Origin[mut], //,
+    ](ref [origin]self) -> UnsafePointer[Self.T, origin]:
         """Retrieves a pointer to the underlying memory.
 
+        Parameters:
+            mut: Whether the pointer is mutable.
+            origin: The origin of the pointer.
+
         Returns:
-            The `UnsafePointer` to the pointee.
+            An `UnsafePointer` to the pointee.
         """
         # TODO: consider removing this method.
-        return UnsafePointer(to=self._inner[].payload)
+        return (
+            UnsafePointer(to=self._inner[].payload)
+            .mut_cast[mut]()
+            .unsafe_origin_cast[origin]()
+        )
 
     fn count(self) -> UInt64:
         """Count the amount of current references.
@@ -212,7 +227,7 @@ struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable, Movable):
         # this ArcPointer is destroyed.
         return self._inner[].refcount.load[ordering = Consistency.MONOTONIC]()
 
-    fn steal_data(deinit self) -> UnsafePointer[T]:
+    fn steal_data(deinit self) -> UnsafePointer[Self.T, MutOrigin.external]:
         """Consume this `ArcPointer`, returning a raw pointer to the underlying data.
 
         Returns:

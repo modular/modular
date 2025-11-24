@@ -12,11 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up, ceildiv
-from os.atomic import Atomic
+from os.atomic import Atomic, Consistency
 from sys.info import align_of, simd_width_of, size_of
 
 import gpu.warp as warp
 from gpu import (
+    PDL,
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -25,8 +26,7 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.intrinsics import Scope, load_acquire, store_release
-from gpu.memory import AddressSpace
+from gpu.intrinsics import Scope, load_acquire, store_release, threadfence
 from gpu.sync import syncwarp
 from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.int_tuple import (
@@ -35,11 +35,17 @@ from layout.int_tuple import (
     _get_index_type,
     _get_layout_type,
 )
-from memory import stack_allocation
+from math import exp
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    stack_allocation,
+)
 from memory.unsafe import bitcast
 from shmem import SHMEM_SIGNAL_SET, SHMEMScope, shmem_put_nbi, shmem_signal_op
 
 from utils.index import IndexList, StaticTuple
+from utils.numerics import get_accum_type
 
 from builtin.device_passable import DevicePassable
 
@@ -126,12 +132,12 @@ trait TokenFormat(DevicePassable):
 struct BF16TokenFormat[
     output_layout: Layout, //, _hid_dim: Int, _top_k: Int, _alignment: Int
 ](TokenFormat):
-    alias hid_dim = _hid_dim
-    alias top_k = _top_k
-    alias alignment = _alignment
+    alias hid_dim = Self._hid_dim
+    alias top_k = Self._top_k
+    alias alignment = Self._alignment
 
     alias TensorType = LayoutTensor[
-        DType.bfloat16, output_layout, MutableAnyOrigin
+        DType.bfloat16, Self.output_layout, MutAnyOrigin
     ]
     var output_tokens: Self.TensorType
 
@@ -150,7 +156,7 @@ struct BF16TokenFormat[
     fn get_type_name() -> String:
         return String(
             "BF16TokenFormat[output_layout = ",
-            String(output_layout),
+            String(Self.output_layout),
             ", hid_dim = ",
             String(Self.hid_dim),
             ", top_k = ",
@@ -171,7 +177,9 @@ struct BF16TokenFormat[
     @always_inline
     @staticmethod
     fn token_size() -> Int:
-        return align_up(Self.hid_dim * DType.bfloat16.size_of(), Self.alignment)
+        return align_up(
+            Self.hid_dim * size_of[DType.bfloat16](), Self.alignment
+        )
 
     @always_inline
     @staticmethod
@@ -228,13 +236,15 @@ struct BlockwiseFP8TokenFormat[
     _top_k: Int,
     _alignment: Int,
 ](TokenFormat):
-    alias hid_dim = _hid_dim
-    alias top_k = _top_k
-    alias alignment = _alignment
+    alias hid_dim = Self._hid_dim
+    alias top_k = Self._top_k
+    alias alignment = Self._alignment
 
-    alias TensorType = LayoutTensor[fp8_dtype, output_layout, MutableAnyOrigin]
+    alias TensorType = LayoutTensor[
+        Self.fp8_dtype, Self.output_layout, MutAnyOrigin
+    ]
     alias ScalesTensorType = LayoutTensor[
-        scales_dtype, scales_layout, MutableAnyOrigin
+        Self.scales_dtype, Self.scales_layout, MutAnyOrigin
     ]
     var output_tokens: Self.TensorType
     var output_scales: Self.ScalesTensorType
@@ -288,7 +298,9 @@ struct BlockwiseFP8TokenFormat[
     @always_inline
     @staticmethod
     fn fp8_quant_size() -> Int:
-        return align_up(Self.hid_dim * Self.fp8_dtype.size_of(), Self.alignment)
+        return align_up(
+            Self.hid_dim * size_of[Self.fp8_dtype](), Self.alignment
+        )
 
     @always_inline
     @staticmethod
@@ -298,7 +310,7 @@ struct BlockwiseFP8TokenFormat[
             "hid_dim must be divisible by 128",
         ]()
         return align_up(
-            Self.hid_dim // Self.group_size * Self.scales_dtype.size_of(),
+            Self.hid_dim // Self.group_size * size_of[Self.scales_dtype](),
             Self.alignment,
         )
 
@@ -322,7 +334,7 @@ struct BlockwiseFP8TokenFormat[
         block_size: UInt,
     ) -> None:
         alias src_width = simd_width_of[src_type]()
-        alias byte_width = src_width * Self.fp8_dtype.size_of()
+        alias byte_width = src_width * size_of[Self.fp8_dtype]()
 
         alias fp8_max = Scalar[Self.fp8_dtype].MAX_FINITE
         alias fp8_max_t = Scalar[Self.fp8_dtype].MAX_FINITE.cast[
@@ -357,7 +369,7 @@ struct BlockwiseFP8TokenFormat[
             )
 
             # The first thread in each group stores the scale factor.
-            alias scale_bytes = Self.scales_dtype.size_of()
+            alias scale_bytes = size_of[Self.scales_dtype]()
             if lane_id() % UInt(n_threads_per_group) == 0:
                 scale_idx = i * src_width // Self.group_size
                 buf_p.store[width=scale_bytes, alignment=scale_bytes](
@@ -389,7 +401,7 @@ struct BlockwiseFP8TokenFormat[
             )
 
         # Unlike the output tensor, the scales tensor is stored in a transposed way.
-        alias scale_bytes = Self.scales_dtype.size_of()
+        alias scale_bytes = size_of[Self.scales_dtype]()
         for i in range(lane_id(), Self.hid_dim // Self.group_size, WARP_SIZE):
             self.output_scales.store(
                 i,
@@ -421,10 +433,8 @@ fn dispatch_kernel[
     max_tokens_per_rank: Int,
     token_fmt_type: TokenFormat,
 ](
-    input_tokens: LayoutTensor[
-        input_type, input_tokens_layout, ImmutableAnyOrigin
-    ],
-    topk_ids: LayoutTensor[DType.int32, topk_ids_layout, ImmutableAnyOrigin],
+    input_tokens: LayoutTensor[input_type, input_tokens_layout, MutAnyOrigin],
+    topk_ids: LayoutTensor[DType.int32, topk_ids_layout, MutAnyOrigin],
     send_buf_p: UnsafePointer[UInt8],
     recv_buf_p: UnsafePointer[UInt8],
     recv_count_p: UnsafePointer[UInt64],
@@ -544,6 +554,12 @@ fn dispatch_kernel[
                     )
                 )
 
+                # TODO(E2EOPT-767): Update to use `store_release`.
+                # When the target device is on the same node, shmem_signal_op is
+                # just a simple `st.global`. Use a membar to ensure that once a
+                # a remote device receives the signal, all transfers are complete.
+                threadfence[Scope.SYSTEM]()
+
                 # This signal operation is sent using the same RC as the one used
                 # for token transfer. Since RC guarantees the message is delivered
                 # in order, the remote device can confirm all the tokens for the
@@ -656,7 +672,7 @@ fn dispatch_kernel[
 
                     # Signal the completion of current token.
                     if lane_id() == 0:
-                        _ = Atomic.fetch_add(
+                        _ = Atomic.fetch_add[ordering = Consistency.RELEASE](
                             expert_finished_counter + target_expert, 1
                         )
 
@@ -678,11 +694,9 @@ fn dispatch_cb_kernel[
     token_fmt_type: TokenFormat,
 ](
     format_handler: token_fmt_type,
-    row_offsets: LayoutTensor[
-        DType.uint32, row_offsets_layout, MutableAnyOrigin
-    ],
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutableAnyOrigin],
-    src_info: LayoutTensor[DType.int32, src_info_layout, MutableAnyOrigin],
+    row_offsets: LayoutTensor[DType.uint32, row_offsets_layout, MutAnyOrigin],
+    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
+    src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
     recv_buf_p: UnsafePointer[UInt8],
     recv_count_p: UnsafePointer[UInt64],
     atomic_counter: UnsafePointer[Int32],
@@ -793,15 +807,17 @@ fn dispatch_cb_kernel[
 
             if target_rank < UInt(n_ranks):
                 var target_count_ptr = recv_count_p.offset(expert_rank_offset)
-                var token_count = load_acquire[scope = Scope.GPU](
+                var token_count = load_acquire[scope = Scope.SYSTEM](
                     target_count_ptr
                 )
                 while token_count == UInt64.MAX_FINITE:
-                    token_count = load_acquire[scope = Scope.GPU](
+                    token_count = load_acquire[scope = Scope.SYSTEM](
                         target_count_ptr
                     )
 
                 prefix_sum_arr[round_i] = UInt32(token_count)
+            else:
+                prefix_sum_arr[round_i] = UInt32(0)
             syncwarp()
             prefix_sum_arr[round_i] = warp.prefix_sum(prefix_sum_arr[round_i])
             syncwarp()
@@ -948,10 +964,8 @@ fn combine_kernel[
     msg_bytes: Int,
     max_tokens_per_rank: Int,
 ](
-    input_tokens: LayoutTensor[
-        input_type, input_tokens_layout, ImmutableAnyOrigin
-    ],
-    src_info: LayoutTensor[DType.int32, src_info_layout, ImmutableAnyOrigin],
+    input_tokens: LayoutTensor[input_type, input_tokens_layout, MutAnyOrigin],
+    src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
     send_buf_p: UnsafePointer[UInt8],
     recv_buf_p: UnsafePointer[UInt8],
     recv_count_p: UnsafePointer[UInt64],
@@ -1113,6 +1127,13 @@ fn combine_kernel[
                 var global_expert_idx = (
                     my_rank * n_local_experts + local_expert_id
                 )
+
+                # TODO(E2EOPT-767): Update to use `store_release`.
+                # When the target device is on the same node, shmem_signal_op is
+                # just a simple `st.global`. Use a membar to ensure that once a
+                # a remote device receives the signal, all transfers are complete.
+                threadfence[Scope.SYSTEM]()
+
                 shmem_signal_op(
                     recv_count_p.offset(global_expert_idx),
                     UInt64(token_end - token_start),
@@ -1141,7 +1162,7 @@ fn combine_cb_kernel[
     max_tokens_per_rank: Int,
 ](
     output_tokens: LayoutTensor[
-        output_type, output_tokens_layout, MutableAnyOrigin
+        output_type, output_tokens_layout, MutAnyOrigin
     ],
     recv_buf_p: UnsafePointer[UInt8],
     recv_count_p: UnsafePointer[UInt64],
@@ -1221,7 +1242,7 @@ fn combine_cb_kernel[
         if tid < n_experts:
             var target_count_ptr = recv_count_p.offset(tid)
             while (
-                load_acquire[scope = Scope.GPU](target_count_ptr)
+                load_acquire[scope = Scope.SYSTEM](target_count_ptr)
                 == UInt64.MAX_FINITE
             ):
                 pass
@@ -1277,3 +1298,178 @@ fn combine_cb_kernel[
                             )
                         ),
                     )
+
+
+# ===-----------------------------------------------------------------------===#
+# Expert Parallelism Utils
+# ===-----------------------------------------------------------------------===#
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+)
+fn fused_silu_kernel[
+    output_dtype: DType,
+    input_dtype: DType,
+    output_layput: Layout,
+    input_layout: Layout,
+    row_offsets_layout: Layout,
+    num_threads: Int,
+    num_sms: Int,
+](
+    output_tensor: LayoutTensor[output_dtype, output_layput, MutAnyOrigin],
+    input_tensor: LayoutTensor[input_dtype, input_layout, ImmutAnyOrigin],
+    row_offsets: LayoutTensor[DType.uint32, row_offsets_layout, ImmutAnyOrigin],
+):
+    """
+    This kernel performs the SILU operation for all the MLPs in the EP MoE
+    module. We need to manually implement the kernel here is because after the
+    EP dispatch phase, the actual number of received tokens is not known to the
+    host. This kernel will read the row offsets to determine the actual number of
+    received tokens in the input tensor.
+
+    Arguments:
+        output_tensor: The output tensor to store the result.
+        input_tensor: The input tensor to perform the SILU operation.
+        row_offsets: The row offsets to determine the actual number of received tokens.
+    """
+    alias accum_dtype = get_accum_type[input_dtype]()
+    alias input_dim = input_tensor.shape[1]()
+    alias output_dim = output_tensor.shape[1]()
+    alias simd_width = simd_width_of[input_dtype]()
+
+    # This should also make sure the input and output tensors has static shape.
+    constrained[
+        input_dim == output_dim * 2,
+        "Input dimension must be twice the output dimension.",
+    ]()
+    constrained[
+        output_dim % simd_width == 0,
+        "Output dimension must be divisible by the SIMD width.",
+    ]()
+
+    var tid = Int(thread_idx.x)
+    var bid = Int(block_idx.x)
+    var gid = tid + bid * num_threads
+
+    with PDL():
+        var num_tokens = row_offsets[row_offsets.size() - 1]
+        var num_elem = num_tokens * output_dim
+
+        for i in range(gid, num_elem // simd_width, num_threads * num_sms):
+            var m = (i * simd_width) // output_dim
+            var k = (i * simd_width) % output_dim
+
+            var gate_proj = input_tensor.aligned_load[width=simd_width](
+                m, k
+            ).cast[accum_dtype]()
+            var up_proj = input_tensor.aligned_load[width=simd_width](
+                m, k + output_dim
+            ).cast[accum_dtype]()
+
+            gate_proj = gate_proj / (1.0 + exp(-gate_proj))
+            var output_val = gate_proj * up_proj
+
+            output_tensor.aligned_store[width=simd_width](
+                m, k, output_val.cast[output_dtype]()
+            )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+)
+fn fused_silu_fp8_kernel[
+    fp8_dtype: DType,
+    scales_dtype: DType,
+    input_dtype: DType,
+    output_layput: Layout,
+    scales_layput: Layout,
+    input_layout: Layout,
+    offsets_layout: Layout,
+    num_threads: Int,
+    num_sms: Int,
+    group_size: Int = 128,
+](
+    output_tensor: LayoutTensor[fp8_dtype, output_layput, MutAnyOrigin],
+    scales_tensor: LayoutTensor[scales_dtype, scales_layput, MutAnyOrigin],
+    input_tensor: LayoutTensor[input_dtype, input_layout, ImmutAnyOrigin],
+    row_offsets: LayoutTensor[DType.uint32, offsets_layout, ImmutAnyOrigin],
+):
+    """
+    This kernel performs the SILU operation for all the MLPs in the EP MoE
+    module. We need to manually implement the kernel here is because after the
+    EP dispatch phase, the actual number of received tokens is not known to the
+    host. This kernel will read the row offsets to determine the actual number of
+    received tokens in the input tensor.
+
+    Once the SILU operation is performed, the output tensor will be quantized to
+    the FP8 format. The scales tensor will be stored in a transposed way.
+
+    Arguments:
+        output_tensor: The output tensor to store the result.
+        scales_tensor: The tensor to store the scales.
+        input_tensor: The input tensor to perform the SILU operation.
+        row_offsets: The row offsets to determine the actual number of received tokens.
+    """
+    alias accum_dtype = get_accum_type[input_dtype]()
+    alias input_dim = input_tensor.shape[1]()
+    alias output_dim = output_tensor.shape[1]()
+    alias simd_width = simd_width_of[input_dtype]()
+
+    constrained[
+        input_dim == output_dim * 2,
+        "Input dimension must be twice the output dimension.",
+    ]()
+    constrained[
+        output_dim % simd_width == 0,
+        "Output dimension must be divisible by the SIMD width.",
+    ]()
+
+    alias n_threads_per_group = group_size // simd_width
+    constrained[
+        WARP_SIZE % n_threads_per_group == 0,
+        "Each warp must process a multiple of quantization groups",
+    ]()
+    alias fp8_max_t = Scalar[fp8_dtype].MAX_FINITE.cast[accum_dtype]()
+
+    var tid = Int(thread_idx.x)
+    var bid = Int(block_idx.x)
+    var gid = tid + bid * num_threads
+
+    with PDL():
+        var num_tokens = row_offsets[row_offsets.size() - 1]
+        var num_elem = num_tokens * output_dim
+
+        for i in range(gid, num_elem // simd_width, num_threads * num_sms):
+            var m = (i * simd_width) // output_dim
+            var k = (i * simd_width) % output_dim
+
+            var gate_proj = input_tensor.aligned_load[width=simd_width](
+                m, k
+            ).cast[accum_dtype]()
+            var up_proj = input_tensor.aligned_load[width=simd_width](
+                m, k + output_dim
+            ).cast[accum_dtype]()
+
+            gate_proj = gate_proj / (1.0 + exp(-gate_proj))
+            var output_val = gate_proj * up_proj
+
+            # Quantization logic.
+            var thread_max = abs(output_val).reduce_max()
+            var group_max = warp.lane_group_max_and_broadcast[
+                n_threads_per_group
+            ](thread_max)
+            var scale_factor = max(group_max, 1e-4) / fp8_max_t
+            output_val = (output_val / scale_factor).clamp(
+                -fp8_max_t, fp8_max_t
+            )
+
+            output_tensor.aligned_store[width=simd_width](
+                m, k, output_val.cast[fp8_dtype]()
+            )
+
+            # The first thread in each group stores the scale factor.
+            if lane_id() % UInt(n_threads_per_group) == 0:
+                scales_tensor.store(
+                    k // group_size, m, scale_factor.cast[scales_dtype]()
+                )

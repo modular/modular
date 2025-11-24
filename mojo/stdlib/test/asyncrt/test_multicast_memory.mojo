@@ -17,9 +17,9 @@ from gpu.host import DeviceContext, DeviceMulticastBuffer
 from testing import TestSuite
 
 
-fn test_multicast_memory(contexts: List[DeviceContext]) raises:
-    alias alloc_len = 128 * 1024
-    alias dtype = DType.int32
+fn _test_multicast_memory(contexts: List[DeviceContext]) raises:
+    comptime alloc_len = 128 * 1024
+    comptime dtype = DType.int32
 
     var multicast_buf = DeviceMulticastBuffer[dtype](contexts.copy(), alloc_len)
 
@@ -45,7 +45,7 @@ def test_multicast():
 
     var ctx1 = create_test_device_context(device_id=1)
 
-    test_multicast_memory([ctx0, ctx1])
+    _test_multicast_memory([ctx0, ctx1])
 
 
 def main():

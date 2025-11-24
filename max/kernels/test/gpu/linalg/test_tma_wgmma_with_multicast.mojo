@@ -19,10 +19,10 @@ from buffer import NDBuffer
 from gpu import barrier
 from gpu.cluster import block_rank_in_cluster, cluster_sync
 from gpu.host import DeviceContext, Dim
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, thread_idx
-from gpu.id import warp_id as get_warp_id
-from gpu.memory import AddressSpace, fence_mbarrier_init
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu import block_idx, thread_idx
+from gpu import warp_id as get_warp_id
+from gpu.memory import fence_mbarrier_init
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
@@ -35,7 +35,6 @@ from layout.tensor_core_async import (
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
@@ -65,13 +64,13 @@ fn multicast_tma_wgmma_kernel[
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -79,7 +78,7 @@ fn multicast_tma_wgmma_kernel[
     var b_smem_tile = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -113,7 +112,7 @@ fn multicast_tma_wgmma_kernel[
     var c_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
@@ -132,7 +131,7 @@ fn multicast_tma_wgmma_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:
@@ -427,11 +426,11 @@ def test_multicast_tma_wgmma[
 
     vendor_blas.matmul(
         ctx,
-        rebind[NDBuffer[c_type, 2, MutableAnyOrigin]](c_ref.device_buffer()),
-        rebind[NDBuffer[a_type, 2, MutableAnyOrigin]](
+        rebind[NDBuffer[c_type, 2, MutAnyOrigin]](c_ref.device_buffer()),
+        rebind[NDBuffer[a_type, 2, MutAnyOrigin]](
             a.device_buffer[update=False]()
         ),
-        rebind[NDBuffer[b_type, 2, MutableAnyOrigin]](
+        rebind[NDBuffer[b_type, 2, MutAnyOrigin]](
             b.device_buffer[update=False]()
         ),
         c_row_major=True,

@@ -13,9 +13,9 @@
 
 import time
 
-from gpu import AddressSpace, memory, sync, thread_idx
+from gpu import memory, sync, thread_idx
 from gpu.host import DeviceContext
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 
 
 fn copy_via_shared(

@@ -36,15 +36,15 @@ struct BoundingBox[dtype: DType](ImplicitlyCopyable, Movable):
         se: Corner storing the minimum coordinates (min y, min x).
     """
 
-    var nw: SIMD[dtype, 2]
-    var se: SIMD[dtype, 2]
+    var nw: SIMD[Self.dtype, 2]
+    var se: SIMD[Self.dtype, 2]
 
     fn __init__(
         out self,
-        y1: Scalar[dtype],
-        x1: Scalar[dtype],
-        y2: Scalar[dtype],
-        x2: Scalar[dtype],
+        y1: Scalar[Self.dtype],
+        x1: Scalar[Self.dtype],
+        y2: Scalar[Self.dtype],
+        x2: Scalar[Self.dtype],
     ):
         """Initialize a bounding box from two diagonal corner coordinates.
 
@@ -58,10 +58,10 @@ struct BoundingBox[dtype: DType](ImplicitlyCopyable, Movable):
             The corners are automatically ordered to ensure nw contains the
             maximum coordinates and se contains the minimum coordinates.
         """
-        self.nw = SIMD[dtype, 2](max(y1, y2), max(x1, x2))
-        self.se = SIMD[dtype, 2](min(y1, y2), min(x1, x2))
+        self.nw = SIMD[Self.dtype, 2](max(y1, y2), max(x1, x2))
+        self.se = SIMD[Self.dtype, 2](min(y1, y2), min(x1, x2))
 
-    fn iou(self, other: BoundingBox[dtype]) -> Scalar[dtype]:
+    fn iou(self, other: BoundingBox[Self.dtype]) -> Scalar[Self.dtype]:
         """Calculate Intersection over Union (IoU) with another bounding box.
 
         Args:
@@ -76,7 +76,9 @@ struct BoundingBox[dtype: DType](ImplicitlyCopyable, Movable):
         var iou_val = abs(intersection_area) / abs(union_area)
         return iou_val
 
-    fn intersection_area(self, other: BoundingBox[dtype]) -> Scalar[dtype]:
+    fn intersection_area(
+        self, other: BoundingBox[Self.dtype]
+    ) -> Scalar[Self.dtype]:
         """Calculate the area of intersection with another bounding box.
 
         Args:
@@ -94,7 +96,7 @@ struct BoundingBox[dtype: DType](ImplicitlyCopyable, Movable):
 
         return Self(nw, se).area()
 
-    fn area(self) -> Scalar[dtype]:
+    fn area(self) -> Scalar[Self.dtype]:
         """Calculate the area of this bounding box.
 
         Returns:
@@ -350,7 +352,7 @@ fn non_max_suppression[
                 sort[_greater_than](
                     Span[box_idxs.T, origin_of(box_idxs)](
                         ptr=box_idxs.unsafe_ptr() + pred_idx,
-                        length=UInt(num_boxes_curr_pred),
+                        length=num_boxes_curr_pred,
                     )
                 )
 

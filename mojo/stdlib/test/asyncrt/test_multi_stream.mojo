@@ -14,6 +14,7 @@
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu import *
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import TestSuite
 
 
@@ -36,8 +37,8 @@ def test_concurrent_copy():
 
 
 fn _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
-    alias length = 1 * 1024 * 1024
-    alias T = DType.float32
+    comptime length = 1 * 1024 * 1024
+    comptime T = DType.float32
 
     var in0_dev1 = ctx1.enqueue_create_buffer[T](length)
     var in0_dev2 = ctx1.enqueue_create_buffer[T](length)
@@ -52,18 +53,27 @@ fn _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             in_host3[i] = 3 * index
 
     # Initialize the fixed (right) inputs.
-    in1_dev1 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(1.0)
-    in1_dev2 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(2.0)
-    in1_dev3 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(3.0)
+    in1_dev1 = ctx1.enqueue_create_buffer[T](length)
+    in1_dev1.enqueue_fill(1.0)
+    in1_dev2 = ctx1.enqueue_create_buffer[T](length)
+    in1_dev2.enqueue_fill(2.0)
+    in1_dev3 = ctx1.enqueue_create_buffer[T](length)
+    in1_dev3.enqueue_fill(3.0)
 
     # Initialize the device outputs with known bad values.
-    out_dev1 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(101.0)
-    out_dev2 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(102.0)
-    out_dev3 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(103.0)
+    out_dev1 = ctx1.enqueue_create_buffer[T](length)
+    out_dev1.enqueue_fill(101.0)
+    out_dev2 = ctx1.enqueue_create_buffer[T](length)
+    out_dev2.enqueue_fill(102.0)
+    out_dev3 = ctx1.enqueue_create_buffer[T](length)
+    out_dev3.enqueue_fill(103.0)
     # Initialize the result buffer on a second queue with known bad values.
-    var out_host1 = ctx2.enqueue_create_host_buffer[T](length).enqueue_fill(0.1)
-    var out_host2 = ctx2.enqueue_create_host_buffer[T](length).enqueue_fill(0.2)
-    var out_host3 = ctx2.enqueue_create_host_buffer[T](length).enqueue_fill(0.3)
+    out_host1 = ctx2.enqueue_create_host_buffer[T](length)
+    out_host1.enqueue_fill(0.1)
+    out_host2 = ctx2.enqueue_create_host_buffer[T](length)
+    out_host2.enqueue_fill(0.2)
+    out_host3 = ctx2.enqueue_create_host_buffer[T](length)
+    out_host3.enqueue_fill(0.3)
 
     for i in range(10):
         print(out_host1[i])
@@ -155,8 +165,8 @@ def test_concurrent_func():
 
 
 fn _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
-    alias length = 20 * 1024 * 1024
-    alias T = DType.float32
+    comptime length = 20 * 1024 * 1024
+    comptime T = DType.float32
 
     # Initialize the variable inputs with known values.
     var in_dev1 = ctx1.enqueue_create_buffer[T](length)
@@ -170,16 +180,23 @@ fn _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             in_host3[i] = 3 * index
 
     # Initialize the fixed (right) inputs.
-    var in_dev4 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(1.0)
-    var in_dev5 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(2.0)
+    var in_dev4 = ctx1.enqueue_create_buffer[T](length)
+    in_dev4.enqueue_fill(1.0)
+    var in_dev5 = ctx1.enqueue_create_buffer[T](length)
+    in_dev5.enqueue_fill(2.0)
 
     # Initialize the outputs with known bad values
-    var out_dev1 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(101.0)
-    var out_dev2 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(102.0)
-    var out_dev3 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(103.0)
-    var out_dev4 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(104.0)
+    var out_dev1 = ctx1.enqueue_create_buffer[T](length)
+    out_dev1.enqueue_fill(101.0)
+    var out_dev2 = ctx1.enqueue_create_buffer[T](length)
+    out_dev2.enqueue_fill(102.0)
+    var out_dev3 = ctx1.enqueue_create_buffer[T](length)
+    out_dev3.enqueue_fill(103.0)
+    var out_dev4 = ctx1.enqueue_create_buffer[T](length)
+    out_dev4.enqueue_fill(104.0)
 
-    var out_host = ctx2.enqueue_create_host_buffer[T](length).enqueue_fill(0.5)
+    var out_host = ctx2.enqueue_create_host_buffer[T](length)
+    out_host.enqueue_fill(0.5)
 
     # Pre-compile and pre-register the device function
     var dev_func1 = ctx1.compile_function_experimental[vec_func]()

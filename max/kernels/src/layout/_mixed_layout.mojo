@@ -25,7 +25,6 @@ from ._mixed_tuple import (
     RuntimeInt,
     crd2idx,
     mixed_int_tuple_to_int_tuple,
-    to_mixed_int_tuple,
 )
 from .int_tuple import IntTuple
 from .layout import LayoutTrait
@@ -49,16 +48,16 @@ struct MixedLayout[
     alias has_shape = True
     """Indicates whether the layout has a valid shape."""
 
-    var shape: MixedTuple[*shape_types]
+    var shape: MixedTuple[*Self.shape_types]
     """The shape of the layout as a mixed tuple."""
 
-    var stride: MixedTuple[*stride_types]
+    var stride: MixedTuple[*Self.stride_types]
     """The stride of the layout as a mixed tuple."""
 
     fn __init__(
         out self,
-        shape: MixedTuple[*shape_types],
-        stride: MixedTuple[*stride_types],
+        shape: MixedTuple[*Self.shape_types],
+        stride: MixedTuple[*Self.stride_types],
     ):
         """Initialize a mixed layout with shape and stride.
 

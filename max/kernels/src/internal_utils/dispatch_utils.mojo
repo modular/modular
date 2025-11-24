@@ -24,11 +24,11 @@ trait TuningConfig(ImplicitlyCopyable, Movable, Stringable):
 
 # DO NOT CHANGE
 struct Table[type: TuningConfig](Stringable):
-    var configs: List[type]
+    var configs: List[Self.type]
     var name: String
     var num_configs: UInt
 
-    fn __init__(out self, configs: List[type], name: String):
+    fn __init__(out self, configs: List[Self.type], name: String):
         self.configs = configs.copy()
         self.name = name
         self.num_configs = UInt(len(configs))
@@ -60,7 +60,7 @@ struct Table[type: TuningConfig](Stringable):
         return is_valid
 
     fn __str__(self) -> String:
-        var s = List[String](self.name)
+        var s: List[String] = [self.name]
         for i in range(len(self.configs)):
             var cfg = self.configs[i]
             s += [String("[", i, "] ", String(cfg))]
@@ -73,17 +73,17 @@ struct Table[type: TuningConfig](Stringable):
     #     These indices are marked valid in the flag and may not represent the entire domain.
     #   - Returns a list of matching indices, not the entire domain.
     fn query_index[
-        rule: fn (type) capturing -> Bool, domain: List[Int] = List[Int]()
+        rule: fn (Self.type) capturing -> Bool, domain: List[Int] = List[Int]()
     ](self) -> List[Int]:
         var flag: List[Bool]
 
         @parameter
         if len(domain):
-            flag = List[Bool](length=self.num_configs, fill=False)
+            flag = List[Bool](length=Int(self.num_configs), fill=False)
             for idx in materialize[domain]():
                 flag[idx] = True
         else:
-            flag = List[Bool](length=self.num_configs, fill=True)
+            flag = List[Bool](length=Int(self.num_configs), fill=True)
 
         for i in range(self.num_configs):
             flag[i] &= rule(self.configs[i])
@@ -97,7 +97,7 @@ struct Table[type: TuningConfig](Stringable):
     # Apply rule on all configs in the table and return list of all the unique results.
     fn query_values[
         ret_type: Comparable & ImplicitlyCopyable & Movable,
-        rule: fn (type) capturing -> ret_type,
+        rule: fn (Self.type) capturing -> ret_type,
         domain: List[Int] = List[Int](),
     ](self) -> List[ret_type]:
         var result = List[ret_type]()
@@ -108,7 +108,7 @@ struct Table[type: TuningConfig](Stringable):
             if len(materialize[domain]()):
                 return materialize[domain]()
             else:
-                return [idx for idx in range(self.num_configs)]
+                return [Int(idx) for idx in range(self.num_configs)]
 
         var search_domain = _get_search_domain()
 
@@ -122,4 +122,15 @@ struct Table[type: TuningConfig](Stringable):
             return lsh < rhs
 
         _quicksort[_cmp](result)
+        return result^
+
+    fn find[
+        rule: fn (Self.type) capturing -> Bool,
+    ](self) -> List[Self.type]:
+        var result = List[Self.type]()
+
+        for config in self.configs:
+            if rule(config):
+                result.append(config)
+
         return result^

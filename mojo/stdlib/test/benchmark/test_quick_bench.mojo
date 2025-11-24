@@ -16,6 +16,7 @@ from random import randint
 from time import sleep
 
 from benchmark import BenchId, BenchMetric, QuickBench, ThroughputMeasure
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import TestSuite
 
 
@@ -113,17 +114,17 @@ def test_overloaded():
     qb.run[T_out = NoneType._mlir_type](
         dummy,
         bench_id=BenchId("dummy_none"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
     qb.run[Int, T_out=Float32](
         dummy,
         1,
         bench_id=BenchId("dummy_1"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
 
     qb.run[Int, Int, T_out=Float32](
@@ -131,9 +132,9 @@ def test_overloaded():
         1,
         2,
         bench_id=BenchId("dummy_2"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
 
     qb.run[Int, Int, Int, T_out=Float32](
@@ -142,9 +143,9 @@ def test_overloaded():
         2,
         3,
         bench_id=BenchId("dummy_3"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
 
     qb.run[Int, Int, Int, Int, T_out=Float32](
@@ -154,9 +155,9 @@ def test_overloaded():
         3,
         4,
         bench_id=BenchId("dummy_4"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
 
     qb.run[Int, Int, Int, Int, Int, T_out=Float32](
@@ -167,9 +168,9 @@ def test_overloaded():
         4,
         5,
         bench_id=BenchId("dummy_5"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
 
     qb.run[Int, Int, Int, Int, Int, Int, T_out=Float32](
@@ -181,9 +182,9 @@ def test_overloaded():
         5,
         6,
         bench_id=BenchId("dummy_6"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
 
     qb.run[Int, Int, Int, Int, Int, Int, Int, T_out=Float32](
@@ -196,9 +197,9 @@ def test_overloaded():
         6,
         7,
         bench_id=BenchId("dummy_7"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
 
     qb.run[Int, Int, Int, Int, Int, Int, Int, Int, T_out=Float32](
@@ -212,9 +213,9 @@ def test_overloaded():
         7,
         8,
         bench_id=BenchId("dummy_8"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
 
     qb.run[Int, Int, Int, Int, Int, Int, Int, Int, Int, T_out=Float32](
@@ -229,9 +230,9 @@ def test_overloaded():
         8,
         9,
         bench_id=BenchId("dummy_9"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
 
     qb.run[Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, T_out=Float32](
@@ -247,9 +248,9 @@ def test_overloaded():
         9,
         10,
         bench_id=BenchId("dummy_10"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
 
     qb.dump_report()
@@ -272,26 +273,22 @@ def test_mojo_math():
         exp,
         1.0,
         bench_id=BenchId("exp"),
-        measures=List[ThroughputMeasure](
-            ThroughputMeasure(BenchMetric.bytes, 4)  # 4 bytes per call
-        ),
+        measures=[ThroughputMeasure(BenchMetric.bytes, 4)],  # 4 bytes per call
     )
 
     qb.run(
         tanh,
         1.0,
         bench_id=BenchId("tanh"),
-        measures=List[ThroughputMeasure](
-            ThroughputMeasure(BenchMetric.bytes, 4)  # 4 bytes per call
-        ),
+        measures=[ThroughputMeasure(BenchMetric.bytes, 4)],  # 4 bytes per call
     )
     qb.dump_report()
 
 
 def test_custom():
-    alias N = 1024
-    alias alignment = 64
-    alias dtype = DType.int32
+    comptime N = 1024
+    comptime alignment = 64
+    comptime dtype = DType.int32
     var x = UnsafePointer[Scalar[dtype],].alloc(N, alignment=alignment)
     var y = UnsafePointer[Scalar[dtype],].alloc(N, alignment=alignment)
     randint[dtype](x, N, 0, 255)
@@ -303,9 +300,9 @@ def test_custom():
         vec_reduce[N, dtype],
         x,
         bench_id=BenchId("vec_reduce"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, N)  # N additions per call
-        ),
+        ],
     )
 
     qb.run(
@@ -313,9 +310,9 @@ def test_custom():
         x,
         y,
         bench_id=BenchId("vec_add"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, N)  # N additions per call
-        ),
+        ],
     )
 
     qb.dump_report()
@@ -353,4 +350,8 @@ def test_all():
 
 
 def main():
-    TestSuite.discover_tests[__functions_in_module()]().run()
+    # NOTE: we pass an empty list since the benchmark infra also tries to parse
+    # the arguments for its own purposes.
+    TestSuite.discover_tests[__functions_in_module()](
+        cli_args=List[StaticString]()
+    ).run()

@@ -39,9 +39,7 @@ description: {% if decl.overloads[0].summary
 
 {% if decl.deprecated %}
 
-**Deprecated:**
-
-{{ decl.deprecated }}
+**Deprecated:** {{ decl.deprecated }}
 {% endif %}
 
 {% if decl.constraints %}

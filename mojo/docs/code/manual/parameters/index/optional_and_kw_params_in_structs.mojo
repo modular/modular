@@ -15,7 +15,7 @@
 # start-opt-and-kw-params-struct
 struct KwParamStruct[greeting: String = "Hello", name: String = "🔥mojo🔥"]:
     fn __init__(out self):
-        print(greeting, name)
+        print(Self.greeting, Self.name)
 
 
 fn use_kw_params():

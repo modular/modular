@@ -1,77 +1,43 @@
-load("//bazel:api.bzl", "modular_generate_stubfiles", "modular_nanobind_extension", "modular_py_library", "requirement")
+load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 
-modular_nanobind_extension(
-    name = "_core.bindings",
-    srcs = ["_core.cpp"],
-    module_name = "_core",
-    new_link_root = "../modular/lib",
-    deps = [
-        "//SDK/lib/API/python/max/_core/src:modules",
-        "@llvm-project//llvm:Support",
-    ],
-)
+# Convenience aliases
+_ALIASES = {
+    "kv_cache": "kernels/src/kv_cache",
+    "layout": "kernels/src/layout",
+    "linalg": "kernels/src/linalg",
+    "nn": "kernels/src/nn",
+    "nvml": "kernels/src/nvml",
+    "shmem": "kernels/src/shmem",
+    "quantization": "kernels/src/quantization",
+    "register": "kernels/src/register",
+    "MOGGPrimitives": "kernels/src/Mogg/MOGGPrimitives",
+    "MOGGKernelAPI": "kernels/src/Mogg/MOGGKernelAPI",
+    "tensor": "kernels/src/extensibility/tensor",
+    "compiler_internal": "kernels/src/extensibility/compiler_internal",
+    "weights_registry": "kernels/src/weights_registry",
+    "internal_utils": "kernels/src/internal_utils",
+    "comm": "kernels/src/comm",
+    "testdata": "kernels/test/testdata",
+    "compiler": "compiler/src:compiler",
+    "_cublas": "kernels/src/_cublas",
+    "_cufft": "kernels/src/_cufft",
+    "_curand": "kernels/src/_curand",
+    "_cudnn": "kernels/src/_cudnn",
+    "_rocblas": "kernels/src/_rocblas",
+}
 
-modular_generate_stubfiles(
-    name = "_core",
-    additional_update_targets = ["//SDK/lib/API/python/max/_mlir/_mlir_libs:_mlir.sync-stubfiles"],
-    diff_test_failure_message = """
-A stubfile is out of sync with its generated counterpart.
-If you modified just a .pyi file, you need to modify the corresponding .cpp file instead.
-When you modify a .cpp file in the _core/src directory, you can run
-`./utils/sync-stubfiles.py` and commit the results.
-""",
-    extension = ":_core.bindings",
-    full_name = "max._core",
-    header = """
-# ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
-#
-# Licensed under the Apache License v2.0 with LLVM Exceptions:
-# https://llvm.org/LICENSE.txt
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ===----------------------------------------------------------------------=== #
-# GENERATED FILE, DO NOT EDIT MANUALLY!
-# ===----------------------------------------------------------------------=== #
-""",
-    imports = [".."],
-    include_private = True,
-    pattern_file = ":patterns.nb",
-    pyi_srcs = glob(["**/*.pyi"]),
-    deps = [
-        "//SDK/lib/API/python/max/_core_types",
-        "//SDK/lib/API/python/max/mlir",
-        requirement("numpy"),
-    ],
-)
+[
+    alias(
+        name = name,
+        testonly = name == "MOGGKernelAPI",
+        actual = "//max/" + target,
+        visibility = ["//visibility:public"],
+    )
+    for name, target in _ALIASES.items()
+]
 
-modular_py_library(
+alias(
     name = "max",
-    srcs = [],
-    deps = [
-        ":_core",
-        "//SDK/lib/API/python/max/_core_mojo",
-        "//SDK/lib/API/python/max/driver",
-        "//SDK/lib/API/python/max/dtype",
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/entrypoints",
-        "//SDK/lib/API/python/max/entrypoints:gpu-query",
-        "//SDK/lib/API/python/max/entrypoints:pipelines",
-        "//SDK/lib/API/python/max/entrypoints:replay_recording",
-        "//SDK/lib/API/python/max/experimental",
-        "//SDK/lib/API/python/max/graph",
-        "//SDK/lib/API/python/max/interfaces",
-        "//SDK/lib/API/python/max/mlir",
-        "//SDK/lib/API/python/max/nn",
-        "//SDK/lib/API/python/max/pipelines",
-        "//SDK/lib/API/python/max/pipelines/architectures",
-        "//SDK/lib/API/python/max/profiler",
-        "//SDK/lib/API/python/max/serve",
-        "//SDK/lib/API/python/max/support",
-        "//SDK/lib/API/python/max/torch",
-    ],
+    actual = "//max/python/max/entrypoints:pipelines",
+    tags = [TOP_LEVEL_TAG],
 )

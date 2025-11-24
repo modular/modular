@@ -380,7 +380,7 @@ for i in range(num_iters):
           alias b_offset = b_smem_layout(idx) * sizeof[b_type]()
 
           # Use c_scale=0 for the first mma to initialize results and use
-          # c_scale=1 subsequently to accumulate resutls.
+          # c_scale=1 subsequently to accumulate results.
           var c_scale_value: UInt32 = 0 if (i == 0 and j == 0) else 1
           mma(
               adesc + a_offset,

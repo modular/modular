@@ -14,30 +14,30 @@
 from math import ceildiv
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
-from gpu.id import global_idx
+from gpu import global_idx
 from layout import Layout, LayoutTensor
 from tensor import InputTensor, OutputTensor, StaticTensorSpec
 from testing import TestSuite
 
 from utils import IndexList
 
-alias WIDTH = 5
-alias HEIGHT = 10
-alias NUM_CHANNELS = 3
+comptime WIDTH = 5
+comptime HEIGHT = 10
+comptime NUM_CHANNELS = 3
 
-alias int_dtype = DType.uint8
-alias float_dtype = DType.float32
-alias rgb_layout_orig = Layout.row_major(HEIGHT, WIDTH, NUM_CHANNELS)
-alias gray_layout_orig = Layout.row_major(HEIGHT, WIDTH)
-alias rgb_spec = StaticTensorSpec[int_dtype, 3].create_unknown()
-alias rgb_layout = rgb_spec.to_layout()
-alias gray_spec = StaticTensorSpec[int_dtype, 2].create_unknown()
-alias gray_layout = gray_spec.to_layout()
+comptime int_dtype = DType.uint8
+comptime float_dtype = DType.float32
+comptime rgb_layout_orig = Layout.row_major(HEIGHT, WIDTH, NUM_CHANNELS)
+comptime gray_layout_orig = Layout.row_major(HEIGHT, WIDTH)
+comptime rgb_spec = StaticTensorSpec[int_dtype, 3].create_unknown()
+comptime rgb_layout = rgb_spec.to_layout()
+comptime gray_spec = StaticTensorSpec[int_dtype, 2].create_unknown()
+comptime gray_layout = gray_spec.to_layout()
 
 
 fn color_to_grayscale(
-    rgb_tensor: LayoutTensor[int_dtype, rgb_layout, MutableAnyOrigin],
-    gray_tensor: LayoutTensor[int_dtype, gray_layout, MutableAnyOrigin],
+    rgb_tensor: LayoutTensor[int_dtype, rgb_layout, MutAnyOrigin],
+    gray_tensor: LayoutTensor[int_dtype, gray_layout, MutAnyOrigin],
 ):
     """Converting each RGB pixel to grayscale, parallelized across the output tensor on the GPU.
     """
@@ -99,7 +99,7 @@ def test_color_to_grayscale():
     # The grid is divided up into blocks, making sure there's an extra
     # full block for any remainder. This hasn't been tuned for any specific
     # GPU.
-    alias BLOCK_SIZE = 16
+    comptime BLOCK_SIZE = 16
     num_col_blocks = ceildiv(WIDTH, BLOCK_SIZE)
     num_row_blocks = ceildiv(HEIGHT, BLOCK_SIZE)
 

@@ -23,18 +23,22 @@ from internal_utils import (
 )
 
 from time import sleep
+from os import getenv
+
+# mojo build sample.mojo
+# mpirun -n 8 ./sample -o output.csv
 
 
 fn bench_func[
     dtype: DType, M: Int, N: Int, K: Int, stages: Int
-](mut m: Bench, mode: Mode) raises:
+](mut m: Bench, mode: Mode, pe_rank: Int) raises:
     @parameter
     @always_inline
     fn bench_iter(mut b: Bencher):
         @parameter
         @always_inline
         fn call_fn():
-            sleep(0.1)
+            sleep(0.01)
 
         b.iter[call_fn]()
 
@@ -43,7 +47,11 @@ fn bench_func[
     )
 
     if Mode.BENCHMARK == mode:
-        m.bench_function[bench_iter](BenchId(name))
+        m.bench_function[bench_iter](
+            BenchId(name, input_id=String("1st-metric (pe_rank=", pe_rank, ")"))
+        )
+        # TODO: enable the following line after adding support for multi-output to kplot and kprofile.
+        # m.bench_function[bench_iter](BenchId(name, input_id=String("2nd-metric (pe_rank=",pe_rank,")")))
     if Mode.VERIFY == mode:
         print("verifying dummy results...PASS")
     if Mode.RUN == mode:
@@ -71,9 +79,8 @@ def main():
         print("-- mode: verify kernel")
 
     var m = Bench(BenchConfig(max_iters=1, max_batch_size=1))
-
+    var pe_rank = m.check_mpirun()
     update_bench_config_args(m)
-
-    bench_func[dtype, shape[0], shape[1], shape[2], stages](m, mode)
+    bench_func[dtype, shape[0], shape[1], shape[2], stages](m, mode, pe_rank)
 
     m.dump_report()

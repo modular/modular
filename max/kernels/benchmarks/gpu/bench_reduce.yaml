@@ -16,19 +16,21 @@ file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_reduce.mojo
 
 params:
 # baby-replit-CE/TG-kernels
-- M: 1
-  N: 1024
-  K: 3072
+- shape: [1x1024x3072]
   dtype: [DType.bfloat16, DType.float32, DType.float16]
+  axis: 2
 
 # baby-llama-LPTG-kernels
-- M: 1
-  N: 1
-  K: 4096
+- shape: [1x1x4096]
   dtype: [DType.bfloat16, DType.float32, DType.float16]
+  axis: 2
 
 # baby-llama-CE-kernels
-- M: 1
-  N: 256
-  K: 4096
+- shape: [1x256x4096]
   dtype: [DType.bfloat16, DType.float32, DType.float16]
+  axis: 2
+
+# External model
+- shape: [ 4x128x6x4x256 ]
+  dtype: [ DType.float16, DType.bfloat16 ]
+  axis: [4, 3, 2]

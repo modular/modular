@@ -17,12 +17,11 @@ from sys._assembly import inlined_assembly
 from gpu import barrier, thread_idx
 from gpu.host import DeviceContext
 from gpu.host.compile import _compile_code
-from gpu.memory import AddressSpace
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 
 
 fn kernel(x: Int) -> Int:
-    return thread_idx.x
+    return Int(thread_idx.x)
 
 
 fn parametric[f: fn (Int) -> Int]() -> Int:
@@ -49,7 +48,7 @@ def test_compile_function():
     print("== test_compile_function")
 
     fn kernel(x: UnsafePointer[Int]):
-        x[0] = thread_idx.x
+        x[0] = Int(thread_idx.x)
 
     # CHECK: tid.x
 

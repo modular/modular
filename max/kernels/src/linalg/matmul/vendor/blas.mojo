@@ -10,6 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from sys import has_amd_gpu_accelerator, size_of
 from sys.ffi import _get_global_or_null, external_call
 
@@ -49,6 +54,7 @@ from _cublas.cublaslt import (
     cublasLtMatrixLayout_t,
     cublasLtMatrixLayoutCreate,
     cublasLtMatrixLayoutDestroy,
+    cublasLtMatmulMatrixScale_t,
 )
 from _cublas.dtype import DataType
 from _rocblas.hipblaslt import (
@@ -81,12 +87,18 @@ from buffer import NDBuffer
 from gpu.host import DeviceContext
 from gpu.host._amdgpu_hip import HIP
 from gpu.host._nvidia_cuda import CUDA
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from runtime.tracing import Trace, TraceLevel
-
+from internal_utils import (
+    DeviceNDBuffer,
+    HostNDBuffer,
+)
+from buffer import DimList, NDBuffer
 from utils import IndexList
 from utils.variant import Variant
+from gpu.host.info import B200
+from collections import OptionalReg, Optional
 
 # ===----------------------------------------------------------------------===#
 # Backend
@@ -94,7 +106,7 @@ from utils.variant import Variant
 
 
 @register_passable("trivial")
-struct Backend(EqualityComparable, ImplicitlyCopyable, Movable, Writable):
+struct Backend(Equatable, ImplicitlyCopyable, Movable, Writable):
     var _value: Int32
 
     alias AUTOMATIC = Self(0)
@@ -157,7 +169,7 @@ fn _resolve_backend[
 struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
     ImplicitlyCopyable, Movable
 ):
-    alias resolved_backend = _resolve_backend[backend]()
+    alias resolved_backend = _resolve_backend[Self.backend]()
     alias _cublas_type = UnsafePointer[cublasContext]
     alias _rocblas_type = _rocblas.Handle
     alias _hipblaslt_type = hipblasLtHandle_t
@@ -187,7 +199,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
         else:
             raise Error(
                 "the backend '",
-                backend,
+                Self.backend,
                 "' is not currently supported",
             )
 
@@ -311,13 +323,23 @@ fn _get_global_handle[
 
 
 fn matmul[
-    use_tf32: Bool = False
+    use_tf32: Bool = False,
+    *,
+    scales_type: DType = DType.invalid,
+    a_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
+    b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
 ](
     ctx: DeviceContext,
     c: NDBuffer[_, 2, _, _],
     a: NDBuffer[_, 2, _, _],
     b: NDBuffer[_, 2, _, _],
     *,
+    a_scales: OptionalReg[
+        LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin]
+    ] = None,
+    b_scales: OptionalReg[
+        LayoutTensor[scales_type, b_scales_layout, MutAnyOrigin]
+    ] = None,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
@@ -336,12 +358,14 @@ fn matmul[
     # Push the device context to ensure correct CUDA context is current for all
     # vendor BLAS calls.
     with ctx.push_context() as cur_ctx:
-        return matmul[use_tf32=use_tf32](
+        return matmul[use_tf32=use_tf32, scales_type=scales_type,](
             cur_ctx,
             _get_global_handle[a.type](ctx),
             c_tensor,
             a_tensor,
             b_tensor,
+            a_scales=a_scales,
+            b_scales=b_scales,
             c_row_major=c_row_major,
             transpose_a=transpose_a,
             transpose_b=transpose_b,
@@ -358,13 +382,23 @@ fn matmul[
     c_layout: Layout,
     a_layout: Layout,
     b_layout: Layout,
+    *,
     use_tf32: Bool = False,
+    scales_type: DType = DType.invalid,
+    a_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
+    b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
 ](
     ctx: DeviceContext,
     c_tensor: LayoutTensor[c_type, c_layout, *_],
     a_tensor: LayoutTensor[a_type, a_layout, *_],
     b_tensor: LayoutTensor[b_type, b_layout, *_],
     *,
+    a_scales: OptionalReg[
+        LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin]
+    ] = None,
+    b_scales: OptionalReg[
+        LayoutTensor[scales_type, b_scales_layout, MutAnyOrigin]
+    ] = None,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
@@ -373,12 +407,14 @@ fn matmul[
     batch_size: Int = 1,
 ) raises:
     with ctx.push_context() as cur_ctx:
-        return matmul[use_tf32=use_tf32](
+        return matmul[use_tf32=use_tf32, scales_type=scales_type,](
             cur_ctx,
             _get_global_handle[a_type](ctx),
             c_tensor,
             a_tensor,
             b_tensor,
+            a_scales=a_scales,
+            b_scales=b_scales,
             c_row_major=c_row_major,
             transpose_a=transpose_a,
             transpose_b=transpose_b,
@@ -396,6 +432,9 @@ fn matmul[
     a_layout: Layout,
     b_layout: Layout,
     use_tf32: Bool = False,
+    scales_type: DType = DType.invalid,
+    a_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
+    b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
 ](
     ctx: DeviceContext,
     handle: Handle,
@@ -403,6 +442,12 @@ fn matmul[
     a_tensor: LayoutTensor[a_type, a_layout, *_],
     b_tensor: LayoutTensor[b_type, b_layout, *_],
     *,
+    a_scales: OptionalReg[
+        LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin]
+    ] = None,
+    b_scales: OptionalReg[
+        LayoutTensor[scales_type, b_scales_layout, MutAnyOrigin]
+    ] = None,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
@@ -447,6 +492,8 @@ fn matmul[
                 c_tensor,
                 a_tensor,
                 b_tensor,
+                a_scales=a_scales,
+                b_scales=b_scales,
                 c_row_major=c_row_major,
                 transpose_a=transpose_a,
                 transpose_b=transpose_b,
@@ -796,6 +843,9 @@ fn _cublasLt_matmul[
     d_layout: Layout,
     a_layout: Layout,
     b_layout: Layout,
+    scales_type: DType = DType.invalid,
+    a_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
+    b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
 ](
     ctx: DeviceContext,
     handle: UnsafePointer[Context],
@@ -803,6 +853,12 @@ fn _cublasLt_matmul[
     a: LayoutTensor[a_type, a_layout, *_],
     b: LayoutTensor[b_type, b_layout, *_],
     *,
+    a_scales: OptionalReg[
+        LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin]
+    ] = None,
+    b_scales: OptionalReg[
+        LayoutTensor[scales_type, b_scales_layout, MutAnyOrigin]
+    ] = None,
     c_row_major: Bool = True,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
@@ -907,6 +963,105 @@ fn _cublasLt_matmul[
         ),
         msg="failed to set cublasLtMatmulDescAttribute for transb",
     )
+
+    @parameter
+    if ctx.default_device_info.compute == B200.compute:
+        if a_scales or b_scales:
+            if not (a_scales and b_scales):
+                raise Error("a_scales and b_scales must be provided together")
+            if scales_type != DType.float8_e8m0fnu:
+                raise Error("Only float8_e8m0fnu scaling is supported for B200")
+            if not (a_type == b_type and a_type == DType.float8_e4m3fn):
+                raise Error("Only E4M3 is supported for block scaled matmul")
+
+            a_scale_tensor = a_scales.value()
+            b_scale_tensor = b_scales.value()
+
+            if a_scales_layout.rank() != 5 or b_scales_layout.rank() != 5:
+                raise Error("Invalid A/B scales dimensions.")
+
+            alias SF_VECTOR_SIZE = 32
+            alias atom_m = (32, 4)
+            alias atom_k = 4
+            var sf_k = ceildiv(K, SF_VECTOR_SIZE)
+
+            if (
+                a_scale_tensor.dim(0) != ceildiv(M, atom_m[0] * atom_m[1])
+                or a_scale_tensor.dim(1) != ceildiv(sf_k, atom_k)
+                or b_scale_tensor.dim(0) != ceildiv(N, atom_m[0] * atom_m[1])
+                or b_scale_tensor.dim(1) != ceildiv(sf_k, atom_k)
+                or a_scale_tensor.dim(2) != b_scale_tensor.dim(2) != atom_m[0]
+                or a_scale_tensor.dim(3) != b_scale_tensor.dim(3) != atom_m[1]
+                or a_scale_tensor.dim(4) != b_scale_tensor.dim(4) != atom_k
+            ):
+                raise Error("Invalid A/B scales dimensions.")
+
+            var a_scale_mode: cublasLtMatmulMatrixScale_t
+            var b_scale_mode: cublasLtMatmulMatrixScale_t
+
+            a_scale_mode = (
+                b_scale_mode
+            ) = cublasLtMatmulMatrixScale_t.MATRIX_SCALE_VEC32_UE8M0
+
+            var a_scale_ptr = b_scale_tensor.ptr.bitcast[
+                NoneType
+            ]() if c_row_major else a_scale_tensor.ptr.bitcast[NoneType]()
+            var b_scale_ptr = a_scale_tensor.ptr.bitcast[
+                NoneType
+            ]() if c_row_major else b_scale_tensor.ptr.bitcast[NoneType]()
+
+            check_cublas_error(
+                cublasLtMatmulDescSetAttribute(
+                    compute_desc,
+                    cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_A_SCALE_MODE,
+                    UnsafePointer(to=a_scale_mode).bitcast[NoneType](),
+                    size_of[Int32](),
+                ),
+                msg=(
+                    "failed to set cublasLtMatmulDescAttribute for Matrix A"
+                    " scale mode"
+                ),
+            )
+            check_cublas_error(
+                cublasLtMatmulDescSetAttribute(
+                    compute_desc,
+                    cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_B_SCALE_MODE,
+                    UnsafePointer(to=b_scale_mode).bitcast[NoneType](),
+                    size_of[Int32](),
+                ),
+                msg=(
+                    "failed to set cublasLtMatmulDescAttribute for Matrix B"
+                    " scale mode"
+                ),
+            )
+
+            check_cublas_error(
+                cublasLtMatmulDescSetAttribute(
+                    compute_desc,
+                    cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_A_SCALE_POINTER,
+                    UnsafePointer(to=a_scale_ptr).bitcast[NoneType](),
+                    size_of[UnsafePointer[NoneType]](),
+                ),
+                msg=(
+                    "failed to set cublasLtMatmulDescAttribute for Matrix A"
+                    " scale factor"
+                ),
+            )
+            check_cublas_error(
+                cublasLtMatmulDescSetAttribute(
+                    compute_desc,
+                    cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_B_SCALE_POINTER,
+                    UnsafePointer(to=b_scale_ptr).bitcast[NoneType](),
+                    size_of[UnsafePointer[NoneType]](),
+                ),
+                msg=(
+                    "failed to set cublasLtMatmulDescAttribute for Matrix B"
+                    " scale factor"
+                ),
+            )
+    else:
+        if a_scales or b_scales:
+            raise Error("block scaling is only supported on B200 devices")
 
     # create matrix descriptors, we are good with the details here so no need to set any extra attributes
     # table of supported type combinations can be found in the documentation: https://docs.nvidia.com/cuda/cublas/index.html#cublasltmatmul
