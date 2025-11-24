@@ -4,11 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import pytest
 from max.driver import (
     CPU,
     Accelerator,
-    accelerator_api,
     accelerator_architecture_name,
 )
 from max.graph import DeviceKind, DeviceRef
@@ -104,12 +102,6 @@ def test_cpu_can_access_cpu() -> None:
 def test_accelerator_architecture_name() -> None:
     """Accelerator should return architecture name (e.g., gfx942, sm_80)."""
     accelerator = Accelerator()
-    if accelerator.api != "hip":
-        with pytest.raises(
-            Exception, match="failed to get device architecture name"
-        ):
-            _ = accelerator.architecture_name
-        return
 
     archname = accelerator.architecture_name
     assert isinstance(archname, str)
@@ -119,13 +111,6 @@ def test_accelerator_architecture_name() -> None:
 
 
 def test_accelerator_architecture_name_function() -> None:
-    if accelerator_api() != "hip":
-        with pytest.raises(
-            Exception, match="failed to get device architecture name"
-        ):
-            _ = accelerator_architecture_name()
-        return
-
     arch = accelerator_architecture_name()
     assert isinstance(arch, str)
     assert len(arch) > 0, (
