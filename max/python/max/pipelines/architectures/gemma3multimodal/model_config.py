@@ -186,6 +186,7 @@ class Gemma3ForConditionalGenerationConfig(
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.text_config.num_key_value_heads,
             head_dim=huggingface_config.text_config.head_dim,
+            num_layers=Gemma3ForConditionalGenerationConfig.get_num_layers(huggingface_config),
             page_size=kv_cache_config.kv_cache_page_size,
             cache_strategy=kv_cache_config.cache_strategy,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
@@ -198,7 +199,7 @@ class Gemma3ForConditionalGenerationConfig(
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         return (
             huggingface_config.text_config.num_hidden_layers
-        )  # TODO text?  vision?  who can tell
+        )
 
     @staticmethod
     def calculate_max_seq_len(

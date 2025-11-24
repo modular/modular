@@ -361,11 +361,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             max_seq_len=Gemma3_MultiModalModel.calculate_max_seq_len(
                 pipeline_config, huggingface_config
             ),
-            num_layers=Gemma3ForConditionalGenerationConfig.get_num_layers(
-                huggingface_config
-            ),
             available_cache_memory=available_cache_memory,
-            devices=devices,
         )
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
@@ -804,12 +800,8 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             max_seq_len=self.calculate_max_seq_len(
                 self.pipeline_config, huggingface_config=self.huggingface_config
             ),
-            num_layers=Gemma3ForConditionalGenerationConfig.get_num_layers(
-                huggingface_config=self.huggingface_config
-            ),
             devices=self.devices,
             available_cache_memory=available_cache_memory,
-            page_size=self.kv_cache_config.kv_cache_page_size,
             session=session,
         )
 
