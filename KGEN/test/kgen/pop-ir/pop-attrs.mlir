@@ -98,3 +98,6 @@ kgen.func @union_constants() {
 
 // CHECK: f0 = #pop.simd_cmp<eq, #kgen.unknown : !pop.simd<4, si32>, #pop<simd -1> : !pop.simd<4, si32>> : !pop.simd<4, bool>
 "simd_cmp.attr"() { f0 = #pop.simd_cmp<eq, #kgen.unknown : !pop.simd<4, si32>, #pop<simd -1> : !pop.simd<4, si32>> : !pop.simd<4, bool> } : () -> ()
+
+// CHECK: f0 = #pop.simd_reduce_or<#kgen.unknown : !pop.simd<4, si32>> : !pop.scalar<si32>
+"simd_reduce_or.attr"() { f0 = #pop.simd_reduce_or<#kgen.unknown : !pop.simd<4, si32>> : !pop.scalar<si32> } : () -> ()

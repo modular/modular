@@ -513,3 +513,34 @@ fn fold_var_decls() -> (
     # CHECK: %b = lit.var.decl "b" var : !lit.ref<!lit.struct<#BuiltinSI32T <:scalar<si32> sugar_builtin({{.*}}, -256)>>, mut *"b`2">
     var b = BuiltinSI32T[var_decls[DType.int32](-1)]()
     return a
+
+
+##===----------------------------------------------------------------------===##
+# Fold pop.simd_reduce_or
+##===----------------------------------------------------------------------===##
+
+
+@always_inline("builtin")
+fn pop_simd_reduce_or(
+    x: __mlir_type.`!pop.simd<4, ui8>`,
+) -> __mlir_type.`!pop.scalar<ui8>`:
+    return __mlir_op.`pop.simd.reduce_or`(x)
+
+
+# CHECK-LABEL: lit.fn @"fold_pop_simd_reduce_or
+fn fold_pop_simd_reduce_or() -> POPUInt8T[POP_UI8_77]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPUInt8T <:scalar<ui8> sugar_builtin(apply(:!lit.generator<("x": !pop.simd<4, ui8>) -> !pop.scalar<ui8>> @builtin_function_folder_pop_ops::@"pop_simd_reduce_or(__mlir_type.!pop.simd<4, ui8>)", <1, 8, 68, 0>), 77)>>, mut *"a`1">
+    var a = POPUInt8T[
+        pop_simd_reduce_or(
+            __mlir_attr.`#pop.simd<1, 8, 68, 0> : !pop.simd<4, ui8>`
+        )
+    ]()
+    return a
+
+
+# CHECK-LABEL: lit.fn @"pop_unresolved_simd_reduce_or
+@always_inline("builtin")
+fn pop_unresolved_simd_reduce_or[
+    dt: DType, n: Int
+](x: SIMD[dt, n]) -> SIMD[dt, 1]._mlir_type:
+    return __mlir_op.`pop.simd.reduce_or`(x._mlir_value)

@@ -2700,6 +2700,14 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
   if (auto xorOp = dyn_cast<POP::SIMDXOrOp>(op))
     return foldSIMDBinOp<POP::SIMDXorAttr>(op, *this);
 
+  if (auto reduceOrOp = dyn_cast<POP::SIMDReduceOrOp>(op)) {
+    if (auto lhs = findValue(op.getOperand(0))) {
+      return POP::SIMDReduceOrAttr::get(
+          lhs,
+          cast<POP::SIMDType>(evaluator.getReboundType(reduceOrOp.getType())));
+    }
+  }
+
   if (auto bitcast = dyn_cast<POP::PointerBitcastOp>(op)) {
     if (auto src = findValue(bitcast.getInput()))
       return ParamOperatorAttr::get(
