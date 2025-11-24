@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing.prop.random import Rng
+from builtin.simd import SIMD
+from collections import List
 
 # ===----------------------------------------------------------------------=== #
 # SIMD

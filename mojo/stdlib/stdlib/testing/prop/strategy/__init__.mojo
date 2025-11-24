@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing.prop.random import Rng
-from .types import *
+from .types import SIMD, List
 
 
 trait Strategy(Movable):

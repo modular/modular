@@ -29,7 +29,10 @@ from testing import (
     TestSuite,
 )
 from testing.prop import PropTest
-from testing.prop.strategy import List, SIMD
+
+# TODO(MOCO-522): Figure out desired behavior for importing files with only
+# extensions in them.
+from testing.prop.strategy import SIMD, List
 
 
 def test_mojo_issue_698():
