@@ -2004,6 +2004,14 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
+    constrained[config.cta_group == 1, "Only support cta_group == 1"]()
+    constrained[
+        config.cluster_shape[0] == 1
+        and config.cluster_shape[1] == 1
+        and config.cluster_shape[2] == 1,
+        "Only support cluster_shape == (1, 1, 1). Got "
+        + String(config.cluster_shape),
+    ]()
     constrained[
         transpose_b,
         "Only support transposed B",
@@ -2322,12 +2330,11 @@ fn grouped_matmul_dynamic_scaled_fp8[
     @parameter
     if ctx.default_device_info is B200:
         comptime umma_shape: IndexList[3] = Index(64, 64, 32)
-        comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
 
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-            cluster_shape=Index(2, 1, 1),
+            cluster_shape=Index(1, 1, 1),
             mma_shape=umma_shape,
-            cta_group=2,
+            cta_group=1,
             AB_swapped=False,
             k_group_size=1,
         )
@@ -2344,6 +2351,7 @@ fn grouped_matmul_dynamic_scaled_fp8[
             ctx,
         )
 
+        # comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
         # grouped_matmul_sm100_blockwise_scaled_fp8[
         #     transpose_b=transpose_b,
         #     umma_shape=umma_shape,
