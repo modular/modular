@@ -140,7 +140,7 @@ struct Tuple[*element_types: Copyable & Movable](
             )
         # Note: The destructor on `existing` is auto-disabled in a moveinit.
 
-    @always_inline
+    @always_inline("builtin")
     @staticmethod
     fn __len__() -> Int:
         """Return the number of elements in the tuple.

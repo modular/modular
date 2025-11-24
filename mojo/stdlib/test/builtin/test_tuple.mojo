@@ -225,5 +225,13 @@ def test_tuple_concat_copy_count():
     assert_equal(t3[0].copy_count, 0)
 
 
+# This test doesn't need to run, it just needs to compile
+def test_tuple_size_parse_time():
+    fn func_with_where_clause(t: Tuple) where type_of(t).__len__() < 4:
+        pass
+
+    func_with_where_clause((1, 3, 2))
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
