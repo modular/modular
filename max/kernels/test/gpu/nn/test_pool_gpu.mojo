@@ -308,7 +308,7 @@ fn pool_ceil_test[
         in_layout.size()
     )
     var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](
-        in_layout.size()
+        out_layout.size()
     )
     var d_input = LayoutTensor[DType.float32, in_layout](d_input_buffer)
     var d_output = LayoutTensor[DType.float32, out_layout](d_output_buffer)
