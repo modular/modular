@@ -20,6 +20,7 @@
 #include "Support/BinaryID.h"
 
 #include <atomic>
+#include <cstdio>
 
 using namespace M::AsyncRT;
 
@@ -60,4 +61,14 @@ MODULAR_CXX_EXPORT std::string M::AsyncRT::getRuntimeGlobalsBinaryID() {
   // it. For the purposes of MEF cache invalidation, we need to know when
   // there's been a change in these shared libraries.
   return M::getBinaryID();
+}
+
+/// Global counter for assigning unique task IDs across all AsyncRT users.
+/// Must live in a shared library to ensure a single instance.
+static std::atomic<uint64_t> globalUniqueTaskIdCounter{0};
+
+MODULAR_CXX_EXPORT uint64_t M::AsyncRT::getUniqueTaskIdForWorkItem() {
+  uint64_t id =
+      globalUniqueTaskIdCounter.fetch_add(1, std::memory_order_relaxed);
+  return id;
 }

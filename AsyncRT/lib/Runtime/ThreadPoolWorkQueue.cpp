@@ -389,7 +389,9 @@ struct WorkQueueThread {
   // or addLocalTask (via an AsyncValue waiter).
   template <bool IsWaiter>
   void doWork(WorkItem &&workItem, WorkType type) {
-    TRACY_ZONE_SCOPED_NC("WorkQueueThread::doWork", TRACY_COLOR_BLUE);
+    TRACY_ZONE_SCOPED_NCT("WorkQueueThread::doWork", TRACY_COLOR_BLUE,
+                          "Unique task ID: " +
+                              std::to_string(workItem.uniqueTaskId));
 
 #if ASYNCRT_WORKER_STATS
     auto start = std::chrono::high_resolution_clock::now();
@@ -1005,7 +1007,9 @@ void ThreadPoolWorkQueue::shutdown() {
 }
 
 void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
-  TRACY_ZONE_SCOPED_NC("ThreadPoolWorkQueue::addTask", TRACY_COLOR_BLUE);
+  TRACY_ZONE_SCOPED_NCT("ThreadPoolWorkQueue::addTask", TRACY_COLOR_BLUE,
+                        "Unique task ID: " +
+                            std::to_string(workItem.uniqueTaskId));
 
   assert(workItem);
 #if ASYNCRT_WORKER_STATS
@@ -1091,7 +1095,9 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
 }
 
 void ThreadPoolWorkQueue::addLocalTask(WorkItem &&workItem) {
-  TRACY_ZONE_SCOPED_NC("ThreadPoolWorkQueue::addLocalTask", TRACY_COLOR_BLUE);
+  TRACY_ZONE_SCOPED_NCT("ThreadPoolWorkQueue::addLocalTask", TRACY_COLOR_BLUE,
+                        "Unique task ID: " +
+                            std::to_string(workItem.uniqueTaskId));
 
   assert(workItem && "invalid work item");
 

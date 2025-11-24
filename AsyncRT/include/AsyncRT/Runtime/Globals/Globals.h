@@ -10,6 +10,7 @@
 #include "Support/SymbolExport.h"
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <string>
 
@@ -53,6 +54,10 @@ struct TCMallocGlobals {
 };
 
 MODULAR_CXX_EXPORT std::string getRuntimeGlobalsBinaryID();
+
+/// Get a unique task id for identifying work items.
+/// Thread-safe and globally unique across all AsyncRT users.
+MODULAR_CXX_EXPORT uint64_t getUniqueTaskIdForWorkItem();
 
 } // namespace M::AsyncRT
 

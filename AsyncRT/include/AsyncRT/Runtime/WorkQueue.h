@@ -15,6 +15,7 @@
 
 #include "AsyncRT/ForwardDecls.h"
 #include "AsyncRT/Runtime/CompactRuntimePtr.h"
+#include "AsyncRT/Runtime/Globals/Globals.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Profiling/TimeProfiler.h"
 #include "Support/Threading/Atomics.h"
@@ -79,6 +80,15 @@ struct WorkItem {
   /// this item to worker (deviceHint % numWorkers). Use kNoDevicePreference to
   /// enqueue on the global queue shared by all workers.
   int deviceHint = kNoDevicePreference;
+
+#ifdef TRACY_ENABLE
+  /// Assign a unique task id for the work item. This is used to identify the
+  /// work item between enqueue and execution. Only done when Tracy profiling
+  // is enabled to avoid performance overhead.
+  uint64_t uniqueTaskId = getUniqueTaskIdForWorkItem();
+#else
+  uint64_t uniqueTaskId = 0;
+#endif // TRACY_ENABLE
 
   WorkItem() = default;
 
