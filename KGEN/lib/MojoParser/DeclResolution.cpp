@@ -3927,11 +3927,9 @@ LogicalResult DeclResolver::resolveSignature(ExtensionDeclOp extensionDeclOp,
   //   the more expensive lookupAllDeclsWithName.
   // TODO(MOCO-522): Consider modifying the import system to automatically
   // import a target struct when we import an extension.
-  // TODO(MOCO-522): Update the conflict test and simplify this to
-  // lookupAndResolveDecl call, now that we've upgraded extension names.
   StringRef structName = structNameAttr.getValue();
   LookupAllResult lookupResult = shared.lookupAllDeclsWithName(
-      structName, identifierLoc, *parentDecl, /*resolve=*/false);
+      structName, identifierLoc, *parentDecl, false);
   ArrayRef<ASTDecl *> foundDecls = lookupResult.getIfSuccess();
   // Find the actual struct declaration among all the found declarations.
   StructDeclOp structDeclOp = nullptr;

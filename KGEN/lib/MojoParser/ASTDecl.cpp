@@ -90,14 +90,9 @@ ASTDecl::collectTypeAndExtensions(ASTType type, llvm::SMLoc callLoc) {
       !isa<StructDeclOp, TraitDeclOp>(astDecl->getIfOperation()))
     return result;
 
-  // Now find all extensions that target this struct/trait.
-  // Extensions are registered with the name of their target type, prefixed
-  // with "extension:" (e.g., "extension:Spaceship") so that we can do this
-  // lookup here.
   StringRef typeName = astDecl->getNameIfOperation().value();
-  std::string extensionName = "extension:" + typeName.str();
   LookupAllResult lookupResult =
-      shared.lookupAllDeclsWithName(extensionName, callLoc, *this, true);
+      shared.lookupAllDeclsWithName(typeName, callLoc, *this, true);
 
   // Only consider results from successful lookups. Lookups with isErroneous()
   // means the error was already diagnosed. Lookups with isFailure() should
