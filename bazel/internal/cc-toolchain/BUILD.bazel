@@ -14,8 +14,13 @@ cc_sysroot(
         "@rules_cc//cc/toolchains/actions:compile_actions",
         "@rules_cc//cc/toolchains/actions:link_actions",
     ],
-    data = ["@sysroot-jammy-aarch64"],
-    sysroot = "@sysroot-jammy-aarch64//:root",
+    allowlist_absolute_include_directories = [
+        # NOTE: This makes bazel not error for any include paths, but we don't
+        # care and should use layering_check for that instead
+        "/",
+    ],
+    data = ["@sysroot-jammy-aarch64//sysroot:directory"],
+    sysroot = "@sysroot-jammy-aarch64//sysroot:root",
 )
 
 cc_sysroot(
@@ -24,8 +29,13 @@ cc_sysroot(
         "@rules_cc//cc/toolchains/actions:compile_actions",
         "@rules_cc//cc/toolchains/actions:link_actions",
     ],
-    data = ["@sysroot-jammy-x86_64"],
-    sysroot = "@sysroot-jammy-x86_64//:root",
+    allowlist_absolute_include_directories = [
+        # NOTE: This makes bazel not error for any include paths, but we don't
+        # care and should use layering_check for that instead
+        "/",
+    ],
+    data = ["@sysroot-jammy-x86_64//sysroot:directory"],
+    sysroot = "@sysroot-jammy-x86_64//sysroot:root",
 )
 
 cc_sysroot(
@@ -34,8 +44,13 @@ cc_sysroot(
         "@rules_cc//cc/toolchains/actions:compile_actions",
         "@rules_cc//cc/toolchains/actions:link_actions",
     ],
-    data = ["@sysroot-macos"],
-    sysroot = "@sysroot-macos//:root",
+    allowlist_absolute_include_directories = [
+        # NOTE: This makes bazel not error for any include paths, but we don't
+        # care and should use layering_check for that instead
+        "/",
+    ],
+    data = ["@sysroot-macos//sysroot:directory"],
+    sysroot = "@sysroot-macos//sysroot:root",
 )
 
 [

@@ -5,7 +5,7 @@
 def _macos_sysroot_repository_impl(rctx):
     if rctx.os.name != "mac os x":
         # Write an empty file that will fail if used by otherwise allows analysis
-        rctx.file("BUILD.bazel", """\
+        rctx.file("sysroot/BUILD.bazel", """\
 load("@bazel_skylib//rules/directory:directory.bzl", "directory")
 
 directory(
@@ -15,7 +15,7 @@ directory(
 )
 
 filegroup(
-    name = "sysroot-macos",
+    name = "directory",
     srcs = [],
     visibility = ["//visibility:public"],
 )
@@ -32,8 +32,8 @@ filegroup(
 
     sdk_path = rctx.path(result.stdout.strip())
     for child in sdk_path.readdir(watch = "no"):
-        rctx.symlink(child, child.basename)
-    rctx.file("BUILD.bazel", """\
+        rctx.symlink(child, "sysroot/" + child.basename)
+    rctx.file("sysroot/BUILD.bazel", """\
 load("@bazel_skylib//rules/directory:directory.bzl", "directory")
 
 # NOTE: Ruby.framework has infinite symlink loops, so we have to avoid that in our globs
@@ -53,7 +53,7 @@ directory(
 )
 
 filegroup(
-    name = "sysroot-macos",
+    name = "directory",
     srcs = glob(_INCLUDES),
     visibility = ["//visibility:public"],
 )
