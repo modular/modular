@@ -77,14 +77,7 @@ def main():
         print(
             "compute=" + String(Float32(major) + (Float32(minor) / 10)) + ", "
         )
-        print(
-            'version="sm_'
-            + (
-                String(compute_capability)
-                + ("a" if compute_capability >= 90 else "")
-            )
-            + '",'
-        )
+        print('version="' + arch_name + '", ')
         print(
             "sm_count="
             + String(
