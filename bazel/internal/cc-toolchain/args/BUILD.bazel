@@ -357,11 +357,20 @@ cc_args(
     args = [
         "-xc++-header",  # TODO: This is wrong for C only headers https://github.com/bazelbuild/bazel/pull/22971
         "-fsyntax-only",
-        "-Wno-unused-command-line-argument",  # NOTE: Ideally we wouldn't need this
     ],
     env = {
         "PARSE_HEADER": "{output_file}",
     },
     format = {"output_file": "@rules_cc//cc/toolchains/variables:output_file"},
     requires_not_none = "@rules_cc//cc/toolchains/variables:output_file",
+)
+
+# TODO: Ideally these would be fixed in rules_cc
+cc_args(
+    name = "ignore_unused_command_line_argument",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:lto_backend",
+        "@rules_cc//cc/toolchains/actions:cpp_header_parsing",
+    ],
+    args = ["-Wno-unused-command-line-argument"],
 )
