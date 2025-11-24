@@ -38,6 +38,7 @@ struct Consistency(
     ImplicitlyCopyable,
     Representable,
     Stringable,
+    Writable,
 ):
     """Represents the consistency model for atomic operations.
 
@@ -127,15 +128,23 @@ struct Consistency(
         """
         return self.as_string_slice()
 
+    fn write_to(self, mut writer: Some[Writer]):
+        """Formats the string representation of this type to the provided
+        `Writer`.
+
+        Args:
+            writer: The type conforming to `Writer`.
+        """
+        alias prefix_len = len("Consistency.")
+        writer.write(self.as_string_slice()[prefix_len:])
+
     fn __str__(self) -> String:
         """Returns a string representation of a `Consistency`.
 
         Returns:
             A string representation of this consistency.
         """
-
-        comptime prefix_len = len("Consistency.")
-        return self.as_string_slice()[prefix_len:]
+        return String.write(self)
 
     fn as_string_slice(self) -> StaticString:
         """Returns a string slice representation of a `Consistency`.

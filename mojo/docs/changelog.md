@@ -301,6 +301,9 @@ what we publish.
   On AMD GPUs or for allocations ≤ 48KB, explicit `func_attribute` values
   should be provided when needed.
 
+- `assert_equal` and `assert_not_equal` now take in `Writable` arguments instead
+  of `Stringable` ones.
+
 ### Tooling changes
 
 - The Mojo compiler now "diffs" very long types in error messages to explain
