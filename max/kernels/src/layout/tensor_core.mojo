@@ -628,7 +628,7 @@ struct TensorCore[
                 lane_id()
             )
             b_reg_tile.vectorize[4, 1]().copy_from(b_ram_frags)
-        elif in_type is DType.float64:
+        elif Self.in_type is DType.float64:
             constrained[
                 reg_per_thread in (1, 2, 4),
                 "No valid mma shape to load matrix fragment b",
