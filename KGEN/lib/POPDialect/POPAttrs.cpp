@@ -2053,6 +2053,41 @@ LogicalResult SIMDCmpAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
+// SIMDReduceOrAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr SIMDReduceOrAttr::get(MLIRContext *ctx, TypedAttr vector,
+                                SIMDType outType) {
+  // Fold if possible
+  if (auto fold = foldSIMDReduceOr(/*vector=*/{}, vector,
+                                   cast<SIMDType>(vector.getType()))) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+  }
+  return Base::get(ctx, vector, outType);
+}
+
+TypedAttr
+SIMDReduceOrAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                             MLIRContext *context, TypedAttr vector,
+                             SIMDType outType) {
+  if (failed(verify(emitError, vector, outType)))
+    return {};
+  return SIMDReduceOrAttr::get(context, vector, outType);
+}
+
+bool SIMDReduceOrAttr::isConstant() const { return false; }
+
+LogicalResult
+SIMDReduceOrAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                         TypedAttr vector, SIMDType outType) {
+  if (!isa<SIMDType>(vector.getType()))
+    return emitError() << "requires a SIMD-type operand";
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 

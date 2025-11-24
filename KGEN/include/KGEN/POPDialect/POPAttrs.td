@@ -804,4 +804,28 @@ def POP_SIMDCmpAttr : POP_ExprAttr<"SIMDCmp", "simd_cmp"> {
   ];
 }
 
+def POP_SIMDReduceOrAttr : POP_ExprAttr<"SIMDReduceOr", "simd_reduce_or"> {
+  let summary = "SIMD OR reduction.";
+  let description = [{
+    The `#pop.simd_reduce_or` attribute performs a bitwise 'or' reduction over
+    a SIMD vector.
+  }];
+
+  let parameters = (ins "TypedAttr":$vector,
+                        AttributeSelfTypeParameter<"", "SIMDType">:$type);
+
+  let assemblyFormat = " `<` $vector `>` ";
+
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return a SIMDReduceOrAttr.
+    AttrBuilder<(ins "TypedAttr":$vector, "SIMDType":$type), "", "TypedAttr">,
+
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$vector, "SIMDType":$type),
+    [{ return get(vector.getContext(), vector, type); }], "TypedAttr">
+  ];
+}
+
 #endif // KGEN_POPDIALECT_POPATTRS_TD
