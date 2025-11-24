@@ -67,7 +67,7 @@ class Gemma3VisionEncoderLayer(Module):
     def __call__(
         self,
         hidden_states: Sequence[TensorValue],
-        signal_buffers: Sequence[BufferValue],  # TODO use this
+        signal_buffers: Sequence[BufferValue],
     ) -> list[TensorValue]:
         """process the input hidden states through each of the sub-layers"""
         residual = hidden_states
