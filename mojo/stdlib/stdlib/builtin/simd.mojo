@@ -1269,7 +1269,7 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             True if all elements of the SIMD vectors are equal, False otherwise.
         """
-        return Bool(self.eq(rhs).reduce_and())
+        return self.eq(rhs).reduce_and().__bool__()
 
     @always_inline
     fn __gt__(self, rhs: Self) -> Bool:
@@ -1288,7 +1288,7 @@ struct SIMD[dtype: DType, size: Int](
                 "did you mean to use `SIMD.gt(...)`?"
             ),
         ]()
-        return Bool(self.gt(rhs))
+        return self.gt(rhs).__bool__()
 
     @always_inline
     fn __ge__(self, rhs: Self) -> Bool:
@@ -1307,7 +1307,7 @@ struct SIMD[dtype: DType, size: Int](
                 "did you mean to use `SIMD.ge(...)`?"
             ),
         ]()
-        return Bool(self.ge(rhs))
+        return self.ge(rhs).__bool__()
 
     @always_inline
     fn __lt__(self, rhs: Self) -> Bool:
@@ -1326,7 +1326,7 @@ struct SIMD[dtype: DType, size: Int](
                 "did you mean to use `SIMD.lt(...)`?"
             ),
         ]()
-        return Bool(self.lt(rhs))
+        return self.lt(rhs).__bool__()
 
     @always_inline
     fn __le__(self, rhs: Self) -> Bool:
@@ -1345,7 +1345,7 @@ struct SIMD[dtype: DType, size: Int](
                 "did you mean to use `SIMD.le(...)`?"
             ),
         ]()
-        return Bool(self.le(rhs))
+        return self.le(rhs).__bool__()
 
     # ===------------------------------------------------------------------=== #
     # Elementwise comparison operations.
