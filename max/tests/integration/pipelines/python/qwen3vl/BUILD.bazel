@@ -12,6 +12,7 @@ modular_py_test(
     size = "enormous",
     srcs = [
         "tests/test_decoder_rotary_embedding.py",
+        "tests/test_text_attention.py",
     ],
     env = {
         "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
