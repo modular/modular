@@ -15,6 +15,10 @@
 import math
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
+from max.graph import TensorValue, ops
+from max.dtype import DType
+from max.driver import Tensor, Device
+import max
 
 import numpy as np
 import torch
@@ -36,12 +40,12 @@ class FlowMatchEulerDiscreteSchedulerOutput(BaseOutput):
     Output class for the scheduler's `step` function output.
 
     Args:
-        prev_sample (`torch.FloatTensor` of shape `(batch_size, num_channels, height, width)` for images):
+        prev_sample (`TensorValue` of shape `(batch_size, num_channels, height, width)` for images):
             Computed sample `(x_{t-1})` of previous timestep. `prev_sample` should be used as next model input in the
             denoising loop.
     """
 
-    prev_sample: torch.FloatTensor
+    prev_sample: TensorValue
 
 
 class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
@@ -115,7 +119,7 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
             raise ValueError("`time_shift_type` must either be 'exponential' or 'linear'.")
 
         timesteps = np.linspace(1, num_train_timesteps, num_train_timesteps, dtype=np.float32)[::-1].copy()
-        timesteps = torch.from_numpy(timesteps).to(dtype=torch.float32)
+        timesteps = Tensor.from_numpy(timesteps).cast(DType.float32)
 
         sigmas = timesteps / num_train_timesteps
         if not use_dynamic_shifting:
@@ -170,30 +174,30 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
 
     def scale_noise(
         self,
-        sample: torch.FloatTensor,
-        timestep: Union[float, torch.FloatTensor],
-        noise: Optional[torch.FloatTensor] = None,
-    ) -> torch.FloatTensor:
+        sample: TensorValue,
+        timestep: Union[float, TensorValue],
+        noise: Optional[TensorValue] = None,
+    ) -> TensorValue:
         """
         Forward process in flow-matching
 
         Args:
-            sample (`torch.FloatTensor`):
+            sample (`TensorValue`):
                 The input sample.
             timestep (`int`, *optional*):
                 The current timestep in the diffusion chain.
 
         Returns:
-            `torch.FloatTensor`:
+            `TensorValue`:
                 A scaled input sample.
         """
         # Make sure sigmas and timesteps have the same device and dtype as original_samples
-        sigmas = self.sigmas.to(device=sample.device, dtype=sample.dtype)
+        sigmas = self.sigmas.to(sample.device).cast(sample.dtype)
 
         if sample.device.type == "mps" and torch.is_floating_point(timestep):
             # mps does not support float64
-            schedule_timesteps = self.timesteps.to(sample.device, dtype=torch.float32)
-            timestep = timestep.to(sample.device, dtype=torch.float32)
+            schedule_timesteps = self.timesteps.to(sample.device, dtype=DType.float32)
+            timestep = timestep.to(sample.device, dtype=DType.float32)
         else:
             schedule_timesteps = self.timesteps.to(sample.device)
             timestep = timestep.to(sample.device)
@@ -219,13 +223,13 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
     def _sigma_to_t(self, sigma):
         return sigma * self.config.num_train_timesteps
 
-    def time_shift(self, mu: float, sigma: float, t: torch.Tensor):
+    def time_shift(self, mu: float, sigma: float, t: TensorValue):
         if self.config.time_shift_type == "exponential":
             return self._time_shift_exponential(mu, sigma, t)
         elif self.config.time_shift_type == "linear":
             return self._time_shift_linear(mu, sigma, t)
 
-    def stretch_shift_to_terminal(self, t: torch.Tensor) -> torch.Tensor:
+    def stretch_shift_to_terminal(self, t: TensorValue) -> TensorValue:
         r"""
         Stretches and shifts the timestep schedule to ensure it terminates at the configured `shift_terminal` config
         value.
@@ -234,11 +238,11 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         https://github.com/Lightricks/LTX-Video/blob/a01a171f8fe3d99dce2728d60a73fecf4d4238ae/ltx_video/schedulers/rf.py#L51
 
         Args:
-            t (`torch.Tensor`):
+            t (`TensorValue`):
                 A tensor of timesteps to be stretched and shifted.
 
         Returns:
-            `torch.Tensor`:
+            `TensorValue`:
                 A tensor of adjusted timesteps such that the final value equals `self.config.shift_terminal`.
         """
         one_minus_z = 1 - t
@@ -249,7 +253,7 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
     def set_timesteps(
         self,
         num_inference_steps: Optional[int] = None,
-        device: Union[str, torch.device] = None,
+        device: Union[str, Device] = None,
         sigmas: Optional[List[float]] = None,
         mu: Optional[float] = None,
         timesteps: Optional[List[float]] = None,
@@ -260,7 +264,7 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         Args:
             num_inference_steps (`int`, *optional*):
                 The number of diffusion steps used when generating samples with a pre-trained model.
-            device (`str` or `torch.device`, *optional*):
+            device (`str` or `Device`, *optional*):
                 The device to which the timesteps should be moved to. If `None`, the timesteps are not moved.
             sigmas (`List[float]`, *optional*):
                 Custom values for sigmas to be used for each diffusion step. If `None`, the sigmas are computed
@@ -327,11 +331,11 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
             sigmas = self._convert_to_beta(in_sigmas=sigmas, num_inference_steps=num_inference_steps)
 
         # 5. Convert sigmas and timesteps to tensors and move to specified device
-        sigmas = torch.from_numpy(sigmas).to(dtype=torch.float32, device=device)
+        sigmas = Tensor.from_numpy(sigmas).to(device).cast(DType.float32)
         if not is_timesteps_provided:
             timesteps = sigmas * self.config.num_train_timesteps
         else:
-            timesteps = torch.from_numpy(timesteps).to(dtype=torch.float32, device=device)
+            timesteps = Tensor.from_numpy(timesteps).to(device).cast(DType.float32)
 
         # 6. Append the terminal sigma value.
         #    If a model requires inverted sigma schedule for denoising but timesteps without inversion, the
@@ -339,9 +343,9 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         if self.config.invert_sigmas:
             sigmas = 1.0 - sigmas
             timesteps = sigmas * self.config.num_train_timesteps
-            sigmas = torch.cat([sigmas, torch.ones(1, device=sigmas.device)])
+            sigmas = ops.concat([sigmas, Tensor.from_numpy(np.ones(1)).to(sigmas.device)])
         else:
-            sigmas = torch.cat([sigmas, torch.zeros(1, device=sigmas.device)])
+            sigmas = ops.concat([sigmas, Tensor.zeros(1, device=sigmas.device)])
 
         self.timesteps = timesteps
         self.sigmas = sigmas
@@ -364,7 +368,7 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
 
     def _init_step_index(self, timestep):
         if self.begin_index is None:
-            if isinstance(timestep, torch.Tensor):
+            if isinstance(timestep, TensorValue):
                 timestep = timestep.to(self.timesteps.device)
             self._step_index = self.index_for_timestep(timestep)
         else:
@@ -372,15 +376,15 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
 
     def step(
         self,
-        model_output: torch.FloatTensor,
-        timestep: Union[float, torch.FloatTensor],
-        sample: torch.FloatTensor,
+        model_output: TensorValue,
+        timestep: Union[float, TensorValue],
+        sample: TensorValue,
         s_churn: float = 0.0,
         s_tmin: float = 0.0,
         s_tmax: float = float("inf"),
         s_noise: float = 1.0,
         generator: Optional[torch.Generator] = None,
-        per_token_timesteps: Optional[torch.Tensor] = None,
+        per_token_timesteps: Optional[TensorValue] = None,
         return_dict: bool = True,
     ) -> Union[FlowMatchEulerDiscreteSchedulerOutput, Tuple]:
         """
@@ -388,11 +392,11 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         process from the learned model outputs (most often the predicted noise).
 
         Args:
-            model_output (`torch.FloatTensor`):
+            model_output (`TensorValue`):
                 The direct output from learned diffusion model.
             timestep (`float`):
                 The current discrete timestep in the diffusion chain.
-            sample (`torch.FloatTensor`):
+            sample (`TensorValue`):
                 A current instance of a sample created by the diffusion process.
             s_churn (`float`):
             s_tmin  (`float`):
@@ -401,7 +405,7 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
                 Scaling factor for noise added to the sample.
             generator (`torch.Generator`, *optional*):
                 A random number generator.
-            per_token_timesteps (`torch.Tensor`, *optional*):
+            per_token_timesteps (`TensorValue`, *optional*):
                 The timesteps for each token in the sample.
             return_dict (`bool`):
                 Whether or not to return a
@@ -416,8 +420,8 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
 
         if (
             isinstance(timestep, int)
-            or isinstance(timestep, torch.IntTensor)
-            or isinstance(timestep, torch.LongTensor)
+            #or isinstance(timestep, torch.IntTensor)
+            #or isinstance(timestep, torch.LongTensor)
         ):
             raise ValueError(
                 (
@@ -431,7 +435,7 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
             self._init_step_index(timestep)
 
         # Upcast to avoid precision issues when computing prev_sample
-        sample = sample.to(torch.float32)
+        sample = sample.cast(DType.float32)
 
         if per_token_timesteps is not None:
             per_token_sigmas = per_token_timesteps / self.config.num_train_timesteps
@@ -455,7 +459,7 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
 
         if self.config.stochastic_sampling:
             x0 = sample - current_sigma * model_output
-            noise = torch.randn_like(sample)
+            noise = ops.random.normal(sample)
             prev_sample = (1.0 - next_sigma) * x0 + next_sigma * noise
         else:
             prev_sample = sample + dt * model_output
@@ -472,19 +476,19 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         return FlowMatchEulerDiscreteSchedulerOutput(prev_sample=prev_sample)
 
     # Copied from diffusers.schedulers.scheduling_euler_discrete.EulerDiscreteScheduler._convert_to_karras
-    def _convert_to_karras(self, in_sigmas: torch.Tensor, num_inference_steps) -> torch.Tensor:
+    def _convert_to_karras(self, in_sigmas: TensorValue, num_inference_steps) -> TensorValue:
         """
         Construct the noise schedule as proposed in [Elucidating the Design Space of Diffusion-Based Generative
         Models](https://huggingface.co/papers/2206.00364).
 
         Args:
-            in_sigmas (`torch.Tensor`):
+            in_sigmas (`TensorValue`):
                 The input sigma values to be converted.
             num_inference_steps (`int`):
                 The number of inference steps to generate the noise schedule for.
 
         Returns:
-            `torch.Tensor`:
+            `TensorValue`:
                 The converted sigma values following the Karras noise schedule.
         """
 
@@ -511,18 +515,18 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         return sigmas
 
     # Copied from diffusers.schedulers.scheduling_euler_discrete.EulerDiscreteScheduler._convert_to_exponential
-    def _convert_to_exponential(self, in_sigmas: torch.Tensor, num_inference_steps: int) -> torch.Tensor:
+    def _convert_to_exponential(self, in_sigmas: TensorValue, num_inference_steps: int) -> TensorValue:
         """
         Construct an exponential noise schedule.
 
         Args:
-            in_sigmas (`torch.Tensor`):
+            in_sigmas (`TensorValue`):
                 The input sigma values to be converted.
             num_inference_steps (`int`):
                 The number of inference steps to generate the noise schedule for.
 
         Returns:
-            `torch.Tensor`:
+            `TensorValue`:
                 The converted sigma values following an exponential schedule.
         """
 
@@ -546,14 +550,14 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
 
     # Copied from diffusers.schedulers.scheduling_euler_discrete.EulerDiscreteScheduler._convert_to_beta
     def _convert_to_beta(
-        self, in_sigmas: torch.Tensor, num_inference_steps: int, alpha: float = 0.6, beta: float = 0.6
-    ) -> torch.Tensor:
+        self, in_sigmas: TensorValue, num_inference_steps: int, alpha: float = 0.6, beta: float = 0.6
+    ) -> TensorValue:
         """
         Construct a beta noise schedule as proposed in [Beta Sampling is All You
         Need](https://huggingface.co/papers/2407.12173).
 
         Args:
-            in_sigmas (`torch.Tensor`):
+            in_sigmas (`TensorValue`):
                 The input sigma values to be converted.
             num_inference_steps (`int`):
                 The number of inference steps to generate the noise schedule for.
@@ -563,7 +567,7 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
                 The beta parameter for the beta distribution.
 
         Returns:
-            `torch.Tensor`:
+            `TensorValue`:
                 The converted sigma values following a beta distribution schedule.
         """
 
