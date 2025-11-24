@@ -3965,10 +3965,10 @@ static void printSugarAttr(AsmPrinter &p, SugarKind kind, StringAttr memberName,
 
 TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
                          StringAttr memberName, TypedAttr sugared,
-                         TypedAttr original, TypedAttr canonical) {
+                         TypedAttr expanded, TypedAttr canonical) {
   // The two operand types must match otherwise this won't round-trip
   // correctly.
-  assert(sugared.getType() == original.getType() &&
+  assert(sugared.getType() == expanded.getType() &&
          "SugarAttr sugared and original types must match");
   assert((kind == SugarKind::MemberAlias && memberName) ||
          (kind != SugarKind::MemberAlias && !memberName) &&
@@ -3981,25 +3981,25 @@ TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
   canonical = {};
 
   // If we shouldn't maintain type sugar for this, then just return the
-  // original. We strip sugar for always_inline builtin calls that simplify down
+  // expanded. We strip sugar for always_inline builtin calls that simplify down
   // to something simple like "42". We don't want to maintain the call sugar
   // for things like 4+5 because it just gets in the way.
   //
   // This is also important for reducing the size of the IR, making it more
   // readable and the compiler faster for primitive things like origins.
-  if (auto shouldElide = canElideSugarFor(original))
+  if (auto shouldElide = canElideSugarFor(expanded))
     if ((int)*shouldElide >= (int)kind)
-      return original;
+      return expanded;
 
   // Compute the canonical form.
-  canonical = getCanonicalAttr(original);
+  canonical = getCanonicalAttr(expanded);
 
-  // We will /never/ use the type sugar in the original form of a builtin
+  // We will /never/ use the type sugar in the expanded form of a builtin
   // call, so we can strip it all away to simplify things.
   if (kind == SugarKind::AlwaysInlineBuiltin)
-    original = ParamOperatorAttr::getRebind(canonical, sugared.getType());
+    expanded = ParamOperatorAttr::getRebind(canonical, sugared.getType());
 
-  return Base::get(sugared.getContext(), kind, memberName, sugared, original,
+  return Base::get(sugared.getContext(), kind, memberName, sugared, expanded,
                    canonical);
 }
 
