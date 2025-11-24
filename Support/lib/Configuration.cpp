@@ -379,8 +379,14 @@ ErrorOr<std::filesystem::path> Config::getModularDataFolderPath(bool create) {
 }
 
 ErrorOr<std::filesystem::path> Config::getModularCacheFolderPath(bool create) {
-  // TODO: check MODULAR_CACHE_DIR here?
-  return findBestPathForType(FolderType::Cache, create);
+  auto cacheDir = getValue("cache_dir");
+  if (!cacheDir.empty())
+    return std::filesystem::path(cacheDir.str());
+
+  auto defaultCacheDir = findBestPathForType(FolderType::Cache, create);
+  if (defaultCacheDir.isError())
+    return defaultCacheDir.takeError();
+  return defaultCacheDir.takeValue();
 }
 
 ErrorOr<std::filesystem::path> Config::getConfigFilePath(bool create) {
