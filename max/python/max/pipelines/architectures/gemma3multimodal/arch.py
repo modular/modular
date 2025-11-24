@@ -22,8 +22,9 @@ from max.pipelines.lib import (
     TextAndVisionTokenizer,
 )
 
-from . import weight_adapters
+from weight_adapters import convert_safetensor_state_dict
 from .model import Gemma3_MultiModalModel
+
 
 gemma3_multimodal_arch = SupportedArchitecture(
     name="Gemma3ForConditionalGeneration",
@@ -50,8 +51,7 @@ gemma3_multimodal_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     rope_type=RopeType.normal,
-    weight_adapters={  # TODO this doesn't make sense as both same weight format.  not using at present (`self.adapter(weights)`)
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_language_state_dict,
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_vision_state_dict,
+    weight_adapters={
+        WeightsFormat.safetensors: convert_safetensor_state_dict,
     },
 )

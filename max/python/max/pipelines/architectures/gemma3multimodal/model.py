@@ -60,15 +60,10 @@ from .vision_model.gemma3multimodal import (
     Gemma3LanguageModel,
     Gemma3VisionModel,
 )
-from .weight_adapters import (
-    convert_safetensor_language_state_dict,
-    convert_safetensor_vision_state_dict,
-)
 
 logger = logging.getLogger("max.pipelines")
 
 
-# ⚠️ borrowed from idefics3
 def _cast_to_dtype(
     raw_tensor: DLPackArray, old_dtype: DType, new_dtype: DType, device: Device
 ) -> Tensor:
@@ -98,7 +93,6 @@ def _cast_to_dtype(
     return result.view(new_dtype, original_shape)
 
 
-# ✅ borrowed from internVL but should be fine
 class _VisionStacker:
     """Helper class for efficient parallel stacking of vision patches.
 
@@ -165,7 +159,6 @@ class _VisionStacker:
         np.copyto(out[sl], np.asarray(images[sl], dtype=images[0].dtype))
 
 
-# ✅ should be good to go
 class Gemma3MultiModalModelInputs(ModelInputs):
     """A class representing inputs for the Gemma3 multi modal model.
 
@@ -258,7 +251,9 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
-        """
+        """Initialize a PipelineModel with default values for signal_buffers,
+        then begin the loading of our vision and language models.
+
         Args:
             pipeline_config: The configuration settings for the entire pipeline.
             session: The MAX Engine inference session managing the runtime.
@@ -303,6 +298,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     def calculate_max_seq_len(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
+        """Calculates the maximum sequence length for the InternVL model."""
         return Gemma3ForConditionalGenerationConfig.calculate_max_seq_len(
             pipeline_config, huggingface_config
         )
@@ -314,12 +310,14 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
+        """Gets the parameters required to configure the KV cache for InternVL."""
         return Gemma3ForConditionalGenerationConfig.get_kv_params(
             huggingface_config, n_devices, kv_cache_config, cache_dtype
         )
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """Gets the number of hidden layers from the HuggingFace configuration."""
         return Gemma3ForConditionalGenerationConfig.get_num_layers(
             huggingface_config
         )
@@ -376,10 +374,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Get processed state dict for language and vision models
         weights_dict = dict(self.weights.items())
-        language_weights_dict = convert_safetensor_language_state_dict(
-            weights_dict
-        )
-        vision_weights_dict = convert_safetensor_vision_state_dict(weights_dict)
+        language_weights_dict, vision_weights_dict = self.adapter(weights_dict)
         state_dict = language_weights_dict | vision_weights_dict
 
         model_config = Gemma3ForConditionalGenerationConfig.generate(
@@ -401,6 +396,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             input_row_offsets_prealloc_host.to(dev) for dev in self.devices
         ]
 
+        # Build and compile language model
         language_graph, language_weight_dict = self._build_language_graph(
             model_config, language_weights_dict
         )
@@ -421,6 +417,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     def _language_model_input_types(
         self, config: Gemma3ForConditionalGenerationConfig
     ) -> Sequence[TensorType]:
+        """Prepare the Tensor input types that our language graph will work with"""
         device_ref = DeviceRef.from_device(self.devices[0])
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
@@ -485,6 +482,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         config: Gemma3ForConditionalGenerationConfig,
         state_dict: dict[str, WeightData],
     ) -> tuple[Graph, dict[str, DLPackArray]]:
+        """Build the language model with our input types and graph"""
         with Graph(
             getattr(self.huggingface_config, "model_type", "Gemma3"),
             input_types=self._language_model_input_types(config),
@@ -567,6 +565,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         config: Gemma3ForConditionalGenerationConfig,
         state_dict: dict[str, WeightData],
     ) -> tuple[Graph, dict[str, DLPackArray]]:
+        """Build the vision model with our input types and graph"""
         with Graph(
             config.model_type,
             input_types=self._vision_model_input_types(config),
@@ -595,6 +594,9 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             return graph, vision_model.state_dict()
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """If required, execute the vision model, then continue to execute the
+        language model.  Either pass through image embeddings or create an empty
+        placeholder."""
         model_inputs = cast(Gemma3MultiModalModelInputs, model_inputs)
 
         input_row_offsets = model_inputs.input_row_offsets
@@ -655,6 +657,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
+        """Prepare our inputs for the first execution pass of the multimodal model."""
         dev = self.devices[0]
         assert kv_cache_inputs is not None
         kv_cache_inputs = cast(KVCacheInputsSequence, kv_cache_inputs)
@@ -670,7 +673,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
 
-        # considered usng our own Gemma3ImageProcessor...
+        # stack our images in a list of tensors
         pixel_values = self._prepare_vision_inputs(context_batch)
 
         # Batch image token indices, offsetting for position in the batch.
@@ -712,6 +715,8 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     def _prepare_vision_inputs(
         self, context_batch: Sequence[TextAndVisionContext]
     ) -> list[Tensor] | None:
+        """Use the VisionStacker to prepare batched vision inputs from multiple contexts.
+        The Tokenizer should have already processed images into pixel_values (pan and scan etc)"""
         images = []
         for context in context_batch:
             for img in context.next_images:
@@ -734,16 +739,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     ) -> list[Tensor] | None:
         """Batch image token indices from multiple contexts, adjusting for
         position in batch.
-
-        For Gemma3, we find where <image> tokens (self.image_token_id) appear
-        in the token sequence. These positions mark where vision embeddings
-        should be inserted.
-
-        Args:
-            context_batch: Sequence of contexts that may contain image tokens
-
-        Returns:
-            Tensor containing all batched indices, or None if no indices found
         """
         indices_and_offsets = []
         batch_offset = 0
@@ -777,7 +772,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
     ) -> PagedKVCacheManager:
-        """Loads and initializes the KVCacheManager for the Gemma 3 model.
+        """Loads and initializes the KVCacheManager for the Gemma3 model.
 
         Configures the KV cache manager based on model parameters, pipeline settings,
         and available memory.
@@ -808,6 +803,8 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
+        """Receives KVCache inputs from the language graph, unflattens them, and
+        returns in a list"""
         kv_params = Gemma3ForConditionalGenerationConfig.get_kv_params(
             huggingface_config=self.huggingface_config,
             n_devices=len(self.devices),

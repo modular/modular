@@ -34,13 +34,14 @@ from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 from ..model_config import Gemma3ForConditionalGenerationConfig
 
 
-# ✅ working, based on HF and MLX-VLM
 class Gemma3MultiModalProjector(Module, Shardable):
+    """Projects vision encoder outputs to text embedding space."""
     def __init__(
         self,
         config: Gemma3ForConditionalGenerationConfig,
         device: DeviceRef | None = None,
     ):
+        """Prepare the normalisation and projection weights based on config"""
         super().__init__()
 
         self.config = config
@@ -64,14 +65,57 @@ class Gemma3MultiModalProjector(Module, Shardable):
 
         self.patches_per_image = int(
             config.vision_config.image_size // config.vision_config.patch_size
-        )  # 64
+        )
 
         self.tokens_per_side = int(
             config.mm_tokens_per_image**0.5
-        )  # 256 ** 05 = 16
+        )
         self.kernel_size = (
             self.patches_per_image // self.tokens_per_side
-        )  # 64 / 16 = 4
+        )
+
+    def __call__(self, vision_outputs: Tensor) -> TensorValue:
+        """Process vision outputs through pooling, normalisation, and a 
+        projection weight"""
+        batch_size, _, seq_length = vision_outputs.shape
+
+        transposed_vision_outputs = vision_outputs.transpose(1, 2)
+
+        reshaped_vision_outputs = ops.reshape(
+            transposed_vision_outputs,
+            [
+                batch_size,
+                seq_length,
+                self.patches_per_image,
+                self.patches_per_image,
+            ],
+        )
+
+        # reshape to 0 2 3 1 NHWL (or NHWC) for avg pool
+        reshaped_vision_outputs = ops.permute(
+            reshaped_vision_outputs, [0, 2, 3, 1]
+        )
+        pooled_vision_outputs = avg_pool2d(
+            input=reshaped_vision_outputs,
+            kernel_size=(self.kernel_size, self.kernel_size),
+            stride=self.kernel_size,
+        )
+        
+        pooled_vision_outputs = ops.permute(pooled_vision_outputs, [0, 3, 1, 2])
+        pooled_vision_outputs = pooled_vision_outputs.flatten(2)
+        pooled_vision_outputs = pooled_vision_outputs.transpose(1, 2)
+
+        normed_vision_outputs = self.mm_soft_emb_norm(pooled_vision_outputs)
+
+        projected_vision_outputs = matmul(
+            normed_vision_outputs, self.mm_input_projection_weight
+        )
+
+        image_hidden_states = ops.flatten(
+            projected_vision_outputs, start_dim=0, end_dim=1
+        )
+
+        return image_hidden_states
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -108,54 +152,9 @@ class Gemma3MultiModalProjector(Module, Shardable):
 
         return shards
 
-    # ✅
-    def __call__(self, vision_outputs: Tensor) -> TensorValue:
-        batch_size, _, seq_length = vision_outputs.shape
 
-        transposed_vision_outputs = vision_outputs.transpose(1, 2)
-
-        # reshape to NLHW
-        reshaped_vision_outputs = ops.reshape(
-            transposed_vision_outputs,
-            [
-                batch_size,
-                seq_length,
-                self.patches_per_image,
-                self.patches_per_image,
-            ],
-        )
-
-        # reshape to 0 2 3 1 NHWL (or NHWC) for avg pool
-        reshaped_vision_outputs = ops.permute(
-            reshaped_vision_outputs, [0, 2, 3, 1]
-        )
-
-        pooled_vision_outputs = avg_pool2d(
-            input=reshaped_vision_outputs,
-            kernel_size=(self.kernel_size, self.kernel_size),
-            stride=self.kernel_size,
-        )
-        # permute to 0 3 1 2 then flatten from dim 2
-        pooled_vision_outputs = ops.permute(pooled_vision_outputs, [0, 3, 1, 2])
-        pooled_vision_outputs = pooled_vision_outputs.flatten(2)
-        # transpose 0 2 1
-        pooled_vision_outputs = pooled_vision_outputs.transpose(1, 2)
-
-        normed_vision_outputs = self.mm_soft_emb_norm(pooled_vision_outputs)
-
-        projected_vision_outputs = matmul(
-            normed_vision_outputs, self.mm_input_projection_weight
-        )
-
-        image_hidden_states = ops.flatten(
-            projected_vision_outputs, start_dim=0, end_dim=1
-        )
-
-        return image_hidden_states
-
-
-# ✅ working, based on HF and MLX-VLM
 class Gemma3VisionMLP(Module):
+    """Two-layer MLP with GELU activation for vision encoder."""
     def __init__(
         self,
         config: Gemma3ForConditionalGenerationConfig,
@@ -182,6 +181,14 @@ class Gemma3VisionMLP(Module):
             device=self.device,
             has_bias=True,
         )
+
+    def __call__(self, x: TensorValue):
+        """Expands hidden states to intermediate size, applies GELU activation,
+        then projects back to hidden size."""
+        x = self.fc1(x)
+        x = ops.gelu(x, getattr(self.config.vision_config, "hidden_act", "none"))
+        x = self.fc2(x)
+        return x
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -214,9 +221,3 @@ class Gemma3VisionMLP(Module):
             shards.append(sharded)
 
         return shards
-
-    def __call__(self, x: TensorValue):
-        x = self.fc1(x)
-        x = ops.gelu(x, "tanh")
-        x = self.fc2(x)
-        return x

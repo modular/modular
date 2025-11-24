@@ -32,20 +32,17 @@ from max.pipelines.lib import (
 )
 from transformers import AutoConfig
 
-# handy https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/models/gemma3/configuration_gemma3.py
-
 
 @dataclass
 class Gemma3VisionConfig:
     """
     The vision-specific config for Gemma3
-    fields and defaults taken from below link - unsure if they are valid
-    https://huggingface.co/google/gemma-3-4b-it/blob/main/config.json
+    More info at: https://huggingface.co/google/gemma-3-4b-it/blob/main/config.json
     """
 
     hidden_act: str | None
     """The non-linear activation function (function or string) in the encoder and pooler. If string, `"gelu"`,
-    `"relu"`, `"selu"` and `"gelu_new"` `"quick_gelu"` are supported."""
+    `"relu"`, `"selu"` and `"gelu_new"` `"gelu"` are supported."""
 
     hidden_size: int
     """Dimensionality of the encoder layers and the pooler layer.  default 1152"""
@@ -76,15 +73,23 @@ class Gemma3VisionConfig:
     attention_dropout: float = 0.0
     """The dropout ratio for the attention probabilities"""
 
-    model_type: str = "Gemma3"  # "siglip_vision_model" (HF)
+    model_type: str = "Gemma3"
     """model type for AutoConfig"""
 
     vision_use_head: bool = False
-    """maybe not required?
-    Dimensionality of the "intermediate" (i.e., feed-forward) layer in the Transformer encoder"""
+    """Flag whether to use attention heads for vision"""
+
+    _HIDDEN_ACTIVATION_MAP = {
+        "gelu_pytorch_tanh": "tanh",
+        "swish": "silu",
+    }
 
     @staticmethod
     def generate(vision_config: AutoConfig) -> Gemma3VisionConfig:
+        hidden_act = vision_config.hidden_act
+        if hidden_act in Gemma3VisionConfig._HIDDEN_ACTIVATION_MAP:
+            hidden_act = Gemma3VisionConfig._HIDDEN_ACTIVATION_MAP[hidden_act]
+
         return Gemma3VisionConfig(
             hidden_size=vision_config.hidden_size,
             image_size=vision_config.image_size,
@@ -93,7 +98,7 @@ class Gemma3VisionConfig:
             num_hidden_layers=vision_config.num_hidden_layers,
             patch_size=vision_config.patch_size,
             num_channels=vision_config.num_channels,
-            hidden_act=vision_config.hidden_act,
+            hidden_act=hidden_act,
             layer_norm_eps=vision_config.layer_norm_eps,
         )
 
@@ -124,7 +129,8 @@ class Gemma3MultiModalConfigBase(MAXModelConfigBase):
     image_token_index: int
     """The image token index to encode the image prompt"""
 
-    initializer_range: float  # TODO figure out.  in Text and overall config??
+    initializer_range: float
+    """Standard deviation for weight initialization."""
 
     interleaved_rope_weights: bool
     """True if the rope weights are in interleaved complex format."""
@@ -143,7 +149,6 @@ class Gemma3MultiModalConfigBase(MAXModelConfigBase):
     text_config: Gemma3Config
     """The config object of the text backbone"""
 
-    # https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/models/gemma3/configuration_gemma3.py
     vision_config: Gemma3VisionConfig
     """Custom vision config or dict"""
 
@@ -223,6 +228,7 @@ class Gemma3ForConditionalGenerationConfig(
         norm_method: Literal["rms_norm"] = "rms_norm",
         attention_bias: bool = False,
     ) -> Gemma3ForConditionalGenerationConfig:
+        """Generate a combined language and vision config class"""
         _weights_format = weights_format(
             pipeline_config.model_config.weight_path
         )
@@ -239,11 +245,10 @@ class Gemma3ForConditionalGenerationConfig(
         # the output weights.
         tie_word_embeddings = (
             getattr(huggingface_config, "tie_word_embeddings", False)
-            or "language_model.lm_head.weight" not in state_dict
         )
 
         # Parse the float8 config from compressed-tensors
-        layer_name_prefix = "language_model."
+        layer_name_prefix = "language_model.model"
         float8_config = parse_float8_config(
             huggingface_config,
             state_dict,
@@ -252,7 +257,7 @@ class Gemma3ForConditionalGenerationConfig(
             ignored_modules_prefix=layer_name_prefix,
         )
 
-        # override SiglipVisionConfig and Gemma3Config from the huggingface AutoConfig
+        # Generate the individual vision and text configs from Huggingface config
         hf_vision_config = getattr(huggingface_config, "vision_config", None)
         if hf_vision_config is None:
             raise ValueError("vision_config not found in huggingface_config")
@@ -261,7 +266,6 @@ class Gemma3ForConditionalGenerationConfig(
         hf_text_config = getattr(huggingface_config, "text_config", None)
         if hf_text_config is None:
             raise ValueError("text_config not found in huggingface_config")
-
         text_config = Gemma3Config.generate(
             pipeline_config=pipeline_config,
             huggingface_config=hf_text_config,
@@ -300,9 +304,3 @@ class Gemma3ForConditionalGenerationConfig(
         )
 
         return gemma3_config
-
-
-_HIDDEN_ACTIVATION_MAP = {
-    "gelu_pytorch_tanh": "gelu_tanh",
-    "swish": "silu",
-}

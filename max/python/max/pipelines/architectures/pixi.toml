@@ -56,6 +56,7 @@ generate = { cmd = [
     "--image_url", "https://huggingface.co/spaces/big-vision/paligemma-hf/resolve/main/examples/password.jpg",
     "--max-batch-size", "1",
     "--max-length", "5000",
+    "--temperature", "0"
 ] }
 
 generate_text = { cmd = [

@@ -57,9 +57,8 @@ from .projection import Gemma3MultiModalProjector
 logger = logging.getLogger("max.pipelines")
 
 
-# ✅ taken from gemma3
 class Gemma3LanguageModel(Module):
-    """The Gemma3 Multi-Modal model's text component"""
+    """The Gemma3 Multi-Modal model's text component, shared with Gemma3"""
 
     def __init__(self, config: Gemma3ForConditionalGenerationConfig) -> None:
         super().__init__()
@@ -293,15 +292,17 @@ class Gemma3LanguageModel(Module):
         return (last_logits,)
 
 
-# ✅ based on HF and MLX-VLM
 class Gemma3VisionModel(Module):
+    """The Gemma3 Multi-Modal model's vision component"""
     def __init__(self, config: Gemma3ForConditionalGenerationConfig) -> None:
+        """Initializes the necessary components for processing vision inputs and 
+        projecting into language space, with multi-device functionality."""
         super().__init__()
         self.config = config
         self.devices = config.devices
         vision_config = config.vision_config
 
-        # Vision embeddings
+        # Vision embeddings, sharded for multi-device setups
         self.embeddings = Gemma3VisionEmbeddings(config, device=config.devices)
         self.embeddings.sharding_strategy = ShardingStrategy.replicate(
             len(config.devices)
@@ -354,7 +355,7 @@ class Gemma3VisionModel(Module):
                 ln.bias = bias_shard
             self.post_layernorm_list.append(ln)
 
-        # Multimodal projector to bridge vision and text spaces
+        # Multimodal projector to project vision embeddings to language space
         self.projector = Gemma3MultiModalProjector(
             config, device=config.devices[0]
         )
@@ -368,6 +369,8 @@ class Gemma3VisionModel(Module):
         pixel_values: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> Sequence[TensorValue]:
+        """Processes vision inputs through the Gemma3 vision tower and produces a
+        sequence of image embeddings"""
         hidden_states = [
             embed(pixels)
             for embed, pixels in zip(

@@ -26,14 +26,16 @@ from .attention import Gemma3VisionAttention
 from .projection import Gemma3VisionMLP
 
 
-# ✅ based on HF and MLX-VLM
 class Gemma3VisionEncoderLayer(Module):
+    """An individual layer of encoding within a stack of encoding layers"""
     def __init__(
         self,
         config: Gemma3ForConditionalGenerationConfig,
         layer_idx: int,
         device: DeviceRef | None = None,
     ):
+        """prepare the two normalisation layers, the self attention, and the 
+        multi-layer perceptrion"""
         self.config = config
         vision_config = config.vision_config
         self.device = device if device is not None else config.devices[0]
@@ -60,6 +62,27 @@ class Gemma3VisionEncoderLayer(Module):
             devices=[self.device],
             dtype=config.dtype,
         )
+
+    def __call__(
+        self,
+        hidden_states: Sequence[TensorValue],
+        signal_buffers: Sequence[
+            BufferValue
+        ], # TODO use this
+    ) -> list[TensorValue]:
+        """process the input hidden states through each of the sub-layers"""
+        residual = hidden_states
+        hidden_states = self.layer_norm1(hidden_states)
+        hidden_states = self.self_attn(hidden_states)
+        hidden_states = residual + hidden_states
+
+        # MLP with residual
+        residual = hidden_states
+        hidden_states = self.layer_norm2(hidden_states)
+        hidden_states = self.mlp(hidden_states)
+        hidden_states = residual + hidden_states
+
+        return hidden_states
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -136,30 +159,12 @@ class Gemma3VisionEncoderLayer(Module):
 
         return shards
 
-    def __call__(
-        self,
-        hidden_states: Sequence[TensorValue],
-        signal_buffers: Sequence[
-            BufferValue
-        ],  # TODO should this be used somehow?
-    ) -> list[TensorValue]:
-        residual = hidden_states
-        hidden_states = self.layer_norm1(hidden_states)
-        hidden_states = self.self_attn(hidden_states)
-        hidden_states = residual + hidden_states
 
-        # MLP with residual
-        residual = hidden_states
-        hidden_states = self.layer_norm2(hidden_states)
-        hidden_states = self.mlp(hidden_states)
-        hidden_states = residual + hidden_states
-
-        return hidden_states
-
-
-# ✅ based on HF and MLX-VLM
 class Gemma3VisionEncoder(Module):
+    """Wrapper class for a stack of vision encoder layers"""
     def __init__(self, config: Gemma3ForConditionalGenerationConfig):
+        """Intialise the stack of encoder layers based on config, and prepare
+        sharding strategy"""
         super().__init__()
         self.config = config
         self.devices = config.devices
@@ -186,6 +191,8 @@ class Gemma3VisionEncoder(Module):
         hidden_states: TensorValue | Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> TensorValue | Sequence[TensorValue]:
+        """Process hidden states through the stack of encoder layers,
+        applying multi-device functionality if required"""
         # if hidden_states is a list, we are sharding across devices.  each device has a replication of the weights
         if isinstance(hidden_states, list):
             outputs = []

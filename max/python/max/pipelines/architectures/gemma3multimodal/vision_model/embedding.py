@@ -25,7 +25,6 @@ from max.nn.embedding import Embedding
 from ..model_config import Gemma3ForConditionalGenerationConfig
 
 
-# ✅ in line with MLX-VLM implementation
 class Gemma3VisionEmbeddings(Module):
     def __init__(
         self,
@@ -63,6 +62,57 @@ class Gemma3VisionEmbeddings(Module):
             device=device,
         )
 
+    def __call__(self, pixel_values: TensorValue) -> TensorValue:
+        """Forward pass of vision embeddings.
+
+        Args:
+            pixel_values: Input images of shape [batch_size, channels, height, width].
+
+        Returns:
+            Embeddings of shape [batch_size, num_patches, hidden_size].
+        """
+        batch_size = pixel_values.shape[0]
+        max_im_h = pixel_values.shape[2]
+        max_im_w = pixel_values.shape[3]
+
+        # apply conv2d to pixel values
+        patch_embeds = self.patch_embedding(pixel_values)
+
+        # Flatten spatial dimensions and transpose ->  [batch_size, num_patches, embed_dim]
+        embeddings = ops.flatten(
+            patch_embeds, start_dim=2
+        )
+        embeddings = ops.transpose(
+            embeddings, 1, 2
+        )
+
+        max_nb_patches_h = max_im_h // self.patch_size
+        max_nb_patches_w = max_im_w // self.patch_size
+        total_patches = max_nb_patches_h * max_nb_patches_w
+
+        # Create position IDs for each batch
+        position_ids = ops.range(
+            start=0,
+            stop=self.num_patches,
+            step=1,
+            out_dim=total_patches,
+            device=self.devices[0],
+            dtype=DType.int32,
+        )
+        position_ids = ops.unsqueeze(position_ids, 0)  # [1, total_patches]
+        position_ids = ops.tile(
+            position_ids, [batch_size, 1]
+        )
+
+        # Get position embeddings for the position IDs
+        position_embeds = self.position_embedding(
+            position_ids
+        )
+
+        embeddings = embeddings + position_embeds
+
+        return embeddings
+
     # ⚠️ check
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -98,56 +148,3 @@ class Gemma3VisionEmbeddings(Module):
             shards.append(sharded)
 
         return shards
-
-    def __call__(self, pixel_values: TensorValue) -> TensorValue:
-        """Forward pass of vision embeddings.
-
-        Args:
-            pixel_values: Input images of shape [batch_size, channels, height, width].
-
-        Returns:
-            Embeddings of shape [batch_size, num_patches, hidden_size].
-        """
-        batch_size = pixel_values.shape[0]
-        max_im_h = pixel_values.shape[2]
-        max_im_w = pixel_values.shape[3]
-
-        patch_embeds = self.patch_embedding(pixel_values)
-
-        # Flatten spatial dimensions and transpose to [batch_size, num_patches, embed_dim]
-        # patch_embeds shape: [batch_size, embed_dim, num_patches_h, num_patches_w]
-        embeddings = ops.flatten(
-            patch_embeds, start_dim=2
-        )  # [batch_size, embed_dim, num_patches]
-        embeddings = ops.transpose(
-            embeddings, 1, 2
-        )  # [batch_size, num_patches, embed_dim]
-
-        max_nb_patches_h = max_im_h // self.patch_size
-        max_nb_patches_w = max_im_w // self.patch_size
-        total_patches = max_nb_patches_h * max_nb_patches_w
-
-        # Create position IDs: [0, 1, 2, ..., total_patches-1] for each batch
-        # Generate 2D tensor with shape [batch_size, total_patches]
-        position_ids = ops.range(
-            start=0,
-            stop=self.num_patches,
-            step=1,
-            out_dim=total_patches,
-            device=self.devices[0],
-            dtype=DType.int32,
-        )  # [total_patches]
-        position_ids = ops.unsqueeze(position_ids, 0)  # [1, total_patches]
-        position_ids = ops.tile(
-            position_ids, [batch_size, 1]
-        )  # [batch_size, total_patches]
-
-        # Get position embeddings for the position IDs
-        position_embeds = self.position_embedding(
-            position_ids
-        )  # [batch_size, total_patches, embed_dim]
-
-        # Add position embeddings to patch embeddings
-        embeddings = embeddings + position_embeds
-
-        return embeddings

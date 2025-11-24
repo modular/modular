@@ -23,14 +23,22 @@ GEMMA3_LANGUAGE_SAFETENSOR_MAP: dict[str, str] = {
 }
 
 # For the vision model
-GEMMA3_VISION_SAFETENSOR_MAP: dict[str, str] = {
+GEMMA3_MULTIMODAL_SAFETENSOR_MAP: dict[str, str] = {
     "vision_tower.vision_model.": "",
     "multi_modal_": "",
 }
 
 
-def convert_safetensor_language_state_dict(
-    state_dict: dict[str, Weights], **unused_kwargs
+def convert_safetensor_state_dict(state_dict: dict[str, Weights]) -> tuple[dict[str, WeightData], dict[str, WeightData]]:
+    """Convert safetensor state dict to MAX format for the full model."""
+    language_weights = _convert_safetensor_language_state_dict(state_dict)
+    vision_weights = _convert_safetensor_vision_state_dict(state_dict)
+
+    return language_weights, vision_weights
+
+
+def _convert_safetensor_language_state_dict(
+    state_dict: dict[str, Weights]
 ) -> dict[str, WeightData]:
     """Convert safetensor state dict to MAX format for the language model."""
     new_state_dict: dict[str, WeightData] = {}
@@ -45,17 +53,13 @@ def convert_safetensor_language_state_dict(
     return new_state_dict
 
 
-def convert_safetensor_vision_state_dict(
+def _convert_safetensor_vision_state_dict(
     state_dict: dict[str, Weights],
-    **unused_kwargs,
 ) -> dict[str, WeightData]:
-    """Convert safetensor state dict to MAX format for the vision model.
-
-    This function only processes weights that start with 'vision_tower.vision_model.'
-    and strips that prefix to match the expected MAX naming convention.
-    """
+    """Convert safetensor state dict to MAX format for the vision model."""
     new_state_dict: dict[str, WeightData] = {}
 
+    # include vision tower weights AND multi modal weights
     for weight_name, value in state_dict.items():
         if not weight_name.startswith("vision_tower.vision_model."):
             if not weight_name.startswith("multi_modal_"):
@@ -63,7 +67,7 @@ def convert_safetensor_vision_state_dict(
 
         max_name = weight_name
 
-        for before, after in GEMMA3_VISION_SAFETENSOR_MAP.items():
+        for before, after in GEMMA3_MULTIMODAL_SAFETENSOR_MAP.items():
             max_name = max_name.replace(before, after)
 
         weight_data = value.data()

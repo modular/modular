@@ -21,15 +21,8 @@ from max.nn.layer import Module
 from ..model_config import Gemma3ForConditionalGenerationConfig
 
 
-# ⚠️ from Huggingface Transformers not sure if complete
 class Gemma3VisionAttention(Module):
-    """Standard self-attention for SigLIP vision encoder.
-
-    Unlike Pixtral, SigLIP uses:
-    - Standard self-attention (no rotary embeddings)
-    - No attention masking
-    - Absolute position embeddings (added in embedding layer)
-    """
+    """Standard self-attention for SigLIP vision encoder."""
 
     def __init__(
         self,
@@ -37,23 +30,16 @@ class Gemma3VisionAttention(Module):
         layer_idx: int,
         device: DeviceRef | None = None,
     ) -> None:
+        """Initialise the vision attention layers for projection and attention"""
         super().__init__()
-        vision_config = config.vision_config
-
-        self.layer_type = (
-            config.layer_types[layer_idx]
-            if hasattr(config, "layer_types")
-            else None
-        )
         self.config = config
+        vision_config = config.vision_config
         self.layer_idx = layer_idx
         self.device = device if device is not None else config.devices[0]
-        # Vision encoder uses its own head_dim, not the text model's
         self.head_dim = (
             vision_config.hidden_size // vision_config.num_attention_heads
         )
         self.num_heads = vision_config.num_attention_heads
-        self.attention_dropout = vision_config.attention_dropout
         self.scaling = self.head_dim**-0.5
 
         self.q_proj = Linear(
@@ -85,13 +71,42 @@ class Gemma3VisionAttention(Module):
             device=self.device,
         )
 
-        self.attn_logit_softcapping = config.attn_logit_softcapping
-        self.sliding_window = (
-            config.sliding_window
-            if self.layer_type == "sliding_attention"
-            else None
+    def __call__(self, x: TensorValue) -> TensorValue:
+        """Process a tensor through the self attention layers and apply scaling"""
+        batch_size, n_patches = x.shape[0], x.shape[1]
+
+        # Project to Q, K, V
+        xq = self.q_proj(x)
+        xk = self.k_proj(x)
+        xv = self.v_proj(x)
+
+        # Reshape to multi-head format [batch, n_patches, n_heads, head_dim]
+        xq = ops.reshape(
+            xq, [batch_size, n_patches, self.num_heads, self.head_dim]
         )
-        self.is_sliding = self.layer_type == "sliding_attention"
+        xk = ops.reshape(
+            xk, [batch_size, n_patches, self.num_heads, self.head_dim]
+        )
+        xv = ops.reshape(
+            xv, [batch_size, n_patches, self.num_heads, self.head_dim]
+        )
+
+        # Transpose to [batch, n_heads, n_patches, head_dim]
+        xq = xq.transpose(1, 2)
+        xk = xk.transpose(1, 2)
+        xv = xv.transpose(1, 2)
+
+        # Scaled dot-product attention
+        scores = (xq @ ops.transpose(xk, 2, 3)) * self.scaling
+        scores = ops.softmax(scores)
+
+        # Apply attention to values - [batch, n_heads, n_patches, head_dim]
+        output = scores @ xv
+
+        # Transpose back and reshape
+        output = output.transpose(1, 2).reshape([batch_size, n_patches, -1])
+
+        return self.out_proj(output)
 
     @property
     def sharding_strategy(self) -> ShardingStrategy:
@@ -139,40 +154,3 @@ class Gemma3VisionAttention(Module):
             shards.append(sharded)
 
         return shards
-
-    def __call__(self, x: TensorValue) -> TensorValue:
-        batch_size, n_patches = x.shape[0], x.shape[1]
-
-        # Project to Q, K, V
-        xq = self.q_proj(x)
-        xk = self.k_proj(x)
-        xv = self.v_proj(x)
-
-        # Reshape to multi-head format [batch, n_patches, n_heads, head_dim]
-        xq = ops.reshape(
-            xq, [batch_size, n_patches, self.num_heads, self.head_dim]
-        )
-        xk = ops.reshape(
-            xk, [batch_size, n_patches, self.num_heads, self.head_dim]
-        )
-        xv = ops.reshape(
-            xv, [batch_size, n_patches, self.num_heads, self.head_dim]
-        )
-
-        # Transpose to [batch, n_heads, n_patches, head_dim]
-        xq = xq.transpose(1, 2)
-        xk = xk.transpose(1, 2)
-        xv = xv.transpose(1, 2)
-
-        # Scaled dot-product attention
-        scores = (xq @ ops.transpose(xk, 2, 3)) * self.scaling
-        scores = ops.softmax(scores)
-
-        # Apply attention to values
-        output = scores @ xv  # [batch, n_heads, n_patches, head_dim]
-
-        # Transpose back and reshape
-        output = output.transpose(1, 2).reshape([batch_size, n_patches, -1])
-
-        # Output projection
-        return self.out_proj(output)
