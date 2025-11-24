@@ -43,6 +43,7 @@ class MoEGate(Module):
         num_experts: int,
         num_experts_per_token: int,
         dtype: DType,
+        is_sharding: bool = False,
     ) -> None:
         """
         Args:
@@ -59,12 +60,13 @@ class MoEGate(Module):
         self.num_experts_per_token = num_experts_per_token
         self.dtype = dtype
 
-        self.gate_score = Linear(
-            in_dim=hidden_dim,
-            out_dim=num_experts,
-            dtype=dtype,
-            device=devices[0],
-        )
+        if not is_sharding:
+            self.gate_score = Linear(
+                in_dim=hidden_dim,
+                out_dim=num_experts,
+                dtype=dtype,
+                device=devices[0],
+            )
 
     def __call__(
         self, hidden_state: TensorValue
@@ -125,6 +127,7 @@ class MoEGate(Module):
                 num_experts=self.num_experts,
                 num_experts_per_token=self.num_experts_per_token,
                 dtype=self.dtype,
+                is_sharding=True,
             )
 
             # Replace the weights with sharded versions.
@@ -142,6 +145,9 @@ class MoE(Module, Shardable):
     _sharding_strategy: ShardingStrategy | None = None
     """The sharding strategy for the module."""
 
+    experts: LayerList
+    """The list of experts."""
+
     def __init__(
         self,
         devices: list[DeviceRef],
@@ -157,6 +163,7 @@ class MoE(Module, Shardable):
         apply_router_weight_first: bool = False,
         ep_batch_manager: EPBatchManager | None = None,
         float8_config: Float8Config | None = None,
+        is_sharding: bool = False,
     ):
         """
         Args:
@@ -215,10 +222,11 @@ class MoE(Module, Shardable):
 
             self._ep_batch_manager = ep_batch_manager
 
-        self._init_experts()
+        if not is_sharding:
+            self._init_experts()
 
     def _init_experts(self) -> None:
-        self.experts: LayerList = LayerList(
+        self.experts = LayerList(
             [
                 MLP(
                     dtype=self.dtype,
@@ -323,6 +331,7 @@ class MoE(Module, Shardable):
                 dtype=self.dtype,
                 apply_router_weight_first=self.apply_router_weight_first,
                 float8_config=self.float8_config,
+                is_sharding=True,
             )
 
             # Replace layers and weights with sharded versions.
@@ -331,8 +340,14 @@ class MoE(Module, Shardable):
                 sharded.shared_experts = shared_experts_shards[shard_idx]
 
             if self._sharding_strategy.is_tensor_parallel:
-                for idx, sharded_mlps in enumerate(expert_mlps_shards):
-                    sharded.experts[idx] = sharded_mlps[shard_idx]
+                experts_for_shard = LayerList(
+                    [
+                        sharded_mlps[shard_idx]
+                        for sharded_mlps in expert_mlps_shards
+                    ]
+                )
+                sharded.experts = experts_for_shard
+
             elif self._sharding_strategy.is_expert_parallel:
                 curr_node_idx = self.ep_batch_manager.config.node_id
                 num_experts_per_node = (
