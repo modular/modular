@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "cc_autolink_deps", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modular_passes", "modular_cc_library", "modular_nanobind_library", "modular_shared_library", "pkg_files", "td_library")
+load("//bazel:api.bzl", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modular_passes", "modular_cc_library", "modular_nanobind_library", "modular_shared_library", "pkg_files", "td_library")
 load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES")
 load("//max/python/max/_core/internal/mlir_nanobind:tblgen.bzl", "mlir_nanobind")  # buildifier: disable=bzl-visibility
 
@@ -890,27 +890,27 @@ td_library(
     visibility = ["//visibility:public"],
 )
 
-# Always link and expose the FallbackTypeIDResolver::registerImplicitTypeID
-# function. This is used by downstream libraries to decide whether MLIR types
-# in different SOs are the same type or not.
-#
-# See https://github.com/llvm/llvm-project/pull/126999#issuecomment-2661526333
-# for more details and breadcrumbs.
-cc_autolink_deps(
-    name = "mlir-typeid-registry",
-    deps = [
-        "@llvm-project//mlir:Support",
-    ],
-)
-
 modular_shared_library(
     name = "Globals",
     srcs = glob(["lib/Globals/*.cpp"]),
     hdrs = glob(["include/Support/Globals/*.h"]),
+    # Always link and expose the FallbackTypeIDResolver::registerImplicitTypeID
+    # function. This is used by downstream libraries to decide whether MLIR types
+    # in different SOs are the same type or not.
+    #
+    # See https://github.com/llvm/llvm-project/pull/126999#issuecomment-2661526333
+    # for more details and breadcrumbs.
+    linkopts = select({
+        "@platforms//os:linux": [
+            "-Wl,--undefined=_ZN4mlir6detail22FallbackTypeIDResolver22registerImplicitTypeIDEN4llvm9StringRefE",
+        ],
+        "@platforms//os:macos": [
+            "-Wl,-u,__ZN4mlir6detail22FallbackTypeIDResolver22registerImplicitTypeIDEN4llvm9StringRefE",
+        ],
+    }),
     output_name = "MSupportGlobals",
     deps = [
         ":SymbolExport",
-        ":mlir-typeid-registry",
         "@llvm-project//mlir:Support",
     ],
     # TODO: Missing define conditionals for symbol visibility
