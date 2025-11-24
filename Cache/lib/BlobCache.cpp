@@ -500,7 +500,10 @@ getVersionedFilesystemBackend(const std::filesystem::path &cacheDir,
   std::error_code ec;
   std::filesystem::path base = cacheDir;
   if (!base.is_absolute()) {
-    auto cacheFolderPath = Config::getModularCacheFolderPath();
+    auto config = Config::open();
+    if (config.isError())
+      return config.takeError();
+    auto cacheFolderPath = config->getModularCacheFolderPath();
     if (cacheFolderPath.isError())
       return Error(cacheFolderPath.getError());
     base = std::filesystem::absolute(*cacheFolderPath) / cacheDir;
