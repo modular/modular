@@ -15,6 +15,7 @@ from collections import OptionalReg
 from hashlib import default_comp_time_hasher
 from sys import align_of, size_of
 
+from linalg.matmul.gpu.sm100.config import MatmulConfig
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -29,6 +30,7 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8,
+    grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
 from linalg.matmul.gpu.sm100.blockwise_fp8 import (
     matmul_sm100_blockwise_scaled_fp8,
@@ -232,12 +234,17 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
 
     ctx.synchronize()
 
-    grouped_matmul_sm100_blockwise_scaled_fp8[
-        transpose_b=transpose_b,
-        umma_shape=umma_shape,
-        block_tile_shape=block_tile_shape,
-        a_swizzle=swizzle,
-        b_swizzle=swizzle,
+    comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        cluster_shape=Index(1, 1, 1),
+        mma_shape=umma_shape,
+        cta_group=1,
+        AB_swapped=False,
+        k_group_size=1,
+    )
+
+    # grouped_matmul_sm100_blockwise_scaled_fp8[
+    grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
+        config=config,
         elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
             epilogue_fn
         ) if use_epilogue else None,
@@ -317,6 +324,14 @@ def main():
             expert_shape = Index(512, 1024),
         ](1, [256], [0], ctx)
 
+        # Simple expert routing
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            num_experts=4,
+            expert_shape = Index(512, 1024),
+        ](1, List[Int](256), List[Int](2), ctx)
+
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.bfloat16,
@@ -324,6 +339,14 @@ def main():
             expert_shape = Index(4096, 7168),
         ](2, [128, 256], [0, 2], ctx)
 
+        # Unaligned grouped matmul
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            num_experts=4,
+            expert_shape = Index(512, 1024),
+        ](2, List[Int](20, 40), List[Int](0, 2), ctx)
+
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.bfloat16,
@@ -338,6 +361,20 @@ def main():
             expert_shape = Index(1280, 1024),
             use_epilogue=True,
         ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
+
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float32,
+            num_experts=4,
+            expert_shape = Index(512, 1024),
+        ](2, List[Int](20, 40), List[Int](0, 2), ctx)
+
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float32,
+            num_experts=1,
+            expert_shape = Index(512, 1024),
+        ](1, List[Int](512), List[Int](0), ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
@@ -359,11 +396,11 @@ def main():
             DType.bfloat16,
             num_experts=4,
             expert_shape = Index(4096, 7168),
-        ](2, [2, 62], [0, 2], ctx)
+        ](2, [8, 64], [0, 2], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=6,
             expert_shape = Index(7168, 2048),
-        ](4, [20, 1, 3, 40], [0, 3, 2, 4], ctx)
+        ](4, [20, 4, 4, 40], [0, 3, 2, 4], ctx)

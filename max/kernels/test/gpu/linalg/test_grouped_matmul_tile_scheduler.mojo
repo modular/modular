@@ -17,6 +17,7 @@ from gpu import block_idx
 from linalg.grouped_matmul_tile_scheduler import TileScheduler
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from buffer import NDBuffer
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 
 from utils.index import Index
 
@@ -24,12 +25,13 @@ from utils.index import Index
 fn test_kernel[
     swizzle: Bool, shape: DimList
 ](group_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin, shape]):
+    var offset_tensor = from_ndbuffer_row_major(group_offsets)
     scheduler = TileScheduler[
-        M=20,
+        static_MN=20,
         tile_shape = Index(4, 8, 16),
         cluster = Index(1, 1, 1),
         swizzle=swizzle,
-    ](len(group_offsets) - 1, group_offsets)
+    ](len(group_offsets) - 1, offset_tensor)
 
     while True:
         work_info = scheduler.fetch_next_work()
