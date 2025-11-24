@@ -31,7 +31,7 @@ fn var_let_decls():
     # CHECK: lit.ref.store %[[V1]], %xx
     var xx = 42
 
-    # CHECK: lit.alias.decl {{.*}}il{{.*}}@IntLiteral<:!pop.int_literal 43>
+    # CHECK: lit.alias.decl {{.*}}il{{.*}}#IntLiteral <:!pop.int_literal 43>
     comptime il = 43
 
     # CHECK: %yy = lit.var.decl "yy" var
@@ -39,31 +39,31 @@ fn var_let_decls():
     # CHECK: lit.ref.store [[TMP]], %yy
     var yy = 1.0
 
-    # CHECK: lit.alias.decl {{.*}}fl1{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<2|1>> = <*?>
+    # CHECK: lit.alias.decl {{.*}}fl1{{.*}}#FloatLiteral <:!pop.float_literal #pop.float_literal<2|1>>> = <*?>
     comptime fl1 = 2.0
-    # CHECK: lit.alias.decl {{.*}}fl2{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<63|10>> = <*?>
+    # CHECK: lit.alias.decl {{.*}}fl2{{.*}}#FloatLiteral <:!pop.float_literal #pop.float_literal<63|10>>> = <*?>
     comptime fl2 = 6.3
-    # CHECK: lit.alias.decl {{.*}}fl3{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<41|2>> = <*?>
+    # CHECK: lit.alias.decl {{.*}}fl3{{.*}}#FloatLiteral <:!pop.float_literal #pop.float_literal<41|2>>> = <*?>
     comptime fl3 = 20.5
-    # CHECK: lit.alias.decl {{.*}}fl4{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<-41|2>> = <*?>
+    # CHECK: lit.alias.decl {{.*}}fl4{{.*}}#FloatLiteral <:!pop.float_literal #pop.float_literal<-41|2>>> = <*?>
     comptime fl4 = -20.5
-    # CHECK: lit.alias.decl {{.*}}fl5{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<neg_zero>> = <*?>
+    # CHECK: lit.alias.decl {{.*}}fl5{{.*}}#FloatLiteral <:!pop.float_literal #pop.float_literal<neg_zero>>> = <*?>
     comptime fl5 = -0.0
 
     # Smallest positive float (moco-1796)
-    # CHECK: lit.alias.decl {{.*}}fl6{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<1|2{{(0)+}}>> = <*?>
+    # CHECK: lit.alias.decl {{.*}}fl6{{.*}}#FloatLiteral <:!pop.float_literal #pop.float_literal<1|2{{(0)+}}>>> = <*?>
     comptime fl6 = 5e-324
 
     # TODO - Python raises an error when dividing by zero.  We need support for
     # parameter-time evaluation of `raise` to support that semantics, in which
     # case these will be static errors instead.
-    # CHECK: lit.alias.decl {{.*}}flDivZero{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<nan>> = <*?>
+    # CHECK: lit.alias.decl {{.*}}flDivZero{{.*}}#FloatLiteral <:!pop.float_literal #pop.float_literal<nan>>> = <*?>
     comptime flDivZero = 5.0 / 0.0
-    # CHECK: lit.alias.decl {{.*}}flDivNegZero{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<nan>> = <*?>
+    # CHECK: lit.alias.decl {{.*}}flDivNegZero{{.*}}#FloatLiteral <:!pop.float_literal #pop.float_literal<nan>>> = <*?>
     comptime flDivNegZero = 5.0 / -0.0
 
-    # CHECK: %str = lit.var.decl {{.*}} : !lit.ref<{{.*}}StringLiteral<:string "hello">
-    # CHECK: [[CONST:%.*]] = kgen.param.constant: {{.*}}@StringLiteral<:string "hello"> = <*?>
+    # CHECK: %str = lit.var.decl {{.*}} : !lit.ref<{{.*}}#StringLiteral <:string "hello">>
+    # CHECK: [[CONST:%.*]] = kgen.param.constant: {{.*}}#StringLiteral <:string "hello">> = <*?>
     # CHECK: lit.ref.store [[CONST]], %str
     var str = "hello"
 
@@ -121,7 +121,7 @@ fn test_list_literal():
 
 # CHECK-LABEL: lit.fn @"test_list_comprehension
 fn test_list_comprehension():
-    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}@List<:!AnyType !Int>
+    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#List <:!AnyType !Int>
     # CHECK: lit.loop cond {
     # CHECK:   SimpleIntRange::@"__has_next__
     # CHECK: } body {
@@ -136,7 +136,7 @@ fn test_list_comprehension():
     # CHECK: }
     var a_collection = [i1 * 2 for i1 in SimpleIntRange()]
 
-    # CHECK: %b_collection = lit.var.decl{{.*}}@List<:!AnyType !Int>
+    # CHECK: %b_collection = lit.var.decl{{.*}}#List <:!AnyType !Int>
     # CHECK: } body {
     # CHECK: %i2 = lit.var.decl "i2"
     # CHECK:   } body {
@@ -212,7 +212,7 @@ fn test_dict_literal(aBool: Bool):
 
 # CHECK-LABEL: lit.fn @"test_dict_comprehension
 fn test_dict_comprehension():
-    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}@Dict<:!AnyType !Int, :!ImplicitlyCopyable_Movable !String>
+    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#Dict <:!AnyType !Int, :!ImplicitlyCopyable_Movable !String>
     # CHECK: lit.loop cond {
     # CHECK:   SimpleIntRange::@"__has_next__
     # CHECK: } body {
@@ -263,7 +263,7 @@ fn test_set_literal():
 
 # CHECK-LABEL: lit.fn @"test_set_comprehension
 fn test_set_comprehension():
-    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}@Set<:!AnyType !Int>
+    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#Set <:!AnyType !Int>
     # CHECK: lit.loop cond {
     # CHECK:   SimpleIntRange::@"__has_next__
     # CHECK: } body {

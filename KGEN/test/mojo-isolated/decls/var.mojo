@@ -158,7 +158,7 @@ fn addrSpaces[lt1: MutOrigin, lt2: ImmutOrigin, as1: AddressSpace]():
     # CHECK: lit.alias.decl [[AS2:.*]]: !AddressSpace = {{.*}} {42}
     comptime as2: AddressSpace = AddressSpace(42)
 
-    # CHECK: lit.var.decl "ref2" {{.*}}!lit.ref<!MemExample, imm #lit.struct.extract<:@stdlib::@builtin::@stubs::@Origin<:!Bool {:i1 0}> lt2, "_mlir_origin">, 42>
+    # CHECK: lit.var.decl "ref2" {{.*}}!lit.ref<!MemExample, imm #lit.struct.extract<:!lit.struct<#Origin <:!Bool {:i1 0}>> lt2, "_mlir_origin">, 42>
     var ref2: __mlir_type[
         `!lit.ref<`, MemExample, `, `, lt2._mlir_origin, `, `, +as2._value._mlir_value, `>`
     ]

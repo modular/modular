@@ -2216,7 +2216,7 @@ kgen.generator export @entry(%arg0: !kgen.pointer<none>) {
   %0 = pop.stack_allocation 1 x index marked
   pop.compiler.global_store "CAPTURE_0", %0 : !kgen.pointer<index>
   kgen.param.declare *"foo()": () capturing -> index = <@FOO>
-  // CHECK: [[STR:%.*]] = kgen.param.constant: string = <"{{.*}}">
+  // CHECK: [[STR:%.*]] = kgen.param.constant: string = <"; Mod{{.*}}">
   // CHECK-NEXT: [[STR1:%.*]] = kgen.param.constant: string = <"{{.*}}">
   // CHECK-NEXT: [[NUM_CAPTURES:%.*]] = kgen.param.constant = <1>
   // CHECK-NEXT: [[CAPTURE_SIZES:%.*]] = pop.stack_allocation 1 x i64

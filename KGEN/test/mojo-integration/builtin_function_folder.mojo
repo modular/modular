@@ -41,7 +41,7 @@ struct BoolT[x: Bool](ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.fn @"fold_select_op
 fn fold_select_op[B: Int = 4, C: Int = 3]() -> IntT[B]:
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@IntT<:!Int B>, mut *"a`1">
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#IntT <:!Int B>>, mut *"a`1">
     var a = IntT[select(True, B, C)]()
     return a
 
@@ -55,7 +55,7 @@ fn fold_select_op[B: Int = 4, C: Int = 3]() -> IntT[B]:
 fn fold_index_ceildiv() -> UIntT[2]:
     comptime A: UInt = 5
     comptime B: UInt = 3
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@UIntT<:!UInt {2}>, mut *"a`3">
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#UIntT <:!UInt {2}>>, mut *"a`3">
     var a = UIntT[A.__ceildiv__(B)]()
     return a
 
@@ -73,9 +73,9 @@ fn fold_bool_init() -> BoolT[True]:
     comptime F = Bool(
         mlir_value=__mlir_attr.`#pop.simd<false> : !pop.scalar<bool>`
     )
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@BoolT<:!Bool {:i1 1}>, mut *"a`3">
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#BoolT <:!Bool {:i1 1}>>, mut *"a`3">
     var a = BoolT[T]()
-    # CHECK: %b = lit.var.decl "b" var : !lit.ref<@builtin_function_folder::@BoolT<:!Bool {:i1 0}>, mut *"b`4">
+    # CHECK: %b = lit.var.decl "b" var : !lit.ref<!lit.struct<#BoolT <:!Bool {:i1 0}>>, mut *"b`4">
     var b = BoolT[F]()
     return a
 
@@ -99,7 +99,7 @@ comptime UI8_139 = __mlir_attr.`#pop.simd<139> : !pop.scalar<ui8>`
 # CHECK-LABEL: lit.fn @"fold_dtype_as_ui8
 fn fold_dtype_as_ui8() -> UInt8T[UI8_139]:
     comptime A: DType = DType.int32
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@UInt8T<{{.*}}, 139)>
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#UInt8T <:scalar<ui8> {{.*}}, 139)>>, mut *"a
     var a = UInt8T[A._as_ui8()]()
     return a
 
@@ -114,7 +114,7 @@ struct DTypeT[x: DType](ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.fn @"fold_dtype_from_ui8
 fn fold_dtype_from_ui8() -> DTypeT[DType.int32]:
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@DTypeT<:!DType {:dtype si32}>, mut *"a`1">
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#DTypeT <:!DType {:dtype si32}>>, mut *"a
     var a = DTypeT[DType._from_ui8(UI8_139)]()
     return a
 

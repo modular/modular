@@ -20,11 +20,11 @@ fn unfoldable[
 fn foldable(
     t0: Tuple[Int, Int, Int],
     t1: Tuple[FloatDyn, FloatDyn, FloatDyn]
-    # CHECK-SAME:  %__result__: !lit.ref<@stdlib::@builtin::@stubs::@Tuple<:variadic<!AnyType>
+    # CHECK-SAME:  %__result__: !lit.ref<!lit.struct<#Tuple <:variadic<!AnyType>
     # CHECK-SAME: [
-    # CHECK-SAME:  @stdlib::@builtin::@stubs::@Tuple<:variadic<!AnyType> [!Int, !FloatDyn]>,
-    # CHECK-SAME:  @stdlib::@builtin::@stubs::@Tuple<:variadic<!AnyType> [!Int, !FloatDyn]>,
-    # CHECK-SAME:  @stdlib::@builtin::@stubs::@Tuple<:variadic<!AnyType> [!Int, !FloatDyn]>
+    # CHECK-SAME:  @Tuple<:variadic<!AnyType> [!Int, !FloatDyn]>,
+    # CHECK-SAME:  @Tuple<:variadic<!AnyType> [!Int, !FloatDyn]>,
+    # CHECK-SAME:  @Tuple<:variadic<!AnyType> [!Int, !FloatDyn]>
     # CHECK-SAME: ]>
 ) -> type_of(unfoldable(t0, t1)):
     pass

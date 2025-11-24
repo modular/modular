@@ -15,6 +15,6 @@ fn param[x: Int]():
     @parameter
     fn param_closure[y: Int]():
 
-        # CHECK: !lit.ref<{{.*}}_CI_{{.*}}escaping0"<:!Int y>
+        # CHECK: !lit.ref<!lit.struct<#escaping0 <:!Int y>
         fn closure() escaping:
             use[y]()

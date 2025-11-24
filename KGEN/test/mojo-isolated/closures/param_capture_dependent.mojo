@@ -12,11 +12,11 @@ struct Foo[a: Int](ImplicitlyCopyable):
     var b: Int
 
 
-# CHECK: lit.struct.decl @"`_CI_{{.*}}"<[[a:.*a]]: !Int, X: [[FOO:.*]]<:!Int [[a]]>, |>
-# CHECK: lit.fn @"__call__{{.*}}({{.*}}<:!Int [[a]], :[[FOO]]<:!Int [[a]]>
+# CHECK: lit.struct.decl @"`_CI_{{.*}}"<a: !Int, X: !lit.struct<#Foo <:!Int a>>, |>
+# CHECK: lit.fn @"__call__{{.*}}({{.*}}<:!Int a, :!lit.struct<#Foo <:!Int a>>
 # CHECK-NEXT: [[VAR1:%.*]] = lit.ref.struct.ger %0[field0]
 # CHECK-NEXT: [[VAR2:%.*]] = lit.ref.load [[VAR1]]
-# CHECK-NEXT: kgen.param.constant: !Int = <#lit.struct.extract<:[[FOO]]<:!Int [[a]]> X, "b">>
+# CHECK-NEXT: kgen.param.constant: !Int = <#lit.struct.extract<:!lit.struct<#Foo <:!Int a>> X, "b">>
 fn parameter_capture[a: Int, X: Foo[a]](c: Int) -> fn (x: Int) escaping -> Int:
     fn p_capture(x: Int) -> Int:
         return X.b + c

@@ -1,7 +1,7 @@
 // RUN: kgen-opt -check-lifetimes -split-input-file -mlir-print-debuginfo %s | FileCheck %s
 
 // CHECK: ![[DI_S_TYPE:.*]] = !debuginfo.unresolved<!lit.struct<@S>>
-// CHECK: #[[DIEXPR_IRVALUE_X:.*]] = #debuginfo.expr.irvalue : !lit.ref<@S, mut xlife>
+// CHECK: #[[DIEXPR_IRVALUE_X:.*]] = #debuginfo.expr.irvalue : !lit.ref<!lit.struct<@S>, mut xlife>
 // CHECK: #[[DIEXPR_DEREF_X:.*]] = #debuginfo.expr.deref<#[[DIEXPR_IRVALUE_X]]> : !lit.struct<@S>
 // CHECK: #[[DISP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, sourceName = <"test">, linkageName = "test", file = #{{.*}}, line = 1, scopeLine = 1, subprogramFlags = Definition>
 // CHECK: #[[DIVAR_X:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "x", file = #{{.*}}, line = 10, flags = Zero> : ![[DI_S_TYPE]]

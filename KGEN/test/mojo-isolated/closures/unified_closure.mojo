@@ -34,17 +34,17 @@
 # CHECK-NEXT: move :
 # CHECK-NEXT: copy :
 # CHECK:  lit.struct.field field0 : !kgen.param<:[[IMPL_PARENT]] impl>
-# CHECK: lit.fn @"__call__({{.*}})"[mut *"[[L0:.*]]`"](%0[*""]: !lit.ref<@{{.*}}::@"fn(y: Int) -> Int_wrapper_copyable"<:[[IMPL_PARENT]] impl, :origin.set origin_set>, mut *"[[L0]]`"> read_mem, |, %y: [[INT]]) capturing -> [[INT]]
+# CHECK: lit.fn @"__call__({{.*}})"[mut *"[[L0:.*]]`"](%0[*""]: !lit.ref<!lit.struct<#copyable <:[[IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[L0]]`"> read_mem, |, %y: [[INT]]) capturing -> [[INT]]
 # CHECK-NEXT:  [[CLOSURE:%.*]] = lit.ref.struct.ger %{{.*}}[field0]
 # CHECK-NEXT:  [[RES:%.*]] = lit.call[!lit.generator<[1](!lit.ref<:[[IMPL_PARENT]] impl, mut *[0,0]> read_mem, |, "y": [[INT]]) capturing -> [[INT]]>: #kgen.get_witness<:[[IMPL_PARENT]] impl, "fn(y: Int) -> Int", "__call__{{.*}}">][mut *"[[L0]]`"->field0]([[CLOSURE]], %y)
 # CHECK-NEXT:  lit.return [[RES]]
 # CHECK-NEXT:  lit.end_fn
 # CHECK-NEXT: }
 
-# CHECK: lit.fn @"__moveinit__({{.*}})"[mut *"[[L2:.*]]`", mut *"[[L3:.*]]`"](%existing: !lit.ref<@{{.*}}::@"fn(y: Int) -> Int_wrapper_copyable"<:[[IMPL_PARENT]] impl, :origin.set origin_set>, mut *"[[L2]]`"> deinit_mem, |, ?, %self: !lit.ref<@{{.*}}::@"fn(y: Int) -> Int_wrapper_copyable"<:[[IMPL_PARENT]] impl, :origin.set origin_set>, mut *"[[L3]]`"> byref_result) -> !kgen.none
+# CHECK: lit.fn @"__moveinit__({{.*}})"[mut *"[[L2:.*]]`", mut *"[[L3:.*]]`"](%existing: !lit.ref<{{.*}}<:[[IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[L2]]`"> deinit_mem, |, ?, %self: !lit.ref<{{.*}} <:[[IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[L3]]`"> byref_result) -> !kgen.none
 # CHECK: lit.ownership.mark_destroyed %existing
 
-# CHECK: lit.fn @"__del__({{.*}})"[mut *"[[L1:.*]]`"](%self: !lit.ref<@{{.*}}::@"fn(y: Int) -> Int_wrapper_copyable"<:[[IMPL_PARENT]] impl, :origin.set origin_set>, mut *"[[L1]]`"> deinit_mem, |) -> !kgen.none
+# CHECK: lit.fn @"__del__({{.*}})"[mut *"[[L1:.*]]`"](%self: !lit.ref<{{.*}}<:[[IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[L1]]`"> deinit_mem, |) -> !kgen.none
 # CHECK: lit.ownership.mark_destroyed %self
 
 
@@ -106,7 +106,7 @@ struct Foo[T: Movable, b: T]:
 
 # CHECK: [[TRAIT:!None.*]] = !lit.trait<@"fn[T: MyInterface, b: T, c: Foo[T, b]](a: T) -> None">
 # CHECK: lit.trait.decl @"fn[T: MyInterface, b: T, c: Foo[T, b]](a: T) -> None"<?, *"_Self`{{.*}}": [[TRAIT]]>(!{{.*}}) unspecified attributes {{{.*}}} {
-# CHECK: lit.fn @"__call__{{.*}}"<T: !MyInterface, b: !kgen.param<:!MyInterface T>, c: @{{.*}}::@Foo<:!Movable {{.*}}, :!kgen.param<:!MyInterface T> b>>
+# CHECK: lit.fn @"__call__{{.*}}"<T: !MyInterface, b: !kgen.param<:!MyInterface T>, c: {{.*}}Foo <:!Movable {{.*}}, :!kgen.param<:!MyInterface T> b>>
 # CHECK-SAME: [mut *"self`", imm *"[[L1:.*]]`"](%0[*""]: !lit.ref<:[[TRAIT]] *"_Self`{{.*}}", mut *"self`"> read_mem, |, %a: !lit.ref<:!MyInterface T, imm *"[[L1]]`"> read_mem) capturing -> !kgen.none
 
 
@@ -128,12 +128,12 @@ fn make_closure(x: Int) -> Int:
 # CHECK-SAME: <impl: [[TRAIT]], origin_set: origin.set, |>([[TRAIT]]) attributes {synthetic}
 # CHECK: lit.struct.field field0 : !kgen.param<:[[TRAIT]] impl>
 
-# CHECK-NEXT: lit.fn @"__call__{{.*}}"<lt: {{.*}}@Origin<:!Bool {:i1 1}>>[mut *"[[L1:.*]]`", imm *"[[L2:.*]]`"](%0[*""]: !lit.ref<@{{.*}}::@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"
-# CHECK-SAME: <:[[TRAIT]] impl, :origin.set origin_set>, mut *"[[L1]]`"> read_mem, |, %a: !lit.ref<!String, {{.*}}>, %b: !lit.ref<!String, imm *"[[L2]]`"> read_mem) capturing -> !kgen.none attributes {sourceName = "__call__", specialFnKind = 0 : i8, synthetic} {
-# CHECK-NEXT: [[V1:%.*]] = lit.ref.struct.ger %0[field0] : <@{{.*}}::@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"<:[[TRAIT]] impl, :origin.set origin_set>, mut *"[[L1]]`"> -> :[[TRAIT]] impl
+# CHECK-NEXT: lit.fn @"__call__{{.*}}"<lt: !lit.struct<#Origin <:!Bool {:i1 1}>>>[mut *"[[L1:.*]]`", imm *"[[L2:.*]]`"](%0[*""]: !lit.ref<!lit.struct<#copyable
+# CHECK-SAME: <:[[TRAIT]] impl, :origin.set origin_set>>, mut *"[[L1]]`"> read_mem, |, %a: !lit.ref<!String, {{.*}}>, %b: !lit.ref<!String, imm *"[[L2]]`"> read_mem)
+# CHECK-NEXT: [[V1:%.*]] = lit.ref.struct.ger %0[field0] : <!lit.struct<#copyable <:[[TRAIT]] impl, :origin.set origin_set>>, mut *"[[L1]]`"> -> :[[TRAIT]] impl
 # CHECK-NEXT: [[V2:%.*]] = lit.call[!lit.generator<[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none>:
-# CHECK-SAME: bind_params(:!lit.generator<<"lt": {{.*}}Origin<:!Bool {:i1 1}>>[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none
-# CHECK-SAME:> #kgen.get_witness<:[[TRAIT]] impl, "fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None", "__call__{{.*}}">, :{{.*}}Origin<:!Bool {:i1 1}> lt)][mut *"[[L1]]`"->field0, imm *"[[L2]]`"]([[V1]], %a, %b)
+# CHECK-SAME: bind_params(:!lit.generator<<"lt": !lit.struct<#Origin <:!Bool {:i1 1}>>>[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none
+# CHECK-SAME:> #kgen.get_witness<:[[TRAIT]] impl, "fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None", "__call__{{.*}}">, :!lit.struct<#Origin <:!Bool {:i1 1}>> lt)][mut *"[[L1]]`"->field0, imm *"[[L2]]`"]([[V1]], %a, %b)
 # CHECK-NEXT: lit.return [[V2]] : !kgen.none
 # CHECK-NEXT: lit.end_fn
 
@@ -160,8 +160,8 @@ trait MyInterface:
 # CHECK: [[TRAIT:!None_Movable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn[T: MyInterface](a: T) -> None", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
 
 
-# CHECK: lit.fn @"__init__($0$)"[mut *"impl`", mut *"self`"](%impl: !lit.ref<:[[TRAIT]] impl, mut *"impl`"> owned_in_mem, |, ?, %self: !lit.ref<@{{.*}}::@"fn[T: MyInterface](a: T) -> None_wrapper_copyable"<:[[TRAIT]] impl, :origin.set origin_set>, mut *"self`"> byref_result) -> !kgen.none attributes {isStatic, sourceName = "__init__", specialFnKind = 2 : i8, synthetic} {
-# CHECK-NEXT: [[V0:%.*]] = lit.ref.struct.ger %self[field0] : <@{{.*}}::@"fn[T: MyInterface](a: T) -> None_wrapper_copyable"<:[[TRAIT]] impl, :origin.set origin_set>, mut *"self`"> -> :[[TRAIT]] impl
+# CHECK: lit.fn @"__init__($0$)"[mut *"impl`", mut *"self`"](%impl: !lit.ref<:[[TRAIT]] impl, mut *"impl`"> owned_in_mem, |, ?, %self: !lit.ref<!lit.struct<#copyable <:[[TRAIT]] impl, :origin.set origin_set>>, mut *"self`"> byref_result)
+# CHECK-NEXT: [[V0:%.*]] = lit.ref.struct.ger %self[field0] : <!lit.struct<#copyable <:[[TRAIT]] impl, :origin.set origin_set>>, mut *"self`"> -> :[[TRAIT]] impl
 # CHECK-NEXT: [[V1:%.*]] = lit.call[!lit.generator<[2]("existing": !lit.ref<:[[TRAIT]] impl, mut *[0,0]> deinit_mem, |, ?, "self": !lit.ref<:[[TRAIT]] impl, mut *[0,1]> byref_result) -> !kgen.none>: #kgen.get_witness<:[[TRAIT]] impl, "{{.*}}::Movable", "__moveinit__{{.*}}">][mut *"impl`", mut *"self`"->field0](%impl, [[V0]])
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: lit.return %none : !kgen.none
@@ -192,8 +192,8 @@ fn make_closure(x: Int):
     # CHECK-NEXT: } : ([[INT]]), !lit.ref<!kgen.closure<@{{.*}}::make_closure{{.*}}", "my_closure" nonescaping>, mut *"[[L0:.*]]">
 
     # CHECK-NEXT: lit.ownership.use [[RAW_CLOSURE]]
-    # CHECK-NEXT: [[WRAPPER:%.*]] = lit.var.decl "my_closure" var : !lit.ref<@{{.*}}::@"fn(y: Int) -> Int_wrapper_copyable"<:[[TRAIT]] {{.*}}, :origin.set {}>, mut *"[[L1:.*]]">
-    # CHECK-NEXT: lit.call @{{.*}}::@"fn(y: Int) -> Int_wrapper_copyable"::@"__init__($0$)"[mut *"[[L0]]", mut *"[[L1]]"]<:[[TRAIT]] {{.*}}, :origin.set {}>([[RAW_CLOSURE]], [[WRAPPER]]) : !lit.generator<[2]("impl": !lit.ref<!kgen.closure<@{{.*}}::make_closure{{.*}}", "my_closure" nonescaping>, mut *[0,0]> owned_in_mem, |, ?, "self": !lit.ref<@{{.*}}::@"fn(y: Int) -> Int_wrapper_copyable"<:[[TRAIT]] {{.*}}, :origin.set {}>, mut *[0,1]> byref_result) -> !kgen.none>
+    # CHECK-NEXT: [[WRAPPER:%.*]] = lit.var.decl "my_closure" var : !lit.ref<!lit.struct<#copyable <:[[TRAIT]] {{.*}}, :origin.set {}>>, mut *"[[L1:.*]]">
+    # CHECK-NEXT: lit.call @{{.*}}::@"fn(y: Int) -> Int_wrapper_copyable"::@"__init__($0$)"[mut *"[[L0]]", mut *"[[L1]]"]<:[[TRAIT]] {{.*}}, :origin.set {}>([[RAW_CLOSURE]], [[WRAPPER]]) : !lit.generator<[2]("impl": !lit.ref<!kgen.closure<@{{.*}}::make_closure{{.*}}", "my_closure" nonescaping>, mut *[0,0]> owned_in_mem, |, ?, "self": !lit.ref<!lit.struct<#copyable <:[[TRAIT]] {{.*}}, :origin.set {}>>, mut *[0,1]> byref_result) -> !kgen.none>
 
     fn my_closure(y: Int) unified {var x} -> Int:
         return x + y
@@ -327,15 +327,15 @@ fn bindIt() -> Int:
 
 
 # CHECK: kgen.conformance @"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None" {
-# CHECK-NEXT: kgen.witness "__call__{{.*}}" : !lit.generator<<"lt": {{.*}}@Origin<:!Bool {:i1 1}>>[2](!lit.ref<@{{.*}}::@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"<{{.*}}>, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none
-# CHECK-SAME: > = @{{.*}}::@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"::@"__call__{{.*}}"<:[[TRAIT]] impl, :origin.set origin_set, {{.*}}@Origin<:!Bool {:i1 1}> ?>
+# CHECK-NEXT: kgen.witness "__call__{{.*}}" : !lit.generator<<"lt": !lit.struct<#Origin <:!Bool {:i1 1}>>>[2](!lit.ref<!lit.struct<#copyable <:[[TRAIT]] impl, :origin.set origin_set>>, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none
+# CHECK-SAME: > = @{{.*}}::@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"::@"__call__{{.*}}"<:[[TRAIT]] impl, :origin.set origin_set, :!lit.struct<#Origin <:!Bool {:i1 1}>> ?>
 
 # CHECK: kgen.conformance @{{.*}}::Movable" {
-# CHECK-NEXT: kgen.witness "__moveinit__{{.*}}" : !lit.generator<[2]("existing": !lit.ref<@{{.*}}::@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"<{{.*}}>, mut *[0,0]> deinit_mem, |, ?, "self": !lit.ref<@{{.*}}::@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"<:[[TRAIT]] impl, :origin.set origin_set>, mut *[0,1]> byref_result) -> !kgen.none
+# CHECK-NEXT: kgen.witness "__moveinit__{{.*}}" : !lit.generator<[2]("existing": !lit.ref<!lit.struct<#copyable <:[[TRAIT]] impl, :origin.set origin_set>>, mut *[0,0]> deinit_mem, |, ?, "self": !lit.ref<!lit.struct<#copyable <:[[TRAIT]] impl, :origin.set origin_set>>, mut *[0,1]> byref_result) -> !kgen.none
 # CHECK-SAME: > = @{{.*}}::@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"::@"__moveinit__({{.*}})"<{{.*}}>
 
 # CHECK: kgen.conformance @"{{.*}}::AnyType" {
-# CHECK-NEXT:  kgen.witness "__del__{{.*}}" : !lit.generator<[1]("self": !lit.ref<@{{.*}}::@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"<:[[TRAIT]] impl, :origin.set origin_set>, mut *[0,0]> deinit_mem, |) -> !kgen.none
+# CHECK-NEXT:  kgen.witness "__del__{{.*}}" : !lit.generator<[1]("self": !lit.ref<!lit.struct<#copyable <:[[TRAIT]] impl, :origin.set origin_set>>, mut *[0,0]> deinit_mem, |) -> !kgen.none
 # CHECK-SAME: > = @{{.*}}::@"fn[lt: MutOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"::@"__del__{{.*}}"<{{.*}}>
 
 
@@ -370,8 +370,8 @@ fn nonemptyOriginSet(mut byRefMut: String):
 # CHECK-DAG: [[INT:!Int.*]] = !lit.struct<{{.*}}::@Int>
 
 # CHECK: lit.struct.decl @"fn(x: Int) -> Int_wrapper_copyable"<impl: [[TRAIT1]], origin_set: origin.set, |>([[TRAIT]])
-# CHECK: kgen.witness "__call__{{.*}}" : !lit.generator<[1](!lit.ref<@{{.*}}::@"fn(x: Int) -> Int_wrapper_copyable"<:[[TRAIT1]] impl, :origin.set origin_set>, mut *[0,0]> read_mem, [[INT]], |) capturing -> [[INT]]> =
-# CHECK-SAME: rebind(:!lit.generator<[1](!lit.ref<@{{.*}}::@"fn(x: Int) -> Int_wrapper_copyable"<:[[TRAIT1]] impl, :origin.set origin_set>, mut *[0,0]> read_mem, |, "x": [[INT]]) capturing -> [[INT]]> @{{.*}}::@"fn(x: Int) -> Int_wrapper_copyable"::@"__call__{{.*}}"<:[[TRAIT1]] impl, :origin.set origin_set>)
+# CHECK: kgen.witness "__call__{{.*}}" : !lit.generator<[1](!lit.ref<!lit.struct<#copyable <:[[TRAIT1]] impl, :origin.set origin_set>>, mut *[0,0]> read_mem, [[INT]], |) capturing -> [[INT]]> =
+# CHECK-SAME: rebind(:!lit.generator<[1](!lit.ref<!lit.struct<#copyable <:[[TRAIT1]] impl, :origin.set origin_set>>, mut *[0,0]> read_mem, |, "x": [[INT]]) capturing -> [[INT]]> @{{.*}}::@"fn(x: Int) -> Int_wrapper_copyable"::@"__call__{{.*}}"<:[[TRAIT1]] impl, :origin.set origin_set>)
 
 
 fn takeIt[C: fn (Int) unified -> Int](closure: C):
@@ -394,8 +394,8 @@ fn bindIt(z: Int):
 # CHECK-DAG: [[INT:!Int.*]] = !lit.struct<{{.*}}::@Int>
 
 # CHECK: lit.struct.decl @"fn(x: Int) -> Int_wrapper_copyable"<impl: [[TRAIT1]], origin_set: origin.set, |>([[TRAIT]])
-# CHECK: kgen.witness "__call__{{.*}}" : !lit.generator<[1](!lit.ref<@{{.*}}::@"fn(x: Int) -> Int_wrapper_copyable"<:[[TRAIT1]] impl, :origin.set origin_set>, mut *[0,0]> read_mem, |, "y": [[INT]]) capturing -> [[INT]]> =
-# CHECK-SAME: rebind(:!lit.generator<[1](!lit.ref<@{{.*}}::@"fn(x: Int) -> Int_wrapper_copyable"<:[[TRAIT1]] impl, :origin.set origin_set>, mut *[0,0]> read_mem, |, "x": [[INT]]) capturing -> [[INT]]> @{{.*}}::@"fn(x: Int) -> Int_wrapper_copyable"::@"__call__{{.*}}"<:[[TRAIT1]] impl, :origin.set origin_set>)
+# CHECK: kgen.witness "__call__{{.*}}" : !lit.generator<[1](!lit.ref<!lit.struct<#copyable <:[[TRAIT1]] impl, :origin.set origin_set>>, mut *[0,0]> read_mem, |, "y": [[INT]]) capturing -> [[INT]]> =
+# CHECK-SAME: rebind(:!lit.generator<[1](!lit.ref<!lit.struct<#copyable <:[[TRAIT1]] impl, :origin.set origin_set>>, mut *[0,0]> read_mem, |, "x": [[INT]]) capturing -> [[INT]]> @{{.*}}::@"fn(x: Int) -> Int_wrapper_copyable"::@"__call__{{.*}}"<:[[TRAIT1]] impl, :origin.set origin_set>)
 
 
 fn takeIt[C: Copyable & fn (y: Int) unified -> Int](closure: C):
@@ -457,8 +457,8 @@ fn bindIt(z: Int):
 
 # CHECK: lit.struct.decl @"fn[a: Int](b: Int) -> Int_wrapper_copyable"<impl: [[TRAIT1]], origin_set: origin.set, |>([[TRAIT]])
 # CHECK: kgen.conformance @"fn[x: Int](y: Int) -> Int"
-# CHECK: kgen.witness "__call__{{.*}}" : !lit.generator<<"x": [[INT]]>[1](!lit.ref<@{{.*}}::@"fn[a: Int](b: Int) -> Int_wrapper_copyable"<:[[TRAIT1]] impl, :origin.set origin_set>, mut *[0,0]> read_mem, |, "y": [[INT]]) capturing -> [[INT]]> =
-# CHECK-SAME: rebind(:!lit.generator<<"a": [[INT]]>[1](!lit.ref<@{{.*}}::@"fn[a: Int](b: Int) -> Int_wrapper_copyable"<:[[TRAIT1]] impl, :origin.set origin_set>, mut *[0,0]> read_mem, |, "b": [[INT]]) capturing -> [[INT]]> @{{.*}}::@"fn[a: Int](b: Int) -> Int_wrapper_copyable"::@"__call__[::Int]({{.*}}::fn[a: Int](b: Int) -> Int_wrapper_copyable[$0, $1],::Int)"<:[[TRAIT1]] impl, :origin.set origin_set, :[[INT]] ?>)
+# CHECK: kgen.witness "__call__{{.*}}" : !lit.generator<<"x": [[INT]]>[1](!lit.ref<!lit.struct<#copyable <:[[TRAIT1]] impl, :origin.set origin_set>>, mut *[0,0]> read_mem, |, "y": [[INT]]) capturing -> [[INT]]> =
+# CHECK-SAME: rebind(:!lit.generator<<"a": [[INT]]>[1](!lit.ref<!lit.struct<#copyable <:[[TRAIT1]] impl, :origin.set origin_set>>, mut *[0,0]> read_mem, |, "b": [[INT]]) capturing -> [[INT]]> @{{.*}}::@"fn[a: Int](b: Int) -> Int_wrapper_copyable"::@"__call__[::Int]({{.*}}::fn[a: Int](b: Int) -> Int_wrapper_copyable[$0, $1],::Int)"<:[[TRAIT1]] impl, :origin.set origin_set, :[[INT]] ?>)
 
 
 fn takeIt[C: fn[x: Int] (y: Int) unified -> Int](closure: C):

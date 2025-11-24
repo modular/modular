@@ -282,8 +282,6 @@ void KGEN::printKGENType(AsmPrinter &p, Type type) {
   if (auto it = dialect->typePrintFns.find(type.getTypeID());
       it != dialect->typePrintFns.end()) {
     it->second(p, type);
-  } else if (auto ref = dyn_cast<StructTypeInterface>(type)) {
-    ref.printSymbol(p);
   } else if (auto signature = dyn_cast<FuncType>(type)) {
     printFuncType(p, signature);
   } else if (auto generator = dyn_cast<GeneratorType>(type)) {
@@ -2009,11 +2007,7 @@ void KGEN::printParameterValues(AsmPrinter &p, ArrayRef<TypedAttr> values) {
   p << '<';
   llvm::interleaveComma(values, p, [&](TypedAttr value) {
     auto valType = value.getType();
-    if (!valType.isIndex()) {
-      p << ":";
-      printKGENType(p, valType);
-      p << " ";
-    }
+    printColonTypeOrIndexPrefix(p, valType);
     printParamValue(p, value);
   });
   p << '>';

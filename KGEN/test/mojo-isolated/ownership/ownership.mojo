@@ -832,7 +832,7 @@ fn call_variadic_inout_mems():
 fn variadic_owned_mems(var *mems: MemExample):
     # CHECK: lit.call @{{.*}}::@VariadicListMem::@"__init__{{.*}}"[{{.*}}]<{{.*}}>({{.*}}) :
     # CHECK-SAME: !lit.generator<[1]("value": !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">>
-    # CHECK-SAME: "self": !lit.ref<@{{.*}}::@VariadicListMem<:!Bool {:i1 1},
+    # CHECK-SAME: "self": !lit.ref<{{.*}}#VariadicListMem <:!Bool {:i1 1},
     mems[0].x += 1
 
 

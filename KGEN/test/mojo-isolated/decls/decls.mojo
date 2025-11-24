@@ -72,7 +72,7 @@ fn variadic_trait_elt[T: ImplicitlyCopyable](*xs: T):
 
 # CHECK-LABEL: lit.fn @"trait_pack
 # CHECK-SAME: <{{.*}}, Ts:
-# CHECK-SAME: %rest: !lit.ref<@stdlib::@builtin::@stubs::@VariadicPack<:!Bool {:i1 0}, {{.*}}origin<0> = *"rest`1"}, :!lit.anytrait<!AnyType> !ImplicitlyCopyable, :variadic<!ImplicitlyCopyable> Ts>, imm *"rest`2"> read_mem|pack_vararg)
+# CHECK-SAME: %rest: !lit.ref<!lit.struct<#VariadicPack <:!Bool {:i1 0}, {{.*}}origin<0> = *"rest`1"}, :!lit.anytrait<!AnyType> !ImplicitlyCopyable, :variadic<!ImplicitlyCopyable> Ts>>, imm *"rest`2"> read_mem|pack_vararg)
 fn trait_pack[T: ImplicitlyCopyable, *Ts: ImplicitlyCopyable](first: T, *rest: *Ts):
     pass
 
@@ -938,9 +938,9 @@ fn coroutine_origins():
     # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}@__MLIRType<:type none>, none], :origin.set {mut [[X_LT]], mut [[Y_LT]]}>([[CORO]])
     var coro = capture_byref(x, y)
 
-    # CHECK: lit.async.call[!lit.generator<[2]("x": !lit.ref<@decls::@LifetimeAccess<:origin<1> [[Y_LT]]>,
+    # CHECK: lit.async.call[!lit.generator<[2]("x": !lit.ref<!lit.struct<#LifetimeAccess <:origin<1> [[Y_LT]]>>,
     # CHECK-SAME: mut *[0,0]{{.*}}) async -> !kgen.none>: {{.*}}lifetime_access{{.*}}<:origin<1> [[Y_LT]]>]
-    # CHECK: Coroutine<:!AnyType [{{.*}}@__MLIRType<:type none>, none], :origin.set {{{.*}}, mut [[Y_LT]]}>
+    # CHECK: #Coroutine <:!AnyType [{{.*}}@__MLIRType<:type none>, none], :origin.set {{{.*}}, mut [[Y_LT]]}>
     var access = lifetime_access(LifetimeAccess[origin_of(y)]())
 
 
@@ -966,7 +966,7 @@ fn async_closure_capture(x: String):
         _ = x
 
     # CHECK: lit.async.call[{{.*}}capture_it
-    # CHECK:  %coro = lit.var.decl{{.*}}Coroutine<{{.*}}{imm *"x`
+    # CHECK:  %coro = lit.var.decl{{.*}}Coroutine <{{.*}}{imm *"x`
     var coro = capture_it()
 
 
@@ -1041,13 +1041,13 @@ struct HasLifetimeParam[p: MutOrigin]:
 
 
 # CHECK-LABEL: lit.fn @"explicitLifetime
-# CHECK-SAME: @Origin<:!Bool {:i1 1}> lt>
+# CHECK-SAME: #Origin <:!Bool {:i1 1}>> lt>
 fn explicitLifetime[lt: MutOrigin, //, arg: HasLifetimeParam[lt]]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"inaccessibleImplicitLifetimeParam
-# CHECK-SAME: "<?, *"p`": @stdlib::@builtin::@stubs::@Origin<:!Bool {:i1 1}>>(%arg:
+# CHECK-SAME: "<?, *"p`": !lit.struct<#Origin <:!Bool {:i1 1}>>>(%arg:
 fn inaccessibleImplicitLifetimeParam(arg: HasLifetimeParam):
     pass
 
@@ -1110,9 +1110,9 @@ fn inferCaptureOrigins[
     # CHECK: lit.alias.decl *"boundSet{{.*}} !lit.generator<:{mut *"x`"}
     comptime boundSet = closureParameterCaptures[captureSomething]
 
-    # CHECK: lit.alias.decl *"unboundSingleParam{{.*}}@Origin<:!Bool {:i1 1}> *(0,0)>
+    # CHECK: lit.alias.decl *"unboundSingleParam{{.*}}#Origin <:!Bool {:i1 1}>> *(0,0)>
     comptime unboundSingleParam = explicitLifetime
-    # CHECK: lit.alias.decl *"boundSingleParam{{.*}}@Origin<:!Bool {:i1 1}> lt> param>
+    # CHECK: lit.alias.decl *"boundSingleParam{{.*}}#Origin <:!Bool {:i1 1}>> lt>> param>
     comptime boundSingleParam = explicitLifetime[param]
 
     # CHECK: lit.alias.decl *"memberFunction{{.*}} !lit.generator<<{{.*}}>:*(0,1):
@@ -1271,7 +1271,7 @@ struct Bound[T: AnyType]:
 struct Match[lt: __mlir_type.`!lit.origin<0>`]:
     pass
     # CHECK: kgen.conformance {{.*}}::AnyType
-    # CHECK-NEXT: kgen.witness "__del__{{.*}}" : !lit.generator<[1]("self": !lit.ref<@decls::@Match<:origin<0> lt>, mut *[0,0]> deinit_mem,
+    # CHECK-NEXT: kgen.witness "__del__{{.*}}" : !lit.generator<[1]("self": !lit.ref<!lit.struct<#Match <:origin<0> lt>>, mut *[0,0]> deinit_mem,
 
 
 ##===----------------------------------------------------------------------===##

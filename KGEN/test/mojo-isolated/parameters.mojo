@@ -54,7 +54,7 @@ fn call_generic[dt: DType]():
   generic_fn[dt, 42, DType](57)
 
   # CHECK: %[[C57_2:.*]] = {{.*}}constant{{.*}}57
-  # CHECK: lit.call @parameters::@"generic_fn{{.*}}"<:!DType dt, :!Int {13}, :type {{.*}}@SIMD<{{.*}}:!DType dt, :!Int {4}>{{.*}}>(%[[C57_2]])
+  # CHECK: lit.call @parameters::@"generic_fn{{.*}}"<:!DType dt, :!Int {13}, :type {{.*}}#SIMD <:!DType dt, :!Int {4}>{{.*}}>(%[[C57_2]])
   generic_fn[dt, 13, SIMD[dt, 4]](57)
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<
@@ -74,16 +74,16 @@ struct TestParamStruct[A: Int]:
     comptime B = Self.A + Self.A + 1
     # CHECK: lit.alias.decl *"C{{.*}}: !Int =
     comptime C = B + Self.A
-    # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<:!Int {{.*}}1{{.*}}> =
+    # CHECK: lit.alias.decl [[D:.*]]: {{.*}}#TestParamStruct <:!Int {{.*}}1{{.*}}> =
     # CHECK-SAME: <apply(:!lit.generator<{{.*}}TestParamStruct <:!Int {1}>>> {{.*}}__init__()"<:!Int {1}>)>
     comptime D = TestParamStruct[1]()
-    # CHECK: %temp = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int
+    # CHECK: %temp = lit.var.decl {{.*}} : {{.*}}#TestParamStruct <:!Int
     var temp: TestParamStruct[C]
 
     # CHECK: lit.alias.decl *"intVal{{.*}}": !Int = <{42}>
     comptime intVal : Int = 42
 
-    # CHECK: %temp2 = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int {{.*}}{_mlir_value = mul(#lit.struct.extract<:!Int [[A]], "_mlir_value">, 2)}
+    # CHECK: %temp2 = lit.var.decl {{.*}} : {{.*}}#TestParamStruct <:!Int {{.*}}{_mlir_value = mul(#lit.struct.extract<:!Int [[A]], "_mlir_value">, 2)}
     var temp2: TestParamStruct[TestParamStruct[Self.A].TypeLevelAlias]
 
   # CHECK: lit.alias.decl *"TypeLevelAlias{{.*}}": !Int = <{{.*}}{_mlir_value = mul(#lit.struct.extract<:!Int *"A`", "_mlir_value">, 2)}
@@ -93,7 +93,7 @@ struct TestParamStruct[A: Int]:
 # CHECK-LABEL: lit.fn @"testTestParamStruct
 fn testTestParamStruct(a: TestParamStruct[4]):
   # CHECK: %0 = lit.call {{.*}}@TestParamStruct::@"__init__{{.*}}<:!Int {{.*}}11{{.*}}>()
-  # CHECK: %arg11 = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int {{.*}}11
+  # CHECK: %arg11 = lit.var.decl {{.*}} : {{.*}}#TestParamStruct <:!Int {{.*}}11
   var arg11 = TestParamStruct[11]()
 
   # CHECK: %1 = lit.ref.load %arg11
@@ -123,15 +123,15 @@ fn testSIMD(a: Scalar[DType.float32],
 # CHECK-SAME: Int,
 # CHECK-SAME: parameters::StructWithIntParam[$2]
 # CHECK-SAME: ]()"<
-# CHECK-SAME: size1: !Int, a: @parameters::@StructWithIntParam<:!Int size1>,
-# CHECK-SAME: size2: !Int, b: @parameters::@StructWithIntParam<:!Int size2>>()
+# CHECK-SAME: size1: !Int, a: !lit.struct<#StructWithIntParam <:!Int size1>>,
+# CHECK-SAME: size2: !Int, b: !lit.struct<#StructWithIntParam <:!Int size2>>>()
 fn paramResolution[size1: Int, a: StructWithIntParam[size1],
                    size2: Int, b: StructWithIntParam[size2]]():
   pass
 
 # Show that we can implicitly convert from 42's literal type to Int.
 # CHECK-LABEL: lit.fn @"implConversion
-# CHECK: <a: @parameters::@StructWithIntParam<:!Int {42}>>
+# CHECK: <a: !lit.struct<#StructWithIntParam <:!Int {42}>>
 fn implConversion[a: StructWithIntParam[42]]():
   pass
 
@@ -177,7 +177,7 @@ struct ParamSubst[
 
 # CHECK-LABEL: lit.fn @"testParamSubst
 fn testParamSubst():
-  # CHECK: %xx = lit.var.decl {{.*}} : !lit.ref<@parameters::@ParamSubst<:type index, :variadic<index> [1, 2]>
+  # CHECK: %xx = lit.var.decl {{.*}} : !lit.ref<!lit.struct<#ParamSubst <:type index, :variadic<index> [1, 2]>>
   var xx : ParamSubst[__mlir_type.index, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`]
 
 
@@ -191,13 +191,13 @@ fn fnWithCall[array: __mlir_type[`!pop.array<10, f32>`]]():
    # CHECK: lit.call @parameters::@"fnToCall{{.*}}"<:!Int {10}, :array<10, f32> array>()
    fnToCall[10, array]()
 
-# CHECK-LABEL: lit.fn @"meta_str{{.*}}"<["value`"]*"value`": string, +, type: @stdlib::@builtin::@stubs::@StringLiteral<:string *"value`">>() -> !kgen.none
+# CHECK-LABEL: lit.fn @"meta_str{{.*}}"<["value`"]*"value`": string, +, type: !lit.struct<#StringLiteral <:string *"value`">>>() -> !kgen.none
 fn meta_str[type: StringLiteral]():
   pass
 
 # CHECK-LABEL: lit.fn @"str_input_param()"() -> !kgen.none
 fn str_input_param():
-  # CHECK: %0 = lit.call @parameters::@"meta_str{{.*}}"<{{.*}}@StringLiteral<:string "123">{{.*}}>()
+  # CHECK: %0 = lit.call @parameters::@"meta_str{{.*}}"<{{.*}}!lit.struct<#StringLiteral <:string "123">>{{.*}}>()
   meta_str["123"]()
 
 @fieldwise_init
@@ -211,7 +211,7 @@ struct TwoParams[a: Int, b: Int]:
 fn signature_capture[a: Int, f: fn[b: Int]() -> TwoParams[a, b]]():
     _ = f[2]()
 
-# CHECK-LABEL: lit.fn @"my_constrained{{.*}}"<{{.*}}cond: !Bool, message: {{.*}}@StringLiteral<:string *"value`">>()
+# CHECK-LABEL: lit.fn @"my_constrained{{.*}}"<{{.*}}cond: !Bool, message: !lit.struct<#StringLiteral <:string *"value`">>>()
 fn my_constrained[cond: Bool, message: StringLiteral]():
     # CHECK: kgen.param.assert <{{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">{{.*}}>, *"value`"
     __mlir_op.`kgen.param.assert`[cond=cond.__mlir_i1__(), message=message.value]()
@@ -220,7 +220,7 @@ fn my_constrained[cond: Bool, message: StringLiteral]():
 
 # CHECK-LABEL: lit.fn @"pass_str_param
 fn pass_str_param():
-    # CHECK: lit.call {{.+}}my_constrained{{.*}}"<{{.*}}:!Bool {:i1 1}, {{.*}}StringLiteral<:string "foo">{{.*}}>()
+    # CHECK: lit.call {{.+}}my_constrained{{.*}}<:string "foo", :!Bool {:i1 1}, :!lit.struct<#StringLiteral <:string "foo">> *?>()
     my_constrained[1==1, "foo"]()
 
 # CHECK-LABEL: lit.fn @"implicit_params
@@ -277,7 +277,7 @@ fn autoparam_param_alias(x: TwoParamsSwap, y: TwoParamsSwap[_, 2]) -> Int:
     return x.a + y.b
 
 # CHECK-LABEL: lit.fn @"autoparam_param_alias_params
-# CHECK-SAME: <["a`"][[A0:.*]]: !Int, x: !Int, +, y: {{.*}}TwoParams<:!Int [[A0]], :!Int {2}>
+# CHECK-SAME: <["a`"][[A0:.*]]: !Int, x: !Int, +, y: {{.*}}TwoParams <:!Int [[A0]], :!Int {2}>
 fn autoparam_param_alias_params[x: Int, //, y: TwoParamsSwap[2, _]]():
     pass
 
@@ -289,7 +289,7 @@ struct IndexParam[x: Int]:
 
 
 # CHECK-LABEL: lit.fn @"autoparam_of_params
-# CHECK-SAME: <["x`"]*"x`": !Int, a: !Int, +, b: {{.*}}IndexParam<:!Int *"x`">, c: {{.*}}IndexParam<:!Int a>
+# CHECK-SAME: <["x`"]*"x`": !Int, a: !Int, +, b: {{.*}}IndexParam <:!Int *"x`">>, c: {{.*}}IndexParam <:!Int a>
 fn autoparam_of_params[a: Int, //, b: IndexParam, c: IndexParam[a]]():
     pass
 
@@ -305,7 +305,7 @@ struct DependentParams[x: Int, //, p: IndexParam[x]]:
 
 
 # CHECK-LABEL: lit.fn @"autoparam_of_dependent_params
-# CHECK-SAME: <["x`"]*"x`": !Int, ["p`1"]*"p`1": {{.*}}IndexParam<:!Int *"x`">, +, dp: {{.*}}DependentParams<:!Int *"x`", :{{.*}}IndexParam<:!Int *"x`"> *"p`1">>
+# CHECK-SAME: <["x`"]*"x`": !Int, ["p`1"]*"p`1": {{.*}}IndexParam <:!Int *"x`">>, +, dp: {{.*}}DependentParams <:!Int *"x`", :{{.*}}IndexParam <:!Int *"x`">> *"p`1">>
 fn autoparam_of_dependent_params[dp: DependentParams]():
     pass
 
@@ -500,10 +500,10 @@ fn nonmaterializable_arg(x: IntLiteral) -> ConvertFromIntLiteral:
 # CHECK-LABEL: lit.fn @"parameter_memoryonly_call
 fn parameter_memoryonly_call():
     # CHECK-NEXT: %x = lit.var.decl "x"
-    # CHECK-NEXT: [[TWO:%.*]] = kgen.param.constant: {{.*}}@IntLiteral<:!pop.int_literal 2>
+    # CHECK-NEXT: [[TWO:%.*]] = kgen.param.constant: {{.*}}IntLiteral <:!pop.int_literal 2>
     # CHECK-NEXT: [[CST:%.*]] = lit.call {{.*}}ConvertFromIntLiteral::@"__init__{{.*}}([[TWO]], %x)
     var x: ConvertFromIntLiteral = 2
-    # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: {{.*}}@IntLiteral<:!pop.int_literal 4>
+    # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: {{.*}}IntLiteral <:!pop.int_literal 4>
     # CHECK-NEXT: %y = lit.var.decl "y"
     # CHECK-NEXT: [[CST:%.*]] = lit.call {{.*}}nonmaterializable_arg{{.*}}([[FOUR]], %y)
     var y = nonmaterializable_arg(4)
@@ -712,11 +712,11 @@ fn useParamVariadics():
   # HECK-NEXT: lit.ref.store [[TMP]], %fnLet
   # var fnLet = fnWithVariadics
 
-  # CHECK-NEXT: %a = lit.var.decl {{.*}} : !lit.ref<@{{.*}}::@StructWithVariadics<:variadic<!Int> []>
+  # CHECK-NEXT: %a = lit.var.decl {{.*}} : !lit.ref<{{.*}}StructWithVariadics <:variadic<!Int> []>
   var a: StructWithVariadics
-  # CHECK-NEXT: %b = lit.var.decl {{.*}} : !lit.ref<@{{.*}}::@StructWithVariadics<:variadic<!Int> [{1}]>
+  # CHECK-NEXT: %b = lit.var.decl {{.*}} : !lit.ref<{{.*}}StructWithVariadics <:variadic<!Int> [{1}]>
   var b: StructWithVariadics[1]
-  # CHECK-NEXT: %c = lit.var.decl {{.*}} : !lit.ref<@{{.*}}::@StructWithVariadics<:variadic<!Int> [{1}, {2}]>
+  # CHECK-NEXT: %c = lit.var.decl {{.*}} : !lit.ref<{{.*}}StructWithVariadics <:variadic<!Int> [{1}, {2}]>
   var c: StructWithVariadics[1, 2]
 
   # TODO(16040): fix symbol name mangling to erase parameter name 'b'
@@ -770,7 +770,7 @@ struct MyStringSlice[mut: Bool, //, origin: Origin[mut]]:  pass
 
 # This only binds to immutable things.
 # CHECK-LABEL: lit.fn @"test_imm_string_slice
-# CHECK-SAME: (%a: !lit.ref<{{.*}}@MyStringSlice<:!Bool {:i1 0},
+# CHECK-SAME: (%a: !lit.ref<{{.*}}MyStringSlice <:!Bool {:i1 0}
 fn test_imm_string_slice(a: ImmMyStringSlice):
     pass
 
@@ -833,7 +833,7 @@ fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
   callee1(b)
   # CHECK-NEXT: lit.call @{{.*}}callee1{{.*}}<:!Int {{.*}}{_mlir_value = add(#lit.struct.extract<:!Int size, "_mlir_value">, 2)}{{.*}}(%b2)
   callee1(b2)
-  # CHECK-NEXT: lit.call @{{.*}}callee2{{.*}}<:type @parameters::@StaticVec<:!Int size>{{.*}}>(%b)
+  # CHECK-NEXT: lit.call @{{.*}}callee2{{.*}}<:type {{.*}}StaticVec <:!Int size>{{.*}}>(%b)
   callee2(b)
   # CHECK-NEXT: lit.call @{{.*}}callee3{{.*}}<:!Int {17}, :dtype f32>(%c)
   callee3[17](c)
@@ -879,7 +879,7 @@ fn testParameterEvaluator():
   # CHECK-NEXT: %0 = lit.call @parameters::@Abstraction::@"push{{.*}}"<:!Int {1}, :!Int {2}>
   # CHECK-NEXT: lit.ref.store %0, %y
   var y : Abstraction[3] = Abstraction[1].push[2]()
-  # CHECK-NEXT: [[Y:%.*]] = lit.ref.load %y : {{.*}}@Abstraction<:!Int {3}>,
+  # CHECK-NEXT: [[Y:%.*]] = lit.ref.load %y : {{.*}}Abstraction <:!Int {3}>>,
   # CHECK-NEXT: lit.call {{.*}}@Abstraction::@"pull{{.*}}"<{{.*}}>([[Y]])
   Abstraction[1].pull[2](y)
   # CHECK-NEXT: lit.call {{.*}}@"testDependentType{{.*}}"<:!Int {1}, :array<1, index> [0]>
@@ -905,7 +905,7 @@ struct AnotherAbstraction[a: Int]:
 # CHECK-LABEL: lit.fn @"testDependentField()"
 fn testDependentField():
     var lvalue = AnotherAbstraction[1]()
-    # CHECK: [[VALUE_PTR:%.*]] = lit.ref.struct.ger %lvalue[value] {{.*}}@AnotherAbstraction<:!Int {1}>,{{.*}}@Abstraction<:!Int {2}>
+    # CHECK: [[VALUE_PTR:%.*]] = lit.ref.struct.ger %lvalue[value] {{.*}}AnotherAbstraction <:!Int {1}>>,{{.*}}Abstraction <:!Int {2}>>
     takeAbstraction2(lvalue.value)
 
 struct LeafToRootEval[a: Int, b: Int]:
@@ -913,7 +913,7 @@ struct LeafToRootEval[a: Int, b: Int]:
 
 # CHECK-LABEL: lit.fn @"refine_type_leaf_to_root
 fn refine_type_leaf_to_root(e: LeafToRootEval[2, 3]):
-    # CHECK: lit.var.decl "value" {{.*}}@Abstraction<:!Int {7}>
+    # CHECK: lit.var.decl "value" {{.*}}Abstraction <:!Int {7}>
     var value = e.value
 
 fn tail_types[T: AnyTrivialRegType, *U: AnyType](a: T, *b: *U):
@@ -967,7 +967,7 @@ fn deduce_kw_only[*Ts: Int, x: Int](y: Abstraction[x]):
 
 # CHECK-LABEL: lit.fn @"out_of_order_kw
 fn out_of_order_kw[x: Int, y: IndexParam[x]]():
-    # CHECK-NEXT: out_of_order_kw{{.*}}<{{.*}}0{{.*}}, :{{.*}}IndexParam<{{.*}}0{{.*}}> {{.*}}IndexParam::@"__init__{{.*}}<{{.*}}0{{.*}}>, #kgen.none)>>
+    # CHECK-NEXT: out_of_order_kw{{.*}}<{{.*}}0{{.*}}, :{{.*}}IndexParam <{{.*}}0{{.*}}>> {{.*}}IndexParam::@"__init__{{.*}}<{{.*}}0{{.*}}>, #kgen.none)>>
     comptime bound = out_of_order_kw[y=None, x=0]
 
 
@@ -1018,7 +1018,7 @@ struct ClosureParam[lt: MutOrigin, f: fn () capturing [lt._mlir_origin] -> None]
 
 # CHECK-LABEL: lit.fn @"infer_implicit_params
 fn infer_implicit_params(var p: ClosureParam):
-    # CHECK: call {{.*}}ClosureParam::@"__moveinit__{{.*}}<{{.*}}@Origin<:!Bool {:i1 1}> *"lt`", :!lit.generator<:{mut #lit.struct.extract<:@stdlib::@builtin::@stubs::@Origin<:!Bool {:i1 1}> *"lt`", "_mlir_origin">}:() capturing -> !kgen.none> *"f`1">
+    # CHECK: call {{.*}}ClosureParam::@"__moveinit__{{.*}}<{{.*}}Origin <:!Bool {:i1 1}>> *"lt`", :!lit.generator<:{mut #lit.struct.extract<:{{.*}}#Origin <:!Bool {:i1 1}>> *"lt`", "_mlir_origin">}:() capturing -> !kgen.none> *"f`1">
     var tmp = p^
     _ = tmp^
 
@@ -1103,8 +1103,8 @@ fn test_origin_struct_inf[imm_data: Int](mut data: Int):
    # CHECK: %[[IMMUT:.+]] = lit.ref.immut {{.*}} : <!Int, mut [[IMMUT_REF:.+]]>
    # CHECK-NEXT: lit.call {{.*}}OriginStructInferenceParSpecialized::@"__init__
    # CHECK-SAME: :!Bool {:i1 0},
-   # CHECK-SAME: :{{[^ ]*}}Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = (mutcast mut [[IMMUT_REF]])},
-   # CHECK-SAME: :{{[^ ]*}}Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = (mutcast mut [[IMMUT_REF]])}>
+   # CHECK-SAME: :{{[^ ]*}}Origin <:!Bool {:i1 0}>> {_mlir_origin: origin<0> = (mutcast mut [[IMMUT_REF]])},
+   # CHECK-SAME: :{{[^ ]*}}Origin <:!Bool {:i1 0}>> {_mlir_origin: origin<0> = (mutcast mut [[IMMUT_REF]])}>
    # CHECK-SAME: (%[[IMMUT]], %parSpecializedTest)
    parSpecializedTest = OriginStructInferenceParSpecialized(imm_data)
 
@@ -1180,9 +1180,9 @@ struct DependentParam[x: Int, y: ParamType[x]]:
 
 
 # CHECK-LABEL: lit.fn @"auto_param_dependent
-# CHECK-SAME: <?, [[Y0:.*]]: !Int, [[Y1:.*]]: {{.*}}ParamType<:!Int [[Y0]]>>
+# CHECK-SAME: <?, [[Y0:.*]]: !Int, [[Y1:.*]]: {{.*}}#ParamType <:!Int [[Y0]]>>
 fn auto_param_dependent(value: DependentParam[*_]):
-    # CHECK-NEXT: ParamType<:!Int [[Y0]]> = <[[Y1]]>
+    # CHECK-NEXT: ParamType <:!Int [[Y0]]>> = <*"y`1">
     comptime param = value.y
 
 
@@ -1308,7 +1308,7 @@ fn test_default_param_struct():
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
     # CHECK-SAME: :!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof">
     comptime T = DefaultParams[1]
-    # CHECK-NEXT: %[[INIT:.*]] = lit.var.decl {{.*}} synth : !lit.ref<@{{.*}}::@DefaultParams<
+    # CHECK-NEXT: %[[INIT:.*]] = lit.var.decl {{.*}} synth : !lit.ref<{{.*}}#DefaultParams <
     # CHECK-SAME:   :!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof">
     # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}<:!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof">
     _ = DefaultParams[1]()
@@ -1316,7 +1316,7 @@ fn test_default_param_struct():
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
     # CHECK-SAME: :!Int {2}, :!Int {3}, {{.*}}#StringLiteral <:string "woof">
     comptime U = DefaultParams[2, 3]
-    # CHECK-NEXT: %[[INIT:.*]] = lit.var.decl {{.*}} synth : !lit.ref<@{{.*}}::@DefaultParams<
+    # CHECK-NEXT: %[[INIT:.*]] = lit.var.decl {{.*}} synth : !lit.ref<{{.*}}DefaultParams <
     # CHECK-SAME:   :!Int {2}, :!Int {3}, {{.*}}#StringLiteral <:string "woof">
     # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}<:!Int {2}, :!Int {3}, {{.*}}#StringLiteral <:string "woof">
     _ = DefaultParams[2, 3]()
@@ -1324,7 +1324,7 @@ fn test_default_param_struct():
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
     # CHECK-SAME: :!Int {4}, :!Int {5}, {{.*}}#StringLiteral <:string "meow">
     comptime S = DefaultParams[4, 5, "meow"]
-    # CHECK-NEXT: %[[INIT:.*]] = lit.var.decl {{.*}} synth : !lit.ref<@{{.*}}::@DefaultParams<
+    # CHECK-NEXT: %[[INIT:.*]] = lit.var.decl {{.*}} synth : !lit.ref<{{.*}}#DefaultParams <
     # CHECK-SAME:   :!Int {4}, :!Int {5}, {{.*}}#StringLiteral <:string "meow">
     # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}<:!Int {4}, :!Int {5}, {{.*}}#StringLiteral <:string "meow">
     _ = DefaultParams[4, 5, "meow"]()
@@ -1341,7 +1341,7 @@ fn test_default_param_struct_all_default():
     # CHECK-SAME: :!MemoryOnlyType {{.*}}MemoryOnlyType::@"__init__()
     comptime T = AllDefaultParams[]
 
-    # CHECK: %[[INIT:.*]] = lit.var.decl {{.*}} : !lit.ref<@{{.*}}::@AllDefaultParams<
+    # CHECK: %[[INIT:.*]] = lit.var.decl {{.*}} : !lit.ref<{{.*}}#AllDefaultParams <
     # CHECK-SAME:   :!Int {0}, :!MemoryOnlyType {{.*}}MemoryOnlyType::@"__init__()
     # CHECK-NEXT: = lit.call @{{.*}}::@AllDefaultParams::@"__init__({{.*}}<:!Int {0}, :!MemoryOnlyType
     _ = AllDefaultParams[]()
@@ -1370,17 +1370,17 @@ struct KwParamStruct[a: Int, b: Int = 2, c: Int = 3]: pass
 
 # CHECK-LABEL: lit.fn @"test_struct_kw_params()"
 fn test_struct_kw_params():
-    # CHECK: lit.var.decl {{.*}} synth : !lit.ref<@{{.*}}::@KwParamStruct<:!Int {5}, :!Int {7}, :!Int {3}
+    # CHECK: lit.var.decl {{.*}} synth : !lit.ref<{{.*}}#KwParamStruct <:!Int {5}, :!Int {7}, :!Int {3}
     _ = KwParamStruct[5, b=7]()
-    # CHECK: lit.var.decl {{.*}} synth : !lit.ref<@{{.*}}::@KwParamStruct<:!Int {5}, :!Int {7}, :!Int {9}
+    # CHECK: lit.var.decl {{.*}} synth : !lit.ref<{{.*}}#KwParamStruct <:!Int {5}, :!Int {7}, :!Int {9}
     _ = KwParamStruct[5, b=7, c=9]()
-    # CHECK: lit.var.decl {{.*}} synth : !lit.ref<@{{.*}}::@KwParamStruct<:!Int {5}, :!Int {2}, :!Int {9}
+    # CHECK: lit.var.decl {{.*}} synth : !lit.ref<{{.*}}#KwParamStruct <:!Int {5}, :!Int {2}, :!Int {9}
     _ = KwParamStruct[5, c=9]()
-    # CHECK: lit.var.decl {{.*}} synth : !lit.ref<@{{.*}}::@KwParamStruct<:!Int {5}, :!Int {7}, :!Int {9}
+    # CHECK: lit.var.decl {{.*}} synth : !lit.ref<{{.*}}#KwParamStruct <:!Int {5}, :!Int {7}, :!Int {9}
     _ = KwParamStruct[5, c=9, b=7]()
-    # CHECK: lit.var.decl {{.*}} synth : !lit.ref<@{{.*}}::@KwParamStruct<:!Int {5}, :!Int {7}, :!Int {9}
+    # CHECK: lit.var.decl {{.*}} synth : !lit.ref<{{.*}}#KwParamStruct <:!Int {5}, :!Int {7}, :!Int {9}
     _ = KwParamStruct[a=5, c=9, b=7]()
-    # CHECK: lit.var.decl {{.*}} synth : !lit.ref<@{{.*}}::@KwParamStruct<:!Int {5}, :!Int {7}, :!Int {9}
+    # CHECK: lit.var.decl {{.*}} synth : !lit.ref<{{.*}}#KwParamStruct <:!Int {5}, :!Int {7}, :!Int {9}
     _ = KwParamStruct[c=9, b=7, a=5]()
 
 ##===----------------------------------------------------------------------===##
@@ -1464,7 +1464,7 @@ struct DependentDefault[x: Int = 1, y: Int = x]:
 
 # CHECK-LABEL: lit.fn @"dependent_default_ctad
 fn dependent_default_ctad():
-    # CHECK-NEXT: value{{.*}}: {{.*}}@DependentDefault<:!Int {1}, :!Int {1}>
+    # CHECK-NEXT: value{{.*}}: {{.*}}#DependentDefault <:!Int {1}, :!Int {1}>
     comptime value = DependentDefault()
 
 
@@ -1560,7 +1560,7 @@ fn getMOCO1144Bound() -> MOCO1144Bound[Int]: pass
 
 # CHECK-LABEL: lit.fn @"tryCallingAThingReturningMOCO1144Bound
 fn tryCallingAThingReturningMOCO1144Bound():
-    # CHECK-NEXT:  lit.var.decl "x" {{.*}}MOCO1144<:!Bool {:i1 1}, :!AnyType !Int{{.*}}takeAnyTypeReturnInt[::AnyType]()"<:!AnyType !Int
+    # CHECK-NEXT:  lit.var.decl "x" {{.*}}#MOCO1144 <:!Bool {:i1 1}, :!AnyType !Int{{.*}}takeAnyTypeReturnInt[::AnyType]()"<:!AnyType !Int
     var x = getMOCO1144Bound()
 
 

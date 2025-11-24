@@ -17,7 +17,7 @@ fn use[T: AnyType](a: T):
 
 # CHECK-LABEL: lit.fn @"tuples_rv
 fn tuples_rv(a: Int, b: FloatDyn):
-    # CHECK: [[TMPVAR:%.*]] = lit.var.decl{{.*}}@Tuple<:variadic<!AnyType> []>,
+    # CHECK: [[TMPVAR:%.*]] = lit.var.decl{{.*}}Tuple <:variadic<!AnyType> []>>,
     # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]])
     use(())
     # CHECK: lit.call {{.*}}tuple_exprs::@"use
@@ -31,7 +31,7 @@ fn tuples_rv(a: Int, b: FloatDyn):
     # CHECK-NEXT: [[AREBOUND:%.*]] = kgen.rebind [[AIMM]] : !lit.ref<!Int, muttoimm [[ALT]]> to !lit.ref<!Int, imm {(mutcast mut [[ALT]]), (mutcast mut [[BLT]])}>
     # CHECK-NEXT: [[BREBOUND:%.*]] = kgen.rebind [[BIMM]] : !lit.ref<!FloatDyn, muttoimm [[BLT]]> to !lit.ref<!FloatDyn, imm {(mutcast mut [[ALT]]), (mutcast mut [[BLT]])}>
     # CHECK-NEXT: = lit.ref.pack.create([[AREBOUND]], [[BREBOUND]])
-    # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
+    # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}Tuple
     # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}({{.*}}, [[TMPVAR]])
     use((a, b))
     # CHECK: lit.call {{.*}}tuple_exprs::@"use
@@ -44,13 +44,13 @@ fn tuples_rv(a: Int, b: FloatDyn):
     # CHECK: lit.call {{.*}}tuple_exprs::@"use
 
     # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
-    # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
+    # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}#Tuple
     # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}, [[TMPVAR]])
     use((a,))
     # CHECK: lit.call {{.*}}tuple_exprs::@"use
 
     # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
-    # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
+    # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}#Tuple
     # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}, [[TMPVAR]])
     use((a,))
     # CHECK: lit.call {{.*}}tuple_exprs::@"use
@@ -96,7 +96,7 @@ fn tuples_lv(i0: Int, f0: FloatDyn):
     # whole RValue on the right before extracting from it.
 
     # CHECK:  = lit.ref.pack.create
-    # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
+    # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}#Tuple
     # CHECK: [[TUPRV:%.*]] = lit.call {{.*}}__init__{{.*}}({{.*}}, [[TMPVAR]])
 
     # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem__{{.*}}>(
@@ -150,21 +150,21 @@ fn swap_container_fields(mut v: Container[_]):
 
 
 # CHECK-LABEL: lit.fn @"returnTup0
-# CHECK-SAME: %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> []>
+# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:variadic<!AnyType> []>
 fn returnTup0() -> Tuple:
     # CHECK: lit.call @{{.*}}@Tuple::@"__init__{{.*}}(%__result__)
     return ()
 
 
 # CHECK-LABEL: lit.fn @"returnTup0a
-# CHECK-SAME: %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> []>
+# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:variadic<!AnyType> []>
 fn returnTup0a() -> ():
     # CHECK: lit.call @{{.*}}@Tuple::@"__init__{{.*}}(%__result__)
     return ()
 
 
 # CHECK-LABEL: lit.fn @"returnTup1
-# CHECK-SAME: %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> [!Int]>,
+# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:variadic<!AnyType> [!Int]>>,
 fn returnTup1() -> Tuple[Int]:
     # CHECK: %0 = kgen.param.constant: !Int
     # CHECK:   = lit.ref.pack.create({{.*}}) : !lit.ref.pack<:variadic<!AnyType> [!Int],
@@ -173,7 +173,7 @@ fn returnTup1() -> Tuple[Int]:
 
 
 # CHECK-LABEL: lit.fn @"returnTup1
-# CHECK-SAME: %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> [!Int]>
+# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:variadic<!AnyType> [!Int]>
 fn returnTup1a() -> Tuple[Int]:
     return (Int(4),)
 
@@ -183,7 +183,7 @@ fn returnTup1b() -> Tuple[Int]:
 
 
 # CHECK-LABEL: lit.fn @"returnTup2
-# CHECK-SAME:  %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> [!Int, !FloatDyn]>
+# CHECK-SAME:  %__result__: !lit.ref<{{.*}}#Tuple <:variadic<!AnyType> [!Int, !FloatDyn]>
 fn returnTup2() -> Tuple[Int, FloatDyn]:
     # CHECK:  = kgen.param.constant: !Int = <{4}>
     # CHECK:  = kgen.param.constant: !FloatDyn = <{{.*}}{:scalar<f64> "2"}
@@ -192,7 +192,7 @@ fn returnTup2() -> Tuple[Int, FloatDyn]:
 
 
 # CHECK-LABEL: lit.fn @"returnTup2a
-# CHECK-SAME: %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> [!Int, !FloatDyn]>,
+# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:variadic<!AnyType> [!Int, !FloatDyn]>>,
 fn returnTup2a() -> Tuple[Int, FloatDyn]:
     # CHECK: lit.ref.pack.create({{.*}}) : !lit.ref.pack<:variadic<!AnyType> [!Int, !FloatDyn]
     return (Int(4), 2.0)
@@ -204,7 +204,7 @@ fn returnTup2b() -> Tuple[Int, FloatDyn]:
 
 
 # CHECK-LABEL: lit.fn @"takesSugarTuple{{.*}}<T: !ImplicitlyCopyable_Movable>
-# CHECK-SAME: @Tuple<:variadic<!AnyType> [!kgen.param<:!ImplicitlyCopyable_Movable T>, !kgen.param<:!ImplicitlyCopyable_Movable T>]>
+# CHECK-SAME: #Tuple <:variadic<!AnyType> [!kgen.param<:!ImplicitlyCopyable_Movable T>, !kgen.param<:!ImplicitlyCopyable_Movable T>]>
 fn takesSugarTuple[T: ImplicitlyCopyable & Movable](elements: Tuple[T, T]):
     pass
 

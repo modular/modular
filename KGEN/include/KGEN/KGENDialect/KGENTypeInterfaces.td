@@ -107,9 +107,6 @@ def StructTypeInterface : TypeInterface<"StructTypeInterface"> {
       (ins "SymTabEvaluationContext &":$evaluationContext,
            "Location":$loc)>,
     InterfaceMethod<[{
-      Pretty print the symbol reference as a type.
-    }], "void", "printSymbol", (ins "AsmPrinter &":$p)>,
-    InterfaceMethod<[{
       Get the referenced symbol.
     }], "SymbolRefAttr", "getSymbolRef">
   ];

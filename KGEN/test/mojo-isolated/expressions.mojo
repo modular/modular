@@ -864,7 +864,7 @@ world"
     # Issue #201: https://github.com/modular/mojo/issues/201
     # CHECK: lit.fn *"hello{{.*}} {
     fn hello() -> StaticString:
-        # CHECK: kgen.param.constant: {{.*}}@StringLiteral<:string "123"> = <*?>
+        # CHECK: kgen.param.constant: {{.*}}#StringLiteral <:string "123">> = <*?>
         return "123"
         # lit.end_fn
     # expected-warning @+1 {{'StringLiteral["other comment"]' value is unused}}
@@ -1003,10 +1003,10 @@ fn function_types[
   # CHECK-SAME: p0: {{.*}}<<"a": !Int>(!lit.struct<#ParamType <:!Int *(0,0)>{{.*}}>, |) -> !kgen.none
   p0: fn[a: Int](ParamType[a]) -> None,
 
-  # CHECK-SAME: p1: {{.*}}<<"a": !Int, "b": {{.*}}@ParamType<:!Int *(0,0)>>[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
+  # CHECK-SAME: p1: {{.*}}<<"a": !Int, "b": {{.*}}#ParamType <:!Int *(0,0)>>>[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
   p1: def[a: Int, b: ParamType[a]]() -> None,
 
-  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> pos_vararg>{{.*}}(!lit.ref<{{.*}}@VariadicPack<:!Bool {:i1 0}, {{.*}}origin<0> = *[0,0]}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>, imm *[0,1]> read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async
+  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> pos_vararg>{{.*}}(!lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, {{.*}}origin<0> = *[0,0]}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>>, imm *[0,1]> read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async
   p2: async fn[*Ts: AnyType](* *Ts) -> None,
 ](
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |) -> !Int
@@ -1075,7 +1075,7 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
 
 
 # CHECK-LABEL: lit.fn @"variadic_memory_subscript
-# CHECK-SAME: variadic<!lit.ref<{{.*}}TwoParamsStruct<
+# CHECK-SAME: variadic<!lit.ref<{{.*}}TwoParamsStruct <
 # CHECK-SAME:   :!Int variadic_get({{.*}}a, 0)
 # CHECK-SAME:   :!Int variadic_get({{.*}}a, 1)
 fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
@@ -1105,7 +1105,7 @@ fn testTransferWarning():
 # Test nonmaterializable IntLiteral beyond Int bounds.
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.alias.decl *"bigggNumber{{.*}}@IntLiteral<:!pop.int_literal 115792089237316195423570985008687907853269984665640564039457584007913129639936> = <*?>
+# CHECK: lit.alias.decl *"bigggNumber{{.*}}#IntLiteral <:!pop.int_literal 115792089237316195423570985008687907853269984665640564039457584007913129639936>> = <*?>
 comptime bigggNumber = 2 << 255
 fn useBigNumber() -> Int:
   # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <{512}>
