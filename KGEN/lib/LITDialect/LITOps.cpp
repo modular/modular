@@ -1238,10 +1238,11 @@ DebugInfo::DIScopeAttr ExtensionDeclOp::getLocScope() {
 }
 
 void ExtensionDeclOp::build(OpBuilder &builder, OperationState &result,
-                            StringAttr name, StringAttr targetStructName) {
+                            StringAttr name) {
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
-        ParamDeclArrayAttr::get(ctx, {}), targetStructName, /*targetStruct=*/{},
+        ParamDeclArrayAttr::get(ctx, {}),
+        /*targetStruct=*/{},
         /*immediateParents=*/SymbolRefArrayAttr::get(ctx, {}),
         /*canonicalTrait=*/{});
   result.regions[0]->push_back(new Block());

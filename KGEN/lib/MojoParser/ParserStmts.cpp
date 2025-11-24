@@ -3148,15 +3148,14 @@ ParseResult StmtParser::parseExtensionStmt(LexerCursor startCursor,
 
   SMLoc nameSMLoc;
   // Unprefixed/unsuffixed name. `extension Spaceship`'s base name is Spaceship.
-  StringAttr targetStructNameAttr;
-  if (parseIdentifier(targetStructNameAttr, "expected extension name",
-                      &nameSMLoc))
+  StringAttr baseNameAttr;
+  if (parseIdentifier(baseNameAttr, "expected extension name", &nameSMLoc))
     return failure();
 
   auto loc = translateLocation(nameSMLoc);
 
-  std::string nameStr = "extension:" + targetStructNameAttr.getValue().str();
-  auto nameAttr = StringAttr::get(getContext(), nameStr);
+  std::string nameStr = "extension:" + baseNameAttr.getValue().str();
+  auto uniqueNameAttr = StringAttr::get(getContext(), nameStr);
 
   // Note that this is using the unique name, not the base name.
   // Further below, we'll still add it to the parent ASTDecl with the base name.
@@ -3164,32 +3163,24 @@ ParseResult StmtParser::parseExtensionStmt(LexerCursor startCursor,
   // their true name.
   // TODO(MOCO-522): This is arcana, reference some central docs here and
   // everywhere else this comes into play
-  auto extensionDeclOp =
-      ExtensionDeclOp::create(builder, loc, nameAttr, targetStructNameAttr);
+  auto extensionDeclOp = ExtensionDeclOp::create(builder, loc, uniqueNameAttr);
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
   skipUntilIndentation(curIndent);
 
   if (nestFailure) {
-    getDeclResolver().addErroneousDecl(targetStructNameAttr.getValue(),
-                                       nameSMLoc, curDeclScope);
+    getDeclResolver().addErroneousDecl(baseNameAttr.getValue(), nameSMLoc,
+                                       curDeclScope);
   } else {
-    // The parent ASTDecl knows this ExtensionDeclOp by the name e.g.
-    // "extension:MyStruct". This might not be unique; there can be multiple
-    // extensions for the same struct.
+    // Note that we're passing in baseNameAttr, not the uniqueNameAttr. The
+    // ASTDecl knows this extensionDeclOp by its base name, not by its actual
+    // name.
     // TODO(MOCO-522): This is arcana, reference some central docs here and
     // everywhere else this comes into play
-    ASTDecl &decl = getDeclResolver().addDecl(
-        extensionDeclOp, nameSMLoc, nameAttr, curDeclScope, startCursor,
-        getLexer().getCursor(), curIndent);
-
-    // The extension should also be known to its parent as "extension:". Some
-    // places look up that string when they want to find all extensions in a
-    // particular scope.
-    // TODO(MOCO-522): Arcana docs on this.
-    StringAttr extensionsNameAttr = StringAttr::get(getContext(), "extension:");
-    getDeclResolver().aliasDeclInParent(&decl, extensionsNameAttr);
+    getDeclResolver().addDecl(extensionDeclOp, nameSMLoc, baseNameAttr,
+                              curDeclScope, startCursor, getLexer().getCursor(),
+                              curIndent);
   }
   return success();
 }
