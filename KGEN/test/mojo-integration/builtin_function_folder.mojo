@@ -137,3 +137,20 @@ fn fold_constrained_func[x: Int]() -> IntT[x]:
 # CHECK-LABEL: lit.fn @"fold_constrained()
 fn fold_constrained() -> IntT[1]:
     return fold_constrained_func[1]()
+
+
+##===----------------------------------------------------------------------===##
+# Handle comptime statements
+##===----------------------------------------------------------------------===##
+
+
+@always_inline("builtin")
+fn comptime_statements() -> Bool:
+    comptime t = True
+    comptime s = not t
+    return s
+
+
+fn fold_comptime_statements() -> BoolT[False]:
+    var b = BoolT[comptime_statements()]()
+    return b
