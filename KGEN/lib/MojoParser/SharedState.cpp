@@ -2786,6 +2786,9 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     }
   }
 
+  if (isa<AliasDeclOp>(op))
+    return TypedAttr(); // handled by user.
+
   if (auto load = dyn_cast<LoadConsumeOp>(op))
     return varDeclSoFar[load.getRef()];
 
