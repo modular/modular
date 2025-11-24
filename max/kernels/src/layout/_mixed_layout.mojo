@@ -64,6 +64,9 @@ struct MixedLayout[
     """The stride of the layout as a mixed tuple."""
 
     comptime rank = variadic_size(Self.shape_types)
+    comptime ALL_DIMS_KNOWN = MixedTuple[
+        *Self.shape_types
+    ].ALL_DIMS_KNOWN and MixedTuple[*Self.stride_types].ALL_DIMS_KNOWN
 
     fn __init__(
         out self,

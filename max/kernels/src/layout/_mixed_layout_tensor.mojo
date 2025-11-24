@@ -14,9 +14,18 @@
 from sys import align_of
 
 from builtin.variadics import VariadicOf, variadic_size
+from builtin.dtype import _unsigned_integral_type_of
+from utils.numerics import max_finite
 
 from ._mixed_layout import MixedLayout
-from ._mixed_tuple import ComptimeInt, Idx, MixedTuple, MixedTupleLike
+from ._mixed_tuple import (
+    ComptimeInt,
+    RuntimeInt,
+    Idx,
+    MixedTuple,
+    MixedTupleLike,
+    _AllEqual,
+)
 
 
 @fieldwise_init
@@ -28,8 +37,13 @@ struct MixedLayoutTensor[
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    linear_idx_type: DType = DType.int64,
-](Copyable, Movable):
+    linear_idx_type: DType = _get_index_type(address_space),
+](Copyable, Movable, Writable):
+    comptime rank = variadic_size(Self.shape_types)
+    comptime ALL_DIMS_KNOWN = MixedTuple[
+        *Self.shape_types
+    ].ALL_DIMS_KNOWN and MixedTuple[*Self.stride_types].ALL_DIMS_KNOWN
+
     var ptr: UnsafePointer[
         Scalar[Self.dtype], Self.origin, address_space = Self.address_space
     ]
@@ -65,6 +79,32 @@ struct MixedLayoutTensor[
         ]
 
     @always_inline("nodebug")
+    fn __getitem__(
+        self, tuple: Tuple
+    ) -> Scalar[Self.dtype] where variadic_size(
+        tuple.element_types
+    ) == variadic_size(Self.shape_types) where _AllEqual[
+        Int, *tuple.element_types
+    ]:
+        var linear_tuple: MixedTuple[
+            *_Splatted[RuntimeInt[Self.linear_idx_type], Self.rank]
+        ]
+        __mlir_op.`lit.ownership.mark_initialized`(
+            __get_mvalue_as_litref(linear_tuple)
+        )
+
+        @parameter
+        for i in range(variadic_size(tuple.element_types)):
+            UnsafePointer(to=linear_tuple[i]).init_pointee_copy(
+                rebind[type_of(linear_tuple).element_types[i]](
+                    RuntimeInt[Self.linear_idx_type](rebind[Int](tuple[i]))
+                )
+            )
+        return self.ptr[
+            self.layout[linear_idx_type = Self.linear_idx_type](linear_tuple)
+        ]
+
+    @always_inline("nodebug")
     fn __setitem__(
         self: MixedLayoutTensor[
             mut=True,
@@ -82,6 +122,89 @@ struct MixedLayoutTensor[
         self.ptr[
             self.layout[linear_idx_type = Self.linear_idx_type](tuple)
         ] = value
+
+    fn numel(self) -> Int:
+        var result = 1
+
+        @parameter
+        for i in range(Self.rank):
+            result *= self.layout.shape[i].value()
+        return result
+
+    fn write_to(self, mut w: Some[Writer]):
+        """Format and write the tensor's contents to a writer.
+
+        This method formats the tensor's contents and writes them to the
+        provided writer. For 2D tensors, it formats the output in a 2D grid. For
+        tensors of other ranks, it prints all values in column-major coordinate
+        order.
+
+        Args:
+            w: The writer instance to write the formatted output to.
+
+        Example:
+
+        ```mojo
+        from layout import Layout, LayoutTensor
+
+        def main():
+            var storage = InlineArray[Float32, 2 * 3](uninitialized=True)
+            var tensor = MixedLayoutTensor(storage, (Idx[2], Idx[3])).fill(1.0)
+            print(tensor)  # Internally calls `write_to` with a StringWriter
+        ```
+
+        Output for a 2x3 tensor:
+
+        ```
+        [[1.0, 1.0, 1.0],
+            [1.0, 1.0, 1.0]]
+        ```
+
+        Notes:
+
+        - For 2D tensors, the output is formatted as a 2D grid with rows and
+            columns.
+        - For tensors of other ranks, values are printed in column-major
+            coordinate order.
+        - Empty tensors (size 0) produce no output.
+        - This method is used by the `__str__` method to convert the tensor to a
+            string.
+        - The formatting is designed for human readability rather than parsing.
+        - For large tensors, the output may be truncated to avoid excessive
+            output.
+        """
+
+        if self.layout.size() == 0:
+            return
+
+        # The 2D print works only for layout shape (M, N).
+        # Check both original and coalesced layouts so that (M, 1) and
+        # ((M), (N)) can all be printed in 2D. Shapes like ((2, 2), 2) will be
+        # printed elementwise.
+
+        @parameter
+        if Self.rank == 2:
+
+            @parameter
+            if (
+                Self.shape_types[0].STATIC_VALUE > -1
+                and Self.shape_types[1].STATIC_VALUE > -1
+            ):
+                _pretty_print_2d_tensor(self, w)
+                return
+
+
+@always_inline
+fn _pretty_print_2d_tensor[
+    W: Writer
+](tensor: MixedLayoutTensor, mut writer: W) where tensor.rank == 2:
+    var m_dim = tensor.layout.shape[0]
+    var n_dim = tensor.layout.shape[1]
+    for m in range(m_dim.value()):
+        for n in range(n_dim.value()):
+            writer.write(tensor[(m, n)], " ")
+        if m < m_dim.value() - 1:
+            writer.write("\n")
 
 
 fn distribute[
@@ -242,3 +365,274 @@ fn tile[
         UnsafePointer(to=data_layout_tensor.ptr[offset]),
         tile_layout,
     )
+
+
+struct MixedLayoutTensorIter[
+    mut: Bool,
+    dtype: DType,
+    shape_types: VariadicOf[MixedTupleLike],
+    stride_types: VariadicOf[MixedTupleLike], //,
+    origin: Origin[mut],
+    /,
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+    axis: Optional[Int] = None,
+    linear_idx_type: DType = _get_index_type(address_space),
+](Copyable, ImplicitlyCopyable, Iterable, Iterator, Movable):
+    """Iterator for traversing a memory buffer with a specific layout.
+
+    `MixedLayoutTensorIter` provides a way to iterate through memory according to a
+    specific layout pattern, constructing layout tensors at each position. This
+    enables efficient traversal of multi-dimensional data structures with custom
+    memory layouts.
+
+    Parameters:
+        mut: Whether the iterator allows mutation of the underlying data.
+        dtype: The data type of the tensor elements.
+        shape_types: The inferred shape types from the layout.
+        stride_types: The inferred stride types from the layout.
+        origin: Origin tracking for memory safety.
+        address_space: The memory address space (`GLOBAL`, `SHARED`, etc.).
+        axis: Optional axis for dimension-specific operations.
+        linear_idx_type: Integer type used for indexing into memory.
+
+    Notes:
+
+    The returned layout tensor is NOT vectorized. Users should explicitly vectorize
+    if needed for performance-critical operations.
+    """
+
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+    alias Element = Self.MixedLayoutTensorType
+
+    comptime linear_uint_type = Scalar[
+        _unsigned_integral_type_of[Self.linear_idx_type]()
+    ]
+    """The unsigned integer type used for indexing into memory."""
+
+    var ptr: UnsafePointer[
+        Scalar[Self.dtype], Self.origin, address_space = Self.address_space
+    ]
+    """Pointer to the memory region being iterated, with appropriate type and memory attributes."""
+
+    var offset: Self.linear_uint_type
+    """Current offset from the base pointer, representing the iterator's position in memory."""
+
+    var stride: Self.linear_uint_type
+    """Step size between consecutive elements or blocks in memory during iteration."""
+
+    var bound: Self.linear_uint_type
+    """Upper bound of the memory region, limiting the iteration range."""
+
+    comptime MixedLayoutType = MixedLayout[Self.shape_types, Self.stride_types]
+    var layout: Self.MixedLayoutType
+    """Representation of the layout pattern used for mapping logical indices to memory locations."""
+
+    var idx: Self.linear_uint_type
+    """Current logical index position within the iteration sequence."""
+
+    @always_inline
+    fn __init__(
+        out self: MixedLayoutTensorIter[
+            dtype = Self.dtype,
+            shape_types = Self.shape_types,
+            stride_types = Self.stride_types,
+            Self.origin,
+            address_space = AddressSpace.GENERIC,
+            axis = Self.axis,
+            linear_idx_type = Self.linear_idx_type,
+        ],
+        span: Span[Scalar[Self.dtype], Self.origin],
+        var layout: MixedLayout[Self.shape_types, Self.stride_types],
+        offset: Self.linear_uint_type = 0,
+        idx: Self.linear_uint_type = 0,
+    ):
+        """Initialize an iterator with a runtime layout.
+
+        Creates an iterator with a runtime-determined layout, allowing for more
+        flexible memory traversal patterns.
+
+        Args:
+            span: Span containing the memory region.
+            layout: Layout determined at runtime.
+            offset: Initial offset from the base pointer.
+            idx: Initial index position.
+
+        Constraints:
+            The runtime layout must have the same bitwidth as specified for the
+            iterator.
+        """
+        self = {span.unsafe_ptr(), len(span), layout^, offset, idx}
+
+    @always_inline
+    fn __init__(
+        out self,
+        ptr: UnsafePointer[
+            Scalar[Self.dtype], Self.origin, address_space = Self.address_space
+        ],
+        bound: Self.linear_uint_type,
+        var layout: MixedLayout[Self.shape_types, Self.stride_types],
+        offset: Self.linear_uint_type = 0,
+        idx: Self.linear_uint_type = 0,
+    ):
+        """Initialize an iterator with a runtime layout.
+
+        Creates an iterator with a runtime-determined layout, allowing for more
+        flexible memory traversal patterns.
+
+        Args:
+            ptr: Pointer to the beginning of the memory region.
+            bound: Upper bound of the memory region.
+            layout: Layout determined at runtime.
+            offset: Initial offset from the base pointer.
+            idx: Initial index position.
+
+        Constraints:
+            The runtime layout must have the same bitwidth as specified for the
+            iterator.
+        """
+
+        constrained[
+            Self.linear_idx_type.is_signed(),
+            "Linear index type must be signed.",
+        ]()
+
+        self.ptr = ptr
+        self.offset = offset
+        self.bound = bound
+        self.layout = layout
+        self.stride = layout.size()
+        self.idx = idx
+
+    comptime MixedLayoutTensorType = MixedLayoutTensor[
+        dtype = Self.dtype,
+        shape_types = Self.shape_types,
+        stride_types = Self.stride_types,
+        Self.origin,
+        address_space = Self.address_space,
+        linear_idx_type = Self.linear_idx_type,
+    ]
+
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self
+
+    @always_inline
+    fn get(self) -> Self.MixedLayoutTensorType:
+        """Get the layout tensor at the current iterator position.
+
+        Returns a layout tensor representing the data at the current position
+        of the iterator.
+
+        Returns:
+            A tensor view at the current iterator position with the
+            same type, layout, and memory characteristics as specified by the
+            output parameter.
+        """
+
+        return Self.MixedLayoutTensorType(
+            self.ptr + Int(self.offset),
+            self.layout,
+        )
+
+    @always_inline
+    fn _incr(mut self):
+        """Increment the iterator by 1.
+
+        Advances the iterator by a single position. This is equivalent to
+        `iter += 1` but without the division operation, making it more
+        efficient.
+        """
+        self.offset += self.stride
+
+    @always_inline
+    fn __next__(mut self) -> Self.Element:
+        """Return an iterator pointing to a position ahead by rhs steps.
+
+        Creates a new iterator that points rhs positions ahead of the current
+        one.
+
+
+        Returns:
+           A MixedLayoutTensor at the given offset.
+        """
+        var next_idx = Self.linear_uint_type(0)
+        var next_offset = self.offset + self.stride
+        var item = self.get()
+
+        @parameter
+        if Self.axis:
+            next_idx = self.idx + 1
+        self.idx = next_idx
+        self.offset = next_offset
+
+        return item^
+
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return self.offset < self.bound
+
+    comptime BitcastType[
+        new_type: DType, *, address_space: AddressSpace = Self.address_space
+    ] = MixedLayoutTensorIter[
+        dtype=new_type,
+        shape_types = Self.shape_types,
+        stride_types = Self.stride_types,
+        Self.origin,
+        address_space=address_space,
+        linear_idx_type = Self.linear_idx_type,
+    ]
+
+    @always_inline
+    fn bitcast[
+        new_type: DType,
+        *,
+        target_address_space: AddressSpace = Self.address_space,
+    ](self) -> Self.BitcastType[new_type, address_space = Self.address_space]:
+        """Reinterpret the iterator's underlying pointer as a different data
+        type.
+
+        This method performs a bitcast operation, allowing you to view the same
+        memory location as a different data type without copying or converting
+        the data.
+
+        Parameters:
+            new_type: The target data type to cast to.
+            target_address_space: The memory address space for the new
+                iterator (defaults to current).
+
+        Returns:
+            A new MixedLayoutTensorIter with the same layout but different data type.
+        """
+        return Self.BitcastType[new_type, address_space = Self.address_space](
+            self.ptr.bitcast[Scalar[new_type]]().address_space_cast[
+                Self.address_space
+            ](),
+            Int(self.bound),
+            self.layout,
+            Int(self.offset),
+            idx=Int(self.idx),
+        )
+
+
+fn _get_index_type(address_space: AddressSpace) -> DType:
+    """Returns int32 for shared/constant GPU memory, index otherwise."""
+    if address_space in (
+        AddressSpace.SHARED,
+        AddressSpace.CONSTANT,
+    ):
+        return DType.int32
+    else:
+        return DType.int64
+
+
+comptime _Splatted[T: MixedTupleLike, count: Int] = __mlir_attr[
+    `#kgen.variadic.splat<`,
+    T,
+    `,`,
+    count._mlir_value,
+    `> : `,
+    VariadicOf[type_of(T)],
+]

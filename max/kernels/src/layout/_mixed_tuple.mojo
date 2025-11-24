@@ -26,6 +26,7 @@ from builtin.variadics import (
     variadic_size,
 )
 from memory import LegacyUnsafePointer as UnsafePointer
+from sys.intrinsics import _type_is_eq_parse_time
 
 
 trait MixedTupleLike(ImplicitlyCopyable, Movable, Representable):
@@ -215,6 +216,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
     comptime VariadicType: VariadicOf[MixedTupleLike] = Self.element_types
     comptime STATIC_VALUE: Int = -1
     comptime IS_TUPLE = True
+    comptime ALL_DIMS_KNOWN = _AllStatic[*Self.element_types]
 
     var _storage: Tuple[*Self.element_types]
     """The underlying MLIR storage for the tuple elements."""
@@ -775,3 +777,48 @@ fn _get_flattened[
         - get_flattened[3](tuple) returns 7  (third top-level element)
     """
     return _get_flattened_helper[flat_idx, 0, 0](tuple)
+
+
+comptime _AllStaticMapper[
+    Prev: VariadicOf[MixedTupleLike],
+    From: VariadicOf[MixedTupleLike],
+    idx: Int,
+] = (
+    MakeVariadic[T=MixedTupleLike, ComptimeInt[1]] if (
+        From[idx].STATIC_VALUE != -1 and Prev[0].STATIC_VALUE == 1
+    ) else MakeVariadic[T=MixedTupleLike, ComptimeInt[0]]
+)
+
+
+comptime _AllStatic[
+    *element_types: MixedTupleLike
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal = MakeVariadic[T=MixedTupleLike, ComptimeInt[1]],
+    Variadic = _Flattened[*element_types],
+    Reducer=_AllStaticMapper,
+][
+    0
+].STATIC_VALUE == 1
+
+comptime _AllEqualMapper[
+    T: Copyable & Movable,
+    Prev: VariadicOf[MixedTupleLike],
+    From: VariadicOf[Copyable & Movable],
+    idx: Int,
+] = (
+    MakeVariadic[T=MixedTupleLike, ComptimeInt[1]] if (
+        _type_is_eq_parse_time[From[idx], T]()
+        and (Prev[0].STATIC_VALUE == 1 or idx == 0)
+    ) else MakeVariadic[T=MixedTupleLike, ComptimeInt[0]]
+)
+
+
+comptime _AllEqual[
+    T: Copyable & Movable, *element_types: Copyable & Movable
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal = MakeVariadic[T=MixedTupleLike, ComptimeInt[0]],
+    Variadic=element_types,
+    Reducer = _AllEqualMapper[T],
+][
+    0
+].STATIC_VALUE == 1
