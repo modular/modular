@@ -70,7 +70,7 @@ def test_chat_template_preserves_text_with_image() -> None:
                 },
                 {
                     "type": "text",
-                    "content": test_question,
+                    "text": test_question,
                 },
             ],
         },
@@ -122,7 +122,7 @@ def test_chat_template_multiple_text_parts() -> None:
             "content": [
                 {
                     "type": "text",
-                    "content": text_part_1,
+                    "text": text_part_1,
                 },
                 {
                     "type": "image",
@@ -130,7 +130,7 @@ def test_chat_template_multiple_text_parts() -> None:
                 },
                 {
                     "type": "text",
-                    "content": text_part_2,
+                    "text": text_part_2,
                 },
             ],
         },
