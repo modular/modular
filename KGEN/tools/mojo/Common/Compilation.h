@@ -64,6 +64,7 @@ struct CommonOptionIDs {
   llvm::opt::OptSpecifier elaborationErrorLimit;
   llvm::opt::OptSpecifier elaborationErrorIncludePrelude;
   llvm::opt::OptSpecifier elaborationErrorVerbose;
+  llvm::opt::OptSpecifier elaborationMaxDepth;
 
   // Target options
   llvm::opt::OptSpecifier targetTriple;
@@ -152,9 +153,10 @@ ErrorOrSuccess parseCompilationOptions(
     llvm::opt::OptSpecifier numThreadsId = {},
     llvm::opt::OptSpecifier stdLibPath = {},
     llvm::opt::OptSpecifier loopUnrollingWarnThresholdId = {},
-    llvm::opt::OptSpecifier elabErrorLimitId = {},
-    llvm::opt::OptSpecifier elabErrorIncludePreludeId = {},
-    llvm::opt::OptSpecifier elabErrorVerbose = {});
+    llvm::opt::OptSpecifier elaborationErrorLimitId = {},
+    llvm::opt::OptSpecifier elaborationErrorIncludePreludeId = {},
+    llvm::opt::OptSpecifier elaborationErrorVerbose = {},
+    llvm::opt::OptSpecifier elaborationMaxDepth = {});
 
 /// Warn users when doing debug builds with a compiler in debug mode.
 void warnBuildingForDebugWithDebugBuiltCompiler(

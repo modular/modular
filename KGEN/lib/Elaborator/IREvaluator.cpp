@@ -92,10 +92,12 @@ IREvaluator::evaluateFunctionWithResultSlot(FuncOp func,
   return result.takeValue();
 }
 
-int IREvaluator::getErrorLimit() { return elaborator->options.elabErrorLimit; }
+int IREvaluator::getErrorLimit() {
+  return elaborator->options.elaborationErrorLimit;
+}
 
 bool IREvaluator::getElabErrorIncludePrelude() {
-  return elaborator->options.elabErrorIncludePrelude;
+  return elaborator->options.elaborationErrorIncludePrelude;
 }
 
 //===----------------------------------------------------------------------===//

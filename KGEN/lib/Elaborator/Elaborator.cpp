@@ -733,7 +733,7 @@ Elaborator::collectConcreteImplementations(Location loc, ImplNode *parent,
   if (concrete.isError()) {
     std::string str = printSimpleParamAttrValues(
         calleeNode->gen.getInputParams(), calleeNode->inputParams,
-        options.elabErrorVerbose);
+        options.elaborationErrorVerbose);
 
     if (str.empty()) {
       parent->setToError(
@@ -2538,7 +2538,8 @@ bool Elaborator::checkCodeGenUnreachable(ModuleOp module,
           [&] {
             return std::move(cause).emit(
                 [](Location loc) { return mlir::emitError(loc); },
-                "call expansion failed", options.elabErrorIncludePrelude);
+                "call expansion failed",
+                options.elaborationErrorIncludePrelude);
           },
           errorLimit);
       return;
@@ -2546,9 +2547,9 @@ bool Elaborator::checkCodeGenUnreachable(ModuleOp module,
 
     DenseMap<ParamNode *, std::vector<Location>> &parents = iter->second;
     for (auto &[parent, locs] : parents) {
-      std::string str = printSimpleParamAttrValues(parent->gen.getInputParams(),
-                                                   parent->inputParams,
-                                                   options.elabErrorVerbose);
+      std::string str = printSimpleParamAttrValues(
+          parent->gen.getInputParams(), parent->inputParams,
+          options.elaborationErrorVerbose);
       std::string msg = "call expansion failed";
       if (!str.empty())
         msg += " with parameter value(s): " + str;
@@ -2642,7 +2643,8 @@ LogicalResult Elaborator::run(
 
   // Check for any errors and emit them. Emit as many errors as possible.
   bool failed = false;
-  ErrorLimit errorLimit{.errorLimit = options.elabErrorLimit, .errorCount = 0};
+  ErrorLimit errorLimit{.errorLimit = options.elaborationErrorLimit,
+                        .errorCount = 0};
 
   for (ParamNode *genNode : primaryNodes) {
     ErrorTreeOrSuccess err = genNode->collectErrorsOrSuccess();
@@ -2652,7 +2654,8 @@ LogicalResult Elaborator::run(
           [&]() {
             return err.takeError().emit(
                 [](Location loc) { return mlir::emitError(loc); },
-                "call expansion failed", options.elabErrorIncludePrelude);
+                "call expansion failed",
+                options.elaborationErrorIncludePrelude);
           },
           errorLimit);
     }
@@ -2671,7 +2674,8 @@ LogicalResult Elaborator::run(
         [&]() {
           return bundleOr.takeError().emit(
               [](Location loc) { return mlir::emitError(loc); },
-              "Bundle CompileOffload failed.", options.elabErrorIncludePrelude);
+              "Bundle CompileOffload failed.",
+              options.elaborationErrorIncludePrelude);
         },
         errorLimit);
 
@@ -2694,7 +2698,8 @@ LogicalResult Elaborator::run(
         [&]() {
           return std::move(compileOffloadError)
               .emit([](Location loc) { return mlir::emitError(loc); },
-                    "Compile offload failed.", options.elabErrorIncludePrelude);
+                    "Compile offload failed.",
+                    options.elaborationErrorIncludePrelude);
         },
         errorLimit);
 
@@ -2792,7 +2797,7 @@ LogicalResult Elaborator::run(
       // IR.
       rewriteCompileOffloadOp(offloadOp, theModule.getLoc(), compiledOffload,
                               failed, errorLimit,
-                              options.elabErrorIncludePrelude);
+                              options.elaborationErrorIncludePrelude);
     } else if (auto isCompileTime = dyn_cast<IsCompileTimeOp>(op)) {
       // Rewrite IsCompileTimeOp to runtime value as always false.
       OpBuilder b(op);
@@ -2903,8 +2908,9 @@ public:
                                       optimizeInterpreter};
 
     VerboseCompilerTimeTraceScope traceScope("elaborate-generators");
-    options.elabErrorIncludePrelude = errorIncludePrelude;
-    options.elabErrorVerbose = errorVerbose;
+    options.elaborationErrorIncludePrelude = errorIncludePrelude;
+    options.elaborationErrorVerbose = errorVerbose;
+    options.elaborationMaxDepth = maxDepth;
 
     // Now, construct and run the elaborator.
     if (useParametricInterpreter) {

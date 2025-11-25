@@ -129,11 +129,13 @@ public:
 
   std::string loopUnrollingWarnThreshold;
 
-  int elabErrorLimit{20};
+  int elaborationErrorLimit{20};
 
-  bool elabErrorIncludePrelude{false};
+  bool elaborationErrorIncludePrelude{false};
 
-  bool elabErrorVerbose{false};
+  bool elaborationErrorVerbose{false};
+
+  unsigned elaborationMaxDepth{std::numeric_limits<unsigned>::max()};
 
   /// Get the include directories that exist on the file system.
   std::vector<std::string> getIncludePaths() const {
@@ -160,10 +162,11 @@ public:
     std::optional<CompilationOptions::DebugAtLevel> debugAt;
     if (debugAtLevel != CompilationOptions::kDebugUnset)
       debugAt = debugAtLevel;
-    return CompilationOptions(optLevel, debugInfoLevel, debugAt,
-                              sanitizerOptions, targetTriple, targetCpu,
-                              targetFeatures, targetAccelerator, elabErrorLimit,
-                              elabErrorIncludePrelude, elabErrorVerbose);
+    return CompilationOptions(
+        optLevel, debugInfoLevel, debugAt, sanitizerOptions, targetTriple,
+        targetCpu, targetFeatures, targetAccelerator, elaborationErrorLimit,
+        elaborationErrorIncludePrelude, elaborationErrorVerbose,
+        elaborationMaxDepth);
   }
 
   bool optLevel0{false};
@@ -440,27 +443,35 @@ private:
       llvm::cl::location(options.sanitizerOptions),
       llvm::cl::cat(KGENOptionsCategory)};
 
-  M::cl::MOpt<int, true> elabErrorLimit{
+  M::cl::MOpt<int, true> elaborationErrorLimit{
       "elaboration-error-limit",
       cl::desc("Stop emitting diagnostics during elaboration after limited "
                "number of errors have been produced. The default is 20, and "
                "the limit can be disabled with -elaboration-error-limit=0."),
-      llvm::cl::location(options.elabErrorLimit),
+      llvm::cl::location(options.elaborationErrorLimit),
       llvm::cl::cat(KGENOptionsCategory)};
 
-  M::cl::MOpt<bool, true> elabErrorIncludePrelude{
+  M::cl::MOpt<bool, true> elaborationErrorIncludePrelude{
       "elaboration-error-include-prelude",
       cl::desc("Show elaboration error with locations in mojo startup modules "
                "(prelude)."),
-      llvm::cl::location(options.elabErrorIncludePrelude),
+      llvm::cl::location(options.elaborationErrorIncludePrelude),
       llvm::cl::cat(KGENOptionsCategory)};
 
-  M::cl::MOpt<bool, true> elabErrorVerbose{
+  M::cl::MOpt<bool, true> elaborationErrorVerbose{
       "elaboration-error-verbose",
       cl::desc("Show verbose elaboration error with all concrete parameter "
                "values where call expansion is failed. Default print only "
                "shows simple values (string, integer, float, boolean)."),
-      llvm::cl::location(options.elabErrorVerbose),
+      llvm::cl::location(options.elaborationErrorVerbose),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<unsigned, true> elaborationMaxDepth{
+      "elaboration-max-depth",
+      cl::desc("The maximum elaborator instantiation depth. Default is "
+               "std::numeric_limits<unsigned>::max(). Elaborator errors out if "
+               "the depth of compile time recursion exceeds this value."),
+      llvm::cl::location(options.elaborationMaxDepth),
       llvm::cl::cat(KGENOptionsCategory)};
 };
 class KGENOptions : public KGENCommonOptions, public CommonOptions {
