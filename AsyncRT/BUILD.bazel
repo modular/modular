@@ -38,7 +38,6 @@ modular_cc_library(
     name = "CompilerSupport",
     srcs = glob(["lib/CompilerSupport/*.cpp"]),
     hdrs = glob(["include/AsyncRT/CompilerSupport/*.h"]),
-    tags = ["no-clang-tidy-headers"],
     deps = [
         ":Runtime",
         ":Support",
@@ -158,6 +157,7 @@ modular_cc_library(
         "//Support:Profiling",
         "//Support:SymbolExport",
         "//Support:Threading",
+        "//Support:TypeID",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -179,7 +179,6 @@ modular_cc_library(
     name = "Support",
     srcs = glob(["lib/Support/*.cpp"]),
     hdrs = glob(["include/AsyncRT/Support/*.h"]),
-    tags = ["no-clang-tidy-headers"],
     deps = [
         ":Runtime.headers",
         "//Support:Base",
