@@ -22,7 +22,7 @@ import click
 import huggingface_hub
 import requests
 import torch
-from create_pipelines import PIPELINE_ORACLES
+from create_pipelines import PIPELINE_ORACLES, GenericOracle
 from debugging_utils import add_max_hooks
 from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
@@ -173,9 +173,9 @@ def _detect_hf_flakes(
 @click.option(
     "--pipeline",
     "pipeline_name",
-    type=click.Choice(sorted(list(PIPELINE_ORACLES.keys()))),
+    type=str,
     required=True,
-    help="Pipeline to run",
+    help="Pipeline to run. Must be a valid Transformers model path or the key to an existing pipeline oracle.",
 )
 @click.option(
     "--device",
@@ -327,7 +327,12 @@ def generate_llm_logits(
         os.chdir(workspace_dir)
     configure_cli_logging(level="INFO")
 
-    pipeline_oracle = PIPELINE_ORACLES[pipeline_name]
+    if pipeline_name in PIPELINE_ORACLES:
+        pipeline_oracle = PIPELINE_ORACLES[pipeline_name]
+    else:
+        pipeline_oracle = GenericOracle(
+            model_path=pipeline_name,
+        )
 
     if mini:
         inputs = pipeline_oracle.inputs[:1]

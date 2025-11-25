@@ -109,7 +109,7 @@ class PipelineOracle(ABC):
 
     @property
     @abstractmethod
-    def device_encoding_map(self) -> dict[str, list[str]]:
+    def device_encoding_map(self) -> dict[str, list[str]] | None:
         """A dict where the key are the supported device types, and the
         values are lists of supported encodings.
 
@@ -120,18 +120,6 @@ class PipelineOracle(ABC):
             }
         """
         raise NotImplementedError
-
-    def is_supported(
-        self, *, encoding: str, device_spec: driver.DeviceSpec
-    ) -> bool:
-        """Check that a particular encoding/device tuple is supported.
-
-        Returns True if supported, False if not.
-        """
-        device_type = device_spec.device_type
-        if device_type not in self.device_encoding_map:
-            return False
-        return encoding in self.device_encoding_map[device_type]
 
     @abstractmethod
     def create_max_pipeline(
@@ -209,9 +197,6 @@ class InternVLPipelineOracle(PipelineOracle):
     def create_max_pipeline(
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
-        for device_spec in device_specs:
-            assert self.is_supported(encoding=encoding, device_spec=device_spec)
-
         revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
 
         # InternVL uses dynamic image sizing, so use a reasonable default
@@ -303,9 +288,6 @@ class Idefics3PipelineOracle(PipelineOracle):
     def create_max_pipeline(
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
-        for device_spec in device_specs:
-            assert self.is_supported(encoding=encoding, device_spec=device_spec)
-
         revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
 
         max_length = 8192
@@ -409,9 +391,6 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
     def create_max_pipeline(
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
-        for device_spec in device_specs:
-            assert self.is_supported(encoding=encoding, device_spec=device_spec)
-
         revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
         max_length = 8192
 
@@ -490,9 +469,6 @@ class LlamaVisionPipelineOracle(PipelineOracle):
     def create_max_pipeline(
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
-        for device_spec in device_specs:
-            assert self.is_supported(encoding=encoding, device_spec=device_spec)
-
         hf_repo_id = "meta-llama/Llama-3.2-11B-Vision-Instruct"
         revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
 
@@ -563,8 +539,6 @@ class PixtralPipelineOracle(PipelineOracle):
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
         # TODO (AIPIPE-234): Implement MAX pipeline generation for Pixtral.
-        for device_spec in device_specs:
-            assert self.is_supported(encoding=encoding, device_spec=device_spec)
         hf_repo_id = "mistral-community/pixtral-12b"
         config = pipelines.PipelineConfig(
             device_specs=device_specs,
@@ -605,7 +579,7 @@ class GenericOracle(PipelineOracle):
         self,
         *,
         model_path: str,
-        device_encoding_map: dict[str, list[str]],
+        device_encoding_map: dict[str, list[str]] | None = None,
         weight_path_map: dict[str, str] | None = None,
         config_params: dict[str, Any] = {},  # noqa: B006
         prompts: list[str] | None = None,
@@ -627,7 +601,7 @@ class GenericOracle(PipelineOracle):
         self.default_batch_size = batch_size
 
     @property
-    def device_encoding_map(self) -> dict[str, list[str]]:
+    def device_encoding_map(self) -> dict[str, list[str]] | None:
         return self._device_encoding_map
 
     def weight_path(self, encoding: str) -> str | None:
@@ -641,8 +615,6 @@ class GenericOracle(PipelineOracle):
         encoding: str,
         device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
-        for device_spec in device_specs:
-            assert self.is_supported(encoding=encoding, device_spec=device_spec)
         weight_path = self.weight_path(encoding) if encoding else None
         config = pipelines.PipelineConfig(
             device_specs=device_specs if device_specs else None,
@@ -816,8 +788,6 @@ class LoRAOracle(PipelineOracle):
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
         """Create MAX pipeline with LoRA adapter."""
-        for device_spec in device_specs:
-            assert self.is_supported(encoding=encoding, device_spec=device_spec)
 
         revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
         lora_path = self._get_shared_adapter()
