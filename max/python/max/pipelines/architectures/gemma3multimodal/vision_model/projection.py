@@ -14,8 +14,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from max.driver import Tensor
-from max.experimental.functional import matmul
 from max.graph import (
     DeviceRef,
     ShardingStrategy,
@@ -71,7 +69,7 @@ class Gemma3MultiModalProjector(Module, Shardable):
         self.tokens_per_side = int(config.mm_tokens_per_image**0.5)
         self.kernel_size = self.patches_per_image // self.tokens_per_side
 
-    def __call__(self, vision_outputs: Tensor) -> TensorValue:
+    def __call__(self, vision_outputs: TensorValue) -> TensorValue:
         """Process vision outputs through pooling, normalisation, and a
         projection weight"""
         batch_size, _, seq_length = vision_outputs.shape
@@ -104,8 +102,8 @@ class Gemma3MultiModalProjector(Module, Shardable):
 
         normed_vision_outputs = self.mm_soft_emb_norm(pooled_vision_outputs)
 
-        projected_vision_outputs = matmul(
-            normed_vision_outputs, self.mm_input_projection_weight
+        projected_vision_outputs = (
+            normed_vision_outputs @ self.mm_input_projection_weight
         )
 
         image_hidden_states = ops.flatten(
@@ -184,9 +182,7 @@ class Gemma3VisionMLP(Module):
         """Expands hidden states to intermediate size, applies GELU activation,
         then projects back to hidden size."""
         x = self.fc1(x)
-        x = ops.gelu(
-            x, getattr(self.config.vision_config, "hidden_act", "none")
-        )
+        x = ops.gelu(x, self.config.vision_config.hidden_act)
         x = self.fc2(x)
         return x
 

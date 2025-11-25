@@ -303,8 +303,9 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             pipeline_config, huggingface_config
         )
 
-    @staticmethod
+    @classmethod
     def get_kv_params(
+        cls,
         huggingface_config: AutoConfig,
         n_devices: int,
         kv_cache_config: KVCacheConfig,
@@ -315,15 +316,16 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             huggingface_config, n_devices, kv_cache_config, cache_dtype
         )
 
-    @staticmethod
-    def get_num_layers(huggingface_config: AutoConfig) -> int:
+    @classmethod
+    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         """Gets the number of hidden layers from the HuggingFace configuration."""
         return Gemma3ForConditionalGenerationConfig.get_num_layers(
             huggingface_config
         )
 
-    @staticmethod
+    @classmethod
     def estimate_kv_cache_size(
+        cls,
         pipeline_config: PipelineConfig,
         available_cache_memory: int,
         devices: list[Device],
@@ -538,7 +540,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     def _vision_model_input_types(
         self, config: Gemma3ForConditionalGenerationConfig
     ) -> Sequence[TensorType]:
-        dev = self.devices[0]
         """Build the vision model graph for processing images."""
         pixel_values_types = [
             TensorType(
@@ -567,7 +568,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     ) -> tuple[Graph, dict[str, DLPackArray]]:
         """Build the vision model with our input types and graph"""
         with Graph(
-            config.model_type,
+            getattr(self.huggingface_config, "model_type", "Gemma3"),
             input_types=self._vision_model_input_types(config),
         ) as graph:
             vision_model = Gemma3VisionModel(config)

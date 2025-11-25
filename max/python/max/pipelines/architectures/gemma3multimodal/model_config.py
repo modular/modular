@@ -73,9 +73,6 @@ class Gemma3VisionConfig:
     attention_dropout: float = 0.0
     """The dropout ratio for the attention probabilities"""
 
-    model_type: str = "Gemma3"
-    """model type for AutoConfig"""
-
     vision_use_head: bool = False
     """Flag whether to use attention heads for vision"""
 
@@ -163,9 +160,6 @@ class Gemma3MultiModalConfigBase(MAXModelConfigBase):
 
     head_dim: int = 256
     """The attention head dimension."""
-
-    model_type: str = "Gemma3ForConditionalGeneration"
-    """the name of the model type for auto config"""
 
     num_key_value_heads: int = 4
     """
