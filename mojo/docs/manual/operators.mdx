@@ -1058,6 +1058,19 @@ The `in` and `not in` operators depend on a type implementing the
 value as an argument and return a `Bool` indicating whether the value is present
 in the collection or not.
 
+### Identity operator dunder methods
+
+The `is` and `is not` operators compare the identity of two values.
+
+When a type conforms to [`Identifiable`](https://docs.modular.com/mojo/stdlib/builtin/identifiable/Identifiable),
+these operators call the [`__is__()`](https://docs.modular.com/mojo/stdlib/builtin/identifiable/Identifiable/#__is__)
+method to determine whether the left-hand operand has the same identity as the right-hand operand. For example,
+you might compare raw values or use some other way to establish what "identity" means in your work.
+
+The `is not` operator uses the automatically provided
+[`__isnot__()`](https://docs.modular.com/mojo/stdlib/builtin/identifiable/Identifiable/#__isnot__) method, which
+returns the logical negation of `__is__()`.
+
 ### Subscript and slicing dunder methods
 
 Subscripting and slicing typically apply only to sequential collection types,
