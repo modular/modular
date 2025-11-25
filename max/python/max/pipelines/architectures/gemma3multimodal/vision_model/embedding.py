@@ -105,7 +105,6 @@ class Gemma3VisionEmbeddings(Module):
 
         return embeddings
 
-    # ⚠️ check
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
         return self.patch_embedding.sharding_strategy

@@ -195,7 +195,6 @@ class Gemma3VisionMLP(Module):
         self.fc1.sharding_strategy = strategy
         self.fc2.sharding_strategy = strategy
 
-    # ⚠️ from Claude.  looks logical but who would know?
     def shard(self, devices: Iterable[DeviceRef]) -> list[Gemma3VisionMLP]:
         assert self.sharding_strategy
 

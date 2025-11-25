@@ -116,8 +116,7 @@ class Gemma3VisionAttention(Module):
     def sharding_strategy(self, strategy: ShardingStrategy) -> None:
         if not strategy.is_replicate:
             raise ValueError(
-                "only replicate is supported for Gemma3VisionAttention, "
-                "currently"
+                "only replicate is currently supported for Gemma3VisionAttention"
             )
 
         self.q_proj.sharding_strategy = strategy
