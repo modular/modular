@@ -1308,10 +1308,23 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
 
   auto shimBodyBuilder = ImplicitLocOpBuilder::atBlockBegin(
       shimMainFn->getLoc(), shimMainFn.getBody());
-  auto wrappedCall = CallOp::create(
-      shimBodyBuilder, shimMainFn.getArgumentTypes()[0], wrapperFnRef,
-      /*originParams=*/ArrayRef<TypedAttr>(), shimMainFn.getArguments());
-  IREmitter::emitNormalReturn(shimBodyBuilder, wrappedCall.getResult(0));
+  Value wrappedCallResult =
+      CallOp::create(
+          shimBodyBuilder, mainWrapperSigGen.getUserResultType(), wrapperFnRef,
+          /*originParams=*/ArrayRef<TypedAttr>(), shimMainFn.getArguments())
+          .getResult(0);
+
+  // Align sugar if needed.
+  if (wrappedCallResult.getType() != shimMainFn.getArgumentTypes()[0]) {
+    assert(
+        isEqualCanon(wrappedCallResult.getType(),
+                     shimMainFn.getArgumentTypes()[0]) &&
+        "wrapped call result type does not match shim main fn argument type");
+    wrappedCallResult = RebindOp::create(
+        shimBodyBuilder, shimMainFn.getArgumentTypes()[0], wrappedCallResult);
+  }
+
+  IREmitter::emitNormalReturn(shimBodyBuilder, wrappedCallResult);
 
   exportedSymbolNames.insert({mainAttr, funcDecl.getLoc()});
 }

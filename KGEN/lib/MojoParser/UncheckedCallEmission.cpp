@@ -1592,6 +1592,15 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
   CallEmitter callEmitter(callee, callExpr, *this, dest);
   auto calleeSig = callEmitter.calleeSig;
 
+  // Make sure the sugar on the callee agrees with calleeSig.  This strips off
+  // top level sugar on the function type itself.
+  if (callee.getRValueType().mlirType != calleeSig) {
+    callEmitter.callee = callee = emitRValue(
+        {callee, callExpr}, ExprContext::EC_CallCalleeValue, calleeSig);
+    assert(callee && callee.getRValueType().mlirType == calleeSig &&
+           "rebinding sugar should work!");
+  }
+
   // We first emit all the arguments.
   auto argumentValuesOr = callEmitter.emitArgValues(callOperands);
   if (failed(argumentValuesOr)) {
@@ -1745,11 +1754,6 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
   Type resultType = expectedCalleeType.getResults()[0];
   CValue callResult;
   if (auto target = callee.getIfPValue()) {
-    // Strip top-level sugar if present so we can have a call of something with
-    // signature type.
-    target = ParamOperatorAttr::getRebind(target,
-                                          SugarAttr::strip(target.getType()));
-
     if (calleeSig.isAsync()) {
       // If the callee is an async function, emit an async call. Then wrap the
       // `!co.routine<T>` result in a `Coroutine[T]` object.
@@ -1792,12 +1796,6 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     // If the callee isn't a PValue, it must be a dynamic callee.
     Value calleeVal = emitSRValue({callee, callExpr}, EC_CallCalleeValue);
     assert(calleeVal && "don't have a callee of expected type");
-
-    // Strip top-level sugar if present so we can have a call of something with
-    // signature type.
-    calleeVal = emitRebindOpIfNeeded(
-        calleeVal, SugarAttr::strip(calleeVal.getType()), callExpr->getLoc());
-
     auto call = CallIndirectOp::create(*builder, loc, resultType, calleeVal,
                                        implicitOrigins, callArgs);
     callResult = SRValue(call.getResult(0));
