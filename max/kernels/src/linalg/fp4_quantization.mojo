@@ -11,12 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
+from math import align_up, ceildiv
 from gpu import (
     block_idx,
     thread_idx,
     grid_dim,
     block_dim,
+    global_idx,
     MAX_THREADS_PER_BLOCK_METADATA,
 )
 from gpu.host import DeviceContext
@@ -24,11 +25,12 @@ from layout import Layout, LayoutTensor
 from logger import Logger
 from gpu.warp import shuffle_xor
 from math import recip
-from quantization.fp4_utils import (
+from .fp4_utils import (
     cast_fp32_to_fp4e2m1,
     E2M1_TO_FLOAT32,
     cast_uint32_to_fp4e2m1,
     cast_fp_to_fp4e2m1,
+    cast_f4e2m1x2_to_fp16x2,
     SF_ATOM_M,
     SF_ATOM_K,
     SF_MN_GROUP_SIZE,
@@ -38,7 +40,10 @@ from quantization.fp4_utils import (
     _get_scale_factor,
 )
 from gpu.host.info import B200
-
+from utils import StaticTuple
+from collections import OptionalReg
+from linalg.utils import elementwise_epilogue_type
+from utils.index import Index, IndexList
 
 ########################################################
 # Dynamic scaled NVFP4 quantization
@@ -214,7 +219,7 @@ fn quantize_dynamic_scaled_fp4_kernel[
                         shuffle_xor(thread_max, 1), thread_max
                     ).cast[DType.float32]()
 
-                    # dequantize the input using the global scale factor and get the scale factor for these 16 elements by dividing it by the maximum value of e2m1
+                    # get the scale factor for these 16 elements by dividing it by the maximum value of e2m1
                     var scale_factor = tensor_sf * (
                         group_max * recip(Float32(6.0))
                     )
@@ -248,3 +253,216 @@ fn quantize_dynamic_scaled_fp4_kernel[
                     output[global_row_idx, col_idx] = rebind[Scalar[out_dtype]](
                         e2m1_vector
                     )
+
+
+fn naive_block_scaled_nvfp4_matmul[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType, //,
+    *,
+    SF_VECTOR_SIZE: Int,
+    accum_type: DType = DType.float32,
+    transpose_b: Bool = True,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    BLOCK_DIM: Int = 16,
+](
+    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, **_],
+    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, **_],
+    b: LayoutTensor[b_type, address_space = AddressSpace.GENERIC, **_],
+    a_scales: LayoutTensor[
+        a_scales_type, address_space = AddressSpace.GENERIC, **_
+    ],
+    b_scales: LayoutTensor[
+        b_scales_type, address_space = AddressSpace.GENERIC, **_
+    ],
+    ctx: DeviceContext,
+) raises:
+    constrained[
+        transpose_b,
+        "Only transpose_b = True is supported for now",
+    ]()
+    constrained[
+        accum_type in (DType.float32,),
+        "Only float32 is supported for accumulation for scaled matmul",
+    ]()
+    constrained[
+        a_type == b_type == DType.uint8,
+        (
+            "Only Float4-E2M1x2(i.e, uint8) is supported for input dtype for"
+            " block scaled NVFP4 matmul"
+        ),
+    ]()
+    constrained[
+        a_scales_type == b_scales_type and a_scales_type == NVFP4_SF_DTYPE,
+        (
+            "input A and B scales dtype should be same and should be"
+            " NVFP4_SF_DTYPE (float8_e4m3fn)"
+        ),
+    ]()
+    constrained[
+        c_type in (DType.bfloat16,),
+        (
+            "Only float32 is supported for output dtype for block scaled NVFP4"
+            " matmul"
+        ),
+    ]()
+
+    var M = c.dim(0)
+    var N = c.dim(1)
+    # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
+    # We need to double the K dimension as we are allocating for uint8 input data type.
+    # Remove this when GENAI-337 is fixed.
+    var K = a.dim(1) * 2
+
+    if M == 0 or N == 0 or K == 0:
+        return
+
+    if (
+        a_scales.dim(0) != ceildiv(M, SF_MN_GROUP_SIZE)
+        or b_scales.dim(0) != ceildiv(N, SF_MN_GROUP_SIZE)
+        or a_scales.dim(1) != ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)
+        or b_scales.dim(1) != ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)
+        or (a_scales.dim(2) != b_scales.dim(2) != SF_ATOM_M[0])
+        or (a_scales.dim(3) != b_scales.dim(3) != SF_ATOM_M[1])
+        or (a_scales.dim(4) != b_scales.dim(4) != SF_ATOM_K)
+    ):
+        raise Error("Invalid A/B scales dimensions.")
+
+    logger.info("Executing Naive Block Scaled NVFP4 GEMM")
+    logger.info("Problem Shape: MNK=[", M, ", ", N, ", ", K, "]", sep="")
+    logger.info(
+        "A Scales Shape: [",
+        a_scales.dim(0),
+        ", ",
+        a_scales.dim(1),
+        ", ",
+        a_scales.dim(2),
+        ", ",
+        a_scales.dim(3),
+        ", ",
+        a_scales.dim(4),
+        "]",
+        sep="",
+    )
+    logger.info(
+        "B Scales Shape: [",
+        b_scales.dim(0),
+        ", ",
+        b_scales.dim(1),
+        ", ",
+        b_scales.dim(2),
+        ", ",
+        b_scales.dim(3),
+        ", ",
+        b_scales.dim(4),
+        "]",
+        sep="",
+    )
+
+    alias kernel = naive_block_scaled_nvfp4_matmul_kernel[
+        c_type,
+        a_type,
+        b_type,
+        a_scales_type,
+        b_scales_type,
+        accum_type,
+        type_of(a).layout,
+        type_of(b).layout,
+        type_of(c).layout,
+        type_of(a_scales).layout,
+        type_of(b_scales).layout,
+        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+        transpose_b=transpose_b,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ]
+
+    ctx.enqueue_function_checked[kernel, kernel](
+        c,
+        a,
+        b,
+        a_scales,
+        b_scales,
+        grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
+        block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
+    )
+
+
+fn naive_block_scaled_nvfp4_matmul_kernel[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    accum_type: DType,
+    a_layout: Layout,
+    b_layout: Layout,
+    c_layout: Layout,
+    a_scale_layout: Layout,
+    b_scale_layout: Layout,
+    SF_VECTOR_SIZE: Int,
+    transpose_b: Bool = True,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutAnyOrigin],
+):
+    # Note: This is a naive kernel that emulates a block scaled NVFP4 matmul.
+    # Assumptions:
+    # 1. both A and B should be in K-major format
+    # 2. both a_scales and b_scales should be in NVFP4 scale factors layout (5D tensors)
+
+    var M = c.dim(0)
+    var N = c.dim(1)
+    # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
+    # We need to double the K dimension as we are allocating for uint8 input data type.
+    # Remove this when GENAI-337 is fixed.
+    var K = a.dim(1) * 2
+
+    var row_idx = global_idx.x
+    var col_idx = global_idx.y
+
+    if row_idx >= UInt(M) or col_idx >= UInt(N):
+        return
+
+    var accum = Scalar[accum_type](0.0)
+    for k in range(0, K, 2):
+        var a_scale = _get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+            a_scales, Int(row_idx), k
+        )
+        var b_scale = _get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+            b_scales, Int(col_idx), k
+        )
+
+        # each uint8 element has two Float4-E2M1 values,
+        var a_val_fp16x2 = cast_f4e2m1x2_to_fp16x2(
+            rebind[UInt8](a[row_idx, k // 2])
+        ).cast[accum_type]()
+        var b_val_fp16x2 = cast_f4e2m1x2_to_fp16x2(
+            rebind[UInt8](b[col_idx, k // 2])
+        ).cast[accum_type]()
+
+        @parameter
+        for k_idx in range(2):
+            var a_val = rebind[Scalar[accum_type]](a_val_fp16x2[k_idx])
+            var b_val = rebind[Scalar[accum_type]](b_val_fp16x2[k_idx])
+            var a_scale_val = abs(
+                rebind[Scalar[accum_type]](a_scale.cast[accum_type]())
+            )
+            var b_scale_val = abs(
+                rebind[Scalar[accum_type]](b_scale.cast[accum_type]())
+            )
+            accum += a_val * b_val * a_scale_val * b_scale_val
+
+    @parameter
+    if elementwise_lambda_fn:
+        alias elementwise_lambda = elementwise_lambda_fn.value()
+        elementwise_lambda[c_type, 1](
+            Index(row_idx, col_idx), accum.cast[c_type]()
+        )
+    else:
+        c[row_idx, col_idx] = accum.cast[c_type]()

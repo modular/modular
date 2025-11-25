@@ -15,7 +15,7 @@ from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random, zero
 from internal_utils._utils import ValOrDim, dynamic, static
-from quantization.fp4_quantization import (
+from linalg.fp4_quantization import (
     quantize_dynamic_scaled_fp4,
 )
 from testing import assert_equal, assert_almost_equal
@@ -23,7 +23,7 @@ from math import ceildiv, recip
 from utils.numerics import max_finite, min_finite
 from buffer import Dim
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from quantization.fp4_utils import (
+from linalg.fp4_utils import (
     cast_fp_to_fp4e2m1,
     cast_uint32_to_fp4e2m1,
     SF_ATOM_M,

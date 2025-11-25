@@ -14,6 +14,39 @@ from sys._assembly import inlined_assembly
 from sys import is_nvidia_gpu, bit_width_of
 from sys.info import _is_sm_100x_or_newer
 from utils.numerics import FPUtils
+from memory import bitcast
+from layout import Layout, LayoutTensor
+
+comptime SF_ATOM_M = (32, 4)
+comptime SF_ATOM_K = 4
+comptime SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
+
+comptime NVFP4_SF_VECTOR_SIZE = 16
+comptime MXFP4_SF_VECTOR_SIZE = 32
+comptime MXFP8_SF_VECTOR_SIZE = 32
+
+comptime NVFP4_SF_DTYPE = DType.float8_e4m3fn
+comptime MXFP4_SF_DTYPE = DType.float8_e8m0fnu
+comptime MXFP8_SF_DTYPE = DType.float8_e8m0fnu
+
+comptime E2M1_TO_FLOAT32 = SIMD[DType.float32, 16](
+    0.0,
+    0.5,
+    1.0,
+    1.5,
+    2.0,
+    3.0,
+    4.0,
+    6.0,
+    -0.0,
+    -0.5,
+    -1.0,
+    -1.5,
+    -2.0,
+    -3.0,
+    -4.0,
+    -6.0,
+)
 
 
 fn cast_uint32_to_fp4e2m1[
@@ -120,37 +153,24 @@ mov.b32 $0, {byte0, byte1, byte2, byte3};
     ](x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7])
 
 
-comptime E2M1_TO_FLOAT32 = SIMD[DType.float32, 16](
-    0.0,
-    0.5,
-    1.0,
-    1.5,
-    2.0,
-    3.0,
-    4.0,
-    6.0,
-    -0.0,
-    -0.5,
-    -1.0,
-    -1.5,
-    -2.0,
-    -3.0,
-    -4.0,
-    -6.0,
-)
+fn cast_f4e2m1x2_to_fp16x2(x: Scalar[DType.uint8]) -> SIMD[DType.float16, 2]:
+    constrained[
+        is_nvidia_gpu() and _is_sm_100x_or_newer(),
+        "only supported on NVIDIA GPUs with SM 100 or newer",
+    ]()
 
+    comptime asm_code = """{
+.reg .b8 byte0;
+.reg .b8 byte1;
+mov.b16 {byte0, byte1}, $1;
+cvt.rn.f16x2.e2m1x2 $0, byte0;
+}
+"""
+    var result = inlined_assembly[
+        asm_code, UInt32, constraints="=r,h", has_side_effect=True
+    ](UInt16(x))
 
-comptime SF_ATOM_M = (32, 4)
-comptime SF_ATOM_K = 4
-comptime SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
-
-comptime NVFP4_SF_VECTOR_SIZE = 16
-comptime MXFP4_SF_VECTOR_SIZE = 32
-comptime MXFP8_SF_VECTOR_SIZE = 32
-
-comptime NVFP4_SF_DTYPE = DType.float8_e4m3fn
-comptime MXFP4_SF_DTYPE = DType.float8_e8m0fnu
-comptime MXFP8_SF_DTYPE = DType.float8_e8m0fnu
+    return bitcast[DType.float16, 2](result)
 
 
 fn _set_scale_factor[
