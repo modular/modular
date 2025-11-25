@@ -795,7 +795,9 @@ class ImageMetadata(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             )
 
         # Compute the hash of the image in post init, overriding the default value of -1
-        self.image_hash = hash_image(self.pixel_values)
+        # This should serialize once, and not recompute, as the serialized hash differs from the default.
+        if self.image_hash == -1:
+            self.image_hash = hash_image(self.pixel_values)
 
     def __repr__(self):
         return f"ImageMetadata(start_idx={self.start_idx}, end_idx={self.end_idx}, pixel_values={self.pixel_values.shape})"
