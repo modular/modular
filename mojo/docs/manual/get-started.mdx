@@ -1305,7 +1305,7 @@ def run_display(
     pygame.init()
 
     # Create a window and set its title
-    window = pygame.display.set_mode(Python.tuple(window_height, window_width))
+    window = pygame.display.set_mode(Python.tuple(window_width, window_height))
     pygame.display.set_caption("Conway's Game of Life")
 
     cell_height = window_height / grid.rows
@@ -1370,8 +1370,8 @@ definition.
 After importing the `pygame` module, we call `pygame.init()` to initialize all
 pygame subsystems.
 
-The `set_mode()` function creates and initializes a window with the height and
-width passed as a Python tuple of two values. This returns a
+The `set_mode()` function creates and initializes a window with the width and
+height passed as a Python tuple of two values. This returns a
 [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) wrapper for the
 window, which we can then use to call functions and set attributes to manipulate
 the window. (For more information about interacting with Python objects from
