@@ -513,6 +513,11 @@ static LogicalResult detectIllegalStructDeclsRecursion(StructDecls &decls) {
     return {ref, WalkResult::skip()};
   });
 
+  dfs.addReplacement([&](SugarAttr sugar) -> std::pair<Attribute, WalkResult> {
+    // Only look at the canonical value, not the sugar.
+    return {dfs.replace(sugar.getCanonical()), WalkResult::skip()};
+  });
+
   // Start from any struct and make sure our DFS terminates.
   for (StructDecl &decl : llvm::make_second_range(decls.structDecls)) {
     if (decl.done)

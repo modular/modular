@@ -492,7 +492,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
 
   OpBuilder structBuilder = OpBuilder::atBlockEnd(stateStruct.getBody());
   Value structValue = exprFn.getArgument(0);
-  Attribute targetAttr = ParamOperatorAttr::get(
+  TypedAttr targetAttr = ParamOperatorAttr::get(
       POC::CurrentTarget, /*operands=*/{}, structBuilder.getType<TargetType>());
 
   // Utility functor to check if a variable should be inserted, and if so insert
@@ -524,8 +524,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     // variable for the address and ensure it gets preserved. For now, we just
     // malloc the memory.
     SmallVector<TypedAttr> operands{
-        TypeParamAttr::get(elementType, anyRegTypeType),
-        cast<TypedAttr>(targetAttr)};
+        TypeParamAttr::get(elementType, anyRegTypeType), targetAttr};
     // Compute the size of the type.
     Value sizeOf = ParamConstantOp::create(
         builder, ParamOperatorAttr::get(POC::GetSizeOf, operands));

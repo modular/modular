@@ -48,26 +48,26 @@ std::string extractBaseTypeName(const M::MojoASTTypeRef &astType,
     Type mlirType = astType.getMLIRType();
 
     // Handle struct types
-    if (auto structType = dyn_cast<LIT::StructType>(mlirType)) {
+    if (auto structType = sugarDynCast<LIT::StructType>(mlirType)) {
       if (auto symbol = structType.getSymbol()) {
         return extractSymbolLeafName(symbol);
       }
     }
     // Handle reference types
-    else if (auto refType = dyn_cast<LIT::RefType>(mlirType)) {
+    else if (auto refType = sugarDynCast<LIT::RefType>(mlirType)) {
       if (auto elementType = astType.getReferenceElementType()) {
         return extractBaseTypeName(elementType, fullTypeStr);
       }
     }
     // Handle trait types
-    else if (auto traitType = dyn_cast<LIT::TraitType>(mlirType)) {
+    else if (auto traitType = sugarDynCast<LIT::TraitType>(mlirType)) {
       auto symbols = traitType.getSymbols();
       if (!symbols.empty()) {
         return extractSymbolLeafName(symbols.front());
       }
     }
     // Handle OriginSet type name
-    else if (isa<LIT::OriginSetType>(mlirType)) {
+    else if (sugarIsa<LIT::OriginSetType>(mlirType)) {
       return "OriginSet";
     }
   }
