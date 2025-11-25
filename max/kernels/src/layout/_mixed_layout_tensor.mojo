@@ -154,6 +154,7 @@ struct MixedLayoutTensor[
             host_buf,
             row_major((Idx[4](), Idx[4]())),
         )
+        ```
 
         Args:
             host_buffer: Contains the underlying data to point to.
