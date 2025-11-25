@@ -47,6 +47,8 @@ async def test_openai_extract_image_from_requests() -> None:
     )
     assert len(messages) == 2
     assert len(images) == 0
+    assert isinstance(messages[0]["content"], str)
+    assert isinstance(messages[1]["content"], list)
     assert "text" in messages[1]["content"][0]
 
     messages, images = await openai_parse_chat_completion_request(
@@ -54,7 +56,9 @@ async def test_openai_extract_image_from_requests() -> None:
     )
     assert len(messages) == 2
     assert len(images) == 0
-    assert "content" in messages[1]["content"][0]
+    assert isinstance(messages[0]["content"], list)
+    assert isinstance(messages[1]["content"], list)
+    assert "text" in messages[1]["content"][0]
 
     user_message_image_with_url = {
         "role": "user",
