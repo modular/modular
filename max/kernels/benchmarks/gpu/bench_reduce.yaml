@@ -34,3 +34,8 @@ params:
 - shape: [ 4x128x6x4x256 ]
   dtype: [ DType.float16, DType.bfloat16 ]
   axis: [4, 3, 2]
+
+# Large/Large problem
+- shape: [ 32x1024x256x1024 ]
+  dtype: [ DType.float16, DType.bfloat16 ]
+  axis: [3, 2, 1, 0]

@@ -53,7 +53,7 @@ fn run_reduce[
     comptime init: Scalar[dtype] = Scalar[dtype](0.0)
 
     var in_size = shape.flattened_length()
-    var out_size = product(shape, rank - 1)
+    var out_size = in_size // shape[axis]
 
     comptime align = align_of_simd[dtype, simd_target = get_gpu_target()]()
     var expected_vals = UnsafePointer[Scalar[dtype]].alloc(

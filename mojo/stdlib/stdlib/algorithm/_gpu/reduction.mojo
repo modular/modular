@@ -21,6 +21,7 @@ from gpu import (
     block_dim,
     block_idx,
     grid_dim,
+    global_idx,
     lane_id,
     thread_idx,
     warp_id,
@@ -451,6 +452,92 @@ fn small_reduce_kernel[
         launch_dependent_grids()
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+)
+fn saturated_reduce_kernel[
+    rank: Int,
+    num_reductions: Int,
+    BLOCK_SIZE: Int,
+    input_fn: fn[dtype: DType, width: Int, rank: Int] (
+        IndexList[rank]
+    ) capturing [_] -> SIMD[dtype, width],
+    output_fn: fn[dtype: DType, width: Int, rank: Int] (
+        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    ) capturing [_] -> None,
+    reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int] (
+        SIMD[ty, width], SIMD[ty, width]
+    ) capturing [_] -> SIMD[ty, width],
+    dtype: DType,
+    simd_width: Int,
+    accum_type: DType = get_accum_type[dtype](),
+](
+    shape: IndexList[rank],
+    axis: Int,
+    init: StaticTuple[Scalar[dtype], num_reductions],
+):
+    constrained[
+        simd_width == 1,
+        "saturated_reduce_kernel doesn't currently support SIMD load/store",
+    ]()
+
+    var row_size = shape[axis]
+    var num_rows = shape.flattened_length() // row_size
+
+    @parameter
+    if PDLLevel() == PDLLevel.OVERLAP_AT_BEGINNING:
+        launch_dependent_grids()
+
+    @parameter
+    if PDLLevel() > PDLLevel.OFF:
+        wait_on_dependent_grids()
+
+    var global_dim_x = grid_dim.x * block_dim.x
+    # Loop over rows
+    for row_idx in range(global_idx.x, UInt(num_rows), global_dim_x):
+        # Reduce the whole row
+        var row_coords = _get_nd_indices_from_flat_index(
+            Int(row_idx), shape, axis
+        )
+
+        # Declare & initialize registers
+        var val = InlineArray[SIMD[accum_type, simd_width], num_reductions](
+            uninitialized=True
+        )
+
+        @parameter
+        for i in range(num_reductions):
+            val[i] = init[i].cast[accum_type]()
+
+        # Load data & reduce
+        # TODO(jtodd): can we unroll this loop by specializing the kernel
+        # & using runtime->compiletime dispatch?
+        for val_idx in range(row_size):
+            row_coords[axis] = val_idx
+            var t = input_fn[dtype, simd_width, rank](row_coords).cast[
+                accum_type
+            ]()
+
+            @parameter
+            for i in range(num_reductions):
+                val[i] = reduce_fn[reduction_idx=i](val[i], t)
+
+        # Cast to output type
+        var row_accum_cast = StaticTuple[Scalar[dtype], num_reductions]()
+
+        @parameter
+        for i in range(num_reductions):
+            row_accum_cast[i] = rebind[Scalar[dtype]](val[i].cast[dtype]())
+
+        # Write output
+        row_coords[axis] = 0
+        output_fn[dtype, 1, rank](row_coords, row_accum_cast)
+
+    @parameter
+    if PDLLevel() == PDLLevel.OVERLAP_AT_END:
+        launch_dependent_grids()
+
+
 fn reduce_launch[
     num_reductions: Int,
     input_fn: fn[dtype: DType, width: Int, rank: Int] (
@@ -470,7 +557,6 @@ fn reduce_launch[
     init: StaticTuple[Scalar[dtype], num_reductions],
     ctx: DeviceContext,
 ) raises:
-    comptime BLOCK_SIZE = env_get_int["MOJO_REDUCTION_BLOCK_SIZE", 128]()
     comptime register_width = 32
     comptime sm_count = ctx.default_device_info.sm_count
 
@@ -484,43 +570,77 @@ fn reduce_launch[
     if num_blocks == 0:
         return
 
+    # 256 is a proxy for BLOCK_SIZE, because having BLOCK_SIZE affect kernel
+    # selection is likely to confound autotuning.
+    comptime num_persistent_threads = 256 * sm_count
+    var saturated: Bool = num_rows >= num_persistent_threads
+    # This assumes row-major layout:
+    var reduce_contig_dim: Bool = axis == rank - 1
+
+    # If we have enough work to saturate the device, have each thread handle a
+    # separate output value (i.e. a whole row), unless we are reducing the
+    # contiguous (stride 1) dimension, in which case original approach coalesces
+    # memory better.
+    if saturated and not reduce_contig_dim and packing_factor == 1:
+        comptime BLOCK_SIZE = env_get_int["MOJO_REDUCTION_BLOCK_SIZE", 32]()
+        comptime kernel = saturated_reduce_kernel[
+            rank,
+            num_reductions,
+            BLOCK_SIZE,
+            input_fn,
+            output_fn,
+            reduce_fn,
+            dtype,
+            packing_factor,
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
+            shape,
+            axis,
+            init,
+            grid_dim=num_blocks,
+            block_dim=BLOCK_SIZE,
+            attributes=pdl_launch_attributes(),
+        )
+
     # When the row size is smaller than the warp so we can use
     # multiple warps within a block to reduce rows and save shared memory sync
-    if shape[axis] < WARP_SIZE:
-        comptime kernel = small_reduce_kernel[
-            rank,
-            num_reductions,
-            BLOCK_SIZE,
-            input_fn,
-            output_fn,
-            reduce_fn,
-            dtype,
-            packing_factor,
-        ]
-        ctx.enqueue_function_checked[kernel, kernel](
-            shape,
-            axis,
-            init,
-            grid_dim=num_blocks,
-            block_dim=BLOCK_SIZE,
-            attributes=pdl_launch_attributes(),
-        )
     else:
-        comptime kernel = reduce_kernel[
-            rank,
-            num_reductions,
-            BLOCK_SIZE,
-            input_fn,
-            output_fn,
-            reduce_fn,
-            dtype,
-            packing_factor,
-        ]
-        ctx.enqueue_function_checked[kernel, kernel](
-            shape,
-            axis,
-            init,
-            grid_dim=num_blocks,
-            block_dim=BLOCK_SIZE,
-            attributes=pdl_launch_attributes(),
-        )
+        comptime BLOCK_SIZE = env_get_int["MOJO_REDUCTION_BLOCK_SIZE", 128]()
+        if shape[axis] < WARP_SIZE:
+            comptime kernel = small_reduce_kernel[
+                rank,
+                num_reductions,
+                BLOCK_SIZE,
+                input_fn,
+                output_fn,
+                reduce_fn,
+                dtype,
+                packing_factor,
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
+                shape,
+                axis,
+                init,
+                grid_dim=num_blocks,
+                block_dim=BLOCK_SIZE,
+                attributes=pdl_launch_attributes(),
+            )
+        else:
+            comptime kernel = reduce_kernel[
+                rank,
+                num_reductions,
+                BLOCK_SIZE,
+                input_fn,
+                output_fn,
+                reduce_fn,
+                dtype,
+                packing_factor,
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
+                shape,
+                axis,
+                init,
+                grid_dim=num_blocks,
+                block_dim=BLOCK_SIZE,
+                attributes=pdl_launch_attributes(),
+            )
