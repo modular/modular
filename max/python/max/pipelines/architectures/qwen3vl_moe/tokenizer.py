@@ -451,9 +451,6 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         self, messages: list[TextGenerationRequestMessage]
     ) -> str:
         """Apply chat template using tokenizer directly (not processor)."""
-        # Use tokenizer directly instead of processor to avoid AutoProcessor dependency
-        # TODO(E2EOPT-621): Wrap message content more generically.
-        messages = self._wrap_str_message_content(messages)
         templated_message = self.delegate.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
