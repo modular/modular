@@ -2,6 +2,11 @@
 
 set -euo pipefail
 
+if [[ "$BAZEL_REAL" != *bazelisk* && "$BAZEL_REAL" != *bazel-bin* ]]; then
+  echo "error: bazel should be run through the ./bazelw script at the root of the repo" >&2
+  exit 1
+fi
+
 bazelrc_lines=("# Generated from tools/bazel, do not edit.")
 bazelrc_lines+=("build --build_metadata=USER=${GITHUB_ACTOR:-${USER:-unknown}}")
 
