@@ -309,4 +309,33 @@ fn test_param_access[dtype: Int]():
     comptime element_type = MyContainer[dtype].d
 
 
+# // -----
+
+# This test revealed a bug where struct signature resolution wasn't
+# signature-resolving the target struct.
+
+# The order here matters, extension must be first.
+__extension MyThing:
+    # In the extension's scope, `Self` didn't have generic parameters.
+    @staticmethod
+    fn foo() -> Self:
+        return Self()
+
+
+@fieldwise_init
+struct MyThing[N: Int]:
+    pass
+
+
+fn zork(m: MyThing[5]):
+    pass
+
+
+fn bork(m: MyThing[5]):
+    # This had a mismatch, because m.foo()'s return type was MyThing but
+    # zork expected the proper MyThing[5].
+    zork(m.foo())
+
+
+
 # TODO(MOCO-522): Add tests for aliases in extensions

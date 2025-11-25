@@ -3948,6 +3948,10 @@ LogicalResult DeclResolver::resolveSignature(ExtensionDeclOp extensionDeclOp,
     return emitError(identifierLoc, "can't find a struct named '")
            << structName << "'";
   }
+  if (failed(resolve(*structAstDecl, DeclResolvedness::signature,
+                     identifierLoc))) {
+    return failure();
+  }
 
   SymbolRefAttr targetStructAttr = structAstDecl->getSymbolRef();
   extensionDeclOp.setTargetStructAttr(targetStructAttr);
