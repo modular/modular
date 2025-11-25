@@ -467,15 +467,15 @@ class TextBatchConstructor:
     def _try_create_ce_batch(self, replica_idx: int) -> ReplicaBatch:
         """Try to create a context encoding batch"""
         replica = self.replicas[replica_idx]
-
+        max_batch_size_tg = self.scheduler_config.max_batch_size_tg
+        max_batch_size_ce = self.scheduler_config.max_batch_size_ce
         ce_batch: dict[RequestID, TextContext] = {}
 
-        # Cannot schedule CE if there are no requests awaiting CE and
-        # cannot schedule CE if the TG batch is full.
+        # Cannot schedule CE if there are no requests awaiting CE and or if the
+        # TG batch is full.
         if (
             len(replica.ce_reqs) == 0
-            or len(replica.tg_reqs)
-            >= self.scheduler_config.max_batch_size_tg_per_replica
+            or len(replica.tg_reqs) >= max_batch_size_tg
         ):
             return ReplicaBatch(batch=ce_batch, num_steps=1)
 
@@ -488,9 +488,6 @@ class TextBatchConstructor:
                 # active length should be 1 for TG requests
                 assert ctx.active_length == 1
                 input_tokens += ctx.active_length
-
-        max_batch_size_tg = self.scheduler_config.max_batch_size_tg_per_replica
-        max_batch_size_ce = self.scheduler_config.max_batch_size_ce_per_replica
 
         if self._lora_manager:
             # Track which LoRAs are currently active from running (TG) requests

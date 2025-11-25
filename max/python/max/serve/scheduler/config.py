@@ -54,14 +54,6 @@ class TokenGenerationSchedulerConfig:
     kvcache_ce_watermark: float = 0.95
     """The maximum percentage of total KVCache memory that can be used after allocating a CE request. This parameter was found empirically."""
 
-    @property
-    def max_batch_size_tg_per_replica(self) -> int:
-        return self.max_batch_size_tg // self.data_parallel_degree
-
-    @property
-    def max_batch_size_ce_per_replica(self) -> int:
-        return self.max_batch_size_ce // self.data_parallel_degree
-
     def __post_init__(self) -> None:
         if self.max_batch_size_tg <= 0:
             raise ValueError(

@@ -70,6 +70,11 @@ class TokenGenerationScheduler(Scheduler):
         )
         self.scheduler_logger = SchedulerLogger()
         self.support_empty_batches = support_empty_batches
+        self.max_items_per_drain = (
+            scheduler_config.max_batch_size_ce
+            * scheduler_config.data_parallel_degree
+            * 2
+        )
 
         # We are parameterizing the offload of queue draining to allow for
         # the use case where we want to drain the queue in the main thread.
@@ -84,7 +89,7 @@ class TokenGenerationScheduler(Scheduler):
                 TextContext | TextAndVisionContext
             ](
                 self.request_queue,
-                max_items_per_drain=self.scheduler_config.max_batch_size_ce * 2,
+                max_items_per_drain=self.max_items_per_drain,
             )
 
     @traced
@@ -114,15 +119,14 @@ class TokenGenerationScheduler(Scheduler):
                     items.extend(
                         drain_queue(
                             self.request_queue,
-                            max_items=self.scheduler_config.max_batch_size_ce
-                            * 2,
+                            self.max_items_per_drain,
                         )
                     )
             else:
                 # No background drainer configured, drain synchronously.
                 items = drain_queue(
                     self.request_queue,
-                    max_items=self.scheduler_config.max_batch_size_ce * 2,
+                    max_items=self.max_items_per_drain,
                 )
 
         with Tracer(f"adding_to_batch_constructor: {len(items)} items"):

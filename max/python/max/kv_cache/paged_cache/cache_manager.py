@@ -92,15 +92,8 @@ class PagedKVCacheManager:
         self.max_seq_len = max_seq_len
         self.max_batch_size = max_batch_size
 
-        max_batch_size_per_replica = (
-            max_batch_size // params.data_parallel_degree
-        )
-        if max_batch_size_per_replica == 0:
-            raise ValueError(
-                f"Cannot use {max_batch_size=} with {params.data_parallel_degree}"
-                " KV cache replicas. The minimum value of max_batch_size allowed"
-                f" is {params.data_parallel_degree}."
-            )
+        if max_batch_size == 0:
+            raise ValueError("Cannot have a max batch size of 0")
 
         # The effective total number of pages is .
         self.num_replicas = params.data_parallel_degree
@@ -118,7 +111,7 @@ class PagedKVCacheManager:
                     params=dp_1_params,
                     total_num_pages=total_num_pages,
                     total_num_host_pages=total_num_host_pages,
-                    max_batch_size=max_batch_size_per_replica,
+                    max_batch_size=max_batch_size,
                     max_seq_len=max_seq_len,
                     devices=devices,
                     session=session,
