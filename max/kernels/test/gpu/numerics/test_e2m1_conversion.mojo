@@ -12,12 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from quantization.fp4_utils import (
-    cast_fp32_to_e2m1,
+    cast_fp32_to_fp4e2m1,
     E2M1_TO_FLOAT32,
-    cast_to_e2m1,
+    cast_fp_to_fp4e2m1,
 )
 from gpu.host import DeviceContext
 from math import nan, inf
+from sys import bit_width_of
 
 
 # CHECK-LABEL: test_simd_f32_to_e2m1
@@ -64,7 +65,7 @@ fn test_simd_f32_to_e2m1():
         -inf[DType.float32](),
     )
 
-    var e2m1_simd = cast_to_e2m1(f32_simd)
+    var e2m1_simd = cast_fp_to_fp4e2m1(f32_simd)
 
     @parameter
     for iter in range(size // 8):
@@ -83,10 +84,10 @@ fn test_simd_f32_to_e2m1_ptx_kernel[
     @parameter
     for iter in range(size // 8):
         var x_slice = x.slice[8, offset = iter * 8]()
-        var x_casted = cast_fp32_to_e2m1(x_slice)
+        var x_casted = cast_fp32_to_fp4e2m1(x_slice)
 
         @parameter
-        for shift in range(0, 32, FP4_E2M1_WIDTH):
+        for shift in range(0, bit_width_of[DType.uint32](), FP4_E2M1_WIDTH):
             var x = (x_casted.to_bits() >> shift) & FP4_E2M1_MASK
             print(E2M1_TO_FLOAT32[Int(x)], end=" ")
         print("")

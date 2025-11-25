@@ -11,11 +11,47 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from sys._assembly import inlined_assembly
-from sys import is_nvidia_gpu
+from sys import is_nvidia_gpu, bit_width_of
 from sys.info import _is_sm_100x_or_newer
+from utils.numerics import FPUtils
 
 
-fn cast_to_e2m1[
+fn cast_uint32_to_fp4e2m1[
+    in_dtype: DType,
+    in_width: Int, //,
+    *,
+    out_dtype: DType,
+    out_width: Int,
+](x: SIMD[in_dtype, in_width]) -> SIMD[out_dtype, out_width]:
+    constrained[in_dtype == DType.uint32, "input_dtype must be uint32"]()
+
+    comptime FP4_E2M1_WIDTH = 4
+    comptime FP4_E2M1_MASK = pow(2, FP4_E2M1_WIDTH) - 1
+    comptime num_fp4_values = bit_width_of[in_dtype]() // FP4_E2M1_WIDTH
+
+    constrained[
+        in_width * num_fp4_values == out_width,
+        (
+            "There are 8 FP4 values per input uint32, so output_dtype must be a"
+            " multiple of 8"
+        ),
+    ]()
+
+    var result = SIMD[out_dtype, out_width]()
+
+    @parameter
+    for i in range(in_width):
+
+        @parameter
+        for shift in range(0, num_fp4_values):
+            var x = (x[i].to_bits() >> (shift * FP4_E2M1_WIDTH)) & FP4_E2M1_MASK
+            result[i * num_fp4_values + shift] = E2M1_TO_FLOAT32[Int(x)].cast[
+                out_dtype
+            ]()
+    return result
+
+
+fn cast_fp_to_fp4e2m1[
     dtype: DType,
     width: Int, //,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -58,7 +94,7 @@ fn cast_to_e2m1[
     return result * sign
 
 
-fn cast_fp32_to_e2m1[
+fn cast_fp32_to_fp4e2m1[
     width: Int, //,
 ](x: SIMD[DType.float32, width]) -> UInt32:
     constrained[
@@ -102,3 +138,55 @@ comptime E2M1_TO_FLOAT32 = SIMD[DType.float32, 16](
     -4.0,
     -6.0,
 )
+
+
+comptime SF_ATOM_M = (32, 4)
+comptime SF_ATOM_K = 4
+comptime SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
+
+comptime NVFP4_SF_VECTOR_SIZE = 16
+comptime MXFP4_SF_VECTOR_SIZE = 32
+comptime MXFP8_SF_VECTOR_SIZE = 32
+
+comptime NVFP4_SF_DTYPE = DType.float8_e4m3fn
+comptime MXFP4_SF_DTYPE = DType.float8_e8m0fnu
+comptime MXFP8_SF_DTYPE = DType.float8_e8m0fnu
+
+
+fn _set_scale_factor[
+    scales_dtype: DType,
+    scales_layout: Layout, //,
+    SF_VECTOR_SIZE: Int,
+](
+    scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
+    global_row_idx: Int,
+    global_col_idx: Int,
+    scale_value: Scalar[scales_dtype],
+):
+    scales_tensor[
+        global_row_idx // SF_MN_GROUP_SIZE,
+        global_col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
+        global_row_idx % SF_ATOM_M[0],
+        (global_row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
+        (global_col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
+    ] = rebind[Scalar[scales_dtype]](scale_value)
+
+
+fn _get_scale_factor[
+    scales_dtype: DType,
+    scales_layout: Layout, //,
+    SF_VECTOR_SIZE: Int,
+](
+    scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
+    global_row_idx: Int,
+    global_col_idx: Int,
+) -> Scalar[scales_dtype]:
+    return rebind[Scalar[scales_dtype]](
+        scales_tensor[
+            global_row_idx // SF_MN_GROUP_SIZE,
+            global_col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
+            global_row_idx % SF_ATOM_M[0],
+            (global_row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
+            (global_col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
+        ]
+    )
