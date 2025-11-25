@@ -16,14 +16,14 @@ from random import random_ui64, seed
 from sys import env_get_dtype, env_get_int
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import Dim, DimList
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer, arg_parse, random
+from internal_utils import arg_parse
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout._fillers import random
 from nn.fused_qk_rope import fused_qk_rope_ragged
 
 from utils.index import IndexList
@@ -70,112 +70,120 @@ def execute_kv_cache_ragged_rope[
             num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
         ),
     ]
-    var input_row_offsets_host = HostNDBuffer[DType.uint32, 1](
-        IndexList[1](batch_size + 1)
+    var input_row_offsets_device = ctx.enqueue_create_buffer[dtype.uint32](
+        batch_size + 1
     )
-    var cache_lengths_host = HostNDBuffer[DType.uint32, 1](
-        IndexList[1](batch_size)
+    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size
     )
     var max_prompt_length = 0
     var total_seq_len: UInt32 = 0
     var cache_len: UInt32 = 10
 
     var flop_count = 0
-    for i in range(batch_size):
-        var curr_seq_length: UInt32
-        if use_random_seq_lengths:
-            curr_seq_length = random_ui64(1, seq_len).cast[DType.uint32]()
-        else:
-            curr_seq_length = seq_len
+    with cache_lengths_device.map_to_host() as cache_lengths_host:
+        with input_row_offsets_device.map_to_host() as input_row_offsets_host:
+            for i in range(batch_size):
+                var curr_seq_length: UInt32
+                if use_random_seq_lengths:
+                    curr_seq_length = random_ui64(1, seq_len).cast[
+                        DType.uint32
+                    ]()
+                else:
+                    curr_seq_length = seq_len
 
-        input_row_offsets_host.tensor[i] = curr_seq_length
-        if curr_seq_length > max_prompt_length:
-            max_prompt_length = Int(curr_seq_length)
+                input_row_offsets_host[i] = curr_seq_length
+                if curr_seq_length > max_prompt_length:
+                    max_prompt_length = Int(curr_seq_length)
 
-        cache_lengths_host.tensor[i] = cache_len
-        total_seq_len += curr_seq_length
+                cache_lengths_host[i] = cache_len
+                total_seq_len += curr_seq_length
 
-    max_context_length = max_prompt_length + cache_len
+            max_context_length = max_prompt_length + cache_len
 
-    input_row_offsets_host.tensor[batch_size] = total_seq_len
-    var input_row_offsets_device = input_row_offsets_host.copy_to_device(ctx)
-    var cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
+            input_row_offsets_host[batch_size] = total_seq_len
 
-    var q_host = HostNDBuffer[dtype, 3, DimList(Dim(), num_q_heads, head_dim)](
-        IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
+    var q_device = ctx.enqueue_create_buffer[dtype](
+        Int(total_seq_len) * num_q_heads * head_dim
     )
-    random(q_host.tensor)
-    var q_device = q_host.copy_to_device(ctx)
-    var output_device = q_host.copy_to_device(ctx)
-    var output_device_tensor = output_device.to_layout_tensor()
-
-    var kv_block_device = DeviceNDBuffer[dtype, 6](
-        IndexList[6](
-            num_blocks,
-            2,
-            num_layers,
-            Int(max_prompt_length + cache_len),
-            num_kv_heads,
-            head_dim,
+    comptime q_layout = Layout.row_major(UNKNOWN_VALUE, num_q_heads, head_dim)
+    var output_device = ctx.enqueue_create_buffer[dtype](len(q_device))
+    with q_device.map_to_host() as q_host:
+        var q_tensor = LayoutTensor[dtype, q_layout](
+            q_host,
+            RuntimeLayout[q_layout].row_major(
+                IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
+            ),
+        )
+        random(q_tensor)
+    ctx.enqueue_copy(output_device, q_device)
+    var output_device_tensor = LayoutTensor[dtype, q_layout](
+        output_device,
+        RuntimeLayout[q_layout].row_major(
+            IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
         ),
-        ctx=ctx,
     )
 
-    var lookup_table_host = HostNDBuffer[DType.uint32, 1](
-        IndexList[1](
-            batch_size,
-        ),
+    var kv_block_shape = IndexList[6](
+        num_blocks,
+        2,
+        num_layers,
+        Int(max_prompt_length + cache_len),
+        num_kv_heads,
+        head_dim,
+    )
+    var kv_block_device = ctx.enqueue_create_buffer[dtype](
+        kv_block_shape.flattened_length()
+    )
+
+    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size
     )
 
     # hacky way to select random blocks.
     var block_idx_set = Set[Int]()
-    var idx = 0
-    while idx < batch_size:
-        var randval = Int(random_ui64(0, num_blocks - 1))
-        if randval in block_idx_set:
-            continue
+    with lookup_table_device.map_to_host() as lookup_table_host:
+        var idx = 0
+        while idx < batch_size:
+            var randval = Int(random_ui64(0, num_blocks - 1))
+            if randval in block_idx_set:
+                continue
 
-        block_idx_set.add(randval)
-        lookup_table_host.tensor[idx] = UInt32(randval)
-        idx += 1
-
-    var lookup_table_device = lookup_table_host.copy_to_device(ctx)
+            block_idx_set.add(randval)
+            lookup_table_host[idx] = UInt32(randval)
+            idx += 1
 
     var kv_collection_device = CollectionType(
         LayoutTensor[
             kv_block_device.dtype, Layout.row_major[6](), MutAnyOrigin
         ](
-            kv_block_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                kv_block_device.to_layout_tensor().runtime_layout.shape.value,
-                kv_block_device.to_layout_tensor().runtime_layout.stride.value,
-            ),
+            kv_block_device,
+            RuntimeLayout[Layout.row_major[6]()].row_major(kv_block_shape),
         ),
         LayoutTensor[
             cache_lengths_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
         ](
-            cache_lengths_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
-                cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+            cache_lengths_device,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                IndexList[1](batch_size)
             ),
         ),
         LayoutTensor[
             lookup_table_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
         ](
-            lookup_table_device.to_layout_tensor().ptr,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                lookup_table_device.to_layout_tensor().runtime_layout.shape.value,
-                lookup_table_device.to_layout_tensor().runtime_layout.stride.value,
+            lookup_table_device,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                IndexList[1](batch_size)
             ),
         ),
         max_context_length,
         max_context_length,
     )
 
-    var freqs_cis_table_device = DeviceNDBuffer[
-        dtype, 2, DimList(max_seq_len, head_dim)
-    ]((max_seq_len, head_dim), ctx=ctx)
+    comptime freqs_cis_table_layout = Layout.row_major(max_seq_len, head_dim)
+    var freqs_cis_table_device = ctx.enqueue_create_buffer[dtype](
+        freqs_cis_table_layout.size()
+    )
 
     num_flops_per_elem = 6
     num_elems = Int(total_seq_len) * num_q_heads * num_kv_heads * head_dim // 2
@@ -199,10 +207,22 @@ def execute_kv_cache_ragged_rope[
                 interleaved=False,
                 target="gpu",
             ](
-                q_device.to_layout_tensor(),
-                input_row_offsets_device.to_layout_tensor(),
+                LayoutTensor[dtype, q_layout](
+                    q_device,
+                    RuntimeLayout[q_layout].row_major(
+                        IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
+                    ),
+                ),
+                LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)](
+                    input_row_offsets_device,
+                    RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                        IndexList[1](batch_size + 1)
+                    ),
+                ),
                 kv_collection_device,
-                freqs_cis_table_device.to_layout_tensor(),
+                LayoutTensor[dtype, freqs_cis_table_layout](
+                    freqs_cis_table_device
+                ),
                 None,
                 0,
                 output_device_tensor,
@@ -221,14 +241,6 @@ def execute_kv_cache_ragged_rope[
         ),
         [ThroughputMeasure(BenchMetric.flops, flop_count)],
     )
-
-    _ = kv_block_device^
-    _ = output_device^
-    _ = q_device^
-    _ = input_row_offsets_device^
-    _ = cache_lengths_device^
-    _ = lookup_table_device^
-    _ = freqs_cis_table_device^
 
 
 def main():
