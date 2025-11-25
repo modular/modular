@@ -47,8 +47,8 @@ fn extract_first_2_modes[l: Layout]() -> Layout:
 struct Major:
     var val: Int
 
-    alias K = Major(0)
-    alias MN = Major(1)
+    comptime K = Major(0)
+    comptime MN = Major(1)
 
     fn __eq__(self, rhs: Major) -> Bool:
         return self.val == rhs.val
@@ -95,10 +95,10 @@ fn _create_mma_desc[
 ) -> MMASmemDescriptor:
     # Extract the stride values from the canonical layout
     # The canonical layout is expected to have at least 2 dimensions
-    alias stride01 = canonical_layout[0].stride[1].value()
-    alias stride11 = canonical_layout[1].stride[1].value()
-    alias SBO = stride01 * size_of[dtype]()
-    alias LBO = stride11 * size_of[dtype]()
+    comptime stride01 = canonical_layout[0].stride[1].value()
+    comptime stride11 = canonical_layout[1].stride[1].value()
+    comptime SBO = stride01 * size_of[dtype]()
+    comptime LBO = stride11 * size_of[dtype]()
 
     # Create and return the MMA shared memory descriptor
     # This will be used by the SM100 MMA operations to access shared memory
@@ -114,10 +114,10 @@ fn _create_mma_desc_pair[
 ) -> MMASmemDescriptorPair:
     # Extract the stride values from the canonical layout
     # The canonical layout is expected to have at least 2 dimensions
-    alias stride01 = canonical_layout[0].stride[1].value()
-    alias stride11 = canonical_layout[1].stride[1].value()
-    alias SBO = stride01 * size_of[dtype]()
-    alias LBO = stride11 * size_of[dtype]()
+    comptime stride01 = canonical_layout[0].stride[1].value()
+    comptime stride11 = canonical_layout[1].stride[1].value()
+    comptime SBO = stride01 * size_of[dtype]()
+    comptime LBO = stride11 * size_of[dtype]()
 
     # Create and return the MMA shared memory descriptor
     # This will be used by the SM100 MMA operations to access shared memory
@@ -137,13 +137,13 @@ fn smem_descriptor[
         Scalar[dtype], address_space = AddressSpace.SHARED, *_, **_
     ]
 ) -> MMASmemDescriptorPair:
-    alias smem_layout = tile_layout_k_major[
+    comptime smem_layout = tile_layout_k_major[
         dtype, BMN, BK, swizzle_mode
     ]() if is_k_major else tile_layout_mn_major[dtype, BMN, BK, swizzle_mode]()
-    alias canonical_layout = tile_to_descriptor[
+    comptime canonical_layout = tile_to_descriptor[
         dtype, smem_layout, is_k_major=is_k_major
     ]()
-    alias cl = canonical_layout if is_k_major else canonical_layout.transpose()
+    comptime cl = canonical_layout if is_k_major else canonical_layout.transpose()
     return _create_mma_desc_pair[
         canonical_layout=cl, swizzle_mode=swizzle_mode
     ](ptr)
@@ -197,8 +197,8 @@ struct MmaOpSM100_SS[
         # and passed to `commit`, need to verify.
         @parameter
         if product(Self.cluster_shape) > 1:
-            alias dim0_mask = cluster_mask_base[Self.cluster_shape, 0]()
-            alias dim1_mask = cluster_mask_base[Self.cluster_shape, 1]()
+            comptime dim0_mask = cluster_mask_base[Self.cluster_shape, 0]()
+            comptime dim1_mask = cluster_mask_base[Self.cluster_shape, 1]()
 
             # The mask includes ctas on the same row and column in the cluster
             # Example mask for cta (0, 1) is cluster (4,4)
@@ -239,14 +239,14 @@ struct MmaOpSM100_SS[
         # Coalesce a and b
         # A and B are coalesced to rank-2 if it's only one tile or rank-3 if it has
         # multiple canonical layouts in K dim.
-        alias a_coalesced_layout = coalesce(a.layout)
-        alias b_coalesced_layout = coalesce(b.layout)
+        comptime a_coalesced_layout = coalesce(a.layout)
+        comptime b_coalesced_layout = coalesce(b.layout)
 
         # Canonical layouts are tiled by core matrices.
-        alias a_canonical_layout = tile_to_descriptor[
+        comptime a_canonical_layout = tile_to_descriptor[
             a.dtype, extract_first_2_modes[a_coalesced_layout]()
         ]()
-        alias b_canonical_layout = tile_to_descriptor[
+        comptime b_canonical_layout = tile_to_descriptor[
             b.dtype, extract_first_2_modes[b_coalesced_layout]()
         ]()
 
@@ -255,8 +255,12 @@ struct MmaOpSM100_SS[
 
         @parameter
         for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
-            alias a_offset = a.layout(IntTuple(0, k)) * size_of[Self.a_type]()
-            alias b_offset = b.layout(IntTuple(0, k)) * size_of[Self.b_type]()
+            comptime a_offset = a.layout(IntTuple(0, k)) * size_of[
+                Self.a_type
+            ]()
+            comptime b_offset = b.layout(IntTuple(0, k)) * size_of[
+                Self.b_type
+            ]()
 
             var c_scale: UInt32 = 0 if (init_c and k == 0) else 1
 

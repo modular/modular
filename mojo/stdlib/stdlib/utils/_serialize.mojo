@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
-
 comptime _kStartTensorMarker = "["
 comptime _kEndTensorMarker = "]"
 comptime _kTensorFiller = "..., "

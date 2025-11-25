@@ -77,12 +77,12 @@ struct TileScheduler[
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
 ]:
-    alias cluster_size = Self.cluster_shape[0] * Self.cluster_shape[
+    comptime cluster_size = Self.cluster_shape[0] * Self.cluster_shape[
         1
     ] * Self.cluster_shape[2]
-    alias log_cluster_m = FastDiv[DType.uint32](Self.cluster_shape[0])
-    alias log_cluster_n = FastDiv[DType.uint32](Self.cluster_shape[1])
-    alias log_cluster_k = FastDiv[DType.uint32](Self.cluster_shape[2])
+    comptime log_cluster_m = FastDiv[DType.uint32](Self.cluster_shape[0])
+    comptime log_cluster_n = FastDiv[DType.uint32](Self.cluster_shape[1])
+    comptime log_cluster_k = FastDiv[DType.uint32](Self.cluster_shape[2])
 
     var cluster_dim: StaticTuple[Int32, 3]
     var log_cluster_dim_m: FastDiv[DType.uint32]
@@ -131,7 +131,7 @@ struct TileScheduler[
     fn work_info_from_clc_response(
         result: UnsafePointer[UInt128, address_space = AddressSpace.SHARED],
     ) -> WorkInfo:
-        alias asm = """{
+        comptime asm = """{
             .reg .pred p1;
             .reg .b128 clc_result;
             ld.shared.b128 clc_result, [$4];
@@ -165,7 +165,7 @@ struct TileScheduler[
     ) -> WorkInfo:
         var normalized_m = Int(work_info.m) / Self.log_cluster_m
         var normalized_n = Int(work_info.n) / Self.log_cluster_n
-        alias log_block_swizzle_size = FastDiv[DType.uint32](
+        comptime log_block_swizzle_size = FastDiv[DType.uint32](
             Self.block_swizzle_size
         )
 
@@ -266,7 +266,7 @@ struct TileScheduler[
         self,
         mut clc_state: PipelineState[Self.num_stages],
     ) -> PipelineState[Self.num_stages]:
-        alias multicast = True if Self.cluster_size > 1 else False
+        comptime multicast = True if Self.cluster_size > 1 else False
         var lane_id = lane_id()
         var pred: UInt32 = 1 if lane_id < UInt(Self.cluster_size) else 0
         self.empty_mbar[clc_state.index()].wait(clc_state.phase())

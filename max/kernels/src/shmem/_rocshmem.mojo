@@ -58,7 +58,7 @@ struct ROCSHEMIVersion:
         self.patch = 5
 
 
-alias ROCSHMEM_LIBRARY = _Global["ROCSHMEM_LIBRARY", _init_rocshmem_dylib]
+comptime ROCSHMEM_LIBRARY = _Global["ROCSHMEM_LIBRARY", _init_rocshmem_dylib]
 
 
 fn _init_rocshmem_dylib() -> OwnedDLHandle:
@@ -99,71 +99,71 @@ fn _get_rocshmem_function[
 # ===-----------------------------------------------------------------------===#
 
 # TODO: verify constants and structs in https://github.com/modular/rocSHMEM
-alias rocshmem_team_id_t = Int32
+comptime rocshmem_team_id_t = Int32
 
 # ===-----------------------------------------------------------------------===#
 # Constants
 # ===-----------------------------------------------------------------------===#
 
-alias ROCSHMEM_SUCCESS = 0
+comptime ROCSHMEM_SUCCESS = 0
 
-alias ROCSHMEM_INIT_WITH_MPI_COMM = 1 << 1
+comptime ROCSHMEM_INIT_WITH_MPI_COMM = 1 << 1
 
-alias CHANNEL_BUF_SIZE: c_int = 1 << 22
-alias CHANNEL_BUF_SIZE_LOG: c_int = 22
-alias CHANNEL_ENTRY_BYTES: c_int = 8
+comptime CHANNEL_BUF_SIZE: c_int = 1 << 22
+comptime CHANNEL_BUF_SIZE_LOG: c_int = 22
+comptime CHANNEL_ENTRY_BYTES: c_int = 8
 
-alias ROCSHMEM_ERROR_INTERNAL = 1
-alias ROCSHMEM_MAX_NAME_LEN: c_int = 256
+comptime ROCSHMEM_ERROR_INTERNAL = 1
+comptime ROCSHMEM_MAX_NAME_LEN: c_int = 256
 
-alias ROCSHMEM_THREAD_SINGLE: c_int = 0
-alias ROCSHMEM_THREAD_FUNNELED: c_int = 1
-alias ROCSHMEM_THREAD_SERIALIZED: c_int = 2
-alias ROCSHMEM_THREAD_MULTIPLE: c_int = 3
-alias ROCSHMEM_THREAD_TYPE_SENTINEL: c_int = c_int.MAX
+comptime ROCSHMEM_THREAD_SINGLE: c_int = 0
+comptime ROCSHMEM_THREAD_FUNNELED: c_int = 1
+comptime ROCSHMEM_THREAD_SERIALIZED: c_int = 2
+comptime ROCSHMEM_THREAD_MULTIPLE: c_int = 3
+comptime ROCSHMEM_THREAD_TYPE_SENTINEL: c_int = c_int.MAX
 
-alias ROCSHMEM_CMP_EQ: c_int = 0
-alias ROCSHMEM_CMP_NE: c_int = 1
-alias ROCSHMEM_CMP_GT: c_int = 2
-alias ROCSHMEM_CMP_LE: c_int = 3
-alias ROCSHMEM_CMP_LT: c_int = 4
-alias ROCSHMEM_CMP_GE: c_int = 5
-alias ROCSHMEM_CMP_SENTINEL: c_int = c_int.MAX
+comptime ROCSHMEM_CMP_EQ: c_int = 0
+comptime ROCSHMEM_CMP_NE: c_int = 1
+comptime ROCSHMEM_CMP_GT: c_int = 2
+comptime ROCSHMEM_CMP_LE: c_int = 3
+comptime ROCSHMEM_CMP_LT: c_int = 4
+comptime ROCSHMEM_CMP_GE: c_int = 5
+comptime ROCSHMEM_CMP_SENTINEL: c_int = c_int.MAX
 
-alias PROXY_GLOBAL_EXIT_INIT: c_int = 1
-alias PROXY_GLOBAL_EXIT_REQUESTED: c_int = 2
-alias PROXY_GLOBAL_EXIT_FINISHED: c_int = 3
-alias PROXY_GLOBAL_EXIT_MAX_STATE: c_int = c_int.MAX
+comptime PROXY_GLOBAL_EXIT_INIT: c_int = 1
+comptime PROXY_GLOBAL_EXIT_REQUESTED: c_int = 2
+comptime PROXY_GLOBAL_EXIT_FINISHED: c_int = 3
+comptime PROXY_GLOBAL_EXIT_MAX_STATE: c_int = c_int.MAX
 
-alias PROXY_DMA_REQ_BYTES: c_int = 32
-alias PROXY_AMO_REQ_BYTES: c_int = 40
-alias PROXY_INLINE_REQ_BYTES: c_int = 24
+comptime PROXY_DMA_REQ_BYTES: c_int = 32
+comptime PROXY_AMO_REQ_BYTES: c_int = 40
+comptime PROXY_INLINE_REQ_BYTES: c_int = 24
 
-alias ROCSHMEM_STATUS_NOT_INITIALIZED: c_int = 0
-alias ROCSHMEM_STATUS_IS_BOOTSTRAPPED: c_int = 1
-alias ROCSHMEM_STATUS_IS_INITIALIZED: c_int = 2
-alias ROCSHMEM_STATUS_LIMITED_MPG: c_int = 4
-alias ROCSHMEM_STATUS_FULL_MPG: c_int = 5
-alias ROCSHMEM_STATUS_INVALID: c_int = c_int.MAX
+comptime ROCSHMEM_STATUS_NOT_INITIALIZED: c_int = 0
+comptime ROCSHMEM_STATUS_IS_BOOTSTRAPPED: c_int = 1
+comptime ROCSHMEM_STATUS_IS_INITIALIZED: c_int = 2
+comptime ROCSHMEM_STATUS_LIMITED_MPG: c_int = 4
+comptime ROCSHMEM_STATUS_FULL_MPG: c_int = 5
+comptime ROCSHMEM_STATUS_INVALID: c_int = c_int.MAX
 
-alias ROCSHMEM_SIGNAL_SET: c_int = 9
-alias ROCSHMEM_SIGNAL_ADD: c_int = 10
+comptime ROCSHMEM_SIGNAL_SET: c_int = 9
+comptime ROCSHMEM_SIGNAL_ADD: c_int = 10
 
-alias ROCSHMEM_TEAM_INVALID: rocshmem_team_id_t = -1
-alias ROCSHMEM_TEAM_WORLD: rocshmem_team_id_t = 0
-alias ROCSHMEM_TEAM_WORLD_INDEX: rocshmem_team_id_t = 0
-alias ROCSHMEM_TEAM_SHARED: rocshmem_team_id_t = 1
-alias ROCSHMEM_TEAM_SHARED_INDEX: rocshmem_team_id_t = 1
-alias ROCSHMEM_TEAM_NODE: rocshmem_team_id_t = 2
-alias ROCSHMEM_TEAM_NODE_INDEX: rocshmem_team_id_t = 2
-alias ROCSHMEM_TEAM_SAME_MYPE_NODE: rocshmem_team_id_t = 3
-alias ROCSHMEM_TEAM_SAME_MYPE_NODE_INDEX: rocshmem_team_id_t = 3
-alias ROCSHMEMI_TEAM_SAME_GPU: rocshmem_team_id_t = 4
-alias ROCSHMEM_TEAM_SAME_GPU_INDEX: rocshmem_team_id_t = 4
-alias ROCSHMEMI_TEAM_GPU_LEADERS: rocshmem_team_id_t = 5
-alias ROCSHMEM_TEAM_GPU_LEADERS_INDEX: rocshmem_team_id_t = 5
-alias ROCSHMEM_TEAMS_MIN: rocshmem_team_id_t = 6
-alias ROCSHMEM_TEAM_INDEX_MAX: rocshmem_team_id_t = rocshmem_team_id_t.MAX
+comptime ROCSHMEM_TEAM_INVALID: rocshmem_team_id_t = -1
+comptime ROCSHMEM_TEAM_WORLD: rocshmem_team_id_t = 0
+comptime ROCSHMEM_TEAM_WORLD_INDEX: rocshmem_team_id_t = 0
+comptime ROCSHMEM_TEAM_SHARED: rocshmem_team_id_t = 1
+comptime ROCSHMEM_TEAM_SHARED_INDEX: rocshmem_team_id_t = 1
+comptime ROCSHMEM_TEAM_NODE: rocshmem_team_id_t = 2
+comptime ROCSHMEM_TEAM_NODE_INDEX: rocshmem_team_id_t = 2
+comptime ROCSHMEM_TEAM_SAME_MYPE_NODE: rocshmem_team_id_t = 3
+comptime ROCSHMEM_TEAM_SAME_MYPE_NODE_INDEX: rocshmem_team_id_t = 3
+comptime ROCSHMEMI_TEAM_SAME_GPU: rocshmem_team_id_t = 4
+comptime ROCSHMEM_TEAM_SAME_GPU_INDEX: rocshmem_team_id_t = 4
+comptime ROCSHMEMI_TEAM_GPU_LEADERS: rocshmem_team_id_t = 5
+comptime ROCSHMEM_TEAM_GPU_LEADERS_INDEX: rocshmem_team_id_t = 5
+comptime ROCSHMEM_TEAMS_MIN: rocshmem_team_id_t = 6
+comptime ROCSHMEM_TEAM_INDEX_MAX: rocshmem_team_id_t = rocshmem_team_id_t.MAX
 
 
 # Structs
@@ -422,7 +422,7 @@ fn rocshmem_put[
     nelems: c_size_t,
     pe: c_int,
 ):
-    alias symbol = _dtype_to_rocshmem_type["rocshmem_", dtype, "_put"]()
+    comptime symbol = _dtype_to_rocshmem_type["rocshmem_", dtype, "_put"]()
 
     @parameter
     if is_amd_gpu():
@@ -447,14 +447,14 @@ fn rocshmem_put_nbi[
     nelems: c_size_t,
     pe: c_int,
 ):
-    alias symbol = _dtype_to_rocshmem_type["rocshmem_", dtype, "_put_nbi"]()
+    comptime symbol = _dtype_to_rocshmem_type["rocshmem_", dtype, "_put_nbi"]()
     external_call[symbol, NoneType](dest, source, nelems, pe)
 
 
 fn rocshmem_p[
     dtype: DType
 ](dest: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], pe: c_int):
-    alias symbol = _dtype_to_rocshmem_type["rocshmem_", dtype, "_p"]()
+    comptime symbol = _dtype_to_rocshmem_type["rocshmem_", dtype, "_p"]()
 
     @parameter
     if is_amd_gpu():
@@ -478,7 +478,7 @@ fn rocshmem_get[
     nelems: c_size_t,
     pe: c_int,
 ):
-    alias symbol = _dtype_to_rocshmem_type["rocshmem_", dtype, "_get"]()
+    comptime symbol = _dtype_to_rocshmem_type["rocshmem_", dtype, "_get"]()
     external_call[symbol, NoneType](dest, source, nelems, pe)
 
 
@@ -490,14 +490,14 @@ fn rocshmem_get_nbi[
     nelems: c_size_t,
     pe: c_int,
 ):
-    alias symbol = _dtype_to_rocshmem_type["rocshmem_", dtype, "_get_nbi"]()
+    comptime symbol = _dtype_to_rocshmem_type["rocshmem_", dtype, "_get_nbi"]()
     external_call[symbol, NoneType](dest, source, nelems, pe)
 
 
 fn rocshmem_g[
     dtype: DType
 ](source: UnsafePointer[Scalar[dtype]], pe: c_int) -> Scalar[dtype]:
-    alias symbol = _dtype_to_rocshmem_type["rocshmem_", dtype, "_g"]()
+    comptime symbol = _dtype_to_rocshmem_type["rocshmem_", dtype, "_g"]()
     return external_call[symbol, Scalar[dtype]](source, pe)
 
 
@@ -517,7 +517,7 @@ fn rocshmem_put_signal_nbi[
     sig_op: c_int,
     pe: c_int,
 ):
-    alias symbol = _dtype_to_rocshmem_type[
+    comptime symbol = _dtype_to_rocshmem_type[
         "rocshmem_", dtype, "_put_signal_nbi"
     ]()
     external_call[symbol, NoneType](
@@ -563,7 +563,9 @@ fn rocshmem_barrier_all_wave(stream: hipStream_t):
 fn rocshmem_signal_wait_until[
     dtype: DType
 ](sig_addr: UnsafePointer[UInt64], cmp: c_int, cmp_value: UInt64):
-    alias symbol = _dtype_to_rocshmem_type["rocshmem_", dtype, "_wait_until"]()
+    comptime symbol = _dtype_to_rocshmem_type[
+        "rocshmem_", dtype, "_wait_until"
+    ]()
     external_call[symbol, NoneType](sig_addr, cmp, cmp_value)
 
 

@@ -97,14 +97,14 @@ fn copy2_n(
 
 @no_inline
 fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
-    alias dtype = DType.float32
+    comptime dtype = DType.float32
     var a_host = UnsafePointer[Scalar[dtype]].alloc(length)
     var b_host = UnsafePointer[Scalar[dtype]].alloc(length)
     var c_host = UnsafePointer[Scalar[dtype]].alloc(length)
     var d_host = UnsafePointer[Scalar[dtype]].alloc(length)
 
-    alias grid_dim = 16
-    alias block_dim = 256
+    comptime grid_dim = 16
+    comptime block_dim = 256
 
     for i in range(length):
         a_host[i] = i
@@ -172,14 +172,14 @@ fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
 
 @no_inline
 fn bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
-    alias dtype = DType.float32
+    comptime dtype = DType.float32
     var a_host = UnsafePointer[Scalar[dtype]].alloc(length)
     var b_host = UnsafePointer[Scalar[dtype]].alloc(length)
     var c_host = UnsafePointer[Scalar[dtype]].alloc(length)
     var d_host = UnsafePointer[Scalar[dtype]].alloc(length)
 
-    alias grid_dim = 16
-    alias block_dim = 256
+    comptime grid_dim = 16
+    comptime block_dim = 256
 
     for i in range(length):
         a_host[i] = i
@@ -244,7 +244,7 @@ fn bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
 
 
 def main():
-    alias length = env_get_int["length", 4096]()
+    comptime length = env_get_int["length", 4096]()
     var m = Bench()
 
     with DeviceContext() as ctx:

@@ -149,8 +149,8 @@ def main():
     fn fill_random[
         rank: Int, dtype: DType
     ](buffer: LayoutTensor[mut=True, dtype, **_]):
-        alias min_val = -1e9
-        alias max_val = 1e9
+        comptime min_val = -1e9
+        comptime max_val = 1e9
         var total_elements = buffer.size()
         for i in range(total_elements):
             var random_value = random_float64(min_val, max_val)

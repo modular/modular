@@ -1,5 +1,5 @@
 load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_grpc_library")
-load("@protobuf//bazel:py_proto_library.bzl", "py_proto_library")
+load("@com_google_protobuf//bazel:py_proto_library.bzl", "py_proto_library")
 load("@rules_proto//proto:defs.bzl", "proto_library")
 load("//bazel:api.bzl", "modular_py_library", "requirement")
 

@@ -30,9 +30,9 @@ from testing import assert_almost_equal, assert_equal
 
 from utils import IndexList
 
-alias DEBUG_BENCH = False
-alias PRINT_OUTPUT = False
-alias NUM_VALIDATION_TRIALS = 50
+comptime DEBUG_BENCH = False
+comptime PRINT_OUTPUT = False
+comptime NUM_VALIDATION_TRIALS = 50
 
 
 @parameter
@@ -172,8 +172,8 @@ fn test_topk_sampling_from_prob[
     var batch_size = test_case.batch_size
     var N = test_case.N
     var K = test_case.K
-    alias largest = test_case.largest
-    alias sampling = test_case.sampling
+    comptime largest = test_case.largest
+    comptime sampling = test_case.sampling
 
     constrained[sampling, "topk_sampling_from_prob requires sampling=True"]()
 
@@ -359,9 +359,9 @@ fn test_case_batched[
     var batch_size = test_case.batch_size
     var N = test_case.N
     var K = test_case.K
-    alias largest = test_case.largest
-    alias sampling = test_case.sampling
-    alias block_size = test_case.block_size
+    comptime largest = test_case.largest
+    comptime sampling = test_case.sampling
+    comptime block_size = test_case.block_size
 
     # sampling must be False for mask_logits kernel
     constrained[not sampling, "topk_mask_logits only supports sampling=False"]()
@@ -520,8 +520,8 @@ fn time_kernel[
 fn fill_random[
     rank: Int, dtype: DType
 ](mut buffer: NDBuffer[mut=True, dtype, rank]):
-    alias min_val = -1e9
-    alias max_val = 1e9
+    comptime min_val = -1e9
+    comptime max_val = 1e9
     var total_elements = buffer.num_elements()
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
@@ -531,11 +531,11 @@ fn fill_random[
 struct TestCase[_sampling: Bool, _largest: Bool = True, _block_size: Int = 256](
     ImplicitlyCopyable, Movable
 ):
-    alias sampling = Self._sampling
-    alias largest = Self._largest
+    comptime sampling = Self._sampling
+    comptime largest = Self._largest
     var N: Int
     var K: Int
-    alias block_size: Int = Self._block_size
+    comptime block_size: Int = Self._block_size
     var batch_size: Int
     var num_blocks_per_input: OptionalReg[Int]
 
@@ -579,18 +579,18 @@ def main():
     (after extraction) with the CPU reference implementation.
     """
     seed(42)
-    alias llama3_vocab_size = 128256
+    comptime llama3_vocab_size = 128256
     with DeviceContext() as ctx:
-        alias float32_dtype = DType.float32
-        alias bf16_type = DType.bfloat16
+        comptime float32_dtype = DType.float32
+        comptime bf16_type = DType.bfloat16
 
         print("\n" + "=" * 80)
         print("Testing topk_mask_logits kernel")
         print("=" * 80 + "\n")
 
-        alias default_block_size = 1024
+        comptime default_block_size = 1024
 
-        alias test_case0 = TestCase[
+        comptime test_case0 = TestCase[
             _sampling=False, _block_size=default_block_size
         ](
             N=1024,
@@ -604,7 +604,7 @@ def main():
             out_idx_type = DType.uint64,
         ](ctx, test_case0)
 
-        alias test_case1 = TestCase[
+        comptime test_case1 = TestCase[
             _sampling=False, _block_size=default_block_size
         ](
             N=1024,
@@ -618,7 +618,7 @@ def main():
             out_idx_type = DType.uint64,
         ](ctx, test_case1)
 
-        alias test_case2 = TestCase[
+        comptime test_case2 = TestCase[
             _sampling=False, _block_size=default_block_size
         ](
             N=32000,
@@ -628,7 +628,7 @@ def main():
         print_test_case(test_case2)
         test_case_batched[float32_dtype, fill_random](ctx, test_case2)
 
-        alias test_case3 = TestCase[
+        comptime test_case3 = TestCase[
             _sampling=False, _block_size=default_block_size
         ](
             N=llama3_vocab_size,
@@ -638,7 +638,7 @@ def main():
         print_test_case(test_case3)
         test_case_batched[float32_dtype, fill_random](ctx, test_case3)
 
-        alias test_case4 = TestCase[
+        comptime test_case4 = TestCase[
             _sampling=False, _block_size=default_block_size
         ](
             N=1024,
@@ -648,7 +648,7 @@ def main():
         print_test_case(test_case4)
         test_case_batched[float32_dtype, fill_random](ctx, test_case4)
 
-        alias test_case5 = TestCase[
+        comptime test_case5 = TestCase[
             _sampling=False, _block_size=default_block_size
         ](
             N=32000,
@@ -658,7 +658,7 @@ def main():
         print_test_case(test_case5)
         test_case_batched[float32_dtype, fill_random](ctx, test_case5)
 
-        alias test_case6 = TestCase[
+        comptime test_case6 = TestCase[
             _sampling=False, _block_size=default_block_size
         ](
             N=llama3_vocab_size,
@@ -668,7 +668,7 @@ def main():
         print_test_case(test_case6)
         test_case_batched[float32_dtype, fill_random](ctx, test_case6)
 
-        alias test_case7 = TestCase[
+        comptime test_case7 = TestCase[
             _sampling=False, _block_size=default_block_size
         ](
             N=1024,
@@ -682,7 +682,7 @@ def main():
             out_idx_type = DType.uint64,
         ](ctx, test_case7)
 
-        alias test_case8 = TestCase[
+        comptime test_case8 = TestCase[
             _sampling=False, _block_size=default_block_size
         ](
             N=32000,
@@ -692,7 +692,7 @@ def main():
         print_test_case(test_case8)
         test_case_batched[bf16_type, fill_random](ctx, test_case8)
 
-        alias test_case9 = TestCase[
+        comptime test_case9 = TestCase[
             _sampling=False, _block_size=default_block_size
         ](
             N=llama3_vocab_size,
@@ -702,7 +702,7 @@ def main():
         print_test_case(test_case9)
         test_case_batched[bf16_type, fill_random](ctx, test_case9)
 
-        alias test_case10 = TestCase[
+        comptime test_case10 = TestCase[
             _sampling=False, _block_size=default_block_size
         ](
             N=llama3_vocab_size,
@@ -712,7 +712,7 @@ def main():
         print_test_case(test_case10)
         test_case_batched[bf16_type, fill_random](ctx, test_case10)
 
-        alias test_case11 = TestCase[
+        comptime test_case11 = TestCase[
             _sampling=False, _block_size=default_block_size
         ](
             N=1024,
@@ -722,7 +722,7 @@ def main():
         print_test_case(test_case11)
         test_case_batched[bf16_type, fill_random](ctx, test_case11)
 
-        alias test_case12 = TestCase[
+        comptime test_case12 = TestCase[
             _sampling=False, _block_size=default_block_size
         ](
             N=50,
@@ -732,7 +732,7 @@ def main():
         print_test_case(test_case12)
         test_case_batched[float32_dtype, fill_random](ctx, test_case12)
 
-        alias test_case13 = TestCase[
+        comptime test_case13 = TestCase[
             _sampling=False, _block_size=default_block_size
         ](
             N=llama3_vocab_size,
@@ -742,7 +742,7 @@ def main():
         print_test_case(test_case13)
         test_case_batched[float32_dtype, fill_random](ctx, test_case13)
 
-        alias test_case14 = TestCase[
+        comptime test_case14 = TestCase[
             _sampling=False, _block_size=default_block_size
         ](
             N=50,
@@ -760,7 +760,7 @@ def main():
         print("Testing topk_sampling_from_prob kernel")
         print("=" * 80 + "\n")
 
-        alias sampling_test_case1 = TestCase[
+        comptime sampling_test_case1 = TestCase[
             _sampling=True, _block_size=default_block_size
         ](
             N=100,
@@ -772,7 +772,7 @@ def main():
             float32_dtype, DType.int32, 2, default_block_size
         ](ctx, sampling_test_case1)
 
-        alias sampling_test_case2 = TestCase[
+        comptime sampling_test_case2 = TestCase[
             _sampling=True, _block_size=default_block_size
         ](
             N=1024,
@@ -784,7 +784,7 @@ def main():
             float32_dtype, DType.int32, 2, default_block_size
         ](ctx, sampling_test_case2)
 
-        alias sampling_test_case3 = TestCase[
+        comptime sampling_test_case3 = TestCase[
             _sampling=True, _block_size=default_block_size
         ](
             N=32000,
@@ -796,7 +796,7 @@ def main():
             float32_dtype, DType.int32, 2, default_block_size
         ](ctx, sampling_test_case3)
 
-        alias sampling_test_case4 = TestCase[
+        comptime sampling_test_case4 = TestCase[
             _sampling=True, _block_size=default_block_size
         ](
             N=32000,
@@ -808,7 +808,7 @@ def main():
             float32_dtype, DType.int32, 2, default_block_size
         ](ctx, sampling_test_case4)
 
-        alias sampling_test_case5 = TestCase[
+        comptime sampling_test_case5 = TestCase[
             _sampling=True, _block_size=default_block_size
         ](
             N=1024,
@@ -820,7 +820,7 @@ def main():
             float32_dtype, DType.int32, 2, default_block_size
         ](ctx, sampling_test_case5)
 
-        alias sampling_test_case6 = TestCase[
+        comptime sampling_test_case6 = TestCase[
             _sampling=True, _block_size=default_block_size
         ](
             N=llama3_vocab_size,

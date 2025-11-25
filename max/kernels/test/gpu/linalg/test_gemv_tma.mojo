@@ -83,11 +83,13 @@ fn gemv_tma_kernel[
     var warp_row_offset = warp_id() * ROWS_PER_WARP
     var global_row_idx = block_row + warp_row_offset
 
-    alias accum_type = get_accum_type[dtype]()
+    comptime accum_type = get_accum_type[dtype]()
 
-    alias a_smem_layout = Layout.row_major(Int(BLOCK_SIZE_M), Int(BLOCK_SIZE_K))
+    comptime a_smem_layout = Layout.row_major(
+        Int(BLOCK_SIZE_M), Int(BLOCK_SIZE_K)
+    )
 
-    alias b_smem_layout = Layout.row_major(Int(BLOCK_SIZE_K))
+    comptime b_smem_layout = Layout.row_major(Int(BLOCK_SIZE_K))
 
     var descriptor_a_ptr = UnsafePointer(to=descriptor_a).bitcast[NoneType]()
     var descriptor_b_ptr = UnsafePointer(to=descriptor_b).bitcast[NoneType]()
@@ -103,13 +105,13 @@ fn gemv_tma_kernel[
         ]()
     )
 
-    alias a_size = a_smem_layout.size()
+    comptime a_size = a_smem_layout.size()
 
     var b_smem_base = (
         a_smem_base + NUM_PIPELINE_STAGES * UInt(a_size)
     ).bitcast[Scalar[dtype]]()
 
-    alias b_size = b_smem_layout.size()
+    comptime b_size = b_smem_layout.size()
 
     var a_smem = LayoutTensorIter[
         dtype,
@@ -246,13 +248,13 @@ def gemv_tma[
     var b_device = b_device_buffer.tensor
 
     # TODO: Tune further.
-    alias THREAD_NUM = 1024
-    alias BLOCK_SIZE_M = 64
-    alias BLOCK_SIZE_K = UInt(256)
+    comptime THREAD_NUM = 1024
+    comptime BLOCK_SIZE_M = 64
+    comptime BLOCK_SIZE_K = UInt(256)
     # Number of warps per block for 128 threads.
-    alias WARPS_PER_BLOCK = THREAD_NUM // WARP_SIZE
-    alias ROWS_PER_WARP = UInt(BLOCK_SIZE_M // WARPS_PER_BLOCK)
-    alias NUM_PIPELINE_STAGES = 1
+    comptime WARPS_PER_BLOCK = THREAD_NUM // WARP_SIZE
+    comptime ROWS_PER_WARP = UInt(BLOCK_SIZE_M // WARPS_PER_BLOCK)
+    comptime NUM_PIPELINE_STAGES = 1
 
     var a = from_ndbuffer_row_major(a_device)
     var b = from_ndbuffer_row_major(b_device)
@@ -276,7 +278,7 @@ def gemv_tma[
     )
     # Shared memory needed for NUM_PIPELINE_STAGES A and B working tiles.
     # +8 bytes for each of NUM_PIPELINE_STAGES barriers.
-    alias smem_use = (
+    comptime smem_use = (
         NUM_PIPELINE_STAGES
         * BLOCK_SIZE_M
         * Int(BLOCK_SIZE_K)
@@ -285,7 +287,7 @@ def gemv_tma[
         + 8 * NUM_PIPELINE_STAGES
     )
 
-    alias kernel = gemv_tma_kernel[
+    comptime kernel = gemv_tma_kernel[
         dtype,
         a.layout,
         b.layout,
@@ -325,9 +327,9 @@ def test_gemv_tma[
     var N = n.value
     var K = k.value
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(k.dim)
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(k.dim)
+    comptime static_c_shape = DimList(m.dim, n.dim)
     var dynamic_a_shape = DimList(m.value, k.value)
     var dynamic_b_shape = DimList(k.value)
     var dynamic_c_shape = DimList(m.value, n.value)
@@ -376,8 +378,8 @@ def test_gemv_tma[
     ctx.synchronize()
 
     if benchmark:
-        alias num_runs = 50
-        alias num_warmup = 10
+        comptime num_runs = 50
+        comptime num_warmup = 10
 
         @always_inline
         @parameter
@@ -429,7 +431,7 @@ def test_gemv_tma[
         ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
         ctx.synchronize()
 
-        alias rtol = 1e-2
+        comptime rtol = 1e-2
         assert_almost_equal(
             c_host.tensor,
             c_host_ref.tensor,

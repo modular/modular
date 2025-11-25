@@ -344,7 +344,7 @@ fn _hex_digits_to_hex_chars(
     %# from testing import assert_equal
     %# from utils import StringSlice
     %# from io.write import _hex_digits_to_hex_chars
-    items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0)
+    items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
     comptime S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
     _hex_digits_to_hex_chars(ptr, UInt32(ord("🔥")))
@@ -377,7 +377,7 @@ fn _write_hex[
     %# from testing import assert_equal
     %# from utils import StringSlice
     %# from io.write import _write_hex
-    items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0)
+    items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
     comptime S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
     _write_hex[8](ptr, ord("🔥"))

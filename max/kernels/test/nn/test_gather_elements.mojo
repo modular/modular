@@ -40,7 +40,7 @@ def main():
     fn test_gather_ax1() raises:
         print("== test_gather_ax1")
 
-        alias shape = DimList(2, 2)
+        comptime shape = DimList(2, 2)
 
         var data = TestTensor[DType.float32, 2](shape, [Float32(1), 2, 3, 4])
         var indices = TestTensor[DType.int32, 2](shape, [Int32(0), 0, 1, 0])

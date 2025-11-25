@@ -219,13 +219,13 @@ fn matmul[
             ](coords: IndexList[2], val: SIMD[_type, _width]):
                 @parameter
                 if elementwise_compute_lambda_fn:
-                    alias compute_lambda = elementwise_compute_lambda_fn.value()
+                    comptime compute_lambda = elementwise_compute_lambda_fn.value()
                     var output = compute_lambda(coords, val)
                     c.store[alignment=alignment](
                         coords, rebind[SIMD[c.type, _width]](output)
                     )
 
-            alias elementwise_lambda_wrapper = OptionalReg[
+            comptime elementwise_lambda_wrapper = OptionalReg[
                 elementwise_epilogue_type
             ](
                 compute_lambda_wrapper

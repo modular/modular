@@ -18,7 +18,7 @@ from gpu.host.info import GPUInfo
 from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal, assert_true
 
-alias _TargetType = __mlir_type.`!kgen.target`
+comptime _TargetType = __mlir_type.`!kgen.target`
 
 
 fn kernel(src: UnsafePointer[Float32], dst: UnsafePointer[Float32]):

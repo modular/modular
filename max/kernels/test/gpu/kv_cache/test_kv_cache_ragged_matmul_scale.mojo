@@ -32,11 +32,11 @@ from testing import assert_almost_equal, assert_equal
 
 from utils import IndexList
 
-alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
-alias llama_num_q_heads = 32
+comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
+comptime llama_num_q_heads = 32
 
 
-alias block_scale = 128
+comptime block_scale = 128
 
 
 def _initialize_ragged_inputs[
@@ -133,12 +133,14 @@ def execute_matmul_k_cache_ragged_scale[
     This test follows the same pattern as execute_matmul_k_cache_ragged but
     includes input_scale and weight_scale parameters for scaled FP8 operations.
     """
-    alias hidden_size = num_q_heads * Int(kv_params.head_size)
-    alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
+    comptime hidden_size = num_q_heads * Int(kv_params.head_size)
+    comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
 
-    alias num_paged_blocks = 32
-    alias page_size = 512
-    alias CollectionType = PagedKVCacheCollection[dtype, kv_params, page_size]
+    comptime num_paged_blocks = 32
+    comptime page_size = 512
+    comptime CollectionType = PagedKVCacheCollection[
+        dtype, kv_params, page_size
+    ]
     var batch_size = len(prompt_lens)
 
     debug_assert(
@@ -277,7 +279,7 @@ def execute_matmul_k_cache_ragged_scale[
     var weight_device = weight_host.copy_to_device(ctx)
 
     # Initialize scales for blockwise scaling.
-    alias static_weight_scale_shape = DimList(
+    comptime static_weight_scale_shape = DimList(
         ceildiv(kv_hidden_size, block_scale), ceildiv(hidden_size, block_scale)
     )
     var dynamic_input_scale_shape = DimList(
@@ -422,9 +424,9 @@ def execute_matmul_k_cache_ragged_scale[
 
 def execute_fused_matmul_suite_float8_e4m3fn(ctx: DeviceContext):
     """Test suite specifically for FP8 scaled matmul operations."""
-    alias dtype = DType.float8_e4m3fn
-    alias rtol = 1e-2
-    alias atol = 1e-2
+    comptime dtype = DType.float8_e4m3fn
+    comptime rtol = 1e-2
+    comptime atol = 1e-2
     for bs in [1, 16]:
         var ce_cache_sizes = List[Int]()
         var ce_seq_lens = List[Int]()

@@ -50,15 +50,15 @@ from linalg.arch.sm100.mma import max_contiguous_tile_shape, Major
 fn calculate_coordinate[
     global_layout: Layout, tile_shape: IntTuple
 ](linear_index: Int) -> UInt32Indices[global_layout.rank()]:
-    alias coalesced_tile = tile_shape.product_flatten()
-    alias smem_tiler = Layout(coalesced_tile)
+    comptime coalesced_tile = tile_shape.product_flatten()
+    comptime smem_tiler = Layout(coalesced_tile)
 
     constrained[global_layout.rank() == smem_tiler.rank(),]()
 
-    alias rank = global_layout.rank()
+    comptime rank = global_layout.rank()
 
-    alias zipped_layout = zipped_divide(global_layout, smem_tiler)[1]
-    alias zipped_shape = zipped_layout.shape
+    comptime zipped_layout = zipped_divide(global_layout, smem_tiler)[1]
+    comptime zipped_shape = zipped_layout.shape
 
     var indices = UInt32Indices[rank](0)
     var elements_per_dimension = IndexList[rank](0)
@@ -67,14 +67,14 @@ fn calculate_coordinate[
 
     @parameter
     for i in range(rank):
-        alias index = rank - i - 1
-        alias dimension = zipped_shape[index].value()
+        comptime index = rank - i - 1
+        comptime dimension = zipped_shape[index].value()
 
         elements_per_dimension[index] = prev
         prev = prev * dimension
 
     var current_coordinate = linear_index
-    alias tile_dims = to_index_list[rank, DType.uint32](coalesced_tile)
+    comptime tile_dims = to_index_list[rank, DType.uint32](coalesced_tile)
 
     @parameter
     for index in range(rank):
@@ -92,11 +92,11 @@ fn shared_to_global_2D[
     dst: LayoutTensor,
     tiled_coordinate: IndexList[2, element_type = DType.uint32],
 ):
-    alias smem_dim0 = product(smem_tile.layout.shape[0])
-    alias smem_dim1 = product(smem_tile.layout.shape[1])
+    comptime smem_dim0 = product(smem_tile.layout.shape[0])
+    comptime smem_dim1 = product(smem_tile.layout.shape[1])
 
-    alias global_dim0 = product(dst.layout.shape[0])
-    alias global_dim1 = product(dst.layout.shape[1])
+    comptime global_dim0 = product(dst.layout.shape[0])
+    comptime global_dim1 = product(dst.layout.shape[1])
 
     if thread_idx.x == 0:
 
@@ -136,13 +136,13 @@ fn shared_to_global_3D[
     dst: LayoutTensor,
     tiled_coordinate: IndexList[3, element_type = DType.uint32],
 ):
-    alias smem_dim0 = product(smem_tile.layout.shape[0])
-    alias smem_dim1 = product(smem_tile.layout.shape[1])
-    alias smem_dim2 = product(smem_tile.layout.shape[2])
+    comptime smem_dim0 = product(smem_tile.layout.shape[0])
+    comptime smem_dim1 = product(smem_tile.layout.shape[1])
+    comptime smem_dim2 = product(smem_tile.layout.shape[2])
 
-    alias global_dim0 = product(dst.layout.shape[0])
-    alias global_dim1 = product(dst.layout.shape[1])
-    alias global_dim2 = product(dst.layout.shape[2])
+    comptime global_dim0 = product(dst.layout.shape[0])
+    comptime global_dim1 = product(dst.layout.shape[1])
+    comptime global_dim2 = product(dst.layout.shape[2])
 
     if thread_idx.x == 0:
 
@@ -192,7 +192,7 @@ fn test_tma_load_kernel[
     dst: LayoutTensor[dtype, global_layout, MutAnyOrigin],
     load_policy: TMALoad[dtype, tile_shape, swizzle_mode],
 ):
-    alias expected_bytes = smem_layout.size() * size_of[dtype]()
+    comptime expected_bytes = smem_layout.size() * size_of[dtype]()
 
     var smem_tile = LayoutTensor[
         dtype,
@@ -229,7 +229,7 @@ fn test_tma_load_kernel[
 
     mbar_ptr[0].wait()
 
-    alias smem_indices = to_index_list[coordinate.size, DType.uint32](
+    comptime smem_indices = to_index_list[coordinate.size, DType.uint32](
         smem_layout.shape
     )
     var tiled_coordinate = coordinate
@@ -253,13 +253,13 @@ def test_2D_swizzle[
 ](reference_tensor: LayoutTensor, result_tensor: LayoutTensor,) -> Int:
     var total_errors = 0
 
-    alias load_shape_m = product(load_shape[0])
-    alias load_shape_n = product(load_shape[1])
+    comptime load_shape_m = product(load_shape[0])
+    comptime load_shape_n = product(load_shape[1])
 
-    alias m_tiles = product(global_shape[0]) // load_shape_m
-    alias n_tiles = product(global_shape[1]) // load_shape_n
+    comptime m_tiles = product(global_shape[0]) // load_shape_m
+    comptime n_tiles = product(global_shape[1]) // load_shape_n
 
-    alias swizzle = to_swizzle[result_tensor.dtype, swizzle_mode]()
+    comptime swizzle = to_swizzle[result_tensor.dtype, swizzle_mode]()
 
     for i in range(m_tiles):
         for j in range(n_tiles):
@@ -294,15 +294,15 @@ def test_3D_swizzle[
     global_shape: IntTuple,
     load_shape: IntTuple,
 ](reference_tensor: LayoutTensor, result_tensor: LayoutTensor,) -> Int:
-    alias load_shape_b = product(load_shape[0])
-    alias load_shape_m = product(load_shape[1])
-    alias load_shape_n = product(load_shape[2])
+    comptime load_shape_b = product(load_shape[0])
+    comptime load_shape_m = product(load_shape[1])
+    comptime load_shape_n = product(load_shape[2])
 
-    alias b_tiles = product(global_shape[0]) // load_shape_b
-    alias m_tiles = product(global_shape[1]) // load_shape_m
-    alias n_tiles = product(global_shape[2]) // load_shape_n
+    comptime b_tiles = product(global_shape[0]) // load_shape_b
+    comptime m_tiles = product(global_shape[1]) // load_shape_m
+    comptime n_tiles = product(global_shape[2]) // load_shape_n
 
-    alias swizzle = to_swizzle[result_tensor.dtype, swizzle_mode]()
+    comptime swizzle = to_swizzle[result_tensor.dtype, swizzle_mode]()
 
     var total_errors = 0
 
@@ -355,16 +355,16 @@ def test_tma_load[
         "Global shape and SMEM shape must have the same depth",
     ]()
 
-    alias total_global_elements = product(global_shape)
-    alias total_smem_elements = smem_layout.size()
-    alias total_load_elements = product(load_shape)
+    comptime total_global_elements = product(global_shape)
+    comptime total_smem_elements = smem_layout.size()
+    comptime total_load_elements = product(load_shape)
 
     constrained[
         total_smem_elements % total_load_elements == 0,
         "shared memory shape must be divisble by load shape",
     ]()
 
-    alias total_tiles = ceildiv(total_global_elements, total_smem_elements)
+    comptime total_tiles = ceildiv(total_global_elements, total_smem_elements)
 
     var global_buffer_host_reference = ctx.enqueue_create_host_buffer[dtype](
         total_global_elements
@@ -396,7 +396,7 @@ def test_tma_load[
 
     var load_policy = TMALoad(descriptor)
 
-    alias kernel = test_tma_load_kernel[
+    comptime kernel = test_tma_load_kernel[
         dtype,
         global_buffer_dst_tensor.layout,
         smem_layout,
@@ -428,7 +428,7 @@ def test_tma_load[
 
         assert_equal(total_errors, 0)
     else:
-        alias GlobalTensorType = LayoutTensor[
+        comptime GlobalTensorType = LayoutTensor[
             dtype, Layout.row_major(global_shape), MutAnyOrigin
         ]
 
@@ -453,7 +453,7 @@ def main():
     with DeviceContext() as ctx:
         print("Test TMA horizontal loads")
 
-        alias desc_shape = IntTuple(2, 64)
+        comptime desc_shape = IntTuple(2, 64)
 
         test_tma_load[
             IntTuple(8, 512),
@@ -485,7 +485,7 @@ def main():
             DType.bfloat16,
         ](ctx)
 
-        alias load_tile_shape[
+        comptime load_tile_shape[
             swizzle_mode: SwizzleMode, major: Major
         ] = max_contiguous_tile_shape[
             DType.bfloat16,
@@ -494,17 +494,21 @@ def main():
             swizzle_mode=swizzle_mode,
         ]()
 
-        alias load_tile_shape_32B_K = load_tile_shape[SwizzleMode._32B, Major.K]
-        alias load_tile_shape_64B_K = load_tile_shape[SwizzleMode._64B, Major.K]
-        alias load_tile_shape_128B_K = load_tile_shape[
+        comptime load_tile_shape_32B_K = load_tile_shape[
+            SwizzleMode._32B, Major.K
+        ]
+        comptime load_tile_shape_64B_K = load_tile_shape[
+            SwizzleMode._64B, Major.K
+        ]
+        comptime load_tile_shape_128B_K = load_tile_shape[
             SwizzleMode._128B, Major.K
         ]
-        alias load_tile_shape_128B_MN = load_tile_shape[
+        comptime load_tile_shape_128B_MN = load_tile_shape[
             SwizzleMode._128B, Major.MN
         ]
 
-        alias gmem_shape = IntTuple(512, 128)
-        alias smem_layout[
+        comptime gmem_shape = IntTuple(512, 128)
+        comptime smem_layout[
             swizzle_mode: SwizzleMode, major: Major
         ] = Layout.row_major(
             128 * 2, load_tile_shape[swizzle_mode, major][1].value()

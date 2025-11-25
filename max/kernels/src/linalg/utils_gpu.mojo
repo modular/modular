@@ -122,7 +122,7 @@ struct MatmulConfig[
 
     var _pdl_level: PDLLevel
 
-    alias accum_type = get_accum_type[Self.a_type]()  # TODO: factor b_type
+    comptime accum_type = get_accum_type[Self.a_type]()  # TODO: factor b_type
 
     # MMA is typically accumulated in FP32. The reduction over partitions may be
     # done in lower precision to reduce traffic to intermediate buffer. This is
@@ -130,14 +130,16 @@ struct MatmulConfig[
     # We see some discrepancy between BF16 and FP32 in KERN-933 and use FP32
     # by default to be safe. TODO: set via env var KERN-1002.
 
-    alias split_k_reduction_scheme = env_get_int["SPLITK_REDUCTION_SCHEME", 2]()
+    comptime split_k_reduction_scheme = env_get_int[
+        "SPLITK_REDUCTION_SCHEME", 2
+    ]()
 
-    alias OUTPUT_PRECISION = 2
+    comptime OUTPUT_PRECISION = 2
 
-    alias ACCUM_PRECISION = 1
+    comptime ACCUM_PRECISION = 1
 
     # TODO: output precision will break the integration test.
-    alias split_k_reduction_type = Self.c_type if Self.OUTPUT_PRECISION == Self.split_k_reduction_scheme else Self.accum_type
+    comptime split_k_reduction_type = Self.c_type if Self.OUTPUT_PRECISION == Self.split_k_reduction_scheme else Self.accum_type
 
     fn __init__(
         out self,
@@ -228,7 +230,7 @@ struct MatmulConfig[
         return self._pdl_level
 
     fn __eq__(self, rhs: MatmulConfig) -> Bool:
-        alias static_info_match = Self.a_type == rhs.a_type and Self.b_type == rhs.b_type and Self.c_type == rhs.c_type and Self.transpose_b == rhs.transpose_b
+        comptime static_info_match = Self.a_type == rhs.a_type and Self.b_type == rhs.b_type and Self.c_type == rhs.c_type and Self.transpose_b == rhs.transpose_b
 
         @parameter
         if static_info_match:
@@ -335,7 +337,7 @@ struct MatmulKernels[
     BK, mma shape, and warp tile shape are decided internally.
     """
 
-    alias hopper_128x128_4 = MatmulConfig[
+    comptime hopper_128x128_4 = MatmulConfig[
         Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
     ](
         block_tile_shape=Index(128, 128, _bk_base[Self.a_type]()),
@@ -343,7 +345,7 @@ struct MatmulKernels[
         num_pipeline_stages=4,
     )
 
-    alias ampere_128x128_4 = MatmulConfig[
+    comptime ampere_128x128_4 = MatmulConfig[
         Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
     ](
         block_tile_shape=Index(128, 128, _bk_base[Self.a_type]()),
@@ -351,7 +353,7 @@ struct MatmulKernels[
         num_pipeline_stages=4,
     )
 
-    alias ampere_256x64_4 = MatmulConfig[
+    comptime ampere_256x64_4 = MatmulConfig[
         Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
     ](
         block_tile_shape=Index(64, 256, _bk_base[Self.a_type]()),
@@ -359,7 +361,7 @@ struct MatmulKernels[
         num_pipeline_stages=4,
     )
 
-    alias ampere_256x128_3 = MatmulConfig[
+    comptime ampere_256x128_3 = MatmulConfig[
         Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
     ](
         block_tile_shape=Index(128, 256, 2 * _bk_base[Self.a_type]()),
@@ -367,7 +369,7 @@ struct MatmulKernels[
         num_pipeline_stages=3,
     )
 
-    alias tuning_config = MatmulConfig[
+    comptime tuning_config = MatmulConfig[
         Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
     ](
         block_tile_shape=Index(
@@ -406,11 +408,11 @@ fn select_config[
     # * num_waves is the maximum thread blocks that are dispatched to a SM.
     #   E.g. 128 blocks to A100's 108 SMs, one SM at most computes two blocks.
 
-    alias gpu_info = ctx.default_device_info
+    comptime gpu_info = ctx.default_device_info
 
     # TODO(KERN-1310): This disables split-k for AMD, enable it after fixing KERN-1310.
-    alias max_num_k_partitions = 8 if has_nvidia_gpu_accelerator() else 1
-    alias min_k_partition = 1024
+    comptime max_num_k_partitions = 8 if has_nvidia_gpu_accelerator() else 1
+    comptime min_k_partition = 1024
 
     # Initial values overwritten in loop
     var best_bmnk = Index(128, 128, _bk_base[a_type]())
@@ -419,17 +421,17 @@ fn select_config[
     var min_num_waves = Int.MAX
     var min_work_per_SM = Int.MAX
 
-    alias _128x128_4 = Index(128, 128, _bk_base[a_type](), 4)
-    alias _256x64_4 = Index(64, 256, _bk_base[a_type](), 4)
+    comptime _128x128_4 = Index(128, 128, _bk_base[a_type](), 4)
+    comptime _256x64_4 = Index(64, 256, _bk_base[a_type](), 4)
     # Only enable this when the target is exactly A100. We use A100 properties
     # for target="gpu" (default) on A10, L4. This avoids breaking tests there.
     # The tile is skipped in the loop for exceeding shared memory capacity when
     # sm_80 is present in target.
-    alias _256x128_3 = Index(
+    comptime _256x128_3 = Index(
         128, 256, 2 * _bk_base[a_type](), 3
     ) if gpu_info is A100 else Index(1024, 1024, 1024, 1024)
 
-    alias opt_list = [_128x128_4, _256x64_4, _256x128_3]
+    comptime opt_list = [_128x128_4, _256x64_4, _256x128_3]
 
     for bmnk_stage in materialize[opt_list]():
         var bm = bmnk_stage[0]

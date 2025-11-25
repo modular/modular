@@ -21,10 +21,10 @@ from buffer.dimlist import DimList
 
 
 def test_spatial_merge(ctx: DeviceContext):
-    alias dtype = DType.float32
-    alias merge_size = 2
-    alias hidden_size = 4
-    alias batch_size = 2
+    comptime dtype = DType.float32
+    comptime merge_size = 2
+    comptime hidden_size = 4
+    comptime batch_size = 2
 
     # Batch item 0: t=1, h=4, w=4
     # Batch item 1: t=2, h=2, w=2

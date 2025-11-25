@@ -78,7 +78,7 @@ fn rope_q_proj[
     var pos_im = idx
     pos_re[rank - 1] = indices[0]
     pos_im[rank - 1] = indices[1]
-    alias width_2 = width // 2
+    comptime width_2 = width // 2
 
     var val: SIMD[dtype, width]
 
@@ -116,8 +116,8 @@ fn rope_k_cache[
     head_size: Int,
 ):
     h_re, h_im = get_safetensors_idx(d_idx, head_size)
-    alias width_2 = width // 2
-    alias cache_type = cache_t.dtype
+    comptime width_2 = width // 2
+    comptime cache_type = cache_t.dtype
 
     var val: SIMD[cache_type, width]
 
@@ -162,13 +162,13 @@ fn fused_qk_rope[
     constrained[freqs_cis.rank == 2]()
     constrained[output.rank == 4]()
 
-    alias kv_params = cache_t.kv_params
+    comptime kv_params = cache_t.kv_params
 
     var batch_size = q_proj.dim[0]()
     var new_seq_len = q_proj.dim[1]()
-    alias num_q_heads = Int(q_proj.layout.shape[2])
-    alias num_k_heads = kv_params.num_heads
-    alias head_size = Int(q_proj.layout.shape[3])
+    comptime num_q_heads = Int(q_proj.layout.shape[2])
+    comptime num_k_heads = kv_params.num_heads
+    comptime head_size = Int(q_proj.layout.shape[3])
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
 
@@ -220,11 +220,13 @@ fn fused_qk_rope[
         num_q_heads + Int(num_k_heads),  # concat q and k along head dim
         head_size,
     )
-    alias compile_target = _current_target() if is_cpu[
+    comptime compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
-    alias target_simd_width = simd_width_of[dtype, target=compile_target]()
-    alias kernel_simd_width = gcd(target_simd_width, Int(kv_params.head_size))
+    comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
+    comptime kernel_simd_width = gcd(
+        target_simd_width, Int(kv_params.head_size)
+    )
     constrained[kernel_simd_width >= 2, "invalid simd_width and head size"]()
 
     @parameter
@@ -273,20 +275,20 @@ fn fused_qk_rope_ragged[
     constrained[
         input_row_offsets.rank == 1, "input_row_offsets must be rank 1"
     ]()
-    alias kv_params = cache_t.kv_params
-    alias num_q_heads = Int(q_proj.layout.shape[1])
-    alias num_k_heads = kv_params.num_heads
-    alias q_head_size = Int(q_proj.layout.shape[2])
-    alias k_head_size = kv_params.head_size
+    comptime kv_params = cache_t.kv_params
+    comptime num_q_heads = Int(q_proj.layout.shape[1])
+    comptime num_k_heads = kv_params.num_heads
+    comptime q_head_size = Int(q_proj.layout.shape[2])
+    comptime k_head_size = kv_params.head_size
     var batch_size = input_row_offsets.dim[0]() - 1
 
     # Add rope dimension parameters
-    alias rope_dim = Int(freqs_cis.layout.shape[1])
+    comptime rope_dim = Int(freqs_cis.layout.shape[1])
 
     # Check if shape of freqs_cis matches head_size.
     # If not, we only rope the last `rope_dim` dimensions of each head.
-    alias unroped_dim = q_head_size - rope_dim
-    alias has_nope = unroped_dim > 0
+    comptime unroped_dim = q_head_size - rope_dim
+    comptime has_nope = unroped_dim > 0
 
     constrained[
         freqs_cis.layout.shape[1] != UNKNOWN_VALUE,
@@ -349,7 +351,7 @@ fn fused_qk_rope_ragged[
 
                     @parameter
                     for i in range(len(mrope_section.value())):
-                        alias val = mrope_section.value().value(i)
+                        comptime val = mrope_section.value().value(i)
                         if head_dim_idx < val:
                             section_idx = i
                             break
@@ -410,11 +412,11 @@ fn fused_qk_rope_ragged[
         num_q_heads + Int(num_k_heads),  # concat q and k along head dim
         q_head_size,
     )
-    alias compile_target = _current_target() if is_cpu[
+    comptime compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
-    alias target_simd_width = simd_width_of[dtype, target=compile_target]()
-    alias kernel_simd_width = gcd(target_simd_width, rope_dim)
+    comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
+    comptime kernel_simd_width = gcd(target_simd_width, rope_dim)
 
     @parameter
     if mrope_section:

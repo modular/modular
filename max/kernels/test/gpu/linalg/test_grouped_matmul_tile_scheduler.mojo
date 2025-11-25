@@ -39,8 +39,8 @@ fn test_kernel[
 
 
 def test(ctx: DeviceContext):
-    alias group_len = 3
-    alias offset_shape = DimList(group_len + 1)
+    comptime group_len = 3
+    comptime offset_shape = DimList(group_len + 1)
     host_group_offsets = HostNDBuffer[DType.uint32, 1, offset_shape](
         offset_shape
     )

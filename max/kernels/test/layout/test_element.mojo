@@ -156,7 +156,7 @@ fn test_element_store():
 fn test_element_dynamic_layout() raises:
     print("== test_element_dynamic_layout")
 
-    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[
         layout, element_type = DType.int32, linear_idx_type = DType.int32
@@ -205,8 +205,8 @@ fn test_element_dynamic_layout() raises:
     # CHECK: 560.0 570.0 580.0 590.0 600.0 610.0 620.0 630.0
     print(tensor_8x8)
 
-    alias layoutUx8 = Layout.row_major(UNKNOWN_VALUE, 8)
-    alias tensor_Ux8_type = ManagedLayoutTensor[DType.float32, layoutUx8]
+    comptime layoutUx8 = Layout.row_major(UNKNOWN_VALUE, 8)
+    comptime tensor_Ux8_type = ManagedLayoutTensor[DType.float32, layoutUx8]
     var runtime_layoutUx8 = RuntimeLayout[
         layoutUx8,
         element_type = tensor_Ux8_type.element_type,
@@ -239,8 +239,8 @@ fn test_element_dynamic_layout() raises:
     print(tensor_Ux8_vec4_d1.element_layout)
     print(tensor_Ux8_vec4_d1)
 
-    alias layout8xU = Layout.row_major(8, UNKNOWN_VALUE)
-    alias tensor_8xU_type = ManagedLayoutTensor[DType.float32, layout8xU]
+    comptime layout8xU = Layout.row_major(8, UNKNOWN_VALUE)
+    comptime tensor_8xU_type = ManagedLayoutTensor[DType.float32, layout8xU]
     var runtime_layout8xU = RuntimeLayout[
         layout8xU,
         element_type = tensor_8xU_type.element_type,

@@ -104,8 +104,8 @@ fn test_average_pool_2d_ceil_includeBound_gpu(ctx: DeviceContext) raises:
 fn pool[
     count_boundary: Bool = False
 ](pool_method: PoolMethod, ctx: DeviceContext) raises:
-    alias in_layout = Layout.row_major(2, 5, 7, 2)
-    alias out_layout = Layout.row_major(2, 2, 2, 2)
+    comptime in_layout = Layout.row_major(2, 5, 7, 2)
+    comptime out_layout = Layout.row_major(2, 2, 2, 2)
 
     var in_heap = List[Float32](capacity=in_layout.size())
     var input_tensor = LayoutTensor[DType.float32, in_layout](in_heap)
@@ -128,10 +128,10 @@ fn pool[
         ),
     ).fill(0)
 
-    var paddings = List[Int32](0, 0, 0, 0)
-    var filter = List[Int32](3, 2)
-    var stride = List[Int32](2, 3)
-    var dilation = List[Int32](1, 1)
+    var paddings: List[Int32] = [0, 0, 0, 0]
+    var filter: List[Int32] = [3, 2]
+    var stride: List[Int32] = [2, 3]
+    var dilation: List[Int32] = [1, 1]
 
     var paddings_tensor = LayoutTensor[
         DType.int32, Layout.row_major(UNKNOWN_VALUE)
@@ -229,8 +229,8 @@ fn pool[
 fn pool_ceil_test[
     count_boundary: Bool = False, ceil_mode: Bool = True
 ](pool_method: PoolMethod, ctx: DeviceContext) raises:
-    alias in_layout = Layout.row_major(1, 4, 4, 1)
-    alias out_layout = Layout.row_major(1, 2, 2, 1)
+    comptime in_layout = Layout.row_major(1, 4, 4, 1)
+    comptime out_layout = Layout.row_major(1, 2, 2, 1)
 
     var in_heap = List[Float32](capacity=in_layout.size())
     var input_tensor = LayoutTensor[DType.float32, in_layout](in_heap)
@@ -253,10 +253,10 @@ fn pool_ceil_test[
         ),
     ).fill(0)
 
-    var paddings = List[Int32](0, 0, 0, 0)
-    var filter = List[Int32](3, 3)
-    var stride = List[Int32](2, 2)
-    var dilation = List[Int32](1, 1)
+    var paddings: List[Int32] = [0, 0, 0, 0]
+    var filter: List[Int32] = [3, 3]
+    var stride: List[Int32] = [2, 2]
+    var dilation: List[Int32] = [1, 1]
 
     var paddings_tensor = LayoutTensor[
         DType.int32, Layout.row_major(UNKNOWN_VALUE)
@@ -372,8 +372,8 @@ fn test_avg_pool_2d_with_padding_gpu[
 ](ctx: DeviceContext) raises:
     print("== test_avg_pool_2d_with_padding_gpu:", count_boundary)
 
-    alias in_layout = Layout.row_major(1, 7, 7, 1)
-    alias out_layout = Layout.row_major(1, 7, 7, 1)
+    comptime in_layout = Layout.row_major(1, 7, 7, 1)
+    comptime out_layout = Layout.row_major(1, 7, 7, 1)
 
     var in_heap = List[Float32](capacity=in_layout.size())
     var input_tensor = LayoutTensor[DType.float32, in_layout](in_heap)
@@ -396,10 +396,10 @@ fn test_avg_pool_2d_with_padding_gpu[
         ),
     ).fill(0)
 
-    var paddings = List[Int32](1, 1, 1, 1)
-    var filter = List[Int32](3, 3)
-    var stride = List[Int32](1, 1)
-    var dilation = List[Int32](1, 1)
+    var paddings: List[Int32] = [1, 1, 1, 1]
+    var filter: List[Int32] = [3, 3]
+    var stride: List[Int32] = [1, 1]
+    var dilation: List[Int32] = [1, 1]
 
     var paddings_tensor = LayoutTensor[
         DType.int32, Layout.row_major(UNKNOWN_VALUE)
@@ -490,8 +490,8 @@ fn test_avg_pool_2d_with_padding_gpu[
 fn test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
     print("== test_max_pool_pad_dilation_2d_gpu")
 
-    alias in_layout = Layout.row_major(1, 4, 4, 1)
-    alias out_layout = Layout.row_major(1, 1, 3, 1)
+    comptime in_layout = Layout.row_major(1, 4, 4, 1)
+    comptime out_layout = Layout.row_major(1, 1, 3, 1)
 
     var in_heap = List[Float32](capacity=in_layout.size())
     var input_tensor = LayoutTensor[DType.float32, in_layout](in_heap)
@@ -515,10 +515,10 @@ fn test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
         ),
     ).fill(0)
 
-    var paddings = List[Int32](0, 0, 2, 0)
-    var filter = List[Int32](2, 2)
-    var stride = List[Int32](1, 1)
-    var dilation = List[Int32](3, 3)
+    var paddings: List[Int32] = [0, 0, 2, 0]
+    var filter: List[Int32] = [2, 2]
+    var stride: List[Int32] = [1, 1]
+    var dilation: List[Int32] = [3, 3]
 
     var paddings_tensor = LayoutTensor[
         DType.int32, Layout.row_major(UNKNOWN_VALUE)

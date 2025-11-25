@@ -16,8 +16,8 @@ from sys._assembly import inlined_assembly
 
 from gpu.host import DeviceContext
 
-alias ptxas_path = Path("/usr/local/cuda/bin/ptxas")
-alias nvdisasm_path = Path("/usr/local/cuda/bin/nvdisasm")
+comptime ptxas_path = Path("/usr/local/cuda/bin/ptxas")
+comptime nvdisasm_path = Path("/usr/local/cuda/bin/nvdisasm")
 
 
 def test__dump_sass():

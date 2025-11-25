@@ -57,8 +57,8 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     k: ValOrDim,
     batch_size: ValOrDim,
 ):
-    alias BLOCK_SCALE_K = 128
-    alias block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
+    comptime BLOCK_SCALE_K = 128
+    comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
 
     constrained[transpose_b, "transpose_b must be true"]()
 
@@ -100,16 +100,16 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         "K must be divisible by BLOCK_SCALE_K",
     )
 
-    alias static_a_shape = DimList(batch_size.dim, m.dim, k.dim)
-    alias static_b_shape = DimList(
+    comptime static_a_shape = DimList(batch_size.dim, m.dim, k.dim)
+    comptime static_b_shape = DimList(
         batch_size.dim, n.dim, k.dim
     ) if transpose_b else DimList(batch_size.dim, k.dim, n.dim)
-    alias static_c_shape = DimList(batch_size.dim, m.dim, n.dim)
+    comptime static_c_shape = DimList(batch_size.dim, m.dim, n.dim)
 
-    alias static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList(
         batch_size.dim, k.dim // BLOCK_SCALE_K, m.dim
     )
-    alias static_b_scales_shape = DimList(
+    comptime static_b_scales_shape = DimList(
         batch_size.dim, n.dim // BLOCK_SCALE_K, k.dim // BLOCK_SCALE_K
     )
 
@@ -123,14 +123,14 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         bs, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
 
-    alias static_a_shape_2D = DimList(m.dim, k.dim)
-    alias static_b_shape_2D = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
-    )
-    alias static_c_shape_2D = DimList(m.dim, n.dim)
+    comptime static_a_shape_2D = DimList(m.dim, k.dim)
+    comptime static_b_shape_2D = DimList(
+        n.dim, k.dim
+    ) if transpose_b else DimList(k.dim, n.dim)
+    comptime static_c_shape_2D = DimList(m.dim, n.dim)
 
-    alias static_a_scales_shape_2D = DimList(k.dim // BLOCK_SCALE_K, m.dim)
-    alias static_b_scales_shape_2D = DimList(
+    comptime static_a_scales_shape_2D = DimList(k.dim // BLOCK_SCALE_K, m.dim)
+    comptime static_b_scales_shape_2D = DimList(
         n.dim // BLOCK_SCALE_K, k.dim // BLOCK_SCALE_K
     )
 

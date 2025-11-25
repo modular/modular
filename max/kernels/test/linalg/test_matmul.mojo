@@ -32,7 +32,7 @@ from testing import assert_almost_equal, assert_equal
 
 from utils.index import Index, IndexList
 
-alias alignment = 64
+comptime alignment = 64
 
 
 fn gemm_naive[](
@@ -209,9 +209,9 @@ def test_matmul[
     saturated: Bool,
     mixed_kernels: Bool,
 ](m: Int, n: Int, k: Int):
-    alias a_shape = DimList.create_unknown[2]()
-    alias b_shape = DimList.create_unknown[2]()
-    alias c_shape = DimList.create_unknown[2]()
+    comptime a_shape = DimList.create_unknown[2]()
+    comptime b_shape = DimList.create_unknown[2]()
+    comptime c_shape = DimList.create_unknown[2]()
     test_matmul[
         a_type,
         a_shape,

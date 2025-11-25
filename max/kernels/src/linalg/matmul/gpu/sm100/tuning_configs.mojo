@@ -334,7 +334,7 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
 
 fn _get_tuning_list_sm100_fp8[mma_k: Int, bk: Int]() -> List[TuningConfigSM100]:
     # ----------------BEGIN-TUNING-LIST-SM100-FP8----------------
-    alias config_list = [
+    comptime config_list = [
         # Automatically generated from [tuning_table_sm100_fp8.yaml]
         # index: [0]
         TuningConfigSM100(

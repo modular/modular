@@ -51,9 +51,9 @@ fn mma_kernel_fp32_fp32(
     n: Int,
     k: Int,
 ):
-    alias mma_m = 16
-    alias mma_n = 16
-    alias mma_k = 4
+    comptime mma_m = 16
+    comptime mma_n = 16
+    comptime mma_k = 4
 
     var d_reg: SIMD[DType.float32, 4] = 0
     var tile_loops = k // (4 * mma_k)
@@ -89,9 +89,9 @@ fn mma_kernel_fp32_fp16[
     n: Int,
     k: Int,
 ):
-    alias mma_m = 4 if mma_n_blocks == 16 else 16
-    alias mma_n = 4 if mma_n_blocks == 16 else 16
-    alias mma_k = 4 if mma_n_blocks == 16 else 16
+    comptime mma_m = 4 if mma_n_blocks == 16 else 16
+    comptime mma_n = 4 if mma_n_blocks == 16 else 16
+    comptime mma_k = 4 if mma_n_blocks == 16 else 16
 
     var d_reg: SIMD[DType.float32, 4] = 0
     var tile_loops = k // mma_k
@@ -127,9 +127,9 @@ fn mma_kernel_fp32_bf16[
     n: Int,
     k: Int,
 ):
-    alias mma_m = 4 if mma_n_blocks == 16 else 16
-    alias mma_n = 4 if mma_n_blocks == 16 else 16
-    alias mma_k = 4 if mma_n_blocks == 16 else 16
+    comptime mma_m = 4 if mma_n_blocks == 16 else 16
+    comptime mma_n = 4 if mma_n_blocks == 16 else 16
+    comptime mma_k = 4 if mma_n_blocks == 16 else 16
 
     var d_reg: SIMD[DType.float32, 4] = 0
     var tile_loops = k // mma_k
@@ -190,12 +190,12 @@ fn run_mma_fp32_fp32(
     ctx.enqueue_copy(b_device, b_host)
     ctx.enqueue_copy(c_device, c_host)
 
-    alias WARP_PER_BLOCK = 1
-    alias MMA_M = 16
-    alias MMA_N = 16
-    alias MMA_K = 4
+    comptime WARP_PER_BLOCK = 1
+    comptime MMA_M = 16
+    comptime MMA_N = 16
+    comptime MMA_K = 4
 
-    alias kernel = mma_kernel_fp32_fp32
+    comptime kernel = mma_kernel_fp32_fp32
 
     ctx.enqueue_function_checked[kernel, kernel](
         a_device,
@@ -278,12 +278,12 @@ fn run_mma_fp32_fp16[
     ctx.enqueue_copy(b_device, b_host)
     ctx.enqueue_copy(c_device, c_host)
 
-    alias WARP_PER_BLOCK = 1
-    alias MMA_M = 4 if mma_n_blocks == 16 else 16
-    alias MMA_N = 4 if mma_n_blocks == 16 else 16
-    alias MMA_K = 4 if mma_n_blocks == 16 else 16
+    comptime WARP_PER_BLOCK = 1
+    comptime MMA_M = 4 if mma_n_blocks == 16 else 16
+    comptime MMA_N = 4 if mma_n_blocks == 16 else 16
+    comptime MMA_K = 4 if mma_n_blocks == 16 else 16
 
-    alias kernel = mma_kernel_fp32_fp16[mma_n_blocks]
+    comptime kernel = mma_kernel_fp32_fp16[mma_n_blocks]
 
     ctx.enqueue_function_checked[kernel, kernel](
         a_device,
@@ -372,12 +372,12 @@ fn run_mma_fp32_bf16[
     ctx.enqueue_copy(b_device, b_host)
     ctx.enqueue_copy(c_device, c_host)
 
-    alias WARP_PER_BLOCK = 1
-    alias MMA_M = 4 if mma_n_blocks == 16 else 16
-    alias MMA_N = 4 if mma_n_blocks == 16 else 16
-    alias MMA_K = 4 if mma_n_blocks == 16 else 16
+    comptime WARP_PER_BLOCK = 1
+    comptime MMA_M = 4 if mma_n_blocks == 16 else 16
+    comptime MMA_N = 4 if mma_n_blocks == 16 else 16
+    comptime MMA_K = 4 if mma_n_blocks == 16 else 16
 
-    alias kernel = mma_kernel_fp32_bf16[mma_n_blocks]
+    comptime kernel = mma_kernel_fp32_bf16[mma_n_blocks]
 
     ctx.enqueue_function_checked[kernel, kernel](
         a_device,

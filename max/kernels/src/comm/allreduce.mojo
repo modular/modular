@@ -95,7 +95,6 @@ from collections import InlineArray
 from math import ceildiv
 from sys import align_of, is_amd_gpu, simd_width_of, size_of
 from sys.ffi import _Global, external_call
-from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 from sys.info import _accelerator_arch
 
 from buffer import NDBuffer
@@ -128,6 +127,7 @@ from gpu.memory import CacheOperation
 from memory import (
     LegacyOpaquePointer as OpaquePointer,
     LegacyUnsafePointer as UnsafePointer,
+    UnsafePointer as UnsafePointerV2,
     stack_allocation,
 )
 
@@ -138,20 +138,20 @@ from gpu.host.info import GPUInfo
 
 from collections.optional import OptionalReg
 
-alias elementwise_epilogue_type = fn[
+comptime elementwise_epilogue_type = fn[
     dtype: DType, rank: Int, width: Int, *, alignment: Int
 ] (IndexList[rank], SIMD[dtype, size=width]) capturing -> None
 
 # On AMD Systems, the loads from GLOBAL addressspace gives an improvement
 # to the performance.
-alias _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else AddressSpace.GENERIC
+comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else AddressSpace.GENERIC
 
 
 # NOTE: the above result was true on A100, but on H100 we need more SMs to
 # sature the NVLink in the bandwidth-bound regime.
 # TODO(bduke): Dispatch based on device after completing parameter sweep.
 
-alias MAX_NUM_BLOCKS_UPPER_BOUND = 512
+comptime MAX_NUM_BLOCKS_UPPER_BOUND = 512
 """Maximum number of thread blocks to use for reduction kernels.
 
 This value has been empirically optimized through grid search across different GPU architectures.
@@ -159,7 +159,7 @@ While this value is optimal for A100 GPUs, H100 GPUs may benefit from more block
 saturate NVLink bandwidth.
 """
 
-alias MAX_GPUS = 8
+comptime MAX_GPUS = 8
 """Maximum number of GPUs supported in the allreduce implementation.
 
 This constant sets the upper bound for the number of GPUS supported in this algorithm.
@@ -167,7 +167,7 @@ This constant sets the upper bound for the number of GPUS supported in this algo
 
 # Counter may overflow, but it's fine since unsigned int overflow is
 # well-defined behavior.
-alias _flag_t = DType.uint32
+comptime _flag_t = DType.uint32
 
 
 @fieldwise_init
@@ -245,14 +245,18 @@ fn _p2p_cache_init_wrapper() -> OpaquePointer:
       1 => p2p_not_available
       2 => p2p_available
     """
-    alias p2p_not_available = 1
-    alias p2p_available = 2
+    comptime p2p_not_available = 1
+    comptime p2p_available = 2
 
     try:
         DeviceContext.enable_all_peer_access()
-        return _unsafe_aliasing_address_to_pointer[NoneType](p2p_available)
+        return UnsafePointerV2[NoneType, MutOrigin.external](
+            unsafe_from_address=p2p_available
+        )
     except:
-        return _unsafe_aliasing_address_to_pointer[NoneType](p2p_not_available)
+        return UnsafePointerV2[NoneType, MutOrigin.external](
+            unsafe_from_address=p2p_not_available
+        )
 
 
 fn _p2p_cache_destroy_wrapper(ptr: OpaquePointer) -> None:
@@ -267,8 +271,8 @@ fn can_enable_p2p() raises -> Bool:
     Returns:
         True if P2P access is possible between all GPU pairs, False otherwise.
     """
-    alias p2p_not_available = Scalar[DType.int](1)
-    alias p2p_available = Scalar[DType.int](2)
+    comptime p2p_not_available = Scalar[DType.int](1)
+    comptime p2p_available = Scalar[DType.int](2)
 
     # Initialize once per process via indexed global, then reuse the tag.
     var cached = external_call[
@@ -298,7 +302,7 @@ fn _naive_reduce_kernel_with_lambda[
     """Naive reduction kernel with elementwise lambda support."""
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
-    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
 
     for idx in range(tid, num_elements // simd_width, stride):
         var elem_idx = idx * simd_width
@@ -372,8 +376,8 @@ fn _allreduce_naive_single[
     - Each op instance only writes to its own temporary buffer and its own
       output buffer (`out_r`).
     """
-    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
-    alias BLOCK_SIZE = 256
+    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime BLOCK_SIZE = 256
     var num_elements = list_of_in_bufs[0].num_elements()
 
     # Wrap ALL input buffers as DeviceBuffer with their respective device contexts.
@@ -426,7 +430,7 @@ fn _allreduce_naive_single[
         )
 
     # Apply elementwise epilogue to write into the output buffer.
-    alias naive_reduce_with_lambda_kernel = _naive_reduce_kernel_with_lambda[
+    comptime naive_reduce_with_lambda_kernel = _naive_reduce_kernel_with_lambda[
         dtype,
         rank,
         width=simd_width,
@@ -499,7 +503,7 @@ fn _multi_gpu_barrier[
         internal_counter_ptr[] = val
 
         # Get the number of flags in self_counter to skip over it
-        alias peer_counter_offset = size_of[
+        comptime peer_counter_offset = size_of[
             StaticTuple[
                 StaticTuple[Scalar[_flag_t], MAX_GPUS],
                 MAX_NUM_BLOCKS_UPPER_BOUND,
@@ -634,9 +638,9 @@ fn _allreduce_2stage_kernel[
         num_elements: Number of elements to reduce.
         my_rank: Current GPU rank.
     """
-    alias accum_type = get_accum_type[dtype]()
-    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
-    alias alignment = align_of[SIMD[dtype, simd_width]]()
+    comptime accum_type = get_accum_type[dtype]()
+    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime alignment = align_of[SIMD[dtype, simd_width]]()
 
     # --- Thread Indexing and Vector Setup ---
     var global_tid = global_idx.x
@@ -789,9 +793,9 @@ fn _allreduce_1stage_kernel[
     Uses P2P access to directly read from other GPU buffers and perform reduction.
     Synchronizes using _multi_gpu_barrier before and after reduction.
     """
-    alias accum_type = get_accum_type[dtype]()
-    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
-    alias alignment = align_of[SIMD[dtype, simd_width]]()
+    comptime accum_type = get_accum_type[dtype]()
+    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime alignment = align_of[SIMD[dtype, simd_width]]()
 
     var global_tid = global_idx.x
     var stride = grid_dim.x * UInt(BLOCK_SIZE)
@@ -875,7 +879,7 @@ fn _allreduce_p2p[
 
     Launches P2P reduction kernel on the current GPU to perform direct reduction.
     """
-    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
     var num_elements = list_of_in_bufs[0].num_elements()
 
     # Do nothing if there are no elements to reduce.
@@ -898,9 +902,9 @@ fn _allreduce_p2p[
     for i in range(num_buffers):
         list_of_in_ptrs[i] = list_of_in_bufs[i].data
 
-    alias BLOCK_SIZE = 256
-    alias rank_4_byte_threshold = 512 * 1024
-    alias rank_8_byte_threshold = 256 * 1024
+    comptime BLOCK_SIZE = 256
+    comptime rank_4_byte_threshold = 512 * 1024
+    comptime rank_8_byte_threshold = 256 * 1024
     var payload_bytecount = list_of_in_bufs[0].bytecount()
 
     if (rank <= 4 and (payload_bytecount < rank_4_byte_threshold)) or (
@@ -913,7 +917,7 @@ fn _allreduce_p2p[
         )
 
         # Use the 1-stage allreduce when transfer is latency bound.
-        alias allreduce_1stage_kernel = _allreduce_1stage_kernel[
+        comptime allreduce_1stage_kernel = _allreduce_1stage_kernel[
             dtype,
             rank,
             ngpus,
@@ -937,15 +941,15 @@ fn _allreduce_p2p[
         @parameter
         if use_quickreduce:
             # Define grid size for stage1 push using fixed tiles over the full vector space.
-            alias atom_size = 8
+            comptime atom_size = 8
             # Compute tiles once here and pass to kernel
-            alias tile_vectors = 256 * atom_size
+            comptime tile_vectors = 256 * atom_size
             var num_simd_vectors_total = num_elements // simd_width
             var num_tiles_total = ceildiv(num_simd_vectors_total, tile_vectors)
 
             var grid_size = min(max_num_blocks, num_tiles_total)
 
-            alias kernel = allreduce_2stage_quickreduce[
+            comptime kernel = allreduce_2stage_quickreduce[
                 dtype,
                 rank,
                 ngpus,
@@ -976,7 +980,7 @@ fn _allreduce_p2p[
             )
 
             # Otherwise, use 2-stage allreduce for the bandwidth bound regime.
-            alias kernel = _allreduce_2stage_kernel[
+            comptime kernel = _allreduce_2stage_kernel[
                 dtype,
                 rank,
                 ngpus,
@@ -1019,7 +1023,7 @@ struct TuningConfigAllreduce(TuningConfig):
         )
 
 
-alias allreduce_table = Table(
+comptime allreduce_table = Table(
     [
         # default for sm90 (encoded with ngpus=-1, num_bytes=-1)
         TuningConfigAllreduce(
@@ -1088,13 +1092,13 @@ fn _dispatch_max_num_blocks[
     fn rule_eq_arch_default(x: TuningConfigAllreduce) -> Bool:
         return x.ngpus == -1 and x.num_bytes == -1
 
-    alias default_idx = allreduce_table.query_index[rule_eq_arch_default]()
+    comptime default_idx = allreduce_table.query_index[rule_eq_arch_default]()
     constrained[len(default_idx)]()
-    alias default_entry = allreduce_table.configs[default_idx[0]]
+    comptime default_entry = allreduce_table.configs[default_idx[0]]
     var default_num_blocks = default_entry.num_blocks
 
     # Override defaults for specific AMD CDNA3 parts regardless of sm_version aliasing
-    alias arch = _accelerator_arch()
+    comptime arch = _accelerator_arch()
     if "gfx950" in arch:  # MI355 family
         default_num_blocks = 64
     elif "gfx942" in arch:  # MI300 family
@@ -1105,7 +1109,7 @@ fn _dispatch_max_num_blocks[
     fn rule_eq_arch_ngpus(x: TuningConfigAllreduce) -> Bool:
         return x.sm_version == sm_version and x.ngpus == ngpus
 
-    alias search_domain = allreduce_table.query_index[rule_eq_arch_ngpus]()
+    comptime search_domain = allreduce_table.query_index[rule_eq_arch_ngpus]()
 
     @parameter
     if not search_domain:
@@ -1116,7 +1120,7 @@ fn _dispatch_max_num_blocks[
     fn rule_get_num_bytes(x: TuningConfigAllreduce) -> Int:
         return x.num_bytes
 
-    alias all_num_bytes_values = allreduce_table.query_values[
+    comptime all_num_bytes_values = allreduce_table.query_values[
         Int, rule_get_num_bytes, search_domain
     ]()
 
@@ -1129,13 +1133,13 @@ fn _dispatch_max_num_blocks[
 
         # Find the fist config x with input 'num_bytes <= x.num_bytes'
         if num_bytes <= nb:
-            alias idx_list = allreduce_table.query_index[
+            comptime idx_list = allreduce_table.query_index[
                 rule_eq_nb, domain=search_domain
             ]()
 
             @parameter
             if idx_list:
-                alias entry = allreduce_table.configs[idx_list[0]]
+                comptime entry = allreduce_table.configs[idx_list[0]]
                 return entry.num_blocks
             else:
                 break
@@ -1144,7 +1148,7 @@ fn _dispatch_max_num_blocks[
 
 
 fn get_sm_version() -> StaticString:
-    alias default_device_info = GPUInfo.from_name[_accelerator_arch()]()
+    comptime default_device_info = GPUInfo.from_name[_accelerator_arch()]()
     return default_device_info.version
 
 
@@ -1241,10 +1245,10 @@ fn allreduce[
             rebind[IndexList[rank]](coords), rebind[SIMD[dtype, _width]](val)
         )
 
-    alias actual_output_lambda = default_output_lambda if not output_lambda else output_lambda.value()
+    comptime actual_output_lambda = default_output_lambda if not output_lambda else output_lambda.value()
 
     # TODO: check all devices have the same GPU sm_version
-    alias sm_version = get_sm_version()
+    comptime sm_version = get_sm_version()
     var max_num_blocks = _max_num_blocks.or_else(
         _dispatch_max_num_blocks[ngpus, sm_version](
             input_buffers[0].bytecount()
@@ -1309,18 +1313,18 @@ fn allreduce_2stage_quickreduce_tile[
     num_tiles: Int,
     iteration: Int,
 ):
-    alias rank_atoms = atom_size // ngpus
-    alias simd_width = simd_width_of[dtype]()
-    alias alignment = align_of[SIMD[dtype, simd_width]]()
-    alias atom_stride = 256 * simd_width
+    comptime rank_atoms = atom_size // ngpus
+    comptime simd_width = simd_width_of[dtype]()
+    comptime alignment = align_of[SIMD[dtype, simd_width]]()
+    comptime atom_stride = 256 * simd_width
     # 32 KiB = 256*8*16 bytes
-    alias tile_elems = 256 * atom_size * simd_width
-    alias accum_type = get_accum_type[dtype]()
-    alias rank_tile_elems = 256 * rank_atoms * simd_width
+    comptime tile_elems = 256 * atom_size * simd_width
+    comptime accum_type = get_accum_type[dtype]()
+    comptime rank_tile_elems = 256 * rank_atoms * simd_width
 
     # Per-tile byte offsets matching CUDA pattern
-    alias bytes_per_elem = size_of[Scalar[dtype]]()
-    alias flag_t_bytes = size_of[Scalar[_flag_t]]()
+    comptime bytes_per_elem = size_of[Scalar[dtype]]()
+    comptime flag_t_bytes = size_of[Scalar[_flag_t]]()
     # Note: In the C++ reference implementation, data_offset is a 64-bit long.
     var data_offset: Int = (
         2 * num_tiles * ngpus * flag_t_bytes // bytes_per_elem
@@ -1585,13 +1589,13 @@ fn allreduce_2stage_quickreduce[
     #   2) Push contributions: every rank sends its segment data to the responsible rank.
     #   3) Target rank reduces its received segment (stage 1 done).
     #   4) All ranks gather the reduced segments back (stage 2).
-    alias simd_width = simd_width_of[dtype]()
-    alias alignment = align_of[SIMD[dtype, simd_width]]()
+    comptime simd_width = simd_width_of[dtype]()
+    comptime alignment = align_of[SIMD[dtype, simd_width]]()
 
-    alias bytes_per_elem = size_of[Scalar[dtype]]()
-    alias flag_t_bytes = size_of[Scalar[_flag_t]]()
-    alias tile_elems = 256 * atom_size * simd_width
-    alias INT32_MAX = 2147483647
+    comptime bytes_per_elem = size_of[Scalar[dtype]]()
+    comptime flag_t_bytes = size_of[Scalar[_flag_t]]()
+    comptime tile_elems = 256 * atom_size * simd_width
+    comptime INT32_MAX = 2147483647
 
     var data_offset_elems = (
         2 * num_tiles_total * ngpus * flag_t_bytes

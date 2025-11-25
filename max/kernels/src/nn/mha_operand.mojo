@@ -31,8 +31,8 @@ from builtin.device_passable import DevicePassable
 trait MHAOperand(DevicePassable):
     """This serves as the trait to support arguments to our MHA kernel."""
 
-    alias dtype: DType
-    alias page_size: Int
+    comptime dtype: DType
+    comptime page_size: Int
 
     # TODO: change this to return a LayoutTensor once MOCO-1471 is fixed
     @always_inline
@@ -91,11 +91,11 @@ struct KVCacheMHAOperand[
     KVCacheT type, but we need to solve some cyclic dependencies first.
     """
 
-    alias dtype = Self.cache_t.dtype
-    alias page_size = Self.cache_t.page_size_
+    comptime dtype = Self.cache_t.dtype
+    comptime page_size = Self.cache_t.page_size_
     var cache: Self.cache_t
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -168,11 +168,11 @@ struct KVCacheMHAOperand[
 struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
     """An implementation for NDBuffer arguments to MHA kernels."""
 
-    alias dtype = Self.dtype_
-    alias page_size = 0
+    comptime dtype = Self.dtype_
+    comptime page_size = 0
     var buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin]
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -249,7 +249,7 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
         # View the 4D buffer as a 2D matrix [batch*seq, heads*head_dim]
         var rows = self.buffer.dim[0]() * self.buffer.dim[1]()
         var cols = self.buffer.dim[2]() * self.buffer.dim[3]()
-        alias layout_ = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+        comptime layout_ = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
         rt_layout = RuntimeLayout[layout_].row_major(IndexList[2](rows, cols))
 
@@ -268,14 +268,14 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
 ):
     """An implementation for ragged NDBuffer arguments to MHA kernels."""
 
-    alias dtype = Self.dtype_
-    alias page_size = 0
+    comptime dtype = Self.dtype_
+    comptime page_size = 0
     var buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin]
     var cache_row_offsets: LayoutTensor[
         DType.uint32, Self.cache_layout, MutAnyOrigin
     ]
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -368,7 +368,7 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
         var rows = self.buffer.dim[0]()  # total tokens
         var cols = self.buffer.dim[1]() * self.buffer.dim[2]()
 
-        alias layout_ = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+        comptime layout_ = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
         rt_layout = RuntimeLayout[layout_].row_major(IndexList[2](rows, cols))
         var tensor = LayoutTensor[Self.dtype, layout_, MutAnyOrigin](

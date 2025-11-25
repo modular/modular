@@ -30,11 +30,11 @@ from sys import size_of
 
 from utils import IndexList
 
-alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
-alias replit_num_q_heads = 24
+comptime kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
+comptime replit_num_q_heads = 24
 
-alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
-alias llama_num_q_heads = 32
+comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
+comptime llama_num_q_heads = 32
 
 
 def execute_ragged_flash_attention[
@@ -46,9 +46,9 @@ def execute_ragged_flash_attention[
     num_layers: Int,
     layer_idx: Int,
 ):
-    alias num_continuous_blocks = 32
-    alias page_size = 512
-    alias num_paged_blocks = 512
+    comptime num_continuous_blocks = 32
+    comptime page_size = 512
+    comptime num_paged_blocks = 512
     var batch_size = len(valid_lengths)
     debug_assert(
         batch_size < num_continuous_blocks,
@@ -63,7 +63,7 @@ def execute_ragged_flash_attention[
         "expected valid_lengths and cache_lengths size to be equal",
     )
 
-    alias layout_1d = Layout(UNKNOWN_VALUE)
+    comptime layout_1d = Layout(UNKNOWN_VALUE)
     var input_row_offsets_heap = alloc[Scalar[DType.uint32]](batch_size + 1)
     var input_row_offsets = LayoutTensor[DType.uint32, layout_1d](
         input_row_offsets_heap,
@@ -88,7 +88,7 @@ def execute_ragged_flash_attention[
         total_length += valid_lengths[i]
     input_row_offsets[batch_size] = total_length
 
-    alias layout_3d = Layout.row_major[3]()
+    comptime layout_3d = Layout.row_major[3]()
     var q_ragged_heap = alloc[Scalar[dtype]](
         total_length * num_q_heads * Int(kv_params.head_size)
     )
@@ -365,7 +365,7 @@ def execute_ragged_flash_attention[
     paged_lut_heap.free()
 
 
-alias dtype = DType.float32
+comptime dtype = DType.float32
 
 
 def execute_flash_attention_suite():

@@ -67,7 +67,7 @@ from .structured import (
 )
 
 # Type aliases for cleaner code
-alias GlobalTensor[dtype: DType, layout: Layout] = LayoutTensor[
+comptime GlobalTensor[dtype: DType, layout: Layout] = LayoutTensor[
     dtype, layout, MutAnyOrigin, address_space = AddressSpace.GLOBAL
 ]
 
@@ -128,7 +128,7 @@ fn determine_thread_role[
 ]() -> Tuple[ThreadRole, Int]:
     """Returns (role, consumer_warp_id within role group)."""
     var warp_id = get_warp_id()
-    alias producer_thread_count = (
+    comptime producer_thread_count = (
         producer_a_warps + producer_b_warps
     ) * WARP_SIZE
 
@@ -176,9 +176,9 @@ fn smem_tile_layout[
         "block_cols must be a multiple of k_tile_size",
     ]()
 
-    alias base_layout = Layout.row_major(block_rows, k_tile_size)
-    alias num_repeats = block_cols // k_tile_size
-    alias tiler_layout = Layout.row_major(1, num_repeats)
+    comptime base_layout = Layout.row_major(block_rows, k_tile_size)
+    comptime num_repeats = block_cols // k_tile_size
+    comptime tiler_layout = Layout.row_major(1, num_repeats)
     return blocked_product(base_layout, tiler_layout, coalesce_output=True)
 
 
@@ -198,16 +198,16 @@ fn get_producer_warp_thread_layout[
     # | T40 T41 T42 T43 | T56 T57 T58 T59 |
     # | T44 T45 T46 T47 | T60 T61 T62 T63 |
 
-    alias inner_block_size = 16  # total number of threads in the inner block
+    comptime inner_block_size = 16  # total number of threads in the inner block
 
     # a row of inner blocks will load one k_tile, so here we calculate
     # threads per row
-    alias inner_block_cols = k_tile_size // simd_width
-    alias inner_block_rows = inner_block_size // inner_block_cols
+    comptime inner_block_cols = k_tile_size // simd_width
+    comptime inner_block_rows = inner_block_size // inner_block_cols
 
-    alias base_layout = Layout.row_major(inner_block_rows, inner_block_cols)
+    comptime base_layout = Layout.row_major(inner_block_rows, inner_block_cols)
 
-    alias num_repeats_col = block_cols // k_tile_size
+    comptime num_repeats_col = block_cols // k_tile_size
 
     constrained[
         num_repeats_col < (WARP_SIZE // inner_block_size),
@@ -218,15 +218,15 @@ fn get_producer_warp_thread_layout[
         + " // "
         + String(inner_block_size),
     ]()
-    alias outer_block_size = num_repeats_col * inner_block_size
-    alias num_repeats_row = WARP_SIZE // outer_block_size
+    comptime outer_block_size = num_repeats_col * inner_block_size
+    comptime num_repeats_row = WARP_SIZE // outer_block_size
 
     constrained[
         block_rows % (inner_block_rows * num_repeats_row) == 0,
         "shared block size is not evenly distributable among threads",
     ]()
 
-    alias tiler_layout = Layout.row_major(
+    comptime tiler_layout = Layout.row_major(
         num_repeats_row,
         num_repeats_col,
     )
@@ -267,13 +267,13 @@ fn run_producer[
     """Generic producer function for loading matrix tiles from global to shared memory.
     """
 
-    alias thread_layout = get_producer_warp_thread_layout[
+    comptime thread_layout = get_producer_warp_thread_layout[
         k_tile_size, simd_width, block_rows, block_cols
     ]()
 
-    alias warp_tile_layout = Layout.row_major(warp_rows, warp_cols)
-    alias total_participating_threads = thread_layout.size()
-    alias elements_loaded_per_thread = warp_tile_layout.size() // total_participating_threads
+    comptime warp_tile_layout = Layout.row_major(warp_rows, warp_cols)
+    comptime total_participating_threads = thread_layout.size()
+    comptime elements_loaded_per_thread = warp_tile_layout.size() // total_participating_threads
 
     var reg_frag = LayoutTensor[
         dtype,
@@ -295,7 +295,7 @@ fn run_producer[
 
             @parameter
             for tile_num in range(tile_count):
-                alias stage = tile_num % pipeline_stages
+                comptime stage = tile_num % pipeline_stages
 
                 var gmem_tile = matrix.tile[block_rows, block_cols](
                     block_idx_dim, tile_num
@@ -366,15 +366,15 @@ fn warp_specialized_matmul_kernel[
         address_space = AddressSpace.GLOBAL,
     ],
 ):
-    alias K = a.shape[1]()
+    comptime K = a.shape[1]()
 
     # NOTE: hardcoded MMA for now, but in theory this pipeline will work with any MMA
-    alias MMA_M = 16
-    alias MMA_N = 16
-    alias MMA_K = 16
+    comptime MMA_M = 16
+    comptime MMA_N = 16
+    comptime MMA_K = 16
 
-    alias m_warps_per_block = BM // WM
-    alias n_warps_per_block = BN // WN
+    comptime m_warps_per_block = BM // WM
+    comptime n_warps_per_block = BN // WN
 
     # Validate configuration
     validate_config[
@@ -396,23 +396,23 @@ fn warp_specialized_matmul_kernel[
     var role_group = role_info[1]
     var warp_id = get_warp_id()
 
-    alias swizzle = Swizzle(3, 0, 1)
+    comptime swizzle = Swizzle(3, 0, 1)
 
     # Compute k_group_size like MMAConfig does
-    alias simd_width = simd_width_of[in_type]()
-    alias frag_size = MMA_M * MMA_K // WARP_SIZE
-    alias c_frag_size = MMA_M * MMA_N // WARP_SIZE
-    alias k_group_size = simd_width // frag_size
-    alias k_tile_size = MMA_K * k_group_size
-    alias num_k_tiles = WK // k_tile_size
+    comptime simd_width = simd_width_of[in_type]()
+    comptime frag_size = MMA_M * MMA_K // WARP_SIZE
+    comptime c_frag_size = MMA_M * MMA_N // WARP_SIZE
+    comptime k_group_size = simd_width // frag_size
+    comptime k_tile_size = MMA_K * k_group_size
+    comptime num_k_tiles = WK // k_tile_size
 
-    alias smem_layout_a = smem_tile_layout[k_tile_size, BM, BK]()
-    alias smem_layout_b = smem_tile_layout[k_tile_size, BN, BK]()
+    comptime smem_layout_a = smem_tile_layout[k_tile_size, BM, BK]()
+    comptime smem_layout_b = smem_tile_layout[k_tile_size, BN, BK]()
 
-    alias block_warps_a = BM // WM
-    alias block_warps_b = BN // WN
+    comptime block_warps_a = BM // WM
+    comptime block_warps_b = BN // WN
 
-    alias RingBufferTypeA = RingBuffer[
+    comptime RingBufferTypeA = RingBuffer[
         in_type,
         smem_layout_a,
         pipeline_stages,
@@ -424,7 +424,7 @@ fn warp_specialized_matmul_kernel[
         1,
         SingleCounterSync[pipeline_stages, BM, WM, n_warps_per_block],
     ]
-    alias RingBufferTypeB = RingBuffer[
+    comptime RingBufferTypeB = RingBuffer[
         in_type,
         smem_layout_b,
         pipeline_stages,
@@ -443,11 +443,11 @@ fn warp_specialized_matmul_kernel[
 
     barrier()  # Ensure that RingBuffers are initialized across warps.
 
-    alias tile_count = K // BK
-    alias warps_processed_per_producer_a = Int(
+    comptime tile_count = K // BK
+    comptime warps_processed_per_producer_a = Int(
         m_warps_per_block // a_producer_warps
     )
-    alias warps_processed_per_producer_b = Int(
+    comptime warps_processed_per_producer_b = Int(
         n_warps_per_block // b_producer_warps
     )
 
@@ -498,15 +498,17 @@ fn warp_specialized_matmul_kernel[
             )
 
     else:  # Consumer
-        alias output_thread_layout = Layout.col_major(MMA_M, WARP_SIZE // MMA_M)
+        comptime output_thread_layout = Layout.col_major(
+            MMA_M, WARP_SIZE // MMA_M
+        )
 
         var c_block_tile = c.tile[BM, BN](Int(block_idx.x), Int(block_idx.y))
         var c_scatter_gather = ScatterGatherAmd[
             output_thread_layout, thread_scope = ThreadScope.WARP
         ](c)
 
-        alias total_consumer_operations = m_warps_per_block * n_warps_per_block
-        alias warps_computed_per_consumer = total_consumer_operations // consumer_warps
+        comptime total_consumer_operations = m_warps_per_block * n_warps_per_block
+        comptime warps_computed_per_consumer = total_consumer_operations // consumer_warps
 
         var consumer_warp_id = (
             Int(warp_id) - a_producer_warps - b_producer_warps
@@ -550,7 +552,7 @@ fn warp_specialized_matmul_kernel[
                 # Accumulate across all K tiles for this M, N position
                 @parameter
                 for tile_num in range(tile_count):
-                    alias stage = tile_num % pipeline_stages
+                    comptime stage = tile_num % pipeline_stages
 
                     # Get tiles using consumer view context
                     with consumer_view_a.get_tile(
@@ -558,7 +560,7 @@ fn warp_specialized_matmul_kernel[
                     ) as smem_tile_a, consumer_view_b.get_tile(
                         stage, consumer_iteration, n_warp_idx
                     ) as smem_tile_b:
-                        alias num_k_tiles = tile_operator.total_k_tiles
+                        comptime num_k_tiles = tile_operator.total_k_tiles
 
                         # Load all K tiles
                         @parameter
@@ -607,7 +609,7 @@ fn warp_specialized_matmul[
     c_device_tensor: LayoutTensor[DType.float32, Layout.row_major(M, N)],
     ctx: DeviceContext,
 ) raises:
-    alias kernel = warp_specialized_matmul_kernel[
+    comptime kernel = warp_specialized_matmul_kernel[
         a_device_tensor.dtype,
         c_device_tensor.dtype,
         a_device_tensor.layout,

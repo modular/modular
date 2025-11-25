@@ -35,11 +35,11 @@ from testing import assert_almost_equal
 from utils import Index, IndexList
 from utils.numerics import min_or_neg_inf
 
-alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
-alias replit_num_q_heads = 24
+comptime kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
+comptime replit_num_q_heads = 24
 
-alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
-alias llama_num_q_heads = 32
+comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
+comptime llama_num_q_heads = 32
 
 
 fn generate_alibi_bias[
@@ -58,7 +58,7 @@ fn generate_alibi_bias[
     if num_heads.is_power_of_two():
         scale = exp2(-((head_idx + 1).cast[dtype]() * 8.0 / num_heads))
     else:
-        alias floor_power_of_2 = prev_power_of_two(num_heads)
+        comptime floor_power_of_2 = prev_power_of_two(num_heads)
         if head_idx < floor_power_of_2:
             scale = exp2(
                 -((head_idx + 1).cast[dtype]() * 8.0 / floor_power_of_2)
@@ -89,8 +89,10 @@ def execute_flash_attention[
     cache_valid_length: NDBuffer[DType.uint32, 1],
     ctx: DeviceContext,
 ):
-    alias num_blocks = 32
-    alias CollectionType = ContinuousBatchingKVCacheCollection[dtype, kv_params]
+    comptime num_blocks = 32
+    comptime CollectionType = ContinuousBatchingKVCacheCollection[
+        dtype, kv_params
+    ]
 
     debug_assert(
         batch_size < num_blocks,
@@ -406,7 +408,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         cache_valid_length_ptr, Index(1)
     )
 
-    alias dtype = DType.bfloat16
+    comptime dtype = DType.bfloat16
 
     # Replit & Llama3 context encoding [testing even query valid lengths].
     valid_length[0] = 128

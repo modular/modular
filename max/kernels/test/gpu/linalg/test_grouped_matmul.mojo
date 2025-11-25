@@ -62,12 +62,12 @@ fn test[
         print(expert_ids[i], end=" ")
     print()
 
-    alias a_type = in_type
-    alias b_type = in_type
-    alias c_type = out_type
+    comptime a_type = in_type
+    comptime b_type = in_type
+    comptime c_type = out_type
 
-    alias N = expert_shape[0]
-    alias K = expert_shape[1]
+    comptime N = expert_shape[0]
+    comptime K = expert_shape[1]
 
     # Total and max number of tokens
     total_num_tokens = 0
@@ -79,11 +79,11 @@ fn test[
         )
 
     # Create host A C buffers
-    alias static_a_shape = DimList(Dim(), K)
+    comptime static_a_shape = DimList(Dim(), K)
     var dynamic_a_shape = DimList(total_num_tokens, K)
     var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    alias actual_N = 3 * N if qkv_perm_dim else N
-    alias static_c_shape = DimList(Dim(), actual_N)
+    comptime actual_N = 3 * N if qkv_perm_dim else N
+    comptime static_c_shape = DimList(Dim(), actual_N)
     var dynamic_c_shape = DimList(total_num_tokens, actual_N)
 
     var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
@@ -93,7 +93,9 @@ fn test[
     )
 
     # Create host B buffers
-    alias static_b_shape = DimList(num_experts, 3 * N if qkv_perm_dim else N, K)
+    comptime static_b_shape = DimList(
+        num_experts, 3 * N if qkv_perm_dim else N, K
+    )
     var b_host = HostNDBuffer[b_type, 3, static_b_shape](static_b_shape)
     var expert_ids_host = HostNDBuffer[DType.int32, 1](num_experts)
 
@@ -187,7 +189,7 @@ fn test[
         ptr = c_dev_ndbuffer.data + new_j * total_num_tokens * N + i * N + new_k
         ptr.store[width=width, alignment=alignment](new_val.cast[out_type]())
 
-    alias elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
+    comptime elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
         perm_dim_fn
     ) if qkv_perm_dim else (
         OptionalReg[elementwise_epilogue_type](
@@ -284,12 +286,12 @@ fn test_negative_lora_id[
         print(expert_ids[i], end=" ")
     print()
 
-    alias a_type = in_type
-    alias b_type = in_type
-    alias c_type = out_type
+    comptime a_type = in_type
+    comptime b_type = in_type
+    comptime c_type = out_type
 
-    alias N = expert_shape[0]
-    alias K = expert_shape[1]
+    comptime N = expert_shape[0]
+    comptime K = expert_shape[1]
 
     # Total and max number of tokens
     total_num_tokens = 0
@@ -301,10 +303,10 @@ fn test_negative_lora_id[
         )
 
     # Create host A C buffers
-    alias static_a_shape = DimList(Dim(), K)
+    comptime static_a_shape = DimList(Dim(), K)
     var dynamic_a_shape = DimList(total_num_tokens, K)
     var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    alias static_c_shape = DimList(Dim(), N)
+    comptime static_c_shape = DimList(Dim(), N)
     var dynamic_c_shape = DimList(total_num_tokens, N)
     var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
     var a_offsets_host = HostNDBuffer[DType.uint32, 1, DimList(Dim())](
@@ -312,7 +314,7 @@ fn test_negative_lora_id[
     )
 
     # Create host B buffers
-    alias static_b_shape = DimList(num_experts, N, K)
+    comptime static_b_shape = DimList(num_experts, N, K)
     var b_host = HostNDBuffer[b_type, 3, static_b_shape](static_b_shape)
     var expert_ids_host = HostNDBuffer[DType.int32, 1](num_active_experts)
 
@@ -431,14 +433,14 @@ def main():
             DType.bfloat16,
             num_experts=1,
             expert_shape = Index(256, 256),
-        ](1, List[Int](128), List[Int](0), ctx)
+        ](1, [128], [0], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=1,
             expert_shape = Index(16, 256),
-        ](1, List[Int](128), List[Int](0), ctx)
+        ](1, [128], [0], ctx)
 
         # unaligned matmul
         test[
@@ -446,14 +448,14 @@ def main():
             DType.bfloat16,
             num_experts=1,
             expert_shape = Index(1024, 256),
-        ](1, List[Int](200), List[Int](0), ctx)
+        ](1, [200], [0], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=1,
             expert_shape = Index(512, 1024),
-        ](1, List[Int](256), List[Int](0), ctx)
+        ](1, [256], [0], ctx)
 
         # simple expert routing
         test[
@@ -461,7 +463,7 @@ def main():
             DType.bfloat16,
             num_experts=4,
             expert_shape = Index(256, 64),
-        ](1, List[Int](128), List[Int](2), ctx)
+        ](1, [128], [2], ctx)
 
         # simple aligned group routing
         test[
@@ -469,7 +471,7 @@ def main():
             DType.bfloat16,
             num_experts=4,
             expert_shape = Index(256, 64),
-        ](3, List[Int](32, 32 * 3, 32 * 7), List[Int](2, 0, 1), ctx)
+        ](3, [32, 32 * 3, 32 * 7], [2, 0, 1], ctx)
 
         # simple unaligned group routing
         test[
@@ -477,21 +479,21 @@ def main():
             DType.bfloat16,
             num_experts=4,
             expert_shape = Index(256, 64),
-        ](2, List[Int](10, 60), List[Int](2, 0), ctx)
+        ](2, [10, 60], [2, 0], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=4,
             expert_shape = Index(2880, 512),
-        ](2, List[Int](10, 60), List[Int](2, 0), ctx)
+        ](2, [10, 60], [2, 0], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=4,
             expert_shape = Index(5760, 512),
-        ](2, List[Int](10, 60), List[Int](2, 0), ctx)
+        ](2, [10, 60], [2, 0], ctx)
 
         # Multiple matmuls selecting part of experts
         test[
@@ -499,7 +501,7 @@ def main():
             DType.bfloat16,
             num_experts=4,
             expert_shape = Index(768, 1024),
-        ](2, List[Int](128, 256), List[Int](0, 2), ctx)
+        ](2, [128, 256], [0, 2], ctx)
 
         # Multiple matmuls selecting part of experts
         # num_tokesn not multiple of tile size
@@ -508,7 +510,7 @@ def main():
             DType.bfloat16,
             num_experts=6,
             expert_shape = Index(1280, 1024),
-        ](4, List[Int](27, 1500, 300, 150), List[Int](0, 3, 2, 4), ctx)
+        ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Multiple matmuls selecting part of experts
         # num_tokesn not multiple of tile size
@@ -518,7 +520,7 @@ def main():
             DType.bfloat16,
             num_experts=6,
             expert_shape = Index(192, 1024),
-        ](4, List[Int](27, 1500, 300, 150), List[Int](0, 3, 2, 4), ctx)
+        ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         @parameter
         if ctx.default_device_info is B200:
@@ -527,14 +529,14 @@ def main():
                 DType.bfloat16,
                 num_experts=6,
                 expert_shape = Index(1280, 16),
-            ](4, List[Int](27, 1500, 300, 150), List[Int](0, 3, 2, 4), ctx)
+            ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=6,
             expert_shape = Index(16, 1024),
-        ](4, List[Int](27, 1500, 300, 150), List[Int](0, 3, 2, 4), ctx)
+        ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Multiple matmuls selecting part of experts with epilogue
         test[
@@ -543,18 +545,18 @@ def main():
             num_experts=4,
             expert_shape = Index(768, 1024),
             has_epilogue=True,
-        ](2, List[Int](128, 256), List[Int](0, 2), ctx)
+        ](2, [128, 256], [0, 2], ctx)
 
-        alias ns = List[Int](16, 256)
-        alias ms = List[Int](16, 512)
+        comptime ns = [16, 256]
+        comptime ms = [16, 512]
 
         @parameter
         for n_idx in range(len(ns)):
 
             @parameter
             for m_idx in range(len(ms)):
-                alias n = ns[n_idx]
-                alias m = ms[m_idx]
+                comptime n = ns[n_idx]
+                comptime m = ms[m_idx]
 
                 @parameter
                 if m == 16 or n == 16:
@@ -568,7 +570,7 @@ def main():
                     DType.bfloat16,
                     num_experts=2,
                     expert_shape = Index(n, m),
-                ](2, List[Int](64, 128), List[Int](0, -1), ctx)
+                ](2, [64, 128], [0, -1], ctx)
 
                 # Test negative lora_id behavior with naive matmul
                 test_negative_lora_id[
@@ -576,7 +578,7 @@ def main():
                     DType.bfloat16,
                     num_experts=2,
                     expert_shape = Index(n, m),
-                ](2, List[Int](64, 128), List[Int](0, -1), ctx)
+                ](2, [64, 128], [0, -1], ctx)
 
         # QKV perm dim test
         test[
@@ -585,4 +587,4 @@ def main():
             num_experts=6,
             expert_shape = Index(192, 1024),
             qkv_perm_dim=True,
-        ](4, List[Int](27, 1500, 300, 150), List[Int](0, 3, 2, 4), ctx)
+        ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)

@@ -18,18 +18,18 @@ from testing import assert_true
 fn print_static_shape[x: List[Int]]():
     @parameter
     for i in range(len(x)):
-        alias xi = x[i]
+        comptime xi = x[i]
         print("dim", i, "=", xi)
 
 
 def main():
-    alias shape_mnk = parse_shape["10x20x30"]()
+    comptime shape_mnk = parse_shape["10x20x30"]()
     print_static_shape[shape_mnk]()
     constrained[shape_mnk[0] == 10]()
     constrained[shape_mnk[1] == 20]()
     constrained[shape_mnk[2] == 30]()
 
-    alias shape = env_get_shape["shape", "1x2x3"]()
+    comptime shape = env_get_shape["shape", "1x2x3"]()
     print_static_shape[shape]()
 
     constrained[shape[0] == 1]()

@@ -18,7 +18,7 @@ from layout.tma_async import SharedMemBarrier
 from memory import LegacyUnsafePointer as UnsafePointer
 
 
-alias MbarPtr = UnsafePointer[
+comptime MbarPtr = UnsafePointer[
     SharedMemBarrier, address_space = AddressSpace.SHARED
 ]
 

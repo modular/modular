@@ -183,7 +183,7 @@ fn top_k[
             "out_idx_type must be int64 for cpu",
         ]()
 
-        alias grain_size = 1000
+        comptime grain_size = 1000
         _top_k_cpu[largest=largest](
             input,
             bound_max_k,
@@ -415,7 +415,7 @@ fn fused_token_sampling_cpu[
         RuntimeLayout[Layout.row_major[input.rank]()].row_major(out_vals_shape),
     )
 
-    alias out_layout = Layout.row_major[input.rank]()
+    comptime out_layout = Layout.row_major[input.rank]()
 
     _top_k_sampling(
         bound_max_k,
@@ -500,7 +500,7 @@ fn _top_k_sampling[
     )
     var last_dim = orig_in_shape[input.rank - 1]
 
-    alias internal_rank = 2
+    comptime internal_rank = 2
     var internal_bs: Int
     var internal_in_shape: IndexList[internal_rank]
 
@@ -697,11 +697,11 @@ fn _warp_reduce_topk[
             return a if a.p < b.p else b
 
     # Reimplement `warp_reduce` for TopK_2 reduce and shuffle function
-    alias limit = log2_floor(WARP_SIZE)
+    comptime limit = log2_floor(WARP_SIZE)
 
     @parameter
     for i in reversed(range(limit)):
-        alias mask = 1 << i
+        comptime mask = 1 << i
         res = reduce_fn(res, shuffle_down_topk2(res, mask))
 
     return res
@@ -734,15 +734,15 @@ fn _block_reduce_topk[
     It uses shared memory to store intermediate results and performs
     a final warp-level reduction to compute the block-wide maximum.
     """
-    alias MAX_BLOCK_SIZE = 1024
+    comptime MAX_BLOCK_SIZE = 1024
     constrained[
         MAX_BLOCK_SIZE % WARP_SIZE == 0,
         "block size must be a multiple of the warp size",
     ]()
 
     # Calculate sizes for shared memory allocation
-    alias p_width = simd_width_of[DType.int]()
-    alias u_width = simd_width_of[Scalar[T]]()
+    comptime p_width = simd_width_of[DType.int]()
+    comptime u_width = simd_width_of[Scalar[T]]()
 
     # Allocate shared memory for indices and values
     var p_sram = stack_allocation[
@@ -758,7 +758,7 @@ fn _block_reduce_topk[
 
     # Calculate warp id and thread information
     var warp = warp_id()
-    alias num_warps_needed = MAX_BLOCK_SIZE // WARP_SIZE
+    comptime num_warps_needed = MAX_BLOCK_SIZE // WARP_SIZE
 
     # Each warp reduces its own TopK_2 value
     var warp_accum: TopK_2[T, largest] = _warp_reduce_topk[T, largest](val)
@@ -1371,7 +1371,7 @@ fn _topk_gpu[
     # Enqueue the first kernel (stage 1)
     @parameter
     if env_get_bool["USE_OLD_TOP_K_KERNEL", False]() or _force_old_impl:
-        alias kernel_1 = _topk_stage1_old[dtype, out_idx_type, largest]
+        comptime kernel_1 = _topk_stage1_old[dtype, out_idx_type, largest]
         ctx.enqueue_function_checked[kernel_1, kernel_1](
             k_device,
             max_k,
@@ -1387,7 +1387,7 @@ fn _topk_gpu[
         )
     else:
         var input_buf_tmp = ctx.enqueue_create_buffer[dtype](batch_size * N)
-        alias kernel_1 = _topk_stage1[dtype, out_idx_type, largest]
+        comptime kernel_1 = _topk_stage1[dtype, out_idx_type, largest]
         ctx.enqueue_function_checked[kernel_1, kernel_1](
             k_device,
             max_k,
@@ -1468,7 +1468,7 @@ fn _topk_gpu[
     )
 
     # Enqueue the second kernel (stage 2)
-    alias kernel_2 = _topk_stage2[dtype, out_idx_type, sampling, largest]
+    comptime kernel_2 = _topk_stage2[dtype, out_idx_type, sampling, largest]
     ctx.enqueue_function_checked[kernel_2, kernel_2](
         k_device,
         max_k,
@@ -1579,8 +1579,8 @@ fn topk_gpu[
 
     # This section handles different input ranks by reshaping to a 2D tensor
     var internal_bs: Int  # Internal batch size
-    alias internal_rank = 2  # We always reshape to 2D for internal processing
-    alias internal_layout = Layout.row_major[internal_rank]()
+    comptime internal_rank = 2  # We always reshape to 2D for internal processing
+    comptime internal_layout = Layout.row_major[internal_rank]()
     var internal_input: LayoutTensor[
         dtype,
         internal_layout,
@@ -1821,14 +1821,14 @@ fn apply_gumbel_noise_kernel[
     temperature: UnsafePointer[Float32],
     seed: UnsafePointer[UInt64],
 ):
-    alias EPS = Float32(1e-20)
-    alias LOG2 = Float32(0.6931471806)
+    comptime EPS = Float32(1e-20)
+    comptime LOG2 = Float32(0.6931471806)
 
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
     var N = input.dim(1)
-    alias num_blocks_per_token = 8
-    alias group_size = num_blocks_per_token * num_threads
-    alias num_groups = num_sms // num_blocks_per_token
+    comptime num_blocks_per_token = 8
+    comptime group_size = num_blocks_per_token * num_threads
+    comptime num_groups = num_sms // num_blocks_per_token
 
     var tid = Int(thread_idx.x)
     var sm_id = Int(block_idx.x)
@@ -1858,7 +1858,7 @@ fn apply_gumbel_noise_kernel[
 
             var ld_ptr = input.ptr + tok_idx * N
             var st_ptr = output.ptr + tok_idx * N
-            alias align = align_of[SIMD[dtype, simd_width]]()
+            comptime align = align_of[SIMD[dtype, simd_width]]()
 
             for i in range(tid_in_group, N // simd_width, group_size):
                 var rng_state = Random(
@@ -1968,8 +1968,8 @@ fn gumbel_sampling_gpu[
         seed_ptr = UnsafePointer[UInt64]()  # null pointer
     var seed_size = seed.value().size() if seed else 0
 
-    alias hw_info = ctx.default_device_info
-    alias gumbel_kernel = apply_gumbel_noise_kernel[
+    comptime hw_info = ctx.default_device_info
+    comptime gumbel_kernel = apply_gumbel_noise_kernel[
         dtype,
         input_layout,
         hw_info.sm_count,

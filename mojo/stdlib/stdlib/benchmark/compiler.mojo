@@ -19,7 +19,7 @@ from sys._assembly import inlined_assembly
 
 
 @always_inline
-fn keep[dtype: AnyTrivialRegType](val: dtype):
+fn keep[Type: AnyType, origin: ImmutOrigin, //](ref [origin]val: Type):
     """Provides a hint to the compiler to not optimize the variable use away.
 
     This is useful in benchmarking to avoid the compiler not deleting the
@@ -27,13 +27,13 @@ fn keep[dtype: AnyTrivialRegType](val: dtype):
     manner.
 
     Parameters:
-      dtype: The type of the input.
+      Type: The type of the input.
+      origin: The origin of the input.
 
     Args:
       val: The value to not optimize away.
     """
-    var tmp = val
-    var tmp_ptr = UnsafePointer(to=tmp)
+    var tmp_ptr = UnsafePointer(to=val)
     inlined_assembly[
         "",
         NoneType,

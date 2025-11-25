@@ -69,7 +69,7 @@ fn pad_constant_dispatch[
 
     @parameter
     if recursive:
-        alias init_axis = 0
+        comptime init_axis = 0
         var constant_cast = rebind[Scalar[dtype]](constant[0])
 
         @__copy_capture(constant_cast)
@@ -244,7 +244,7 @@ fn pad_reflect_dispatch[
 
     @parameter
     if recursive:
-        alias init_axis = 0
+        comptime init_axis = 0
 
         @parameter
         fn pad_reflect_wrapper(
@@ -450,7 +450,7 @@ fn bench[
     size: Int,
     name: String,
 ]() raises:
-    alias N = 100
+    comptime N = 100
 
     @parameter
     fn runner_iter():
@@ -495,9 +495,9 @@ fn bench[
 fn test_pad_constant_nd[
     rank: Int, recursive: Int, n: Int, verify: Bool = False
 ]() raises:
-    alias d_pre = 3
-    alias d_post = 7
-    alias d = d_pre + d_post
+    comptime d_pre = 3
+    comptime d_post = 7
+    comptime d = d_pre + d_post
 
     @always_inline
     fn get_in_out_shapes[rank: Int = 1]() -> InlineArray[IndexList[rank], 2]:
@@ -519,13 +519,13 @@ fn test_pad_constant_nd[
             out_shape = [n + d, n + d, n + d, n + d]
         return [in_shape, out_shape]
 
-    alias in_out_shape = get_in_out_shapes[rank]()
-    alias in_shape = in_out_shape[0]
-    alias out_shape = in_out_shape[1]
-    alias out_layout = Layout.row_major(out_shape)
+    comptime in_out_shape = get_in_out_shapes[rank]()
+    comptime in_shape = in_out_shape[0]
+    comptime out_shape = in_out_shape[1]
+    comptime out_layout = Layout.row_major(out_shape)
 
-    alias in_size = product(in_shape)
-    alias out_size = product(out_shape)
+    comptime in_size = product(in_shape)
+    comptime out_size = product(out_shape)
 
     # create a big input matrix and fill it with 1
     var input_ptr = UnsafePointer[Scalar[DType.int]].alloc(in_size)
@@ -590,9 +590,9 @@ fn test_pad_constant_nd[
 fn test_pad_reflect_nd[
     rank: Int, recursive: Int, n: Int, verify: Bool = False
 ]() raises:
-    alias d_pre = 3
-    alias d_post = 7
-    alias d = d_pre + d_post
+    comptime d_pre = 3
+    comptime d_post = 7
+    comptime d = d_pre + d_post
 
     @always_inline
     fn get_in_out_shapes[rank: Int = 1]() -> InlineArray[IndexList[rank], 2]:
@@ -614,13 +614,13 @@ fn test_pad_reflect_nd[
             out_shape = [n + d, n + d, n + d, n + d]
         return [in_shape, out_shape]
 
-    alias in_out_shape = get_in_out_shapes[rank]()
-    alias in_shape = in_out_shape[0]
-    alias out_shape = in_out_shape[1]
-    alias out_layout = Layout.row_major(out_shape)
+    comptime in_out_shape = get_in_out_shapes[rank]()
+    comptime in_shape = in_out_shape[0]
+    comptime out_shape = in_out_shape[1]
+    comptime out_layout = Layout.row_major(out_shape)
 
-    alias in_size = product(in_shape)
-    alias out_size = product(out_shape)
+    comptime in_size = product(in_shape)
+    comptime out_size = product(out_shape)
 
     # create a big input matrix and fill it with 1
     var input_ptr = UnsafePointer[Scalar[DType.int]].alloc(in_size)

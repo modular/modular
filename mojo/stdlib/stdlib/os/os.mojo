@@ -22,10 +22,6 @@ from os import listdir
 
 from collections import InlineArray, List
 from collections.string.string_slice import _unsafe_strlen
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
 from io import FileDescriptor
 from sys import CompilationTarget, external_call, is_gpu
 from sys.ffi import c_char, c_int
@@ -88,7 +84,7 @@ struct _dirent_macos(Copyable, Movable):
 struct _DirHandle:
     """Handle to an open directory descriptor opened via opendir."""
 
-    var _handle: OpaquePointer
+    var _handle: OpaquePointer[MutOrigin.external]
 
     fn __init__(out self, var path: String) raises:
         """Construct the _DirHandle using the path provided.
@@ -99,7 +95,7 @@ struct _DirHandle:
         if not isdir(path):
             raise Error("the directory '", path, "' does not exist")
 
-        self._handle = external_call["opendir", OpaquePointer](
+        self._handle = external_call["opendir", type_of(self._handle)](
             path.unsafe_cstr_ptr()
         )
 
@@ -132,9 +128,9 @@ struct _DirHandle:
         var res = List[String]()
 
         while True:
-            var ep = external_call["readdir", UnsafePointer[_dirent_linux]](
-                self._handle
-            )
+            var ep = external_call[
+                "readdir", UnsafePointer[_dirent_linux, MutOrigin.external]
+            ](self._handle)
             if not ep:
                 break
             var name = ep.take_pointee().name
@@ -160,9 +156,9 @@ struct _DirHandle:
         var res = List[String]()
 
         while True:
-            var ep = external_call["readdir", UnsafePointer[_dirent_macos]](
-                self._handle
-            )
+            var ep = external_call[
+                "readdir", UnsafePointer[_dirent_macos, MutOrigin.external]
+            ](self._handle)
             if not ep:
                 break
             var name = ep.take_pointee().name

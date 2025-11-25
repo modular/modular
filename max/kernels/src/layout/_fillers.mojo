@@ -28,7 +28,7 @@ from sys import is_nvidia_gpu
 from utils.numerics import max_finite
 
 # A batch size for filler functions loop bounds.
-alias BATCH_SIZE = 2048
+comptime BATCH_SIZE = 2048
 
 
 fn _filler_impl[
@@ -67,7 +67,7 @@ fn _filler_impl[
 
     @parameter
     if not use_runtime_layout:
-        alias num_elements = tensor.layout.size() * tensor.element_size
+        comptime num_elements = tensor.layout.size() * tensor.element_size
 
         @parameter
         for i in range(num_elements):

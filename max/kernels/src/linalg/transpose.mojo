@@ -74,8 +74,8 @@ fn _transpose_inplace_4x4[
 fn _transpose_inplace_4x4[
     dtype: DType,
 ](bufloat0: LayoutTensor[mut=True, dtype, **_]):
-    alias rows = Int(bufloat0.layout.shape[0])
-    alias cols = Int(bufloat0.layout.shape[1])
+    comptime rows = Int(bufloat0.layout.shape[0])
+    comptime cols = Int(bufloat0.layout.shape[1])
 
     constrained[rows == 4]()
     constrained[cols == 4]()
@@ -223,8 +223,8 @@ fn _transpose_inplace_8x8[
 fn _transpose_inplace_8x8[
     dtype: DType,
 ](bufloat0: LayoutTensor[mut=True, dtype, **_]):
-    alias rows = Int(bufloat0.layout.shape[0])
-    alias cols = Int(bufloat0.layout.shape[1])
+    comptime rows = Int(bufloat0.layout.shape[0])
+    comptime cols = Int(bufloat0.layout.shape[1])
     constrained[rows == 8]()
     constrained[cols == 8]()
 
@@ -538,8 +538,8 @@ fn _transpose_inplace_16x16[
 fn _transpose_inplace_16x16[
     dtype: DType,
 ](bufloat0: LayoutTensor[mut=True, dtype, **_]):
-    alias rows = Int(bufloat0.layout.shape[0])
-    alias cols = Int(bufloat0.layout.shape[1])
+    comptime rows = Int(bufloat0.layout.shape[0])
+    comptime cols = Int(bufloat0.layout.shape[1])
     constrained[rows == 16]()
     constrained[cols == 16]()
 
@@ -807,8 +807,8 @@ fn _transpose_inplace_naive[
 fn _transpose_inplace_naive[
     dtype: DType,
 ](buf: LayoutTensor[mut=True, dtype, **_]):
-    alias rows = Int(buf.layout.shape[0])
-    alias cols = Int(buf.layout.shape[1])
+    comptime rows = Int(buf.layout.shape[0])
+    comptime cols = Int(buf.layout.shape[1])
 
     for i in range(rows):
         for j in range(i + 1, cols):
@@ -913,7 +913,7 @@ fn _fill_strides[
 
     @parameter
     for idx in range(rank - 1):
-        alias axis = rank - idx - 2
+        comptime axis = rank - idx - 2
         var next_axis_stride = strides[axis + 1]
         var next_axis_dim = buf.dim[axis + 1]()
         var curr_axis_stride = next_axis_stride * next_axis_dim
@@ -938,7 +938,7 @@ fn _fill_strides[
 
     @parameter
     for idx in range(buf.rank - 1):
-        alias axis = buf.rank - idx - 2
+        comptime axis = buf.rank - idx - 2
         var next_axis_stride = strides[axis + 1]
         var next_axis_dim = buf.dim[axis + 1]()
         var curr_axis_stride = next_axis_stride * next_axis_dim
@@ -1114,7 +1114,7 @@ fn _transpose_2d_serial_tiled[
     simplified_rank: Int,
     offset: Int,
 ):
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
 
     @parameter
     if rank < 2:
@@ -1137,7 +1137,7 @@ fn _transpose_2d_serial_tiled[
             m, n, M, N, output.data.offset(offset), input.data.offset(offset)
         )
 
-    alias tile_size = simd_width if simd_width <= 16 else 1
+    comptime tile_size = simd_width if simd_width <= 16 else 1
     tile[
         process_tile,
         VariadicList[Int](tile_size, 1),
@@ -1182,12 +1182,12 @@ fn _transpose_2d_parallel_tiled[
     if rank < 2:
         return
 
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
     var N = simplified_input_shape[simplified_rank - 2]
     var M = simplified_input_shape[simplified_rank - 1]
-    alias min_work_per_task = 1024
-    alias tile_size_m = simd_width if simd_width <= 16 else 1
-    alias tile_size_n = simd_width if simd_width <= 16 else 1
+    comptime min_work_per_task = 1024
+    comptime tile_size_m = simd_width if simd_width <= 16 else 1
+    comptime tile_size_n = simd_width if simd_width <= 16 else 1
 
     var n_unit_size = simd_width
     var m_unit_size = simd_width
@@ -1249,10 +1249,10 @@ fn transpose_2d[
     if rank < 2:
         return
 
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
     var N = simplified_input_shape[simplified_rank - 2]
     var M = simplified_input_shape[simplified_rank - 1]
-    alias min_work_per_task = 1024
+    comptime min_work_per_task = 1024
 
     if _should_run_parallel(M, N, simd_width, min_work_per_task):
         _transpose_2d_parallel_tiled(
@@ -1289,11 +1289,11 @@ fn _transpose_4d_swap_middle_helper[
     var work = L * M * N
     var total_size = L * M * N * K
 
-    alias KB = 1024
+    comptime KB = 1024
 
     # TODO: These parameters might be tuned
-    alias min_work_per_task = 1 * KB
-    alias min_work_for_parallel = 4 * min_work_per_task
+    comptime min_work_per_task = 1 * KB
+    comptime min_work_for_parallel = 4 * min_work_per_task
 
     # TODO: take into account dimension K for parallelization.
     #
@@ -1438,9 +1438,9 @@ fn transpose_trivial_memcpy[
     var src_ptr = input.data.offset(0)
     var dst_ptr = output.data.offset(0)
 
-    alias KB = 1024
-    alias min_work_per_task = 1 * KB
-    alias min_work_for_parallel = 4 * min_work_per_task
+    comptime KB = 1024
+    comptime min_work_per_task = 1 * KB
+    comptime min_work_for_parallel = 4 * min_work_per_task
 
     var total_size = output.size()
 
@@ -1525,11 +1525,11 @@ fn _copy_with_strides[
 
     var next_axis = axis + 1
 
-    alias KB = 1024
+    comptime KB = 1024
 
     # TODO: These parameters might be tuned
-    alias min_work_per_task = 1 * KB
-    alias min_work_for_parallel = 4 * min_work_per_task
+    comptime min_work_per_task = 1 * KB
+    comptime min_work_for_parallel = 4 * min_work_per_task
 
     if output.bytecount() <= min_work_for_parallel or axis_dim == 1:
         var next_input_offset = input_offset
@@ -1618,7 +1618,7 @@ fn transpose_strided[
     # ~ output.at(offset(x*isx + y*isy + z*isz)) = input.at(offset(x*osy + y*osz + z*osx))
     # ~ output.at(offset([x, y, z], output_strides)) = input.at(offset([x, y, z], permuted_input_strides))
     # ~ output.at(offset(index, output_strides)) = input.at(offset(index, permuted_input_strides))
-    alias init_axis = 0
+    comptime init_axis = 0
     # NOTE: Synchronous, so the stack allocated input_strides, permuted_input_strings
     # and output_strides are safe to use.
     _copy_with_strides(

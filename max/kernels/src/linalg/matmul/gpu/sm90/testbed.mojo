@@ -63,14 +63,14 @@ fn test_matmul_sm90[
     var N = n.value
     var K = k.value
 
-    alias CLUSTER_N = cluster_shape[0]
-    alias CLUSTER_M = cluster_shape[1]
+    comptime CLUSTER_N = cluster_shape[0]
+    comptime CLUSTER_M = cluster_shape[1]
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_c_shape = DimList(m.dim, n.dim)
     var dynamic_a_shape = DimList(m.value, k.value)
     var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
         k.value, n.value
@@ -104,9 +104,9 @@ fn test_matmul_sm90[
     ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
     ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
 
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
 
     print(
         "wgmma_shape",
@@ -181,11 +181,11 @@ fn test_matmul_sm90[
             idx, rebind[SIMD[c_type, width]](val)
         )
 
-    alias elf = OptionalReg[elementwise_epilogue_type](
+    comptime elf = OptionalReg[elementwise_epilogue_type](
         epilogue_fn
     ) if default_epilogue and elementwise_compute_lambda_fn is None else None
 
-    alias matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+    comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=block_tile_shape,
         mma_shape=wgmma_shape,
         cluster_shape=cluster_shape,
@@ -233,7 +233,7 @@ fn test_matmul_sm90[
     @parameter
     if elementwise_compute_lambda_fn:
         # Apply the compute lambda directly on the reference tensor
-        alias compute_lambda = elementwise_compute_lambda_fn.value()
+        comptime compute_lambda = elementwise_compute_lambda_fn.value()
         for i in range(M):
             for j in range(N):
                 c_host_ref.tensor[Index(i, j)] = compute_lambda(
@@ -249,7 +249,7 @@ fn test_matmul_sm90[
             threshold=measure_threshold.value(),
         )
 
-    alias rtol = 1e-2
+    comptime rtol = 1e-2
     assert_almost_equal(
         c_host.tensor,
         c_host_ref.tensor,

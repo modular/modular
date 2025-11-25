@@ -59,13 +59,13 @@ fn set_and_shift_kernel(
 
 
 fn test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
-    alias num_elems: UInt = 8192
-    alias threads_per_block: UInt = 256
+    comptime num_elems: UInt = 8192
+    comptime threads_per_block: UInt = 256
     debug_assert(
         num_elems % threads_per_block == 0,
         "num_elems must be divisible by threads_per_block",
     )
-    alias num_blocks = num_elems // threads_per_block
+    comptime num_blocks = num_elems // threads_per_block
 
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()

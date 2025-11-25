@@ -29,7 +29,7 @@ from utils import StaticTuple
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_CURAND_LIBRARY_PATHS: List[Path] = [
+comptime CUDA_CURAND_LIBRARY_PATHS: List[Path] = [
     "libcurand.so.10",
     "/usr/local/cuda/lib64/libcurand.so.10",
 ]
@@ -50,7 +50,7 @@ fn _on_error_msg() -> Error:
     )
 
 
-alias CUDA_CURAND_LIBRARY = _Global[
+comptime CUDA_CURAND_LIBRARY = _Global[
     "CUDA_CURAND_LIBRARY", _init_dylib, on_error_msg=_on_error_msg
 ]
 
@@ -76,7 +76,7 @@ fn _get_dylib_function[
 # Bindings
 # ===-----------------------------------------------------------------------===#
 
-alias curandDistributionShift_t = UnsafePointer[curandDistributionShift_st]
+comptime curandDistributionShift_t = UnsafePointer[curandDistributionShift_st]
 
 
 @register_passable("trivial")
@@ -106,7 +106,7 @@ struct curandHistogramM2_st:
     var host_gen: UInt32
 
 
-alias curandDistribution_t = UnsafePointer[Float64]
+comptime curandDistribution_t = UnsafePointer[Float64]
 
 
 @register_passable("trivial")
@@ -173,9 +173,9 @@ fn curandGenerateLongLong(
 @register_passable("trivial")
 struct libraryPropertyType_t:
     var _value: Int32
-    alias MAJOR_VERSION = Self(0)
-    alias MINOR_VERSION = Self(1)
-    alias PATCH_LEVEL = Self(2)
+    comptime MAJOR_VERSION = Self(0)
+    comptime MINOR_VERSION = Self(1)
+    comptime PATCH_LEVEL = Self(2)
 
 
 fn curandGetProperty(
@@ -208,18 +208,18 @@ struct curandRngType(Equatable, Identifiable, Writable):
     ."""
 
     var _value: Int8
-    alias CURAND_RNG_TEST = Self(0)
-    alias CURAND_RNG_PSEUDO_DEFAULT = Self(1)
-    alias CURAND_RNG_PSEUDO_XORWOW = Self(2)
-    alias CURAND_RNG_PSEUDO_MRG32K3A = Self(3)
-    alias CURAND_RNG_PSEUDO_MTGP32 = Self(4)
-    alias CURAND_RNG_PSEUDO_MT19937 = Self(5)
-    alias CURAND_RNG_PSEUDO_PHILOX4_32_10 = Self(6)
-    alias CURAND_RNG_QUASI_DEFAULT = Self(7)
-    alias CURAND_RNG_QUASI_SOBOL32 = Self(8)
-    alias CURAND_RNG_QUASI_SCRAMBLED_SOBOL32 = Self(9)
-    alias CURAND_RNG_QUASI_SOBOL64 = Self(10)
-    alias CURAND_RNG_QUASI_SCRAMBLED_SOBOL64 = Self(11)
+    comptime CURAND_RNG_TEST = Self(0)
+    comptime CURAND_RNG_PSEUDO_DEFAULT = Self(1)
+    comptime CURAND_RNG_PSEUDO_XORWOW = Self(2)
+    comptime CURAND_RNG_PSEUDO_MRG32K3A = Self(3)
+    comptime CURAND_RNG_PSEUDO_MTGP32 = Self(4)
+    comptime CURAND_RNG_PSEUDO_MT19937 = Self(5)
+    comptime CURAND_RNG_PSEUDO_PHILOX4_32_10 = Self(6)
+    comptime CURAND_RNG_QUASI_DEFAULT = Self(7)
+    comptime CURAND_RNG_QUASI_SOBOL32 = Self(8)
+    comptime CURAND_RNG_QUASI_SCRAMBLED_SOBOL32 = Self(9)
+    comptime CURAND_RNG_QUASI_SOBOL64 = Self(10)
+    comptime CURAND_RNG_QUASI_SCRAMBLED_SOBOL64 = Self(11)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -270,7 +270,7 @@ struct curandRngType(Equatable, Identifiable, Writable):
         return Int(self._value)
 
 
-alias curandHistogramM2K_t = UnsafePointer[Int16]
+comptime curandHistogramM2K_t = UnsafePointer[Int16]
 
 
 fn curandDestroyGenerator(generator: curandGenerator_t) raises -> curandStatus:
@@ -314,11 +314,11 @@ fn curandGetScrambleConstants64(
     ]()(constants)
 
 
-alias curandHistogramM2V_t = UnsafePointer[Float64]
+comptime curandHistogramM2V_t = UnsafePointer[Float64]
 
-alias curandHistogramM2V_st = curandDistribution_st
+comptime curandHistogramM2V_st = curandDistribution_st
 
-alias curandDiscreteDistribution_t = UnsafePointer[
+comptime curandDiscreteDistribution_t = UnsafePointer[
     curandDiscreteDistribution_st
 ]
 
@@ -544,8 +544,8 @@ fn curandGenerateLogNormal(
 #  CURAND generator
 #
 #  \\cond UNHIDE_TYPEDEFS .
-alias curandGenerator_st = NoneType
-alias curandGenerator_t = UnsafePointer[curandGenerator_st]
+comptime curandGenerator_st = NoneType
+comptime curandGenerator_t = UnsafePointer[curandGenerator_st]
 
 
 @fieldwise_init
@@ -554,20 +554,20 @@ struct curandMethod(Equatable, Identifiable, Writable):
     """\\cond UNHIDE_ENUMS ."""
 
     var _value: Int8
-    alias CURAND_CHOOSE_BEST = Self(0)
-    alias CURAND_ITR = Self(1)
-    alias CURAND_KNUTH = Self(2)
-    alias CURAND_HITR = Self(3)
-    alias CURAND_M1 = Self(4)
-    alias CURAND_M2 = Self(5)
-    alias CURAND_BINARY_SEARCH = Self(6)
-    alias CURAND_DISCRETE_GAUSS = Self(7)
-    alias CURAND_REJECTION = Self(8)
-    alias CURAND_DEVICE_API = Self(9)
-    alias CURAND_FAST_REJECTION = Self(10)
-    alias CURAND_3RD = Self(11)
-    alias CURAND_DEFINITION = Self(12)
-    alias CURAND_POISSON = Self(13)
+    comptime CURAND_CHOOSE_BEST = Self(0)
+    comptime CURAND_ITR = Self(1)
+    comptime CURAND_KNUTH = Self(2)
+    comptime CURAND_HITR = Self(3)
+    comptime CURAND_M1 = Self(4)
+    comptime CURAND_M2 = Self(5)
+    comptime CURAND_BINARY_SEARCH = Self(6)
+    comptime CURAND_DISCRETE_GAUSS = Self(7)
+    comptime CURAND_REJECTION = Self(8)
+    comptime CURAND_DEVICE_API = Self(9)
+    comptime CURAND_FAST_REJECTION = Self(10)
+    comptime CURAND_3RD = Self(11)
+    comptime CURAND_DEFINITION = Self(12)
+    comptime CURAND_POISSON = Self(13)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -677,7 +677,9 @@ fn curandSetQuasiRandomGeneratorDimensions(
 # CURAND distribution M2
 #
 # \\cond UNHIDE_TYPEDEFS .
-alias curandDistributionM2Shift_t = UnsafePointer[curandDistributionM2Shift_st]
+comptime curandDistributionM2Shift_t = UnsafePointer[
+    curandDistributionM2Shift_st
+]
 
 
 fn curandGetVersion(version: UnsafePointer[Int16]) raises -> curandStatus:
@@ -699,9 +701,9 @@ fn curandGetVersion(version: UnsafePointer[Int16]) raises -> curandStatus:
     ]()(version)
 
 
-alias curandHistogramM2K_st = Int16
+comptime curandHistogramM2K_st = Int16
 
-alias curandMethod_t = curandMethod
+comptime curandMethod_t = curandMethod
 
 
 @fieldwise_init
@@ -712,19 +714,19 @@ struct curandStatus(Equatable, Identifiable, Writable):
     ."""
 
     var _value: Int8
-    alias CURAND_STATUS_SUCCESS = Self(0)
-    alias CURAND_STATUS_VERSION_MISMATCH = Self(1)
-    alias CURAND_STATUS_NOT_INITIALIZED = Self(2)
-    alias CURAND_STATUS_ALLOCATION_FAILED = Self(3)
-    alias CURAND_STATUS_TYPE_ERROR = Self(4)
-    alias CURAND_STATUS_OUT_OF_RANGE = Self(5)
-    alias CURAND_STATUS_LENGTH_NOT_MULTIPLE = Self(6)
-    alias CURAND_STATUS_DOUBLE_PRECISION_REQUIRED = Self(7)
-    alias CURAND_STATUS_LAUNCH_FAILURE = Self(8)
-    alias CURAND_STATUS_PREEXISTING_FAILURE = Self(9)
-    alias CURAND_STATUS_INITIALIZATION_FAILED = Self(10)
-    alias CURAND_STATUS_ARCH_MISMATCH = Self(11)
-    alias CURAND_STATUS_INTERNAL_ERROR = Self(12)
+    comptime CURAND_STATUS_SUCCESS = Self(0)
+    comptime CURAND_STATUS_VERSION_MISMATCH = Self(1)
+    comptime CURAND_STATUS_NOT_INITIALIZED = Self(2)
+    comptime CURAND_STATUS_ALLOCATION_FAILED = Self(3)
+    comptime CURAND_STATUS_TYPE_ERROR = Self(4)
+    comptime CURAND_STATUS_OUT_OF_RANGE = Self(5)
+    comptime CURAND_STATUS_LENGTH_NOT_MULTIPLE = Self(6)
+    comptime CURAND_STATUS_DOUBLE_PRECISION_REQUIRED = Self(7)
+    comptime CURAND_STATUS_LAUNCH_FAILURE = Self(8)
+    comptime CURAND_STATUS_PREEXISTING_FAILURE = Self(9)
+    comptime CURAND_STATUS_INITIALIZATION_FAILED = Self(10)
+    comptime CURAND_STATUS_ARCH_MISMATCH = Self(11)
+    comptime CURAND_STATUS_INTERNAL_ERROR = Self(12)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -785,10 +787,10 @@ struct curandDirectionVectorSet(Equatable, Identifiable, Writable):
     ."""
 
     var _value: Int8
-    alias CURAND_DIRECTION_VECTORS_32_JOEKUO6 = Self(0)
-    alias CURAND_SCRAMBLED_DIRECTION_VECTORS_32_JOEKUO6 = Self(1)
-    alias CURAND_DIRECTION_VECTORS_64_JOEKUO6 = Self(2)
-    alias CURAND_SCRAMBLED_DIRECTION_VECTORS_64_JOEKUO6 = Self(3)
+    comptime CURAND_DIRECTION_VECTORS_32_JOEKUO6 = Self(0)
+    comptime CURAND_SCRAMBLED_DIRECTION_VECTORS_32_JOEKUO6 = Self(1)
+    comptime CURAND_DIRECTION_VECTORS_64_JOEKUO6 = Self(2)
+    comptime CURAND_SCRAMBLED_DIRECTION_VECTORS_64_JOEKUO6 = Self(3)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -913,7 +915,7 @@ fn curandCreatePoissonDistribution(
 
 
 # \\cond UNHIDE_TYPEDEFS .
-alias curandDirectionVectorSet_t = curandDirectionVectorSet
+comptime curandDirectionVectorSet_t = curandDirectionVectorSet
 
 
 fn curandCreateGenerator(
@@ -1038,16 +1040,16 @@ fn curandSetGeneratorOrdering(
 
 
 # \\cond UNHIDE_TYPEDEFS .
-alias curandStatus_t = curandStatus
+comptime curandStatus_t = curandStatus
 
 #
 #  CURAND distribution
 #
 #  \\cond UNHIDE_TYPEDEFS .
-alias curandDistribution_st = Float64
+comptime curandDistribution_st = Float64
 
 # \\cond UNHIDE_TYPEDEFS .
-alias curandRngType_t = curandRngType
+comptime curandRngType_t = curandRngType
 
 
 fn curandGenerateUniformDouble(
@@ -1231,13 +1233,13 @@ fn curandGenerate(
     ]()(generator, output_ptr, num)
 
 
-alias curandHistogramM2_t = UnsafePointer[curandHistogramM2_st]
+comptime curandHistogramM2_t = UnsafePointer[curandHistogramM2_st]
 
 #
 #  CURAND array of 64-bit direction vectors
 #
 #  \\cond UNHIDE_TYPEDEFS .
-alias curandDirectionVectors64_t = StaticTuple[UInt64, 64]
+comptime curandDirectionVectors64_t = StaticTuple[UInt64, 64]
 
 
 @fieldwise_init
@@ -1248,12 +1250,12 @@ struct curandOrdering(Equatable, Identifiable, Writable):
     ."""
 
     var _value: Int8
-    alias CURAND_ORDERING_PSEUDO_BEST = Self(0)
-    alias CURAND_ORDERING_PSEUDO_DEFAULT = Self(1)
-    alias CURAND_ORDERING_PSEUDO_SEEDED = Self(2)
-    alias CURAND_ORDERING_PSEUDO_LEGACY = Self(3)
-    alias CURAND_ORDERING_PSEUDO_DYNAMIC = Self(4)
-    alias CURAND_ORDERING_QUASI_DEFAULT = Self(5)
+    comptime CURAND_ORDERING_PSEUDO_BEST = Self(0)
+    comptime CURAND_ORDERING_PSEUDO_DEFAULT = Self(1)
+    comptime CURAND_ORDERING_PSEUDO_SEEDED = Self(2)
+    comptime CURAND_ORDERING_PSEUDO_LEGACY = Self(3)
+    comptime CURAND_ORDERING_PSEUDO_DYNAMIC = Self(4)
+    comptime CURAND_ORDERING_QUASI_DEFAULT = Self(5)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -1428,7 +1430,7 @@ fn curandCreateGeneratorHost(
 
 
 # \\cond UNHIDE_TYPEDEFS .
-alias curandOrdering_t = curandOrdering
+comptime curandOrdering_t = curandOrdering
 
 
 fn curandGeneratePoisson(
@@ -1477,7 +1479,7 @@ fn curandGeneratePoisson(
 #  CURAND array of 32-bit direction vectors
 #
 #  \\cond UNHIDE_TYPEDEFS .
-alias curandDirectionVectors32_t = StaticTuple[UInt32, 32]
+comptime curandDirectionVectors32_t = StaticTuple[UInt32, 32]
 
 
 fn curandGetScrambleConstants32(

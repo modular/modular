@@ -129,19 +129,19 @@ fn multistage_mma_q[
     *,
     num_b_rows: OptionalReg[Int] = None,
 ):
-    alias simd_size = simd_width_of[a_type]()
-    alias simd_b_size = simd_width_of[b_type]()
-    alias num_scales_stages = ceildiv(
+    comptime simd_size = simd_width_of[a_type]()
+    comptime simd_b_size = simd_width_of[b_type]()
+    comptime num_scales_stages = ceildiv(
         (num_pipeline_stages - 1) * BK, group_size
     ) + 1
-    alias repack_tile = Index(64, 16)
+    comptime repack_tile = Index(64, 16)
 
     var tid: UInt32 = thread_idx.x % UInt(num_threads)
     var warp_id = tid // WARP_SIZE
     var lane_id = tid % WARP_SIZE
 
-    alias num_warps_m = BM // WM
-    alias num_warps_n = BN // WN
+    comptime num_warps_m = BM // WM
+    comptime num_warps_n = BN // WN
     var warp_x = warp_id % num_warps_n
     var warp_y = warp_id // num_warps_n
 
@@ -151,21 +151,21 @@ fn multistage_mma_q[
     var a_smem_iter = a_smem_iter_arg
     var scales_smem_iter = scales_smem_iter_arg
     # work around mut argument can't have default value.
-    alias async_copy_a_layout = Layout.row_major(
+    comptime async_copy_a_layout = Layout.row_major(
         num_threads * simd_size // BK, BK // simd_size
     )
 
-    alias async_copy_b_layout = Layout.row_major(
+    comptime async_copy_b_layout = Layout.row_major(
         ceildiv(num_threads * simd_b_size, b_smem_layout.stride[0].value()),
         num_threads
         // ceildiv(num_threads * simd_b_size, b_smem_layout.stride[0].value()),
     )
-    alias swizzle_b = transpose_b or b_type.is_half_float()
+    comptime swizzle_b = transpose_b or b_type.is_half_float()
 
-    alias async_copy_scales_layout = Layout.row_major(1, WARP_SIZE)
-    alias async_copy_scales_veclen = BN // WARP_SIZE
+    comptime async_copy_scales_layout = Layout.row_major(1, WARP_SIZE)
+    comptime async_copy_scales_veclen = BN // WARP_SIZE
 
-    alias smem_reg_scales_layout = Layout.row_major(8, 4)
+    comptime smem_reg_scales_layout = Layout.row_major(8, 4)
 
     @always_inline
     @parameter
@@ -217,7 +217,7 @@ fn multistage_mma_q[
             @parameter
             if scales_iter.address_space == AddressSpace.GENERIC:
                 if stage % (group_size // BK) == 0:
-                    alias scales_stage = stage // (group_size // BK)
+                    comptime scales_stage = stage // (group_size // BK)
                     var scales_smem_tile = scales_smem_iter.next_unsafe(
                         scales_stage
                     )[]
@@ -249,21 +249,21 @@ fn multistage_mma_q[
         async_copy_wait_group(num_pipeline_stages - 2)
         barrier()
 
-    alias mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
-    alias MMA_M = mma_shape[0]
-    alias MMA_N = mma_shape[1]
-    alias MMA_K = mma_shape[2]
-    alias num_k_mmas = BK // MMA_K
-    alias num_m_mmas = WM // MMA_M
-    alias num_n_mmas = WN // MMA_N
+    comptime mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
+    comptime MMA_M = mma_shape[0]
+    comptime MMA_N = mma_shape[1]
+    comptime MMA_K = mma_shape[2]
+    comptime num_k_mmas = BK // MMA_K
+    comptime num_m_mmas = WM // MMA_M
+    comptime num_n_mmas = WN // MMA_N
 
-    alias accum_type = get_accum_type[a_type]()
-    alias frag_size = get_fragment_size[mma_shape]()
-    alias a_frag_size = frag_size[0]
-    alias b_frag_size = frag_size[1]
-    alias c_frag_size = frag_size[2]
+    comptime accum_type = get_accum_type[a_type]()
+    comptime frag_size = get_fragment_size[mma_shape]()
+    comptime a_frag_size = frag_size[0]
+    comptime b_frag_size = frag_size[1]
+    comptime c_frag_size = frag_size[2]
 
-    alias a_reg_layout = Layout.row_major(2 * num_m_mmas, a_frag_size)
+    comptime a_reg_layout = Layout.row_major(2 * num_m_mmas, a_frag_size)
     # Register tiles.
     var a_reg_tiles = (
         LayoutTensor[
@@ -275,7 +275,7 @@ fn multistage_mma_q[
         .stack_allocation()
         .split[2]()
     )
-    alias b_reg_layout = Layout.row_major(2 * num_n_mmas, b_frag_size)
+    comptime b_reg_layout = Layout.row_major(2 * num_n_mmas, b_frag_size)
     var b_reg_tiles = (
         LayoutTensor[
             a_type,
@@ -301,10 +301,10 @@ fn multistage_mma_q[
 
     var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
 
-    alias b_wtile_dim0 = WN // repack_tile[0] if transpose_b else (
+    comptime b_wtile_dim0 = WN // repack_tile[0] if transpose_b else (
         (BK * repack_tile[0]) // pack_factor
     )
-    alias b_wtile_dim1 = (
+    comptime b_wtile_dim1 = (
         (BK * repack_tile[0]) // pack_factor
     ) if transpose_b else WN // repack_tile[0]
     var b_wtile_coord0 = Int(warp_x) if transpose_b else 0
@@ -318,7 +318,7 @@ fn multistage_mma_q[
 
     var mma_op = TensorCore[accum_type, a_type, mma_shape, transpose_b]()
 
-    alias swizzle_a_pattern = make_ldmatrix_swizzle[
+    comptime swizzle_a_pattern = make_ldmatrix_swizzle[
         a_type, a_warp_tile.stride[0]()
     ]() if swizzle_a else OptionalReg[Swizzle](None)
 
@@ -494,42 +494,42 @@ fn multistage_qgemm_kernel[
         is_nvidia_gpu(),
         "Quantized gemm only supports NVIDIA hardwares for now.",
     ]()
-    alias simd_size = simd_width_of[c_type]()
+    comptime simd_size = simd_width_of[c_type]()
 
-    alias repack_tile = Index(64, 16)
-    alias group_bytes = group_size // 2 + 2
+    comptime repack_tile = Index(64, 16)
+    comptime group_bytes = group_size // 2 + 2
 
     var M = UInt(c.dim[0]())
-    alias N = Int(b_layout.shape[0])
-    alias K = Int(b_layout.shape[1]) // group_bytes * group_size
+    comptime N = Int(b_layout.shape[0])
+    comptime K = Int(b_layout.shape[1]) // group_bytes * group_size
 
-    alias BM = config.block_tile_shape[0]
-    alias BN = config.block_tile_shape[1]
-    alias BK = config.block_tile_shape[2]
-    alias WM = config.warp_tile_shape[0]
-    alias WN = config.warp_tile_shape[1]
-    alias num_pipeline_stages = config.num_pipeline_stages
+    comptime BM = config.block_tile_shape[0]
+    comptime BN = config.block_tile_shape[1]
+    comptime BK = config.block_tile_shape[2]
+    comptime WM = config.warp_tile_shape[0]
+    comptime WN = config.warp_tile_shape[1]
+    comptime num_pipeline_stages = config.num_pipeline_stages
 
-    alias num_warps_m = config.num_warps_m()
-    alias num_warps_n = config.num_warps_n()
-    alias num_threads = config.num_threads()
+    comptime num_warps_m = config.num_warps_m()
+    comptime num_warps_n = config.num_warps_n()
+    comptime num_threads = config.num_threads()
 
     # Unpack quantized weights
-    alias scales_type = DType.bfloat16
-    alias b_type = DType.uint32
-    alias b_weight_layout = Layout.row_major(N // 64, K * 64 // pack_factor)
+    comptime scales_type = DType.bfloat16
+    comptime b_type = DType.uint32
+    comptime b_weight_layout = Layout.row_major(N // 64, K * 64 // pack_factor)
     var b = LayoutTensor[b_type, b_weight_layout](
         b_packed.ptr.bitcast[Scalar[b_type]](),
     )
 
-    alias b_scales_layout = Layout.row_major(K // group_size, N)
+    comptime b_scales_layout = Layout.row_major(K // group_size, N)
     var b_scales_ptr = b_packed.ptr + N * K // 2
     var scales = LayoutTensor[scales_type, b_scales_layout](
         b_scales_ptr.bitcast[Scalar[scales_type]](),
     )
 
-    alias num_warp_k_partitions = config.num_warp_k_partitions
-    alias num_threads_per_warp_k_part = num_threads // num_warp_k_partitions
+    comptime num_warp_k_partitions = config.num_warp_k_partitions
+    comptime num_threads_per_warp_k_part = num_threads // num_warp_k_partitions
 
     var tid = thread_idx.x
     var ln_id = lane_id()
@@ -539,7 +539,7 @@ fn multistage_qgemm_kernel[
     var warp_id = (tid % num_threads_per_warp_k_part) // UInt(WARP_SIZE)
 
     # Only apply block swizzling for half precision types.
-    alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
+    comptime swizzle_block = a_type.is_half_float() and b_type.is_half_float()
 
     var block_idx = block_swizzle(
         (Int(block_idx.x), Int(block_idx.y)),
@@ -551,13 +551,13 @@ fn multistage_qgemm_kernel[
 
     # Prepare circular shared memory buffer for A and B.
     # Each pipeline stage has its own buffer.
-    alias alignment = align_of[SIMD[a_type, simd_size]]()
+    comptime alignment = align_of[SIMD[a_type, simd_size]]()
     var a_smem = external_memory[
         Scalar[a_type],
         address_space = AddressSpace.SHARED,
         alignment=alignment,
     ]()
-    alias a_smem_size = num_pipeline_stages * UInt(BM) * UInt(BK)
+    comptime a_smem_size = num_pipeline_stages * UInt(BM) * UInt(BK)
 
     var a_smem_iter = LayoutTensorIter[
         a_type,
@@ -574,12 +574,12 @@ fn multistage_qgemm_kernel[
     var b_smem = (a_smem + num_warp_k_partitions * a_smem_size).bitcast[
         Scalar[b_type]
     ]()
-    alias b_smem_size = num_pipeline_stages * UInt(BK) * UInt(BN) // UInt(
+    comptime b_smem_size = num_pipeline_stages * UInt(BK) * UInt(BN) // UInt(
         pack_factor
     )
-    alias BD_0 = BN // repack_tile[0]
-    alias BD_1 = (BK * repack_tile[0]) // pack_factor
-    alias b_smem_layout = Layout.row_major(BD_0, BD_1)
+    comptime BD_0 = BN // repack_tile[0]
+    comptime BD_1 = (BK * repack_tile[0]) // pack_factor
+    comptime b_smem_layout = Layout.row_major(BD_0, BD_1)
 
     var b_smem_iter = LayoutTensorIter[
         b_type,
@@ -589,16 +589,16 @@ fn multistage_qgemm_kernel[
     ](b_smem + warp_k_part_id * b_smem_size, b_smem_size)
 
     # multiple stages may share the same scales
-    alias num_scales_stages = ceildiv(
+    comptime num_scales_stages = ceildiv(
         (num_pipeline_stages - 1) * UInt(BK), UInt(group_size)
     ) + 1
     var scales_smem = (b_smem + num_warp_k_partitions * b_smem_size).bitcast[
         Scalar[scales_type]
     ]()
-    alias scales_smem_size = num_scales_stages * UInt(BN) * UInt(
+    comptime scales_smem_size = num_scales_stages * UInt(BN) * UInt(
         ceildiv(BK, group_size)
     )
-    alias scales_smem_layout = Layout.row_major(ceildiv(BK, group_size), BN)
+    comptime scales_smem_layout = Layout.row_major(ceildiv(BK, group_size), BN)
 
     var scales_smem_iter = LayoutTensorIter[
         scales_type,
@@ -613,11 +613,11 @@ fn multistage_qgemm_kernel[
     )
     var a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](block_idx[1], bk_start)
     var b_tile_coords = args_to_tuple[transpose_b](bk_start, block_idx[0])
-    alias b_tile_axis = 1 if transpose_b else 0
+    comptime b_tile_axis = 1 if transpose_b else 0
     var b_gmem_iter = b.tiled_iterator[BD_0, BD_1, axis=b_tile_axis](
         b_tile_coords[0], b_tile_coords[1]
     )
-    alias groups_per_iter = ceildiv(BK, group_size)
+    comptime groups_per_iter = ceildiv(BK, group_size)
     var bk_scales_start: Int = Int(
         (K // (groups_per_iter * group_size) // Int(num_warp_k_partitions))
         * Int(warp_k_part_id)
@@ -626,17 +626,19 @@ fn multistage_qgemm_kernel[
         ceildiv(BK, group_size), BN, axis=0
     ](bk_scales_start, block_idx[0])
 
-    alias mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
-    alias MMA_M = mma_shape[0]
-    alias MMA_N = mma_shape[1]
-    alias num_m_mmas = WM // MMA_M
-    alias num_n_mmas = WN // MMA_N
+    comptime mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
+    comptime MMA_M = mma_shape[0]
+    comptime MMA_N = mma_shape[1]
+    comptime num_m_mmas = WM // MMA_M
+    comptime num_n_mmas = WN // MMA_N
 
-    alias accum_type = get_accum_type[a_type]()
-    alias frag_size = get_fragment_size[mma_shape]()
-    alias c_frag_size = frag_size[2]
+    comptime accum_type = get_accum_type[a_type]()
+    comptime frag_size = get_fragment_size[mma_shape]()
+    comptime c_frag_size = frag_size[2]
 
-    alias c_reg_layout = Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size)
+    comptime c_reg_layout = Layout.row_major(
+        num_m_mmas * num_n_mmas, c_frag_size
+    )
     var c_reg_tile = (
         LayoutTensor[
             accum_type,
@@ -699,14 +701,14 @@ fn multistage_qgemm_kernel[
             elementwise_lambda_fn is not None,
             "elementwise_lambda_fn is not valid",
         ]()
-        alias thread_layout = Layout.row_major(
+        comptime thread_layout = Layout.row_major(
             8, 4
         ) if is_nvidia_gpu() else Layout.row_major(4, 16)
-        alias dst_simd_width_x = 1 if is_nvidia_gpu() else 4
-        alias dst_simd_width_y = 2 if is_nvidia_gpu() else 1
-        alias src_simd_width_x = 1 if is_nvidia_gpu() else 1
-        alias src_simd_width_y = 2 if is_nvidia_gpu() else 4
-        alias epilogue = elementwise_lambda_fn.value()
+        comptime dst_simd_width_x = 1 if is_nvidia_gpu() else 4
+        comptime dst_simd_width_y = 2 if is_nvidia_gpu() else 1
+        comptime src_simd_width_x = 1 if is_nvidia_gpu() else 1
+        comptime src_simd_width_y = 2 if is_nvidia_gpu() else 4
+        comptime epilogue = elementwise_lambda_fn.value()
         var c_gmem_frag = c_gmem_warp_tile.vectorize[
             dst_simd_width_x, dst_simd_width_y
         ]().distribute[thread_layout](ln_id)
@@ -717,8 +719,8 @@ fn multistage_qgemm_kernel[
 
         @parameter
         for i in range(type_of(c_gmem_frag).layout.size()):
-            alias src_idx = c_reg_frag.layout(i)
-            alias dst_static_idx = UInt(type_of(c_gmem_frag).layout(i))
+            comptime src_idx = c_reg_frag.layout(i)
+            comptime dst_static_idx = UInt(type_of(c_gmem_frag).layout(i))
             var dst_idx: Int
 
             @parameter
@@ -726,7 +728,7 @@ fn multistage_qgemm_kernel[
                 dst_idx = Int(dst_static_idx)
             else:
                 dst_idx = Int(c_gmem_frag.runtime_layout(i))
-            alias alignment = align_of[SIMD[c_type, src_simd_width_y]]()
+            comptime alignment = align_of[SIMD[c_type, src_simd_width_y]]()
             var m = (Int(thread_offset) + dst_idx) // N
             var n = (Int(thread_offset) + dst_idx) % N
             if UInt(m) < M and UInt(n) < UInt(N):
@@ -754,7 +756,7 @@ fn multistage_qgemm_kernel[
 
     @parameter
     if c_type.is_half_float() and is_nvidia_gpu():
-        alias swizzle = make_swizzle[
+        comptime swizzle = make_swizzle[
             num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
 
@@ -781,8 +783,8 @@ fn multistage_qgemm_kernel[
         # vector and stored using 16B store instruction.
         @parameter
         if elementwise_lambda_fn:
-            alias epilogue = elementwise_lambda_fn.value()
-            alias warp_layout = Layout.row_major(
+            comptime epilogue = elementwise_lambda_fn.value()
+            comptime warp_layout = Layout.row_major(
                 WARP_SIZE * simd_size // WN, WN // simd_size
             )
             var c_gmem_frag = c_gmem_warp_tile.vectorize[
@@ -792,7 +794,7 @@ fn multistage_qgemm_kernel[
                 1, simd_size
             ]().distribute[warp_layout](thread_idx.x)
             var thread_offset = c_gmem_frag.distance(c.ptr)
-            alias num_stores_per_thread = type_of(c_gmem_frag).layout.size()
+            comptime num_stores_per_thread = type_of(c_gmem_frag).layout.size()
 
             var c_smem_frag_offset = c_smem_frag.distance(
                 accum_smem_warp_tile.ptr
@@ -800,14 +802,14 @@ fn multistage_qgemm_kernel[
 
             @parameter
             for i in range(num_stores_per_thread):
-                alias src_idx = type_of(c_smem_frag).layout(i)
-                alias src_idx_base = src_idx % swizzle.size()
-                alias src_idx_diff = src_idx - src_idx_base
+                comptime src_idx = type_of(c_smem_frag).layout(i)
+                comptime src_idx_base = src_idx % swizzle.size()
+                comptime src_idx_diff = src_idx - src_idx_base
                 var swizzled_idx = (
                     swizzle(c_smem_frag_offset + src_idx_base) + src_idx_diff
                 )
 
-                alias dst_static_idx = type_of(c_gmem_frag).layout(i)
+                comptime dst_static_idx = type_of(c_gmem_frag).layout(i)
                 var dst_idx: Int
 
                 @parameter
@@ -818,7 +820,7 @@ fn multistage_qgemm_kernel[
 
                 var m = (Int(thread_offset) + dst_idx) // N
                 var n = (Int(thread_offset) + dst_idx) % N
-                alias alignment = align_of[SIMD[c_type, simd_size]]()
+                comptime alignment = align_of[SIMD[c_type, simd_size]]()
                 if UInt(m) < M and UInt(n) < UInt(N):
                     epilogue[alignment=alignment](
                         (m, n),
@@ -965,30 +967,30 @@ fn repack_Q4_0_for_sm8x[
     q_weight: LayoutTensor[DType.uint8, q_layout, MutAnyOrigin],
     q_packed_weight: LayoutTensor[DType.uint8, repack_layout, MutAnyOrigin],
 ):
-    alias group_size = 32
-    alias group_bytes = size_of[DType.float16]() + (group_size // 2)
-    alias pack_factor = 8
-    alias repack_tile = Index(64, 16)
-    alias WARP_SIZE = 32
-    alias BN = 128
-    alias BK = 1024
+    comptime group_size = 32
+    comptime group_bytes = size_of[DType.float16]() + (group_size // 2)
+    comptime pack_factor = 8
+    comptime repack_tile = Index(64, 16)
+    comptime WARP_SIZE = 32
+    comptime BN = 128
+    comptime BK = 1024
 
     var tid: UInt = thread_idx.x
     var warp_id = UInt(tid // WARP_SIZE)
-    alias num_warps_x = BN // repack_tile[0]
+    comptime num_warps_x = BN // repack_tile[0]
     var warp_x = UInt(warp_id % UInt(num_warps_x))
     var warp_y = UInt(warp_id // UInt(num_warps_x))
     var lane_id: Int = Int(tid % WARP_SIZE)
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
-    alias N = Int(q_layout.shape[0])
-    alias K = Int(q_layout.shape[1]) // group_bytes * group_size
+    comptime N = Int(q_layout.shape[0])
+    comptime K = Int(q_layout.shape[1]) // group_bytes * group_size
 
-    alias K_groups = K // group_size
-    alias BK_groups = BK // group_size
+    comptime K_groups = K // group_size
+    comptime BK_groups = BK // group_size
 
-    alias uint_K = K // pack_factor
-    alias uint_BK = BK // pack_factor
+    comptime uint_K = K // pack_factor
+    comptime uint_BK = BK // pack_factor
 
     @always_inline
     @parameter
@@ -1000,7 +1002,7 @@ fn repack_Q4_0_for_sm8x[
         ]()
         return bitcast[scales_type, 2](f32_values)[1]
 
-    alias repacked_b_layout = Layout(
+    comptime repacked_b_layout = Layout(
         IntTuple(
             IntTuple(64, N // 64),
             IntTuple(2, uint_K // 2),
@@ -1014,7 +1016,7 @@ fn repack_Q4_0_for_sm8x[
         q_packed_weight.ptr.bitcast[UInt32](),
     )
 
-    alias b_scales_layout = Layout.row_major(K_groups, N)
+    comptime b_scales_layout = Layout.row_major(K_groups, N)
     var b_scales_ptr = q_packed_weight.ptr + N * K // 2
     var repack_scales = LayoutTensor[scales_type, b_scales_layout](
         b_scales_ptr.bitcast[Scalar[scales_type]](),
@@ -1076,7 +1078,7 @@ fn repack_Q4_0_for_sm8x[
             var frag_0: SIMD[DType.uint8, 16] = 0
             var frag_1: SIMD[DType.uint8, 16] = 0
             var raw_Q_tile = q_warp_tile.tile[repack_tile[0], group_bytes]()
-            alias thd_layout = Layout.row_major(8, 4)
+            comptime thd_layout = Layout.row_major(8, 4)
             # The first 2 Bytes is the scale for this Q4_0 block
             # GGUF pack elements 0-15 in the lower 4-bit of the 16 Bytes,
             # and elements 16-31 in the higher 4-bit of the 16 Bytes.
@@ -1106,7 +1108,9 @@ fn repack_Q4_0_for_sm8x[
             )
             repacked_gemm_iter._incr()
 
-            alias scales_thread_layout = Layout(IntTuple(4, 8), IntTuple(16, 1))
+            comptime scales_thread_layout = Layout(
+                IntTuple(4, 8), IntTuple(16, 1)
+            )
             var rt_scales_thread_layout = RuntimeLayout[
                 scales_thread_layout,
                 element_type = q_warp_tile.layout_int_type,
@@ -1156,30 +1160,30 @@ fn repack_GPTQ_for_sm8x[
     out_tensor: LayoutTensor[DType.uint8, out_layout, MutAnyOrigin],
     perm_idx: LayoutTensor[DType.int32, perm_layout, MutAnyOrigin],
 ):
-    alias raw_scales_type = DType.float16
-    alias weights_bytes_per_group = group_size // 2
-    alias group_bytes = size_of[DType.float16]() + weights_bytes_per_group
-    alias pack_factor = 8
-    alias repack_tile = Index(64, 16)
-    alias BN = 128
-    alias BK = 1024
+    comptime raw_scales_type = DType.float16
+    comptime weights_bytes_per_group = group_size // 2
+    comptime group_bytes = size_of[DType.float16]() + weights_bytes_per_group
+    comptime pack_factor = 8
+    comptime repack_tile = Index(64, 16)
+    comptime BN = 128
+    comptime BK = 1024
 
     var tid: UInt = thread_idx.x
     var warp_id = UInt(tid // UInt(WARP_SIZE))
-    alias num_warps_x = BN // repack_tile[0]
+    comptime num_warps_x = BN // repack_tile[0]
     var warp_x = UInt(warp_id % UInt(num_warps_x))
     var warp_y = UInt(warp_id // UInt(num_warps_x))
     var lane_id: Int = Int(tid % UInt(WARP_SIZE))
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
-    alias N = Int(in_layout.shape[1])
-    alias K = Int(in_layout.shape[0]) // group_bytes * group_size
+    comptime N = Int(in_layout.shape[1])
+    comptime K = Int(in_layout.shape[0]) // group_bytes * group_size
 
-    alias K_groups = K // group_size
-    alias BK_groups = BK // group_size
+    comptime K_groups = K // group_size
+    comptime BK_groups = BK // group_size
 
-    alias uint_K = K // pack_factor
-    alias uint_BK = BK // pack_factor
+    comptime uint_K = K // pack_factor
+    comptime uint_BK = BK // pack_factor
 
     @always_inline
     @parameter
@@ -1192,18 +1196,18 @@ fn repack_GPTQ_for_sm8x[
         return bitcast[scales_type, 2](f32_values)[1]
 
     # Define 4-bit weights and scales for the raw input
-    alias raw_weights_layout = Layout.row_major(uint_K, N)
+    comptime raw_weights_layout = Layout.row_major(uint_K, N)
     var raw_weights = LayoutTensor[DType.uint32, raw_weights_layout](
         in_tensor.ptr.bitcast[UInt32](),
     ).transpose()
-    alias raw_scales_layout = Layout.row_major(K_groups, N)
+    comptime raw_scales_layout = Layout.row_major(K_groups, N)
     var raw_scales_ptr = in_tensor.ptr + N * K // 2
     var raw_scales = LayoutTensor[raw_scales_type, raw_scales_layout](
         raw_scales_ptr.bitcast[Scalar[raw_scales_type]](),
     ).transpose()
 
     # Define 4-bit weights and scales for the repacked buffer
-    alias repacked_weights_layout = Layout(
+    comptime repacked_weights_layout = Layout(
         IntTuple(
             IntTuple(64, N // 64),
             IntTuple(2, uint_K // 2),
@@ -1216,7 +1220,7 @@ fn repack_GPTQ_for_sm8x[
     var repack_weights = LayoutTensor[DType.uint32, repacked_weights_layout](
         out_tensor.ptr.bitcast[UInt32](),
     )
-    alias repacked_scales_layout = Layout.row_major(K_groups, N)
+    comptime repacked_scales_layout = Layout.row_major(K_groups, N)
     var repacked_scales_ptr = out_tensor.ptr + N * K // 2
     var repack_scales = LayoutTensor[scales_type, repacked_scales_layout](
         repacked_scales_ptr.bitcast[Scalar[scales_type]](),
@@ -1294,7 +1298,7 @@ fn repack_GPTQ_for_sm8x[
             @parameter
             for i_Q_tile in range(group_size // repack_tile[1]):
                 var tmp: SIMD[DType.uint8, 16] = 0
-                alias thd_layout = Layout.row_major(8, 4)
+                comptime thd_layout = Layout.row_major(8, 4)
 
                 @parameter
                 if has_perm:
@@ -1363,7 +1367,9 @@ fn repack_GPTQ_for_sm8x[
                 Int(warp_x), Int(warp_y)
             )
 
-            alias scales_thread_layout = Layout(IntTuple(4, 8), IntTuple(16, 1))
+            comptime scales_thread_layout = Layout(
+                IntTuple(4, 8), IntTuple(16, 1)
+            )
             var rt_scales_thread_layout = RuntimeLayout[
                 scales_thread_layout,
                 element_type = scales_warp_tile.layout_int_type,
@@ -1388,10 +1394,10 @@ fn repack_GPTQ_for_sm8x[
 
 @always_inline
 fn q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
-    alias num_warp_k_partitions = config.num_warp_k_partitions
-    alias block_mnk = config.block_tile_shape
-    alias num_pipeline_stages = config.num_pipeline_stages
-    alias pack_factor = 8
+    comptime num_warp_k_partitions = config.num_warp_k_partitions
+    comptime block_mnk = config.block_tile_shape
+    comptime num_pipeline_stages = config.num_pipeline_stages
+    comptime pack_factor = 8
 
     # fmt: off
     var a_usage = block_mnk[0] * block_mnk[2] * Int(num_pipeline_stages) * size_of[config.a_type]()
@@ -1431,8 +1437,8 @@ fn multistage_gemm_q[
     var M = c.dim[0]()
     var N = c.dim[1]()
 
-    alias smem_usage = q_smem_usage[config, group_size]()
-    alias max_smem = ctx.default_device_info.shared_memory_per_multiprocessor
+    comptime smem_usage = q_smem_usage[config, group_size]()
+    comptime max_smem = ctx.default_device_info.shared_memory_per_multiprocessor
 
     @parameter
     if smem_usage > max_smem:
@@ -1447,7 +1453,7 @@ fn multistage_gemm_q[
 
             @parameter
             for num_stages in range(config.num_pipeline_stages, 2, -1):
-                alias adjusted_config = MatmulConfig[
+                comptime adjusted_config = MatmulConfig[
                     a_type, b_type, c_type, True
                 ](
                     block_tile_shape=config.block_tile_shape,
@@ -1460,13 +1466,13 @@ fn multistage_gemm_q[
                     ),  # Reduce warp partitions by powers of 2
                 )
 
-                alias adjusted_smem = q_smem_usage[
+                comptime adjusted_smem = q_smem_usage[
                     adjusted_config, group_size
                 ]()
 
                 @parameter
                 if adjusted_smem < max_smem:
-                    alias gemm_kernel_type = multistage_qgemm_kernel[
+                    comptime gemm_kernel_type = multistage_qgemm_kernel[
                         c_type,  # c_type
                         c.layout,
                         a_type,  # a_type
@@ -1496,7 +1502,7 @@ fn multistage_gemm_q[
 
                     return
 
-    alias gemm_kernel_type = multistage_qgemm_kernel[
+    comptime gemm_kernel_type = multistage_qgemm_kernel[
         c_type,  # c_type
         c.layout,
         a_type,  # a_type
@@ -1566,21 +1572,23 @@ fn matmul_gpu_qint4_impl[
     # constrained[is_gpu[target](), "unsupported target"]()
     var cuda_ctx = ctx.value()
 
-    alias pack_factor = 8
+    comptime pack_factor = 8
 
-    alias a_shape = a.layout.shape
-    alias b_shape = b.layout.shape
-    alias c_shape = c.layout.shape
+    comptime a_shape = a.layout.shape
+    comptime b_shape = b.layout.shape
+    comptime c_shape = c.layout.shape
     var shape = GemmShape.get[transpose_b=True](c, a, b)
     var m = shape.M
 
-    alias static_K = Int(a_shape[1])
-    alias static_N = Int(c_shape[1])
+    comptime static_K = Int(a_shape[1])
+    comptime static_N = Int(c_shape[1])
 
     @parameter
     if static_K == 4096 and static_N == 4096:
         if m <= 16:
-            alias M16_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+            comptime M16_config = MatmulConfig[
+                a_type, DType.uint8, c_type, True
+            ](
                 block_tile_shape=Index(16, 64, 128),
                 warp_tile_shape=Index(16, 64, 32),
                 num_pipeline_stages=4,
@@ -1601,7 +1609,9 @@ fn matmul_gpu_qint4_impl[
             )
             return
         if 16 < m <= 32:
-            alias M32_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+            comptime M32_config = MatmulConfig[
+                a_type, DType.uint8, c_type, True
+            ](
                 block_tile_shape=Index(32, 64, 128),
                 warp_tile_shape=Index(16, 64, 32),
                 num_pipeline_stages=3,
@@ -1622,7 +1632,9 @@ fn matmul_gpu_qint4_impl[
             )
             return
         if 32 < m <= 64:
-            alias M64_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+            comptime M64_config = MatmulConfig[
+                a_type, DType.uint8, c_type, True
+            ](
                 block_tile_shape=Index(64, 64, 32),
                 warp_tile_shape=Index(64, 64, 32),
                 num_pipeline_stages=5,
@@ -1643,7 +1655,9 @@ fn matmul_gpu_qint4_impl[
             )
             return
         if 64 < m <= 128:
-            alias M128_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+            comptime M128_config = MatmulConfig[
+                a_type, DType.uint8, c_type, True
+            ](
                 block_tile_shape=Index(64, 128, 32),
                 warp_tile_shape=Index(64, 64, 32),
                 num_pipeline_stages=4,
@@ -1664,7 +1678,9 @@ fn matmul_gpu_qint4_impl[
             )
             return
         if 128 < m <= 512:
-            alias M512_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+            comptime M512_config = MatmulConfig[
+                a_type, DType.uint8, c_type, True
+            ](
                 block_tile_shape=Index(64, 64, 32),
                 warp_tile_shape=Index(64, 64, 32),
                 num_pipeline_stages=3,
@@ -1688,7 +1704,9 @@ fn matmul_gpu_qint4_impl[
     @parameter
     if static_K == 4096 and static_N == 6144:
         if m <= 16:
-            alias M16_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+            comptime M16_config = MatmulConfig[
+                a_type, DType.uint8, c_type, True
+            ](
                 block_tile_shape=Index(16, 64, 128),
                 warp_tile_shape=Index(16, 64, 32),
                 num_pipeline_stages=4,
@@ -1709,7 +1727,9 @@ fn matmul_gpu_qint4_impl[
             )
             return
         if 16 < m <= 32:
-            alias M32_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+            comptime M32_config = MatmulConfig[
+                a_type, DType.uint8, c_type, True
+            ](
                 block_tile_shape=Index(32, 64, 128),
                 warp_tile_shape=Index(16, 64, 32),
                 num_pipeline_stages=3,
@@ -1730,7 +1750,9 @@ fn matmul_gpu_qint4_impl[
             )
             return
         if 32 < m <= 64:
-            alias M64_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+            comptime M64_config = MatmulConfig[
+                a_type, DType.uint8, c_type, True
+            ](
                 block_tile_shape=Index(64, 64, 32),
                 warp_tile_shape=Index(64, 64, 32),
                 num_pipeline_stages=5,
@@ -1751,7 +1773,9 @@ fn matmul_gpu_qint4_impl[
             )
             return
         if 64 < m <= 128:
-            alias M128_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+            comptime M128_config = MatmulConfig[
+                a_type, DType.uint8, c_type, True
+            ](
                 block_tile_shape=Index(64, 128, 32),
                 warp_tile_shape=Index(64, 64, 32),
                 num_pipeline_stages=4,
@@ -1772,7 +1796,9 @@ fn matmul_gpu_qint4_impl[
             )
             return
         if 128 < m <= 256:
-            alias M256_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+            comptime M256_config = MatmulConfig[
+                a_type, DType.uint8, c_type, True
+            ](
                 block_tile_shape=Index(128, 128, 32),
                 warp_tile_shape=Index(64, 64, 32),
                 num_pipeline_stages=3,
@@ -1796,7 +1822,9 @@ fn matmul_gpu_qint4_impl[
     @parameter
     if static_K == 4096 and static_N == 14336:
         if m <= 16:
-            alias M16_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+            comptime M16_config = MatmulConfig[
+                a_type, DType.uint8, c_type, True
+            ](
                 block_tile_shape=Index(16, 64, 32),
                 warp_tile_shape=Index(16, 64, 32),
                 num_pipeline_stages=5,
@@ -1817,7 +1845,9 @@ fn matmul_gpu_qint4_impl[
             )
             return
         if 16 < m <= 32:
-            alias M32_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+            comptime M32_config = MatmulConfig[
+                a_type, DType.uint8, c_type, True
+            ](
                 block_tile_shape=Index(16, 64, 32),
                 warp_tile_shape=Index(16, 64, 32),
                 num_pipeline_stages=5,
@@ -1838,7 +1868,9 @@ fn matmul_gpu_qint4_impl[
             )
             return
         if 32 < m <= 64:
-            alias M64_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+            comptime M64_config = MatmulConfig[
+                a_type, DType.uint8, c_type, True
+            ](
                 block_tile_shape=Index(32, 64, 32),
                 warp_tile_shape=Index(32, 64, 32),
                 num_pipeline_stages=3,
@@ -1859,7 +1891,9 @@ fn matmul_gpu_qint4_impl[
             )
             return
         if 64 < m <= 256:
-            alias M128_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+            comptime M128_config = MatmulConfig[
+                a_type, DType.uint8, c_type, True
+            ](
                 block_tile_shape=Index(64, 64, 32),
                 warp_tile_shape=Index(64, 64, 32),
                 num_pipeline_stages=4,
@@ -1883,7 +1917,9 @@ fn matmul_gpu_qint4_impl[
     @parameter
     if static_K == 14336 and static_N == 4096:
         if m <= 16:
-            alias M16_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+            comptime M16_config = MatmulConfig[
+                a_type, DType.uint8, c_type, True
+            ](
                 block_tile_shape=Index(16, 64, 32),
                 warp_tile_shape=Index(16, 64, 32),
                 num_pipeline_stages=4,
@@ -1904,7 +1940,9 @@ fn matmul_gpu_qint4_impl[
             )
             return
         if 16 < m <= 32:
-            alias M32_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+            comptime M32_config = MatmulConfig[
+                a_type, DType.uint8, c_type, True
+            ](
                 block_tile_shape=Index(16, 64, 32),
                 warp_tile_shape=Index(16, 64, 32),
                 num_pipeline_stages=4,
@@ -1925,7 +1963,9 @@ fn matmul_gpu_qint4_impl[
             )
             return
         if 32 < m <= 64:
-            alias M64_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+            comptime M64_config = MatmulConfig[
+                a_type, DType.uint8, c_type, True
+            ](
                 block_tile_shape=Index(32, 64, 32),
                 warp_tile_shape=Index(32, 64, 32),
                 num_pipeline_stages=4,
@@ -1946,7 +1986,9 @@ fn matmul_gpu_qint4_impl[
             )
             return
         if 64 < m <= 128:
-            alias M128_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+            comptime M128_config = MatmulConfig[
+                a_type, DType.uint8, c_type, True
+            ](
                 block_tile_shape=Index(32, 64, 32),
                 warp_tile_shape=Index(32, 64, 32),
                 num_pipeline_stages=3,
@@ -1967,7 +2009,9 @@ fn matmul_gpu_qint4_impl[
             )
             return
         if 128 < m <= 512:
-            alias M512_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+            comptime M512_config = MatmulConfig[
+                a_type, DType.uint8, c_type, True
+            ](
                 block_tile_shape=Index(64, 64, 32),
                 warp_tile_shape=Index(64, 64, 32),
                 num_pipeline_stages=3,
@@ -1988,7 +2032,7 @@ fn matmul_gpu_qint4_impl[
             )
             return
 
-    alias default_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+    comptime default_config = MatmulConfig[a_type, DType.uint8, c_type, True](
         block_tile_shape=Index(128, 128, 32),
         warp_tile_shape=Index(64, 64, 32),
         num_pipeline_stages=5,
@@ -2026,18 +2070,18 @@ fn gpu_qint4_repack_Q4_0[
     constrained[is_gpu[target](), "unsupported target"]()
     var cuda_ctx = ctx.get_device_context()
 
-    alias pack_factor = 8
-    alias group_size = 32
-    alias group_bytes = 2 + (group_size // 2)
-    alias BN = 128
-    alias BK = 1024
+    comptime pack_factor = 8
+    comptime group_size = 32
+    comptime group_bytes = 2 + (group_size // 2)
+    comptime BN = 128
+    comptime BK = 1024
 
-    alias N = Int(b.layout.shape[0])
-    alias K = Int(b.layout.shape[1]) // group_bytes * group_size
+    comptime N = Int(b.layout.shape[0])
+    comptime K = Int(b.layout.shape[1]) // group_bytes * group_size
 
     var smem_usage: Int = BN * 2 * group_bytes
 
-    alias repack = repack_Q4_0_for_sm8x[
+    comptime repack = repack_Q4_0_for_sm8x[
         b.layout, b_packed.layout, DType.bfloat16
     ]
 
@@ -2068,13 +2112,13 @@ fn gpu_qint4_repack_GPTQ[
     constrained[is_gpu[target](), "unsupported target"]()
     var cuda_ctx = ctx.get_device_context()
 
-    alias pack_factor = 8
-    alias group_bytes = 2 + (group_size // 2)
-    alias BN = 128
-    alias BK = 1024
+    comptime pack_factor = 8
+    comptime group_bytes = 2 + (group_size // 2)
+    comptime BN = 128
+    comptime BK = 1024
 
-    alias N = Int(b.layout.shape[1])
-    alias K = Int(b.layout.shape[0]) // group_bytes * group_size
+    comptime N = Int(b.layout.shape[1])
+    comptime K = Int(b.layout.shape[0]) // group_bytes * group_size
 
     constrained[
         N == Int(b_packed.layout.shape[0]),
@@ -2088,9 +2132,9 @@ fn gpu_qint4_repack_GPTQ[
     var smem_usage: Int = BN * 2 * group_bytes
 
     if perm_idx:
-        alias perm_shape = DimList((K,))
+        comptime perm_shape = DimList((K,))
 
-        alias repack = repack_GPTQ_for_sm8x[
+        comptime repack = repack_GPTQ_for_sm8x[
             b.layout,
             b_packed.layout,
             DType.bfloat16,
@@ -2108,7 +2152,7 @@ fn gpu_qint4_repack_GPTQ[
         )
 
     else:
-        alias repack = repack_GPTQ_for_sm8x[
+        comptime repack = repack_GPTQ_for_sm8x[
             b.layout,
             b_packed.layout,
             DType.bfloat16,

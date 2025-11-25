@@ -13,6 +13,7 @@
 """Implements functions that return compile-time information.
 """
 from .param_env import env_get_int, env_get_string, is_defined
+from collections.string.string_slice import _get_kgen_string
 
 # ===----------------------------------------------------------------------=== #
 # is_compile_time
@@ -28,6 +29,29 @@ fn is_compile_time() -> Bool:
         A boolean value indicating whether the code is being compiled.
     """
     return __mlir_op.`kgen.is_compile_time`()
+
+
+# ===----------------------------------------------------------------------=== #
+# codegen_reachable
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline("nodebug")
+fn codegen_unreachable[cond: Bool, msg: StaticString, *extra: StaticString]():
+    """Compilation fails if cond is True and the caller of the function
+    is being generated as runtime code.
+
+    Parameters:
+        cond: The bool value for reachability.
+        msg: The message to display on failure.
+        extra: Additional messages to concatenate to msg.
+
+    """
+    __mlir_op.`kgen.codegen.reachable`[
+        cond = (not cond).__mlir_i1__(),
+        message = _get_kgen_string[msg, extra](),
+        _type=None,
+    ]()
 
 
 # ===----------------------------------------------------------------------=== #

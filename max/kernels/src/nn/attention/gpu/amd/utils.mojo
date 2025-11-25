@@ -53,7 +53,7 @@ fn get_warp_layout[mma_shape: IndexList[3]]() -> Layout:
 
 @always_inline
 fn get_warp_coords[BN: Int, WN: Int]() -> IndexList[2]:
-    alias num_warps_n = BN // WN
+    comptime num_warps_n = BN // WN
     var warp_row = get_warp_id() // UInt(num_warps_n)
     var warp_col = get_warp_id() % UInt(num_warps_n)
     return IndexList[2](Int(warp_row), Int(warp_col))
@@ -61,19 +61,19 @@ fn get_warp_coords[BN: Int, WN: Int]() -> IndexList[2]:
 
 @always_inline
 fn pad[dtype: DType, depth: Int, size: Int]() -> Int:
-    alias simd_width = simd_width_of[dtype]()
-    alias padding = 0 if depth == 64 else size // simd_width
+    comptime simd_width = simd_width_of[dtype]()
+    comptime padding = 0 if depth == 64 else size // simd_width
     return size + padding
 
 
-alias LocalLayoutTensor[dtype: DType, layout: Layout] = LayoutTensor[
+comptime LocalLayoutTensor[dtype: DType, layout: Layout] = LayoutTensor[
     dtype,
     layout,
     MutAnyOrigin,
     address_space = AddressSpace.LOCAL,
 ]
 
-alias SharedLayoutTensor[dtype: DType, layout: Layout] = LayoutTensor[
+comptime SharedLayoutTensor[dtype: DType, layout: Layout] = LayoutTensor[
     dtype,
     layout,
     MutAnyOrigin,
@@ -97,18 +97,18 @@ fn copy_local_to_dram2[
     var buffer = make_amd_buffer_resource(dst_base)
     var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
 
-    alias M = src.layout.shape[0].value()
-    alias N = src.layout.shape[1].value()
+    comptime M = src.layout.shape[0].value()
+    comptime N = src.layout.shape[1].value()
 
     @parameter
     for n in range(N):
 
         @parameter
         for m in range(M):
-            alias src_idx = 4 * n + 16 * m
-            alias i = 4 * m + n
+            comptime src_idx = 4 * n + 16 * m
+            comptime i = 4 * m + n
 
-            alias dst_static_idx = dst_fragments.layout(i)
+            comptime dst_static_idx = dst_fragments.layout(i)
             var dst_idx = dst_frag_offset
 
             @parameter
@@ -122,7 +122,7 @@ fn copy_local_to_dram2[
                 src.runtime_element_layout,
             )
 
-            alias element_stride = dst_fragments.element_layout.stride[
+            comptime element_stride = dst_fragments.element_layout.stride[
                 1
             ].value()
 
@@ -136,7 +136,7 @@ fn copy_local_to_dram2[
 
                 @parameter
                 for i in range(dst_fragments.element_layout.size()):
-                    alias element_offset = dst_fragments.element_layout(i)
+                    comptime element_offset = dst_fragments.element_layout(i)
                     var src = src_element.element_data[i].cast[dst.dtype]()
                     buffer.store(
                         Int32(dst_idx + element_offset),
@@ -167,15 +167,17 @@ struct SharedMemoryManager[
         Scalar[Self.dtype], address_space = AddressSpace.SHARED
     ]
     # k_v_smem is used for k, v, and scratch
-    alias alignment = align_of[SIMD[Self.dtype, simd_width_of[Self.dtype]()]]()
-    alias accum_type = get_accum_type[Self.dtype]()
-    alias p_smem_size = Self.BM * Self.BN if Self.token_gen else 0
-    alias simd_width = simd_width_of[Self.dtype]()
+    comptime alignment = align_of[
+        SIMD[Self.dtype, simd_width_of[Self.dtype]()]
+    ]()
+    comptime accum_type = get_accum_type[Self.dtype]()
+    comptime p_smem_size = Self.BM * Self.BN if Self.token_gen else 0
+    comptime simd_width = simd_width_of[Self.dtype]()
     # depth // simd_width is the padding
-    alias k_smem_size = Self.BN * (Self.depth if Self.full_kv else Self.BK) * (
-        2 if Self.double_buffer else 1
-    )
-    alias v_smem_size = (Self.BN if Self.full_kv else Self.BK) * (
+    comptime k_smem_size = Self.BN * (
+        Self.depth if Self.full_kv else Self.BK
+    ) * (2 if Self.double_buffer else 1)
+    comptime v_smem_size = (Self.BN if Self.full_kv else Self.BK) * (
         pad[
             Self.dtype, Self.depth, Self.depth
         ]() if Self.depth_padded else Self.depth
@@ -190,7 +192,7 @@ struct SharedMemoryManager[
             alignment = Self.alignment,
         ]()
 
-        alias kv_smem_size = max(Self.k_smem_size, Self.v_smem_size)
+        comptime kv_smem_size = max(Self.k_smem_size, Self.v_smem_size)
 
         self.k_smem = stack_allocation[
             kv_smem_size if Self.shared_kv else Self.k_smem_size,
@@ -263,23 +265,23 @@ struct GlobalMemoryManager[
     q_depth: UInt32 = depth,
     output_depth: UInt32 = depth,
 ]:
-    alias kv_num_heads = Self.num_heads // Self.group
+    comptime kv_num_heads = Self.num_heads // Self.group
     # BHSD layout for q and kv cache
-    alias q_gmem_layout = Layout(
+    comptime q_gmem_layout = Layout(
         IntTuple(Int(Self.BM), Int(Self.q_depth)),
         IntTuple(Int(Self.num_heads * Self.q_depth), 1),
     ) if not Self.token_gen else Layout.row_major(
         Int(Self.BM), Int(Self.q_depth)
     )
 
-    alias output_gmem_layout = Layout(
+    comptime output_gmem_layout = Layout(
         IntTuple(Int(Self.BM), Int(Self.output_depth)),
         IntTuple(Int(Self.num_heads * Self.output_depth), 1),
     ) if not Self.token_gen else Layout.row_major(
         Int(Self.BM), Int(Self.output_depth)
     )
 
-    alias kv_gmem_layout = Layout(
+    comptime kv_gmem_layout = Layout(
         IntTuple(Int(Self.BN), Int(Self.depth)),
         IntTuple(Int(Self.kv_num_heads * Self.depth), 1),
     )

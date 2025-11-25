@@ -38,7 +38,7 @@ struct BoxCoords[dtype: DType]:
         self.x2 = x2
 
 
-alias unknown_layout_3d = Layout.row_major(
+comptime unknown_layout_3d = Layout.row_major(
     UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
 )
 

@@ -37,8 +37,8 @@ from testing import assert_almost_equal
 
 from utils import IndexList
 
-alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
-alias llama_num_q_heads = 32
+comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
+comptime llama_num_q_heads = 32
 
 
 def _initialize_ragged_inputs[
@@ -130,11 +130,13 @@ def execute_matmul_kv_cache_ragged[
     For example, in cross attention the sequence would be from a sequence of
     patch embeddings of an image.
     """
-    alias hidden_size = num_q_heads * Int(kv_params.head_size)
-    alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
-    alias num_blocks = 32
+    comptime hidden_size = num_q_heads * Int(kv_params.head_size)
+    comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
+    comptime num_blocks = 32
 
-    alias CollectionType = ContinuousBatchingKVCacheCollection[dtype, kv_params]
+    comptime CollectionType = ContinuousBatchingKVCacheCollection[
+        dtype, kv_params
+    ]
 
     debug_assert(
         len(prompt_lens) == len(cache_sizes),
@@ -376,12 +378,14 @@ def execute_matmul_k_cache_ragged[
     layer_idx: Int,
     ctx: DeviceContext,
 ):
-    alias hidden_size = num_q_heads * Int(kv_params.head_size)
-    alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
+    comptime hidden_size = num_q_heads * Int(kv_params.head_size)
+    comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
 
-    alias num_paged_blocks = 32
-    alias page_size = 512
-    alias CollectionType = PagedKVCacheCollection[dtype, kv_params, page_size]
+    comptime num_paged_blocks = 32
+    comptime page_size = 512
+    comptime CollectionType = PagedKVCacheCollection[
+        dtype, kv_params, page_size
+    ]
     var batch_size = len(prompt_lens)
     debug_assert(
         len(prompt_lens) == len(cache_sizes),
@@ -593,9 +597,9 @@ def generic_assert_output_equals[
     ctx: DeviceContext,
 ):
     constrained[cache_t.dtype == dtype, "type mismatch"]()
-    alias kv_params = cache_t.kv_params
-    alias hidden_size = num_q_heads * Int(kv_params.head_size)
-    alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
+    comptime kv_params = cache_t.kv_params
+    comptime hidden_size = num_q_heads * Int(kv_params.head_size)
+    comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
 
     ref_output_host = HostNDBuffer[
         ref_output_device.dtype, ref_output_device.rank, ref_output_device.shape
@@ -711,10 +715,10 @@ def generic_execute_fused_qkv_cache_ragged[
     Returns:
       - Tuple[HostNDBuffer, HostNDBuffer]: (ref_output, test_output).
     """
-    alias hidden_size = num_q_heads * Int(kv_params.head_size)
-    alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
-    alias fused_hidden_size = (2 * Int(kv_hidden_size)) + hidden_size
-    alias num_blocks = 32
+    comptime hidden_size = num_q_heads * Int(kv_params.head_size)
+    comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
+    comptime fused_hidden_size = (2 * Int(kv_hidden_size)) + hidden_size
+    comptime num_blocks = 32
 
     debug_assert(
         len(prompt_lens) == len(cache_sizes),
@@ -820,9 +824,11 @@ def execute_paged_fused_qkv_matmul[
     layer_idx: Int,
     ctx: DeviceContext,
 ):
-    alias num_paged_blocks = 32
-    alias page_size = 512
-    alias CollectionType = PagedKVCacheCollection[dtype, kv_params, page_size]
+    comptime num_paged_blocks = 32
+    comptime page_size = 512
+    comptime CollectionType = PagedKVCacheCollection[
+        dtype, kv_params, page_size
+    ]
     var batch_size = len(prompt_lens)
     debug_assert(
         len(prompt_lens) == len(cache_sizes),
@@ -992,12 +998,14 @@ def execute_cont_batch_fused_qkv_matmul[
     layer_idx: Int,
     ctx: DeviceContext,
 ):
-    alias hidden_size = num_q_heads * Int(kv_params.head_size)
-    alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
-    alias fused_hidden_size = (2 * Int(kv_hidden_size)) + hidden_size
-    alias num_blocks = 32
+    comptime hidden_size = num_q_heads * Int(kv_params.head_size)
+    comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
+    comptime fused_hidden_size = (2 * Int(kv_hidden_size)) + hidden_size
+    comptime num_blocks = 32
 
-    alias CollectionType = ContinuousBatchingKVCacheCollection[dtype, kv_params]
+    comptime CollectionType = ContinuousBatchingKVCacheCollection[
+        dtype, kv_params
+    ]
 
     debug_assert(
         len(prompt_lens) == len(cache_sizes),
@@ -1152,12 +1160,12 @@ def execute_cont_batch_fused_qkv_matmul[
 
 # TODO implement fused qkv matmul for paged
 def execute_fused_matmul_suite(ctx: DeviceContext):
-    alias dtypes_tolerances = ((DType.float32, 1e-4), (DType.bfloat16, 1e-2))
+    comptime dtypes_tolerances = ((DType.float32, 1e-4), (DType.bfloat16, 1e-2))
 
     @parameter
     for dtype_idx in range(2):
-        alias dtype = dtypes_tolerances[dtype_idx][0]
-        alias rtol = dtypes_tolerances[dtype_idx][1]
+        comptime dtype = dtypes_tolerances[dtype_idx][0]
+        comptime rtol = dtypes_tolerances[dtype_idx][1]
 
         for bs in [1, 16]:
             ce_cache_sizes = List[Int]()

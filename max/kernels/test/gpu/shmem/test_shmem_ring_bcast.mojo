@@ -55,7 +55,7 @@ fn ring_bcast(
 
 
 def test_ring_bcast(ctx: SHMEMContext):
-    alias data_len = 32
+    comptime data_len = 32
     var destination = ctx.enqueue_create_buffer[DType.int32](1)
 
     var data = ctx.enqueue_create_buffer[DType.int32](data_len)

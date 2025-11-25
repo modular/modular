@@ -136,30 +136,6 @@ fn assert_equal[
 
 # TODO: Remove the PythonObject, String and List overloads once we have
 # more powerful traits.
-@always_inline
-fn assert_equal(
-    lhs: String,
-    rhs: String,
-    msg: String = "",
-    *,
-    location: Optional[_SourceLocation] = None,
-) raises:
-    """Asserts that the input values are equal. If it is not then an Error
-    is raised.
-
-    Args:
-        lhs: The lhs of the equality.
-        rhs: The rhs of the equality.
-        msg: The message to be printed if the assertion fails.
-        location: The location of the error (defaults to `__call_location`).
-
-    Raises:
-        An Error with the provided message if assert fails and `None` otherwise.
-    """
-    if lhs != rhs:
-        raise _assert_cmp_error["`left == right` comparison"](
-            lhs, rhs, msg=msg, loc=location.or_else(__call_location())
-        )
 
 
 @always_inline
@@ -239,19 +215,14 @@ fn assert_equal[
 
 
 @always_inline
-fn assert_equal[
-    O: ImmutOrigin,
-](
-    lhs: StringSlice[O],
-    rhs: String,
+fn assert_equal(
+    lhs: StringSlice[mut=False],
+    rhs: StringSlice[mut=False],
     msg: String = "",
     *,
     location: Optional[_SourceLocation] = None,
 ) raises:
     """Asserts that a `StringSlice` is equal to a `String`.
-
-    Parameters:
-        O: The origin of the `StringSlice`.
 
     Args:
         lhs: The left-hand side value.
@@ -265,39 +236,6 @@ fn assert_equal[
     if lhs != rhs:
         raise _assert_cmp_error["`left == right` comparison"](
             lhs.__str__(),
-            rhs,
-            msg=msg,
-            loc=location.or_else(__call_location()),
-        )
-
-
-@always_inline
-fn assert_equal[
-    O: ImmutOrigin,
-](
-    lhs: String,
-    rhs: StringSlice[O],
-    msg: String = "",
-    *,
-    location: Optional[_SourceLocation] = None,
-) raises:
-    """Asserts that a `String` is equal to a `StringSlice`.
-
-    Parameters:
-        O: The origin of the `StringSlice`.
-
-    Args:
-        lhs: The left-hand side value.
-        rhs: The right-hand side value.
-        msg: An optional custom error message.
-        location: The source location of the assertion (defaults to caller location).
-
-    Raises:
-        If the values are not equal.
-    """
-    if lhs != rhs:
-        raise _assert_cmp_error["`left == right` comparison"](
-            lhs,
             rhs.__str__(),
             msg=msg,
             loc=location.or_else(__call_location()),

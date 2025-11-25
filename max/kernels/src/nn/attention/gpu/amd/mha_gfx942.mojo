@@ -53,25 +53,25 @@ from .utils import (
 struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
     AttentionConfig
 ):
-    alias USE_EXPERIMENTAL_CDNA4_MHA_KERNEL = _cdna_4_or_newer() and env_get_bool[
+    comptime USE_EXPERIMENTAL_CDNA4_MHA_KERNEL = _cdna_4_or_newer() and env_get_bool[
         "USE_EXPERIMENTAL_CDNA4_MHA_KERNEL", False
     ]() and not Self.token_gen
 
     # share shared memory for k and v
-    alias shared_kv = False if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else True
+    comptime shared_kv = False if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else True
     # shared memory for the full tile vs BK blocks
-    alias full_kv = True if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else False
+    comptime full_kv = True if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else False
     # pad the depth for v smem
-    alias depth_padded = False if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else True
+    comptime depth_padded = False if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else True
     # double shared memory for k and v
-    alias double_buffer = True if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else False
+    comptime double_buffer = True if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else False
 
     @staticmethod
     @always_inline
     fn q_head_idx() -> UInt:
         @parameter
         if Self.token_gen:
-            alias mma_shape = Self.get_mma_shape()
+            comptime mma_shape = Self.get_mma_shape()
             var group_idx = lane_id() % UInt(mma_shape[0])
             return block_idx.y * UInt(Self.group) + UInt(group_idx)
         else:
@@ -261,7 +261,7 @@ __extension Attention:
 
             self.zero_p_buffer()
 
-            alias swizzle = Swizzle(2, 0, 2)
+            comptime swizzle = Swizzle(2, 0, 2)
 
             var num_b_rows = OptionalReg[Int](
                 kv_tile_num_rows

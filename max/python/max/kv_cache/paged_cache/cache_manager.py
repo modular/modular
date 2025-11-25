@@ -149,8 +149,8 @@ class PagedKVCacheManager:
             self._create_ragged_increment_cache_lengths_graph()
         )
 
-    def get_replica(self, context: TextGenerationContext) -> int:
-        return self._request_to_replica_idx[context.request_id]
+    def get_replica(self, request_id: RequestID) -> int:
+        return self._request_to_replica_idx[request_id]
 
     def get_or_recommend_replica(self, context: TextGenerationContext) -> int:
         """Return idx of the replica that should be used for the given request."""
@@ -503,3 +503,7 @@ class PagedKVCacheManager:
         return self._replica_managers[replica_idx].block_manager.get_req_blocks(
             request_id
         )
+
+    @property
+    def device_tensors(self) -> list[list[Tensor]]:
+        return [manager.device_tensors for manager in self._replica_managers]

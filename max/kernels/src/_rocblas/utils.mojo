@@ -22,7 +22,7 @@ from .types import Status
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias ROCM_ROCBLAS_LIBRARY_PATHS: List[Path] = [
+comptime ROCM_ROCBLAS_LIBRARY_PATHS: List[Path] = [
     "librocblas.so.4",
     "librocblas.so.5",
     "/opt/rocm/lib/librocblas.so.4",
@@ -45,7 +45,7 @@ fn _on_error_msg() -> Error:
     )
 
 
-alias ROCM_ROCBLAS_LIBRARY = _Global[
+comptime ROCM_ROCBLAS_LIBRARY = _Global[
     "ROCM_ROCBLAS_LIBRARY", _init_dylib, on_error_msg=_on_error_msg
 ]()
 

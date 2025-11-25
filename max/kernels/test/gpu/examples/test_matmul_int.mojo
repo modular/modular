@@ -30,9 +30,9 @@ from memory import (
 
 from utils.index import Index
 
-alias TILE_SZ_A = 128
-alias TILE_SZ_B = 16
-alias TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
+comptime TILE_SZ_A = 128
+comptime TILE_SZ_B = 16
+comptime TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
 
 
 fn matmul(
@@ -108,9 +108,9 @@ fn matmul(
 fn run_matmul(ctx: DeviceContext) raises:
     print("== run_matmul")
 
-    alias m = 512
-    alias n = 512
-    alias k = 512
+    comptime m = 512
+    comptime n = 512
+    comptime k = 512
 
     var a_host_ptr = alloc[Scalar[DType.int]](m * k)
     var b_host_ptr = alloc[Scalar[DType.int]](k * n)

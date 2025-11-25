@@ -36,7 +36,7 @@ fn launch_p2p_copy_kernel(
     src_buf: DeviceBuffer[DType.float32],
     num_elements: Int,
 ) raises:
-    alias BLOCK_SIZE = 256
+    comptime BLOCK_SIZE = 256
     var grid_size = ceildiv(num_elements, BLOCK_SIZE)
 
     # Launch the kernel on both devices
@@ -53,7 +53,7 @@ fn launch_p2p_copy_kernel(
 
 
 def main():
-    alias log2_length = env_get_int["log2_length", 20]()
+    comptime log2_length = env_get_int["log2_length", 20]()
     constrained[log2_length > 0]()
     var length = 1 << log2_length
 

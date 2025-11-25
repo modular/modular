@@ -172,11 +172,11 @@ fn spatial_merge[
     merge_size: Int,
     ctx: DeviceContext,
 ) raises:
-    alias threads_per_block = 256
+    comptime threads_per_block = 256
     var batch_size = grid_thw.dim[0]()
     var num_blocks = input.dim[0]()
 
-    alias kernel = spatial_merge_kernel[
+    comptime kernel = spatial_merge_kernel[
         dtype, input.layout, output.layout, grid_thw.layout
     ]
 

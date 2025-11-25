@@ -24,9 +24,9 @@ from utils.index import IndexList
 
 
 def test_runtime_and_compile_time_dim_and_stride(m: ValOrDim, k: ValOrDim):
-    alias static_shape = DimList(k.dim, m.dim)
+    comptime static_shape = DimList(k.dim, m.dim)
     var dynamic_shape = IndexList[2](k.value, m.value)
-    alias layout = Layout.row_major[2](static_shape)
+    comptime layout = Layout.row_major[2](static_shape)
 
     var tensor = LayoutTensor[DType.float32, layout,](
         UnsafePointer[Float32](),
@@ -47,9 +47,9 @@ def test_runtime_and_compile_time_dim_and_stride(m: ValOrDim, k: ValOrDim):
 def test_nested_layout_shape():
     """Test that shape[idx]() works correctly for nested layouts."""
     # Test case 1: blocked_product creates nested layout
-    alias tiler_layout = Layout.row_major(2, 4)
-    alias base_layout = Layout.row_major(32, 32)
-    alias smem_layout = blocked_product(base_layout, tiler_layout)
+    comptime tiler_layout = Layout.row_major(2, 4)
+    comptime base_layout = Layout.row_major(32, 32)
+    comptime smem_layout = blocked_product(base_layout, tiler_layout)
 
     var tensor = LayoutTensor[DType.float32, smem_layout, MutAnyOrigin](
         UnsafePointer[Float32]()
@@ -58,8 +58,8 @@ def test_nested_layout_shape():
     # Shape should be (64, 128) because:
     # - First dimension: 32 * 2 = 64
     # - Second dimension: 32 * 4 = 128
-    alias shape0 = tensor.shape[0]()
-    alias shape1 = tensor.shape[1]()
+    comptime shape0 = tensor.shape[0]()
+    comptime shape1 = tensor.shape[1]()
 
     assert_equal(shape0, 64, "Shape[0] should be 64 for nested layout")
     assert_equal(shape1, 128, "Shape[1] should be 128 for nested layout")
@@ -69,11 +69,11 @@ def test_nested_layout_shape():
     assert_equal(total_size, 8192, "Total size should be 8192")
 
     # Test case 2: Ensure non-nested layouts still work (regression test)
-    alias simple_layout = Layout.row_major(16, 32)
-    alias simple_shape0 = LayoutTensor[
+    comptime simple_layout = Layout.row_major(16, 32)
+    comptime simple_shape0 = LayoutTensor[
         DType.float32, simple_layout, MutAnyOrigin
     ].shape[0]()
-    alias simple_shape1 = LayoutTensor[
+    comptime simple_shape1 = LayoutTensor[
         DType.float32, simple_layout, MutAnyOrigin
     ].shape[1]()
 

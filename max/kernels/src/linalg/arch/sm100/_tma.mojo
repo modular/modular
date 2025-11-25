@@ -100,7 +100,7 @@ fn create_tma_descriptor[
 
     constrained[depth(tile_shape) == 1, "Tile shape must be a flat tuple"]()
 
-    alias rank = len(tile_shape)
+    comptime rank = len(tile_shape)
     constrained[
         rank == gmem_tensor.rank,
         "Tile shape and input tensor's rank must match",
@@ -136,9 +136,9 @@ struct TMALoad[
         Self.dtype, Self.tile_shape, Self.swizzle_mode
     ]
 
-    alias smem_alignment = 128
+    comptime smem_alignment = 128
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -212,13 +212,13 @@ struct TMALoad[
 
     @staticmethod
     fn layout_is_tma_compatible[repeat_pattern: Layout]() -> Bool:
-        alias shape = repeat_pattern.shape
-        alias stride = repeat_pattern.stride
+        comptime shape = repeat_pattern.shape
+        comptime stride = repeat_pattern.stride
 
         @parameter
         for i in range(len(shape)):
-            alias current_shape = product(shape[i])
-            alias current_stride = product(stride[i]) * size_of[Self.dtype]()
+            comptime current_shape = product(shape[i])
+            comptime current_stride = product(stride[i]) * size_of[Self.dtype]()
 
             @parameter
             if current_shape > 1 and current_stride % Self.smem_alignment != 0:
@@ -228,9 +228,9 @@ struct TMALoad[
 
     @staticmethod
     fn get_2D_smem_layout[m: Int, n: Int]() -> Layout:
-        alias desc_layout = Layout.row_major(Self.tile_shape)
+        comptime desc_layout = Layout.row_major(Self.tile_shape)
 
-        alias blocked_smem_layout = blocked_product(
+        comptime blocked_smem_layout = blocked_product(
             desc_layout,
             Layout.row_major(m, n),
             coalesce_output=True,
@@ -245,10 +245,12 @@ struct TMALoad[
     fn get_repeat_pattern[
         dst_layout: Layout, check_tma_compatibility: Bool = True
     ]() -> Layout:
-        alias descriptor_layout = Layout(
+        comptime descriptor_layout = Layout(
             Self.tile_shape
         )  # uses column-major layout
-        alias repeat_pattern = zipped_divide(dst_layout, descriptor_layout)[1]
+        comptime repeat_pattern = zipped_divide(dst_layout, descriptor_layout)[
+            1
+        ]
 
         constrained[
             Self.layout_is_tma_compatible[repeat_pattern]()
@@ -260,8 +262,8 @@ struct TMALoad[
         return repeat_pattern
 
 
-alias UInt32Indices[rank: Int] = IndexList[rank, element_type = DType.uint32]
-alias MBarPtr = UnsafePointer[
+comptime UInt32Indices[rank: Int] = IndexList[rank, element_type = DType.uint32]
+comptime MBarPtr = UnsafePointer[
     SharedMemBarrier, address_space = AddressSpace.SHARED
 ]
 
@@ -308,20 +310,20 @@ fn copy[
     # with a naive layout the raw memory will appear to be stored incorrectly. So when
     # doing loads with a width less than the tile width, it's important to use a nested layout.
 
-    alias dst_layout = dst.layout
+    comptime dst_layout = dst.layout
 
     policy.verify_destination_tensor(dst)
 
     # The coalesced layout is the row major version of any nested / normal layout.
     # It will have the same shape as the nested layout but will be in row major order.
-    alias coalesced_shape = dst_layout.shape.product_flatten()
-    alias coalesced_layout = Layout.row_major(coalesced_shape)
+    comptime coalesced_shape = dst_layout.shape.product_flatten()
+    comptime coalesced_layout = Layout.row_major(coalesced_shape)
 
     # The repeat pattern tells us hoy many times our policy tile (descriptor)
     # can be repeated over the provided layout, in this case our destination
     # layout and our coalesced layout.
-    alias dst_repeat_pattern = policy.get_repeat_pattern[dst_layout]()
-    alias src_repeat_pattern = policy.get_repeat_pattern[
+    comptime dst_repeat_pattern = policy.get_repeat_pattern[dst_layout]()
+    comptime src_repeat_pattern = policy.get_repeat_pattern[
         coalesced_layout, check_tma_compatibility=False
     ]()
 
@@ -330,7 +332,7 @@ fn copy[
         "Repeat patterns must have the same size",
     ]()
 
-    alias num_copies = src_repeat_pattern.size()
+    comptime num_copies = src_repeat_pattern.size()
 
     """
     Here's why we have 2 sets of offsets, repeat_patterns, and layouts.
@@ -376,16 +378,16 @@ fn copy[
         # We plug i into the repeat pattern to get the starting offset
         # of the desired tile.
 
-        alias dst_copy_offset = dst_repeat_pattern(i)
-        alias src_copy_offset = src_repeat_pattern(i)
+        comptime dst_copy_offset = dst_repeat_pattern(i)
+        comptime src_copy_offset = src_repeat_pattern(i)
 
         # The coordinate of a copy tile's starting point in dst
         # If repeat_pattern is (2, 2):(32, 4), the 2nd tile is at (1, 0) in (2, 2)
         # its offset's coordinates is (32, 0).
-        alias offset_coords_tuple = coalesced_layout.idx2crd(src_copy_offset)
-        alias offset_coords = to_index_list[rank, element_type = DType.uint32](
-            offset_coords_tuple
-        )
+        comptime offset_coords_tuple = coalesced_layout.idx2crd(src_copy_offset)
+        comptime offset_coords = to_index_list[
+            rank, element_type = DType.uint32
+        ](offset_coords_tuple)
 
         # expects X, Y, Z coordinates
         var copy_tile_coords = (coords + offset_coords).reverse()
@@ -412,7 +414,7 @@ fn to_swizzle[dtype: DType, mode: SwizzleMode]() -> Swizzle:
     Returns:
         A `Swizzle` object configured by the specified mode.
     """
-    alias type_size = size_of[dtype]()
+    comptime type_size = size_of[dtype]()
 
     @parameter
     if mode in (

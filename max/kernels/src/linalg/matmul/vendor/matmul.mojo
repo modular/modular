@@ -56,14 +56,14 @@ fn matmul[
         )
         return
     else:
-        alias epilogue = elementwise_lambda_fn.value()
+        comptime epilogue = elementwise_lambda_fn.value()
         # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
         # arch support 32B load/store to global memory, see KERN-2037.
-        alias use_32b_simd = (
+        comptime use_32b_simd = (
             has_nvidia_gpu_accelerator()
             and ctx.default_device_info.compute >= B200.compute
         )
-        alias simd_size = 32 // size_of[c.type]() if use_32b_simd else (
+        comptime simd_size = 32 // size_of[c.type]() if use_32b_simd else (
             simd_width_of[c.type, target = get_gpu_target()]()
         )
 

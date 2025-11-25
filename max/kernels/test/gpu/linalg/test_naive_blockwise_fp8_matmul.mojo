@@ -34,9 +34,9 @@ fn test_naive_blockwise_fp8_matmul[
     block_scales_sizes: IndexList[3],
     transpose_b: Bool = True,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,) raises:
-    alias BLOCK_SCALE_M = block_scales_sizes[0]
-    alias BLOCK_SCALE_N = block_scales_sizes[1]
-    alias BLOCK_SCALE_K = block_scales_sizes[2]
+    comptime BLOCK_SCALE_M = block_scales_sizes[0]
+    comptime BLOCK_SCALE_N = block_scales_sizes[1]
+    comptime BLOCK_SCALE_K = block_scales_sizes[2]
 
     var M = m.value
     var N = n.value
@@ -61,16 +61,16 @@ fn test_naive_blockwise_fp8_matmul[
         transpose_b,
     )
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_c_shape = DimList(m.dim, n.dim)
 
-    alias static_a_scale_shape = DimList(
+    comptime static_a_scale_shape = DimList(
         ceildiv(k.dim, BLOCK_SCALE_K), ceildiv(m.dim, BLOCK_SCALE_M)
     )
-    alias static_b_scale_shape = DimList(
+    comptime static_b_scale_shape = DimList(
         ceildiv(n.dim, BLOCK_SCALE_N), ceildiv(k.dim, BLOCK_SCALE_K)
     ) if transpose_b else DimList(
         ceildiv(k.dim, BLOCK_SCALE_K), ceildiv(n.dim, BLOCK_SCALE_N)

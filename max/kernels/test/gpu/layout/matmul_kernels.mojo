@@ -28,8 +28,8 @@ from layout.tensor_core import TensorCore
 from memory import LegacyUnsafePointer as UnsafePointer
 from utils.index import Index
 
-alias NWARMUP = 1
-alias NRUN = 1
+comptime NWARMUP = 1
+comptime NRUN = 1
 
 
 fn time_kernel[
@@ -316,7 +316,7 @@ fn run_gemm_kernel_2[
     var N = b.shape[1]()
     var K = a.shape[1]()
 
-    alias kernel = gemm_kernel_2[dtype, a.layout, b.layout, c.layout, BM, BN]
+    comptime kernel = gemm_kernel_2[dtype, a.layout, b.layout, c.layout, BM, BN]
     var func = ctx.compile_function_checked[kernel, kernel]()
 
     @always_inline
@@ -424,8 +424,8 @@ fn gemm_kernel_3[
     # Iterate over tiles of input matrices A and B
     for block in range(b.dim[0]() // BK):
         # Define the layout for loading tiles of A and B into shared memory
-        alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
-        alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
+        comptime load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
+        comptime load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
 
         # Get the tiles of A and B for the current iteration
         var a_tile = a.tile[BM, BK](Int(block_idx.y), block)
@@ -472,7 +472,7 @@ fn run_gemm_kernel_3[
     var N = b.shape[1]()
     var K = a.shape[1]()
 
-    alias kernel = gemm_kernel_3[
+    comptime kernel = gemm_kernel_3[
         dtype, a.layout, b.layout, c.layout, BM, BN, BK, BM * BN
     ]
     var func = ctx.compile_function_checked[kernel, kernel]()
@@ -594,8 +594,8 @@ fn gemm_kernel_4[
     for block in range(b.dim[0]() // BK):
         # Define the layout for loading tiles of A and B into shared
         # memory.
-        alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
-        alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
+        comptime load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
+        comptime load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
 
         # Get the tiles of A and B for the current block.
         var a_tile = a.tile[BM, BK](Int(block_idx.y), block)
@@ -649,8 +649,8 @@ fn run_gemm_kernel_4[
     var N = b.shape[1]()
     var K = a.shape[1]()
 
-    alias NUM_THREADS = (BM * BN) // TM
-    alias kernel = gemm_kernel_4[
+    comptime NUM_THREADS = (BM * BN) // TM
+    comptime kernel = gemm_kernel_4[
         dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, NUM_THREADS
     ]
     var func = ctx.compile_function_checked[kernel, kernel]()
@@ -778,8 +778,8 @@ fn gemm_kernel_5[
     var ntiles = b.dim[0]() // BK
 
     for block in range(ntiles):
-        alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
-        alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
+        comptime load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
+        comptime load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
         var a_tile = a.tile[BM, BK](Int(block_idx.y), block)
         var b_tile = b.tile[BK, BN](block, Int(block_idx.x))
         copy_dram_to_sram_async[thread_layout=load_a_layout](a_smem, a_tile)
@@ -821,9 +821,9 @@ fn run_gemm_kernel_5[
     var N = b.shape[1]()
     var K = a.shape[1]()
 
-    alias NUM_THREADS = (BM * BN) // (TM * TN)
+    comptime NUM_THREADS = (BM * BN) // (TM * TN)
 
-    alias kernel = gemm_kernel_5[
+    comptime kernel = gemm_kernel_5[
         dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, TN, NUM_THREADS
     ]
     var func = ctx.compile_function_checked[kernel, kernel]()
@@ -914,7 +914,7 @@ fn gemm_kernel_6[
     of rows in B.
     """
 
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
     var partition_col = Int(thread_idx.x % UInt(BN // TN))
     var partition_row = Int(thread_idx.x // UInt(BN // TN))
     var bidx = block_idx.x
@@ -963,8 +963,8 @@ fn gemm_kernel_6[
 
     # Iterate over the tiles of A and B in the K dimension.
     for block in range(ntiles):
-        alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
-        alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
+        comptime load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
+        comptime load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
         var a_tile = a.tile[BM, BK](Int(block_idx.y), block)
         var b_tile = b.tile[BK, BN](block, Int(block_idx.x))
 
@@ -1019,8 +1019,8 @@ fn run_gemm_kernel_6[
     var N = b.shape[1]()
     var K = a.shape[1]()
 
-    alias NUM_THREADS = (BM * BN) // (TM * TN)
-    alias kernel = gemm_kernel_6[
+    comptime NUM_THREADS = (BM * BN) // (TM * TN)
+    comptime kernel = gemm_kernel_6[
         dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, TN, NUM_THREADS
     ]
     var func = ctx.compile_function_checked[kernel, kernel]()
@@ -1110,9 +1110,9 @@ fn matmul_kernel_tc[
     matrix multiplication, i.e., the number of columns in A equals the number
     of rows in B.
     """
-    alias M = C.shape[0]()  # Number of rows in matrix C
-    alias N = C.shape[1]()  # Number of columns in matrix C
-    alias K = A.shape[1]()  # Number of columns in matrix A
+    comptime M = C.shape[0]()  # Number of rows in matrix C
+    comptime N = C.shape[1]()  # Number of columns in matrix C
+    comptime K = A.shape[1]()  # Number of columns in matrix A
 
     var warp_id = get_warp_id()  # Warp ID within the block
 
@@ -1248,8 +1248,8 @@ fn run_gemm_kernel_tc[
     var N = b.shape[1]()
     var K = a.shape[1]()
 
-    alias NUM_WARPS = (BM // WM) * (BN // WN)
-    alias kernel = matmul_kernel_tc[
+    comptime NUM_WARPS = (BM // WM) * (BN // WN)
+    comptime kernel = matmul_kernel_tc[
         dtype,
         a.layout,
         b.layout,

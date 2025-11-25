@@ -23,19 +23,19 @@ from testing import assert_equal
 
 from utils.index import Index
 
-alias float_type = DType.float64
-alias int_type = DType.int
+comptime float_type = DType.float64
+comptime int_type = DType.int
 
 
-alias width = 4096
-alias height = 4096
-alias MAX_ITERS = 1000
-alias BLOCK_SIZE = 32
+comptime width = 4096
+comptime height = 4096
+comptime MAX_ITERS = 1000
+comptime BLOCK_SIZE = 32
 
-alias min_x = -2.0
-alias max_x = 0.47
-alias min_y = -1.12
-alias max_y = 1.12
+comptime min_x = -2.0
+comptime max_x = 0.47
+comptime min_y = -1.12
+comptime max_y = 1.12
 
 
 @always_inline
@@ -65,8 +65,8 @@ fn mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
 
     var out = NDBuffer[int_type, 2](out_ptr, Index(height, width))
 
-    alias scale_x = (max_x - min_x) / width
-    alias scale_y = (max_y - min_y) / height
+    comptime scale_x = (max_x - min_x) / width
+    comptime scale_y = (max_y - min_y) / height
 
     @always_inline
     fn compute_vector[simd_width: Int](col: Int) unified {mut}:

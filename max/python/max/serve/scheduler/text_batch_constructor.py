@@ -103,26 +103,32 @@ class TextBatchConstructor:
         self.total_preemption_count = 0
         self.last_preemption_logging_time: float = 0.0
 
-    def enqueue_new_request(self, ctx: TextContext) -> None:
-        """Add a new CE request.
-
-        This request is assigned based on recommendation from KVCacheManager or
-        based on round-robin assignment.
-
-        Args:
-            ctx: The request to enqueue.
-        """
-
-        # Pick the replica to enqueue the request to.
+    def get_next_replica_idx(self) -> int:
+        """Returns the next replica index to assign the request to."""
 
         # TODO: Make this decision based on KVCache state.
         # if self.paged_cache is not None:
         #     replica_idx = self.paged_cache.get_or_recommend_replica(ctx)
 
         replica_idx = self._round_robin_counter
-        # Increment the round-robin counter and wrap around if it exceeds the number of replicas.
         self._round_robin_counter += 1
         self._round_robin_counter %= self.num_replicas
+        return replica_idx
+
+    def enqueue_new_request(
+        self, ctx: TextContext, replica_idx: int | None = None
+    ) -> None:
+        """Add a new CE request to a replica.
+
+        Args:
+            ctx: The request to enqueue.
+            replica_idx: The replica index to assign the request to.
+                If None, the next replica index will be automatically chosen.
+        """
+
+        # Pick the replica to enqueue the request to.
+        if replica_idx is None:
+            replica_idx = self.get_next_replica_idx()
         replica = self.replicas[replica_idx]
 
         # Add the request to the appropriate dict based on whether it needs CE.

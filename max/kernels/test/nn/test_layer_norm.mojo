@@ -29,13 +29,13 @@ from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
 
-alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
 
 
 fn run_layer_norm_cpu[
     dtype: DType, rank: Int
 ](shape: IndexList[rank], rtol: Float64 = 0.01) raises:
-    alias layout = Layout.row_major[rank]()
+    comptime layout = Layout.row_major[rank]()
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 

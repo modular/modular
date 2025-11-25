@@ -53,10 +53,10 @@ from .tuning_configs import (
     _get_tuning_list_sm100_bf16,
 )
 
-alias DISPATCH_MISS = 0
-alias DISPATCH_HIT = 1
+comptime DISPATCH_MISS = 0
+comptime DISPATCH_HIT = 1
 
-alias logger = Logger()
+comptime logger = Logger()
 
 
 @always_inline
@@ -79,20 +79,26 @@ fn matmul_dispatch_sm100[
 
     @parameter
     if env_get_bool["AUTOTUNING_MODE", False]():
-        alias BM = env_get_int["BM", 128]()
-        alias BN = env_get_int["BN", 64]()
-        alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
-        alias CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 2]()
-        alias CLUSTER_DIM_Y = env_get_int["TUNE_CLUSTER_DIM_Y", 1]()
-        alias CLUSTER_DIM_Z = env_get_int["TUNE_CLUSTER_DIM_Z", 1]()
-        alias CLUSTER_DIM = Index(CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z)
-        alias BLOCK_SWIZZLE_SIZE = env_get_int["TUNE_BLOCK_SWIZZLE_SIZE", 8]()
-        alias RASTERIZE_ORDER = env_get_int["TUNE_RASTER_ORDER", 1]()
-        alias block_tile_shape = Index(BM, BN, BK)
-        alias MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
-        alias UmmaShape = Index(BM * 2, BN * 2, MMA_K)
+        comptime BM = env_get_int["BM", 128]()
+        comptime BN = env_get_int["BN", 64]()
+        comptime BK = (
+            TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
+        )
+        comptime CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 2]()
+        comptime CLUSTER_DIM_Y = env_get_int["TUNE_CLUSTER_DIM_Y", 1]()
+        comptime CLUSTER_DIM_Z = env_get_int["TUNE_CLUSTER_DIM_Z", 1]()
+        comptime CLUSTER_DIM = Index(
+            CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z
+        )
+        comptime BLOCK_SWIZZLE_SIZE = env_get_int[
+            "TUNE_BLOCK_SWIZZLE_SIZE", 8
+        ]()
+        comptime RASTERIZE_ORDER = env_get_int["TUNE_RASTER_ORDER", 1]()
+        comptime block_tile_shape = Index(BM, BN, BK)
+        comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
+        comptime UmmaShape = Index(BM * 2, BN * 2, MMA_K)
 
-        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             mma_shape=UmmaShape,
             cluster_shape=CLUSTER_DIM,
             block_swizzle_size=BLOCK_SWIZZLE_SIZE,
@@ -108,9 +114,9 @@ fn matmul_dispatch_sm100[
 
     @parameter
     if elementwise_lambda_fn:
-        alias umma_shape = Index(64, 128, 16)
-        alias BK = 64
-        alias block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
+        comptime umma_shape = Index(64, 128, 16)
+        comptime BK = 64
+        comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
 
         matmul_sm100_fallback[
             transpose_b=transpose_b,
@@ -126,11 +132,11 @@ fn matmul_dispatch_sm100[
         "a_type and b_type and c_type must be the same",
     ]()
 
-    alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
-    alias MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
+    comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
+    comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
 
-    alias static_N = c.shape.get[1]()  # mxk
-    alias static_K = a.shape.get[1]()  # mxn
+    comptime static_N = c.shape.get[1]()  # mxk
+    comptime static_K = a.shape.get[1]()  # mxn
 
     var m = c.dim[0]()
 
@@ -140,12 +146,12 @@ fn matmul_dispatch_sm100[
     @parameter
     if static_N == 8192 and static_K == 2048:
         if m == 512:
-            alias block_tile_shape = Index(64, 112, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(64, 112, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=2,
@@ -156,12 +162,12 @@ fn matmul_dispatch_sm100[
             ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
         elif m == 4096:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=2,
@@ -172,12 +178,12 @@ fn matmul_dispatch_sm100[
             ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
         elif m == 8192:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -194,12 +200,12 @@ fn matmul_dispatch_sm100[
     @parameter
     if static_N == 8192 and static_K == 7168:
         if m == 512:
-            alias block_tile_shape = Index(128, 112, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 112, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=8,
@@ -210,12 +216,12 @@ fn matmul_dispatch_sm100[
             ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
         elif m == 4096:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
@@ -224,12 +230,12 @@ fn matmul_dispatch_sm100[
             ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
         elif m == 8192:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=8,
@@ -246,12 +252,12 @@ fn matmul_dispatch_sm100[
     @parameter
     if static_N == 14336 and static_K == 8192:
         if m == 512:
-            alias block_tile_shape = Index(128, 104, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 104, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -262,12 +268,12 @@ fn matmul_dispatch_sm100[
             ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
         elif m == 4096:
-            alias block_tile_shape = Index(128, 112, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 112, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=8,
@@ -278,12 +284,12 @@ fn matmul_dispatch_sm100[
             ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
         elif m == 8192:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=8,
@@ -300,12 +306,12 @@ fn matmul_dispatch_sm100[
     @parameter
     if static_N == 2560 and static_K == 8192:
         if m == 512:
-            alias block_tile_shape = Index(64, 80, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(64, 80, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(4, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(4, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
@@ -314,12 +320,12 @@ fn matmul_dispatch_sm100[
             ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
         elif m == 4096:
-            alias block_tile_shape = Index(128, 72, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 72, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=8,
@@ -330,12 +336,12 @@ fn matmul_dispatch_sm100[
             ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
         elif m == 8192:
-            alias block_tile_shape = Index(128, 80, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 80, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
@@ -348,12 +354,12 @@ fn matmul_dispatch_sm100[
     @parameter
     if static_N == 4096 and static_K == 4096:
         if m == 4096:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=0,
@@ -367,12 +373,12 @@ fn matmul_dispatch_sm100[
     @parameter
     if static_N == 8192 and static_K == 8192:
         if m == 8192:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=8,
@@ -384,13 +390,15 @@ fn matmul_dispatch_sm100[
             return DISPATCH_HIT
 
     # Global fallback for any unmatched cases
-    alias fallback_block_tile_shape = Index(128, 64, BK)
-    alias fallback_umma_shape = Index(
+    comptime fallback_block_tile_shape = Index(128, 64, BK)
+    comptime fallback_umma_shape = Index(
         fallback_block_tile_shape[0] * 2,
         fallback_block_tile_shape[1] * 2,
         MMA_K,
     )
-    alias fallback_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+    comptime fallback_config = MatmulConfig[
+        a_type, b_type, c_type, transpose_b
+    ](
         mma_shape=fallback_umma_shape,
         cluster_shape=Index(2, 1, 1),
         block_swizzle_size=0,  # (KERN-2026) block_swizzle_size=8 fails for some special cases, so we use 0 here.
@@ -430,24 +438,30 @@ fn matmul_dispatch_sm100[
         var a_tensor = from_ndbuffer_row_major(a)
         var b_tensor = from_ndbuffer_row_major(b)
 
-        alias BM = env_get_int["TUNE_BM", 128]()
-        alias BN = env_get_int["TUNE_BN", 64]()
-        alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
-        alias MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
-        alias CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 2]()
-        alias CLUSTER_DIM_Y = env_get_int["TUNE_CLUSTER_DIM_Y", 1]()
-        alias CLUSTER_DIM_Z = env_get_int["TUNE_CLUSTER_DIM_Z", 1]()
-        alias CLUSTER_DIM = Index(CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z)
-        alias BLOCK_SWIZZLE_SIZE = env_get_int["TUNE_BLOCK_SWIZZLE_SIZE", 0]()
-        alias RASTERIZE_ORDER = env_get_int["TUNE_RASTER_ORDER", 1]()
-        alias CTA_GROUP = env_get_int["TUNE_CTA_GROUP", 2]()
-        alias K_GROUP_SIZE = env_get_int["TUNE_K_GROUP_SIZE", 1]()
-        alias AB_SWAPPED = env_get_bool["TUNE_AB_SWAPPED", False]()
+        comptime BM = env_get_int["TUNE_BM", 128]()
+        comptime BN = env_get_int["TUNE_BN", 64]()
+        comptime BK = (
+            TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
+        )
+        comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
+        comptime CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 2]()
+        comptime CLUSTER_DIM_Y = env_get_int["TUNE_CLUSTER_DIM_Y", 1]()
+        comptime CLUSTER_DIM_Z = env_get_int["TUNE_CLUSTER_DIM_Z", 1]()
+        comptime CLUSTER_DIM = Index(
+            CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z
+        )
+        comptime BLOCK_SWIZZLE_SIZE = env_get_int[
+            "TUNE_BLOCK_SWIZZLE_SIZE", 0
+        ]()
+        comptime RASTERIZE_ORDER = env_get_int["TUNE_RASTER_ORDER", 1]()
+        comptime CTA_GROUP = env_get_int["TUNE_CTA_GROUP", 2]()
+        comptime K_GROUP_SIZE = env_get_int["TUNE_K_GROUP_SIZE", 1]()
+        comptime AB_SWAPPED = env_get_bool["TUNE_AB_SWAPPED", False]()
         # alias PIPELINE_STAGE = env_get_int["TUNE_PIPELINE_STAGE", 4]()
 
-        alias umma_shape = Index(BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
+        comptime umma_shape = Index(BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
 
-        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             mma_shape=umma_shape,
             cluster_shape=CLUSTER_DIM,
             block_swizzle_size=BLOCK_SWIZZLE_SIZE,
@@ -464,8 +478,8 @@ fn matmul_dispatch_sm100[
         ](c_tensor, a_tensor, b_tensor, ctx)
 
     var m = c.dim[0]()
-    alias static_N = c.shape.get[1]()
-    alias static_K = a.shape.get[1]()
+    comptime static_N = c.shape.get[1]()
+    comptime static_K = a.shape.get[1]()
 
     var epilogue_type = String("None")
 
@@ -495,8 +509,8 @@ fn matmul_dispatch_sm100[
     )
 
     # default matmul config for sm100
-    alias MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
-    alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
+    comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
+    comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
 
     # 1. for m==1 our gemv matmul is faster than cublas for skinny bfloat16 matmuls
     # 2. Our GEMV matmul dosen't support float8 yet.
@@ -580,17 +594,17 @@ fn matmul_dispatch_sm100_fp8[
     b: NDBuffer[b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
-    alias static_N = c.shape.get[1]()
-    alias static_K = a.shape.get[1]()
+    comptime static_N = c.shape.get[1]()
+    comptime static_K = a.shape.get[1]()
 
-    alias MMA_K = 32
-    alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
+    comptime MMA_K = 32
+    comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
     var m = c.dim[0]()
 
     @parameter
     @always_inline("nodebug")
     fn _dispatch[entry: TuningConfigSM100]() raises:
-        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             mma_shape=entry.mma_shape,
             cluster_shape=entry.cluster_shape,
             block_swizzle_size=Int(entry.block_swizzle_size),
@@ -615,7 +629,7 @@ fn matmul_dispatch_sm100_fp8[
         fn get_m(x: TuningConfigSM100) -> Int:
             return x.M
 
-        alias m_values = T.query_values[Int, get_m, domain]()
+        comptime m_values = T.query_values[Int, get_m, domain]()
 
         @parameter
         for static_m in m_values:
@@ -626,11 +640,11 @@ fn matmul_dispatch_sm100_fp8[
                 return x.M == static_m
 
             if m <= static_m:
-                alias idx_list = T.query_index[rule_eq_m, domain=domain]()
+                comptime idx_list = T.query_index[rule_eq_m, domain=domain]()
 
                 @parameter
                 if idx_list:
-                    alias entry = T.configs[idx_list[0]]
+                    comptime entry = T.configs[idx_list[0]]
                     _dispatch[entry]()
                     return DISPATCH_HIT
                 else:
@@ -639,15 +653,15 @@ fn matmul_dispatch_sm100_fp8[
 
         return DISPATCH_MISS
 
-    alias tuning_list = _get_tuning_list_sm100_fp8[mma_k=MMA_K, bk=BK]()
-    alias tuning_table = Table(tuning_list, "tuning_table_sm100_fp8")
+    comptime tuning_list = _get_tuning_list_sm100_fp8[mma_k=MMA_K, bk=BK]()
+    comptime tuning_table = Table(tuning_list, "tuning_table_sm100_fp8")
 
     @parameter
     @always_inline
     fn rule_eq_nk(x: TuningConfigSM100) -> Bool:
         return x.K == static_K and x.N == static_N
 
-    alias nk_idx_list = tuning_table.query_index[rule_eq_nk]()
+    comptime nk_idx_list = tuning_table.query_index[rule_eq_nk]()
 
     # TODO: re-enable the following tuning dispatch.
     # make sure the domain (nk_idx_list) is not empty!
@@ -664,12 +678,12 @@ fn matmul_dispatch_sm100_fp8[
             static_m % 2 == 0,
             "static_m must be even",
         ]()
-        alias block_tile_shape = Index(128, static_m // 2, BK)
-        alias umma_shape = Index(
+        comptime block_tile_shape = Index(128, static_m // 2, BK)
+        comptime umma_shape = Index(
             block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
         )
-        alias cluster_shape = Index(2, 1, 1)
-        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        comptime cluster_shape = Index(2, 1, 1)
+        comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             mma_shape=umma_shape,
             cluster_shape=cluster_shape,
             AB_swapped=True,
@@ -697,12 +711,12 @@ fn matmul_dispatch_sm100_fp8[
     @parameter
     if static_N == 5376 and static_K == 21504:
         if m == 224 or m == 256:
-            alias block_tile_shape = Index(128, 64, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 64, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -716,12 +730,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 288:
-            alias block_tile_shape = Index(128, 96, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 96, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(4, 2, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(4, 2, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=0,
@@ -735,12 +749,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 512:
-            alias block_tile_shape = Index(128, 96, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 96, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(4, 2, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(4, 2, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=4,
@@ -754,12 +768,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 1024:
-            alias block_tile_shape = Index(128, 96, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 96, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(8, 2, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(8, 2, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=2,
@@ -773,12 +787,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 2000 or m == 2048:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(8, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(8, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=0,
@@ -792,12 +806,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 3000 or m == 3500:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -811,12 +825,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 4096:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=8,
@@ -830,12 +844,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 7000 or m == 8192:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=4,
@@ -851,12 +865,12 @@ fn matmul_dispatch_sm100_fp8[
 
     elif static_N == 43008 and static_K == 5376:
         if m == 224:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 2, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 2, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -870,12 +884,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 256:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 2, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 2, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=0,
@@ -889,12 +903,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 288 or m == 512:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=8,
@@ -908,12 +922,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 1024 or m == 2048:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=2,
@@ -927,12 +941,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 2000 or m == 3500 or m == 4096 or m == 8192:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -946,12 +960,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 3000 or m == 7000:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=0,
@@ -967,12 +981,12 @@ fn matmul_dispatch_sm100_fp8[
 
     elif static_N == 8192 and static_K == 5376:
         if m == 224 or m == 256:
-            alias block_tile_shape = Index(128, 64, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 64, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -986,12 +1000,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 288 or m == 1024:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(4, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(4, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -1005,12 +1019,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 512:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(4, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(4, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=0,
@@ -1024,12 +1038,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 2000:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 2, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 2, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=0,
@@ -1043,12 +1057,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 2048 or m == 3000:
-            alias block_tile_shape = Index(128, 96, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 96, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -1062,12 +1076,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 3500:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 2, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 2, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -1081,12 +1095,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 4096 or m == 7000 or m == 8192:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=0,
@@ -1100,12 +1114,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 8192:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -1121,12 +1135,12 @@ fn matmul_dispatch_sm100_fp8[
 
     elif static_N == 5376 and static_K == 4096:
         if m == 224:
-            alias block_tile_shape = Index(128, 64, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 64, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 2, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 2, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -1140,12 +1154,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 256:
-            alias block_tile_shape = Index(128, 64, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 64, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -1159,12 +1173,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 288:
-            alias block_tile_shape = Index(128, 96, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 96, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 2, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 2, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=2,
@@ -1178,12 +1192,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 512:
-            alias block_tile_shape = Index(128, 96, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 96, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 2, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 2, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -1197,12 +1211,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 1024:
-            alias block_tile_shape = Index(128, 96, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 96, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(4, 2, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(4, 2, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -1216,12 +1230,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 2000 or m == 2048:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(8, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(8, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=2,
@@ -1235,12 +1249,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 3000:
-            alias block_tile_shape = Index(128, 96, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 96, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -1254,12 +1268,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 3500 or m == 8192:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=0,
@@ -1273,12 +1287,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 4096:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -1292,12 +1306,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 7000:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=2,
@@ -1313,12 +1327,12 @@ fn matmul_dispatch_sm100_fp8[
 
     elif static_N == 21504 and static_K == 5376:
         if m == 224 or m == 256:
-            alias block_tile_shape = Index(128, 96, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 96, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 2, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 2, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -1332,12 +1346,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 288:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(4, 2, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(4, 2, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=4,
@@ -1351,12 +1365,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 512:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(4, 2, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(4, 2, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=0,
@@ -1370,12 +1384,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 1024 or m == 4096:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -1389,12 +1403,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 2000 or m == 3500:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=2,
@@ -1408,12 +1422,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 2048 or m == 3000 or m == 7000 or m == 8192:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=0,
@@ -1431,12 +1445,12 @@ fn matmul_dispatch_sm100_fp8[
     @parameter
     if static_N == 4096 and static_K == 5376:
         if m == 2000:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 2, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 2, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=2,
@@ -1450,12 +1464,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 3000 or m == 7000 or m == 8192:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 2, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 2, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=0,
@@ -1469,12 +1483,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 3500:
-            alias block_tile_shape = Index(128, 96, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 96, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 2, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 2, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -1490,12 +1504,12 @@ fn matmul_dispatch_sm100_fp8[
 
     elif static_N == 5376 and static_K == 2048:
         if m == 2000:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(4, 2, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(4, 2, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=8,
@@ -1509,12 +1523,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 3000:
-            alias block_tile_shape = Index(128, 96, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 96, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=4,
@@ -1528,12 +1542,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 3500:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=4,
@@ -1547,12 +1561,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 7000 or m == 8192:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=0,
@@ -1568,12 +1582,12 @@ fn matmul_dispatch_sm100_fp8[
 
     elif static_N == 5376 and static_K == 10752:
         if m == 2000:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(8, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(8, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -1587,12 +1601,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 3000:
-            alias block_tile_shape = Index(128, 96, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 96, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=0,
@@ -1606,12 +1620,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 3500:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -1625,12 +1639,12 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 7000 or m == 8192:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=8,
@@ -1646,12 +1660,12 @@ fn matmul_dispatch_sm100_fp8[
 
     elif static_N == 10752 and static_K == 5376:
         if m == 2000 or m == 3000 or m == 3500 or m == 7000 or m == 8192:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -1706,13 +1720,13 @@ fn heuristic_and_outliers_dispatch_bf16[
     ctx: DeviceContext,
 ) raises -> Int:
     var m = c.dim[0]()
-    alias static_N = c.shape.get[1]()
-    alias static_K = a.shape.get[1]()
+    comptime static_N = c.shape.get[1]()
+    comptime static_K = a.shape.get[1]()
 
-    alias MMA_K = 16
-    alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
+    comptime MMA_K = 16
+    comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
 
-    alias outliers = Table(
+    comptime outliers = Table(
         _get_tuning_list_sm100_bf16(), "bf16_heuristic_outliers"
     )
 
@@ -1721,12 +1735,12 @@ fn heuristic_and_outliers_dispatch_bf16[
     fn rule(x: TuningConfigSM100) -> Bool:
         return x.K == static_K and x.N == static_N
 
-    alias outlier_configs = outliers.find[rule]()
+    comptime outlier_configs = outliers.find[rule]()
 
     @parameter
     for tuning_config in outlier_configs:
         if m >= tuning_config.M and m < tuning_config.M_end:
-            alias matmul_config = MatmulConfig[
+            comptime matmul_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
                 mma_shape=tuning_config.mma_shape,
@@ -1750,7 +1764,7 @@ fn heuristic_and_outliers_dispatch_bf16[
 
             return DISPATCH_HIT
 
-    alias configs = build_configs[
+    comptime configs = build_configs[
         a_type, b_type, c_type, static_N, static_K, transpose_b
     ]()
     var config_runtime = choose_config[a_type, b_type, c_type, transpose_b](
@@ -1791,13 +1805,13 @@ fn matmul_dispatch_sm100_bf16[
     ctx: DeviceContext,
 ) raises -> Int:
     var m = c.dim[0]()
-    alias static_N = c.shape.get[1]()
-    alias static_K = a.shape.get[1]()
+    comptime static_N = c.shape.get[1]()
+    comptime static_K = a.shape.get[1]()
 
-    alias MMA_K = 16
-    alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
+    comptime MMA_K = 16
+    comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
 
-    alias llama3_8b_NK = [
+    comptime llama3_8b_NK = [
         # TP1
         Index(6144, 4096),
         Index(4096, 4096),
@@ -1824,12 +1838,12 @@ fn matmul_dispatch_sm100_bf16[
     @parameter
     if static_N == 8192 and static_K == 5376:
         if m == 48000:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=8,
@@ -1843,12 +1857,12 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 2000 or m == 3000 or m == 3500:
-            alias block_tile_shape = Index(128, 112, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 112, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
@@ -1861,12 +1875,12 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 4096 or m == 7000 or m == 8192:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=8,
@@ -1880,12 +1894,12 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 512:
-            alias block_tile_shape = Index(128, 112, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 112, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
@@ -1901,12 +1915,12 @@ fn matmul_dispatch_sm100_bf16[
     @parameter
     if static_N == 5376 and static_K == 4096:
         if m == 2000:
-            alias block_tile_shape = Index(128, 104, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 104, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
@@ -1920,12 +1934,12 @@ fn matmul_dispatch_sm100_bf16[
             return DISPATCH_HIT
 
         elif m == 3000 or m == 48000:
-            alias block_tile_shape = Index(128, 112, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 112, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
@@ -1939,12 +1953,12 @@ fn matmul_dispatch_sm100_bf16[
             return DISPATCH_HIT
 
         elif m == 3500 or m == 7000 or m == 8192:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=8,
@@ -1958,12 +1972,12 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 4096:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=2,
@@ -1977,12 +1991,12 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 512:
-            alias block_tile_shape = Index(128, 96, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 96, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -1999,12 +2013,12 @@ fn matmul_dispatch_sm100_bf16[
     @parameter
     if static_N == 43008 and static_K == 5376:
         if m == 2000:
-            alias block_tile_shape = Index(128, 112, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 112, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
@@ -2025,12 +2039,12 @@ fn matmul_dispatch_sm100_bf16[
             or m == 7000
             or m == 48000
         ):
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -2044,12 +2058,12 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 8192:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=8,
@@ -2066,12 +2080,12 @@ fn matmul_dispatch_sm100_bf16[
     @parameter
     if static_N == 5376 and static_K == 21504:
         if m == 2000:
-            alias block_tile_shape = Index(128, 104, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 104, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
@@ -2084,12 +2098,12 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 3000:
-            alias block_tile_shape = Index(128, 112, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 112, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
@@ -2104,12 +2118,12 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 3500 or m == 4096 or m == 7000 or m == 48000:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=4,
@@ -2123,12 +2137,12 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 8192:
-            alias block_tile_shape = Index(128, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=8,
@@ -2142,12 +2156,12 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 512:
-            alias block_tile_shape = Index(128, 96, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 96, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(4, 2, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(4, 2, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=8,
@@ -2164,12 +2178,12 @@ fn matmul_dispatch_sm100_bf16[
     @parameter
     if static_N == 262208 and static_K == 5376:
         if m == 1:
-            alias block_tile_shape = Index(64, 128, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(64, 128, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
@@ -2186,12 +2200,12 @@ fn matmul_dispatch_sm100_bf16[
     @parameter
     if static_N == 4096 and static_K == 5376:
         if m == 3000:
-            alias block_tile_shape = Index(128, 88, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 88, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
@@ -2208,12 +2222,12 @@ fn matmul_dispatch_sm100_bf16[
     @parameter
     if static_N == 3072 and static_K == 4096:
         if m == 4096:
-            alias block_tile_shape = Index(128, 120, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 120, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
@@ -2226,12 +2240,12 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 2048:
-            alias block_tile_shape = Index(128, 96, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 96, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 2, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 2, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=2,
@@ -2245,12 +2259,12 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 512:
-            alias block_tile_shape = Index(128, 48, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 48, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=2,
@@ -2267,12 +2281,12 @@ fn matmul_dispatch_sm100_bf16[
     @parameter
     if static_N == 4096 and static_K == 2048:
         if m == 512:
-            alias block_tile_shape = Index(128, 56, BK)
-            alias umma_shape = Index(
+            comptime block_tile_shape = Index(128, 56, BK)
+            comptime umma_shape = Index(
                 block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
             )
-            alias cluster_shape = Index(2, 1, 1)
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime cluster_shape = Index(2, 1, 1)
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=4,
@@ -2305,10 +2319,10 @@ fn _vendor_blas_matmul_sm100[
     b: NDBuffer[b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises:
-    alias K = a.shape.get[1]()
-    alias a_shape = a.shape
-    alias b_shape = b.shape
-    alias c_shape = c.shape
+    comptime K = a.shape.get[1]()
+    comptime a_shape = a.shape
+    comptime b_shape = b.shape
+    comptime c_shape = c.shape
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
     var n = shape.N
@@ -2328,8 +2342,10 @@ fn _vendor_blas_matmul_sm100[
         @parameter
         if not a_type.is_float8() and K * size_of[a_type]() >= 8 * 16:
             logger.info("Executing Multistage matmul kernel")
-            alias kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
-            alias config = kernels.ampere_256x64_4
+            comptime kernels = MatmulKernels[
+                a_type, b_type, c_type, transpose_b
+            ]()
+            comptime config = kernels.ampere_256x64_4
             multistage_gemm[
                 transpose_b=transpose_b,
                 config=config,
@@ -2342,14 +2358,14 @@ fn _vendor_blas_matmul_sm100[
                 ctx,
             )
         else:
-            alias BLOCK_DIM = 16
+            comptime BLOCK_DIM = 16
             logger.info("Executing Naive matmul kernel")
 
             var c_layout_tensor = from_ndbuffer_row_major(c)
             var a_layout_tensor = from_ndbuffer_row_major(a)
             var b_layout_tensor = from_ndbuffer_row_major(b)
 
-            alias kernel = matmul_kernel_naive[
+            comptime kernel = matmul_kernel_naive[
                 c_type,
                 a_type,
                 b_type,
@@ -2420,14 +2436,14 @@ fn _matmul_dispatch_sm100[
         return
 
     else:
-        alias epilogue = elementwise_lambda_fn.value()
+        comptime epilogue = elementwise_lambda_fn.value()
         # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
         # arch support 32B load/store to global memory, see KERN-2037.
-        alias use_32b_simd = (
+        comptime use_32b_simd = (
             has_nvidia_gpu_accelerator()
             and ctx.default_device_info.compute >= B200.compute
         )
-        alias simd_size = 32 // size_of[c.type]() if use_32b_simd else (
+        comptime simd_size = 32 // size_of[c.type]() if use_32b_simd else (
             simd_width_of[c.type, target = get_gpu_target()]()
         )
 

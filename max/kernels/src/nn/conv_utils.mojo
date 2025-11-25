@@ -28,14 +28,14 @@ from .image import Image2DLayout
 
 
 # Elementwise epilogue signature
-alias elementwise_epilogue_type = fn[rank: Int] (
+comptime elementwise_epilogue_type = fn[rank: Int] (
     coords: IndexList[rank],
     f_size: Int,
 ) capturing -> None
 
-alias elementwise_simd_epilogue_type = fn[dtype: DType, rank: Int, width: Int] (
-    IndexList[rank], SIMD[dtype, width]
-) capturing -> None
+comptime elementwise_simd_epilogue_type = fn[
+    dtype: DType, rank: Int, width: Int
+] (IndexList[rank], SIMD[dtype, width]) capturing -> None
 
 
 # ===----------------------------------------------------------------------=== #
@@ -366,7 +366,7 @@ fn get_conv_tile_size[dtype: DType]() -> Int:
     # The rule-of-thumb is 1/2 of L2 cache size. It's common to have 3x3
     # filter window in convolution. So the cache tile size (in terms of
     # elements) is rounded up to multiple of 9.
-    alias KB = 1024
+    comptime KB = 1024
 
     # See MatmulUtils for context on tile size for debug built and macos.
     @parameter
@@ -396,7 +396,7 @@ fn get_conv_tile_shape[
     by default fully covered. The heuristic tried to block in C as much as
     possible. If C is small, it would start to block F.
     """
-    alias simd_size = simd_width_of[dtype]()
+    comptime simd_size = simd_width_of[dtype]()
 
     # Number of elements in tile.
     var tile_size = get_conv_tile_size[dtype]()
@@ -565,19 +565,21 @@ fn get_direct_conv_micro_kernel_width() -> Int:
 fn get_micro_kernel_shape[
     rank: Int, WO: Int, F: Int, conv_attr: ConvInfoStatic[rank], simd_size: Int
 ]() -> IndexList[2]:
-    alias optimize_static_shapes = WO != UNKNOWN_VALUE and F != UNKNOWN_VALUE and conv_attr.all_known()
+    comptime optimize_static_shapes = WO != UNKNOWN_VALUE and F != UNKNOWN_VALUE and conv_attr.all_known()
 
     # Number of named simd registers for each architecture.
     # TODO: configure micro kernel shape are other architectures.
-    alias num_avx512_registers = 32
-    alias num_avx2_registers = 16
+    comptime num_avx512_registers = 32
+    comptime num_avx2_registers = 16
 
     @parameter
     if optimize_static_shapes:
         # TODO: extend to 1d/3d.
-        alias pad_h_val = Index(conv_attr.pad[0], conv_attr.pad[2])
-        alias pad_w_val = Index(conv_attr.pad[1], conv_attr.pad[3])
-        alias has_padding = pad_h_val != Index(0, 0) or pad_w_val != Index(0, 0)
+        comptime pad_h_val = Index(conv_attr.pad[0], conv_attr.pad[2])
+        comptime pad_w_val = Index(conv_attr.pad[1], conv_attr.pad[3])
+        comptime has_padding = pad_h_val != Index(0, 0) or pad_w_val != Index(
+            0, 0
+        )
 
         @parameter
         if CompilationTarget.has_avx512f():
@@ -693,7 +695,7 @@ struct ConvPartition(ImplicitlyCopyable, Movable):
 fn get_conv_num_tasks(num_threads: Int, conv_shape: ConvShape) -> Int:
     # Currently use matmul's min task size but the optimal value
     # for direct conv may be different.
-    alias min_task_size = 64 * 1024
+    comptime min_task_size = 64 * 1024
     # fmt: off
     var complexity = conv_shape.matmul_M() * conv_shape.matmul_N() \
                    * conv_shape.matmul_K()
@@ -714,13 +716,13 @@ fn get_conv_num_partitions[
 
     # Heuristic parameters for partitioning
     # AVX512, partitioning channel can be beneficial for some shapes.
-    alias min_rows_per_task_avx512 = align_down(196, micro_kernel_w)
-    alias min_c_per_task_avx512 = 64
+    comptime min_rows_per_task_avx512 = align_down(196, micro_kernel_w)
+    comptime min_c_per_task_avx512 = 64
     # Otherwise, discourage partitioning channel.
-    alias min_rows_per_task = min_rows_per_task_avx512 if CompilationTarget.has_avx512f() else align_down(
+    comptime min_rows_per_task = min_rows_per_task_avx512 if CompilationTarget.has_avx512f() else align_down(
         64, micro_kernel_w
     )
-    alias min_c_per_task = min_c_per_task_avx512 if CompilationTarget.has_avx512f() else 1024
+    comptime min_c_per_task = min_c_per_task_avx512 if CompilationTarget.has_avx512f() else 1024
 
     # alias min_rows_per_task = (196 // micro_kernel_w) * micro_kernel_w
     # alias min_c_per_task = 64
@@ -733,7 +735,7 @@ fn get_conv_num_partitions[
     # Time a factor to M to var the heuristic bias on partitioning M.
     # TODO: make this bias factor part of function parameter/argument and
     # unifies interface with matmul partition, e.x. bias=1 for matmul.
-    alias bias = 0.25
+    comptime bias = 0.25
     var matmul_M_biased = Int(max(Float64(matmul_M) * bias, 1))
 
     # The ideal partition in theory is to balance the cost of memory access in
@@ -855,9 +857,11 @@ fn get_partition(
 @register_passable("trivial")
 struct ConvAlgorithm(ImplicitlyCopyable, Movable):
     var value: Int
-    alias Default = ConvAlgorithm(0)  # statically unknown layout.
-    alias Im2Col = ConvAlgorithm(1)  # channels first layout.
-    alias Direct = ConvAlgorithm(2)  # TF filter layout for channels last input.
+    comptime Default = ConvAlgorithm(0)  # statically unknown layout.
+    comptime Im2Col = ConvAlgorithm(1)  # channels first layout.
+    comptime Direct = ConvAlgorithm(
+        2
+    )  # TF filter layout for channels last input.
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: ConvAlgorithm) -> Bool:

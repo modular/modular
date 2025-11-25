@@ -100,11 +100,11 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
             )
         )
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_c_shape = DimList(m.dim, n.dim)
     var dynamic_a_shape = DimList(m.value, k.value)
     var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
         k.value, n.value
@@ -147,7 +147,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
     ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
 
-    alias matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+    comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         cluster_shape=Index(
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
@@ -191,7 +191,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
     ctx.synchronize()
 
-    alias rtol = 1e-2
+    comptime rtol = 1e-2
     assert_almost_equal(
         c_host.tensor,
         c_host_ref.tensor,
@@ -212,12 +212,12 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 
 def main():
     with DeviceContext() as ctx:
-        alias dtype = DType.bfloat16
+        comptime dtype = DType.bfloat16
 
         @parameter
         for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
-            alias BK = (swizzle.bytes() // size_of[dtype]())
-            alias MMA_K = 16
+            comptime BK = (swizzle.bytes() // size_of[dtype]())
+            comptime MMA_K = 16
 
             @parameter
             for mma_m_scale in range(1, 3):
@@ -227,10 +227,10 @@ def main():
                     # from 16*1 till 16*16 which is 256
                     # basically, if MMA_M is 64, then BN must be multiple of 16 (mma_n_scale must be even)
 
-                    alias block_tile_shape = Index(
+                    comptime block_tile_shape = Index(
                         64 * mma_m_scale, 8 * mma_n_scale, BK
                     )
-                    alias umma_shape = Index(
+                    comptime umma_shape = Index(
                         128 * mma_m_scale, 16 * mma_n_scale, MMA_K
                     )
 

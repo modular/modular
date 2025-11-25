@@ -45,7 +45,7 @@ def reference_attention_bshd[
     ],
     scale: Float32,
 ):
-    alias layout_4d = Layout.row_major[4]()
+    comptime layout_4d = Layout.row_major[4]()
 
     fn reshape_4d(
         buf: LayoutTensor[dtype, **_]
@@ -108,7 +108,7 @@ def reference_attention_bshd[
         output_4d.runtime_layout.shape.value.canonicalize(),
     )
 
-    alias layout_2d = Layout.row_major[2]()
+    comptime layout_2d = Layout.row_major[2]()
     var score_ptr = UnsafePointer[Scalar[dtype]].alloc(seq_len * kv_seq_len)
     var score_2d = LayoutTensor[dtype, layout_2d](
         score_ptr,
@@ -178,7 +178,7 @@ def reference_attention_bshd_with_sinks[
 ):
     """Reference implementation of attention with sink weights."""
 
-    alias layout_4d = Layout.row_major[4]()
+    comptime layout_4d = Layout.row_major[4]()
 
     fn reshape_4d(
         buf: LayoutTensor[dtype, **_]
@@ -225,7 +225,7 @@ def reference_attention_bshd_with_sinks[
 
     var kv_group_count = num_heads // kv_num_heads
 
-    alias layout_2d = Layout.row_major[2]()
+    comptime layout_2d = Layout.row_major[2]()
     var score_ptr = UnsafePointer[Scalar[dtype]].alloc(seq_len * kv_seq_len)
     var score_2d = LayoutTensor[dtype, layout_2d](
         score_ptr,
@@ -297,8 +297,8 @@ def reference_attention_bshd_with_sinks[
 struct TestCaseConfig[batch_rank: Int](ImplicitlyCopyable, Movable):
     """Test case workload configuration hyperparameters."""
 
-    alias rank = Self.batch_rank + 2
-    alias kv_cache_rank = Self.rank + 1
+    comptime rank = Self.batch_rank + 2
+    comptime kv_cache_rank = Self.rank + 1
 
     var batch_dims: IndexList[Self.batch_rank]
     var seq_len: Int

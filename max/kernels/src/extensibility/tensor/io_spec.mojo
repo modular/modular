@@ -17,18 +17,18 @@ struct IO(ImplicitlyCopyable, Movable):
     var value: Int
 
     # TODO: either rename or get rid of this
-    alias Unknown = IO(-1)
+    comptime Unknown = IO(-1)
 
-    alias Output = IO(0)
-    alias Input = IO(1)
+    comptime Output = IO(0)
+    comptime Input = IO(1)
 
     # Represents the standard kind of fusion where we only make accesses
     # through the fusion lambda (e.g. any of the elementwise ops).
-    alias FusedInput = IO(2)
-    alias FusedOutput = IO(3)
+    comptime FusedInput = IO(2)
+    comptime FusedOutput = IO(3)
 
     # Output fusion using a compute lambda.
-    alias _FusedComputeOutput = IO(31)
+    comptime _FusedComputeOutput = IO(31)
 
     @always_inline("builtin")
     fn __init__(out self, value: Int):
@@ -57,13 +57,13 @@ struct IOSpec[mut: Bool, input: IO](ImplicitlyCopyable, Movable):
     ...
 
 
-alias IOUnknown = IOSpec[True, IO.Unknown]()
+comptime IOUnknown = IOSpec[True, IO.Unknown]()
 
-alias Input = IOSpec[False, IO.Input]()
-alias Output = IOSpec[True, IO.Output]()
-alias MutableInput = IOSpec[True, IO.Input]()
+comptime Input = IOSpec[False, IO.Input]()
+comptime Output = IOSpec[True, IO.Output]()
+comptime MutableInput = IOSpec[True, IO.Input]()
 
-alias FusedInput = IOSpec[False, IO.FusedInput]()
-alias FusedOutput = IOSpec[True, IO.FusedOutput]()
+comptime FusedInput = IOSpec[False, IO.FusedInput]()
+comptime FusedOutput = IOSpec[True, IO.FusedOutput]()
 
-alias _FusedComputeOutput = IOSpec[True, IO._FusedComputeOutput]()
+comptime _FusedComputeOutput = IOSpec[True, IO._FusedComputeOutput]()

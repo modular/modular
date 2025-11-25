@@ -65,11 +65,11 @@ def test_blackwell_matmul_tma_umma[
     if not benchmark:
         print(M, "x", N, "x", K)
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_c_shape = DimList(m.dim, n.dim)
     var dynamic_a_shape = DimList(m.value, k.value)
     var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
         k.value, n.value
@@ -112,7 +112,7 @@ def test_blackwell_matmul_tma_umma[
     var b = from_ndbuffer_row_major(b_device.tensor)
     var c = from_ndbuffer_row_major(c_device.tensor)
 
-    alias block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
+    comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
 
     matmul_sm100[mma_shape=umma_shape, block_tile_shape=block_tile_shape](
         c_device.tensor, a_device.tensor, b_device.tensor, ctx
@@ -134,7 +134,7 @@ def test_blackwell_matmul_tma_umma[
     ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
     ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
     ctx.synchronize()
-    alias rtol = 1e-2
+    comptime rtol = 1e-2
     assert_almost_equal(
         c_host.tensor,
         c_host_ref.tensor,
@@ -178,8 +178,7 @@ def main():
             BK=64,
         ](ctx, dynamic(1024), static[2048](), static[2048]())
 
-        alias BK_list = List[Int](64, 128)
-        # alias BK_list = List[Int](64, 128)
+        comptime BK_list: List[Int] = [64, 128]
 
         @parameter
         for BK in BK_list:

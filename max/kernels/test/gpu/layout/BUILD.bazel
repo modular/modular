@@ -20,6 +20,8 @@ _H100_TESTS = [
     "test_tensor_core_sm90.mojo",
     "test_tensormap_replace_insts.mojo",
     "test_tma_3d_async_copy.mojo",
+    "test_tma_4d_async_copy.mojo",
+    "test_tma_5d_async_copy.mojo",
     "test_tma_async.mojo",
     "test_tma_async_mc.mojo",
     "test_tma_mc_swizzle.mojo",

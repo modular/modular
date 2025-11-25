@@ -74,7 +74,7 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     var N = n.value
     var K = k.value
 
-    alias BLOCK_SCALE_K = 128
+    comptime BLOCK_SCALE_K = 128
 
     if M * size_of[DType.float32]() % 16 != 0:
         raise Error("TMA expects M to be divisible by 16 bytes")
@@ -111,21 +111,21 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
             sep="",
         )
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_c_shape = DimList(m.dim, n.dim)
     var dynamic_a_shape = DimList(m.value, k.value)
     var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
         k.value, n.value
     )
     var dynamic_c_shape = DimList(m.value, n.value)
 
-    alias static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList(
         ceildiv(Int(k.dim), BLOCK_SCALE_K), m.dim
     )
-    alias static_b_scales_shape = DimList(
+    comptime static_b_scales_shape = DimList(
         ceildiv(Int(n.dim), BLOCK_SCALE_K), ceildiv(Int(k.dim), BLOCK_SCALE_K)
     )
 
@@ -212,7 +212,7 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     var a_scales = from_ndbuffer_row_major(a_scales_device.tensor)
     var b_scales = from_ndbuffer_row_major(b_scales_device.tensor)
 
-    alias matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+    comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         cluster_shape=Index(
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
@@ -237,13 +237,13 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
 
     @parameter
     if benchmark:
-        alias num_runs = 100
-        alias num_warmup = 100
+        comptime num_runs = 100
+        comptime num_warmup = 100
 
         @always_inline
         @parameter
         fn run_kernel(ctx: DeviceContext) raises:
-            alias matmul_config = MatmulConfig[
+            comptime matmul_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
                 cluster_shape=Index(
@@ -356,13 +356,13 @@ fn make_shapes_dict() -> Dict[Int, Tuple[Int, Int], default_comp_time_hasher]:
 
 
 fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
-    alias dtype = DType.float8_e4m3fn
-    alias swizzle = TensorMapSwizzle.SWIZZLE_128B
-    alias BK = (swizzle.bytes() // size_of[dtype]())
-    alias MMA_K = 32
+    comptime dtype = DType.float8_e4m3fn
+    comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
+    comptime BK = (swizzle.bytes() // size_of[dtype]())
+    comptime MMA_K = 32
 
-    alias c_type = DType.bfloat16
-    alias shapes_dict = make_shapes_dict()
+    comptime c_type = DType.bfloat16
+    comptime shapes_dict = make_shapes_dict()
 
     print("Benchmarking warp-specialized blockwise fp8 (fp32 scalers)")
     print("============================================")
@@ -370,7 +370,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
 
     @parameter
     for i in range(len(shapes_dict)):
-        alias shape_nk = get_shapes_dict(i, shapes_dict)
+        comptime shape_nk = get_shapes_dict(i, shapes_dict)
 
         for m in [128, 4096]:
             var max_flops: Float64 = 0.0
@@ -380,10 +380,10 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
 
                 @parameter
                 for mma_n_scale in [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 16]:
-                    alias block_tile_shape = Index(
+                    comptime block_tile_shape = Index(
                         64 * mma_m_scale, 8 * mma_n_scale, BK
                     )
-                    alias umma_shape = Index(
+                    comptime umma_shape = Index(
                         128 * mma_m_scale, 16 * mma_n_scale, MMA_K
                     )
 
@@ -423,21 +423,21 @@ def main():
             benchmark_blackwell_matmul(ctx)
             return
 
-        alias swizzle = TensorMapSwizzle.SWIZZLE_128B
-        alias in_dtype = DType.float8_e4m3fn
-        alias BK = (swizzle.bytes() // size_of[in_dtype]())
-        alias MMA_K = 32
-        alias out_dtype = DType.bfloat16
+        comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
+        comptime in_dtype = DType.float8_e4m3fn
+        comptime BK = (swizzle.bytes() // size_of[in_dtype]())
+        comptime MMA_K = 32
+        comptime out_dtype = DType.bfloat16
 
         @parameter
         for mma_m_scale in range(1, 3):
 
             @parameter
             for mma_n_scale in [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 16]:
-                alias block_tile_shape = Index(
+                comptime block_tile_shape = Index(
                     64 * mma_m_scale, 8 * mma_n_scale, BK
                 )
-                alias umma_shape = Index(
+                comptime umma_shape = Index(
                     128 * mma_m_scale, 16 * mma_n_scale, MMA_K
                 )
 

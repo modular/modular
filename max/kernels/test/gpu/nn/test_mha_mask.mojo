@@ -30,7 +30,7 @@ from utils.index import Index, IndexList
 
 
 def test_causal_mask():
-    alias type = DType.int32
+    comptime type = DType.int32
 
     print("test_causal_mask")
     var mask = CausalMask()
@@ -114,7 +114,7 @@ def test_causal_mask_asm():
 
 
 def test_and_mask():
-    alias type = DType.int32
+    comptime type = DType.int32
 
     print("test_and_mask")
     # Or-ing a causal mask with a null mask should result in a causal mask.
@@ -153,7 +153,7 @@ def test_and_mask():
 def test_sliding_window_causal_mask():
     print("test_sliding_window_causal_mask")
 
-    alias mask = SlidingWindowCausalMask[3]()
+    comptime mask = SlidingWindowCausalMask[3]()
 
     @always_inline
     def check_status(

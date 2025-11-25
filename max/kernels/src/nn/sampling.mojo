@@ -112,8 +112,8 @@ fn update_frequency_data_kernel[
     their count or adds them to the first available padding slot.
     """
 
-    alias simd_width = simd_width_of[DType.int32]()
-    alias PADDING_TOKEN = -1
+    comptime simd_width = simd_width_of[DType.int32]()
+    comptime PADDING_TOKEN = -1
 
     var tid = thread_idx.x
     var batch_id = block_idx.x
@@ -190,10 +190,10 @@ fn update_frequency_data[
 
     @parameter
     if is_gpu[target]():
-        alias block_size = 128
+        comptime block_size = 128
 
         dev_ctx = ctx.get_device_context()
-        alias kernel = update_frequency_data_kernel[
+        comptime kernel = update_frequency_data_kernel[
             token_type,
             block_size,
             compressed_frequency_data.layout,

@@ -45,8 +45,8 @@ from testing import assert_equal, assert_raises, TestSuite
 
 from utils.index import Index, IndexList
 
-alias simd_size: Int = simd_width_of[DType.float32]()
-alias dtype = DType.float32
+comptime simd_size: Int = simd_width_of[DType.float32]()
+comptime dtype = DType.float32
 
 
 @always_inline
@@ -176,15 +176,15 @@ fn test_conv_transposed[
     var output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
 
     # Find the tile size used in packing.
-    alias micro_kernel_height = get_direct_conv_micro_kernel_height()
-    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+    comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
+    comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
 
     # Rounded C and F size for pre-packed filter.
     # alias micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     # var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Input buffer.
-    alias input_layout = Layout.row_major[rank + 2]()
+    comptime input_layout = Layout.row_major[rank + 2]()
     var input_shape = extend_shape(input_dims, N, C)
     var input = LayoutTensor[dtype, input_layout](
         input_ptr,
@@ -275,7 +275,7 @@ fn test_conv_transposed[
             vectorize[simd_size](F, body0)
 
     # Test.
-    alias conv_attr = ConvInfoStatic[input_layout.rank() - 2]()
+    comptime conv_attr = ConvInfoStatic[input_layout.rank() - 2]()
 
     # Test epilogue
     @always_inline

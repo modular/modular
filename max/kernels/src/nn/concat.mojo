@@ -35,7 +35,7 @@ from utils import IndexList, StaticTuple, product
 
 from .gather_scatter import normalize_neg_index
 
-alias elementwise_epilogue_type = fn[
+comptime elementwise_epilogue_type = fn[
     c_type: DType, rank: Int, width: Int = 1, *, alignment: Int = 1
 ] (IndexList[rank], SIMD[c_type, width]) capturing -> None
 
@@ -61,8 +61,8 @@ fn memcpy_or_fuse[
     if not epilogue_fn:
         memcpy(dest=dest_data.offset(out_byte_offset), src=src_data, count=n)
     else:
-        alias func = epilogue_fn.value()
-        alias simd_width = simd_width_of[dtype]()
+        comptime func = epilogue_fn.value()
+        comptime simd_width = simd_width_of[dtype]()
 
         var typed_offset = out_byte_offset // size_of[dtype]()
         var typed_len = n // size_of[dtype]()
@@ -185,8 +185,8 @@ fn _concat_parallel[
 
     var total_output_bytes = output_h * output_wc
 
-    alias KB = 1024
-    alias parallel_chunk_size = 64 * KB  # TODO autotune
+    comptime KB = 1024
+    comptime parallel_chunk_size = 64 * KB  # TODO autotune
     var num_chunks = ceildiv(total_output_bytes, parallel_chunk_size)
 
     @__copy_capture(
@@ -466,8 +466,8 @@ fn _concat_small[
     axis: Int,
     inputs: List[LayoutTensor[dtype, inputs_layout, MutAnyOrigin]],
 ) raises:
-    alias single_thread_blocking_override = True
-    alias simd_width = simd_width_of[dtype]()
+    comptime single_thread_blocking_override = True
+    comptime simd_width = simd_width_of[dtype]()
 
     @parameter
     @always_inline
@@ -495,7 +495,7 @@ fn _concat_small[
 
                 @parameter
                 if epilogue_fn:
-                    alias func = epilogue_fn.value()
+                    comptime func = epilogue_fn.value()
                     func[dtype, rank, simd_width](out_index, load)
                 else:
                     output.store[width=simd_width](out_index, load)
@@ -553,8 +553,8 @@ fn _concat_cpu[
     fn dispatch_serial(unused_thread_idx: Int) raises:
         _concat_serial[dtype, epilogue_fn](output, axis, inputs)
 
-    alias KB = 1024
-    alias min_work_for_parallel = 128 * KB  # TODO: autotune
+    comptime KB = 1024
+    comptime min_work_for_parallel = 128 * KB  # TODO: autotune
 
     var output_bytes = output.size() * size_of[dtype]()
 
@@ -706,7 +706,7 @@ fn _concat_inner_most_single_dim[
 
         @parameter
         if epilogue_fn:
-            alias func = epilogue_fn.value()
+            comptime func = epilogue_fn.value()
             func[dtype, output.rank, 1](
                 out_index, inputs[i].load[width=1](index)
             )
@@ -771,7 +771,7 @@ fn _concat_gpu_elementwise[
 
                 @parameter
                 if epilogue_fn:
-                    alias func = epilogue_fn.value()
+                    comptime func = epilogue_fn.value()
                     func[dtype, _rank, simd_width](
                         out_index,
                         input.load[width=1](in_index),
@@ -804,7 +804,7 @@ fn _concat_gpu[
     inputs: StaticTuple[LayoutTensor[dtype, inputs_layout, MutAnyOrigin], *_],
     ctx: DeviceContext,
 ) raises:
-    alias num_inputs = inputs.size
+    comptime num_inputs = inputs.size
     # Size of outer dims, if 1 we should memcpy to the output buffer.
     var outer_dims = 1
     for i in range(axis):
@@ -855,8 +855,8 @@ fn _concat_gpu[
                 break
 
         if inner_most_unit_dim:
-            alias block_size = 32
-            alias kernel = _concat_inner_most_single_dim[
+            comptime block_size = 32
+            comptime kernel = _concat_inner_most_single_dim[
                 output_layout=output_layout,
                 inputs_layout=inputs_layout,
                 dtype,
@@ -936,7 +936,7 @@ fn _fused_concat_inner_most_single_dim[
     input_shapes: StaticTuple[IndexList[rank], size],
     output: LayoutTensor[mut=True, dtype, output_layout, MutAnyOrigin],
 ):
-    alias num_inputs = input_shapes.size
+    comptime num_inputs = input_shapes.size
 
     var idx = block_idx.x * UInt(block_size) + thread_idx.x
     if idx >= UInt(product(input_shapes[0], rank)):
@@ -974,7 +974,7 @@ fn _fused_concat_gpu_elementwise[
     ],
     ctx: DeviceContext,
 ) raises:
-    alias num_inputs = input_shapes.size
+    comptime num_inputs = input_shapes.size
 
     @parameter
     @always_inline
@@ -1023,7 +1023,7 @@ fn _fused_concat_gpu[
     output: LayoutTensor[mut=True, dtype, output_layout, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
-    alias num_inputs = input_shapes.size
+    comptime num_inputs = input_shapes.size
 
     if axis == rank - 1:
         var inner_most_unit_dim = True
@@ -1036,8 +1036,8 @@ fn _fused_concat_gpu[
                 break
 
         if inner_most_unit_dim:
-            alias block_size = 32
-            alias kernel = _fused_concat_inner_most_single_dim[
+            comptime block_size = 32
+            comptime kernel = _fused_concat_inner_most_single_dim[
                 output_layout=output_layout,
                 rank,
                 dtype,

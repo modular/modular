@@ -73,7 +73,7 @@ trait OpArgs(ImplicitlyCopyable):
 
 # @register_passable("trivial")
 trait LoadOp(DevicePassable):
-    alias args_type: OpArgs
+    comptime args_type: OpArgs
 
     fn __init__(out self, args: Self.args_type):
         ...
@@ -133,15 +133,15 @@ struct TMALoadOp[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](ImplicitlyCopyable, LoadOp):
-    alias a_tma_layout = Layout.row_major(
+    comptime a_tma_layout = Layout.row_major(
         Self.block_tile_shape[0] // Self.cluster_shape[0],
         Self.block_tile_shape[2],
     )
-    alias b_tma_layout = Layout.row_major(
+    comptime b_tma_layout = Layout.row_major(
         Self.block_tile_shape[1] // Self.cluster_shape[1],
         Self.block_tile_shape[2],
     )
-    alias a_tma_desc_layout = _tma_desc_tile_layout[
+    comptime a_tma_desc_layout = _tma_desc_tile_layout[
         Self.a_type,
         2,
         Index(
@@ -151,7 +151,7 @@ struct TMALoadOp[
         True,
         Self.a_swizzle,
     ]()
-    alias b_tma_desc_layout = _tma_desc_tile_layout[
+    comptime b_tma_desc_layout = _tma_desc_tile_layout[
         Self.b_type,
         2,
         Index(
@@ -162,7 +162,7 @@ struct TMALoadOp[
         Self.b_swizzle,
     ]()
 
-    alias args_type = TMALoadOpArgs[
+    comptime args_type = TMALoadOpArgs[
         Self.a_type,
         Self.b_type,
         Self.a_tma_layout,
@@ -171,14 +171,14 @@ struct TMALoadOp[
         Self.b_tma_desc_layout,
     ]
 
-    alias a_tma_type = TMATensorTile[
+    comptime a_tma_type = TMATensorTile[
         Self.a_type, Self.a_tma_layout, Self.a_tma_desc_layout
     ]
-    alias b_tma_type = TMATensorTile[
+    comptime b_tma_type = TMATensorTile[
         Self.b_type, Self.b_tma_layout, Self.b_tma_desc_layout
     ]
 
-    alias device_type = Self
+    comptime device_type = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         """Device type mapping is the identity function."""
@@ -296,7 +296,7 @@ struct TMALoadOp[
 
 
 trait OutputOp(DevicePassable):
-    alias args_type: OpArgs
+    comptime args_type: OpArgs
 
     fn __init__(out self, args: Self.args_type):
         ...
@@ -333,11 +333,11 @@ struct R2GOutputOp[
     block_tile_shape: IndexList[3],
     o: Origin,
 ](ImplicitlyCopyable, OutputOp):
-    alias args_type = STOutputOpArgs[Self.dtype, Self.layout, Self.o]
+    comptime args_type = STOutputOpArgs[Self.dtype, Self.layout, Self.o]
 
     var c: LayoutTensor[Self.dtype, Self.layout, Self.o]
 
-    alias device_type = Self
+    comptime device_type = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         """Device type mapping is the identity function."""
@@ -400,14 +400,14 @@ struct R2GOutputOp[
 
     @always_inline
     fn __call__(self, tmem_addr: UInt32):
-        alias BM = Self.block_tile_shape[0]
-        alias BN = Self.block_tile_shape[1]
-        alias MMA_M = Self.mma_shape[0]
-        alias MMA_N = Self.mma_shape[1]
+        comptime BM = Self.block_tile_shape[0]
+        comptime BN = Self.block_tile_shape[1]
+        comptime MMA_M = Self.mma_shape[0]
+        comptime MMA_N = Self.mma_shape[1]
 
-        alias num_m_mmas = BM // MMA_M
-        alias num_n_mmas = BN // MMA_N
-        alias c_frag_size = MMA_M * MMA_N // Self.num_threads
+        comptime num_m_mmas = BM // MMA_M
+        comptime num_n_mmas = BN // MMA_N
+        comptime c_frag_size = MMA_M * MMA_N // Self.num_threads
 
         c_frag = tcgen05_ld[
             datapaths=16,
@@ -420,7 +420,7 @@ struct R2GOutputOp[
 
         tcgen05_load_wait()  # wait for the load to finish
 
-        alias num_warps = Self.num_threads // WARP_SIZE
+        comptime num_warps = Self.num_threads // WARP_SIZE
         # Extract last 2 bits so that warp_id is 0-3.
         var warp_id = (thread_idx.x // UInt(WARP_SIZE)) & 3
 
@@ -431,7 +431,7 @@ struct R2GOutputOp[
 
             @parameter
             for n_mma in range(num_n_mmas):
-                alias mma_id = n_mma * num_m_mmas + m_mma
+                comptime mma_id = n_mma * num_m_mmas + m_mma
 
                 c_gmem_warp_tile = ctile.tile[MMA_M // num_warps, MMA_N](
                     4 * m_mma + Int(warp_id), n_mma
@@ -441,15 +441,15 @@ struct R2GOutputOp[
                     Layout.row_major(8, 4)
                 ](lane_id())
 
-                alias num_vecs_m = c_gmem_frag.layout.shape[0].value()
-                alias num_vecs_n = c_gmem_frag.layout.shape[1].value()
+                comptime num_vecs_m = c_gmem_frag.layout.shape[0].value()
+                comptime num_vecs_n = c_gmem_frag.layout.shape[1].value()
 
                 @parameter
                 for n_vec in range(num_vecs_n):
 
                     @parameter
                     for m_vec in range(num_vecs_m):
-                        alias i_vec = n_vec * num_vecs_m + m_vec
+                        comptime i_vec = n_vec * num_vecs_m + m_vec
 
                         c_gmem_frag[m_vec, n_vec] = rebind[
                             c_gmem_frag.element_type
@@ -461,7 +461,7 @@ struct R2GOutputOp[
 
 
 trait PipelineOp:
-    alias args_type: OpArgs
+    comptime args_type: OpArgs
 
     @staticmethod
     fn run(args: Self.args_type):
@@ -472,7 +472,7 @@ struct PipelineArgs[
     loadop_t: LoadOp,
     outputop_t: OutputOp,
 ](DevicePassable, OpArgs):
-    alias device_type = Self
+    comptime device_type = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         """Device type mapping is the identity function."""
@@ -532,7 +532,7 @@ struct Pipeline[
     loadop_t: LoadOp,
     outputop_t: OutputOp,
 ](PipelineOp):
-    alias args_type = PipelineArgs[Self.loadop_t, Self.outputop_t]
+    comptime args_type = PipelineArgs[Self.loadop_t, Self.outputop_t]
 
     @staticmethod
     @always_inline
@@ -540,14 +540,14 @@ struct Pipeline[
         var loadop = Self.loadop_t(args.load_args)
         var outputop = Self.outputop_t(args.output_args)
 
-        alias BM = Self.block_tile_shape[0]
-        alias BN = Self.block_tile_shape[1]
-        alias BK = Self.block_tile_shape[2]
+        comptime BM = Self.block_tile_shape[0]
+        comptime BN = Self.block_tile_shape[1]
+        comptime BK = Self.block_tile_shape[2]
 
-        alias a_smem_layout = tile_layout_k_major[
+        comptime a_smem_layout = tile_layout_k_major[
             Self.a_type, BM, BK, swizzle_mode = Self.a_swizzle
         ]()
-        alias b_smem_layout = tile_layout_k_major[
+        comptime b_smem_layout = tile_layout_k_major[
             Self.b_type, BN, BK, swizzle_mode = Self.b_swizzle
         ]()
 
@@ -566,14 +566,14 @@ struct Pipeline[
         )
 
         # a_smem_layout is a description of how tile is arranged in memory, and LayoutTensor is a pointer to memory + a layout, taking in a_smem as its pointer
-        alias a_smem_tile_t = LayoutTensor[
+        comptime a_smem_tile_t = LayoutTensor[
             Self.a_type,
             a_smem_layout,
             MutAnyOrigin,
             address_space = AddressSpace.SHARED,
             alignment=128,
         ]
-        alias b_smem_tile_t = LayoutTensor[
+        comptime b_smem_tile_t = LayoutTensor[
             Self.b_type,
             b_smem_layout,
             MutAnyOrigin,
@@ -581,8 +581,8 @@ struct Pipeline[
             alignment=128,
         ]
 
-        alias a_size = a_smem_layout.size()
-        alias b_size = b_smem_layout.size()
+        comptime a_size = a_smem_layout.size()
+        comptime b_size = b_smem_layout.size()
 
         constrained[
             ((a_size * size_of[Self.a_type]()) % 128) == 0, "preserve alignment"
@@ -598,11 +598,11 @@ struct Pipeline[
         # Shared memory pointer to hold tensor memory address, after last smem pointer and expected smem size
         var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
 
-        alias accum_type = get_accum_type[Self.a_type]()
+        comptime accum_type = get_accum_type[Self.a_type]()
 
-        alias a_expected_bytes = a_size * size_of[Self.a_type]()
-        alias b_expected_bytes = b_size * size_of[Self.b_type]()
-        alias expected_bytes = a_expected_bytes + b_expected_bytes
+        comptime a_expected_bytes = a_size * size_of[Self.a_type]()
+        comptime b_expected_bytes = b_size * size_of[Self.b_type]()
+        comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
         tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
         mma_mbar = tma_mbar + 1
@@ -617,7 +617,7 @@ struct Pipeline[
         var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
         var elect_one_thread = thread_idx.x == 0
         var elect_one_cta = block_rank_in_cluster() % 2 == 0
-        alias max_tmem_cols = 512
+        comptime max_tmem_cols = 512
 
         # allocate all 2^18 bytes of smem for tcgen05, all 512 cols allocated
         if elect_one_warp:
@@ -704,21 +704,23 @@ fn matmul_sm100[
     var b = from_ndbuffer_row_major(b_device)
     var c = from_ndbuffer_row_major(c_device)
 
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
     var M = c.dim[0]()
     var N = c.dim[1]()
-    alias K = a_shape.get[1]()
-    alias num_iters = UInt(K // BK)
+    comptime K = a_shape.get[1]()
+    comptime num_iters = UInt(K // BK)
 
-    alias smem_use = (BM * size_of[a_type]() + BN * size_of[b_type]()) * BK + 24
+    comptime smem_use = (
+        BM * size_of[a_type]() + BN * size_of[b_type]()
+    ) * BK + 24
 
-    alias accum_type = get_accum_type[a_type]()
+    comptime accum_type = get_accum_type[a_type]()
 
-    alias block_dim = 128
-    alias cluster_shape = Index(1, 1, 1)
-    alias loadop_t = TMALoadOp[
+    comptime block_dim = 128
+    comptime cluster_shape = Index(1, 1, 1)
+    comptime loadop_t = TMALoadOp[
         a_type,
         b_type,
         block_tile_shape,
@@ -726,7 +728,7 @@ fn matmul_sm100[
         a_swizzle,
         b_swizzle,
     ]
-    alias outputop_t = R2GOutputOp[
+    comptime outputop_t = R2GOutputOp[
         accum_type,
         c_type,
         c.layout,
@@ -735,7 +737,7 @@ fn matmul_sm100[
         block_tile_shape,
         c.origin,
     ]
-    alias pipeline_t = Pipeline[
+    comptime pipeline_t = Pipeline[
         a_type,
         b_type,
         c_type,
@@ -746,14 +748,14 @@ fn matmul_sm100[
         loadop_t,
         outputop_t,
     ]
-    alias pipeline_args_t = pipeline_t.args_type
+    comptime pipeline_args_t = pipeline_t.args_type
     var args = pipeline_args_t(
         loadop_t.to_kernel_args(a, b, ctx),
         outputop_t.to_kernel_args(c, ctx),
         num_iters,
     )
 
-    alias kernel = matmul_kernel[pipeline_t]
+    comptime kernel = matmul_kernel[pipeline_t]
     ctx.enqueue_function_checked[kernel, kernel](
         args,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),

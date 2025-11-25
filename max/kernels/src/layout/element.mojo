@@ -53,7 +53,7 @@ fn _get_offset[
 
     @parameter
     if runtime_layout.layout.all_dims_known():
-        alias offset = runtime_layout.layout(i)
+        comptime offset = runtime_layout.layout(i)
         return offset
     else:
         return runtime_layout(i)
@@ -78,7 +78,7 @@ fn _get_offset[
 
     @parameter
     if runtime_layout.layout.all_dims_known():
-        alias offset = runtime_layout.layout([i, j])
+        comptime offset = runtime_layout.layout([i, j])
         return offset
     else:
         return runtime_layout(
@@ -105,7 +105,7 @@ struct Element[
         index_type: The integer type of the index pointing to each element.
     """
 
-    alias element_data_type = SIMD[Self.dtype, size = Self.layout.size()]
+    comptime element_data_type = SIMD[Self.dtype, size = Self.layout.size()]
     """The SIMD type used to store and process the element data.
 
     This type alias defines a SIMD vector with the specified data type and size
@@ -186,18 +186,18 @@ struct Element[
         Returns:
             A new `Element` containing the loaded data.
         """
-        alias flat_layout = coalesce(Self.layout)
+        comptime flat_layout = coalesce(Self.layout)
         constrained[flat_layout.rank() <= 2, "Only supports rank <= 2"]()
 
         var element_data = Self.element_data_type()
 
         @parameter
         if flat_layout.rank() == 1:
-            alias size = flat_layout.size()
+            comptime size = flat_layout.size()
 
             @parameter
             if is_contiguous_dim(flat_layout, 0):
-                alias alignment = align_of[Self.element_data_type]()
+                comptime alignment = align_of[Self.element_data_type]()
                 return Self(
                     ptr.load[
                         width = Self.element_data_type.size, alignment=alignment
@@ -211,10 +211,10 @@ struct Element[
 
         @parameter
         if is_contiguous_dim(flat_layout, 0):
-            alias size = Int(flat_layout.shape[0])
-            alias elements = Int(flat_layout.shape[1])
-            alias vec_type = SIMD[Self.dtype, size]
-            alias alignment = align_of[vec_type]()
+            comptime size = Int(flat_layout.shape[0])
+            comptime elements = Int(flat_layout.shape[1])
+            comptime vec_type = SIMD[Self.dtype, size]
+            comptime alignment = align_of[vec_type]()
 
             @parameter
             for i in range(elements):
@@ -225,10 +225,10 @@ struct Element[
             return Element(element_data, runtime_layout)
 
         elif is_contiguous_dim(flat_layout, 1):
-            alias size = Int(flat_layout.shape[1])
-            alias elements = Int(flat_layout.shape[0])
-            alias vec_type = SIMD[Self.dtype, size]
-            alias alignment = align_of[vec_type]()
+            comptime size = Int(flat_layout.shape[1])
+            comptime elements = Int(flat_layout.shape[0])
+            comptime vec_type = SIMD[Self.dtype, size]
+            comptime alignment = align_of[vec_type]()
 
             @parameter
             for i in range(elements):
@@ -238,8 +238,8 @@ struct Element[
                 element_data = element_data.insert[offset = i * size](vec_i)
             return Element(element_data, runtime_layout)
 
-        alias dim_0 = Int(flat_layout.shape[0])
-        alias dim_1 = Int(flat_layout.shape[1])
+        comptime dim_0 = Int(flat_layout.shape[0])
+        comptime dim_1 = Int(flat_layout.shape[1])
 
         @parameter
         for i in range(dim_0):
@@ -285,11 +285,11 @@ struct Element[
 
         @parameter
         if Self.layout.rank() == 1:
-            alias size = Self.layout.size()
+            comptime size = Self.layout.size()
 
             @parameter
             if Self.layout.stride[0] == 1:
-                alias alignment = align_of[Self.element_data_type]()
+                comptime alignment = align_of[Self.element_data_type]()
                 if runtime_layout.dim(0) < size:
 
                     @parameter
@@ -315,14 +315,14 @@ struct Element[
         # rank-2 element.
         @parameter
         if Self.layout.stride[0] == 1:
-            alias size = Int(Self.layout.shape[0])
-            alias elements = Int(Self.layout.shape[1])
-            alias vec_type = SIMD[dtype, size]
-            alias alignment = align_of[vec_type]
+            comptime size = Int(Self.layout.shape[0])
+            comptime elements = Int(Self.layout.shape[1])
+            comptime vec_type = SIMD[dtype, size]
+            comptime alignment = align_of[vec_type]
             var element_data = Self.element_data_type()
             if runtime_layout.dim(0) < size:
-                alias dim_0 = Int(Self.layout.shape[0])
-                alias dim_1 = Int(Self.layout.shape[1])
+                comptime dim_0 = Int(Self.layout.shape[0])
+                comptime dim_1 = Int(Self.layout.shape[1])
 
                 @parameter
                 for i in range(dim_0):
@@ -349,14 +349,14 @@ struct Element[
             return Element(element_data, runtime_layout)
 
         elif Self.layout.stride[1] == 1:
-            alias size = Int(Self.layout.shape[1])
-            alias elements = Int(Self.layout.shape[0])
-            alias vec_type = SIMD[dtype, size]
-            alias alignment = align_of[vec_type]
+            comptime size = Int(Self.layout.shape[1])
+            comptime elements = Int(Self.layout.shape[0])
+            comptime vec_type = SIMD[dtype, size]
+            comptime alignment = align_of[vec_type]
             var element_data = Self.element_data_type()
             if runtime_layout.dim(1) < size:
-                alias dim_0 = Int(Self.layout.shape[0])
-                alias dim_1 = Int(Self.layout.shape[1])
+                comptime dim_0 = Int(Self.layout.shape[0])
+                comptime dim_1 = Int(Self.layout.shape[1])
 
                 @parameter
                 for i in range(dim_0):
@@ -382,8 +382,8 @@ struct Element[
                 element_data = element_data.insert[offset = i * size](vec_i)
             return Element(element_data, runtime_layout)
 
-        alias dim_0 = Int(Self.layout.shape[0])
-        alias dim_1 = Int(Self.layout.shape[1])
+        comptime dim_0 = Int(Self.layout.shape[0])
+        comptime dim_1 = Int(Self.layout.shape[1])
 
         @parameter
         for i in range(dim_0):
@@ -426,11 +426,11 @@ struct Element[
 
         @parameter
         if Self.layout.rank() == 1:
-            alias size = Self.layout.size()
+            comptime size = Self.layout.size()
 
             @parameter
             if Self.layout.stride[0] == 1:
-                alias alignment = align_of[Self.element_data_type]()
+                comptime alignment = align_of[Self.element_data_type]()
                 ptr.store[alignment=alignment](self.element_data)
                 return
 
@@ -441,10 +441,10 @@ struct Element[
 
         @parameter
         if Self.layout.stride[0] == 1:
-            alias size = Int(Self.layout.shape[0])
-            alias elements = Int(Self.layout.shape[1])
-            alias vec_type = SIMD[Self.dtype, size]
-            alias alignment = align_of[vec_type]()
+            comptime size = Int(Self.layout.shape[0])
+            comptime elements = Int(Self.layout.shape[1])
+            comptime vec_type = SIMD[Self.dtype, size]
+            comptime alignment = align_of[vec_type]()
 
             @parameter
             for i in range(elements):
@@ -455,10 +455,10 @@ struct Element[
             return
 
         elif Self.layout.stride[1] == 1:
-            alias size = Int(Self.layout.shape[1])
-            alias elements = Int(Self.layout.shape[0])
-            alias vec_type = SIMD[Self.dtype, size]
-            alias alignment = align_of[vec_type]()
+            comptime size = Int(Self.layout.shape[1])
+            comptime elements = Int(Self.layout.shape[0])
+            comptime vec_type = SIMD[Self.dtype, size]
+            comptime alignment = align_of[vec_type]()
 
             @parameter
             for i in range(elements):
@@ -468,8 +468,8 @@ struct Element[
                 )
             return
 
-        alias dim_0 = Int(Self.layout.shape[0])
-        alias dim_1 = Int(Self.layout.shape[1])
+        comptime dim_0 = Int(Self.layout.shape[0])
+        comptime dim_1 = Int(Self.layout.shape[1])
 
         @parameter
         for i in range(dim_0):
@@ -507,7 +507,7 @@ struct Element[
 
         @parameter
         if Self.layout.rank() == 1:
-            alias size = Self.layout.size()
+            comptime size = Self.layout.size()
 
             @parameter
             if Self.layout.stride[0] == 1:
@@ -522,7 +522,7 @@ struct Element[
                         ] = self.element_data[i]
                     return
 
-                alias alignment = align_of[Self.element_data_type]()
+                comptime alignment = align_of[Self.element_data_type]()
                 ptr.store(self.element_data)
                 return
 
@@ -535,13 +535,13 @@ struct Element[
 
         @parameter
         if Self.layout.stride[0] == 1:
-            alias size = Int(Self.layout.shape[0])
-            alias elements = Int(Self.layout.shape[1])
-            alias vec_type = SIMD[Self.dtype, size]
-            alias alignment = align_of[vec_type]()
+            comptime size = Int(Self.layout.shape[0])
+            comptime elements = Int(Self.layout.shape[1])
+            comptime vec_type = SIMD[Self.dtype, size]
+            comptime alignment = align_of[vec_type]()
             if self.runtime_layout.dim(1) < size:
-                alias dim_0 = Int(Self.layout.shape[0])
-                alias dim_1 = Int(Self.layout.shape[1])
+                comptime dim_0 = Int(Self.layout.shape[0])
+                comptime dim_1 = Int(Self.layout.shape[1])
 
                 @parameter
                 for i in range(dim_0):
@@ -569,13 +569,13 @@ struct Element[
             return
 
         elif Self.layout.stride[1] == 1:
-            alias size = Int(Self.layout.shape[1])
-            alias elements = Int(Self.layout.shape[0])
-            alias vec_type = SIMD[Self.dtype, size]
-            alias alignment = align_of[vec_type]()
+            comptime size = Int(Self.layout.shape[1])
+            comptime elements = Int(Self.layout.shape[0])
+            comptime vec_type = SIMD[Self.dtype, size]
+            comptime alignment = align_of[vec_type]()
             if self.runtime_layout.dim(1) < size:
-                alias dim_0 = Int(Self.layout.shape[0])
-                alias dim_1 = Int(Self.layout.shape[1])
+                comptime dim_0 = Int(Self.layout.shape[0])
+                comptime dim_1 = Int(Self.layout.shape[1])
 
                 @parameter
                 for i in range(dim_0):
@@ -602,8 +602,8 @@ struct Element[
                 )
             return
 
-        alias dim_0 = Int(Self.layout.shape[0])
-        alias dim_1 = Int(Self.layout.shape[1])
+        comptime dim_0 = Int(Self.layout.shape[0])
+        comptime dim_1 = Int(Self.layout.shape[1])
 
         @parameter
         for i in range(dim_0):
@@ -668,7 +668,7 @@ struct MemoryElement[
         index_type: The integer type of the index pointing to each memory element.
     """
 
-    alias _AsMut[
+    comptime _AsMut[
         mut_origin: MutOrigin,
     ] = MemoryElement[
         mut=True,

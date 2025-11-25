@@ -105,7 +105,7 @@ fn block_sync_lds_direct_load[
 struct KVCacheIterator[
     cache_t: MHAOperand, tile_size: Int, kv_num_heads: Int, depth: Int
 ]:
-    alias kv_gmem_layout = Layout(
+    comptime kv_gmem_layout = Layout(
         IntTuple(Int(Self.tile_size), Int(Self.depth)),
         IntTuple(Int(Self.kv_num_heads * Self.depth), 1),
     )
@@ -169,20 +169,20 @@ struct KVCacheIterator[
 fn copy_dram_to_sram_lds[
     swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
 ](dst: LayoutTensor, src: LayoutTensor,) -> Int:
-    alias thread_layout = Layout.row_major(16, 4)
+    comptime thread_layout = Layout.row_major(16, 4)
     var worker_idx = lane_id()
 
     var bc = make_amd_buffer_resource(src)
 
-    alias M = src.shape[0]()
-    alias N = src.shape[1]()
+    comptime M = src.shape[0]()
+    comptime N = src.shape[1]()
     var num_loads = 0
     # we use 16x4 thread layout to load 16x32 tile from dram to sram
     # but we need to load 32x16 tiles from sram for mma, so swizzle need to be applied to
     # the whole 32x32 tile.
-    alias BM = 32
-    alias BN = 32
-    alias BM_SUB = thread_layout.shape[0].value()
+    comptime BM = 32
+    comptime BN = 32
+    comptime BM_SUB = thread_layout.shape[0].value()
 
     @parameter
     for n_tile, m_tile, m_sub_tile in product(
@@ -194,7 +194,7 @@ fn copy_dram_to_sram_lds[
         var src_partitions = src.tile[BM, BN](m_tile, n_tile).tile[BM_SUB, BN](
             m_sub_tile, 0
         )
-        alias dst_layout = dst_partitions.layout
+        comptime dst_layout = dst_partitions.layout
         # dst need to be contiguous
         constrained[dst_layout.stride[1].value() == 1, String(dst_layout)]()
         constrained[dst_layout.stride[0].value() == 32, String(dst_layout)]()
@@ -209,10 +209,10 @@ fn copy_dram_to_sram_lds[
             )
             % UInt(WARP_SIZE)
         )
-        alias dtype = src.dtype
+        comptime dtype = src.dtype
         var src_offset = (Int(src_dist.ptr) - Int(src.ptr)) // size_of[dtype]()
 
-        alias src_load_offset = src_dist.layout(0)
+        comptime src_load_offset = src_dist.layout(0)
         var ptr = dst_partitions.ptr
         var dst_ptr = ptr.address_space_cast[AddressSpace.SHARED]()
         bc.load_to_lds[width = simd_width_of[src.dtype]()](
@@ -228,12 +228,12 @@ fn copy_dram_to_sram_lds[
 fn load_b_[
     mma_shape: IndexList[3], swizzle: OptionalReg[Swizzle], k_tile_idx: Int
 ](src: LayoutTensor) -> SIMD[src.dtype, simd_width_of[src.dtype]()]:
-    alias MMA_M = mma_shape[0]
-    alias MMA_K = mma_shape[2]
+    comptime MMA_M = mma_shape[0]
+    comptime MMA_K = mma_shape[2]
     constrained[src.shape[0]() == MMA_M]()
-    alias simd_width = simd_width_of[src.dtype]()
+    comptime simd_width = simd_width_of[src.dtype]()
     var tile = src.tile[MMA_M, MMA_K](0, k_tile_idx)
-    alias thread_layout = Layout.col_major(32, 2) if mma_shape[
+    comptime thread_layout = Layout.col_major(32, 2) if mma_shape[
         0
     ] == 32 else Layout.col_major(16, 4)
     var dist = tile.vectorize[1, simd_width]().distribute[thread_layout,](
@@ -261,10 +261,10 @@ fn load_b[
     ],
 ):
     var output = type_of(res).stack_allocation()
-    alias MMA_M = mma_shape[0]
-    alias MMA_K = mma_shape[2]
-    alias M = src.shape[0]() // MMA_M
-    alias N = src.shape[1]() // MMA_K
+    comptime MMA_M = mma_shape[0]
+    comptime MMA_K = mma_shape[2]
+    comptime M = src.shape[0]() // MMA_M
+    comptime N = src.shape[1]() // MMA_K
     var output_vectorized = output.vectorize[1, 8]()
 
     @parameter
@@ -292,13 +292,13 @@ struct KVBuffer[
     kv_num_heads: Int,
     transpose: Bool,
 ]:
-    alias MMA_N = Self.mma_shape[1]
-    alias MMA_K = Self.mma_shape[2]
-    alias num_mmas = ceildiv(
+    comptime MMA_N = Self.mma_shape[1]
+    comptime MMA_K = Self.mma_shape[2]
+    comptime num_mmas = ceildiv(
         Self.WN if Self.transpose else Self.depth, Self.MMA_N
     )
-    alias num_k_mmas2 = ceildiv(Self.BK, Int(Self.MMA_K * Self.k_group_size))
-    alias simd_width = simd_width_of[Self.kv_t.dtype]()
+    comptime num_k_mmas2 = ceildiv(Self.BK, Int(Self.MMA_K * Self.k_group_size))
+    comptime simd_width = simd_width_of[Self.kv_t.dtype]()
 
     # Shared memory layout
     # Layout construction for standard memory access:
@@ -326,16 +326,16 @@ struct KVBuffer[
     # └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
     # stride between blocks = BN × simd_width = 128 × 8 = 1024
 
-    alias num_repeats = Self.depth // Self.BK
+    comptime num_repeats = Self.depth // Self.BK
     # this shoul be 2, num_repeats x 32, BK but it gives error in tiling
-    alias tiler_layout = Layout.row_major(1, Self.num_repeats)
-    alias base_layout = Layout.row_major(Self.BN, Self.BK)
-    alias smem_layout = blocked_product(Self.base_layout, Self.tiler_layout)
+    comptime tiler_layout = Layout.row_major(1, Self.num_repeats)
+    comptime base_layout = Layout.row_major(Self.BN, Self.BK)
+    comptime smem_layout = blocked_product(Self.base_layout, Self.tiler_layout)
     # alias smem_layout = Layout.row_major(BN, depth)
 
     # alias thread_layout = Layout.row_major(num_threads // 16, 16)
 
-    alias MMATileType = LayoutTensor[
+    comptime MMATileType = LayoutTensor[
         Self.kv_t.dtype,
         Layout.row_major(Self.num_mmas * Self.num_k_mmas2, Self.simd_width),
         MutAnyOrigin,
@@ -343,10 +343,10 @@ struct KVBuffer[
     ]
     var mma_tile: Self.MMATileType
 
-    alias wtile_dim0 = Self.WN
-    alias wtile_dim1 = Self.BK
+    comptime wtile_dim0 = Self.WN
+    comptime wtile_dim1 = Self.BK
 
-    alias SharedIterType = LayoutTensorIter[
+    comptime SharedIterType = LayoutTensorIter[
         Self.kv_t.dtype,
         Self.smem_layout,
         MutAnyOrigin,
@@ -356,8 +356,8 @@ struct KVBuffer[
 
     var smem_iter: Self.SharedIterType
 
-    alias SharedTileType = Self.SharedIterType.LayoutTensorType
-    alias SharedWarpTileType = Self.SharedTileType.TileType[
+    comptime SharedTileType = Self.SharedIterType.LayoutTensorType
+    comptime SharedWarpTileType = Self.SharedTileType.TileType[
         Self.wtile_dim0, Self.wtile_dim1
     ]
 
@@ -410,7 +410,7 @@ struct KVBuffer[
                 gmem_warp_tile,
             )
         else:
-            alias num_warps = Self.num_threads // WARP_SIZE
+            comptime num_warps = Self.num_threads // WARP_SIZE
 
             @parameter
             for depth_tile in range(Self.depth // 128):
@@ -444,7 +444,7 @@ struct KVBuffer[
     fn load_from_shared(self, buffer: UInt, bk_tile: UInt):
         @parameter
         if Self.transpose:
-            alias num_warps_n = Self.BN // Self.WN
+            comptime num_warps_n = Self.BN // Self.WN
             var warp_col = get_warp_id() % UInt(num_warps_n)
             var smem_tile = self.smem_iter.next_unsafe(buffer)[].tile[
                 Self.BN, Self.BK
@@ -464,8 +464,8 @@ struct KVBuffer[
             )
 
         else:
-            alias MMA_M = Self.mma_shape[0]
-            alias MMA_K = Self.mma_shape[2]
+            comptime MMA_M = Self.mma_shape[0]
+            comptime MMA_K = Self.mma_shape[2]
 
             @parameter
             for k in range(Self.BK // MMA_K):
@@ -482,14 +482,14 @@ struct KVBuffer[
 
                 @parameter
                 for i in range(Self.depth // MMA_M):
-                    alias tile_layout = type_of(
+                    comptime tile_layout = type_of(
                         smem_tile.tile[MMA_K, MMA_M](0, i)
                     ).layout
                     # TODO: KERN-2173, the offset calculation is a workaround
                     # a bug in tile, remove this once the bug is fixed
-                    alias tiles_per_bk = Self.BK // MMA_M
-                    alias stride = self.base_layout.size()
-                    alias offset = (
+                    comptime tiles_per_bk = Self.BK // MMA_M
+                    comptime stride = self.base_layout.size()
+                    comptime offset = (
                         MMA_M * (i % tiles_per_bk)
                         + (i // tiles_per_bk) * stride
                     )
@@ -511,7 +511,7 @@ __extension Attention:
     fn mha_prefill_experimental(mut self):
         constrained[Self.BK == 32, "BK must be 32"]()
 
-        alias num_threads = config.num_threads()
+        comptime num_threads = config.num_threads()
         var k_buffer = KVBuffer[
             mma_shape = Self.mma_shape,
             k_group_size = Self.k_group_size,
@@ -551,12 +551,12 @@ __extension Attention:
             UInt(self.num_keys),
         )
 
-        alias num_v_loads = 4
-        alias num_k_loads = 4
-        alias k_lds_loads = 4
-        alias v_lds_loads = 8
+        comptime num_v_loads = 4
+        comptime num_k_loads = 4
+        comptime k_lds_loads = 4
+        comptime v_lds_loads = 8
 
-        alias accum_type = get_accum_type[type_of(self.k).dtype]()
+        comptime accum_type = get_accum_type[type_of(self.k).dtype]()
 
         @always_inline
         @parameter
@@ -573,7 +573,7 @@ __extension Attention:
 
         var loop_counter = 0
 
-        alias simd_width = simd_width_of[Self.q_type]()
+        comptime simd_width = simd_width_of[Self.q_type]()
 
         @always_inline
         @parameter
@@ -588,7 +588,7 @@ __extension Attention:
                 return
 
             var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
-            alias tensor_core_mma = TiledTensorCore[
+            comptime tensor_core_mma = TiledTensorCore[
                 accum_type,
                 q_type,
                 Self.mma_shape,

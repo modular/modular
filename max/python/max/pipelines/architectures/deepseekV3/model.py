@@ -226,7 +226,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             tie_word_embeddings=config.tie_word_embeddings,
             rope_theta=config.rope_theta,
             rope_scaling=config.rope_scaling,
-            rope_interleave=config.rope_interleave,
+            rope_interleave=getattr(config, "rope_interleave", True),
             scoring_func=config.scoring_func,
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,

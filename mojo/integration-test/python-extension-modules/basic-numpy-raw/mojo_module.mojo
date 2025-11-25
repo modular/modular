@@ -60,7 +60,7 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable, Movable):
 
 @export
 fn mojo_incr_np_array(py_array_object: PythonObject) raises -> PythonObject:
-    alias dtype = DType.int32
+    comptime dtype = DType.int32
 
     print("Hello from mojo_incr_np_array")
 

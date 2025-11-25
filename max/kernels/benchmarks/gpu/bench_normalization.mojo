@@ -61,8 +61,8 @@ fn bench_layer_norm_gpu[
 
     var param_shape = IndexList[1](cols)
 
-    alias layout = Layout.row_major[rank]()
-    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    comptime layout = Layout.row_major[rank]()
+    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var data_buf = LayoutTensor[dtype, layout](
         data_d, RuntimeLayout[layout].row_major(shape)
     )
@@ -176,8 +176,8 @@ fn bench_rms_norm_gpu[
 
     var param_shape = IndexList[1](cols)
 
-    alias layout = Layout.row_major[rank]()
-    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    comptime layout = Layout.row_major[rank]()
+    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var data_buf = LayoutTensor[dtype, layout](
         data_d, RuntimeLayout[layout].row_major(shape)
     )
@@ -245,8 +245,8 @@ fn bench_rms_norm_gpu[
 
 
 def main():
-    alias dtype = env_get_dtype["dtype", DType.bfloat16]()
-    alias shape = int_list_to_tuple[env_get_shape["shape", "256x256"]()]()
+    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
+    comptime shape = int_list_to_tuple[env_get_shape["shape", "256x256"]()]()
 
     var m = Bench(BenchConfig(num_repetitions=1))
     with DeviceContext() as ctx:

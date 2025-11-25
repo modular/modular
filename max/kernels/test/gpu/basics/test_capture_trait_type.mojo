@@ -46,7 +46,7 @@ def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int):
         var idx = Int(thread_idx.x)
         print(Float32(thing.get_val(idx)) * 2)
 
-    alias kernel = kernel_fn
+    comptime kernel = kernel_fn
     ctx.enqueue_function_checked[kernel, kernel](
         grid_dim=(1,), block_dim=(size)
     )

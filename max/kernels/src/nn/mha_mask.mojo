@@ -32,12 +32,12 @@ struct MaskName(Stringable):
 
     var name: String
 
-    alias NULL = Self("null")
-    alias CAUSAL = Self("causal")
-    alias CHUNKED = Self("chunked")
-    alias SLIDING_WINDOW_CAUSAL = Self("sliding_window_causal")
-    alias MATERIALIZED = Self("materialized")
-    alias CHUNKED_CAUSAL = Self("chunked_causal")
+    comptime NULL = Self("null")
+    comptime CAUSAL = Self("causal")
+    comptime CHUNKED = Self("chunked")
+    comptime SLIDING_WINDOW_CAUSAL = Self("sliding_window_causal")
+    comptime MATERIALIZED = Self("materialized")
+    comptime CHUNKED_CAUSAL = Self("chunked_causal")
 
     fn __init__(out self, name: String):
         self.name = name
@@ -75,18 +75,18 @@ struct TileMaskStatus(
     var status: UInt8
 
     # No element is masked.
-    alias NO_MASK = Self(0)
+    comptime NO_MASK = Self(0)
 
     # Some elements in the tile are masked.
-    alias PARTIAL_MASK = Self(1)
+    comptime PARTIAL_MASK = Self(1)
 
     # All elements in the tile are masked.
-    alias FULL_MASK = Self(3)
+    comptime FULL_MASK = Self(3)
 
     # Unkown mask -- a further check needed.
     # This is used by masks not yet supporting
     # the predefined trip count information.
-    alias UNKNOWN_MASK = Self(4)
+    comptime UNKNOWN_MASK = Self(4)
 
     fn __eq__(self, rhs: Self) -> Bool:
         return self.status == rhs.status
@@ -126,17 +126,17 @@ trait MHAMask(Copyable, DevicePassable):
     """The MHAMask trait describes masks for MHA kernels, such as the causal mask.
     """
 
-    alias apply_log2e_after_mask: Bool
+    comptime apply_log2e_after_mask: Bool
     """
     Does the mask require `log2e` to be applied after the mask, or
     can it be fused with the scaling?
     """
-    alias mask_out_of_bound: Bool
-    alias mask_safe_out_of_bounds: Bool
+    comptime mask_out_of_bound: Bool
+    comptime mask_safe_out_of_bounds: Bool
     """
     Is the mask safe to read out of bounds?
     """
-    alias check_mask_during_decoding: Bool
+    comptime check_mask_during_decoding: Bool
     """
     Should we check the mask during decoding, or should we assume that it
     does not return `FULL_MASK`?
@@ -254,7 +254,7 @@ trait MHAMask(Copyable, DevicePassable):
 # CausalMask
 # ===-----------------------------------------------------------------------===#
 
-alias MASK_VALUE = -10_000
+comptime MASK_VALUE = -10_000
 
 
 @fieldwise_init
@@ -262,12 +262,12 @@ alias MASK_VALUE = -10_000
 struct CausalMask(ImplicitlyCopyable, MHAMask, Movable):
     """MHA causal mask ensures a token is only affected by previous tokens."""
 
-    alias apply_log2e_after_mask: Bool = False
-    alias mask_out_of_bound: Bool = is_nvidia_gpu()
-    alias mask_safe_out_of_bounds: Bool = True
-    alias check_mask_during_decoding: Bool = False
+    comptime apply_log2e_after_mask: Bool = False
+    comptime mask_out_of_bound: Bool = is_nvidia_gpu()
+    comptime mask_safe_out_of_bounds: Bool = True
+    comptime check_mask_during_decoding: Bool = False
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -295,7 +295,7 @@ struct CausalMask(ImplicitlyCopyable, MHAMask, Movable):
         coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
-        alias index_type = coord.element_type
+        comptime index_type = coord.element_type
 
         # coord[2] and coord[3] are the token index in query and key respectively.
         var q_idx = coord[2]
@@ -423,12 +423,12 @@ struct CausalMask(ImplicitlyCopyable, MHAMask, Movable):
 struct NullMask(ImplicitlyCopyable, MHAMask, Movable):
     """Mask that's effectively a noop."""
 
-    alias apply_log2e_after_mask: Bool = False
-    alias mask_out_of_bound: Bool = True
-    alias mask_safe_out_of_bounds: Bool = True
-    alias check_mask_during_decoding: Bool = False
+    comptime apply_log2e_after_mask: Bool = False
+    comptime mask_out_of_bound: Bool = True
+    comptime mask_safe_out_of_bounds: Bool = True
+    comptime check_mask_during_decoding: Bool = False
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -537,12 +537,12 @@ struct ChunkedMask[local_window_size: Int](
         6 | 0 0 0 0 0 0 0 0 1 1
     """
 
-    alias apply_log2e_after_mask: Bool = False
-    alias mask_out_of_bound: Bool = True
-    alias mask_safe_out_of_bounds: Bool = True
-    alias check_mask_during_decoding: Bool = True
+    comptime apply_log2e_after_mask: Bool = False
+    comptime mask_out_of_bound: Bool = True
+    comptime mask_safe_out_of_bounds: Bool = True
+    comptime check_mask_during_decoding: Bool = True
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -647,7 +647,7 @@ struct ChunkedMask[local_window_size: Int](
         var col: UInt32 = (
             row // Self.local_window_size
         ) * Self.local_window_size
-        alias align_to = min(page_size, BN)
+        comptime align_to = min(page_size, BN)
 
         @parameter
         if align_to == 1:
@@ -720,12 +720,12 @@ struct SlidingWindowCausalMask[window_size: Int](
         6 | 0 0 0 0 1 1 1
     """
 
-    alias apply_log2e_after_mask: Bool = False
-    alias mask_out_of_bound: Bool = True
-    alias mask_safe_out_of_bounds: Bool = True
-    alias check_mask_during_decoding: Bool = True
+    comptime apply_log2e_after_mask: Bool = False
+    comptime mask_out_of_bound: Bool = True
+    comptime mask_safe_out_of_bounds: Bool = True
+    comptime check_mask_during_decoding: Bool = True
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -753,7 +753,7 @@ struct SlidingWindowCausalMask[window_size: Int](
         coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
-        alias index_type = coord.element_type
+        comptime index_type = coord.element_type
 
         constrained[
             width <= Self.window_size,
@@ -847,7 +847,7 @@ struct SlidingWindowCausalMask[window_size: Int](
         var col: UInt32 = UInt32(
             max(Int32(row) - Int32(Self.window_size) + 1, 0)
         )
-        alias align_to = min(page_size, BN)
+        comptime align_to = min(page_size, BN)
 
         @parameter
         if align_to == 1:
@@ -982,12 +982,12 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
 ):
     """Mask that's backed by a materialized tensor."""
 
-    alias apply_log2e_after_mask: Bool = True
-    alias mask_out_of_bound: Bool = True
-    alias mask_safe_out_of_bounds: Bool = False
-    alias check_mask_during_decoding: Bool = True
+    comptime apply_log2e_after_mask: Bool = True
+    comptime mask_out_of_bound: Bool = True
+    comptime mask_safe_out_of_bounds: Bool = False
+    comptime check_mask_during_decoding: Bool = True
 
-    alias MaskType = LayoutTensor[Self.dtype_, Self.layout_, MutAnyOrigin]
+    comptime MaskType = LayoutTensor[Self.dtype_, Self.layout_, MutAnyOrigin]
     var mask_tensor: Self.MaskType
     var start_pos: OptionalReg[
         LayoutTensor[
@@ -996,7 +996,7 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
     ]
     var is_multiple_of_2: Bool
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -1053,7 +1053,7 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
         coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
-        alias IndexListType = IndexList[
+        comptime IndexListType = IndexList[
             Self.layout_.rank(), element_type=element_type
         ]
         var adjusted_coord: IndexListType
@@ -1071,7 +1071,7 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
             )
 
         var retval = SIMD[dtype, width](MASK_VALUE)
-        alias rank = Self.layout_.rank()
+        comptime rank = Self.layout_.rank()
         if adjusted_coord[rank - 2] < self.mask_tensor.dim[rank - 2]():
             if (
                 adjusted_coord[rank - 1] + width
@@ -1156,12 +1156,12 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 ):
     """Mask that's the AND of two masks."""
 
-    alias apply_log2e_after_mask: Bool = Self.T.apply_log2e_after_mask or Self.S.apply_log2e_after_mask
-    alias mask_out_of_bound: Bool = Self.T.mask_out_of_bound or Self.S.mask_out_of_bound
-    alias mask_safe_out_of_bounds: Bool = Self.T.mask_safe_out_of_bounds and Self.S.mask_safe_out_of_bounds
-    alias check_mask_during_decoding: Bool = Self.T.check_mask_during_decoding and Self.S.check_mask_during_decoding
+    comptime apply_log2e_after_mask: Bool = Self.T.apply_log2e_after_mask or Self.S.apply_log2e_after_mask
+    comptime mask_out_of_bound: Bool = Self.T.mask_out_of_bound or Self.S.mask_out_of_bound
+    comptime mask_safe_out_of_bounds: Bool = Self.T.mask_safe_out_of_bounds and Self.S.mask_safe_out_of_bounds
+    comptime check_mask_during_decoding: Bool = Self.T.check_mask_during_decoding and Self.S.check_mask_during_decoding
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -1260,12 +1260,12 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 ):
     """Mask that's the OR of two masks."""
 
-    alias apply_log2e_after_mask: Bool = Self.T.apply_log2e_after_mask or Self.S.apply_log2e_after_mask
-    alias mask_out_of_bound: Bool = Self.T.mask_out_of_bound and Self.S.mask_out_of_bound
-    alias mask_safe_out_of_bounds: Bool = Self.T.mask_safe_out_of_bounds and Self.S.mask_safe_out_of_bounds
-    alias check_mask_during_decoding: Bool = Self.T.check_mask_during_decoding or Self.S.check_mask_during_decoding
+    comptime apply_log2e_after_mask: Bool = Self.T.apply_log2e_after_mask or Self.S.apply_log2e_after_mask
+    comptime mask_out_of_bound: Bool = Self.T.mask_out_of_bound and Self.S.mask_out_of_bound
+    comptime mask_safe_out_of_bounds: Bool = Self.T.mask_safe_out_of_bounds and Self.S.mask_safe_out_of_bounds
+    comptime check_mask_during_decoding: Bool = Self.T.check_mask_during_decoding or Self.S.check_mask_during_decoding
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self

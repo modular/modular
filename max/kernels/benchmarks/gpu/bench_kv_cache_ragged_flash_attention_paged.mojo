@@ -92,10 +92,10 @@ def execute_kv_cache_ragged_flash_attention[
     use_random_cache_lengths: Bool,
     run_benchmark: Bool,
 ):
-    alias num_layers = 1
-    alias layer_idx = 0
+    comptime num_layers = 1
+    comptime layer_idx = 0
     var num_pages = batch_size * ceildiv(seq_len + cache_len, page_size) * 2
-    alias CollectionType = PagedKVCacheCollection[
+    comptime CollectionType = PagedKVCacheCollection[
         dtype,
         KVCacheStaticParams(
             num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
@@ -318,11 +318,11 @@ def execute_kv_cache_ragged_flash_attention[
 
 
 def main():
-    alias dtype = env_get_dtype["dtype", DType.bfloat16]()
+    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
-    alias head_dim = env_get_int["head_dim", 128]()
-    alias num_q_heads = env_get_int["num_q_heads", 32]()
-    alias num_kv_heads = env_get_int["num_kv_heads", 8]()
+    comptime head_dim = env_get_int["head_dim", 128]()
+    comptime num_q_heads = env_get_int["num_q_heads", 32]()
+    comptime num_kv_heads = env_get_int["num_kv_heads", 8]()
 
     var batch_size = arg_parse("batch_size", 1)
     var use_random_seq_lengths = arg_parse("use_random_seq_lengths", False)

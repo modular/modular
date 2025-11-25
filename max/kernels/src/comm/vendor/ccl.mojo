@@ -29,14 +29,14 @@ from gpu.host._amdgpu_hip import HIP
 from gpu.host._nvidia_cuda import CUDA
 from comm.allreduce import MAX_GPUS, elementwise_epilogue_type
 
-alias ncclComm_t = OpaquePointer
+comptime ncclComm_t = OpaquePointer
 
 
 @fieldwise_init
 @register_passable("trivial")
 struct ncclResult_t(Equatable, Writable):
     var _value: Int32
-    alias ncclSuccess = Self(0)
+    comptime ncclSuccess = Self(0)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -52,7 +52,7 @@ struct ncclResult_t(Equatable, Writable):
 @register_passable("trivial")
 struct ncclRedOp_t:
     var _value: Int32
-    alias ncclSum = Self(0)
+    comptime ncclSum = Self(0)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -62,15 +62,15 @@ struct ncclRedOp_t:
 @register_passable("trivial")
 struct ncclDataType_t:
     var _value: Int32
-    alias ncclFloat16 = Self(6)
-    alias ncclFloat32 = Self(7)
-    alias ncclBfloat16 = Self(9)
+    comptime ncclFloat16 = Self(6)
+    comptime ncclFloat32 = Self(7)
+    comptime ncclBfloat16 = Self(9)
 
     fn __init__(out self, value: Int):
         self._value = value
 
 
-alias RCCL_LIBRARY_PATHS: List[Path] = [
+comptime RCCL_LIBRARY_PATHS: List[Path] = [
     "librccl.so",
     "librccl.so.1",
     "/opt/rocm/lib/librccl.so",
@@ -78,7 +78,7 @@ alias RCCL_LIBRARY_PATHS: List[Path] = [
 ]
 
 
-alias NCCL_LIBRARY_PATHS: List[Path] = [
+comptime NCCL_LIBRARY_PATHS: List[Path] = [
     "libnccl.so",
     "libnccl.so.2",
     "/usr/lib/x86_64-linux-gnu/libnccl.so",
@@ -95,7 +95,7 @@ fn _init_ccl_dylib() -> OwnedDLHandle:
         return _find_dylib["NCCL"](materialize[NCCL_LIBRARY_PATHS]())
 
 
-alias CCL_LIBRARY = _Global["CCL_LIBRARY", _init_ccl_dylib]
+comptime CCL_LIBRARY = _Global["CCL_LIBRARY", _init_ccl_dylib]
 
 
 @always_inline
@@ -106,7 +106,7 @@ fn _get_ccl_function[
 
 
 # Common function signatures for CCL APIs (shared by RCCL/NCCL)
-alias CCLAllReduceFn = fn (
+comptime CCLAllReduceFn = fn (
     OpaquePointer,
     OpaquePointer,
     Int,
@@ -116,7 +116,7 @@ alias CCLAllReduceFn = fn (
     OpaquePointer,
 ) -> ncclResult_t
 
-alias CCLAllGatherFn = fn (
+comptime CCLAllGatherFn = fn (
     OpaquePointer,
     OpaquePointer,
     Int,

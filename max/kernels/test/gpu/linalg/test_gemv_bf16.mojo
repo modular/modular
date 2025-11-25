@@ -62,8 +62,8 @@ fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias WARPS_PER_BLOCK = 32
-    alias kernel = gemv_kernel[DType.float32, DType.bfloat16, DType.bfloat16]
+    comptime WARPS_PER_BLOCK = 32
+    comptime kernel = gemv_kernel[DType.float32, DType.bfloat16, DType.bfloat16]
 
     @always_inline
     @parameter
@@ -94,10 +94,10 @@ fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device_n, a_host_n)
     ctx.enqueue_copy(b_device_n, b_host_n)
 
-    alias BLOCK_DIM = 16
+    comptime BLOCK_DIM = 16
 
     # Create layout tensors for the naive kernel
-    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var c_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
         c_device_n.unsafe_ptr(),
@@ -117,7 +117,7 @@ fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        alias kernel = matmul_kernel_naive[
+        comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -150,7 +150,7 @@ fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
 
     # Due to varied pattern of FP arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
-    alias errorTolerance = 0.1
+    comptime errorTolerance = 0.1
     var failed = False
     for i in range(M * N):
         var outVal = c_host[i]

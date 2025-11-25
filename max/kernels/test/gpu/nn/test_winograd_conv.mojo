@@ -96,9 +96,9 @@ fn matmul[
         b_type, b_layout, MutAnyOrigin, element_layout=element_layout, **_
     ],
 ):
-    alias M = Int(c_layout.shape[0])
-    alias N = Int(c_layout.shape[1])
-    alias K = Int(a_layout.shape[1])
+    comptime M = Int(c_layout.shape[0])
+    comptime N = Int(c_layout.shape[1])
+    comptime K = Int(a_layout.shape[1])
 
     @parameter
     if transpose_b:
@@ -290,7 +290,7 @@ fn winograd_conv2d_gpu_launcher[
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
-    alias block_size = 16
+    comptime block_size = 16
 
     # TODO: Is assert_true the right way to do this?
     assert_true(
@@ -323,7 +323,7 @@ fn winograd_conv2d_gpu_launcher[
     var grid_dim_y = ceildiv(output_dim.get[1](), 2 * block_size)
     var grid_dim_z = input_dim.get[0]()
 
-    alias kernel = winograd_conv2d_gpu_nhwc[
+    comptime kernel = winograd_conv2d_gpu_nhwc[
         input_dim,
         filter_dim,
         output_dim,
@@ -353,25 +353,25 @@ fn get_output_dim[
     dilation: IndexList[2],
     pad: IndexList[2],
 ]() -> DimList:
-    alias N = input_dim.get[0]()
-    alias H = input_dim.get[1]()
-    alias W = input_dim.get[2]()
-    alias C = input_dim.get[3]()
+    comptime N = input_dim.get[0]()
+    comptime H = input_dim.get[1]()
+    comptime W = input_dim.get[2]()
+    comptime C = input_dim.get[3]()
 
-    alias R = filter_dim.get[0]()
-    alias S = filter_dim.get[1]()
-    alias F = filter_dim.get[3]()
+    comptime R = filter_dim.get[0]()
+    comptime S = filter_dim.get[1]()
+    comptime F = filter_dim.get[3]()
 
-    alias pad_h = IndexList[2](pad[0], pad[0])
-    alias pad_w = IndexList[2](pad[1], pad[1])
+    comptime pad_h = IndexList[2](pad[0], pad[0])
+    comptime pad_w = IndexList[2](pad[1], pad[1])
 
-    alias HO = (H + pad_h[0] + pad_h[1] - dilation[0] * (R - 1) - 1) // stride[
-        0
-    ] + 1
-    alias WO = (W + pad_w[0] + pad_w[1] - dilation[1] * (S - 1) - 1) // stride[
-        1
-    ] + 1
-    alias output_dim = DimList(N, HO, WO, F)
+    comptime HO = (
+        H + pad_h[0] + pad_h[1] - dilation[0] * (R - 1) - 1
+    ) // stride[0] + 1
+    comptime WO = (
+        W + pad_w[0] + pad_w[1] - dilation[1] * (S - 1) - 1
+    ) // stride[1] + 1
+    comptime output_dim = DimList(N, HO, WO, F)
     return output_dim
 
 
@@ -386,7 +386,7 @@ fn test_winograd_conv_gpu[
 ](ctx: DeviceContext) raises:
     print("== test_conv_winograd_gpu")
 
-    alias output_dim = get_output_dim[
+    comptime output_dim = get_output_dim[
         input_dim, filter_dim, stride, dilation, pad
     ]()
 
@@ -438,8 +438,8 @@ fn test_winograd_conv_gpu[
     var host_output = device_output.copy_from_device(ctx)
 
     # TODO: Should tolerances really this high for BFloat16?
-    alias atol = 1e-06 if dtype is DType.float32 else 1e-1
-    alias rtol = 1e-06 if dtype is DType.float32 else 1e-4
+    comptime atol = 1e-06 if dtype is DType.float32 else 1e-1
+    comptime rtol = 1e-06 if dtype is DType.float32 else 1e-4
 
     for x in range(output_dim.product().get()):
         assert_almost_equal(
@@ -451,7 +451,7 @@ fn test_winograd_conv_gpu[
 
 
 def main():
-    alias dtype = DType.float32
+    comptime dtype = DType.float32
 
     with DeviceContext() as ctx:
         test_winograd_conv_gpu[

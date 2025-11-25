@@ -124,7 +124,6 @@ class MultimodalKVCacheManager:
         devices: Sequence[Device],
         session: InferenceSession,
         available_cache_memory: int,
-        page_size: int,
     ) -> None:
         """Initialize the multimodal KV cache manager with separate text and vision caches.
 
@@ -138,7 +137,6 @@ class MultimodalKVCacheManager:
             devices: Sequence of devices to use for the KV cache.
             session: Inference session for executing operations.
             available_cache_memory: Total available memory for KV caching in bytes.
-            page_size: Page size for the text KV cache.
         """
         self.params = params
 
@@ -1260,7 +1258,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         self,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> PagedKVCacheManager:
+    ) -> MultimodalKVCacheManager:
         """Loads KV cache management objects for Llama vision.
 
         Args:
@@ -1272,9 +1270,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             A pair of KV managers: one for self the other for cross attention.
         """
         num_cross_attn_layers = len(self.text_config.cross_attention_layers)
-        # TODO: Remove this type ignore as we appropriately create an
-        # interface for using multiple KV Cache)) Managers in a single model.
-        return MultimodalKVCacheManager(  # type: ignore
+        return MultimodalKVCacheManager(
             params=self.get_kv_params(
                 huggingface_config=self.huggingface_config,
                 n_devices=len(self.devices),

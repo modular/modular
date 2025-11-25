@@ -106,9 +106,9 @@ trait KVCacheT(DevicePassable, ImplicitlyCopyable, Movable):
     Represents a single (key or value) cache.
     """
 
-    alias dtype: DType
-    alias kv_params: KVCacheStaticParams
-    alias page_size_: Int
+    comptime dtype: DType
+    comptime kv_params: KVCacheStaticParams
+    comptime page_size_: Int
 
     fn cache_lengths_nd(
         self,
@@ -224,18 +224,18 @@ struct ContinuousBatchingKVCache[
     KERNELS.
     """
 
-    alias dtype = Self.dtype_
-    alias kv_params = Self.kv_params_
-    alias page_size_ = 0
+    comptime dtype = Self.dtype_
+    comptime kv_params = Self.kv_params_
+    comptime page_size_ = 0
     # Shape is [num_blocks, max_seq_len, num_heads, head_size].
-    alias blocks_shape = IntTuple(
+    comptime blocks_shape = IntTuple(
         UNKNOWN_VALUE,
         UNKNOWN_VALUE,
         Int(Self.kv_params.num_heads),
         Int(Self.kv_params.head_size),
     )
-    alias blocks_layout = Layout.row_major(Self.blocks_shape)
-    alias blocks_type = LayoutTensor[
+    comptime blocks_layout = Layout.row_major(Self.blocks_shape)
+    comptime blocks_type = LayoutTensor[
         Self.dtype, Self.blocks_layout, MutAnyOrigin
     ]
 
@@ -256,7 +256,7 @@ struct ContinuousBatchingKVCache[
     #   max(cache_lengths[i] + prompt_lengths[i] for i in range(batch_size)
     var max_cache_length: UInt32
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -430,9 +430,9 @@ struct ContinuousBatchingKVCache[
         # yields number of rows:
         # (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
         var rows = (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
-        alias cols = Self.kv_params.num_heads * Self.kv_params.head_size
+        comptime cols = Self.kv_params.num_heads * Self.kv_params.head_size
 
-        alias layout = Layout.row_major(UNKNOWN_VALUE, Int(cols))
+        comptime layout = Layout.row_major(UNKNOWN_VALUE, Int(cols))
         rt_layout = RuntimeLayout[layout].row_major(
             IndexList[2](Int(rows), Int(cols))
         )
@@ -479,19 +479,19 @@ struct PagedKVCache[
         page_size: The size of the page.
     """
 
-    alias dtype = Self.dtype_
-    alias kv_params = Self.kv_params_
-    alias page_size_ = Self.page_size
+    comptime dtype = Self.dtype_
+    comptime kv_params = Self.kv_params_
+    comptime page_size_ = Self.page_size
 
     # Shape is [total_num_blocks, page_size, num_heads, head_size].
-    alias blocks_shape = IntTuple(
+    comptime blocks_shape = IntTuple(
         UNKNOWN_VALUE,
         Self.page_size,
         Int(Self.kv_params.num_heads),
         Int(Self.kv_params.head_size),
     )
-    alias blocks_layout = Layout.row_major(Self.blocks_shape)
-    alias blocks_type = LayoutTensor[
+    comptime blocks_layout = Layout.row_major(Self.blocks_shape)
+    comptime blocks_type = LayoutTensor[
         Self.dtype, Self.blocks_layout, MutAnyOrigin
     ]
 
@@ -512,7 +512,7 @@ struct PagedKVCache[
     #   max(cache_lengths[i] + prompt_lengths[i] for i in range(batch_size)
     var max_cache_length: UInt32
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -634,8 +634,8 @@ struct PagedKVCache[
         # Create a view that accounts for the paged layout
         var total_blocks = self.blocks.dim[0]()
         var rows = (total_blocks - 1) * self._stride() + Self.page_size
-        alias cols = Int(Self.kv_params.num_heads * Self.kv_params.head_size)
-        alias layout = Layout.row_major(UNKNOWN_VALUE, cols)
+        comptime cols = Int(Self.kv_params.num_heads * Self.kv_params.head_size)
+        comptime layout = Layout.row_major(UNKNOWN_VALUE, cols)
         rt_layout = RuntimeLayout[layout].row_major(
             IndexList[2](Int(rows), cols)
         )
@@ -750,10 +750,10 @@ struct PagedKVCache[
 trait KVCollectionT(ImplicitlyCopyable, Movable):
     """Trait for a pair of caches (keys and values)."""
 
-    alias CacheType: KVCacheT
-    alias name_str: StaticString
-    alias dtype: DType
-    alias kv_params: KVCacheStaticParams
+    comptime CacheType: KVCacheT
+    comptime name_str: StaticString
+    comptime dtype: DType
+    comptime kv_params: KVCacheStaticParams
 
     fn get_key_cache(self, layer_idx: Int) -> Self.CacheType:
         ...
@@ -781,13 +781,13 @@ struct ContinuousBatchingKVCacheCollection[
     It does own the Pointer[NDBuffer[dtype, 3]] and valid_lengths buffer
     """
 
-    alias name_str = "continuous_batching"
-    alias dtype = Self.dtype_
-    alias kv_params = Self.kv_params_
-    alias CacheType = ContinuousBatchingKVCache[Self.dtype, Self.kv_params]
+    comptime name_str = "continuous_batching"
+    comptime dtype = Self.dtype_
+    comptime kv_params = Self.kv_params_
+    comptime CacheType = ContinuousBatchingKVCache[Self.dtype, Self.kv_params]
 
     # Shape is [num_blocks, 2, num_layers, max_seq_len, num_heads, head_size].
-    alias blocks_shape = IntTuple(
+    comptime blocks_shape = IntTuple(
         UNKNOWN_VALUE,
         UNKNOWN_VALUE,
         UNKNOWN_VALUE,
@@ -795,8 +795,8 @@ struct ContinuousBatchingKVCacheCollection[
         Int(Self.kv_params.num_heads),
         Int(Self.kv_params.head_size),
     )
-    alias blocks_layout = Layout.row_major(Self.blocks_shape)
-    alias blocks_type = LayoutTensor[
+    comptime blocks_layout = Layout.row_major(Self.blocks_shape)
+    comptime blocks_type = LayoutTensor[
         Self.dtype, Self.blocks_layout, MutAnyOrigin
     ]
 
@@ -874,15 +874,17 @@ struct PagedKVCacheCollection[
     kv_params_: KVCacheStaticParams,
     page_size: Int,
 ](KVCollectionT):
-    alias name_str = "paged"
-    alias dtype = Self.dtype_
-    alias kv_params = Self.kv_params_
-    alias CacheType = PagedKVCache[Self.dtype, Self.kv_params, Self.page_size]
+    comptime name_str = "paged"
+    comptime dtype = Self.dtype_
+    comptime kv_params = Self.kv_params_
+    comptime CacheType = PagedKVCache[
+        Self.dtype, Self.kv_params, Self.page_size
+    ]
 
     # Shape is [total_num_blocks, 2, num_layers, page_size, num_heads, head_size].
     # Matrix view is
     # (total_num_blocks, 2, num_layers, page_size) x (num_heads, head_size)
-    alias blocks_shape = IntTuple(
+    comptime blocks_shape = IntTuple(
         UNKNOWN_VALUE,
         2 if not Self.kv_params.is_mla else 1,
         UNKNOWN_VALUE,
@@ -890,17 +892,17 @@ struct PagedKVCacheCollection[
         Int(Self.kv_params.num_heads),
         Int(Self.kv_params.head_size),
     )
-    alias blocks_layout = Layout.row_major(Self.blocks_shape)
-    alias blocks_type = LayoutTensor[
+    comptime blocks_layout = Layout.row_major(Self.blocks_shape)
+    comptime blocks_type = LayoutTensor[
         Self.dtype, Self.blocks_layout, MutAnyOrigin
     ]
 
     var blocks: Self.blocks_type
-    alias cache_lengths_type = LayoutTensor[
+    comptime cache_lengths_type = LayoutTensor[
         DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
     ]
     var cache_lengths: Self.cache_lengths_type
-    alias lookup_table_type = LayoutTensor[
+    comptime lookup_table_type = LayoutTensor[
         DType.uint32, Layout.row_major[2](), ImmutAnyOrigin
     ]
     var lookup_table: Self.lookup_table_type

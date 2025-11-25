@@ -50,12 +50,12 @@ fn test_tma_3d_load_kernel[
         "for these test cases cta and smem should have the same size",
     ]()
 
-    alias dst_dim0 = dst_layout.shape[0].value()
-    alias dst_dim1 = dst_layout.shape[1].value()
+    comptime dst_dim0 = dst_layout.shape[0].value()
+    comptime dst_dim1 = dst_layout.shape[1].value()
 
-    alias cta_tile_dim0 = cta_tile_layout.shape[0].value()
-    alias cta_tile_dim1 = cta_tile_layout.shape[1].value()
-    alias cta_tile_dim2 = cta_tile_layout.shape[2].value()
+    comptime cta_tile_dim0 = cta_tile_layout.shape[0].value()
+    comptime cta_tile_dim1 = cta_tile_layout.shape[1].value()
+    comptime cta_tile_dim2 = cta_tile_layout.shape[2].value()
 
     constrained[
         dst_dim1 == cta_tile_dim2,
@@ -70,7 +70,7 @@ fn test_tma_3d_load_kernel[
         alignment=128,
     ].stack_allocation()
 
-    alias expected_bytes = cta_tile_layout.size() * size_of[dtype]()
+    comptime expected_bytes = cta_tile_layout.size() * size_of[dtype]()
 
     mbar = stack_allocation[
         1,
@@ -95,15 +95,13 @@ fn test_tma_3d_load_kernel[
     barrier()
     mbar[0].wait()
 
-    alias smem_dim0 = smem_layout.shape[0].value()
-    alias smem_dim1 = smem_layout.shape[1].value()
-    alias smem_dim2 = smem_layout.shape[2].value()
+    comptime smem_dim0 = smem_layout.shape[0].value()
+    comptime smem_dim1 = smem_layout.shape[1].value()
+    comptime smem_dim2 = smem_layout.shape[2].value()
 
     var idx = (
-        block_idx.z * grid_dim.x * grid_dim.y
-        + block_idx.y * grid_dim.x
-        + block_idx.x
-    )
+        block_idx.z * grid_dim.y + block_idx.y
+    ) * grid_dim.x + block_idx.x
     for i in range(cta_tile_dim0):
         smem_tile_i = smem_tile.tile[1, cta_tile_dim1, cta_tile_dim2](i)
 
@@ -123,15 +121,15 @@ def test_tma_3d_load_row_major[
 ](ctx: DeviceContext):
     print("test_tma_3d_load")
 
-    alias src_dim0 = src_layout.shape[0].value()
-    alias src_dim1 = src_layout.shape[1].value()
-    alias src_dim2 = src_layout.shape[2].value()
+    comptime src_dim0 = src_layout.shape[0].value()
+    comptime src_dim1 = src_layout.shape[1].value()
+    comptime src_dim2 = src_layout.shape[2].value()
 
-    alias cta_tile_dim0 = cta_tile_layout.shape[0].value()
-    alias cta_tile_dim1 = cta_tile_layout.shape[1].value()
-    alias cta_tile_dim2 = cta_tile_layout.shape[2].value()
+    comptime cta_tile_dim0 = cta_tile_layout.shape[0].value()
+    comptime cta_tile_dim1 = cta_tile_layout.shape[1].value()
+    comptime cta_tile_dim2 = cta_tile_layout.shape[2].value()
 
-    alias dst_layout = Layout.row_major(
+    comptime dst_layout = Layout.row_major(
         src_dim0 * src_dim1 * src_dim2 // cta_tile_dim2, cta_tile_dim2
     )
 
@@ -152,7 +150,7 @@ def test_tma_3d_load_row_major[
     print("cta tile layout:", cta_tile_layout)
     print("desc layout:", type_of(tma_tensor).desc_layout)
 
-    alias kernel = test_tma_3d_load_kernel[
+    comptime kernel = test_tma_3d_load_kernel[
         type_of(tma_tensor).dtype,
         dst_layout,  # dst layout
         type_of(tma_tensor).layout,  # cta_tile
@@ -173,15 +171,15 @@ def test_tma_3d_load_row_major[
     src_host = src.tensor()
     dst_host = dst.tensor()
 
-    alias swizzle = make_swizzle[dtype, swizzle_mode]()
+    comptime swizzle = make_swizzle[dtype, swizzle_mode]()
 
-    alias cta_tile_size = cta_tile_layout.size()
+    comptime cta_tile_size = cta_tile_layout.size()
 
-    alias desc_tile_dim0 = type_of(tma_tensor).desc_layout.shape[0].value()
-    alias desc_tile_dim1 = type_of(tma_tensor).desc_layout.shape[1].value()
-    alias desc_tile_dim2 = type_of(tma_tensor).desc_layout.shape[2].value()
+    comptime desc_tile_dim0 = type_of(tma_tensor).desc_layout.shape[0].value()
+    comptime desc_tile_dim1 = type_of(tma_tensor).desc_layout.shape[1].value()
+    comptime desc_tile_dim2 = type_of(tma_tensor).desc_layout.shape[2].value()
 
-    alias desc_tile_size = desc_tile_dim1 * desc_tile_dim2
+    comptime desc_tile_size = desc_tile_dim1 * desc_tile_dim2
 
     desc_tile = LayoutTensor[
         dtype,

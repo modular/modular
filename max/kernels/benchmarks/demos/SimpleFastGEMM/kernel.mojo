@@ -20,10 +20,10 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim
 from memory import LegacyUnsafePointer as UnsafePointer
 
-alias mr = 6
-alias nr = 64
+comptime mr = 6
+comptime nr = 64
 
-alias simd_size = 16
+comptime simd_size = 16
 
 
 fn kernel6x4(

@@ -43,8 +43,8 @@ fn bench_topk_batched[
     var K = test_case.K
     var block_size = test_case.block_size
     var num_blocks_per_input = test_case.num_blocks_per_input
-    alias largest = test_case.largest
-    alias sampling = test_case.sampling
+    comptime largest = test_case.largest
+    comptime sampling = test_case.sampling
     # Instantiate data in host memory
     var out_idx_len = 1 if sampling else K
 
@@ -216,8 +216,8 @@ fn bench_topk_multi_rank[
         ceildiv(input_shape.flattened_length(), block_size), 8
     ) if not test_case.num_blocks_per_input else test_case.num_blocks_per_input
 
-    alias largest = test_case.largest
-    alias sampling = test_case.sampling
+    comptime largest = test_case.largest
+    comptime sampling = test_case.sampling
     # Instantiate data in host memory
     var out_idx_len = 1 if sampling else K
     var out_vals_shape = input_shape
@@ -354,8 +354,8 @@ fn bench_topk_multi_rank[
 fn fill_random[
     rank: Int, dtype: DType
 ](mut buffer: NDBuffer[mut=True, dtype, rank]):
-    alias min_val = -1e9
-    alias max_val = 1e9
+    comptime min_val = -1e9
+    comptime max_val = 1e9
     var total_elements = buffer.num_elements()
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
@@ -394,8 +394,8 @@ fn fill_buffer[
 struct TestCase[_sampling: Bool, _largest: Bool = True](
     ImplicitlyCopyable, Movable
 ):
-    alias sampling = Self._sampling
-    alias largest = Self._largest
+    comptime sampling = Self._sampling
+    comptime largest = Self._largest
     var N: Int
     var K: Int
     var block_size: Int
@@ -411,11 +411,11 @@ fn main() raises:
     var num_blocks_per_input = arg_parse("num_blocks_per_input", 0)
     var fill_fn_name = arg_parse("fill_fn_name", "fill_random")
 
-    alias dtype = env_get_dtype["dtype", DType.float32]()
-    alias rank = env_get_int["rank", 2]()
-    alias out_idx_type = env_get_dtype["out_idx_type", DType.int]()
-    alias sampling = env_get_bool["sampling", False]()
-    alias largest = env_get_bool["largest", True]()
+    comptime dtype = env_get_dtype["dtype", DType.float32]()
+    comptime rank = env_get_int["rank", 2]()
+    comptime out_idx_type = env_get_dtype["out_idx_type", DType.int]()
+    comptime sampling = env_get_bool["sampling", False]()
+    comptime largest = env_get_bool["largest", True]()
 
     var m = Bench()
     with DeviceContext() as ctx:

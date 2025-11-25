@@ -33,10 +33,10 @@ from nn.conv_utils import (
 
 from utils.index import Index, IndexList
 
-alias input_type = DType.uint8
-alias filter_type = DType.int8
-alias output_type = DType.int32
-alias simd_size: Int = simd_width_of[output_type]()
+comptime input_type = DType.uint8
+comptime filter_type = DType.int8
+comptime output_type = DType.int32
+comptime simd_size: Int = simd_width_of[output_type]()
 
 
 # CHECK-LABEL: test_direct_conv
@@ -91,8 +91,8 @@ fn test[
     rand[filter_type](filter_ptr, R * S * C * F)
 
     # Find the tile size used in packing.
-    alias micro_kernel_height = get_direct_conv_micro_kernel_height()
-    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+    comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
+    comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
 
     var num_threads = num_physical_cores()
     var num_tasks = get_conv_num_tasks(num_threads, conv_shape)
@@ -101,14 +101,14 @@ fn test[
     ](num_tasks, conv_shape)
 
     # Rounded C and F size for pre-packed filter.
-    alias micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
+    comptime micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
     var packed_filter_ptr = UnsafePointer[Scalar[filter_type]].alloc(
         R * S * C * rounded_F
     )
 
-    alias layout_4d = Layout.row_major[4]()
-    alias layout_5d = Layout.row_major[5]()
+    comptime layout_4d = Layout.row_major[4]()
+    comptime layout_5d = Layout.row_major[5]()
     var input = LayoutTensor[input_type, layout_4d](
         input_ptr, RuntimeLayout[layout_4d].row_major(Index(N, H, W, C))
     )
@@ -157,7 +157,7 @@ fn test[
     )
 
     # Test direct conv
-    alias conv_attr = ConvInfoStatic[2]()
+    comptime conv_attr = ConvInfoStatic[2]()
 
     @parameter
     if filter_packed:

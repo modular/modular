@@ -417,12 +417,12 @@ struct Q4sym[
 
 
 struct block_QK_K:
-    alias quantized_k = 256
+    comptime quantized_k = 256
 
 
 struct block_Q4_K:
-    alias group_size = 32
-    alias group_count = block_QK_K.quantized_k // Self.group_size
+    comptime group_size = 32
+    comptime group_count = block_QK_K.quantized_k // Self.group_size
 
     var base_scale: Float16
     var base_min: Float16
@@ -463,11 +463,11 @@ fn q4_k_dequantize_impl(
         mut=True, DType.float32, address_space = AddressSpace.GENERIC, **_
     ],
 ):
-    alias group_nelems = block_Q4_K.group_size
+    comptime group_nelems = block_Q4_K.group_size
     # 2 elements per byte.
-    alias group_nbytes = group_nelems // 2
-    alias block_nelems = block_QK_K.quantized_k
-    alias block_nbytes = size_of[block_Q4_K]()
+    comptime group_nbytes = group_nelems // 2
+    comptime block_nelems = block_QK_K.quantized_k
+    comptime block_nbytes = size_of[block_Q4_K]()
 
     var num_blocks = input_tensor.size() // block_nbytes
     var input_q4_k_ptr = input_tensor.ptr.bitcast[block_Q4_K]()
@@ -529,8 +529,8 @@ fn q4_k_dequantize_impl(
 
 
 struct block_Q6_K:
-    alias group_size = 16
-    alias group_count = block_QK_K.quantized_k // Self.group_size
+    comptime group_size = 16
+    comptime group_count = block_QK_K.quantized_k // Self.group_size
 
     # Low 4 bits.
     var q_bits_lo: InlineArray[UInt8, block_QK_K.quantized_k // 2]
@@ -547,9 +547,9 @@ fn q6_k_dequantize_impl(
     output_tensor: LayoutTensor[mut=True, DType.float32, **_],
     output_shape: IndexList[output_tensor.rank],
 ):
-    alias group_nelems = block_Q6_K.group_size
-    alias block_nelems = block_QK_K.quantized_k
-    alias block_nbytes = size_of[block_Q6_K]()
+    comptime group_nelems = block_Q6_K.group_size
+    comptime block_nelems = block_QK_K.quantized_k
+    comptime block_nbytes = size_of[block_Q6_K]()
 
     var num_blocks = (output_shape[0] * output_shape[1]) // block_nelems
     var input_q6_k_ptr = input_tensor.ptr.bitcast[block_Q6_K]()

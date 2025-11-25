@@ -89,14 +89,9 @@ class DecodeScheduler(Scheduler):
         self.prefill_reqs: dict[RequestID, TextContext] = {}
         self.inflight_transfers: dict[RequestID, TransferReqData] = {}
 
-        # Create Transfer Engine
-        if self.paged_manager.num_replicas > 1:
-            raise ValueError(
-                "DecodeScheduler does not support data parallelism"
-            )
         self.transfer_engine = KVTransferEngine(
             name=f"decode_agent_{uuid.uuid4()}",
-            tensors=self.paged_manager._replica_managers[0].device_tensors,
+            tensors=self.paged_manager.device_tensors,
             total_num_pages=self.paged_manager.total_num_pages,
         )
 
@@ -153,12 +148,15 @@ class DecodeScheduler(Scheduler):
         request_id: RequestID,
         data: TextContext,
         dst_idxs: list[int],
+        dst_replica_idx: int,
     ) -> None:
         """Pushes a request to the prefill socket.
 
         Args:
             request_id: The ID of the request to send
             data: The context containing the request data
+            dst_idxs: The destination block indices for the request
+            replica_idx: The replica the request is on for Decode
 
         Raises:
             zmq.ZMQError: If there is an error sending on the socket
@@ -185,7 +183,8 @@ class DecodeScheduler(Scheduler):
                 id=request_id,
                 context=data,
                 transfer_engine_name=self.transfer_engine.name,
-                block_ids=dst_idxs,
+                dst_block_ids=dst_idxs,
+                dst_replica_idx=dst_replica_idx,
             ),
             data.target_endpoint,
         )
@@ -222,7 +221,8 @@ class DecodeScheduler(Scheduler):
 
             # Claim the slot with the paged manager
             if not self.paged_manager.contains(req_id):
-                self.paged_manager.claim(req_id)
+                replica_idx = self.batch_constructor.get_next_replica_idx()
+                self.paged_manager.claim(req_id, replica_idx=replica_idx)
 
             # Allocate enough memory needed to run the request for one step.
             # The blocks allocated here will be written via a KVCache transfer
@@ -237,9 +237,12 @@ class DecodeScheduler(Scheduler):
                 break
 
             # Send to the Prefill Node
+            dst_replica_idx = self.paged_manager.get_replica(req_id)
             dst_idxs = self.paged_manager.get_req_blocks(req_id)
             self.prefill_reqs[req_id] = context
-            self.send_prefill_request(req_id, context, dst_idxs)
+            self.send_prefill_request(
+                req_id, context, dst_idxs, dst_replica_idx
+            )
 
     def _handle_cancelled_requests(self) -> None:
         for req_id in get_cancelled_reqs(self.cancel_queue):
@@ -297,7 +300,8 @@ class DecodeScheduler(Scheduler):
 
             # Remove from pending prefill requests and add to TG requests.
             context = self.prefill_reqs.pop(request_id)
-            self.batch_constructor.enqueue_new_request(context)
+            dst_replica_idx = self.paged_manager.get_replica(request_id)
+            self.batch_constructor.enqueue_new_request(context, dst_replica_idx)
 
         # Manage for cancelled requests
         self._handle_cancelled_requests()

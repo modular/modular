@@ -245,10 +245,9 @@ str_ptr[] += " pointers" # Works now
 
 ### Destroying or removing values
 
-The
-[`take_pointee()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#take_pointee)
-method moves the pointee from the memory location pointed to by `ptr`. This is
-a consuming move—it invokes `__moveinit__()` on the destination value. It leaves
+The [`take_pointee()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#take_pointee)
+method moves a pointee from the memory location pointed to by `ptr`. This is
+a consuming move. It invokes `__moveinit__()` on the destination value. It leaves
 the memory location uninitialized.
 
 The [`destroy_pointee()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#destroy_pointee)
@@ -259,14 +258,18 @@ Both `take_pointee()` and `destroy_pointee()` require that the pointer is
 non-null, and the memory location contains a valid, initialized value of the
 pointee's type; otherwise the function results in undefined behavior.
 
-The [`move_pointee_into(self, dst)`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#move_pointee_into)
-method moves the pointee from one pointer location to another. Both pointers
-must be non-null. The source location must contain a valid, initialized value of
-the pointee's type, and is left uninitialized after the call. The destination
-location is assumed to be uninitialized—if it contains a valid value, that
-value's destructor is not run. The value from the source location is moved to
-the destination location as a consuming move. This function also has undefined
-behavior if any of its prerequisites is not met.
+Calling [`init_pointee_move_from(self, src)`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer/#init_pointee_move_from)
+moves the value pointed to by `src` into the memory location pointed to by `self`.
+After this operation, ownership of that value transfers from `src` to `self`
+and the memory at `src` is uninitialized: 
+do not read from it, and do not invoke destructors on it.
+To make the memory valid again, initialize it with a new value using 
+one of the `init_pointee_*()` operations.
+
+:::note
+Mojo assumes the destination memory is uninitialized.
+It does not destroy existing contents before writing the value from `src`.
+:::
 
 ### Freeing memory
 

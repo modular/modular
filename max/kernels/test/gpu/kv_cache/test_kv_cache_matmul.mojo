@@ -28,11 +28,11 @@ from testing import assert_almost_equal
 
 from utils import IndexList
 
-alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
-alias replit_num_q_heads = 24
+comptime kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
+comptime replit_num_q_heads = 24
 
-alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
-alias llama_num_q_heads = 32
+comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
+comptime llama_num_q_heads = 32
 
 
 def execute_fused_qkv_matmul[
@@ -46,11 +46,13 @@ def execute_fused_qkv_matmul[
     layer_idx: Int,
     ctx: DeviceContext,
 ):
-    alias hidden_size = num_q_heads * Int(kv_params.head_size)
-    alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
-    alias fused_hidden_size = (2 * Int(kv_hidden_size)) + hidden_size
-    alias num_blocks = 32
-    alias CollectionType = ContinuousBatchingKVCacheCollection[dtype, kv_params]
+    comptime hidden_size = num_q_heads * Int(kv_params.head_size)
+    comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
+    comptime fused_hidden_size = (2 * Int(kv_hidden_size)) + hidden_size
+    comptime num_blocks = 32
+    comptime CollectionType = ContinuousBatchingKVCacheCollection[
+        dtype, kv_params
+    ]
 
     debug_assert(
         batch_size < num_blocks,
@@ -334,11 +336,11 @@ def execute_fused_qkv_matmul[
 
 
 def execute_fused_matmul_suite(ctx: DeviceContext):
-    alias dtypes = (DType.float32, DType.bfloat16)
+    comptime dtypes = (DType.float32, DType.bfloat16)
 
     @parameter
     for dtype_idx in range(2):
-        alias dtype = dtypes[dtype_idx]
+        comptime dtype = dtypes[dtype_idx]
         for bs in [1, 16]:
             ce_cache_sizes = List[Int]()
             tg_cache_sizes = List[Int]()

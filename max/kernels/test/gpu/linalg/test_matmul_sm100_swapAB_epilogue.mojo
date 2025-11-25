@@ -99,11 +99,11 @@ def test_matmul_sm100_epilogue[
         )
     )
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_c_shape = DimList(m.dim, n.dim)
     var dynamic_a_shape = DimList(m.value, k.value)
     var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
         k.value, n.value
@@ -152,7 +152,7 @@ def test_matmul_sm100_epilogue[
     random(a_host.tensor)
     random(b_host.tensor)
 
-    var scales = List[Int32](-2, -1, 0, 1, 2)
+    var scales: List[Int32] = [-2, -1, 0, 1, 2]
 
     for i in range(M):
         for j in range(N):
@@ -165,7 +165,7 @@ def test_matmul_sm100_epilogue[
     ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
     ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
 
-    alias matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+    comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         cluster_shape=Index(
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
@@ -175,7 +175,7 @@ def test_matmul_sm100_epilogue[
         k_group_size=k_group_size,
     )
 
-    alias optional_lambda_fn = OptionalReg[elementwise_compute_lambda_type](
+    comptime optional_lambda_fn = OptionalReg[elementwise_compute_lambda_type](
         test_lambda_add_coords_prod
     ) if test_lambda_fn else None
 
@@ -195,7 +195,7 @@ def test_matmul_sm100_epilogue[
         ](c_dev, a_dev, b_dev, ctx)
 
     if is_benchmark:
-        alias nrun = 50
+        comptime nrun = 50
 
         # Warmup
         kernel_launch(ctx)
@@ -258,7 +258,7 @@ def test_matmul_sm100_epilogue[
                         c_host_ref.tensor[Index(i, j)],
                     )
 
-        alias rtol = 1e-2
+        comptime rtol = 1e-2
         assert_almost_equal(
             c_host.tensor,
             c_host_ref.tensor,
@@ -279,9 +279,9 @@ def test_matmul_sm100_epilogue[
 
 
 def main():
-    alias dtype = DType.bfloat16
-    alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[dtype]())
-    alias MMA_K = 16
+    comptime dtype = DType.bfloat16
+    comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[dtype]())
+    comptime MMA_K = 16
     var is_bench = is_benchmark()
 
     with DeviceContext() as ctx:
@@ -294,10 +294,10 @@ def main():
 
                 @parameter
                 for mma_n_scale in range(1, 17):
-                    alias block_tile_shape = Index(
+                    comptime block_tile_shape = Index(
                         64 * mma_m_scale, 8 * mma_n_scale, BK
                     )
-                    alias umma_shape = Index(
+                    comptime umma_shape = Index(
                         128 * mma_m_scale, 16 * mma_n_scale, MMA_K
                     )
 
@@ -347,8 +347,8 @@ def main():
 
                 @parameter
                 for mma_n in [8, 16, 32, 40, 48, 64, 88, 104, 128]:
-                    alias block_tile_shape = Index(mma_m, mma_n, BK)
-                    alias umma_shape = Index(mma_m, mma_n, MMA_K)
+                    comptime block_tile_shape = Index(mma_m, mma_n, BK)
+                    comptime umma_shape = Index(mma_m, mma_n, MMA_K)
 
                     test_matmul_sm100_epilogue[
                         dtype,

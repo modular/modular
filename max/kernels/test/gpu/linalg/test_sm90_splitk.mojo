@@ -50,18 +50,18 @@ fn test_warp_specialize_gemm_with_multicasting[
     var N = n.value
     var K = k.value
 
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
 
-    alias CLUSTER_N = cluster_shape[0]
-    alias CLUSTER_M = cluster_shape[1]
+    comptime CLUSTER_N = cluster_shape[0]
+    comptime CLUSTER_M = cluster_shape[1]
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_c_shape = DimList(m.dim, n.dim)
     var dynamic_a_shape = DimList(m.value, k.value)
     var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
         k.value, n.value
@@ -101,9 +101,9 @@ fn test_warp_specialize_gemm_with_multicasting[
     ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
     ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
 
-    alias num_consumer: Int = 1 if BM == 64 else 2
+    comptime num_consumer: Int = 1 if BM == 64 else 2
 
-    alias wgmma_shape = Index(
+    comptime wgmma_shape = Index(
         64, BN, 32
     ) if a_type is DType.float8_e4m3fn else Index(64, BN, 16)
 
@@ -143,7 +143,7 @@ fn test_warp_specialize_gemm_with_multicasting[
         "PARTITIONED" if partitioned_multicast else "BROADCAST",
     )
 
-    alias matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+    comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=block_tile_shape,
         mma_shape=wgmma_shape,
         cluster_shape=cluster_shape,
@@ -194,7 +194,7 @@ fn test_warp_specialize_gemm_with_multicasting[
         c_host.tensor, c_host_ref.tensor, threshold=0.001
     )
 
-    alias rtol = 1e-2
+    comptime rtol = 1e-2
     assert_almost_equal(
         c_host.tensor,
         c_host_ref.tensor,

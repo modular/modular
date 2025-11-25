@@ -51,11 +51,11 @@ fn test[
     var K = k.value
     print(M, "x", N, "x", K)
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_c_shape = DimList(m.dim, n.dim)
 
     var dynamic_a_shape = DimList(m.value, k.value)
     var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
@@ -82,8 +82,8 @@ fn test[
         dynamic_c_shape, ctx=ctx
     )
 
-    alias rand_min = -100
-    alias rand_max = 100
+    comptime rand_min = -100
+    comptime rand_max = 100
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -226,13 +226,13 @@ def test_block_k(ctx: DeviceContext):
     def test_block_k[
         in_type: DType, out_type: DType, block_k: Int
     ](m: ValOrDim, n: ValOrDim, k: ValOrDim):
-        alias config = MatmulConfig[in_type, in_type, out_type, True](
+        comptime config = MatmulConfig[in_type, in_type, out_type, True](
             block_tile_shape=Index(64, 64, block_k),
             warp_tile_shape=Index(32, 32, block_k),
         )
         test[config](ctx, m, n, k)
 
-    alias block_ks = List[Int](32, 64, 128, 256)
+    comptime block_ks: List[Int] = [32, 64, 128, 256]
 
     @parameter
     for i in range(len(block_ks)):
@@ -248,8 +248,8 @@ def test_warp_k_partitions(ctx: DeviceContext):
     def test_warp_k_partitions[
         in_type: DType, out_type: DType
     ](m: ValOrDim, n: ValOrDim, k: ValOrDim):
-        alias config_type = MatmulConfig[in_type, in_type, out_type, True]
-        alias configs = List[config_type](
+        comptime config_type = MatmulConfig[in_type, in_type, out_type, True]
+        comptime configs: List[config_type] = [
             # TEST: num_warps=(1, 4, 1).
             config_type(
                 block_tile_shape=Index(16, 128, 128),
@@ -272,7 +272,7 @@ def test_warp_k_partitions(ctx: DeviceContext):
                 warp_tile_shape=Index(16, 64, 64),
                 num_warp_k_partitions=2,
             ),
-        )
+        ]
 
         @parameter
         for i in range(len(configs)):
@@ -288,15 +288,15 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext):
     # unit test for verifying changes to parts of the matmul dispatcher.
     print("=== test_matmul_config_from_block_shape")
 
-    alias in_type = DType.bfloat16
-    alias out_type = DType.float32
-    alias transpose_b = True
+    comptime in_type = DType.bfloat16
+    comptime out_type = DType.float32
+    comptime transpose_b = True
 
     # The test is intended to cover partial and complete blocks.
     var m = static[1012]()
     var n = static[1016]()
 
-    alias block_sizes = [16, 32, 64, 96, 128, 160, 192, 224, 256]
+    comptime block_sizes = [16, 32, 64, 96, 128, 160, 192, 224, 256]
 
     @parameter
     for block_m in block_sizes:
@@ -306,7 +306,7 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext):
 
             @parameter
             def test_block_shape[block_m: Int, block_n: Int, k: Int]():
-                alias config = _amdgpu_matmul_config_from_block_shape[
+                comptime config = _amdgpu_matmul_config_from_block_shape[
                     out_type, in_type, in_type, transpose_b, k
                 ](Index(block_m, block_n))
                 print(

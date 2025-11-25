@@ -70,7 +70,7 @@ fn test_vectorize_2() raises:
     assert_equal(val_linear_3dt[2], 66)
     assert_equal(val_linear_3dt[3], 67)
 
-    alias layout = Layout(IntTuple(8, 8), IntTuple(8, 1))
+    comptime layout = Layout(IntTuple(8, 8), IntTuple(8, 1))
     var tensor2 = LayoutTensor[
         DType.float32,
         layout,
@@ -95,7 +95,7 @@ fn test_vectorize_2() raises:
     assert_equal(val3[0], 16.0)
     assert_equal(val3[1], 17.0)
 
-    alias layout_unknown = Layout(
+    comptime layout_unknown = Layout(
         IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE), IntTuple(UNKNOWN_VALUE, 1)
     )
     var heap = UnsafePointer[Int32].alloc(64, alignment=8)

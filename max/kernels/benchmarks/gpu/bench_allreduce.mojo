@@ -55,9 +55,9 @@ fn _pretty_print_float(val: Float64) -> String:
 
 
 fn _human_memory(size: Int) -> String:
-    alias KB = 1024
-    alias MB = KB * KB
-    alias GB = MB * KB
+    comptime KB = 1024
+    comptime MB = KB * KB
+    comptime GB = MB * KB
 
     if size >= GB:
         return _pretty_print_float(Float64(size) / GB) + "GB"
@@ -103,7 +103,7 @@ fn bench_reduce[
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var host_buffers = List[UnsafePointer[Scalar[dtype]]](capacity=ngpus)
 
-    alias num_buffers = 1 if use_multimem else ngpus
+    comptime num_buffers = 1 if use_multimem else ngpus
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
@@ -274,7 +274,7 @@ fn bench_reduce[
     @parameter
     for i in range(ngpus):
         for j in range(length):
-            alias accum_t = get_accum_type[dtype]()
+            comptime accum_t = get_accum_type[dtype]()
             var accum = Scalar[accum_t](0)
 
             @parameter
@@ -317,17 +317,17 @@ fn _get_test_str[
 def main():
     var num_bytes = arg_parse("num_bytes", 16 * 1024)
 
-    alias dtype = env_get_dtype["dtype", DType.bfloat16]()
-    alias num_gpus = env_get_int["num_gpus", 2]()
-    alias rank = env_get_int["rank", 1]()
+    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
+    comptime num_gpus = env_get_int["num_gpus", 2]()
+    comptime rank = env_get_int["rank", 1]()
     # Force passing `max_num_blocks` explicitly.
     var max_nb = env_get_int["TUNE_MAX_NUM_BLOCKS", -1]()
     var max_num_blocks: Optional[Int] = Optional[Int]()
     if max_nb > 0:
         max_num_blocks = Optional[Int](max_nb)
-    alias use_multimem = env_get_bool["multimem", False]()
-    alias use_quickreduce = env_get_bool["quickreduce", False]()
-    alias use_vendor_ccl = env_get_bool["use_vendor_ccl", False]()
+    comptime use_multimem = env_get_bool["multimem", False]()
+    comptime use_quickreduce = env_get_bool["quickreduce", False]()
+    comptime use_vendor_ccl = env_get_bool["use_vendor_ccl", False]()
 
     var num_gpus_found = DeviceContext.number_of_devices()
     assert_true(

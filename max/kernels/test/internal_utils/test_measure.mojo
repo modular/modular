@@ -65,9 +65,9 @@ fn test_correlation() raises:
 
 
 fn test_kl_div() raises:
-    alias dtype = DType.float32
-    alias out_dtype = DType.float64
-    alias len = 10
+    comptime dtype = DType.float32
+    comptime out_dtype = DType.float64
+    comptime len = 10
 
     var a = InlineArray[Scalar[dtype], len](uninitialized=True)
     var b = InlineArray[Scalar[dtype], len](uninitialized=True)

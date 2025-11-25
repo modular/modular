@@ -59,7 +59,7 @@ fn run_vector_reduction[
         num_parts,
     )
 
-    alias PN = N * num_parts
+    comptime PN = N * num_parts
     var a_host = UnsafePointer[Scalar[dtype]].alloc(PN)
     var c_host = UnsafePointer[Scalar[dtype]].alloc(N)
     var c_host_ref = UnsafePointer[Scalar[dtype]].alloc(N)
@@ -76,7 +76,7 @@ fn run_vector_reduction[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(c_device, c_host)
 
-    alias kernel = semaphore_vector_reduce[dtype, N, num_parts]
+    comptime kernel = semaphore_vector_reduce[dtype, N, num_parts]
     ctx.enqueue_function_checked[kernel, kernel](
         c_device,
         a_device,
@@ -147,7 +147,7 @@ fn run_matrix_reduction[
         num_parts,
     )
 
-    alias PX = M * N * num_parts
+    comptime PX = M * N * num_parts
     var a_host = UnsafePointer[Scalar[dtype]].alloc(PX)
     var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
     var c_host_ref = UnsafePointer[Scalar[dtype]].alloc(M * N)
@@ -166,7 +166,7 @@ fn run_matrix_reduction[
 
     var block_size = 1024
 
-    alias kernel = semaphore_matrix_reduce[dtype, M, N, num_parts]
+    comptime kernel = semaphore_matrix_reduce[dtype, M, N, num_parts]
     ctx.enqueue_function_checked[kernel, kernel](
         c_device,
         a_device,

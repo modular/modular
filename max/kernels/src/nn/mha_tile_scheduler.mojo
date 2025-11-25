@@ -102,8 +102,9 @@ struct SeqInfo(ImplicitlyCopyable, Movable):
         if not ValidLengthType.is_null:
             # treat valid_lengths as a input_row_offsets
             ptr = rebind[UnsafePointer[UInt32]](valid_length.value())
-            start_of_seq = ptr[Int(batch_idx)]
-            end_of_seq = ptr[Int(batch_idx + 1)]
+            seq = ptr.load[width=2](batch_idx)
+            start_of_seq = warp.broadcast(seq[0])
+            end_of_seq = warp.broadcast(seq[1])
             seq_len = end_of_seq - start_of_seq
             return SeqInfo(seq_len, start_of_seq, work)
         else:
@@ -116,10 +117,10 @@ struct SeqInfo(ImplicitlyCopyable, Movable):
 struct MHASchedulerSynchronization(ImplicitlyCopyable, Movable):
     var _value: Int32
 
-    alias NONE = Self(0)  # use for TMA
-    alias PRODUCER = Self(1)  # use for copy-async
-    alias ALL = Self(2)  # use when all threads are synced
-    alias DEFAULT = Self.PRODUCER  # default is currently copy-async
+    comptime NONE = Self(0)  # use for TMA
+    comptime PRODUCER = Self(1)  # use for copy-async
+    comptime ALL = Self(2)  # use when all threads are synced
+    comptime DEFAULT = Self.PRODUCER  # default is currently copy-async
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -332,8 +333,8 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
 
 @register_passable("trivial")
 trait MHATileScheduler(Copyable, DevicePassable):
-    alias may_advance: Bool
-    alias mha_schedule: MHASchedule
+    comptime may_advance: Bool
+    comptime mha_schedule: MHASchedule
 
     """The MHATileScheduler trait describes a schedule for the persistent kernel.
     """
@@ -395,8 +396,8 @@ trait MHATileScheduler(Copyable, DevicePassable):
 struct MHASchedule(ImplicitlyCopyable, Movable):
     var _value: Int32
 
-    alias DEFAULT = Self(0)
-    alias PROMPT_ROTATE = Self(1)
+    comptime DEFAULT = Self(0)
+    comptime PROMPT_ROTATE = Self(1)
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -417,10 +418,10 @@ struct TransientScheduler[
     tile_shape: UInt32,
     num_heads: UInt32,
 ](Defaultable, ImplicitlyCopyable, MHATileScheduler, Movable):
-    alias may_advance: Bool = False
-    alias mha_schedule: MHASchedule = MHASchedule.DEFAULT
+    comptime may_advance: Bool = False
+    comptime mha_schedule: MHASchedule = MHASchedule.DEFAULT
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -513,10 +514,10 @@ struct TileScheduler[
     num_ctas: UInt32 = H100.sm_count,
     schedule: MHASchedule = MHASchedule.DEFAULT,
 ](Defaultable, ImplicitlyCopyable, MHATileScheduler, Movable):
-    alias may_advance: Bool = True
-    alias mha_schedule: MHASchedule = Self.schedule
+    comptime may_advance: Bool = True
+    comptime mha_schedule: MHASchedule = Self.schedule
 
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -636,8 +637,8 @@ struct QueuedTileScheduler[
     # Linear work tile index i.e. idx-th work among all possible workload.
     var gidx_ptr: UnsafePointer[UInt32, address_space = AddressSpace.GLOBAL]
 
-    alias may_advance: Bool = True
-    alias mha_schedule: MHASchedule = Self.schedule
+    comptime may_advance: Bool = True
+    comptime mha_schedule: MHASchedule = Self.schedule
 
     @always_inline
     fn __init__(
@@ -767,7 +768,7 @@ struct QueuedTileScheduler[
         ](state.idx)
 
     # `trait DevicePassable` implementation
-    alias device_type: AnyType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         """Convert the host type object to a device_type and store it at the

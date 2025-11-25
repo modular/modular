@@ -347,7 +347,7 @@ fn test_copy_to_tile_major_layout():
     # CHECK:     +----+----+----+----+
     # CHECK:  3  |  9 | 11 | 13 | 15 |
     # CHECK:     +----+----+----+----+
-    alias tiled_major_layout = Layout(
+    comptime tiled_major_layout = Layout(
         IntTuple(IntTuple(2, 2), IntTuple(2, 2)),
         IntTuple(IntTuple(1, 8), IntTuple(2, 4)),
     )
@@ -394,7 +394,7 @@ fn test_distribute_tiled_layout():
         DType.float32, Layout(IntTuple(4, 8), IntTuple(8, 1)), MutAnyOrigin
     ].stack_allocation[stack_alignment=16]()
     arange(tensor)
-    alias threads_2x4_layout = Layout(
+    comptime threads_2x4_layout = Layout(
         IntTuple(2, IntTuple(2, 2)), IntTuple(1, IntTuple(2, 4))
     )
     # CHECK: ----fragments-data[ 0 ]----
@@ -441,7 +441,7 @@ fn test_distribute_with_tile_size():
     # TH_1 TH_3
     # TH_4 TH_6
     # TH_5 TH_7
-    alias thread_layout = Layout(
+    comptime thread_layout = Layout(
         IntTuple(IntTuple(2, 2), 2), IntTuple(IntTuple(1, 4), 2)
     )
 
@@ -807,7 +807,7 @@ fn test_distribute_vectorized():
         element_layout = Layout(2),
     ](ptr)
 
-    alias thread_layout = Layout(
+    comptime thread_layout = Layout(
         IntTuple(IntTuple(8, 4), 4), IntTuple(IntTuple(4, 1), 32)
     )
 
@@ -1286,8 +1286,8 @@ fn test_copy_subtiles_scalars_back():
         .fill(-1)
     )
 
-    alias tile_m_size = 4
-    alias tile_n_size = 4
+    comptime tile_m_size = 4
+    comptime tile_n_size = 4
 
     # TODO(#38547) re-enable the checks when the non-deterministic behavior is addressed.
     # CHECK-FIXME: ----tile-data[ 0 , 0 ]----
@@ -1495,14 +1495,14 @@ fn test_slice_with_offsets():
 fn test_layout_tensor_iterator():
     print("== test_layout_tensor_iterator")
 
-    alias size = 64
-    alias type = DType.float32
+    comptime size = 64
+    comptime type = DType.float32
 
     var arr = InlineArray[Scalar[type], size](uninitialized=True)
     for i in range(size):
         arr[i] = i
 
-    alias layout_2x2_8x1 = Layout(IntTuple(2, 2), IntTuple(8, 1))
+    comptime layout_2x2_8x1 = Layout(IntTuple(2, 2), IntTuple(8, 1))
 
     # Non circular iterator.
     # CHECK: 0.0 1.0
@@ -1593,11 +1593,11 @@ fn test_layout_tensor_iterator():
 # CHECK-LABEL: test_nested_layout_tensor_iterator
 fn test_nested_layout_tensor_iterator():
     print("== test_nested_layout_tensor_iterator")
-    alias N = 128
-    alias K = 8
+    comptime N = 128
+    comptime K = 8
 
-    alias size = N * K
-    alias type = DType.float32
+    comptime size = N * K
+    comptime type = DType.float32
 
     var arr = InlineArray[Scalar[type], size](uninitialized=True)
     for i in range(size):
@@ -1636,7 +1636,7 @@ fn test_nested_layout_tensor_iterator():
     # with shape = IntTuple(IntTuple(64, TN),IntTuple(2, TK))
     # and stride = IntTuple(IntTuple(2, TK * 128),IntTuple(1, 128))
 
-    alias nested_layout = Layout(
+    comptime nested_layout = Layout(
         IntTuple(
             IntTuple(64, N // 64),
             IntTuple(2, K // 2),
@@ -1985,9 +1985,9 @@ fn test_vectorized_tile() raises:
 
 
 fn test_nested_tile() raises:
-    alias base_layout = Layout.row_major(8, 8)
-    alias tiler_layout = Layout.row_major(2, 2)
-    alias layout = blocked_product(base_layout, tiler_layout)
+    comptime base_layout = Layout.row_major(8, 8)
+    comptime tiler_layout = Layout.row_major(2, 2)
+    comptime layout = blocked_product(base_layout, tiler_layout)
     var managed_tensor_a = ManagedLayoutTensor[DType.float32, layout]()
     arange(managed_tensor_a.tensor())
     var tensor_a = managed_tensor_a.tensor()
@@ -1998,11 +1998,11 @@ fn test_nested_tile() raises:
 
 
 fn test_tensor_size() raises:
-    alias layout = Layout.row_major(4, 4)
+    comptime layout = Layout.row_major(4, 4)
     var stack = InlineArray[UInt32, layout.size()](uninitialized=True)
     var tensor = LayoutTensor[DType.uint32, layout](stack)
     assert_equal(tensor.size(), 16)
-    alias layout2 = Layout.row_major(4, UNKNOWN_VALUE)
+    comptime layout2 = Layout.row_major(4, UNKNOWN_VALUE)
     var runtime_tensor = LayoutTensor[DType.uint32, layout2](
         stack,
         RuntimeLayout[layout2].row_major(IndexList[2](4, 4)),
@@ -2012,7 +2012,7 @@ fn test_tensor_size() raises:
 
 # This test doesn't need to run, it just needs to compile
 fn test_merge():
-    alias layout = Layout.row_major(4, 4)
+    comptime layout = Layout.row_major(4, 4)
     var stack = InlineArray[UInt32, layout.size()](uninitialized=True)
     var tensor = LayoutTensor[DType.uint32, layout](stack)
     var stack2 = InlineArray[UInt32, layout.size()](uninitialized=True)

@@ -41,7 +41,7 @@ fn argmaxmin_gpu[
     constrained[
         input.rank == output.rank, "Input and output rank must be the same"
     ]()
-    alias K = 1
+    comptime K = 1
 
     var out_vals_shape = input.runtime_layout.shape.value.canonicalize()
     out_vals_shape[input.rank - 1] = K

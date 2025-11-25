@@ -66,9 +66,9 @@ struct ProducerTiles[
     when entering and exiting the context.
     """
 
-    alias ATile = Self.ring_buffer_type.ATile
-    alias BTile = Self.ring_buffer_type.BTile
-    alias RingBufferPtrType = Pointer[Self.ring_buffer_type, Self.origin]
+    comptime ATile = Self.ring_buffer_type.ATile
+    comptime BTile = Self.ring_buffer_type.BTile
+    comptime RingBufferPtrType = Pointer[Self.ring_buffer_type, Self.origin]
 
     var ring_buffer_ptr: Self.RingBufferPtrType
 
@@ -103,9 +103,9 @@ struct ConsumerTiles[
     the slot when exiting the context.
     """
 
-    alias ATile = Self.ring_buffer_type.ATile
-    alias BTile = Self.ring_buffer_type.BTile
-    alias RingBufferPtrType = Pointer[Self.ring_buffer_type, Self.origin]
+    comptime ATile = Self.ring_buffer_type.ATile
+    comptime BTile = Self.ring_buffer_type.BTile
+    comptime RingBufferPtrType = Pointer[Self.ring_buffer_type, Self.origin]
 
     var ring_buffer_ptr: Self.RingBufferPtrType
 
@@ -140,9 +140,9 @@ struct RingBufferConsumer[
     the initial barrier arrival when entering the consumer context.
     """
 
-    alias ATile = Self.ring_buffer_type.ATile
-    alias BTile = Self.ring_buffer_type.BTile
-    alias RingBufferPtrType = Pointer[Self.ring_buffer_type, Self.origin]
+    comptime ATile = Self.ring_buffer_type.ATile
+    comptime BTile = Self.ring_buffer_type.BTile
+    comptime RingBufferPtrType = Pointer[Self.ring_buffer_type, Self.origin]
 
     var ring_buffer_ptr: Self.RingBufferPtrType
 
@@ -173,9 +173,9 @@ struct RingBufferProducer[
     the producer to wait for empty slots and fill them with new tiles.
     """
 
-    alias ATile = Self.ring_buffer_type.ATile
-    alias BTile = Self.ring_buffer_type.BTile
-    alias RingBufferPtrType = Pointer[Self.ring_buffer_type, Self.origin]
+    comptime ATile = Self.ring_buffer_type.ATile
+    comptime BTile = Self.ring_buffer_type.BTile
+    comptime RingBufferPtrType = Pointer[Self.ring_buffer_type, Self.origin]
 
     var ring_buffer_ptr: Self.RingBufferPtrType
 
@@ -224,22 +224,22 @@ struct RingBuffer[
         tma_transfer: Whether the RingBuffer is used for TMA transfers (default: True)
     """
 
-    alias SMM = NVIDIASharedMemoryManager[]
+    comptime SMM = NVIDIASharedMemoryManager[]
 
     # Tile iterator types for managing shared memory tiles
-    alias ATileArray = Self.SMM.TileArray[
+    comptime ATileArray = Self.SMM.TileArray[
         Self.a_type, Self.a_tile_layout, Self.num_pipeline_stages
     ]
-    alias BTileArray = Self.SMM.TileArray[
+    comptime BTileArray = Self.SMM.TileArray[
         Self.b_type, Self.b_tile_layout, Self.num_pipeline_stages
     ]
 
     # Pipeline barrier type for managing pipeline synchronization
-    alias PipelineBarrier = PipelineBarrier[Self.num_pipeline_stages]
+    comptime PipelineBarrier = PipelineBarrier[Self.num_pipeline_stages]
 
     # Actual tile tensor types that hold the data
-    alias ATile = Self.ATileArray.Tile
-    alias BTile = Self.BTileArray.Tile
+    comptime ATile = Self.ATileArray.Tile
+    comptime BTile = Self.BTileArray.Tile
 
     # Barriers for synchronization:
     # - full_mbar[i]: Signaled by producer when slot i contains data
@@ -329,7 +329,7 @@ struct RingBuffer[
         self.empty_mbar[Int(write_idx)][].wait(self.write_state.phase())
         if Self.tma_transfer:
             # For TMA transfers, set expected bytes for the barrier
-            alias expected_bytes = Self.get_expected_bytes()
+            comptime expected_bytes = Self.get_expected_bytes()
             self.full_mbar[Int(write_idx)][].expect_bytes(expected_bytes)
         return write_idx
 

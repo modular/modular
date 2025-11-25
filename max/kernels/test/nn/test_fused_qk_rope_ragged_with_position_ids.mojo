@@ -65,15 +65,15 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
         > (seq_len + Int(_max[DType.uint32, items=start_positions]())),
         "KV cache size smaller than sum of sequence length and start pos",
     ]()
-    alias num_heads = 2
-    alias dim = 16
-    alias head_dim = dim // num_heads
+    comptime num_heads = 2
+    comptime dim = 16
+    comptime head_dim = dim // num_heads
 
     # Create aliases for KV cache parameters.
-    alias kv_params = KVCacheStaticParams(
+    comptime kv_params = KVCacheStaticParams(
         num_heads=num_heads, head_size=head_dim
     )
-    alias block_shape = IndexList[6](
+    comptime block_shape = IndexList[6](
         batch_size, 2, num_layers, max_seq_len, num_heads, head_dim
     )
 

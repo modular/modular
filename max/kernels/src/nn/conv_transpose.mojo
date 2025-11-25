@@ -481,17 +481,17 @@ struct ConvTransposedPacked[
         ],
         conv_shape: ConvShape[Self.input_layout.rank() - 2],
     ) raises:
-        alias simd_size = simd_width_of[Self.output_type]()
-        alias micro_kernel_shape = get_micro_kernel_shape[
+        comptime simd_size = simd_width_of[Self.output_type]()
+        comptime micro_kernel_shape = get_micro_kernel_shape[
             Self.input_layout.rank() - 2,
             Int(Self.output_layout.shape[Self.output_layout.rank() - 2]),  # WO
             Int(Self.output_layout.shape[Self.output_layout.rank() - 1]),  # F
             Self.conv_attr,
             simd_size,
         ]()
-        alias micro_kernel_height = micro_kernel_shape[0]
-        alias micro_kernel_width = micro_kernel_shape[1]
-        alias micro_kernel_f_size = micro_kernel_width * simd_size
+        comptime micro_kernel_height = micro_kernel_shape[0]
+        comptime micro_kernel_width = micro_kernel_shape[1]
+        comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
         var cf_tile_size = get_conv_tile_shape[Self.filter_type](
             conv_shape.c,
@@ -558,7 +558,7 @@ struct ConvTransposedPacked[
     @always_inline
     fn _zero_output(self, n: Int, g: Int):
         """Zero the output buffer."""
-        alias simd_size = simd_width_of[Self.output_type]()
+        comptime simd_size = simd_width_of[Self.output_type]()
 
         var f_offset = (
             g * self.conv_shape.f_per_group() + self.partition.f_offset
@@ -632,10 +632,10 @@ struct ConvTransposedPacked[
         last_c_tile: Bool
     ](self, n: Int, g: Int, c_tile_offset: Int, c_tile_size: Int):
         """Loop over F tiles."""
-        alias micro_kernel_width = get_direct_conv_micro_kernel_width()
-        alias micro_kernel_height = get_direct_conv_micro_kernel_height()
-        alias simd_size = simd_width_of[Self.output_type]()
-        alias micro_kernel_f_size = micro_kernel_width * simd_size
+        comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
+        comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
+        comptime simd_size = simd_width_of[Self.output_type]()
+        comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
         @always_inline
         @parameter
@@ -700,8 +700,8 @@ struct ConvTransposedPacked[
         c_tile_offset: Int,
         c_tile_size: Int,
     ):
-        alias simd_size = simd_width_of[Self.output_type]()
-        alias micro_kernel_f_size = micro_kernel_width * simd_size
+        comptime simd_size = simd_width_of[Self.output_type]()
+        comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
         # Current group index.
         var g = self.conv_shape.f_to_group(f_tile_offset)
@@ -814,7 +814,7 @@ struct ConvTransposedPacked[
         left_pad_impact_end: Int,
         right_pad_impact_start: Int,
     ):
-        alias simd_size = simd_width_of[Self.output_type]()
+        comptime simd_size = simd_width_of[Self.output_type]()
 
         for h in range(
             self.partition.ho_or_howo_offset,
@@ -894,7 +894,7 @@ struct ConvTransposedPacked[
         left_pad_impact_end: Int,
         right_pad_impact_start: Int,
     ):
-        alias simd_size = simd_width_of[Self.output_type]()
+        comptime simd_size = simd_width_of[Self.output_type]()
 
         for d in range(self.conv_shape.d()):
             var do = d * self.conv_shape.stride[0] - self.conv_shape.pad_d[0]
@@ -962,7 +962,7 @@ struct ConvTransposedPacked[
 
     @always_inline
     fn apply_epilogue(self, n: Int, g: Int):
-        alias simd_size = simd_width_of[Self.output_type]()
+        comptime simd_size = simd_width_of[Self.output_type]()
 
         var f_offset = (
             g * self.conv_shape.f_per_group() + self.partition.f_offset
@@ -974,7 +974,7 @@ struct ConvTransposedPacked[
 
         @parameter
         if Self.elementwise_epilogue:
-            alias epilogue = Self.elementwise_epilogue.value()
+            comptime epilogue = Self.elementwise_epilogue.value()
 
             var output_ptr = output_base
 
@@ -1026,7 +1026,7 @@ fn update_w_tile_2d[
     n: Int,
     hw: IndexList[2],
 ):
-    alias micro_kernel_f_size = micro_kernel_width * simd_size
+    comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
     # Output stride to neighbor point in the filter window (R, S).
     # fmt: off
@@ -1115,7 +1115,7 @@ fn update_w_tile_3d[
     n: Int,
     hw: IndexList[3],
 ):
-    alias micro_kernel_f_size = micro_kernel_width * simd_size
+    comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
     # Output stride to neighbor point in the filter window (R, S).
     # fmt: off
@@ -1263,9 +1263,9 @@ fn pack_filter_shape(
         The output shape.
     """
 
-    alias simd_size = simd_width_of[filter.dtype]()
-    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
-    alias micro_kernel_f_size = micro_kernel_width * simd_size
+    comptime simd_size = simd_width_of[filter.dtype]()
+    comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
+    comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
     # Filter is in RSFC layout. The 2nd last dim is F.
     var F = filter.dim[filter.rank - 2]()
@@ -1298,9 +1298,9 @@ fn pack_filter(
 ):
     """This packs the filter form RSFC to FRSCf."""
 
-    alias simd_size = simd_width_of[filter.dtype]()
-    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
-    alias micro_kernel_f_size = micro_kernel_width * simd_size
+    comptime simd_size = simd_width_of[filter.dtype]()
+    comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
+    comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
     # Product of filter window dims.
     var window_dims_prod = 1
@@ -1461,7 +1461,7 @@ fn conv_transposed_cpu[
         "conv_transposed",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
-        alias packed_filter_rank = filter.rank if filter_packed else filter.rank + 1
+        comptime packed_filter_rank = filter.rank if filter_packed else filter.rank + 1
 
         var packed_filter_ptr = filter.ptr
         var packed_filter_shape: IndexList[packed_filter_rank]
@@ -1496,7 +1496,7 @@ fn conv_transposed_cpu[
         if not filter_packed:
             pack_filter(filter, packed_filter, 1)
 
-        alias conv_attr = ConvInfoStatic[input.rank - 2]()
+        comptime conv_attr = ConvInfoStatic[input.rank - 2]()
 
         var conv_shape = get_conv_shape[input_layout.rank() - 2, True](
             output,
@@ -1516,8 +1516,8 @@ fn conv_transposed_cpu[
         fn elementwise_epilogue[
             rank: Int
         ](coords: IndexList[rank], f_size: Int):
-            alias simd_size = simd_width_of[output_type]()
-            alias input_rank = input.rank
+            comptime simd_size = simd_width_of[output_type]()
+            comptime input_rank = input.rank
 
             @always_inline
             fn body[width: Int](idx: Int) unified {mut}:
@@ -1586,7 +1586,7 @@ fn conv_transposed_gpu[
 ) raises:
     @parameter
     if elementwise_epilogue:
-        alias epilogue = elementwise_epilogue.value()
+        comptime epilogue = elementwise_epilogue.value()
 
         var output_tmp_data = ctx.enqueue_create_buffer[output_type](
             output.size()
@@ -1611,7 +1611,7 @@ fn conv_transposed_gpu[
         fn epilogue_wrapper[
             _width: Int, _rank: Int, alignment: Int = 1
         ](coords: IndexList[_rank]):
-            alias align = align_of[SIMD[output_type, _width]]()
+            comptime align = align_of[SIMD[output_type, _width]]()
             var idx = output_tmp.runtime_layout(
                 RuntimeTuple[fill_like(output_tmp.layout.shape, UNKNOWN_VALUE)](
                     coords

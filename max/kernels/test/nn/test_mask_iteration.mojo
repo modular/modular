@@ -80,8 +80,8 @@ fn test_mask[
     MaskType: MHAMask, //, BM: Int, BN: Int, page_size: Int = 1
 ](mask: MaskType, q_row: UInt32, end: UInt32) raises:
     var kv_row: UInt32 = mask.start_column[BM, BN, page_size](q_row)
-    alias mask_sets = MaskType.nonfull_sets[BM, BN]()
-    alias num_sets = len(mask_sets)
+    comptime mask_sets = MaskType.nonfull_sets[BM, BN]()
+    comptime num_sets = len(mask_sets)
     mask_ends = mask.masked_set_ends[BM=BM, BN=BN, page_size=page_size](
         q_row, end
     )
@@ -143,12 +143,12 @@ fn test_mask[
 fn main() raises:
     # alias BM = 2
     # alias BN = 2
-    alias BM = 128
-    alias BN = 128
-    alias causal_mask = CausalMask()
-    alias sliding_mask16 = SlidingWindowCausalMask[16]()
-    alias sliding_mask1024 = SlidingWindowCausalMask[1024]()
-    alias chunked_causal_mask = ChunkedCausalMask[256]()
+    comptime BM = 128
+    comptime BN = 128
+    comptime causal_mask = CausalMask()
+    comptime sliding_mask16 = SlidingWindowCausalMask[16]()
+    comptime sliding_mask1024 = SlidingWindowCausalMask[1024]()
+    comptime chunked_causal_mask = ChunkedCausalMask[256]()
     for num_keys in range(1, 8193):
         for q_row in range(num_keys):
             test_mask[BM=BM, BN=BN, page_size=1](causal_mask, q_row, num_keys)

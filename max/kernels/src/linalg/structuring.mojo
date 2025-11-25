@@ -153,7 +153,7 @@ struct IteratorScatterGatherAmd[
 
 # Shared Memory and Register tiles type declarations, shared by TileOps and Tile Buffer objects
 
-alias SMemTileType[
+comptime SMemTileType[
     _dtype: DType,
     layout: Layout,
     /,
@@ -176,7 +176,7 @@ alias SMemTileType[
 ]
 """Type alias for shared memory tile tensors."""
 
-alias RegTileType[
+comptime RegTileType[
     _dtype: DType,
     layout: Layout,
     /,
@@ -199,12 +199,12 @@ alias RegTileType[
 ]
 """Type alias for register (local memory) tile tensors."""
 
-alias SMemBarrier = UnsafePointer[
+comptime SMemBarrier = UnsafePointer[
     SharedMemBarrier, address_space = AddressSpace.SHARED
 ]
 """Type alias for shared memory barrier pointer."""
 
-alias PipelineBarrier[num_pipeline_stages: Int] = SMemArrayType[
+comptime PipelineBarrier[num_pipeline_stages: Int] = SMemArrayType[
     SharedMemBarrier, num_pipeline_stages
 ]
 """Type alias for shared memory pipeline barrier array."""
@@ -226,13 +226,13 @@ struct SMemTileArrayType[
         alignment: Memory alignment.
     """
 
-    alias Tile = SMemTileType[
+    comptime Tile = SMemTileType[
         Self.dtype,
         Self.layout,
         alignment = Self.alignment,
     ]
 
-    alias storage_size = eval[Self.layout.size()] * size_of[
+    comptime storage_size = eval[Self.layout.size()] * size_of[
         Self.dtype
     ]() * Self.num_tiles
 
@@ -296,10 +296,10 @@ struct SMemArrayType[type: AnyTrivialRegType, size: Int]:
         size: Number of elements.
     """
 
-    alias ptr_type = UnsafePointer[
+    comptime ptr_type = UnsafePointer[
         Self.type, address_space = AddressSpace.SHARED
     ]
-    alias storage_size = Self.size * size_of[Self.type]()
+    comptime storage_size = Self.size * size_of[Self.type]()
 
     var ptr: Self.ptr_type
 
@@ -349,12 +349,12 @@ struct SMemArrayType[type: AnyTrivialRegType, size: Int]:
         return Self(ptr)
 
 
-alias eval[T: AnyType, //, val: T] = val
+comptime eval[T: AnyType, //, val: T] = val
 """Helper alias to force evaluation of expressions at compile time."""
 
 
 trait SharedMemoryBasePtr:
-    alias alignment: Int
+    comptime alignment: Int
 
     @always_inline
     @staticmethod
@@ -366,7 +366,7 @@ struct NVIDIASharedMemoryBasePtr[
     name: StaticString = "extern_ptr_syml",
     memory_alignment: Int = 8,
 ](SharedMemoryBasePtr):
-    alias alignment: Int = 128
+    comptime alignment: Int = 128
 
     @always_inline
     @staticmethod
@@ -380,15 +380,17 @@ struct NVIDIASharedMemoryBasePtr[
 
 
 struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
-    alias Tile[dtype: DType, layout: Layout] = SMemTileType[
+    comptime Tile[dtype: DType, layout: Layout] = SMemTileType[
         dtype, layout, alignment = Self.SMBP.alignment
     ]
 
-    alias TileArray[
+    comptime TileArray[
         dtype: DType, layout: Layout, num_tiles: Int
     ] = SMemTileArrayType[dtype, layout, num_tiles, Self.SMBP.alignment]
 
-    alias Array[type: AnyTrivialRegType, size: Int] = SMemArrayType[type, size]
+    comptime Array[type: AnyTrivialRegType, size: Int] = SMemArrayType[
+        type, size
+    ]
 
     var base_ptr: UnsafePointer[Int8, address_space = AddressSpace.SHARED]
     var offset: Int
@@ -450,4 +452,6 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
         return T(result)
 
 
-alias NVIDIASharedMemoryManager = SharedMemoryManager[NVIDIASharedMemoryBasePtr]
+comptime NVIDIASharedMemoryManager = SharedMemoryManager[
+    NVIDIASharedMemoryBasePtr
+]

@@ -1029,7 +1029,10 @@ fn _external_call_const[
         memory = __mlir_attr[
             `#llvm.memory_effects<other = none, `,
             `argMem = none, `,
-            `inaccessibleMem = none>`,
+            `inaccessibleMem = none, `,
+            `errnoMem = none, `,
+            `targetMem0 = none, `,
+            `targetMem1 = none>`,
         ],
         _type=return_type,
     ](loaded_pack)

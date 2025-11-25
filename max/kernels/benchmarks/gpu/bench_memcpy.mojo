@@ -35,9 +35,9 @@ fn _pretty_print_float(val: Float64) -> String:
 
 
 fn _human_memory(size: Int) -> String:
-    alias KB = 1024
-    alias MB = KB * KB
-    alias GB = MB * KB
+    comptime KB = 1024
+    comptime MB = KB * KB
+    comptime GB = MB * KB
 
     if size >= GB:
         return _pretty_print_float(Float64(size) / GB) + "GiB"
@@ -56,18 +56,18 @@ struct Config(ImplicitlyCopyable, Movable, Writable):
     var direction: Int
     var pinned_memory: Bool
     # Definitions for direction field.
-    alias DToH = 0
-    alias HToD = 1
-    alias DToD = 2
-    alias P2P = 3
+    comptime DToH = 0
+    comptime HToD = 1
+    comptime DToD = 2
+    comptime P2P = 3
     # Different possible configurations.
-    alias DEVICE_TO_HOST = Self(Self.DToH, False)
-    alias DEVICE_TO_HOST_PINNED = Self(Self.DToH, True)
-    alias HOST_TO_DEVICE = Self(Self.HToD, False)
-    alias HOST_PINNED_TO_DEVICE = Self(Self.HToD, True)
-    alias DEVICE_TO_DEVICE = Self(Self.DToD, False)
-    alias PEER_TO_PEER = Self(Self.P2P, False)
-    alias UNDEFINED = Self(-1, False)
+    comptime DEVICE_TO_HOST = Self(Self.DToH, False)
+    comptime DEVICE_TO_HOST_PINNED = Self(Self.DToH, True)
+    comptime HOST_TO_DEVICE = Self(Self.HToD, False)
+    comptime HOST_PINNED_TO_DEVICE = Self(Self.HToD, True)
+    comptime DEVICE_TO_DEVICE = Self(Self.DToD, False)
+    comptime PEER_TO_PEER = Self(Self.P2P, False)
+    comptime UNDEFINED = Self(-1, False)
 
     @no_inline
     fn __str__(self) -> String:
@@ -127,7 +127,7 @@ fn bench_memcpy(
     config: Config,
     context: DeviceContext,
 ) raises:
-    alias dtype = DType.float32
+    comptime dtype = DType.float32
     length_in_elements = length_in_bytes // size_of[dtype]()
     var mem_host: HostBuffer[dtype] = context.enqueue_create_host_buffer[dtype](
         length_in_elements
@@ -197,7 +197,7 @@ fn bench_p2p(
     ctx1: DeviceContext,
     ctx2: DeviceContext,
 ) raises:
-    alias dtype = DType.float32
+    comptime dtype = DType.float32
     length_in_elements = length_in_bytes // size_of[dtype]()
 
     # Create host buffers for verification

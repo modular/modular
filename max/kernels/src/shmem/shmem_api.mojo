@@ -119,7 +119,7 @@ from ._nvshmem import (
 # Types
 # ===----------------------------------------------------------------------=== #
 
-alias shmem_team_t = c_int
+comptime shmem_team_t = c_int
 
 
 struct SHMEMScope(Equatable, ImplicitlyCopyable, Movable):
@@ -129,11 +129,11 @@ struct SHMEMScope(Equatable, ImplicitlyCopyable, Movable):
 
     var value: StaticString
 
-    alias default = Self("")
+    comptime default = Self("")
     """Execute RMA operation at global scope"""
-    alias block = Self("_block")
+    comptime block = Self("_block")
     """Execute RMA operation at thread block scope (NVIDIA extension)"""
-    alias warp = Self("_warp")
+    comptime warp = Self("_warp")
     """Execute RMA operation at warp scope (NVIDIA extension)"""
 
     fn __init__(out self, value: StaticString):
@@ -147,21 +147,21 @@ struct SHMEMScope(Equatable, ImplicitlyCopyable, Movable):
 # Constants
 # ===----------------------------------------------------------------------=== #
 
-alias SHMEM_TEAM_INVALID: shmem_team_t = NVSHMEM_TEAM_INVALID
-alias SHMEM_TEAM_SHARED: shmem_team_t = NVSHMEM_TEAM_SHARED
-alias SHMEM_TEAM_NODE: shmem_team_t = NVSHMEMX_TEAM_NODE
-alias SHMEM_TEAM_WORLD: shmem_team_t = NVSHMEM_TEAM_WORLD
+comptime SHMEM_TEAM_INVALID: shmem_team_t = NVSHMEM_TEAM_INVALID
+comptime SHMEM_TEAM_SHARED: shmem_team_t = NVSHMEM_TEAM_SHARED
+comptime SHMEM_TEAM_NODE: shmem_team_t = NVSHMEMX_TEAM_NODE
+comptime SHMEM_TEAM_WORLD: shmem_team_t = NVSHMEM_TEAM_WORLD
 
-alias SHMEM_CMP_EQ: c_int = NVSHMEM_CMP_EQ
-alias SHMEM_CMP_NE: c_int = NVSHMEM_CMP_NE
-alias SHMEM_CMP_GT: c_int = NVSHMEM_CMP_GT
-alias SHMEM_CMP_LE: c_int = NVSHMEM_CMP_LE
-alias SHMEM_CMP_LT: c_int = NVSHMEM_CMP_LT
-alias SHMEM_CMP_GE: c_int = NVSHMEM_CMP_GE
-alias SHMEM_CMP_SENTINEL: c_int = NVSHMEM_CMP_SENTINEL
+comptime SHMEM_CMP_EQ: c_int = NVSHMEM_CMP_EQ
+comptime SHMEM_CMP_NE: c_int = NVSHMEM_CMP_NE
+comptime SHMEM_CMP_GT: c_int = NVSHMEM_CMP_GT
+comptime SHMEM_CMP_LE: c_int = NVSHMEM_CMP_LE
+comptime SHMEM_CMP_LT: c_int = NVSHMEM_CMP_LT
+comptime SHMEM_CMP_GE: c_int = NVSHMEM_CMP_GE
+comptime SHMEM_CMP_SENTINEL: c_int = NVSHMEM_CMP_SENTINEL
 
-alias SHMEM_SIGNAL_SET: c_int = NVSHMEM_SIGNAL_SET
-alias SHMEM_SIGNAL_ADD: c_int = NVSHMEM_SIGNAL_ADD
+comptime SHMEM_SIGNAL_SET: c_int = NVSHMEM_SIGNAL_SET
+comptime SHMEM_SIGNAL_ADD: c_int = NVSHMEM_SIGNAL_ADD
 
 # ===----------------------------------------------------------------------=== #
 # 1: Library Setup, Exit, and Query Routines

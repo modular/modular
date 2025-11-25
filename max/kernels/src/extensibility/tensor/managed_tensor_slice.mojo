@@ -87,11 +87,11 @@ fn simd_store_into_managed_tensor_slice[
     var flat_index = tensor._compute_offset(indices)
 
     # Store alignment cannot exceed the data type's alignment.
-    alias max_alignment = _gcd_pow2[
+    comptime max_alignment = _gcd_pow2[
         tensor.alignment, element_alignment * align_of[dtype]()
     ]()
 
-    alias static_stride = tensor._static_strides.at[rank - 1]()
+    comptime static_stride = tensor._static_strides.at[rank - 1]()
 
     # Stride = 1
     @parameter
@@ -154,13 +154,13 @@ fn simd_load_from_managed_tensor_slice[
     indices: IndexList[rank],
 ) -> SIMD[dtype, simd_width]:
     var flat_index = tensor._compute_offset(indices)
-    alias static_stride = tensor._static_strides.at[rank - 1]()
+    comptime static_stride = tensor._static_strides.at[rank - 1]()
 
     # Load alignment cannot exceed the data type's alignment.
-    alias max_alignment = _gcd_pow2[
+    comptime max_alignment = _gcd_pow2[
         tensor.alignment, element_alignment * align_of[dtype]()
     ]()
-    alias invariant = not tensor.io_spec.mut
+    comptime invariant = not tensor.io_spec.mut
 
     # Stride = 1
     @parameter
@@ -395,7 +395,7 @@ fn _mixed_precision_output_fusion_hook_impl[
             element_alignment=_elem_align,
         ](tensor, rebind[IndexList[rank]](i), rebind[SIMD[dst_dtype, _w]](v))
 
-    alias mixed_in_spec = StaticTensorSpec[src_dtype, src_rank](
+    comptime mixed_in_spec = StaticTensorSpec[src_dtype, src_rank](
         shape=src_shape,
         strides=src_strides,
         alignment=static_spec.alignment,
@@ -438,7 +438,7 @@ fn _mixed_precision_compute_output_fusion_hook_impl[
     ](i: IndexList[src_rank], v: SIMD[src_dtype, _w]) -> SIMD[src_dtype, _w]:
         return v
 
-    alias mixed_in_spec = StaticTensorSpec[src_dtype, src_rank](
+    comptime mixed_in_spec = StaticTensorSpec[src_dtype, src_rank](
         shape=src_shape,
         strides=static_spec.strides,
         alignment=static_spec.alignment,
@@ -527,18 +527,18 @@ fn _mixed_precision_input_fusion_hook_impl[
 # ManagedTensorSlice class
 # ===----------------------------------------------------------------------=== #
 
-alias OutputTensor = ManagedTensorSlice[io_spec=Output]
-alias InputTensor = ManagedTensorSlice[io_spec=Input]
+comptime OutputTensor = ManagedTensorSlice[io_spec=Output]
+comptime InputTensor = ManagedTensorSlice[io_spec=Input]
 
-alias _MutableInputTensor = ManagedTensorSlice[io_spec=MutableInput]
-alias _FusedOutputTensor = ManagedTensorSlice[io_spec=FusedOutput]
-alias _FusedInputTensor = ManagedTensorSlice[io_spec=FusedInput]
+comptime _MutableInputTensor = ManagedTensorSlice[io_spec=MutableInput]
+comptime _FusedOutputTensor = ManagedTensorSlice[io_spec=FusedOutput]
+comptime _FusedInputTensor = ManagedTensorSlice[io_spec=FusedInput]
 
-alias _FusedComputeOutputTensor = ManagedTensorSlice[
+comptime _FusedComputeOutputTensor = ManagedTensorSlice[
     io_spec=_FusedComputeOutput
 ]
 
-alias DynamicTensor[dtype: DType, rank: Int] = ManagedTensorSlice[
+comptime DynamicTensor[dtype: DType, rank: Int] = ManagedTensorSlice[
     io_spec=IOUnknown,
     static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
 ]
@@ -567,7 +567,7 @@ struct ManagedTensorSlice[
     """
 
     # `trait DevicePassable` implementation
-    alias device_type: AnyType = LayoutTensor[
+    comptime device_type: AnyType = LayoutTensor[
         Self.dtype, Self.static_spec.to_layout(), MutAnyOrigin
     ]
 
@@ -602,14 +602,14 @@ struct ManagedTensorSlice[
             + "]"
         )
 
-    alias address_space = Self.static_spec.address_space
-    alias alignment = Self.static_spec.alignment
-    alias exclusive = Self.static_spec.exclusive
-    alias _static_shape = Self.static_spec.shape
-    alias _static_strides = Self.static_spec.strides
+    comptime address_space = Self.static_spec.address_space
+    comptime alignment = Self.static_spec.alignment
+    comptime exclusive = Self.static_spec.exclusive
+    comptime _static_shape = Self.static_spec.shape
+    comptime _static_strides = Self.static_spec.strides
 
-    alias _in_lambda = Self.static_spec.in_lambda
-    alias _out_lambda = Self.static_spec.out_lambda
+    comptime _in_lambda = Self.static_spec.in_lambda
+    comptime _out_lambda = Self.static_spec.out_lambda
 
     var _ptr: UnsafePointer[Scalar[Self.dtype]]
     var _spec: RuntimeTensorSpec[Self.dtype, Self.rank]
@@ -939,14 +939,14 @@ struct ManagedTensorSlice[
         constrained[_rank == Self.rank]()
         var ridx = rebind[IndexList[Self.rank]](index)
 
-        alias in_lambda = Self.static_spec.in_lambda
-        alias alignment = Self.static_spec.alignment
-        alias address_space = Self.static_spec.address_space
-        alias strides = Self.static_spec.strides
+        comptime in_lambda = Self.static_spec.in_lambda
+        comptime alignment = Self.static_spec.alignment
+        comptime address_space = Self.static_spec.address_space
+        comptime strides = Self.static_spec.strides
 
         @parameter
         if in_lambda:
-            alias in_fn = in_lambda.value()
+            comptime in_fn = in_lambda.value()
             return in_fn[width, element_alignment](ridx)
         else:
             return simd_load_from_managed_tensor_slice[
@@ -962,9 +962,9 @@ struct ManagedTensorSlice[
     ](self, index: IndexList[_rank]) -> SIMD[Self.dtype, width]:
         constrained[_rank == Self.rank]()
         var ridx = rebind[IndexList[Self.rank]](index)
-        alias in_lambda = Self.static_spec.in_lambda
+        comptime in_lambda = Self.static_spec.in_lambda
         constrained[Bool(in_lambda)]()
-        alias in_fn = in_lambda.value()
+        comptime in_fn = in_lambda.value()
         return in_fn[width, element_alignment](ridx)
 
     @always_inline
@@ -1060,14 +1060,14 @@ struct ManagedTensorSlice[
         constrained[_rank == Self.rank]()
         var ridx = rebind[IndexList[Self.rank]](index)
 
-        alias out_lambda = Self.static_spec.out_lambda
-        alias alignment = Self.static_spec.alignment
-        alias address_space = Self.static_spec.address_space
-        alias strides = Self.static_spec.strides
+        comptime out_lambda = Self.static_spec.out_lambda
+        comptime alignment = Self.static_spec.alignment
+        comptime address_space = Self.static_spec.address_space
+        comptime strides = Self.static_spec.strides
 
         @parameter
         if out_lambda:
-            alias out_fn = out_lambda.value()
+            comptime out_fn = out_lambda.value()
             out_fn[width, element_alignment](ridx, val)
         else:
             simd_store_into_managed_tensor_slice[
@@ -1091,9 +1091,9 @@ struct ManagedTensorSlice[
     ):
         constrained[_rank == Self.rank]()
         var ridx = rebind[IndexList[Self.rank]](index)
-        alias out_lambda = Self.static_spec.out_lambda
+        comptime out_lambda = Self.static_spec.out_lambda
         constrained[Bool(out_lambda)]()
-        alias out_fn = out_lambda.value()
+        comptime out_fn = out_lambda.value()
         out_fn[width, element_alignment](ridx, val)
 
     @always_inline
@@ -1109,11 +1109,11 @@ struct ManagedTensorSlice[
         constrained[_rank == Self.rank]()
         var ridx = rebind[IndexList[Self.rank]](index)
 
-        alias out_compute_lambda = Self.static_spec.out_compute_lambda
+        comptime out_compute_lambda = Self.static_spec.out_compute_lambda
 
         @parameter
         if out_compute_lambda:
-            alias out_fn = out_compute_lambda.value()
+            comptime out_fn = out_compute_lambda.value()
             return out_fn[width](ridx, val)
         else:
             return val
@@ -1161,7 +1161,7 @@ struct ManagedTensorSlice[
             Self.dtype, Self.static_spec.to_layout(), MutAnyOrigin
         ],
     ):
-        alias layout = Self.static_spec.to_layout()
+        comptime layout = Self.static_spec.to_layout()
         return type_of(result)(
             self.unsafe_ptr(),
             type_of(result.runtime_layout)(
@@ -1258,12 +1258,12 @@ fn trace_slice_arg(name: String, buf: ManagedTensorSlice) -> String:
 # VariadicTensors
 # ===----------------------------------------------------------------------=== #
 
-alias InputVariadicTensors = VariadicTensors[io_spec=Input]
-alias OutputVariadicTensors = VariadicTensors[io_spec=Output]
+comptime InputVariadicTensors = VariadicTensors[io_spec=Input]
+comptime OutputVariadicTensors = VariadicTensors[io_spec=Output]
 
-alias _MutableInputVariadicTensors = VariadicTensors[io_spec=MutableInput]
-alias _FusedInputVariadicTensors = VariadicTensors[io_spec=FusedInput]
-alias _FusedOutputVariadicTensors = VariadicTensors[io_spec=FusedOutput]
+comptime _MutableInputVariadicTensors = VariadicTensors[io_spec=MutableInput]
+comptime _FusedInputVariadicTensors = VariadicTensors[io_spec=FusedInput]
+comptime _FusedOutputVariadicTensors = VariadicTensors[io_spec=FusedOutput]
 
 
 @fieldwise_init

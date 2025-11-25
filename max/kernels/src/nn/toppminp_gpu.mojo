@@ -35,8 +35,8 @@ from nn.topk import (
 
 from utils import IndexList
 
-alias DEBUG_FILE = False
-alias SEED = 42
+comptime DEBUG_FILE = False
+comptime SEED = 42
 
 
 fn topk_wrapper[
@@ -159,7 +159,7 @@ fn normalize(value: BFloat16) -> UInt16:
     # Normalize bf16 values by flipping the sign bit for positive and fully
     # inverting negative numbers
     var bits = reinterpret(value)
-    alias sign_bit_mask = 0b1 << (bit_width_of[DType.bfloat16]() - 1)
+    comptime sign_bit_mask = 0b1 << (bit_width_of[DType.bfloat16]() - 1)
     if bits & sign_bit_mask:
         # For negative numbers, flip all bits (two's complement behavior)
         return ~bits
@@ -184,7 +184,7 @@ fn normalize(value: Int32) -> UInt32:
     # For signed integers: Flip the most significant bit to ensure correct ordering
     # This makes negative numbers appear "smaller" than positive numbers in
     # unsigned comparison
-    alias sign_bit_mask = 0b1 << (bit_width_of[DType.int32]() - 1)
+    comptime sign_bit_mask = 0b1 << (bit_width_of[DType.int32]() - 1)
 
     return reinterpret(value) ^ sign_bit_mask
 
@@ -204,7 +204,7 @@ fn normalize(value: Float32) -> UInt32:
         return bitcast[DType.uint32, 1](value)
 
     var bits = reinterpret(value)
-    alias sign_bit = bit_width_of[DType.float32]() - 1
+    comptime sign_bit = bit_width_of[DType.float32]() - 1
     # Flip all bits if the value is negative (sign bit is 1)
     # This makes more negative numbers appear "smaller" in unsigned comparison
     return bits ^ ((-(bits >> sign_bit)) | (0b1 << sign_bit))
@@ -219,7 +219,7 @@ fn normalize(
     Normalize the value to the appropriate unsigned integer type. This is needed
     for radix sort to work correctly.
     """
-    alias dtype = value.dtype
+    comptime dtype = value.dtype
 
     @parameter
     if dtype is DType.int32:
@@ -283,7 +283,7 @@ fn radix_sort_pairs_kernel[
     var tid = thread_idx.x
     var batch_id = block_idx.x
     var elems_per_thread = ceildiv(num_keys, BLOCK_SIZE)
-    alias NUM_BUCKETS = 2**NUM_BITS_PER_PASS
+    comptime NUM_BUCKETS = 2**NUM_BITS_PER_PASS
 
     var input_keys = input_keys_ + batch_id * UInt(num_keys)
     var output_keys = output_keys_ + batch_id * UInt(num_keys)
@@ -529,7 +529,7 @@ fn run_radix_sort_pairs_gpu[
 
     @parameter
     for current_bit in range(0, bit_width_of[dtype](), NUM_BITS_PER_PASS):
-        alias kernel = radix_sort_pairs_kernel[
+        comptime kernel = radix_sort_pairs_kernel[
             dtype, out_idx_type, current_bit, ascending, BLOCK_SIZE
         ]
 
@@ -721,7 +721,7 @@ fn _topp_minp_sampling_gpu[
         _is_supported_dtype[dtype](), String("Unsupported dtype: ", dtype)
     ]()
 
-    alias BLOCK_SIZE = 256
+    comptime BLOCK_SIZE = 256
 
     # Step 1; Apply temperature scaling to the logits and apply
     # softmax to get probabilities
@@ -771,9 +771,9 @@ fn _topp_minp_sampling_gpu[
     var max_vals = ctx.enqueue_create_buffer[dtype](Int(batch_size))
     var skip_sort = ctx.enqueue_create_buffer[DType.bool](Int(batch_size))
 
-    alias K = 1
-    alias num_blocks_per_input = 1
-    alias topk_kernel = topk_wrapper[
+    comptime K = 1
+    comptime num_blocks_per_input = 1
+    comptime topk_kernel = topk_wrapper[
         dtype, out_idx_type, is_top_p, _test_sort=_test_sort
     ]
     ctx.enqueue_function_checked[topk_kernel, topk_kernel](
@@ -824,7 +824,7 @@ fn _topp_minp_sampling_gpu[
         )
 
     # Step 4: Sample from the sorted probabilities by cumsumming
-    alias topp_minp_kernel = topp_minp_sampling_kernel[
+    comptime topp_minp_kernel = topp_minp_sampling_kernel[
         dtype, out_idx_type, is_top_p
     ]
     ctx.enqueue_function_checked[topp_minp_kernel, topp_minp_kernel](

@@ -21,10 +21,7 @@ from utils import StaticTuple
 
 from builtin.device_passable import DevicePassable
 from compile import get_type_name
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
+from memory import LegacyOpaquePointer
 
 # ===-----------------------------------------------------------------------===#
 # StaticTuple
@@ -61,7 +58,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
     var _mlir_value: Self._mlir_type
     """The underlying storage for the static tuple."""
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: LegacyOpaquePointer):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod

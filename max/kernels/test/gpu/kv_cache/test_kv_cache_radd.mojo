@@ -42,7 +42,7 @@ fn test_kv_cache_radd[
     num_active_loras: Int,
     ctx: DeviceContext,
 ) raises:
-    alias num_layers = 2
+    comptime num_layers = 2
     debug_assert(
         num_active_loras <= batch_size,
         "num_active_loras must be less than or equal to batch_size",

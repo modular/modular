@@ -11,10 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
 from os import Atomic
 from sys import external_call
 
@@ -26,14 +22,14 @@ from sys import external_call
 struct SpinWaiter(Defaultable):
     """A proxy for the C++ runtime's SpinWaiter type."""
 
-    var storage: OpaquePointer
+    var storage: OpaquePointer[MutOrigin.external]
     """Pointer to the underlying SpinWaiter instance."""
 
     fn __init__(out self):
         """Initializes a SpinWaiter instance."""
         self.storage = external_call[
             "KGEN_CompilerRT_AsyncRT_InitializeSpinWaiter",
-            OpaquePointer,
+            OpaquePointer[MutOrigin.external],
         ]()
 
     fn __del__(deinit self):
@@ -104,12 +100,12 @@ struct BlockingScopedLock:
     comptime LockType = BlockingSpinLock
     """The type of the lock."""
 
-    var lock: UnsafePointer[Self.LockType]
+    var lock: UnsafePointer[Self.LockType, MutAnyOrigin]
     """The underlying lock instance."""
 
     fn __init__(
         out self,
-        lock: UnsafePointer[Self.LockType],
+        lock: UnsafePointer[Self.LockType, MutAnyOrigin],
     ):
         """Primary constructor.
 
@@ -129,18 +125,18 @@ struct BlockingScopedLock:
             lock: A mutable reference to the underlying lock.
         """
 
-        self.lock = UnsafePointer(to=lock)
+        self.lock = UnsafePointer(to=lock).as_any_origin()
 
     @no_inline
     fn __enter__(mut self):
         """Acquire the lock on entry.
         This is done by setting the owner of the lock to own address."""
-        var address = UnsafePointer[Self](to=self)
+        var address = UnsafePointer(to=self)
         self.lock[].lock(Int(address))
 
     @no_inline
     fn __exit__(mut self):
         """Release the lock on exit.
         Reset the address on the underlying lock."""
-        var address = UnsafePointer[Self](to=self)
+        var address = UnsafePointer(to=self)
         _ = self.lock[].unlock(Int(address))

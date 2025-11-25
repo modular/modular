@@ -630,6 +630,16 @@ class TextAndVisionTokenizer(
         )
         self._default_eos_token_ids = set([self.eos])
 
+        if pipeline_config:
+            huggingface_config = pipeline_config.model_config.huggingface_config
+            if eos_token_id := getattr(
+                huggingface_config, "eos_token_id", None
+            ):
+                if isinstance(eos_token_id, int):
+                    self._default_eos_token_ids.add(eos_token_id)
+                elif isinstance(eos_token_id, list):
+                    self._default_eos_token_ids.update(eos_token_id)
+
         self._context_validators = (
             context_validators if context_validators else []
         )

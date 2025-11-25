@@ -24,11 +24,11 @@ from layout.layout_tensor import LayoutTensor
 from memory import LegacyUnsafePointer as UnsafePointer, memset_zero
 from python import Python
 
-alias M = 512  # rows of A and C
-alias N = 4096  # cols of B and C
-alias K = 512  # cols of A and rows of B
+comptime M = 512  # rows of A and C
+comptime N = 4096  # cols of B and C
+comptime K = 512  # cols of A and rows of B
 
-alias dtype = DType.float32
+comptime dtype = DType.float32
 
 
 struct Matrix[rows: Int, cols: Int]:
@@ -81,10 +81,10 @@ fn tile[tiled_fn: Tile2DFunc, tile_x: Int, tile_y: Int](end_x: Int, end_y: Int):
 fn matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
     # simdwidth of = amount of `dtype` elements that fit into a single SIMD register
     # 2x multiplier will use multiple SIMD registers in parallel where possible
-    alias nelts = simd_width_of[dtype]() * 2
-    alias tile_m = 8  # M must be a multiple of this
-    alias tile_n = 64  # N must be a multiple of this
-    alias tile_k = 4  # K must be a multiple of this
+    comptime nelts = simd_width_of[dtype]() * 2
+    comptime tile_m = 8  # M must be a multiple of this
+    comptime tile_n = 64  # N must be a multiple of this
+    comptime tile_k = 4  # K must be a multiple of this
 
     constrained[M % tile_m == 0, "M must be a multiple of tile_m"]()
     constrained[N % tile_n == 0, "N must be a multiple of tile_n"]()
@@ -114,7 +114,7 @@ fn matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
                             + A_val * B.load[simd_size](k, idx),
                         )
 
-                    alias unroll_factor = tile_x // nelts
+                    comptime unroll_factor = tile_x // nelts
                     vectorize[
                         nelts,
                         size=tile_x,
@@ -131,11 +131,11 @@ fn matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
     var lhs = LayoutTensor[dtype, Layout.row_major(M, K)](A.data)
     var rhs = LayoutTensor[dtype, Layout.row_major(K, N)](B.data)
 
-    alias vec_size = simd_width_of[dtype]() * 2
+    comptime vec_size = simd_width_of[dtype]() * 2
 
-    alias tile_m = 2
-    alias tile_n = 64
-    alias tile_k = 4
+    comptime tile_m = 2
+    comptime tile_n = 64
+    comptime tile_k = 4
 
     constrained[M % tile_m == 0, "N must be a multiple of tile_m"]()
     constrained[N % tile_n == 0, "N must be a multiple of tile_n"]()
@@ -173,7 +173,7 @@ fn matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
                                 + lhs_val * rhs_view.load[simd_size](k, n),
                             )
 
-                        alias unroll_factor = tile_n // vec_size
+                        comptime unroll_factor = tile_n // vec_size
                         vectorize[
                             vec_size,
                             size=tile_n,
@@ -186,8 +186,8 @@ fn matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
 fn alloc_aligned_tile[
     M: Int, N: Int, dtype: DType
 ]() -> UnsafePointer[Scalar[dtype]]:
-    alias alignment = align_of[SIMD[dtype, simd_width_of[dtype]()]]()
-    alias cache_width = ((N + alignment - 1) // alignment) * alignment
+    comptime alignment = align_of[SIMD[dtype, simd_width_of[dtype]()]]()
+    comptime cache_width = ((N + alignment - 1) // alignment) * alignment
     return UnsafePointer[Scalar[dtype],].alloc(
         M * cache_width, alignment=alignment
     )
@@ -198,11 +198,11 @@ fn matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
     var lhs = LayoutTensor[dtype, Layout.row_major(M, K)](A.data)
     var rhs = LayoutTensor[dtype, Layout.row_major(K, N)](B.data)
 
-    alias vec_size = simd_width_of[dtype]() * 2
+    comptime vec_size = simd_width_of[dtype]() * 2
 
-    alias tile_m = 8
-    alias tile_n = 64
-    alias tile_k = 4
+    comptime tile_m = 8
+    comptime tile_n = 64
+    comptime tile_k = 4
 
     constrained[M % tile_m == 0, "N must be a multiple of tile_m"]()
     constrained[N % tile_n == 0, "N must be a multiple of tile_n"]()
@@ -243,7 +243,7 @@ fn matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
                                 * rhs_cache.aligned_load[simd_size](k, n),
                             )
 
-                        alias unroll_factor = tile_n // vec_size
+                        comptime unroll_factor = tile_n // vec_size
                         vectorize[
                             vec_size,
                             size=tile_n,
@@ -258,11 +258,11 @@ fn matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
     var lhs = LayoutTensor[dtype, Layout.row_major(M, K)](A.data)
     var rhs = LayoutTensor[dtype, Layout.row_major(K, N)](B.data)
 
-    alias vec_size = 4 * simd_width_of[dtype]()
+    comptime vec_size = 4 * simd_width_of[dtype]()
 
-    alias tile_m = 16
-    alias tile_n = 16
-    alias tile_k = 128
+    comptime tile_m = 16
+    comptime tile_n = 16
+    comptime tile_k = 128
 
     constrained[M % tile_m == 0, "N must be a multiple of tile_m"]()
     constrained[N % tile_n == 0, "N must be a multiple of tile_n"]()
@@ -301,7 +301,7 @@ fn matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
                                 sum,
                             )
 
-                        alias unroll_factor = tile_k // vec_size
+                        comptime unroll_factor = tile_k // vec_size
                         vectorize[
                             vec_size,
                             size=tile_k,

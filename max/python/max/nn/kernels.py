@@ -1344,7 +1344,7 @@ def flare_mla_prefill_plan(
             ),  # buffer_row_offsets
             TensorType(
                 dtype=DType.uint32,
-                shape=[max_chunks, input_row_offsets.shape[0] - 1],
+                shape=[max_chunks, input_row_offsets.shape[0]],
                 device=input_row_offsets.device,
             ),  # cache_offsets
             TensorType(

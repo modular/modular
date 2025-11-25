@@ -149,7 +149,7 @@ trait SMemTileWriter:
     abstracting over different hardware mechanisms.
     """
 
-    alias _dtype: DType
+    comptime _dtype: DType
 
     @always_inline
     fn write_tile(
@@ -185,9 +185,9 @@ struct TileWriterTMA[
         desc_layout: Layout described by the TMA descriptor.
     """
 
-    alias _dtype = Self.dtype
+    comptime _dtype = Self.dtype
 
-    alias TMATensorTilePtr = Pointer[
+    comptime TMATensorTilePtr = Pointer[
         TMATensorTile[Self.dtype, Self.tma_layout, Self.desc_layout],
         Self.tma_origin,
     ]
@@ -248,9 +248,9 @@ struct TileWriterThreadwise[
     simd_size: Int,
     half_tile: Bool = False,  # Handle masked x2 case
 ](SMemTileWriter):
-    alias _dtype = Self.dtype
+    comptime _dtype = Self.dtype
 
-    alias DstType = LayoutTensor[
+    comptime DstType = LayoutTensor[
         Self.dtype,
         Self.dst_layout,
         MutAnyOrigin,
@@ -298,7 +298,7 @@ struct TileWriterThreadwise[
         # destination tile is already pre-extracted as the workgroup tile.
         # We directly use self.dst as the destination.
 
-        alias swizzle = make_ldmatrix_swizzle[
+        comptime swizzle = make_ldmatrix_swizzle[
             Self._dtype,
             src.stride[0](),
             log2_floor(16 // size_of[Self._dtype]()),
@@ -308,9 +308,9 @@ struct TileWriterThreadwise[
         if Self.half_tile:
             # Handle masked x2 case - write only half the tile width
             # Get compile-time layout dimensions
-            alias dst_height = Self.dst_layout.shape[0].value()
-            alias dst_width = Self.dst_layout.shape[1].value()
-            alias half_width = dst_width // 2
+            comptime dst_height = Self.dst_layout.shape[0].value()
+            comptime dst_width = Self.dst_layout.shape[1].value()
+            comptime half_width = dst_width // 2
 
             # Slice both source and destination to half width internally
             var masked_src = src.slice[
@@ -323,13 +323,13 @@ struct TileWriterThreadwise[
             ]()
 
             # Compute half-width thread layout
-            alias half_thread_layout = Layout.row_major(
+            comptime half_thread_layout = Layout.row_major(
                 Self.thread_layout.shape[0].value(),
                 Self.thread_layout.shape[1].value() // 2,
             )
 
             # Only first half of threads participate
-            alias num_threads = Self.thread_layout.size()
+            comptime num_threads = Self.thread_layout.size()
             if self.thread_idx < UInt(num_threads // 2):
                 copy_sram_to_dram[
                     thread_layout=half_thread_layout,
@@ -401,10 +401,10 @@ struct FragmentToSMemWriter[
         sub_wg_id: Which portion of WG_BN this instance handles.
     """
 
-    alias st_matrix_swizzle = make_ldmatrix_swizzle[
+    comptime st_matrix_swizzle = make_ldmatrix_swizzle[
         Self.c_type, Self.tile_n_size, log2_floor(16 // size_of[Self.c_type]())
     ]()
-    alias st_matrix_rt_layout_type = RuntimeLayout[
+    comptime st_matrix_rt_layout_type = RuntimeLayout[
         st_matrix_n_layout[
             Self.c_type, Self.tile_n_size, Self.num_m_mmas, Self.num_consumer
         ](),
@@ -467,7 +467,7 @@ struct FragmentToSMemWriter[
         var linear_idx = self.st_matrix_rt_layout(layout_coords)
         return self.st_matrix_swizzle(linear_idx)
 
-    alias st_matrix_layout = Layout.row_major(Self.WG_BM, Self.tile_n_size)
+    comptime st_matrix_layout = Layout.row_major(Self.WG_BM, Self.tile_n_size)
 
     @always_inline
     fn _store_fragment[
@@ -490,7 +490,7 @@ struct FragmentToSMemWriter[
             smem_tile: Target shared memory tile.
             data: Register data to store.
         """
-        alias packed_width = elements_per_op // 2  # BF16 pairs packed as float32
+        comptime packed_width = elements_per_op // 2  # BF16 pairs packed as float32
 
         # Pack BF16 pairs into float32 (hardware requirement)
         var packed_data = bitcast[DType.float32, packed_width](data)
@@ -517,8 +517,8 @@ struct FragmentToSMemWriter[
         """
         # Locate destination tile in shared memory
         var tile_linear_idx = Int(coords[0]) + Int(coords[1])
-        alias elements_per_tile = Self.WG_BM * Self.tile_n_size
-        alias total_tiles = Self.c_tile_layout.size() // elements_per_tile
+        comptime elements_per_tile = Self.WG_BM * Self.tile_n_size
+        comptime total_tiles = Self.c_tile_layout.size() // elements_per_tile
 
         # Reshape shared memory to access individual tiles
         var smem_tiles = self.c_tile.reshape[
@@ -532,10 +532,10 @@ struct FragmentToSMemWriter[
         var smem_frag = dest_tile_flat.reshape[Self.st_matrix_layout]()
 
         # st.matrix configuration
-        alias elements_per_store = 4 * (1 if Self.half_tile else 2)
-        alias reg_fragment_scale = 2 if Self.half_tile else 1
+        comptime elements_per_store = 4 * (1 if Self.half_tile else 2)
+        comptime reg_fragment_scale = 2 if Self.half_tile else 1
 
-        alias ST_MATRIX_WIDTH_BYTES = 16  # Fragment size: st.matrix operates on 16-byte chunks
+        comptime ST_MATRIX_WIDTH_BYTES = 16  # Fragment size: st.matrix operates on 16-byte chunks
         var n_fragment_base = (
             Int(coords[1]) * Self.tile_n_size
             + Self.sub_wg_id * Self.WG_BN  # Sub-warp handles portion of WG_BN
@@ -605,16 +605,16 @@ struct RegisterToGMemWriter[
         At most one of epilogue_fn or compute_lambda_fn should be set.
     """
 
-    alias c_frag_size = Self.wgmma_shape[0] * Self.wgmma_shape[
+    comptime c_frag_size = Self.wgmma_shape[0] * Self.wgmma_shape[
         1
     ] // WARPGROUP_SIZE
-    alias num_n_frag_mat = Self.wgmma_shape[1] // 8
-    alias num_m_frag_mat = Self.wgmma_shape[0] // 4 // 8
-    alias num_frag_mats = Self.num_n_frag_mat * Self.num_m_frag_mat
+    comptime num_n_frag_mat = Self.wgmma_shape[1] // 8
+    comptime num_m_frag_mat = Self.wgmma_shape[0] // 4 // 8
+    comptime num_frag_mats = Self.num_n_frag_mat * Self.num_m_frag_mat
 
     var thread_info: ThreadInfo
 
-    alias DstType = LayoutTensor[
+    comptime DstType = LayoutTensor[
         Self.c_type,
         Self.dst_layout,
         MutAnyOrigin,
@@ -761,14 +761,14 @@ struct RegisterToGMemWriter[
         var coords = gmem_offset_coords + warp_coords
         var max_row = self.max_row.value()
 
-        alias num_vecs = gmem_frag.layout.size()
+        comptime num_vecs = gmem_frag.layout.size()
 
         # Process all vectors
         @parameter
         for frag_idx in range(num_vecs):
-            alias dst_idx = gmem_frag.layout(frag_idx)
-            alias dst_m_offset = dst_idx // Self.N
-            alias dst_n_offset = dst_idx % Self.N
+            comptime dst_idx = gmem_frag.layout(frag_idx)
+            comptime dst_m_offset = dst_idx // Self.N
+            comptime dst_n_offset = dst_idx % Self.N
             var m = Int(coords[0] + dst_m_offset)
             var n = Int(coords[1] + dst_n_offset)
 
@@ -792,17 +792,17 @@ struct RegisterToGMemWriter[
         n: Int,
     ) capturing:
         """Apply epilogue or compute_lambda and store result."""
-        alias alignment = align_of[SIMD[Self.c_type, 2]]()
+        comptime alignment = align_of[SIMD[Self.c_type, 2]]()
 
         @parameter
         if Self.epilogue_fn:
-            alias epilogue = Self.epilogue_fn.value()
+            comptime epilogue = Self.epilogue_fn.value()
             epilogue[alignment=alignment](
                 (m, n),
                 c_reg_frag[mma_id, frag_idx].cast[Self.c_type](),
             )
         else:  # compute_lambda
-            alias compute_lambda = Self.compute_lambda_fn.value()
+            comptime compute_lambda = Self.compute_lambda_fn.value()
             var reg_val = compute_lambda[alignment=alignment](
                 (m, n),
                 c_reg_frag[mma_id, frag_idx].cast[Self.c_type](),
@@ -839,7 +839,7 @@ struct RegisterToGMemWriter[
         for m_frag, n_frag in itertools.product(
             range(Self.num_m_frag_mat), range(Self.num_n_frag_mat)
         ):
-            alias frag_mat_id = n_frag * Self.num_m_frag_mat + m_frag
+            comptime frag_mat_id = n_frag * Self.num_m_frag_mat + m_frag
             var frag_mat_gmem = warp_tile.tile[8, 8](m_frag, n_frag)
 
             # Get runtime bounds
@@ -869,7 +869,7 @@ struct RegisterToGMemWriter[
 
                     @parameter
                     if Self.epilogue_fn:
-                        alias epilogue = Self.epilogue_fn.value()
+                        comptime epilogue = Self.epilogue_fn.value()
                         var frag_m, frag_n = epilogue_coordinates()
                         epilogue[alignment = align_of[Scalar[Self.c_type]]()](
                             (frag_m, frag_n), reg_val
@@ -878,7 +878,7 @@ struct RegisterToGMemWriter[
 
                         @parameter
                         if Self.compute_lambda_fn:
-                            alias compute_lambda = Self.compute_lambda_fn.value()
+                            comptime compute_lambda = Self.compute_lambda_fn.value()
                             var frag_m, frag_n = epilogue_coordinates()
                             reg_val = compute_lambda[
                                 alignment = align_of[Scalar[Self.c_type]]()

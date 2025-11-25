@@ -44,10 +44,10 @@ from gpu.primitives.warp import (
 )
 from benchmark import keep
 
-alias MI300X_TARGET = get_gpu_target["mi300x"]()
-alias MI355X_TARGET = get_gpu_target["mi355x"]()
+comptime MI300X_TARGET = get_gpu_target["mi300x"]()
+comptime MI355X_TARGET = get_gpu_target["mi355x"]()
 
-alias FULL_MASK_AMD = 2**WARP_SIZE - 1
+comptime FULL_MASK_AMD = 2**WARP_SIZE - 1
 
 
 fn kernel(x: UnsafePointer[Int]):

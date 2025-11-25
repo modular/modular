@@ -25,7 +25,7 @@ from utils import IndexList
 
 fn test_managed_layout_tensor_1d() raises:
     """Test 1D ManagedLayoutTensor buffer operations."""
-    alias layout_1d = Layout(IntTuple(10))
+    comptime layout_1d = Layout(IntTuple(10))
 
     # Test with CPU context
     var cpu_tensor = ManagedLayoutTensor[DType.float32, layout_1d]()
@@ -43,7 +43,7 @@ fn test_managed_layout_tensor_1d() raises:
 
 fn test_managed_layout_tensor_2d() raises:
     """Test 2D ManagedLayoutTensor buffer operations."""
-    alias layout_2d = Layout(IntTuple(4, 6))
+    comptime layout_2d = Layout(IntTuple(4, 6))
 
     # Test with CPU context
     var cpu_tensor = ManagedLayoutTensor[DType.float32, layout_2d]()
@@ -63,7 +63,7 @@ fn test_managed_layout_tensor_2d() raises:
 
 fn test_managed_layout_tensor_3d() raises:
     """Test 3D ManagedLayoutTensor buffer operations."""
-    alias layout_3d = Layout(IntTuple(2, 3, 4))
+    comptime layout_3d = Layout(IntTuple(2, 3, 4))
 
     # Test with CPU context
     var cpu_tensor = ManagedLayoutTensor[DType.float32, layout_3d]()
@@ -86,7 +86,7 @@ fn test_managed_layout_tensor_3d() raises:
 fn test_managed_layout_tensor_dynamic() raises:
     """Test ManagedLayoutTensor with dynamic dimensions."""
     # Create layout with some dynamic dimensions
-    alias layout_dynamic = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE, 4)
+    comptime layout_dynamic = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE, 4)
 
     # Define runtime shape with actual values
     var runtime_shape = IndexList[3](5, 8, 4)

@@ -24,7 +24,7 @@ fn test_memset_async(ctx: DeviceContext) raises:
     @parameter
     @always_inline
     fn test_memset[dtype: DType](val: Scalar[dtype]) raises:
-        alias length = 4
+        comptime length = 4
         var data = UnsafePointer[Scalar[dtype]].alloc(length)
         var data_device = ctx.enqueue_create_buffer[dtype](length)
         ctx.enqueue_copy(data_device, data)

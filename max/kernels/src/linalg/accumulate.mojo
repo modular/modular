@@ -45,7 +45,7 @@ struct _Accumulator[
         simd_width: Number of lanes of a SIMD vector.
     """
 
-    alias tile_columns = Self.num_cols * Self.simd_width
+    comptime tile_columns = Self.num_cols * Self.simd_width
 
     # The output buffer, should have num_rows x num_cols x simd_width.
     var _storage: NDBuffer[
@@ -62,7 +62,7 @@ struct _Accumulator[
             and (Self.num_rows > 0)
             and (Self.simd_width > 0)
         ]()
-        alias alignment = align_of[SIMD[Self.dtype, Self.simd_width]]()
+        comptime alignment = align_of[SIMD[Self.dtype, Self.simd_width]]()
         self._storage = NDBuffer[
             Self.dtype,
             1,
@@ -239,7 +239,7 @@ struct _Accumulator[
     ):
         """Loads or stores one or more columns from the base column for each
         row of the tile."""
-        alias column_step = min(column_count, Self.simd_width)
+        comptime column_step = min(column_count, Self.simd_width)
 
         @parameter
         @always_inline
@@ -288,9 +288,9 @@ struct _Accumulator[
     ):
         """Loads/stores all pairwise vectors of the tile and dispatches the
         remaining non-pairwise elements."""
-        alias tile_columns_remaining = Self.tile_columns - base_column
+        comptime tile_columns_remaining = Self.tile_columns - base_column
         # Support fusion of LDP/STP instructions by emitting pairs of load/store with neon
-        alias column_groups = 2 if CompilationTarget.has_neon() else 1
+        comptime column_groups = 2 if CompilationTarget.has_neon() else 1
 
         # vector instructions.
         @parameter
@@ -333,7 +333,7 @@ struct _Accumulator[
             self._transfer_columns[base_column, tail_size, is_load](
                 row_ptrs, stride
             )
-            alias tile_columns_remaining = Self.tile_columns - base_column - tail_size
+            comptime tile_columns_remaining = Self.tile_columns - base_column - tail_size
 
             @parameter
             if tile_columns_remaining >= tail_size // 2 and tail_size > 1:
@@ -361,7 +361,7 @@ struct _Accumulator[
 
         @parameter
         for row in range(Self.num_rows):
-            alias col = base_column // Self.simd_width
+            comptime col = base_column // Self.simd_width
 
             @parameter
             if is_load:
@@ -442,7 +442,7 @@ struct _Accumulator[
             @parameter
             for j in range(Self.num_cols):
                 var input_ptr = input + i * input_stride + j * Self.simd_width
-                alias partial_load_last_vec = partial_load and (
+                comptime partial_load_last_vec = partial_load and (
                     j == Self.num_cols - 1
                 )
 
@@ -479,7 +479,7 @@ struct _Accumulator[
 
             @parameter
             for j in range(Self.num_cols):
-                alias partial_store_last_vec = partial_store and (
+                comptime partial_store_last_vec = partial_store and (
                     j == Self.num_cols - 1
                 )
                 _simd_store_maybe_partial[
@@ -765,7 +765,7 @@ struct _Accumulator[
 
         constrained[not CompilationTarget.has_neon()]()
 
-        alias kernel_width = Self.num_cols * Self.simd_width
+        comptime kernel_width = Self.num_cols * Self.simd_width
         var b_ptr = b
 
         for l in range(length):
@@ -830,7 +830,7 @@ struct _Accumulator[
 
         constrained[not CompilationTarget.has_neon()]()
 
-        alias kernel_width = Self.num_cols * Self.simd_width
+        comptime kernel_width = Self.num_cols * Self.simd_width
         var b_ptr = b
 
         for l in range(length):
@@ -896,7 +896,7 @@ struct _Accumulator[
 
         constrained[not CompilationTarget.has_neon()]()
 
-        alias kernel_width = Self.num_cols * Self.simd_width
+        comptime kernel_width = Self.num_cols * Self.simd_width
         var b_ptr = b
 
         for l in range(length):

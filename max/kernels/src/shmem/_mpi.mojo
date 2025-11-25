@@ -31,7 +31,7 @@ from sys.info import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias MPI_LIBRARY = _Global["MPI_LIBRARY", _init_mpi_dylib]
+comptime MPI_LIBRARY = _Global["MPI_LIBRARY", _init_mpi_dylib]
 
 
 fn mpi_lib_name() -> String:
@@ -81,12 +81,12 @@ fn _get_mpi_function[
 # Types and constants
 # ===-----------------------------------------------------------------------===#
 
-alias MPIComm = UnsafePointer[OpaquePointer]
+comptime MPIComm = UnsafePointer[OpaquePointer]
 
-alias MPI_THREAD_SINGLE = 0
-alias MPI_THREAD_FUNNELED = 1
-alias MPI_THREAD_SERIALIZED = 2
-alias MPI_THREAD_MULTIPLE = 3
+comptime MPI_THREAD_SINGLE = 0
+comptime MPI_THREAD_FUNNELED = 1
+comptime MPI_THREAD_SERIALIZED = 2
+comptime MPI_THREAD_MULTIPLE = 3
 
 # ===-----------------------------------------------------------------------===#
 # Function bindings

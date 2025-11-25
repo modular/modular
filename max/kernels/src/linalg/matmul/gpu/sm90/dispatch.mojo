@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
 from collections import OptionalReg
 from math import ceildiv
 from sys import env_get_bool, env_get_int, size_of
@@ -29,13 +30,14 @@ from ..tile_scheduler import MatmulSchedule, RasterOrder
 from .matmul import warp_specialize_gemm_with_multicasting
 from .tuning_configs import _get_tuning_list_bf16, TuningConfigSM90
 
-alias MAX_M = Int.MAX
+comptime MAX_M = Int.MAX
 
 # TODO: Move to a general location and use for all dispatch
-alias DISPATCH_MISS = 0
-alias DISPATCH_HIT = 1
 
-alias logger = Logger()
+comptime DISPATCH_MISS = 0
+comptime DISPATCH_HIT = 1
+
+comptime logger = Logger()
 
 
 fn matmul_dispatch_sm90[
@@ -54,30 +56,30 @@ fn matmul_dispatch_sm90[
     b: NDBuffer[b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
-    alias is_AB_fp8 = a_type == b_type == DType.float8_e4m3fn
-    alias is_AB_bf16 = a_type == b_type == DType.bfloat16
-    alias is_AB_fp32 = a_type == b_type == DType.float32
+    comptime is_AB_fp8 = a_type == b_type == DType.float8_e4m3fn
+    comptime is_AB_bf16 = a_type == b_type == DType.bfloat16
+    comptime is_AB_fp32 = a_type == b_type == DType.float32
 
-    alias input_type_supported = is_AB_fp8 or is_AB_bf16 or is_AB_fp32
+    comptime input_type_supported = is_AB_fp8 or is_AB_bf16 or is_AB_fp32
 
     # fmt: off
-    alias has_static_NK = b.shape.all_known[2]() \
+    comptime has_static_NK = b.shape.all_known[2]() \
                       and a.shape.has_value[1]() \
                       and c.shape.has_value[1]()
     # fmt: on
 
-    alias N = c.shape.get[1]()
-    alias N_multiple_of_8 = N % 8 == 0
+    comptime N = c.shape.get[1]()
+    comptime N_multiple_of_8 = N % 8 == 0
 
     logger.info("------ Dispatching to sm90 ------")
 
     # Support K multiple of 16B for FP8 due to using TMA.
     # 4B and 8B alignments are supported for BF16/FP32 by using
     # cp.async.ca.
-    alias K = a.shape.get[1]()
-    alias K_multiple_of_16B = K * size_of[a_type]() % 16 == 0
-    alias K_multiple_of_4B = K * size_of[a_type]() % 4 == 0
-    alias K_align_supported = (K_multiple_of_16B and is_AB_fp8) or (
+    comptime K = a.shape.get[1]()
+    comptime K_multiple_of_16B = K * size_of[a_type]() % 16 == 0
+    comptime K_multiple_of_4B = K * size_of[a_type]() % 4 == 0
+    comptime K_align_supported = (K_multiple_of_16B and is_AB_fp8) or (
         K_multiple_of_4B and (is_AB_bf16 or is_AB_fp32)
     )
 
@@ -117,12 +119,14 @@ fn matmul_dispatch_sm90[
 
 
 # ===----------------------------------------------------------------------=== #
+
 # FP8 (e4m3fn) Dispatch
+
 # ===----------------------------------------------------------------------=== #
 
-
 # llama-405B-FP8 gemm shapes
-alias llama_405b_fp8_list = [
+
+comptime llama_405b_fp8_list = [
     ##############################
     # N=16384 and K=2048
     TuningConfigSM90(
@@ -419,10 +423,11 @@ alias llama_405b_fp8_list = [
     ),
 ]
 
-alias llama_405b_fp8_table = Table(llama_405b_fp8_list, "llama_405b_fp8")
+comptime llama_405b_fp8_table = Table(llama_405b_fp8_list, "llama_405b_fp8")
 
 # llama-8B-FP8 gemm shapes
-alias llama_8b_fp8_list = [
+
+comptime llama_8b_fp8_list = [
     ##############################
     # ignore N and K for this table.
     TuningConfigSM90(
@@ -466,7 +471,7 @@ alias llama_8b_fp8_list = [
     ),
 ]
 
-alias llama_8b_fp8_table = Table(llama_8b_fp8_list, "llama_8b_fp8")
+comptime llama_8b_fp8_table = Table(llama_8b_fp8_list, "llama_8b_fp8")
 
 
 fn matmul_dispatch_sm90_fp8[
@@ -485,26 +490,28 @@ fn matmul_dispatch_sm90_fp8[
     b: NDBuffer[b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
-    alias static_N = c.shape.get[1]()
-    alias static_K = a.shape.get[1]()
+    comptime static_N = c.shape.get[1]()
+    comptime static_K = a.shape.get[1]()
 
     var m = c.dim[0]()
 
     @parameter
     if env_get_bool["AUTOTUNING_MODE", False]():
-        alias NUM_PIPELINE_STAGES = env_get_int["TUNE_NUM_PIPELINE_STAGES", 4]()
-        alias NUM_CONSUMER = env_get_int["TUNE_NUM_CONSUMER", 1]()
-        alias WGMMA_N = env_get_int["TUNE_WGMMA_N", 128]()
-        alias CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 1]()
-        alias GRID_DIM_X = env_get_int["TUNE_GRID_DIM_X", 1]()
-        alias GRID_DIM_Y = H100.sm_count // GRID_DIM_X
-        alias BLOCK_TILE_DIM_M = 64 * NUM_CONSUMER
+        comptime NUM_PIPELINE_STAGES = env_get_int[
+            "TUNE_NUM_PIPELINE_STAGES", 4
+        ]()
+        comptime NUM_CONSUMER = env_get_int["TUNE_NUM_CONSUMER", 1]()
+        comptime WGMMA_N = env_get_int["TUNE_WGMMA_N", 128]()
+        comptime CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 1]()
+        comptime GRID_DIM_X = env_get_int["TUNE_GRID_DIM_X", 1]()
+        comptime GRID_DIM_Y = H100.sm_count // GRID_DIM_X
+        comptime BLOCK_TILE_DIM_M = 64 * NUM_CONSUMER
 
-        alias SCHEDULE_TYPE = MatmulSchedule(
+        comptime SCHEDULE_TYPE = MatmulSchedule(
             env_get_int["TUNE_SCHEDULE_TYPE", 1]()
         )
 
-        alias H100_FP8_TUNING_CONFIG = MatmulConfig[
+        comptime H100_FP8_TUNING_CONFIG = MatmulConfig[
             a_type,
             b_type,
             c_type,
@@ -536,7 +543,7 @@ fn matmul_dispatch_sm90_fp8[
     @parameter
     @always_inline("nodebug")
     fn _dispatch[entry: TuningConfigSM90]() raises:
-        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             block_tile_shape=entry.block_tile_shape,
             mma_shape=entry.mma_shape,
             cluster_shape=entry.cluster_shape,
@@ -569,7 +576,7 @@ fn matmul_dispatch_sm90_fp8[
         fn get_m(x: TuningConfigSM90) -> Int:
             return x.M
 
-        alias m_values = T.query_values[Int, get_m, domain]()
+        comptime m_values = T.query_values[Int, get_m, domain]()
 
         @parameter
         for static_m in m_values:
@@ -580,11 +587,11 @@ fn matmul_dispatch_sm90_fp8[
                 return x.M == static_m
 
             if m <= static_m:
-                alias idx_list = T.query_index[rule_eq_m, domain=domain]()
+                comptime idx_list = T.query_index[rule_eq_m, domain=domain]()
 
                 @parameter
                 if idx_list:
-                    alias entry = T.configs[idx_list[0]]
+                    comptime entry = T.configs[idx_list[0]]
                     _dispatch[entry]()
                     return DISPATCH_HIT
                 else:
@@ -608,7 +615,7 @@ fn matmul_dispatch_sm90_fp8[
             return x.K == static_K and x.N == static_N
 
         # First, filter by static params N and K
-        alias nk_idx_list = llama_405b_fp8_table.query_index[rule_eq_nk]()
+        comptime nk_idx_list = llama_405b_fp8_table.query_index[rule_eq_nk]()
         # Search the table for matching values of M within domain
         if _search[llama_405b_fp8_table, domain=nk_idx_list]() == DISPATCH_HIT:
             return DISPATCH_HIT
@@ -626,14 +633,14 @@ fn matmul_dispatch_sm90_fp8[
 
     else:
         # for gemms with small n and k we fall back the naive kernel
-        alias BN = _find_largest_bn_for_sm90_matmul[a_type, static_N]()
-        alias BK = 128
+        comptime BN = _find_largest_bn_for_sm90_matmul[a_type, static_N]()
+        comptime BK = 128
 
         @parameter
         if BN != -1 and static_K % BK == 0:
             # If the number of blocks is less than the number of SMs, it's probably better to not use any persistent kernel
             if ceildiv(m, 64) * ceildiv(static_N, BN) <= H100.sm_count:
-                alias config = MatmulConfig[
+                comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
                     block_tile_shape=Index(64, BN, BK),
@@ -657,7 +664,7 @@ fn matmul_dispatch_sm90_fp8[
                 )
                 return DISPATCH_HIT
             elif m <= 1024:
-                alias config = MatmulConfig[
+                comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
                     block_tile_shape=Index(64, BN, BK),
@@ -683,7 +690,7 @@ fn matmul_dispatch_sm90_fp8[
                 )
                 return DISPATCH_HIT
             else:
-                alias config = MatmulConfig[
+                comptime config = MatmulConfig[
                     a_type,
                     b_type,
                     c_type,
@@ -715,7 +722,9 @@ fn matmul_dispatch_sm90_fp8[
 
 
 # ===----------------------------------------------------------------------=== #
+
 # BF16 and FP32 Dispatch
+
 # ===----------------------------------------------------------------------=== #
 
 
@@ -1262,6 +1271,8 @@ fn _get_internvl_list[
 
 
 # shapes for llama3.3.70b
+
+
 fn _get_llama_3_3_70b_list[
     size_factor: Int, mma_k: Int, BK: Int
 ]() -> List[TuningConfigSM90]:
@@ -1335,6 +1346,8 @@ fn _get_llama_3_3_70b_list[
 
 
 # shapes for gemma.3.27b
+
+
 fn _get_gemma_3_27b_list[
     size_factor: Int, mma_k: Int, BK: Int
 ]() -> List[TuningConfigSM90]:
@@ -2128,38 +2141,40 @@ fn matmul_dispatch_sm90_bf16_fp32[
     b: NDBuffer[b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
-    alias size_factor = 2 if a_type is DType.float32 else 1
-    alias mma_k = 16 // size_factor
-    alias BK = 64 // size_factor
+    comptime size_factor = 2 if a_type is DType.float32 else 1
+    comptime mma_k = 16 // size_factor
+    comptime BK = 64 // size_factor
 
     @parameter
     if env_get_bool["AUTOTUNING_MODE", False]():
-        alias static_N = c.shape.get[1]()
-        alias static_K = a.shape.get[1]()
+        comptime static_N = c.shape.get[1]()
+        comptime static_K = a.shape.get[1]()
 
-        alias IS_LARGE_GEMM_SHAPE = env_get_bool[
+        comptime IS_LARGE_GEMM_SHAPE = env_get_bool[
             "TUNE_LARGE_GEMM_SHAPE", True
         ]()
-        alias CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 1]()
-        alias CLUSTER_DIM_Y = env_get_int["TUNE_CLUSTER_DIM_Y", 1]()
-        alias NUM_PIPELINE_STAGES = env_get_int["TUNE_NUM_PIPELINE_STAGES", 4]()
-        alias NUM_CONSUMER = env_get_int["TUNE_NUM_CONSUMER", 1]()
-        alias WGMMA_N = env_get_int["TUNE_WGMMA_N", 128]()
-        alias BLOCK_TILE_DIM_M = 64 * NUM_CONSUMER
-        alias PARTITIONED_MULTICAST = env_get_bool[
+        comptime CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 1]()
+        comptime CLUSTER_DIM_Y = env_get_int["TUNE_CLUSTER_DIM_Y", 1]()
+        comptime NUM_PIPELINE_STAGES = env_get_int[
+            "TUNE_NUM_PIPELINE_STAGES", 4
+        ]()
+        comptime NUM_CONSUMER = env_get_int["TUNE_NUM_CONSUMER", 1]()
+        comptime WGMMA_N = env_get_int["TUNE_WGMMA_N", 128]()
+        comptime BLOCK_TILE_DIM_M = 64 * NUM_CONSUMER
+        comptime PARTITIONED_MULTICAST = env_get_bool[
             "TUNE_PARTITIONED_MULTICAST", False
         ]()
-        alias SCHEDULE_TYPE = MatmulSchedule(
+        comptime SCHEDULE_TYPE = MatmulSchedule(
             env_get_int["TUNE_SCHEDULE_TYPE", 0]()
         )
 
         @parameter
         if IS_LARGE_GEMM_SHAPE:
             # GRID_DIM_X = 2^n for n in range[0-7]
-            alias GRID_DIM_X = env_get_int["TUNE_GRID_DIM_X", 1]()
-            alias GRID_DIM_Y = H100.sm_count // GRID_DIM_X
+            comptime GRID_DIM_X = env_get_int["TUNE_GRID_DIM_X", 1]()
+            comptime GRID_DIM_Y = H100.sm_count // GRID_DIM_X
 
-            alias H100_TUNING_CONFIG = MatmulConfig[
+            comptime H100_TUNING_CONFIG = MatmulConfig[
                 a_type,
                 b_type,
                 c_type,
@@ -2191,15 +2206,15 @@ fn matmul_dispatch_sm90_bf16_fp32[
             return DISPATCH_HIT
 
         else:
-            alias IS_SPLITK = env_get_bool["TUNE_IS_SPLITK", False]()
+            comptime IS_SPLITK = env_get_bool["TUNE_IS_SPLITK", False]()
 
             @parameter
             if not IS_SPLITK:
-                alias NUM_PIPELINE_STAGES = env_get_int[
+                comptime NUM_PIPELINE_STAGES = env_get_int[
                     "TUNE_NUM_PIPELINE_STAGES", 4
                 ]()
-                alias GRID_DIM_X = H100.sm_count
-                alias GRID_DIM_Y = 1
+                comptime GRID_DIM_X = H100.sm_count
+                comptime GRID_DIM_Y = 1
 
                 constrained[
                     SCHEDULE_TYPE != MatmulSchedule.DS_SCHEDULER
@@ -2211,7 +2226,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     "Deepseek scheduler dose not support multicasting",
                 ]()
 
-                alias SMALL_SHAPE_H100_BF16_TUNING_CONFIG_NON_SPLITK = MatmulConfig[
+                comptime SMALL_SHAPE_H100_BF16_TUNING_CONFIG_NON_SPLITK = MatmulConfig[
                     a_type,
                     b_type,
                     c_type,
@@ -2241,9 +2256,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 return DISPATCH_HIT
 
             else:
-                alias SPLITS = env_get_int["TUNE_SPLITS", 2]()
+                comptime SPLITS = env_get_int["TUNE_SPLITS", 2]()
 
-                alias SMALL_SHAPE_H100_BF16_TUNING_CONFIG_SPLITK = MatmulConfig[
+                comptime SMALL_SHAPE_H100_BF16_TUNING_CONFIG_SPLITK = MatmulConfig[
                     a_type,
                     b_type,
                     c_type,
@@ -2272,9 +2287,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 )
                 return DISPATCH_HIT
 
-    alias static_N = c.shape.get[1]()
-    alias static_K = a.shape.get[1]()
-    alias a_is_bfloat16_or_float32 = a_type in (
+    comptime static_N = c.shape.get[1]()
+    comptime static_K = a.shape.get[1]()
+    comptime a_is_bfloat16_or_float32 = a_type in (
         DType.bfloat16,
         DType.float32,
     )
@@ -2287,28 +2302,32 @@ fn matmul_dispatch_sm90_bf16_fp32[
         return DISPATCH_MISS
 
     # load custom tables
-    alias tuning_list = _get_tuning_list_bf16[mma_k, BK]()
-    alias tuning_table = Table(tuning_list, "tuning_table_bf16")
+    comptime tuning_list = _get_tuning_list_bf16[mma_k, BK]()
+    comptime tuning_table = Table(tuning_list, "tuning_table_bf16")
 
     # TODO: merge these custom lists into tuning_table_sm90_bf16.yaml
     # Then everything can just dispatch from the core list.
     # Internvl gemm shapes
-    alias internvl_list = _get_internvl_list[size_factor, mma_k, BK]()
-    alias internvl_table = Table(internvl_list, "internvl")
+    comptime internvl_list = _get_internvl_list[size_factor, mma_k, BK]()
+    comptime internvl_table = Table(internvl_list, "internvl")
 
-    alias llama_3_3_70b_list = _get_llama_3_3_70b_list[size_factor, mma_k, BK]()
-    alias llama_3_3_70b_table = Table(llama_3_3_70b_list, "llama_3_3_70b")
+    comptime llama_3_3_70b_list = _get_llama_3_3_70b_list[
+        size_factor, mma_k, BK
+    ]()
+    comptime llama_3_3_70b_table = Table(llama_3_3_70b_list, "llama_3_3_70b")
 
-    alias gemma_3_27b_list = _get_gemma_3_27b_list[size_factor, mma_k, BK]()
-    alias gemma_3_27b_table = Table(gemma_3_27b_list, "gemma_3_27b")
+    comptime gemma_3_27b_list = _get_gemma_3_27b_list[size_factor, mma_k, BK]()
+    comptime gemma_3_27b_table = Table(gemma_3_27b_list, "gemma_3_27b")
 
-    alias miscellaneous_list = _get_miscellaneous_list[size_factor, mma_k, BK]()
-    alias miscellaneous_table = Table(miscellaneous_list, "miscellaneous")
+    comptime miscellaneous_list = _get_miscellaneous_list[
+        size_factor, mma_k, BK
+    ]()
+    comptime miscellaneous_table = Table(miscellaneous_list, "miscellaneous")
 
     @parameter
     @always_inline("nodebug")
     fn _dispatch[entry: TuningConfigSM90]() raises:
-        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             block_tile_shape=entry.block_tile_shape,
             mma_shape=entry.mma_shape,
             cluster_shape=entry.cluster_shape,
@@ -2361,7 +2380,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
         fn get_m(x: TuningConfigSM90) -> Int:
             return x.M
 
-        alias m_values = T.query_values[Int, get_m, domain]()
+        comptime m_values = T.query_values[Int, get_m, domain]()
 
         @parameter
         for static_m in m_values:
@@ -2372,11 +2391,11 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 return x.M == static_m
 
             if m <= static_m:
-                alias idx_list = T.query_index[rule_eq_m, domain=domain]()
+                comptime idx_list = T.query_index[rule_eq_m, domain=domain]()
 
                 @parameter
                 if idx_list:
-                    alias entry = T.configs[idx_list[0]]
+                    comptime entry = T.configs[idx_list[0]]
                     _dispatch[entry]()
                     return DISPATCH_HIT
                 else:
@@ -2391,13 +2410,18 @@ fn matmul_dispatch_sm90_bf16_fp32[
         return x.K == static_K and x.N == static_N
 
     # First check the new tuning table before falling back on any old results
-    alias tuning_nk_idx_list = tuning_table.query_index[rule_eq_nk]()
+    comptime tuning_nk_idx_list = tuning_table.query_index[rule_eq_nk]()
 
     # make sure the domain (nk_idx_list) is not empty!
     @parameter
     if tuning_nk_idx_list:
-        # TODO(GENAI-326): remove this if. Currently, these kernels are hitting accuracy bugs.
-        if not (static_N == 27648 and static_K == 5120 and m <= 8):
+        # TODO(GENAI-326): Skip problematic configs
+        # - N=27648, K=5120, M<=8: accuracy bugs
+        # - N=5120 with m <=8 : causes hang (unknown root cause in tuning configs)
+        if not (
+            (static_N == 27648 and static_K == 5120 and m <= 8)
+            or (static_N == 5120 and m <= 8)
+        ):
             if (
                 _search[tuning_table, domain=tuning_nk_idx_list]()
                 == DISPATCH_HIT
@@ -2410,7 +2434,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
         or (static_N == 4096 and static_K == 1536)
         or (static_N == 1536 and static_K == 4608)
     ):
-        alias nk_idx_list = miscellaneous_table.query_index[rule_eq_nk]()
+        comptime nk_idx_list = miscellaneous_table.query_index[rule_eq_nk]()
         if _search[miscellaneous_table, domain=nk_idx_list]() == DISPATCH_HIT:
             return DISPATCH_HIT
 
@@ -2431,7 +2455,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
         or (static_N == 12800 and static_K == 2560)
     ):
         # First, filter by static params N and K
-        alias nk_idx_list = internvl_table.query_index[rule_eq_nk]()
+        comptime nk_idx_list = internvl_table.query_index[rule_eq_nk]()
         # Search the table for matching values of M within domain
         if _search[internvl_table, domain=nk_idx_list]() == DISPATCH_HIT:
             return DISPATCH_HIT
@@ -2439,7 +2463,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
     # matmul configs for llama_3_3_70b
     @parameter
     if a_is_bfloat16_or_float32 and static_N == 2560 and static_K == 8192:
-        alias nk_idx_list = llama_3_3_70b_table.query_index[rule_eq_nk]()
+        comptime nk_idx_list = llama_3_3_70b_table.query_index[rule_eq_nk]()
 
         # In this case for m>64 the ranges are not supported.
         # TODO: add ranges for <=256, 512, 1024, 2048
@@ -2459,7 +2483,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
         or (static_N == 43008 and static_K == 5376)
         or (static_N == 8192 and static_K == 5376)
     ):
-        alias nk_idx_list = gemma_3_27b_table.query_index[rule_eq_nk]()
+        comptime nk_idx_list = gemma_3_27b_table.query_index[rule_eq_nk]()
 
         @parameter
         if nk_idx_list:
@@ -2474,7 +2498,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
     @parameter
     if a_is_bfloat16_or_float32 and static_N == 8192 and static_K == 2048:
         if m <= 16:
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(64, 64 // size_factor, BK),
                 mma_shape=Index(64, 64 // size_factor, mma_k),
                 cluster_shape=Index(1, 1, 1),
@@ -2498,7 +2522,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             )
             return DISPATCH_HIT
         elif m <= 64:
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(64, 64 // size_factor, BK),
                 mma_shape=Index(64, 64 // size_factor, mma_k),
                 cluster_shape=Index(1, 1, 1),
@@ -2522,7 +2546,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             )
             return DISPATCH_HIT
         elif m == 8192:
-            alias M8192_N8192_K2048_config = MatmulConfig[
+            comptime M8192_N8192_K2048_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(128, 256 // size_factor, BK),
@@ -2549,7 +2573,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             return DISPATCH_HIT
 
         elif m == 4096:
-            alias M4096_N8192_K2048_config = MatmulConfig[
+            comptime M4096_N8192_K2048_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(128, 256 // size_factor, BK),
@@ -2577,7 +2601,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
     @parameter
     if a_is_bfloat16_or_float32 and static_N == 14336 and static_K == 8192:
         if m <= 64:
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(64, 112 // size_factor, BK),
                 mma_shape=Index(64, 112 // size_factor, mma_k),
                 cluster_shape=Index(1, 1, 1),
@@ -2601,7 +2625,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             )
             return DISPATCH_HIT
         elif m == 8192:
-            alias M8192_N14336_K8192_config = MatmulConfig[
+            comptime M8192_N14336_K8192_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(128, 256 // size_factor, BK),
@@ -2628,7 +2652,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             return DISPATCH_HIT
 
         elif m == 4096:
-            alias M4096_N14336_K8192_config = MatmulConfig[
+            comptime M4096_N14336_K8192_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(128, 256 // size_factor, BK),
@@ -2656,7 +2680,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
     @parameter
     if a_is_bfloat16_or_float32 and static_N == 8192 and static_K == 7168:
         if m <= 16:
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(64, 64 // size_factor, BK),
                 mma_shape=Index(64, 64 // size_factor, mma_k),
                 cluster_shape=Index(1, 1, 1),
@@ -2680,7 +2704,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             )
             return DISPATCH_HIT
         elif m <= 64:
-            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(64, 64 // size_factor, BK),
                 mma_shape=Index(64, 64 // size_factor, mma_k),
                 cluster_shape=Index(1, 1, 1),
@@ -2704,7 +2728,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             )
             return DISPATCH_HIT
         elif m == 8192:
-            alias M8192_N8192_K7168_config = MatmulConfig[
+            comptime M8192_N8192_K7168_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(128, 256 // size_factor, BK),
@@ -2731,7 +2755,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             return DISPATCH_HIT
 
         elif m == 4096:
-            alias M4096_N8192_K7168_config = MatmulConfig[
+            comptime M4096_N8192_K7168_config = MatmulConfig[
                 a_type,
                 b_type,
                 c_type,
@@ -2766,7 +2790,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
         and static_K in (15360, 4096)
     ):
         if m <= 512:
-            alias M512_N3840_K15360_config = MatmulConfig[
+            comptime M512_N3840_K15360_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(128, 128 // size_factor, BK),
@@ -2792,7 +2816,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
 
             return DISPATCH_HIT
 
-    alias BN = _find_largest_bn_for_sm90_matmul[
+    comptime BN = _find_largest_bn_for_sm90_matmul[
         a_type, static_N
     ]() // size_factor
 
@@ -2803,7 +2827,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
     @parameter
     if a_type is DType.bfloat16 and BN != -1:
         if m <= 128:
-            alias default_bf16_config = MatmulConfig[
+            comptime default_bf16_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(64, BN, BK),
@@ -2828,7 +2852,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             )
             return DISPATCH_HIT
         else:
-            alias default_bf16_config = MatmulConfig[
+            comptime default_bf16_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(128, BN, BK),
@@ -2856,8 +2880,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
     # Fallback path, will use scalar 2B output and lots of OOB check.
     @parameter
     if a_type is DType.bfloat16:
-        alias BN = 256
-        alias default_bf16_config = MatmulConfig[
+        comptime BN = 256
+        comptime default_bf16_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
         ](
             block_tile_shape=Index(128, BN, 64),

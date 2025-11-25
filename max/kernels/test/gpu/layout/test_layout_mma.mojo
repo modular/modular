@@ -86,9 +86,9 @@ fn test_layout_mma[
 ) raises:
     print("== run layout mma => ", String(out_type), String(in_type), M, N, K)
 
-    alias layout_a = Layout(IntTuple(M, K), IntTuple(K, 1))
-    alias layout_b = Layout(IntTuple(K, N), IntTuple(N, 1))
-    alias layout_c = Layout(IntTuple(M, N), IntTuple(N, 1))
+    comptime layout_a = Layout(IntTuple(M, K), IntTuple(K, 1))
+    comptime layout_b = Layout(IntTuple(K, N), IntTuple(N, 1))
+    comptime layout_c = Layout(IntTuple(M, N), IntTuple(N, 1))
 
     var mat_a = ManagedLayoutTensor[in_type, layout_a](ctx)
     var mat_b = ManagedLayoutTensor[in_type, layout_b](ctx)
@@ -123,7 +123,7 @@ fn test_layout_mma[
             mat_c_tensor[i, j] = val.cast[out_type]()
             mat_c_n_tensor[i, j] = mat_c_tensor[i, j]
 
-    alias kernel = mma_layout_tc[
+    comptime kernel = mma_layout_tc[
         out_type, in_type, shape, layout_c, layout_a, layout_b
     ]
     ctx.enqueue_function_checked[kernel, kernel](
@@ -136,8 +136,8 @@ fn test_layout_mma[
 
     ctx.synchronize()
 
-    alias warps_per_block = 16
-    alias naive_func = matmul_naive[
+    comptime warps_per_block = 16
+    comptime naive_func = matmul_naive[
         out_type, in_type, layout_c, layout_a, layout_b
     ]
     ctx.enqueue_function_checked[kernel, kernel](
@@ -172,9 +172,26 @@ def main():
 
         @parameter
         if has_nvidia_gpu_accelerator():
-            alias shape_1684 = IndexList[3](16, 8, 4)
-            alias shape_1688 = IndexList[3](16, 8, 8)
-            alias shape_16816 = IndexList[3](16, 8, 16)
+            comptime shape_884 = IndexList[3](8, 8, 4)
+            comptime shape_1684 = IndexList[3](16, 8, 4)
+            comptime shape_1688 = IndexList[3](16, 8, 8)
+            comptime shape_16816 = IndexList[3](16, 8, 16)
+
+            test_layout_mma[DType.float64, DType.float64, shape_884, 8, 8, 4](
+                ctx, rtol=1e-01
+            )
+
+            test_layout_mma[DType.float64, DType.float64, shape_1684, 16, 8, 4](
+                ctx, rtol=1e-01
+            )
+
+            test_layout_mma[DType.float64, DType.float64, shape_1688, 16, 8, 8](
+                ctx, rtol=1e-01
+            )
+
+            test_layout_mma[
+                DType.float64, DType.float64, shape_16816, 16, 8, 16
+            ](ctx, rtol=1e-01)
 
             test_layout_mma[DType.float32, DType.float32, shape_1684, 16, 8, 4](
                 ctx, rtol=1e-01
@@ -189,8 +206,8 @@ def main():
                 ctx, rtol=1e-01
             )
         elif has_amd_gpu_accelerator():
-            alias shape_161616 = IndexList[3](16, 16, 16)
-            alias shape_16164 = IndexList[3](16, 16, 4)
+            comptime shape_161616 = IndexList[3](16, 16, 16)
+            comptime shape_16164 = IndexList[3](16, 16, 4)
 
             test_layout_mma[
                 DType.float32, DType.float16, shape_161616, 16, 16, 16

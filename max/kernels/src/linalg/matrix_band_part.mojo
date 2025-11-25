@@ -14,7 +14,7 @@
 
 
 from algorithm.functional import elementwise, unswitch
-from buffer import NDBuffer
+from layout import Layout, LayoutTensor
 from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import IndexList
@@ -34,12 +34,19 @@ fn matrix_band_part[
     target: StaticString = "cpu",
 ](
     input_shape: IndexList[rank],
-    num_lower: NDBuffer[int_type, 1],
-    num_upper: NDBuffer[int_type, 1],
-    exclude_buf: NDBuffer[cond_type, 1],
-    output: NDBuffer[mut=True, dtype, rank],
+    num_lower: LayoutTensor[mut=False, int_type, *_, **_],
+    num_upper: LayoutTensor[mut=False, int_type, *_, **_],
+    exclude: LayoutTensor[mut=False, cond_type, *_, **_],
+    output: LayoutTensor[mut=True, dtype, *_, **_],
     ctx: DeviceContextPtr,
 ) raises:
+    constrained[
+        num_lower.layout.rank()
+        == num_upper.layout.rank()
+        == exclude.layout.rank()
+        == 1,
+        "num_lower, num_upper and exclude must have same rank == 1",
+    ]()
     var lower_diagonal_index = Int(num_lower[0])
     var upper_diagonal_index = Int(num_upper[0])
 
@@ -60,7 +67,7 @@ fn matrix_band_part[
             target=target,
         ](input_shape, lower_diagonal_index, upper_diagonal_index, output, ctx)
 
-    unswitch[dispatch](exclude_buf[0] != 0)
+    unswitch[dispatch](exclude[0] != 0)
 
 
 @always_inline
@@ -80,7 +87,7 @@ fn _matrix_band_part_impl[
     input_shape: IndexList[rank],
     lower_diagonal_index: Int,
     upper_diagonal_index: Int,
-    output: NDBuffer[mut=True, dtype, rank],
+    output: LayoutTensor[mut=True, dtype, *_, **_],
     ctx: DeviceContextPtr,
 ) raises:
     constrained[rank >= 2, "Matrix band only supports rank >=2"]()
@@ -105,11 +112,11 @@ fn _matrix_band_part_impl[
             in_band = not in_band
 
         if in_band:
-            output[idx] = rebind[Scalar[dtype]](
-                input_0_fn[simd_width, rank](idx)
+            output.store[width=1](
+                idx, rebind[Scalar[dtype]](input_0_fn[simd_width, rank](idx))
             )
         else:
-            output[idx] = 0
+            output.store[width=1](idx, 0)
 
     elementwise[
         func,
