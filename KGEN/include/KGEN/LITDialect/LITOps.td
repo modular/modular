@@ -574,6 +574,12 @@ def LIT_ExtensionDeclOp : LITOp<"extension.decl", [
     unique symbol.
     The body contains `lit.fn` operations that declare the methods/aliases/etc.
     that will be usable with the struct that's being extended.
+    In the parser, this can be known to its parent ASTDecl twice, by different
+    names. For example, an `__extension MyStruct` will be known to its parent
+    ASTDecl as "extension:MyStruct" as well as "extension:" (the latter name is
+    shared by all extensions).
+    TODO(MOCO-522): Arcana docs on all the above, and on how importing works
+    in general.
 
     Example:
 
@@ -589,6 +595,10 @@ def LIT_ExtensionDeclOp : LITOp<"extension.decl", [
     SymbolNameAttr:$sym_name,
     TypeAttrOf<LIT_TypeSignatureType>:$signature,
     KGEN_ParamDeclArrayAttr:$params,
+    // String name of the target struct (e.g., the "MyStruct" in `extension MyStruct`).
+    // This is here as well as targetStruct because we sometimes want to know the name
+    // without signature resolving the whole extension.
+    OptionalAttr<StrAttr>:$targetStructName,
     OptionalAttr<SymbolRefAttr>:$targetStruct,
     // Direct parent traits this extension adds (first level only).
     // Used for extension trait conformance checking.
@@ -614,7 +624,7 @@ def LIT_ExtensionDeclOp : LITOp<"extension.decl", [
   let builders = [
     // Create an extension with a region but no body block. The caller must create
     // it and fill it in.
-    OpBuilder<(ins "StringAttr":$name)>,
+    OpBuilder<(ins "StringAttr":$name, CArg<"StringAttr", "{}">:$targetStructName)>,
   ];
 }
 
