@@ -504,6 +504,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "skip_test_prompt": "Skip the test prompt. Useful when doing external profiling.",
             "collect_gpu_stats": "Enable GPU stats collection for serving benchmarks.",
             "collect_cpu_stats": "Enable CPU stats collection for serving benchmarks.",
+            "collect_server_stats": "Enable server stats collection for serving benchmarks.",
             "result_filename": "JSON filename for results. If None, no results are saved. Can include directory path.",
             "record_output_lengths": "Path to save output lengths in YAML format.",
             "metadata": 'Key-value pairs for metadata (format: ["key=value", ...]).',
