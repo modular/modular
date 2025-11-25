@@ -776,7 +776,9 @@ def test_paged_scheduler_max_batch_context_length() -> None:
 
 
 def test_paged_scheduler_dp8() -> None:
-    scheduler, request_queue = create_paged_scheduler(dp=8, max_batch_size=32)
+    # Each replica has a max batch size of 4
+    # Across all replicas the aggregate max batch size is 8 * 4 = 32
+    scheduler, request_queue = create_paged_scheduler(dp=8, max_batch_size=4)
 
     for _ in range(50):
         enqueue_request(request_queue, prompt_len=12, max_seq_len=24)
