@@ -191,6 +191,7 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
       .elaborationErrorIncludePrelude =
           options::OPT_elaboration_error_include_prelude,
       .elaborationErrorVerbose = options::OPT_elaboration_error_verbose,
+      .elaborationMaxDepth = options::OPT_elaboration_max_depth,
       .targetTriple = options::OPT_target_triple,
       .targetCpu = options::OPT_target_cpu,
       .targetFeatures = options::OPT_target_features,

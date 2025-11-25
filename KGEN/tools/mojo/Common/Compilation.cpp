@@ -110,7 +110,7 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
           optionIDs.mojoSearchPaths, optionIDs.loopUnrollingWarnThreshold,
           optionIDs.elaborationErrorLimit,
           optionIDs.elaborationErrorIncludePrelude,
-          optionIDs.elaborationErrorVerbose))
+          optionIDs.elaborationErrorVerbose, optionIDs.elaborationMaxDepth))
     return err.takeError();
 
   // Parse target options.
@@ -141,9 +141,10 @@ ErrorOrSuccess M::parseCompilationOptions(
     llvm::opt::OptSpecifier debugInfoLanguageId,
     llvm::opt::OptSpecifier numThreadsId, llvm::opt::OptSpecifier stdLibPath,
     llvm::opt::OptSpecifier loopUnrollingWarnThresholdId,
-    llvm::opt::OptSpecifier elabErrorLimitId,
-    llvm::opt::OptSpecifier elabErrorIncludePreludeId,
-    llvm::opt::OptSpecifier elabErrorVerboseId) {
+    llvm::opt::OptSpecifier elaborationErrorLimitId,
+    llvm::opt::OptSpecifier elaborationErrorIncludePreludeId,
+    llvm::opt::OptSpecifier elaborationErrorVerboseId,
+    llvm::opt::OptSpecifier elaborationMaxDepthId) {
 
   // Process the sanitizers.
   if (sanitizeId.isValid()) {
@@ -275,37 +276,54 @@ ErrorOrSuccess M::parseCompilationOptions(
     }
   }
 
-  if (elabErrorLimitId.isValid()) {
-    if (args.hasMultipleArgs(elabErrorLimitId)) {
+  if (elaborationErrorLimitId.isValid()) {
+    if (args.hasMultipleArgs(elaborationErrorLimitId)) {
       return Error(
           "too many specified elaboration-error-limit, expected exactly one");
     }
 
-    StringRef elabErrorLimit = args.getLastArgValue(elabErrorLimitId);
+    StringRef elabErrorLimit = args.getLastArgValue(elaborationErrorLimitId);
     if (!elabErrorLimit.empty()) {
       if (!llvm::to_integer(elabErrorLimit,
-                            compilationOptions.elabErrorLimit)) {
+                            compilationOptions.elaborationErrorLimit)) {
         return Error("invalid elaboration-error-limit'" + elabErrorLimit +
                      "', expected an integer number");
       }
     }
   }
 
-  if (elabErrorIncludePreludeId.isValid()) {
-    if (args.hasMultipleArgs(elabErrorIncludePreludeId)) {
+  if (elaborationErrorIncludePreludeId.isValid()) {
+    if (args.hasMultipleArgs(elaborationErrorIncludePreludeId)) {
       return Error("too many specified elaboration-error-include-prelude , "
                    "expected exactly one");
     }
-    compilationOptions.elabErrorIncludePrelude =
-        args.hasArg(elabErrorIncludePreludeId);
+    compilationOptions.elaborationErrorIncludePrelude =
+        args.hasArg(elaborationErrorIncludePreludeId);
   }
 
-  if (elabErrorVerboseId.isValid()) {
-    if (args.hasMultipleArgs(elabErrorVerboseId)) {
+  if (elaborationErrorVerboseId.isValid()) {
+    if (args.hasMultipleArgs(elaborationErrorVerboseId)) {
       return Error("too many specified elaboration-error-verbose, "
                    "expected exactly one");
     }
-    compilationOptions.elabErrorVerbose = args.hasArg(elabErrorVerboseId);
+    compilationOptions.elaborationErrorVerbose =
+        args.hasArg(elaborationErrorVerboseId);
+  }
+
+  if (elaborationMaxDepthId.isValid()) {
+    if (args.hasMultipleArgs(elaborationMaxDepthId)) {
+      return Error(
+          "too many specified elaboration-max-depth, expected exactly one");
+    }
+
+    StringRef elabMaxDepth = args.getLastArgValue(elaborationMaxDepthId);
+    if (!elabMaxDepth.empty()) {
+      if (!llvm::to_integer(elabMaxDepth,
+                            compilationOptions.elaborationMaxDepth)) {
+        return Error("invalid elaboration-max-depth'" + elabMaxDepth +
+                     "', expected an unsigned number");
+      }
+    }
   }
 
   // Unike other command line options, disableWarnings is parsed

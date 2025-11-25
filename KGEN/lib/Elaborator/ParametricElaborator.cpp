@@ -662,7 +662,7 @@ FailureOr<PImplNode *> ParametricElaborator::collectConcreteImplementations(
   if (concrete.isError()) {
     std::string str = printSimpleParamAttrValues(
         calleeNode->gen.getInputParams(), calleeNode->inputParams,
-        options.elabErrorVerbose);
+        options.elaborationErrorVerbose);
 
     if (str.empty()) {
       parent->setToError(
@@ -2632,7 +2632,8 @@ LogicalResult ParametricElaborator::run(
 
   // Check for any errors and emit them. Emit as many errors as possible.
   bool failed = false;
-  ErrorLimit errorLimit{.errorLimit = options.elabErrorLimit, .errorCount = 0};
+  ErrorLimit errorLimit{.errorLimit = options.elaborationErrorLimit,
+                        .errorCount = 0};
 
   for (PParamNode *genNode : primaryNodes) {
     ErrorTreeOrSuccess err = genNode->collectErrorsOrSuccess();
@@ -2642,7 +2643,8 @@ LogicalResult ParametricElaborator::run(
           [&] {
             return err.takeError().emit(
                 [](Location loc) { return mlir::emitError(loc); },
-                "call expansion failed 1", options.elabErrorIncludePrelude);
+                "call expansion failed 1",
+                options.elaborationErrorIncludePrelude);
           },
           errorLimit);
     }
@@ -2658,7 +2660,8 @@ LogicalResult ParametricElaborator::run(
           [&]() {
             return err.takeError().emit(
                 [](Location loc) { return mlir::emitError(loc); },
-                "call expansion failed 2", options.elabErrorIncludePrelude);
+                "call expansion failed 2",
+                options.elaborationErrorIncludePrelude);
           },
           errorLimit);
     }
@@ -2680,7 +2683,8 @@ LogicalResult ParametricElaborator::run(
         [&]() {
           return bundleOr.takeError().emit(
               [](Location loc) { return mlir::emitError(loc); },
-              "Bundle CompileOffload failed.", options.elabErrorIncludePrelude);
+              "Bundle CompileOffload failed.",
+              options.elaborationErrorIncludePrelude);
         },
         errorLimit);
 
@@ -2703,7 +2707,8 @@ LogicalResult ParametricElaborator::run(
         [&] {
           return std::move(compileOffloadError)
               .emit([](Location loc) { return mlir::emitError(loc); },
-                    "Compile offload failed.", options.elabErrorIncludePrelude);
+                    "Compile offload failed.",
+                    options.elaborationErrorIncludePrelude);
         },
         errorLimit);
     for (PImplNode *node : llvm::make_second_range(concreteNodes.get()))
@@ -2797,7 +2802,7 @@ LogicalResult ParametricElaborator::run(
       // Plug offload compilation results as strings back to the elaborated IR.
       rewriteCompileOffloadOp(offloadOp, theModule.getLoc(), compiledOffload,
                               failed, errorLimit,
-                              options.elabErrorIncludePrelude);
+                              options.elaborationErrorIncludePrelude);
     } else if (auto isCompileTime = dyn_cast<IsCompileTimeOp>(op)) {
       // Rewrite IsCompileTimeOp to runtime value as always false.
       OpBuilder b(op);

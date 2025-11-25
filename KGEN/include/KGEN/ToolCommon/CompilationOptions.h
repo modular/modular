@@ -60,8 +60,10 @@ public:
       std::string targetTriple = llvm::sys::getDefaultTargetTriple(),
       std::string targetCpu = llvm::sys::getHostCPUName().str(),
       std::string targetFeatures = getHostCPUFeatures(),
-      std::string targetAccelerator = "", int elabErrorLimit = 20,
-      bool elabErrorIncludePrelude = false, bool elabErrorVerbose = false,
+      std::string targetAccelerator = "", int elaborationErrorLimit = 20,
+      bool elaborationErrorIncludePrelude = false,
+      bool elaborationErrorVerbose = false,
+      unsigned elaborationMaxDepth = std::numeric_limits<unsigned>::max(),
       DebugInfoLanguage debugInfoLanguage = kLangMojo,
       std::string searchPaths = "",
       SmallVector<std::string> extraSearchPaths = {});
@@ -122,11 +124,13 @@ public:
 
   bool verboseOutput = false;
 
-  int elabErrorLimit = 20;
+  int elaborationErrorLimit = 20;
 
-  bool elabErrorIncludePrelude = false;
+  bool elaborationErrorIncludePrelude = false;
 
-  bool elabErrorVerbose = false;
+  bool elaborationErrorVerbose = false;
+
+  unsigned elaborationMaxDepth = std::numeric_limits<unsigned>::max();
 
   // HACK: to disable llvm splitting for some cases.
   // - mojo REPL (#35345)

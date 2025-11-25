@@ -19,19 +19,21 @@ CompilationOptions::CompilationOptions(
     unsigned optimizationLevel, DebugInfoLevel debugLevel,
     std::optional<DebugAtLevel> debugAtLevel, Sanitizers sanitizers,
     std::string targetTriple, std::string targetCpu, std::string targetFeatures,
-    std::string targetAccelerator, int elabErrorLimit,
-    bool elabErrorIncludePrelude, bool elabErrorVerbose,
-    DebugInfoLanguage debugInfoLanguage, std::string searchPaths,
-    SmallVector<std::string> extraSearchPaths)
+    std::string targetAccelerator, int elaborationErrorLimit,
+    bool elaborationErrorIncludePrelude, bool elaborationErrorVerbose,
+    unsigned elaborationMaxDepth, DebugInfoLanguage debugInfoLanguage,
+    std::string searchPaths, SmallVector<std::string> extraSearchPaths)
     : optimizationLevel(optimizationLevel), debugLevel(debugLevel),
       debugAtLevel(debugAtLevel), sanitizers(sanitizers),
       targetTriple(std::move(targetTriple)), targetCpu(std::move(targetCpu)),
       targetFeatures(std::move(targetFeatures)),
       targetAccelerator(std::move(targetAccelerator)),
       debugInfoLanguage(debugInfoLanguage), searchPaths(searchPaths),
-      extraSearchPaths(extraSearchPaths), elabErrorLimit(elabErrorLimit),
-      elabErrorIncludePrelude(elabErrorIncludePrelude),
-      elabErrorVerbose(elabErrorVerbose) {}
+      extraSearchPaths(extraSearchPaths),
+      elaborationErrorLimit(elaborationErrorLimit),
+      elaborationErrorIncludePrelude(elaborationErrorIncludePrelude),
+      elaborationErrorVerbose(elaborationErrorVerbose),
+      elaborationMaxDepth(elaborationMaxDepth) {}
 
 llvm::CodeGenOptLevel CompilationOptions::getCodeGenOptLevel() const {
   if (auto level = llvm::CodeGenOpt::getLevel(optimizationLevel))

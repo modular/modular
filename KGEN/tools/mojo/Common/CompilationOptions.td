@@ -90,7 +90,7 @@ defm elaboration_error_limit: CommandOptionHidden<["--", "-"],
     "before stop emitting diagnostics. The default is 20, and "
     "the limit can be disabled with -elaboration-error-limit=0.">>;
 
-def elaboration_error_include_prelude: Flag<["--", "-"], 
+def elaboration_error_include_prelude: Flag<["--", "-"],
   "elaboration-error-include-prelude">,
   Group<CompilationOptionGroup>, Index<14>,
   HelpText<
@@ -104,6 +104,15 @@ def elaboration_error_verbose: Flag<["--", "-"],
     "Show verbose elaboration error with all concrete parameter "
     "values where call expansion is failed. Default print only "
     "shows simple values (string, integer, float, boolean).">;
+
+defm elaboration_max_depth: CommandOptionHidden<["--", "-"],
+  "elaboration-max-depth",
+  CompilationOptionGroup, Index<16>, MetaVarName<"ELABMAXDEPTH">,
+  HelpText<
+      "The maximum elaborator instantiation depth. Default is "
+      "std::numeric_limits<unsigned>::max(). Elaborator errors out if "
+      "the depth of compile time recursion exceeds this value.">>;
+
 
 //===----------------------------------------------------------------------===//
 // Experimental Compilation Options

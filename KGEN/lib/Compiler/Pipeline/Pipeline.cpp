@@ -151,8 +151,10 @@ void KGEN::buildElaborateModulePipeline(
   // When compiling with -O0, optimize functions before interpreting them.
   elaboratorOptions.optimizeInterpreter = options.optimizationLevel == 0;
   elaboratorOptions.useParametricInterpreter = options.useParametricInterpreter;
-  elaboratorOptions.errorIncludePrelude = options.elabErrorIncludePrelude;
-  elaboratorOptions.errorVerbose = options.elabErrorVerbose;
+  elaboratorOptions.errorIncludePrelude =
+      options.elaborationErrorIncludePrelude;
+  elaboratorOptions.errorVerbose = options.elaborationErrorVerbose;
+  elaboratorOptions.maxDepth = options.elaborationMaxDepth;
   pm.addPass(createElaborateGenerators(target, elaboratorOptions, options,
                                        compileAsmFn, compileOffloadFn));
 }

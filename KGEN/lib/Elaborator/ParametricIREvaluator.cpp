@@ -442,11 +442,11 @@ ErrorTreeOr<TypedAttr> ParametricIREvaluator::evaluateFunctionWithResultSlot(
 }
 
 int ParametricIREvaluator::getErrorLimit() {
-  return elaborator->options.elabErrorLimit;
+  return elaborator->options.elaborationErrorLimit;
 }
 
 bool ParametricIREvaluator::getElabErrorIncludePrelude() {
-  return elaborator->options.elabErrorIncludePrelude;
+  return elaborator->options.elaborationErrorIncludePrelude;
 }
 
 //===----------------------------------------------------------------------===//
@@ -628,7 +628,7 @@ ParametricIREvaluator::evaluateApplyLike(ParamOperatorAttr op,
 
   result.takeError().emit([](Location loc) { return mlir::emitError(loc); },
                           "interpreter failed.",
-                          elaborator->options.elabErrorIncludePrelude);
+                          elaborator->options.elaborationErrorIncludePrelude);
 
   return TypedAttr();
 }
