@@ -9,7 +9,7 @@ modular_cc_library(
     ],
     visibility = ["//visibility:private"],
     deps = [
-        "@llvm-project//third-party/unittest:gtest_main",
+        "@llvm-project//third-party/unittest:gmock",
     ],
 )
 
@@ -276,6 +276,7 @@ modular_cc_test(
         "//AsyncRT:Support",
         "//Support:Base",
         "//Support:Globals",
+        "//Support:TypeID",
     ],
 )
 

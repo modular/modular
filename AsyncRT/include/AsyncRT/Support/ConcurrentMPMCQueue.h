@@ -81,7 +81,7 @@ struct thread_id_converter<thread_id_t> {
   using thread_id_numeric_size_t =
       thread_id_size<sizeof(thread_id_t)>::numeric_t;
 #ifndef __APPLE__
-  typedef std::size_t thread_id_hash_t;
+  using thread_id_hash_t = std::size_t;
 #else
   using thread_id_hash_t = thread_id_numeric_size_t;
 #endif
@@ -108,7 +108,7 @@ struct thread_id_converter<thread_id_t> {
 #endif
 namespace MoodyCamel {
 namespace Details {
-typedef std::uintptr_t thread_id_t;
+using thread_id_t = std::uintptr_t;
 static thread_id_t invalid_thread_id() { return 0; } // Address can't be nullptr
 static const thread_id_t invalid_thread_id2 =
     1; // Member accesses off a null pointer are also generally invalid. Plus
@@ -186,8 +186,8 @@ struct const_numeric_max {
 };
 
 #if defined(__GLIBCXX__)
-typedef ::max_align_t
-    std_max_align_t; // libstdc++ forgot to add it to std:: for a while
+using std_max_align_t =
+    ::max_align_t; // libstdc++ forgot to add it to std:: for a while
 #else
 using std_max_align_t = std::max_align_t; // Others (e.g. MSVC) insist it can
                                           // *only* be accessed via std::
@@ -211,7 +211,7 @@ using max_align_t = union {
 // otherwise.
 struct ConcurrentQueueDefaultTraits {
   // General-purpose size type. std::size_t is strongly recommended.
-  typedef std::size_t size_t;
+  using size_t = std::size_t;
 
   // The type used for the enqueue and dequeue indices. Must be at least as
   // large as size_t. Should be significantly larger than the number of elements
@@ -223,7 +223,7 @@ struct ConcurrentQueueDefaultTraits {
   // prevent a race condition no matter the usage of the queue. Note that
   // whether the queue is lock-free with a 64-int type depends on the whether
   // std::atomic<std::uint64_t> is lock-free, which is platform-specific.
-  typedef std::size_t index_t;
+  using index_t = std::size_t;
 
   // Internally, all elements are enqueued and dequeued from multi-element
   // blocks; this is the smallest controllable unit. If you expect few elements
@@ -439,7 +439,7 @@ struct is_trivially_destructible : std::has_trivial_destructor<T> {};
 class ThreadExitNotifier;
 
 struct ThreadExitListener {
-  typedef void (*callback_t)(void *);
+  using callback_t = void (*)(void *);
   callback_t callback;
   void *userData;
 
