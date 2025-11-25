@@ -852,7 +852,7 @@ def format_file_in_place(
         # doesn't know how to parse lit syntax.
         fast = True
 
-    then = datetime.datetime.fromtimestamp(src.stat().st_mtime, datetime.UTC)
+    then = datetime.datetime.fromtimestamp(src.stat().st_mtime, datetime.timezone.utc)
     header = b""
     with open(src, "rb") as buf:
         if mode.skip_source_first_line:
@@ -873,7 +873,7 @@ def format_file_in_place(
         with open(src, "w", encoding=encoding, newline=newline) as f:
             f.write(dst_contents)
     elif write_back in (WriteBack.DIFF, WriteBack.COLOR_DIFF):
-        now = datetime.datetime.now(datetime.UTC)
+        now = datetime.datetime.now(datetime.timezone.utc)
         src_name = f"{src}\t{then} +0000"
         dst_name = f"{src}\t{now} +0000"
         if mode.is_ipynb:
@@ -913,7 +913,7 @@ def format_stdin_to_stdout(
     write a diff to stdout. The `mode` argument is passed to
     :func:`format_file_contents`.
     """
-    then = datetime.datetime.now(datetime.UTC)
+    then = datetime.datetime.now(datetime.timezone.utc)
 
     if content is None:
         src, encoding, newline = decode_bytes(sys.stdin.buffer.read())
@@ -942,7 +942,7 @@ def format_stdin_to_stdout(
                 dst += "\n"
             f.write(dst)
         elif write_back in (WriteBack.DIFF, WriteBack.COLOR_DIFF):
-            now = datetime.datetime.now(datetime.UTC)
+            now = datetime.datetime.now(datetime.timezone.utc)
             src_name = f"STDIN\t{then} +0000"
             dst_name = f"STDOUT\t{now} +0000"
             d = diff(src, dst, src_name, dst_name)
