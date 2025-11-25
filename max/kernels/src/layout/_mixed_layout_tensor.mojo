@@ -15,6 +15,7 @@ from sys import align_of
 
 from builtin.variadics import VariadicOf, variadic_size
 from builtin.dtype import _unsigned_integral_type_of
+from gpu.host import DeviceBuffer, HostBuffer
 from utils.numerics import max_finite
 
 from ._mixed_layout import MixedLayout
@@ -53,20 +54,117 @@ struct MixedLayoutTensor[
         stride_types = Self.stride_types,
     ]
 
+    comptime GenericType = MixedLayoutTensor[
+        dtype = Self.dtype,
+        shape_types = Self.shape_types,
+        stride_types = Self.stride_types,
+        origin = Self.origin,
+        address_space = AddressSpace.GENERIC,
+        linear_idx_type = Self.linear_idx_type,
+    ]
+
     fn __init__(
-        out self: MixedLayoutTensor[
-            dtype = Self.dtype,
-            shape_types = Self.shape_types,
-            stride_types = Self.stride_types,
-            origin = Self.origin,
-            address_space = Self.address_space,
-            linear_idx_type = Self.linear_idx_type,
-        ],
+        out self: Self.GenericType,
         var span: Span[Scalar[Self.dtype], Self.origin],
         var layout: MixedLayout[Self.shape_types, Self.stride_types],
     ):
-        self.ptr = span.unsafe_ptr().address_space_cast[Self.address_space]()
+        self.ptr = span.unsafe_ptr()
         self.layout = layout^
+
+    @always_inline
+    fn __init__(
+        out self: Self.GenericType,
+        ref [Self.origin]device_buffer: DeviceBuffer[Self.dtype],
+        var layout: MixedLayout[Self.shape_types, Self.stride_types],
+    ):
+        """Create a `LayoutTensor` from a `DeviceBuffer`. The layout must have
+        statically known dimensions.
+
+        Note that the device buffer memory is on the accelerator device (GPU
+        global memory). Code running on the CPU can use the
+        [`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext) to
+        allocate a `DeviceBuffer` and use that to construct a `LayoutTensor`
+        that can be accessed on the GPU. You cannot directly access data in the
+        `DeviceBuffer` or `LayoutTensor` from the CPU.
+
+        The following example shows a typical pattern for using `DeviceBuffer`
+        to construct a `LayoutTensor` that you can use on the GPU.
+
+        ```mojo
+        from gpu.host import DeviceContext, DeviceBuffer
+        from layout._mixed_layout import row_major
+        from layout._mixed_layout_tensor import MixedLayoutTensor
+        from layout._mixed_tuple import Idx
+
+        comptime dtype = DType.float32
+
+        var ctx = DeviceContext()
+        # Allocate buffers
+        var dev_buf = ctx.enqueue_create_buffer[dtype](16)
+        var host_buf = ctx.enqueue_create_host_buffer[dtype](16)
+        # Ensure buffers have been created
+        ctx.synchronize()
+
+        # Initialize host buffer and copy to device buffer
+        for i in range(16):
+            host_buf[i] = i
+        ctx.enqueue_copy(dev_buf, host_buf)
+
+        # Create MixedLayoutTensor to use on device
+        var tensor = MixedLayoutTensor(
+             dev_buf,
+             row_major((Idx[4](), Idx[4]())),
+        )
+        ...
+        ```
+        Args:
+            device_buffer: Contains the underlying data to point to.
+            layout: The layout of the tensor.
+        """
+        self = Self.GenericType(
+            device_buffer.unsafe_ptr()
+            .mut_cast[Self.mut]()
+            .unsafe_origin_cast[Self.origin](),
+            layout^,
+        )
+
+    @always_inline
+    fn __init__(
+        out self: Self.GenericType,
+        ref [Self.origin]host_buffer: HostBuffer[Self.dtype],
+        var layout: MixedLayout[Self.shape_types, Self.stride_types],
+    ):
+        """Create a `LayoutTensor` from a `HostBuffer`. The layout must have
+        statically known dimensions.
+
+        The resulting tensor's data can only be accessed on the CPU.
+
+        ```mojo
+        from gpu.host import DeviceContext, HostBuffer
+        from layout._mixed_layout import row_major
+        from layout._mixed_layout_tensor import MixedLayoutTensor
+        from layout._mixed_tuple import Idx
+
+        comptime dtype = DType.float32
+
+        var ctx = DeviceContext()
+        var host_buf = ctx.enqueue_create_host_buffer[dtype](8)
+
+        var tensor = MixedLayoutTensor(
+            host_buf,
+            row_major((Idx[4](), Idx[4]())),
+        )
+
+        Args:
+            host_buffer: Contains the underlying data to point to.
+            layout: The layout of the tensor.
+        """
+        self = Self.GenericType(
+            host_buffer.unsafe_ptr()
+            .mut_cast[Self.mut]()
+            .unsafe_origin_cast[Self.origin](),
+            layout^,
+        )
 
     @always_inline("nodebug")
     fn __getitem__(
@@ -145,7 +243,9 @@ struct MixedLayoutTensor[
         Example:
 
         ```mojo
-        from layout import Layout, LayoutTensor
+        from layout._mixed_layout_tensor import MixedLayoutTensor
+        from layout._mixed_layout import row_major
+        from layout._mixed_tuple import Idx
 
         def main():
             var storage = InlineArray[Float32, 2 * 3](uninitialized=True)
