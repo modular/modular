@@ -388,17 +388,6 @@ modular_cc_library(
 )
 
 modular_cc_library(
-    name = "Profiling.headers",
-    hdrs = glob(["include/Support/Profiling/*.h"]),
-    # NOTE: Passed as defines to propagate to dependents
-    defines = ASYNCRT_PROFILING_LOCAL_DEFINES,
-    visibility = ["//AsyncRT:__subpackages__"],
-    deps = [
-        ":Base",
-    ],
-)
-
-modular_cc_library(
     name = "MArchTarget",
     srcs = ["lib/MArchTarget/MArchTarget.cpp"],
     hdrs = ["include/Support/MArchTarget/MArchTarget.h"],

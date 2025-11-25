@@ -12,29 +12,6 @@ config_setting(
 )
 
 modular_cc_library(
-    name = "Runtime.headers",
-    hdrs = glob([
-        "include/AsyncRT/Runtime/*.h",
-        "include/AsyncRT/Runtime/Globals/*.h",
-    ]) + [
-        "include/AsyncRT/ForwardDecls.h",
-    ],
-    tags = ["no-clang-tidy-headers"],
-    visibility = ["//visibility:private"],
-    deps = [
-        ":Support.headers",
-        "//Support:Profiling.headers",
-    ],
-)
-
-modular_cc_library(
-    name = "Support.headers",
-    hdrs = glob(["include/AsyncRT/Support/*.h"]),
-    tags = ["no-clang-tidy-headers"],
-    visibility = ["//visibility:private"],
-)
-
-modular_cc_library(
     name = "CompilerSupport",
     srcs = glob(["lib/CompilerSupport/*.cpp"]),
     hdrs = glob(["include/AsyncRT/CompilerSupport/*.h"]),
@@ -148,10 +125,10 @@ modular_cc_library(
         "//conditions:default": [],
     }),
     deps = [
-        ":Runtime.headers",
         ":Support",
         "//Support:ADT",
         "//Support:Base",
+        "//Support:ConcurrentAppendingVector",
         "//Support:Context",
         "//Support:MArchTargetMinimal",
         "//Support:Profiling",
@@ -165,9 +142,13 @@ modular_cc_library(
 modular_shared_library(
     name = "RuntimeGlobals",
     srcs = glob(["lib/Runtime/Globals/*.cpp"]),
+    hdrs = glob([
+        "include/AsyncRT/Runtime/Globals/*.h",
+    ]) + [
+        "include/AsyncRT/Runtime/CompactRuntimePtr.h",
+    ],
     output_name = "AsyncRTRuntimeGlobals",
     deps = [
-        ":Runtime.headers",
         "//Support:BinaryID",
         "//Support:SymbolExport",
         "//bazel/third-party:tcmalloc",
@@ -180,7 +161,6 @@ modular_cc_library(
     srcs = glob(["lib/Support/*.cpp"]),
     hdrs = glob(["include/AsyncRT/Support/*.h"]),
     deps = [
-        ":Runtime.headers",
         "//Support:Base",
         "//Support:MArchTarget",
         "//Support:MArchTargetMinimal",
