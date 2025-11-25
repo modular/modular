@@ -268,11 +268,11 @@ private:
 /// Return true if the specified type is RegisterPassableTrivial - no copy,
 /// move, or destructor members.
 bool TypeDeclInfo::isRegisterPassableTrivial(Type type) const {
-  if (auto valueType = dyn_cast<LIT::StructType>(type))
+  if (auto valueType = sugarDynCast<LIT::StructType>(type))
     return getStructDeclForType(valueType).isRegisterPassableTrivial();
 
   // This is not trivial if it is a reference to a trait value.
-  if (auto paramRef = dyn_cast<ParamType>(type)) {
+  if (auto paramRef = sugarDynCast<ParamType>(type)) {
     if (isa<TraitType>(paramRef.getParam().getType()))
       return false;
   }
@@ -285,7 +285,7 @@ static SymbolConstantAttr getSpecialMemberForType(
     Type type, const TypeDeclInfo *typeDecls,
     llvm::function_ref<SymbolConstantAttr(StructDeclOp)> getMember,
     Location loc) {
-  auto valueType = dyn_cast<LIT::StructType>(type);
+  auto valueType = sugarDynCast<LIT::StructType>(type);
   if (!valueType) // Values of raw MLIR type don't have destructors.
     return {};
   SymbolConstantAttr attr =
@@ -309,8 +309,8 @@ static SymbolConstantAttr getSpecialMemberForType(
 /// Given the RValue type for a value that needs to be destroyed, return the
 /// destructor the invoke, or null if there is none.
 TypedAttr TypeDeclInfo::getDestructorForType(Type type, Location loc) const {
-  if (auto generic = dyn_cast<ParamType>(type)) {
-    if (auto trait = dyn_cast<TraitType>(generic.getParam().getType())) {
+  if (auto generic = sugarDynCast<ParamType>(type)) {
+    if (auto trait = sugarDynCast<TraitType>(generic.getParam().getType())) {
       for (SymbolRefAttr symbol : trait.getSymbols()) {
         TraitDeclOp traitDecl = traitMap.at(symbol);
         if (auto dtorWitness = traitDecl.getDtorWitness()) {
@@ -357,11 +357,11 @@ std::optional<StringRef>
 TypeDeclInfo::getErrorMsgIfLinearType(Type type) const {
   // See if the type is a linear struct or trait.  If so, get the error message
   // to report out.
-  if (auto valueType = dyn_cast<LIT::StructType>(type))
+  if (auto valueType = sugarDynCast<LIT::StructType>(type))
     return getStructDeclForType(valueType).getLinearTypeErrorMsg();
 
-  if (auto generic = dyn_cast<ParamType>(type)) {
-    if (auto trait = dyn_cast<TraitType>(generic.getParam().getType())) {
+  if (auto generic = sugarDynCast<ParamType>(type)) {
+    if (auto trait = sugarDynCast<TraitType>(generic.getParam().getType())) {
       for (SymbolRefAttr symbol : trait.getSymbols()) {
         TraitDeclOp traitDecl(traitMap.at(symbol));
         auto errorMsg = traitDecl.getLinearTypeErrorMsg();
@@ -378,7 +378,7 @@ TypeDeclInfo::getErrorMsgIfLinearType(Type type) const {
 unsigned TypeDeclInfo::getNumFieldsInType(Type type) const {
   // We currently treat all non-struct types as being a single element, even
   // things like kgen.list containing struct types.
-  auto structType = dyn_cast<LIT::StructType>(type);
+  auto structType = sugarDynCast<LIT::StructType>(type);
   if (!structType)
     return 1;
 
@@ -965,7 +965,7 @@ ValueSet::getValueRefAndTypeForOrigin(TypedAttr origin) const {
 
   // If the origin has one or more field specifiers like 'a.x.y.z', find
   // the ValueRef for the base and then refine it.
-  if (auto field = dyn_cast<OriginFieldAttr>(origin)) {
+  if (auto field = sugarDynCast<OriginFieldAttr>(origin)) {
     auto [valueRef, type] = getValueRefAndTypeForOrigin(field.getBase());
     // If we don't have field sensitive information then we cannot refine the
     // origin.  This also handles the null valueRef case.
@@ -979,7 +979,7 @@ ValueSet::getValueRefAndTypeForOrigin(TypedAttr origin) const {
     // keep track of where this happens in the origin, and we don't keep track
     // of the full struct+symbol name for fields.  *This is a bug*.  Until we
     // decide to fix this, this should work.
-    auto containerType = dyn_cast<LIT::StructType>(type);
+    auto containerType = sugarDynCast<LIT::StructType>(type);
     if (!containerType)
       return {valueRef, Type()};
     int fieldOffset =
@@ -1039,7 +1039,7 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
     // Figure out what subset of elements we have indexed to.
     auto containerType = structGER.getContainer().getType().getElementType();
     unsigned fieldOffset = typeDeclInfo.getFieldIndex(
-        cast<LIT::StructType>(containerType), structGER.getFieldAttr());
+        sugarCast<LIT::StructType>(containerType), structGER.getFieldAttr());
     unsigned startBit = baseVal.startBit + fieldOffset;
     auto resultType = structGER.getType().getElementType();
     return ValueRef{baseVal.valueId, startBit,
@@ -1205,7 +1205,7 @@ static Type digIntoTypeAtFieldOffset(Type type, unsigned firstInvalidOffset,
       return type;
 
     // To index into this type, it must be a DeclRef.
-    auto declRefType = cast<LIT::StructType>(type);
+    auto declRefType = sugarCast<LIT::StructType>(type);
 
     auto [fieldDecl, fieldBitOffset, numFieldBits] =
         typeDeclInfo.getFieldContaining(declRefType, firstInvalidOffset);
@@ -1217,7 +1217,7 @@ static Type digIntoTypeAtFieldOffset(Type type, unsigned firstInvalidOffset,
 
   // Dig into the field to ignore trailing members that we don't care about.
   while (nextValidOffset < typeDeclInfo.getNumFieldsInType(type)) {
-    auto declRefType = cast<LIT::StructType>(type);
+    auto declRefType = sugarCast<LIT::StructType>(type);
     auto [fieldDecl, startBit, numBits] =
         typeDeclInfo.getFieldContaining(declRefType, 0);
     type = fieldDecl.getReboundType(declRefType);
@@ -2132,7 +2132,7 @@ void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
   // Otherwise, we must have an indirect value where some fields are present and
   // some are missing.  Recursively walk the type and destroy just the fields
   // that are missing.
-  auto valueType = cast<LIT::StructType>(valueRef.getValueType(value));
+  auto valueType = sugarCast<LIT::StructType>(valueRef.getValueType(value));
   LIT::StructDeclOp structDecl =
       valueSet.typeDeclInfo.getStructDeclForType(valueType);
 
@@ -2253,7 +2253,7 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
 
   value = getMutableRefForPossiblyImmutValue(value, builder);
   auto argRef = cast<RefType>(value.getType());
-  assert(delSelfTy.getElementType() == argRef.getElementType());
+
   implicitOrigins.push_back(argRef.getOrigin());
 
   // Verify that the address space of the reference matches.  The __del__
@@ -2264,6 +2264,14 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
         valueSet.getValueInfo(valueRef.valueId), builder.getLoc(),
         "cannot destroy value in non-default address space");
     return;
+  }
+
+  // Adjust eleemnt type sugar if needed.
+  assert(isEqualCanon(delSelfTy.getElementType(), argRef.getElementType()));
+  if (delSelfTy.getElementType() != argRef.getElementType()) {
+    value = RebindOp::create(
+        builder, argRef.getWithElement(delSelfTy.getElementType()), value);
+    argRef = cast<RefType>(value.getType());
   }
 
   // Emit the call to the destructor.
@@ -3595,7 +3603,7 @@ static void clearTrivialFields(ValueRef valueRef, Type valueType,
     return;
   }
 
-  auto valueDRType = dyn_cast<LIT::StructType>(valueType);
+  auto valueDRType = sugarDynCast<LIT::StructType>(valueType);
   if (!valueDRType) // Trait values are not trivial.
     return;
 
@@ -3654,7 +3662,7 @@ computeAccessPathForMaxUnconsumedField(ValueRef use,
     // Okay, we must be accessing some subfield of this total value.  Figure out
     // which one, it must be field sensitive.
     auto [fieldDecl, fieldStartBit, fieldNumBits] =
-        typeDeclInfo.getFieldContaining(cast<LIT::StructType>(valueType),
+        typeDeclInfo.getFieldContaining(sugarCast<LIT::StructType>(valueType),
                                         useWithinValue.startBit);
 
     // Don't drill into the subfield if we're spanning multiple of them.
@@ -3765,7 +3773,7 @@ bool DestructorInsertion::scheduleNeededDtors(ValueRef use,
 
   // Get the type for the value so we can poke at it.
   // If a generic type or trivial, then emit a destructor call (or nothing).
-  auto valueType = dyn_cast<LIT::StructType>(use.getValueType(value));
+  auto valueType = sugarDynCast<LIT::StructType>(use.getValueType(value));
   if (!valueType) {
     // We are going to emit a destructor for the specified ValueRef, so all none
     // of the things we are about to destroy should already be destroyed.
