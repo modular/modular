@@ -167,7 +167,7 @@ class MsgpackNumpyDecoder:
 
         Args:
             type_: The type to decode into
-            copy: Copy numpy arrays if true
+            copy: Whether to copy numpy arrays when deserializing. Defaults to False.
         """
         self._type = type_
         self._copy = copy

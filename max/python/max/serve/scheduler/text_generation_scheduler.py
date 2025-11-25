@@ -99,17 +99,35 @@ class TokenGenerationScheduler(Scheduler):
         This method is responsible for ensuring that new requests are continuously
         fetched and made available for batching and scheduling.
         """
-        if self._queue_drainer is not None:
-            self._queue_drainer.start_draining()
-            items = self._queue_drainer.retrieve_items()
-        else:
-            items = drain_queue(
-                self.request_queue,
-                max_items=self.scheduler_config.max_batch_size_ce * 2,
-            )
+        with Tracer("drain_queue"):
+            # Collect items that were already drained by the background
+            # drainer while the GPU was running.
+            items: list[TextContext | TextAndVisionContext]
+            if self._queue_drainer is not None:
+                items = self._queue_drainer.retrieve_items()
 
-        for context in items:
-            self.batch_constructor.enqueue_new_request(context)
+                # If there are no outstanding CE requests, we want to seed the
+                # system as quickly as possible and avoid latency from the
+                # background thread and GIL handoffs. In that case we perform a
+                # blocking drain on the main thread.
+                if len(self.batch_constructor.all_ce_reqs) == 0:
+                    items.extend(
+                        drain_queue(
+                            self.request_queue,
+                            max_items=self.scheduler_config.max_batch_size_ce
+                            * 2,
+                        )
+                    )
+            else:
+                # No background drainer configured, drain synchronously.
+                items = drain_queue(
+                    self.request_queue,
+                    max_items=self.scheduler_config.max_batch_size_ce * 2,
+                )
+
+        with Tracer(f"adding_to_batch_constructor: {len(items)} items"):
+            for context in items:
+                self.batch_constructor.enqueue_new_request(context)
 
     @traced
     def run_iteration(self) -> SchedulerProgress:
@@ -165,9 +183,14 @@ class TokenGenerationScheduler(Scheduler):
 
     def _schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
         """Returns the number of terminated requests."""
-
-        # execute the batch
-        responses = self.pipeline.execute(inputs)
+        # Execute the batch. When a background drainer is configured we
+        # overlap draining of the request queue with GPU execution; otherwise
+        # we simply run the pipeline synchronously.
+        if self._queue_drainer is not None:
+            with self._queue_drainer.drain_while_gpu():
+                responses = self.pipeline.execute(inputs)
+        else:
+            responses = self.pipeline.execute(inputs)
 
         # If there is a chunked request, we put it back into the request queue
         self.batch_constructor.move_completed_ce_requests_to_tg(
