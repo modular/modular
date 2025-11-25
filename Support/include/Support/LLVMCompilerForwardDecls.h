@@ -21,7 +21,7 @@
 
 // Forward declarations of classes to be imported in to the M namespace.
 namespace mlir {
-namespace detail {
+namespace detail { // NOLINT, upstream namespace
 template <typename T>
 class DenseArrayAttrImpl;
 } // namespace detail
@@ -151,7 +151,7 @@ class OwningOpRef;
 using DefaultTypeStorage = TypeStorage;
 using OpAsmSetValueNameFn = function_ref<void(Value, StringRef)>;
 namespace OpTrait {}
-namespace quant {
+namespace quant { // NOLINT, upstream namespace
 class CalibratedQuantizedType;
 class QuantizedType;
 class UniformQuantizedType;

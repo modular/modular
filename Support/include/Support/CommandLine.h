@@ -19,7 +19,7 @@
 
 namespace M {
 
-namespace cl {
+namespace cl { // NOLINT, mirrors upstream llvm::cl
 
 using alias = llvm::cl::alias;
 
