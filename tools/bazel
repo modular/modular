@@ -6,8 +6,7 @@ bazelrc_lines=("# Generated from tools/bazel, do not edit.")
 bazelrc_lines+=("build --build_metadata=USER=${GITHUB_ACTOR:-${USER:-unknown}}")
 
 xcode_build_number=""
-# TODO: Enable on CI as well once all runners have full Xcode installs
-if [[ $OSTYPE == darwin* && -z "${GITHUB_REPOSITORY:-}" ]]; then
+if [[ $OSTYPE == darwin* ]]; then
   if (( EUID == 0 )); then
     echo "error: bazel should not be run as with sudo." >&2
     exit 1
