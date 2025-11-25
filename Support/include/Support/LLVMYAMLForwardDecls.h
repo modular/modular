@@ -18,7 +18,7 @@
 namespace llvm {
 class StringRef;
 class raw_ostream;
-namespace yaml {
+namespace yaml { // NOLINT, upstream namespace
 class IO;
 template <class T>
 struct MappingTraits;

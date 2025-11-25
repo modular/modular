@@ -21,7 +21,7 @@
 namespace llvm {
 class MemoryBuffer;
 
-namespace opt {
+namespace opt { // NOLINT, upstream namespace
 class InputArgList;
 class OptSpecifier;
 } // namespace opt
