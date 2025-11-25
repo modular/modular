@@ -18,11 +18,11 @@ using namespace LIT;
 
 static ASTDecl *getDeclForTypeValue(SharedState &shared, TypedAttr typeValue) {
   // We can only simplify if the type reference is resolved already.
-  auto typeParam = dyn_cast<TypeParamAttr>(typeValue);
+  auto typeParam = sugarDynCast<TypeParamAttr>(typeValue);
   if (!typeParam)
     return nullptr;
 
-  auto structType = dyn_cast<LIT::StructType>(typeParam.getTypeValue());
+  auto structType = sugarDynCast<LIT::StructType>(typeParam.getTypeValue());
   if (!structType)
     return nullptr;
 
@@ -32,19 +32,21 @@ static ASTDecl *getDeclForTypeValue(SharedState &shared, TypedAttr typeValue) {
 FailureOr<TypedAttr> ParserEvaluationContext::evaluateExpression(
     ContextuallyEvaluatedAttrInterface attr) {
   // Handle simplifiable cases here.
-  if (auto getWitness = dyn_cast<GetWitnessAttr>(attr))
+  TypedAttr typedAttr = dyn_cast<TypedAttr>((Attribute)attr);
+  if (auto getWitness = sugarDynCastIfPresent<GetWitnessAttr>(typedAttr))
     return evaluateGetWitness(
         getWitness.getTypeValue(), getWitness.getTraitName(),
         getWitness.getWitnessName(), getWitness.getType());
 
-  if (auto conformsTo = dyn_cast<TypeConformsToTraitAttr>(attr)) {
+  if (auto conformsTo =
+          sugarDynCastIfPresent<TypeConformsToTraitAttr>(typedAttr)) {
     if (auto *decl = getDeclForTypeValue(shared, conformsTo.getTypeValue())) {
       auto structDeclOp = cast<StructDeclOp>(decl->getIfOperation());
       return conformsTo.simplify(SymbolTable(structDeclOp));
     }
   }
 
-  if (auto downcast = dyn_cast<DowncastAttr>(attr)) {
+  if (auto downcast = sugarDynCastIfPresent<DowncastAttr>(typedAttr)) {
     if (getDeclForTypeValue(shared, downcast.getInputTypeValue())) {
       // FIXME: We should raise an error when the resolved struct type does not
       // conforms to the downcast traits. The folding below leads to an indirect
@@ -56,7 +58,8 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateExpression(
     }
   }
 
-  if (auto variadicReduce = dyn_cast<VariadicReduceAttr>(attr))
+  if (auto variadicReduce =
+          sugarDynCastIfPresent<VariadicReduceAttr>(typedAttr))
     return variadicReduce.evaluateWith(this);
 
   // Otherwise, this is not something we can evaluate, which is ok, because
@@ -89,11 +92,11 @@ ParserEvaluationContext::evaluateGetWitness(TypedAttr typeValue,
                                             StringAttr traitName,
                                             StringAttr witnessName, Type type) {
   // We can only simplify if the type reference is resolved already.
-  auto typeParam = dyn_cast<TypeParamAttr>(typeValue);
+  auto typeParam = sugarDynCast<TypeParamAttr>(typeValue);
   if (!typeParam)
     return failure();
 
-  auto structType = dyn_cast<LIT::StructType>(typeParam.getTypeValue());
+  auto structType = sugarDynCast<LIT::StructType>(typeParam.getTypeValue());
   if (!structType)
     return failure();
 
