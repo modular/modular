@@ -142,7 +142,7 @@ class PipelineOracle(ABC):
 
     @abstractmethod
     def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device | str
+        self, *, encoding: str | None, device: torch.device | str
     ) -> TorchModelAndDataProcessor:
         """Instantiate a Torch pipeline for the given encoding/device."""
         raise NotImplementedError
@@ -234,7 +234,7 @@ class InternVLPipelineOracle(PipelineOracle):
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device
+        self, *, encoding: str | None, device: torch.device
     ) -> TorchModelAndDataProcessor:
         revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
         tokenizer = transformers.AutoTokenizer.from_pretrained(
@@ -252,7 +252,7 @@ class InternVLPipelineOracle(PipelineOracle):
             revision=revision,
             config=config,
             device_map=device,
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
+            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None,
             trust_remote_code=True,
         )
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
@@ -327,7 +327,7 @@ class Idefics3PipelineOracle(PipelineOracle):
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device
+        self, *, encoding: str | None, device: torch.device
     ) -> TorchModelAndDataProcessor:
         revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
         config = transformers.AutoConfig.from_pretrained(
@@ -342,7 +342,7 @@ class Idefics3PipelineOracle(PipelineOracle):
             revision=revision,
             config=config,
             device_map=device,
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
+            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None,
             trust_remote_code=True,
         )
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
@@ -436,7 +436,7 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device
+        self, *, encoding: str | None, device: torch.device
     ) -> TorchModelAndDataProcessor:
         revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
         config = transformers.AutoConfig.from_pretrained(
@@ -527,7 +527,7 @@ class LlamaVisionPipelineOracle(PipelineOracle):
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device
+        self, *, encoding: str | None, device: torch.device
     ) -> TorchModelAndDataProcessor:
         hf_repo_id = "meta-llama/Llama-3.2-11B-Vision-Instruct"
         revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
@@ -542,7 +542,7 @@ class LlamaVisionPipelineOracle(PipelineOracle):
             revision=revision,
             config=config,
             device_map=device,
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
+            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None,
         )
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
@@ -580,7 +580,7 @@ class PixtralPipelineOracle(PipelineOracle):
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device
+        self, *, encoding: str | None, device: torch.device
     ) -> TorchModelAndDataProcessor:
         hf_repo_id = "mistral-community/pixtral-12b"
         revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
@@ -595,7 +595,7 @@ class PixtralPipelineOracle(PipelineOracle):
             revision=revision,
             config=config,
             device_map=device,
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
+            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None,
         )
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
@@ -636,14 +636,19 @@ class GenericOracle(PipelineOracle):
         return None
 
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: str,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         for device_spec in device_specs:
             assert self.is_supported(encoding=encoding, device_spec=device_spec)
-        weight_path = self.weight_path(encoding)
+        weight_path = self.weight_path(encoding) if encoding else None
         config = pipelines.PipelineConfig(
-            device_specs=device_specs,
-            quantization_encoding=pipelines.SupportedEncoding[encoding],
+            device_specs=device_specs if device_specs else None,
+            quantization_encoding=pipelines.SupportedEncoding[encoding]
+            if encoding
+            else None,
             model_path=self.model_path,
             weight_path=[] if weight_path is None else [weight_path],
             max_num_steps=1,
@@ -660,14 +665,14 @@ class GenericOracle(PipelineOracle):
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device
+        self, *, encoding: str | None, device: torch.device
     ) -> TorchModelAndDataProcessor:
         trust_remote_code = self.config_params.get("trust_remote_code", False)
         processor = self.auto_processor_cls.from_pretrained(
             self.model_path,
             trust_remote_code=trust_remote_code,
         )
-        weight_path = self.weight_path(encoding)
+        weight_path = self.weight_path(encoding) if encoding else None
         if weight_path:
             config_path = Path(
                 huggingface_hub.hf_hub_download(
@@ -695,7 +700,9 @@ class GenericOracle(PipelineOracle):
                     gguf_file=str(downloaded_weight_path),
                     device_map=device,
                     trust_remote_code=trust_remote_code,
-                    torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
+                    torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding]
+                    if encoding
+                    else None,
                 )
         else:
             model = self.auto_model_cls.from_pretrained(
@@ -703,7 +710,9 @@ class GenericOracle(PipelineOracle):
                 revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
                 device_map=device,
                 trust_remote_code=trust_remote_code,
-                torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
+                torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding]
+                if encoding
+                else None,
             )
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
@@ -836,7 +845,7 @@ class LoRAOracle(PipelineOracle):
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device
+        self, *, encoding: str | None, device: torch.device
     ) -> TorchModelAndDataProcessor:
         """Create PyTorch pipeline with LoRA adapter using PEFT."""
 
@@ -853,7 +862,7 @@ class LoRAOracle(PipelineOracle):
             revision=revision,
             device_map=device,
             trust_remote_code=True,
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
+            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None,
         )
 
         model = PeftModel.from_pretrained(model, lora_path, "lora")

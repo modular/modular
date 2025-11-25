@@ -28,6 +28,7 @@ from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
 from max.entrypoints.cli.entrypoint import configure_cli_logging
 from max.interfaces import PipelineTask
+from max.pipelines.lib.hf_utils import HuggingFaceRepo
 
 # Tests
 from test_common import (
@@ -163,14 +164,6 @@ def _detect_hf_flakes(
 
 @click.command()
 @click.option(
-    "--device",
-    "--devices",
-    "device_type",
-    type=DevicesOptionType(),
-    required=True,
-    help="Type of device to run pipeline with",
-)
-@click.option(
     "--framework",
     "framework_name",
     type=click.Choice(["max", "torch"]),
@@ -183,6 +176,14 @@ def _detect_hf_flakes(
     type=click.Choice(sorted(list(PIPELINE_ORACLES.keys()))),
     required=True,
     help="Pipeline to run",
+)
+@click.option(
+    "--device",
+    "--devices",
+    "device_type",
+    type=DevicesOptionType(),
+    default="default",
+    help="Type of device to run pipeline with. Default is to use the first available GPU.",
 )
 @click.option(
     "--encoding",
@@ -281,25 +282,6 @@ def main(
     else:
         reference_logits = None
 
-    device_specs = DevicesOptionType.device_specs(device_type)
-
-    if encoding_name is None:
-        device_name = device_specs[0].device_type
-        device_encoding_map = PIPELINE_ORACLES[
-            pipeline_name
-        ].device_encoding_map
-        if device_name not in device_encoding_map:
-            raise ValueError(
-                f"Device type {device_name} not supported for pipeline {pipeline_name}. "
-                f"Supported device types are: {device_encoding_map.keys()}"
-            )
-        if len(device_encoding_map[device_name]) > 1:
-            raise ValueError(
-                f"Multiple encodings supported for device type {device_name}: "
-                f"{device_encoding_map[device_name]}. Please specify an encoding."
-            )
-        encoding_name = device_encoding_map[device_name][0]
-
     try:
         generate_llm_logits(
             device_specs=DevicesOptionType.device_specs(device_type),
@@ -324,9 +306,9 @@ def generate_llm_logits(
     device_specs: list[driver.DeviceSpec],
     framework_name: str,
     pipeline_name: str,
-    encoding_name: str,
     output_path: Path,
     print_output: bool,
+    encoding_name: str | None = None,
     max_batch_size: int | None = None,
     reference: list[ModelOutput] | None = None,
     log_hf_downloads: bool = False,
@@ -363,21 +345,20 @@ def generate_llm_logits(
     else:
         evaluation_batch_size = max_batch_size
 
-    for device_spec in device_specs:
-        if not pipeline_oracle.is_supported(
-            encoding=encoding_name,
-            device_spec=device_spec,
-        ):
-            raise ValueError(
-                f"Unsupported combination of encoding '{encoding_name}' and "
-                f"device '{device_spec.device_type}'. For pipeline "
-                f"'{pipeline_name}', supported combinations are: "
-                f"{pipeline_oracle.device_encoding_map}"
-            )
-
-    title = f"{pipeline_name} - {framework_name.upper()} - {encoding_name}"
+    title = f"{pipeline_name} - {framework_name.upper()} - {encoding_name or 'Default Encoding'}"
     with github_log_group(title):
         if framework_name == "max":
+            if encoding_name is None:
+                hf_repo = HuggingFaceRepo(pipeline_name)
+                arch = pipelines.PIPELINE_REGISTRY.retrieve_architecture(
+                    hf_repo
+                )
+                if arch is None:
+                    raise ValueError(
+                        "Model architecture not yet supported by MAX."
+                    )
+                encoding_name = arch.default_encoding.name
+
             hooks_ctx = (
                 add_max_hooks(output_directory=intermediates_dir)
                 if (print_intermediates or intermediates_dir is not None)
@@ -432,6 +413,12 @@ def generate_llm_logits(
                 torch_device = torch.device("cpu")
             elif device_specs[0].device_type == "gpu":
                 torch_device = torch.device("cuda:0")
+            elif device_specs[0].device_type == "default":
+                torch_device = (
+                    torch.device("cuda:0")
+                    if torch.cuda.is_available()
+                    else torch.device("cpu")
+                )
 
             # For multi-gpu, use auto to handle mapping automatically.
             if len(device_specs) > 1:
