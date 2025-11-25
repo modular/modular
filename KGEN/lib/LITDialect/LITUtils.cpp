@@ -1152,21 +1152,23 @@ LIT::verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
 //===----------------------------------------------------------------------===//
 
 static LIT::StructType getStructTypeForTypeValue(TypedAttr typeValue) {
-  auto typeParam = dyn_cast<TypeParamAttr>(typeValue);
+  auto typeParam = sugarDynCast<TypeParamAttr>(typeValue);
   if (!typeParam)
     return nullptr;
-  return dyn_cast<LIT::StructType>(typeParam.getTypeValue());
+  return sugarDynCast<LIT::StructType>(typeParam.getTypeValue());
 }
 
 FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateExpression(
     ContextuallyEvaluatedAttrInterface attr) {
-  if (auto getWitness = dyn_cast<GetWitnessAttr>(attr)) {
+  TypedAttr typedAttr = dyn_cast<TypedAttr>((Attribute)attr);
+  if (auto getWitness = sugarDynCastIfPresent<GetWitnessAttr>(typedAttr)) {
     FailureOr<TypedAttr> simplified = evaluateGetWitness(getWitness);
     if (succeeded(simplified))
       return simplified.value();
   }
 
-  if (auto conformsTo = dyn_cast<TypeConformsToTraitAttr>(attr)) {
+  if (auto conformsTo =
+          sugarDynCastIfPresent<TypeConformsToTraitAttr>(typedAttr)) {
     auto structType = getStructTypeForTypeValue(conformsTo.getTypeValue());
     if (structType) {
       auto structDecl =
@@ -1177,7 +1179,7 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateExpression(
     }
   }
 
-  if (auto downcast = dyn_cast<DowncastAttr>(attr)) {
+  if (auto downcast = sugarDynCastIfPresent<DowncastAttr>(typedAttr)) {
     if (getStructTypeForTypeValue(downcast.getInputTypeValue())) {
       // FIXME: We should raise an error when the resolved struct type does not
       // conforms to the downcast traits. The folding below leads to an indirect
