@@ -161,6 +161,7 @@ modular_py_test(
         "manual",
         "no-sandbox",
         "requires-network",
+        "run-in-hf-workflow",
     ],
     target_compatible_with = select({
         "@platforms//os:linux": [],
