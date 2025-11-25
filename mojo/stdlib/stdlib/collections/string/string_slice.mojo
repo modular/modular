@@ -68,7 +68,7 @@ from math import align_down
 from os import PathLike, abort
 from sys import is_compile_time, simd_width_of
 from sys.ffi import c_char
-from sys.intrinsics import likely, unlikely
+from sys.intrinsics import likely, unlikely, _type_is_eq_parse_time
 
 from bit import count_trailing_zeros
 from bit._mask import is_negative, splat
@@ -2414,6 +2414,22 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         while result.byte_length() < width:
             result += fillchar
         return result
+
+    fn join(
+        self, iterable: Some[Iterable]
+    ) -> String where _type_is_eq_parse_time[
+        StringSlice[__origin_of()],
+        __type_of(iterable).IteratorType[__origin_of()].Element,
+    ]():
+        """Joins string elements using the current string as a delimiter.
+
+        Args:
+            iterable: The input values.
+
+        Returns:
+            The joined string.
+        """
+        return String(iterable, sep=self)
 
     fn join[
         T: Copyable & Movable & Writable, //,

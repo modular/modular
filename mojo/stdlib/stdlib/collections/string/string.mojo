@@ -91,6 +91,7 @@ from os.atomic import Atomic, Consistency, fence
 from sys import size_of, bit_width_of
 from sys.ffi import c_char
 from sys.info import is_32bit
+from sys.intrinsics import _type_is_eq_parse_time
 
 from bit import count_leading_zeros
 from memory import memcmp, memcpy, memset
@@ -404,6 +405,59 @@ struct String(
             end.write_to(writer)
 
         if total_bytes.size <= Self.INLINE_CAPACITY:
+            self = String()
+            _write(self)
+        else:
+            self = String(capacity=total_bytes.size)
+            var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
+            _write(buffer)
+            buffer.flush()
+
+    # TODO: Once we have parametric traits or a way to check trait conformance
+    # we should accept any iterator that returns a Writable type not just
+    # StringSlice. Propagate this change down to all join(Iterable) functions
+    fn __init__[
+        O1: ImmutableOrigin = StaticConstantOrigin,
+        O2: ImmutableOrigin = StaticConstantOrigin,
+    ](
+        out self,
+        iterable: Some[Iterable],
+        sep: StringSlice[O1] = StringSlice[O1](),
+        end: StringSlice[O2] = StringSlice[O2](),
+    ) where _type_is_eq_parse_time[
+        StringSlice[__origin_of()],
+        __type_of(iterable).IteratorType[__origin_of()].Element,
+    ]():
+        """Joins string elements using the current string as a delimiter.
+
+        Parameters:
+            O1: The immutable origin of the separator.
+            O2: The immutable origin of the end terminator.
+
+        Args:
+            iterable: The input values.
+            sep: The separator used between elements.
+            end: The String to write after printing the elements.
+
+        Returns:
+            The joined string.
+        """
+        var total_bytes = _TotalWritableBytes()
+
+        @parameter
+        fn _write[W: Writer](mut writer: W):
+            for i, elem in enumerate(iterable):
+                rebind[StringSlice[__origin_of()]](elem).write_to(writer)
+
+                if i > 0:
+                    sep.write_to(writer)
+            end.write_to(writer)
+
+        _write(total_bytes)
+
+        if total_bytes.size == 0:
+            return String()
+        elif total_bytes.size <= Self.INLINE_CAPACITY:
             self = String()
             _write(self)
         else:
@@ -1034,6 +1088,22 @@ struct String(
             StringSlice(ptr=self.unsafe_ptr(), length=self.byte_length())
         )
         return String(elems, sep=sep)
+
+    fn join(
+        self, iterable: Some[Iterable]
+    ) -> String where _type_is_eq_parse_time[
+        StringSlice[__origin_of()],
+        __type_of(iterable).IteratorType[__origin_of()].Element,
+    ]():
+        """Joins string elements using the current string as a delimiter.
+
+        Args:
+            iterable: The input values.
+
+        Returns:
+            The joined string.
+        """
+        return String(iterable, sep=self)
 
     fn join[
         T: Copyable & Movable & Writable
