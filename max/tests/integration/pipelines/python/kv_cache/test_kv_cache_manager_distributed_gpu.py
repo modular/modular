@@ -58,20 +58,10 @@ def test_init() -> None:
     kv_manager = _create_kv_manager(data_parallel_degree, num_devices)
     devices = kv_manager.devices
     for i, single_device_manager in enumerate(kv_manager._replica_managers):
-        assert single_device_manager.max_batch_size == 2
+        assert single_device_manager.max_batch_size == 4
         assert single_device_manager.devices == [devices[i]]
         assert single_device_manager.max_seq_len == 100
         assert single_device_manager.params.num_layers == 10
-
-
-def test_init_small_batch_size() -> None:
-    data_parallel_degree = 2
-    num_devices = 2
-
-    with pytest.raises(
-        ValueError, match=r"minimum value of max_batch_size allowed is 2."
-    ):
-        _ = _create_kv_manager(data_parallel_degree, num_devices, 1)
 
 
 def test_claim_until_full() -> None:
@@ -82,7 +72,7 @@ def test_claim_until_full() -> None:
 
     max_batch_size = kv_manager.max_batch_size
     batch = []
-    for i in range(max_batch_size):
+    for i in range(max_batch_size * data_parallel_degree):
         context = create_text_context(np.empty(i))
         replica_idx = kv_manager.get_or_recommend_replica(context)
         kv_manager.claim(context.request_id, replica_idx=replica_idx)
