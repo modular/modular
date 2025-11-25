@@ -513,9 +513,9 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
                                    bool waitForTasks,
                                    StringLiteral spinningLabel,
                                    StringLiteral sleepingLabel) {
-  while (true) {
-    TRACY_ZONE_SCOPED_NC("WorkQueueThread::runItemsImpl", TRACY_COLOR_BLUE);
+  TRACY_ZONE_SCOPED_NC("WorkQueueThread::runItemsImpl", TRACY_COLOR_BLUE);
 
+  while (true) {
   KeepRunning:
     // Stop immediately if there is nothing to do.
     if (earlyStopPredicate())
