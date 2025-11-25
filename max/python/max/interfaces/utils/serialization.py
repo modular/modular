@@ -162,7 +162,7 @@ class MsgpackNumpyDecoder:
     as needed.
     """
 
-    def __init__(self, type_: Any, copy: bool = True):
+    def __init__(self, type_: Any, copy: bool = False):
         """Initialize the decoder.
 
         Args:
@@ -211,7 +211,9 @@ class MsgpackNumpyDecoder:
         self._create_decoder()
 
 
-def msgpack_numpy_decoder(type_: Any, copy: bool = True) -> MsgpackNumpyDecoder:
+def msgpack_numpy_decoder(
+    type_: Any, copy: bool = False
+) -> MsgpackNumpyDecoder:
     """Create a decoder function for the specified type.
 
     Args:

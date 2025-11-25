@@ -735,6 +735,22 @@ class TTSContext(TextContext):
         default=GenerationStatus.ACTIVE
     )
 
+    def __post_init__(self) -> None:
+        """Initialize TTSContext state after deserialization or construction.
+
+        We must run the base TextContext.__post_init__ to initialize token indices
+        (e.g., _active_idx, _end_idx, _prompt_len) and ensure the text `tokens`
+        buffer is correctly sized and writeable.
+
+        In addition, we ensure that the speech token buffer `_speech_tokens` is
+        writeable, copying only when necessary (e.g., after serialization).
+        """
+        super().__post_init__()
+
+        # Ensure the speech token buffer is writeable.
+        if not self._speech_tokens.flags.writeable:
+            self._speech_tokens = self._speech_tokens.copy()
+
     @property
     def is_done(self) -> bool:
         return self.audio_generation_status.is_done
