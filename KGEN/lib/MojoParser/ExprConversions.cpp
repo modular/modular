@@ -1236,7 +1236,14 @@ ParseResult IREmitter::coerceTypesToEachOther(
   if (lhs && rhs &&
       lhs.getRValueType().mlirType != rhs.getRValueType().mlirType) {
     configEmitter(/*isLHS*/ false);
-    rhs = rebindValue({rhs, rhsExpr}, lhs.getRValueType());
+    Type destType;
+    // LHS and RHS may differ in MValue'ness.  The LHS might be an SRValue and
+    // the RHS may be an MLValue for example.
+    if (rhs.isMValue())
+      destType = rhs.getMValueType().getWithElement(lhs.getRValueType());
+    else
+      destType = lhs.getRValueType();
+    rhs = rebindValue({rhs, rhsExpr}, destType);
   }
 
   return success(lhs && rhs);
