@@ -81,7 +81,7 @@ MojoTypeDataLayoutContext::Impl::calculateForStructLike(
 std::optional<MojoTypeDataLayout>
 MojoTypeDataLayoutContext::Impl::calculateForStruct(
     MojoASTTypeRef typeRef, LIT::StructDeclOp structOp) {
-  auto refType = cast<LIT::StructType>(typeRef);
+  auto refType = sugarCast<LIT::StructType>(typeRef.getMLIRType());
   return calculateForStructLike(llvm::map_to_vector(
       structOp.getFieldDecls(), [&](LIT::StructFieldOp field) {
         MojoASTTypeRef fieldType =
@@ -99,7 +99,7 @@ MojoTypeDataLayoutContext::Impl::calculateForStruct(
 std::optional<MojoTypeDataLayout>
 MojoTypeDataLayoutContext::Impl::calculateForPack(MojoASTTypeRef typeRef,
                                                   PackType packType) {
-  auto attr = dyn_cast<VariadicAttr>(packType.getVariadic());
+  auto attr = sugarCast<VariadicAttr>(packType.getVariadic());
   if (!attr)
     return {};
   return calculateForStructLike(
@@ -165,7 +165,7 @@ MojoTypeDataLayoutContext::Impl::getOrCalculate(MojoASTTypeRef type) {
 std::optional<MojoTypeDataLayout>
 MojoTypeDataLayoutContext::Impl::calculate(MojoASTTypeRef type) {
   // A REPLResultRefType is effectively a pointer, so we transform it into one.
-  if (auto replType = dyn_cast<LIT::REPLResultRefType>(type))
+  if (auto replType = sugarDynCast<LIT::REPLResultRefType>(type.getMLIRType()))
     return calculate(KGEN::PointerType::get(replType.getElementType()));
 
   if (MojoASTDeclRef declRef = context.getDecl(type)) {

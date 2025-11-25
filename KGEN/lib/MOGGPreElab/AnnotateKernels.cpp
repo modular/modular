@@ -97,15 +97,15 @@ bool symbolMatches(mlir::SymbolRefAttr symbol,
 }
 
 std::optional<SymbolRefAttr> getDecoratorSymbol(TypedAttr attr) {
-  auto directSym = dyn_cast<SymbolConstantAttr>(attr);
+  auto directSym = sugarDynCast<SymbolConstantAttr>(attr);
   if (directSym) {
     return directSym.getSymbol();
   }
 
   ParamOperatorAttr apply;
-  apply = dyn_cast<ParamOperatorAttr>(attr);
+  apply = sugarDynCast<ParamOperatorAttr>(attr);
   if (apply) {
-    if (auto sym = dyn_cast<SymbolConstantAttr>(apply.getOperand(0))) {
+    if (auto sym = sugarDynCast<SymbolConstantAttr>(apply.getOperand(0))) {
       return sym.getSymbol();
     }
   }
@@ -123,10 +123,10 @@ bool decoratorIsPartOfMAXCompiler(SymbolRefAttr symbol) {
 // #kgen.param.expr<apply, #kgen.symbol.constant<@StringSlice::@"__init__"
 //        [mut: Bool, origin: Origin, value: !kgen.string]
 StringAttr getStringAttrFromStaticStringDecorator(TypedAttr operand) {
-  auto initApply = dyn_cast<ParamOperatorAttr>(operand);
+  auto initApply = sugarDynCast<ParamOperatorAttr>(operand);
   assert(initApply && initApply.getOpcode() == POC::Apply &&
          "Expected a call to StringSlice.__init__");
-  auto callee = dyn_cast<SymbolConstantAttr>(initApply.getOperand(0));
+  auto callee = sugarDynCast<SymbolConstantAttr>(initApply.getOperand(0));
   assert(callee && callee.getParamValues().size() == 3 &&
          "Expected a symbol reference to StringSlice.__init__");
   return cast<StringAttr>(callee.getParamValues()[2]);
@@ -168,7 +168,7 @@ void replaceMOGGPreElabDecoratorsWithAttributes(StructDeclOrFnTy obj) {
       continue;
 
     StringRef decoratorName = decoratorSymbol.getLeafReference().strref();
-    auto apply = dyn_cast<ParamOperatorAttr>(decorator);
+    auto apply = sugarDynCast<ParamOperatorAttr>(decorator);
     if (!apply)
       continue;
 
@@ -210,11 +210,11 @@ static std::optional<SmallVector<TypedAttr>>
 getDecoratorLambdaArgument(ModuleOp mod, TypedAttr decorator,
                            StringRef expectedFuncAttr,
                            ArrayRef<size_t> indicesToFetch) {
-  auto apply = dyn_cast<ParamOperatorAttr>(decorator);
+  auto apply = sugarDynCast<ParamOperatorAttr>(decorator);
   if (!apply)
     return std::nullopt;
 
-  auto sym = dyn_cast<SymbolConstantAttr>(apply.getOperand(0));
+  auto sym = sugarDynCast<SymbolConstantAttr>(apply.getOperand(0));
   if (!sym)
     return std::nullopt;
 
@@ -233,10 +233,10 @@ getDecoratorLambdaArgument(ModuleOp mod, TypedAttr decorator,
 
 /// Look through ref types to get underlying decl ref type if needed.
 static LIT::StructType getAsStructType(Type t) {
-  auto asLitRef = dyn_cast<LIT::RefType>(t);
+  auto asLitRef = sugarDynCast<LIT::RefType>(t);
   if (asLitRef)
-    return dyn_cast<LIT::StructType>(asLitRef.getElementType());
-  return dyn_cast<LIT::StructType>(t);
+    return sugarDynCast<LIT::StructType>(asLitRef.getElementType());
+  return sugarDynCast<LIT::StructType>(t);
 }
 
 /// Check if the function is a DPS kernel with by-ref tensor arguments.
@@ -245,7 +245,7 @@ static LogicalResult checkByRefTensorArgs(LIT::FnOp func) {
   for (auto [index, litType] : llvm::enumerate(signature.getArguments())) {
     if (LIT::StructType structType = getAsStructType(litType)) {
       if (isExtensibilityFunc(func) && isDPSTensor(structType) &&
-          isa<LIT::RefType>(litType)) {
+          sugarIsa<LIT::RefType>(litType)) {
         return func.emitError()
                << " Only the borrowed argument (read) convention is supported "
                   "for tensor arguments ("
@@ -319,7 +319,7 @@ static LogicalResult annotateTypes(LIT::FnOp func) {
 
   // Add the result type.
   Type resultType = func.getResultTypes()[0];
-  if (!isa<KGEN::NoneType>(resultType)) {
+  if (!sugarIsa<KGEN::NoneType>(resultType)) {
     func->setDiscardableAttr(MOGG_RESULT_TYPE_NAME,
                              litTypeToSourceName(resultType));
   }
@@ -431,7 +431,7 @@ static Attribute getUnboundParameters(KGENModule &kgenModule,
   result.reserve(allValues.size());
 
   for (auto [decl, value] : llvm::zip(decl.getAllParams(), allValues)) {
-    if (auto structType = dyn_cast<LIT::StructType>(decl.getType()))
+    if (auto structType = sugarDynCast<LIT::StructType>(decl.getType()))
       if (!willBePresentInKgen(kgenModule, structType))
         continue;
 
@@ -541,7 +541,7 @@ isExtensibilityAPIStruct(LIT::StructDeclOp structDeclOp, ModuleOp moduleOp,
   // Iterate over the decorators and to find max.compiler.register.
   for (auto decorator : decorators) {
     // Handle elementwise annotation
-    if (auto directSym = dyn_cast<SymbolConstantAttr>(decorator)) {
+    if (auto directSym = sugarDynCast<SymbolConstantAttr>(decorator)) {
       auto decoratorFunc =
           moduleOp.lookupSymbol<LIT::FnOp>(directSym.getSymbol());
 
@@ -625,7 +625,7 @@ static std::optional<IOSpec> maybeGetIOSpec(TypedAttr mutAttr,
   inputAttr = getCanonicalAttr(inputAttr);
 
   auto processMut = [&]() -> std::optional<bool> {
-    auto mutStruct = dyn_cast<LIT::LITStructAttr>(mutAttr);
+    auto mutStruct = sugarDynCast<LIT::LITStructAttr>(mutAttr);
     if (!mutStruct) {
       if (!isShapeFunc) {
         emitError(loc, "Error for argument '" + argName +
@@ -635,7 +635,7 @@ static std::optional<IOSpec> maybeGetIOSpec(TypedAttr mutAttr,
     }
 
     auto [_, mutValueAttr] = mutStruct.getValues().front();
-    auto mutIntAttr = dyn_cast<IntegerAttr>(mutValueAttr);
+    auto mutIntAttr = sugarDynCast<IntegerAttr>(mutValueAttr);
     ASSERT_STREAM(mutIntAttr,
                   << "Error for argument '" << argName
                   << "': Expected integer attribute for mut parameter value");
@@ -643,7 +643,7 @@ static std::optional<IOSpec> maybeGetIOSpec(TypedAttr mutAttr,
   };
 
   auto processInput = [&]() -> std::optional<int64_t> {
-    auto inputStruct = dyn_cast<LIT::LITStructAttr>(inputAttr);
+    auto inputStruct = sugarDynCast<LIT::LITStructAttr>(inputAttr);
     if (!inputStruct) {
       if (!isShapeFunc) {
         emitError(loc, "Error for argument '" + argName +
@@ -653,14 +653,14 @@ static std::optional<IOSpec> maybeGetIOSpec(TypedAttr mutAttr,
     }
 
     auto [_, inputValueAttr] = inputStruct.getValues().front();
-    auto inputStructAttr = dyn_cast<LIT::LITStructAttr>(inputValueAttr);
+    auto inputStructAttr = sugarDynCast<LIT::LITStructAttr>(inputValueAttr);
     ASSERT_STREAM(
         inputStructAttr && !inputStructAttr.getValues().empty(),
         << "Error for argument '" << argName
         << "': Expected struct attribute with value for input parameter");
 
     auto [__, inputIntValueAttr] = inputStructAttr.getValues().front();
-    auto inputIntAttr = dyn_cast<IntegerAttr>(inputIntValueAttr);
+    auto inputIntAttr = sugarDynCast<IntegerAttr>(inputIntValueAttr);
     ASSERT_STREAM(inputIntAttr,
                   << "Error for argument '" << argName
                   << "': Expected integer attribute for input parameter value");

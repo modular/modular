@@ -143,7 +143,7 @@ static std::string getSignatureOrigin(SharedState &shared, TypedAttr origin,
 
   // Check to see if the origin is a parameter on this signature.  If so, it
   // will have a depth of zero.
-  if (auto indexRef = dyn_cast<ParamIndexRefAttr>(origin);
+  if (auto indexRef = sugarDynCast<ParamIndexRefAttr>(origin);
       indexRef && indexRef.getDepth() == 0 && signature) {
     PogListAttr paramListMetadata = signature.getParamListAttrs();
 
@@ -167,7 +167,7 @@ static std::string getSignatureOrigin(SharedState &shared, TypedAttr origin,
   }
 
   // Combine unions into comma separated string.
-  if (auto unionAttr = dyn_cast<OriginUnionAttr>(origin)) {
+  if (auto unionAttr = sugarDynCast<OriginUnionAttr>(origin)) {
     std::string result;
     llvm::interleave(
         unionAttr.getOperands(),
@@ -195,9 +195,9 @@ static std::string getRefPrefixAsString(SharedState &shared, RefType refType,
     // It will often be two extract_elements from the inner guts of the actual
     // AddressSpace value. Remove them.
     TypedAttr addrSpace = refType.getAddressSpace();
-    if (auto extractAttr = dyn_cast<LIT::StructExtractAttr>(addrSpace)) {
+    if (auto extractAttr = sugarDynCast<LIT::StructExtractAttr>(addrSpace)) {
       addrSpace = extractAttr.getStructValue();
-      if (auto extractAttr2 = dyn_cast<LIT::StructExtractAttr>(addrSpace)) {
+      if (auto extractAttr2 = sugarDynCast<LIT::StructExtractAttr>(addrSpace)) {
         addrSpace = extractAttr2.getStructValue();
       }
     }
@@ -1335,8 +1335,7 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
       continue;
     TypedAttr defaultValue;
     if (TypedAttr defaultAttr = defaultParamHandler.getDefault(parIdx)) {
-      defaultValue =
-          cast<TypedAttr>(evaluator.getReboundAttribute(defaultAttr));
+      defaultValue = evaluator.getReboundAttribute(defaultAttr);
     }
     VariadicKind variadicKind =
         signature.getParamListAttrs().getVariadicKind(parIdx);
@@ -1357,8 +1356,7 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
 
     TypedAttr defaultValue;
     if (auto defaultAttr = defaultArgHandler.getDefault(argIdx)) {
-      defaultValue =
-          cast<TypedAttr>(evaluator.getReboundAttribute(defaultAttr));
+      defaultValue = evaluator.getReboundAttribute(defaultAttr);
     }
 
     std::string prefix;

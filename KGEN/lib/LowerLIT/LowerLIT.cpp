@@ -1054,7 +1054,7 @@ static void lowerAttributesAndTypes(
         if (auto bindParams = dyn_cast<BindParamsAttr>(attr)) {
           SmallVector<TypedAttr> newOperands;
           for (auto [declType, param] : llvm::zip(
-                   cast<GeneratorType>(bindParams.getGenerator().getType())
+                   sugarCast<GeneratorType>(bindParams.getGenerator().getType())
                        .getInputParamTypes(),
                    bindParams.getParamValues())) {
             // Check for singleton type using the declared type on the
