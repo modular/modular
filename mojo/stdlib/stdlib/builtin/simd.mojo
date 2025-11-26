@@ -206,7 +206,7 @@ comptime Byte = UInt8
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline("nodebug")
+@always_inline("builtin")
 fn _simd_construction_checks[dtype: DType, size: Int]():
     """Checks if the SIMD size is valid.
 
@@ -538,7 +538,7 @@ struct SIMD[dtype: DType, size: Int](
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __init__(out self):
         """Default initializer of the SIMD vector.
 
@@ -621,7 +621,7 @@ struct SIMD[dtype: DType, size: Int](
         else:
             self = Self(value.__int__())
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Int, /):
         """Initializes the SIMD vector with a signed integer.
@@ -672,7 +672,7 @@ struct SIMD[dtype: DType, size: Int](
         """
         self = value.__float__()
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: IntLiteral, /):
         """Initializes the SIMD vector with an integer.
@@ -1826,7 +1826,7 @@ struct SIMD[dtype: DType, size: Int](
 
         return self.size
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __bool__(self) -> Bool:
         """Converts the SIMD scalar into a boolean value.
 
