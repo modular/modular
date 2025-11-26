@@ -60,18 +60,16 @@ class BasicDispatcherServer(PrefillDispatcherServerV2):
 
 
 class BasicDispatcherClient(DecodeDispatcherClientV2):
-    def __init__(self, bind_addr: str, default_dest_addr: str | None):
+    def __init__(self, bind_addr: str):
         self.bind_addr = bind_addr
-        super().__init__(
-            bind_addr=bind_addr,
-            default_dest_addr=default_dest_addr,
-        )
+        super().__init__(bind_addr=bind_addr)
 
     def recv_reply_nowait(self) -> ReplyType:
         return blocking_recv(super().recv_reply_nowait)
 
 
 def create_text_context(
+    target_endpoint: str,
     prompt_len: int,
     output_len: int | None = None,
 ) -> TextContext:
@@ -84,6 +82,7 @@ def create_text_context(
         request_id=RequestID(),
         max_length=max_length,
         tokens=tokens,
+        target_endpoint=target_endpoint,
     )
 
 
@@ -100,7 +99,7 @@ def create_di_scheduler(
     enable_kvcache_swapping_to_host: bool = False,
     dp: int = 1,
     device: Device = CPU(),
-) -> tuple[DecodeScheduler, PrefillScheduler]:
+) -> tuple[DecodeScheduler, PrefillScheduler, str]:
     def _create_paged_manager() -> PagedKVCacheManager:
         return create_paged_manager(
             num_blocks=num_blocks,
@@ -136,13 +135,8 @@ def create_di_scheduler(
     paged_manager_decode = _create_paged_manager()
     server_addr = generate_zmq_ipc_path()
     client_addr = generate_zmq_ipc_path()
-    dispatcher_server = BasicDispatcherServer(
-        bind_addr=server_addr,
-    )
-    dispatcher_client = BasicDispatcherClient(
-        bind_addr=client_addr,
-        default_dest_addr=server_addr,
-    )
+    dispatcher_server = BasicDispatcherServer(bind_addr=server_addr)
+    dispatcher_client = BasicDispatcherClient(bind_addr=client_addr)
 
     decode_scheduler = DecodeScheduler(
         pipeline=FakeTokenGeneratorPipeline(
@@ -165,14 +159,16 @@ def create_di_scheduler(
         dispatcher=dispatcher_server,
     )
 
-    return decode_scheduler, prefill_scheduler
+    return decode_scheduler, prefill_scheduler, server_addr
 
 
 def create_default_di_scheduler_and_submit_one_request() -> tuple[
     DecodeScheduler, PrefillScheduler, TextContext
 ]:
-    decode, prefill = create_di_scheduler()
-    ctx = create_text_context(prompt_len=100, output_len=5)
+    decode, prefill, server_addr = create_di_scheduler()
+    ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
     request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)
     request_queue.put(ctx)
     return decode, prefill, ctx
@@ -257,12 +253,12 @@ def test_one_req_end_to_end() -> None:
 
 def test_di_with_dp2_requests_distributed_to_different_replicas() -> None:
     """Test that with DP=2, requests are distributed to different replicas."""
-    decode, prefill = create_di_scheduler(dp=2)
+    decode, prefill, server_addr = create_di_scheduler(dp=2)
 
     # Create and submit two requests
-    ctx1 = create_text_context(prompt_len=1111)
-    ctx2 = create_text_context(prompt_len=1111)
-    ctx3 = create_text_context(prompt_len=1111)
+    ctx1 = create_text_context(target_endpoint=server_addr, prompt_len=1111)
+    ctx2 = create_text_context(target_endpoint=server_addr, prompt_len=1111)
+    ctx3 = create_text_context(target_endpoint=server_addr, prompt_len=1111)
     request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)
     request_queue.put(ctx1)
     request_queue.put(ctx2)
@@ -296,11 +292,15 @@ def test_di_with_dp2_requests_distributed_to_different_replicas() -> None:
 
 def test_di_with_dp2_end_to_end() -> None:
     """Test end-to-end DI flow with DP=2."""
-    decode, prefill = create_di_scheduler(dp=2)
+    decode, prefill, server_addr = create_di_scheduler(dp=2)
 
     # Create and submit two requests
-    ctx1 = create_text_context(prompt_len=100, output_len=5)
-    ctx2 = create_text_context(prompt_len=100, output_len=5)
+    ctx1 = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    ctx2 = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
     req_id1 = ctx1.request_id
     req_id2 = ctx2.request_id
     request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)
