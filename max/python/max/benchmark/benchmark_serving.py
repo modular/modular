@@ -45,6 +45,7 @@ from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
 if TYPE_CHECKING:
+    from max.benchmark.benchmark_shared.server_metrics import ParsedMetrics
     from max.diagnostics.gpu import BackgroundRecorder as GPUBackgroundRecorder
     from max.diagnostics.gpu import GPUStats
 
@@ -88,8 +89,7 @@ from max.benchmark.benchmark_shared.request import (
     RequestFuncOutput,
 )
 from max.benchmark.benchmark_shared.server_metrics import (
-    compute_metrics_delta,
-    fetch_and_parse_metrics,
+    collect_server_metrics,
     print_server_metrics,
 )
 
@@ -272,6 +272,7 @@ def calculate_metrics(
     skip_first_n_requests: int,
     max_concurrency: int | None,
     collect_gpu_stats: bool,
+    server_metrics: ParsedMetrics | None = None,
 ) -> tuple[BenchmarkMetrics, list[int]]:
     actual_output_lens: list[int] = []
     nonempty_response_chunks = 0
@@ -429,6 +430,7 @@ def calculate_metrics(
         gpu_utilization=gpu_utilization,
         cpu_utilization_user=cpu_metrics.get("user_percent"),
         cpu_utilization_system=cpu_metrics.get("system_percent"),
+        server_metrics=server_metrics,
     )
 
     return metrics, actual_output_lens
@@ -949,11 +951,15 @@ async def benchmark(
         baseline_server_metrics = None
         if collect_server_stats:
             try:
-                baseline_server_metrics = fetch_and_parse_metrics(
-                    backend=backend,
-                    base_url=base_url,
+                baseline_server_metrics = collect_server_metrics(
+                    backend, base_url
                 )
-                logger.info("Captured baseline server metrics")
+                logger.info(
+                    f"Captured baseline server metrics: "
+                    f"{len(baseline_server_metrics.counters)} counters, "
+                    f"{len(baseline_server_metrics.gauges)} gauges, "
+                    f"{len(baseline_server_metrics.histograms)} histograms"
+                )
             except Exception as e:
                 logger.warning(
                     f"Failed to capture baseline server metrics: {e}"
@@ -1047,36 +1053,29 @@ async def benchmark(
     else:
         cpu_metrics = {}
 
-    # Parse server-side metrics from Prometheus endpoint
+    # Collect server-side metrics from Prometheus endpoint (with delta from baseline)
     server_metrics = None
     if collect_server_stats:
         try:
-            final_server_metrics = fetch_and_parse_metrics(
-                backend=backend,
-                base_url=base_url,
+            server_metrics = collect_server_metrics(
+                backend, base_url, baseline_server_metrics
             )
-
-            # Compute delta if we have baseline metrics
             if baseline_server_metrics is not None:
-                server_metrics = compute_metrics_delta(
-                    baseline=baseline_server_metrics,
-                    final=final_server_metrics,
-                )
                 logger.info(
-                    f"Computed server metrics delta: {len(server_metrics.counters)} counters, "
+                    f"Computed server metrics delta: "
+                    f"{len(server_metrics.counters)} counters, "
                     f"{len(server_metrics.gauges)} gauges, "
                     f"{len(server_metrics.histograms)} histograms"
                 )
             else:
-                # If no baseline, use final metrics as-is
-                server_metrics = final_server_metrics
                 logger.info(
-                    f"Collected {len(server_metrics.counters)} counters, "
+                    f"Collected server metrics: "
+                    f"{len(server_metrics.counters)} counters, "
                     f"{len(server_metrics.gauges)} gauges, "
-                    f"{len(server_metrics.histograms)} histograms from server"
+                    f"{len(server_metrics.histograms)} histograms"
                 )
         except Exception as e:
-            logger.warning(f"Failed to parse server metrics: {e}")
+            logger.warning(f"Failed to collect server metrics: {e}")
 
     metrics, actual_output_lens = calculate_metrics(
         outputs=outputs,
@@ -1087,6 +1086,7 @@ async def benchmark(
         skip_first_n_requests=skip_first_n_requests,
         max_concurrency=max_concurrency,
         collect_gpu_stats=collect_gpu_stats,
+        server_metrics=server_metrics,
     )
     achieved_request_rate = 0.0
     if timing_data and timing_data.get("intervals"):
@@ -1279,8 +1279,8 @@ async def benchmark(
         print("=" * 50)
 
     # Print server-side metrics if available
-    if server_metrics:
-        print_server_metrics(server_metrics)
+    if metrics.server_metrics:
+        print_server_metrics(metrics.server_metrics)
 
     result = {
         "duration": benchmark_duration,
@@ -1347,18 +1347,10 @@ async def benchmark(
         }
 
     # Add server-side metrics to result if available
-    if server_metrics:
-        # Extract prefill/decode stats for easy access
-        prefill_hist = server_metrics.get_histogram(
-            "maxserve_batch_execution_time_milliseconds", {"batch_type": "CE"}
-        )
-        decode_hist = server_metrics.get_histogram(
-            "maxserve_batch_execution_time_milliseconds", {"batch_type": "TG"}
-        )
-
+    if metrics.server_metrics:
         result["server_metrics"] = {
-            "counters": server_metrics.counters,
-            "gauges": server_metrics.gauges,
+            "counters": metrics.server_metrics.counters,
+            "gauges": metrics.server_metrics.gauges,
             "histograms": {
                 name: {
                     "buckets": hist.buckets,
@@ -1366,19 +1358,13 @@ async def benchmark(
                     "count": hist.count,
                     "mean": hist.mean,
                 }
-                for name, hist in server_metrics.histograms.items()
+                for name, hist in metrics.server_metrics.histograms.items()
             },
-            # Add prefill/decode breakdown for easy access
-            "prefill_batch_execution_time_ms": (
-                prefill_hist.mean if prefill_hist else None
-            ),
-            "prefill_batch_count": (
-                int(prefill_hist.count) if prefill_hist else 0
-            ),
-            "decode_batch_execution_time_ms": (
-                decode_hist.mean if decode_hist else None
-            ),
-            "decode_batch_count": int(decode_hist.count) if decode_hist else 0,
+            # Convenience fields for prefill/decode breakdown
+            "prefill_batch_execution_time_ms": metrics.mean_prefill_batch_time_ms,
+            "prefill_batch_count": metrics.prefill_batch_count,
+            "decode_batch_execution_time_ms": metrics.mean_decode_batch_time_ms,
+            "decode_batch_count": metrics.decode_batch_count,
         }
 
     return result
