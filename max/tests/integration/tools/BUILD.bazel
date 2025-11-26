@@ -1,6 +1,21 @@
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
 
 modular_py_library(
+    name = "debugging_utils",
+    testonly = True,
+    srcs = [
+        "debugging_utils.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":generate_llm_logits",
+        "//max/python/max/driver",
+        "//max/python/max/entrypoints",
+        requirement("torch"),
+    ],
+)
+
+modular_py_library(
     name = "create_pipelines",
     testonly = True,
     srcs = ["create_pipelines.py"],
@@ -24,7 +39,6 @@ modular_py_binary(
     name = "generate_llm_logits",
     testonly = True,
     srcs = [
-        "debugging_utils.py",
         "generate_llm_logits.py",
     ],
     data = [
