@@ -122,7 +122,8 @@ bool decoratorIsPartOfMAXCompiler(SymbolRefAttr symbol) {
 // We expect the decorator to be of the form:
 // #kgen.param.expr<apply, #kgen.symbol.constant<@StringSlice::@"__init__"
 //        [mut: Bool, origin: Origin, value: !kgen.string]
-StringAttr getStringAttrFromStaticStringDecorator(TypedAttr operand) {
+static StringAttr getStringAttrFromStaticStringDecorator(TypedAttr operand) {
+  operand = ParamOperatorAttr::stripRebind(operand);
   auto initApply = sugarDynCast<ParamOperatorAttr>(operand);
   assert(initApply && initApply.getOpcode() == POC::Apply &&
          "Expected a call to StringSlice.__init__");
