@@ -150,9 +150,96 @@ OpFoldResult POP::foldCastFromBuiltin(TypedAttr val, SIMDType resultType) {
   return SIMDAttr::get({cast<FloatAttr>(val).getValue(), *dtype}, resultType);
 }
 
+// If casting specifically to a 32-bit or 64-bit int from an index-like type, we
+// don't need to worry about the 32-bit and 64-bit representations of the fold
+// result being the same.
+template <typename... OpsFns>
+static OpFoldResult foldCastToInt(ArrayRef<Attribute> operands,
+                                  KGENDType inputDType, KGENDType outputDType,
+                                  std::optional<int64_t> indexBitWidth,
+                                  OpsFns &&...ops) {
+  assert(outputDType.isInt() && "Unexpected output DType");
+  unsigned intWidth = outputDType.getIntegerWidthInBits();
+  // If we know the index bitwidth, and we're casting to an integer of the same
+  // size, we can improve the chances of folding. Otherwise the folder will
+  // ensure that the fold result is identical for either 32- or 64-bit index
+  // widths.
+  if (indexBitWidth && (inputDType.isIndex() || inputDType.isUIndex())) {
+    if (intWidth == 64)
+      return foldSIMDOpResult<POP::k64BitResult>(
+          operands, outputDType,
+          [&](const APSInt &in) -> APSInt {
+            return in.extOrTrunc(*indexBitWidth).extOrTrunc(intWidth);
+          },
+          std::forward<OpsFns>(ops)...);
+    if (intWidth == 32)
+      return foldSIMDOpResult<POP::k32BitResult>(
+          operands, outputDType,
+          [&](const APSInt &in) -> APSInt {
+            return in.extOrTrunc(*indexBitWidth).extOrTrunc(intWidth);
+          },
+          std::forward<OpsFns>(ops)...);
+  }
+  return foldSIMDOpResult<POP::kOtherResult>(
+      operands, outputDType,
+      [&](const APSInt &in) -> APSInt { return in.extOrTrunc(intWidth); },
+      std::forward<OpsFns>(ops)...);
+}
+
+// If casting specifically to a 32-bit or 64-bit int from an index-like type, we
+// don't need to worry about the 32-bit and 64-bit representations of the fold
+// result being the same.
+template <typename... OpsFns>
+static OpFoldResult foldCastToFP(ArrayRef<Attribute> operands,
+                                 KGENDType inputDType, KGENDType outputDType,
+                                 std::optional<int64_t> indexBitWidth,
+                                 OpsFns &&...ops) {
+  assert(outputDType.isFloat() && "Unexpected output DType");
+  const llvm::fltSemantics *sem = outputDType.getFloatSemantics();
+  assert(sem && "Must have semantics at this point");
+
+  // If we know the index bitwidth, and we're casting to a float of the same
+  // size, we can improve the chances of folding. Otherwise the folder will
+  // ensure that the fold result is identical for either 32- or 64-bit index
+  // widths.
+  if (indexBitWidth && (inputDType.isIndex() || inputDType.isUIndex())) {
+    if (outputDType == KGENDType::f64) {
+      return foldSIMDOpResult<POP::k64BitResult>(
+          operands, outputDType,
+          [&](const APSInt &in) -> APFloat {
+            APFloat fp(*sem);
+            fp.convertFromAPInt(in.extOrTrunc(*indexBitWidth), in.isSigned(),
+                                APFloat::rmNearestTiesToEven);
+            return fp;
+          },
+          std::forward<OpsFns>(ops)...);
+    }
+    if (outputDType == KGENDType::f32) {
+      return foldSIMDOpResult<POP::k32BitResult>(
+          operands, outputDType,
+          [&](const APSInt &in) -> APFloat {
+            APFloat fp(*sem);
+            fp.convertFromAPInt(in.extOrTrunc(*indexBitWidth), in.isSigned(),
+                                APFloat::rmNearestTiesToEven);
+            return fp;
+          },
+          std::forward<OpsFns>(ops)...);
+    }
+  }
+  return foldSIMDOpResult<POP::kOtherResult>(
+      operands, outputDType,
+      [&](const APSInt &in) -> APFloat {
+        APFloat fp(*sem);
+        fp.convertFromAPInt(in, in.isSigned(), APFloat::rmNearestTiesToEven);
+        return fp;
+      },
+      std::forward<OpsFns>(ops)...);
+}
+
 /// Fold a cast between two SIMD types.
 OpFoldResult POP::foldCast(ArrayRef<Attribute> operands, SIMDType resultType,
-                           SIMDType inputType, SIMDType outputType) {
+                           SIMDType inputType, SIMDType outputType,
+                           std::optional<int64_t> indexBitWidth) {
   auto in = dyn_cast_if_present<SIMDAttr>(operands.front());
   std::optional<KGENDType> dtype = resultType.getResolvedDType();
 
@@ -173,13 +260,8 @@ OpFoldResult POP::foldCast(ArrayRef<Attribute> operands, SIMDType resultType,
     const llvm::fltSemantics *sem = dtype->getFloatSemantics();
     if (!sem)
       return {};
-    return foldSIMDOpResult<kOtherResult>(
-        operands, *dtype,
-        [&](const APSInt &in) -> APFloat {
-          APFloat fp(*sem);
-          fp.convertFromAPInt(in, in.isSigned(), APFloat::rmNearestTiesToEven);
-          return fp;
-        },
+    return foldCastToFP(
+        operands, *inType, *dtype, indexBitWidth,
         [&](APFloat in) {
           bool ignored;
           in.convert(*sem, APFloat::rmNearestTiesToEven, &ignored);
@@ -192,9 +274,8 @@ OpFoldResult POP::foldCast(ArrayRef<Attribute> operands, SIMDType resultType,
     // Note that float to integer casts are undefined if the float value is
     // too large to fit in the integer dtype.
     unsigned width = dtype->getIntegerWidthInBits();
-    return foldSIMDOpResult<kOtherResult>(
-        operands, *dtype,
-        [&](const APSInt &in) -> APSInt { return in.extOrTrunc(width); },
+    return foldCastToInt(
+        operands, *inType, *dtype, indexBitWidth,
         [&](const APFloat &in) -> std::optional<APSInt> {
           APSInt iv(width, /*isUnsigned=*/dtype->isUInt());
           bool ignored;

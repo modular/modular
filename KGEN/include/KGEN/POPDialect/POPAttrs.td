@@ -565,7 +565,8 @@ def POP_StringConcatAttr : POP_ExprAttr<"StringConcat", "string_concat"> {
 // Cast
 //===----------------------------------------------------------------------===//
 
-def POP_CastAttr : POP_ExprAttr<"Cast", "cast"> {
+def POP_CastAttr : POP_ExprAttr<"Cast", "cast",
+    [ContextuallyEvaluatedAttrInterface]> {
   let summary = "Convert between POP types.";
   let description = [{
     The `#pop.cast` attribute converts a POP type to another POP type.
