@@ -25,7 +25,6 @@ Use the public API in `random.mojo` instead.
 """
 
 from math import sqrt, log, cos, pi
-from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys.ffi import _Global
 from utils.numerics import isnan, max_finite, FPUtils
@@ -259,16 +258,18 @@ fn _init_random_state() -> _RandomState:
     return _RandomState()
 
 
-fn _get_global_random_state() -> UnsafePointer[_RandomState]:
+fn _get_global_random_state(
+    out result: UnsafePointer[_RandomState, MutOrigin.external]
+):
     """Gets the global random state.
 
     Returns:
         A pointer to the global _RandomState instance.
     """
     try:
-        return _global_random_state.get_or_create_ptr()
+        result = _global_random_state.get_or_create_ptr()
     except:
-        return abort[UnsafePointer[_RandomState]](
+        return abort[type_of(result)](
             "Failed to initialize global random state"
         )
 

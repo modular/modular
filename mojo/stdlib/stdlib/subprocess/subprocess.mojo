@@ -19,7 +19,7 @@ from sys._libc import FILE_ptr, pclose, popen
 from sys.ffi import c_char
 from sys.info import CompilationTarget
 
-from memory import LegacyUnsafePointer as UnsafePointer, Span
+from memory import Span
 
 
 struct _POpenHandle:
@@ -58,7 +58,7 @@ struct _POpenHandle:
             * The data written by the subprocess is not valid UTF-8.
         """
         var len: Int = 0
-        var line = UnsafePointer[c_char]()
+        var line = UnsafePointer[c_char, MutOrigin.external]()
         var res = String()
 
         while True:

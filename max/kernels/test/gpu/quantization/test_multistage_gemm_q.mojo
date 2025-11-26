@@ -421,7 +421,7 @@ fn test_repack_Q4_0_for_sm8x(
 ) raises:
     print("test repack_Q4_0_for_sm8x")
 
-    fn fill_random[dtype: DType](array: InlineArray[Scalar[dtype]]):
+    fn fill_random[dtype: DType](mut array: InlineArray[Scalar[dtype]]):
         rand(array.unsafe_ptr(), len(array), min=0, max=255)
 
     fn build_b_buffer(N: Int, K: Int, b_ptr: UnsafePointer[UInt8]):

@@ -20,7 +20,6 @@ from time import perf_counter_ns
 """
 
 from math import floor
-from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys import (
     CompilationTarget,
@@ -315,12 +314,9 @@ fn sleep(sec: Float64):
         Int(total_secs),
         Int((sec - total_secs) * NANOSECONDS_IN_SECOND),
     )
-    var req = UnsafePointer[_CTimeSpec](to=tv_spec)
-    var rem = UnsafePointer[_CTimeSpec]()
+    var req = UnsafePointer(to=tv_spec)
+    var rem = UnsafePointer[_CTimeSpec, MutOrigin.external]()
     _ = external_call["nanosleep", Int32](req, rem)
-    _ = tv_spec
-    _ = req
-    _ = rem
 
 
 fn _gpu_sleep_inst() -> StaticString:
