@@ -133,7 +133,8 @@ public:
 
   bool elaborationErrorIncludePrelude{false};
 
-  bool elaborationErrorVerbose{false};
+  CompilationOptions::ErrorVerboseLevel elaborationErrorVerbose{
+      CompilationOptions::kSimpleParams};
 
   unsigned elaborationMaxDepth{std::numeric_limits<unsigned>::max()};
 
@@ -458,13 +459,22 @@ private:
       llvm::cl::location(options.elaborationErrorIncludePrelude),
       llvm::cl::cat(KGENOptionsCategory)};
 
-  M::cl::MOpt<bool, true> elaborationErrorVerbose{
-      "elaboration-error-verbose",
-      cl::desc("Show verbose elaboration error with all concrete parameter "
-               "values where call expansion is failed. Default print only "
-               "shows simple values (string, integer, float, boolean)."),
-      llvm::cl::location(options.elaborationErrorVerbose),
-      llvm::cl::cat(KGENOptionsCategory)};
+  M::cl::MOpt<CompilationOptions::ErrorVerboseLevel, true>
+      elaborationErrorVerbose{
+          "elaboration-error-verbose",
+          cl::desc("controls how parameter values are displayed as part of "
+                   "elaboration errors when function instantiation fails."),
+          cl::values(clEnumValN(CompilationOptions::kNoParams, "no-params",
+                                "don't display any concrete parameter values"),
+                     clEnumValN(CompilationOptions::kSimpleParams,
+                                "simple-params",
+                                "display concretized parameter values for "
+                                "simple types, including numeric types and "
+                                "strings, in a user-friendly format (default)"),
+                     clEnumValN(CompilationOptions::kAllParams, "all-params",
+                                "show all concrete parameter values")),
+          llvm::cl::location(options.elaborationErrorVerbose),
+          llvm::cl::cat(KGENOptionsCategory)};
 
   M::cl::MOpt<unsigned, true> elaborationMaxDepth{
       "elaboration-max-depth",

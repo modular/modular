@@ -7,7 +7,8 @@
 # RUN: kgen -elaborate %s --verify-diagnostics
 # RUN: not kgen -elaborate %s --elaboration-error-include-prelude 2>&1 | FileCheck %s --check-prefix=CHECK-PRELUDE
 # RUN: not mojo --elaboration-error-include-prelude %s 2>&1 | FileCheck %s --check-prefix=CHECK-PRELUDE
-# RUN: not mojo --elaboration-error-include-prelude --elaboration-error-verbose %s 2>&1 | FileCheck %s --check-prefix=CHECK-VERBOSE
+# RUN: not kgen -elaborate %s --elaboration-error-include-prelude --elaboration-error-verbose=all-params 2>&1 | FileCheck %s --check-prefix=CHECK-VERBOSE
+# RUN: not mojo --elaboration-error-include-prelude --elaboration-error-verbose=all-params %s 2>&1 | FileCheck %s --check-prefix=CHECK-VERBOSE
 
 from collections.string.string_slice import _get_kgen_string
 

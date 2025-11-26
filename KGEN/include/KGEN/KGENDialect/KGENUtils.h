@@ -15,6 +15,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENCompilationContext.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/ToolCommon/CLOptions.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/OpImplementation.h"
@@ -488,9 +489,10 @@ void printMemSymbolTripleAttrWithoutType(
                                           ArrayRef<TypedAttr> params)>>
         parameterPrinter = {});
 
-std::string printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
-                                       ArrayRef<TypedAttr> values,
-                                       bool printAll);
+std::string
+printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
+                           ArrayRef<TypedAttr> values,
+                           CompilationOptions::ErrorVerboseLevel verboseLevel);
 
 } // namespace M::KGEN
 
