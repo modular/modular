@@ -325,6 +325,35 @@ kgen.generator @closureSymbol(){
   e = #pop.simd_cmp<le, #pop<simd 42> : !pop.scalar<si32>, #pop<simd 42> : !pop.scalar<si32>> : !pop.scalar<bool>
 } : () -> ()
 
+"some.op"() {
+  // CHECK: a0 = #pop<simd true> : !pop.scalar<bool>
+  a0 = #pop.simd_cmp<eq, #pop<simd "1.0"> : !pop.scalar<f32>, #pop<simd "1.0"> : !pop.scalar<f32>> : !pop.scalar<bool>,
+  // CHECK: a1 = #pop<simd false> : !pop.scalar<bool>
+  a1 = #pop.simd_cmp<eq, #pop<simd "1.5"> : !pop.scalar<f32>, #pop<simd "1.0"> : !pop.scalar<f32>> : !pop.scalar<bool>,
+  // CHECK: a2 = #pop<simd false> : !pop.scalar<bool>
+  a2 = #pop.simd_cmp<eq, #pop<simd "NaN"> : !pop.scalar<f32>, #pop<simd "NaN"> : !pop.scalar<f32>> : !pop.scalar<bool>,
+  // CHECK: b0 = #pop<simd false> : !pop.scalar<bool>
+  b0 = #pop.simd_cmp<lt, #pop<simd "1.0"> : !pop.scalar<f32>, #pop<simd "1.0"> : !pop.scalar<f32>> : !pop.scalar<bool>,
+  // CHECK: b1 = #pop<simd true> : !pop.scalar<bool>
+  b1 = #pop.simd_cmp<lt, #pop<simd "1.0"> : !pop.scalar<f32>, #pop<simd "1.01"> : !pop.scalar<f32>> : !pop.scalar<bool>,
+  // CHECK: b2 = #pop<simd false> : !pop.scalar<bool>
+  b2 = #pop.simd_cmp<lt, #pop<simd "1.0"> : !pop.scalar<f32>, #pop<simd "NaN"> : !pop.scalar<f32>> : !pop.scalar<bool>,
+  // CHECK: b3 = #pop<simd false> : !pop.scalar<bool>
+  b3 = #pop.simd_cmp<lt, #pop<simd "1.0"> : !pop.scalar<f32>, #pop<simd "NaN"> : !pop.scalar<f32>> : !pop.scalar<bool>,
+  // CHECK: b4 = #pop<simd false> : !pop.scalar<bool>
+  b4 = #pop.simd_cmp<lt, #pop<simd "NaN"> : !pop.scalar<f32>, #pop<simd "1.0"> : !pop.scalar<f32>> : !pop.scalar<bool>,
+  // CHECK: c0 = #pop<simd true> : !pop.scalar<bool>
+  c0 = #pop.simd_cmp<le, #pop<simd "1.0"> : !pop.scalar<f32>, #pop<simd "1.0"> : !pop.scalar<f32>> : !pop.scalar<bool>,
+  // CHECK: c1 = #pop<simd true> : !pop.scalar<bool>
+  c1 = #pop.simd_cmp<le, #pop<simd "1.0"> : !pop.scalar<f32>, #pop<simd "1.01"> : !pop.scalar<f32>> : !pop.scalar<bool>,
+  // CHECK: c2 = #pop<simd false> : !pop.scalar<bool>
+  c2 = #pop.simd_cmp<le, #pop<simd "1.0"> : !pop.scalar<f32>, #pop<simd "NaN"> : !pop.scalar<f32>> : !pop.scalar<bool>,
+  // CHECK: c3 = #pop<simd false> : !pop.scalar<bool>
+  c3 = #pop.simd_cmp<le, #pop<simd "1.0"> : !pop.scalar<f32>, #pop<simd "NaN"> : !pop.scalar<f32>> : !pop.scalar<bool>,
+  // CHECK: c4 = #pop<simd false> : !pop.scalar<bool>
+  c4 = #pop.simd_cmp<le, #pop<simd "NaN"> : !pop.scalar<f32>, #pop<simd "1.0"> : !pop.scalar<f32>> : !pop.scalar<bool>
+} : () -> ()
+
 // CHECK-LABEL: @simd_cmp_folding
 kgen.generator @simd_cmp_folding<dt: dtype>() {
   // CHECK-NEXT: kgen.param.if <eq(:ui8 #pop.dtype_to_ui8<dtype>, 1)> {

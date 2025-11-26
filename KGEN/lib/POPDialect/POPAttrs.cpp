@@ -1966,27 +1966,31 @@ TypedAttr SIMDCmpAttr::get(MLIRContext *ctx, NormalizedCmpPredicate cc,
       outDType && inDType && outDType->isBool()) {
     bool isSignedCompare = inDType->isSInt();
     std::function<bool(APSInt, APSInt)> intCompare;
+    std::function<bool(APFloat, APFloat)> fpCompare;
     std::function<bool(bool, bool)> boolCompare;
     switch (cc) {
     case NormalizedCmpPredicate::EQ:
       intCompare = [](APSInt lhs, APSInt rhs) { return lhs.eq(rhs); };
+      fpCompare = [](APFloat lhs, APFloat rhs) { return lhs == rhs; };
       boolCompare = [](bool lhs, bool rhs) { return lhs == rhs; };
       break;
     case NormalizedCmpPredicate::LT:
       intCompare = [isSignedCompare](APSInt lhs, APSInt rhs) {
         return isSignedCompare ? lhs.slt(rhs) : lhs.ult(rhs);
       };
+      fpCompare = [](APFloat lhs, APFloat rhs) { return lhs < rhs; };
       boolCompare = [](bool lhs, bool rhs) { return lhs < rhs; };
       break;
     case NormalizedCmpPredicate::LE:
       intCompare = [isSignedCompare](APSInt lhs, APSInt rhs) {
         return isSignedCompare ? lhs.sle(rhs) : lhs.ule(rhs);
       };
+      fpCompare = [](APFloat lhs, APFloat rhs) { return lhs <= rhs; };
       boolCompare = [](bool lhs, bool rhs) { return lhs <= rhs; };
       break;
     }
-    if (auto fold = foldSIMDOpResult<kOtherResult>({lhs, rhs}, *outDType,
-                                                   intCompare, boolCompare)) {
+    if (auto fold = foldSIMDOpResult<kOtherResult>(
+            {lhs, rhs}, *outDType, intCompare, fpCompare, boolCompare)) {
       if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
         return ret;
     }
@@ -2015,7 +2019,7 @@ TypedAttr SIMDCmpAttr::get(MLIRContext *ctx, NormalizedCmpPredicate cc,
           cmpPred = POC::LE;
           break;
         }
-        // Get as i1 and then convert to SsIMD<i1, 1>
+        // Get as i1 and then convert to SIMD<i1, 1>
         auto i1Val = ParamOperatorAttr::get(cmpPred, {lhs, rhs});
         return CastFromBuiltinAttr::get(i1Val, outType);
       }
