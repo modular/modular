@@ -353,11 +353,20 @@ void LowerCallingConventionsPass::runOnOperation() {
     // Micro-optimization: don't hash a new type if it won't change.
     if (!anyNone)
       return signature;
-    return FuncType::get(FunctionType::get(signature.getContext(),
-                                           signature.getArguments(),
-                                           newResults),
-                         signature.getArgConventions(),
-                         signature.getFnEffects().setThrows(false));
+
+    // At this point in lowering, we turn byref_error into read_reg, because the
+    // normal "throws" convention is done.
+    SmallVector<ArgConvention> newArgConventions;
+    for (auto conv : signature.getArgConventions()) {
+      if (conv == ArgConvention::ByRefError)
+        conv = ArgConvention::ReadReg;
+      newArgConventions.push_back(conv);
+    }
+
+    return FuncType::get(
+        FunctionType::get(signature.getContext(), signature.getArguments(),
+                          newResults),
+        newArgConventions, signature.getFnEffects().setThrows(false));
   };
   replacer.addReplacement(lowerResult);
   replacer.addReplacement(removeDINoneResults);
