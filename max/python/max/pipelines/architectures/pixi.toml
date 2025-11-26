@@ -75,7 +75,7 @@ lint = [{ task = "linter" }, { task = "formatter" }]
 
 [dependencies]
 #modular = "==25.7.0.dev2025101518"
-modular = ">=26"
+modular = "==26.1.0.dev2025112505"
 
 [pypi-dependencies]
 lm-eval = { version = ">=0.4.9, <0.5", extras = ["api"] }
