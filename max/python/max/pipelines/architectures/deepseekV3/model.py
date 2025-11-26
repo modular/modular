@@ -283,10 +283,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             max_kv_length: int = 0
 
             if pipeline_config.max_batch_context_length is None:
-                logger.info(
-                    "Estimation for activation memory might be inaccurate, "
-                    "max-batch-context-length is not set."
-                )
+                # If max_batch_context_length is not set, we use max_length.
+                max_kv_length = pipeline_config.max_length or 0
             else:
                 max_kv_length = pipeline_config.max_batch_context_length
 
