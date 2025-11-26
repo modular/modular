@@ -241,6 +241,12 @@ kgen.generator @simd_reduce_or_fold_1() -> !pop.scalar<bool> {
   kgen.return %1 : !pop.scalar<bool>
 }
 
+kgen.generator @simd_reduce_or_fold_2() -> !pop.scalar<index> {
+  %0 = kgen.param.constant: simd<4, index> = <<64, 8, 2, 1>>
+  %1 = pop.simd.reduce_or %0 : !pop.simd<4, index>
+  kgen.return %1 : !pop.scalar<index>
+}
+
 // CHECK-LABEL: kgen.func export @do_it
 kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
@@ -415,6 +421,9 @@ kgen.generator export @do_it() {
 
   // CHECK-NEXT: constant: scalar<bool> = <true>
   kgen.param.constant: scalar<bool> = <apply(:() -> !pop.scalar<bool> @simd_reduce_or_fold_1)>
+
+  // CHECK-NEXT: constant: scalar<index> = <75>
+  kgen.param.constant: scalar<index> = <apply(:() -> !pop.scalar<index> @simd_reduce_or_fold_2)>
 
   kgen.return
 }
