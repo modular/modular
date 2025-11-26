@@ -15,7 +15,7 @@ MAX_SEND_TOKENS_PER_RANK = 128
 NUM_RANKS = 8
 
 
-def mock_pipeline_config() -> MagicMock:
+def mock_pipeline_config(pipeline_role: PipelineRole) -> MagicMock:
     pipeline_config = MagicMock()
 
     # Model config attributes
@@ -29,7 +29,8 @@ def mock_pipeline_config() -> MagicMock:
     ]
 
     # Pipeline config attributes
-    pipeline_config.pipeline_role = PipelineRole.DecodeOnly
+    pipeline_config.pipeline_role = pipeline_role
+    pipeline_config.max_length = 1024 * 1024  # ~million tokens
     pipeline_config.max_batch_context_length = None
     pipeline_config.ep_size = NUM_RANKS
     pipeline_config.prefill_chunk_size = MAX_SEND_TOKENS_PER_RANK
@@ -52,7 +53,7 @@ def mock_huggingface_config() -> MagicMock:
 
 def test_deepseekv3_memory_estimation() -> None:
     deepseek_model = deepseekV3_arch.pipeline_model
-    pipeline_config = mock_pipeline_config()
+    pipeline_config = mock_pipeline_config(PipelineRole.DecodeOnly)
     huggingface_config = mock_huggingface_config()
 
     memory_estimated = deepseek_model.estimate_activation_memory(
@@ -71,3 +72,22 @@ def test_deepseekv3_memory_estimation() -> None:
     moe_min_memory *= NUM_RANKS
 
     assert memory_estimated > moe_min_memory
+
+
+def test_deepseekv3_memory_estimation_exact() -> None:
+    deepseek_model = deepseekV3_arch.pipeline_model
+    huggingface_config = mock_huggingface_config()
+
+    # For DecodeOnly, we only need to consider moe_activation_memory
+    pipeline_config = mock_pipeline_config(PipelineRole.DecodeOnly)
+    mem = deepseek_model.estimate_activation_memory(
+        pipeline_config, huggingface_config
+    )
+    assert mem == 6442450944
+
+    # For PrefillAndDecode, we also need to consider mla_activation_memory
+    pipeline_config = mock_pipeline_config(PipelineRole.PrefillAndDecode)
+    mem = deepseek_model.estimate_activation_memory(
+        pipeline_config, huggingface_config
+    )
+    assert mem == 549755813888
