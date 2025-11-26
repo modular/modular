@@ -381,7 +381,7 @@ ParseResult KGEN::parseTypeParamValue(AsmParser &p, TypedAttr &value) {
 ParseResult KGEN::parseParamType(AsmParser &p, Type &type) {
   OptionalParseResult result = parseOptionalKGENType(p, type);
   if (result.has_value())
-    return success();
+    return result.value();
 
   // If not a mlir Type, it's a parameter in the type-domain. Parse as a
   // parameter and wrap with ParamType.

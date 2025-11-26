@@ -63,6 +63,11 @@ fn test_mlir2():
   # expected-error @+1 {{cannot use initializer syntax on MLIR type 'index'}}
   _ = __mlir_type.index(index42)
 
+  # expected-error @below {{invalid MLIR type: !kgen.pointer<!b>}}
+  # expected-note @below {{undefined symbol alias id 'b'}}
+  _ = __mlir_type[`!kgen.pointer<!b>`]
+
+
 fn colon_instead_of_equal():
   # expected-error @below {{attribute spec requires a keyword parameter; did you mean 'value=...'?}}
   _ = __mlir_op.`lit.crazy`[value:index42]()
