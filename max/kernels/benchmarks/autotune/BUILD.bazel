@@ -5,6 +5,7 @@ modular_py_binary(
     srcs = [
         "__init__.py",
         "kbench.py",
+        "kbench_model.py",
         "utils.py",
     ],
     data = [
