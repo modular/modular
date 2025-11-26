@@ -36,7 +36,7 @@ struct ConfigurationEnvTestCLIOptions {
 
   cl::opt<bool> ConfigFilePath{
       "ConfigFilePath",
-      cl::desc("M::Conifg::getConfigFilePath()"),
+      cl::desc("M::Config::getConfigFilePath()"),
   };
 };
 
