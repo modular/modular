@@ -4044,6 +4044,14 @@ Type SugarAttr::strip(Type type, bool keepApplies) {
   return type;
 }
 
+/// Return true if the specified value has top level SugarAttr.  Nested
+/// sugar isn't processed here.
+bool SugarAttr::hasTopLevelSugar(Type type) {
+  if (auto paramRef = dyn_cast_if_present<ParamType>(type))
+    return isa<SugarAttr>(paramRef.getParam());
+  return false;
+}
+
 static Attribute getLocalCanonical(Attribute attr) {
   // SugarAttr maintains its canonical form directly so we don't need to walk.
   if (auto sugar = dyn_cast<SugarAttr>(attr))

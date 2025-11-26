@@ -2136,6 +2136,13 @@ def KGEN_SugarAttr : KGENAttr<"Sugar", "sugar",
     static TypedAttr strip(TypedAttr value, bool keepApplies = false);
     static Type strip(Type value, bool keepApplies = false);
 
+    /// Return true if the specified value has top level SugarAttr.  Nested
+    /// sugar isn't processed here.
+    static bool hasTopLevelSugar(Type type);
+    static bool hasTopLevelSugar(TypedAttr value) {
+      return llvm::isa<KGEN::SugarAttr>(value);
+    }
+
     Type getType() const;
     mlir::OpAsmAliasResult getAlias(raw_ostream &os) const;
 

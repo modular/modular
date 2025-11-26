@@ -1601,6 +1601,37 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
            "rebinding sugar should work!");
   }
 
+  // Capture the types of any "fully sugared" arguments that are passed in so
+  // we can propagate them to the result type.  We capture the sugared forms of
+  // things so we compile generic calls (e.g. SIMD.add(someInt8, 42)) into a
+  // result type of "Int8" even though the signature indicates "SIMD[Int8, 1]".
+  //
+  // Note that these types usually won't line up with the signature type
+  // (for example, N values passed into a variadic could have N entries here,
+  // not one) and the types may not match the signature.
+  SmallVector<ASTType> sugaredActualArgumentTypes;
+  for (const OperandValue &argVal : callOperands.values) {
+    if (auto actualType = argVal.ir.getRValueTypeIfResolvable()) {
+      if (SugarAttr::hasTopLevelSugar(actualType))
+        sugaredActualArgumentTypes.push_back(actualType);
+    }
+  }
+  // Given the final result type for the call, if it isn't fully sugared, see if
+  // there is anything else we can learn from.  This is intended to propagate
+  // "fully generic" operations with input sugar.
+  auto findSugaredResultTypeFor = [&](Type userResultType) -> Type {
+    // If the result is already sugared, leave it alone.
+    if (SugarAttr::hasTopLevelSugar(userResultType))
+      return {};
+    // Otherwise, take the first thing that is structurally the same but that is
+    // sugared.
+    for (auto sugaredType : sugaredActualArgumentTypes) {
+      if (sugaredType && isEqualCanon(sugaredType, userResultType))
+        return sugaredType;
+    }
+    return {};
+  };
+
   // We first emit all the arguments.
   auto argumentValuesOr = callEmitter.emitArgValues(callOperands);
   if (failed(argumentValuesOr)) {
@@ -1620,6 +1651,15 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
       argumentValues = dropResultSlots(argumentValues, calleeSig);
       paramCallResult = callEmitter.emitCallInParamContext(argumentValues);
     }
+
+    // Propagate fully-sugared input types to the result if any line up.
+    if (paramCallResult) {
+      if (auto sugaredResult =
+              findSugaredResultTypeFor(paramCallResult.getType()))
+        paramCallResult =
+            ParamOperatorAttr::getRebind(paramCallResult, sugaredResult);
+    }
+
     // The dest might force further calls.  We delay calling it until after
     // restoring the builder so that it is NOT forced to be in the parameter
     // context.  In particular, dest may cause a call to set the paramCallResult
@@ -1827,6 +1867,16 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
 
     // Use the appropriate classification for the value based on its mutability.
     callResult = CValue::getMValueForRef(resultVal);
+  }
+
+  // In the case of something like "someInt8+42" we want to turn the
+  // result into "Int8" even though the signature would make it a "SIMD[Int8,1]"
+  if (auto sugaredResult =
+          findSugaredResultTypeFor(callResult.getRValueType())) {
+    if (callResult.isMValue())
+      sugaredResult = callResult.getMValueType().getWithElement(sugaredResult);
+    callResult = rebindValue({callResult, callExpr}, sugaredResult);
+    assert(callResult && "rebindValue always succeeds");
   }
 
   // Otherwise, register-passable results are the call result which may need to
