@@ -359,8 +359,8 @@ void IREvaluatorContext::printParamValue(raw_ostream &os, ParamDeclAttr decl,
         MemoryBlobAttr memory =
             memRefAttr.getModel().getMemory()[memRefAttr.getIndex()];
         if (MemoryHandleAttr handle = memory.getHandle(); handle.isString()) {
-          // NOTE: these strings should be null terminated, but let's be safe.
-          os << '"' << StringRef(handle.getData(), handle.getSize() - 1) << '"';
+          // NOTE: these strings should be null terminated.
+          os << '"' << StringRef(handle.getData(), handle.getSize()) << '"';
           return;
         }
 
