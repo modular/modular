@@ -101,6 +101,22 @@ what we publish.
   `--target-accelerator=nvidia:80` should be changed to
   `--target-accelerator=nvidia:sm_80`. If an incorrect format is used for the
   version, the compiler will default to the lowest supported sm version.
+- Elaboration error printing with different level of verbosity
+  which offers control on how parameter values are displayed as part of
+  elaboration errors when function instantiation fails.
+  `--elaboration-error-verbose=value` now takes a value, where:
+  - `no-params` means don't display any concrete parameter values.
+    This is helpful to collapse recursion related error message
+    into shorter blobs.
+  - `simple-params` display concretized parameter values for simple types,
+    including numeric types and strings, in a user-friendly format
+    (default value).
+  - `all-params` means show all concrete parameter values.
+    This is for advanced programmer who doesn't mind reading
+    MLIR attributes but wants more visibility of parameter values.
+- `--elaboration-max-depth` is added to control maximum elaborator
+   instantiation depth. This (unsigned) value helps to detect compile time
+   recursion. The default is `std::numeric_limits<unsigned>::max()`.
 
 ### Experimental changes
 
