@@ -2204,7 +2204,12 @@ struct GraphEdge {
   /// Return true if this edge is a blocker/interpreter edge.
   bool isBlockerEdge() const {
     auto &inode = pnode->impl;
-    return depIdx >= inode.dependencies.size();
+    // Try to find the node in the scc that can break the scc loop.
+    // This node should not be an already errored out node since
+    // we may break it previously and marked it as errored, we don't
+    // want to keep breaking the same node then come back
+    // to enter an infinite loop here.
+    return depIdx >= inode.dependencies.size() && !inode.error;
   }
 
   // Comparison operators for GraphTraits.
