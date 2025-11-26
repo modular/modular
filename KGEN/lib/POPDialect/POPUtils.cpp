@@ -369,7 +369,7 @@ OpFoldResult POP::foldSIMDReduceOr(Value vectorVal, Attribute vectorAttr,
   if (auto dtype = vectorType.getResolvedDType(); !dtype || !dtype->isIntLike())
     return {};
 
-  return foldSIMDReduceOp(
+  return foldBitwiseSIMDReduceOp(
       vectorAttr, [](APSInt lhs, APSInt rhs) { return lhs | rhs; },
       [](bool lhs, bool rhs) { return lhs | rhs; });
 }

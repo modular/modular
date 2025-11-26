@@ -297,17 +297,15 @@ SIMDAttr foldSIMDOp(ArrayRef<Attribute> operands, KGENDType inputDType,
 /// Try to fold an n-ary SIMD vector operation using one of the provided
 /// functions for each possible operand dtype given a result dtype.
 template <typename... OpFns>
-SIMDAttr foldSIMDReduceOp(Attribute operand, KGENDType inputDType,
-                          KGENDType resultDType, OpFns &&...ops) {
-  if (inputDType.isInt())
+SIMDAttr foldBitwiseSIMDReduceOp(Attribute operand, KGENDType inputDType,
+                                 KGENDType resultDType, OpFns &&...ops) {
+  // For bitwise reductions we can treat index-like types as ints. The result
+  // would be the same no matter the eventual index bitwidth, whether it was
+  // extended/truncated before or after the fold.
+  if (inputDType.isInt() || inputDType.isIndex() || inputDType.isUIndex() ||
+      inputDType.isAddress())
     return Detail::foldSIMDReduceOpDType<APSInt>(
         [](const DTypeValue &val) { return val.getIntVal(); }, operand,
-        resultDType, std::forward<OpFns>(ops)...);
-  // FIXME: Should we even do floating point folds? Results don't match hardware
-  // and not all float semantics are supported.
-  if (inputDType.isFloat())
-    return Detail::foldSIMDReduceOpDType<APFloat>(
-        [](const DTypeValue &val) { return val.getFloatVal(); }, operand,
         resultDType, std::forward<OpFns>(ops)...);
   if (inputDType.isBool())
     return Detail::foldSIMDReduceOpDType<bool>(
@@ -350,12 +348,12 @@ SIMDAttr foldSIMDOp(ArrayRef<Attribute> operands, OpFns &&...ops) {
 /// functions for each possible operand dtype, assuming the result dtype is the
 /// same as the operands' dtypes.
 template <typename... OpFns>
-SIMDAttr foldSIMDReduceOp(Attribute operand, OpFns &&...ops) {
+SIMDAttr foldBitwiseSIMDReduceOp(Attribute operand, OpFns &&...ops) {
   if (!isa_and_nonnull<SIMDAttr>(operand))
     return {};
   KGENDType dtype = *cast<SIMDAttr>(operand).getType().getResolvedDType();
-  return Detail::foldSIMDReduceOp(operand, dtype, dtype,
-                                  std::forward<OpFns>(ops)...);
+  return Detail::foldBitwiseSIMDReduceOp(operand, dtype, dtype,
+                                         std::forward<OpFns>(ops)...);
 }
 
 } // namespace M::KGEN::POP
