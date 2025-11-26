@@ -735,7 +735,43 @@ def test_paged_scheduler_oom_tg() -> None:
     assert_batch_info_equal(actual, expected)
 
 
-def test_paged_scheduler_max_batch_context_length() -> None:
+def test_paged_scheduler_max_batch_context_length_ce() -> None:
+    max_batch_context_length = 1000
+    scheduler, request_queue = create_paged_scheduler(
+        max_seq_len=max_batch_context_length,
+        max_batch_context_length=max_batch_context_length,
+        target_tokens_per_batch_ce=max_batch_context_length,
+        enable_chunked_prefill=True,
+    )
+
+    for _ in range(20):
+        enqueue_request(request_queue, prompt_len=60, max_seq_len=67)
+
+    actual = run_until_completion(scheduler)
+    # fmt: off
+    expected = [
+        # CE batch is limited to 16 requests by max_batch_context_length=1000
+        # batch_size * prompt_len = 16 * 60 = 960 tokens. A 17th req would cross the 1000 token limit.
+        BatchInfo(CE, batch_size=16, terminated=0, steps=1, preempted=0, input_toks=960, cached_toks=0),
+        BatchInfo(TG, batch_size=16, terminated=0, steps=2, preempted=0, input_toks=16, cached_toks=960),
+        # We run 15 of the 16 TG requests. The 16 request is skipped (not preempted) to not exceed the max_batch_context_length limit
+        BatchInfo(TG, batch_size=15, terminated=15, steps=4, preempted=0, input_toks=15, cached_toks=930),
+        # Encode the remaining 4 requests that are not yet encoded
+        BatchInfo(CE, batch_size=4, terminated=0, steps=1, preempted=0, input_toks=240, cached_toks=0),
+        # Now there are 4 (newly encoded) + 1 (skipped) = 5 reqs in the TG batch
+        BatchInfo(TG, batch_size=5, terminated=5, steps=7, preempted=0, input_toks=5, cached_toks=302),
+        BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
+    ]
+    # fmt: on
+    assert_batch_info_equal(actual, expected)
+    for batch in actual:
+        cached_toks = batch.cached_toks
+        steps = batch.steps
+        batch_size = batch.batch_size
+        assert cached_toks + batch_size * steps <= max_batch_context_length
+
+
+def test_paged_scheduler_max_batch_context_length_tg() -> None:
     max_batch_context_length = 1000
     scheduler, request_queue = create_paged_scheduler(
         max_seq_len=max_batch_context_length,
