@@ -362,7 +362,7 @@ fn logsoftmax[
     pass
 
 
-# CHECK: "signature": "tile_and_unswitch[workgroup_function: fn[width: Int, sw: Bool](Int, Int) capturing -> None, tile_size_list: VariadicList[Int]](offset: Int, upperbound: Int)",
+# CHECK: "signature": "tile_and_unswitch[workgroup_function: Static1DTileUnswitchUnitFunc, tile_size_list: VariadicList[Int]](offset: Int, upperbound: Int)",
 
 
 fn tile_and_unswitch[

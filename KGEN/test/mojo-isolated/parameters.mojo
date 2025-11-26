@@ -101,12 +101,12 @@ fn testTestParamStruct(a: TestParamStruct[4]):
   a.method[7](arg11)
 
 # CHECK-LABEL: lit.fn @"testSIMD(
-fn testSIMD(a: Scalar[DType.float32],
-            b: Scalar[DType.int32],
-            mut reff: Scalar[DType.int32]):
-  # CHECK: %field1 = lit.var.decl {{.*}} : !lit.ref<scalar<{{.*}}f32{{.*}}>,
+fn testSIMD(a: SIMD[DType.float32, 1],
+            b: SIMD[DType.int32, 1],
+            mut reff: SIMD[DType.int32, 1]):
+  # CHECK: %field1 = lit.var.decl {{.*}} : !lit.ref<scalar<f32>
   var field1 = a._mlir_value
-  # CHECK: %field2 = lit.var.decl {{.*}} : !lit.ref<scalar<{{.*}}si32{{.*}}>,
+  # CHECK: %field2 = lit.var.decl {{.*}} : !lit.ref<scalar<si32>
   var field2 = reff._mlir_value
 
   # Test calls to methods and operators on parameterized type.
@@ -169,7 +169,7 @@ struct TypeParameter[T: __mlir_type.`!kgen.type`]:
 
 # Test that parameter decls can refine subsequent ones in the same param list.
 # CHECK-LABEL: lit.struct.decl @ParamSubst
-# CHECK-SAME: <[[TYPE:.*]]: type, shape: variadic<[[TYPE]]>>
+# CHECK-SAME: <T: {{.*}}, shape: variadic<T>>
 struct ParamSubst[
     T: AnyTrivialRegType,
     shape: __mlir_type[`!kgen.variadic<`, T,`>`],
@@ -177,7 +177,7 @@ struct ParamSubst[
 
 # CHECK-LABEL: lit.fn @"testParamSubst
 fn testParamSubst():
-  # CHECK: %xx = lit.var.decl {{.*}} : !lit.ref<!lit.struct<#ParamSubst <:type index, :variadic<index> [1, 2]>>
+  # CHECK: %xx = lit.var.decl {{.*}} : !lit.ref<!lit.struct<#ParamSubst <:!alias_AnyTrivialRegType1 #kgen.type<index>, :variadic<index> [1, 2]>>,
   var xx : ParamSubst[__mlir_type.index, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`]
 
 
@@ -921,11 +921,11 @@ fn tail_types[T: AnyTrivialRegType, *U: AnyType](a: T, *b: *U):
 
 # CHECK-LABEL: lit.fn @"call_with_tail_types()"
 fn call_with_tail_types():
-    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<!AnyType> []>
+    # CHECK: call {{.*}}tail_types{{.*}}<:{{.*}} #kgen.type<!Int>, :variadic<!AnyType> []>
     tail_types(1)
-    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<!AnyType> [!FloatDyn]>
+    # CHECK: call {{.*}}tail_types{{.*}}<:{{.*}} #kgen.type<!Int>, :variadic<!AnyType> [!FloatDyn]>
     tail_types(1, 1.2)
-    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<!AnyType> [!Int]>
+    # CHECK: call {{.*}}tail_types{{.*}}<:{{.*}} #kgen.type<!Int>, :variadic<!AnyType> [!Int]>
     tail_types(1, 77)
 
 # COM: We can't infer parameters from the default value, but we need to test if
@@ -986,7 +986,7 @@ struct CallableArg[ArgT: AnyTrivialRegType]:
 
 # CHECK-LABEL: lit.fn @"infer_conversion_arg_type
 fn infer_conversion_arg_type(callable: CallableArg[NoneType]):
-    # CHECK: lit.call {{.*}}CallableArg::@"__call__{{.*}}<:type !NoneType>
+    # CHECK: lit.call {{.*}}CallableArg::@"__call__{{.*}}<:{{.*}} #kgen.type<!NoneType>
     callable(None)
 
 fn take_two[a_type: DType, c_type: DType, width: Int](
@@ -1089,7 +1089,7 @@ fn test_origin_struct_inf[imm_data: Int](mut data: Int):
    # This needs to infer the origin through an implicit conversion
    # CHECK: %0 = lit.ref.immut %data
    # CHECK-NEXT: lit.call {{.*}}OriginStructInferenceImm::@"__init__
-   # CHECK-SAME: {_mlir_origin: origin<0> = (mutcast mut *"data`")}>(%0, %immTest)
+   # CHECK-SAME: {_mlir_origin: {{.*}}origin<0>{{.*}}(mutcast mut *"data`"){{.*}}>(%0, %immTest)
    immTest = OriginStructInferenceImm(data)
 
    # CHECK-NEXT: lit.call {{.*}}OriginStructInferencePar::@"__init__
@@ -1103,8 +1103,6 @@ fn test_origin_struct_inf[imm_data: Int](mut data: Int):
    # CHECK: %[[IMMUT:.+]] = lit.ref.immut {{.*}} : <!Int, mut [[IMMUT_REF:.+]]>
    # CHECK-NEXT: lit.call {{.*}}OriginStructInferenceParSpecialized::@"__init__
    # CHECK-SAME: :!Bool {:i1 0},
-   # CHECK-SAME: :{{[^ ]*}}Origin <:!Bool {:i1 0}>> {_mlir_origin: origin<0> = (mutcast mut [[IMMUT_REF]])},
-   # CHECK-SAME: :{{[^ ]*}}Origin <:!Bool {:i1 0}>> {_mlir_origin: origin<0> = (mutcast mut [[IMMUT_REF]])}>
    # CHECK-SAME: (%[[IMMUT]], %parSpecializedTest)
    parSpecializedTest = OriginStructInferenceParSpecialized(imm_data)
 
@@ -1357,8 +1355,8 @@ struct StructWithParametricDefaultValue[T: AnyTrivialRegType, N: Int = IntForTyp
 # CHECK-LABEL: lit.fn @"test_struct_with_parametric_default_value()"
 fn test_struct_with_parametric_default_value():
     # CHECK: lit.alias.decl *"a{{.*}}": meta<!lit.struct<{{.*}}>> = <@{{.*}}::@StructWithParametricDefaultValue<
-    # CHECK-SAME: :type !Int
-    # CHECK-SAME: :!Int apply(:!lit.generator<() -> !Int> @{{.*}}::@"IntForType[AnyTrivialRegType]()"{{.*}}<:type !Int>)>
+    # CHECK-SAME: :!alias_AnyTrivialRegType1 #kgen.type<!Int>,
+    # CHECK-SAME: :!Int apply(:!lit.generator<() -> !Int> @{{.*}}::@"IntForType[AnyTrivialRegType]()"{{.*}}<:!alias_AnyTrivialRegType1 #kgen.type<!Int>>)>
     comptime a = StructWithParametricDefaultValue[Int]
 
 ##===----------------------------------------------------------------------===##

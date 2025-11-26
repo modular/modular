@@ -48,7 +48,8 @@ fn main_use():
     # expected-error @below {{invalid call to 'use1': failed to infer parameter 'T', argument type 'Struct4' does not conform to trait 'Trait1'}}
     use1(s4)
 
-    # expected-error @below {{invalid call to 'use12Alias': failed to infer parameter 'T', argument type 'Struct4' does not conform to trait 'Trait1 & Trait2'}}
+    # expected-error @below {{invalid call to 'use12Alias': failed to infer parameter 'T', argument type 'Struct4' does not conform to trait 'Traits12'}}
+    # expected-note @below {{'Traits12' is aka 'Trait1 & Trait2'}}
     use12Alias(s4)
 
     # expected-error @below {{invalid call to 'use12Direct': failed to infer parameter 'T', argument type 'Struct4' does not conform to trait 'Trait1 & Trait2'}}

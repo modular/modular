@@ -267,7 +267,7 @@ fn badPackCalls(value: Int):
   examplePack[Int](1, 2)
   # expected-error @+1 {{invalid call to 'examplePack': callee with non-empty variadic pack argument expects 2 positional operands, but 1 was specified}}
   examplePack[Int, FloatDyn](1)
-  # expected-error-re @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from 'index' to 'FloatDyn'}}
+  # expected-error-re @below {{invalid call to 'examplePack': argument #1 cannot be converted from 'index' to 'FloatDyn'}}
   examplePack[Int, FloatDyn](1, Int(2)._mlir_value)
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
   # expected-error @below {{invalid call to 'examplePack': failed to infer parameter 'Ts', it isn't used in any argument}}

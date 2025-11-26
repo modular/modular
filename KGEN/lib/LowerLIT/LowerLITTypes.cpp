@@ -145,7 +145,8 @@ private:
 
 FailureOr<TypedAttr> LowerLITEvaluationContext::evaluateExpression(
     ContextuallyEvaluatedAttrInterface attr) {
-  if (auto getWitness = dyn_cast<GetWitnessAttr>(attr)) {
+  TypedAttr typedAttr = dyn_cast<TypedAttr>((Attribute)attr);
+  if (auto getWitness = sugarDynCastIfPresent<GetWitnessAttr>(typedAttr)) {
     FailureOr<TypedAttr> simplified = evaluateGetWitness(getWitness);
     if (succeeded(simplified))
       return simplified.value();
@@ -156,11 +157,11 @@ FailureOr<TypedAttr> LowerLITEvaluationContext::evaluateExpression(
 FailureOr<TypedAttr>
 LowerLITEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
   // We can only simplify if the type reference is resolved already.
-  auto typeParam = dyn_cast<TypeParamAttr>(getWitness.getTypeValue());
+  auto typeParam = sugarDynCast<TypeParamAttr>(getWitness.getTypeValue());
   if (!typeParam)
     return failure();
 
-  auto structType = dyn_cast<LIT::StructType>(typeParam.getTypeValue());
+  auto structType = sugarDynCast<LIT::StructType>(typeParam.getTypeValue());
   if (!structType)
     return failure();
 

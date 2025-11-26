@@ -116,18 +116,19 @@ Operation *SymTabEvaluationContext::getStructInstIfResolved(TypedAttr typeVal) {
 
 FailureOr<TypedAttr> SymTabEvaluationContext::evaluateExpression(
     ContextuallyEvaluatedAttrInterface attr) {
-  if (auto getWitness = dyn_cast<GetWitnessAttr>(attr))
+  TypedAttr typedAttr = dyn_cast<TypedAttr>((Attribute)attr);
+  if (auto getWitness = sugarDynCast<GetWitnessAttr>(typedAttr))
     return evaluateGetWitness(getWitness);
 
-  if (auto conformsTo = dyn_cast<TypeConformsToTraitAttr>(attr)) {
+  if (auto conformsTo = sugarDynCast<TypeConformsToTraitAttr>(typedAttr)) {
     if (auto decl = getStructInstIfResolved(conformsTo.getTypeRefIfResolved()))
       return conformsTo.simplify(SymbolTable(decl));
   }
 
-  if (auto pocAttr = dyn_cast<ParamOperatorAttr>(attr))
+  if (auto pocAttr = sugarDynCast<ParamOperatorAttr>(typedAttr))
     return inlineApply(pocAttr);
 
-  if (auto downcast = dyn_cast<DowncastAttr>(attr)) {
+  if (auto downcast = sugarDynCast<DowncastAttr>(typedAttr)) {
     if (getStructInstIfResolved(downcast.getTypeRefIfResolved())) {
       // FIXME: We should raise an error when the resolved struct type does not
       // conforms to the downcast traits. The folding below leads to an indirect
@@ -139,7 +140,7 @@ FailureOr<TypedAttr> SymTabEvaluationContext::evaluateExpression(
     }
   }
 
-  if (auto variadicReduce = dyn_cast<VariadicReduceAttr>(attr))
+  if (auto variadicReduce = sugarDynCast<VariadicReduceAttr>(typedAttr))
     return variadicReduce.evaluateWith(this);
 
   return failure();
@@ -190,7 +191,7 @@ SymTabEvaluationContext::inlineApply(ParamOperatorAttr apply) {
 FailureOr<TypedAttr>
 SymTabEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
   // We can only simplify if the type reference is resolved already.
-  auto genRef = dyn_cast_if_present<TypeGeneratorRefAttr>(
+  auto genRef = sugarDynCastIfPresent<TypeGeneratorRefAttr>(
       getWitness.getTypeRefIfResolved());
   if (!genRef)
     return failure();

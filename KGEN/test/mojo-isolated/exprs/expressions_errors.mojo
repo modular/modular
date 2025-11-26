@@ -1020,7 +1020,10 @@ fn test_origin_of_deprecated[T: AnyType](a: T):
 
 fn some_complex_calculation() -> Int: return 4
 comptime ideal_width = some_complex_calculation()*4
-fn get_data() -> SIMD[DType.int32, ideal_width]: ...
+comptime IdealSIMD = SIMD[DType.int32, ideal_width]
+
+fn get_data() -> IdealSIMD: return IdealSIMD()
+
 
 # expected-note @+1 {{function declared here}}
 fn sugar_test1(x: type_of(HasIntParam[1])): pass
@@ -1034,8 +1037,8 @@ fn sugar_test():
     var a = get_data()  # Ok
     var b : SIMD[DType.int32, 4]
 
-    # expected-error @below {{cannot implicitly convert 'SIMD[DType.int32, ideal_width]' value to 'SIMD[DType.int32, 4]'}}
-    # expected-note @below {{'ideal_width' is aka '(some_complex_calculation() * 4)'}}
+    # expected-error @below {{cannot implicitly convert 'IdealSIMD' value to 'SIMD[DType.int32, 4]'}}
+    # expected-note @below {{'IdealSIMD' is aka 'SIMD[DType.int32, ideal_width]'}}
     b = get_data()
 
     var c = a.join(a) # c has twice the width.
@@ -1043,3 +1046,7 @@ fn sugar_test():
     # expected-error @below {{cannot implicitly convert 'SIMD[DType.int32, (2 * ideal_width)]' value to 'SIMD[DType.int32, 4]'}}
     # expected-note @below {{.size of left value is '(2 * ideal_width)' but the right value is '4'}}
     b = c
+
+    # expected-error @below {{cannot implicitly convert 'SIMD[DType.int32, ideal_width]' value to 'SIMD[DType.int32, 4]'}}
+    # expected-note @below {{'ideal_width' is aka '(some_complex_calculation() * 4)'}}
+    b = a+a

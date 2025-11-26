@@ -222,9 +222,9 @@ fn usePacks(x: FloatDyn, y: Int):
 
     packBorrowed(Int(1)._mlir_value, x, y)
 
-    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<type>  [!Int, !FloatDyn]>
+    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<#alias_AnyTrivialRegType> [#kgen.type<!Int>, #kgen.type<!FloatDyn>]>
     variadicParameter[Int, FloatDyn](1)
-    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<type> []>
+    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<#alias_AnyTrivialRegType> []>
     variadicParameter(Int(2))
 
 

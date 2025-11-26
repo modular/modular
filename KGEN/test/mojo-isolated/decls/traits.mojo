@@ -61,7 +61,7 @@ trait Trait:
     fn overloaded(self, x: Int):
         ...
 
-    fn overloaded(self, x: string):
+    fn overloaded(self, x: __mlir_type.`!kgen.string`):
         ...
 
     # CHECK-LABEL: lit.fn @"parametric{{.*}}<x: !Int>
@@ -130,7 +130,7 @@ trait CFMTraitParams:
 struct CFMStructParams[t1: AnyTrivialRegType, t2: AnyTrivialRegType](
     CFMTraitParams
 ):
-    # CHECK: lit.fn @"f1{{.*}}"<x: !CFMTraitParams>[{{.*}}](%self: !lit.ref<!lit.struct<#CFMStructParams <:type t1, :type t2>>{{.*}}> read_mem)
+    # CHECK: lit.fn @"f1{{.*}}"<x: !CFMTraitParams>[{{.*}}](%self: !lit.ref<!lit.struct<#CFMStructParams <:!alias_AnyTrivialRegType1 t1, :!alias_AnyTrivialRegType1 t2>>{{.*}}> read_mem)
     fn f1[x: CFMTraitParams](self):
         pass
 
@@ -902,7 +902,7 @@ struct TestAnyTrait[element_trait: _AnyTypeMetaType]:
 
     # CHECK: lit.fn @"test
     # CHECK-SAME: <a_type: !kgen.param<:!lit.anytrait<!AnyType> element_trait>>
-    # CHECK-SAME: (%self: {{.*}}%a_value: !lit.ref<:!kgen.param<:!lit.anytrait<!AnyType> element_trait> a_type, imm {{.*}}> read_mem
+    # CHECK-SAME: (%self: {{.*}}%a_value: !lit.ref<:{{.*}} element_trait> a_type, imm {{.*}}> read_mem
     fn test[a_type: Self.element_trait](self, a_value: a_type):
         self.take_any_type(a_value)
 
@@ -953,8 +953,8 @@ fn take_anytype_ref[type: UnknownDestructibility](ref value: type): pass
 # CHECK-LABEL: lit.fn @"pass_movable_mt_ref
 fn pass_movable_mt_ref[elt_trait: _MovableMetaType, PassT: elt_trait](mut a: PassT):
     # CHECK-NEXT: lit.call @traits::@"take_anytype_ref
-    # CHECK-SAME: <:!UnknownDestructibility !kgen.param<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT>
-    # CHECK-SAME: : !lit.generator<("value": !lit.ref<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT, mut *"a`"> ref) -> !kgen.none>
+    # CHECK-SAME: <:!UnknownDestructibility !kgen.param<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT>,
+    # CHECK-SAME: : !lit.generator<("value":{{.*}} elt_trait> PassT, mut *"a`"> ref) -> !kgen.none>
     take_anytype_ref(a)
 
 comptime _CollectionElementMetaType = type_of(ImplicitlyCopyable & Movable)
@@ -974,13 +974,13 @@ struct FormVariadicPackWithCastedElementVariadic[
 # to Movable correctly.
 fn take_movable_pointer[T: Movable&AnyType](ptr: UnsafePointer[T]): pass
 # CHECK-LABEL: test_parametric_anytype_movable
-# CHECK-SAME: %ptr: !lit.struct<#UnsafePointer <:!AnyType !kgen.param<:!kgen.param<:!lit.anytrait<!ImplicitlyCopyable_Movable> element_trait>
+# CHECK-SAME: %ptr: !lit.struct<#UnsafePointer <:!AnyType {{.*}}!lit.anytrait<!ImplicitlyCopyable_Movable> element_trait>
 fn test_parametric_anytype_movable[element_trait: _CollectionElementMetaType,
                                   *element_types: element_trait]
                                   (ptr: UnsafePointer[element_types[0]]):
 
         # CHECK: lit.call {{.*}}take_movable_pointer
-        # CHECK-SAME: <:!Movable_AnyType !kgen.param<:!kgen.param<:!lit.anytrait<!ImplicitlyCopyable_Movable> element_trait>
+        # CHECK-SAME: <:!Movable_AnyType {{.*}}!ImplicitlyCopyable_Movable> element_trait>
         take_movable_pointer(ptr)
 
 

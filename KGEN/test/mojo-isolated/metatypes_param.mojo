@@ -45,7 +45,7 @@ fn fully_bound_alias():
     # COM: Test alias to a fully bound parametric type.
     # CHECK: BoundType{{.*}}: meta<!lit.struct<{{.*}}Param <{{.*}}1{{.*}}>>> = <{{.*}}@Param<{{.*}}1{{.*}}>>
     comptime BoundType = Param[1]
-    # CHECK: alias_value{{.*}} = <sugar_member_alias(!lit.struct<#Param <:!Int {1}>>, "value", {1})>
+    # CHECK: alias_value{{.*}} = <sugar_member_alias(!alias_BoundType1, "value", {1})>
     comptime alias_value = BoundType.value
     # CHECK: call {{.*}}@Param::@"foo()"<{{.*}}1{{.*}}>
     BoundType.foo()
@@ -87,9 +87,9 @@ fn partially_bound_alias():
     # CHECK: *"BoundFromPartial`3": meta<!lit.struct<#TwoParam <:!Int {1}, :!Int {2}>>> =
     # CHECK-SAME: <@metatypes_param::@TwoParam<:!Int {1}, :!Int {2}>>
     comptime BoundFromPartial = PartiallyBound[2]
-    # CHECK: first{{.*}} = <sugar_member_alias(!lit.struct<#TwoParam <:!Int {1}, :!Int {2}>>, "first", {1})>
+    # CHECK: first{{.*}} = <sugar_member_alias(!alias_BoundFromPartial1, "first", {1})>
     comptime first = BoundFromPartial.first
-    # CHECK: second{{.*}} = <sugar_member_alias(!lit.struct<#TwoParam <:!Int {1}, :!Int {2}>>, "second", {2})>
+    # CHECK: second{{.*}} = <sugar_member_alias(!alias_BoundFromPartial1, "second", {2})>
     comptime second = BoundFromPartial.second
     # CHECK: fn_from_bound{{.*}}: !lit.generator<() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<:!Int {1}, :!Int {2}>>
     comptime fn_from_bound = BoundFromPartial.foo

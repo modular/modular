@@ -549,7 +549,7 @@ fn giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
 # CHECK: lit.struct.field field0
 # CHECK-NEXT:      lit.fn @"__call__
 # CHECK-NEXT:        %1 = lit.ref.struct.ger
-# CHECK-NEXT:        %2 = lit.call[!lit.generator<[1]({{.*}}) capturing -> !kgen.param<T>>
+# CHECK-NEXT:        %2 = lit.call[!lit.generator<[1]({{.*}}) capturing -> !kgen.param<{{.*}}T)
 fn makeIt[T: AnyTrivialRegType](a: T):
     fn parametric() unified {var a} -> T:
         return a

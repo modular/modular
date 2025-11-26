@@ -206,17 +206,17 @@ struct RegPassable(ImplicitlyCopyable):
   fn __rmatmul__(lhs, rhs: Self) -> Self: pass
 
 # CHECK-LABEL: lit.struct.decl @StructWithFuncParam<comparator: !lit.generator
-# CHECK-SAME: <"T": type>(!kgen.param<*(0,0)>, |)
+# CHECK-SAME: <"T": !alias_AnyTrivialRegType1>(!kgen.param<:!alias_AnyTrivialRegType1 *(0,0)>, |)
 struct StructWithFuncParam[comparator: fn[T: AnyTrivialRegType] (T) -> None]:
     # CHECK-LABEL: lit.fn @"f
-    # CHECK-SAME: %self: !lit.ref<{{.*}}<:!lit.generator<<"T": type>(!kgen.param<*(0,0)>
+    # CHECK-SAME: %self: !lit.ref<{{.*}}<:!lit.generator<<"T": !alias_AnyTrivialRegType1>(!kgen.param<:!alias_AnyTrivialRegType1 *(0,0)>
     fn f(self):
         pass
 
     # CHECK-LABEL: lit.fn @"g
     fn g(self):
-        # CHECK: call {{.*}}[imm *"self`2x"]<:!lit.generator<<"T": type>(!kgen.param<*(0,0)>, |)
-        # CHECK-SAME: !lit.ref<{{.*}}<"T": type>(!kgen.param<*(0,0)>, |)
+        # CHECK: lit.call {{.*}}[imm *"self`2x"]<:!lit.generator<<"T": !alias_AnyTrivialRegType1>(!kgen.param<:!alias_AnyTrivialRegType1 *(0,0)>, |)
+        # CHECK-SAME: !lit.ref<{{.*}}<"T": !alias_AnyTrivialRegType1>(!kgen.param<:!alias_AnyTrivialRegType1 *(0,0)>, |)
         self.f()
 
 # CHECK-LABEL: lit.fn @"simpleMath
@@ -669,8 +669,10 @@ fn patterns():
   (_) = 1.0
 
   # CHECK: %someFloat32 = lit.var.decl "someFloat32" var
-  # CHECK: [[Float32:%.*]] = lit.ref.load %someFloat32
-  # CHECK: {{%.*}} = lit.call {{.*}}__iadd__{{.*}}(%someFloat32, [[Float32]])
+  # CHECK-NEXT: [[TMP:%.*]] = kgen.rebind %someFloat32
+  # CHECK: [[Float32:%.*]] = lit.ref.load [[TMP]]
+  # CHECK-NEXT: [[TMP2:%.*]] = kgen.rebind %someFloat32
+  # CHECK: {{%.*}} = lit.call {{.*}}__iadd__{{.*}}([[TMP2]], [[Float32]])
   var someFloat32 : Float32
   (someFloat32) += someFloat32
 
@@ -1043,7 +1045,7 @@ fn function_types[
 
 # CHECK-LABEL: lit.struct.decl @Mem
 # CHECK:         lit.alias.decl *"x{{.*}}": type = <i8>
-# CHECK-NEXT:    lit.alias.decl *"B{{.*}}": type = <!lit.generator<("foo": i8) -> !kgen.none>>
+# CHECK-NEXT:    lit.alias.decl *"B{{.*}}": type = <!lit.generator<("foo": !kgen.param<sugar_member_alias(!Mem, "x", i8)>) -> !kgen.none>>
 struct Mem:
    comptime x = __mlir_type.i8
    comptime B = fn (foo: Self.x) -> None
