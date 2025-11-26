@@ -316,6 +316,8 @@ class TextBatchConstructor:
         max_seq_len = self.scheduler_config.max_seq_len
         max_batch_context_length = (
             self.scheduler_config.max_batch_context_length
+            if self.scheduler_config.max_batch_context_length is not None
+            else float("inf")
         )
         batch_context_length = 0
 
@@ -332,8 +334,7 @@ class TextBatchConstructor:
             # Check if adding this request would violate the max_batch_context_length
             # limit assuming we run for num_steps=1.
             if (
-                max_batch_context_length is not None
-                and batch_context_length + ctx.start_idx + len(scheduled) + 1
+                batch_context_length + ctx.start_idx + len(scheduled) + 1
                 > max_batch_context_length
             ):
                 break
@@ -434,12 +435,11 @@ class TextBatchConstructor:
             # If running for num_steps would exceed the max_batch_context_length
             # limit, we need to reduce the number of steps we are running for.
             if (
-                max_batch_context_length is not None
-                and batch_context_length + len(scheduled) * num_steps
+                batch_context_length + len(scheduled) * num_steps
                 > max_batch_context_length
             ):
                 num_steps = (
-                    max_batch_context_length - batch_context_length
+                    int(max_batch_context_length) - batch_context_length
                 ) // len(scheduled)
                 # Based on construction of batch, we know that we can at least
                 # run for 1 step without exceeding max_batch_context_length.
@@ -505,11 +505,21 @@ class TextBatchConstructor:
 
             deferred_lora_requests = {}
 
+        max_batch_context_length = (
+            self.scheduler_config.max_batch_context_length
+            if self.scheduler_config.max_batch_context_length is not None
+            else float("inf")
+        )
+        batch_context_length = sum(
+            ctx.current_length for ctx in replica.tg_reqs.values()
+        )
+
         while (
             replica.ce_reqs
             and len(ce_batch) < max_batch_size_ce
             and len(ce_batch) + len(replica.tg_reqs) < max_batch_size_tg
             and input_tokens < self.scheduler_config.target_tokens_per_batch_ce
+            and batch_context_length < max_batch_context_length
         ):
             req_id, ctx = replica.ce_reqs.popitem(last=False)
 
@@ -524,6 +534,14 @@ class TextBatchConstructor:
             if ctx.start_idx == 0:
                 if self.paged_cache is not None:
                     self.paged_cache.claim(req_id, replica_idx=replica_idx)
+
+            # Check if the CE request would exceed the max_batch_context_length limit
+            if (
+                batch_context_length + ctx.current_length
+                > max_batch_context_length
+            ):
+                self._return_to_request_queue(ctx, replica_idx)
+                break
 
             if self.paged_cache is not None:
                 # Check if the CE request will fit in the KVCache
@@ -578,6 +596,7 @@ class TextBatchConstructor:
 
             # Schedule the requests as it fits in KVCache and token limit
             input_tokens += ctx.active_length
+            batch_context_length += ctx.current_length
             ce_batch[req_id] = ctx
 
         if self._lora_manager:
