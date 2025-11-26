@@ -748,7 +748,7 @@ struct SIMD[dtype: DType, size: Int](
         ](s)
 
     @doc_private
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __init__(out self, *, mlir_value: Self._mlir_type):
         """Initializes the SIMD vector with the underlying mlir value.
 
@@ -1271,7 +1271,7 @@ struct SIMD[dtype: DType, size: Int](
         """
         return self.eq(rhs).reduce_and().__bool__()
 
-    @always_inline
+    @always_inline("builtin")
     fn __gt__(self, rhs: Self) -> Bool:
         """Compares two Scalars using greater-than comparison.
 
@@ -1290,7 +1290,7 @@ struct SIMD[dtype: DType, size: Int](
         ]()
         return self.gt(rhs).__bool__()
 
-    @always_inline
+    @always_inline("builtin")
     fn __ge__(self, rhs: Self) -> Bool:
         """Compares two Scalars using greater-than-or-equal comparison.
 
@@ -1309,7 +1309,7 @@ struct SIMD[dtype: DType, size: Int](
         ]()
         return self.ge(rhs).__bool__()
 
-    @always_inline
+    @always_inline("builtin")
     fn __lt__(self, rhs: Self) -> Bool:
         """Compares two Scalars using less-than comparison.
 
@@ -1328,7 +1328,7 @@ struct SIMD[dtype: DType, size: Int](
         ]()
         return self.lt(rhs).__bool__()
 
-    @always_inline
+    @always_inline("builtin")
     fn __le__(self, rhs: Self) -> Bool:
         """Compares two Scalars using less-than-or-equal comparison.
 
@@ -1351,7 +1351,7 @@ struct SIMD[dtype: DType, size: Int](
     # Elementwise comparison operations.
     # ===------------------------------------------------------------------=== #
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn eq(self, rhs: Self) -> Self._Mask:
         """Compares two SIMD vectors using elementwise equality.
 
@@ -1368,7 +1368,7 @@ struct SIMD[dtype: DType, size: Int](
         )
         return Self._Mask(mlir_value=res)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn ne(self, rhs: Self) -> Self._Mask:
         """Compares two SIMD vectors using elementwise inequality.
 
@@ -1385,7 +1385,7 @@ struct SIMD[dtype: DType, size: Int](
         )
         return Self._Mask(mlir_value=res)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn gt(self, rhs: Self) -> Self._Mask:
         """Compares two SIMD vectors using elementwise greater-than comparison.
 
@@ -1402,7 +1402,7 @@ struct SIMD[dtype: DType, size: Int](
         )
         return Self._Mask(mlir_value=res)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn ge(self, rhs: Self) -> Self._Mask:
         """Compares two SIMD vectors using elementwise greater-than-or-equal
         comparison.
@@ -1420,7 +1420,7 @@ struct SIMD[dtype: DType, size: Int](
         )
         return Self._Mask(mlir_value=res)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn lt(self, rhs: Self) -> Self._Mask:
         """Compares two SIMD vectors using elementwise less-than comparison.
 
@@ -1437,7 +1437,7 @@ struct SIMD[dtype: DType, size: Int](
         )
         return Self._Mask(mlir_value=res)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn le(self, rhs: Self) -> Self._Mask:
         """Compares two SIMD vectors using elementwise less-than-or-equal
         comparison.
