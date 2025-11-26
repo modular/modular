@@ -449,7 +449,9 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         Args:
           ptr: The pointer to the data to write.
-          len: The length of the pointer (in bytes).
+          len: The length of the data buffer (in bytes).
+        Raises:
+            If the file handle is invalid, the write fails, or the write is incomplete.
         """
         if not self.handle:
             raise Error("invalid file handle")
