@@ -300,4 +300,391 @@ module attributes {M.target_info = #M.target<triple = "air64-apple-macosx", arch
     %0 = pop.max %arg0, %arg1 : !pop.simd<2, ui32>
     llvm.return
   }
+
+  kgen.func @test_pop_cast_all_types(
+    %si8_val: !pop.scalar<si8>,
+    %ui8_val: !pop.scalar<ui8>,
+    %si16_val: !pop.scalar<si16>,
+    %ui16_val: !pop.scalar<ui16>,
+    %si32_val: !pop.scalar<si32>,
+    %ui32_val: !pop.scalar<ui32>,
+    %f16_val: !pop.scalar<f16>,
+    %bf16_val: !pop.scalar<bf16>,
+    %f32_val: !pop.scalar<f32>
+  ) {
+    // CHECK-LABEL:   kgen.func @test_pop_cast_all_types(
+    // CHECK-SAME: %[[ARG0:.*]]: !pop.scalar<si8>,
+    // CHECK-SAME: %[[ARG1:.*]]: !pop.scalar<ui8>,
+    // CHECK-SAME: %[[ARG2:.*]]: !pop.scalar<si16>,
+    // CHECK-SAME: %[[ARG3:.*]]: !pop.scalar<ui16>,
+    // CHECK-SAME: %[[ARG4:.*]]: !pop.scalar<si32>,
+    // CHECK-SAME: %[[ARG5:.*]]: !pop.scalar<ui32>,
+    // CHECK-SAME: %[[ARG6:.*]]: !pop.scalar<f16>,
+    // CHECK-SAME: %[[ARG7:.*]]: !pop.scalar<bf16>,
+    // CHECK-SAME: %[[ARG8:.*]]: !pop.scalar<f32>) {
+    // CHECK: %[[UNREALIZED_CONVERSION_CAST_0:.*]] = builtin.unrealized_conversion_cast %[[ARG8]] : !pop.scalar<f32> to f32
+    // CHECK: %[[UNREALIZED_CONVERSION_CAST_1:.*]] = builtin.unrealized_conversion_cast %[[ARG7]] : !pop.scalar<bf16> to bf16
+    // CHECK: %[[UNREALIZED_CONVERSION_CAST_2:.*]] = builtin.unrealized_conversion_cast %[[ARG6]] : !pop.scalar<f16> to f16
+    // CHECK: %[[UNREALIZED_CONVERSION_CAST_3:.*]] = builtin.unrealized_conversion_cast %[[ARG5]] : !pop.scalar<ui32> to i32
+    // CHECK: %[[UNREALIZED_CONVERSION_CAST_4:.*]] = builtin.unrealized_conversion_cast %[[ARG4]] : !pop.scalar<si32> to i32
+    // CHECK: %[[UNREALIZED_CONVERSION_CAST_5:.*]] = builtin.unrealized_conversion_cast %[[ARG3]] : !pop.scalar<ui16> to i16
+    // CHECK: %[[UNREALIZED_CONVERSION_CAST_6:.*]] = builtin.unrealized_conversion_cast %[[ARG2]] : !pop.scalar<si16> to i16
+    // CHECK: %[[UNREALIZED_CONVERSION_CAST_7:.*]] = builtin.unrealized_conversion_cast %[[ARG1]] : !pop.scalar<ui8> to i8
+    // CHECK: %[[UNREALIZED_CONVERSION_CAST_8:.*]] = builtin.unrealized_conversion_cast %[[ARG0]] : !pop.scalar<si8> to i8
+    // ========================================================================
+    // from si8
+    // ========================================================================
+    // CHECK: %[[CALL_0:.*]] = llvm.call @air.convert.f.f16.s.i8(%[[UNREALIZED_CONVERSION_CAST_8]]) : (i8) -> f16
+    %si8_to_f16 = pop.cast %si8_val : !pop.scalar<si8> to !pop.scalar<f16>
+
+    // CHECK: %[[CALL_1:.*]] = llvm.call @air.convert.f.bf16.s.i8(%[[UNREALIZED_CONVERSION_CAST_8]]) : (i8) -> bf16
+    %si8_to_bf16 = pop.cast %si8_val : !pop.scalar<si8> to !pop.scalar<bf16>
+
+    // CHECK: %[[CALL_2:.*]] = llvm.call @air.convert.f.f32.s.i8(%[[UNREALIZED_CONVERSION_CAST_8]]) : (i8) -> f32
+    %si8_to_f32 = pop.cast %si8_val : !pop.scalar<si8> to !pop.scalar<f32>
+
+    // ========================================================================
+    // from ui8
+    // ========================================================================
+    // CHECK: %[[CALL_3:.*]] = llvm.call @air.convert.f.f16.u.i8(%[[UNREALIZED_CONVERSION_CAST_7]]) : (i8) -> f16
+    %ui8_to_f16 = pop.cast %ui8_val : !pop.scalar<ui8> to !pop.scalar<f16>
+
+    // CHECK: %[[CALL_4:.*]] = llvm.call @air.convert.f.bf16.u.i8(%[[UNREALIZED_CONVERSION_CAST_7]]) : (i8) -> bf16
+    %ui8_to_bf16 = pop.cast %ui8_val : !pop.scalar<ui8> to !pop.scalar<bf16>
+
+    // CHECK: %[[CALL_5:.*]] = llvm.call @air.convert.f.f32.u.i8(%[[UNREALIZED_CONVERSION_CAST_7]]) : (i8) -> f32
+    %ui8_to_f32 = pop.cast %ui8_val : !pop.scalar<ui8> to !pop.scalar<f32>
+
+    // ========================================================================
+    // from si16
+    // ========================================================================
+    // CHECK: %[[CALL_6:.*]] = llvm.call @air.convert.f.f16.s.i16(%[[UNREALIZED_CONVERSION_CAST_6]]) : (i16) -> f16
+    %si16_to_f16 = pop.cast %si16_val : !pop.scalar<si16> to !pop.scalar<f16>
+
+    // CHECK: %[[CALL_7:.*]] = llvm.call @air.convert.f.bf16.s.i16(%[[UNREALIZED_CONVERSION_CAST_6]]) : (i16) -> bf16
+    %si16_to_bf16 = pop.cast %si16_val : !pop.scalar<si16> to !pop.scalar<bf16>
+
+    // CHECK: %[[CALL_8:.*]] = llvm.call @air.convert.f.f32.s.i16(%[[UNREALIZED_CONVERSION_CAST_6]]) : (i16) -> f32
+    %si16_to_f32 = pop.cast %si16_val : !pop.scalar<si16> to !pop.scalar<f32>
+
+    // ========================================================================
+    // from ui16
+    // ========================================================================
+    // CHECK: %[[CALL_9:.*]] = llvm.call @air.convert.f.f16.u.i16(%[[UNREALIZED_CONVERSION_CAST_5]]) : (i16) -> f16
+    %ui16_to_f16 = pop.cast %ui16_val : !pop.scalar<ui16> to !pop.scalar<f16>
+
+    // CHECK: %[[CALL_10:.*]] = llvm.call @air.convert.f.bf16.u.i16(%[[UNREALIZED_CONVERSION_CAST_5]]) : (i16) -> bf16
+    %ui16_to_bf16 = pop.cast %ui16_val : !pop.scalar<ui16> to !pop.scalar<bf16>
+
+    // CHECK: %[[CALL_11:.*]] = llvm.call @air.convert.f.f32.u.i16(%[[UNREALIZED_CONVERSION_CAST_5]]) : (i16) -> f32
+    %ui16_to_f32 = pop.cast %ui16_val : !pop.scalar<ui16> to !pop.scalar<f32>
+
+    // ========================================================================
+    // from si32
+    // ========================================================================
+    // CHECK: %[[CALL_12:.*]] = llvm.call @air.convert.f.f16.s.i32(%[[UNREALIZED_CONVERSION_CAST_4]]) : (i32) -> f16
+    %si32_to_f16 = pop.cast %si32_val : !pop.scalar<si32> to !pop.scalar<f16>
+
+    // CHECK: %[[CALL_13:.*]] = llvm.call @air.convert.f.bf16.s.i32(%[[UNREALIZED_CONVERSION_CAST_4]]) : (i32) -> bf16
+    %si32_to_bf16 = pop.cast %si32_val : !pop.scalar<si32> to !pop.scalar<bf16>
+
+    // CHECK: %[[CALL_14:.*]] = llvm.call @air.convert.f.f32.s.i32(%[[UNREALIZED_CONVERSION_CAST_4]]) : (i32) -> f32
+    %si32_to_f32 = pop.cast %si32_val : !pop.scalar<si32> to !pop.scalar<f32>
+
+    // ========================================================================
+    // from ui32
+    // ========================================================================
+    // CHECK: %[[CALL_15:.*]] = llvm.call @air.convert.f.f16.u.i32(%[[UNREALIZED_CONVERSION_CAST_3]]) : (i32) -> f16
+    %ui32_to_f16 = pop.cast %ui32_val : !pop.scalar<ui32> to !pop.scalar<f16>
+
+    // CHECK: %[[CALL_16:.*]] = llvm.call @air.convert.f.bf16.u.i32(%[[UNREALIZED_CONVERSION_CAST_3]]) : (i32) -> bf16
+    %ui32_to_bf16 = pop.cast %ui32_val : !pop.scalar<ui32> to !pop.scalar<bf16>
+
+    // CHECK: %[[CALL_17:.*]] = llvm.call @air.convert.f.f32.u.i32(%[[UNREALIZED_CONVERSION_CAST_3]]) : (i32) -> f32
+    %ui32_to_f32 = pop.cast %ui32_val : !pop.scalar<ui32> to !pop.scalar<f32>
+
+    // ========================================================================
+    // from f16
+    // ========================================================================
+    // CHECK: %[[CALL_18:.*]] = llvm.call @air.convert.s.i8.f.f16(%[[UNREALIZED_CONVERSION_CAST_2]]) : (f16) -> i8
+    %f16_to_si8 = pop.cast %f16_val : !pop.scalar<f16> to !pop.scalar<si8>
+
+    // CHECK: %[[CALL_19:.*]] = llvm.call @air.convert.u.i8.f.f16(%[[UNREALIZED_CONVERSION_CAST_2]]) : (f16) -> i8
+    %f16_to_ui8 = pop.cast %f16_val : !pop.scalar<f16> to !pop.scalar<ui8>
+
+    // CHECK: %[[CALL_20:.*]] = llvm.call @air.convert.s.i16.f.f16(%[[UNREALIZED_CONVERSION_CAST_2]]) : (f16) -> i16
+    %f16_to_si16 = pop.cast %f16_val : !pop.scalar<f16> to !pop.scalar<si16>
+
+    // CHECK: %[[CALL_21:.*]] = llvm.call @air.convert.u.i16.f.f16(%[[UNREALIZED_CONVERSION_CAST_2]]) : (f16) -> i16
+    %f16_to_ui16 = pop.cast %f16_val : !pop.scalar<f16> to !pop.scalar<ui16>
+
+    // CHECK: %[[CALL_22:.*]] = llvm.call @air.convert.s.i32.f.f16(%[[UNREALIZED_CONVERSION_CAST_2]]) : (f16) -> i32
+    %f16_to_si32 = pop.cast %f16_val : !pop.scalar<f16> to !pop.scalar<si32>
+
+    // CHECK: %[[CALL_23:.*]] = llvm.call @air.convert.u.i32.f.f16(%[[UNREALIZED_CONVERSION_CAST_2]]) : (f16) -> i32
+    %f16_to_ui32 = pop.cast %f16_val : !pop.scalar<f16> to !pop.scalar<ui32>
+
+    // CHECK: %[[CALL_24:.*]] = llvm.call @air.convert.f.bf16.f.f16(%[[UNREALIZED_CONVERSION_CAST_2]]) : (f16) -> bf16
+    %f16_to_bf16 = pop.cast %f16_val : !pop.scalar<f16> to !pop.scalar<bf16>
+
+    // ========================================================================
+    // from bf16
+    // ========================================================================
+    // CHECK: %[[CALL_24:.*]] = llvm.call @air.convert.s.i8.f.bf16(%[[UNREALIZED_CONVERSION_CAST_1]]) : (bf16) -> i8
+    %bf16_to_si8 = pop.cast %bf16_val : !pop.scalar<bf16> to !pop.scalar<si8>
+
+    // CHECK: %[[CALL_25:.*]] = llvm.call @air.convert.u.i8.f.bf16(%[[UNREALIZED_CONVERSION_CAST_1]]) : (bf16) -> i8
+    %bf16_to_ui8 = pop.cast %bf16_val : !pop.scalar<bf16> to !pop.scalar<ui8>
+
+    // CHECK: %[[CALL_26:.*]] = llvm.call @air.convert.s.i16.f.bf16(%[[UNREALIZED_CONVERSION_CAST_1]]) : (bf16) -> i16
+    %bf16_to_si16 = pop.cast %bf16_val : !pop.scalar<bf16> to !pop.scalar<si16>
+
+    // CHECK: %[[CALL_27:.*]] = llvm.call @air.convert.u.i16.f.bf16(%[[UNREALIZED_CONVERSION_CAST_1]]) : (bf16) -> i16
+    %bf16_to_ui16 = pop.cast %bf16_val : !pop.scalar<bf16> to !pop.scalar<ui16>
+
+    // CHECK: %[[CALL_28:.*]] = llvm.call @air.convert.s.i32.f.bf16(%[[UNREALIZED_CONVERSION_CAST_1]]) : (bf16) -> i32
+    %bf16_to_si32 = pop.cast %bf16_val : !pop.scalar<bf16> to !pop.scalar<si32>
+
+    // CHECK: %[[CALL_29:.*]] = llvm.call @air.convert.u.i32.f.bf16(%[[UNREALIZED_CONVERSION_CAST_1]]) : (bf16) -> i32
+    %bf16_to_ui32 = pop.cast %bf16_val : !pop.scalar<bf16> to !pop.scalar<ui32>
+
+    // CHECK: %[[CALL_291:.*]] = llvm.call @air.convert.f.f16.f.bf16(%[[UNREALIZED_CONVERSION_CAST_1]]) : (bf16) -> f16
+    %bf16_to_f16 = pop.cast %bf16_val : !pop.scalar<bf16> to !pop.scalar<f16>
+
+    // ========================================================================
+    // from f32
+    // ========================================================================
+    // CHECK: %[[CALL_30:.*]] = llvm.call @air.convert.s.i8.f.f32(%[[UNREALIZED_CONVERSION_CAST_0]]) : (f32) -> i8
+    %f32_to_si8 = pop.cast %f32_val : !pop.scalar<f32> to !pop.scalar<si8>
+
+    // CHECK: %[[CALL_31:.*]] = llvm.call @air.convert.u.i8.f.f32(%[[UNREALIZED_CONVERSION_CAST_0]]) : (f32) -> i8
+    %f32_to_ui8 = pop.cast %f32_val : !pop.scalar<f32> to !pop.scalar<ui8>
+
+    // CHECK: %[[CALL_32:.*]] = llvm.call @air.convert.s.i16.f.f32(%[[UNREALIZED_CONVERSION_CAST_0]]) : (f32) -> i16
+    %f32_to_si16 = pop.cast %f32_val : !pop.scalar<f32> to !pop.scalar<si16>
+
+    // CHECK: %[[CALL_33:.*]] = llvm.call @air.convert.u.i16.f.f32(%[[UNREALIZED_CONVERSION_CAST_0]]) : (f32) -> i16
+    %f32_to_ui16 = pop.cast %f32_val : !pop.scalar<f32> to !pop.scalar<ui16>
+
+    // CHECK: %[[CALL_34:.*]] = llvm.call @air.convert.s.i32.f.f32(%[[UNREALIZED_CONVERSION_CAST_0]]) : (f32) -> i32
+    %f32_to_si32 = pop.cast %f32_val : !pop.scalar<f32> to !pop.scalar<si32>
+
+    // CHECK: %[[CALL_35:.*]] = llvm.call @air.convert.u.i32.f.f32(%[[UNREALIZED_CONVERSION_CAST_0]]) : (f32) -> i32
+    %f32_to_ui32 = pop.cast %f32_val : !pop.scalar<f32> to !pop.scalar<ui32>
+
+    kgen.return
+  }
+
+  // CHECK-LABEL:   @test_vector_pop_cast_all_types(
+  kgen.func @test_vector_pop_cast_all_types(
+    %si8_val: !pop.simd<2, si8>,
+    %ui8_val: !pop.simd<2, ui8>,
+    %si16_val: !pop.simd<2, si16>,
+    %ui16_val: !pop.simd<2, ui16>,
+    %si32_val: !pop.simd<2, si32>,
+    %ui32_val: !pop.simd<2, ui32>,
+    %f16_val: !pop.simd<2, f16>,
+    %bf16_val: !pop.simd<2, bf16>,
+    %f32_val: !pop.simd<2, f32>
+  ) {
+    // CHECK:  %[[CALL_0:.*]] = llvm.call @air.convert.s.v2i16.s.v2i8({{.*}}) : (vector<2xi8>) -> vector<2xi16>
+    // CHECK:  %[[CALL_1:.*]] = llvm.call @air.convert.u.v2i16.s.v2i8({{.*}}) : (vector<2xi8>) -> vector<2xi16>
+    // CHECK:  %[[CALL_2:.*]] = llvm.call @air.convert.s.v2i32.s.v2i8({{.*}}) : (vector<2xi8>) -> vector<2xi32>
+    // CHECK:  %[[CALL_3:.*]] = llvm.call @air.convert.u.v2i32.s.v2i8({{.*}}) : (vector<2xi8>) -> vector<2xi32>
+    // CHECK:  %[[CALL_4:.*]] = llvm.call @air.convert.f.v2f16.s.v2i8({{.*}}) : (vector<2xi8>) -> vector<2xf16>
+    // CHECK:  %[[CALL_5:.*]] = llvm.call @air.convert.f.v2bf16.s.v2i8({{.*}}) : (vector<2xi8>) -> vector<2xbf16>
+    // CHECK:  %[[CALL_6:.*]] = llvm.call @air.convert.f.v2f32.s.v2i8({{.*}}) : (vector<2xi8>) -> vector<2xf32>
+    // CHECK:  %[[CALL_7:.*]] = llvm.call @air.convert.s.v2i16.u.v2i8({{.*}}) : (vector<2xi8>) -> vector<2xi16>
+    // CHECK:  %[[CALL_8:.*]] = llvm.call @air.convert.u.v2i16.u.v2i8({{.*}}) : (vector<2xi8>) -> vector<2xi16>
+    // CHECK:  %[[CALL_9:.*]] = llvm.call @air.convert.s.v2i32.u.v2i8({{.*}}) : (vector<2xi8>) -> vector<2xi32>
+    // CHECK:  %[[CALL_10:.*]] = llvm.call @air.convert.u.v2i32.u.v2i8({{.*}}) : (vector<2xi8>) -> vector<2xi32>
+    // CHECK:  %[[CALL_11:.*]] = llvm.call @air.convert.f.v2f16.u.v2i8({{.*}}) : (vector<2xi8>) -> vector<2xf16>
+    // CHECK:  %[[CALL_12:.*]] = llvm.call @air.convert.f.v2bf16.u.v2i8({{.*}}) : (vector<2xi8>) -> vector<2xbf16>
+    // CHECK:  %[[CALL_13:.*]] = llvm.call @air.convert.f.v2f32.u.v2i8({{.*}}) : (vector<2xi8>) -> vector<2xf32>
+    // CHECK:  %[[CALL_14:.*]] = llvm.call @air.convert.s.v2i8.s.v2i16({{.*}}) : (vector<2xi16>) -> vector<2xi8>
+    // CHECK:  %[[CALL_15:.*]] = llvm.call @air.convert.u.v2i8.s.v2i16({{.*}}) : (vector<2xi16>) -> vector<2xi8>
+    // CHECK:  %[[CALL_16:.*]] = llvm.call @air.convert.s.v2i32.s.v2i16({{.*}}) : (vector<2xi16>) -> vector<2xi32>
+    // CHECK:  %[[CALL_17:.*]] = llvm.call @air.convert.u.v2i32.s.v2i16({{.*}}) : (vector<2xi16>) -> vector<2xi32>
+    // CHECK:  %[[CALL_18:.*]] = llvm.call @air.convert.f.v2f16.s.v2i16({{.*}}) : (vector<2xi16>) -> vector<2xf16>
+    // CHECK:  %[[CALL_19:.*]] = llvm.call @air.convert.f.v2bf16.s.v2i16({{.*}}) : (vector<2xi16>) -> vector<2xbf16>
+    // CHECK:  %[[CALL_20:.*]] = llvm.call @air.convert.f.v2f32.s.v2i16({{.*}}) : (vector<2xi16>) -> vector<2xf32>
+    // CHECK:  %[[CALL_21:.*]] = llvm.call @air.convert.s.v2i8.u.v2i16({{.*}}) : (vector<2xi16>) -> vector<2xi8>
+    // CHECK:  %[[CALL_22:.*]] = llvm.call @air.convert.u.v2i8.u.v2i16({{.*}}) : (vector<2xi16>) -> vector<2xi8>
+    // CHECK:  %[[CALL_23:.*]] = llvm.call @air.convert.s.v2i32.u.v2i16({{.*}}) : (vector<2xi16>) -> vector<2xi32>
+    // CHECK:  %[[CALL_24:.*]] = llvm.call @air.convert.u.v2i32.u.v2i16({{.*}}) : (vector<2xi16>) -> vector<2xi32>
+    // CHECK:  %[[CALL_25:.*]] = llvm.call @air.convert.f.v2f16.u.v2i16({{.*}}) : (vector<2xi16>) -> vector<2xf16>
+    // CHECK:  %[[CALL_26:.*]] = llvm.call @air.convert.f.v2bf16.u.v2i16({{.*}}) : (vector<2xi16>) -> vector<2xbf16>
+    // CHECK:  %[[CALL_27:.*]] = llvm.call @air.convert.f.v2f32.u.v2i16({{.*}}) : (vector<2xi16>) -> vector<2xf32>
+    // CHECK:  %[[CALL_28:.*]] = llvm.call @air.convert.s.v2i8.s.v2i32({{.*}}) : (vector<2xi32>) -> vector<2xi8>
+    // CHECK:  %[[CALL_29:.*]] = llvm.call @air.convert.u.v2i8.s.v2i32({{.*}}) : (vector<2xi32>) -> vector<2xi8>
+    // CHECK:  %[[CALL_30:.*]] = llvm.call @air.convert.s.v2i16.s.v2i32({{.*}}) : (vector<2xi32>) -> vector<2xi16>
+    // CHECK:  %[[CALL_31:.*]] = llvm.call @air.convert.u.v2i16.s.v2i32({{.*}}) : (vector<2xi32>) -> vector<2xi16>
+    // CHECK:  %[[CALL_32:.*]] = llvm.call @air.convert.f.v2f16.s.v2i32({{.*}}) : (vector<2xi32>) -> vector<2xf16>
+    // CHECK:  %[[CALL_33:.*]] = llvm.call @air.convert.f.v2bf16.s.v2i32({{.*}}) : (vector<2xi32>) -> vector<2xbf16>
+    // CHECK:  %[[CALL_34:.*]] = llvm.call @air.convert.f.v2f32.s.v2i32({{.*}}) : (vector<2xi32>) -> vector<2xf32>
+    // CHECK:  %[[CALL_35:.*]] = llvm.call @air.convert.s.v2i8.u.v2i32({{.*}}) : (vector<2xi32>) -> vector<2xi8>
+    // CHECK:  %[[CALL_36:.*]] = llvm.call @air.convert.u.v2i8.u.v2i32({{.*}}) : (vector<2xi32>) -> vector<2xi8>
+    // CHECK:  %[[CALL_37:.*]] = llvm.call @air.convert.s.v2i16.u.v2i32({{.*}}) : (vector<2xi32>) -> vector<2xi16>
+    // CHECK:  %[[CALL_38:.*]] = llvm.call @air.convert.u.v2i16.u.v2i32({{.*}}) : (vector<2xi32>) -> vector<2xi16>
+    // CHECK:  %[[CALL_39:.*]] = llvm.call @air.convert.f.v2f16.u.v2i32({{.*}}) : (vector<2xi32>) -> vector<2xf16>
+    // CHECK:  %[[CALL_40:.*]] = llvm.call @air.convert.f.v2bf16.u.v2i32({{.*}}) : (vector<2xi32>) -> vector<2xbf16>
+    // CHECK:  %[[CALL_41:.*]] = llvm.call @air.convert.f.v2f32.u.v2i32({{.*}}) : (vector<2xi32>) -> vector<2xf32>
+    // CHECK:  %[[CALL_42:.*]] = llvm.call @air.convert.s.v2i8.f.v2f16({{.*}}) : (vector<2xf16>) -> vector<2xi8>
+    // CHECK:  %[[CALL_43:.*]] = llvm.call @air.convert.u.v2i8.f.v2f16({{.*}}) : (vector<2xf16>) -> vector<2xi8>
+    // CHECK:  %[[CALL_44:.*]] = llvm.call @air.convert.s.v2i16.f.v2f16({{.*}}) : (vector<2xf16>) -> vector<2xi16>
+    // CHECK:  %[[CALL_45:.*]] = llvm.call @air.convert.u.v2i16.f.v2f16({{.*}}) : (vector<2xf16>) -> vector<2xi16>
+    // CHECK:  %[[CALL_46:.*]] = llvm.call @air.convert.s.v2i32.f.v2f16({{.*}}) : (vector<2xf16>) -> vector<2xi32>
+    // CHECK:  %[[CALL_47:.*]] = llvm.call @air.convert.u.v2i32.f.v2f16({{.*}}) : (vector<2xf16>) -> vector<2xi32>
+    // CHECK:  %[[CALL_48:.*]] = llvm.call @air.convert.f.v2bf16.f.v2f16({{.*}}) : (vector<2xf16>) -> vector<2xbf16>
+    // CHECK:  %[[CALL_49:.*]] = llvm.call @air.convert.f.v2f32.f.v2f16({{.*}}) : (vector<2xf16>) -> vector<2xf32>
+    // CHECK:  %[[CALL_50:.*]] = llvm.call @air.convert.s.v2i8.f.v2bf16({{.*}}) : (vector<2xbf16>) -> vector<2xi8>
+    // CHECK:  %[[CALL_51:.*]] = llvm.call @air.convert.u.v2i8.f.v2bf16({{.*}}) : (vector<2xbf16>) -> vector<2xi8>
+    // CHECK:  %[[CALL_52:.*]] = llvm.call @air.convert.s.v2i16.f.v2bf16({{.*}}) : (vector<2xbf16>) -> vector<2xi16>
+    // CHECK:  %[[CALL_53:.*]] = llvm.call @air.convert.u.v2i16.f.v2bf16({{.*}}) : (vector<2xbf16>) -> vector<2xi16>
+    // CHECK:  %[[CALL_54:.*]] = llvm.call @air.convert.s.v2i32.f.v2bf16({{.*}}) : (vector<2xbf16>) -> vector<2xi32>
+    // CHECK:  %[[CALL_55:.*]] = llvm.call @air.convert.u.v2i32.f.v2bf16({{.*}}) : (vector<2xbf16>) -> vector<2xi32>
+    // CHECK:  %[[CALL_56:.*]] = llvm.call @air.convert.f.v2f16.f.v2bf16({{.*}}) : (vector<2xbf16>) -> vector<2xf16>
+    // CHECK:  %[[CALL_57:.*]] = llvm.call @air.convert.f.v2f32.f.v2bf16({{.*}}) : (vector<2xbf16>) -> vector<2xf32>
+    // CHECK:  %[[CALL_58:.*]] = llvm.call @air.convert.s.v2i8.f.v2f32({{.*}}) : (vector<2xf32>) -> vector<2xi8>
+    // CHECK:  %[[CALL_59:.*]] = llvm.call @air.convert.u.v2i8.f.v2f32({{.*}}) : (vector<2xf32>) -> vector<2xi8>
+    // CHECK:  %[[CALL_60:.*]] = llvm.call @air.convert.s.v2i16.f.v2f32({{.*}}) : (vector<2xf32>) -> vector<2xi16>
+    // CHECK:  %[[CALL_61:.*]] = llvm.call @air.convert.u.v2i16.f.v2f32({{.*}}) : (vector<2xf32>) -> vector<2xi16>
+    // CHECK:  %[[CALL_62:.*]] = llvm.call @air.convert.s.v2i32.f.v2f32({{.*}}) : (vector<2xf32>) -> vector<2xi32>
+    // CHECK:  %[[CALL_63:.*]] = llvm.call @air.convert.u.v2i32.f.v2f32({{.*}}) : (vector<2xf32>) -> vector<2xi32>
+    // CHECK:  %[[CALL_64:.*]] = llvm.call @air.convert.f.v2f16.f.v2f32({{.*}}) : (vector<2xf32>) -> vector<2xf16>
+    // CHECK:  %[[CALL_65:.*]] = llvm.call @air.convert.f.v2bf16.f.v2f32({{.*}}) : (vector<2xf32>) -> vector<2xbf16>
+    %si8_to_si16 = pop.cast %si8_val : !pop.simd<2, si8> to !pop.simd<2, si16>
+
+    %si8_to_ui16 = pop.cast %si8_val : !pop.simd<2, si8> to !pop.simd<2, ui16>
+
+    %si8_to_si32 = pop.cast %si8_val : !pop.simd<2, si8> to !pop.simd<2, si32>
+
+    %si8_to_ui32 = pop.cast %si8_val : !pop.simd<2, si8> to !pop.simd<2, ui32>
+
+    %si8_to_f16 = pop.cast %si8_val : !pop.simd<2, si8> to !pop.simd<2, f16>
+
+    %si8_to_bf16 = pop.cast %si8_val : !pop.simd<2, si8> to !pop.simd<2, bf16>
+
+    %si8_to_f32 = pop.cast %si8_val : !pop.simd<2, si8> to !pop.simd<2, f32>
+
+    %ui8_to_si16 = pop.cast %ui8_val : !pop.simd<2, ui8> to !pop.simd<2, si16>
+
+    %ui8_to_ui16 = pop.cast %ui8_val : !pop.simd<2, ui8> to !pop.simd<2, ui16>
+
+    %ui8_to_si32 = pop.cast %ui8_val : !pop.simd<2, ui8> to !pop.simd<2, si32>
+
+    %ui8_to_ui32 = pop.cast %ui8_val : !pop.simd<2, ui8> to !pop.simd<2, ui32>
+
+    %ui8_to_f16 = pop.cast %ui8_val : !pop.simd<2, ui8> to !pop.simd<2, f16>
+
+    %ui8_to_bf16 = pop.cast %ui8_val : !pop.simd<2, ui8> to !pop.simd<2, bf16>
+
+    %ui8_to_f32 = pop.cast %ui8_val : !pop.simd<2, ui8> to !pop.simd<2, f32>
+
+    %si16_to_si8 = pop.cast %si16_val : !pop.simd<2, si16> to !pop.simd<2, si8>
+
+    %si16_to_ui8 = pop.cast %si16_val : !pop.simd<2, si16> to !pop.simd<2, ui8>
+
+    %si16_to_si32 = pop.cast %si16_val : !pop.simd<2, si16> to !pop.simd<2, si32>
+
+    %si16_to_ui32 = pop.cast %si16_val : !pop.simd<2, si16> to !pop.simd<2, ui32>
+
+    %si16_to_f16 = pop.cast %si16_val : !pop.simd<2, si16> to !pop.simd<2, f16>
+
+    %si16_to_bf16 = pop.cast %si16_val : !pop.simd<2, si16> to !pop.simd<2, bf16>
+
+    %si16_to_f32 = pop.cast %si16_val : !pop.simd<2, si16> to !pop.simd<2, f32>
+
+    %ui16_to_si8 = pop.cast %ui16_val : !pop.simd<2, ui16> to !pop.simd<2, si8>
+
+    %ui16_to_ui8 = pop.cast %ui16_val : !pop.simd<2, ui16> to !pop.simd<2, ui8>
+
+    %ui16_to_si32 = pop.cast %ui16_val : !pop.simd<2, ui16> to !pop.simd<2, si32>
+
+    %ui16_to_ui32 = pop.cast %ui16_val : !pop.simd<2, ui16> to !pop.simd<2, ui32>
+
+    %ui16_to_f16 = pop.cast %ui16_val : !pop.simd<2, ui16> to !pop.simd<2, f16>
+
+    %ui16_to_bf16 = pop.cast %ui16_val : !pop.simd<2, ui16> to !pop.simd<2, bf16>
+
+    %ui16_to_f32 = pop.cast %ui16_val : !pop.simd<2, ui16> to !pop.simd<2, f32>
+
+    %si32_to_si8 = pop.cast %si32_val : !pop.simd<2, si32> to !pop.simd<2, si8>
+
+    %si32_to_ui8 = pop.cast %si32_val : !pop.simd<2, si32> to !pop.simd<2, ui8>
+
+    %si32_to_si16 = pop.cast %si32_val : !pop.simd<2, si32> to !pop.simd<2, si16>
+
+    %si32_to_ui16 = pop.cast %si32_val : !pop.simd<2, si32> to !pop.simd<2, ui16>
+
+    %si32_to_f16 = pop.cast %si32_val : !pop.simd<2, si32> to !pop.simd<2, f16>
+
+    %si32_to_bf16 = pop.cast %si32_val : !pop.simd<2, si32> to !pop.simd<2, bf16>
+
+    %si32_to_f32 = pop.cast %si32_val : !pop.simd<2, si32> to !pop.simd<2, f32>
+
+    %ui32_to_si8 = pop.cast %ui32_val : !pop.simd<2, ui32> to !pop.simd<2, si8>
+
+    %ui32_to_ui8 = pop.cast %ui32_val : !pop.simd<2, ui32> to !pop.simd<2, ui8>
+
+    %ui32_to_si16 = pop.cast %ui32_val : !pop.simd<2, ui32> to !pop.simd<2, si16>
+
+    %ui32_to_ui16 = pop.cast %ui32_val : !pop.simd<2, ui32> to !pop.simd<2, ui16>
+
+    %ui32_to_f16 = pop.cast %ui32_val : !pop.simd<2, ui32> to !pop.simd<2, f16>
+
+    %ui32_to_bf16 = pop.cast %ui32_val : !pop.simd<2, ui32> to !pop.simd<2, bf16>
+
+    %ui32_to_f32 = pop.cast %ui32_val : !pop.simd<2, ui32> to !pop.simd<2, f32>
+
+    %f16_to_si8 = pop.cast %f16_val : !pop.simd<2, f16> to !pop.simd<2, si8>
+
+    %f16_to_ui8 = pop.cast %f16_val : !pop.simd<2, f16> to !pop.simd<2, ui8>
+
+    %f16_to_si16 = pop.cast %f16_val : !pop.simd<2, f16> to !pop.simd<2, si16>
+
+    %f16_to_ui16 = pop.cast %f16_val : !pop.simd<2, f16> to !pop.simd<2, ui16>
+
+    %f16_to_si32 = pop.cast %f16_val : !pop.simd<2, f16> to !pop.simd<2, si32>
+
+    %f16_to_ui32 = pop.cast %f16_val : !pop.simd<2, f16> to !pop.simd<2, ui32>
+
+    %f16_to_bf16 = pop.cast %f16_val : !pop.simd<2, f16> to !pop.simd<2, bf16>
+
+    %f16_to_f32 = pop.cast %f16_val : !pop.simd<2, f16> to !pop.simd<2, f32>
+
+    %bf16_to_si8 = pop.cast %bf16_val : !pop.simd<2, bf16> to !pop.simd<2, si8>
+
+    %bf16_to_ui8 = pop.cast %bf16_val : !pop.simd<2, bf16> to !pop.simd<2, ui8>
+
+    %bf16_to_si16 = pop.cast %bf16_val : !pop.simd<2, bf16> to !pop.simd<2, si16>
+
+    %bf16_to_ui16 = pop.cast %bf16_val : !pop.simd<2, bf16> to !pop.simd<2, ui16>
+
+    %bf16_to_si32 = pop.cast %bf16_val : !pop.simd<2, bf16> to !pop.simd<2, si32>
+
+    %bf16_to_ui32 = pop.cast %bf16_val : !pop.simd<2, bf16> to !pop.simd<2, ui32>
+
+    %bf16_to_f16 = pop.cast %bf16_val : !pop.simd<2, bf16> to !pop.simd<2, f16>
+
+    %bf16_to_f32 = pop.cast %bf16_val : !pop.simd<2, bf16> to !pop.simd<2, f32>
+
+    %f32_to_si8 = pop.cast %f32_val : !pop.simd<2, f32> to !pop.simd<2, si8>
+
+    %f32_to_ui8 = pop.cast %f32_val : !pop.simd<2, f32> to !pop.simd<2, ui8>
+
+    %f32_to_si16 = pop.cast %f32_val : !pop.simd<2, f32> to !pop.simd<2, si16>
+
+    %f32_to_ui16 = pop.cast %f32_val : !pop.simd<2, f32> to !pop.simd<2, ui16>
+
+    %f32_to_si32 = pop.cast %f32_val : !pop.simd<2, f32> to !pop.simd<2, si32>
+
+    %f32_to_ui32 = pop.cast %f32_val : !pop.simd<2, f32> to !pop.simd<2, ui32>
+
+    %f32_to_f16 = pop.cast %f32_val : !pop.simd<2, f32> to !pop.simd<2, f16>
+
+    %f32_to_bf16 = pop.cast %f32_val : !pop.simd<2, f32> to !pop.simd<2, bf16>
+
+    kgen.return
+  }
 }

@@ -731,3 +731,155 @@ module attributes {M.target_info = #M.target<triple = "amdgcn-amd-amdhsa", arch=
       !pop.simd<2, bf16>
   }
 }
+
+// -----
+module attributes {M.target_info = #M.target<triple = "air64-apple-macosx", arch = "", data_layout = "", simd_bit_width = 128>} {
+  // CHECK-LABEL: @test_pop_cast_no_air(
+  kgen.func @test_pop_cast_no_air(
+    %si8_val: !pop.scalar<si8>,
+    %ui8_val: !pop.scalar<ui8>,
+    %si16_val: !pop.scalar<si16>,
+    %ui16_val: !pop.scalar<ui16>,
+    %si32_val: !pop.scalar<si32>,
+    %ui32_val: !pop.scalar<ui32>,
+    %f16_val: !pop.scalar<f16>,
+    %bf16_val: !pop.scalar<bf16>,
+    %f32_val: !pop.scalar<f32>
+  ) -> (
+    !pop.scalar<bf16>, !pop.scalar<f32>,
+    !pop.scalar<si16>, !pop.scalar<ui16>, !pop.scalar<si32>, !pop.scalar<ui32>,
+    !pop.scalar<si8>, !pop.scalar<ui8>, !pop.scalar<si32>, !pop.scalar<ui32>,
+    !pop.scalar<si8>, !pop.scalar<ui8>, !pop.scalar<si32>, !pop.scalar<ui32>,
+    !pop.scalar<si8>, !pop.scalar<ui8>, !pop.scalar<si16>, !pop.scalar<ui16>,
+    !pop.scalar<si8>, !pop.scalar<ui8>, !pop.scalar<si16>, !pop.scalar<ui16>,
+    !pop.scalar<f32>,
+    !pop.scalar<f32>,
+    !pop.scalar<f16>, !pop.scalar<bf16>
+  ){
+    // ========================================================================
+    // from si8
+    // ========================================================================
+    // CHECK: %[[UNREALIZED_CONVERSION_CAST_0:.*]] = builtin.unrealized_conversion_cast %arg0 : i8 to !pop.scalar<si8>
+    // CHECK: %[[CAST_0:.*]] = pop.cast %[[UNREALIZED_CONVERSION_CAST_0]] : !pop.scalar<si8> to !pop.scalar<bf16>
+    %si8_to_bf16 = pop.cast %si8_val : !pop.scalar<si8> to !pop.scalar<bf16>
+
+    // CHECK: %[[UNREALIZED_CONVERSION_CAST_1:.*]] = builtin.unrealized_conversion_cast %[[CAST_0]] : !pop.scalar<bf16> to bf16
+    // CHECK: %[[CAST_1:.*]] = pop.cast %[[UNREALIZED_CONVERSION_CAST_0]] : !pop.scalar<si8> to !pop.scalar<f32>
+    %si8_to_f32 = pop.cast %si8_val : !pop.scalar<si8> to !pop.scalar<f32>
+
+    // ========================================================================
+    // from ui8
+    // ========================================================================
+    // CHECK: %[[ZEXT_0:.*]] = llvm.zext %arg1 : i8 to i16
+    %ui8_to_si16 = pop.cast %ui8_val : !pop.scalar<ui8> to !pop.scalar<si16>
+
+    // CHECK: %[[ZEXT_1:.*]] = llvm.zext %arg1 : i8 to i16
+    %ui8_to_ui16 = pop.cast %ui8_val : !pop.scalar<ui8> to !pop.scalar<ui16>
+
+    // CHECK: %[[ZEXT_2:.*]] = llvm.zext %arg1 : i8 to i32
+    %ui8_to_si32 = pop.cast %ui8_val : !pop.scalar<ui8> to !pop.scalar<si32>
+
+    // CHECK: %[[ZEXT_3:.*]] = llvm.zext %arg1 : i8 to i32
+    %ui8_to_ui32 = pop.cast %ui8_val : !pop.scalar<ui8> to !pop.scalar<ui32>
+
+    // ========================================================================
+    // from si16
+    // ========================================================================
+    // CHECK: %[[TRUNC_0:.*]] = llvm.trunc %arg2 : i16 to i8
+    %si16_to_si8 = pop.cast %si16_val : !pop.scalar<si16> to !pop.scalar<si8>
+
+    // CHECK: %[[TRUNC_1:.*]] = llvm.trunc %arg2 : i16 to i8
+    %si16_to_ui8 = pop.cast %si16_val : !pop.scalar<si16> to !pop.scalar<ui8>
+
+    // CHECK: %[[SEXT_0:.*]] = llvm.sext %arg2 : i16 to i32
+    %si16_to_si32 = pop.cast %si16_val : !pop.scalar<si16> to !pop.scalar<si32>
+
+    // CHECK: %[[SEXT_1:.*]] = llvm.sext %arg2 : i16 to i32
+    %si16_to_ui32 = pop.cast %si16_val : !pop.scalar<si16> to !pop.scalar<ui32>
+
+    // ========================================================================
+    // from ui16
+    // ========================================================================
+    // CHECK: %[[TRUNC_2:.*]] = llvm.trunc %arg3 : i16 to i8
+    %ui16_to_si8 = pop.cast %ui16_val : !pop.scalar<ui16> to !pop.scalar<si8>
+
+    // CHECK: %[[TRUNC_3:.*]] = llvm.trunc %arg3 : i16 to i8
+    %ui16_to_ui8 = pop.cast %ui16_val : !pop.scalar<ui16> to !pop.scalar<ui8>
+
+    // CHECK: %[[ZEXT_4:.*]] = llvm.zext %arg3 : i16 to i32
+    %ui16_to_si32 = pop.cast %ui16_val : !pop.scalar<ui16> to !pop.scalar<si32>
+
+    // CHECK: %[[ZEXT_5:.*]] = llvm.zext %arg3 : i16 to i32
+    %ui16_to_ui32 = pop.cast %ui16_val : !pop.scalar<ui16> to !pop.scalar<ui32>
+
+    // ========================================================================
+    // from si32
+    // ========================================================================
+    // CHECK: %[[TRUNC_4:.*]] = llvm.trunc %arg4 : i32 to i8
+    %si32_to_si8 = pop.cast %si32_val : !pop.scalar<si32> to !pop.scalar<si8>
+
+    // CHECK: %[[TRUNC_5:.*]] = llvm.trunc %arg4 : i32 to i8
+    %si32_to_ui8 = pop.cast %si32_val : !pop.scalar<si32> to !pop.scalar<ui8>
+
+    // CHECK: %[[TRUNC_6:.*]] = llvm.trunc %arg4 : i32 to i16
+    %si32_to_si16 = pop.cast %si32_val : !pop.scalar<si32> to !pop.scalar<si16>
+
+    // CHECK: %[[TRUNC_7:.*]] = llvm.trunc %arg4 : i32 to i16
+    %si32_to_ui16 = pop.cast %si32_val : !pop.scalar<si32> to !pop.scalar<ui16>
+
+    // ========================================================================
+    // from ui32
+    // ========================================================================
+    // CHECK: %[[TRUNC_8:.*]] = llvm.trunc %arg5 : i32 to i8
+    %ui32_to_si8 = pop.cast %ui32_val : !pop.scalar<ui32> to !pop.scalar<si8>
+
+    // CHECK: %[[TRUNC_9:.*]] = llvm.trunc %arg5 : i32 to i8
+    %ui32_to_ui8 = pop.cast %ui32_val : !pop.scalar<ui32> to !pop.scalar<ui8>
+
+    // CHECK: %[[TRUNC_10:.*]] = llvm.trunc %arg5 : i32 to i16
+    %ui32_to_si16 = pop.cast %ui32_val : !pop.scalar<ui32> to !pop.scalar<si16>
+
+    // CHECK: %[[TRUNC_11:.*]] = llvm.trunc %arg5 : i32 to i16
+    %ui32_to_ui16 = pop.cast %ui32_val : !pop.scalar<ui32> to !pop.scalar<ui16>
+
+    // ========================================================================
+    // from f16
+    // ========================================================================
+    // CHECK: %[[FPEXT_0:.*]] = llvm.fpext %arg6 : f16 to f32
+    %f16_to_f32 = pop.cast %f16_val : !pop.scalar<f16> to !pop.scalar<f32>
+
+    // ========================================================================
+    // from bf16
+    // ========================================================================
+    // CHECK: %[[FPEXT_1:.*]] = llvm.fpext %arg7 : bf16 to f32
+    %bf16_to_f32 = pop.cast %bf16_val : !pop.scalar<bf16> to !pop.scalar<f32>
+
+    // ========================================================================
+    // from f32
+    // ========================================================================
+    // CHECK: %[[FPTRUNC_0:.*]] = llvm.fptrunc %arg8 : f32 to f16
+    %f32_to_f16 = pop.cast %f32_val : !pop.scalar<f32> to !pop.scalar<f16>
+
+    // CHECK: %[[FPTRUNC_1:.*]] = llvm.fptrunc %arg8 : f32 to bf16
+    %f32_to_bf16 = pop.cast %f32_val : !pop.scalar<f32> to !pop.scalar<bf16>
+
+    kgen.return %si8_to_bf16, %si8_to_f32,
+      %ui8_to_si16, %ui8_to_ui16, %ui8_to_si32, %ui8_to_ui32,
+      %si16_to_si8, %si16_to_ui8, %si16_to_si32, %si16_to_ui32,
+      %ui16_to_si8, %ui16_to_ui8, %ui16_to_si32, %ui16_to_ui32,
+      %si32_to_si8, %si32_to_ui8, %si32_to_si16, %si32_to_ui16,
+      %ui32_to_si8, %ui32_to_ui8, %ui32_to_si16, %ui32_to_ui16,
+      %f16_to_f32,
+      %bf16_to_f32,
+      %f32_to_f16, %f32_to_bf16
+      : !pop.scalar<bf16>, !pop.scalar<f32>,
+        !pop.scalar<si16>, !pop.scalar<ui16>, !pop.scalar<si32>, !pop.scalar<ui32>,
+        !pop.scalar<si8>, !pop.scalar<ui8>, !pop.scalar<si32>, !pop.scalar<ui32>,
+        !pop.scalar<si8>, !pop.scalar<ui8>, !pop.scalar<si32>, !pop.scalar<ui32>,
+        !pop.scalar<si8>, !pop.scalar<ui8>, !pop.scalar<si16>, !pop.scalar<ui16>,
+        !pop.scalar<si8>, !pop.scalar<ui8>, !pop.scalar<si16>, !pop.scalar<ui16>,
+        !pop.scalar<f32>,
+        !pop.scalar<f32>,
+        !pop.scalar<f16>, !pop.scalar<bf16>
+  }
+}
