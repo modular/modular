@@ -94,11 +94,6 @@ void KGENDialect::registerTypes() {
 //===----------------------------------------------------------------------===//
 
 Type ParamType::get(TypedAttr param) {
-  // TODO(Sugar): Stripping sugar here seems odd, but we do need to look through
-  // upcasts buried in sugar and need to fold constant types for some reason.
-  // Maybe we should keep the sugar but propagate a different metatype, or maybe
-  // metatype calculation on ParamType is incorrect in ASTType.cpp?
-
   // If the parameter is already resolved to a constant, fold this to the
   // indicated type. ParamType does not propagate the typeValue.
   //
@@ -108,7 +103,7 @@ Type ParamType::get(TypedAttr param) {
   //
   // FIXME: we should probably add some verification rules to verify the
   // property above since we are implicitly relying on the assumption here.
-  if (auto constant = sugarDynCast<TypeParamAttr>(param))
+  if (auto constant = dyn_cast<TypeParamAttr>(param))
     return constant.getMlirType();
 
   // If this is an trait upcast, we can look through it because we don't

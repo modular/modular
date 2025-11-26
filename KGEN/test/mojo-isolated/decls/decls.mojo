@@ -84,21 +84,18 @@ fn callOverload(a: Int, pack: __mlir_type.`!kgen.pack<[index]>`):
     # CHECK: lit.call @decls::@"testThing({{.*}}Int,{{.*}}Int)"(%a, %a)
     _ = testThing(a, a)
 
-    # CHECK: kgen.create_closure[!lit.generator<(!Int, |) -> !FloatDyn>:
-    # CHECK-SAME: rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing({{.*}}Int)")]()
+    # CHECK: = kgen.param.constant: !alias_IntToFloat32Type1 = <rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::Int)")>
     var float1: IntToFloat32Type = testThing
 
-    # CHECK: kgen.create_closure[!lit.generator<(!Int, |) -> !FloatDyn>:
-    # CHECK-SAME: rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing({{.*}}Int)")]()
+    # CHECK: %3 = kgen.param.constant: !alias_IntToFloat32Type1 = <rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::Int)")>
     # CHECK-NEXT: lit.ref.store %3, %float1
     float1 = testThing
 
-    # CHECK: %4 = kgen.create_closure[!lit.generator<(!Int, |) -> !FloatDyn>:
-    # CHECK-SAME: rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing({{.*}}Int)")]()
+    # CHECK: %4 = kgen.param.constant: !alias_IntToFloat32Type1 = <rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::Int)")>
     var float2: IntToFloat32Type = testThing
 
     # CHECK: lit.call @decls::@"takeIntToFloat32Param[fn({{.*}}Int, /) -> {{.*}}FloatDyn]()"<:
-    # CHECK-SAME: !lit.generator<(!Int, |) -> !FloatDyn> rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing{{.*}}")>()
+    # CHECK-SAME: !alias_IntToFloat32Type1 rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::Int)")>()
     takeIntToFloat32Param[testThing]()
 
     # Issue #10036.  This should call the exact match, consider the varargs match
@@ -227,9 +224,9 @@ fn take_variadic_struct[*Ts: AnyTrivialRegType](a: VariadicStruct[*Ts]):
 
 # CHECK-LABEL: lit.fn @"variadic_params()"
 fn variadic_params():
-    # CHECK-NEXT: call {{.*}}param_func[{{.*}}Int]()"<:variadic<type> [!Int, !FloatDyn], :!Int {4}>
+    # CHECK-NEXT: call {{.*}}param_func[{{.*}}Int]()"<:variadic<#alias_AnyTrivialRegType> [#kgen.type<!Int>, #kgen.type<!FloatDyn>], :!Int {4}>
     VariadicStruct[Int, FloatDyn].param_func[4]()
-    # CHECK: call {{.*}}take_variadic_struct{{.*}}<:variadic<type> [!Int, !FloatDyn]
+    # CHECK: call {{.*}}take_variadic_struct{{.*}}<:variadic<#alias_AnyTrivialRegType> [#kgen.type<!Int>, #kgen.type<!FloatDyn>]>>
     take_variadic_struct(VariadicStruct[Int, FloatDyn]())
 
 
@@ -261,7 +258,7 @@ fn orvalueInferType():
     fn func(x: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # CHECK: call {{.*}}paramRefFunc{{.*}}<:type !lit.generator<("x": index) -> index>>
+    # CHECK: call {{.*}}paramRefFunc{{.*}}<:!alias_AnyTrivialRegType1 #kgen.type<!lit.generator<("x": index) -> index>>>
     paramRefFunc(func)
 
 
@@ -854,7 +851,7 @@ async fn load(server_ptr: Container[__mlir_type.index]):
 async fn awaitSomething():
     var ptr = Container[__mlir_type.index]()
     # CHECK: [[CORO:%.*]] = lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}], :origin.set {}>(%{{.*}}) :
-    # CHECK-SAME: !lit.generator<("handle": !co.routine) -> !lit.struct<#Coroutine <:!AnyType
+    # CHECK-SAME: !lit.generator<("handle": !alias_AnyCoroutine1) -> !lit.struct<#Coroutine <:!AnyType
     await load(ptr)
 
 
@@ -870,8 +867,9 @@ async fn coroutine() -> Int:
 struct StructWithAsync:
     # CHECK-LABEL: lit.fn @"do_something{{.*}}({{.*}}) async
     async fn do_something(self: StructWithAsync):
-        # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[!lit.generator<[1](?, "__result__": !lit.ref<!Int, mut *[0,0]> byref_result) async -> !kgen.none>: @decls::@"coroutine()"][imm {}]()
-        # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType !Int, :origin.set {}>(%[[CORO]])
+        # CHECK-NEXT: [[CORO:%.*]] = lit.async.call[!lit.generator<[1](?, "__result__": !lit.ref<!Int, mut *[0,0]> byref_result) async -> !kgen.none>: @decls::@"coroutine()"][imm {}]()
+        # CHECK-NEXT: %1 = kgen.rebind [[CORO]] : !co.routine to !alias_AnyCoroutine1
+        # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType !Int, :origin.set {}>(%1)
         _ = coroutine()
 
 
@@ -906,7 +904,8 @@ async fn inline_async() -> Int:
 # CHECK-LABEL: lit.fn @"use_inline_async()"
 async fn use_inline_async() -> Int:
     # CHECK: [[ASYNC_RESULT:%.*]] = lit.async.call{{.*}}inline_async
-    # CHECK: [[TMP:%.*]] = lit.call {{.*}}Coroutine{{.*}}__init__{{.*}}([[ASYNC_RESULT]]) :
+    # CHECK: [[TMP2:%.*]] = kgen.rebind [[ASYNC_RESULT]] : !co.routine to !alias_AnyCoroutine1
+    # CHECK: [[TMP:%.*]] = lit.call {{.*}}Coroutine{{.*}}__init__{{.*}}([[TMP2]]) :
     # CHECK: lit.ref.store [[TMP]], [[CORO:%.*]] : <
     # CHECK: lit.call {{.*}}Coroutine{{.*}}__await__{{.*}}([[CORO]], %__result__)
     return await inline_async()
@@ -935,7 +934,8 @@ fn coroutine_origins():
     # CHECK: [[Y_IMM:%.*]] = lit.ref.immut %y
     # CHECK: [[CORO:%.*]] = lit.async.call[!lit.generator<[3]("x": !lit.ref<!Awaitable, mut *[0,0]> mut, "y": !lit.ref<!Awaitable, imm *[0,1]> read_mem, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async -> !kgen.none>
     # CHECK-SAME: [mut [[X_LT]], muttoimm [[Y_LT]], imm {}](%x, [[Y_IMM]])
-    # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}@__MLIRType<:type none>, none], :origin.set {mut [[X_LT]], mut [[Y_LT]]}>([[CORO]])
+    # CHECK: [[CORO2:%.*]] = kgen.rebind [[CORO]] : !co.routine to !alias_AnyCoroutine1
+    # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}@__MLIRType<:type none>, none], :origin.set {mut [[X_LT]], mut [[Y_LT]]}>([[CORO2]])
     var coro = capture_byref(x, y)
 
     # CHECK: lit.async.call[!lit.generator<[2]("x": !lit.ref<!lit.struct<#LifetimeAccess <:origin<1> [[Y_LT]]>>,
@@ -947,14 +947,16 @@ fn coroutine_origins():
 # CHECK-LABEL: lit.fn @"mem_result{{.*}}(?, %__result__: !lit.ref<!Awaitable, {{.*}}> byref_result) async -> !kgen.none
 async fn mem_result() -> Awaitable:
     # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_result()"][imm {}]()
-    # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}([[CORO]])
+    # CHECK: [[CORO2:%.*]] = kgen.rebind [[CORO]] : !co.routine to !alias_AnyCoroutine1
+    # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}([[CORO2]])
     var coro = mem_result()
 
 
 # CHECK-LABEL: lit.fn @"mem_raises{{.*}}(?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!Int, {{.*}}> byref_result) throws|async -> i1
 async fn mem_raises() raises -> Int:
     # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_raises()"][imm {}, imm {}]()
-    # CHECK: lit.call {{.*}}@RaisingCoroutine::@"__init__{{.*}}([[CORO]])
+    # CHECK: [[CORO2:%.*]] = kgen.rebind [[CORO]] : !co.routine to !alias_AnyCoroutine1
+    # CHECK: lit.call {{.*}}@RaisingCoroutine::@"__init__{{.*}}([[CORO2]])
     var coro = mem_raises()
 
 
@@ -1017,7 +1019,7 @@ fn closureParameter[func: fn () capturing -> __mlir_type.index]():
 
 # CHECK-LABEL: lit.fn @"closureParameterCaptures
 # CHECK-SAME: :*(0,0):
-# CHECK-SAME: func: !lit.generator<:origins:() capturing -> !kgen.none>
+# CHECK-SAME: func: !lit.generator<:rebind(:!alias_OriginSet1 origins):() capturing -> !kgen.none>
 fn closureParameterCaptures[
     origins: OriginSet, //, func: fn () capturing [origins] -> None
 ]():
@@ -1095,10 +1097,10 @@ fn inferCaptureOrigins[
     fn captureSomething():
         _ = x
 
-    # CHECK: call {{.*}}closureParameterCaptures{{.*}}<:origin.set {},
+    # CHECK: call {{.*}}closureParameterCaptures{{.*}}:origin.set {}),
     # CHECK-SAME: !lit.generator<() capturing -> !kgen.none>
     closureParameterCaptures[bareFunc]()
-    # CHECK: call {{.*}}closureParameterCaptures{{.*}}<:origin.set {mut *"x`"},
+    # CHECK: call {{.*}}closureParameterCaptures{{.*}}:origin.set {mut *"x`"}),
     # CHECK-SAME: !lit.generator<:{mut *"x`"}:() capturing -> !kgen.none>
     closureParameterCaptures[captureSomething]()
     # CHECK: call {{.*}}closureParameterInference{{.*}}<:!Int *"p`{{.*}}",
@@ -1107,7 +1109,7 @@ fn inferCaptureOrigins[
 
     # CHECK: lit.alias.decl *"unboundSet{{.*}} !lit.generator<<{{.*}}>:*(0,0):
     comptime unboundSet = closureParameterCaptures
-    # CHECK: lit.alias.decl *"boundSet{{.*}} !lit.generator<:{mut *"x`"}
+    # CHECK: lit.alias.decl *"boundSet{{.*}} !lit.generator<:rebind(:origin.set {mut *"x`"}):
     comptime boundSet = closureParameterCaptures[captureSomething]
 
     # CHECK: lit.alias.decl *"unboundSingleParam{{.*}}#Origin <:!Bool {:i1 1}>> *(0,0)>
@@ -1126,7 +1128,7 @@ fn inferCaptureOrigins[
     ]():
         _ = y
 
-    # CHECK: lit.alias.decl *"boundClosure{{.*}} !lit.generator<:{mut *"x`", mut *"y`{{.*}}"}
+    # CHECK: lit.alias.decl *"boundClosure{{.*}} !lit.generator<:{mut *"y`1", mut |rebind(:origin.set {mut *"x`"})|}:
     comptime boundClosure = captureWithClosure[captureSomething]
 
 

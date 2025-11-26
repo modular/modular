@@ -187,7 +187,7 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
 }
 )");
   EXPECT_EQ(ctx.runCommand("v p_struct_int").output,
-            R"((ParamStruct) p_struct_int = (t = 8)
+            R"((module builtin_types::struct ParamStruct) p_struct_int = (t = 8)
 )");
   EXPECT_TRUE(RE::PartialMatch(ctx.runCommand("v p_struct_string_slice").output,
                                "len = 5"));

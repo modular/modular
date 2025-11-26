@@ -5,9 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %parse-mojo-isolated %s | kgen-opt -mlir-print-op-generic | FileCheck %s
 
-comptime AnyTrivialRegType = __mlir_type.`!kgen.type`
-comptime NoneType = __mlir_type.`!kgen.none`
-
+alias NoneType = __mlir_type.`!kgen.none`
 
 @register_passable
 struct Optional[T: AnyTrivialRegType]:
@@ -16,16 +14,13 @@ struct Optional[T: AnyTrivialRegType]:
         pass
 
 
-comptime Index = __mlir_type.index
-
-
 @register_passable
-struct Param[x: Index]:
+struct Param[x: Int]:
     pass
 
 # Check the TypeSignatureType attribute. This is the only memory-only
 # struct so we can match with 0.
 # CHECK: "lit.struct.decl"() {{.*}} convention = 0 :
-# CHECK-SAME: signature = !lit.type_signature<"x": index, "y": !lit.struct<#Optional <:type !lit.generator<<"y": index>() -> !lit.struct<#Param <*(1,0)>>>
-struct Thing[x: Index, y: Optional[fn[y: Index] () -> Param[x]] = None]:
-    comptime z = 1
+# CHECK-SAME: signature = !lit.type_signature<"x": !Int, "y": !lit.struct<#Optional{{.*}}!lit.generator<<"y": !Int>() -> !lit.struct<#Param <:!Int *(1,0)>>
+struct Thing[x: Int, y: Optional[fn[y: Int] () -> Param[x]] = None]:
+    alias z = 1

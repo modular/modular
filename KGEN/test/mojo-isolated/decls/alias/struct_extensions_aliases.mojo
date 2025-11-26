@@ -48,10 +48,10 @@ __extension Spaceship:
 # CHECK-LABEL: lit.fn @"test_function()"
 fn test_function():
     # Note how this is resolving to ZInt right here, it means the lookup worked.
-    # CHECK: lit.alias.decl *"MySpeed`": !ZInt
+    # CHECK: lit.alias.decl *"MySpeed`": !alias_InnerType1 = <sugar_member_alias(!Spaceship, "MaxSpeed",
     comptime MySpeed = Spaceship.MaxSpeed
     # Note how this is resolving to ZInt right here, it means the lookup worked.
-    # CHECK: lit.var.decl "speed" var : !lit.ref<!ZInt,
+    # CHECK: lit.var.decl "speed" var : !lit.ref<:!AnyType #alias_InnerType,
     var speed = MySpeed
 
 

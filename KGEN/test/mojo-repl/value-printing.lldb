@@ -52,7 +52,7 @@ var w = SIMD[DType.int8, 2](-50, 31)
 # CHECK:     (si8) [1] = 31
 # CHECK:   }
 # CHECK:   (Bool) x = True
-# CHECK:   (StringSlice[StaticConstantOrigin]) y =
+# CHECK:   (StaticString) y =
 # CHECK:   (SIMD[DType.float32, 4]) z = {
 # CHECK:     (f32) [0] = 1
 # CHECK:     (f32) [1] = 2

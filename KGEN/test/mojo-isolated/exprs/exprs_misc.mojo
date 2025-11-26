@@ -208,24 +208,24 @@ fn testUnmovable(a: Unmovable):
 # type_of
 ##===----------------------------------------------------------------------===##
 
-comptime index = __mlir_type.index
+comptime _index = __mlir_type.index
 
 
 # CHECK-LABEL: lit.fn @"simple_typeof_return(
 # CHECK: __mlir_type.index)"(%x: index) -> index
-fn simple_typeof_return(x: index) -> type_of(x):
+fn simple_typeof_return(x: _index) -> type_of(x):
     return x
 
 
 # CHECK-LABEL: lit.fn @"typeof_arg(
 # CHECK: __mlir_type.index,__mlir_type.index)"(%x: index, %y: index) -> index
-fn typeof_arg(x: index, y: type_of(x)) -> index:
+fn typeof_arg(x: __mlir_type.index, y: type_of(x)) -> _index:
     var z: type_of(x) = y
     return z
 
 
 # CHECK-LABEL: lit.fn @"typeof_dynval_in_param(
-fn typeof_dynval_in_param(x: index):
+fn typeof_dynval_in_param(x: _index):
     # CHECK-NEXT:  %y = lit.var.decl
     # CHECK-NEXT: lit.call {{.*}}String::@"__init__
     var y = String()

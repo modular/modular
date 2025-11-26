@@ -11,12 +11,14 @@
 
 # CHECK: lit.fn @"__call__
 # CHECK: [[GEP:%.*]] = lit.ref.struct.ger {{.*}}[param_capture]
-# CHECK: lit.call {{.*}}expand{{.*}}([[GEP]])
+# CHECK: [[REBIND:%.*]] = kgen.rebind [[GEP]]
+# CHECK: lit.call {{.*}}expand{{.*}}([[REBIND]])
 
 # CHECK: lit.fn @"__init__
 # CHECK: [[GEP:%.*]] = lit.ref.struct.ger %self[param_capture]
 # CHECK: [[RES:%.*]] = lit.call {{.*}}@__ParameterClosureCaptureList::@"__init__{{.*}}()
-# CHECK-NEXT: lit.ref.store [[RES]], [[GEP]]
+# CHECK: [[REBIND:%.*]] = kgen.rebind [[RES]]
+# CHECK-NEXT: lit.ref.store [[REBIND]], [[GEP]]
 
 
 fn func[pf: fn () capturing -> Int](x: Int):

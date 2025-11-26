@@ -85,7 +85,7 @@ fn use2[T: Trait2](x: T):
 # CHECK: lit.fn @"use12
 # CHECK-SAME: <T: !Trait1_Trait2>
 # CHECK-SAME: (%x: !lit.ref<:!Trait1_Trait2 T,
-fn use12[T: Traits12](x: T):
+fn use12[T: Trait1 & Trait2](x: T):
     # CHECK: lit.call @trait_composition::@"use1
     # CHECK-SAME: <:!Trait1 !kgen.param<:!Trait1_Trait2 T>>
     use1[T](x)
@@ -102,7 +102,7 @@ fn use23[T: Trait2 & Trait3](x: T):
     x.f3()
 
 
-fn use123[T: Traits123](x: T):
+fn use123[T: Trait1 & Trait2 & Trait3](x: T):
     # CHECK: lit.call @trait_composition::@"use23
     # CHECK-SAME: "x": !lit.ref<:!Trait1_Trait2_Trait3 T,
     use23(x)
@@ -184,7 +184,7 @@ struct Wrapper[T: AnyType]:
 
 # CHECK: lit.fn @"useCond1
 fn useCond1[
-    ElementType: Traits12
+    ElementType: Trait1 & Trait2
 ](p1: Wrapper[ElementType], p2: Wrapper[ElementType]):
     # CHECK: lit.call {{.*}}@Wrapper::@"cond1
     # CHECK-SAME: <:!AnyType !kgen.param<:!Trait1_Trait2 ElementType>, :!Trait1 !kgen.param<:!Trait1_Trait2 ElementType>>

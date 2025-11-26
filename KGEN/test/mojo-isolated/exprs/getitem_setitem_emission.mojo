@@ -66,23 +66,28 @@ fn test_setitem[x: Int](a: WeirdArray, idx: Int):
 
 # CHECK-LABEL: lit.fn @"test_getitem_slice
 fn test_getitem_slice(a: WeirdArray, i: Int, j: Int, k: Int):
-    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type none, :type none, :type none>(%none{{.*}}, %none{{.*}}, %none{{.*}}) :
+    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:!alias_AnyTrivialRegType1 #kgen.type<none>
+    # CHECK-SAME: :!alias_AnyTrivialRegType1 #kgen.type<none>, :!alias_AnyTrivialRegType1 #kgen.type<none>>(%none{{.*}}, %none{{.*}}, %none{{.*}}) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[:]
 
-    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type none, :type none, :type none>{{.*}}(%none{{.*}}, %none{{.*}}, %none{{.*}}) :
+    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:!alias_AnyTrivialRegType1 #kgen.type<none>, :!alias_AnyTrivialRegType1 #kgen.type<none>,
+    # CHECK-SAME: :!alias_AnyTrivialRegType1 #kgen.type<none>>{{.*}}(%none{{.*}}, %none{{.*}}, %none{{.*}}) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[::]
 
-    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type !Int, :type !Int, :type none>(%i, %j, %none{{.*}}) :
+    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:!alias_AnyTrivialRegType1 #kgen.type<!Int>,
+    # CHECK-SAME: :!alias_AnyTrivialRegType1 #kgen.type<!Int>, :!alias_AnyTrivialRegType1 #kgen.type<none>>(%i, %j, %none{{.*}}) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[i:j]
 
-    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type none, :type !Int, :type !Int>(%none{{.*}}, %i, %j) :
+    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:!alias_AnyTrivialRegType1 #kgen.type<none>,
+    # CHECK-SAME: :!alias_AnyTrivialRegType1 #kgen.type<!Int>, :!alias_AnyTrivialRegType1 #kgen.type<!Int>>(%none{{.*}}, %i, %j) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[:i:j]
 
-    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type !Int, :type !Int, :type !Int>(%i, %j, %k) :
+    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:!alias_AnyTrivialRegType1 #kgen.type<!Int>,
+    # CHECK-SAME: :!alias_AnyTrivialRegType1 #kgen.type<!Int>, :!alias_AnyTrivialRegType1 #kgen.type<!Int>>(%i, %j, %k) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[i:j:k]
 
