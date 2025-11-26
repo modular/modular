@@ -57,6 +57,9 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
         response = requests.get("http://localhost:8001/metrics", timeout=1)
         assert response.status_code == 200
 
+        # Wait for the metrics to be available
+        time.sleep(2)
+
         # There shouldn't be any maxserve_ metrics at this point except for the model load since the server is just started up.
         assert "maxserve_model_load_time_milliseconds_bucket" in response.text
         assert "maxserve_request_time_milliseconds_bucket" not in response.text
@@ -77,10 +80,10 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
                 raw_response.json()
             )
 
-        response = requests.get("http://localhost:8001/metrics", timeout=1)
-
         # Ensure enough time for request to complete
-        time.sleep(5)
+        time.sleep(2)
+
+        response = requests.get("http://localhost:8001/metrics", timeout=1)
 
         assert response.status_code == 200
         assert "maxserve_num_input_tokens_total" in response.text
@@ -133,6 +136,9 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
 
         assert raw_response.status_code == 200
 
+        # Wait for the metrics to be available
+        time.sleep(2)
+
         assert "maxserve_pipeline_load_total" in raw_response.text
 
         # Make a few requests
@@ -154,6 +160,9 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
 
         # Endpoint exists
         raw_response = requests.get("http://localhost:8001/metrics", timeout=1)
+
+        # Wait for the metrics to be available
+        time.sleep(2)
 
         assert raw_response.status_code == 200
         assert "maxserve_num_input_tokens_total" in raw_response.text
