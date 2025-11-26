@@ -77,8 +77,7 @@ fn tryFinally():
             # CHECK-NEXT: lit.try.yield
             pass
         # CHECK-NEXT: except
-        # CHECK-NEXT: [[ERR:%.*]] = lit.load.consume %__try_error__
-        # CHECK-NEXT: lit.ref.store [[ERR]], %__try_error__
+        # CHECK-NEXT: lit.call {{.*}}Error::@"__moveinit__{{.*}}(%__try_error___1, %__try_error___0)
         # CHECK-NEXT: lit.raise
         finally:
             pass
@@ -122,8 +121,7 @@ fn propagateErrorInTry():
 
 # CHECK-LABEL: lit.fn @"raiseError
 def raiseErrorInDef(err: Error):
-    # CHECK: [[ERR:%.*]] = lit.call {{.*}}@Error::@"__copyinit__{{.*}}(%err)
-    # CHECK-NEXT: lit.ref.store [[ERR]], %__error__
+    # CHECK: lit.call {{.*}}@Error::@"__copyinit__{{.*}}(%err, %__error__)
     # CHECK-NEXT: lit.raise
     raise err
 
@@ -132,8 +130,7 @@ def raiseErrorInDef(err: Error):
 def raiseErrorInIf(cond: Bool, err: Error):
     # CHECK: hlcf.elif
     if cond:
-        # CHECK: [[ERR:%.*]] = lit.call {{.*}}@Error::@"__copyinit__{{.*}}(%err)
-        # CHECK-NEXT: lit.ref.store [[ERR]], %__error__
+        # CHECK: lit.call {{.*}}@Error::@"__copyinit__{{.*}}(%err, %__error__)
         # CHECK-NEXT: lit.raise
         raise err
 
@@ -142,8 +139,7 @@ def raiseErrorInIf(cond: Bool, err: Error):
 fn raiseErrorInTry(err: Error):
     # CHECK: lit.try %__try_error__
     try:
-        # CHECK-NEXT: [[ERR:%.*]] = lit.call {{.*}}@Error::@"__copyinit__{{.*}}(%err)
-        # CHECK-NEXT: lit.ref.store [[ERR]], %__try_error__
+        # CHECK-NEXT: [[ERR:%.*]] = lit.call {{.*}}@Error::@"__copyinit__{{.*}}(%err, %__try_error__)
         # CHECK-NEXT: lit.raise
         raise err
     except:
@@ -160,8 +156,7 @@ fn rethrowsToRethrow():
             maybeRaises()  # expected-warning {{'Int' value is unused}}
         # CHECK: } except {
         except:
-            # CHECK: [[ERR:%.*]] = lit.load.consume [[TRY_ERROR2]]
-            # CHECK-NEXT: lit.ref.store [[ERR]], [[TRY_ERROR1]]
+            # CHECK-NEXT: lit.call {{.*}}Error::@"__moveinit__{{.*}}([[TRY_ERROR2]], [[TRY_ERROR1]])
             # CHECK-NEXT: lit.raise
             raise
         # CHECK: }

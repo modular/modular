@@ -139,27 +139,28 @@ fn if_examples(cond: __mlir_type.i1):
 # CHECK-LABEL: lit.fn @"try_examples
 fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK-NEXT: %a = lit.var.decl
+    # CHECK-NEXT: %caught_error = lit.var.decl
     var a: MemExample
-    # CHECK: lit.try
+    # CHECK: lit.try "try0" {
     # CHECK-NOT: %a
     try:
         # The error value isn't used on the except branch, so it's copy from err
         # is completely optimized out.
 
-        # TODO: Eliminate this entirely by handling lit.ref.store!
-        # CHECK-NEXT: %11 = lit.call {{.*}}@Error::@"__copyinit__(::Error)"[imm *"err`"](%err)
-        # CHECK-NEXT: lit.var.lifetime.start %__try_error__
-        # CHECK-NEXT: lit.ref.store %11, %__try_error__
-        # CHECK-NEXT: %12 = lit.call {{.*}}@Error::@"__del__{{.*}}(%__try_error__)
-        # CHECK-NEXT: lit.var.lifetime.end %__try_error__
-
+        # CHECK-NEXT: lit.var.lifetime.start %caught_error
+        # CHECK-NEXT: %11 = lit.call {{.*}}@Error::@"__copyinit__{{.*}}(%err, %caught_error)
         # CHECK-NEXT: lit.try.raise
         raise err
     # CHECK: } except {
-    except:
+    except caught_error:
         # CHECK-NEXT: lifetime.start %a
         # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%a)
         a = MemExample()
+        # CHECK-NEXT: lit.ownership.use %caught_error
+        # CHECK-NEXT: lit.ownership.use %caught_error
+        _ = caught_error^
+        # CHECK-NEXT: lit.call {{.*}}Error::@"__del__{{.*}}(%caught_error)
+        # CHECK-NEXT: lit.var.lifetime.end %caught_error
         # CHECK-NEXT: lit.try.yield
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   kgen.unreachable

@@ -15,8 +15,7 @@
 # CHECK-LABEL: lit.fn @"raise_string
 fn raise_string() raises:
     # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: {{.*}}#StringLiteral <:string "thing">> = <*?>
-    # CHECK-NEXT: [[ERR:%.*]] = lit.call {{.*}}Error::@"__init__{{.*}}([[TMP]])
-    # CHECK-NEXT: lit.ref.store [[ERR]], %__error__
+    # CHECK-NEXT: [[ERR:%.*]] = lit.call {{.*}}Error::@"__init__{{.*}}([[TMP]], %__error__)
     # CHECK-NEXT: lit.raise
     raise "thing"
 
@@ -144,16 +143,14 @@ fn testWithRaising(a: ExampleCM) raises:
     # CHECK-NEXT:   hlcf.if [[SUCCESS]] {
     # CHECK-NEXT:     hlcf.yield
     # CHECK-NEXT:   } else {
-    # CHECK-NEXT:     [[ERROR:%.*]] = lit.load.consume %__inner_error__
-    # CHECK-NEXT:     lit.ref.store [[ERROR]], %__with_error__
+    # CHECK-NEXT:     lit.call {{.*}}Error::@"__moveinit__{{.*}}(%__inner_error__, %__with_error__)
     # CHECK-NEXT:     lit.raise
     # CHECK-NEXT:     hlcf.yield
     # CHECK-NEXT:   }
     # CHECK-NEXT:   lit.try.yield
     # CHECK:      } finally {
-    # CHECK:    } except
-    # CHECK-NEXT: [[ERROR:%.*]] = lit.load.consume %__with_error__
-    # CHECK-NEXT: lit.ref.store [[ERROR]], %__error__
+    # CHECK:    } except {
+    # CHECK-NEXT: lit.call {{.*}}Error::@"__moveinit__{{.*}}(%__with_error__, %__error__)
     # CHECK:    } finally {
     # CHECK-NEXT: %__finally_error__ = lit.var.decl
     # CHECK-NEXT: lit.try

@@ -68,8 +68,7 @@ struct _lit_indirect_origin[mut: Bool, //, base: Origin[mut]]:
 comptime KeyElement = Copyable & Movable
 
 
-@register_passable
-struct Error(ImplicitlyCopyable):
+struct Error(ImplicitlyCopyable, Movable):
     fn __init__(out self):
         pass
 

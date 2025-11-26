@@ -135,15 +135,13 @@ struct RaisingInit:
 fn finally_may_raise() raises:
     # CHECK: lit.try
     try:
-        # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}() : !lit.generator<() -> !Error>
         # CHECK-NEXT: lifetime.start %__try_error__
-        # CHECK-NEXT: lit.ref.store [[TMP]], %__try_error__
+        # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}(%__try_error__)
         # CHECK-NEXT: lit.try.raise
         raise Error()
-        # CHECK-NEXT: except
-        # CHECK-NEXT: [[MOVE:%.*]] = lit.load.consume %__try_error__
-        # CHECK-NEXT: lifetime.end %__try_error__
-        # CHECK-NEXT: lit.ref.store [[MOVE]], %__error__
+        # CHECK-NEXT: } except {
+        # CHECK-NEXT: lit.call {{.*}}Error::@"__moveinit__{{.*}}(%__try_error__, %__error__)
+        # CHECK-NEXT: lit.var.lifetime.end %__try_error__
         # CHECK-NEXT: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
         # CHECK-NEXT: %__finally_error__ = lit.var.decl
         # CHECK-NEXT: lit.try
@@ -154,10 +152,9 @@ fn finally_may_raise() raises:
         # CHECK-NEXT:   if [[IS_ERR]]
         # CHECK-NEXT:     call {{.*}}__del__{{.*}}(%__error__)
         # CHECK-NEXT:     mark_consumed [[RESULT]]
-        # CHECK:      except
-        # CHECK-NEXT:   [[MOVE:%.*]] = lit.load.consume %__finally_error__
-        # CHECK-NEXT:   lifetime.end %__finally_error__
-        # CHECK-NEXT:   lit.ref.store [[MOVE]], %__error__
+        # CHECK:      } except {
+        # CHECK-NEXT:   lit.call {{.*}}Error::@"__moveinit__{{.*}}(%__finally_error__, %__error__)
+        # CHECK-NEXT:   lit.var.lifetime.end %__finally_error__
         # CHECK:      else
         # CHECK-NEXT:   lit.try.yield
         # CHECK-NEXT: }
@@ -183,9 +180,8 @@ struct ThrowingExit:
 
 # CHECK-LABEL: lit.fn @"context_mgr_exit_raises
 fn context_mgr_exit_raises() raises:
-    # CHECK:      [[MOVE:%.*]] = lit.load.consume %__with_error__
-    # CHECK-NEXT: lifetime.end %__with_error__
-    # CHECK-NEXT: lit.ref.store [[MOVE]], %__error__
+    # CHECK: lit.call {{.*}}Error::@"__moveinit__{{.*}}(%__with_error__, %__error__)
+    # CHECK-NEXT: lit.var.lifetime.end %__with_error__
     # CHECK-NEXT: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
     # CHECK-NEXT: %__finally_error__ = lit.var.decl
     # CHECK-NEXT: lit.try
@@ -210,10 +206,9 @@ fn context_mgr_exit_raises() raises:
     # CHECK-NEXT:       yield
     # CHECK:        else
     # CHECK-NEXT:     call {{.*}}__del__{{.*}}(%$CONTEXTMGR)
-    # CHECK:      except
-    # CHECK-NEXT:   [[MOVE:%.*]] = lit.load.consume %__finally_error__
-    # CHECK-NEXT:   lifetime.end %__finally_error__
-    # CHECK-NEXT:   lit.ref.store [[MOVE]], %__error__
+    # CHECK:      } except {
+    # CHECK-NEXT:   lit.call {{.*}}Error::@"__moveinit__{{.*}}(%__finally_error__, %__error__)
+    # CHECK-NEXT:   lit.var.lifetime.end %__finally_error__
     # CHECK:      else
     # CHECK-NEXT:   lit.try.yield
     # CHECK-NEXT: }
@@ -427,8 +422,7 @@ struct ThrowingSelfInit:
 
 # CHECK-LABEL: lit.fn @"emplace_error
 fn emplace_error() raises:
-    # CHECK: [[TMP:%.*]] = lit.call {{.*}}Error::@"__init__{{.*}}()
-    # CHECK-NEXT: lit.ref.store [[TMP]], %__error__
+    # CHECK: lit.call {{.*}}Error::@"__init__{{.*}}(%__error__)
     # CHECK: lit.error_return
     __get_nearest_error_slot() = Error()
     __mlir_op.`lit.raise`()
@@ -448,7 +442,6 @@ struct InitFieldsDestroyedInThrowingConstructor:
         # CHECK-NEXT: } then {
         # CHECK-NEXT:   lit.call {{.*}}__del__{{.*}}(%self)
         # CHECK-NEXT:   lit.call @{{.*}}::@Error::@"__init__
-        # CHECK-NEXT:   lit.ref.store
         # CHECK-NEXT:   kgen.param.constant
         # CHECK-NEXT:   lit.error_return
         # CHECK-NEXT: } else {
