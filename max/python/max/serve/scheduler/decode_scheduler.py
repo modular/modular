@@ -103,7 +103,7 @@ class DecodeScheduler(Scheduler):
         self.scheduler_logger = SchedulerLogger()
         # None corresponds to the default destination address.
         # TODO: delete the default destination address.
-        self.remote_endpoints: set[str | None] = set()
+        self.remote_endpoints: set[str] = set()
 
         # We are parameterizing the offload of queue draining to allow for
         # the use case where we want to drain the queue in the main thread.
@@ -161,7 +161,12 @@ class DecodeScheduler(Scheduler):
         Raises:
             zmq.ZMQError: If there is an error sending on the socket
         """
-
+        # TODO: Do not crash the scheduler if a request does not have a target endpoint.
+        #       Instead we should validate this in the frontend.
+        if data.target_endpoint is None:
+            raise ValueError(
+                f"Target endpoint is not specified for the request {request_id}"
+            )
         if data.target_endpoint not in self.remote_endpoints:
             self.dispatcher.send_request_nowait(
                 self.transfer_engine.metadata,
@@ -255,11 +260,21 @@ class DecodeScheduler(Scheduler):
 
             # If it is pending prefill, remove the pending request.
             elif req_id in self.prefill_reqs:
+                data = self.prefill_reqs[req_id]
+
                 # Remove from pending requests.
                 del self.prefill_reqs[req_id]
 
+                # TODO: Do not crash the scheduler if a request does not have a target endpoint.
+                #       Instead we should validate this in the frontend.
+                if data.target_endpoint is None:
+                    raise ValueError(
+                        f"Target endpoint is not specified for the request {req_id}."
+                    )
                 # Send a cancel request to the prefill node
-                self.dispatcher.send_request_nowait(CancelRequest(id=req_id))
+                self.dispatcher.send_request_nowait(
+                    CancelRequest(id=req_id), data.target_endpoint
+                )
 
                 # Send the cancelled result back to the response q
                 self.response_queue.put_nowait(
@@ -427,9 +442,6 @@ def load_decode_scheduler(
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
-        dispatcher=DecodeDispatcherClientV2(
-            bind_addr=settings.dispatcher_config.transport_config.bind_address,
-            default_dest_addr=settings.dispatcher_config.transport_config.default_destination_address,
-        ),
+        dispatcher=DecodeDispatcherClientV2(bind_addr=settings.di_bind_address),
         offload_queue_draining=pipeline_config.experimental_background_queue,
     )

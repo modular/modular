@@ -28,23 +28,15 @@ class DispatcherClientV2(Generic[Request, Reply]):
         self,
         *,
         bind_addr: str,
-        default_dest_addr: str | None,
         request_type: Any,
         reply_type: Any,
     ):
         self._request_type = request_type
         self._reply_type = reply_type
 
-        self._default_dest_address = default_dest_addr
         self._dealers: dict[str, ZmqDealerSocket[Request, Reply]] = {}
 
-    def send_request_nowait(
-        self, request: Request, dest_addr: str | None = None
-    ) -> None:
-        dest_addr = dest_addr or self._default_dest_address
-        if dest_addr is None:
-            raise ValueError("dest_addr is required")
-
+    def send_request_nowait(self, request: Request, dest_addr: str) -> None:
         if dest_addr not in self._dealers:
             self._dealers[dest_addr] = ZmqDealerSocket[Request, Reply](
                 endpoint=dest_addr,

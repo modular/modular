@@ -152,9 +152,12 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
                 raise ValueError(
                     f"target_endpoint must be prefixed with 'tcp://' or 'ipc://': {self.target_endpoint}"
                 )
-            if ":" not in self.target_endpoint.split("://")[-1]:
+            if (
+                self.target_endpoint.startswith("tcp://")
+                and ":" not in self.target_endpoint.split("://")[-1]
+            ):
                 raise ValueError(
-                    f"target_endpoint must contain a port: {self.target_endpoint}"
+                    f"target_endpoint must contain a port if using tcp: {self.target_endpoint}"
                 )
 
         # Ensure the array is writable even when copy=False

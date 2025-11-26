@@ -327,6 +327,6 @@ def load_prefill_scheduler(
         scheduler_config=scheduler_config,
         paged_cache=paged_cache,
         dispatcher=PrefillDispatcherServerV2(
-            bind_addr=settings.dispatcher_config.transport_config.bind_address
+            bind_addr=settings.di_bind_address
         ),
     )
