@@ -40,6 +40,8 @@ DEFAULT_MSGPACK_NUMPY_ENCODER = msgpack_numpy_encoder(
     shared_memory_threshold=0,
 )
 
+NON_SHARED_MSGPACK_NUMPY_ENCODER = msgpack_numpy_encoder()
+
 
 def generate_zmq_ipc_path() -> str:
     """Generate a unique ZMQ IPC path."""
@@ -227,8 +229,18 @@ class ZmqSocket:
 
 
 class ZmqPushSocket(Generic[T], ZmqSocket, MAXPushQueue[T]):
-    def __init__(self, *, endpoint: str, payload_type: Any) -> None:
-        self._serialize = DEFAULT_MSGPACK_NUMPY_ENCODER
+    def __init__(
+        self,
+        *,
+        endpoint: str,
+        payload_type: Any,
+        use_shared_memory: bool = True,
+    ) -> None:
+        self._serialize = (
+            DEFAULT_MSGPACK_NUMPY_ENCODER
+            if use_shared_memory
+            else NON_SHARED_MSGPACK_NUMPY_ENCODER
+        )
         super().__init__(endpoint=endpoint, mode=zmq.PUSH)
 
     def put_nowait(self, msg: T) -> None:
@@ -263,7 +275,8 @@ class ZmqRouterSocket(Generic[Request, Reply], ZmqSocket):
         self, *, endpoint: str, request_type: Any, reply_type: Any
     ) -> None:
         self._endpoint = endpoint
-        self._serialize = DEFAULT_MSGPACK_NUMPY_ENCODER
+        # Do not use shm since it does not work for inter-node communication.
+        self._serialize = NON_SHARED_MSGPACK_NUMPY_ENCODER
         self._deserialize = msgpack_numpy_decoder(request_type)
         super().__init__(endpoint=endpoint, mode=zmq.ROUTER)
 
@@ -292,7 +305,8 @@ class ZmqDealerSocket(Generic[Request, Reply], ZmqSocket):
         self, *, endpoint: str, request_type: Any, reply_type: Any
     ) -> None:
         self._endpoint = endpoint
-        self._serialize = DEFAULT_MSGPACK_NUMPY_ENCODER
+        # Do not use shm since it does not work for inter-node communication.
+        self._serialize = NON_SHARED_MSGPACK_NUMPY_ENCODER
         self._deserialize = msgpack_numpy_decoder(reply_type)
         super().__init__(endpoint=endpoint, mode=zmq.DEALER)
 
