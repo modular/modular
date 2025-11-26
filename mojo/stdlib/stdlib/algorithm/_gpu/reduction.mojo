@@ -278,6 +278,7 @@ fn row_reduce[
 )
 fn reduce_kernel[
     rank: Int,
+    axis: Int,
     num_reductions: Int,
     BLOCK_SIZE: Int,
     input_fn: fn[dtype: DType, width: Int, rank: Int] (
@@ -292,11 +293,7 @@ fn reduce_kernel[
     dtype: DType,
     simd_width: Int,
     accum_type: DType = get_accum_type[dtype](),
-](
-    shape: IndexList[rank],
-    axis: Int,
-    init: StaticTuple[Scalar[dtype], num_reductions],
-):
+](shape: IndexList[rank], init: StaticTuple[Scalar[dtype], num_reductions],):
     var row_size = shape[axis]
     var num_rows = shape.flattened_length() // row_size
 
@@ -346,6 +343,7 @@ fn reduce_kernel[
 )
 fn small_reduce_kernel[
     rank: Int,
+    axis: Int,
     num_reductions: Int,
     BLOCK_SIZE: Int,
     input_fn: fn[dtype: DType, width: Int, rank: Int] (
@@ -360,11 +358,7 @@ fn small_reduce_kernel[
     dtype: DType,
     simd_width: Int,
     accum_type: DType = get_accum_type[dtype](),
-](
-    shape: IndexList[rank],
-    axis: Int,
-    init: StaticTuple[Scalar[dtype], num_reductions],
-):
+](shape: IndexList[rank], init: StaticTuple[Scalar[dtype], num_reductions],):
     var row_size = shape[axis]
     var num_rows = shape.flattened_length() // row_size
 
@@ -457,6 +451,7 @@ fn small_reduce_kernel[
 )
 fn saturated_reduce_kernel[
     rank: Int,
+    axis: Int,
     num_reductions: Int,
     BLOCK_SIZE: Int,
     input_fn: fn[dtype: DType, width: Int, rank: Int] (
@@ -471,11 +466,7 @@ fn saturated_reduce_kernel[
     dtype: DType,
     simd_width: Int,
     accum_type: DType = get_accum_type[dtype](),
-](
-    shape: IndexList[rank],
-    axis: Int,
-    init: StaticTuple[Scalar[dtype], num_reductions],
-):
+](shape: IndexList[rank], init: StaticTuple[Scalar[dtype], num_reductions],):
     constrained[
         simd_width == 1,
         "saturated_reduce_kernel doesn't currently support SIMD load/store",
@@ -583,64 +574,76 @@ fn reduce_launch[
     # memory better.
     if saturated and not reduce_contig_dim and packing_factor == 1:
         comptime BLOCK_SIZE = env_get_int["MOJO_REDUCTION_BLOCK_SIZE", 32]()
-        comptime kernel = saturated_reduce_kernel[
-            rank,
-            num_reductions,
-            BLOCK_SIZE,
-            input_fn,
-            output_fn,
-            reduce_fn,
-            dtype,
-            packing_factor,
-        ]
-        ctx.enqueue_function_checked[kernel, kernel](
-            shape,
-            axis,
-            init,
-            grid_dim=num_blocks,
-            block_dim=BLOCK_SIZE,
-            attributes=pdl_launch_attributes(),
-        )
+
+        @parameter
+        for ax in range(rank):
+            if axis == ax:
+                comptime kernel = saturated_reduce_kernel[
+                    rank,
+                    ax,
+                    num_reductions,
+                    BLOCK_SIZE,
+                    input_fn,
+                    output_fn,
+                    reduce_fn,
+                    dtype,
+                    packing_factor,
+                ]
+                ctx.enqueue_function_checked[kernel, kernel](
+                    shape,
+                    init,
+                    grid_dim=num_blocks,
+                    block_dim=BLOCK_SIZE,
+                    attributes=pdl_launch_attributes(),
+                )
 
     # When the row size is smaller than the warp so we can use
     # multiple warps within a block to reduce rows and save shared memory sync
     else:
         comptime BLOCK_SIZE = env_get_int["MOJO_REDUCTION_BLOCK_SIZE", 128]()
         if shape[axis] < WARP_SIZE:
-            comptime kernel = small_reduce_kernel[
-                rank,
-                num_reductions,
-                BLOCK_SIZE,
-                input_fn,
-                output_fn,
-                reduce_fn,
-                dtype,
-                packing_factor,
-            ]
-            ctx.enqueue_function_checked[kernel, kernel](
-                shape,
-                axis,
-                init,
-                grid_dim=num_blocks,
-                block_dim=BLOCK_SIZE,
-                attributes=pdl_launch_attributes(),
-            )
+
+            @parameter
+            for ax in range(rank):
+                if axis == ax:
+                    comptime kernel = small_reduce_kernel[
+                        rank,
+                        ax,
+                        num_reductions,
+                        BLOCK_SIZE,
+                        input_fn,
+                        output_fn,
+                        reduce_fn,
+                        dtype,
+                        packing_factor,
+                    ]
+                    ctx.enqueue_function_checked[kernel, kernel](
+                        shape,
+                        init,
+                        grid_dim=num_blocks,
+                        block_dim=BLOCK_SIZE,
+                        attributes=pdl_launch_attributes(),
+                    )
         else:
-            comptime kernel = reduce_kernel[
-                rank,
-                num_reductions,
-                BLOCK_SIZE,
-                input_fn,
-                output_fn,
-                reduce_fn,
-                dtype,
-                packing_factor,
-            ]
-            ctx.enqueue_function_checked[kernel, kernel](
-                shape,
-                axis,
-                init,
-                grid_dim=num_blocks,
-                block_dim=BLOCK_SIZE,
-                attributes=pdl_launch_attributes(),
-            )
+
+            @parameter
+            for ax in range(rank):
+                if axis == ax:
+                    comptime kernel = reduce_kernel[
+                        rank,
+                        ax,
+                        num_reductions,
+                        BLOCK_SIZE,
+                        input_fn,
+                        output_fn,
+                        reduce_fn,
+                        dtype,
+                        packing_factor,
+                    ]
+                    ctx.enqueue_function_checked[kernel, kernel](
+                        shape,
+                        init,
+                        grid_dim=num_blocks,
+                        block_dim=BLOCK_SIZE,
+                        attributes=pdl_launch_attributes(),
+                    )
