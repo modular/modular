@@ -95,7 +95,7 @@ fn warp_split_k_reduction[
 ](
     warp_k_part_id: Int,
     c_reg_tile: LayoutTensor[
-        c_type, c_layout, address_space = AddressSpace.LOCAL, **_
+        mut=True, c_type, c_layout, address_space = AddressSpace.LOCAL, **_
     ],
     smem: UnsafePointer[
         Scalar[c_type], address_space = AddressSpace.SHARED, **_
@@ -153,7 +153,7 @@ fn warp_split_k_reduction[
 ](
     warp_k_part_id: Int,
     c_reg_tile: LayoutTensor[
-        c_type, c_layout, address_space = AddressSpace.LOCAL, **_
+        mut=True, c_type, c_layout, address_space = AddressSpace.LOCAL, **_
     ],
 ):
     comptime c_frag_size = c_layout.shape[1].value()
@@ -203,7 +203,9 @@ fn multistage_mma[
     next_op_b_linear_idx_type: DType = DType.int64,
     k_group_size: UInt = 1,
 ](
-    c: LayoutTensor[c_type, c_layout, address_space = AddressSpace.LOCAL, **_],
+    c: LayoutTensor[
+        mut=True, c_type, c_layout, address_space = AddressSpace.LOCAL, **_
+    ],
     a_iter_arg: LayoutTensorIter[_, a_layout, **_],
     b_iter_arg: LayoutTensorIter[b_type, b_layout, **_],
     a_smem_iter_arg: LayoutTensorIter[

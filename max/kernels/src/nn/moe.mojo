@@ -278,7 +278,7 @@ fn _count_expert_tokens[
     expected_count: Int,
 ](
     topk_ids: LayoutTensor[input_type, *_, **_],
-    smem: LayoutTensor[DType.uint32, *_, **_],
+    smem: LayoutTensor[mut=True, DType.uint32, *_, **_],
     bg_params: _BucketGroupParams[num_threads, input_type],
 ) -> UInt64:
     comptime width = bg_params.width
@@ -378,8 +378,8 @@ fn _copy_tokens_smem_to_gmem[
     input_type: DType, //,
     expected_count: Int,
 ](
-    token_expert_order: LayoutTensor[DType.uint32, *_, **_],
-    restore_token_order: LayoutTensor[DType.uint32, *_, **_],
+    token_expert_order: LayoutTensor[mut=True, DType.uint32, *_, **_],
+    restore_token_order: LayoutTensor[mut=True, DType.uint32, *_, **_],
     smem: LayoutTensor[DType.uint32, *_, **_],
     g_offset: UInt32,
     total_writes: UInt64,
@@ -435,8 +435,8 @@ fn _copy_tokens_to_gmem[
 ](
     topk_ids: LayoutTensor[input_type, *_, **_],
     smem: LayoutTensor[DType.uint32, *_, **_],
-    token_expert_order: LayoutTensor[DType.uint32, *_, **_],
-    restore_token_order: LayoutTensor[DType.uint32, *_, **_],
+    token_expert_order: LayoutTensor[mut=True, DType.uint32, *_, **_],
+    restore_token_order: LayoutTensor[mut=True, DType.uint32, *_, **_],
     total_writes: UInt64,
     g_offset: UInt32,
     bg_params: _BucketGroupParams[num_threads, input_type],

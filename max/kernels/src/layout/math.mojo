@@ -82,7 +82,7 @@ fn _reduce[
     func: fn[dtype: DType, width: Int] (
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> (SIMD[dtype, width]),
-](inp: LayoutTensor, outp: LayoutTensor):
+](inp: LayoutTensor, outp: LayoutTensor[mut=True, **_]):
     constrained[
         inp.layout.known_shape() and outp.layout.known_shape(),
         "_reduce expects inputs with statically know shapes",
@@ -148,7 +148,7 @@ fn _reduce[
 
 
 @always_inline
-fn sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor):
+fn sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, **_]):
     """Computes sum reduction along specified axis.
 
     Reduces the input tensor by summing elements along the specified axis
@@ -202,7 +202,7 @@ fn sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor):
 
 
 @always_inline
-fn max[axis: Int](inp: LayoutTensor, outp: LayoutTensor):
+fn max[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, **_]):
     """Computes maximum reduction along specified axis.
 
     Reduces the input tensor by taking maximum elements along the specified

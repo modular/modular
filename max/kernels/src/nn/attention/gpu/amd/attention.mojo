@@ -133,7 +133,7 @@ fn _mask_apply[
     mask_warp_col: UInt32,
     scale: Float32,
     mask: mask_t,
-    p_reg_vectorized: LayoutTensor[accum_type, **_],
+    p_reg_vectorized: LayoutTensor[mut=True, accum_type, **_],
     not_last_iter: Bool,
     cache_start_pos: UInt32 = 0,
 ):

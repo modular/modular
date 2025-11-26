@@ -3184,7 +3184,7 @@ fn scale_and_mask_helper[
     use_score_mod: Bool = False,
 ](
     p_reg_tile: LayoutTensor[
-        p_type, p_layout, address_space = AddressSpace.LOCAL
+        mut=True, p_type, p_layout, address_space = AddressSpace.LOCAL
     ],
     scale_log2e: Float32,
     num_keys: UInt,

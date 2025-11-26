@@ -103,7 +103,9 @@ fn multistage_mma_q[
     b_next_smem_layout: Layout = Layout(),
     next_op_b_iter_alignment: Int = align_of[b_type](),
 ](
-    c: LayoutTensor[c_type, c_layout, address_space = AddressSpace.LOCAL],
+    c: LayoutTensor[
+        mut=True, c_type, c_layout, address_space = AddressSpace.LOCAL
+    ],
     a_iter_arg: LayoutTensorIter[_, a_layout, **_],
     b_iter_arg: LayoutTensorIter[b_type, b_layout, **_],
     a_smem_iter_arg: LayoutTensorIter[

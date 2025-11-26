@@ -401,7 +401,9 @@ fn f32_frag_to_smem[
     stageN: UInt,
 ](
     vec: SIMD[_, _],
-    dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_],
+    dst: LayoutTensor[
+        mut=True, _, _, address_space = AddressSpace.SHARED, *_, **_
+    ],
 ):
     # TODO: apply swizzle. Somehow swizzle+distribute results in wrong values.
     # alias swizzle = make_swizzle[DType.float64, swizzle_mode]() # hack
@@ -435,7 +437,9 @@ fn stsm_helper[
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
     vec: SIMD[_, _],
-    dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_],
+    dst: LayoutTensor[
+        mut=True, _, _, address_space = AddressSpace.SHARED, *_, **_
+    ],
     warp_offset: UInt32 = 0,
 ):
     @parameter

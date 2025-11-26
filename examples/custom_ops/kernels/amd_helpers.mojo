@@ -242,7 +242,7 @@ fn mma[
 ](
     a_tiles: MMATileBuffers[mma_type=MMAType],
     b_tiles: MMATileBuffers[mma_type=MMAType],
-    c_reg_tile: LayoutTensor,
+    c_reg_tile: LayoutTensor[mut=True, **_],
 ):
     """
     AMD-style MMA operation wrapper for the AMD_MMA struct.

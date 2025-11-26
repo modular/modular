@@ -852,7 +852,7 @@ struct TensorCore[
     ](
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor,
+        fragments: LayoutTensor[mut=True, **_],
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
     ):
         """
@@ -889,7 +889,7 @@ struct TensorCore[
     ](
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor,
+        fragments: LayoutTensor[mut=True, **_],
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
     ):
         comptime frag_type = fragments.element_type
@@ -916,7 +916,7 @@ struct TensorCore[
     ](
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor,
+        fragments: LayoutTensor[mut=True, **_],
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
     ):
         comptime frag_type = fragments.element_type
@@ -943,7 +943,7 @@ struct TensorCore[
     ](
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor,
+        fragments: LayoutTensor[mut=True, **_],
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
         warp_tile_coord_n: UInt = 0,  # n coordinate of warp tile
     ):
@@ -995,7 +995,7 @@ struct TensorCore[
     ](
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor,
+        fragments: LayoutTensor[mut=True, **_],
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
         warp_tile_coord_n: UInt = 0,  # n coordinate of warp tile
     ):
@@ -1032,7 +1032,7 @@ struct TensorCore[
     fn _load_b_nvidia(
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor,
+        fragments: LayoutTensor[mut=True, **_],
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
         warp_tile_coord_n: UInt = 0,  # n coordinate of warp tile
     ):
@@ -1188,7 +1188,7 @@ struct TensorCore[
     fn load_b(
         self,
         warp_tile: LayoutTensor,
-        fragments: LayoutTensor,
+        fragments: LayoutTensor[mut=True, **_],
         scales: LayoutTensor,
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
     ):
@@ -1276,7 +1276,10 @@ struct TensorCore[
 
     @always_inline
     fn mma(
-        self, a_frag: LayoutTensor, b_frag: LayoutTensor, c_frag: LayoutTensor
+        self,
+        a_frag: LayoutTensor,
+        b_frag: LayoutTensor,
+        c_frag: LayoutTensor[mut=True, **_],
     ):
         """Perform matrix multiply-accumulate operation using tensor cores.
 
@@ -1574,7 +1577,7 @@ struct TiledTensorCore[
     ](
         a_reg_tile: LayoutTensor,
         b_reg_tile: LayoutTensor,
-        c_reg_tile: LayoutTensor,
+        c_reg_tile: LayoutTensor[mut=True, **_],
     ):
         """Perform multiple matrix multiply-accumulate operations along the K dimension.
 
@@ -1617,7 +1620,9 @@ struct TiledTensorCore[
 
         @parameter
         fn _inner_loop(
-            a_frag: LayoutTensor, b_frag: LayoutTensor, c_frag: LayoutTensor
+            a_frag: LayoutTensor,
+            b_frag: LayoutTensor,
+            c_frag: LayoutTensor[mut=True, **_],
         ):
             comptime num_m_mmas = a_frag.shape[0]()
             comptime num_n_mmas = b_frag.shape[0]()

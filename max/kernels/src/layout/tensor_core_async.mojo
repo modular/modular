@@ -687,7 +687,7 @@ fn _convert_cfrags_to_simd[
 ](
     c_frags_in_tuple: StaticTuple[Scalar[c_type], c_frag_size],
     c_frags: LayoutTensor[
-        c_type, _, address_space = AddressSpace.LOCAL, *_, **_
+        mut=True, c_type, _, address_space = AddressSpace.LOCAL, *_, **_
     ],
 ):
     @parameter
@@ -753,7 +753,12 @@ struct TensorCoreAsync[
             Self.b_type, _, _, address_space = AddressSpace.SHARED, *_, **_
         ],
         c_reg_tile: LayoutTensor[
-            Self.c_type, _, _, address_space = AddressSpace.LOCAL, *_, **_
+            mut=True,
+            Self.c_type,
+            _,
+            _,
+            address_space = AddressSpace.LOCAL,
+            *_, **_,
         ],
         wg_idx: Int = 0,
     ):
@@ -915,7 +920,11 @@ struct TensorCoreAsync[
             Self.b_type, _, address_space = AddressSpace.SHARED, *_, **_
         ],
         c_reg_tile: LayoutTensor[
-            Self.c_type, _, address_space = AddressSpace.LOCAL, *_, **_
+            mut=True,
+            Self.c_type,
+            _,
+            address_space = AddressSpace.LOCAL,
+            *_, **_,
         ],
     ):
         """Perform asynchronous matrix multiplication using warp group matrix multiply-accumulate (WGMMA).

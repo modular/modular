@@ -20,7 +20,7 @@ from layout.tensor_core import TensorCore
 from utils.index import IndexList
 
 
-fn arange(tensor: LayoutTensor):
+fn arange(tensor: LayoutTensor[mut=True, **_]):
     @parameter
     for i in range(tensor.shape[0]()):
 
@@ -36,7 +36,7 @@ fn load_and_mma_16x8x32[
     layout_a: Layout,
     layout_b: Layout,
 ](
-    mat_c: LayoutTensor[out_type, layout_c, MutAnyOrigin],
+    mat_c: LayoutTensor[mut=True, out_type, layout_c, MutAnyOrigin],
     mat_a: LayoutTensor[in_type, layout_a, MutAnyOrigin],
     mat_b: LayoutTensor[in_type, layout_b, MutAnyOrigin],
 ):

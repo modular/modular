@@ -1910,7 +1910,9 @@ struct LayoutTensor[
         return self._load_offset(offset)
 
     @always_inline("nodebug")
-    fn __setitem__[*Tys: Indexer](self, *args: *Tys, val: Self.element_type):
+    fn __setitem__[
+        *Tys: Indexer
+    ](self, *args: *Tys, val: Self.element_type) where Self.mut:
         """Sets a single element in a tensor at the specified indices.
 
         This method provides array-like element assignment for tensors.
@@ -2187,10 +2189,8 @@ struct LayoutTensor[
     fn store[
         width: Int
     ](
-        self: Self._AsMut,
-        coords: IndexList[*_, **_],
-        val: SIMD[Self.dtype, width],
-    ):
+        self, coords: IndexList[*_, **_], val: SIMD[Self.dtype, width]
+    ) where Self.mut:
         """Store a SIMD vector to the tensor at the specified ND coordinates.
 
         Performs a vectorized store operation to the tensor's memory, writing
