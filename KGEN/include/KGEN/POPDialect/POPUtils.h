@@ -34,7 +34,8 @@ OpFoldResult foldCastFromBuiltin(TypedAttr input, SIMDType resultType);
 
 /// Fold a cast between two SIMD types.
 OpFoldResult foldCast(ArrayRef<Attribute> operands, SIMDType resultType,
-                      SIMDType inputType, SIMDType outputType);
+                      SIMDType inputType, SIMDType outputType,
+                      std::optional<int64_t> indexBitWidth = std::nullopt);
 
 /// Fold a SIMD splat operation.
 OpFoldResult foldSIMDSplat(Value scalarVal, Attribute scalarAttr,

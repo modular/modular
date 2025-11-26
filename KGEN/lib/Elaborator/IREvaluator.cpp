@@ -12,6 +12,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/POPDialect/POPUtils.h"
 #include "KGEN/TransformUtils/ManglingUtils.h"
 #include "KGEN/lib/Elaborator/IREvaluatorContext.h"
 #include "Support/Compiler/DiagnosticHandler.h"
@@ -156,6 +157,18 @@ IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
     return evaluateCompileAssemblyAttr(compileAssemblyAttr);
   if (auto variadicReduceAttr = dyn_cast<VariadicReduceAttr>(attr))
     return variadicReduceAttr.evaluateWith(this);
+
+  if (auto castAttr = dyn_cast<POP::CastAttr>(attr)) {
+    auto outType = cast<POP::SIMDType>(castAttr.getType());
+    auto inType = cast<POP::SIMDType>(castAttr.getArg().getType());
+    if (auto fold =
+            POP::foldCast({castAttr.getArg()}, outType, inType, outType,
+                          elaborator->getTarget().resolveIndexBitWidth())) {
+      return cast<TypedAttr>(cast<Attribute>(fold));
+    }
+    emitError(ErrorTree(*errorLoc, "Unable to evaluate #pop.cast attribute"));
+    return failure();
+  }
 
   // Must be a parameter operator then.
   auto op = dyn_cast<ParamOperatorAttr>(attr);

@@ -1112,9 +1112,9 @@ PointerBitcastOp::parametric_interpret(ArrayRef<Attribute> operands,
 
 static OpFoldResult castOpfoldHelper(CastOp op, ArrayRef<Attribute> operands,
                                      SIMDType resultType, SIMDType inputType,
-                                     SIMDType outputType) {
+                                     SIMDType outputType,
+                                     std::optional<int64_t> indexBitWidth) {
   auto in = dyn_cast_if_present<SIMDAttr>(operands.front());
-
   std::optional<KGENDType> dtype = resultType.getResolvedDType();
   if (!in || !dtype) {
     if (inputType == outputType)
@@ -1122,12 +1122,14 @@ static OpFoldResult castOpfoldHelper(CastOp op, ArrayRef<Attribute> operands,
     return {};
   }
 
-  return POP::foldCast(operands, resultType, inputType, outputType);
+  return POP::foldCast(operands, resultType, inputType, outputType,
+                       indexBitWidth);
 }
 
 OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
   return castOpfoldHelper(*this, adaptor.getOperands(), getType(),
-                          getInput().getType(), getOutput().getType());
+                          getInput().getType(), getOutput().getType(),
+                          /*indexBitWidth=*/std::nullopt);
 }
 
 /// Canonicalize integer type `cast(cast(x : T1 to T2) : T3) -> cast(T1 to T3)`,
@@ -1223,8 +1225,9 @@ ErrorTreeOrSuccess CastOp::interpret(ArrayRef<Attribute> operands,
   auto inputType = cast<SIMDType>(cast<TypedAttr>(operands[0]).getType());
   auto outputType = cast<SIMDType>(getOutput().getType());
 
-  if (auto result = castOpfoldHelper(*this, operands, resultType, inputType,
-                                     outputType)) {
+  if (auto result =
+          castOpfoldHelper(*this, operands, resultType, inputType, outputType,
+                           state.getTarget().getIndexBitWidth())) {
     state.mapResults(cast<Attribute>(result));
     return success();
   }
@@ -1278,8 +1281,9 @@ CastOp::parametric_interpret(ArrayRef<Attribute> operands,
       state.getReboundType(cast<TypedAttr>(operands[0]).getType()));
   auto outputType = cast<SIMDType>(state.getReboundType(getOutput().getType()));
 
-  if (auto result = castOpfoldHelper(*this, operands, resultType, inputType,
-                                     outputType)) {
+  if (auto result =
+          castOpfoldHelper(*this, operands, resultType, inputType, outputType,
+                           state.getTarget().getIndexBitWidth())) {
     state.mapResults(cast<Attribute>(result));
     return success();
   }
