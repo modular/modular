@@ -438,10 +438,24 @@ def ElaborateGenerators : Pass<"elaborate-generators", "ModuleOp"> {
            "If true, elaboration error will include prelude locations "
            "from mojo _startup modules.">,
     Option<"errorVerbose", "error-verbose",
-           "bool", "false",
-           "If true, elaboration error will include all concretized "
+           "CompilationOptions::ErrorVerboseLevel",
+           "CompilationOptions::kSimpleParams",
+           "CompilationOptions::kNoParams: "
+           "don't include any concrete parameter values; "
+           "CompilationOptions::kSimpleParams: "
+           "elaboration error will include concretized "
+           "parameter values at call expansion site which are of simple types;"
+           "CompilationOptions::kAllParams: "
+           "elaboration error will include all concretized "
            "parameter values as mlir attributes at call expansion site "
-           "instead of just values with simple types.">
+           "instead of just values with simple types.",
+           "cl::values(clEnumValN(CompilationOptions::kNoParams, \"no-params\","
+              "\"show no concrete parameter values\"),"
+            "clEnumValN(CompilationOptions::kSimpleParams, \"simple-params\","
+              "\"show only simple concrete parameter values "
+              "(string, integer, float, boolean) \"),"
+            "clEnumValN(CompilationOptions::kAllParams, \"all-params\","
+              "\"show all concrete parameter values\"))">
   ];
 }
 

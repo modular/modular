@@ -2354,9 +2354,9 @@ void KGEN::printMemSymbolTripleAttrWithoutType(
     printSymbol(del);
 }
 
-std::string KGEN::printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
-                                             ArrayRef<TypedAttr> values,
-                                             bool printAll) {
+std::string KGEN::printSimpleParamAttrValues(
+    ArrayRef<ParamDeclAttr> params, ArrayRef<TypedAttr> values,
+    CompilationOptions::ErrorVerboseLevel verboseLevel) {
   SmallVector<std::string> result;
   for (auto [param, value] : llvm::zip(params, values)) {
     llvm::TypeSwitch<TypedAttr>(value)
@@ -2385,7 +2385,7 @@ std::string KGEN::printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
           result.push_back(str);
         })
         .Default([&](auto &attr) {
-          if (printAll) {
+          if (verboseLevel == CompilationOptions::kAllParams) {
             std::string str;
             llvm::raw_string_ostream os(str);
             os << param.getName() << ": " << attr;
@@ -2397,7 +2397,7 @@ std::string KGEN::printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
   }
 
   std::string str;
-  if (!result.empty()) {
+  if (verboseLevel != CompilationOptions::kNoParams && !result.empty()) {
     llvm::raw_string_ostream os(str);
     os << "(";
     llvm::interleaveComma(result, os);

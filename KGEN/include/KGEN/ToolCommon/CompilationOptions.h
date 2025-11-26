@@ -53,6 +53,8 @@ public:
     kDebugAtLLVM
   };
 
+  enum ErrorVerboseLevel { kNoParams, kSimpleParams, kAllParams };
+
   CompilationOptions(
       unsigned optimizationLevel = 3, DebugInfoLevel debugLevel = kNoDebug,
       std::optional<DebugAtLevel> debugAtLevel = std::nullopt,
@@ -62,7 +64,7 @@ public:
       std::string targetFeatures = getHostCPUFeatures(),
       std::string targetAccelerator = "", int elaborationErrorLimit = 20,
       bool elaborationErrorIncludePrelude = false,
-      bool elaborationErrorVerbose = false,
+      ErrorVerboseLevel elaborationErrorVerbose = kSimpleParams,
       unsigned elaborationMaxDepth = std::numeric_limits<unsigned>::max(),
       DebugInfoLanguage debugInfoLanguage = kLangMojo,
       std::string searchPaths = "",
@@ -128,7 +130,7 @@ public:
 
   bool elaborationErrorIncludePrelude = false;
 
-  bool elaborationErrorVerbose = false;
+  ErrorVerboseLevel elaborationErrorVerbose = kSimpleParams;
 
   unsigned elaborationMaxDepth = std::numeric_limits<unsigned>::max();
 

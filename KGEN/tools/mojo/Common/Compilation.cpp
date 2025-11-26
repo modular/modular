@@ -303,11 +303,32 @@ ErrorOrSuccess M::parseCompilationOptions(
 
   if (elaborationErrorVerboseId.isValid()) {
     if (args.hasMultipleArgs(elaborationErrorVerboseId)) {
-      return Error("too many specified elaboration-error-verbose, "
-                   "expected exactly one");
+      return Error(
+          "too many specified elaboration-error-verbose, expected exactly one");
     }
+
+    StringLiteral kNoParams = "no-params";
+    StringLiteral kSimpleParams = "simple-params";
+    StringLiteral kAllParams = "all-params";
+
+    StringRef elabErrorVerbose =
+        args.getLastArgValue(elaborationErrorVerboseId, kSimpleParams);
+
+    if (!llvm::is_contained({kNoParams, kSimpleParams, kAllParams},
+                            elabErrorVerbose)) {
+
+      return Error(llvm::formatv(
+          "invalid elaboration-error-verbose '{0}', expected one of: "
+          "`{1}` (the default value), `{2}`, or `{3}`",
+          elabErrorVerbose, kNoParams, kSimpleParams, kAllParams));
+    }
+
     compilationOptions.elaborationErrorVerbose =
-        args.hasArg(elaborationErrorVerboseId);
+        llvm::StringSwitch<CompilationOptions::ErrorVerboseLevel>(
+            elabErrorVerbose)
+            .Case(kNoParams, CompilationOptions::kNoParams)
+            .Case(kSimpleParams, CompilationOptions::kSimpleParams)
+            .Case(kAllParams, CompilationOptions::kAllParams);
   }
 
   if (elaborationMaxDepthId.isValid()) {

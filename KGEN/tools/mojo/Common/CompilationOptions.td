@@ -97,13 +97,18 @@ def elaboration_error_include_prelude: Flag<["--", "-"],
     "Show elaboration error with locations in mojo startup modules "
     "(prelude).">;
 
-def elaboration_error_verbose: Flag<["--", "-"],
-  "elaboration-error-verbose">,
-  Group<CompilationOptionGroup>, Index<15>,
+defm elaboration_error_verbose: CommandOptionHidden<["--", "-"],
+  "elaboration-error-verbose",
+  CompilationOptionGroup, Index<15>, MetaVarName<"ELABERRORVERBOSE">,
   HelpText<
-    "Show verbose elaboration error with all concrete parameter "
-    "values where call expansion is failed. Default print only "
-    "shows simple values (string, integer, float, boolean).">;
+    "Controls how parameter values are displayed as part of "
+    "elaboration errors when function instantiation fails. "
+    "The default is `simple-params`, which "
+    "display concretized parameter values for "
+    "simple types, including numeric types and "
+    "strings, in a user-friendly format; "
+    "`no-params` means don't display any concrete parameter values; "
+    "`all-params` means show all concrete parameter values.">>;
 
 defm elaboration_max_depth: CommandOptionHidden<["--", "-"],
   "elaboration-max-depth",

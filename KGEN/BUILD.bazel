@@ -824,6 +824,7 @@ modular_cc_library(
         ":KGENEnumsIncGen",
         ":KGENInterfacesIncGen",
         ":KGENTypeInterfacesIncGen",
+        ":ToolCommon.headers",
     ],
 )
 
@@ -1077,6 +1078,7 @@ modular_cc_library(
     deps = [
         ":HLCFDialect",
         ":Support",
+        "//AsyncRT:Runtime",
         "@llvm-project//llvm:OrcJIT",
         "@llvm-project//mlir:BuiltinToLLVMIRTranslation",
     ],
