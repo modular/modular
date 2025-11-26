@@ -127,7 +127,7 @@ def test_get_type_name_non_scalar_simd_value():
         name,
         (
             "test_reflection.Foo[SIMD[DType.float32, 4], "
-            '[1, 2, 3, 4] : SIMD[DType.float32, 4], True, None, {"hello", 5}]'
+            '[1, 2, 3, 4] : SIMD[DType.float32, 4], True, None, {"hello\0", 5}]'
         ),
     )
 
@@ -139,7 +139,7 @@ def test_get_type_name_non_scalar_simd_value():
         (
             "test_reflection.Foo[SIMD[DType.bool, 4], "
             "[True, False, True, False] : SIMD[DType.bool, 4], "
-            'True, None, {"hello", 5}]'
+            'True, None, {"hello\0", 5}]'
         ),
     )
 
@@ -152,7 +152,7 @@ def test_get_type_name_struct():
             "test_reflection.Foo["
             "test_reflection.Bar[2, 1.29999995 : SIMD[DType.float32, 1]], "
             "{3, 4.0999999999999996 : SIMD[DType.float64, 1]}, "
-            'True, None, {"hello", 5}]'
+            'True, None, {"hello\0", 5}]'
         ),
     )
 
@@ -164,7 +164,7 @@ def test_get_type_name_partially_bound_type():
         (
             "test_reflection.Foo["
             "test_reflection.Bar[2, 1.29999995 : SIMD[DType.float32, 1]], "
-            '{3, 0.125 : SIMD[DType.float64, 1]}, ?, None, {"hello", 5}]'
+            '{3, 0.125 : SIMD[DType.float64, 1]}, ?, None, {"hello\0", 5}]'
         ),
     )
 
