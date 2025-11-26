@@ -5,9 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: kgen %s -elaborate=no-use-parametric-interpreter -verify-diagnostics
-
+# RUN: not kgen -elaborate  -D TEST_RECURSION2=1 %s 2>&1 | FileCheck %s --check-prefix=CHECK-RECURSION2
+# RUN: not kgen -elaborate  -D TEST_RECURSION3=1 %s 2>&1 | FileCheck %s --check-prefix=CHECK-RECURSION3
 
 from collections.string.string_slice import StaticString, _get_kgen_string
+from sys import env_get_bool
 
 
 # expected-error @+2{{function instantiation failed}}
@@ -72,3 +74,64 @@ fn test_comptime_assert():
 fn parametric_assert[param: Int]():
     # expected-note @below {{constraint failed: param must be 2}}
     __comptime_assert param == 2, "param must be 2"
+
+
+# This creates recursive cycles: foo[D] -> bar[D] -> foo[D] and foo[D] -> baz[D] -> foo[D]
+fn bar[D: Int]() -> Int:
+    alias x = foo[D]()
+    return x
+
+
+fn baz[D: Int]() -> Int:
+    alias x = foo[D]()
+    return x
+
+
+fn foo[D: Int]() -> Int:
+    var x = bar[D]()
+    # CHECK-RECURSION2: call expansion failed with parameter value(s): ("D": 2)
+    var y = baz[D]()
+    _ = x
+    _ = y
+    return y
+
+
+fn test_recursion2():
+    comptime run_test = env_get_bool["TEST_RECURSION2", False]()
+
+    @parameter
+    if run_test:
+        # CHECK-RECURSION2: call expansion failed with parameter value(s): ("D": 2)
+        _ = foo[2]()
+
+        # CHECK-RECURSION2: function instantiation in parameter domain that recursively requires itself
+        # CHECK-RECURSION2: recursively instantiated through here
+
+
+# This creates a recursive cycle: foo1[D] -> bar1[D] -> foo1[D]
+fn bar1[D: Int]() -> Int:
+    alias x = foo1[D]()
+    return x
+
+
+fn foo1[D: Int]() -> Int:
+    # CHECK-RECURSION3: call expansion failed with parameter value(s): ("D": 1)
+    var x = bar1[D]()
+    return x
+
+
+fn test_recursion3():
+    comptime run_test = env_get_bool["TEST_RECURSION3", False]()
+
+    @parameter
+    if run_test:
+        # CHECK-RECURSION3: call expansion failed with parameter value(s): ("D": 1)
+        _ = foo1[1]()
+
+        # CHECK-RECURSION3: function instantiation in parameter domain that recursively requires itself
+        # CHECK-RECURSION3: recursively instantiated through here
+
+
+fn main():
+    test_recursion2()
+    test_recursion3()
