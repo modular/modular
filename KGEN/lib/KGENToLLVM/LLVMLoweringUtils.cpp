@@ -1174,7 +1174,7 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
   }
 
   // Unknown attribute to convert.
-  return Error("cannot lower unknown attribute to LLVM" +
+  return Error("cannot lower unknown attribute to LLVM: " +
                getParamAsString(attr));
 }
 
