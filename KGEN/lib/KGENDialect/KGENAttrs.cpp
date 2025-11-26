@@ -3974,12 +3974,6 @@ TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
          (kind != SugarKind::MemberAlias && !memberName) &&
              "memberName should be specified for MemberAlias only");
 
-  // This method gets called by client doing general structural replacements,
-  // e.g. a parameter with an arbitrary attribute.  This can turn canonical
-  // forms to non-canonical and visa-versa, so always recompute the canonical
-  // pointer.
-  canonical = {};
-
   // If we shouldn't maintain type sugar for this, then just return the
   // expanded. We strip sugar for always_inline builtin calls that simplify down
   // to something simple like "42". We don't want to maintain the call sugar
@@ -3991,7 +3985,10 @@ TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
     if ((int)*shouldElide >= (int)kind)
       return expanded;
 
-  // Compute the canonical form.
+  // This method gets called by client doing general structural replacements,
+  // e.g. a parameter with an arbitrary attribute.  This can turn canonical
+  // forms to non-canonical and visa-versa, so always recompute the canonical
+  // pointer.
   canonical = getCanonicalAttr(expanded);
 
   // We will /never/ use the type sugar in the expanded form of a builtin
@@ -4031,15 +4028,20 @@ TypedAttr SugarAttr::strip(TypedAttr value, bool keepApplies) {
   return value;
 }
 
-Type SugarAttr::strip(Type value, bool keepApplies) {
-  if (!value)
+Type SugarAttr::strip(Type type, bool keepApplies) {
+  if (!type)
     return {};
   // Sugar for a type will be wrapped in a ParamType converting the attr into
   // the type domain.
-  if (auto paramRef = dyn_cast<ParamType>(value))
-    if (isa<SugarAttr>(paramRef.getParam()))
-      return ParamType::get(strip(paramRef.getParam(), keepApplies));
-  return value;
+  if (auto paramRef = dyn_cast<ParamType>(type))
+    if (isa<SugarAttr>(paramRef.getParam())) {
+      // Strip the attr inside the ParamType if it is sugar.
+      type = ParamType::get(strip(paramRef.getParam(), keepApplies));
+      // ParamType::get has some canonicalizations that can expose nested sugar.
+      // Make sure to remove them as well.
+      return strip(type);
+    }
+  return type;
 }
 
 static Attribute getLocalCanonical(Attribute attr) {
