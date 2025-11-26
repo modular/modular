@@ -11,7 +11,6 @@ import time
 from collections.abc import Callable
 from typing import TypeVar
 
-import pytest
 from max.serve.kvcache_agent import DispatcherClientV2, DispatcherServerV2
 from max.serve.queue.zmq_queue import ClientIdentity, generate_zmq_ipc_path
 
@@ -40,11 +39,10 @@ class BasicDispatcherServer(DispatcherServerV2[int, int]):
 
 
 class BasicDispatcherClient(DispatcherClientV2[int, int]):
-    def __init__(self, bind_addr: str, default_dest_addr: str | None):
+    def __init__(self, bind_addr: str):
         self.bind_addr = bind_addr
         super().__init__(
             bind_addr=bind_addr,
-            default_dest_addr=default_dest_addr,
             request_type=int,
             reply_type=int,
         )
@@ -54,7 +52,7 @@ class BasicDispatcherClient(DispatcherClientV2[int, int]):
 
 
 def make_servers_and_clients(
-    num_servers: int, num_clients: int, use_default_dest_addr: bool = True
+    num_servers: int, num_clients: int
 ) -> tuple[list[BasicDispatcherServer], list[BasicDispatcherClient]]:
     server_addrs = [generate_zmq_ipc_path() for _ in range(num_servers)]
     client_addrs = [generate_zmq_ipc_path() for _ in range(num_clients)]
@@ -62,11 +60,8 @@ def make_servers_and_clients(
         BasicDispatcherServer(bind_addr=server_addr)
         for server_addr in server_addrs
     ]
-    default_dest_addr = server_addrs[0] if use_default_dest_addr else None
     clients = [
-        BasicDispatcherClient(
-            bind_addr=client_addr, default_dest_addr=default_dest_addr
-        )
+        BasicDispatcherClient(bind_addr=client_addr)
         for client_addr in client_addrs
     ]
     return servers, clients
@@ -79,7 +74,7 @@ def test_server_client() -> None:
 
     for _ in range(100):
         t0 = time.time()
-        client.send_request_nowait(42)
+        client.send_request_nowait(42, server.bind_addr)
         request, identity = server.recv_request_blocking()
         assert request == 42
         server.send_reply_nowait(99, identity)
@@ -96,7 +91,7 @@ def test_many_clients_one_server() -> None:
     clients = clients
 
     for i, client in enumerate(clients):
-        client.send_request_nowait(i)
+        client.send_request_nowait(i, server.bind_addr)
 
     num_requests_received = 0
     while True:
@@ -114,9 +109,7 @@ def test_many_clients_one_server() -> None:
 
 
 def test_many_servers_one_client() -> None:
-    servers, clients = make_servers_and_clients(
-        10, 1, use_default_dest_addr=False
-    )
+    servers, clients = make_servers_and_clients(10, 1)
     client = clients[0]
 
     for server in servers:
@@ -144,7 +137,7 @@ def test_spam_server() -> None:
     client = clients[0]
 
     for i in range(100):
-        client.send_request_nowait(i)
+        client.send_request_nowait(i, server.bind_addr)
 
     while True:
         try:
@@ -156,11 +149,3 @@ def test_spam_server() -> None:
     for i in range(100):
         reply = client.recv_reply_blocking()
         assert reply == i + 100
-
-
-def test_no_dest_addr() -> None:
-    _, clients = make_servers_and_clients(1, 1, use_default_dest_addr=False)
-    client = clients[0]
-
-    with pytest.raises(ValueError):
-        client.send_request_nowait(42)
