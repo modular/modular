@@ -612,6 +612,20 @@ class TextGenerationContext(BaseContext, Protocol):
         """
         ...
 
+    def maybe_chunk(self, chunk_size: int) -> int:
+        """Optionally chunks the next `chunk_size` tokens for processing.
+
+        This method determines the appropriate chunk size (up to `chunk_size`) based on
+        available tokens and context, returning the number of tokens that can be processed.
+
+        Args:
+            chunk_size (int): The maximum number of tokens to chunk.
+
+        Returns:
+            int: The number of tokens that will actually be processed in this chunk.
+        """
+        ...
+
     @property
     def needs_ce(self) -> bool:
         """Returns whether this context needs context encoding (CE).

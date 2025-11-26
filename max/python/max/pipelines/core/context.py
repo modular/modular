@@ -186,6 +186,37 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     def active_idx(self) -> int:
         return self._active_idx
 
+    def maybe_chunk(self, chunk_size: int) -> int:
+        """Optionally chunk the active token window to enforce a maximum size.
+
+        This is used by the text-generation scheduler when performing chunked
+        prefill. If the number of active prompt tokens exceeds the configured
+        per-batch target, the context is "chunked" by advancing indices so that
+        only a bounded number of active tokens remain.
+
+        Args:
+            chunk_size: The desired maximum number of active tokens to keep
+                in this context.
+
+        Returns:
+            The actual number of tokens kept active after chunking. This value
+            will never exceed ``self.active_length``.
+        """
+
+        if chunk_size < 0:
+            raise ValueError(
+                f"chunk size must be non-negative: got {chunk_size}"
+            )
+
+        if chunk_size > self.active_length:
+            return self.active_length
+
+        # Calculate how much to bump the token indices by
+        # If chunk_size = 10, and available_active_tokens = 30, we have to move back the active_idx
+        # by 20.
+        self.bump_token_indices(active_idx=chunk_size - self.active_length)
+        return chunk_size
+
     @property
     def min_tokens(self) -> int:
         """The minimum number of new tokens to generate."""

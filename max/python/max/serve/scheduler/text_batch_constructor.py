@@ -251,24 +251,13 @@ class TextBatchConstructor:
         if not self.scheduler_config.enable_chunked_prefill:
             return
 
-        input_tokens = ctx.active_length
-        if (
-            tot_input_tokens + input_tokens
-            <= self.scheduler_config.target_tokens_per_batch_ce
-        ):
-            return
-
-        # We can only schedule part of the prompt.
-        # We achieve this by decreasing the active_idx of the context class.
-        token_num_diff = (
-            tot_input_tokens
-            + input_tokens
-            - self.scheduler_config.target_tokens_per_batch_ce
+        # Calculate the space in the active chunk
+        remaining_budget = (
+            self.scheduler_config.target_tokens_per_batch_ce - tot_input_tokens
         )
-        input_tokens -= token_num_diff
-        assert input_tokens > 0
-        assert token_num_diff > 0
-        ctx.bump_token_indices(active_idx=-token_num_diff)
+
+        if remaining_budget > 0:
+            _ = ctx.maybe_chunk(remaining_budget)
 
     @traced
     def _return_to_request_queue(
