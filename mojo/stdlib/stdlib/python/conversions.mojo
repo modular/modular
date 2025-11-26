@@ -52,3 +52,14 @@ trait ConvertibleFromPython(Copyable, Movable):
             If conversion was not successful.
         """
         ...
+
+
+__extension SIMD(ConvertibleToPython):
+    fn to_python_object(var self) raises -> PythonObject:
+        """Convert this value to a PythonObject.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        constrained[size == 1, "only works with scalar values"]()
+        return PythonObject(self._refine[new_size=1]())
