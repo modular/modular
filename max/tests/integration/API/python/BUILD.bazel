@@ -236,10 +236,7 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
-    gpu_constraints = ["//:has_multi_gpu"] + select({
-        "//:amd_gpu": ["@platforms//:incompatible"],  # TODO(GEX-2637): Enable AMD multi-GPU tests once flakes are resolved.
-        "//conditions:default": [],
-    }),
+    gpu_constraints = ["//:has_multi_gpu"],
     tags = ["gpu"],
     deps = [
         "//max/python/max/engine",
