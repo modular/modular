@@ -55,8 +55,6 @@ def allgather_graph(signals: Signals, axis: int) -> Graph:
         return graph
 
 
-# TODO(GEX-2832): Re-enable once timeout issue is resolved
-@pytest.mark.skip(reason="Skipping allgather tests due to timeout issues")
 @pytest.mark.parametrize("num_gpus, axis", [(1, 0), (2, 0), (4, 0)])
 def test_allgather_execution_even(num_gpus: int, axis: int) -> None:
     """Tests multi-device allgather execution with equal shapes."""
@@ -87,11 +85,12 @@ def test_allgather_execution_even(num_gpus: int, axis: int) -> None:
         for a, device in zip(numpy_inputs, devices, strict=True)
     ]
 
+    buffers = signals.buffers()
     # Synchronize devices so that the signal buffers are initialized.
     for dev in devices:
         dev.synchronize()
 
-    outputs = compiled.execute(*tensor_inputs, *signals.buffers())
+    outputs = compiled.execute(*tensor_inputs, *buffers)
 
     expected_output = np.concatenate(numpy_inputs, axis=axis)
 
@@ -101,8 +100,6 @@ def test_allgather_execution_even(num_gpus: int, axis: int) -> None:
         assert np.array_equal(output.to(host).to_numpy(), expected_output)
 
 
-# TODO(GEX-2832): Re-enable once timeout issue is resolved
-@pytest.mark.skip(reason="Skipping allgather tests due to timeout issues")
 @pytest.mark.parametrize(
     "shapes, axis",
     [
@@ -169,7 +166,13 @@ def test_allgather_execution_uneven(
         )
         offset += size
 
-    outputs = compiled.execute(*tensor_inputs, *signals.buffers())
+    buffers = signals.buffers()
+
+    # Synchronize devices so that the signal buffers are initialized.
+    for dev in accel_devices:
+        dev.synchronize()
+
+    outputs = compiled.execute(*tensor_inputs, *buffers)
 
     expected_output = np.concatenate(numpy_inputs, axis=axis)
 
