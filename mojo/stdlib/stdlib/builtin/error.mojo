@@ -114,7 +114,6 @@ struct _ErrorWriter(Writer):
             args[i].write_to(self)
 
 
-@register_passable
 struct Error(
     Boolable,
     Defaultable,
