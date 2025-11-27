@@ -342,11 +342,8 @@ OpFoldResult POP::foldSIMDSplat(Value scalarVal, Attribute scalarAttr,
                                 SIMDType resultType) {
   std::optional<int64_t> size = resultType.getResolvedSize();
 
-  if (size == 1) {
-    if (scalarAttr)
-      return scalarAttr;
-    return scalarVal;
-  }
+  if (size == 1)
+    return scalarAttr ? OpFoldResult(scalarAttr) : scalarVal;
 
   auto scalarSIMD = dyn_cast_if_present<SIMDAttr>(scalarAttr);
   if (!size || !scalarSIMD)
@@ -358,13 +355,9 @@ OpFoldResult POP::foldSIMDSplat(Value scalarVal, Attribute scalarAttr,
 /// Fold a SIMD Or-reduction operation.
 OpFoldResult POP::foldSIMDReduceOr(Value vectorVal, Attribute vectorAttr,
                                    SIMDType vectorType) {
-  std::optional<int64_t> size = vectorType.getResolvedSize();
   // If the vector only has one element, it's already reduced.
-  if (size == 1) {
-    if (vectorAttr)
-      return vectorAttr;
-    return vectorVal;
-  }
+  if (vectorType.getResolvedSize() == 1)
+    return vectorAttr ? OpFoldResult(vectorAttr) : vectorVal;
 
   if (auto dtype = vectorType.getResolvedDType(); !dtype || !dtype->isIntLike())
     return {};
@@ -377,13 +370,9 @@ OpFoldResult POP::foldSIMDReduceOr(Value vectorVal, Attribute vectorAttr,
 /// Fold a SIMD And-reduction operation.
 OpFoldResult POP::foldSIMDReduceAnd(Value vectorVal, Attribute vectorAttr,
                                     SIMDType vectorType) {
-  std::optional<int64_t> size = vectorType.getResolvedSize();
   // If the vector only has one element, it's already reduced.
-  if (size == 1) {
-    if (vectorAttr)
-      return vectorAttr;
-    return vectorVal;
-  }
+  if (vectorType.getResolvedSize() == 1)
+    return vectorAttr ? OpFoldResult(vectorAttr) : vectorVal;
 
   if (auto dtype = vectorType.getResolvedDType(); !dtype || !dtype->isIntLike())
     return {};
