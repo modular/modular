@@ -1400,12 +1400,24 @@ fn cp_async_bulk_tensor_global_shared_cta[
     - The source memory must be properly aligned for TMA operations.
     - The TMA descriptor must be properly initialized before use.
     """
-    constrained[rank in (1, 2, 3), "Expecting rank-1, 2, or 3 tensors"]()
+    constrained[rank in (1, 2, 3, 4), "Expecting rank-1, 2, 3, or 4 tensors"]()
 
     comptime cache_hint: Bool = eviction_policy is not CacheEviction.EVICT_NORMAL
 
     @parameter
-    if rank == 3:
+    if rank == 4:
+        llvm_intrinsic["llvm.nvvm.cp.async.bulk.tensor.s2g.tile.4d", NoneType](
+            src_mem,
+            tma_descriptor,
+            Int32(coords[0]),
+            Int32(coords[1]),
+            Int32(coords[2]),
+            Int32(coords[3]),
+            eviction_policy._value,
+            cache_hint,
+        )
+
+    elif rank == 3:
         llvm_intrinsic["llvm.nvvm.cp.async.bulk.tensor.s2g.tile.3d", NoneType](
             src_mem,
             tma_descriptor,
