@@ -106,16 +106,25 @@ class Signals:
         self.devices = devices
 
     def buffers(self) -> list[Tensor]:
-        """Allocates and returns buffers used for communication in allreduce."""
+        """Allocates and returns buffers used for communication in allreduce.
+
+        Synchronizes so that buffers are ready for use when this method
+        returns.
+        """
         # Contents of signal buffer should be filled with zeros.
-        return [
+        accelerators = [Accelerator(id=dev.id) for dev in self.devices]
+        signal_buffers = [
             Tensor.zeros(
                 shape=(Signals.NUM_BYTES,),
                 dtype=DType.uint8,
-                device=Accelerator(id=dev.id),
+                device=accel,
             )
-            for dev in self.devices
+            for accel in accelerators
         ]
+        for accel in accelerators:
+            accel.synchronize()
+
+        return signal_buffers
 
     def input_types(self) -> list[BufferType]:
         """Gets graph input types corresponding to these signal buffers."""
