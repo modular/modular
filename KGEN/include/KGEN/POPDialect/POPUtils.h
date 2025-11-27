@@ -302,17 +302,16 @@ SIMDAttr foldSIMDOp(ArrayRef<Attribute> operands, KGENDType inputDType,
 template <typename... OpFns>
 SIMDAttr foldBitwiseSIMDReduceOp(Attribute operand, KGENDType inputDType,
                                  KGENDType resultDType, OpFns &&...ops) {
-  // For bitwise reductions we can treat index-like types as ints. The result
-  // would be the same no matter the eventual index bitwidth, whether it was
-  // extended/truncated before or after the fold.
-  if (inputDType.isInt() || inputDType.isIndex() || inputDType.isUIndex() ||
-      inputDType.isAddress())
-    return Detail::foldSIMDReduceOpDType<APSInt>(
-        [](const DTypeValue &val) { return val.getIntVal(); }, operand,
-        resultDType, std::forward<OpFns>(ops)...);
   if (inputDType.isBool())
     return Detail::foldSIMDReduceOpDType<bool>(
         [](const DTypeValue &val) { return val.getBoolVal(); }, operand,
+        resultDType, std::forward<OpFns>(ops)...);
+  // For bitwise reductions we can treat index-like types as ints. The result
+  // would be the same no matter the eventual index bitwidth, whether it was
+  // extended/truncated before or after the fold.
+  if (inputDType.isIntLike())
+    return Detail::foldSIMDReduceOpDType<APSInt>(
+        [](const DTypeValue &val) { return val.getIntVal(); }, operand,
         resultDType, std::forward<OpFns>(ops)...);
   llvm_unreachable("unhandled dtype");
 }
