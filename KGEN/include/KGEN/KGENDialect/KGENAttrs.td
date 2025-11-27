@@ -2134,6 +2134,7 @@ def KGEN_SugarAttr : KGENAttr<"Sugar", "sugar",
     /// Remove any top-level sugar nodes from this type, but don't fully
     /// canonicalize it.
     static TypedAttr strip(TypedAttr value, bool keepApplies = false);
+    static Attribute strip(Attribute value, bool keepApplies = false);
     static Type strip(Type value, bool keepApplies = false);
 
     /// Return true if the specified value has top level SugarAttr.  Nested
