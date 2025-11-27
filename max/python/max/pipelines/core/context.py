@@ -186,6 +186,16 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     def active_idx(self) -> int:
         return self._active_idx
 
+    def skip_processing(self, n: int) -> None:
+        """Advance the processing window start by n.
+
+        Use after committing tokens to cache or accepting a draft so future steps no
+        longer reprocess those tokens. Validates that start <= end.
+        Args:
+            n (int): The number of tokens to skip.
+        """
+        self.bump_token_indices(start_idx=n)
+
     def maybe_chunk(self, chunk_size: int) -> int:
         """Optionally chunk the active token window to enforce a maximum size.
 
