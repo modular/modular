@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from pathlib import Path
 from sys import (
@@ -52,15 +51,17 @@ comptime _TraceType_MAX = 4
 
 @always_inline
 fn _setup_category(
-    name_category: fn (UInt32, UnsafePointer[UInt8, mut=False]) -> NoneType,
+    name_category: fn (
+        UInt32, UnsafePointer[UInt8, ImmutAnyOrigin]
+    ) -> NoneType,
     value: Int,
     name: StaticString,
 ):
-    name_category(value, name.unsafe_ptr())
+    name_category(value, name.unsafe_ptr().as_any_origin())
 
 
 fn _setup_categories(
-    name_category: fn (UInt32, UnsafePointer[UInt8, mut=False]) -> NoneType
+    name_category: fn (UInt32, UnsafePointer[UInt8, ImmutAnyOrigin]) -> NoneType
 ):
     _setup_category(name_category, _TraceType_OTHER, "Other")
     _setup_category(name_category, _TraceType_ASYNCRT, "AsyncRT")
@@ -102,7 +103,9 @@ fn _init_dylib() -> OwnedDLHandle:
         if has_nvidia_gpu_accelerator():
             _setup_categories(
                 dylib._handle.get_function[
-                    fn (UInt32, UnsafePointer[UInt8, mut=False]) -> NoneType
+                    fn (
+                        UInt32, UnsafePointer[UInt8, ImmutAnyOrigin]
+                    ) -> NoneType
                 ]("nvtxNameCategoryA")
             )
 
@@ -207,7 +210,7 @@ struct _C_EventAttributes:
     var message_type: Int32
     """Message type specified in this attribute structure."""
 
-    var message: UnsafePointer[UInt8, mut=False]
+    var message: UnsafePointer[UInt8, ImmutAnyOrigin]
     """Message assigned to this attribute structure."""
 
 
@@ -252,8 +255,38 @@ struct EventAttributes:
             _reserved=0,
             event_payload=0,
             message_type=ASCII,
-            message=message.unsafe_ptr(),
+            message=message.unsafe_ptr().as_any_origin(),
         )
+
+
+# ===-----------------------------------------------------------------------===#
+# Function Type Definitions
+# ===-----------------------------------------------------------------------===#
+
+# Define explicit type aliases for consistency
+comptime _NvtxMarkExFnType = fn (
+    UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]
+) -> NoneType
+comptime _NvtxRangeStartExFnType = fn (
+    UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]
+) -> RangeID
+comptime _NvtxRangeEndFnType = fn (RangeID) -> NoneType
+comptime _NvtxRangePushExFnType = fn (
+    UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]
+) -> Int32
+comptime _NvtxRangePopFnType = fn () -> Int32
+
+comptime _RoctxMarkAFnType = fn (
+    UnsafePointer[UInt8, ImmutAnyOrigin]
+) -> NoneType
+comptime _RoctxRangePushAFnType = fn (
+    UnsafePointer[UInt8, ImmutAnyOrigin]
+) -> Int32
+comptime _RoctxRangePopFnType = fn () -> Int32
+comptime _RoctxRangeStartAFnType = fn (
+    UnsafePointer[UInt8, ImmutAnyOrigin]
+) -> RangeID
+comptime _RoctxRangeStopFnType = fn (RangeID) -> NoneType
 
 
 @register_passable("trivial")
@@ -270,29 +303,23 @@ struct _dylib_function[fn_name: StaticString, type: AnyTrivialRegType]:
 # ===-----------------------------------------------------------------------===#
 
 # NVTX_DECLSPEC void NVTX_API nvtxMarkEx(const nvtxEventAttributes_t* eventAttrib);
-comptime _nvtxMarkEx = _dylib_function[
-    "nvtxMarkEx", fn (UnsafePointer[_C_EventAttributes, mut=False]) -> NoneType
-]
+comptime _nvtxMarkEx = _dylib_function["nvtxMarkEx", _NvtxMarkExFnType]
 
 # NVTX_DECLSPEC nvtxRangeId_t NVTX_API nvtxRangeStartEx(const nvtxEventAttributes_t* eventAttrib);
 comptime _nvtxRangeStartEx = _dylib_function[
-    "nvtxRangeStartEx",
-    fn (UnsafePointer[_C_EventAttributes, mut=False]) -> RangeID,
+    "nvtxRangeStartEx", _NvtxRangeStartExFnType
 ]
 
 # NVTX_DECLSPEC void NVTX_API nvtxRangeEnd(nvtxRangeId_t id);
-comptime _nvtxRangeEnd = _dylib_function[
-    "nvtxRangeEnd", fn (RangeID) -> NoneType
-]
+comptime _nvtxRangeEnd = _dylib_function["nvtxRangeEnd", _NvtxRangeEndFnType]
 
 # NVTX_DECLSPEC int NVTX_API nvtxRangePushEx(const nvtxEventAttributes_t* eventAttrib);
 comptime _nvtxRangePushEx = _dylib_function[
-    "nvtxRangePushEx",
-    fn (UnsafePointer[_C_EventAttributes, mut=False]) -> Int32,
+    "nvtxRangePushEx", _NvtxRangePushExFnType
 ]
 
 # NVTX_DECLSPEC int NVTX_API nvtxRangePop(void);
-comptime _nvtxRangePop = _dylib_function["nvtxRangePop", fn () -> Int32]
+comptime _nvtxRangePop = _dylib_function["nvtxRangePop", _NvtxRangePopFnType]
 
 
 # ===-----------------------------------------------------------------------===#
@@ -300,25 +327,23 @@ comptime _nvtxRangePop = _dylib_function["nvtxRangePop", fn () -> Int32]
 # ===-----------------------------------------------------------------------===#
 
 # ROCTX_API void roctxMarkA(const char* message) ROCTX_VERSION_4_1;
-comptime _roctxMarkA = _dylib_function[
-    "roctxMarkA", fn (UnsafePointer[UInt8, mut=False]) -> NoneType
-]
+comptime _roctxMarkA = _dylib_function["roctxMarkA", _RoctxMarkAFnType]
 
 # ROCTX_API int roctxRangePushA(const char* message) ROCTX_VERSION_4_1;
 comptime _roctxRangePushA = _dylib_function[
-    "roctxRangePushA", fn (UnsafePointer[UInt8, mut=False]) -> Int32
+    "roctxRangePushA", _RoctxRangePushAFnType
 ]
 
 # ROCTX_API int roctxRangePop() ROCTX_VERSION_4_1;
-comptime _roctxRangePop = _dylib_function["roctxRangePop", fn () -> Int32]
+comptime _roctxRangePop = _dylib_function["roctxRangePop", _RoctxRangePopFnType]
 # ROCTX_API roctx_range_id_t roctxRangeStartA(const char* message)
 comptime _roctxRangeStartA = _dylib_function[
-    "roctxRangeStartA", fn (UnsafePointer[UInt8, mut=False]) -> RangeID
+    "roctxRangeStartA", _RoctxRangeStartAFnType
 ]
 
 # ROCTX_API void roctxRangeStop(roctx_range_id_t id) ROCTX_VERSION_4_1;
 comptime _roctxRangeStop = _dylib_function[
-    "roctxRangeStop", fn (RangeID) -> NoneType
+    "roctxRangeStop", _RoctxRangeStopFnType
 ]
 
 # ===-----------------------------------------------------------------------===#
@@ -327,7 +352,7 @@ comptime _roctxRangeStop = _dylib_function[
 
 
 struct _Mark:
-    var _fn: Variant[_nvtxMarkEx.fn_type, _roctxMarkA.fn_type]
+    var _fn: Variant[_NvtxMarkExFnType, _RoctxMarkAFnType]
 
     fn __init__(out self) raises:
         @parameter
@@ -336,17 +361,17 @@ struct _Mark:
         else:
             self._fn = _roctxMarkA.load()
 
-    fn __call__(self, val: UnsafePointer[_C_EventAttributes, mut=False]):
+    fn __call__(self, val: UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]):
         constrained[has_nvidia_gpu_accelerator()]()
-        self._fn[_nvtxMarkEx.fn_type](val)
+        self._fn[_NvtxMarkExFnType](val)
 
-    fn __call__(self, val: UnsafePointer[UInt8, mut=False]):
+    fn __call__(self, val: UnsafePointer[UInt8, ImmutAnyOrigin]):
         constrained[has_amd_gpu_accelerator()]()
-        self._fn[_roctxMarkA.fn_type](val)
+        self._fn[_RoctxMarkAFnType](val)
 
 
 struct _RangeStart:
-    var _fn: Variant[_nvtxRangeStartEx.fn_type, _roctxRangeStartA.fn_type]
+    var _fn: Variant[_NvtxRangeStartExFnType, _RoctxRangeStartAFnType]
 
     fn __init__(out self) raises:
         @parameter
@@ -356,20 +381,18 @@ struct _RangeStart:
             self._fn = _roctxRangeStartA.load()
 
     fn __call__(
-        self, val: UnsafePointer[_C_EventAttributes, mut=False, origin=_]
+        self, val: UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]
     ) -> RangeID:
         constrained[has_nvidia_gpu_accelerator()]()
-        return self._fn[_nvtxRangeStartEx.fn_type](val)
+        return self._fn[_NvtxRangeStartExFnType](val)
 
-    fn __call__(
-        self, val: UnsafePointer[UInt8, mut=False, origin=_]
-    ) -> RangeID:
+    fn __call__(self, val: UnsafePointer[UInt8, ImmutAnyOrigin]) -> RangeID:
         constrained[has_amd_gpu_accelerator()]()
-        return self._fn[_roctxRangeStartA.fn_type](val)
+        return self._fn[_RoctxRangeStartAFnType](val)
 
 
 struct _RangeEnd:
-    var _fn: fn (RangeID) -> NoneType
+    var _fn: _NvtxRangeEndFnType
 
     fn __init__(out self) raises:
         @parameter
@@ -383,7 +406,7 @@ struct _RangeEnd:
 
 
 struct _RangePush:
-    var _fn: Variant[_nvtxRangePushEx.fn_type, _roctxRangePushA.fn_type]
+    var _fn: Variant[_NvtxRangePushExFnType, _RoctxRangePushAFnType]
 
     fn __init__(out self) raises:
         @parameter
@@ -393,18 +416,18 @@ struct _RangePush:
             self._fn = _roctxRangePushA.load()
 
     fn __call__(
-        self, val: UnsafePointer[_C_EventAttributes, mut=False, origin=_]
+        self, val: UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]
     ) -> Int32:
         constrained[has_nvidia_gpu_accelerator()]()
-        return self._fn[_nvtxRangePushEx.fn_type](val.as_any_origin())
+        return self._fn[_NvtxRangePushExFnType](val)
 
-    fn __call__(self, val: UnsafePointer[UInt8, mut=False, origin=_]) -> Int32:
+    fn __call__(self, val: UnsafePointer[UInt8, ImmutAnyOrigin]) -> Int32:
         constrained[has_amd_gpu_accelerator()]()
-        return self._fn[_roctxRangePushA.fn_type](val.as_any_origin())
+        return self._fn[_RoctxRangePushAFnType](val)
 
 
 struct _RangePop:
-    var _fn: _nvtxRangePop.fn_type
+    var _fn: _NvtxRangePopFnType
 
     fn __init__(out self) raises:
         @parameter
@@ -456,9 +479,9 @@ fn _start_range(
         var info = EventAttributes(
             message=message, color=color, category=category
         )
-        return _RangeStart()(UnsafePointer(to=info._value))
+        return _RangeStart()(UnsafePointer(to=info._value).as_any_origin())
     else:
-        return _RangeStart()(message.unsafe_ptr())
+        return _RangeStart()(message.unsafe_ptr().as_any_origin())
 
 
 @always_inline
@@ -485,9 +508,9 @@ fn _mark(
         var info = EventAttributes(
             message=message, color=color, category=category
         )
-        _Mark()(UnsafePointer(to=info._value))
+        _Mark()(UnsafePointer(to=info._value).as_any_origin())
     else:
-        _Mark()(message.unsafe_ptr())
+        _Mark()(message.unsafe_ptr().as_any_origin())
 
 
 struct Range:
@@ -516,7 +539,9 @@ struct Range:
     fn __enter__(mut self):
         @parameter
         if has_nvidia_gpu_accelerator():
-            self._id = self._start_fn(UnsafePointer(to=self._info._value))
+            self._id = self._start_fn(
+                UnsafePointer(to=self._info._value).as_any_origin()
+            )
         else:
             self._id = self._start_fn(self._info._value.message)
 
@@ -563,7 +588,9 @@ struct RangeStack:
     fn __enter__(mut self):
         @parameter
         if has_nvidia_gpu_accelerator():
-            _ = self._push_fn(UnsafePointer(to=self._info._value))
+            _ = self._push_fn(
+                UnsafePointer(to=self._info._value).as_any_origin()
+            )
         else:
             _ = self._push_fn(self._info._value.message)
 
