@@ -152,12 +152,7 @@ def test_linear(
     device_refs = [DeviceRef(device.label, device.id) for device in devices]
     signals = Signals(device_refs)
 
-    signal_buffers = signals.buffers()
-    # Synchronize devices before execution
-    for dev in devices:
-        dev.synchronize()
-
-    distributed_outputs = compiled_distributed_linear(input, *signal_buffers)
+    distributed_outputs = compiled_distributed_linear(input, *signals.buffers())
 
     for n, output in enumerate(distributed_outputs):
         assert isinstance(output, Tensor)
