@@ -45,9 +45,9 @@ def test_remove():
     )
 
     # trying to delete non existing file
-    with assert_raises(contains="Can not remove file: "):
+    with assert_raises(contains="No such file or directory: "):
         remove(my_file_name)
-    with assert_raises(contains="Can not remove file: "):
+    with assert_raises(contains="No such file or directory: "):
         remove(my_file_path)
 
     create_file_and_test_delete_path[remove, "remove"](my_file_name)

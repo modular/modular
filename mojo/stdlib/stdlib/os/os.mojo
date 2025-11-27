@@ -25,6 +25,7 @@ from collections.string.string_slice import _unsafe_strlen
 from io import FileDescriptor
 from sys import CompilationTarget, external_call, is_gpu
 from sys.ffi import c_char, c_int
+from sys._libc_errno import get_errno
 
 from .path import isdir, split
 from .pathlike import PathLike
@@ -287,11 +288,8 @@ fn remove[PathLike: os.PathLike](path: PathLike) raises:
     )
 
     if error != 0:
-        # TODO get error message, the following code prints it
-        # var error_str = String("Something went wrong")
-        # _ = external_call["perror", OpaquePointer](error_str.unsafe_ptr())
-        # _ = error_str
-        raise Error("Can not remove file: ", fspath)
+        var error_string = get_errno()
+        raise Error(error_string, ": ", fspath)
 
 
 fn unlink[PathLike: os.PathLike](path: PathLike) raises:
