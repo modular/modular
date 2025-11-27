@@ -544,3 +544,26 @@ fn pop_unresolved_simd_reduce_or[
     dt: DType, n: Int
 ](x: SIMD[dt, n]) -> SIMD[dt, 1]._mlir_type:
     return __mlir_op.`pop.simd.reduce_or`(x._mlir_value)
+
+
+##===----------------------------------------------------------------------===##
+# Fold pop.simd_reduce_and
+##===----------------------------------------------------------------------===##
+
+
+@always_inline("builtin")
+fn pop_simd_reduce_and(
+    x: __mlir_type.`!pop.simd<4, ui8>`,
+) -> __mlir_type.`!pop.scalar<ui8>`:
+    return __mlir_op.`pop.simd.reduce_and`(x)
+
+
+# CHECK-LABEL: lit.fn @"fold_pop_simd_reduce_and
+fn fold_pop_simd_reduce_and() -> POPUInt8T[POP_UI8_77]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPUInt8T <:scalar<ui8> sugar_builtin(apply(:!lit.generator<("x": !pop.simd<4, ui8>) -> !pop.scalar<ui8>> @builtin_function_folder_pop_ops::@"pop_simd_reduce_and(__mlir_type.!pop.simd<4, ui8>)", <79, 93, 207, 221>), 77)>>, mut *"a`1">
+    var a = POPUInt8T[
+        pop_simd_reduce_and(
+            __mlir_attr.`#pop.simd<79, 93, 207, 221> : !pop.simd<4, ui8>`
+        )
+    ]()
+    return a

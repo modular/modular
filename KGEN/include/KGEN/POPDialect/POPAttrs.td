@@ -805,12 +805,13 @@ def POP_SIMDCmpAttr : POP_ExprAttr<"SIMDCmp", "simd_cmp"> {
   ];
 }
 
-def POP_SIMDReduceOrAttr : POP_ExprAttr<"SIMDReduceOr", "simd_reduce_or"> {
-  let summary = "SIMD OR reduction.";
-  let description = [{
-    The `#pop.simd_reduce_or` attribute performs a bitwise 'or' reduction over
-    a SIMD vector.
-  }];
+class POP_SIMDReduceAttr<string name>
+      : POP_ExprAttr<"SIMDReduce" # name, "simd_reduce_" # !tolower(name)> {
+  let summary = "SIMD '" # name # "' reduction.";
+  let description = !strconcat(
+    "The `#pop.simd_reduce_" , !tolower(name), "` attribute performs a ",
+    "bitwise '", name, "' reduction over a SIMD vector."
+  );
 
   let parameters = (ins "TypedAttr":$vector,
                         AttributeSelfTypeParameter<"", "SIMDType">:$type);
@@ -821,12 +822,15 @@ def POP_SIMDReduceOrAttr : POP_ExprAttr<"SIMDReduceOr", "simd_reduce_or"> {
   let skipDefaultBuilders = 1;
   let builders = [
     // Override the default builder used by the generated parser because this
-    // may not return a SIMDReduceOrAttr.
+    // may not return an identically-typed attribute.
     AttrBuilder<(ins "TypedAttr":$vector, "SIMDType":$type), "", "TypedAttr">,
 
     AttrBuilderWithInferredContext<(ins "TypedAttr":$vector, "SIMDType":$type),
     [{ return get(vector.getContext(), vector, type); }], "TypedAttr">
   ];
 }
+
+def POP_SIMDReduceOrAttr : POP_SIMDReduceAttr<"Or">;
+def POP_SIMDReduceAndAttr : POP_SIMDReduceAttr<"And">;
 
 #endif // KGEN_POPDIALECT_POPATTRS_TD

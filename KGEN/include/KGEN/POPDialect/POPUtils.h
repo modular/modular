@@ -44,6 +44,9 @@ OpFoldResult foldSIMDSplat(Value scalarVal, Attribute scalarAttr,
 /// Fold a SIMD Or-reduction operation.
 OpFoldResult foldSIMDReduceOr(Value vectorVal, Attribute vectorAttr,
                               SIMDType vectorType);
+/// Fold a SIMD And-reduction operation.
+OpFoldResult foldSIMDReduceAnd(Value vectorVal, Attribute vectorAttr,
+                               SIMDType vectorType);
 
 //===----------------------------------------------------------------------===//
 // SIMD Folder Helpers

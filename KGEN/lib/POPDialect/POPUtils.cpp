@@ -373,3 +373,22 @@ OpFoldResult POP::foldSIMDReduceOr(Value vectorVal, Attribute vectorAttr,
       vectorAttr, [](APSInt lhs, APSInt rhs) { return lhs | rhs; },
       [](bool lhs, bool rhs) { return lhs | rhs; });
 }
+
+/// Fold a SIMD And-reduction operation.
+OpFoldResult POP::foldSIMDReduceAnd(Value vectorVal, Attribute vectorAttr,
+                                    SIMDType vectorType) {
+  std::optional<int64_t> size = vectorType.getResolvedSize();
+  // If the vector only has one element, it's already reduced.
+  if (size == 1) {
+    if (vectorAttr)
+      return vectorAttr;
+    return vectorVal;
+  }
+
+  if (auto dtype = vectorType.getResolvedDType(); !dtype || !dtype->isIntLike())
+    return {};
+
+  return foldBitwiseSIMDReduceOp(
+      vectorAttr, [](APSInt lhs, APSInt rhs) { return lhs & rhs; },
+      [](bool lhs, bool rhs) { return lhs & rhs; });
+}
