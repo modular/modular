@@ -3495,7 +3495,7 @@ UnaryOpNode::emitLValueIfImplicitlyTyped(IREmitter &emitter,
     return this;
 
   return emitter.shared.allocPersistent<UnaryOpNode>(
-      kind, opLoc, const_cast<ExprNode *>(newSubExpr));
+      kind, range.getStart(), const_cast<ExprNode *>(newSubExpr));
 }
 
 AnyValue UnaryOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
