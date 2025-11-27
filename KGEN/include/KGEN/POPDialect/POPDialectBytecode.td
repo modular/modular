@@ -154,6 +154,9 @@ def SIMDSplatAttr : DialectAttribute<(attr
 def SIMDReduceOrAttr : DialectAttribute<(attr
   TypedAttr:$vector, ConcreteType<"SIMDType">:$type
 )>;
+def SIMDReduceAndAttr : DialectAttribute<(attr
+  TypedAttr:$vector, ConcreteType<"SIMDType">:$type
+)>;
 
 def POPDialectAttributes : DialectAttributes<"pop"> {
   let elems = [
@@ -186,6 +189,7 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
 
     SIMDCmpAttr,
     SIMDReduceOrAttr,
+    SIMDReduceAndAttr,
   ];
 }
 

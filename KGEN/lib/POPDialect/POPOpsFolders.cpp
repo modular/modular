@@ -3397,3 +3397,12 @@ OpFoldResult SIMDReduceOrOp::fold(FoldAdaptor adaptor) {
   return POP::foldSIMDReduceOr(getVector(), adaptor.getVector(),
                                getVector().getType());
 }
+
+//===----------------------------------------------------------------------===//
+// SIMDReduceAndOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult SIMDReduceAndOp::fold(FoldAdaptor adaptor) {
+  return POP::foldSIMDReduceAnd(getVector(), adaptor.getVector(),
+                                getVector().getType());
+}

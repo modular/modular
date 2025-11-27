@@ -250,3 +250,25 @@ kgen.generator export @use_it_simd_invalid_reduce_or() {
 }
 
 }
+
+// -----
+
+module attributes {M.target = #M.target<triple="", arch="", features="", data_layout="p:64:64", simd_bit_width=128>} {
+
+// expected-note @below {{failed to interpret function @invalid_simd_reduce_and}}
+kgen.generator @invalid_simd_reduce_and() -> !pop.scalar<f32> {
+  %0 = kgen.param.constant: simd<4, f32> = <<"1.0", "0.0", "1.5", "2.0">>
+// expected-note @below {{failed to fold operation pop.simd.reduce_and}}
+  %1 = pop.simd.reduce_and %0 : !pop.simd<4, f32>
+  kgen.return %1 : !pop.scalar<f32>
+}
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator export @use_it_simd_invalid_reduce_and() {
+  // CHECK-PARAM: failed to compile-time evaluate function call
+  // expected-note @below {{failed to compile-time evaluate function call}}
+  kgen.param.constant = <apply(:() -> index @invalid_simd_reduce_and)>
+  kgen.return
+}
+
+}

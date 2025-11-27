@@ -984,11 +984,34 @@ kgen.func @simd_reduce_or_1elt_si32(%arg0: !pop.simd<1, si32>) -> !pop.scalar<si
   kgen.return %0 : !pop.scalar<si32>
 }
 
-// CHECK-LABEL: simd_reduce_or_bool
+// CHECK-LABEL: @simd_reduce_or_bool
 kgen.func @simd_reduce_or_bool(%arg0: !pop.simd<4, bool>) -> !pop.scalar<bool> {
   // CHECK-DAG: [[ARG0:%.*]] = builtin.unrealized_conversion_cast %arg0
   // CHECK: "llvm.intr.vector.reduce.or"([[ARG0]])
   %0 = pop.simd.reduce_or %arg0 : !pop.simd<4, bool>
+  kgen.return %0 : !pop.scalar<bool>
+}
+
+// CHECK-LABEL: @simd_reduce_and_si32
+kgen.func @simd_reduce_and_si32(%arg0: !pop.simd<4, si32>) -> !pop.scalar<si32> {
+  // CHECK-DAG: [[ARG0:%.*]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK: "llvm.intr.vector.reduce.and"([[ARG0]])
+  %0 = pop.simd.reduce_and %arg0 : !pop.simd<4, si32>
+  kgen.return %0 : !pop.scalar<si32>
+}
+
+// CHECK-LABEL: @simd_reduce_and_1elt_si32
+kgen.func @simd_reduce_and_1elt_si32(%arg0: !pop.simd<1, si32>) -> !pop.scalar<si32> {
+  // CHECK: kgen.return %arg0
+  %0 = pop.simd.reduce_and %arg0 : !pop.simd<1, si32>
+  kgen.return %0 : !pop.scalar<si32>
+}
+
+// CHECK-LABEL: @simd_reduce_and_bool
+kgen.func @simd_reduce_and_bool(%arg0: !pop.simd<4, bool>) -> !pop.scalar<bool> {
+  // CHECK-DAG: [[ARG0:%.*]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK: "llvm.intr.vector.reduce.and"([[ARG0]])
+  %0 = pop.simd.reduce_and %arg0 : !pop.simd<4, bool>
   kgen.return %0 : !pop.scalar<bool>
 }
 }

@@ -335,3 +335,11 @@ kgen.func @invalid_simd_reduce_or(%arg0: i32) {
   %0 = pop.simd.reduce_or %arg0 : i32
   kgen.return
 }
+
+// -----
+
+kgen.func @invalid_simd_reduce_and(%arg0: i32) {
+  // expected-error @below {{custom op 'pop.simd.reduce_and' 'vector' must be parameterized SIMD vector type, but got 'i32'}}
+  %0 = pop.simd.reduce_and %arg0 : i32
+  kgen.return
+}
