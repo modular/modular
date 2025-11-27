@@ -114,7 +114,7 @@ def create_mock_request(
         tokens=tokens,
     )
     assert context.active_idx == seq_len
-    context.bump_token_indices(start_idx=start_idx)
+    context.skip_processing(start_idx)
     if is_tg:
         context.update(ARBITRARY_TOKEN_ID)
     return context
