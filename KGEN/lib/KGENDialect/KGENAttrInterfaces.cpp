@@ -110,6 +110,10 @@ bool ParameterAttr::compare(Attribute lhs, Attribute rhs) {
   if (lhs == rhs)
     return false;
 
+  // Look through sugar - it shouldn't affect ordering.
+  lhs = SugarAttr::strip(lhs);
+  rhs = SugarAttr::strip(rhs);
+
   // All non-constant expressions are "less than" a constant, since they appear
   // on the right. We handle all simple constants consistently here: they can
   // never occur in the same expression since they have different types.

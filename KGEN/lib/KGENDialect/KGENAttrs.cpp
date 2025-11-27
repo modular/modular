@@ -68,10 +68,11 @@ void KGENDialect::registerAttributes() {
 //===----------------------------------------------------------------------===//
 
 static TypedAttr getTypeRefForTypeValueIfResolved(TypedAttr typeRef) {
-  if (sugarIsa<TypeGeneratorRefAttr, TypeInstanceRefAttr>(typeRef))
-    return SugarAttr::strip(typeRef);
+  typeRef = SugarAttr::strip(typeRef);
+  if (isa<TypeGeneratorRefAttr, TypeInstanceRefAttr>(typeRef))
+    return typeRef;
 
-  auto typeParam = sugarDynCast<TypeParamAttr>(typeRef);
+  auto typeParam = dyn_cast<TypeParamAttr>(typeRef);
   if (!typeParam)
     return {};
 
@@ -79,11 +80,10 @@ static TypedAttr getTypeRefForTypeValueIfResolved(TypedAttr typeRef) {
   if (!typeValueType)
     return {};
 
-  typeRef = typeValueType.getTypeValue();
-  if (!sugarIsa<TypeGeneratorRefAttr, TypeInstanceRefAttr>(typeRef))
-    return {};
-
-  return typeRef;
+  typeRef = SugarAttr::strip(typeValueType.getTypeValue());
+  if (isa<TypeGeneratorRefAttr, TypeInstanceRefAttr>(typeRef))
+    return typeRef;
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
@@ -2221,7 +2221,7 @@ struct DecomposedAddend {
 /// Analyze an operand to an add.  If it is a multiplication by a constant (e.g.
 /// `(a*b*42)` then split it into the non-constant and the constant portions
 /// (e.g. `a*b` and `42`).  Otherwise return the operand as the first value and
-/// null as the second (standin for "multiplication by 1").
+/// null as the second (stand-in for "multiplication by 1").
 static DecomposedAddend decomposeAddend(TypedAttr operand) {
   auto mul = sugarDynCast<ParamOperatorAttr>(operand);
   if (mul && llvm::is_contained({POC::MulNoWrap, POC::Mul}, mul.getOpcode())) {
@@ -2496,6 +2496,10 @@ static SymbolRefAttr getOptionalTypeSymbolRef(Type type) {
 /// attributes to do the job for us.  Both operands may be null, and this
 /// returns null if no folding is possible.
 static IntegerAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
+  // This depends on pointer comparison, so sure to strip all sugar.
+  lhs = getCanonicalAttr(lhs);
+  rhs = getCanonicalAttr(rhs);
+
   // foldCompareOp handles 32-bit truncation of input values correctly.
   if (lhs.getType().isIndex() && isa<IntegerAttr>(lhs) && isa<IntegerAttr>(rhs))
     return foldCompareOp(lhs, rhs, [](auto a, auto b) { return a == b; });
@@ -2535,7 +2539,7 @@ static IntegerAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
         // struct.
         if (lhsStructRef && rhsSimpleConstant)
           return BoolAttr::get(rhs.getContext(), false);
-        else if (rhsStructRef && lhsSimpleConstant)
+        if (rhsStructRef && lhsSimpleConstant)
           return BoolAttr::get(rhs.getContext(), false);
       }
     }
@@ -3265,7 +3269,7 @@ static TypedAttr simplifyPtrBitcast(ArrayRef<TypedAttr> operands,
                                     Type resultType) {
   if (operands.front().getType() == resultType)
     return operands.front();
-  if (auto ptr = dyn_cast<PointerAttr>(operands.front()))
+  if (auto ptr = sugarDynCast<PointerAttr>(operands.front()))
     return PointerAttr::get(ptr.getAddr(), resultType);
   return {};
 }
@@ -4042,6 +4046,12 @@ Type SugarAttr::strip(Type type, bool keepApplies) {
       return strip(type);
     }
   return type;
+}
+
+Attribute SugarAttr::strip(Attribute value, bool keepApplies) {
+  if (auto typedAttr = dyn_cast<TypedAttr>(value))
+    return SugarAttr::strip(typedAttr, keepApplies);
+  return value;
 }
 
 /// Return true if the specified value has top level SugarAttr.  Nested
