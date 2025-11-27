@@ -415,7 +415,8 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
 
   // Sugar attr is turned into canonical form.
   replacer.addInferredDomainNonRecursiveReplacement([&](SugarAttr sugar) {
-    return replacer.replaceParameter(sugar.getCanonical());
+    llvm_unreachable("sugar should be replaced by now");
+    return Attribute();
   });
 
   // Since lowerings have been generated for all struct types, we just need to

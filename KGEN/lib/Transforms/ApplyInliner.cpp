@@ -155,6 +155,9 @@ void ApplyInlinerPass::runOnOperation() {
   mlir::LockedSymbolTableCollection symtabs(symTabAnalysis.getSymbolTables());
   KGEN::SymTabEvaluationContext context(getOperation(), symtabs);
   mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](SugarAttr sugar) -> TypedAttr {
+    llvm_unreachable("sugar should be replaced by now");
+  });
   replacer.addReplacement([&funcTraits,
                            &context](ParamOperatorAttr apply) -> TypedAttr {
     if (apply.getOpcode() != POC::Apply &&

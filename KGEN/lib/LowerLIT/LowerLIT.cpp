@@ -115,7 +115,7 @@ private:
 } // namespace
 
 bool SingletonTypeHelper::isSingletonType(Type type) {
-  if (isa<OriginType, OriginSetType>(type))
+  if (sugarIsa<OriginType, OriginSetType>(type))
     return true;
 
   if (auto structType = dyn_cast<LIT::StructType>(type)) {
@@ -126,17 +126,22 @@ bool SingletonTypeHelper::isSingletonType(Type type) {
 }
 
 TypedAttr SingletonTypeHelper::getSingletonValue(Type type) {
-  if (auto origin = dyn_cast<OriginType>(type))
-    return AnyOriginAttr::get(origin);
-  if (auto set = dyn_cast<OriginSetType>(type))
-    return OriginSetAttr::get(/*operands=*/{}, set);
+  TypedAttr result;
+  if (auto origin = sugarDynCast<OriginType>(type))
+    result = AnyOriginAttr::get(origin);
+  else if (auto set = dyn_cast<OriginSetType>(type))
+    result = OriginSetAttr::get(/*operands=*/{}, set);
 
-  if (auto structType = dyn_cast<LIT::StructType>(type)) {
+  else if (auto structType = dyn_cast<LIT::StructType>(type)) {
     auto it = lookupStructSingletonFields(structType.getSymbol());
     if (it == alwaysSingletonStructs.end())
       return {};
-    return LITStructAttr::get(it->second, structType);
+    result = LITStructAttr::get(it->second, structType);
   }
+
+  if (result)
+    return ParamOperatorAttr::getRebind(result, type);
+
   return {};
 }
 
@@ -1013,6 +1018,10 @@ static void lowerAttributesAndTypes(
   replacer.addReplacement([&](GeneratorAttr gen) {
     return replaceGeneratorAttrType(singletonTypeHelper, replacer, gen);
   });
+
+  // Sugar attr is turned into canonical form.
+  replacer.addReplacement(
+      [&](SugarAttr sugar) { return replacer.replace(sugar.getCanonical()); });
 
   auto *debugInfoDialect =
       op->getContext()->getLoadedDialect<DebugInfo::DebugInfoDialect>();
