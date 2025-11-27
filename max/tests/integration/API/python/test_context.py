@@ -261,23 +261,22 @@ def test_context__bump_token_indices() -> None:
 
     # Can't trim more tokens than the context has.
     with pytest.raises(ValueError):
-        context.bump_token_indices(start_idx=999)
+        context.skip_processing(n=999)
 
     # Trimming 0 tokens does nothing.
-    context.bump_token_indices(start_idx=0)
     assert (context.next_tokens == np.array([0, 1, 2, 3])).all()
     assert context.active_length == 4
     assert context.current_length == 4
 
     # Trimming 2 tokens should remove the first 2 tokens of prompt.
-    context.bump_token_indices(start_idx=2)
+    context.skip_processing(n=2)
     assert (context.next_tokens == np.array([2, 3])).all()
     assert context.active_length == 2
     assert context.current_length == 4  # does not change
 
     # Can't trim prompt to 0 tokens.
     with pytest.raises(ValueError):
-        context.bump_token_indices(start_idx=2)
+        context.skip_processing(n=2)
 
 
 def test_context__update_beyond_chunk_size() -> None:
