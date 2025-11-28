@@ -6,4 +6,4 @@ performance-optimized MAX graphs such as those in the
 [`pipelines/architectures/`](../pipelines/architectures/) directory.
 
 If you're looking for the low-level compute kernels that correspond to these
-Python APIs, see the [`max/kernels/`](../kernels) directory.
+Python APIs, see the [`max/kernels/`](/max/kernels) directory.
