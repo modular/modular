@@ -1120,3 +1120,23 @@ struct MyStruct[p: Int, m1: MyParam[_], m2: MyParam[_]]:
 # https://github.com/modular/modular/issues/5479
 fn __del__(): # expected-error {{'__del__' must be a method, not a global function}}
   pass
+
+# expected-error @below {{thrown type specifier should be surrounded by parentheses}}
+fn bad_raises_fn1() raises Error:
+  pass
+
+fn raises_int() raises (Int):
+  raise 1
+
+  # expected-error @+1 {{cannot implicitly convert 'FloatLiteral[4]' value to 'Int'}}
+  raise 4.0
+
+  # expected-error @+1 {{cannot implicitly convert 'Error' value to 'Int'}}
+  raise Error()
+
+fn bad_raises_fn2() raises:
+  # expected-error @+1 {{cannot call function that may raise 'Int' in context that supports an error type of 'Error'}}
+  raises_int()
+
+  # expected-error @+1 {{cannot implicitly convert 'FloatLiteral[4]' value to 'Error'}}
+  raise 4.0

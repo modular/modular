@@ -616,6 +616,20 @@ struct RaisingGetterSetter:
 fn test_raising_computed_getter() raises:
     var a = RaisingGetterSetter()[2]
 
+# CHECK-LABEL: lit.fn @"test_typed_raises_fn
+# CHECK-SAME: %__error__: !lit.ref<!Int, mut *"__error__`"> byref_error
+# CHECK-SAME: ) throws -> i1
+fn test_typed_raises_fn() raises (Int) -> String:
+    pass
+
+# CHECK-LABEL: lit.fn @"call_test_typed_raises_fn
+fn call_test_typed_raises_fn() raises (Int):
+    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
+    # CHECK-NEXT: lit.call @decls::@"test_typed_raises_fn{{.*}}(%__error__, %__call_result_tmp__)
+    test_typed_raises_fn()
+
+
+
 ##===----------------------------------------------------------------------===##
 # Constraint Overloading
 ##===----------------------------------------------------------------------===##

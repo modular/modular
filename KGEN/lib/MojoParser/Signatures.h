@@ -211,6 +211,8 @@ public:
   /// The result specifier if present.
   ParsedArgument resultArg;
   FnEffects effects;
+  ExprNode *thrownTypeExpr = nullptr;
+
   /// Trailing function level constraints specified with 'where' clauses.
   SmallVector<ParsedConstraint> fnConstraints;
 

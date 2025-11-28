@@ -1153,11 +1153,17 @@ ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p, ArgListKind kind,
       return failure();
   }
 
+  auto isEffectKeywordOrWhere = [&](StringRef spelling) {
+    return spelling == "raises" || spelling == "capturing" ||
+           spelling == "escaping" || spelling == "unified" ||
+           spelling == "register_passable" || spelling == "where";
+  };
+
   // If the client supports function effects, parse them as well.
   // Parse other function effects.
   while (p.getToken().isIdentifier()) {
     SMLoc loc = p.getToken().getLoc();
-    StringRef spelling = p.getToken().getSpelling();
+    StringRef spelling = p.getTokenSpelling();
 
     auto handleEffect = [&](auto hasFn, auto setFn) {
       if ((effects.*hasFn)())
@@ -1166,21 +1172,7 @@ ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p, ArgListKind kind,
       (effects.*setFn)(true);
     };
 
-    if (spelling == "raises") {
-      handleEffect(&FnEffects::isThrows, &FnEffects::setThrows);
-    } else if (spelling == "capturing") {
-      handleEffect(&FnEffects::isCapturing, &FnEffects::setCapturing);
-    } else if (spelling == "escaping") {
-      handleEffect(&FnEffects::isEscaping, &FnEffects::setEscaping);
-    } else if (spelling == "unified") {
-      handleEffect(&FnEffects::isUnified, &FnEffects::setUnified);
-    } else if (spelling == "register_passable") {
-      handleEffect(&FnEffects::isRegisterPassable,
-                   &FnEffects::setRegisterPassable);
-    } else if (spelling == "where") {
-      // `where` clauses signal the end of the effects list.
-      break;
-    } else {
+    if (!isEffectKeywordOrWhere(spelling)) {
       // If this isn't a known effect, then it could be an error like a missing
       // colon at the end of a function declaration.  If so, emit a nice error
       // and recover cleanly.
@@ -1194,6 +1186,37 @@ ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p, ArgListKind kind,
       // Otherwise maybe it was misspelled, just eat it.
       p.emitError(loc, "unknown function effect '")
           << spelling << "', expected 'raises', 'capturing', or 'escaping'";
+    } else if (spelling == "raises") {
+      handleEffect(&FnEffects::isThrows, &FnEffects::setThrows);
+      p.consumeIdentifier();
+
+      // Parse a thrown type if specified.
+      if (p.consumeIf(Token::l_paren)) {
+        if (p.parseExpression(thrownTypeExpr) ||
+            p.parseToken(Token::r_paren, "expected ')' in thrown type"))
+          continue;
+      } else if (p.getToken().isIdentifier() &&
+                 !isEffectKeywordOrWhere(p.getTokenSpelling()) &&
+                 !p.getToken().isStartOfLine()) {
+        p.emitError(
+            p.getToken().getLoc(),
+            "thrown type specifier should be surrounded by parentheses");
+        return failure();
+      }
+      continue;
+
+    } else if (spelling == "capturing") {
+      handleEffect(&FnEffects::isCapturing, &FnEffects::setCapturing);
+    } else if (spelling == "escaping") {
+      handleEffect(&FnEffects::isEscaping, &FnEffects::setEscaping);
+    } else if (spelling == "unified") {
+      handleEffect(&FnEffects::isUnified, &FnEffects::setUnified);
+    } else if (spelling == "register_passable") {
+      handleEffect(&FnEffects::isRegisterPassable,
+                   &FnEffects::setRegisterPassable);
+    } else {
+      assert(spelling == "where" && "isEffectKeywordOrWhere unknown keyword");
+      break;
     }
 
     p.consumeIdentifier();
@@ -1877,8 +1900,14 @@ static void typeCheckResult(ParsedArgument resultArg,
   // If this function throws, add a result slot for the error that may be
   // raised.
   if (tcSignature.argList.effects.isThrows()) {
-    ASTType errorType = shared.getBuiltinErrorType(
-        tcSignature.paramList.declScope, resultArg.loc);
+    ASTType errorType;
+    if (tcSignature.argList.thrownTypeExpr) {
+      IREmitter typeEmitter(declScope, EC_Type);
+      errorType = typeEmitter.emitExprType(tcSignature.argList.thrownTypeExpr);
+    }
+    if (!errorType)
+      errorType = shared.getBuiltinErrorType(tcSignature.paramList.declScope,
+                                             resultArg.loc);
 
     // Synthesize a ByRefError argument for the error.
     ParsedArgument errArg;
@@ -1887,7 +1916,7 @@ static void typeCheckResult(ParsedArgument resultArg,
     errArg.convention = ParsedArgument::kConventionByRefResult;
     errArg.kgenConvention = ArgConvention::ByRefError;
     errArg.kwArgHandling = KWArgHandling::kKeywordOnly;
-    errArg.typeExpr = nullptr;
+    errArg.typeExpr = tcSignature.argList.thrownTypeExpr;
     tcSignature.argList.parsedArgs.push_back(errArg);
     tcSignature.argTypes.push_back(errorType);
 
