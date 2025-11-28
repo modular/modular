@@ -240,17 +240,16 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet]:
         # Black magic! Internal implementation detail!
         # Don't you dare copy this code! 😤
         var handle = self^._take_handle()
+        var error: Error
         if __mlir_op.`co.await`[_type = __mlir_type.i1](
             handle,
             __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(result)),
-            __mlir_op.`lit.ref.to_pointer`(
-                __get_mvalue_as_litref(__get_nearest_error_slot())
-            ),
+            __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(error)),
         ):
             __mlir_op.`lit.ownership.mark_initialized`(
-                __get_mvalue_as_litref(__get_nearest_error_slot())
+                __get_mvalue_as_litref(error)
             )
-            __mlir_op.`lit.raise`()
+            raise error^
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(result)
         )
