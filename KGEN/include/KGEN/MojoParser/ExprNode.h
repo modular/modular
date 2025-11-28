@@ -81,7 +81,6 @@ public:
     kGetLitRefAsMValue,        // __get_litref_as_mvalue(x)
     kGetAddressAsUninitLValue, // __get_address_as_uninit_lvalue(x)
     kGetAddressAsOwned,        // __get_address_as_owned_value(x)
-    kGetNearestErrorSlot,      // __get_nearest_error_slot()
     kOriginOf,                 // origin_of(x)
     kTypeOf,                   // type_of(x)
     kConformsTo,               // conforms_to(T, Trait)

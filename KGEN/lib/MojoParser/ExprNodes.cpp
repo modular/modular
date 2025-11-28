@@ -4050,24 +4050,6 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   if (kind == kOriginOf)
     return emitOriginOf(dest, emitter);
 
-  // __get_nearest_error_slot returns an MLValue.
-  if (kind == kGetNearestErrorSlot) {
-    if (!subExprs.empty()) {
-      emitter.emitError(getLoc())
-          << "unexpected argument in call to '__get_nearest_error_slot'"
-          << getRange();
-      return {};
-    }
-    MLValue err = emitter.findNearestErrorSlot();
-    if (!err) {
-      emitter.emitError(getLoc())
-          << "cannot use '__get_nearest_error_slot' in non-raising context"
-          << getRange();
-      return {};
-    }
-    return emitter.emitResult(err, this, dest);
-  }
-
   if (kind == kFunctionsInModule) {
     if (subExprs.size() != 0) {
       emitter.emitError(getLoc(), "expected no arguments") << getRange();

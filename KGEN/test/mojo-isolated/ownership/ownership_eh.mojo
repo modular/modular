@@ -420,14 +420,6 @@ struct ThrowingSelfInit:
         self = ThrowingSelfInit()
 
 
-# CHECK-LABEL: lit.fn @"emplace_error
-fn emplace_error() raises:
-    # CHECK: lit.call {{.*}}Error::@"__init__{{.*}}(%__error__)
-    # CHECK: lit.error_return
-    __get_nearest_error_slot() = Error()
-    __mlir_op.`lit.raise`()
-
-
 struct InitFieldsDestroyedInThrowingConstructor:
     var x: MemExample
 
