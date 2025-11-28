@@ -504,7 +504,6 @@ struct TestSuite(Movable):
         if num_args == 2:
             raise Error("expected test name(s) after '--only' or '--skip'")
 
-        # TODO: would be better if this was StaticString
         var discovered_tests = Set[String]()
         for test in self.tests:
             discovered_tests.add(test.name)
