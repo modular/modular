@@ -213,3 +213,17 @@ multirun(
     jobs = 0,
     visibility = ["//visibility:public"],
 )
+
+sh_binary(
+    name = "format",
+    srcs = ["format-wrapper.sh"],
+    data = ["//bazel/lint:fix"],
+    visibility = ["//visibility:public"],
+)
+
+sh_binary(
+    name = "format-fast",
+    srcs = ["format-fast-wrapper.sh"],
+    data = ["//bazel/lint:fix-fast"],
+    visibility = ["//visibility:public"],
+)
