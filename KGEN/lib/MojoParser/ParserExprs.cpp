@@ -401,7 +401,6 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw___get_litref_as_mvalue:
   case Token::kw___get_address_as_owned_value:
   case Token::kw___get_address_as_uninit_lvalue:
-  case Token::kw___get_nearest_error_slot:
   case Token::kw_conforms_to:
   case Token::kw_origin_of:
   case Token::kw_type_of:
@@ -564,7 +563,6 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   case Token::kw___get_litref_as_mvalue:
   case Token::kw___get_address_as_owned_value:
   case Token::kw___get_address_as_uninit_lvalue:
-  case Token::kw___get_nearest_error_slot:
   case Token::kw_origin_of:
   case Token::kw_type_of:
   case Token::kw_conforms_to:
@@ -1193,9 +1191,6 @@ ParseResult ExprParser::parseMagicFunction(ExprNode *&result) {
     break;
   case Token::kw___get_address_as_owned_value:
     nodeKind = ExprNode::kGetAddressAsOwned;
-    break;
-  case Token::kw___get_nearest_error_slot:
-    nodeKind = ExprNode::kGetNearestErrorSlot;
     break;
   case Token::kw_conforms_to:
     nodeKind = ExprNode::kConformsTo;
