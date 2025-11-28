@@ -896,6 +896,20 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       }
       return {};
     }
+    // Make sure the raised error type matches the contextual error type. We
+    // don't support throwing an Int in a context that catches a Float for
+    // example.
+    // TODO: we can add support for implicit conversions in the future.  We can
+    // make many types implicitly convert to Error by stringizing.  Until then,
+    // people can do this manually by catching and rethrowing.
+    auto errorType = ASTType(cast<RefType>(declaredArgType).getElementType());
+    if (!errorType.isEqualCanon(errSlot.getRValueType())) {
+      emitter.emitError(callExpr->getLoc())
+          << "cannot call function that may raise " << errorType
+          << " in context that supports an error type of "
+          << errSlot.getRValueType() << callExpr->getRange();
+      return {};
+    }
     return errSlot;
   }
 
