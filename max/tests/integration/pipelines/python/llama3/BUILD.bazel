@@ -86,7 +86,6 @@ modular_py_test(
     env_inherit = ["HF_TOKEN"],
     exec_properties = {
         "test.resources:gpu-memory": "20",
-        "test.resources:gpu-1": "1",  # Exclusive access
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],

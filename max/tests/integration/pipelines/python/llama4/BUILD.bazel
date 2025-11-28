@@ -20,7 +20,6 @@ modular_py_test(
     },
     exec_properties = {
         "test.resources:gpu-memory": "23",
-        "test.resources:gpu-1": "1",  # Exclusive access
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
