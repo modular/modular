@@ -21,7 +21,20 @@ what we publish.
 
 ### Language enhancements
 
+- Mojo now allows implicit conversions between function types from a non-raising
+  function to a raising function.  It also allows implicit conversions between
+  function types whose result types are implicitly convertible:
+
+  ```mojo
+  fn takes_raising_float(a: fn () raises -> Float32): ...
+  fn returns_int() -> Int: ...
+  fn example():
+      # This is now ok.
+      takes_raising_float(returns_int)
+  ```
+
 - Mojo now differentiates between `...` and `pass` in trait methods. The use of
+
   `...` continues to denote no default implementation - `pass` now specifies a
   default do-nothing implementation. For example:
 
