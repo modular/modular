@@ -437,7 +437,11 @@ class Module:
         finally:
             self.load_state_dict(parameters)
 
-    def compile(self, *input_types: graph.Type[Any]) -> Callable[..., Any]:
+    def compile(
+        self,
+        *input_types: graph.Type[Any],
+        weights: Mapping[str, DLPackArray] | None = None,
+    ) -> Callable[..., Any]:
         """Compiles the module to an optimized executable through graph tracing.
 
         This method performs symbolic tracing of the module's ``__call__`` method
@@ -492,6 +496,16 @@ class Module:
                 ``__call__``. Must match the number and order of arguments.
                 Each should be a :obj:`max.graph.Type` (typically
                 :obj:`TensorType`) describing the shape and dtype.
+            weights: Mapping of parameter names to weight data. Weights should
+                be on CPU and will be transfered to the target device as part
+                of model initialization. If not passed, the model's parameters
+                will be used as the weights.
+
+                XXX: We could just separate compilation from loading model
+                loading :/
+                Yeah that's definitely the right fix. We can do this temporarily
+                to unblock but absolutely the root cause of this whole problem
+                is the fact that we combine compilation and loading into one step.
 
         Returns:
             Callable[..., Any]
@@ -540,18 +554,21 @@ class Module:
         session = _session()
 
         # Avoid realizing parameters to a device if at all possible.
-        # - Weights are loaded from the host directly and then moved onto the
-        #   device during init
-        # - Holding a reference to the parameter would cause it to be realized
-        #   when passing weights to compilation
-        # - Instead, if a parameter is not real we reset it to _after_ the move
-        #   to CPU
-        weights = {k: t.to(CPU()) for k, t in self.parameters}
-        self.apply_to_parameters(
-            lambda name, data: data
-            if data.real
-            else weights[name].to(data.device)
-        )
+        # Most users should pass CPU weights to this method explicitly.
+        if weights is None:
+            # - Weights are loaded from the host directly and then moved onto the
+            #   device during init
+            # - Holding a reference to the parameter would cause it to be realized
+            #   when passing weights to compilation
+            # - Instead, if a parameter is not real we reset it to _after_ the move
+            #   to CPU
+            weight_tensors = {k: t.to(CPU()) for k, t in self.parameters}
+            self.apply_to_parameters(
+                lambda name, data: data
+                if data.real
+                else weight_tensors[name].to(data.device)
+            )
+            weights = weight_tensors
         compiled = F.functional(session.load(graph, weights_registry=weights))
 
         if unary:

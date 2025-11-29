@@ -306,12 +306,8 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             return_logits=self.return_logits,
         )
         nn_model = GptOss(model_config, self.kv_manager)
-
-        nn_model.load_state_dict(
-            state_dict,
-            strict=True,
-        )
         nn_model.to(self.devices[0])
+
         kv_inputs = self.kv_manager.get_symbolic_inputs()
         flattened_kv_types = [
             kv_type for sublist in kv_inputs for kv_type in sublist
@@ -322,6 +318,7 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             return_n_logits_type,
             input_row_offsets_type,
             *flattened_kv_types,
+            weights=state_dict,
         )
         after = time.perf_counter()
 
