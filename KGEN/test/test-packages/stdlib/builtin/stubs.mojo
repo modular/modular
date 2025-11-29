@@ -1342,6 +1342,7 @@ struct SIMD[dtype: DType, size: Int]:
         comptime res = SIMD[Self.dtype, Self.size](Int())
         self = res
 
+    @implicit
     @always_inline
     fn __init__(out self, value: Int, /):
         var index = __mlir_op.`pop.cast_from_builtin`[

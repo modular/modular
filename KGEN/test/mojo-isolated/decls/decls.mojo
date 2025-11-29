@@ -626,7 +626,33 @@ fn test_typed_raises_fn() raises (Int) -> String:
 fn call_test_typed_raises_fn() raises (Int):
     # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
     # CHECK-NEXT: lit.call @decls::@"test_typed_raises_fn{{.*}}(%__error__, %__call_result_tmp__)
-    test_typed_raises_fn()
+    _ = test_typed_raises_fn()
+
+fn parametric_raise_example[ErrorType: AnyType](fp: fn () raises (ErrorType)) raises (ErrorType):
+    fp()
+
+# Test that parametric types raise the correct concrete error type.
+# CHECK-LABEL: lit.fn @"call_parametric_raise_example
+fn call_parametric_raise_example[GenTy: AnyType](func_ptr: fn () raises (GenTy)):
+    # CHECK:  lit.var.decl "err_int" var : !lit.ref<!Int,
+    fn raise_int() raises (Int): pass
+    try:
+        parametric_raise_example(raise_int)
+    except err_int:
+        ref x: Int = err_int # Test no error.
+
+    # CHECK: lit.var.decl "err_string" var : !lit.ref<!String,
+    fn raise_string() raises (String): pass
+    try:
+      parametric_raise_example(raise_string)
+    except err_string:
+        ref s: String = err_string # Test no error.
+
+    # CHECK: lit.var.decl "err_gen" var : !lit.ref<:!AnyType GenTy,
+    try:
+      parametric_raise_example(func_ptr)
+    except err_gen:
+        ref s: GenTy = err_gen # Test no error.
 
 
 

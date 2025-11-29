@@ -98,29 +98,43 @@ bool checkConventionsConvertible(ArgConvention expectedConv,
 }
 
 // TODO: Return more than a boolean, so we can have better error messages.
-static bool canConvertFunctionTypes(SharedState &shared, FnType actual,
-                                    FnType expected) {
+static bool canConvertFunctionTypes(FnType actual, FnType expected,
+                                    const ExprNode *expr, ASTDecl &declScope) {
   // We should have already checked that the function types are not
   // trivially-convertible between each other.
+  SharedState &shared = declScope.getShared();
+
+  // The function result types must be the same or implicitly convertible.
+  auto actualResultType = actual.getUserResultType();
+  auto expectedResultType = expected.getUserResultType();
+  if (!isEqualCanon(actualResultType, expectedResultType)) {
+    if (!IREmitter::canImplicitlyConvertToType(
+            {UnknownAttr::get(actualResultType), expr}, expectedResultType,
+            declScope))
+      return false;
+  }
+
+  // Get the argument type list, dropping the memory-only result slot.
+  ArrayRef<Type> actualArgTypes =
+      actual.getArguments().drop_back(actual.hasMemoryOnlyResult());
+  ArrayRef<Type> expectedArgTypes =
+      expected.getArguments().drop_back(expected.hasMemoryOnlyResult());
+
+  // We allow implicitly converting a function that doesn't throw to one that
+  // does throw an error.
+  // TODO: Allow implicit conversions between thrown error types.
+  auto actualEffects = actual.getFnEffects();
+  if (!actual.isThrows() && expected.isThrows()) {
+    actualEffects = actualEffects.setThrows(true);
+    assert(expected.getArgConvention(expectedArgTypes.size() - 1) ==
+           ArgConvention::ByRefError);
+    expectedArgTypes = expectedArgTypes.drop_back();
+  }
 
   // If the function effects are different, then the conversion cannot be
   // performed.
-  // TODO: Enable non-raising to raising conversions.
-  if (actual.getFnEffects() != expected.getFnEffects())
+  if (actualEffects != expected.getFnEffects())
     return false;
-
-  // If the functions differ in return type conventions, check if the nominal
-  // types are equal.
-  bool actualMemResult = actual.hasMemoryOnlyResult();
-  bool expectedMemResult = expected.hasMemoryOnlyResult();
-  // TODO: We could allow implicit conversions here.
-  if (!isEqualCanon(actual.getUserResultType(), expected.getUserResultType()))
-    return false;
-
-  ArrayRef<Type> actualArgTypes =
-      actual.getArguments().drop_back(actualMemResult);
-  ArrayRef<Type> expectedArgTypes =
-      expected.getArguments().drop_back(expectedMemResult);
 
   // Functions with an incompatible number of arguments cannot be converted
   // between each other. The number of arguments should be equal (unless the
@@ -231,9 +245,10 @@ static bool canConvertFunctionTypes(SharedState &shared, FnType actual,
   return true;
 }
 
-static bool canConvertGeneratorTypes(ASTDecl &declScope, SMLoc loc,
-                                     CValue value, GeneratorType actual,
-                                     GeneratorType expected) {
+static bool canConvertGeneratorTypes(ASTExprAnd<CValue> valueExpr,
+                                     GeneratorType actual,
+                                     GeneratorType expected,
+                                     ASTDecl &declScope) {
   // Generators with different parameterization cannot be converted between each
   // other. If the types are equal but the passing conventions are different,
   // then the conversion is allowed.
@@ -249,21 +264,21 @@ static bool canConvertGeneratorTypes(ASTDecl &declScope, SMLoc loc,
   // If the body is a function, we apply custom conversion rules.
   if (auto actualFnType = sugarDynCast<FnType>(actual.getBody())) {
     if (auto expectedFnType = sugarDynCast<FnType>(expected.getBody())) {
-      return canConvertFunctionTypes(declScope.getShared(), actualFnType,
-                                     expectedFnType);
+      return canConvertFunctionTypes(actualFnType, expectedFnType,
+                                     valueExpr.expr, declScope);
     }
   }
 
   // Otherwise, the bodies must be convertible. This is possible if we can get
   // the body, meaning the value must be a GeneratorAttr.
   auto genAttr =
-      sugarDynCastIfPresent<GeneratorAttr>(value.getIfPValue().get());
+      sugarDynCastIfPresent<GeneratorAttr>(valueExpr.ir.getIfPValue().get());
   if (!genAttr)
     return false;
 
-  SyntheticNode node(loc);
   return IREmitter::canImplicitlyConvertToType(
-      {genAttr.getBody(), node}, ASTType(expected.getBody()), declScope);
+      {genAttr.getBody(), valueExpr.expr}, ASTType(expected.getBody()),
+      declScope);
 }
 
 static FnType getReducedFnType(FnType sig) {
@@ -1544,9 +1559,8 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   if (auto requiredGenerator = sugarDynCast<GeneratorType>(requiredType)) {
     bool result = false;
     if (auto rvGeneratorType = sugarDynCast<GeneratorType>(rvType))
-      result =
-          canConvertGeneratorTypes(declScope, value.expr->getLoc(), value.ir,
-                                   rvGeneratorType, requiredGenerator);
+      result = canConvertGeneratorTypes(value, rvGeneratorType,
+                                        requiredGenerator, declScope);
     return cacheAndReturnVal(rvType, requiredType, result);
   }
 
@@ -1723,8 +1737,8 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
   // generators).
   if (auto requiredGenerator = sugarDynCast<GeneratorType>(requiredType)) {
     if (auto rvGeneratorType = sugarDynCast<GeneratorType>(rvType))
-      if (canConvertGeneratorTypes(declScope, expr->getLoc(), value,
-                                   rvGeneratorType, requiredGenerator))
+      if (canConvertGeneratorTypes(valueExpr, rvGeneratorType,
+                                   requiredGenerator, declScope))
         return convertGeneratorValue(value, expr, requiredGenerator, *this,
                                      dest);
   }
