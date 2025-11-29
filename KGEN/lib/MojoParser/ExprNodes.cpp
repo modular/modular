@@ -3989,6 +3989,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   argList.parsedArgs = llvm::to_vector(parsedArgs);
   argList.resultArg = resultArg;
   argList.effects = effects;
+  argList.thrownTypeExpr = const_cast<ExprNode *>(thrownTypeExpr);
 
   SpecialFunctionInfo fnInfo; // Not a named function.
   TypeCheckedFnSignature tcSignature(paramList, argList, originExpr,

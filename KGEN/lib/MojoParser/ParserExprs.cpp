@@ -1138,7 +1138,7 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
       baseLoc, copyArrayRef<ParsedArgument>(paramList.params),
       copyArrayRef<ParsedArgument>(fnSignature.parsedArgs),
       copyArrayRef<ParsedArgument>(fnSignature.resultArg)[0],
-      fnSignature.effects, originExpr, endLoc);
+      fnSignature.effects, fnSignature.thrownTypeExpr, originExpr, endLoc);
   return success();
 }
 
