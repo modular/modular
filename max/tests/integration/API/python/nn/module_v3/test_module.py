@@ -8,8 +8,10 @@
 from __future__ import annotations
 
 import re
+import weakref
 
 import pytest
+from max import driver
 from max.driver import CPU, Accelerator, accelerator_count
 from max.experimental import random
 from max.experimental.tensor import Tensor, TensorType, defaults
@@ -271,3 +273,58 @@ def test_compile(test_module: TestModule) -> None:
     result_compiled = compiled(input)
 
     assert all((result_eager == result_compiled)._values())
+
+
+def test_compile_with_weights(test_module: TestModule) -> None:
+    dtype, device = defaults()
+    type = TensorType(dtype, ["batch", "n"], device=device)
+
+    parameters = weakref.WeakValueDictionary(test_module.parameters)
+
+    weights = {
+        name: driver.Tensor.zeros(
+            [int(d) for d in param.shape], param.dtype, param.device
+        )
+        for name, param in test_module.parameters
+    }
+
+    assert not any(param.real for param in parameters.values())
+    assert not any(param.real for _, param in test_module.parameters)
+
+    compiled = test_module.compile(type, weights=weights)
+
+    assert not any(param.real for param in parameters.values())
+    assert not any(param.real for _, param in test_module.parameters)
+
+    input = driver.Tensor.zeros([3, 3], dtype, device)
+    _ = compiled(input)
+
+    assert not any(param.real for param in parameters.values())
+    assert not any(param.real for _, param in test_module.parameters)
+
+
+@pytest.mark.skip("TODO(XFN-32): never realize module weights if not needed")
+def test_compile_with_weights_never_realized(test_module: TestModule) -> None:
+    dtype, device = defaults()
+    type = TensorType(dtype, ["batch", "n"], device=device)
+
+    parameters = weakref.WeakValueDictionary(test_module.parameters)
+
+    weights = {
+        name: Tensor.zeros_like(param.type)
+        for name, param in test_module.parameters
+    }
+
+    assert not any(param.real for param in parameters.values())
+    assert not any(param.real for _, param in test_module.parameters)
+
+    compiled = test_module.compile(type, weights=weights)
+
+    assert not any(param.real for param in parameters.values())
+    assert not any(param.real for _, param in test_module.parameters)
+
+    input = random.uniform([3, 3])
+    _ = compiled(input)
+
+    assert not any(param.real for param in parameters.values())
+    assert not any(param.real for _, param in test_module.parameters)
