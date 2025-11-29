@@ -42,12 +42,14 @@ Operation *LIT::findOpProcessingRaise(Block *currentBlock) {
 
     if (auto tryOp = dyn_cast<TryOp>(parentOp)) {
       Region &tryBody = tryOp.getTryRegion();
+      // Throwing from an else or finally region of a try operation shouldn't
+      // stop at the try.
       if (!tryBody.empty() && &tryBody.front() == currentBlock) {
         // If the except region has an UnreachableOp in it, then this is not
         // allowed to raise.  This must be for a 'with' or something else that
         // needs a finally but isn't itself in a throwing region.
         auto &exceptRegion = tryOp.getExceptRegion();
-        if (exceptRegion.empty() ||
+        if (exceptRegion.empty() || exceptRegion.front().empty() ||
             !isa<UnreachableOp>(exceptRegion.front().front()))
           return tryOp;
       }
@@ -1634,6 +1636,12 @@ LogicalResult VarDeclOp::verify() {
   if (getArgShadowIndex().has_value() && getKind() != VarDeclKind::Arg)
     return emitOpError() << "cannot have arg index unless is arg kind";
   return success();
+}
+
+// Change the element type of the var decl to the specified RValue type,
+// maintaining the origin of the vardecl.
+void VarDeclOp::changeElementType(Type newElementType) {
+  getResult().setType(getType().getWithElement(newElementType));
 }
 
 //===----------------------------------------------------------------------===//

@@ -903,7 +903,12 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // make many types implicitly convert to Error by stringizing.  Until then,
     // people can do this manually by catching and rethrowing.
     auto errorType = ASTType(cast<RefType>(declaredArgType).getElementType());
-    if (!errorType.isEqualCanon(errSlot.getRValueType())) {
+    if (isa<UnresolvedType>(errSlot.getRValueType())) {
+      // If the contextual caught type is unresolved, then we're the first call
+      // in a try block.  Resolve the error type to whatever type we raise.
+      auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
+      errorVar.changeElementType(errorType);
+    } else if (!errorType.isEqualCanon(errSlot.getRValueType())) {
       emitter.emitError(callExpr->getLoc())
           << "cannot call function that may raise " << errorType
           << " in context that supports an error type of "

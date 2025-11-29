@@ -283,7 +283,7 @@ struct StmtParser : public ParserBase {
   ParseResult parseWithStmt(size_t curIndent);
   ParseResult parseSingleWithStmt(size_t curIndent, SMLoc smLoc, Location loc);
   ParseResult
-  handleRaisingFinallyRegion(TryOp tryOp, ASTType errorType, SMLoc loc,
+  handleRaisingFinallyRegion(TryOp tryOp, SMLoc loc,
                              function_ref<ParseResult()> populateFinallyBody);
 
   // Simple statements.
@@ -1080,7 +1080,15 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
           << "or mark surrounding function as 'raises'";
     return success();
   }
+
   ValueDest dest(errSlot, EC_RaiseValue);
+  // If the contextual caught type is unresolved, then we're the first raise
+  // in a try block.  Resolve the error type to whatever type we are raising.
+  if (isa<UnresolvedType>(errSlot.getRValueType())) {
+    auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
+    dest = ValueDest(errorVar, EC_RaiseValue);
+  }
+
   if (errorExpr) {
     // If we had an error, emit it.
     emitter.emitExpr(errorExpr, dest);
@@ -1621,8 +1629,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
 ///             raise
 /// ```
 ParseResult StmtParser::handleRaisingFinallyRegion(
-    TryOp tryOp, ASTType errorType, SMLoc loc,
-    function_ref<ParseResult()> populateFinallyBody) {
+    TryOp tryOp, SMLoc loc, function_ref<ParseResult()> populateFinallyBody) {
   if (tryOp.hasTrivialFinally())
     return success();
 
@@ -1631,7 +1638,8 @@ ParseResult StmtParser::handleRaisingFinallyRegion(
     return populateFinallyBody();
 
   VarDeclOp errDecl = getEmitter().emitVarDecl(
-      "__finally_error__", errorType, tryOp.getLoc(), VarDeclKind::Synthesized);
+      "__finally_error__", UnresolvedType::get(getContext()), tryOp.getLoc(),
+      VarDeclKind::Synthesized);
   auto nestedTry = TryOp::create(builder, tryOp.getLoc(), errDecl,
                                  /*suppressWarnings=*/true);
 
@@ -1641,18 +1649,29 @@ ParseResult StmtParser::handleRaisingFinallyRegion(
   builder.createBlock(&nestedTry.getFinallyRegion());
   TryYieldOp::create(builder, tryOp.getLoc());
 
-  // Move the error into the overall error slot.
-  builder.createBlock(&nestedTry.getExceptRegion());
-  ValueDest moveDest(errSlot, EC_RaiseValue);
-  getEmitter().emitResult(MRValue(errDecl), SyntheticNode(loc), moveDest);
-  RaiseOp::create(builder, tryOp.getLoc());
-  TryYieldOp::create(builder, tryOp.getLoc());
-
   Block *tryBlock = builder.createBlock(&nestedTry.getTryRegion());
   if (populateFinallyBody())
     return failure();
   builder.setInsertionPointToEnd(tryBlock);
   TryYieldOp::create(builder, tryOp.getLoc());
+
+  // Move the error into the overall error slot.
+  builder.createBlock(&nestedTry.getExceptRegion());
+
+  // If no errors got emitted, then the catch block is unreachable.
+  if (isa<UnresolvedType>(errDecl.getType().getElementType())) {
+    UnreachableOp::create(builder, tryOp.getLoc());
+  } else {
+    ValueDest moveDest(errSlot, EC_RaiseValue);
+    if (isa<UnresolvedType>(errSlot.getRValueType())) {
+      auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
+      moveDest = ValueDest(errorVar, EC_RaiseValue);
+    }
+    getEmitter().emitResult(MRValue(errDecl), SyntheticNode(loc), moveDest);
+    RaiseOp::create(builder, tryOp.getLoc());
+    TryYieldOp::create(builder, tryOp.getLoc());
+  }
+
   builder.setInsertionPointAfter(nestedTry);
   return success();
 }
@@ -1679,11 +1698,13 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
 
   // Restore the builder to its current insertion point after parsing.
   llvm::SaveAndRestore builderSaver(builder);
-  ASTType errorType = shared.getBuiltinErrorType(getParentDecl(), smLoc);
-  if (!errorType)
-    return failure();
-  VarDeclOp errDecl = getEmitter().emitVarDecl("__try_error__", errorType, loc,
-                                               VarDeclKind::Synthesized);
+
+  // We start the caught exception type as 'UnresolvedType' to allow throws
+  // within the try body to infer this.  If there are no throwing operations
+  // in the body, this will be left as-is, but won't be used.
+  VarDeclOp errDecl = getEmitter().emitVarDecl(
+      "__try_error__", UnresolvedType::get(getContext()), loc,
+      VarDeclKind::Synthesized);
   auto tryOp = TryOp::create(builder, loc, errDecl);
   if (!inExceptRegion) {
     builder.createBlock(&tryOp.getExceptRegion());
@@ -1695,6 +1716,14 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
   if (parseLocalScopeSuite(curIndent))
     return failure();
   TryYieldOp::create(builder, translateLocation(getToken().getLoc()));
+
+  // If nothing in the try body raised, the error vardecl may still be
+  // unresolved.  Force it to Error type if so, so any uses of it complain about
+  // Error.
+  if (isa<UnresolvedType>(errDecl.getType().getElementType())) {
+    if (auto errorType = shared.getBuiltinErrorType(getParentDecl(), smLoc))
+      errDecl.changeElementType(errorType);
+  }
 
   bool hasFinally = false;
   if (consumeIf(Token::kw_except)) {
@@ -1766,6 +1795,13 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
       builder.createBlock(&tryOp.getExceptRegion());
       MLValue errSlot = getEmitter().findNearestErrorSlot();
       ValueDest dest(errSlot, EC_RaiseValue);
+
+      // If the contextual caught type is unresolved, then we're the first raise
+      // in a try block.  Resolve the error type to whatever we are raising.
+      if (isa<UnresolvedType>(errSlot.getRValueType())) {
+        auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
+        dest = ValueDest(errorVar, EC_RaiseValue);
+      }
       getEmitter().emitResult(MRValue(errDecl), SyntheticNode(smLoc), dest);
       LIT::RaiseOp::create(builder, loc);
       TryYieldOp::create(builder, loc);
@@ -1777,7 +1813,7 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
   }
   builder.createBlock(&tryOp.getFinallyRegion());
   if (hasFinally) {
-    if (handleRaisingFinallyRegion(tryOp, errorType, smLoc, [&] {
+    if (handleRaisingFinallyRegion(tryOp, smLoc, [&] {
           if (parseToken(Token::colon, "expected ':' after 'finally'") ||
               parseLocalScopeSuite(curIndent))
             return failure();
@@ -1955,8 +1991,12 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       "__enter__", std::move(enterOperands), enterDest, CallSyntax::kMethodCall,
       contextExp);
 
-  // Lookup the error type and emit a vardecl for the error.
+  // Create the temporary error decl for any thrown values.
+  // TODO(Typed throws): This should be inferred from whatever the __exit__
+  // method accepts.
   ASTType errorType = shared.getBuiltinErrorType(getParentDecl(), smLoc);
+  if (!errorType)
+    return failure();
   VarDeclOp errDecl = getEmitter().emitVarDecl("__with_error__", errorType, loc,
                                                VarDeclKind::Synthesized);
 
@@ -1966,17 +2006,10 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   // Stub the 'except' and 'else' regions.
   builder.createBlock(&tryOp.getExceptRegion());
 
-  // If the body of this try can throw, then the "except" block in it needs to
-  // catch the current exception and then re-raise it.
-  if (inExceptRegion) {
-    ValueDest dest(errSlot, EC_RaiseValue);
-    getEmitter().emitResult(MRValue(errDecl), contextExp, dest);
-    LIT::RaiseOp::create(builder, loc);
-    TryYieldOp::create(builder, loc);
-  } else {
-    // Otherwise it will be unreachable.
+  // If the body of this try can't throw, mark the except region so expressions
+  // in it know that.
+  if (!inExceptRegion)
     UnreachableOp::create(builder, loc);
-  }
   builder.createBlock(&tryOp.getElseRegion());
   TryYieldOp::create(builder, loc);
   builder.createBlock(&tryOp.getTryRegion());
@@ -1985,7 +2018,12 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   // an error. If it doesn't, then we know the exit is unconditional.
   CallOperands exitCallOperands;
   exitCallOperands.addSelf({contextVal, contextExp});
-  exitCallOperands.add({PValue(UnknownAttr::get(errorType)), contextExp});
+  // FIXME: This should theoretically infer the error type from the body of the
+  // try region, or just accept any type.
+  ASTType stdErrorType = shared.getBuiltinErrorType(getParentDecl(), smLoc);
+  if (!stdErrorType)
+    return failure();
+  exitCallOperands.add({PValue(UnknownAttr::get(stdErrorType)), contextExp});
   PValue conditionalExit;
   if (inExceptRegion && hasExitMethod) {
     IREmitter exitEmitter = getEmitter();
@@ -2089,6 +2127,36 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     }
   };
 
+  // If the body of this try can throw, then the "except" block in it needs to
+  // catch the current exception and then re-raise it.
+  auto emitExceptBody = [&]() {
+    builder.setInsertionPointToStart(&tryOp.getExceptRegion().front());
+    if (inExceptRegion) {
+      // If nothing in the except region raised, the error vardecl will still be
+      // unresolved, just mark the except region as unreachable to silence
+      // downstream warnings.
+      if (isa<UnresolvedType>(errDecl.getType().getElementType())) {
+        UnreachableOp::create(builder, loc);
+      } else {
+        ValueDest dest(errSlot, EC_RaiseValue);
+        // If the contextual caught type is unresolved, then we're the first
+        // raise in a try block.  Resolve the error type to whatever we are
+        // raising.
+        if (isa<UnresolvedType>(errSlot.getRValueType())) {
+          auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
+          dest = ValueDest(errorVar, EC_RaiseValue);
+        }
+
+        getEmitter().emitResult(MRValue(errDecl), contextExp, dest);
+        LIT::RaiseOp::create(builder, loc);
+        TryYieldOp::create(builder, loc);
+      }
+    } else {
+      // We already emitted the unreachable if this was not reachable.
+      assert(isa<UnreachableOp>(builder.getInsertionBlock()->front()));
+    }
+  };
+
   // If we're in a non-raising region (or have no __exit__ method), then we have
   // a simple pattern to emit:
   //   contextMgr = EXPRESSION
@@ -2098,6 +2166,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   //   finally:
   //     contextMgr.__exit__()
   if (!inExceptRegion || !hasExitMethod) {
+    emitExceptBody();
     builder.createBlock(&tryOp.getFinallyRegion());
     emitNormalExitLogic();
     TryYieldOp::create(builder, loc);
@@ -2105,16 +2174,27 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   }
 
   if (conditionalExit) {
-    // Set up the except region.  Pseudo code:
-    //  except(%val : Error) {
-    //    hlcf.if (
-
+    // Set up the except region for the nested try.  Pseudo code:
+    //  except(%__inner_error__ : Error) {
+    //    %stop_rethrow = contextMgr.__exit__(%__inner_error__);
+    //    hlcf.if %stop_rethrow {
+    //      hlcf.yield
+    //    } else {
+    //      raise %inner_error
+    //    }
     builder.createBlock(&nestedTryOp.getExceptRegion());
 
     // Set the flag to 'False'.
     RefStoreOp::create(builder, loc,
                        mlir::index::BoolConstantOp::create(builder, loc, false),
                        excVar);
+
+    // FIXME: Support inferring the error type for conditional exit handlers.
+    // Right now this gets hard coded to Error unnecessarily.
+    if (isa<UnresolvedType>(nestedErrDecl.getType().getElementType())) {
+      if (auto errorType = shared.getBuiltinErrorType(getParentDecl(), smLoc))
+        nestedErrDecl.changeElementType(errorType);
+    }
 
     // Pass the error value to the __exit__ method.
     // TODO: this isn't using the same convention that Python does.  We support
@@ -2143,15 +2223,22 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
 
     // On false, we re-raise the error.
     builder.createBlock(&ifOp.getElseRegion());
-    ValueDest dest(MLValue(tryOp.getErr()), EC_RaiseValue);
+    ValueDest dest(MLValue(errDecl), EC_RaiseValue);
+    // If the error type is unresolved, resolve it to whatever we propagate.
+    if (isa<UnresolvedType>(errDecl.getType().getElementType()))
+      dest = ValueDest(errDecl, EC_RaiseValue);
     getEmitter().emitResult(MRValue(nestedErrDecl), contextExp, dest);
     LIT::RaiseOp::create(builder, loc);
     HLCF::YieldOp::create(builder, loc);
   }
 
+  // Now that we have seen the body of the try, we can have inferred the thrown
+  // type, so we can emit the rethrow logic in except {}
+  emitExceptBody();
+
   // Emit the conditional call to __exit__.
   builder.createBlock(&tryOp.getFinallyRegion());
-  (void)handleRaisingFinallyRegion(tryOp, errorType, smLoc, [&] {
+  (void)handleRaisingFinallyRegion(tryOp, smLoc, [&] {
     HLCF::IfOp excIf;
     if (conditionalExit) {
       excIf = HLCF::IfOp::create(builder, loc,
@@ -2908,8 +2995,7 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
     ValueDest dest(EC_VarInit);
     ExprContext exprContext = EC_VarInit;
     if (parsedType) {
-      varOp.getResult().setType(
-          RefType::get(parsedType, varOp.getType().getOrigin()));
+      varOp.changeElementType(parsedType);
       dest = ValueDest(MLValue(varOp), exprContext);
     } else {
       // If we don't, we emit into the varOp itself, because this will infer the
@@ -2924,8 +3010,7 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
            "RValue emission should have inferred var type");
 
   } else if (parsedType) {
-    varOp.getResult().setType(
-        RefType::get(parsedType, varOp.getType().getOrigin()));
+    varOp.changeElementType(parsedType);
   } else {
     // If there was neither a type or initializer, reject the var.
     emitError(varOp.getLoc(),

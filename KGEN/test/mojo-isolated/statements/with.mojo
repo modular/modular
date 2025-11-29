@@ -123,7 +123,7 @@ fn testWithRaising(a: ExampleCM) raises:
     # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}([[IMMREF]])
     # CHECK: %val = lit.var.decl "val"
     # CHECK-NEXT: lit.ref.store [[TARGET]], %val
-    # CHECK: lit.ref.store %true, %__with_exc__
+    # CHECK-NEXT: %__with_error__ = lit.var.decl
     # CHECK: lit.try %__with_error__
     # CHECK: lit.try %__inner_error__
     with a as val:
@@ -372,16 +372,21 @@ struct CMUnconditionalExit:
 fn unconditional_exit() raises:
     # CHECK: lit.try %__with_error__
     with CMUnconditionalExit():
-        # CHECK: call {{.*}}noop
+        # CHECK: lit.call {{.*}}noop
+        # CHECK-NEXT:  lit.try.yield
         noop(42)
-    # CHECK: except
-    # CHECK:   lit.raise
-    # CHECK:   lit.try.yield
-    # CHECK: else
-    # CHECK:   lit.try.yield
-    # CHECK: finally
-    # CHECK:   lit.try %__finally_error__
-    # CHECK:     call {{.*}}__exit__{{.*}}(%$CONTEXTMGR)
+    # CHECK-NEXT: } except {
+    # CHECK-NEXT:   lit.call {{.*}}Error::@"__moveinit__{{.*}}(%__with_error__, %__error__)
+    # CHECK-NEXT:   lit.raise
+    # CHECK-NEXT:   lit.try.yield
+    # CHECK-NEXT: } else {
+    # CHECK-NEXT:   lit.try.yield
+    # CHECK-NEXT: finally {
+    # CHECK-NEXT: %__finally_error__ = lit.var.decl
+    # CHECK-NEXT:   lit.try %__finally_error__
+    # CHECK:          call {{.*}}__exit__{{.*}}(%$CONTEXTMGR)
+    # CHECK:        } except {
+    # CHECK-NEXT:     kgen.unreachable
 
 
 struct ExampleCMTuple(ImplicitlyCopyable):
