@@ -188,14 +188,14 @@ fn vectorize[
             closure[simd_width](simd_idx)
 
     comptime steps = count_trailing_zeros(simd_width)
-    var idx = Int(simd_end)
+    var offset = Int(simd_end)
 
     @parameter
     for i in range(steps):
         comptime new_width = simd_width >> (i + 1)
-        if (size - idx) & new_width:
-            closure[new_width](idx)
-            idx += new_width
+        if (size - offset) & new_width:
+            closure[new_width](offset)
+            offset += new_width
 
 
 @always_inline
@@ -301,15 +301,18 @@ fn vectorize[
 
     @parameter
     if size > simd_end:
+        comptime tail_len = size - simd_end
+        comptime steps = count_trailing_zeros(simd_width)
+        var offset = simd_end
 
         @parameter
-        if (size - simd_end).is_power_of_two():
-            closure[size - simd_end](simd_end)
-        else:
+        for i in range(steps):
+            comptime new_width = simd_width >> (i + 1)
 
             @parameter
-            for i in range(simd_end, size):
-                closure[1](i)
+            if tail_len & new_width:
+                closure[new_width](offset)
+                offset += new_width
 
 
 # ===-----------------------------------------------------------------------===#
