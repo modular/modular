@@ -369,7 +369,7 @@ fn debug_assert[
         if cond:
             return
         _debug_assert_msg(
-            message.unsafe_cstr_ptr().bitcast[Byte](),
+            message.unsafe_ptr(),
             len(message) + 1,  # include null terminator
             __call_location(),
         )

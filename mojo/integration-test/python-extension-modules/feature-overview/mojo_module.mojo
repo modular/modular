@@ -89,7 +89,9 @@ fn case_raise_string_error() -> PythonObject:
 
     var error_type = cpython.get_error_global("PyExc_ValueError")
 
-    cpython.PyErr_SetString(error_type, "sample value error".unsafe_cstr_ptr())
+    cpython.PyErr_SetString(
+        error_type, "sample value error".as_c_string_slice().unsafe_ptr()
+    )
 
     return PythonObject(from_owned=PyObjectPtr())
 

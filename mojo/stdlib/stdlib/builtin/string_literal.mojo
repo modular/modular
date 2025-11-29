@@ -18,7 +18,7 @@ These are Mojo built-ins, so you don't need to import them.
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import CodepointSliceIter, StaticString
 from os import PathLike
-from sys.ffi import c_char
+from sys.ffi import c_char, CStringSlice
 
 from python import ConvertibleToPython, PythonObject
 
@@ -344,6 +344,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         return ptr.bitcast[Byte]()
 
     @always_inline
+    @deprecated("Use `StringLiteral.as_c_string_slice()` instead.")
     fn unsafe_cstr_ptr(
         self,
     ) -> UnsafePointer[c_char, StaticConstantOrigin]:
@@ -355,6 +356,18 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             The pointer to the underlying memory.
         """
         return self.unsafe_ptr().bitcast[c_char]()
+
+    @always_inline
+    fn as_c_string_slice(
+        self,
+    ) -> CStringSlice[StaticConstantOrigin]:
+        """Return a `CStringSlice` to the underlying memory of the string.
+
+        Returns:
+            The `CStringSlice` of the string.
+        """
+        # Safety: StringLiteral is guaranteed to be nul-terminated.
+        return CStringSlice(unsafe_from_ptr=self.unsafe_ptr().bitcast[c_char]())
 
     @always_inline("nodebug")
     fn as_string_slice(self) -> StaticString:

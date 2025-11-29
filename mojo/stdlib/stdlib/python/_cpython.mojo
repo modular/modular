@@ -1792,7 +1792,9 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_SimpleString
         """
-        return self._PyRun_SimpleString(command.unsafe_cstr_ptr())
+        return self._PyRun_SimpleString(
+            command.as_c_string_slice().unsafe_ptr()
+        )
 
     fn PyRun_String(
         self,
@@ -1809,7 +1811,9 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_String
         """
-        return self._PyRun_String(str.unsafe_cstr_ptr(), start, globals, locals)
+        return self._PyRun_String(
+            str.as_c_string_slice().unsafe_ptr(), start, globals, locals
+        )
 
     fn Py_CompileString(
         self,
@@ -1826,8 +1830,8 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/veryhigh.html#c.Py_CompileString
         """
         return self._Py_CompileString(
-            str.unsafe_cstr_ptr(),
-            filename.unsafe_cstr_ptr(),
+            str.as_c_string_slice().unsafe_ptr(),
+            filename.as_c_string_slice().unsafe_ptr(),
             start,
         )
 
@@ -2062,7 +2066,9 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/import.html#c.PyImport_ImportModule
         """
-        return self._PyImport_ImportModule(name.unsafe_cstr_ptr())
+        return self._PyImport_ImportModule(
+            name.as_c_string_slice().unsafe_ptr()
+        )
 
     fn PyImport_AddModule(self, var name: String) -> PyObjectPtr:
         """Return the module object corresponding to a module name.
@@ -2072,7 +2078,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/import.html#c.PyImport_AddModule
         """
-        return self._PyImport_AddModule(name.unsafe_cstr_ptr())
+        return self._PyImport_AddModule(name.as_c_string_slice().unsafe_ptr())
 
     # ===-------------------------------------------------------------------===#
     # Abstract Objects Layer
@@ -2092,7 +2098,9 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/object.html#c.PyObject_HasAttrString
         """
-        return self._PyObject_HasAttrString(obj, name.unsafe_cstr_ptr())
+        return self._PyObject_HasAttrString(
+            obj, name.as_c_string_slice().unsafe_ptr()
+        )
 
     fn PyObject_GetAttrString(
         self, obj: PyObjectPtr, var name: String
@@ -2104,7 +2112,9 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/object.html#c.PyObject_GetAttrString
         """
-        return self._PyObject_GetAttrString(obj, name.unsafe_cstr_ptr())
+        return self._PyObject_GetAttrString(
+            obj, name.as_c_string_slice().unsafe_ptr()
+        )
 
     fn PyObject_SetAttrString(
         self, obj: PyObjectPtr, var name: String, value: PyObjectPtr
@@ -2115,7 +2125,9 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/object.html#c.PyObject_SetAttrString
         """
-        return self._PyObject_SetAttrString(obj, name.unsafe_cstr_ptr(), value)
+        return self._PyObject_SetAttrString(
+            obj, name.as_c_string_slice().unsafe_ptr(), value
+        )
 
     fn PyObject_Str(self, obj: PyObjectPtr) -> PyObjectPtr:
         """Compute a string representation of object `obj`.
@@ -2601,7 +2613,7 @@ struct CPython(Defaultable, Movable):
         return self._PyUnicode_DecodeUTF8(
             s.unsafe_ptr().bitcast[c_char](),
             Py_ssize_t(s.byte_length()),
-            "strict".unsafe_cstr_ptr(),
+            "strict".as_c_string_slice().unsafe_ptr(),
         )
 
     # TODO: fix signature to take unicode and size as args
@@ -2909,7 +2921,9 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/capsule.html#c.PyCapsule_New
         """
-        return self._PyCapsule_New(pointer, name.unsafe_cstr_ptr(), destructor)
+        return self._PyCapsule_New(
+            pointer, name.as_c_string_slice().unsafe_ptr(), destructor
+        )
 
     fn PyCapsule_GetPointer(
         self,
@@ -2922,7 +2936,9 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/capsule.html#c.PyCapsule_GetPointer
         """
-        var r = self._PyCapsule_GetPointer(capsule, name.unsafe_cstr_ptr())
+        var r = self._PyCapsule_GetPointer(
+            capsule, name.as_c_string_slice().unsafe_ptr()
+        )
         if self.PyErr_Occurred():
             raise self.get_error()
         return r

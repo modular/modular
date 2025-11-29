@@ -2176,7 +2176,7 @@ struct DeviceFunction[
                 self._func_impl.asm.unsafe_ptr(),
                 UInt(len(self._func_impl.asm)),
                 max_dynamic_shared_size_bytes,
-                debug_level.unsafe_cstr_ptr().bitcast[UInt8](),
+                debug_level.as_c_string_slice().unsafe_ptr().bitcast[UInt8](),
                 Int(OptimizationLevel),
             )
         )
@@ -3246,7 +3246,7 @@ struct DeviceExternalFunction:
                 asm.unsafe_ptr(),
                 UInt(len(asm)),
                 max_dynamic_shared_size_bytes,
-                debug_level.unsafe_cstr_ptr().bitcast[UInt8](),
+                debug_level.as_c_string_slice().unsafe_ptr().bitcast[UInt8](),
                 Int(OptimizationLevel),
             )
         )
@@ -3503,7 +3503,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
                 Int32,
             ](
                 UnsafePointer(to=result),
-                api.unsafe_cstr_ptr(),
+                api.as_c_string_slice().unsafe_ptr(),
                 device_id,
             )
         )

@@ -92,6 +92,9 @@ what we publish.
 - The `EqualityComparable` trait has been deprecated in favor of `Equatable`,
   which has identical functionality.
 
+- Added a `CStringSlice` as a type-safe way to interact with nul-terminated
+  c-style strings (`const char*`).
+
 ### Tooling changes
 
 - The Mojo compiler now "diffs" very long types in error messages to explain

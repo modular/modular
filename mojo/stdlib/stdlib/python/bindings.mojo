@@ -1054,8 +1054,7 @@ fn _py_init_function_nonregistered(
     var error_type = cpython.get_error_global("PyExc_TypeError")
     cpython.PyErr_SetString(
         error_type,
-        "No initializer registered for this type. Use def_py_init() or"
-        " def_init_defaultable() to register an initializer.".unsafe_cstr_ptr(),
+        "No initializer registered for this type. Use def_py_init() or def_init_defaultable() to register an initializer.".as_c_string_slice().unsafe_ptr(),
     )
     return -1
 
@@ -1071,7 +1070,7 @@ fn _py_new_function_wrapper[
         return _unsafe_alloc[T](subtype)
     except e:
         var error_type = cpython.get_error_global("PyExc_TypeError")
-        cpython.PyErr_SetString(error_type, e.unsafe_cstr_ptr())
+        cpython.PyErr_SetString(error_type, e.as_c_string_slice().unsafe_ptr())
         return {}
 
 
@@ -1098,7 +1097,7 @@ fn _py_init_function_wrapper[
     except e:
         # TODO(MSTDL-933): Add custom 'MojoError' type, and raise it here.
         var error_type = cpython.get_error_global("PyExc_ValueError")
-        cpython.PyErr_SetString(error_type, e.unsafe_cstr_ptr())
+        cpython.PyErr_SetString(error_type, e.as_c_string_slice().unsafe_ptr())
         return -1
 
 
@@ -1178,7 +1177,9 @@ fn _py_c_function_wrapper[
             except e:
                 var error_type = cpython.get_error_global("PyExc_Exception")
 
-                cpython.PyErr_SetString(error_type, e.unsafe_cstr_ptr())
+                cpython.PyErr_SetString(
+                    error_type, e.as_c_string_slice().unsafe_ptr()
+                )
 
                 # Return a NULL `PyObject*`.
                 return PyObjectPtr()

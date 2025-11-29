@@ -96,7 +96,7 @@ struct _DirHandle:
             raise Error("the directory '", path, "' does not exist")
 
         self._handle = external_call["opendir", type_of(self._handle)](
-            path.unsafe_cstr_ptr()
+            path.as_c_string_slice().unsafe_ptr()
         )
 
         if not self._handle:
@@ -282,7 +282,9 @@ fn remove[PathLike: os.PathLike](path: PathLike) raises:
         If the operation fails.
     """
     var fspath = path.__fspath__()
-    var error = external_call["unlink", Int32](fspath.unsafe_cstr_ptr())
+    var error = external_call["unlink", Int32](
+        fspath.as_c_string_slice().unsafe_ptr()
+    )
 
     if error != 0:
         # TODO get error message, the following code prints it
@@ -334,7 +336,9 @@ fn mkdir[PathLike: os.PathLike](path: PathLike, mode: Int = 0o777) raises:
     """
 
     var fspath = path.__fspath__()
-    var error = external_call["mkdir", Int32](fspath.unsafe_cstr_ptr(), mode)
+    var error = external_call["mkdir", Int32](
+        fspath.as_c_string_slice().unsafe_ptr(), mode
+    )
     if error != 0:
         raise Error("Can not create directory: ", fspath)
 
@@ -396,7 +400,9 @@ fn rmdir[PathLike: os.PathLike](path: PathLike) raises:
         If the operation fails.
     """
     var fspath = path.__fspath__()
-    var error = external_call["rmdir", Int32](fspath.unsafe_cstr_ptr())
+    var error = external_call["rmdir", Int32](
+        fspath.as_c_string_slice().unsafe_ptr()
+    )
     if error != 0:
         raise Error("Can not remove directory: ", fspath)
 

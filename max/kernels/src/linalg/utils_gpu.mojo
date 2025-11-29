@@ -561,7 +561,7 @@ fn get_hilbert_lut_with_cache(
     # use runtime lookup since key is computed at runtime
     var cached_ptr = external_call[
         "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer
-    ](key_str.unsafe_cstr_ptr(), key_str.byte_length())
+    ](key_str.as_string_slice().unsafe_ptr(), key_str.byte_length())
 
     if cached_ptr:
         var device_ptr = cached_ptr.bitcast[UInt32]()

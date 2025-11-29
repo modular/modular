@@ -1112,7 +1112,7 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
     var osver = String(unsafe_uninit_length=buf_len)
 
     var err = external_call["sysctlbyname", Int32](
-        "kern.osproductversion".unsafe_cstr_ptr(),
+        "kern.osproductversion".as_c_string_slice().unsafe_ptr(),
         osver.unsafe_ptr(),
         Pointer(to=buf_len),
         OpaquePointer(),

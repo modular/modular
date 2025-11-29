@@ -19,7 +19,7 @@ These are Mojo built-ins, so you don't need to import them.
 from collections.string.format import _CurlyEntryFormattable
 from io.write import _WriteBufferStack
 from sys import _libc, external_call, is_gpu
-from sys.ffi import c_char
+from sys.ffi import c_char, CStringSlice
 
 from memory import (
     ArcPointer,
@@ -284,6 +284,7 @@ struct Error(
     # Methods
     # ===-------------------------------------------------------------------===#
 
+    @deprecated("Use `Error.as_c_string_slice()` instead.")
     fn unsafe_cstr_ptr(self) -> UnsafePointer[c_char, ImmutOrigin.external]:
         """Retrieves a C-string-compatible pointer to the underlying memory.
 
@@ -293,6 +294,21 @@ struct Error(
             The pointer to the underlying memory.
         """
         return self.data.bitcast[c_char]()
+
+    @always_inline
+    fn as_c_string_slice(
+        self,
+    ) -> CStringSlice[origin_of(self)]:
+        """Returns a `CStringSlice` to the underlying error message.
+
+        Returns:
+            A `CStringSlice` to the underlying error message.
+        """
+        return CStringSlice(
+            unsafe_from_ptr=self.data.bitcast[c_char]().unsafe_origin_cast[
+                origin_of(self)
+            ]()
+        )
 
     fn as_string_slice(self) -> StringSlice[ImmutOrigin.external]:
         """Returns a string slice of the data maybe owned by the Error.

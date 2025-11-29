@@ -37,7 +37,10 @@ struct _POpenHandle:
         if mode != "r" and mode != "w":
             raise Error("the mode specified `", mode, "` is not valid")
 
-        self._handle = popen(cmd.unsafe_cstr_ptr(), mode.unsafe_cstr_ptr())
+        self._handle = popen(
+            cmd.as_c_string_slice().unsafe_ptr(),
+            mode.as_c_string_slice().unsafe_ptr(),
+        )
 
         if not self._handle:
             raise Error("unable to execute the command `", cmd, "`")

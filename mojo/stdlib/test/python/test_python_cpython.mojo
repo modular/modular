@@ -69,7 +69,7 @@ def _test_exception_handling_api(cpy: CPython):
     assert_true(cpy.PyErr_Occurred())
     cpy.PyErr_Clear()
 
-    cpy.PyErr_SetString(ValueError, msg.unsafe_cstr_ptr())
+    cpy.PyErr_SetString(ValueError, msg.as_c_string_slice().unsafe_ptr())
     assert_true(cpy.PyErr_Occurred())
 
     if cpy.version.minor < 12:
@@ -329,7 +329,12 @@ def _test_module_object_api(cpy: CPython):
     var n = cpy.PyLong_FromSsize_t(0)
     var name = "n"
     # returns 0 on success, -1 on failure
-    assert_equal(cpy.PyModule_AddObjectRef(mod, name.unsafe_cstr_ptr(), n), 0)
+    assert_equal(
+        cpy.PyModule_AddObjectRef(
+            mod, name.as_c_string_slice().unsafe_ptr(), n
+        ),
+        0,
+    )
     _ = name
 
 

@@ -171,6 +171,6 @@ fn get_mpi_comm_world() raises -> MPIComm:
     """Get the MPI_COMM_WORLD communicator."""
     var handle = MPI_LIBRARY.get_or_create_ptr()[].borrow()
     var comm_world_ptr = handle.get_symbol[OpaquePointer](
-        cstr_name="ompi_mpi_comm_world".unsafe_cstr_ptr()
+        cstr_name="ompi_mpi_comm_world".as_c_string_slice().unsafe_ptr()
     )
     return comm_world_ptr

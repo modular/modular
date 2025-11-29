@@ -344,7 +344,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         ref cpy = Self().cpython()
         var errno = cpy.PyModule_AddObjectRef(
             module._obj_ptr,
-            name.unsafe_cstr_ptr(),
+            name.as_c_string_slice().unsafe_ptr(),
             value._obj_ptr,
         )
         if errno == -1:

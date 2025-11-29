@@ -20,8 +20,9 @@ from sys._libc_errno import ErrNo, get_errno, set_errno
 
 from memory import OwnedPointer
 
-from .info import CompilationTarget, is_64bit
-from .intrinsics import _mlirtype_is_eq
+from ..info import CompilationTarget, is_64bit
+from ..intrinsics import _mlirtype_is_eq
+from .cstring import CStringSlice
 
 # ===-----------------------------------------------------------------------===#
 # Primitive C type aliases
@@ -440,7 +441,7 @@ struct _DLHandle(Boolable, Copyable, Movable):
         """
 
         var fspath = path.__fspath__()
-        self = Self._dlopen(fspath.unsafe_cstr_ptr(), flags)
+        self = Self._dlopen(fspath.as_c_string_slice().unsafe_ptr(), flags)
 
     @staticmethod
     fn _dlopen(
@@ -466,7 +467,7 @@ struct _DLHandle(Boolable, Copyable, Movable):
         """
         var opaque_function_ptr = dlsym(
             self.handle,
-            name.unsafe_cstr_ptr(),
+            name.as_c_string_slice().unsafe_ptr(),
         )
 
         return Bool(opaque_function_ptr)
@@ -508,7 +509,9 @@ struct _DLHandle(Boolable, Copyable, Movable):
             A handle to the function.
         """
 
-        return self._get_function[result_type](cstr_name=name.unsafe_cstr_ptr())
+        return self._get_function[result_type](
+            cstr_name=name.as_c_string_slice().unsafe_ptr()
+        )
 
     @always_inline
     fn _get_function[
@@ -567,7 +570,7 @@ struct _DLHandle(Boolable, Copyable, Movable):
         """
         name_copy = String(name)
         return self.get_symbol[result_type](
-            cstr_name=name_copy.unsafe_cstr_ptr()
+            cstr_name=name_copy.as_c_string_slice().unsafe_ptr()
         )
 
     fn get_symbol[

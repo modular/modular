@@ -89,7 +89,7 @@ from io.write import STACK_BUFFER_BYTES, _TotalWritableBytes, _WriteBufferStack
 from os import PathLike, abort
 from os.atomic import Atomic, Consistency, fence
 from sys import size_of, bit_width_of
-from sys.ffi import c_char
+from sys.ffi import c_char, CStringSlice
 from sys.info import is_32bit
 
 from bit import count_leading_zeros
@@ -1177,6 +1177,26 @@ struct String(
 
         return self.unsafe_ptr().unsafe_mut_cast[True]()
 
+    @always_inline
+    fn as_c_string_slice(
+        mut self,
+    ) -> CStringSlice[ImmutOrigin.cast_from[origin_of(self)]]:
+        """Return a `CStringSlice` to the underlying memory of the string.
+
+        Returns:
+            The `CStringSlice` of the string.
+        """
+        # Add a nul terminator, making the string mutable if not already
+        if not self._has_nul_terminator():
+            var ptr = self.unsafe_ptr_mut(capacity=len(self) + 1)
+            var len = self.byte_length()
+            ptr[len] = 0
+            self._capacity_or_data |= Self.FLAG_HAS_NUL_TERMINATOR
+
+        # Safety: we ensure the string is null-terminated above.
+        return CStringSlice(unsafe_from_ptr=self.unsafe_ptr().bitcast[c_char]())
+
+    @deprecated("Use `String.as_c_string_slice()` instead.")
     fn unsafe_cstr_ptr(
         mut self,
     ) -> UnsafePointer[c_char, ImmutOrigin.cast_from[origin_of(self)]]:
@@ -1193,7 +1213,6 @@ struct String(
             var len = self.byte_length()
             ptr[len] = 0
             self._capacity_or_data |= Self.FLAG_HAS_NUL_TERMINATOR
-            return self.unsafe_ptr().bitcast[c_char]()
 
         return self.unsafe_ptr().bitcast[c_char]()
 

@@ -1426,29 +1426,30 @@ def test_uninit_ctor():
     assert_equal(s3._is_inline(), False)
 
 
-def test_unsafe_cstr():
-    var s1: String = "ab"
-    var p1 = s1.unsafe_cstr_ptr()
-    assert_equal(p1[0], ord("a"))
-    assert_equal(p1[1], ord("b"))
-    assert_equal(p1[2], 0)
+def test_as_c_string_slice_empty():
+    var string = String()
+    var cslice = string.as_c_string_slice()
+    assert_equal(len(string), 0)
+    assert_true(string.capacity() > 0)
+    # Safe to index `len(string)` as this has a nul terminator
+    assert_equal(string.unsafe_ptr()[len(string)], 0)
+    assert_true(string.as_bytes() == cslice.as_bytes())
 
-    var s2: String = ""
-    var p2 = s2.unsafe_cstr_ptr()
-    assert_equal(p2[0], 0)
 
-    var s3 = String()
-    var p3 = s3.unsafe_cstr_ptr()
-    assert_equal(p3[0], 0)
+def test_as_c_string_slice_inlined():
+    var string = String("a")
+    var cslice = string.as_c_string_slice()
+    # Safe to index `len(string)` as this has a nul terminator
+    assert_equal(string.unsafe_ptr()[len(string)], 0)
+    assert_true(string.as_bytes() == cslice.as_bytes())
 
-    # 24 bytes is out of line.
-    var s4: String = "abcdefghabcdefghabcdefgh"
-    var p4 = s4.unsafe_cstr_ptr()
-    assert_equal(p4[0], ord("a"))
-    assert_equal(p4[1], ord("b"))
-    assert_equal(p4[2], ord("c"))
-    assert_equal(p4[23], ord("h"))
-    assert_equal(p4[24], 0)
+
+def test_as_c_string_slice_heap():
+    var string = String("abcdefghijlmnopqrstuvwxyz")
+    var cslice = string.as_c_string_slice()
+    # Safe to index `len(string)` as this has a nul terminator
+    assert_equal(string.unsafe_ptr()[len(string)], 0)
+    assert_true(string.as_bytes() == cslice.as_bytes())
 
 
 def test_variadic_ctors():
@@ -1484,12 +1485,6 @@ def test_sso():
     assert_equal(s._has_nul_terminator(), False)
     assert_equal(s, "hellof")
 
-    # Check that unsafe_cstr_ptr adds the nul terminator at the end.
-    var ptr = s.unsafe_cstr_ptr()
-    assert_equal(s._has_nul_terminator(), True)
-    assert_equal(ptr[len(s) - 1], ord("f"))
-    assert_equal(ptr[len(s)], 0)
-
     # Test StringLiterals behave the same when above SSO capacity.
     comptime long = "hellohellohellohellohellohellohellohellohellohellohello"
     s = String(long)
@@ -1506,12 +1501,6 @@ def test_sso():
     assert_equal(s._is_inline(), False)
     assert_equal(s._has_nul_terminator(), False)
     assert_equal(s, long + "f")
-
-    # Check that unsafe_cstr_ptr adds the nul terminator at the end.
-    ptr = s.unsafe_cstr_ptr()
-    assert_equal(s._has_nul_terminator(), True)
-    assert_equal(ptr[len(s) - 1], ord("f"))
-    assert_equal(ptr[len(s)], 0)
 
     # Empty strings are stored inline.
     s = String()
