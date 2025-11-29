@@ -1140,3 +1140,19 @@ fn bad_raises_fn2() raises:
 
   # expected-error @+1 {{cannot implicitly convert 'FloatLiteral[4]' value to 'Error'}}
   raise 4.0
+
+  try:
+    raises_int()
+
+    # expected-error @+1 {{cannot implicitly convert 'Error' value to 'Int'}}
+    raise Error()
+  except e: # 'e' inferred to Int.
+    var x: Int = e
+    # expected-error @+1 {{cannot implicitly convert 'Int' value to 'Error'}}
+    var y: Error = e
+
+  try:
+    raise 1 # Should infer error to Int, not IntLiteral
+  except e:
+    # expected-error @+1 {{cannot implicitly convert 'Int' value to 'String'}}
+    var x: String = e

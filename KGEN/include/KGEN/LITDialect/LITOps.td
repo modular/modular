@@ -949,6 +949,10 @@ def LIT_VarDeclOp : LITOp<"var.decl", [
     /// Return true if this is non-synthetic variable, if its name starts with
     /// something other than an underscore, and is not an argument shadow.
     bool shouldWarnAboutUnused();
+
+    // Change the element type of the var decl to the specified RValue type,
+    // maintaining the origin of the vardecl.
+    void changeElementType(Type newElementType);
   }];
   let hasVerifier = 1;
 }

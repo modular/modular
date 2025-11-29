@@ -190,19 +190,19 @@ fn context_mgr_exit_raises() raises:
     # CHECK-NEXT:   hlcf.if [[DID_ERR]]
     # CHECK-NEXT:     [[IMM:%.*]] = lit.ref.immut %$CONTEXTMGR
     # CHECK-NEXT:     [[BOOL:%.*]] = lit.var.decl
-    # CHECK-NEXT:     lifetime.start %__finally_error__
-    # CHECK-NEXT:     lifetime.start [[BOOL]]
+    # CHECK-NEXT:     lit.var.lifetime.start %__finally_error__
+    # CHECK-NEXT:     lit.var.lifetime.start [[BOOL]]
     # CHECK-NEXT:     [[IS_ERR:%.*]] = lit.call {{.*}}__exit__{{.*}}([[IMM]], %__finally_error__, [[BOOL]])
     # CHECK-NEXT:     call {{.*}}__del__{{.*}}(%$CONTEXTMGR)
-    # CHECK-NEXT:     lifetime.end %$CONTEXTMGR
+    # CHECK-NEXT:     lit.var.lifetime.end %$CONTEXTMGR
     # CHECK-NEXT:     if [[IS_ERR]]
     # CHECK-NEXT:       call {{.*}}__del__{{.*}}(%__error__)
     # CHECK-NEXT:       mark_consumed [[BOOL]]
-    # CHECK-NEXT:       lifetime.end [[BOOL]]
+    # CHECK-NEXT:       lit.var.lifetime.end [[BOOL]]
     # CHECK:          else
-    # CHECK-NEXT:       lifetime.end [[BOOL]]
+    # CHECK-NEXT:       lit.var.lifetime.end [[BOOL]]
     # CHECK-NEXT:       mark_consumed %__finally_error__
-    # CHECK-NEXT:       lifetime.end %__finally_error__
+    # CHECK-NEXT:       lit.var.lifetime.end %__finally_error__
     # CHECK-NEXT:       yield
     # CHECK:        else
     # CHECK-NEXT:     call {{.*}}__del__{{.*}}(%$CONTEXTMGR)
