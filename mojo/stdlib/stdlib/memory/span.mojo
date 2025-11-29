@@ -22,6 +22,8 @@ from memory import Span
 
 from builtin._location import __call_location
 from bit._mask import splat
+from bit import pop_count
+from memory import pack_bits
 from collections._index_normalization import normalize_index
 from sys import align_of
 from sys.info import simd_width_of
@@ -745,26 +747,17 @@ struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
             The amount of times the function returns `True`.
         """
 
-        comptime simdwidth = simd_width_of[DType.int]()
+        comptime simdwidth = simd_width_of[dtype]()
         var ptr = self.unsafe_ptr()
         var length = len(self)
-        var countv = SIMD[DType.int, simdwidth](0)
-        var count = Scalar[DType.int](0)
+        var count = 0
 
-        fn do_count[
-            width: Int
-        ](idx: Int) unified {mut count, mut countv, read ptr}:
-            var vec = func(ptr.load[width=width](idx)).cast[DType.int]()
-
-            @parameter
-            if width == 1:
-                count += rebind[type_of(count)](vec)
-            else:
-                countv += rebind[type_of(countv)](vec)
+        fn do_count[width: Int](idx: Int) unified {mut count, read ptr}:
+            var mask = func(ptr.load[width=width](idx))
+            count += mask.reduce_bit_count()
 
         vectorize[simdwidth](length, do_count)
-
-        return UInt(countv.reduce_add() + count)
+        return UInt(count)
 
     @always_inline
     fn unsafe_subspan(self, *, offset: Int, length: Int) -> Self:

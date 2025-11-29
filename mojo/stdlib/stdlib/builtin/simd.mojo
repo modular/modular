@@ -75,7 +75,7 @@ from builtin.device_passable import DevicePassable
 from builtin.format_int import _try_write_int
 from builtin.math import DivModable, Powable
 from documentation import doc_private
-from memory import bitcast, memcpy
+from memory import bitcast, memcpy, pack_bits
 from python import ConvertibleToPython, Python, PythonObject
 
 from utils import IndexList, StaticTuple
@@ -3042,7 +3042,16 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if Self.dtype is DType.bool:
-            return Int(self.cast[DType.uint8]().reduce_add())
+
+            @parameter
+            if Self.size == 1:
+                return Int(self)
+            else:
+                var packed_mask = pack_bits(
+                    rebind[SIMD[DType.bool, Self.size]](self)
+                )
+                var count = pop_count(packed_mask)
+                return Int(count)
         else:
             return Int(pop_count(self).reduce_add())
 
