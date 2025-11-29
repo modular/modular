@@ -137,3 +137,11 @@ fn test_rp_trivial_inference(a: RP_NotTrivial, b: Foo):
 # expected-note @below {{function declared here}}
 fn infer_rp_trivial[T: AnyTrivialRegType](val: T):
     pass
+
+fn stripping_raises():
+  fn fn_raises() raises: pass
+  # expected-error @+1 {{cannot implicitly convert 'fn() raises -> None' value to 'fn() -> None'}}
+  var fp : fn () = fn_raises
+
+  # expected-error @+1 {{cannot implicitly convert 'fn() raises -> None' value to 'fn() raises (Int) -> None'}}
+  var fp2 : fn () raises (Int) = fn_raises

@@ -34,3 +34,21 @@ fn test_passing_funcs():
     # CHECK: lit.call @{{.*}}::@"take_func_without_default{{.*}}"<
     # CHECK-SAME: :!lit.generator<("a": !Int) -> !kgen.none> rebind(:!lit.generator<("a": !Int = {0}) -> !kgen.none>
     take_func_without_default[func_with_default]()
+
+
+fn fn_doesnt_raise() -> Int: pass
+
+# CHECK-LABEL: lit.fn @"test_more_conversions
+fn test_more_conversions():
+  # CHECK: %test_raises = lit.var.decl
+  # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure
+  # CHECK-NEXT: lit.ref.store [[TMP]], %test_raises
+  var test_raises : fn () raises -> Int = fn_doesnt_raise
+
+  # CHECK: %test_result_convert = lit.var.decl
+  # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure
+  # CHECK-NEXT: lit.ref.store [[TMP]], %test_result_convert
+  var test_result_convert : fn () raises -> Float32 = fn_doesnt_raise
+
+
+  #var test_error_convert : fn () raises (Float32) -> Float32 = fn_doesnt_raise
