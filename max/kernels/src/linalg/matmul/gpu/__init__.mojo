@@ -700,7 +700,7 @@ fn _matmul_gpu[
                                     key, a_type, b_type, c_type, transpose_b
                                 ]()
                                 if curr_config.num_pipeline_stages == 0:
-                                    raise "no match for the triple"
+                                    raise Error("no match for the triple")
                                 return _multistage_gemm[curr_config]()
                         raise "no match for the triple"
                     except:
