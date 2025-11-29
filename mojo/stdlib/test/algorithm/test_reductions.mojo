@@ -206,18 +206,20 @@ def test_fused_reductions_outer():
         indices: IndexList[rank],
         val: StaticTuple[SIMD[dtype, width], num_reductions],
     ):
-        # CHECK: Column: 0  min:  1.0  max:  99.0  sum:  2500.0
-        # CHECK: Column: 1  min:  2.0  max:  100.0  sum:  2550.0
-        print(
-            "Column:",
-            indices[1],
-            " min: ",
-            val[0],
-            " max: ",
-            val[1],
-            " sum: ",
-            val[2],
-        )
+        @parameter
+        for i in range(width):
+            # CHECK: Column: 0  min:  1.0  max:  99.0  sum:  2500.0
+            # CHECK: Column: 1  min:  2.0  max:  100.0  sum:  2550.0
+            print(
+                "Column:",
+                indices[1] + i,
+                " min: ",
+                val[0][i],
+                " max: ",
+                val[1][i],
+                " sum: ",
+                val[2][i],
+            )
 
     _reduce_generator[
         num_reductions, test_type, input_fn, output_fn, reduce_fn

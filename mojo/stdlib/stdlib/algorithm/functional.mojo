@@ -25,6 +25,7 @@ from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv, clamp
 from os import abort
 from pathlib import Path
+from bit import count_trailing_zeros
 
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -76,15 +77,22 @@ fn map[
 
 @always_inline
 fn vectorize[
-    func: fn[width: Int] (idx: Int) unified -> None, //,
+    func: fn[width: Int] (Int) unified -> None, //,
     simd_width: Int,
     /,
     *,
     unroll_factor: Int = 1,
 ](size: Int, closure: func):
     """Simplifies SIMD optimized loops by mapping a function across a range from
-    0 to `size`, incrementing by `simd_width` at each step. The remainder of
-    `size % simd_width` will run in separate iterations.
+    0 to `size`, incrementing by `simd_width` at each step.
+
+    The function handles the main loop using the specified `simd_width`.
+    The remainder of `size % simd_width` is handled using a **cascading tail strategy**:
+    it decomposes the remaining length into powers of 2 and calls `func` with
+    decreasing widths (e.g., width/2, width/4, ... 1).
+
+    This approach ensures the tail is processed with the largest possible SIMD
+    operations and eliminates the inefficient scalar loop found in naive implementations.
 
     Parameters:
         func: The function that will be called in the loop body.
@@ -118,18 +126,20 @@ fn vectorize[
         vectorize[simd_width](size, closure)
         print(p.load[width=simd_width]())
         print(p.load[width=simd_width](simd_width))
+        print(p.load[width=2](2 * simd_width))
     ```
 
     On a machine with a SIMD register size of 128, this will set 4xInt32 values
-    on each iteration. The remainder of 10 % 4 is 2, so those last two elements
-    will be set in two separate iterations:
+    on each iteration. The optimized tail handling will process these 2 elements in a
+    single iteration of width 2, rather than two scalar iterations:
 
     ```plaintext
     storing 4 els at pos 0
     storing 4 els at pos 4
-    storing 1 els at pos 8
-    storing 1 els at pos 9
-    [0, 0, 0, 0, 4, 4, 4, 4, 8, 9]
+    storing 2 els at pos 8
+    [0, 0, 0, 0]
+    [4, 4, 4, 4]
+    [8, 8]
     ```
 
     You can also unroll the loop to potentially improve performance at the cost
@@ -146,16 +156,17 @@ fn vectorize[
     ```
     closure[4](0)
     closure[4](4)
-    # Remainder loop won't unroll unless `size` is passed as a parameter
-    for i in range(8, 10):
-        closure[1](i)
-        closure[1](i)
+
+    # Tail handling (Cascading)
+    # Checks bits of the remaining length to dispatch:
+    if (remainder & 2): closure[2](8)
+    if (remainder & 1): closure[1](10)
     ```
 
-    You can pass `size` as a parameter if it's compile time known to reduce the
-    iterations for the remainder. This only occurs if the remainder is an
-    exponent of 2 (2, 4, 8, 16, ...). The remainder loop will still unroll for
-    performance improvements if not an exponent of 2.
+    You can pass `size` as a parameter if it's compile time known, the compiler
+    will perform Dead Code Elimination on the bitmask checks. This results in a
+    completely branchless sequence of calls perfectly matched to the exact data
+    size.
     """
     constrained[simd_width > 0, "simd width must be > 0"]()
     constrained[unroll_factor > 0, "unroll factor must be > 0"]()
@@ -176,13 +187,20 @@ fn vectorize[
         for simd_idx in range(unrolled_end, simd_end, simd_width):
             closure[simd_width](simd_idx)
 
-    for i in range(simd_end, size):
-        closure[1](i)
+    comptime steps = count_trailing_zeros(simd_width)
+    var idx = Int(simd_end)
+
+    @parameter
+    for i in range(steps):
+        comptime new_width = simd_width >> (i + 1)
+        if (size - idx) & new_width:
+            closure[new_width](idx)
+            idx += new_width
 
 
 @always_inline
 fn vectorize[
-    func: fn[width: Int] (idx: Int) unified -> None, //,
+    func: fn[width: Int] (Int) unified -> None, //,
     simd_width: Int,
     /,
     *,
