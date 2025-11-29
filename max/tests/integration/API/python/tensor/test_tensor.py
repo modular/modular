@@ -11,6 +11,8 @@ They don't otherwise make any attempt at coverage, edge cases, or correctness.
 
 from __future__ import annotations
 
+import weakref
+
 from conftest import assert_all_close
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
@@ -356,3 +358,13 @@ def test_invert() -> None:
     result = ~a
     result._sync_realize()
     assert result.real
+
+
+def test_dead_sources_freed() -> None:
+    a = Tensor.ones([1])
+    a._sync_realize()
+    weak_a = weakref.ref(a)
+    a *= 2
+    a._sync_realize()
+    assert a.item() == 2
+    assert weak_a() is None
