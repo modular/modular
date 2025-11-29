@@ -612,6 +612,17 @@ class TextGenerationContext(BaseContext, Protocol):
         """
         ...
 
+    def skip_processing(self, n: int) -> None:
+        """Advance the processing window start by n.
+
+        Use after committing tokens to cache or accepting a draft so future steps no
+        longer reprocess those tokens. Validates that start <= end.
+
+        Args:
+            n (int): The number of tokens to skip.
+        """
+        ...
+
     def maybe_chunk(self, chunk_size: int) -> int:
         """Optionally chunks the next `chunk_size` tokens for processing.
 
