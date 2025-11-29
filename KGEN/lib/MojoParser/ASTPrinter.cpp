@@ -1294,6 +1294,20 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
           std::make_pair(sig.isEscaping(), "escaping")})
       if (enabled)
         os << ' ' << effect;
+
+    if (sig.isThrows()) {
+      ASTType errorType = sig.getUserThrownType();
+      // Do this the hard way because we may not have diagShared here.
+      StringRef typeName;
+      if (auto structType = sugarDynCast<StructType>(errorType))
+        typeName = structType.getSymbol().getLeafReference().strref();
+      if (typeName != "Error") {
+        os << " (";
+        ASTType(errorType).print(os, diagShared);
+        os << ")";
+      }
+    }
+
     os << " -> ";
     Type resultType = sig.getUserResultType();
 

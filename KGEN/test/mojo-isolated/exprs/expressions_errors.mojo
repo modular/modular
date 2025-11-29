@@ -175,6 +175,9 @@ fn test_overloaded_arg_ambiguity() :
   # expected-note @below {{did you mean to call it?}}
   (var xxx) = overloaded_arg
 
+fn throws_int() raises (Int):
+    pass
+
 fn test_func_type():
     # expected-error @below {{fn(Int) -> Int}}
     comptime float0: fn(Int) -> Int = test_func_type
@@ -212,6 +215,8 @@ fn test_func_type():
     comptime f7: fn [*, Int] -> Int = test_func_type
     # expected-error @below {{unnamed parameter must be positional-only}}
     comptime f8 = fn [Int, b: Int] capturing -> Int
+    # expected-error @below {{'fn() raises (Int) -> None' value to 'fn() raises (String) -> None'}}
+    comptime f9: fn () raises (String) = throws_int
 
 ##===----------------------------------------------------------------------===##
 # LValue and RValues

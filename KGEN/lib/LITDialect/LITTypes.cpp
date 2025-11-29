@@ -1276,6 +1276,16 @@ Type FnType::getUserResultType() {
   return getResultType();
 }
 
+/// Get the user result type of the signature.
+Type FnType::getUserThrownType() {
+  if (!isThrows())
+    return {};
+  auto numArgs = getArgConventions().size();
+  assert(getArgConventions()[numArgs - 2] == ArgConvention::ByRefError &&
+         "byref_error must be the second to last argument");
+  return ::cast<RefType>(getArguments()[numArgs - 2]).getElementType();
+}
+
 /// Substitute the specified implicit origin references into the specified
 /// type, replacing them with `values` if they are at depth 0, or decrementing
 /// their depth if not.  This returns the resultant FunctionType on success,

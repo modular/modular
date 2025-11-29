@@ -659,16 +659,19 @@ struct FunctionTypeNode final : public ExprNode {
   FunctionTypeNode(SMLoc baseLoc, ArrayRef<ParsedArgument> parsedParams,
                    ArrayRef<ParsedArgument> parsedArgs,
                    const ParsedArgument &resultArg, FnEffects effects,
-                   const ExprNode *originExpr, SMLoc endLoc)
+                   const ExprNode *thrownTypeExpr, const ExprNode *originExpr,
+                   SMLoc endLoc)
       : ExprNode(kFunctionType), baseLoc(baseLoc), parsedParams(parsedParams),
         parsedArgs(parsedArgs), resultArg(resultArg), effects(effects),
-        originExpr(originExpr), endLoc(endLoc) {}
+        thrownTypeExpr(thrownTypeExpr), originExpr(originExpr), endLoc(endLoc) {
+  }
 
   SMLoc baseLoc;
   ArrayRef<ParsedArgument> parsedParams; // Parameter list
   ArrayRef<ParsedArgument> parsedArgs;   // Argument list
   const ParsedArgument &resultArg;       // Result argument
   FnEffects effects;
+  const ExprNode *thrownTypeExpr;
   const ExprNode *originExpr;
   SMLoc endLoc;
 
