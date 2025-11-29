@@ -17,7 +17,7 @@ To evaluate kernel performance on NVIDIA hardware, see [Kernel profiling with
 Nsight Compute](docs/profiling.md).
 
 If you're looking for the high-level Python APIs based on these kernels and
-used to build MAX graphs, see the [`max/nn/`](../nn) directory.
+used to build MAX graphs, see the [`max/python/max/nn/`](/max/python/max/nn/) directory.
 
 ## Contributing
 
