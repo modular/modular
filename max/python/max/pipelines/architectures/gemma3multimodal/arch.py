@@ -19,11 +19,11 @@ from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,
     SupportedEncoding,
-    TextTokenizer,
+    TextAndVisionTokenizer,
 )
 
-from . import weight_adapters
 from .model import Gemma3_MultiModalModel
+from .weight_adapters import convert_safetensor_state_dict
 
 gemma3_multimodal_arch = SupportedArchitecture(
     name="Gemma3ForConditionalGeneration",
@@ -46,11 +46,11 @@ gemma3_multimodal_arch = SupportedArchitecture(
     },
     pipeline_model=Gemma3_MultiModalModel,
     task=PipelineTask.TEXT_GENERATION,
-    tokenizer=TextTokenizer,
+    tokenizer=TextAndVisionTokenizer,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     rope_type=RopeType.normal,
     weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+        WeightsFormat.safetensors: convert_safetensor_state_dict,
     },
 )

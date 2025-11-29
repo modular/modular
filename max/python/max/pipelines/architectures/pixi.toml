@@ -1,0 +1,83 @@
+[workspace]
+authors = ["rosscampbell <ross.campbell@codethink.co.uk>"]
+channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
+name = "gemma3multimodal"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+# serve the model for benchmarking
+serve_inference = { cmd = [
+    "max", "serve",
+    "--model", "google/gemma-3-4B-it",
+	"--custom-architectures", "gemma3multimodal",
+    "--max-batch-size", "1",
+    "--max-length", "5000",
+    "--no-enable-prefix-caching",
+    "--no-enable-chunked-prefill"
+] }
+
+# run a benchmark test
+benchmark_text = { cmd = [
+    "max", "benchmark",
+    "--model", "google/gemma-3-4B-it",
+    "--custom-architectures", "gemma3multimodal",
+    "--backend", "modular",
+    "--endpoint", "/v1/chat/completions",
+    "--dataset-name", "sonnet",
+    "--num-prompts", "500",
+    "--sonnet-input-len", "550",
+    "--output-lengths", "256",
+    "--sonnet-prefix-len", "2",
+] }
+
+# run lm evals against inference server
+run_lm_eval = { cmd = [
+    "lm_eval",
+    "--tasks=chartqa",
+    "--model=local-chat-completions",
+    "--log_samples",
+    "--model_args=model=google/gemma-3-4B-it,base_url=http://127.0.0.1:8000/v1/chat/completions,num_concurrent=64,max_retries=1,timeout=7200",
+    "--apply_chat_template",
+    "--output_path=/tmp/tmpqd471l8t",
+    "--limit=320",
+    "--seed=42",
+    "--gen_kwargs=seed=42,temperature=0",
+    "--fewshot_as_multiturn",
+    "--log_samples"
+]}
+
+# quickly run a model with 1 text and image prompt and then shut it down
+generate = { cmd = [
+	"max","generate",
+	"--model", "google/gemma-3-4B-it",
+	"--custom-architectures", "gemma3multimodal",
+	"--prompt", "<start_of_image><end_of_image>what is the password?",
+    "--image_url", "https://huggingface.co/spaces/big-vision/paligemma-hf/resolve/main/examples/password.jpg",
+    "--max-batch-size", "1",
+    "--max-length", "5000",
+    "--temperature", "0"
+] }
+
+generate_text = { cmd = [
+    "max", "generate",
+    "--model", "google/gemma-3-4B-it",
+    "--custom-architectures", "gemma3multimodal",
+    "--prompt", "<start_of_turn>what day is it?<end_of_turn>",
+    "--max-batch-size", "1",
+    "--max-length", "5000"
+] }
+
+# keep it clean
+linter = { cmd = ["../../../../../bazelw", "run", "//:lint"] }
+formatter = { cmd = ["../../../../../bazelw", "run", "//:format"] }
+lint = [{ task = "linter" }, { task = "formatter" }]
+
+[dependencies]
+#modular = "==25.7.0.dev2025101518"
+modular = "==26.1.0.dev2025112505"
+
+[pypi-dependencies]
+lm-eval = { version = ">=0.4.9, <0.5", extras = ["api"] }
+# CUDA dependencies for NVIDIA GPU support
+# cuda-toolkit = "12.*"
