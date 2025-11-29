@@ -963,6 +963,7 @@ struct List[T: Copyable & Movable](
             )
 
         self._len -= slice_len
+        self._annotate_shrink(self._len + slice_len)
         return res^
 
     fn reserve(mut self, new_capacity: Int):
