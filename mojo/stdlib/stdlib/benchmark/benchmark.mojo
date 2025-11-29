@@ -135,7 +135,7 @@ max total time of 4 s:
 r = benchmark.run[sleeper](1, 2, 3, 4)
 ```
 
-Note that benchmarking continues until 'min_runtime_secs' has 
+Note that benchmarking continues until `min_runtime_secs` has
 elapsed and either `max_runtime_secs` OR `max_iters` is achieved.
 """
 
@@ -182,11 +182,11 @@ struct Batch(ImplicitlyCopyable, Movable):
 struct Unit:
     """Time Unit used by Benchmark Report."""
 
-    alias ns = "ns"
+    comptime ns = "ns"
     """Nanoseconds"""
-    alias ms = "ms"
+    comptime ms = "ms"
     """Milliseconds"""
-    alias s = "s"
+    comptime s = "s"
     """Seconds"""
 
     @staticmethod
@@ -407,6 +407,9 @@ fn run[
 
     Returns:
         Average execution time of func in ns.
+
+    Raises:
+        If the operation fails.
     """
 
     @parameter
@@ -459,6 +462,9 @@ fn run[
 
     Returns:
         Average execution time of func in ns.
+
+    Raises:
+        If the operation fails.
     """
 
     @parameter
@@ -502,6 +508,9 @@ fn run[
 
     Returns:
         Average execution time of func in ns.
+
+    Raises:
+        If the operation fails.
     """
 
     @parameter
@@ -554,6 +563,9 @@ fn run[
 
     Returns:
         Average execution time of func in ns.
+
+    Raises:
+        If the operation fails.
     """
 
     @parameter
@@ -655,3 +667,15 @@ fn _is_significant_measurement(
 
     # Otherwise the result is not statistically significant.
     return False
+
+
+@always_inline
+fn _run_impl_fixed[
+    timing_fn: fn (num_iters: Int) raises capturing [_] -> Int
+](fixed_iterations: Int) raises -> Report:
+    # Only run 'timing_fn' for the fixed number of iterations and return the report.
+    var report = Report()
+    report.runs.append(
+        Batch(timing_fn(fixed_iterations), fixed_iterations, True)
+    )
+    return report^

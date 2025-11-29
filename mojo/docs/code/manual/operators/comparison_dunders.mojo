@@ -19,20 +19,10 @@ struct MyInt(Comparable):
     fn __eq__(self, rhs: MyInt) -> Bool:
         return self.value == rhs.value
 
-    fn __ne__(self, rhs: MyInt) -> Bool:
-        return self.value != rhs.value
-
     fn __lt__(self, rhs: MyInt) -> Bool:
         return self.value < rhs.value
 
-    fn __le__(self, rhs: MyInt) -> Bool:
-        return self.value <= rhs.value
-
-    fn __gt__(self, rhs: MyInt) -> Bool:
-        return self.value > rhs.value
-
-    fn __ge__(self, rhs: MyInt) -> Bool:
-        return self.value >= rhs.value
+    # `__ne__`, `__le__`, `__gt__`, and `__ge__` have default implementations.
 
 
 def main():

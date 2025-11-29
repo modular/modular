@@ -31,6 +31,14 @@ fn get_gpu_target[
     # TODO: Ideally this is an Optional[StaticString] but blocked by MOCO-1039
     target_arch: StaticString = _accelerator_arch(),
 ]() -> _TargetType:
+    """Gets the GPU target information for the specified architecture.
+
+    Parameters:
+        target_arch: GPU architecture name (defaults to current accelerator architecture).
+
+    Returns:
+        Target type information for the specified GPU architecture.
+    """
     constrained[
         target_arch != "", "target_arch must be a valid GPU architecture."
     ]()
@@ -76,7 +84,7 @@ fn _compile_code[
 fn _to_sass[
     target: _TargetType = get_gpu_target()
 ](asm: String, *, nvdisasm_opts: String = "") raises -> String:
-    alias nvdisasm_path = Path("/usr/local/cuda/bin/nvdisasm")
+    comptime nvdisasm_path = Path("/usr/local/cuda/bin/nvdisasm")
     if not nvdisasm_path.exists():
         raise Error(
             "the `nvdisasm` binary does not exist in '", nvdisasm_path, "'"
@@ -104,7 +112,7 @@ fn _ptxas_compile[
 ](
     asm: String, *, options: String = "", output_file: Optional[Path] = None
 ) raises -> String:
-    alias ptxas_path = Path("/usr/local/cuda/bin/ptxas")
+    comptime ptxas_path = Path("/usr/local/cuda/bin/ptxas")
     if not ptxas_path.exists():
         raise Error("the `ptxas` binary does not exist in '", ptxas_path, "'")
     # Compile the PTX code to an ELF file. Here we care about the diagnostics.

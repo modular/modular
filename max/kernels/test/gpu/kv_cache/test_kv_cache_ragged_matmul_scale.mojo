@@ -22,6 +22,7 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
+from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from memory import memcpy
 from nn.kv_cache_ragged import (
@@ -31,11 +32,11 @@ from testing import assert_almost_equal, assert_equal
 
 from utils import IndexList
 
-alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
-alias llama_num_q_heads = 32
+comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
+comptime llama_num_q_heads = 32
 
 
-alias block_scale = 128
+comptime block_scale = 128
 
 
 def _initialize_ragged_inputs[
@@ -45,11 +46,11 @@ def _initialize_ragged_inputs[
     batch_size: Int,
     prompt_lens: List[Int],
     ctx: DeviceContext,
-) -> (
+) -> Tuple[
     DeviceNDBuffer[DType.uint32, 1],
     DeviceNDBuffer[dtype, 2, DimList(Dim(), hidden_size)],
     DeviceNDBuffer[dtype, 2, DimList(Dim(), hidden_size)],
-):
+]:
     """Initializes input row offsets and hidden state ragged tensor inputs."""
     var total_length = 0
     var max_seq_length_batch = -1
@@ -132,12 +133,14 @@ def execute_matmul_k_cache_ragged_scale[
     This test follows the same pattern as execute_matmul_k_cache_ragged but
     includes input_scale and weight_scale parameters for scaled FP8 operations.
     """
-    alias hidden_size = num_q_heads * kv_params.head_size
-    alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
+    comptime hidden_size = num_q_heads * Int(kv_params.head_size)
+    comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
 
-    alias num_paged_blocks = 32
-    alias page_size = 512
-    alias CollectionType = PagedKVCacheCollection[dtype, kv_params, page_size]
+    comptime num_paged_blocks = 32
+    comptime page_size = 512
+    comptime CollectionType = PagedKVCacheCollection[
+        dtype, kv_params, page_size
+    ]
     var batch_size = len(prompt_lens)
 
     debug_assert(
@@ -155,8 +158,8 @@ def execute_matmul_k_cache_ragged_scale[
             2,
             num_layers,
             page_size,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         )
     )
 
@@ -193,9 +196,33 @@ def execute_matmul_k_cache_ragged_scale[
     var kv_block_device = kv_block_host.copy_to_device(ctx)
 
     var kv_collection_device = CollectionType(
-        kv_block_device.tensor,
-        cache_lengths_device.tensor,
-        paged_lut_device.tensor,
+        LayoutTensor[
+            kv_block_device.dtype, Layout.row_major[6](), MutAnyOrigin
+        ](
+            kv_block_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_device.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            paged_lut_device.dtype, Layout.row_major[2](), ImmutAnyOrigin
+        ](
+            paged_lut_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut_device.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_seq_length_batch,
         max_full_context_length,
     )
@@ -203,9 +230,31 @@ def execute_matmul_k_cache_ragged_scale[
     var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
 
     var kv_collection_host = CollectionType(
-        kv_block_host.tensor,
-        cache_lengths_host.tensor,
-        paged_lut_host.tensor,
+        LayoutTensor[kv_block_host.dtype, Layout.row_major[6](), MutAnyOrigin](
+            kv_block_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_host.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_host.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_host.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            paged_lut_host.dtype, Layout.row_major[2](), ImmutAnyOrigin
+        ](
+            paged_lut_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut_host.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_seq_length_batch,
         max_full_context_length,
     )
@@ -225,12 +274,12 @@ def execute_matmul_k_cache_ragged_scale[
     # Initialize the weights.
     var weight_host = HostNDBuffer[
         weight_dtype, 2, DimList(kv_hidden_size, hidden_size)
-    ](IndexList[2](kv_hidden_size, hidden_size))
+    ](IndexList[2](Int(kv_hidden_size), hidden_size))
     random(weight_host.tensor)
     var weight_device = weight_host.copy_to_device(ctx)
 
     # Initialize scales for blockwise scaling.
-    alias static_weight_scale_shape = DimList(
+    comptime static_weight_scale_shape = DimList(
         ceildiv(kv_hidden_size, block_scale), ceildiv(hidden_size, block_scale)
     )
     var dynamic_input_scale_shape = DimList(
@@ -256,8 +305,12 @@ def execute_matmul_k_cache_ragged_scale[
 
     # Initialize reference output.
     var ref_output_host = HostNDBuffer[
-        dtype, 2, DimList(Dim(), kv_hidden_size)
-    ](IndexList[2](hidden_state_ragged_device.tensor.dim(0), kv_hidden_size))
+        dtype, 2, DimList(Dim(), Int(kv_hidden_size))
+    ](
+        IndexList[2](
+            hidden_state_ragged_device.tensor.dim(0), Int(kv_hidden_size)
+        )
+    )
     var ref_output_device = ref_output_host.copy_to_device(ctx)
 
     # Execute test with scaled implementation.
@@ -265,11 +318,11 @@ def execute_matmul_k_cache_ragged_scale[
         target="gpu",
         scales_granularity_mnk = IndexList[3](1, block_scale, block_scale),
     ](
-        hidden_state_ragged_device.tensor,
-        input_row_offsets_device.tensor,
-        weight_device.tensor,
-        input_scale_device.tensor,
-        weight_scale_device.tensor,
+        hidden_state_ragged_device.to_layout_tensor(),
+        input_row_offsets_device.to_layout_tensor(),
+        weight_device.to_layout_tensor(),
+        input_scale_device.to_layout_tensor(),
+        weight_scale_device.to_layout_tensor(),
         k_cache_device,
         ctx,
     )
@@ -278,7 +331,7 @@ def execute_matmul_k_cache_ragged_scale[
     # Convert weight to same dtype as input for reference computation.
     var weight_ref_host = HostNDBuffer[
         weight_dtype, 2, DimList(kv_hidden_size, hidden_size)
-    ](IndexList[2](kv_hidden_size, hidden_size))
+    ](IndexList[2](Int(kv_hidden_size), hidden_size))
     var weight_ref_device = weight_ref_host.copy_to_device(ctx)
 
     # Copy weight data
@@ -332,13 +385,13 @@ def execute_matmul_k_cache_ragged_scale[
                 var head_idx = k_dim // kv_params.head_size
                 var head_dim_idx = k_dim % kv_params.head_size
                 var a = ref_out[
-                    Int(input_row_offsets_host.tensor[bs]) + s, k_dim
+                    Int(input_row_offsets_host.tensor[bs]) + s, Int(k_dim)
                 ]
                 var b = k_cache_host.load[width=1](
                     bs,
-                    head_idx,
+                    Int(head_idx),
                     cache_sizes[bs] + s,
-                    head_dim_idx,
+                    Int(head_dim_idx),
                 )
                 assert_almost_equal(a, b, atol=atol, rtol=rtol)
 
@@ -371,9 +424,9 @@ def execute_matmul_k_cache_ragged_scale[
 
 def execute_fused_matmul_suite_float8_e4m3fn(ctx: DeviceContext):
     """Test suite specifically for FP8 scaled matmul operations."""
-    alias dtype = DType.float8_e4m3fn
-    alias rtol = 1e-2
-    alias atol = 1e-2
+    comptime dtype = DType.float8_e4m3fn
+    comptime rtol = 1e-2
+    comptime atol = 1e-2
     for bs in [1, 16]:
         var ce_cache_sizes = List[Int]()
         var ce_seq_lens = List[Int]()

@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from math import ceildiv, rsqrt
 from sys import simd_width_of
 
@@ -58,8 +59,8 @@ fn run_layer_norm_block[
     var data_shape = Index(rows, cols)
     var param_shape = Index(cols)
 
-    alias layout = Layout.row_major[2]()
-    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    comptime layout = Layout.row_major[2]()
+    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var data_buf = LayoutTensor[dtype, layout](
         data_d, RuntimeLayout[layout].row_major(data_shape)
     )
@@ -122,7 +123,7 @@ fn run_layer_norm_block[
     @parameter
     @__copy_capture(data_buf, gamma, beta, epsilon)
     fn run_func_ln() raises:
-        alias kernel = layer_norm_gpu_block[
+        comptime kernel = layer_norm_gpu_block[
             mut = beta.mut,
             origin = beta.origin,
             layout = beta.layout,
@@ -198,8 +199,8 @@ fn run_layer_norm_gpu[
 
     var param_shape = Index(cols)
 
-    alias layout = Layout.row_major[rank]()
-    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    comptime layout = Layout.row_major[rank]()
+    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var data_buf = LayoutTensor[dtype, layout](
         data_d, RuntimeLayout[layout].row_major(shape)
     )
@@ -313,8 +314,8 @@ fn run_layer_norm_warp_tiling[
     var data_shape = Index(rows, cols)
     var param_shape = Index(cols)
 
-    alias layout = Layout.row_major[2]()
-    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    comptime layout = Layout.row_major[2]()
+    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var data_buf = LayoutTensor[dtype, layout](
         data_d, RuntimeLayout[layout].row_major(data_shape)
     )
@@ -378,7 +379,7 @@ fn run_layer_norm_warp_tiling[
     @parameter
     @__copy_capture(data_buf, gamma, beta, epsilon)
     fn run_func_ln() raises:
-        alias kernel = layer_norm_gpu_warp_tiling[
+        comptime kernel = layer_norm_gpu_warp_tiling[
             mut = beta.mut,
             origin = beta.origin,
             layout = beta.layout,

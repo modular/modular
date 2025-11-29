@@ -62,7 +62,7 @@ trait Representable:
         Returns:
             The string representation of the instance.
         """
-        pass
+        ...
 
 
 fn repr[T: Representable](value: T) -> String:

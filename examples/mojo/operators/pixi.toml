@@ -1,4 +1,4 @@
-[project]
+[workspace]
 name = "Operators for custom Mojo struct"
 version = "0.1.0"
 description = "An example of implementing operators for a custom Mojo struct"
@@ -11,4 +11,4 @@ mojo = "<1.0.0"
 
 [tasks]
 main = "mojo run main.mojo"
-test = "mojo test test_*.mojo"
+test = "mojo run test_my_complex.mojo"

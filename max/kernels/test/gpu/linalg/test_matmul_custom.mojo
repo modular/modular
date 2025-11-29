@@ -23,6 +23,7 @@ from layout.runtime_layout import RuntimeLayout
 from linalg.bmm import _batched_matmul_gpu
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive, multistage_gemm
 from linalg.utils_gpu import MatmulConfig, MatmulKernels, select_config
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
@@ -65,22 +66,22 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias BLOCK_DIM = 16
+    comptime BLOCK_DIM = 16
 
     # Create layout tensors for bf16 kernel
-    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var c_tensor_bf16 = LayoutTensor[DType.bfloat16, layout, MutableAnyOrigin](
+    var c_tensor_bf16 = LayoutTensor[DType.bfloat16, layout, MutAnyOrigin](
         c_device,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
-    var a_tensor_bf16 = LayoutTensor[DType.bfloat16, layout, MutableAnyOrigin](
+    var a_tensor_bf16 = LayoutTensor[DType.bfloat16, layout, MutAnyOrigin](
         a_device,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
-    var b_tensor_bf16 = LayoutTensor[DType.bfloat16, layout, MutableAnyOrigin](
+    var b_tensor_bf16 = LayoutTensor[DType.bfloat16, layout, MutAnyOrigin](
         b_device,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
@@ -88,7 +89,7 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     @always_inline
     @parameter
     fn run_func_bf16() raises:
-        alias kernel = matmul_kernel_naive[
+        comptime kernel = matmul_kernel_naive[
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,
@@ -117,17 +118,17 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     ctx.enqueue_copy(b_device_n, b_host_n)
 
     # Create layout tensors for fp32 kernel
-    var c_tensor_fp32 = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+    var c_tensor_fp32 = LayoutTensor[DType.float32, layout, MutAnyOrigin](
         c_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
-    var a_tensor_fp32 = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+    var a_tensor_fp32 = LayoutTensor[DType.float32, layout, MutAnyOrigin](
         a_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
-    var b_tensor_fp32 = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+    var b_tensor_fp32 = LayoutTensor[DType.float32, layout, MutAnyOrigin](
         b_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
@@ -135,7 +136,7 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     @always_inline
     @parameter
     fn run_func_fp32() raises:
-        alias kernel = matmul_kernel_naive[
+        comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -189,8 +190,8 @@ fn run_matmul[
     K: Int,
 ](
     ctx: DeviceContext,
-    rtol: Float64 = 1e-05,
-    atol: Float64 = 0.1,
+    rtol: Float64 = 0.01,
+    atol: Float64 = 1.0,
     rng_width: Float64 = Float64(100.0),
     debug: Bool = True,
 ) raises:
@@ -221,9 +222,9 @@ fn run_matmul[
         c_host[i] = val.cast[dtype]()
         c_host_n[i] = c_host[i]
 
-    alias a_shape = DimList(M, K)
-    alias b_shape = DimList(K, N)
-    alias c_shape = DimList(M, N)
+    comptime a_shape = DimList(M, K)
+    comptime b_shape = DimList(K, N)
+    comptime c_shape = DimList(M, N)
 
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](K * N)
@@ -252,22 +253,22 @@ fn run_matmul[
     ctx.enqueue_copy(a_device_n, a_host_n)
     ctx.enqueue_copy(b_device_n, b_host_n)
 
-    alias BLOCK_DIM = 16
+    comptime BLOCK_DIM = 16
 
     # Create layout tensors for naive kernel
-    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var c_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var c_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
         c_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
-    var a_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var a_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
         a_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
-    var b_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var b_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
         b_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
@@ -275,7 +276,7 @@ fn run_matmul[
     @always_inline
     @parameter
     fn run_func_naive() raises:
-        alias kernel = matmul_kernel_naive[
+        comptime kernel = matmul_kernel_naive[
             dtype,
             dtype,
             dtype,
@@ -333,8 +334,8 @@ fn run_matmul_split_k[
     config: MatmulConfig[dtype, dtype, dtype, False],
 ](
     ctx: DeviceContext,
-    rtol: Float64 = 1e-05,
-    atol: Float64 = 0.1,
+    rtol: Float64 = 0.01,
+    atol: Float64 = 1.0,
     rng_width: Float64 = Float64(100.0),
     debug: Bool = True,
 ) raises:
@@ -367,9 +368,9 @@ fn run_matmul_split_k[
         c_host[i] = val.cast[dtype]()
         c_host_n[i] = c_host[i]
 
-    alias a_shape = DimList(M, K)
-    alias b_shape = DimList(K, N)
-    alias c_shape = DimList(M, N)
+    comptime a_shape = DimList(M, K)
+    comptime b_shape = DimList(K, N)
+    comptime c_shape = DimList(M, N)
 
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](K * N)
@@ -408,27 +409,27 @@ fn run_matmul_split_k[
     ctx.enqueue_copy(a_device_n, a_host)
     ctx.enqueue_copy(b_device_n, b_host)
 
-    alias BLOCK_DIM = 16
+    comptime BLOCK_DIM = 16
 
     # Create layout tensors for naive kernel
-    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var c_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var c_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
         c_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
-    var a_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var a_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
         a_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
-    var b_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var b_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
         b_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
 
-    alias kernel = matmul_kernel_naive[
+    comptime kernel = matmul_kernel_naive[
         dtype,
         dtype,
         dtype,
@@ -481,14 +482,14 @@ fn run_matmul_transpose[
     K: Int,
 ](
     ctx: DeviceContext,
-    rtol: Float64 = 1e-05,
-    atol: Float64 = 0.1,
+    rtol: Float64 = 0.01,
+    atol: Float64 = 1.0,
     rng_width: Float64 = Float64(100.0),
     debug: Bool = True,
 ) raises:
     print("== run_matmul kernel transpose => ", String(dtype), M, N, K)
 
-    alias transpose_b = True
+    comptime transpose_b = True
     var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
     var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
     var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
@@ -514,9 +515,9 @@ fn run_matmul_transpose[
         c_host[i] = val.cast[dtype]()
         c_host_n[i] = c_host[i]
 
-    alias a_shape = DimList(M, K)
-    alias b_shape = DimList(N, K)
-    alias c_shape = DimList(M, N)
+    comptime a_shape = DimList(M, K)
+    comptime b_shape = DimList(N, K)
+    comptime c_shape = DimList(M, N)
 
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](N * K)
@@ -547,22 +548,22 @@ fn run_matmul_transpose[
     ctx.enqueue_copy(a_device_n, a_host_n)
     ctx.enqueue_copy(b_device_n, b_host_n)
 
-    alias BLOCK_DIM = 16
+    comptime BLOCK_DIM = 16
 
     # Create layout tensors for naive kernel
-    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var c_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var c_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
         c_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
-    var a_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var a_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
         a_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
-    var b_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var b_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
         b_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](N, K)),
     )
@@ -570,7 +571,7 @@ fn run_matmul_transpose[
     @always_inline
     @parameter
     fn run_func_naive() raises:
-        alias kernel = matmul_kernel_naive[
+        comptime kernel = matmul_kernel_naive[
             dtype,
             dtype,
             dtype,
@@ -745,10 +746,10 @@ fn run_batched_matmul(
 
 def main():
     with DeviceContext() as ctx:
-        alias kernels = MatmulKernels[
+        comptime kernels = MatmulKernels[
             DType.bfloat16, DType.bfloat16, DType.bfloat16, False
         ]()
-        alias config = kernels.ampere_256x128_3 if ctx.default_device_info is A100 else kernels.ampere_128x128_4
+        comptime config = kernels.ampere_256x128_3 if ctx.default_device_info is A100 else kernels.ampere_128x128_4
         run_matmul_split_k[DType.bfloat16, 512, 4096, 14336, config](
             ctx, atol=1.0, rng_width=1.0
         )

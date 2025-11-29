@@ -40,73 +40,73 @@ struct Attribute(Identifiable, Writable):
     var code: Int32
     """The numeric code representing the attribute type."""
 
-    alias MAX_THREADS_PER_BLOCK = Self(0)
+    comptime MAX_THREADS_PER_BLOCK = Self(0)
     """The maximum number of threads per block, beyond which a launch of the
     function would fail. This number depends on both the function and the device
     on which the function is currently loaded."""
 
-    alias SHARED_SIZE_BYTES = Self(1)
+    comptime SHARED_SIZE_BYTES = Self(1)
     """The size in bytes of statically-allocated shared memory required by this
     function. This does not include dynamically-allocated shared memory
     requested by the user at runtime."""
 
-    alias CONST_SIZE_BYTES = Self(2)
+    comptime CONST_SIZE_BYTES = Self(2)
     """The size in bytes of user-allocated constant memory required by this
     function."""
 
-    alias LOCAL_SIZE_BYTES = Self(3)
+    comptime LOCAL_SIZE_BYTES = Self(3)
     """The size in bytes of local memory used by each thread of this function."""
 
-    alias NUM_REGS = Self(4)
+    comptime NUM_REGS = Self(4)
     """The number of registers used by each thread of this function."""
 
-    alias PTX_VERSION = Self(5)
+    comptime PTX_VERSION = Self(5)
     """The PTX virtual architecture version for which the function was compiled.
     This value is the major PTX version * 10 + the minor PTX version, so a PTX
     version 1.3 function would return the value 13. Note that this may return
     the undefined value of 0 for cubins compiled prior to CUDA 3.0.."""
 
-    alias BINARY_VERSION = Self(6)
+    comptime BINARY_VERSION = Self(6)
     """The binary architecture version for which the function was compiled.
     This value is the major binary version * 10 + the minor binary version,
     so a binary version 1.3 function would return the value 13. Note that this
     will return a value of 10 for legacy cubins that do not have a properly-
     encoded binary architecture version.."""
 
-    alias CACHE_MODE_CA = Self(7)
+    comptime CACHE_MODE_CA = Self(7)
     """The attribute to indicate whether the function has been compiled with
     user specified option "-Xptxas --dlcm=ca" set ."""
 
-    alias MAX_DYNAMIC_SHARED_SIZE_BYTES = Self(8)
+    comptime MAX_DYNAMIC_SHARED_SIZE_BYTES = Self(8)
     """The maximum size in bytes of dynamically-allocated shared memory that
     can be used by this function. If the user-specified dynamic shared memory
     size is larger than this value."""
 
-    alias PREFERRED_SHARED_MEMORY_CARVEOUT = Self(9)
+    comptime PREFERRED_SHARED_MEMORY_CARVEOUT = Self(9)
     """On devices where the L1 cache and shared memory use the same hardware
     resources, this sets the shared memory carveout preference, in percent of
     the total shared memory."""
 
-    alias CLUSTER_SIZE_MUST_BE_SET = Self(10)
+    comptime CLUSTER_SIZE_MUST_BE_SET = Self(10)
     """If this attribute is set, the kernel must launch with a valid cluster
     size specified."""
 
-    alias REQUIRED_CLUSTER_WIDTH = Self(11)
+    comptime REQUIRED_CLUSTER_WIDTH = Self(11)
     """The required cluster width in blocks. The values must either all be 0 or
     all be positive. The validity of the cluster dimensions is otherwise checked
     at launch time."""
 
-    alias REQUIRED_CLUSTER_HEIGHT = Self(12)
+    comptime REQUIRED_CLUSTER_HEIGHT = Self(12)
     """The required cluster height in blocks. The values must either all be 0 or
     all be positive. The validity of the cluster dimensions is otherwise checked
     at launch time."""
 
-    alias REQUIRED_CLUSTER_DEPTH = Self(13)
+    comptime REQUIRED_CLUSTER_DEPTH = Self(13)
     """The required cluster depth in blocks. The values must either all be 0 or
     all be positive. The validity of the cluster dimensions is otherwise checked
     at launch time."""
 
-    alias NON_PORTABLE_CLUSTER_SIZE_ALLOWED = Self(14)
+    comptime NON_PORTABLE_CLUSTER_SIZE_ALLOWED = Self(14)
     """Whether the function can be launched with non-portable cluster size. 1 is
     allowed, 0 is disallowed. A non-portable cluster size may only function on
     the specific SKUs the program is tested on. The launch might fail if the
@@ -117,7 +117,7 @@ struct Attribute(Identifiable, Writable):
     higher than the target compute capability. The portable cluster size for
     sm_90 is 8 blocks per cluster."""
 
-    alias CLUSTER_SCHEDULING_POLICY_PREFERENCE = Self(15)
+    comptime CLUSTER_SCHEDULING_POLICY_PREFERENCE = Self(15)
     """The block scheduling policy of a function. The value type is
     CUclusterSchedulingPolicy / cudaClusterSchedulingPolicy."""
 
@@ -192,7 +192,7 @@ struct Attribute(Identifiable, Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct FuncAttribute(EqualityComparable, ImplicitlyCopyable, Movable):
+struct FuncAttribute(Equatable, ImplicitlyCopyable, Movable):
     """Implements CUDA's CUfunction_attribute enum for GPU kernel function attributes.
 
     This struct represents function attributes that can be set or queried for GPU kernels,
@@ -211,7 +211,7 @@ struct FuncAttribute(EqualityComparable, ImplicitlyCopyable, Movable):
     var value: Int32
     """The value associated with this attribute."""
 
-    alias NULL = FuncAttribute(Attribute(-1), -1)
+    comptime NULL = FuncAttribute(Attribute(-1), -1)
     """A null/invalid function attribute constant."""
 
     @always_inline("nodebug")

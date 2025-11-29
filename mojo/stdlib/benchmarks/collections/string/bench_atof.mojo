@@ -48,7 +48,7 @@ fn bench_parsing_all_floats_in_file[
 
 def main():
     var bench = Bench()
-    alias files = ["canada", "mesh"]
+    comptime files = ["canada", "mesh"]
 
     @parameter
     for filename in files:
@@ -58,12 +58,14 @@ def main():
         for item2 in items_to_parse:
             nb_of_bytes += len(item2)
 
-        alias S = __type_of(items_to_parse)
+        comptime S = type_of(items_to_parse)
         bench.bench_with_input[S, bench_parsing_all_floats_in_file[S.T.origin]](
             BenchId("atof", filename),
             items_to_parse,
-            ThroughputMeasure(BenchMetric.elements, len(items_to_parse)),
-            ThroughputMeasure(BenchMetric.bytes, nb_of_bytes),
+            [
+                ThroughputMeasure(BenchMetric.elements, len(items_to_parse)),
+                ThroughputMeasure(BenchMetric.bytes, nb_of_bytes),
+            ],
         )
 
     print(bench)

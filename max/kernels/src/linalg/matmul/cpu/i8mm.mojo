@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import prefetch
 from sys.info import align_of
 from sys.intrinsics import PrefetchOptions
@@ -33,16 +34,16 @@ struct LoadStore_i8mm[
     tile_rows: Int,
     tile_columns: Int,
 ]:
-    alias num_simd_cols = tile_columns // simd_size
+    comptime num_simd_cols = Self.tile_columns // Self.simd_size
     var output_tile: _Accumulator[
-        dtype, tile_rows, Self.num_simd_cols, simd_size
+        Self.dtype, Self.tile_rows, Self.num_simd_cols, Self.simd_size
     ]
     var skip_boundary_check: Bool
 
     @always_inline
     fn __init__(out self, skip_boundary_check: Bool):
         self.output_tile = _Accumulator[
-            dtype, tile_rows, Self.num_simd_cols, simd_size
+            Self.dtype, Self.tile_rows, Self.num_simd_cols, Self.simd_size
         ]()
         self.skip_boundary_check = skip_boundary_check
 
@@ -53,7 +54,7 @@ struct LoadStore_i8mm[
     @always_inline
     fn _load_c_tile(
         mut self,
-        c_ptr: UnsafePointer[Scalar[dtype]],
+        c_ptr: UnsafePointer[Scalar[Self.dtype]],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: IndexList[2],
@@ -61,11 +62,11 @@ struct LoadStore_i8mm[
         var c_ptr_loc = c_ptr.offset(tile_n_idx)
 
         @parameter
-        for idx0 in range(tile_rows):
+        for idx0 in range(Self.tile_rows):
 
             @parameter
-            for idx1 in range(tile_columns // simd_size):
-                var c_data: SIMD[dtype, simd_size] = 0
+            for idx1 in range(Self.tile_columns // Self.simd_size):
+                var c_data: SIMD[Self.dtype, Self.simd_size] = 0
                 if self.skip_boundary_check or (
                     idx1 * 2 + 2 <= c_bound[1] - tile_n_idx
                 ):
@@ -74,8 +75,10 @@ struct LoadStore_i8mm[
                     )
                     var t1 = c_ptr_loc.load[width=2](
                         c_stride * (2 * idx0 + 1) + 2 * idx1
-                    ) if not single_row else SIMD[dtype, 2](0)
-                    c_data = rebind[SIMD[dtype, simd_size]](t0.join(t1))
+                    ) if not Self.single_row else SIMD[Self.dtype, 2](0)
+                    c_data = rebind[SIMD[Self.dtype, Self.simd_size]](
+                        t0.join(t1)
+                    )
                 elif idx1 * 2 <= c_bound[1]:
                     var t0 = partial_simd_load[2](
                         c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1),
@@ -88,15 +91,17 @@ struct LoadStore_i8mm[
                         0,
                         c_bound[1] - tile_n_idx - idx1 * 2,
                         0,
-                    ) if not single_row else SIMD[dtype, 2](0)
-                    c_data = rebind[SIMD[dtype, simd_size]](t0.join(t1))
+                    ) if not Self.single_row else SIMD[Self.dtype, 2](0)
+                    c_data = rebind[SIMD[Self.dtype, Self.simd_size]](
+                        t0.join(t1)
+                    )
 
                 self.output_tile[idx0, idx1] = c_data
 
     @always_inline
     fn _store_c_tile(
         mut self,
-        c_ptr: UnsafePointer[Scalar[dtype]],
+        c_ptr: UnsafePointer[Scalar[Self.dtype]],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: IndexList[2],
@@ -104,10 +109,10 @@ struct LoadStore_i8mm[
         var c_ptr_loc = c_ptr.offset(tile_n_idx)
 
         @parameter
-        for idx0 in range(tile_rows):
+        for idx0 in range(Self.tile_rows):
 
             @parameter
-            for idx1 in range(tile_columns // simd_size):
+            for idx1 in range(Self.tile_columns // Self.simd_size):
                 var c_data = self.output_tile[idx0, idx1]
                 if self.skip_boundary_check or (
                     idx1 * 2 + 2 <= c_bound[1] - tile_n_idx
@@ -119,7 +124,7 @@ struct LoadStore_i8mm[
                     )
 
                     @parameter
-                    if not single_row:
+                    if not Self.single_row:
                         c_ptr_loc.offset(
                             c_stride * (2 * idx0 + 1) + 2 * idx1
                         ).store(
@@ -134,7 +139,7 @@ struct LoadStore_i8mm[
                     )
 
                     @parameter
-                    if not single_row:
+                    if not Self.single_row:
                         partial_simd_store(
                             c_ptr_loc.offset(
                                 c_stride * (2 * idx0 + 1) + 2 * idx1
@@ -187,12 +192,12 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         )
 
         # Prefetch B matrix.
-        alias prefetch_distance = get_matmul_prefetch_b_distance_k()
+        comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
         constrained[simd_size == 4]()
 
         @parameter
         if prefetch_distance > 0:
-            alias prefetch_offset = prefetch_distance * kernel_cols
+            comptime prefetch_offset = prefetch_distance * kernel_cols
 
             @parameter
             for idx in range(kernel_cols // simd_size):
@@ -206,7 +211,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
 
             @parameter
             for idx1 in range(kernel_cols // simd_size):
-                alias alignment = align_of[SIMD[c_local.dtype, simd_size]]()
+                comptime alignment = align_of[SIMD[c_local.dtype, simd_size]]()
                 var a_val = a_ptr.load[width = simd_size * 4](2 * idx0 * K)
                 var b_val = b_ptr.offset(16 * idx1).load[
                     width = simd_size * 4, alignment=alignment
@@ -234,8 +239,8 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         (kernel_rows2, TileN, TileK) tile.
         """
 
-        alias kernel_rows2 = kernel_rows // 2 if kernel_rows != 1 else kernel_rows
-        alias single_row = (kernel_rows == 1)
+        comptime kernel_rows2 = kernel_rows // 2 if kernel_rows != 1 else kernel_rows
+        comptime single_row = (kernel_rows == 1)
 
         var c_stride = c.dim[1]()
 

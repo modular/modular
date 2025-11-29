@@ -20,6 +20,8 @@ _H100_TESTS = [
     "test_tensor_core_sm90.mojo",
     "test_tensormap_replace_insts.mojo",
     "test_tma_3d_async_copy.mojo",
+    "test_tma_4d_async_copy.mojo",
+    "test_tma_5d_async_copy.mojo",
     "test_tma_async.mojo",
     "test_tma_async_mc.mojo",
     "test_tma_mc_swizzle.mojo",
@@ -31,7 +33,6 @@ _H100_TESTS = [
     "test_wgmma_layouts.mojo",
     "test_wgmma_with_static_tuple_output_bf16.mojo",
     "test_wgmma_with_static_tuple_output_fp8.mojo",
-    "test_naive_blockwise_fp8_matmul.mojo",
 ]
 
 _EXTRA_CONSTRAINTS = {
@@ -58,10 +59,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
-    "test_index_tensor.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2366
     "test_layout_tensor_copy.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -109,12 +106,12 @@ _FILECHECK_TESTS = [
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:internal_utils",
-            "@mojo//:kv_cache",
-            "@mojo//:layout",
-            "@mojo//:linalg",
-            "@mojo//:nn",
-            "@mojo//:quantization",
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:layout",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
             "@mojo//:stdlib",
         ],
     )
@@ -142,11 +139,11 @@ _FILECHECK_TESTS = [
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:internal_utils",
-            "@mojo//:kv_cache",
-            "@mojo//:linalg",
-            "@mojo//:nn",
-            "@mojo//:quantization",
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
             "@mojo//:stdlib",
         ],
     )

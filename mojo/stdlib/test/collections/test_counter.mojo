@@ -264,17 +264,36 @@ def test_lt_le_gt_and_ge():
     c2["b"] = 2
     c2["c"] = 0
 
-    assert_false(c1.__lt__(c2))
-    assert_true(c1.__le__(c2))
-    assert_false(c1.__gt__(c2))
-    assert_true(c1.__ge__(c2))
+    assert_false(c1.lt(c2))
+    assert_false(c2.lt(c1))
+    assert_true(c1.le(c2))
+    assert_true(c2.le(c1))
+    assert_false(c1.gt(c2))
+    assert_false(c2.gt(c1))
+    assert_true(c1.ge(c2))
+    assert_true(c2.ge(c1))
+
+    c2["a"] = 2
+    assert_false(c1.lt(c2))
+    assert_false(c2.lt(c1))
+    assert_true(c1.le(c2))
+    assert_false(c2.le(c1))
+    assert_false(c1.gt(c2))
+    assert_false(c2.gt(c1))
+    assert_false(c1.ge(c2))
+    assert_true(c2.ge(c1))
 
     c2["b"] = 3
-    assert_true(c1.__lt__(c2))
-    assert_true(c1.__le__(c2))
-    assert_false(c1.__gt__(c2))
-    assert_true(c2.__gt__(c1))
-    assert_false(c1.__ge__(c2))
+    c2["c"] = 1
+    c2["d"] = 1
+    assert_true(c1.lt(c2))
+    assert_false(c2.lt(c1))
+    assert_true(c1.le(c2))
+    assert_false(c2.le(c1))
+    assert_false(c1.gt(c2))
+    assert_true(c2.gt(c1))
+    assert_false(c1.ge(c2))
+    assert_true(c2.ge(c1))
 
 
 def test_elements():
@@ -372,7 +391,7 @@ def test_sub():
 
     assert_equal(c3["a"], 3)
     assert_equal(c3["b"], 4)
-    # assert_equal(c3["c"], -3)  # TODO(MSTDL-1920): fix this
+    assert_equal(c3["c"], 0)
 
     # Check that the original counters are not modified
     assert_equal(c1["a"], 4)
@@ -381,8 +400,8 @@ def test_sub():
 
     c2 -= c1
 
-    # assert_equal(c2["a"], -3)  # TODO(MSTDL-1920): fix this
-    # assert_equal(c2["b"], -4)  # TODO(MSTDL-1920): fix this
+    assert_equal(c2["a"], 0)
+    assert_equal(c2["b"], 0)
     assert_equal(c2["c"], 3)
 
 

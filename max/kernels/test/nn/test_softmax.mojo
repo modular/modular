@@ -25,11 +25,11 @@ from utils import IndexList
 # CHECK-LABEL: test_logsoftmax
 fn test_logsoftmax() raises:
     print("== test_logsoftmax")
-    alias type = DType.float32
-    alias simd_width = simd_width_of[type]()
+    comptime type = DType.float32
+    comptime simd_width = simd_width_of[type]()
 
     fn logsoftmax_test_nd[rank: Int, shape: IndexList[rank]]() raises:
-        alias layout = Layout.row_major(shape)
+        comptime layout = Layout.row_major(shape)
         var in_stack = InlineArray[Scalar[type], layout.size()](
             uninitialized=True
         )
@@ -78,9 +78,9 @@ fn test_logsoftmax() raises:
 # CHECK-LABEL: test_softmax_2pass
 fn test_softmax_2pass():
     print("== test_softmax_2pass")
-    alias type = DType.float32
-    alias simd_width = simd_width_of[type]()
-    alias sz = 5
+    comptime type = DType.float32
+    comptime simd_width = simd_width_of[type]()
+    comptime sz = 5
 
     var in_stack = InlineArray[Scalar[type], sz](uninitialized=True)
     var in_buf = LayoutTensor[type, Layout.row_major(sz)](in_stack)

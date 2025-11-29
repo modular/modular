@@ -23,3 +23,4 @@ from .random import (
     seed,
     shuffle,
 )
+from .philox import Random, NormalRandom

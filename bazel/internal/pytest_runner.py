@@ -105,9 +105,13 @@ fi
 
 if [[ "${{MODULAR_VSCODE_DEBUG:-}}" == "1" ]]; then
   env {pairs} MODULAR_HOME=$PWD/.derived bazel-bin/KGEN/tools/mojo/mojo debug --vscode -- {args}
-elif [[ "${{MODULAR_GDB:-}}" == "1" ]]; then
+elif [[ "${{MODULAR_GDB:-}}" == "1" || "${{MODULAR_ROCGDB:-}}" == "1" ]]; then
+  exe=/usr/bin/rocgdb
+  if [[ "${{MODULAR_GDB:-}}" == "1" ]]; then
+    exe=/usr/bin/gdb
+  fi
   env {pairs} \
-      /usr/bin/gdb \
+      "$exe" \
       --eval-command="set cwd {pwd}" \
       --args {args}
 elif [[ "${{MODULAR_XCTRACE:-}}" == "1" ]]; then
@@ -152,8 +156,17 @@ fi
         "-o",
         "xfail_strict=true",
         "-o",
+        "filterwarnings=error::pytest.PytestUnhandledCoroutineWarning",
+        "-o",
         f"junit_suite_name={os.environ['TEST_TARGET']}",
     ]
+
+    try:
+        _ = importlib.import_module("pytest_asyncio")
+        pytest_args.append("--asyncio-mode=auto")
+    except ModuleNotFoundError:
+        pass
+
     if namespace.k:
         pytest_args.extend(["-k", namespace.k])
     elif namespace.n:  # Skip xdist when filtering

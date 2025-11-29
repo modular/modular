@@ -20,6 +20,7 @@ multiplications, significantly optimizing division performance.
 from bit import log2_ceil
 from builtin.dtype import _uint_type_of_width
 from gpu.intrinsics import mulhi
+from sys.info import bit_width_of
 
 
 @register_passable("trivial")
@@ -30,9 +31,12 @@ struct FastDiv[dtype: DType](Stringable, Writable):
     replacing the division operation with a series of shifts and
     multiplications. This approach significantly improves performance,
     especially in scenarios where division is a frequent operation.
+
+    Parameters:
+        dtype: The data type for the division operation.
     """
 
-    alias uint_type = _uint_type_of_width[dtype.bit_width()]()
+    comptime uint_type = _uint_type_of_width[bit_width_of[Self.dtype]()]()
 
     var _div: Scalar[Self.uint_type]
     var _mprime: Scalar[Self.uint_type]
@@ -53,7 +57,7 @@ struct FastDiv[dtype: DType](Stringable, Writable):
                 Defaults to 1.
         """
         constrained[
-            dtype.bit_width() <= 32,
+            bit_width_of[Self.dtype]() <= 32,
             "larger types are not currently supported",
         ]()
         self._div = divisor
@@ -65,7 +69,7 @@ struct FastDiv[dtype: DType](Stringable, Writable):
         if not self._is_pow2:
             self._mprime = (
                 (
-                    (UInt64(1) << dtype.bit_width())
+                    (UInt64(1) << bit_width_of[Self.dtype]())
                     * ((1 << self._log2_shift.cast[DType.uint64]()) - divisor)
                     / divisor
                 )
@@ -131,7 +135,7 @@ struct FastDiv[dtype: DType](Stringable, Writable):
     @always_inline
     fn __divmod__(
         self, other: Scalar[Self.uint_type]
-    ) -> (Scalar[Self.uint_type], Scalar[Self.uint_type]):
+    ) -> Tuple[Scalar[Self.uint_type], Scalar[Self.uint_type]]:
         """Computes both quotient and remainder.
 
         Args:
@@ -146,6 +150,9 @@ struct FastDiv[dtype: DType](Stringable, Writable):
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
         """Writes the FastDiv parameters to a writer.
+
+        Parameters:
+            W: The type of the writer.
 
         Args:
             writer: The writer to which the parameters are written.

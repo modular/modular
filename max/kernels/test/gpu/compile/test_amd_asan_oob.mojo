@@ -31,6 +31,7 @@
 from sys import argv
 
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 fn bad_func(ptr: UnsafePointer[Int32], i: Int):
@@ -39,10 +40,10 @@ fn bad_func(ptr: UnsafePointer[Int32], i: Int):
 
 
 fn test(ctx: DeviceContext, i: Int) raises:
-    alias n = 4
+    comptime n = 4
     var buf = ctx.enqueue_create_buffer[DType.int32](n)
 
-    alias kernel = bad_func
+    comptime kernel = bad_func
     ctx.enqueue_function_checked[kernel, kernel](
         buf, i, grid_dim=(1), block_dim=(1)
     )

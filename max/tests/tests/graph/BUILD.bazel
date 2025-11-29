@@ -1,0 +1,56 @@
+load("//bazel:api.bzl", "modular_multi_py_version_test", "modular_py_test", "requirement")
+
+_MULTI_VERSION_TEST_SRCS = [
+    "test_graph.py",
+]
+
+modular_py_test(
+    name = "tests",
+    srcs = glob(
+        ["**/*.py"],
+        exclude = _MULTI_VERSION_TEST_SRCS,
+    ),
+    data = [
+        "//max/tests/integration:test_user_op",
+        "//max/tests/tests/graph/testdata",
+    ],
+    env = {
+        "CUSTOM_OPS_PATH": "$(rootpath //max/tests/integration:test_user_op)",
+        "MODULAR_PATH": ".",
+        "TESTDATA_DIRECTORY": "max/tests/tests/graph/testdata",
+    },
+    imports = ["."],
+    mojo_deps = [
+        "//max/tests/integration:test_user_op",
+        "@mojo//:stdlib",
+    ],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("gguf"),
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_multi_py_version_test(
+    name = "multi_version_tests",
+    srcs = _MULTI_VERSION_TEST_SRCS + [
+        "conftest.py",
+    ],
+    data = ["//max/tests/tests/graph/testdata"],
+    env = {"TESTDATA_DIRECTORY": "max/tests/tests/graph/testdata"},
+    exclude = ["3.14"],  # Current version of numpy doesn't build on 3.14
+    imports = ["."],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("hypothesis"),
+        requirement("numpy"),
+    ],
+)

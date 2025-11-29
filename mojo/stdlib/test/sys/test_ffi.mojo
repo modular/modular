@@ -18,7 +18,7 @@ from sys.info import CompilationTarget
 from testing import assert_equal, assert_raises
 from testing import TestSuite
 
-alias error_message_linux: List[Tuple[ErrNo, String]] = [
+comptime error_message_linux: List[Tuple[ErrNo, String]] = [
     (ErrNo.SUCCESS, "Success"),
     (ErrNo.EPERM, "Operation not permitted"),
     (ErrNo.ENOENT, "No such file or directory"),
@@ -155,7 +155,7 @@ alias error_message_linux: List[Tuple[ErrNo, String]] = [
 ]
 
 
-alias error_message_macos: List[Tuple[ErrNo, String]] = [
+comptime error_message_macos: List[Tuple[ErrNo, String]] = [
     (ErrNo.EPERM, "Operation not permitted"),
     (ErrNo.ENOENT, "No such file or directory"),
     (ErrNo.ESRCH, "No such process"),

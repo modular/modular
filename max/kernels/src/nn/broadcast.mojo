@@ -14,6 +14,7 @@
 
 from layout import LayoutTensor
 from memory import memcpy
+from memory import LegacyUnsafePointer as UnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # _get_rightmost_broadcast_axis
@@ -82,7 +83,7 @@ fn broadcast[
         memcpy(dest=dst_ptr, src=src_ptr, count=input.size())
         return
 
-    alias init_axis = 0
+    comptime init_axis = 0
     # imaginary axis before 0
     var init_input_prev_axis_stride = input.size()
     var init_output_prev_axis_stride = output.size()

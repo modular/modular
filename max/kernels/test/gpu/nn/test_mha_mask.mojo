@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 from sys.info import CompilationTarget
 
@@ -29,7 +30,7 @@ from utils.index import Index, IndexList
 
 
 def test_causal_mask():
-    alias type = DType.int32
+    comptime type = DType.int32
 
     print("test_causal_mask")
     var mask = CausalMask()
@@ -113,7 +114,7 @@ def test_causal_mask_asm():
 
 
 def test_and_mask():
-    alias type = DType.int32
+    comptime type = DType.int32
 
     print("test_and_mask")
     # Or-ing a causal mask with a null mask should result in a causal mask.
@@ -152,12 +153,12 @@ def test_and_mask():
 def test_sliding_window_causal_mask():
     print("test_sliding_window_causal_mask")
 
-    alias mask = SlidingWindowCausalMask[3]()
+    comptime mask = SlidingWindowCausalMask[3]()
 
     @always_inline
     def check_status(
         offset: IndexList[2, **_],
-        size: __type_of(offset),
+        size: type_of(offset),
         expected: TileMaskStatus,
     ):
         var status = mask.status(offset, size)

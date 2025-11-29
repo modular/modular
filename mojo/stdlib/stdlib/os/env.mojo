@@ -19,7 +19,6 @@ from os import setenv
 ```
 """
 
-
 from sys import CompilationTarget, external_call
 from sys.ffi import c_int
 
@@ -75,9 +74,9 @@ fn getenv(var name: String, default: String = "") -> String:
     Returns:
       The value of the environment variable.
     """
-    var ptr = external_call["getenv", UnsafePointer[UInt8]](
-        name.unsafe_cstr_ptr()
-    )
+    var ptr = external_call[
+        "getenv", UnsafePointer[UInt8, ImmutOrigin.external]
+    ](name.unsafe_cstr_ptr())
     if not ptr:
         return default
     return String(unsafe_from_utf8_ptr=ptr)

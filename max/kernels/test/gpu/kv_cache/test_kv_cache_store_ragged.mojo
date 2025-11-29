@@ -29,26 +29,28 @@ from testing import assert_equal, assert_almost_equal
 
 from utils import IndexList
 
-alias kv_params_test = KVCacheStaticParams(num_heads=4, head_size=64)
-alias dtype = DType.float32
+comptime kv_params_test = KVCacheStaticParams(num_heads=4, head_size=64)
+comptime dtype = DType.float32
 
 
 fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
-    alias dtype = DType.float32
-    alias page_size = 128
-    alias num_kv_heads = 2
-    alias kv_params = KVCacheStaticParams(num_heads=num_kv_heads, head_size=64)
-    alias num_layers = 2
-    alias batch_size = 3
-    var valid_lengths = List[Int](100, 200, 300)
-    var cache_lengths = List[Int](100, 200, 300)
+    comptime dtype = DType.float32
+    comptime page_size = 128
+    comptime num_kv_heads = 2
+    comptime kv_params = KVCacheStaticParams(
+        num_heads=num_kv_heads, head_size=64
+    )
+    comptime num_layers = 2
+    comptime batch_size = 3
+    var valid_lengths: List[Int] = [100, 200, 300]
+    var cache_lengths: List[Int] = [100, 200, 300]
 
     debug_assert(
         len(valid_lengths) == len(cache_lengths),
         "expected valid_lengths and cache_lengths size to be equal",
     )
 
-    alias cache_lengths_layout = Layout.row_major(UNKNOWN_VALUE)
+    comptime cache_lengths_layout = Layout.row_major(UNKNOWN_VALUE)
     var cache_lengths_runtime_layout = RuntimeLayout[
         cache_lengths_layout
     ].row_major(IndexList[1](batch_size))
@@ -57,7 +59,7 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     ](cache_lengths_runtime_layout, ctx)
     var cache_lengths_tensor = cache_lengths_managed.tensor()
 
-    alias input_row_offsets_layout = Layout.row_major(UNKNOWN_VALUE)
+    comptime input_row_offsets_layout = Layout.row_major(UNKNOWN_VALUE)
     var runtime_layout = RuntimeLayout[input_row_offsets_layout].row_major(
         IndexList[1](batch_size + 1)
     )
@@ -88,10 +90,10 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
         2,
         num_layers,
         page_size,
-        kv_params.num_heads,
-        kv_params.head_size,
+        Int(kv_params.num_heads),
+        Int(kv_params.head_size),
     )
-    alias kv_block_layout = Layout.row_major(
+    comptime kv_block_layout = Layout.row_major(
         UNKNOWN_VALUE,
         UNKNOWN_VALUE,
         UNKNOWN_VALUE,
@@ -110,7 +112,7 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     var paged_lut_shape = IndexList[2](
         batch_size, ceildiv(max_full_context_length, page_size)
     )
-    alias paged_lut_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime paged_lut_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     var paged_lut_runtime_layout = RuntimeLayout[paged_lut_layout].row_major(
         paged_lut_shape
     )
@@ -133,22 +135,33 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     var kv_collection_paged_device = PagedKVCacheCollection[
         dtype, kv_params, page_size
     ](
-        rebind[NDBuffer[dtype, 6, MutableAnyOrigin]](
-            kv_block_managed.device_buffer()
+        LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+            kv_block_managed.device_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()].row_major(
+                kv_block_managed.device_tensor().runtime_layout.shape.value
+            ),
         ),
-        rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-            cache_lengths_managed.device_buffer()
+        LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+            cache_lengths_managed.device_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                cache_lengths_managed.device_tensor().runtime_layout.shape.value
+            ),
         ),
-        rebind[NDBuffer[DType.uint32, 2, MutableAnyOrigin]](
-            paged_lut_managed.device_buffer()
+        LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+            paged_lut_managed.device_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()].row_major(
+                paged_lut_managed.device_tensor().runtime_layout.shape.value,
+            ),
         ),
         max_prompt_length,
         max_full_context_length,
     )
 
-    var q_shape = IndexList[3](total_length, num_kv_heads, kv_params.head_size)
-    alias q_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_kv_heads, kv_params.head_size
+    var q_shape = IndexList[3](
+        total_length, num_kv_heads, Int(kv_params.head_size)
+    )
+    comptime q_layout = Layout.row_major(
+        UNKNOWN_VALUE, num_kv_heads, Int(kv_params.head_size)
     )
     var q_runtime_layout = RuntimeLayout[q_layout].row_major(q_shape)
     var q_managed = ManagedLayoutTensor[dtype, q_layout](q_runtime_layout, ctx)
@@ -164,9 +177,11 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
                     # Calculate expected value
                     var global_token_idx = current_offset + token_idx
                     var expected_linear_idx = (
-                        global_token_idx * num_kv_heads * kv_params.head_size
-                        + head_idx * kv_params.head_size
-                        + head_dim_idx
+                        global_token_idx
+                        * num_kv_heads
+                        * Int(kv_params.head_size)
+                        + head_idx * Int(kv_params.head_size)
+                        + Int(head_dim_idx)
                     )
                     q_tensor[
                         global_token_idx, head_idx, head_dim_idx
@@ -195,12 +210,23 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     var kv_collection_paged_host = PagedKVCacheCollection[
         dtype, kv_params, page_size
     ](
-        rebind[NDBuffer[dtype, 6, MutableAnyOrigin]](kv_block_managed.buffer()),
-        rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-            cache_lengths_managed.buffer()
+        LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+            kv_block_managed.tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()].row_major(
+                kv_block_managed.tensor().runtime_layout.shape.value
+            ),
         ),
-        rebind[NDBuffer[DType.uint32, 2, MutableAnyOrigin]](
-            paged_lut_managed.buffer()
+        LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+            cache_lengths_managed.tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                cache_lengths_managed.tensor().runtime_layout.shape.value
+            ),
+        ),
+        LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+            paged_lut_managed.tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()].row_major(
+                paged_lut_managed.tensor().runtime_layout.shape.value,
+            ),
         ),
         max_prompt_length,
         max_full_context_length,
@@ -217,9 +243,11 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
                     # Calculate expected value
                     var global_token_idx = current_offset + token_idx
                     var expected_linear_idx = (
-                        global_token_idx * num_kv_heads * kv_params.head_size
-                        + head_idx * kv_params.head_size
-                        + head_dim_idx
+                        global_token_idx
+                        * num_kv_heads
+                        * Int(kv_params.head_size)
+                        + head_idx * Int(kv_params.head_size)
+                        + Int(head_dim_idx)
                     )
                     var expected_value = Float32(expected_linear_idx)
 
@@ -227,9 +255,9 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
                     var cache_token_idx = token_idx + cache_lengths[batch_idx]
                     var actual_value = k_cache_host.load[width=1](
                         batch_idx,
-                        UInt(head_idx),
+                        head_idx,
                         cache_token_idx,
-                        UInt(head_dim_idx),
+                        Int(head_dim_idx),
                     )
 
                     # Verify the values match

@@ -16,26 +16,28 @@
 from algorithm import parallelize
 from gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
 from math import iota
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from shmem import *
 from sys.ffi import c_int
 from sys.info import size_of
+from gpu.host import DeviceBuffer
 
-alias min_size = 1024 * 1024 * 32
-alias max_size = min_size * 16
-alias num_blocks = 32
-alias threads_per_block = 256
-alias iters = 4
-alias warmup_iters = 1
-alias step_factor = 2
-alias chunk_size = 1024 * 256
+comptime min_size = 1024 * 1024 * 32
+comptime max_size = min_size * 16
+comptime num_blocks = 32
+comptime threads_per_block = 256
+comptime iters = 4
+comptime warmup_iters = 1
+comptime step_factor = 2
+comptime chunk_size = 1024 * 256
 
 
 fn ring_reduce(
-    var dst: UnsafePointer[c_int],
-    var src: UnsafePointer[c_int],
-    var nreduce: Int,
-    var signal: UnsafePointer[UInt64],
+    dst_ptr: UnsafePointer[c_int],
+    src_ptr: UnsafePointer[c_int],
+    nreduce: Int,
+    signal_ptr: UnsafePointer[UInt64],
     chunk_size: Int,
 ):
     """Perform Allreduce using ring algorithm.
@@ -45,10 +47,10 @@ fn ring_reduce(
     2. Broadcast phase: Final result is broadcast back through the ring
 
     Args:
-        dst: Destination buffer for reduced data.
-        src: Source buffer with input data.
+        dst_ptr: Destination buffer for reduced data.
+        src_ptr: Source buffer with input data.
         nreduce: Number of elements to reduce.
-        signal: Signaling buffer for synchronization.
+        signal_ptr: Signaling buffer for synchronization.
         chunk_size: Size of each chunk in bytes.
     """
     var mype = shmem_my_pe()
@@ -59,18 +61,17 @@ fn ring_reduce(
     var num_threads = block_dim.x
     var num_blocks = grid_dim.x
     var block_idx = block_idx.x
-    var elems_per_block = nreduce // num_blocks
+    var elems_per_block = nreduce // Int(num_blocks)
 
-    if elems_per_block * (block_idx + 1) > nreduce:
+    if elems_per_block * Int(block_idx + 1) > nreduce:
         return
 
-    src += block_idx * UInt(elems_per_block)
-    dst += block_idx * UInt(elems_per_block)
-    nreduce = elems_per_block
-    signal += block_idx
+    var src = src_ptr + block_idx * UInt(elems_per_block)
+    var dst = dst_ptr + block_idx * UInt(elems_per_block)
+    var signal = signal_ptr + block_idx
 
     var chunk_elems = chunk_size // size_of[DType.int32]()
-    var num_chunks = nreduce // chunk_elems
+    var num_chunks = elems_per_block // chunk_elems
 
     # Reduce phase - data flows through ring accumulating values
     for chunk in range(num_chunks):
@@ -133,7 +134,7 @@ def bench_ring_reduce(ctx: SHMEMContext):
     var dst = ctx.enqueue_create_buffer[DType.int32](max_ints)
     var src = ctx.enqueue_create_buffer[DType.int32](max_ints)
     var data_h = ctx.enqueue_create_host_buffer[DType.int32](max_ints)
-    var signal = shmem_calloc[DType.uint64](1)
+    var signal = shmem_calloc[DType.uint64](num_blocks)
 
     # Initialize test data - each element has value equal to its index
     iota(data_h.unsafe_ptr(), max_ints)
@@ -143,8 +144,6 @@ def bench_ring_reduce(ctx: SHMEMContext):
     ctx.barrier_all()
 
     var dev_ctx = ctx.get_device_context()
-    var dst_ptr = dst.unsafe_ptr()
-    var src_ptr = src.unsafe_ptr()
 
     # Test different sizes
     var size = min_size
@@ -153,11 +152,13 @@ def bench_ring_reduce(ctx: SHMEMContext):
 
         # Warmup iterations
         for i in range(warmup_iters):
-            ctx.enqueue_function_collective[ring_reduce](
-                dst_ptr,
-                src_ptr,
+            ctx.enqueue_function_collective_checked[ring_reduce, ring_reduce](
+                dst,
+                src,
                 num_ints,
-                signal,
+                DeviceBuffer[DType.uint64](
+                    ctx._ctx, signal, num_blocks, owning=False
+                ),
                 chunk_size,
                 grid_dim=num_blocks,
                 block_dim=threads_per_block,
@@ -167,11 +168,13 @@ def bench_ring_reduce(ctx: SHMEMContext):
 
         @parameter
         def benchmark():
-            ctx.enqueue_function_collective[ring_reduce](
-                dst_ptr,
-                src_ptr,
+            ctx.enqueue_function_collective_checked[ring_reduce, ring_reduce](
+                dst,
+                src,
                 num_ints,
-                signal,
+                DeviceBuffer[DType.uint64](
+                    ctx._ctx, signal, num_blocks, owning=False
+                ),
                 chunk_size,
                 grid_dim=num_blocks,
                 block_dim=threads_per_block,

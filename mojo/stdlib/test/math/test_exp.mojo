@@ -21,6 +21,8 @@ from testing import assert_almost_equal, assert_equal, TestSuite
 
 def test_exp_bfloat16():
     assert_equal(exp(BFloat16(2.0)), 7.375)
+    assert_equal(exp(5.0) * exp(6.0), exp(5.0 + 6.0))
+    assert_equal(exp(5.0) / exp(2.0), exp(5.0 - 2.0))
 
 
 def test_exp_float16():
@@ -55,9 +57,9 @@ def exp_libm[
     return libm_call["expf", "exp"](arg)
 
 
-def test_exp_libm[dtype: DType]():
+def _test_exp_libm[dtype: DType]():
     seed(0)
-    alias N = 8192
+    comptime N = 8192
     for _i in range(N):
         var x = randn_float64(0, 9.0).cast[dtype]()
         assert_almost_equal(
@@ -65,8 +67,13 @@ def test_exp_libm[dtype: DType]():
         )
 
 
+def test_exp_libm():
+    _test_exp_libm[DType.float32]()
+    _test_exp_libm[DType.float64]()
+
+
 @fieldwise_init
-struct Float32Expable(EqualityComparable, Stringable, _Expable):
+struct Float32Expable(Equatable, Stringable, _Expable):
     """This is a test struct that implements the Expable trait for Float32."""
 
     var x: Float32
@@ -85,7 +92,7 @@ struct Float32Expable(EqualityComparable, Stringable, _Expable):
 
 
 @fieldwise_init
-struct FakeExpable(EqualityComparable, Stringable, _Expable):
+struct FakeExpable(Equatable, Stringable, _Expable):
     """This is a test struct that has a dummy definition of exp function."""
 
     var x: Int

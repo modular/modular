@@ -15,9 +15,16 @@ from math import sqrt
 from sys.info import simd_width_of
 
 from algorithm.functional import elementwise
-from internal_utils import HostNDBuffer, random
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeTuple
+from layout import (
+    UNKNOWN_VALUE,
+    Layout,
+    LayoutTensor,
+    RuntimeTuple,
+    RuntimeLayout,
+)
+from layout._fillers import random
 from layout.int_tuple import fill_like
+from memory import alloc
 from nn.normalization import rms_norm_cpu, rms_norm_fused_residual_add_cpu
 from testing import assert_almost_equal
 
@@ -32,28 +39,51 @@ fn run_rms_norm_fused_residual_add_gpu[
     var rows = shape.flattened_length() // cols
 
     # Allocate host memory
-    var data_h = HostNDBuffer[dtype, rank](shape)
-    var unfused_intermediate_h = HostNDBuffer[dtype, rank](shape)
-    var result_unfused_h = HostNDBuffer[dtype, rank](shape)
-    var result_fused_h = HostNDBuffer[dtype, rank](shape)
-    var residual_fused_output_h = HostNDBuffer[dtype, rank](shape)
-    var gamma1_h = HostNDBuffer[dtype, 1](Index(cols))
-    var gamma2_h = HostNDBuffer[dtype, 1](Index(cols))
+    comptime layout = Layout.row_major[rank]()
+    var data_heap = alloc[Scalar[dtype]](rows * cols)
+    var data_h = LayoutTensor[dtype, layout](
+        data_heap, RuntimeLayout[layout].row_major(shape)
+    )
+    var unfused_intermediate_heap = alloc[Scalar[dtype]](rows * cols)
+    var unfused_intermediate_h = LayoutTensor[dtype, layout](
+        unfused_intermediate_heap, RuntimeLayout[layout].row_major(shape)
+    ).fill(0)
+    var result_unfused_heap = alloc[Scalar[dtype]](rows * cols)
+    var result_unfused_h = LayoutTensor[dtype, layout](
+        result_unfused_heap, RuntimeLayout[layout].row_major(shape)
+    ).fill(0)
+    var result_fused_heap = alloc[Scalar[dtype]](rows * cols)
+    var result_fused_h = LayoutTensor[dtype, layout](
+        result_fused_heap, RuntimeLayout[layout].row_major(shape)
+    ).fill(0)
+    var residual_fused_output_heap = alloc[Scalar[dtype]](rows * cols)
+    var residual_fused_output_h = LayoutTensor[dtype, layout](
+        residual_fused_output_heap, RuntimeLayout[layout].row_major(shape)
+    ).fill(0)
+    comptime layout_1d = Layout(UNKNOWN_VALUE)
+    var gamma1_heap = alloc[Scalar[dtype]](cols)
+    var gamma1_h = LayoutTensor[dtype, layout_1d](
+        gamma1_heap, RuntimeLayout[layout_1d].row_major(Index(cols))
+    )
+    var gamma2_heap = alloc[Scalar[dtype]](cols)
+    var gamma2_h = LayoutTensor[dtype, layout_1d](
+        gamma2_heap, RuntimeLayout[layout_1d].row_major(Index(cols))
+    )
 
     # Initialize input data
-    random(data_h.tensor)
-    random(gamma1_h.tensor)
-    random(gamma2_h.tensor)
+    random(data_h)
+    random(gamma1_h)
+    random(gamma2_h)
 
-    var param_shape = Index(cols)
+    var _ = Index(cols)
 
-    var data_buf = data_h.to_layout_tensor()
-    var gamma1 = gamma1_h.to_layout_tensor()
-    var gamma2 = gamma2_h.to_layout_tensor()
-    var result_fused_buf = result_fused_h.to_layout_tensor()
-    var result_unfused_buf = result_unfused_h.to_layout_tensor()
-    var unfused_intermediate_buf = unfused_intermediate_h.to_layout_tensor()
-    var residual_fused_output_buf = residual_fused_output_h.to_layout_tensor()
+    var data_buf = data_h
+    var gamma1 = gamma1_h
+    var gamma2 = gamma2_h
+    var result_fused_buf = result_fused_h
+    var result_unfused_buf = result_unfused_h
+    var unfused_intermediate_buf = unfused_intermediate_h
+    var residual_fused_output_buf = residual_fused_output_h
     var epsilon1 = Scalar[dtype](0.001)
     var epsilon2 = Scalar[dtype](0.002)
     var weight_offset1 = Scalar[dtype](0.0)
@@ -223,15 +253,22 @@ fn run_rms_norm_fused_residual_add_gpu[
     var flattened_size = rows * cols
     for i in range(flattened_size):
         assert_almost_equal(
-            result_fused_h.tensor.data[i],
-            result_unfused_h.tensor.data[i],
+            result_fused_h.ptr[i],
+            result_unfused_h.ptr[i],
             rtol=rtol,
         )
         assert_almost_equal(
-            residual_fused_output_h.tensor.data[i],
-            unfused_intermediate_h.tensor.data[i],
+            residual_fused_output_h.ptr[i],
+            unfused_intermediate_h.ptr[i],
             rtol=rtol,
         )
+    data_heap.free()
+    unfused_intermediate_heap.free()
+    result_unfused_heap.free()
+    result_fused_heap.free()
+    residual_fused_output_heap.free()
+    gamma1_heap.free()
+    gamma2_heap.free()
 
 
 def main():

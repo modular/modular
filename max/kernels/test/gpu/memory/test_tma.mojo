@@ -14,10 +14,10 @@
 from io.io import _printf
 
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TMADescriptor, create_tma_descriptor
-from gpu.id import block_idx
+from gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
+from gpu import block_idx
 from gpu.memory import (
-    _GPUAddressSpace,
+    AddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
 )
 from gpu.sync import (
@@ -25,7 +25,7 @@ from gpu.sync import (
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
 )
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 
 from utils.index import Index
 
@@ -33,11 +33,9 @@ from utils.index import Index
 @__llvm_arg_metadata(descriptor, `nvvm.grid_constant`)
 fn kernel_copy_async_tma(descriptor: TMADescriptor):
     var shmem = stack_allocation[
-        16, DType.float32, alignment=16, address_space = _GPUAddressSpace.SHARED
+        16, DType.float32, alignment=16, address_space = AddressSpace.SHARED
     ]()
-    var mbar = stack_allocation[
-        1, Int64, address_space = _GPUAddressSpace.SHARED
-    ]()
+    var mbar = stack_allocation[1, Int64, address_space = AddressSpace.SHARED]()
     var descriptor_ptr = UnsafePointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 
@@ -90,7 +88,7 @@ def test_tma_tile_copy(ctx: DeviceContext):
         gmem_dev, (8, 8), (8, 1), (4, 4)
     )
 
-    ctx.enqueue_function[kernel_copy_async_tma](
+    ctx.enqueue_function_checked[kernel_copy_async_tma, kernel_copy_async_tma](
         descriptor, grid_dim=(2, 2), block_dim=(1)
     )
     ctx.synchronize()

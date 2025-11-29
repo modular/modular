@@ -34,7 +34,7 @@ from utils import IndexList, StaticTuple
 struct Dim(
     CeilDivable,
     Defaultable,
-    EqualityComparable,
+    Equatable,
     ImplicitlyBoolable,
     Indexer,
     Intable,
@@ -48,7 +48,7 @@ struct Dim(
     present, the dimension is dynamic.
     """
 
-    alias _sentinel = -31337
+    comptime _sentinel = -31337
     """The sentinel value to use if the dimension is dynamic.  This value was
     chosen to be a visible-in-the-debugger sentinel.  We can't use Int.MIN
     because that value is target-dependent and won't fold in parameters."""
@@ -316,7 +316,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
         self.value = VariadicList[Dim](Int(index(value)))
 
     @always_inline("nodebug")
-    fn __init__[I: Indexer & Copyable & Movable](out self, values: (I,)):
+    fn __init__[I: Indexer & Copyable & Movable](out self, values: Tuple[I]):
         """Creates a dimension list from the given list of values.
 
         Parameters:
@@ -331,7 +331,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
     fn __init__[
         I0: Indexer & Copyable & Movable,
         I1: Indexer & Copyable & Movable,
-    ](out self, values: (I0, I1)):
+    ](out self, values: Tuple[I0, I1]):
         """Creates a dimension list from the given list of values.
 
         Parameters:
@@ -348,7 +348,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
         I0: Indexer & Copyable & Movable,
         I1: Indexer & Copyable & Movable,
         I2: Indexer & Copyable & Movable,
-    ](out self, values: (I0, I1, I2)):
+    ](out self, values: Tuple[I0, I1, I2]):
         """Creates a dimension list from the given list of values.
 
         Parameters:

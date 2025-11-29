@@ -15,33 +15,37 @@ from os import abort
 from pathlib import Path
 from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle
+from sys.ffi import _Global, OwnedDLHandle
 
 from gpu.host._amdgpu_hip import hipStream_t
 
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from utils import StaticTuple
 
-alias hipblasLtHandle_t = OpaquePointer
-alias hipblasLtMatmulDesc_t = OpaquePointer
-alias hipblasLtMatrixLayout_t = OpaquePointer
-alias hipblasLtMatmulPreference_t = OpaquePointer
+comptime hipblasLtHandle_t = OpaquePointer
+comptime hipblasLtMatmulDesc_t = OpaquePointer
+comptime hipblasLtMatrixLayout_t = OpaquePointer
+comptime hipblasLtMatmulPreference_t = OpaquePointer
 
 
 @fieldwise_init
 @register_passable("trivial")
-struct Status(EqualityComparable, Writable):
+struct Status(Equatable, Writable):
     var _value: Int32
-    alias SUCCESS = Self(0)
-    alias NOT_INITIALIZED = Self(1)
-    alias ALLOC_FAILED = Self(2)
-    alias INVALID_VALUE = Self(3)
-    alias MAPPING_ERROR = Self(4)
-    alias EXECUTION_FAILED = Self(5)
-    alias INTERNAL_ERROR = Self(6)
-    alias NOT_SUPPORTED = Self(7)
-    alias ARCH_MISMATCH = Self(8)
-    alias HANDLE_IS_NULLPTR = Self(9)
-    alias INVALID_ENUM = Self(10)
+    comptime SUCCESS = Self(0)
+    comptime NOT_INITIALIZED = Self(1)
+    comptime ALLOC_FAILED = Self(2)
+    comptime INVALID_VALUE = Self(3)
+    comptime MAPPING_ERROR = Self(4)
+    comptime EXECUTION_FAILED = Self(5)
+    comptime INTERNAL_ERROR = Self(6)
+    comptime NOT_SUPPORTED = Self(7)
+    comptime ARCH_MISMATCH = Self(8)
+    comptime HANDLE_IS_NULLPTR = Self(9)
+    comptime INVALID_ENUM = Self(10)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -88,15 +92,15 @@ struct Status(EqualityComparable, Writable):
 @register_passable("trivial")
 struct hipDataType_t:
     var _value: Int32
-    alias R_32F = Self(0)
-    alias R_64F = Self(1)
-    alias R_16F = Self(2)
-    alias R_8I = Self(3)
-    alias R_16BF = Self(14)
-    alias R_8F_E4M3 = Self(28)
-    alias R_8F_E5M2 = Self(29)
-    alias R_8F_E4M3_FNUZ = Self(1000)
-    alias R_8F_E5M2_FNUZ = Self(1001)
+    comptime R_32F = Self(0)
+    comptime R_64F = Self(1)
+    comptime R_16F = Self(2)
+    comptime R_8I = Self(3)
+    comptime R_16BF = Self(14)
+    comptime R_8F_E4M3 = Self(28)
+    comptime R_8F_E5M2 = Self(29)
+    comptime R_8F_E4M3_FNUZ = Self(1000)
+    comptime R_8F_E5M2_FNUZ = Self(1001)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -112,10 +116,10 @@ struct hipDataType_t:
 @register_passable("trivial")
 struct hipblasComputeType_t:
     var _value: Int32
-    alias COMPUTE_16F = Self(0)
-    alias COMPUTE_16F_PEDANTIC = Self(1)
-    alias COMPUTE_32F = Self(2)
-    alias COMPUTE_32F_PEDANTIC = Self(3)
+    comptime COMPUTE_16F = Self(0)
+    comptime COMPUTE_16F_PEDANTIC = Self(1)
+    comptime COMPUTE_32F = Self(2)
+    comptime COMPUTE_32F_PEDANTIC = Self(3)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -131,9 +135,9 @@ struct hipblasComputeType_t:
 @register_passable("trivial")
 struct hipblasOperation_t:
     var _value: Int32
-    alias OP_N = Self(111)
-    alias OP_T = Self(112)
-    alias OP_C = Self(113)
+    comptime OP_N = Self(111)
+    comptime OP_T = Self(112)
+    comptime OP_C = Self(113)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -149,12 +153,12 @@ struct hipblasOperation_t:
 @register_passable("trivial")
 struct hipblasLtOrder_t:
     var _value: Int32
-    alias COL = Self(0)
-    alias ROW = Self(1)
-    alias COL16_4R16 = Self(100)
-    alias COL16_4R8 = Self(101)
-    alias COL16_4R4 = Self(102)
-    alias COL16_4R2 = Self(103)
+    comptime COL = Self(0)
+    comptime ROW = Self(1)
+    comptime COL16_4R16 = Self(100)
+    comptime COL16_4R8 = Self(101)
+    comptime COL16_4R4 = Self(102)
+    comptime COL16_4R2 = Self(103)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -170,8 +174,8 @@ struct hipblasLtOrder_t:
 @register_passable("trivial")
 struct hipblasLtMatmulDescAttributes_t:
     var _value: Int32
-    alias TRANSA = Self(0)
-    alias TRANSB = Self(1)
+    comptime TRANSA = Self(0)
+    comptime TRANSB = Self(1)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -187,13 +191,13 @@ struct hipblasLtMatmulDescAttributes_t:
 @register_passable("trivial")
 struct hipblasLtMatmulLayoutAttribute_t:
     var _value: Int32
-    alias BATCH_COUNT = Self(0)
-    alias STRIDED_BATCH_OFFSET = Self(1)
-    alias TYPE = Self(2)
-    alias ORDER = Self(3)
-    alias ROWS = Self(4)
-    alias COLS = Self(5)
-    alias LD = Self(6)
+    comptime BATCH_COUNT = Self(0)
+    comptime STRIDED_BATCH_OFFSET = Self(1)
+    comptime TYPE = Self(2)
+    comptime ORDER = Self(3)
+    comptime ROWS = Self(4)
+    comptime COLS = Self(5)
+    comptime LD = Self(6)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -235,17 +239,17 @@ struct hipblasLtMatmulHeuristicResult_t(Defaultable):
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias HIPBLASLT_LIBRARY_PATHS = List[Path](
+comptime HIPBLASLT_LIBRARY_PATHS: List[Path] = [
     "libhipblaslt.so.0",
     "libhipblaslt.so.1",
     "/opt/rocm/lib/libhipblaslt.so.0",
     "/opt/rocm/lib/libhipblaslt.so.1",
-)
+]
 
-alias HIPBLASLT_LIBRARY = _Global["HIPBLASLT_LIBRARY", _init_dylib]
+comptime HIPBLASLT_LIBRARY = _Global["HIPBLASLT_LIBRARY", _init_dylib]
 
 
-fn _init_dylib() -> _OwnedDLHandle:
+fn _init_dylib() -> OwnedDLHandle:
     return _find_dylib["HIP BLAS LT"](materialize[HIPBLASLT_LIBRARY_PATHS]())
 
 

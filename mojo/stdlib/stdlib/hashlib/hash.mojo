@@ -17,7 +17,7 @@ There are a few main tools in this module:
 - `Hashable` trait for types implementing `__hash__(self) -> UInt`
 - `hash[T: Hashable](hashable: T) -> Int` built-in function.
 - A `hash()` implementation for arbitrary byte strings,
-  `hash(data: UnsafePointer[UInt8], n: Int) -> Int`,
+  `hash(data: UnsafePointer[mut=False, UInt8], n: Int) -> Int`,
   is the workhorse function, which implements efficient hashing via SIMD
   vectors. See the documentation of this function for more details on the hash
   implementation.
@@ -25,7 +25,7 @@ There are a few main tools in this module:
     These are useful helpers to specialize for the general bytes implementation.
 """
 
-from memory import UnsafePointer
+from memory import Span
 
 from .hasher import Hasher, default_hasher
 
@@ -65,9 +65,9 @@ trait Hashable:
 
         Parameters:
             H: Any Hasher type.
+
         Args:
             hasher: The hasher instance to contribute to.
-
         """
         ...
 
@@ -95,13 +95,20 @@ fn hash[
 
 fn hash[
     HasherType: Hasher = default_hasher
-](
-    bytes: UnsafePointer[
-        UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
-    ],
-    n: Int,
-) -> UInt64:
+](bytes: UnsafePointer[mut=False, UInt8], n: Int) -> UInt64:
+    """Hash a sequence of bytes using the specified hasher.
+
+    Parameters:
+        HasherType: Type of the hasher to use for hashing (default: `AHasher`).
+
+    Args:
+        bytes: Pointer to the byte sequence to hash.
+        n: The number of bytes to hash.
+
+    Returns:
+        A 64-bit integer hash value.
+    """
     var hasher = HasherType()
-    hasher._update_with_bytes(bytes, n)
+    hasher._update_with_bytes(Span(ptr=bytes, length=n))
     var value = hasher^.finish()
     return value

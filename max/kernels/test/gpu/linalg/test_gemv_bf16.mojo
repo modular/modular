@@ -20,15 +20,14 @@ from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from linalg.gemv import gemv_kernel
 from linalg.matmul.gpu import matmul_kernel_naive
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_false
 
 from utils.index import IndexList
 from utils.numerics import isnan
 
 
-fn run_matvec[
-    reduction_method: warp.ReductionMethod
-](M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
+fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     print("== run_matvec kernel")
 
     var iterations = 100
@@ -63,13 +62,8 @@ fn run_matvec[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias WARPS_PER_BLOCK = 32
-    alias kernel = gemv_kernel[
-        DType.float32,
-        DType.bfloat16,
-        DType.bfloat16,
-        reduction_method=reduction_method,
-    ]
+    comptime WARPS_PER_BLOCK = 32
+    comptime kernel = gemv_kernel[DType.float32, DType.bfloat16, DType.bfloat16]
 
     @always_inline
     @parameter
@@ -100,22 +94,22 @@ fn run_matvec[
     ctx.enqueue_copy(a_device_n, a_host_n)
     ctx.enqueue_copy(b_device_n, b_host_n)
 
-    alias BLOCK_DIM = 16
+    comptime BLOCK_DIM = 16
 
     # Create layout tensors for the naive kernel
-    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var c_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+    var c_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
         c_device_n.unsafe_ptr(),
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
-    var a_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+    var a_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
         a_device_n.unsafe_ptr(),
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
-    var b_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+    var b_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
         b_device_n.unsafe_ptr(),
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
@@ -123,7 +117,7 @@ fn run_matvec[
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        alias kernel = matmul_kernel_naive[
+        comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -156,7 +150,7 @@ fn run_matvec[
 
     # Due to varied pattern of FP arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
-    alias errorTolerance = 0.1
+    comptime errorTolerance = 0.1
     var failed = False
     for i in range(M * N):
         var outVal = c_host[i]
@@ -196,9 +190,4 @@ fn run_matvec[
 
 def main():
     with DeviceContext() as ctx:
-        run_matvec[reduction_method = warp.ReductionMethod.WARP](
-            4096, 1, 4096, ctx=ctx
-        )
-        run_matvec[reduction_method = warp.ReductionMethod.TENSOR_CORE](
-            4096, 1, 4096, ctx=ctx
-        )
+        run_matvec(4096, 1, 4096, ctx=ctx)

@@ -19,13 +19,14 @@ from sys import align_of, simd_width_of
 import benchmark
 from buffer import NDBuffer
 from layout import *
+from memory import LegacyUnsafePointer as UnsafePointer
 
-alias MR = 6
-alias NR = 64
+comptime MR = 6
+comptime NR = 64
 
-alias dtype = DType.float32
-alias simd_size = simd_width_of[dtype]()
-alias alignment = align_of[SIMD[dtype, simd_size]]()
+comptime dtype = DType.float32
+comptime simd_size = simd_width_of[dtype]()
+comptime alignment = align_of[SIMD[dtype, simd_size]]()
 
 
 fn gemm_naive[
@@ -33,7 +34,7 @@ fn gemm_naive[
 ](
     c: NDBuffer[dtype, 2],  # M x N
     a: NDBuffer[dtype, 2],  # M x K
-    b: LayoutTensor[dtype, layout_b, MutableAnyOrigin],  # N x K
+    b: LayoutTensor[dtype, layout_b, MutAnyOrigin],  # N x K
 ):
     var M = c.dim(0)
     var N = b.dim(1)
@@ -95,8 +96,8 @@ fn pack_b[
     b: LayoutTensor[layout_b, dtype],  # K x N
     packed: LayoutTensor[layout_packed, dtype],  # N // NR x K * NR
 ):
-    alias K = b.dim[0]()
-    alias N = b.dim[1]()
+    comptime K = b.dim[0]()
+    comptime N = b.dim[1]()
 
     for jc in range(N // NR):
         for pr in range(K // NR):
@@ -136,7 +137,7 @@ fn gemm[
             # var c_tile = c_strip.tile[MR, NR](0, jc)
 
             # Possibly a slightly more efficient way of building c_tile
-            alias c_tile_layout = Layout([MR, NR], [N, 1])
+            comptime c_tile_layout = Layout([MR, NR], [N, 1])
             var c_tile = LayoutTensor[c_tile_layout, dtype](
                 c.data.offset(N * MR * ir + NR * jc)
             )
@@ -146,7 +147,7 @@ fn gemm[
         # sync_parallelize[process_row](M // MR)
 
 
-# kgen --emit-asm open-source/max/max/kernels/benchmarks/demos/SimpleFastGEMM/gemm_layout.mojo >out.S
+# kgen --emit=asm max/kernels/benchmarks/demos/SimpleFastGEMM/gemm_layout.mojo >out.S
 @export(ABI="C")
 fn gemm_export_dynamic(
     a_ptr: UnsafePointer[Scalar[dtype]],
@@ -154,8 +155,8 @@ fn gemm_export_dynamic(
     c_ptr: UnsafePointer[Scalar[dtype]],
     M: Int,
 ):
-    alias N = 1024
-    alias K = 1024
+    comptime N = 1024
+    comptime K = 1024
     var a = NDBuffer[dtype, 2](a_ptr, (M, N))
     var b_packed = TensorBuilder[N // NR, K * NR, dtype].Wrap(b_packed_ptr)
     var c = NDBuffer[dtype, 2](c_ptr, (M, N))
@@ -163,9 +164,9 @@ fn gemm_export_dynamic(
 
 
 fn main():
-    alias M = align_up(1024, MR)
-    alias N = align_up(1024, NR)
-    alias K: Int = 1024
+    comptime M = align_up(1024, MR)
+    comptime N = align_up(1024, NR)
+    comptime K: Int = 1024
 
     if M % MR != 0:
         print("M must be multiple of", MR)

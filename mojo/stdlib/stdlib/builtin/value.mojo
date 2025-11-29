@@ -55,7 +55,7 @@ trait Movable:
         """
         ...
 
-    alias __moveinit__is_trivial: Bool
+    comptime __moveinit__is_trivial: Bool
     """A flag (often compiler generated) to indicate whether the implementation
     of `__moveinit__` is trivial.
 
@@ -118,7 +118,7 @@ trait Copyable:
         """
         return Self.__copyinit__(self)
 
-    alias __copyinit__is_trivial: Bool
+    comptime __copyinit__is_trivial: Bool
     """A flag (often compiler generated) to indicate whether the implementation
     of `__copyinit__` is trivial.
 
@@ -158,7 +158,7 @@ trait ImplicitlyCopyable(Copyable):
 
     ### Examples
 
-    A type can opt-in to implicit copying by conforming to `ImplicityCopyable`
+    A type can opt-in to implicit copying by conforming to `ImplicitlyCopyable`
     (in the example below, the compiler also synthesizes a default field-wise
     `__copyinit__()` implementation, as the user didn't provide a definition):
 
@@ -183,11 +183,19 @@ trait ImplicitlyCopyable(Copyable):
     "Use `Copyable` or `ImplicitlyCopyable` instead. `Copyable` on its own no"
     " longer implies implicit copyability."
 )
-alias ExplicitlyCopyable = Copyable
+comptime ExplicitlyCopyable = Copyable
 
 
 fn materialize[T: AnyType, //, value: T](out result: T):
-    """Explicitly materialize a compile time parameter into a runtime value."""
+    """Explicitly materialize a compile-time parameter into a run-time value.
+
+    Parameters:
+        T: The type of the value to materialize.
+        value: The compile-time parameter value to materialize.
+
+    Returns:
+        The materialized run-time value.
+    """
     __mlir_op.`lit.materialize_into`[value=value](
         __get_mvalue_as_litref(result)
     )

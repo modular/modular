@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from math import ceildiv, isclose
 from random import rand
 from sys.info import simd_width_of
 
 from algorithm.functional import vectorize
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import LayoutTensor, Layout, RuntimeLayout
 from nn.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -34,8 +34,8 @@ from nn.conv_utils import (
 
 from utils.index import Index, IndexList
 
-alias simd_size: Int = simd_width_of[DType.float32]()
-alias dtype = DType.float32
+comptime simd_size: Int = simd_width_of[DType.float32]()
+comptime dtype = DType.float32
 
 
 # CHECK-LABEL: test_conv_epilogue
@@ -122,30 +122,41 @@ fn test[
     # var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Input buffer.
+    comptime layout_p2 = Layout.row_major[rank + 2]()
+    comptime layout_p3 = Layout.row_major[rank + 3]()
     var input_shape = extend_shape(input_dims, N, C)
-    var input = NDBuffer[dtype, rank + 2](input_ptr, input_shape)
+    var input = LayoutTensor[dtype, layout_p2](
+        input_ptr, RuntimeLayout[layout_p2].row_major(input_shape)
+    )
 
     # Filter buffer.
     var filter_shape = append_shape(filter_dims, C_per_group, F)
-    var filter = NDBuffer[dtype, rank + 2](filter_ptr, filter_shape)
+    var filter = LayoutTensor[dtype, layout_p2](
+        filter_ptr, RuntimeLayout[layout_p2].row_major(filter_shape)
+    )
 
     var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
     var packed_filter_ptr = UnsafePointer[Scalar[dtype]].alloc(
         packed_filter_shape.flattened_length()
     )
-    var packed_filter = NDBuffer[dtype, rank + 3](
-        packed_filter_ptr, rebind[IndexList[rank + 3]](packed_filter_shape)
+    var packed_filter = LayoutTensor[dtype, layout_p3](
+        packed_filter_ptr,
+        RuntimeLayout[layout_p3].row_major(packed_filter_shape),
     )
 
     var output_shape = extend_shape(output_dims, N, F)
-    var output = NDBuffer[dtype, rank + 2](output_ptr, output_shape)
-    var output_ref = NDBuffer[dtype, rank + 2](output_ref_ptr, output_shape)
+    var output = LayoutTensor[dtype, layout_p2](
+        output_ptr, RuntimeLayout[layout_p2].row_major(output_shape)
+    )
+    var output_ref = LayoutTensor[dtype, layout_p2](
+        output_ref_ptr, RuntimeLayout[layout_p2].row_major(output_shape)
+    )
 
     @parameter
     if filter_packed:
         pack_filter(filter, packed_filter, num_groups)
 
-    alias conv_attr = ConvInfoStatic[rank + 2 - 2]()
+    comptime conv_attr = ConvInfoStatic[rank]()
 
     @always_inline
     @parameter
@@ -155,15 +166,12 @@ fn test[
     @parameter
     if filter_packed:
         ConvDirectNHWC[
-            rank + 2,
-            rank + 3,
-            rank + 2,
+            layout_p2,
+            layout_p3,
+            layout_p2,
             _,
             _,
             _,
-            DimList.create_unknown[rank + 2](),
-            DimList.create_unknown[rank + 3](),
-            DimList.create_unknown[rank + 2](),
             dtype,
             dtype,
             dtype,
@@ -178,15 +186,12 @@ fn test[
         )
     else:
         ConvDirectNHWC[
-            rank + 2,
-            rank + 2,
-            rank + 2,
+            layout_p2,
+            layout_p2,
+            layout_p2,
             _,
             _,
             _,
-            DimList.create_unknown[rank + 2](),
-            DimList.create_unknown[rank + 2](),
-            DimList.create_unknown[rank + 2](),
             dtype,
             dtype,
             dtype,
@@ -204,14 +209,13 @@ fn test[
     var output_image_size = output_dims.flattened_length()
     for n in range(N):
         for i in range(output_image_size):
-            var output_ref_ptr = output_ref.data + F * (
+            var output_ref_ptr = output_ref.ptr + F * (
                 i + output_image_size * n
             )
 
             @always_inline
-            @__copy_capture(output_ref_ptr, bias_ptr)
             @parameter
-            fn body0[width: Int](offset: Int):
+            fn body0[width: Int](offset: Int) unified {var}:
                 output_ref_ptr.store(
                     offset,
                     10.0
@@ -221,15 +225,14 @@ fn test[
                     ),
                 )
 
-            vectorize[body0, simd_size](F)
+            vectorize[simd_size](F, body0)
 
     # Test epilogue
     @always_inline
     @parameter
     fn epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
         @always_inline
-        @parameter
-        fn body1[width: Int](idx: Int):
+        fn body1[width: Int](idx: Int) unified {mut}:
             var curr_coords = rebind[IndexList[rank + 2]](coords)
             curr_coords[rank + 1] += idx
 
@@ -241,20 +244,17 @@ fn test[
                 * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
             )
 
-        vectorize[body1, simd_size](f_size)
+        vectorize[simd_size](f_size, body1)
 
     @parameter
     if filter_packed:
         ConvDirectNHWC[
-            rank + 2,
-            rank + 3,
-            rank + 2,
+            layout_p2,
+            layout_p3,
+            layout_p2,
             _,
             _,
             _,
-            DimList.create_unknown[rank + 2](),
-            DimList.create_unknown[rank + 3](),
-            DimList.create_unknown[rank + 2](),
             dtype,
             dtype,
             dtype,
@@ -270,15 +270,12 @@ fn test[
         )
     else:
         ConvDirectNHWC[
-            rank + 2,
-            rank + 2,
-            rank + 2,
+            layout_p2,
+            layout_p2,
+            layout_p2,
             _,
             _,
             _,
-            DimList.create_unknown[rank + 2](),
-            DimList.create_unknown[rank + 2](),
-            DimList.create_unknown[rank + 2](),
             dtype,
             dtype,
             dtype,
@@ -301,8 +298,8 @@ fn test[
     # Check results, return on the first failed comparison.
     for i in range(output_size):
         if not isclose(
-            output_ref.data[i],
-            output.data[i],
+            output_ref.ptr[i],
+            output.ptr[i],
             atol=1e-4,  # absolute error tolerance
             rtol=1e-4,  # relative error tolerance
         ):
@@ -311,8 +308,8 @@ fn test[
             print("filter packed", filter_packed)
             print("num groups", num_groups)
             print("flat output index:", i)
-            print("Golden value: ", output_ref.data[i])
-            print("Actual value: ", output.data[i])
+            print("Golden value: ", output_ref.ptr[i])
+            print("Actual value: ", output.ptr[i])
             output_ptr.free()
             output_ref_ptr.free()
             return

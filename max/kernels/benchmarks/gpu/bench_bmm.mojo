@@ -76,9 +76,9 @@ fn _get_run_name[
     )
 
 
-alias epilogue_func_type = fn[dtype: DType, width: Int, *, alignment: Int = 1] (
-    SIMD[dtype, width]
-) capturing -> SIMD[dtype, width]
+comptime epilogue_func_type = fn[
+    dtype: DType, width: Int, *, alignment: Int = 1
+] (SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
 @always_inline
@@ -113,17 +113,17 @@ fn bench_bmm[
     var K = k.value
     var B = b.value
 
-    alias batch_static_a_shape = DimList(b.dim, m.dim, k.dim)
-    alias batch_static_b_shape = DimList(
+    comptime batch_static_a_shape = DimList(b.dim, m.dim, k.dim)
+    comptime batch_static_b_shape = DimList(
         b.dim, n.dim, k.dim
     ) if transpose_b else DimList(b.dim, k.dim, n.dim)
-    alias batch_static_c_shape = DimList(b.dim, m.dim, n.dim)
+    comptime batch_static_c_shape = DimList(b.dim, m.dim, n.dim)
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_c_shape = DimList(m.dim, n.dim)
 
     var batch_dynamic_a_shape = IndexList[3](b.value, m.value, k.value)
     var batch_dynamic_b_shape = IndexList[3](
@@ -159,15 +159,15 @@ fn bench_bmm[
         c_host.tensor.num_elements()
     )
 
-    var a_device = NDBuffer[
-        dtype, 3, MutableAnyOrigin, batch_static_a_shape, _
-    ](a_device_buffer.unsafe_ptr(), batch_dynamic_a_shape)
-    var b_device = NDBuffer[
-        dtype, 3, MutableAnyOrigin, batch_static_b_shape, _
-    ](b_device_buffer.unsafe_ptr(), batch_dynamic_b_shape)
-    var c_device = NDBuffer[
-        dtype, 3, MutableAnyOrigin, batch_static_c_shape, _
-    ](c_device_buffer.unsafe_ptr(), batch_dynamic_c_shape)
+    var a_device = NDBuffer[dtype, 3, MutAnyOrigin, batch_static_a_shape, _](
+        a_device_buffer.unsafe_ptr(), batch_dynamic_a_shape
+    )
+    var b_device = NDBuffer[dtype, 3, MutAnyOrigin, batch_static_b_shape, _](
+        b_device_buffer.unsafe_ptr(), batch_dynamic_b_shape
+    )
+    var c_device = NDBuffer[dtype, 3, MutAnyOrigin, batch_static_c_shape, _](
+        c_device_buffer.unsafe_ptr(), batch_dynamic_c_shape
+    )
 
     # Initialize data on the device
 
@@ -188,13 +188,13 @@ fn bench_bmm[
         *,
         alignment: Int = 1,
     ](idx: IndexList[rank], val: SIMD[dtype, width],) capturing -> None:
-        alias func = lambda_fn.value()
+        comptime func = lambda_fn.value()
         var update_val = func(val)
         c_device.store(
             Index(idx[0], idx[1], idx[2]), update_val.cast[c_device.type]()
         )
 
-    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
     @always_inline
     @__copy_capture(c_device, B, M, N)
@@ -204,7 +204,7 @@ fn bench_bmm[
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[3]](idx0)
         var val = c_device.load[width=simd_width](idx)
-        alias element_lambda = lambda_fn.value()
+        comptime element_lambda = lambda_fn.value()
         var update_val = element_lambda(val)
 
         c_device.store(
@@ -302,10 +302,12 @@ fn bench_bmm[
             ](b, m, n, k)
         ),
         # TODO: Pick relevant benchmetric
-        ThroughputMeasure(
-            BenchMetric.flops,
-            2 * B * M * N * K,
-        ),
+        [
+            ThroughputMeasure(
+                BenchMetric.flops,
+                2 * B * M * N * K,
+            )
+        ],
     )
 
     # Retain our buffers till the end.
@@ -350,17 +352,17 @@ fn create_bmm_bench[
 
 
 def main():
-    alias dtype = env_get_dtype["dtype", DType.bfloat16]()
+    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     var B = Int(arg_parse("B", 1))
     var M = Int(arg_parse("M", 1))
-    alias N = env_get_int["N", 1]()
-    alias K = env_get_int["K", 1]()
+    comptime N = env_get_int["N", 1]()
+    comptime K = env_get_int["K", 1]()
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
     )
-    alias transpose_b = False
-    alias use_vendor_blas = env_get_bool["use_vendor_blas", False]()
+    comptime transpose_b = False
+    comptime use_vendor_blas = env_get_bool["use_vendor_blas", False]()
 
     var m = Bench()
     with DeviceContext() as ctx:

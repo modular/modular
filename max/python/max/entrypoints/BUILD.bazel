@@ -1,0 +1,103 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
+
+package(default_visibility = ["//visibility:public"])
+
+modular_py_library(
+    name = "entrypoints",
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [
+            "gpu_query.py",
+            "pipelines.py",
+            "replay_recording.py",
+        ],
+    ),
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//max/python/max/diagnostics",
+        "//max/python/max/pipelines",
+        "//max/python/max/serve",
+        "//max/python/max/serve/kvcache_agent",
+        "//max/python/max/serve/pipelines",
+        requirement("click"),
+        requirement("gguf"),
+        requirement("huggingface-hub"),
+        requirement("numpy"),
+        requirement("opentelemetry-api"),
+        requirement("opentelemetry-sdk"),
+        requirement("pillow"),
+        requirement("psutil"),
+        requirement("requests"),
+        requirement("sentencepiece"),
+        requirement("tokenizers"),
+        requirement("tqdm"),
+        requirement("transformers"),
+        requirement("uvicorn"),
+        requirement("uvloop"),
+    ],
+)
+
+modular_py_library(
+    name = "_pipelines",
+    srcs = [
+        "pipelines.py",
+    ],
+    imports = ["../.."],
+    deps = [
+        "//max/python/max/entrypoints",
+        "//max/python/max/interfaces",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/serve",
+        # These all point to the symlinked version of the benchmark directory.
+        "//max/python/max/benchmark:benchmark_serving_lib",
+        requirement("aiohttp"),
+        requirement("click"),
+        requirement("datasets"),
+        requirement("huggingface-hub"),
+        requirement("jinja2"),
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("tqdm"),
+        requirement("transformers"),
+        requirement("uvicorn"),
+    ],
+)
+
+modular_py_binary(
+    name = "pipelines",
+    srcs = [
+        "pipelines.py",
+    ],
+    data = [
+        "@nvshmem_prebuilt//:host",
+    ],
+    env = {
+        "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
+    deps = [
+        ":_pipelines",
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "replay_recording",
+    srcs = ["replay_recording.py"],
+    deps = [
+        "//max/python/max/serve/recordreplay",
+        requirement("click"),
+        requirement("httpx"),
+    ],
+)
+
+modular_py_library(
+    name = "gpu-query",
+    srcs = ["gpu_query.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@mojo//:python"],
+)

@@ -24,21 +24,25 @@ from memory import Span
 # Validate UTF-8
 # ===-----------------------------------------------------------------------===#
 
+comptime BIGGEST_UTF8_FIRST_BYTE = Byte(0b1111_0100)
+"""Since the biggest unicode codepoint is 0x10FFFF then the biggest
+first byte that a utf-8 sequence can have is 0b1111_0100 (0xF4).
+"""
 
-alias TOO_SHORT: UInt8 = 1 << 0
-alias TOO_LONG: UInt8 = 1 << 1
-alias OVERLONG_3: UInt8 = 1 << 2
-alias SURROGATE: UInt8 = 1 << 4
-alias OVERLONG_2: UInt8 = 1 << 5
-alias TWO_CONTS: UInt8 = 1 << 7
-alias TOO_LARGE: UInt8 = 1 << 3
-alias TOO_LARGE_1000: UInt8 = 1 << 6
-alias OVERLONG_4: UInt8 = 1 << 6
-alias CARRY: UInt8 = TOO_SHORT | TOO_LONG | TWO_CONTS
+comptime TOO_SHORT: UInt8 = 1 << 0
+comptime TOO_LONG: UInt8 = 1 << 1
+comptime OVERLONG_3: UInt8 = 1 << 2
+comptime SURROGATE: UInt8 = 1 << 4
+comptime OVERLONG_2: UInt8 = 1 << 5
+comptime TWO_CONTS: UInt8 = 1 << 7
+comptime TOO_LARGE: UInt8 = 1 << 3
+comptime TOO_LARGE_1000: UInt8 = 1 << 6
+comptime OVERLONG_4: UInt8 = 1 << 6
+comptime CARRY: UInt8 = TOO_SHORT | TOO_LONG | TWO_CONTS
 
 
 # fmt: off
-alias shuf1 = SIMD[DType.uint8, 16](
+comptime shuf1 = SIMD[DType.uint8, 16](
     TOO_LONG, TOO_LONG, TOO_LONG, TOO_LONG,
     TOO_LONG, TOO_LONG, TOO_LONG, TOO_LONG,
     TWO_CONTS, TWO_CONTS, TWO_CONTS, TWO_CONTS,
@@ -48,7 +52,7 @@ alias shuf1 = SIMD[DType.uint8, 16](
     TOO_SHORT | TOO_LARGE | TOO_LARGE_1000 | OVERLONG_4
 )
 
-alias shuf2 = SIMD[DType.uint8, 16](
+comptime shuf2 = SIMD[DType.uint8, 16](
     CARRY | OVERLONG_3 | OVERLONG_2 | OVERLONG_4,
     CARRY | OVERLONG_2,
     CARRY,
@@ -66,7 +70,7 @@ alias shuf2 = SIMD[DType.uint8, 16](
     CARRY | TOO_LARGE | TOO_LARGE_1000,
     CARRY | TOO_LARGE | TOO_LARGE_1000
 )
-alias shuf3 = SIMD[DType.uint8, 16](
+comptime shuf3 = SIMD[DType.uint8, 16](
     TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT,
     TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT,
     TOO_LONG | OVERLONG_2 | TWO_CONTS | OVERLONG_3 | TOO_LARGE_1000 | OVERLONG_4,
@@ -94,10 +98,10 @@ fn validate_chunk[
     current_block: SIMD[DType.uint8, simd_size],
     previous_input_block: SIMD[DType.uint8, simd_size],
 ) -> SIMD[DType.uint8, simd_size]:
-    alias v0f = SIMD[DType.uint8, simd_size](0x0F)
-    alias v80 = SIMD[DType.uint8, simd_size](0x80)
-    alias third_byte = 0b11100000 - 0x80
-    alias fourth_byte = 0b11110000 - 0x80
+    comptime v0f = SIMD[DType.uint8, simd_size](0x0F)
+    comptime v80 = SIMD[DType.uint8, simd_size](0x80)
+    comptime third_byte = 0b11100000 - 0x80
+    comptime fourth_byte = 0b11110000 - 0x80
     var prev1 = _extract_vector[simd_size - 1](
         previous_input_block, current_block
     )
@@ -136,7 +140,7 @@ fn _is_valid_utf8_runtime(span: Span[mut=False, Byte, **_]) -> Bool:
 
     ptr = span.unsafe_ptr()
     length = len(span)
-    alias simd_size = sys.simd_byte_width()
+    comptime simd_size = sys.simd_byte_width()
     var i: Int = 0
     var previous = SIMD[DType.uint8, simd_size]()
 
@@ -169,6 +173,8 @@ fn _is_valid_utf8_comptime(span: Span[mut=False, Byte, **_]) -> Bool:
 
     while offset < length:
         var b0 = ptr[offset]
+        if b0 > BIGGEST_UTF8_FIRST_BYTE:
+            return False
         var byte_type = _utf8_byte_type(b0)
         if byte_type == 0:
             offset += 1
@@ -183,15 +189,15 @@ fn _is_valid_utf8_comptime(span: Span[mut=False, Byte, **_]) -> Bool:
 
         # special unicode ranges
         var b1 = ptr[offset + 1]
-        if byte_type == 2 and b0 < UInt8(0b1100_0010):
+        if byte_type == 2 and b0 < 0b1100_0010:
             return False
-        elif b0 == 0xE0 and b1 < UInt8(0xA0):
+        elif b0 == 0xE0 and b1 < 0xA0:
             return False
-        elif b0 == 0xED and b1 > UInt8(0x9F):
+        elif b0 == 0xED and b1 > 0x9F:
             return False
-        elif b0 == 0xF0 and b1 < UInt8(0x90):
+        elif b0 == 0xF0 and b1 < 0x90:
             return False
-        elif b0 == 0xF4 and b1 > UInt8(0x8F):
+        elif b0 == 0xF4 and b1 > 0x8F:
             return False
 
         offset += UInt(byte_type)
@@ -246,7 +252,7 @@ fn _is_utf8_continuation_byte[
 
 @always_inline
 fn _count_utf8_continuation_bytes(span: Span[Byte]) -> Int:
-    return span.count[func=_is_utf8_continuation_byte]()
+    return Int(span.count[func=_is_utf8_continuation_byte]())
 
 
 @always_inline
@@ -254,6 +260,9 @@ fn _utf8_first_byte_sequence_length(b: Byte) -> UInt:
     """Get the length of the sequence starting with given byte. Do note that
     this does not work correctly if given a continuation byte."""
 
+    debug_assert(
+        b <= BIGGEST_UTF8_FIRST_BYTE, "first byte is out of range for utf-8"
+    )
     debug_assert(
         not _is_utf8_continuation_byte(b),
         "Function does not work correctly if given a continuation byte.",
@@ -263,7 +272,7 @@ fn _utf8_first_byte_sequence_length(b: Byte) -> UInt:
     )
 
 
-fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):
+fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> type_of(b):
     """UTF-8 byte type.
 
     Returns:
@@ -277,19 +286,17 @@ fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):
         - 3 -> start of 3 byte long sequence.
         - 4 -> start of 4 byte long sequence.
     """
-    return (
-        b.ge(0b1000_0000).cast[DType.uint8]()
-        + b.ge(0b1100_0000).cast[DType.uint8]()
-        + b.ge(0b1110_0000).cast[DType.uint8]()
-        + b.ge(0b1111_0000).cast[DType.uint8]()
+    debug_assert(
+        b <= BIGGEST_UTF8_FIRST_BYTE, "first byte is out of range for utf-8"
     )
+    return count_leading_zeros(~b)
 
 
 @always_inline
 fn _is_newline_char_utf8[
     include_r_n: Bool = False
 ](
-    p: UnsafePointer[Byte, mut=False, **_],
+    p: UnsafePointer[mut=False, Byte, **_],
     eol_start: UInt,
     b0: Byte,
     char_len: UInt,
@@ -300,11 +307,11 @@ fn _is_newline_char_utf8[
         This assumes valid utf-8 is passed.
     """
     # highly performance sensitive code, benchmark before touching
-    alias `\r` = UInt8(ord("\r"))
-    alias `\n` = UInt8(ord("\n"))
-    alias `\t` = UInt8(ord("\t"))
-    alias `\x1c` = UInt8(ord("\x1c"))
-    alias `\x1e` = UInt8(ord("\x1e"))
+    comptime `\r` = UInt8(ord("\r"))
+    comptime `\n` = UInt8(ord("\n"))
+    comptime `\t` = UInt8(ord("\t"))
+    comptime `\x1c` = UInt8(ord("\x1c"))
+    comptime `\x1e` = UInt8(ord("\x1e"))
 
     # Since line-breaks are a relatively uncommon occurrence it is best to
     # branch here because the algorithm that calls this needs low latency rather

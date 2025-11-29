@@ -17,8 +17,9 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from os import abort
+from sys import bit_width_of
 
-alias _DEFAULT_DIGIT_CHARS = "0123456789abcdefghijklmnopqrstuvwxyz"
+comptime _DEFAULT_DIGIT_CHARS = "0123456789abcdefghijklmnopqrstuvwxyz"
 
 
 # ===-----------------------------------------------------------------------===#
@@ -333,7 +334,7 @@ fn _try_write_int[
     # Stack allocate enough bytes to store any formatted integer up to 256 bits
     # TODO: use a dynamic size when #2194 is resolved
     # +1 for storing NUL terminator.
-    alias CAPACITY: Int = max(64, dtype.bit_width()) + 1
+    comptime CAPACITY: Int = max(64, bit_width_of[dtype]()) + 1
 
     var buf = InlineArray[UInt8, CAPACITY](uninitialized=True)
 
@@ -399,7 +400,7 @@ fn _try_write_int[
 
     # SAFETY:
     #   Create a slice to only those bytes in `buf` that have been initialized.
-    var str_slice = StringSlice[__origin_of(buf)](ptr=buf_ptr, length=UInt(len))
+    var str_slice = StringSlice[origin_of(buf)](ptr=buf_ptr, length=len)
 
     writer.write(str_slice)
 

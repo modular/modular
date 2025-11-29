@@ -53,7 +53,7 @@ fn bench_empty_launch_caller(mut m: Bench, ctx: DeviceContext) raises:
 fn bench_empty_launch_many_params_caller(
     mut m: Bench, ctx: DeviceContext
 ) raises:
-    alias func_alias = empty_kernel_many_params[
+    comptime func_alias = empty_kernel_many_params[
         Layout([1, 2], [3, 3]),
         Layout([1, 2], [3, 3]),
         Layout([1, 2], [3, 3]),

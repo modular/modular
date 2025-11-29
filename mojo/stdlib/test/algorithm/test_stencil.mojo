@@ -20,11 +20,11 @@ from testing import TestSuite
 from utils import IndexList
 from utils.numerics import min_or_neg_inf
 
-alias _map_fn_type = fn[rank: Int] (IndexList[rank]) capturing -> (
+comptime _map_fn_type = fn[rank: Int] (IndexList[rank]) capturing -> Tuple[
     IndexList[rank],
     IndexList[rank],
-)
-alias load_fn_type = fn[dtype: DType, rank: Int, simd_width: Int] (
+]
+comptime load_fn_type = fn[dtype: DType, rank: Int, simd_width: Int] (
     IndexList[rank]
 ) capturing -> SIMD[dtype, simd_width]
 
@@ -44,34 +44,36 @@ fn fill_buffer[
 # CHECK-LABEL: test_stencil_avg_pool
 def test_stencil_avg_pool():
     print("== test_stencil_avg_pool")
-    alias rank = 4
-    alias stencil_rank = 2
-    alias dtype = DType.float32
-    alias simd_with = 1
+    comptime rank = 4
+    comptime stencil_rank = 2
+    comptime dtype = DType.float32
+    comptime simd_with = 1
 
-    alias input_width = 5
-    alias input_height = 5
+    comptime input_width = 5
+    comptime input_height = 5
 
-    alias stride = 1
-    alias pool_window_h = 3
-    alias pool_window_w = 3
-    alias dilation = 1
+    comptime stride = 1
+    comptime pool_window_h = 3
+    comptime pool_window_w = 3
+    comptime dilation = 1
 
-    alias input_shape = DimList(1, input_height, input_width, 1)
+    comptime input_shape = DimList(1, input_height, input_width, 1)
 
-    alias output_height = input_height - pool_window_h + 1
-    alias output_width = input_width - pool_window_w + 1
+    comptime output_height = input_height - pool_window_h + 1
+    comptime output_width = input_width - pool_window_w + 1
 
-    alias output_shape = DimList(1, output_height, output_width, 1)
+    comptime output_shape = DimList(1, output_height, output_width, 1)
 
     var input_stack = InlineArray[Scalar[dtype], Int(input_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[dtype, rank, _, input_shape](input_stack)
+    var input = NDBuffer[dtype, rank, _, input_shape](input_stack.unsafe_ptr())
     var output_stack = InlineArray[Scalar[dtype], Int(output_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[dtype, rank, _, output_shape](output_stack)
+    var output = NDBuffer[dtype, rank, _, output_shape](
+        output_stack.unsafe_ptr()
+    )
 
     fill_buffer(input)
     output.fill(0)
@@ -79,10 +81,10 @@ def test_stencil_avg_pool():
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](point[0], point[1])
         var upper_bound = IndexList[stencil_rank](
             point[0] + pool_window_h, point[1] + pool_window_w
@@ -127,7 +129,7 @@ def test_stencil_avg_pool():
         var res = val / (pool_window_h * pool_window_w)
         output.store(point, res)
 
-    alias stencil_axis = IndexList[stencil_rank](1, 2)
+    comptime stencil_axis = IndexList[stencil_rank](1, 2)
     stencil[
         rank,
         stencil_rank,
@@ -154,36 +156,38 @@ def test_stencil_avg_pool():
 # CHECK-LABEL: test_stencil_avg_pool_padded
 def test_stencil_avg_pool_padded():
     print("== test_stencil_avg_pool_padded")
-    alias rank = 4
-    alias stencil_rank = 2
-    alias dtype = DType.float32
-    alias simd_with = 1
+    comptime rank = 4
+    comptime stencil_rank = 2
+    comptime dtype = DType.float32
+    comptime simd_with = 1
 
-    alias input_width = 5
-    alias input_height = 5
+    comptime input_width = 5
+    comptime input_height = 5
 
-    alias stride = 1
-    alias pool_window_h = 5
-    alias pool_window_w = 5
-    alias dilation = 1
-    alias pad_h = 2
-    alias pad_w = 2
+    comptime stride = 1
+    comptime pool_window_h = 5
+    comptime pool_window_w = 5
+    comptime dilation = 1
+    comptime pad_h = 2
+    comptime pad_w = 2
 
-    alias input_shape = DimList(1, input_height, input_width, 1)
+    comptime input_shape = DimList(1, input_height, input_width, 1)
 
-    alias output_height = input_height - pool_window_h + pad_h * 2 + 1
-    alias output_width = input_width - pool_window_w + pad_w * 2 + 1
+    comptime output_height = input_height - pool_window_h + pad_h * 2 + 1
+    comptime output_width = input_width - pool_window_w + pad_w * 2 + 1
 
-    alias output_shape = DimList(1, output_height, output_width, 1)
+    comptime output_shape = DimList(1, output_height, output_width, 1)
 
     var input_stack = InlineArray[Scalar[dtype], Int(input_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[dtype, rank, _, input_shape](input_stack)
+    var input = NDBuffer[dtype, rank, _, input_shape](input_stack.unsafe_ptr())
     var output_stack = InlineArray[Scalar[dtype], Int(output_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[dtype, rank, _, output_shape](output_stack)
+    var output = NDBuffer[dtype, rank, _, output_shape](
+        output_stack.unsafe_ptr()
+    )
 
     fill_buffer(input)
     output.fill(0)
@@ -191,10 +195,10 @@ def test_stencil_avg_pool_padded():
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] - pad_h, point[1] - pad_w
         )
@@ -241,7 +245,7 @@ def test_stencil_avg_pool_padded():
     fn dilation_fn(dim: Int) -> Int:
         return 1
 
-    alias stencil_axis = IndexList[stencil_rank](1, 2)
+    comptime stencil_axis = IndexList[stencil_rank](1, 2)
     stencil[
         rank,
         stencil_rank,
@@ -270,34 +274,36 @@ def test_stencil_avg_pool_padded():
 # CHECK-LABEL: test_stencil_avg_pool_stride_2
 def test_stencil_avg_pool_stride_2():
     print("== test_stencil_avg_pool_stride_2")
-    alias rank = 4
-    alias stencil_rank = 2
-    alias dtype = DType.float32
-    alias simd_with = 1
+    comptime rank = 4
+    comptime stencil_rank = 2
+    comptime dtype = DType.float32
+    comptime simd_with = 1
 
-    alias input_width = 7
-    alias input_height = 7
+    comptime input_width = 7
+    comptime input_height = 7
 
-    alias stride = 2
-    alias pool_window_h = 3
-    alias pool_window_w = 3
-    alias dilation = 1
+    comptime stride = 2
+    comptime pool_window_h = 3
+    comptime pool_window_w = 3
+    comptime dilation = 1
 
-    alias input_shape = DimList(1, input_height, input_width, 1)
+    comptime input_shape = DimList(1, input_height, input_width, 1)
 
-    alias output_height = (input_height - pool_window_h) // stride + 1
-    alias output_width = (input_width - pool_window_w) // stride + 1
+    comptime output_height = (input_height - pool_window_h) // stride + 1
+    comptime output_width = (input_width - pool_window_w) // stride + 1
 
-    alias output_shape = DimList(1, output_height, output_width, 1)
+    comptime output_shape = DimList(1, output_height, output_width, 1)
 
     var input_stack = InlineArray[Scalar[dtype], Int(input_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[dtype, rank, _, input_shape](input_stack)
+    var input = NDBuffer[dtype, rank, _, input_shape](input_stack.unsafe_ptr())
     var output_stack = InlineArray[Scalar[dtype], Int(output_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[dtype, rank, _, output_shape](output_stack)
+    var output = NDBuffer[dtype, rank, _, output_shape](
+        output_stack.unsafe_ptr()
+    )
 
     fill_buffer(input)
     output.fill(0)
@@ -305,10 +311,10 @@ def test_stencil_avg_pool_stride_2():
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride, point[1] * stride
         )
@@ -356,7 +362,7 @@ def test_stencil_avg_pool_stride_2():
     fn dilation_fn(dim: Int) -> Int:
         return 1
 
-    alias stencil_axis = IndexList[stencil_rank](1, 2)
+    comptime stencil_axis = IndexList[stencil_rank](1, 2)
     stencil[
         rank,
         stencil_rank,
@@ -383,38 +389,40 @@ def test_stencil_avg_pool_stride_2():
 # CHECK-LABEL: test_stencil_max_pool_dilation_2
 def test_stencil_max_pool_dilation_2():
     print("== test_stencil_max_pool_dilation_2")
-    alias rank = 4
-    alias stencil_rank = 2
-    alias dtype = DType.float32
-    alias simd_with = 1
+    comptime rank = 4
+    comptime stencil_rank = 2
+    comptime dtype = DType.float32
+    comptime simd_with = 1
 
-    alias input_width = 7
-    alias input_height = 7
+    comptime input_width = 7
+    comptime input_height = 7
 
-    alias stride = 1
-    alias pool_window_h = 3
-    alias pool_window_w = 3
-    alias dilation = 2
+    comptime stride = 1
+    comptime pool_window_h = 3
+    comptime pool_window_w = 3
+    comptime dilation = 2
 
-    alias input_shape = DimList(1, input_height, input_width, 1)
+    comptime input_shape = DimList(1, input_height, input_width, 1)
 
-    alias output_height = (
+    comptime output_height = (
         input_height - pool_window_h - (pool_window_h - 1) * (dilation - 1)
     ) // stride + 1
-    alias output_width = (
+    comptime output_width = (
         input_width - pool_window_w - (pool_window_w - 1) * (dilation - 1)
     ) // stride + 1
 
-    alias output_shape = DimList(1, output_height, output_width, 1)
+    comptime output_shape = DimList(1, output_height, output_width, 1)
 
     var input_stack = InlineArray[Scalar[dtype], Int(input_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[dtype, rank, _, input_shape](input_stack)
+    var input = NDBuffer[dtype, rank, _, input_shape](input_stack.unsafe_ptr())
     var output_stack = InlineArray[Scalar[dtype], Int(output_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[dtype, rank, _, output_shape](output_stack)
+    var output = NDBuffer[dtype, rank, _, output_shape](
+        output_stack.unsafe_ptr()
+    )
 
     fill_buffer(input)
     output.fill(0)
@@ -422,10 +430,10 @@ def test_stencil_max_pool_dilation_2():
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride, point[1] * stride
         )
@@ -472,7 +480,7 @@ def test_stencil_max_pool_dilation_2():
     fn dilation_fn(dim: Int) -> Int:
         return dilation
 
-    alias stencil_axis = IndexList[stencil_rank](1, 2)
+    comptime stencil_axis = IndexList[stencil_rank](1, 2)
     stencil[
         rank,
         stencil_rank,

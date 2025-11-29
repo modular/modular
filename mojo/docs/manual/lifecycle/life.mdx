@@ -362,14 +362,14 @@ performs a deep copy:
 
 ```mojo
 struct HeapArray(Copyable):
-    var data: UnsafePointer[Int]
+    var data: UnsafePointer[Int, MutOrigin.external]
     var size: Int
     var cap: Int
 
     fn __init__(out self, size: Int, val: Int):
         self.size = size
         self.cap = size * 2
-        self.data = UnsafePointer[Int].alloc(self.cap)
+        self.data = alloc[Int](self.cap)
         for i in range(self.size):
             (self.data + i).init_pointee_copy(val)
 
@@ -377,7 +377,7 @@ struct HeapArray(Copyable):
         # Deep-copy the existing value
         self.size = existing.size
         self.cap = existing.cap
-        self.data = UnsafePointer[Int].alloc(self.cap)
+        self.data = alloc[Int](self.cap)
         for i in range(self.size):
             (self.data + i).init_pointee_copy(existing.data[i])
         # The lifetime of `existing` continues unchanged

@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from math import rsqrt
 from sys import simd_width_of
 
@@ -24,10 +25,10 @@ from utils.index import Index, IndexList
 
 def compute_group_stats[
     t: DType
-](vec: LayoutTensor[t, **_], size: Int, eps: Scalar[t]) -> (
+](vec: LayoutTensor[t, **_], size: Int, eps: Scalar[t]) -> Tuple[
     Scalar[t],
     Scalar[t],
-):
+]:
     constrained[vec.rank == 1, "vec must be rank 1"]()
     var sum_val = Scalar[t]()
     var sum_sq = Scalar[t]()
@@ -74,8 +75,8 @@ fn run_group_norm_gpu[
     var beta_d = ctx.enqueue_create_buffer[dtype](C)
 
     var param_shape = Index(C)
-    alias layout = Layout.row_major[rank]()
-    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    comptime layout = Layout.row_major[rank]()
+    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var data_buf = LayoutTensor[dtype, layout](
         data_d, RuntimeLayout[layout].row_major(shape)
     )
@@ -159,7 +160,7 @@ fn run_group_norm_gpu[
 
 def main():
     with DeviceContext() as ctx:
-        alias default_simd = simd_width_of[
+        comptime default_simd = simd_width_of[
             DType.float32, target = get_gpu_target()
         ]()
 

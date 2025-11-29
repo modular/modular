@@ -22,10 +22,11 @@ print(CompilationTarget.is_x86())
 """
 
 from collections.string.string_slice import _get_kgen_string
+from memory import LegacyOpaquePointer as OpaquePointer
 
 from .ffi import _external_call_const, external_call
 
-alias _TargetType = __mlir_type.`!kgen.target`
+comptime _TargetType = __mlir_type.`!kgen.target`
 
 
 @always_inline("nodebug")
@@ -67,8 +68,8 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
             can be specified to satisfy Mojo type checking.
         """
 
-        alias note_text = String(" Note: ", note.value() if note else "")
-        alias msg = "Current compilation target does not support"
+        comptime note_text = String(" Note: ", note.value() if note else "")
+        comptime msg = "Current compilation target does not support"
 
         @parameter
         if operation:
@@ -111,6 +112,11 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
     @always_inline("nodebug")
     @staticmethod
     fn __arch() -> __mlir_type.`!kgen.string`:
+        """Get the target architecture string from the compilation target.
+
+        Returns:
+            The architecture string (e.g., "x86_64", "aarch64").
+        """
         return __mlir_attr[
             `#kgen.param.expr<target_get_field,`,
             Self.value,
@@ -374,17 +380,20 @@ fn platform_map[
     on the current compilation target, raising a compilation
     error if trying to access the value on an unsupported target.
 
+    Parameters:
+        T: The type of the platform-specific value.
+        operation: Optional operation name for error messages.
+        linux: The value to use on Linux platforms.
+        macos: The value to use on macOS platforms.
+
+    Returns:
+        The platform-specific value for the current target.
+
     Example:
 
     ```mojo
-    alias EDEADLK = platform_alias["EDEADLK", linux=35, macos=11]()
+    comptime EDEADLK = platform_alias["EDEADLK", linux=35, macos=11]()
     ```
-
-    Parameters:
-        T: The type of the value.
-        operation: The operation to show in the compilation error.
-        linux: Optional support for linux targets.
-        macos: Optional support for macos targets.
     """
 
     @parameter
@@ -516,6 +525,7 @@ fn _is_sm_120x_or_newer() -> Bool:
 @always_inline("nodebug")
 fn is_apple_gpu() -> Bool:
     """Returns True if the target triple is for Apple GPU (Metal) and False otherwise.
+
     Returns:
         True if the triple target is Apple GPU and False otherwise.
     """
@@ -562,37 +572,132 @@ fn is_nvidia_gpu[subarch: StaticString]() -> Bool:
 
 
 @always_inline("nodebug")
+fn _is_amd_gcn() -> Bool:
+    """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
+    and we are compiling for any of the GCN (Graphics Core Next) architectures.
+
+    Returns:
+        True if GCN and False otherwise.
+    """
+    return (
+        is_amd_gpu["gfx600"]()
+        or is_amd_gpu["gfx601"]()
+        or is_amd_gpu["gfx602"]()
+        or is_amd_gpu["gfx700"]()
+        or is_amd_gpu["gfx701"]()
+        or is_amd_gpu["gfx702"]()
+        or is_amd_gpu["gfx703"]()
+        or is_amd_gpu["gfx704"]()
+        or is_amd_gpu["gfx705"]()
+        or is_amd_gpu["gfx801"]()
+        or is_amd_gpu["gfx802"]()
+        or is_amd_gpu["gfx803"]()
+        or is_amd_gpu["gfx805"]()
+        or is_amd_gpu["gfx810"]()
+        or is_amd_gpu["gfx900"]()
+        or is_amd_gpu["gfx902"]()
+        or is_amd_gpu["gfx904"]()
+        or is_amd_gpu["gfx906"]()
+        or is_amd_gpu["gfx909"]()
+    )
+
+
+@always_inline("nodebug")
+fn _is_amd_rdna1() -> Bool:
+    """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
+    and we are compiling for the any of the Radeon RX 5000 series
+    sub-architectures:
+
+        amdgpu:gfx1010: Navi 10 (RX 5700 XT/5700)
+        amdgpu:gfx1011: Navi 12
+        amdgpu:gfx1012: Navi 14 (RX 5500 XT/5500)
+        amdgpu:gfx1013: Navi 14
+
+    Returns:
+        True if the RDNA1 and False otherwise.
+    """
+    return (
+        is_amd_gpu["amdgpu:gfx1010"]()
+        or is_amd_gpu["amdgpu:gfx1011"]()
+        or is_amd_gpu["amdgpu:gfx1012"]()
+        or is_amd_gpu["amdgpu:gfx1013"]()
+    )
+
+
+@always_inline("nodebug")
+fn _is_amd_rdna2() -> Bool:
+    """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
+    and we are compiling for the any of the Radeon RX 6000 series
+    sub-architectures:
+
+        amdgpu:gfx1030: Navi 21 (RX 6900/6800)
+        amdgpu:gfx1031: Navi 22 (RX 6700)
+        amdgpu:gfx1032: Navi 23 (RX 6600)
+        amdgpu:gfx1033: Navi 24
+        amdgpu:gfx1034: Navi 24
+        amdgpu:gfx1035: Rembrandt APU
+        amdgpu:gfx1036: Raphael APU
+
+    Returns:
+        True if the RDNA2 and False otherwise.
+    """
+    return (
+        is_amd_gpu["amdgpu:gfx1030"]()
+        or is_amd_gpu["amdgpu:gfx1031"]()
+        or is_amd_gpu["amdgpu:gfx1032"]()
+        or is_amd_gpu["amdgpu:gfx1033"]()
+        or is_amd_gpu["amdgpu:gfx1034"]()
+        or is_amd_gpu["amdgpu:gfx1035"]()
+        or is_amd_gpu["amdgpu:gfx1036"]()
+    )
+
+
+@always_inline("nodebug")
 fn _is_amd_rdna3() -> Bool:
     return (
-        is_amd_gpu["amdgpu:gfx1100"]()
-        or is_amd_gpu["amdgpu:gfx1101"]()
-        or is_amd_gpu["amdgpu:gfx1102"]()
-        or is_amd_gpu["amdgpu:gfx1103"]()
-        # These last two are technically RDNA3.5, but we'll treat them as RDNA3
+        is_amd_gpu["gfx1100"]()
+        or is_amd_gpu["gfx1101"]()
+        or is_amd_gpu["gfx1102"]()
+        or is_amd_gpu["gfx1103"]()
+        # These last four are technically RDNA3.5, but we'll treat them as RDNA3
         # for now.
-        or is_amd_gpu["amdgpu:gfx1150"]()
-        or is_amd_gpu["amdgpu:gfx1151"]()
+        or is_amd_gpu["gfx1150"]()
+        or is_amd_gpu["gfx1151"]()
+        or is_amd_gpu["gfx1152"]()
+        or is_amd_gpu["gfx1153"]()
     )
 
 
 @always_inline("nodebug")
 fn _is_amd_rdna4() -> Bool:
-    return is_amd_gpu["amdgpu:gfx1200"]() or is_amd_gpu["amdgpu:gfx1201"]()
+    return is_amd_gpu["gfx1200"]() or is_amd_gpu["gfx1201"]()
 
 
 @always_inline("nodebug")
 fn _is_amd_rdna() -> Bool:
-    return _is_amd_rdna3() or _is_amd_rdna4()
+    return (
+        _is_amd_rdna1() or _is_amd_rdna2() or _is_amd_rdna3() or _is_amd_rdna4()
+    )
+
+
+@always_inline("nodebug")
+fn _is_amd_rdna2_or_earlier() -> Bool:
+    """Returns True if the target is GCN, RDNA1, or RDNA2.
+
+    Returns:
+        True if the GPU is GCN, RDNA1, or RDNA2, False otherwise.
+    """
+    return _is_amd_gcn() or _is_amd_rdna1() or _is_amd_rdna2()
 
 
 @always_inline("nodebug")
 fn _is_amd_mi300x() -> Bool:
-    return is_amd_gpu["amdgpu:gfx942"]()
+    return is_amd_gpu["gfx942"]()
 
 
 @always_inline("nodebug")
 fn _is_amd_mi355x() -> Bool:
-    return is_amd_gpu["amdgpu:gfx950"]()
+    return is_amd_gpu["gfx950"]()
 
 
 @always_inline("nodebug")
@@ -646,10 +751,13 @@ fn is_amd_gpu[subarch: StaticString]() -> Bool:
     """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
     and we are compiling for the specified sub-architecture, False otherwise.
 
+    Parameters:
+        subarch: The AMD GPU sub-architecture to check for (e.g., "gfx90a").
+
     Returns:
         True if the triple target is amdgpu and False otherwise.
     """
-    return is_amd_gpu() and _accelerator_arch() == subarch
+    return is_amd_gpu() and CompilationTarget._is_arch[subarch]()
 
 
 @always_inline("nodebug")
@@ -766,7 +874,7 @@ fn simd_byte_width[target: _TargetType = _current_target()]() -> Int:
     Returns:
         The vector size (in bytes) of the host system.
     """
-    alias CHAR_BIT = 8
+    comptime CHAR_BIT = 8
     return simd_bit_width[target]() // CHAR_BIT
 
 
@@ -797,7 +905,7 @@ fn size_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     ```
     Note: `align_of` is in same module.
     """
-    alias mlir_type = __mlir_attr[
+    comptime mlir_type = __mlir_attr[
         `#kgen.param.expr<rebind, #kgen.type<!kgen.param<`,
         type,
         `>> : `,
@@ -848,7 +956,7 @@ fn align_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     Returns:
         The alignment of the type in bytes.
     """
-    alias mlir_type = __mlir_attr[
+    comptime mlir_type = __mlir_attr[
         `#kgen.param.expr<rebind, #kgen.type<!kgen.param<`,
         type,
         `>> : `,
@@ -901,7 +1009,7 @@ fn bit_width_of[
     Returns:
         The size of the type in bits.
     """
-    alias CHAR_BIT = 8
+    comptime CHAR_BIT = 8
     return CHAR_BIT * size_of[type, target=target]()
 
 
@@ -997,11 +1105,11 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
         "the operating system must be macOS",
     ]()
 
-    alias INITIAL_CAPACITY = 32
+    comptime INITIAL_CAPACITY = 32
 
     # Overallocate the string.
     var buf_len = Int(INITIAL_CAPACITY)
-    var osver = String(unsafe_uninit_length=UInt(buf_len))
+    var osver = String(unsafe_uninit_length=buf_len)
 
     var err = external_call["sysctlbyname", Int32](
         "kern.osproductversion".unsafe_cstr_ptr(),
@@ -1014,7 +1122,7 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
         raise "Unable to query macOS version"
 
     # Truncate the string down to the actual length.
-    osver = osver[0:buf_len]
+    osver.resize(buf_len)
 
     var major = 0
     var minor = 0
@@ -1022,11 +1130,11 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
 
     if "." in osver:
         major = Int(osver[: osver.find(".")])
-        osver = osver[osver.find(".") + 1 :]
+        osver = String(osver[osver.find(".") + 1 :])
 
     if "." in osver:
         minor = Int(osver[: osver.find(".")])
-        osver = osver[osver.find(".") + 1 :]
+        osver = String(osver[osver.find(".") + 1 :])
 
     if "." in osver:
         patch = Int(osver[: osver.find(".")])
@@ -1072,6 +1180,7 @@ fn has_nvidia_gpu_accelerator() -> Bool:
 @always_inline("nodebug")
 fn has_apple_gpu_accelerator() -> Bool:
     """Returns True if the host system has a Metal GPU and False otherwise.
+
     Returns:
         True if the host system has a Metal GPU.
     """

@@ -18,10 +18,17 @@ from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout.tensor_core import TensorCore
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils.index import Index, IndexList
 
-alias fp8_dtype = DType.float8_e4m3fnuz if DeviceContext.default_device_info <= MI300X else DType.float8_e4m3fn
-alias bf8_dtype = DType.float8_e5m2fnuz if DeviceContext.default_device_info <= MI300X else DType.float8_e5m2
+comptime fp8_dtype = (
+    DType.float8_e4m3fnuz if DeviceContext.default_device_info.compute
+    <= MI300X.compute else DType.float8_e4m3fn
+)
+comptime bf8_dtype = (
+    DType.float8_e5m2fnuz if DeviceContext.default_device_info.compute
+    <= MI300X.compute else DType.float8_e5m2
+)
 
 
 fn test_load_a[
@@ -30,8 +37,8 @@ fn test_load_a[
     layout: Layout,
     inst_shape: IndexList[3],
 ](
-    a: LayoutTensor[dtype, layout, MutableAnyOrigin],
-    a_lane: LayoutTensor[dtype, Layout(WARP_SIZE), MutableAnyOrigin],
+    a: LayoutTensor[dtype, layout, MutAnyOrigin],
+    a_lane: LayoutTensor[dtype, Layout(WARP_SIZE), MutAnyOrigin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
     var a_reg_tile = mma.load_a(a)
@@ -46,8 +53,8 @@ fn test_load_b[
     inst_shape: IndexList[3],
     transpose_b: Bool,
 ](
-    b: LayoutTensor[dtype, layout, MutableAnyOrigin],
-    b_lane: LayoutTensor[dtype, Layout(WARP_SIZE), MutableAnyOrigin],
+    b: LayoutTensor[dtype, layout, MutAnyOrigin],
+    b_lane: LayoutTensor[dtype, Layout(WARP_SIZE), MutAnyOrigin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
     var b_reg_tile = mma.load_b(b)
@@ -62,8 +69,8 @@ fn test_load_c[
     c_lane_layout: Layout,
     inst_shape: IndexList[3],
 ](
-    c: LayoutTensor[dst_dtype, layout, MutableAnyOrigin],
-    c_lane: LayoutTensor[dst_dtype, c_lane_layout, MutableAnyOrigin],
+    c: LayoutTensor[dst_dtype, layout, MutAnyOrigin],
+    c_lane: LayoutTensor[dst_dtype, c_lane_layout, MutAnyOrigin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
     var c_reg_tile = mma.load_c(c)
@@ -76,9 +83,9 @@ fn test_store_d[
     dtype: DType,
     layout: Layout,
     inst_shape: IndexList[3],
-](d: LayoutTensor[dst_dtype, layout, MutableAnyOrigin]):
+](d: LayoutTensor[dst_dtype, layout, MutAnyOrigin]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
-    var src = __type_of(mma).c_reg_tile_type.stack_allocation().fill(lane_id())
+    var src = type_of(mma).c_reg_tile_type.stack_allocation().fill(lane_id())
     mma.store_d(d, src)
 
 
@@ -91,13 +98,13 @@ fn test_mma_op[
     inst_shape: IndexList[3],
     transpose_b: Bool,
 ](
-    a: LayoutTensor[dtype, layout_a, MutableAnyOrigin],
-    b: LayoutTensor[dtype, layout_b, MutableAnyOrigin],
-    c: LayoutTensor[dst_dtype, layout_c, MutableAnyOrigin],
-    d: LayoutTensor[dst_dtype, layout_c, MutableAnyOrigin],
+    a: LayoutTensor[dtype, layout_a, MutAnyOrigin],
+    b: LayoutTensor[dtype, layout_b, MutAnyOrigin],
+    c: LayoutTensor[dst_dtype, layout_c, MutAnyOrigin],
+    d: LayoutTensor[dst_dtype, layout_c, MutAnyOrigin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
-    alias k_group_size = a.layout.shape[1].value() // inst_shape[2]
+    comptime k_group_size = a.layout.shape[1].value() // inst_shape[2]
     var a_reg = mma.load_a(a)
     var b_reg = mma.load_b(b)
     var d_reg = mma.load_c(c)
@@ -134,9 +141,9 @@ def test_load_and_mma_and_multiply_operands[
     transpose_b: Bool,
     k_group_size: Int = 1,
 ](ctx: DeviceContext):
-    alias M = shape[0]
-    alias N = shape[1]
-    alias K = shape[2] * k_group_size
+    comptime M = shape[0]
+    comptime N = shape[1]
+    comptime K = shape[2] * k_group_size
 
     var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(M * K)
     var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(K * N)
@@ -159,15 +166,15 @@ def test_load_and_mma_and_multiply_operands[
     var b_lane_device = ctx.enqueue_create_buffer[dtype](WARP_SIZE)
     var c_lane_device = ctx.enqueue_create_buffer[dst_dtype](WARP_SIZE * 4)
 
-    alias layout_mk = Layout.row_major(M, K)
-    alias layout_mn = Layout.row_major(M, N)
+    comptime layout_mk = Layout.row_major(M, K)
+    comptime layout_mn = Layout.row_major(M, N)
     var a_host = LayoutTensor[dtype, layout_mk](a_host_ptr)
     var a_dev = LayoutTensor[dtype, layout_mk](a_device)
 
-    alias B_row = N if transpose_b else K
-    alias B_col = K if transpose_b else N
+    comptime B_row = N if transpose_b else K
+    comptime B_col = K if transpose_b else N
 
-    alias layout_b = Layout.row_major(B_row, B_col)
+    comptime layout_b = Layout.row_major(B_row, B_col)
 
     var b_host = LayoutTensor[dtype, layout_b](b_host_ptr)
     var b_dev = LayoutTensor[dtype, layout_b](b_device)
@@ -180,8 +187,8 @@ def test_load_and_mma_and_multiply_operands[
     var d_dev = LayoutTensor[dst_dtype, layout_mn](d_device)
     var d_dev_mma = LayoutTensor[dst_dtype, layout_mn](d_device_mma)
 
-    alias layout_warp = Layout(WARP_SIZE)
-    alias layout_warp4 = Layout.row_major(WARP_SIZE, 4)
+    comptime layout_warp = Layout(WARP_SIZE)
+    comptime layout_warp4 = Layout.row_major(WARP_SIZE, 4)
 
     var a_lane_host = LayoutTensor[dtype, layout_warp](a_lane_host_ptr)
     var a_lane_dev = LayoutTensor[dtype, layout_warp](a_lane_device)
@@ -198,14 +205,16 @@ def test_load_and_mma_and_multiply_operands[
     ctx.enqueue_copy(b_device, b_host_ptr)
     ctx.enqueue_copy(c_device, c_host_ptr)
 
-    alias kernel_load_a = test_load_a[dst_dtype, dtype, a_dev.layout, shape]
-    alias kernel_load_b = test_load_b[
+    comptime kernel_load_a = test_load_a[dst_dtype, dtype, a_dev.layout, shape]
+    comptime kernel_load_b = test_load_b[
         dst_dtype, dtype, b_dev.layout, shape, transpose_b
     ]
-    alias kernel_load_c = test_load_c[
+    comptime kernel_load_c = test_load_c[
         dst_dtype, dtype, c_dev.layout, c_lane_dev.layout, shape
     ]
-    alias kernel_store_d = test_store_d[dst_dtype, dtype, c_dev.layout, shape]
+    comptime kernel_store_d = test_store_d[
+        dst_dtype, dtype, c_dev.layout, shape
+    ]
 
     ctx.enqueue_function_checked[kernel_load_a, kernel_load_a](
         a_dev, a_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
@@ -223,7 +232,7 @@ def test_load_and_mma_and_multiply_operands[
         d_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
     )
 
-    alias kernel = test_mma_op[
+    comptime kernel = test_mma_op[
         dst_dtype,
         dtype,
         a_dev.layout,

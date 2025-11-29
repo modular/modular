@@ -87,13 +87,14 @@ trait ImplicitlyBoolable(Boolable):
     ```
     """
 
+    @always_inline
     fn __as_bool__(self) -> Bool:
         """Get the boolean representation of the value.
 
         Returns:
             The boolean representation of the value.
         """
-        ...
+        return self.__bool__()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -112,7 +113,6 @@ struct Bool(
     Hashable,
     ImplicitlyBoolable,
     ImplicitlyCopyable,
-    ImplicitlyIntable,
     Indexer,
     Intable,
     Movable,
@@ -133,11 +133,19 @@ struct Bool(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias MIN = Bool(False)
+    comptime MIN = Bool(False)
     """The minimum value of a Bool."""
 
-    alias MAX = Bool(True)
+    comptime MAX = Bool(True)
     """The maximum value of a Bool."""
+
+    # ===-------------------------------------------------------------------===#
+    # Trivial bits for special functions.
+    # ===-------------------------------------------------------------------===#
+
+    comptime __del__is_trivial: Bool = True
+    comptime __moveinit__is_trivial: Bool = True
+    comptime __copyinit__is_trivial: Bool = True
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -160,7 +168,7 @@ struct Bool(
         self._mlir_value = value
 
     @doc_private
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __init__(out self, *, mlir_value: __mlir_type.`!pop.scalar<bool>`):
         """Construct a Bool value given a `!pop.scalar<bool>` value.
 
@@ -536,6 +544,9 @@ struct Bool(
 
         Returns:
             A PythonObject representing the value.
+
+        Raises:
+            If the Python runtime is not initialized or conversion fails.
         """
         return PythonObject(self)
 

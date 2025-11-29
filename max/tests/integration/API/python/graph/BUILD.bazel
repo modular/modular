@@ -1,0 +1,100 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+
+_NVIDIA_ONLY_TESTS = [
+    "test_float8_e4m3fn.py",
+    "test_irfft.py",
+]
+
+_AMD_ONLY_TESTS = [
+    "test_fp8_conversion.py",
+]
+
+modular_py_library(
+    name = "modular_graph_test",
+    testonly = True,
+    srcs = ["modular_graph_test.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/graph",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("hypothesis"),
+        requirement("torch"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "graph",
+    size = "large",
+    srcs = glob(
+        ["*.py"],
+        exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + ["modular_graph_test.py"],
+    ),
+    data = [
+        "//max/tests/integration:compile_config_ops",
+        "//max/tests/integration:counter_ops",
+        "//max/tests/integration:kernel_verification_ops",
+        "//max/tests/integration:test_user_op",
+        "//max/tests/integration/API:inputs",
+        "//max/tests/integration/API:pytest_inputs",
+        "//max/tests/tests/graph/testdata",
+    ],
+    env = {
+        "MODULAR_COUNTER_OPS_PATH": "$(rootpath //max/tests/integration:counter_ops)",
+        "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration:kernel_verification_ops)",
+        "MODULAR_COMPILE_CONFIG_OPS_PATH": "$(rootpath //max/tests/integration:compile_config_ops)",
+        "CUSTOM_OPS_PATH": "$(rootpath //max/tests/integration:test_user_op)",
+        "MODULAR_PATH": ".",
+        "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    mojo_deps = [
+        "//max/tests/integration:compile_config_ops",
+        "//max/tests/integration:test_user_op",
+    ],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        ":modular_graph_test",
+        "//max/python/max",
+        requirement("torch"),
+        requirement("torchvision"),
+        requirement("hypothesis"),
+    ],
+)
+
+modular_py_test(
+    name = "nvidia_tests",
+    size = "large",
+    srcs = _NVIDIA_ONLY_TESTS + ["conftest.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:nvidia_gpu"],
+    tags = ["gpu"],
+    deps = [
+        ":modular_graph_test",
+        "//max/python/max",
+    ],
+)
+
+modular_py_test(
+    name = "amd_tests",
+    size = "large",
+    srcs = _AMD_ONLY_TESTS + ["conftest.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:amd_gpu"],
+    deps = [
+        ":modular_graph_test",
+        "//max/python/max",
+    ],
+)

@@ -20,6 +20,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.matmul import matmul
 from linalg.packing import pack_b_ndbuffer, pack_matmul_b_shape_func
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -67,18 +68,18 @@ fn bench_matmul_spec(mut m: Bench, spec: MatmulSpec) raises:
         BenchId("matmul", String(spec)),
         spec,
         # TODO: Pick relevant benchmetric
-        ThroughputMeasure(BenchMetric.elements, spec.flops()),
+        [ThroughputMeasure(BenchMetric.elements, spec.flops())],
     )
 
 
 fn bench_matmul[
     static: MatmulSpecStatic
 ](mut bencher: Bencher, spec: MatmulSpec[static]) raises capturing:
-    alias a_type = spec.static_info.a_type
-    alias b_type = spec.static_info.b_type
-    alias c_type = spec.static_info.c_type
-    alias b_packed = spec.static_info.b_packed
-    alias alignment = 64
+    comptime a_type = spec.static_info.a_type
+    comptime b_type = spec.static_info.b_type
+    comptime c_type = spec.static_info.c_type
+    comptime b_packed = spec.static_info.b_packed
+    comptime alignment = 64
     var a_ptr = UnsafePointer[Scalar[a_type],].alloc(
         spec.m * spec.k, alignment=alignment
     )
@@ -185,13 +186,13 @@ struct MatmulSpec[static_info: MatmulSpecStatic](
 def main():
     var m = Bench(BenchConfig(num_repetitions=2))
 
-    alias packed_float32 = MatmulSpecStatic(
+    comptime packed_float32 = MatmulSpecStatic(
         b_packed=True,
         a_type=DType.float32,
         b_type=DType.float32,
         c_type=DType.float32,
     )
-    alias unpacked_float32 = MatmulSpecStatic(
+    comptime unpacked_float32 = MatmulSpecStatic(
         b_packed=False,
         a_type=DType.float32,
         b_type=DType.float32,

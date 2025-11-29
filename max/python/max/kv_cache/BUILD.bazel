@@ -1,0 +1,20 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "kv_cache",
+    srcs = glob(["**/*.py"]),
+    imports = ["../.."],
+    deps = [
+        requirement("numpy"),
+        requirement("msgspec"),
+        requirement("transformers"),
+        "//max/python/max/_core_mojo",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/serve/kvcache_agent",
+        "//max/python/max/support",
+    ],
+)

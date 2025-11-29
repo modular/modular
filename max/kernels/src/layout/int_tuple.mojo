@@ -60,21 +60,20 @@ from os import abort
 
 from buffer import DimList
 from builtin.range import _StridedRange
-from iter import _Zip2
-from memory import memcpy
-from memory.pointer import _GPUAddressSpace
+from memory import LegacyUnsafePointer as UnsafePointer, memcpy
+from sys.intrinsics import _type_is_eq_parse_time
 
 from utils.numerics import max_finite
 from utils import IndexList
 
-alias INT_TUPLE_VALIDATION = False
+comptime INT_TUPLE_VALIDATION = False
 
 
 fn _get_index_type(address_space: AddressSpace) -> DType:
     """Returns int32 for shared/constant GPU memory, index otherwise."""
     if address_space in (
-        _GPUAddressSpace.SHARED,
-        _GPUAddressSpace.CONSTANT,
+        AddressSpace.SHARED,
+        AddressSpace.CONSTANT,
     ):
         return DType.int32
     else:
@@ -130,8 +129,7 @@ struct IntArray(ImplicitlyCopyable):
     """A memory-efficient, register-passable array of integers.
 
     `IntArray` provides a low-level implementation of a dynamically-sized integer array
-    with direct memory management. It supports both owned and non-owned (view) modes
-    for efficient memory sharing without copying.
+    with direct memory management.
 
     This struct serves as the underlying storage mechanism for `IntTuple` and related
     data structures, optimized for high-performance tensor operations.
@@ -151,25 +149,10 @@ struct IntArray(ImplicitlyCopyable):
         self._size = size
 
     @always_inline("nodebug")
-    fn __init__(out self, *, non_owned: Self, offset: Int = 0):
-        """Create a non-owned view into another `IntArray`.
-
-        Creates a view starting at the specified offset in the source array.
-        The resulting array doesn't own the memory and won't free it when destroyed.
-
-        Args:
-            non_owned: The source array to create a view into.
-            offset: Starting position in the source array. Defaults to 0.
-        """
-        self._data = non_owned._data + offset
-        self._size = -(non_owned.size() - offset)
-
-    @always_inline("nodebug")
     fn __copyinit__(out self, existing: Self):
         """Initialize by copying an existing `IntArray`.
 
         For owned arrays, this performs a deep copy of the data.
-        For non-owned arrays, this creates another view of the same data (zero-copy operation).
 
         Args:
             existing: The source array to copy from.
@@ -281,7 +264,7 @@ struct IntArray(ImplicitlyCopyable):
         )
 
 
-alias UNKNOWN_VALUE = -1
+comptime UNKNOWN_VALUE = -1
 """Special value indicating an unknown or unspecified dimension.
 
 This constant is used throughout the `IntTuple` system to represent dimensions
@@ -290,27 +273,23 @@ that are not known at compile time or have not been specified.
 
 
 @register_passable("trivial")
-struct _IntTupleIter[origin: ImmutableOrigin, tuple_origin: ImmutableOrigin](
-    Iterable, Iterator
-):
+struct _IntTupleIter[origin: ImmutOrigin](Iterable, Iterator):
     """Iterator for traversing elements of an IntTuple."""
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
-    alias Element = IntTuple[origin]
+    comptime Element = IntTuple
 
-    var src: Pointer[IntTuple[tuple_origin], origin]
+    var src: Pointer[IntTuple, Self.origin]
     """Pointer to the source IntTuple being iterated."""
 
     var idx: Int
     """Current position in the iteration."""
 
     @always_inline("nodebug")
-    fn __init__(
-        out self, src: Pointer[IntTuple[tuple_origin], origin], idx: Int
-    ):
+    fn __init__(out self, src: Pointer[IntTuple, Self.origin], idx: Int):
         """Initialize the iterator with a source IntTuple and starting index."""
         self.src = src
         self.idx = idx
@@ -320,14 +299,14 @@ struct _IntTupleIter[origin: ImmutableOrigin, tuple_origin: ImmutableOrigin](
         return self.idx < len(self.src[])
 
     @always_inline("nodebug")
-    fn __next__(mut self) -> IntTuple[origin]:
+    fn __next__(mut self) -> IntTuple:
         """Get the next element and advance the iterator."""
         var idx = self.idx
         self.idx += 1
         return self.src[][idx]
 
     @always_inline("nodebug")
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline("nodebug")
@@ -336,9 +315,9 @@ struct _IntTupleIter[origin: ImmutableOrigin, tuple_origin: ImmutableOrigin](
         return (len, {len})
 
 
-struct IntTuple[origin: ImmutableOrigin = __origin_of()](
+struct IntTuple(
     Defaultable,
-    EqualityComparable,
+    Equatable,
     ImplicitlyCopyable,
     Intable,
     Iterable,
@@ -355,23 +334,18 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
 
     This structure is fundamental for tensor operations, layout specifications,
     and dimension handling in high-performance computing contexts.
-
-    Parameters:
-        origin: Origin tracking for memory safety. Defaults to the current origin.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
-    ]: Iterator = _IntTupleIter[
-        ImmutableOrigin.cast_from[iterable_origin], origin
-    ]
+    ]: Iterator = _IntTupleIter[ImmutOrigin.cast_from[iterable_origin]]
 
     var _store: IntArray
     """The underlying storage for the `IntTuple`.
     Int values are represented with positive numbers.
     Sub-tuples are represented with a negative offset from the current position."""
 
-    alias MinimumValue = -0xFFFE
+    comptime MinimumValue = -0xFFFE
     """Minimum allowed value for integers in an `IntTuple`.
 
     This constant defines the lower bound for integer values that can be stored
@@ -381,16 +355,11 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
 
     @staticmethod
     @always_inline("nodebug")
-    fn elements_size[
-        _origin: ImmutableOrigin
-    ](elements: VariadicListMem[IntTuple[_origin]]) -> Int:
+    fn elements_size(elements: VariadicListMem[IntTuple]) -> Int:
         """Calculate the total storage size needed for a list of IntTuples.
 
         Computes the sum of sizes for all elements, accounting for both direct
         integer values and nested sub-tuples.
-
-        Parameters:
-            _origin: Origin of the elements in the `IntTuple`.
 
         Args:
             elements: List of `IntTuple` elements to measure.
@@ -407,7 +376,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
     @staticmethod
     @always_inline("nodebug")
     fn elements_size[
-        _origin: ImmutableOrigin, n: Int
+        _origin: ImmutOrigin, n: Int
     ](elements: InlineArray[Pointer[IntTuple, _origin], n], idx: Int) -> Int:
         """Calculate the total storage size needed for IntTuples at a specific index.
 
@@ -563,19 +532,6 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             self.validate_structure()
 
     @always_inline("nodebug")
-    fn __init__(out self, *, non_owned: IntArray):
-        """Initialize an `IntTuple` with a non-owned `IntArray`.
-
-        Creates an `IntTuple` that uses the provided `IntArray` as its storage
-        without taking ownership. This allows creating views into existing
-        `IntTuple` data without copying.
-
-        Args:
-            non_owned: The `IntArray` to use as storage without taking ownership.
-        """
-        self._store = IntArray(non_owned=non_owned)
-
-    @always_inline("nodebug")
     fn __init__(out self, *, var _owned: IntArray):
         """Initialize an `IntTuple` taking the values of an `IntArray`.
 
@@ -660,36 +616,28 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
 
     @always_inline("nodebug")
     fn __init__[
-        tuple0_origin0: ImmutableOrigin,
-        tuple0_origin1: ImmutableOrigin,
-        tuple1_origin0: ImmutableOrigin,
-        tuple1_origin1: ImmutableOrigin,
-    ](
-        out self,
-        zipper: _Zip2[
-            _IntTupleIter[tuple0_origin0, tuple0_origin1],
-            _IntTupleIter[tuple1_origin0, tuple1_origin1],
-        ],
-    ):
+        IterableType: Iterable
+    ](out self, iterable: IterableType) where _type_is_eq_parse_time[
+        IterableType.IteratorType[origin_of(iterable)].Element,
+        Tuple[IntTuple, IntTuple],
+    ]():
         """Initialize an `IntTuple` from a zip iterator.
 
         Creates an `IntTuple` by appending each element from the zip iterator.
 
         Parameters:
-            tuple0_origin0: The first tuple's container origin.
-            tuple0_origin1: The first tuple's inner origin.
-            tuple1_origin0: The second tuple's container origin.
-            tuple1_origin1: The second tuple's inner origin.
+            IterableType: The type of the iterable.
 
         Args:
-            zipper: A zip iterator containing pairs of elements to append.
+            iterable: An iterable containing pairs of elements to append.
 
         Note:
             This implementation is not optimized and may be improved in future versions.
         """
         # FIXME: massively inefficient
         self = Self()
-        for z0, z1 in zipper:
+        for elem in iterable:
+            var z0, z1 = rebind_var[Tuple[IntTuple, IntTuple]](elem^)
             var tup = IntTuple()
             tup.append(z0)
             tup.append(z1)
@@ -771,7 +719,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             # Modifying copy will not affect original
             ```
         """
-        var copy = IntTuple(non_owned=IntArray())
+        var copy = IntTuple()
         var size = self.size()
         copy._store = IntArray(size)
         copy._store.copy_from(0, self._store, size)
@@ -881,6 +829,24 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         _ = result._fill(self)
         return result
 
+    fn product_flatten(self) -> IntTuple:
+        """Coalesces a nested `IntTuple` into a single-level `IntTuple`, by multiplying all the
+        values together.
+
+        Returns:
+            A new `IntTuple` containing the products of each top level tuple, in a flat structure.
+        """
+
+        var rank = len(self)
+
+        var tup = IntTuple(num_elems=rank)
+
+        for i in range(rank):
+            var product = product(self[i])
+            tup.replace_entry(i, int_value=product)
+
+        return tup
+
     fn all_known(self) -> Bool:
         """Check if all values in this tuple hierarchy are known (not `UNKNOWN_VALUE`).
 
@@ -935,7 +901,6 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
 
             - This operation requires reallocating the underlying `IntArray` storage to accommodate
             the new elements, which may impact performance for large tuples.
-            - Aborts if called on a non-owning (sub-tuple) instance.
         """
 
         @parameter
@@ -994,7 +959,6 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
 
             - This operation requires reallocating the underlying `IntArray` storage
               to accommodate the new elements, which may impact performance for large tuples.
-            - Aborts if called on a non-owning (sub-tuple) instance.
             - If the input tuple is empty, this method returns without making any changes.
         """
 
@@ -1056,7 +1020,6 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         Returns the total size of the `IntTuple` in memory.
 
         For owning tuples, returns the size of the underlying `IntArray`.
-        For non-owning tuples, calculates the size recursively.
 
         Returns:
             The total size in memory units.
@@ -1079,17 +1042,35 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         Returns:
             The total size of the tuple in memory units.
         """
-        var len = data[0]
-        var size = 1
+        return Self._calculate_tuple_size(data, 0)
+
+    @staticmethod
+    fn _calculate_tuple_size(data: IntArray, offset: Int) -> Int:
+        """
+        Helper method to calculate the size of a tuple at a given offset without copying.
+
+        Args:
+            data: The IntArray containing the tuple data.
+            offset: The offset where the tuple starts.
+
+        Returns:
+            The size of the tuple starting at the given offset.
+        """
+        var len = data[offset]
+        var size = 1 + len  # Header + all element slots
+
+        # Now add the sizes of nested tuple data
         for i in range(len):
-            var val = data[i + 1]
-            if val >= Self.MinimumValue:
-                size += 1
-            else:
-                var sub_data = IntArray(
-                    non_owned=data, offset=i + 1 - (val - Self.MinimumValue)
-                )
-                size += Self.tuple_size(sub_data) + 1
+            var val = data[offset + i + 1]
+            if val < Self.MinimumValue:
+                # For nested tuples, also add the size of the nested tuple data
+                # Formula: sub_offset = (offset + i + 1) - (val - MinimumValue)
+                var sub_offset = offset + i + 1 - (val - Self.MinimumValue)
+                # Ensure sub_offset is valid
+                if sub_offset < 0 or sub_offset >= data.size():
+                    continue
+                var nested_size = Self._calculate_tuple_size(data, sub_offset)
+                size += nested_size
         return size
 
     fn validate_structure(self):
@@ -1105,18 +1086,17 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
 
         @parameter
         if INT_TUPLE_VALIDATION:
-            if self._store.owning() > 0:
-                var data_size = self._store.size()
-                var computed_size = Self.tuple_size(self._store)
-                if data_size != computed_size:
-                    abort(
-                        String(
-                            "size validation failed: ",
-                            data_size,
-                            " != ",
-                            computed_size,
-                        )
+            # Basic structure validation: ensure size is at least header + elements
+            var len = self._store[0]
+            if self._store.size() < len + 1:
+                abort(
+                    String(
+                        "Invalid tuple structure: size ",
+                        self._store.size(),
+                        " is less than required ",
+                        len + 1,
                     )
+                )
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:
@@ -1131,7 +1111,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         return self._store[0]
 
     @always_inline("nodebug")
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """
         Returns an iterator over the elements of the `IntTuple`.
 
@@ -1143,7 +1123,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         return _IntTupleIter(Pointer(to=self), 0)
 
     @always_inline
-    fn __getitem__(self, _idx: Int) -> IntTuple[__origin_of(self)]:
+    fn __getitem__(self, _idx: Int) -> IntTuple:
         """
         Retrieves an element at the specified index from the `IntTuple`.
 
@@ -1170,15 +1150,14 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         var val = self._store[idx + 1]
         if val >= Self.MinimumValue:
             # Return the Int value
-            return IntTuple[__origin_of(self)](val)
+            return IntTuple(val)
         else:
-            # Return the sub-tuple
-            return IntTuple[__origin_of(self)](
-                non_owned=IntArray(
-                    non_owned=self._store,
-                    offset=idx + 1 - (val - Self.MinimumValue),
-                )
-            )
+            # Return the sub-tuple with a deep copy
+            var offset = idx + 1 - (val - Self.MinimumValue)
+            var sub_size = Self._calculate_tuple_size(self._store, offset)
+            var sub_data = IntArray(sub_size)
+            sub_data.copy_from(0, self._store, offset, sub_size)
+            return IntTuple(_owned=sub_data)
 
     @always_inline("nodebug")
     fn __getitem__(self, span: Slice) -> Self:
@@ -1284,7 +1263,16 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         Notes:
             If the element is not a value, the behavior is undefined.
         """
-        return self._store[i + 1]
+        var val = self._store[i + 1]
+        if val >= Self.MinimumValue:
+            # Direct value
+            return val
+        else:
+            # It's a tuple reference - extract the value from the sub-tuple
+            # This handles the case where elements are stored as single-element tuples
+            var offset = i + 1 - (val - Self.MinimumValue)
+            # For a single-element tuple containing an int, the value is at offset+1
+            return self._store[offset + 1]
 
     @always_inline("nodebug")
     fn tuple(ref self) -> ref [self] Self:
@@ -1427,23 +1415,6 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             abort("IntTuple is not a single value. Cannot convert to Int.")
 
         return self.value()
-
-    @always_inline("nodebug")
-    fn __merge_with__[
-        other_type: __type_of(IntTuple[_]),
-    ](var self) -> IntTuple[__origin_of(origin, other_type.origin)]:
-        """Returns an IntTuple with merged origins.  Used for if/then and
-        list literals.
-
-        Parameters:
-            other_type: The type of the IntTuple to merge with.
-
-        Returns:
-            An IntTuple that will work.
-        """
-        return IntTuple[__origin_of(origin, other_type.origin)](
-            _owned=self._store
-        )
 
 
 @always_inline("nodebug")
@@ -1640,13 +1611,33 @@ fn to_nest(nested: IntTuple, flat: IntTuple) -> IntTuple:
 
 
 fn _to_unknown(mut t: IntTuple):
-    var num_elems = len(t)
+    """Recursively replace all values in a tuple with UNKNOWN_VALUE in place.
+
+    This function modifies the tuple's internal storage directly to avoid
+    creating unnecessary copies when dealing with nested structures.
+
+    Args:
+        t: The tuple to modify in place.
+    """
+    _to_unknown_impl(t._store, 0)
+
+
+fn _to_unknown_impl(mut data: IntArray, offset: Int):
+    """Helper function to recursively replace values with UNKNOWN_VALUE.
+
+    Args:
+        data: The IntArray containing tuple data.
+        offset: The offset where the current tuple starts.
+    """
+    var num_elems = data[offset]
     for i in range(num_elems):
-        if t._store[i + 1] >= IntTuple[].MinimumValue:
-            t._store[i + 1] = UNKNOWN_VALUE
+        var idx = offset + i + 1
+        var val = data[idx]
+        if val >= IntTuple.MinimumValue:
+            data[idx] = UNKNOWN_VALUE
         else:
-            var sub_tuple = t[i]
-            _to_unknown(sub_tuple)
+            var sub_offset = idx - (val - IntTuple.MinimumValue)
+            _to_unknown_impl(data, sub_offset)
 
 
 # Create a IntTuple with same structure but filled by UNKNOWN_VALUE.
@@ -1789,7 +1780,7 @@ fn tuple_max(t: IntTuple) -> Int:
     fn reducer(a: Int, b: IntTuple) -> Int:
         return max(a, Int(b) if is_int(b) else tuple_max(b))
 
-    alias int_min_val = 0
+    comptime int_min_val = 0
     return reduce[reducer](t, int_min_val)
 
 
@@ -2038,19 +2029,19 @@ fn product_each(t: IntTuple) -> IntTuple:
 
 
 # Multiply lhs tuple elements by rhs
-
-
-fn _mul(mut lhs: IntTuple, rhs: Int):
-    var num_elems = len(lhs)
+fn _mul(mut lhs: IntTuple, rhs: Int, offset: Int = 0):
+    var num_elems = lhs._store[offset]
     for i in range(num_elems):
-        if lhs._store[i + 1] >= IntTuple[].MinimumValue:
-            if UNKNOWN_VALUE in (lhs._store[i + 1], rhs):
-                lhs._store[i + 1] = UNKNOWN_VALUE
+        var idx = offset + i + 1
+        var val = lhs._store[idx]
+        if val >= IntTuple.MinimumValue:
+            if UNKNOWN_VALUE in (val, rhs):
+                lhs._store[idx] = UNKNOWN_VALUE
             else:
-                lhs._store[i + 1] *= rhs
+                lhs._store[idx] *= rhs
         else:
-            var sub_tuple = lhs[i]
-            _mul(sub_tuple, rhs)
+            var sub_offset = idx - (val - IntTuple.MinimumValue)
+            _mul(lhs, rhs, sub_offset)
 
 
 @always_inline("nodebug")
@@ -2308,7 +2299,7 @@ fn _prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
             return init.owned_copy()
 
 
-fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
+fn shape_div[check: Bool = False](a: IntTuple, b: IntTuple) -> IntTuple:
     """Performs division operation between shape tuples.
 
     Handles four cases:
@@ -2318,6 +2309,9 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
     3. int-tuple: Returns `shape_div(a, product(b))`
     4. int-int: Enforces the divisibility condition `a % b == 0 || b % a == 0` when possible
        Returns `a / b` with rounding away from `0` (that is, `1` or `-1` when `a < b`)
+
+    Parameters:
+        check: Whether to check for incompatible shapes.
 
     Args:
         a: The dividend `IntTuple`.
@@ -2343,19 +2337,19 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
                             "Tuple sizes don't match: ", len(a), " != ", len(b)
                         )
                     )
-            return apply_zip[shape_div](a, b)
+            return apply_zip[shape_div[check]](a, b)
         else:  # tuple "int"
             var vb = Int(b)
             var r = IntTuple()
             for v in a:
-                r.append(shape_div(v, vb))
+                r.append(shape_div[check](v, vb))
                 var prod_v = IntTuple(product(v))
-                vb = Int(shape_div(vb, prod_v))
+                vb = Int(shape_div[check](vb, prod_v))
             return r
     else:
         if is_tuple(b):  # "int" tuple
             var prod_b = IntTuple(product(b))
-            return shape_div(a, prod_b)
+            return shape_div[check](a, prod_b)
         else:  # "int" "int"
             var va = Int(a)
             var vb = Int(b)
@@ -2364,7 +2358,7 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
                 return UNKNOWN_VALUE
 
             @parameter
-            if INT_TUPLE_VALIDATION:
+            if INT_TUPLE_VALIDATION or check:
                 if not (va % vb == 0 or vb % va == 0):
                     abort(String("Incompatible shape values: ", va, " ", vb))
 
@@ -2769,7 +2763,7 @@ fn depth(src: IntTuple) -> Int:
     return res
 
 
-alias IntList = List[Int]
+comptime IntList = List[Int]
 """
 A type alias for a List of integers with ownership.
 
@@ -2880,12 +2874,15 @@ fn compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
     return to_nest(shape, flat_result)
 
 
-fn to_index_list[rank: Int](t: IntTuple) -> IndexList[rank]:
+fn to_index_list[
+    rank: Int, element_type: DType = DType.int64
+](t: IntTuple) -> IndexList[rank, element_type=element_type]:
     """
     Converts an IntTuple to a flattened IndexList with the same values.
 
     Parameters:
         rank: The rank of the resulting IndexList.
+        element_type: Element type, must be integer type.
 
     Args:
         t: The `IntTuple` defining the values.
@@ -2893,7 +2890,7 @@ fn to_index_list[rank: Int](t: IntTuple) -> IndexList[rank]:
     Returns:
         An IndexList filled with the values of t.
     """
-    var res = IndexList[rank]()
+    var res = IndexList[rank, element_type=element_type]()
     var flattened_t = t.flatten()
     for i in range(len(t)):
         res[i] = Int(flattened_t[i])

@@ -13,9 +13,9 @@
 
 import time
 
-from gpu import AddressSpace, memory, sync, thread_idx
+from gpu import memory, sync, thread_idx
 from gpu.host import DeviceContext
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 
 
 fn copy_via_shared(
@@ -65,7 +65,7 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     ctx.enqueue_copy(in_device, in_data)
     ctx.enqueue_copy(out_device, out_data)
 
-    alias kernel = copy_via_shared
+    comptime kernel = copy_via_shared
     ctx.enqueue_function_checked[kernel, kernel](
         in_device,
         out_device,

@@ -181,6 +181,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
         Returns:
             A PythonObject representing the value.
+
+        Raises:
+            If the Python runtime is not initialized or conversion fails.
         """
         return PythonObject(self)
 
@@ -208,20 +211,24 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     @always_inline
     fn __int__(self) raises -> Int:
         """Parses the given string as a base-10 integer and returns that value.
-        If the string cannot be parsed as an int, an error is raised.
 
         Returns:
-            An integer value that represents the string, or otherwise raises.
+            An integer value that represents the string.
+
+        Raises:
+            If the string cannot be parsed as a valid base-10 integer.
         """
         return Int(self.as_string_slice())
 
     @always_inline
     fn __float__(self) raises -> Float64:
-        """Parses the string as a float point number and returns that value. If
-        the string cannot be parsed as a float, an error is raised.
+        """Parses the string as a floating-point number and returns that value.
 
         Returns:
-            A float value that represents the string, or otherwise raises.
+            A float value that represents the string.
+
+        Raises:
+            If the string cannot be parsed as a valid floating-point number.
         """
         return Float64(self.as_string_slice())
 
@@ -290,7 +297,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     # eventually merge into String through nonmaterialization.
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(StringLiteral[_]),
+        other_type: type_of(StringLiteral[_]),
     ](self) -> StaticString:
         """Returns a StaticString after merging with another string literal.
 
@@ -321,27 +328,25 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     @always_inline("nodebug")
     fn unsafe_ptr(
         self,
-    ) -> UnsafePointer[Byte, mut=False, origin=StaticConstantOrigin]:
+    ) -> UnsafePointer[Byte, StaticConstantOrigin]:
         """Get raw pointer to the underlying data.
 
         Returns:
             The raw pointer to the data.
         """
-        var ptr = UnsafePointer(__mlir_op.`pop.string.address`(self.value))
+        var ptr = UnsafePointer[_, StaticConstantOrigin](
+            __mlir_op.`pop.string.address`(self.value)
+        )
 
         # TODO(MSTDL-555):
         #   Remove bitcast after changing pop.string.address
         #   return type.
-        return (
-            ptr.bitcast[Byte]()
-            .as_immutable()
-            .unsafe_origin_cast[StaticConstantOrigin]()
-        )
+        return ptr.bitcast[Byte]()
 
     @always_inline
     fn unsafe_cstr_ptr(
         self,
-    ) -> UnsafePointer[c_char, mut=False, origin=StaticConstantOrigin]:
+    ) -> UnsafePointer[c_char, StaticConstantOrigin]:
         """Retrieves a C-string-compatible pointer to the underlying memory.
 
         The returned pointer is guaranteed to be NUL terminated, and not null.
@@ -364,7 +369,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         #   guaranteed to be valid.
         return StaticString(
             ptr=self.unsafe_ptr(),
-            length=UInt(self.byte_length()),
+            length=self.byte_length(),
         )
 
     @always_inline("nodebug")
@@ -377,7 +382,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
 
         return Span[Byte, StaticConstantOrigin](
-            ptr=self.unsafe_ptr(), length=UInt(self.byte_length())
+            ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
     fn write_to(self, mut writer: Some[Writer]):
@@ -452,38 +457,96 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         return String(self).upper()
 
     fn rjust(self, width: Int, fillchar: StaticString = " ") -> String:
-        """Returns the string right justified in a string literal of specified width.
+        """Returns the string literal right justified in a string of specified width.
+
+        Pads the string literal on the left with the specified fill character so
+        that the total length of the resulting string equals `width`. If the
+        original string literal is already longer than or equal to `width`,
+        returns the string literal unchanged (as a `String`).
 
         Args:
-            width: The width of the field containing the string.
-            fillchar: Specifies the padding character.
+            width: The total width (in bytes) of the resulting string. This is
+                not the amount of padding, but the final length of the returned
+                string.
+            fillchar: The padding character to use (defaults to space). Must be
+                a single-byte character.
 
         Returns:
-            Returns right justified string, or self if width is not bigger than self length.
+            A right-justified string of length `width`, or the original string
+            literal (as a `String`) if its length is already greater than or
+            equal to `width`.
+
+        Examples:
+
+        ```mojo
+        var s = "hello"
+        print(s.rjust(10))        # "     hello"
+        print(s.rjust(10, "*"))   # "*****hello"
+        print(s.rjust(3))         # "hello" (no padding)
+        ```
         """
         return String(self).rjust(width, fillchar)
 
     fn ljust(self, width: Int, fillchar: StaticString = " ") -> String:
-        """Returns the string left justified in a string literal of specified width.
+        """Returns the string literal left justified in a string of specified width.
+
+        Pads the string literal on the right with the specified fill character so
+        that the total length of the resulting string equals `width`. If the
+        original string literal is already longer than or equal to `width`,
+        returns the string literal unchanged (as a `String`).
 
         Args:
-            width: The width of the field containing the string.
-            fillchar: Specifies the padding character.
+            width: The total width (in bytes) of the resulting string. This is
+                not the amount of padding, but the final length of the returned
+                string.
+            fillchar: The padding character to use (defaults to space). Must be
+                a single-byte character.
 
         Returns:
-            Returns left justified string, or self if width is not bigger than self length.
+            A left-justified string of length `width`, or the original string
+            literal (as a `String`) if its length is already greater than or
+            equal to `width`.
+
+        Examples:
+
+        ```mojo
+        var s = "hello"
+        print(s.ljust(10))        # "hello     "
+        print(s.ljust(10, "*"))   # "hello*****"
+        print(s.ljust(3))         # "hello" (no padding)
+        ```
         """
         return String(self).ljust(width, fillchar)
 
     fn center(self, width: Int, fillchar: StaticString = " ") -> String:
-        """Returns the string center justified in a string literal of specified width.
+        """Returns the string literal center justified in a string of specified width.
+
+        Pads the string literal on both sides with the specified fill character so
+        that the total length of the resulting string equals `width`. If the
+        padding needed is odd, the extra character goes on the right side. If the
+        original string literal is already longer than or equal to `width`,
+        returns the string literal unchanged (as a `String`).
 
         Args:
-            width: The width of the field containing the string.
-            fillchar: Specifies the padding character.
+            width: The total width (in bytes) of the resulting string. This is
+                not the amount of padding, but the final length of the returned
+                string.
+            fillchar: The padding character to use (defaults to space). Must be
+                a single-byte character.
 
         Returns:
-            Returns center justified string, or self if width is not bigger than self length.
+            A center-justified string of length `width`, or the original string
+            literal (as a `String`) if its length is already greater than or
+            equal to `width`.
+
+        Examples:
+
+        ```mojo
+        var s = "hello"
+        print(s.center(10))        # "  hello   "
+        print(s.center(11, "*"))   # "***hello***"
+        print(s.center(3))         # "hello" (no padding)
+        ```
         """
         return String(self).center(width, fillchar)
 
@@ -629,15 +692,18 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         For more information, see the discussion in the
         [`format` module](/mojo/stdlib/collections/string/format/).
 
-        Args:
-            args: The substitution values.
-
         Parameters:
             Ts: The types of substitution values that implement `Representable`
                 and `Stringable` (to be changed and made more flexible).
 
+        Args:
+            args: The substitution values.
+
         Returns:
             The template with the given values substituted.
+
+        Raises:
+            If the format string is invalid or argument count/types don't match.
 
         Example:
 
@@ -666,7 +732,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
     fn join[
         T: Copyable & Movable & Writable
-    ](self, elems: List[T, *_]) -> String:
+    ](self, elems: Span[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than
         `buffer_size`, otherwise will allocate once to the heap and write

@@ -17,6 +17,7 @@ These are Mojo built-ins, so you don't need to import them.
 
 from math import ceil
 
+from sys import bit_width_of
 from bit import count_leading_zeros
 from memory import Span
 
@@ -24,13 +25,13 @@ from memory import Span
 # sort
 # ===-----------------------------------------------------------------------===#
 
-alias insertion_sort_threshold = 32
+comptime insertion_sort_threshold = 32
 
 
 @always_inline
 fn _insertion_sort[
     T: Copyable & Movable,
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin]):
     """Sort the array[start:end] slice"""
@@ -55,7 +56,7 @@ fn _insertion_sort[
 @always_inline
 fn _quicksort_partition_right[
     T: Copyable & Movable,
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin]) -> Int:
     var size = len(span)
@@ -83,7 +84,7 @@ fn _quicksort_partition_right[
 @always_inline
 fn _quicksort_partition_left[
     T: Copyable & Movable,
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin]) -> Int:
     var size = len(span)
@@ -108,7 +109,7 @@ fn _quicksort_partition_left[
 
 fn _heap_sort_fix_down[
     T: Copyable & Movable,
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin], idx: Int):
     var size = len(span)
@@ -130,7 +131,7 @@ fn _heap_sort_fix_down[
 @always_inline
 fn _heap_sort[
     T: Copyable & Movable,
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin]):
     var size = len(span)
@@ -147,7 +148,9 @@ fn _heap_sort[
 @always_inline
 fn _estimate_initial_height(size: Int) -> Int:
     # Compute the log2 of the size rounded upward.
-    var log2 = Int((DType.int.bit_width() - 1) ^ count_leading_zeros(size | 1))
+    var log2 = Int(
+        (bit_width_of[DType.int]() - 1) ^ count_leading_zeros(size | 1)
+    )
     # The number 1.3 was chosen by experimenting the max stack size for random
     # input. This also depends on insertion_sort_threshold
     return max(2, Int(ceil(1.3 * log2)))
@@ -156,7 +159,7 @@ fn _estimate_initial_height(size: Int) -> Int:
 @always_inline
 fn _delegate_small_sort[
     T: Copyable & Movable,
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin]):
     var size = len(span)
@@ -186,7 +189,7 @@ fn _delegate_small_sort[
 @always_inline
 fn _quicksort[
     T: Copyable & Movable,
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
     *,
     do_smallsort: Bool = False,
@@ -250,8 +253,8 @@ fn _quicksort[
 
 fn _merge[
     T: Copyable & Movable,
-    span_origin: MutableOrigin,
-    result_origin: MutableOrigin, //,
+    span_origin: MutOrigin,
+    result_origin: MutOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](
     span1: Span[T, span_origin],
@@ -310,8 +313,8 @@ fn _merge[
 
 fn _stable_sort_impl[
     T: Copyable & Movable,
-    span_life: MutableOrigin,
-    tmp_life: MutableOrigin, //,
+    span_life: MutOrigin,
+    tmp_life: MutOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, span_life], temp_buff: Span[T, tmp_life]):
     var size = len(span)
@@ -345,11 +348,11 @@ fn _stable_sort_impl[
 
 fn _stable_sort[
     T: Copyable & Movable,
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin]):
-    var temp_buff = UnsafePointer[T].alloc(len(span))
-    var temp_buff_span = Span(ptr=temp_buff, length=UInt(len(span)))
+    var temp_buff = alloc[T](len(span))
+    var temp_buff_span = Span(ptr=temp_buff, length=len(span))
     _stable_sort_impl[cmp_fn](span, temp_buff_span)
     temp_buff.free()
 
@@ -362,7 +365,7 @@ fn _stable_sort[
 @always_inline
 fn _partition[
     T: Copyable & Movable,
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin]) -> Int:
     var size = len(span)
@@ -393,7 +396,7 @@ fn _partition[
 
 fn _partition[
     T: Copyable & Movable,
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](var span: Span[T, origin], var k: Int):
     while True:
@@ -410,7 +413,7 @@ fn _partition[
 
 fn partition[
     T: Copyable & Movable,
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin], k: Int):
     """Partition the input buffer inplace such that first k elements are the
@@ -438,7 +441,7 @@ fn partition[
 # Junction from public to private API
 fn _sort[
     T: Copyable & Movable,
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
     *,
     stable: Bool = False,
@@ -467,7 +470,7 @@ fn _sort[
 # optional cmp_fn.
 fn sort[
     T: Copyable & Movable,
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
     *,
     stable: Bool = False,
@@ -493,7 +496,7 @@ fn sort[
 
 fn sort[
     dtype: DType,
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     cmp_fn: fn (Scalar[dtype], Scalar[dtype]) capturing [_] -> Bool,
     *,
     stable: Bool = False,
@@ -514,7 +517,7 @@ fn sort[
 
 
 fn sort[
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     cmp_fn: fn (Int, Int) capturing [_] -> Bool,
     *,
     stable: Bool = False,
@@ -535,7 +538,7 @@ fn sort[
 
 
 fn sort[
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     *,
     stable: Bool = False,
 ](span: Span[Int, origin]):
@@ -559,7 +562,7 @@ fn sort[
 
 fn sort[
     T: Copyable & Movable & Comparable,
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     *,
     stable: Bool = False,
 ](span: Span[T, origin]):
@@ -588,7 +591,7 @@ fn sort[
 
 @always_inline
 fn _sort2[
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     T: Copyable & Movable,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin], offset0: Int, offset1: Int,):
@@ -598,7 +601,7 @@ fn _sort2[
 
 @always_inline
 fn _sort3[
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     T: Copyable & Movable,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin], offset0: Int, offset1: Int, offset2: Int,):
@@ -609,7 +612,7 @@ fn _sort3[
 
 @always_inline
 fn _sort_partial_3[
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     T: Copyable & Movable,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin], offset0: Int, offset1: Int, offset2: Int):
@@ -624,7 +627,7 @@ fn _sort_partial_3[
 
 @always_inline
 fn _small_sort[
-    origin: MutableOrigin, //,
+    origin: MutOrigin, //,
     n: Int,
     T: Copyable & Movable,
     cmp_fn: fn (T, T) capturing [_] -> Bool,

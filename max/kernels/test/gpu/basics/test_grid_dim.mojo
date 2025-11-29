@@ -15,6 +15,7 @@ import gpu.warp as warp
 from gpu import barrier, global_idx, grid_dim
 from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
 
@@ -34,8 +35,8 @@ fn kernel(
 
 
 fn test_grid_dim(ctx: DeviceContext) raises:
-    alias block_size = WARP_SIZE
-    alias buffer_size = block_size
+    comptime block_size = WARP_SIZE
+    comptime buffer_size = block_size
     var output_host = UnsafePointer[Float32].alloc(buffer_size)
 
     for i in range(buffer_size):

@@ -383,10 +383,10 @@ are aggregates of more primitive things, for example, `-x` is just `0-x` and
 ```mojo
 struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
     ...
-    fn __neg__(self) -> __type_of(0 - self):
+    fn __neg__(self) -> type_of(0 - self):
         return {}
 
-    fn __invert__(self) -> __type_of(self ^ -1):
+    fn __invert__(self) -> type_of(self ^ -1):
         return {}
 ```
 
@@ -468,7 +468,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
     ):
         return {}
 
-    fn __rsub__(self, rhs: FloatLiteral) -> __type_of(rhs - self):
+    fn __rsub__(self, rhs: FloatLiteral) -> type_of(rhs - self):
         return {}
 ```
 
@@ -556,7 +556,7 @@ fn ceildiv[T: CeilDivable, //](numerator: T, denominator: T) -> T:
     return numerator.__ceildiv__(denominator)
 
 fn ceildiv(numerator: IntLiteral, denominator: IntLiteral)
-  -> __type_of(numerator.__ceildiv__(denominator):
+  -> type_of(numerator.__ceildiv__(denominator):
     return {}
 ```
 

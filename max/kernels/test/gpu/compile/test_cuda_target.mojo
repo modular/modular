@@ -30,8 +30,11 @@ from gpu import (
 )
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.compile import _compile_code
-from gpu.memory import AddressSpace
-from memory import memset_zero, stack_allocation
+from memory import (
+    LegacyUnsafePointer as UnsafePointer,
+    memset_zero,
+    stack_allocation,
+)
 from testing import *
 
 from utils.index import IndexList
@@ -121,8 +124,8 @@ fn erf_elementwise(
     buf: UnsafePointer[Float32], len: Int, ctx: DeviceContext
 ) raises:
     # Each thread will process 4 * simd_width elements.
-    alias granularity = 4 * simd_width_of[DType.float32]()
-    var tid = granularity * global_idx.x
+    comptime granularity = 4 * simd_width_of[DType.float32]()
+    var tid = granularity * Int(global_idx.x)
 
     @always_inline
     @__copy_capture(tid)
@@ -281,9 +284,9 @@ fn gemm(
     #
     # NOTE: A and C are column major, B is row major.
 
-    alias TILE_SZ_A = 128
-    alias TILE_SZ_B = 16
-    alias TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
+    comptime TILE_SZ_A = 128
+    comptime TILE_SZ_B = 16
+    comptime TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
 
     # Utilities for accessing flattened matrices.
     @always_inline
@@ -324,11 +327,9 @@ fn gemm(
 
         # Load the B matrix into shared memory.
         var b_val: Float32
-        if tile_idx * TILE_SZ_RATIO + i < k and col + j < UInt(n):
-            b_val = get_b(
-                (tile_idx * TILE_SZ_RATIO + i),
-                (col + j),
-            )
+        var r = tile_idx * TILE_SZ_RATIO + Int(i)
+        if r < k and col + j < UInt(n):
+            b_val = get_b(r, Int(col + j))
         else:
             b_val = 0
         b_shared[i * TILE_SZ_B + j] = b_val
@@ -341,7 +342,7 @@ fn gemm(
             # Load the A tile into the register.
             var a_reg: Float32
             if row < UInt(m) and tile_idx * TILE_SZ_RATIO + idx < k:
-                a_reg = get_a(row, tile_idx * TILE_SZ_RATIO + idx)
+                a_reg = get_a(Int(row), tile_idx * TILE_SZ_RATIO + idx)
             else:
                 a_reg = 0
 
@@ -355,7 +356,7 @@ fn gemm(
     # Store the values into the output matrix.
     for out_idx in range(TILE_SZ_B):
         if row < UInt(m) and col + UInt(out_idx) < UInt(n):
-            set_c(row, col + UInt(out_idx), c_reg.load(out_idx))
+            set_c(Int(row), Int(col + UInt(out_idx)), c_reg.load(out_idx))
 
 
 def _verify_gemm(asm: StringSlice):
@@ -383,7 +384,7 @@ def test_gemm_sm90():
 fn test_warp_shuffle_up(val: Float32) -> Float32:
     var res = val
 
-    alias limit = log2_floor(WARP_SIZE)
+    comptime limit = log2_floor(WARP_SIZE)
 
     @parameter
     for mask in reversed(range(limit)):
@@ -414,7 +415,7 @@ def test_warp_shuffle_up_sm90():
 fn test_warp_shuffle_down(val: Int32) -> Int32:
     var res = val
 
-    alias limit = log2_floor(WARP_SIZE)
+    comptime limit = log2_floor(WARP_SIZE)
 
     @parameter
     for mask in reversed(range(limit)):
@@ -450,7 +451,7 @@ def test_warp_shuffle_down_sm90():
 fn warp_sum_reduce(val: Float32) -> Float32:
     var res = val
 
-    alias limit = log2_floor(WARP_SIZE)
+    comptime limit = log2_floor(WARP_SIZE)
 
     @parameter
     for mask in reversed(range(limit)):
@@ -483,7 +484,7 @@ fn block_reduce(val: Float32) -> Float32:
         WARP_SIZE, DType.float32, address_space = AddressSpace.SHARED
     ]()
 
-    alias warp_shift = log2_floor(WARP_SIZE)
+    comptime warp_shift = log2_floor(WARP_SIZE)
 
     var lane = lane_id()
     var warp = warp_id()
@@ -526,6 +527,8 @@ def main():
     test_parameterized_on_cuda_sm90()
     test_hello_mojo_sm80()
     test_hello_mojo_sm90()
+    #    FIXME: MSTDL-1794
+    #    Compilation for GPU calls to another compilation for GPU
     #    test_erf_elementwise_sm80()
     #    test_erf_elementwise_sm90()
     test_erf_kernel_sm80()

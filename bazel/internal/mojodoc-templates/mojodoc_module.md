@@ -72,6 +72,7 @@ description: {% if decl.summary
 {{alias.description | indent(2, True, False)}}
 {% endif %}
 {% if alias.deprecated %}
+
 **Deprecated:** {{ alias.deprecated }}
 {% endif %}
 

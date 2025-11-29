@@ -98,12 +98,12 @@ fn update_frequency_data_kernel[
     new_tokens_layout: Layout,
 ](
     compressed_frequency_data: LayoutTensor[
-        mut=True, DType.int32, freq_data_layout, MutableAnyOrigin
+        mut=True, DType.int32, freq_data_layout, MutAnyOrigin
     ],
     frequency_offsets: LayoutTensor[
-        DType.uint32, freq_offsets_layout, MutableAnyOrigin
+        DType.uint32, freq_offsets_layout, MutAnyOrigin
     ],
-    new_tokens: LayoutTensor[token_type, new_tokens_layout, MutableAnyOrigin],
+    new_tokens: LayoutTensor[token_type, new_tokens_layout, MutAnyOrigin],
 ):
     """
     GPU kernel to update token frequency data in CSR format.
@@ -112,8 +112,8 @@ fn update_frequency_data_kernel[
     their count or adds them to the first available padding slot.
     """
 
-    alias simd_width = simd_width_of[DType.int32]()
-    alias PADDING_TOKEN = -1
+    comptime simd_width = simd_width_of[DType.int32]()
+    comptime PADDING_TOKEN = -1
 
     var tid = thread_idx.x
     var batch_id = block_idx.x
@@ -128,8 +128,8 @@ fn update_frequency_data_kernel[
 
     # search if the new token is already in the frequency data
     for scan_idx in range(num_scans):
-        var tok_idx = tok_start + (tid + UInt(scan_idx * block_size)) * UInt(
-            simd_width
+        var tok_idx = tok_start + Int(
+            (tid + UInt(scan_idx * block_size)) * UInt(simd_width)
         )
 
         var val = SIMD[DType.int32, simd_width](0)
@@ -190,10 +190,10 @@ fn update_frequency_data[
 
     @parameter
     if is_gpu[target]():
-        alias block_size = 128
+        comptime block_size = 128
 
         dev_ctx = ctx.get_device_context()
-        alias kernel = update_frequency_data_kernel[
+        comptime kernel = update_frequency_data_kernel[
             token_type,
             block_size,
             compressed_frequency_data.layout,

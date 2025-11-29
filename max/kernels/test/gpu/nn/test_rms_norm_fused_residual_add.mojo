@@ -61,8 +61,8 @@ fn run_rms_norm_fused_residual_add_gpu[
 
     var param_shape = Index(cols)
 
-    alias layout = Layout.row_major[rank]()
-    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    comptime layout = Layout.row_major[rank]()
+    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var data_buf = LayoutTensor[dtype, layout](
         data_d.buffer, RuntimeLayout[layout].row_major(shape)
     )

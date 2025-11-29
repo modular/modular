@@ -8,8 +8,8 @@ mojo_filecheck_test(
         "//:b200_gpu",
     ],
     deps = [
-        "@mojo//:layout",
-        "@mojo//:linalg",
+        "//max:layout",
+        "//max:linalg",
         "@mojo//:stdlib",
     ],
 )

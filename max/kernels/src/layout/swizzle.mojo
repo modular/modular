@@ -37,7 +37,7 @@ from collections import OptionalReg
 from sys import is_compile_time, simd_width_of, size_of
 
 from bit import log2_floor
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 
 from .int_tuple import flatten
 from .layout import LayoutTrait
@@ -336,7 +336,7 @@ struct Swizzle(LayoutTrait, Movable, Stringable, Writable):
         zzz_mask (Int): Mask for the target bits (ZZZ).
     """
 
-    alias has_shape = False
+    comptime has_shape = False
     """Indicates if layout has shape. Swizzle always False."""
 
     var bits: Int
@@ -487,9 +487,9 @@ fn make_ldmatrix_swizzle[
         A `Swizzle` object configured for `ldmatrix`.
     """
     # For Nvidia GPU, 32 banks of 4B each.
-    alias bytes_32_banks = 128
-    alias type_size = size_of[dtype]()
-    alias bytes_row = row_size * type_size
+    comptime bytes_32_banks = 128
+    comptime type_size = size_of[dtype]()
+    comptime bytes_row = row_size * type_size
 
     constrained[
         bytes_row % bytes_32_banks == 0 or bytes_32_banks % bytes_row == 0,
@@ -503,13 +503,13 @@ fn make_ldmatrix_swizzle[
     # Stride between vectors is `row_size`.
     # Conflict ways: banks spanned by 8x4 matrix / 32.
     # E.g., fp32, row_size=16, rows 0, 2, 4, 6 in `ld_matrix` conflict.
-    alias conflict_ways = min(8 * row_size * type_size // bytes_32_banks, 8)
-    alias bits = log2_floor(conflict_ways)
+    comptime conflict_ways = min(8 * row_size * type_size // bytes_32_banks, 8)
+    comptime bits = log2_floor(conflict_ways)
 
     # Apply one swizzle bit pattern (^01) to same row if row > 32 banks
     # or multiple rows fit in 32 banks.
-    alias simd_size = simd_width_of[dtype]()
-    alias shifts = log2_floor(max(row_size // simd_size, 8))
+    comptime simd_size = simd_width_of[dtype]()
+    comptime shifts = log2_floor(max(row_size // simd_size, 8))
 
     return Swizzle(bits, log2_vector_width, shifts)
 
@@ -529,9 +529,9 @@ fn make_swizzle[num_rows: Int, row_size: Int, access_size: Int]() -> Swizzle:
     Returns:
         A `Swizzle` object for 2D memory access.
     """
-    alias bits = log2_floor(num_rows)
-    alias base = log2_floor(access_size)
-    alias shifts = log2_floor(row_size) - base
+    comptime bits = log2_floor(num_rows)
+    comptime base = log2_floor(access_size)
+    comptime shifts = log2_floor(row_size) - base
 
     constrained[shifts > 0, "Negative shifts in swizzling likely a bug."]()
 
@@ -552,7 +552,7 @@ fn make_swizzle[dtype: DType, mode: TensorMapSwizzle]() -> Swizzle:
     Returns:
         A `Swizzle` object configured by the specified mode.
     """
-    alias type_size = size_of[dtype]()
+    comptime type_size = size_of[dtype]()
 
     @parameter
     if mode in (
@@ -586,16 +586,16 @@ struct ComposedLayout[
         offset: Optional offset between layouts (default: 0).
     """
 
-    alias has_shape = LayoutA.has_shape or LayoutB.has_shape
+    comptime has_shape = Self.LayoutA.has_shape or Self.LayoutB.has_shape
     """True if either layout has a shape."""
 
-    var layout_a: LayoutA
+    var layout_a: Self.LayoutA
     """The first layout to apply."""
-    var layout_b: LayoutB
+    var layout_b: Self.LayoutB
     """The second layout to apply."""
 
     @always_inline
-    fn __init__(out self, layout_a: LayoutA, layout_b: LayoutB):
+    fn __init__(out self, layout_a: Self.LayoutA, layout_b: Self.LayoutB):
         """Initialize ComposedLayout with two layouts.
 
         Args:
@@ -603,7 +603,7 @@ struct ComposedLayout[
             layout_b: The second layout.
         """
         constrained[
-            not offset or offset.value() >= 0,
+            not Self.offset or Self.offset.value() >= 0,
             "Requires non-negative offset if present",
         ]()
         self.layout_a = layout_a
@@ -631,7 +631,7 @@ struct ComposedLayout[
         Returns:
             The transformed index.
         """
-        var offset_val = offset.value() if offset else 0
+        var offset_val = Self.offset.value() if Self.offset else 0
         return self.layout_b(offset_val + self.layout_a(idx))
 
     @always_inline
@@ -649,7 +649,7 @@ struct ComposedLayout[
             The transformed index.
         """
         constrained[
-            not offset,
+            not Self.offset,
             "Static offset set; runtime offset not allowed.",
         ]()
         return self.layout_b(offset_val + self.layout_a(idx))
@@ -704,13 +704,13 @@ fn eval_composed[
     # layout or composed layout
     @parameter
     if composed_layout.layout_a.has_shape:
-        alias shape_a = flatten(composed_layout.layout_a.shape)
-        alias stride_a = flatten(composed_layout.layout_a.stride)
+        comptime shape_a = flatten(composed_layout.layout_a.shape)
+        comptime stride_a = flatten(composed_layout.layout_a.stride)
 
         @parameter
         for i in range(len(stride_a)):
-            alias s = shape_a[i].value()
-            alias st = stride_a[i].value()
+            comptime s = shape_a[i].value()
+            comptime st = stride_a[i].value()
             a_idx, coord_i = divmod(a_idx, UInt(s))
             b_idx += Int(coord_i * UInt(st))
     # swizzle
@@ -736,5 +736,5 @@ fn eval_composed[
     #         b_idx = b_idx // shape_b[i].value()
     # # swizzle
     # else:
-    alias layout_b = composed_layout.layout_b
+    comptime layout_b = composed_layout.layout_b
     return UInt(layout_b(b_idx))

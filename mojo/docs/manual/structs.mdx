@@ -87,16 +87,67 @@ uninitialized, the code won't compile.)
 
 :::
 
-Once you have a constructor, you can create an instance of `MyPair` and set the
-fields:
+## Constructing a struct type
 
-```mojo
+Once you have a constructor, with `__init__` or using `@fieldwise_init`, 
+you can create an instance of `MyPair` and set the fields:
+
+```mojo title="Construct an instance"
 var mine = MyPair(2, 4)
 print(mine.first)
 ```
 
 ```output
 2
+```
+
+Initializer lists make it simple to construct instances without spelling out the type name.
+For example, here's the standard way to call a function:
+
+```mojo title="Calling a function"
+def process_pair(pair: MyPair):
+    ...
+
+process_pair(MyPair(2, 4))
+```
+
+Because `process_pair` expects a `MyPair` instance, Mojo infers that
+from context. Use braces to construct the instance with an initializer
+list:
+
+```mojo title="Using an initializer list"
+process_pair({2, 4})
+```
+
+Initializer lists support all Mojo argument styles, including keyword
+arguments. For example:
+
+```mojo title="Initializer lists with a keyword argument"
+def utility_function(argument: CustomType):
+    ...
+
+utility_function(CustomType(0.5, fish="swordfish"))
+
+...is equivalent to...
+
+utility_function({0.5, fish="swordfish"})
+```
+
+The result is concise, and both calls are functionally identical in the
+preceding example.
+
+You can also update declared instances with initializer lists.
+Mojo knows the variable's type. For example:
+
+```mojo title="Reassignment with initializer lists"
+# Construct a new instance
+myCustomType = CustomType(0.5, fish="swordfish")
+
+# Use the instance
+...
+
+# Update the instance before further use
+myCustomType = {0.7, fish="salmon"}
 ```
 
 ## Making a struct copyable and movable

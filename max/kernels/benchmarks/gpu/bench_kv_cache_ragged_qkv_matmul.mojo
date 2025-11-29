@@ -23,6 +23,7 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.kv_cache_ragged import _fused_qkv_matmul_kv_cache_ragged_impl
 
 from utils import IndexList
@@ -59,21 +60,21 @@ def execute_kv_cache_ragged_matmul[
     seq_len: Int,
     use_random_lengths: Bool,
 ):
-    alias CollectionType = ContinuousBatchingKVCacheCollection[
+    comptime CollectionType = ContinuousBatchingKVCacheCollection[
         dtype,
         KVCacheStaticParams(
             num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
         ),
     ]
 
-    alias hidden_size = num_q_heads * head_dim
-    alias combined_hidden_size = (num_q_heads + 2 * num_kv_heads) * head_dim
+    comptime hidden_size = num_q_heads * head_dim
+    comptime combined_hidden_size = (num_q_heads + 2 * num_kv_heads) * head_dim
     var num_blocks = batch_size + 1
-    alias max_seq_length_cache = 1024
-    alias num_layers = 1
-    alias cache_size = 10
-    alias is_context_encoding = True  # value is ignored for matmul kernel
-    alias layer_idx = 0
+    comptime max_seq_length_cache = 1024
+    comptime num_layers = 1
+    comptime cache_size = 10
+    comptime is_context_encoding = True  # value is ignored for matmul kernel
+    comptime layer_idx = 0
 
     var max_context_length = 0
     var max_prompt_length = 0
@@ -94,25 +95,28 @@ def execute_kv_cache_ragged_matmul[
         max_context_length = max(max_context_length, Int(length + cache_size))
         max_prompt_length = max(max_prompt_length, Int(length))
     prefix_sums_host.tensor[batch_size] = total_seq_len
-    var prefix_sums_device = prefix_sums_host.copy_to_device(ctx)
-
+    var prefix_sums_device_buffer = prefix_sums_host.copy_to_device(ctx)
+    var prefix_sums_device = prefix_sums_device_buffer.to_layout_tensor()
     var hidden_state_host = HostNDBuffer[dtype, 2, DimList(Dim(), hidden_size)](
         (Int(total_seq_len), hidden_size),
     )
     random(hidden_state_host.tensor)
-    var hidden_state_device = hidden_state_host.copy_to_device(ctx)
+    var hidden_state_device_buffer = hidden_state_host.copy_to_device(ctx)
+    var hidden_state_device = hidden_state_device_buffer.to_layout_tensor()
 
     var weight_host = HostNDBuffer[
         dtype, 2, DimList(hidden_size, combined_hidden_size)
     ]((hidden_size, combined_hidden_size))
     random(weight_host.tensor)
-    var weight_device = weight_host.copy_to_device(ctx)
+    var weight_device_buffer = weight_host.copy_to_device(ctx)
+    var weight_device = weight_device_buffer.to_layout_tensor()
 
     var output_host = HostNDBuffer[dtype, 2, DimList(Dim(), hidden_size)](
         (Int(total_seq_len), combined_hidden_size),
     )
     random(output_host.tensor)
-    var output_device = output_host.copy_to_device(ctx)
+    var output_devce_buffer = output_host.copy_to_device(ctx)
+    var output_device = output_devce_buffer.to_layout_tensor()
 
     var kv_block_host = HostNDBuffer[dtype, 6](
         IndexList[6](
@@ -153,9 +157,33 @@ def execute_kv_cache_ragged_matmul[
     var cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
 
     var kv_collection_device = CollectionType(
-        kv_block_device.tensor,
-        cache_lengths_device.tensor,
-        lookup_table_device.tensor,
+        LayoutTensor[
+            kv_block_device.dtype, Layout.row_major[6](), MutAnyOrigin
+        ](
+            kv_block_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_device.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            lookup_table_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            lookup_table_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                lookup_table_device.to_layout_tensor().runtime_layout.shape.value,
+                lookup_table_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_prompt_length,
         max_context_length,
     )
@@ -177,12 +205,12 @@ def execute_kv_cache_ragged_matmul[
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             _fused_qkv_matmul_kv_cache_ragged_impl[target="gpu"](
-                hidden_state_device.tensor,
-                prefix_sums_device.tensor,
-                weight_device.tensor,
+                hidden_state_device,
+                prefix_sums_device,
+                weight_device,
                 k_cache_device,
                 v_cache_device,
-                output_device.tensor,
+                output_device,
                 ctx,
             )
 
@@ -197,19 +225,21 @@ def execute_kv_cache_ragged_matmul[
             )
         ),
         # TODO: Pick relevant benchmetric
-        ThroughputMeasure(
-            BenchMetric.flops,
-            # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
-            2 * Int(total_seq_len) * hidden_size * combined_hidden_size,
-        ),
+        [
+            ThroughputMeasure(
+                BenchMetric.flops,
+                # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
+                2 * Int(total_seq_len) * hidden_size * combined_hidden_size,
+            )
+        ],
     )
 
 
 def main():
-    alias dtype = env_get_dtype["dtype", DType.bfloat16]()
-    alias head_dim = env_get_int["head_dim", 128]()
-    alias num_q_heads = env_get_int["num_q_heads", 128]()
-    alias num_kv_heads = env_get_int["num_kv_heads", 128]()
+    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
+    comptime head_dim = env_get_int["head_dim", 128]()
+    comptime num_q_heads = env_get_int["num_q_heads", 128]()
+    comptime num_kv_heads = env_get_int["num_kv_heads", 128]()
 
     var batch_size = arg_parse("batch_size", 1)
     var use_random_lengths = arg_parse("use_random_lengths", False)

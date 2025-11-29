@@ -17,12 +17,11 @@ from sys._assembly import inlined_assembly
 from gpu import barrier, thread_idx
 from gpu.host import DeviceContext
 from gpu.host.compile import _compile_code
-from gpu.memory import AddressSpace
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 
 
 fn kernel(x: Int) -> Int:
-    return thread_idx.x
+    return Int(thread_idx.x)
 
 
 fn parametric[f: fn (Int) -> Int]() -> Int:
@@ -49,7 +48,7 @@ def test_compile_function():
     print("== test_compile_function")
 
     fn kernel(x: UnsafePointer[Int]):
-        x[0] = thread_idx.x
+        x[0] = Int(thread_idx.x)
 
     # CHECK: tid.x
 
@@ -82,7 +81,7 @@ def test_compile_function_with_path():
     # CHECK-NOT: begin assembly
 
     with DeviceContext() as ctx:
-        alias out_file = Path("/tmp/my_file.ptx")
+        comptime out_file = Path("/tmp/my_file.ptx")
         _ = ctx.compile_function[kernel_inlined_assembly, dump_asm=out_file]()
         print(out_file.read_text())
 
@@ -96,7 +95,7 @@ def test_compile_function_with_path_func():
 
     with DeviceContext() as ctx:
         var out_file_name = "my_file_2.ptx"
-        alias out_dir = Path("/tmp")
+        comptime out_dir = Path("/tmp")
 
         @parameter
         fn dummy_fn() capturing -> Path:

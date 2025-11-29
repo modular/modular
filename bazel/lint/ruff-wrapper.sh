@@ -22,10 +22,15 @@ binary=$(find $binary_root -name ruff | head -n 1)
 
 result=0
 if [[ $1 == "check" ]]; then
-    "$binary" format --check --quiet --diff || result=$?
-    "$binary" check --quiet || result=$?
+    shift
+    "$binary" format --check --quiet --diff "$@" || result=$?
+    "$binary" check --quiet "$@" || result=$?
+elif [[ $1 == "fix" ]]; then
+    shift
+    "$binary" format "$@" || result=$?
+    "$binary" check --fix "$@" || result=$?
 else
-    "$binary" format || result=$?
-    "$binary" check --fix || result=$?
+    echo "Unknown subcommand '$1' to Ruff wrapper" >&2
+    result=1
 fi
 exit $result

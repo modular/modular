@@ -87,8 +87,8 @@ def test_write_int_padded():
 
 
 def test_hex_digits_to_hex_chars():
-    items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0)
-    alias S = StringSlice[__origin_of(items)]
+    items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    comptime S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
     _hex_digits_to_hex_chars(ptr, UInt32(ord("🔥")))
     assert_equal("0001f525", String(S(ptr=ptr, length=8)))
@@ -113,8 +113,8 @@ def test_hex_digits_to_hex_chars():
 
 
 def test_write_hex():
-    items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-    alias S = StringSlice[__origin_of(items)]
+    items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    comptime S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
     _write_hex[8](ptr, ord("🔥"))
     assert_equal(r"\U0001f525", String(S(ptr=ptr, length=10)))
@@ -139,7 +139,7 @@ def test_closure_non_capturing():
     write_non_capturing[write_closure]()
 
 
-def test_closure_capturing(mut writer: Some[Writer & Writable]):
+def _test_closure_capturing(mut writer: Some[Writer & Writable]):
     fn write_closure() capturing:
         writer.write("Hello Mojo!")
 
@@ -152,6 +152,11 @@ def test_closure_capturing(mut writer: Some[Writer & Writable]):
     var result = String()
     writer.write_to(result)
     assert_equal(result, "Hello Mojo!")
+
+
+def test_closure_capturing():
+    var writer = String()
+    _test_closure_capturing(writer)
 
 
 def main():

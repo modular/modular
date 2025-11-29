@@ -47,9 +47,9 @@ including a particular item.
   - *Examples:*
     - `Pointer`
     - `Slice` — necessary for a type to implement `[a..b]` `__getitem__` syntax.
-    - `Origin`, `ImmutableOrigin`, `MutableAnyOrigin` — necessary to use the
+    - `Origin`, `ImmutableOrigin`, `MutAnyOrigin` — necessary to use the
       `ref [lifetime] foo: T` syntax.
-    - `EqualityComparable`, `Comparable` — necessary in generic programming to
+    - `Equatable`, `Comparable` — necessary in generic programming to
       require a type supports `==` syntax, or to write a conditional conformance
       implementation of `__eq__` for a parameterized type.
 - **Convenience to encourage use.**

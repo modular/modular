@@ -23,9 +23,11 @@ from collections.string.string import (
 from hashlib.hasher import Hasher
 from math import Ceilable, CeilDivable, Floorable, Truncable
 from sys.info import is_32bit
+from sys.info import bit_width_of
 
 from builtin.device_passable import DevicePassable
 from builtin.math import Absable, DivModable, Powable
+from memory import LegacyOpaquePointer as OpaquePointer
 from python import (
     ConvertibleFromPython,
     ConvertibleToPython,
@@ -163,45 +165,6 @@ trait IntableRaising:
         ...
 
 
-trait ImplicitlyIntable(Intable):
-    """The `ImplicitlyIntable` trait describes a type that can be converted to
-    an Int implicitly.
-
-    This trait requires the type to implement the `__as_int__()` method. For
-    example:
-
-    ```mojo
-    struct Foo(ImplicitlyIntable):
-        var i: Int
-
-        fn __int__(self) -> Int:
-            return self.i
-
-        fn __as_int__(self) -> Int:
-            return self.__int__()
-
-    ```
-
-    Now you can use `Foo` anywhere that an `Int` is expected, e.g. equality
-    checks:
-
-    ```mojo
-    %# from testing import assert_equal
-    foo = Foo(42)
-    assert_equal(Int(42), foo)
-    ```
-    """
-
-    fn __as_int__(self) -> Int:
-        """Implicitly convert to an integral representation of the value,
-        wherever an `Int` is expected.
-
-        Returns:
-            The integral representation of the value.
-        """
-        ...
-
-
 @lldb_formatter_wrapping_type
 @register_passable("trivial")
 struct Int(
@@ -243,16 +206,16 @@ struct Int(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias BITWIDTH = Int(DType.int.bit_width())
+    comptime BITWIDTH = Int(bit_width_of[DType.int]())
     """The bit width of the integer type."""
 
-    alias MAX = Int(Scalar[DType.int].MAX)
+    comptime MAX = Int(Scalar[DType.int].MAX)
     """Returns the maximum integer value."""
 
-    alias MIN = Int(Scalar[DType.int].MIN)
+    comptime MIN = Int(Scalar[DType.int].MIN)
     """Returns the minimum value of type."""
 
-    alias device_type: AnyTrivialRegType = Self
+    comptime device_type: AnyType = Self
     """Int is remapped to the same type when passed to accelerator devices."""
 
     fn _to_device_type(self, target: OpaquePointer):
@@ -327,7 +290,6 @@ struct Int(
         self = value.__int__()
 
     @always_inline("builtin")
-    @implicit
     fn __init__(out self, value: UInt):
         """Construct Int from the given UInt value.
 
@@ -362,19 +324,6 @@ struct Int(
             If the type does not have an integral representation.
         """
         self = value.__int__()
-
-    @always_inline("nodebug")
-    @implicit
-    fn __init__[I: ImplicitlyIntable](out self, value: I):
-        """Construct Int from implicitly convertible type.
-
-        Parameters:
-            I: The type that is implicitly convertible to an `Int`.
-
-        Args:
-            value: The init value.
-        """
-        self = value.__as_int__()
 
     @always_inline("nodebug")
     fn __init__(out self, value: StringSlice, base: UInt = 10) raises:
@@ -1193,6 +1142,9 @@ struct Int(
 
         Returns:
             A PythonObject representing the value.
+
+        Raises:
+            If the Python runtime is not initialized or conversion fails.
         """
         return PythonObject(self)
 

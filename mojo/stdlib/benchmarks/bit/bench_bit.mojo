@@ -104,7 +104,7 @@ fn _build_list[start: Int, stop: Int]() -> List[Int]:
     return values^
 
 
-alias width = bit_width_of[Int]()
+comptime width = bit_width_of[Int]()
 
 
 @parameter
@@ -168,7 +168,7 @@ def main():
         BenchId("bench_next_power_of_two_uint_v4")
     )
 
-    results = Dict[String, (Float64, Int)]()
+    results = Dict[String, Tuple[Float64, Int]]()
     for info in m.info_vec:
         n = info.name
         time = info.result.mean("ms")

@@ -5,8 +5,9 @@ package(default_visibility = ["//visibility:public"])
 mojo_library(
     name = "internal_utils",
     srcs = glob(["**/*.mojo"]),
+    validate_missing_docs = False,
     deps = [
+        "//max:tensor",
         "@mojo//:stdlib",
-        "@mojo//:tensor_internal",
     ],
 )

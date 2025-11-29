@@ -11,15 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from sys import size_of
 from bit import rotate_bits_left
-from memory import bitcast
+from memory import Span, bitcast
 
 from .hasher import Hasher
 
-alias U256 = SIMD[DType.uint64, 4]
-alias U128 = SIMD[DType.uint64, 2]
-alias MULTIPLE = 6364136223846793005
-alias ROT = 23
+comptime U256 = SIMD[DType.uint64, 4]
+comptime U128 = SIMD[DType.uint64, 2]
+comptime MULTIPLE = 6364136223846793005
+comptime ROT = 23
 
 
 @always_inline
@@ -41,7 +42,7 @@ fn _folded_multiply(lhs: UInt64, rhs: UInt64) -> UInt64:
 
 
 @always_inline
-fn _read_small(data: UnsafePointer[UInt8, mut=False, **_], length: Int) -> U128:
+fn _read_small(data: UnsafePointer[mut=False, UInt8], length: Int) -> U128:
     """Produce a `SIMD[DType.uint64, 2]` value from data which is smaller than or equal to `8` bytes.
 
     Args:
@@ -91,7 +92,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
 
     fn __init__(out self):
         """Initialize the hasher."""
-        alias pi_key = key ^ U256(
+        comptime pi_key = Self.key ^ U256(
             0x243F_6A88_85A3_08D3,
             0x1319_8A2E_0370_7344,
             0xA409_3822_299F_31D0,
@@ -121,39 +122,34 @@ struct AHasher[key: U256](Defaultable, Hasher):
         var combined = _folded_multiply(xored[0], xored[1])
         self.buffer = rotate_bits_left[ROT]((self.buffer + self.pad) ^ combined)
 
-    fn _update_with_bytes(
-        mut self,
-        data: UnsafePointer[
-            UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
-        ],
-        length: Int,
-    ):
+    fn _update_with_bytes(mut self, data: Span[Byte, _]):
         """Consume provided data to update the internal buffer.
 
         Args:
-            data: Pointer to the byte array.
-            length: The length of the byte array.
+            data: Span of bytes to hash.
         """
+        var length = len(data)
+        var ptr = data.unsafe_ptr()
         self.buffer = (self.buffer + length) * MULTIPLE
         if length > 8:
             if length > 16:
                 var tail = (
-                    data.offset(length - 16).bitcast[UInt64]().load[width=2]()
+                    ptr.offset(length - 16).bitcast[UInt64]().load[width=2]()
                 )
                 self._large_update(tail)
                 var offset = 0
                 while length - offset > 16:
                     var block = (
-                        data.offset(offset).bitcast[UInt64]().load[width=2]()
+                        ptr.offset(offset).bitcast[UInt64]().load[width=2]()
                     )
                     self._large_update(block)
                     offset += 16
             else:
-                var a = data.bitcast[UInt64]().load()
-                var b = data.offset(length - 8).bitcast[UInt64]().load()
+                var a = ptr.bitcast[UInt64]().load()
+                var b = ptr.offset(length - 8).bitcast[UInt64]().load()
                 self._large_update(U128(a, b))
         else:
-            var value = _read_small(data, length)
+            var value = _read_small(ptr, length)
             self._large_update(value)
 
     fn _update_with_simd(mut self, new_data: SIMD[_, _]):
@@ -167,7 +163,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
         # values smaller than 8 bytes contribute only once
         # values which are multiple of 8 bytes contribute multiple times
         # e.g. int128 is 16 bytes long and evaluates to 2 rounds
-        alias rounds = max(1, new_data.dtype.size_of() // 8)
+        comptime rounds = max(1, size_of[new_data.dtype]() // 8)
 
         @parameter
         if rounds == 1:
@@ -187,7 +183,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
             @parameter
             for i in range(new_data.size):
                 var v = new_data[i]
-                constrained[v.dtype.size_of() > 8 and v.dtype.is_integral()]()
+                constrained[size_of[v.dtype]() > 8 and v.dtype.is_integral()]()
 
                 @parameter
                 for r in range(0, rounds, 2):

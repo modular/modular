@@ -13,7 +13,12 @@
 
 from sys import simd_width_of, size_of
 
-from memory import AddressSpace, memcmp, memcpy, memset, memset_zero
+from memory import (
+    memcmp,
+    memcpy,
+    memset,
+    memset_zero,
+)
 from testing import TestSuite
 from testing import (
     assert_almost_equal,
@@ -24,8 +29,8 @@ from testing import (
 
 from utils.numerics import nan
 
-alias void = __mlir_attr.`#kgen.dtype.constant<invalid> : !kgen.dtype`
-alias int8_pop = __mlir_type.`!pop.scalar<si8>`
+comptime void = __mlir_attr.`#kgen.dtype.constant<invalid> : !kgen.dtype`
+comptime int8_pop = __mlir_type.`!pop.scalar<si8>`
 
 
 @fieldwise_init
@@ -52,10 +57,10 @@ def test_memcpy():
 
     @parameter
     def _test_memcpy_buf[size: Int]():
-        var buf = UnsafePointer[UInt8]().alloc(size * 2)
+        var buf = alloc[UInt8](size * 2)
         memset_zero(buf + size, size)
-        var src = UnsafePointer[UInt8]().alloc(size * 2)
-        var dst = UnsafePointer[UInt8]().alloc(size * 2)
+        var src = alloc[UInt8](size * 2)
+        var dst = alloc[UInt8](size * 2)
         for i in range(size * 2):
             buf[i] = src[i] = 2
             dst[i] = 0
@@ -81,8 +86,8 @@ def test_memcpy():
 
 
 def test_memcpy_dtype():
-    var a = UnsafePointer[Int32].alloc(4)
-    var b = UnsafePointer[Int32].alloc(4)
+    var a = alloc[Int32](4)
+    var b = alloc[Int32](4)
     for i in range(4):
         a[i] = i
         b[i] = -1
@@ -141,8 +146,8 @@ def test_memcmp_non_multiple_of_int32():
 
 
 def test_memcmp_overflow():
-    p1 = UnsafePointer[Byte].alloc(1)
-    p2 = UnsafePointer[Byte].alloc(1)
+    p1 = alloc[Byte](1)
+    p2 = alloc[Byte](1)
     p1.store(-120)
     p2.store(120)
 
@@ -156,8 +161,8 @@ def test_memcmp_overflow():
 def test_memcmp_simd():
     var length = simd_width_of[DType.int8]() + 10
 
-    var p1 = UnsafePointer[Int8].alloc(length)
-    var p2 = UnsafePointer[Int8].alloc(length)
+    var p1 = alloc[Int8](length)
+    var p2 = alloc[Int8](length)
     memset_zero(p1, length)
     memset_zero(p2, length)
     p1.store(120)
@@ -192,11 +197,11 @@ def test_memcmp_simd():
 def _test_memcmp_extensive[
     dtype: DType, extermes: StaticString = ""
 ](count: Int):
-    var ptr1 = UnsafePointer[Scalar[dtype]].alloc(count)
-    var ptr2 = UnsafePointer[Scalar[dtype]].alloc(count)
+    var ptr1 = alloc[Scalar[dtype]](count)
+    var ptr2 = alloc[Scalar[dtype]](count)
 
-    var dptr1 = UnsafePointer[Scalar[dtype]].alloc(count)
-    var dptr2 = UnsafePointer[Scalar[dtype]].alloc(count)
+    var dptr1 = alloc[Scalar[dtype]](count)
+    var dptr2 = alloc[Scalar[dtype]](count)
 
     for i in range(count):
         ptr1[i] = i
@@ -282,12 +287,12 @@ def test_memcmp_extensive():
 
 def test_memcmp_simd_boundary():
     """Test edge cases in SIMD memcmp implementation that could expose bugs."""
-    alias simd_width = simd_width_of[DType.int8]()
+    comptime simd_width = simd_width_of[DType.int8]()
 
     # Test 1: Difference exactly at SIMD boundary
-    alias size = simd_width + 1
-    var ptr1 = UnsafePointer[Int8].alloc(size)
-    var ptr2 = UnsafePointer[Int8].alloc(size)
+    comptime size = simd_width + 1
+    var ptr1 = alloc[Int8](size)
+    var ptr2 = alloc[Int8](size)
 
     # Fill with identical data
     for i in range(size):
@@ -314,17 +319,20 @@ def test_memcmp_simd_boundary():
 
 def test_memcmp_simd_overlap():
     """Test overlapping region handling in SIMD memcmp."""
-    alias simd_width = simd_width_of[DType.int8]()
+    comptime simd_width = simd_width_of[DType.int8]()
 
     # Test sizes that trigger overlapping tail reads
-    var test_sizes = List[Int](
-        simd_width + 1, simd_width + 2, simd_width * 2 - 1, simd_width * 2 + 1
-    )
+    var test_sizes: List[Int] = [
+        simd_width + 1,
+        simd_width + 2,
+        simd_width * 2 - 1,
+        simd_width * 2 + 1,
+    ]
 
     for i in range(len(test_sizes)):
         var size = test_sizes[i]
-        var ptr1 = UnsafePointer[Int8].alloc(size)
-        var ptr2 = UnsafePointer[Int8].alloc(size)
+        var ptr1 = alloc[Int8](size)
+        var ptr2 = alloc[Int8](size)
 
         # Fill with identical data
         for j in range(size):
@@ -350,8 +358,8 @@ def test_memcmp_simd_index_finding():
 
     # Test difference at each possible SIMD lane position
     for lane in range(simd_width):
-        var ptr1 = UnsafePointer[Int8].alloc(simd_width)
-        var ptr2 = UnsafePointer[Int8].alloc(simd_width)
+        var ptr1 = alloc[Int8](simd_width)
+        var ptr2 = alloc[Int8](simd_width)
 
         # Fill with identical data
         for i in range(simd_width):
@@ -382,8 +390,8 @@ def test_memcmp_simd_index_finding():
 
 def test_memcmp_simd_signed_overflow():
     """Test signed byte overflow cases in SIMD memcmp."""
-    var ptr1 = UnsafePointer[Int8].alloc(4)
-    var ptr2 = UnsafePointer[Int8].alloc(4)
+    var ptr1 = alloc[Int8](4)
+    var ptr2 = alloc[Int8](4)
 
     # Test extreme signed values
     ptr1[0] = -128  # Most negative
@@ -415,8 +423,8 @@ def test_memcmp_simd_signed_overflow():
 def test_memcmp_simd_alignment():
     """Test alignment-related bugs in SIMD memcmp."""
     var size = 64
-    var large_ptr1 = UnsafePointer[Int8].alloc(size)
-    var large_ptr2 = UnsafePointer[Int8].alloc(size)
+    var large_ptr1 = alloc[Int8](size)
+    var large_ptr2 = alloc[Int8](size)
 
     # Fill with pattern
     for i in range(size):
@@ -455,7 +463,7 @@ def test_memcmp_simd_width_edge_cases():
     var simd_width = simd_width_of[DType.int8]()
 
     # Test sizes that might cause issues with SIMD width calculations
-    var critical_sizes = List[Int](
+    var critical_sizes: List[Int] = [
         simd_width - 1,
         simd_width,
         simd_width + 1,
@@ -465,12 +473,12 @@ def test_memcmp_simd_width_edge_cases():
         simd_width * 3 - 1,
         simd_width * 3,
         simd_width * 3 + 1,
-    )
+    ]
 
     for i in range(len(critical_sizes)):
         var size = critical_sizes[i]
-        var ptr1 = UnsafePointer[Int8].alloc(size)
-        var ptr2 = UnsafePointer[Int8].alloc(size)
+        var ptr1 = alloc[Int8](size)
+        var ptr2 = alloc[Int8](size)
 
         # Fill with identical sequential data
         for j in range(size):
@@ -500,9 +508,9 @@ def test_memcmp_simd_width_edge_cases():
 
 def test_memcmp_simd_zero_bytes():
     """Test handling of zero bytes in SIMD memcmp."""
-    alias size = simd_width_of[DType.int8]() * 2
-    var ptr1 = UnsafePointer[Int8].alloc(size)
-    var ptr2 = UnsafePointer[Int8].alloc(size)
+    comptime size = simd_width_of[DType.int8]() * 2
+    var ptr1 = alloc[Int8](size)
+    var ptr2 = alloc[Int8](size)
 
     # Fill with zeros
     memset_zero(ptr1, size)
@@ -512,7 +520,7 @@ def test_memcmp_simd_zero_bytes():
     assert_equal(result, 0, "Zero-filled buffers should be equal")
 
     # Test zero vs non-zero at different positions
-    var test_positions = List[Int](0, 1, size // 2, size - 1)
+    var test_positions: List[Int] = [0, 1, size // 2, size - 1]
 
     for i in range(len(test_positions)):
         var pos = test_positions[i]
@@ -560,19 +568,19 @@ def test_memset():
     assert_equal(pair.lo, 0)
     assert_equal(pair.hi, 0)
 
-    var buf0 = UnsafePointer[Int32].alloc(2)
+    var buf0 = alloc[Int32](2)
     memset(buf0, 1, 2)
     assert_equal(buf0.load(0), 16843009)
     memset(buf0, -1, 2)
     assert_equal(buf0.load(0), -1)
     buf0.free()
 
-    var buf1 = UnsafePointer[Int8].alloc(2)
+    var buf1 = alloc[Int8](2)
     memset(buf1, 5, 2)
     assert_equal(buf1.load(0), 5)
     buf1.free()
 
-    var buf3 = UnsafePointer[Int32].alloc(2)
+    var buf3 = alloc[Int32](2)
     memset(buf3, 1, 2)
     memset_zero[count=2](buf3)
     assert_equal(buf3.load(0), 0)
@@ -583,43 +591,43 @@ def test_memset():
 
 
 def test_pointer_string():
-    var nullptr = UnsafePointer[Int]()
+    var nullptr = UnsafePointer[Int, MutAnyOrigin]()
     assert_equal(String(nullptr), "0x0")
 
-    var ptr = UnsafePointer[Int].alloc(1)
+    var ptr = alloc[Int](1)
     assert_true(String(ptr).startswith("0x"))
     assert_not_equal(String(ptr), "0x0")
     ptr.free()
 
 
 def test_dtypepointer_string():
-    var nullptr = UnsafePointer[Float32]()
+    var nullptr = UnsafePointer[Float32, MutAnyOrigin]()
     assert_equal(String(nullptr), "0x0")
 
-    var ptr = UnsafePointer[Float32].alloc(1)
+    var ptr = alloc[Float32](1)
     assert_true(String(ptr).startswith("0x"))
     assert_not_equal(String(ptr), "0x0")
     ptr.free()
 
 
 def test_pointer_explicit_copy():
-    var ptr = UnsafePointer[Int].alloc(1)
+    var ptr = alloc[Int](1)
     ptr[] = 42
-    var copy = UnsafePointer(other=ptr)
+    var copy = ptr.copy()
     assert_equal(copy[], 42)
     ptr.free()
 
 
 def test_pointer_refitem():
-    var ptr = UnsafePointer[Int].alloc(1)
+    var ptr = alloc[Int](1)
     ptr[] = 42
     assert_equal(ptr[], 42)
     ptr.free()
 
 
 def test_pointer_refitem_string():
-    alias payload = "$Modular!Mojo!HelloWorld^"
-    var ptr = UnsafePointer[String].alloc(1)
+    comptime payload = "$Modular!Mojo!HelloWorld^"
+    var ptr = alloc[String](1)
     __get_address_as_uninit_lvalue(ptr.address) = String()
     ptr[] = payload
     assert_equal(ptr[], payload)
@@ -627,7 +635,7 @@ def test_pointer_refitem_string():
 
 
 def test_pointer_refitem_pair():
-    var ptr = UnsafePointer[Pair].alloc(1)
+    var ptr = alloc[Pair](1)
     ptr[].lo = 42
     ptr[].hi = 24
     #   NOTE: We want to write the below but we can't implement a generic assert_equal yet.
@@ -643,7 +651,7 @@ def test_address_space_str():
 
 
 def test_dtypepointer_gather():
-    var ptr = UnsafePointer[Float32].alloc(4)
+    var ptr = alloc[Float32](4)
     ptr.store(0, SIMD[ptr.type.dtype, 4](0.0, 1.0, 2.0, 3.0))
 
     @parameter
@@ -690,7 +698,7 @@ def test_dtypepointer_gather():
 
 
 def test_dtypepointer_scatter():
-    var ptr = UnsafePointer[Float32].alloc(4)
+    var ptr = alloc[Float32](4)
     ptr.store(0, SIMD[ptr.type.dtype, 4](0.0))
 
     @parameter
@@ -767,7 +775,7 @@ def test_dtypepointer_scatter():
 
 
 def test_indexing():
-    var ptr = UnsafePointer[Float32].alloc(4)
+    var ptr = alloc[Float32](4)
     for i in range(4):
         ptr[i] = i
 

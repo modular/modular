@@ -15,14 +15,13 @@ from math import ceildiv
 
 from gpu import WARP_SIZE, barrier, lane_id
 from gpu.host import DeviceContext
-from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma
 from gpu.mma_util import store_matrix_d
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu import matmul_kernel_naive
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -36,15 +35,15 @@ fn test_ldmatrix_fp8[
     a_ptr: UnsafePointer[Scalar[input_type]],
     b_ptr: UnsafePointer[Scalar[input_type]],
 ):
-    alias accum_type = get_accum_type[input_type]()
-    alias mma_shape = get_mma_shape[input_type, accum_type]()
-    alias M = mma_shape[0]
-    alias N = mma_shape[1]
-    alias K = mma_shape[2]
-    alias frag_size = get_fragment_size[mma_shape]()
-    alias a_frag_size = frag_size[0]
-    alias b_frag_size = frag_size[1]
-    alias c_frag_size = frag_size[2]
+    comptime accum_type = get_accum_type[input_type]()
+    comptime mma_shape = get_mma_shape[input_type, accum_type]()
+    comptime M = mma_shape[0]
+    comptime N = mma_shape[1]
+    comptime K = mma_shape[2]
+    comptime frag_size = get_fragment_size[mma_shape]()
+    comptime a_frag_size = frag_size[0]
+    comptime b_frag_size = frag_size[1]
+    comptime c_frag_size = frag_size[2]
 
     var d = SIMD[accum_type, c_frag_size](0)
 
@@ -88,11 +87,11 @@ fn check_ldmatrix_fp8[
     print("== test ldmatrix transposed fp8")
 
     # Shape for a single mma.
-    alias accum_type = get_accum_type[input_type]()
-    alias mma_shape = get_mma_shape[input_type, accum_type]()
-    alias M = mma_shape[0]
-    alias N = mma_shape[1]
-    alias K = mma_shape[2]
+    comptime accum_type = get_accum_type[input_type]()
+    comptime mma_shape = get_mma_shape[input_type, accum_type]()
+    comptime M = mma_shape[0]
+    comptime N = mma_shape[1]
+    comptime K = mma_shape[2]
 
     var a_host = UnsafePointer[Scalar[input_type]].alloc(M * K)
     var b_host = UnsafePointer[Scalar[input_type]].alloc(K * N)
@@ -125,7 +124,7 @@ fn check_ldmatrix_fp8[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias kernel_func = test_ldmatrix_fp8[input_type]
+    comptime kernel_func = test_ldmatrix_fp8[input_type]
     ctx.enqueue_function_checked[kernel_func, kernel_func](
         c_device,
         a_device,
@@ -137,29 +136,29 @@ fn check_ldmatrix_fp8[
     ctx.enqueue_copy(c_host, c_device)
 
     # Run naive matmul.
-    alias BLOCK_DIM = 16
+    comptime BLOCK_DIM = 16
 
     # Create LayoutTensors directly
-    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var c_tensor_ref = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+    var c_tensor_ref = LayoutTensor[DType.float32, layout, MutAnyOrigin](
         c_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
-    var a_tensor = LayoutTensor[input_type, layout, MutableAnyOrigin](
+    var a_tensor = LayoutTensor[input_type, layout, MutAnyOrigin](
         a_device,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
-    var b_tensor = LayoutTensor[input_type, layout, MutableAnyOrigin](
+    var b_tensor = LayoutTensor[input_type, layout, MutAnyOrigin](
         b_device,
         RuntimeLayout[layout].row_major(
             IndexList[2](N, K)
         ),  # N x K for transpose_b=True
     )
 
-    alias kernel = matmul_kernel_naive[
+    comptime kernel = matmul_kernel_naive[
         DType.float32,
         input_type,
         input_type,

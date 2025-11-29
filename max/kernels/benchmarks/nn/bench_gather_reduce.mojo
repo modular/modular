@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from random import random_si64
 from sys import simd_width_of, size_of
 
@@ -22,18 +23,18 @@ from utils import IndexList
 
 
 @always_inline
-fn add(x: SIMD, y: __type_of(x)) -> __type_of(x):
+fn add(x: SIMD, y: type_of(x)) -> type_of(x):
     return x + y
 
 
 @parameter
 fn bench_gather_reduce(mut b: Bencher):
-    alias type = DType.float32
+    comptime type = DType.float32
     var num_rows = 500000
     var embedding_dim = 32
     var multi_hot_dim = 100
-    alias l3_size = 32  # mb
-    alias clear_size = l3_size * 2 * 1_000_000
+    comptime l3_size = 32  # mb
+    comptime clear_size = l3_size * 2 * 1_000_000
     var num_indices = clear_size // (
         size_of[type]() * embedding_dim * multi_hot_dim
     )
@@ -49,7 +50,7 @@ fn bench_gather_reduce(mut b: Bencher):
     var indices_storage = UnsafePointer[Int32].alloc(
         indices_shape.flattened_length()
     )
-    alias layout_2d = Layout.row_major[2]()
+    comptime layout_2d = Layout.row_major[2]()
     var input = LayoutTensor[type, layout_2d](
         input_storage, RuntimeLayout[layout_2d].row_major(input_shape)
     ).fill(1)

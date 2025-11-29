@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyOpaquePointer as OpaquePointer
 from os import abort
 
 
@@ -31,9 +32,9 @@ struct Handle(Defaultable):
 struct Operation:
     var _value: Int32
 
-    alias NONE = Self(111)
-    alias TRANSPOSE = Self(112)
-    alias CONJUGATE_TRANSPOSE = Self(113)
+    comptime NONE = Self(111)
+    comptime TRANSPOSE = Self(112)
+    comptime CONJUGATE_TRANSPOSE = Self(113)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -53,9 +54,9 @@ struct Operation:
 struct Fill:
     var _value: Int32
 
-    alias UPPER = Self(121)
-    alias LOWER = Self(122)
-    alias FULL = Self(123)
+    comptime UPPER = Self(121)
+    comptime LOWER = Self(122)
+    comptime FULL = Self(123)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -75,8 +76,8 @@ struct Fill:
 struct Diagonal:
     var _value: Int32
 
-    alias NON_UNIT = Self(131)
-    alias DIAGONAL_UNIT = Self(132)
+    comptime NON_UNIT = Self(131)
+    comptime DIAGONAL_UNIT = Self(132)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -96,9 +97,9 @@ struct Diagonal:
 struct Side:
     var _value: Int32
 
-    alias LEFT = Self(141)
-    alias RIGHT = Self(142)
-    alias BOTH = Self(143)
+    comptime LEFT = Self(141)
+    comptime RIGHT = Self(142)
+    comptime BOTH = Self(143)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -118,29 +119,29 @@ struct Side:
 struct DataType:
     var _value: Int32
 
-    alias F16_R = Self(150)
-    alias F32_R = Self(151)
-    alias F64_R = Self(152)
-    alias F16_C = Self(153)
-    alias F32_C = Self(154)
-    alias F64_C = Self(155)
+    comptime F16_R = Self(150)
+    comptime F32_R = Self(151)
+    comptime F64_R = Self(152)
+    comptime F16_C = Self(153)
+    comptime F32_C = Self(154)
+    comptime F64_C = Self(155)
 
-    alias I8_R = Self(160)
-    alias U8_R = Self(161)
-    alias I32_R = Self(162)
-    alias U32_R = Self(163)
+    comptime I8_R = Self(160)
+    comptime U8_R = Self(161)
+    comptime I32_R = Self(162)
+    comptime U32_R = Self(163)
 
-    alias I8_C = Self(164)
-    alias U8_C = Self(165)
-    alias I32_C = Self(166)
-    alias U32_C = Self(167)
+    comptime I8_C = Self(164)
+    comptime U8_C = Self(165)
+    comptime I32_C = Self(166)
+    comptime U32_C = Self(167)
 
-    alias BF16_R = Self(168)
-    alias BF16_C = Self(169)
-    alias F8_R = Self(170)
-    alias BF8_R = Self(171)
+    comptime BF16_R = Self(168)
+    comptime BF16_C = Self(169)
+    comptime F8_R = Self(170)
+    comptime BF8_R = Self(171)
 
-    alias INVALID = Self(255)
+    comptime INVALID = Self(255)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -173,12 +174,12 @@ struct DataType:
 struct ComputeType:
     var _value: Int32
 
-    alias F32 = Self(300)
-    alias F8_F8_F32 = Self(301)
-    alias F8_BF8_F32 = Self(302)
-    alias BF8_F8_F32 = Self(303)
-    alias BF8_BF8_F32 = Self(304)
-    alias INVALID = Self(455)
+    comptime F32 = Self(300)
+    comptime F8_F8_F32 = Self(301)
+    comptime F8_BF8_F32 = Self(302)
+    comptime BF8_F8_F32 = Self(303)
+    comptime BF8_BF8_F32 = Self(304)
+    comptime INVALID = Self(455)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -195,25 +196,25 @@ struct ComputeType:
 
 @fieldwise_init
 @register_passable("trivial")
-struct Status(EqualityComparable, Writable):
+struct Status(Equatable, Writable):
     var _value: Int32
 
-    alias SUCCESS = Self(0)
-    alias INVALID_HANDLE = Self(1)
-    alias NOT_IMPLEMENTED = Self(2)
-    alias INVALID_POINTER = Self(3)
-    alias INVALID_SIZE = Self(4)
-    alias MEMORY_ERROR = Self(5)
-    alias INTERNAL_ERROR = Self(6)
-    alias PERF_DEGRADED = Self(7)
-    alias SIZE_QUERY_MISMATCH = Self(8)
-    alias SIZE_INCREASED = Self(9)
-    alias SIZE_UNCHANGED = Self(10)
-    alias INVALID_VALUE = Self(11)
-    alias CONTINUE = Self(12)
-    alias CHECK_NUMERICS_FAIL = Self(13)
-    alias EXCLUDED_FROM_BUILD = Self(14)
-    alias ARCH_MISMATCH = Self(15)
+    comptime SUCCESS = Self(0)
+    comptime INVALID_HANDLE = Self(1)
+    comptime NOT_IMPLEMENTED = Self(2)
+    comptime INVALID_POINTER = Self(3)
+    comptime INVALID_SIZE = Self(4)
+    comptime MEMORY_ERROR = Self(5)
+    comptime INTERNAL_ERROR = Self(6)
+    comptime PERF_DEGRADED = Self(7)
+    comptime SIZE_QUERY_MISMATCH = Self(8)
+    comptime SIZE_INCREASED = Self(9)
+    comptime SIZE_UNCHANGED = Self(10)
+    comptime INVALID_VALUE = Self(11)
+    comptime CONTINUE = Self(12)
+    comptime CHECK_NUMERICS_FAIL = Self(13)
+    comptime EXCLUDED_FROM_BUILD = Self(14)
+    comptime ARCH_MISMATCH = Self(15)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -271,8 +272,8 @@ struct Status(EqualityComparable, Writable):
 struct PointerMode:
     var _value: Int32
 
-    alias HOST = Self(0)
-    alias DEVICE = Self(1)
+    comptime HOST = Self(0)
+    comptime DEVICE = Self(1)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -298,8 +299,8 @@ struct MallocBase:
 struct Algorithm:
     var _value: Int32
 
-    alias STANDARD = Self(0)
-    alias SOLUTION_INDEX = Self(1)
+    comptime STANDARD = Self(0)
+    comptime SOLUTION_INDEX = Self(1)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -319,8 +320,8 @@ struct Algorithm:
 struct GEAMExOp:
     var _value: Int32
 
-    alias MIN_PLUS = Self(0)
-    alias PLUS_MIN = Self(1)
+    comptime MIN_PLUS = Self(0)
+    comptime PLUS_MIN = Self(1)
 
     fn __init__(out self, value: Int):
         self._value = value

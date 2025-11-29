@@ -30,7 +30,7 @@ from kernels.causal_conv1d import CausalConv1Dcpu, CausalConv1Dgpu
 from kernels.matrix_multiplication import MatrixMultiplication
 from kernels.tensor_core_mma import TensorCoreMMA
 from kernels.top_k import TopK
-from tensor_internal import (
+from tensor import (
     Input,
     IOSpec,
     ManagedTensorSlice,
@@ -47,24 +47,23 @@ struct Tensor[
     io_spec: IOSpec,
     static_spec: StaticTensorSpec[dtype, rank],
 ](ImplicitlyCopyable, Movable):
-    alias size = Int(static_spec.shape.product())
+    alias size = Int(Self.static_spec.shape.product())
 
-    var slice: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
-    var buffer: DeviceBuffer[dtype]
+    var slice: ManagedTensorSlice[
+        io_spec = Self.io_spec, static_spec = Self.static_spec
+    ]
+    var buffer: DeviceBuffer[Self.dtype]
 
     fn __init__(out self, ctx: DeviceContext) raises:
-        self.buffer = ctx.enqueue_create_buffer[dtype](Self.size)
+        self.buffer = ctx.enqueue_create_buffer[Self.dtype](Self.size)
 
         self.slice = ManagedTensorSlice[
-            io_spec=io_spec, static_spec=static_spec
+            io_spec = Self.io_spec, static_spec = Self.static_spec
         ](
             self.buffer.unsafe_ptr(),
-            Self.static_spec.shape.into_index_list[rank](),
-            Self.static_spec.strides.into_index_list[rank](),
+            Self.static_spec.shape.into_index_list[Self.rank](),
+            Self.static_spec.strides.into_index_list[Self.rank](),
         )
-
-    fn unsafe_ptr(self) -> UnsafePointer[Scalar[dtype]]:
-        return self.buffer.unsafe_ptr()
 
     fn rand(self) raises -> Self:
         with self.buffer.map_to_host() as host_buffer:
@@ -76,7 +75,7 @@ struct Tensor[
             iota(host_buffer.unsafe_ptr(), Self.size)
             return self
 
-    fn fill(self, value: Scalar[dtype]) raises -> Self:
+    fn fill(self, value: Scalar[Self.dtype]) raises -> Self:
         with self.buffer.map_to_host() as host_buffer:
             var ptr = host_buffer.unsafe_ptr()
             for i in range(Self.size):
@@ -122,7 +121,7 @@ def top_k():
     var b = Bench()
     var flops = ThroughputMeasure(BenchMetric.flops, els * log2_floor(K))
     var elements = ThroughputMeasure(BenchMetric.elements, els)
-    var metrics = List(flops, elements)
+    var metrics = [flops, elements]
 
     @parameter
     def top_k_cpu():
@@ -178,7 +177,7 @@ def matmul():
     var bench = Bench()
     var flops = ThroughputMeasure(BenchMetric.flops, FLOPS)
     var elements = ThroughputMeasure(BenchMetric.elements, M * N)
-    var metrics = List(flops, elements)
+    var metrics = [flops, elements]
 
     @parameter
     def matmul_cpu():
@@ -243,7 +242,7 @@ def tensor_core_mma():
     var bench = Bench()
     var flops = ThroughputMeasure(BenchMetric.flops, FLOPS)
     var elements = ThroughputMeasure(BenchMetric.elements, M * N)
-    var metrics = List(flops, elements)
+    var metrics = [flops, elements]
 
     alias perform_validation = False
 
@@ -343,7 +342,7 @@ def run_conv1d[impl: StaticString]():
             bencher.iter[run_bench]()
 
         bench.bench_function[bench_cpu](
-            BenchId("cpu", "naive"), flops, elements
+            BenchId("cpu", "naive"), [flops, elements]
         )
 
     @parameter
@@ -377,7 +376,7 @@ def run_conv1d[impl: StaticString]():
                 bench.iter_custom[kernel_launch](gpu_ctx)
 
             bench.bench_function[bench_gpu](
-                BenchId(impl, String(impl)), flops, elements
+                BenchId(impl, String(impl)), [flops, elements]
             )
 
         bench_conv1d_kernel[impl]()

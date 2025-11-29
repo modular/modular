@@ -53,7 +53,7 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
     from utils import Variant
     import random
 
-    alias IntOrString = Variant[Int, String]
+    comptime IntOrString = Variant[Int, String]
 
     fn to_string(mut x: IntOrString) -> String:
         if x.isa[String]():
@@ -79,7 +79,7 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
     Example usage for error handling:
 
     ```mojo
-    alias Result = Variant[String, Error]
+    comptime Result = Variant[String, Error]
 
     fn process_data(data: String) -> Result:
         if len(data) == 0:
@@ -96,7 +96,7 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
     Example usage in a `List` to create a heterogeneous list:
 
     ```mojo
-    alias MixedType = Variant[Int, Float64, String, Bool]
+    comptime MixedType = Variant[Int, Float64, String, Bool]
 
     var mixed_list = List[MixedType]()
     mixed_list.append(MixedType(42))
@@ -121,9 +121,9 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
     """
 
     # Fields
-    alias _sentinel: Int = -1
-    alias _mlir_type = __mlir_type[
-        `!kgen.variant<[rebind(:`, __type_of(Ts), ` `, Ts, `)]>`
+    comptime _sentinel: Int = -1
+    comptime _mlir_type = __mlir_type[
+        `!kgen.variant<[rebind(:`, type_of(Self.Ts), ` `, Self.Ts, `)]>`
     ]
     var _impl: Self._mlir_type
 
@@ -151,7 +151,7 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
             value: The value to initialize the variant with.
         """
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        alias idx = Self._check[T]()
+        comptime idx = Self._check[T]()
         self._get_discr() = idx
         self._get_ptr[T]().init_pointee_move(value^)
 
@@ -166,8 +166,8 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
         self._get_discr() = other._get_discr()
 
         @parameter
-        for i in range(len(VariadicList(Ts))):
-            alias T = Ts[i]
+        for i in range(len(VariadicList(Self.Ts))):
+            comptime T = Self.Ts[i]
             if self._get_discr() == i:
                 self._get_ptr[T]().init_pointee_move(
                     other._get_ptr[T]()[].copy()
@@ -184,8 +184,8 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
         self._get_discr() = other._get_discr()
 
         @parameter
-        for i in range(len(VariadicList(Ts))):
-            alias T = Ts[i]
+        for i in range(len(VariadicList(Self.Ts))):
+            comptime T = Self.Ts[i]
             if self._get_discr() == i:
                 # Calls the correct __moveinit__
                 self._get_ptr[T]().init_pointee_move_from(other._get_ptr[T]())
@@ -195,9 +195,9 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
         """Destroy the variant."""
 
         @parameter
-        for i in range(len(VariadicList(Ts))):
+        for i in range(len(VariadicList(Self.Ts))):
             if self._get_discr() == i:
-                self._get_ptr[Ts[i]]().destroy_pointee()
+                self._get_ptr[Self.Ts[i]]().destroy_pointee()
                 return
 
     # ===-------------------------------------------------------------------===#
@@ -230,12 +230,13 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn _get_ptr[T: AnyType](self) -> UnsafePointer[T]:
-        alias idx = Self._check[T]()
+    fn _get_ptr[T: AnyType](ref [_]self) -> UnsafePointer[T, origin_of(self)]:
+        comptime idx = Self._check[T]()
         constrained[idx != Self._sentinel, "not a union element type"]()
         var ptr = UnsafePointer(to=self._impl).address
         var discr_ptr = __mlir_op.`pop.variant.bitcast`[
-            _type = UnsafePointer[T]._mlir_type, index = idx._mlir_value
+            _type = UnsafePointer[T, origin_of(self)]._mlir_type,
+            index = idx._mlir_value,
         ](ptr)
         return discr_ptr
 
@@ -367,7 +368,7 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
         Returns:
             True if the variant contains the requested type.
         """
-        alias idx = Self._check[T]()
+        comptime idx = Self._check[T]()
         return self._get_discr() == idx
 
     fn unsafe_get[T: AnyType](ref self) -> ref [self] T:
@@ -393,8 +394,8 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
     @staticmethod
     fn _check[T: AnyType]() -> Int:
         @parameter
-        for i in range(len(VariadicList(Ts))):
-            if _type_is_eq[Ts[i], T]():
+        for i in range(len(VariadicList(Self.Ts))):
+            if _type_is_eq[Self.Ts[i], T]():
                 return i
         return Self._sentinel
 

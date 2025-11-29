@@ -9,7 +9,7 @@ pkg_files(
         exclude = [
             "README.md",
             "BUILD.bazel",
-            "post-process-docs.py",
+            "code/**",
         ],
     ),
     prefix = "mojo",

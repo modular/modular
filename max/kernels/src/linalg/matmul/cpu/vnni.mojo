@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import prefetch
 from sys.info import CompilationTarget, align_of
 from sys.intrinsics import PrefetchOptions
@@ -66,7 +67,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                 processing tile to index the packed B matrix.
             tile_n_k: TODO
         """
-        alias c_type = c_local.dtype
+        comptime c_type = c_local.dtype
         # Seek outer indices in packed layout.
         var n_outer_idx = tile_n_k_idx[0] // kernel_cols
         var kl = tile_n_k_idx[1]
@@ -80,11 +81,11 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         @parameter
         if not is_tail:
             # Prefetch B matrix.
-            alias prefetch_distance = get_matmul_prefetch_b_distance_k()
+            comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
 
             @parameter
             if prefetch_distance > 0:
-                alias prefetch_offset = prefetch_distance * kernel_cols
+                comptime prefetch_offset = prefetch_distance * kernel_cols
 
                 @parameter
                 for idx in range(kernel_cols // simd_size):
@@ -101,7 +102,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         var a_local = NDBuffer[
             a.type,
             1,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             4 * kernel_rows,
             address_space = a.address_space,
         ].stack_allocation()
@@ -148,7 +149,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                     .load()
                 )
 
-                alias alignment = align_of[SIMD[c_type, simd_size]]()
+                comptime alignment = align_of[SIMD[c_type, simd_size]]()
                 # var c_idx = Index(idx0, idx1 * simd_size)
                 var c_val = c_local[idx0, idx1]
                 var b_val = b_ptr.offset(idx1 * simd_size).load[
@@ -163,7 +164,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                         bitcast[a.type, simd_size * 4](a_val2),
                         bitcast[b_packed.type, simd_size * 4](b_val),
                     )
-                elif saturated_vnni:
+                elif Self.saturated_vnni:
                     c_val = dot_i8_to_i32_saturated_x86[simd_size](
                         c_val, a_val, b_val
                     )

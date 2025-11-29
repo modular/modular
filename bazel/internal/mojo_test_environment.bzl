@@ -111,6 +111,10 @@ def _mojo_test_environment_implementation(ctx):
         linker_driver = linker_driver.replace("external/", "../")
     new_system_libs = []
     for lib in system_libs:
+        # This is only for cross compilation, which doesn't happen in the test
+        if lib.startswith("-resource-dir="):
+            continue
+
         if ctx.attr.short_path:
             new_system_libs.append(lib.replace("external/", "../"))
         else:

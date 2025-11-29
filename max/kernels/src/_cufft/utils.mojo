@@ -14,7 +14,7 @@
 from pathlib import Path
 from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle
+from sys.ffi import _Global, OwnedDLHandle
 
 from .types import Status
 
@@ -22,10 +22,12 @@ from .types import Status
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_CUFFT_LIBRARY_PATHS = List[Path](
+comptime CUDA_CUFFT_LIBRARY_PATHS: List[Path] = [
+    "libcufft.so.12",
+    "/usr/local/cuda/lib64/libcufft.so.12",
     "libcufft.so.11",
     "/usr/local/cuda/lib64/libcufft.so.11",
-)
+]
 
 
 fn _on_error_msg() -> Error:
@@ -43,12 +45,12 @@ fn _on_error_msg() -> Error:
     )
 
 
-alias CUDA_CUFFT_LIBRARY = _Global[
+comptime CUDA_CUFFT_LIBRARY = _Global[
     "CUDA_CUFFT_LIBRARY", _init_dylib, on_error_msg=_on_error_msg
 ]()
 
 
-fn _init_dylib() -> _OwnedDLHandle:
+fn _init_dylib() -> OwnedDLHandle:
     return _find_dylib[abort_on_failure=False](
         materialize[CUDA_CUFFT_LIBRARY_PATHS]()
     )

@@ -15,7 +15,17 @@
 from os import abort
 from sys.intrinsics import _type_is_eq
 
-from builtin.variadics import VariadicOf
+from builtin.variadics import (
+    VariadicOf,
+    VariadicPack,
+    Concatenated,
+    Reversed,
+    MakeVariadic,
+    EmptyVariadic,
+    variadic_size,
+    _MapVariadicAndIdxToType,
+    _ReduceVariadicAndIdxToVariadic,
+)
 
 from ._mixed_tuple import (
     ComptimeInt,
@@ -23,9 +33,10 @@ from ._mixed_tuple import (
     MixedTuple,
     MixedTupleLike,
     RuntimeInt,
+    _Flattened,
     crd2idx,
     mixed_int_tuple_to_int_tuple,
-    to_mixed_int_tuple,
+    _FlattenedOffsets,
 )
 from .int_tuple import IntTuple
 from .layout import LayoutTrait
@@ -46,19 +57,21 @@ struct MixedLayout[
         stride_types: The types for the stride dimensions.
     """
 
-    alias has_shape = True
-    """Indicates whether the layout has a valid shape."""
-
-    var shape: MixedTuple[*shape_types]
+    var shape: MixedTuple[*Self.shape_types]
     """The shape of the layout as a mixed tuple."""
 
-    var stride: MixedTuple[*stride_types]
+    var stride: MixedTuple[*Self.stride_types]
     """The stride of the layout as a mixed tuple."""
+
+    comptime rank = variadic_size(Self.shape_types)
+    comptime ALL_DIMS_KNOWN = MixedTuple[
+        *Self.shape_types
+    ].ALL_DIMS_KNOWN and MixedTuple[*Self.stride_types].ALL_DIMS_KNOWN
 
     fn __init__(
         out self,
-        shape: MixedTuple[*shape_types],
-        stride: MixedTuple[*stride_types],
+        shape: MixedTuple[*Self.shape_types],
+        stride: MixedTuple[*Self.stride_types],
     ):
         """Initialize a mixed layout with shape and stride.
 
@@ -67,21 +80,25 @@ struct MixedLayout[
             stride: The stride as a MixedTuple.
         """
         constrained[
-            __type_of(shape).__len__() == __type_of(stride).__len__(),
+            type_of(shape).__len__() == type_of(stride).__len__(),
             String(
                 (
                     "Shape and stride must have the same length, but got shape"
                     " length: "
                 ),
-                __type_of(shape).__len__(),
+                type_of(shape).__len__(),
                 " stride length: ",
-                __type_of(stride).__len__(),
+                type_of(stride).__len__(),
             ),
         ]()
         self.shape = shape
         self.stride = stride
 
-    fn __call__[index_type: MixedTupleLike](self, index: index_type) -> Int:
+    fn __call__[
+        index_type: MixedTupleLike,
+        *,
+        linear_idx_type: DType = DType.int64,
+    ](self, index: index_type) -> Scalar[linear_idx_type]:
         """Maps a logical coordinate to a linear memory index.
 
         Args:
@@ -90,7 +107,7 @@ struct MixedLayout[
         Returns:
             The linear memory index corresponding to the given coordinates.
         """
-        return Int(crd2idx(index, self.shape, self.stride))
+        return crd2idx[out_type=linear_idx_type](index, self.shape, self.stride)
 
     fn size(self) -> Int:
         """Returns the total number of elements in the layout's domain.
@@ -103,7 +120,9 @@ struct MixedLayout[
         """
         return self.shape.product()
 
-    fn cosize(self) -> Int:
+    fn cosize[
+        linear_idx_type: DType = DType.int64
+    ](self) -> Scalar[linear_idx_type]:
         """Returns the size of the memory region spanned by the layout.
 
         For a layout with shape `(m, n)` and stride `(r, s)`, this returns
@@ -112,7 +131,7 @@ struct MixedLayout[
         Returns:
             The size of the memory region required by the layout.
         """
-        return self(Idx(self.size() - 1)) + 1
+        return self[linear_idx_type=linear_idx_type](Idx(self.size() - 1)) + 1
 
     fn to_layout(self) -> Layout:
         return Layout(
@@ -121,71 +140,156 @@ struct MixedLayout[
         )
 
 
-# TODO(MOCO-2182): These functions don't work for nested layouts right now.
-# E.g. ((5, 4), (3, 2)) should have a row-major stride of ((24, 6), (2, 1)).
-# A correct solution may need to recurse into the nested layouts in the return
-# type.
+comptime _RowMajor[
+    *element_types: MixedTupleLike
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal = EmptyVariadic[MixedTupleLike],
+    Variadic = Reversed[*_Flattened[*element_types]],
+    Reducer=_RowMajorMapper,
+]
 
 
-fn make_row_major[
-    First: MixedTupleLike,
-    Second: MixedTupleLike, //,
-](shape: MixedTuple[First, Second]) -> __type_of(
-    MixedLayout(
-        shape=MixedTuple(shape[0], shape[1]),
-        stride=MixedTuple(shape[1], Idx[1]()),
+comptime _RowMajorMapper[
+    Prev: VariadicOf[MixedTupleLike],
+    From: VariadicOf[MixedTupleLike],
+    idx: Int,
+] = Concatenated[
+    MakeVariadic[T=MixedTupleLike, ComptimeInt[1]] if idx
+    == 0 else (
+        MakeVariadic[
+            T=MixedTupleLike,
+            RuntimeInt[
+                From[idx - 1].DTYPE if From[idx - 1].STATIC_VALUE
+                == -1 else Prev[0].DTYPE
+            ],
+        ] if From[idx - 1].STATIC_VALUE
+        == -1
+        or Prev[0].STATIC_VALUE
+        == -1 else MakeVariadic[
+            T=MixedTupleLike,
+            ComptimeInt[From[idx - 1].STATIC_VALUE * Prev[0].STATIC_VALUE],
+        ]
+    ),
+    Prev,
+]
+
+
+fn unflatten[
+    structure_types: VariadicOf[MixedTupleLike],
+    flat_types: VariadicOf[MixedTupleLike],
+](flat_tuple: MixedTuple[*flat_types]) -> MixedTuple[*structure_types]:
+    """Unflatten a flat tuple back to match a nested structure.
+
+    This reconstructs a nested tuple structure by extracting elements from a
+    flat tuple based on the structure template. The values come from flat_tuple,
+    but the nesting structure matches structure_types.
+
+    Parameters:
+        structure_types: The desired nested structure (values ignored, only structure used).
+        flat_types: The types of the flat tuple elements.
+
+    Args:
+        flat_tuple: The flat tuple containing the actual values.
+
+    Returns:
+        A nested tuple with the structure of structure_types and values from flat_tuple.
+    """
+    comptime Offsets = _FlattenedOffsets[*structure_types]
+    var result_tuple: Tuple[*structure_types]
+
+    __mlir_op.`lit.ownership.mark_initialized`(
+        __get_mvalue_as_litref(result_tuple)
     )
-):
-    return MixedLayout(shape=shape, stride=MixedTuple(shape[1], Idx[1]()))
+
+    @parameter
+    for i in range(variadic_size(structure_types)):
+        var result_ptr = UnsafePointer(to=result_tuple[i])
+        comptime T = structure_types[i]
+        comptime offset = Offsets[i].STATIC_VALUE
+
+        @parameter
+        if T.IS_TUPLE:
+            # For nested tuples, we need to recursively unflatten
+            # Extract the slice of flat_tuple that corresponds to this nested element
+            comptime count = variadic_size(_Flattened[*T.VariadicType])
+
+            # Build a tuple containing just the elements for this nested structure
+            var nested_flat: Tuple[*_Flattened[*T.VariadicType]]
+            __mlir_op.`lit.ownership.mark_initialized`(
+                __get_mvalue_as_litref(nested_flat)
+            )
+
+            @parameter
+            for j in range(count):
+                var nested_flat_ptr = UnsafePointer(to=nested_flat[j])
+                nested_flat_ptr.init_pointee_copy(
+                    rebind[type_of(nested_flat).element_types[j]](
+                        flat_tuple[offset + j]
+                    )
+                )
+
+            var nested = unflatten[T.VariadicType, _Flattened[*T.VariadicType]](
+                MixedTuple(nested_flat^)
+            )
+            result_ptr.init_pointee_move(rebind[T](nested^))
+        else:
+            # For leaf values, copy directly from flat_tuple
+            result_ptr.init_pointee_copy(rebind[T](flat_tuple[offset]))
+
+    return MixedTuple(result_tuple^)
 
 
-# TODO: A cleaner solution for changing return type based on argument types than
-# overloading, since the current overloading algorithm reports ambiguity.
-fn make_row_major[
-    First: MixedTupleLike,
-    Second: Int,
-    Third: Int, //,
-](
-    shape: MixedTuple[First, ComptimeInt[Second], ComptimeInt[Third]]
-) -> __type_of(
-    MixedLayout(
-        shape=MixedTuple(shape[0], shape[1], shape[2]),
-        stride=MixedTuple(
-            ComptimeInt[Second * Third](),
-            ComptimeInt[Third](),
-            Idx[1](),
-        ),
-    )
-):
-    return MixedLayout(
-        shape=shape,
-        stride=MixedTuple(
-            ComptimeInt[Second * Third](),
-            ComptimeInt[Third](),
-            Idx[1](),
-        ),
+@always_inline
+fn row_major(
+    var tuple: MixedTuple,
+) -> MixedLayout[
+    _Flattened[*tuple.element_types], _RowMajor[*tuple.element_types]
+]:
+    # Flatten the shape and compute row-major strides on the flattened representation
+    # For now, we keep both shape and strides flat (not nested)
+
+    var flat_shape = tuple.flatten()
+    comptime FlatTypes = _Flattened[*tuple.element_types]
+    comptime RowMajorTypes = _RowMajor[*tuple.element_types]
+    comptime flat_rank = variadic_size(FlatTypes)
+
+    var flat_strides: Tuple[*RowMajorTypes]
+
+    __mlir_op.`lit.ownership.mark_initialized`(
+        __get_mvalue_as_litref(flat_strides)
     )
 
+    # Compute row-major strides on the flattened shape
+    # Row-major means rightmost dimension has stride 1,
+    # and each preceding dimension has stride equal to the product of all following dimensions
+    @parameter
+    for i in range(flat_rank):
+        comptime idx = flat_rank - 1 - i  # Process in reverse order
+        var stride_ptr = UnsafePointer(to=flat_strides[idx])
 
-fn make_row_major[
-    First: MixedTupleLike,
-    Second: MixedTupleLike,
-    Third: MixedTupleLike, //,
-](shape: MixedTuple[First, Second, Third]) -> __type_of(
-    MixedLayout(
-        shape=MixedTuple(shape[0], shape[1], shape[2]),
-        stride=MixedTuple(
-            RuntimeInt(shape[1].product() * shape[2].product()),
-            shape[2],
-            Idx[1](),
-        ),
-    )
-):
-    return MixedLayout(
-        shape=shape,
-        stride=MixedTuple(
-            RuntimeInt(shape[1].product() * shape[2].product()),
-            shape[2],
-            Idx[1](),
-        ),
-    )
+        @parameter
+        if i == 0:
+            # Rightmost dimension always has stride 1
+            comptime StrideType = RowMajorTypes[idx]
+            stride_ptr.init_pointee_copy(rebind[StrideType](Idx[1]()))
+        else:
+            # Calculate stride as product of shape[idx+1] * stride[idx+1]
+            comptime StrideType = RowMajorTypes[idx]
+
+            @parameter
+            if StrideType.STATIC_VALUE != -1:
+                # Stride is compile-time known (both shape and prev stride are compile-time)
+                comptime stride_val = StrideType.STATIC_VALUE
+                stride_ptr.init_pointee_copy(
+                    rebind[StrideType](Idx[stride_val]())
+                )
+            else:
+                # At least one is runtime, compute at runtime
+                var stride_val = (
+                    flat_shape[idx + 1].value() * flat_strides[idx + 1].value()
+                )
+                stride_ptr.init_pointee_copy(
+                    rebind[StrideType](RuntimeInt[StrideType.DTYPE](stride_val))
+                )
+
+    return MixedLayout(flat_shape^, MixedTuple(flat_strides^))

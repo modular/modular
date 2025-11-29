@@ -34,21 +34,21 @@ from utils import IndexList, StaticTuple
 fn test_index_tensor_DLRM() raises:
     print("== test_index_tensor_DLRM")
 
-    alias input_type = DType.int32
-    alias dim_0 = 4096
-    alias dim_1 = 9
-    alias dim_2 = 9
+    comptime input_type = DType.int32
+    comptime dim_0 = 4096
+    comptime dim_1 = 9
+    comptime dim_2 = 9
 
-    alias batch_dims = 1
-    alias index_len = 45
+    comptime batch_dims = 1
+    comptime index_len = 45
 
-    alias input_rank = 3
-    alias indices_rank = 2
-    alias output_rank = 2
+    comptime input_rank = 3
+    comptime indices_rank = 2
+    comptime output_rank = 2
 
     # dim_0 x dim_1 x dim_2 input tensor.
-    alias input_shape = IndexList[3](dim_0, dim_1, dim_2)
-    alias input_layout = Layout.row_major(input_shape)
+    comptime input_shape = IndexList[3](dim_0, dim_1, dim_2)
+    comptime input_layout = Layout.row_major(input_shape)
     var input_stack = InlineArray[Scalar[input_type], input_layout.size()](
         uninitialized=True
     )
@@ -81,8 +81,8 @@ fn test_index_tensor_DLRM() raises:
     # where x = [0, input.dim(0)), n = [0, index_a.dim(0))
 
     # Reference output of shape dim_0 x index_len.
-    alias ref_shape = IndexList[2](dim_0, index_len)
-    alias ref_layout = Layout.row_major(ref_shape)
+    comptime ref_shape = IndexList[2](dim_0, index_len)
+    comptime ref_layout = Layout.row_major(ref_shape)
     var ref_stack = InlineArray[Scalar[input_type], ref_layout.size()](
         uninitialized=True
     )
@@ -102,8 +102,8 @@ fn test_index_tensor_DLRM() raises:
         indices[i, 0] = index_a[i]
         indices[i, 1] = index_b[i]
 
-    alias input_dyn_layout = Layout.row_major[input.rank]()
-    alias indices_dyn_layout = Layout.row_major[indices.rank]()
+    comptime input_dyn_layout = Layout.row_major[input.rank]()
+    comptime indices_dyn_layout = Layout.row_major[indices.rank]()
     var output_shape = index_tensor_shape[
         output_rank,
         input_type,
@@ -125,7 +125,7 @@ fn test_index_tensor_DLRM() raises:
     var output_data_stack = InlineArray[Scalar[input_type], dim_0 * index_len](
         uninitialized=True
     )
-    alias output_layout = Layout.row_major[output_rank]()
+    comptime output_layout = Layout.row_major[output_rank]()
     var output_data_buffer = LayoutTensor[input_type, output_layout](
         output_data_stack, RuntimeLayout[output_layout].row_major(output_shape)
     )
@@ -154,23 +154,23 @@ fn test_index_tensor_DLRM() raises:
 fn test_index_tensor_DLRM_batch() raises:
     print("== test_index_tensor_DLRM_batch")
 
-    alias input_type = DType.int32
+    comptime input_type = DType.int32
 
-    alias dim_0 = 2
-    alias dim_1 = 2
-    alias dim_3 = 3
-    alias dim_4 = 4
+    comptime dim_0 = 2
+    comptime dim_1 = 2
+    comptime dim_3 = 3
+    comptime dim_4 = 4
 
-    alias batch_dims = 2
-    alias index_len = 5
+    comptime batch_dims = 2
+    comptime index_len = 5
 
-    alias input_rank = 4
-    alias indices_rank = 2
-    alias output_rank = 3
+    comptime input_rank = 4
+    comptime indices_rank = 2
+    comptime output_rank = 3
 
     # dim_0 x dim_1 x dim_3 x dim_4 input tensor.
-    alias input_shape = IndexList[4](dim_0, dim_1, dim_3, dim_4)
-    alias input_layout = Layout.row_major(input_shape)
+    comptime input_shape = IndexList[4](dim_0, dim_1, dim_3, dim_4)
+    comptime input_layout = Layout.row_major(input_shape)
     var input_stack = InlineArray[Scalar[input_type], input_layout.size()](
         uninitialized=True
     )
@@ -202,8 +202,8 @@ fn test_index_tensor_DLRM_batch() raises:
     # n = [0, index_a.dim(0))
 
     # Reference output of shape dim_0 x index_len
-    alias ref_shape = IndexList[3](dim_0, dim_1, index_len)
-    alias ref_layout = Layout.row_major(ref_shape)
+    comptime ref_shape = IndexList[3](dim_0, dim_1, index_len)
+    comptime ref_layout = Layout.row_major(ref_shape)
     var ref_stack = InlineArray[Scalar[input_type], ref_layout.size()](
         uninitialized=True
     )
@@ -225,8 +225,8 @@ fn test_index_tensor_DLRM_batch() raises:
         indices[i, 0] = index_a[i]
         indices[i, 1] = index_b[i]
 
-    alias input_dyn_layout = Layout.row_major[input.rank]()
-    alias indices_dyn_layout = Layout.row_major[indices.rank]()
+    comptime input_dyn_layout = Layout.row_major[input.rank]()
+    comptime indices_dyn_layout = Layout.row_major[indices.rank]()
     var output_shape = index_tensor_shape[
         output_rank,
         input_type,
@@ -248,7 +248,7 @@ fn test_index_tensor_DLRM_batch() raises:
     var output_data_stack = InlineArray[
         Scalar[input_type], dim_0 * dim_1 * index_len
     ](uninitialized=True)
-    alias output_layout = Layout.row_major[output_rank]()
+    comptime output_layout = Layout.row_major[output_rank]()
     var output_data_buffer = LayoutTensor[input_type, output_layout](
         output_data_stack, RuntimeLayout[output_layout].row_major(output_shape)
     )
@@ -278,21 +278,21 @@ fn test_index_tensor_DLRM_batch() raises:
 fn test_index_tensor_CLIPVIT() raises:
     print("== test_index_tensor_CLIPVIT")
 
-    alias input_type = DType.int32
-    alias dim_0 = 2
-    alias dim_1 = 2
-    alias dim_2 = 768
+    comptime input_type = DType.int32
+    comptime dim_0 = 2
+    comptime dim_1 = 2
+    comptime dim_2 = 768
 
-    alias batch_dims = 0
-    alias index_len = 2
+    comptime batch_dims = 0
+    comptime index_len = 2
 
-    alias input_rank = 3
-    alias indices_rank = 2
-    alias output_rank = 2
+    comptime input_rank = 3
+    comptime indices_rank = 2
+    comptime output_rank = 2
 
     # dim_0 x dim_1 x dim_2 input tensor.
-    alias input_shape = IndexList[3](dim_0, dim_1, dim_2)
-    alias input_layout = Layout.row_major(input_shape)
+    comptime input_shape = IndexList[3](dim_0, dim_1, dim_2)
+    comptime input_layout = Layout.row_major(input_shape)
     var input_stack = InlineArray[Scalar[input_type], input_layout.size()](
         uninitialized=True
     )
@@ -319,8 +319,8 @@ fn test_index_tensor_CLIPVIT() raises:
 
     # Reference output of shape dim_0 x dim_2
 
-    alias ref_shape = IndexList[2](dim_0, dim_2)
-    alias ref_layout = Layout.row_major(ref_shape)
+    comptime ref_shape = IndexList[2](dim_0, dim_2)
+    comptime ref_layout = Layout.row_major(ref_shape)
     var ref_stack = InlineArray[Scalar[input_type], ref_layout.size()](
         uninitialized=True
     )
@@ -348,8 +348,8 @@ fn test_index_tensor_CLIPVIT() raises:
     indices[1, 1] = index_b[1]
     # TODO: Or index_a[0], index_a[1] and index_b[0], index_b[1]???
 
-    alias input_dyn_layout = Layout.row_major[input.rank]()
-    alias indices_dyn_layout = Layout.row_major[indices.rank]()
+    comptime input_dyn_layout = Layout.row_major[input.rank]()
+    comptime indices_dyn_layout = Layout.row_major[indices.rank]()
     var output_shape = gather_nd_shape[
         output_rank,
         input_type,
@@ -371,7 +371,7 @@ fn test_index_tensor_CLIPVIT() raises:
     var output_data_stack = InlineArray[Scalar[input_type], dim_0 * dim_2](
         uninitialized=True
     )
-    alias output_layout = Layout.row_major[output_rank]()
+    comptime output_layout = Layout.row_major[output_rank]()
     var output_data_buffer = LayoutTensor[input_type, output_layout](
         output_data_stack, RuntimeLayout[output_layout].row_major(output_shape)
     )
@@ -401,22 +401,22 @@ fn test_index_tensor_CLIPVIT() raises:
 fn test_index_tensor_llama2_mistral() raises:
     print("== test_index_tensor_llama2_mistral")
 
-    alias input_type = DType.int32
-    alias index_type = DType.uint64
-    alias dim_0 = 257
-    alias dim_1 = 128
+    comptime input_type = DType.int32
+    comptime index_type = DType.uint64
+    comptime dim_0 = 257
+    comptime dim_1 = 128
 
-    alias batch_dims = 0
-    alias index_dim_0 = 1
-    alias index_dim_1 = 1
+    comptime batch_dims = 0
+    comptime index_dim_0 = 1
+    comptime index_dim_1 = 1
 
-    alias input_rank = 2
-    alias index_rank = 2
-    alias output_rank = 3
+    comptime input_rank = 2
+    comptime index_rank = 2
+    comptime output_rank = 3
 
     # dim_0 x dim_1 input tensor.
-    alias input_shape = IndexList[2](dim_0, dim_1)
-    alias input_layout = Layout.row_major(input_shape)
+    comptime input_shape = IndexList[2](dim_0, dim_1)
+    comptime input_layout = Layout.row_major(input_shape)
     var input_stack = InlineArray[Scalar[input_type], input_layout.size()](
         uninitialized=True
     )
@@ -428,8 +428,8 @@ fn test_index_tensor_llama2_mistral() raises:
     # We have one 2D tensor with index_len elements each.
 
     # index_len-element input tensor.
-    alias index_shape = IndexList[2](index_dim_0, index_dim_1)
-    alias index_layout = Layout.row_major(index_shape)
+    comptime index_shape = IndexList[2](index_dim_0, index_dim_1)
+    comptime index_layout = Layout.row_major(index_shape)
     var a_stack = InlineArray[UInt64, index_layout.size()](uninitialized=True)
     var index_a = LayoutTensor[index_type, index_layout](a_stack)
     # Initialize with one.
@@ -440,8 +440,8 @@ fn test_index_tensor_llama2_mistral() raises:
     # This is effectively a gather operation.
 
     # Reference output of shape index_dim_0 x index_dim_1 x dim_1.
-    alias ref_shape = IndexList[3](index_dim_0, index_dim_1, dim_1)
-    alias ref_layout = Layout.row_major(ref_shape)
+    comptime ref_shape = IndexList[3](index_dim_0, index_dim_1, dim_1)
+    comptime ref_layout = Layout.row_major(ref_shape)
     var ref_stack = InlineArray[Scalar[input_type], ref_layout.size()](
         uninitialized=True
     )
@@ -451,8 +451,8 @@ fn test_index_tensor_llama2_mistral() raises:
             for k in range(dim_1):
                 ref_output[i, j, k] = input[Int(index_a[i, j]), k]
 
-    alias input_dyn_layout = Layout.row_major[input.rank]()
-    alias indices_dyn_layout = Layout.row_major[index_a.rank]()
+    comptime input_dyn_layout = Layout.row_major[input.rank]()
+    comptime indices_dyn_layout = Layout.row_major[index_a.rank]()
     var output_shape = gather_shape[output_rank, input_type, index_type](
         LayoutTensor[input.dtype, input_dyn_layout](
             input.ptr,
@@ -468,7 +468,7 @@ fn test_index_tensor_llama2_mistral() raises:
     var output_data_stack = InlineArray[
         Scalar[input_type], index_dim_0 * index_dim_1 * dim_1
     ](uninitialized=True)
-    alias output_layout = Layout.row_major[output_rank]()
+    comptime output_layout = Layout.row_major[output_rank]()
     var output_data_buffer = LayoutTensor[input_type, output_layout](
         output_data_stack, RuntimeLayout[output_layout].row_major(output_shape)
     )
@@ -497,13 +497,13 @@ fn test_advanced_indexing_getitem() raises:
     print("== test_advanced_indexing_getitem")
 
     # Initialize input with sequential data for test purposes.
-    alias input_type = DType.int32
-    alias input_rank = 4
-    alias input_shape = IndexList[input_rank](2, 3, 5, 6)
+    comptime input_type = DType.int32
+    comptime input_rank = 4
+    comptime input_shape = IndexList[input_rank](2, 3, 5, 6)
     var input_stack = InlineArray[
         Scalar[input_type], Int(input_shape.flattened_length())
     ](uninitialized=True)
-    alias input_layout = Layout.row_major[input_rank]()
+    comptime input_layout = Layout.row_major[input_rank]()
     var input_buffer = LayoutTensor[input_type, input_layout](
         input_stack, RuntimeLayout[input_layout].row_major(input_shape)
     )
@@ -511,41 +511,41 @@ fn test_advanced_indexing_getitem() raises:
         input_buffer.ptr[i] = i
 
     # Create tensors for indexing in a somewhat predictable pattern
-    alias index_rank = 2
-    alias index_shape = IndexList[index_rank](2, 3)
-    alias index_type = DType.uint64
+    comptime index_rank = 2
+    comptime index_shape = IndexList[index_rank](2, 3)
+    comptime index_type = DType.uint64
     var a_stack = InlineArray[
         Scalar[index_type], Int(index_shape.flattened_length())
     ](uninitialized=True)
     var b_stack = InlineArray[
         Scalar[index_type], Int(index_shape.flattened_length())
     ](uninitialized=True)
-    alias index_layout = Layout.row_major[index_rank]()
-    var index_a = LayoutTensor[index_type, index_layout, MutableAnyOrigin](
+    comptime index_layout = Layout.row_major[index_rank]()
+    var index_a = LayoutTensor[index_type, index_layout, MutAnyOrigin](
         a_stack, RuntimeLayout[index_layout].row_major(index_shape)
     )
-    var index_b = LayoutTensor[index_type, index_layout, MutableAnyOrigin](
+    var index_b = LayoutTensor[index_type, index_layout, MutAnyOrigin](
         b_stack, RuntimeLayout[index_layout].row_major(index_shape)
     )
     for i in range(index_shape.flattened_length()):
         index_a.ptr[i] = i % 5
         index_b.ptr[i] = (i + 1) % 5
     var indices = StaticTuple[
-        LayoutTensor[index_type, index_layout, MutableAnyOrigin], 2
+        LayoutTensor[index_type, index_layout, MutAnyOrigin], 2
     ](index_a, index_b)
 
     # Create output tensor
-    alias output_rank = input_rank + index_rank - num_index_tensors
-    alias ref_shape = IndexList[output_rank](2, 3, 2, 3)
-    alias start_axis = 2
-    alias num_index_tensors = 2
-    alias output_shape = advanced_indexing_getitem_shape[
+    comptime output_rank = input_rank + index_rank - num_index_tensors
+    comptime ref_shape = IndexList[output_rank](2, 3, 2, 3)
+    comptime start_axis = 2
+    comptime num_index_tensors = 2
+    comptime output_shape = advanced_indexing_getitem_shape[
         start_axis=start_axis, num_index_tensors=num_index_tensors
     ](input_shape, index_shape)
     var output_data_stack = InlineArray[
         Scalar[input_type], output_shape.flattened_length()
     ](uninitialized=True)
-    alias output_layout = Layout.row_major[output_rank]()
+    comptime output_layout = Layout.row_major[output_rank]()
     var output_data_buffer = LayoutTensor[input_type, output_layout](
         output_data_stack, RuntimeLayout[output_layout].row_major(output_shape)
     )
@@ -642,23 +642,23 @@ fn test_advanced_indexing_setitem_inplace() raises:
     print("== test_advanced_indexing_setitem_inplace")
 
     # Create input vector
-    alias input_type = DType.int32
-    alias input_rank = 4
-    alias input_shape = IndexList[input_rank](2, 2, 4, 4)
+    comptime input_type = DType.int32
+    comptime input_rank = 4
+    comptime input_shape = IndexList[input_rank](2, 2, 4, 4)
     var input_stack = InlineArray[
         Scalar[input_type], Int(input_shape.flattened_length())
     ](uninitialized=True)
-    alias input_layout = Layout.row_major[input_rank]()
+    comptime input_layout = Layout.row_major[input_rank]()
     var input_buffer = LayoutTensor[input_type, input_layout](
         input_stack, RuntimeLayout[input_layout].row_major(input_shape)
     ).fill(0)
 
     # Create indexing tensors, ensure no pair of indices point to the same
     # location in `input` to avoid nondeterministic behavior.
-    alias index_rank = 2
-    alias num_index_tensors = 2
-    alias index_shape = IndexList[index_rank](2, 2)
-    alias index_type = DType.uint64
+    comptime index_rank = 2
+    comptime num_index_tensors = 2
+    comptime index_shape = IndexList[index_rank](2, 2)
+    comptime index_type = DType.uint64
 
     var a_stack = InlineArray[
         Scalar[index_type], Int(index_shape.flattened_length())
@@ -666,27 +666,27 @@ fn test_advanced_indexing_setitem_inplace() raises:
     var b_stack = InlineArray[
         Scalar[index_type], Int(index_shape.flattened_length())
     ](uninitialized=True)
-    alias index_layout = Layout.row_major[index_rank]()
-    var index_a = LayoutTensor[index_type, index_layout, MutableAnyOrigin](
+    comptime index_layout = Layout.row_major[index_rank]()
+    var index_a = LayoutTensor[index_type, index_layout, MutAnyOrigin](
         a_stack, RuntimeLayout[index_layout].row_major(index_shape)
     )
-    var index_b = LayoutTensor[index_type, index_layout, MutableAnyOrigin](
+    var index_b = LayoutTensor[index_type, index_layout, MutAnyOrigin](
         b_stack, RuntimeLayout[index_layout].row_major(index_shape)
     )
     for i in range(index_shape.flattened_length()):
         index_a.ptr[i] = i % 4
         index_b.ptr[i] = (i + 1) % 4
     var indices = StaticTuple[
-        LayoutTensor[index_type, index_layout, MutableAnyOrigin], 2
+        LayoutTensor[index_type, index_layout, MutAnyOrigin], 2
     ](index_a, index_b)
 
     # Create the updates list and set it sequential data to make it easy to read
-    alias updates_rank = 4
-    alias updates_shape = IndexList[updates_rank](2, 2, 2, 2)
+    comptime updates_rank = 4
+    comptime updates_shape = IndexList[updates_rank](2, 2, 2, 2)
     var updates_stack = InlineArray[
         Scalar[input_type], Int(updates_shape.flattened_length())
     ](uninitialized=True)
-    alias updates_layout = Layout.row_major[updates_rank]()
+    comptime updates_layout = Layout.row_major[updates_rank]()
     var updates = LayoutTensor[input_type, updates_layout](
         updates_stack, RuntimeLayout[updates_layout].row_major(updates_shape)
     )
@@ -707,7 +707,7 @@ fn test_advanced_indexing_setitem_inplace() raises:
     ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
         return indices[indices_index].load[width=1](coordinates)
 
-    alias start_axis = 2
+    comptime start_axis = 2
     advanced_indexing_setitem_inplace[
         index_rank=index_rank,
         start_axis=start_axis,

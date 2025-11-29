@@ -25,14 +25,12 @@ struct RuntimeStruct:
 @nonmaterializable(RuntimeStruct)
 @register_passable("trivial")
 struct ParamStruct[param_value: Int]:
-    var thing: UnsafePointer[Int]
-
     fn __init__(out self):
-        self.thing = UnsafePointer[Int].alloc(1)
-        self.thing[0] = self.param_value
+        pass
 
     fn __add__(
-        self, rhs: ParamStruct
+        self,
+        rhs: ParamStruct,
     ) -> ParamStruct[self.param_value + rhs.param_value]:
         return ParamStruct[self.param_value + rhs.param_value]()
 

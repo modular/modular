@@ -150,7 +150,7 @@ the base pointer:
 ```mojo
 alias a_tma_load_size = a_desc_layout.size()
 var rank_n = block_id_in_cluster.y
-var a_smem_slice = __type_of(a_smem_tile)(
+var a_smem_slice = type_of(a_smem_tile)(
     a_smem_tile.ptr + rank_n * a_tma_load_size
 )
 
@@ -351,7 +351,7 @@ follows:
         for i in range(num_iters):
             ...
       mma_mbar[stage].wait(phase)
-      # issue TMA loads and singals tma_bar
+      # issue TMA loads and signals tma_bar
       ...
 
     if WarpRole.is_mma():
@@ -386,7 +386,7 @@ are ready for output. The high level structure becomes something like:
         for i in range(num_iters):
             ...
       mma_mbar[stage].wait(phase)
-      # issue TMA loads and singals tma_bar
+      # issue TMA loads and signals tma_bar
       ...
     if WarpRole.is_mma():
         for i in range(num_iters):
@@ -466,7 +466,7 @@ Figure 13: iteration 1 of the double-buffer pipeline
 Figure 14: iteration 2 of the double-buffer pipeline
 ///
 
-To implement the pipeline stategy in Mojo, we first break down the output into
+To implement the pipeline strategy in Mojo, we first break down the output into
 `MMA_N / StageN = 8` iterations. At each iteration, we process `stageN = 32`
 columns from TMEM. The TMEM load and `stmatrix` code is omitted for simplicity,
 but the code is largely same as in previous kernels with the exception of

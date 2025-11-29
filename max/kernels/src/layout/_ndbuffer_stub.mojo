@@ -16,16 +16,14 @@ from sys import align_of, size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from gpu.id import thread_idx
-from gpu.memory import CacheEviction, async_copy
+from gpu import thread_idx, CacheEviction, async_copy
 from layout import Layout, LayoutTensor
 from layout.int_tuple import depth
 from layout.layout import make_layout
-from memory.pointer import _GPUAddressSpace
 
 from utils import IndexList, StaticTuple
 
-alias _swizzle_signature = fn[dtype: DType] (Scalar[dtype]) -> Scalar[dtype]
+comptime _swizzle_signature = fn[dtype: DType] (Scalar[dtype]) -> Scalar[dtype]
 
 
 # TileMask holds information collected by composed tile operations to
@@ -38,13 +36,13 @@ struct TileMask[
     element_size: IndexList[rank] = IndexList[rank](1),
     element_stride: IndexList[rank] = IndexList[rank](1),
 ](ImplicitlyCopyable, Movable):
-    var max_dim: IndexList[rank]
-    var offset: IndexList[rank]
+    var max_dim: IndexList[Self.rank]
+    var offset: IndexList[Self.rank]
 
     fn __init__(
         out self,
-        max_dim: IndexList[rank],
-        offset: IndexList[rank] = IndexList[rank](0),
+        max_dim: IndexList[Self.rank],
+        offset: IndexList[Self.rank] = IndexList[Self.rank](0),
     ):
         self.max_dim = max_dim
         self.offset = offset
@@ -53,22 +51,26 @@ struct TileMask[
     # accessed at the given `point` at this axis.
     #
     @always_inline
-    fn access_mask(self, point: IndexList[rank]) -> StaticTuple[Bool, rank]:
-        var mask = StaticTuple[Bool, rank]()
+    fn access_mask(
+        self, point: IndexList[Self.rank]
+    ) -> StaticTuple[Bool, Self.rank]:
+        var mask = StaticTuple[Bool, Self.rank]()
 
         @parameter
-        for axis in range(rank):
+        for axis in range(Self.rank):
 
             @parameter
-            if element_size[axis] == 1:
+            if Self.element_size[axis] == 1:
                 mask[axis] = (
-                    self.offset[axis] + point[axis] * element_stride[axis]
+                    self.offset[axis] + point[axis] * Self.element_stride[axis]
                 ) < self.max_dim[axis]
             else:
                 mask[axis] = (
                     self.offset[axis]
-                    + point[axis] * element_size[axis] * element_stride[axis]
-                    + element_size[axis]
+                    + point[axis]
+                    * Self.element_size[axis]
+                    * Self.element_stride[axis]
+                    + Self.element_size[axis]
                 ) < self.max_dim[axis]
 
         return mask
@@ -77,18 +79,20 @@ struct TileMask[
     #
     @always_inline
     fn access_size(
-        self, point: IndexList[rank], dim_mask: StaticTuple[Bool, rank]
-    ) -> IndexList[rank]:
-        var size = IndexList[rank]()
+        self,
+        point: IndexList[Self.rank],
+        dim_mask: StaticTuple[Bool, Self.rank],
+    ) -> IndexList[Self.rank]:
+        var size = IndexList[Self.rank]()
 
         @parameter
-        for i in range(rank):
+        for i in range(Self.rank):
             if dim_mask[i]:
-                size[i] = element_size[i]
+                size[i] = Self.element_size[i]
             else:
                 var start_index = (
                     self.offset[i]
-                    + point[i] * element_size[i] * element_stride[i]
+                    + point[i] * Self.element_size[i] * Self.element_stride[i]
                 )
                 size[i] = max(0, self.max_dim[i] - start_index)
 
@@ -179,8 +183,8 @@ fn _distribute_mask[
 
     @parameter
     for i in range(rank):
-        alias shape_i = Int(thread_layout.shape[i])
-        alias stride_i = Int(thread_layout.stride[i])
+        comptime shape_i = Int(thread_layout.shape[i])
+        comptime stride_i = Int(thread_layout.stride[i])
         var thread_coord_i = (thread_id // stride_i) % shape_i
         res.offset[i] += thread_coord_i
 
@@ -238,7 +242,7 @@ fn distribute[
 
     @parameter
     for i in range(rank):
-        alias thread_shape_i = Int(thread_layout.shape[i])
+        comptime thread_shape_i = Int(thread_layout.shape[i])
         res_shape[i] = buff.dim[i]() // thread_shape_i
         res_strides[i] = buff.stride[i]() * thread_shape_i
 
@@ -246,14 +250,14 @@ fn distribute[
 
     @parameter
     for i in range(rank):
-        alias shape_i = Int(thread_layout.shape[i])
-        alias stride_i = Int(thread_layout.stride[i])
+        comptime shape_i = Int(thread_layout.shape[i])
+        comptime stride_i = Int(thread_layout.stride[i])
         var thread_coords_i = (thread_id // stride_i) % shape_i
         thread_offset += thread_coords_i * buff.stride[i]()
 
     @parameter
     if swizzle:
-        alias swizzle_fn = swizzle.value()
+        comptime swizzle_fn = swizzle.value()
         thread_offset = (
             swizzle_fn[DType.int32](thread_offset // element_size)
             * element_size
@@ -269,7 +273,7 @@ fn distribute[
 
 @always_inline("nodebug")
 fn _vectorize_shape[*sizes: Int](shape: DimList) -> DimList:
-    alias rank = stdlib.builtin.variadic_size(sizes)
+    comptime rank = stdlib.builtin.variadic_size(sizes)
 
     constrained[
         rank <= 3,
@@ -280,7 +284,7 @@ fn _vectorize_shape[*sizes: Int](shape: DimList) -> DimList:
 
     @parameter
     for i in range(rank):
-        alias size_i = sizes[i]
+        comptime size_i = sizes[i]
 
         if shape.at[i]().is_dynamic():
             res[i] = Dim()
@@ -313,10 +317,10 @@ fn _to_static_tuple[*sizes: Int, rank: Int]() -> IndexList[rank]:
 struct ElementLayout[rank: Int, shape: IndexList[rank]](
     Defaultable, ImplicitlyCopyable, Movable, Stringable, Writable
 ):
-    var stride: IndexList[rank]
+    var stride: IndexList[Self.rank]
 
     fn __init__(out self):
-        self.stride = IndexList[rank]()
+        self.stride = IndexList[Self.rank]()
 
     @no_inline
     fn __str__(self) -> String:
@@ -324,7 +328,7 @@ struct ElementLayout[rank: Int, shape: IndexList[rank]](
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
-        writer.write(shape, ":", self.stride)
+        writer.write(Self.shape, ":", self.stride)
 
 
 # Returns the linear index of an element, this is equivalent to concat
@@ -407,7 +411,7 @@ fn vectorize[
     dtype: DType,
     rank: Int,
     shape: DimList,
-    origin: MutableOrigin,
+    origin: MutOrigin,
     _res_shape: DimList = _vectorize_shape[*sizes](shape),
 ](buff: NDBuffer[dtype, rank, origin, shape, *_]) -> Tuple[
     NDBuffer[
@@ -467,9 +471,9 @@ fn _copy_nd_buffer_to_layout_tensor[
     src: NDBuffer[dtype, src_rank, _, shape],
     buff_element_layout: ElementLayout[src_rank, buff_element_layout_shape],
 ):
-    alias num_elements = dst.layout.size()
-    alias dst_rank = layout.rank()
-    alias tensor_element_layout = dst.element_layout
+    comptime num_elements = dst.layout.size()
+    comptime dst_rank = layout.rank()
+    comptime tensor_element_layout = dst.element_layout
     constrained[src_rank == dst_rank, "src and dst should have same rank"]()
 
     # 1d-vector load/store
@@ -485,12 +489,12 @@ fn _copy_nd_buffer_to_layout_tensor[
         ]()
         constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
 
-        alias vec_size = Int(tensor_element_layout.shape[0])
-        alias alignment = align_of[dst.element_type]()
+        comptime vec_size = Int(tensor_element_layout.shape[0])
+        comptime alignment = align_of[dst.element_type]()
 
         @parameter
         for i in range(num_elements):
-            alias dst_idx = make_layout(tensor_element_layout, dst.layout)(
+            comptime dst_idx = make_layout(tensor_element_layout, dst.layout)(
                 i * vec_size
             )
             var src_idx = _get_element_idx(
@@ -499,13 +503,9 @@ fn _copy_nd_buffer_to_layout_tensor[
 
             @parameter
             if is_async:
-                alias element_size_bytes = vec_size * size_of[dtype]()
-                var src_ptr = src.data.address_space_cast[
-                    _GPUAddressSpace.GLOBAL
-                ]()
-                var dst_ptr = dst.ptr.address_space_cast[
-                    _GPUAddressSpace.SHARED
-                ]()
+                comptime element_size_bytes = vec_size * size_of[dtype]()
+                var src_ptr = src.data.address_space_cast[AddressSpace.GLOBAL]()
+                var dst_ptr = dst.ptr.address_space_cast[AddressSpace.SHARED]()
                 async_copy[
                     element_size_bytes,
                     fill=fill,
@@ -522,29 +522,29 @@ fn _copy_nd_buffer_to_layout_tensor[
         tensor_element_layout.rank() == 2
         and tensor_element_layout.stride[1] == 1
     ):
-        alias num_copies = tensor_element_layout.shape[0].value()
-        alias vec_width = tensor_element_layout.shape[1].value()
+        comptime num_copies = tensor_element_layout.shape[0].value()
+        comptime vec_width = tensor_element_layout.shape[1].value()
 
         @parameter
         for i in range(num_elements):
-            alias dst_offset = layout(i)
+            comptime dst_offset = layout(i)
             var src_offset = _get_element_idx(i, src)
 
             @parameter
             for j in range(num_copies):
-                alias dst_idx = dst_offset + tensor_element_layout(j)
+                comptime dst_idx = dst_offset + tensor_element_layout(j)
                 var src_idx = src_offset + _get_element_idx(
                     j, buff_element_layout
                 )
 
                 @parameter
                 if is_async:
-                    alias element_size_bytes = vec_width * size_of[dtype]()
+                    comptime element_size_bytes = vec_width * size_of[dtype]()
                     var src_ptr = src.data.address_space_cast[
-                        _GPUAddressSpace.GLOBAL
+                        AddressSpace.GLOBAL
                     ]()
                     var dst_ptr = dst.ptr.address_space_cast[
-                        _GPUAddressSpace.SHARED
+                        AddressSpace.SHARED
                     ]()
                     async_copy[
                         element_size_bytes,
@@ -566,17 +566,13 @@ fn _copy_nd_buffer_to_layout_tensor[
 
         @parameter
         for i in range(num_elements * dst.element_size):
-            alias dst_idx = make_layout(tensor_element_layout, dst.layout)(i)
+            comptime dst_idx = make_layout(tensor_element_layout, dst.layout)(i)
             var src_idx = _get_element_idx(i, src, buff_element_layout)
 
             @parameter
             if is_async:
-                var src_ptr = src.data.address_space_cast[
-                    _GPUAddressSpace.GLOBAL
-                ]()
-                var dst_ptr = dst.ptr.address_space_cast[
-                    _GPUAddressSpace.SHARED
-                ]()
+                var src_ptr = src.data.address_space_cast[AddressSpace.GLOBAL]()
+                var dst_ptr = dst.ptr.address_space_cast[AddressSpace.SHARED]()
                 async_copy[4, fill=fill, eviction_policy=eviction_policy](
                     src_ptr + src_idx, dst_ptr + dst_idx
                 )
@@ -609,9 +605,9 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
     buff_element_layout: ElementLayout[src_rank, buff_element_layout_shape],
     tile_mask: TileMask[mask_rank, mask_element_size, mask_element_stride],
 ):
-    alias num_elements = dst.layout.size()
-    alias dst_rank = layout.rank()
-    alias tensor_element_layout = dst.element_layout
+    comptime num_elements = dst.layout.size()
+    comptime dst_rank = layout.rank()
+    comptime tensor_element_layout = dst.element_layout
     constrained[src_rank == dst_rank, "src and dst should have same rank"]()
     constrained[
         mask_rank == dst_rank, "mask_rank and dst should have same rank"
@@ -637,12 +633,12 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
         ]()
         constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
 
-        alias vec_size = Int(tensor_element_layout.shape[0])
-        alias alignment = align_of[dst.element_type]()
+        comptime vec_size = Int(tensor_element_layout.shape[0])
+        comptime alignment = align_of[dst.element_type]()
 
         @parameter
         for i in range(num_elements):
-            alias dst_idx = make_layout(tensor_element_layout, dst.layout)(
+            comptime dst_idx = make_layout(tensor_element_layout, dst.layout)(
                 i * vec_size
             )
             var src_idx = _get_element_idx(
@@ -651,13 +647,9 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
 
             @parameter
             if is_async:
-                alias element_size_bytes = vec_size * size_of[dtype]()
-                var src_ptr = src.data.address_space_cast[
-                    _GPUAddressSpace.GLOBAL
-                ]()
-                var dst_ptr = dst.ptr.address_space_cast[
-                    _GPUAddressSpace.SHARED
-                ]()
+                comptime element_size_bytes = vec_size * size_of[dtype]()
+                var src_ptr = src.data.address_space_cast[AddressSpace.GLOBAL]()
+                var dst_ptr = dst.ptr.address_space_cast[AddressSpace.SHARED]()
                 async_copy[
                     element_size_bytes,
                     fill=fill,
@@ -674,29 +666,29 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
         tensor_element_layout.rank() == 2
         and tensor_element_layout.stride[1] == 1
     ):
-        alias num_copies = tensor_element_layout.shape[0].value()
-        alias vec_width = tensor_element_layout.shape[1].value()
+        comptime num_copies = tensor_element_layout.shape[0].value()
+        comptime vec_width = tensor_element_layout.shape[1].value()
 
         @parameter
         for i in range(num_elements):
-            alias dst_offset = layout(i)
+            comptime dst_offset = layout(i)
             var src_offset = _get_element_idx(i, src)
 
             @parameter
             for j in range(num_copies):
-                alias dst_idx = dst_offset + tensor_element_layout(j)
+                comptime dst_idx = dst_offset + tensor_element_layout(j)
                 var src_idx = src_offset + _get_element_idx(
                     j, buff_element_layout
                 )
 
                 @parameter
                 if is_async:
-                    alias element_size_bytes = vec_width * size_of[dtype]()
+                    comptime element_size_bytes = vec_width * size_of[dtype]()
                     var src_ptr = src.data.address_space_cast[
-                        _GPUAddressSpace.GLOBAL
+                        AddressSpace.GLOBAL
                     ]()
                     var dst_ptr = dst.ptr.address_space_cast[
-                        _GPUAddressSpace.SHARED
+                        AddressSpace.SHARED
                     ]()
                     async_copy[
                         element_size_bytes,
@@ -718,11 +710,11 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
 
         @parameter
         for i in range(num_elements * dst.element_size):
-            alias dst_idx = make_layout(tensor_element_layout, dst.layout)(i)
+            comptime dst_idx = make_layout(tensor_element_layout, dst.layout)(i)
             var src_idx = _get_element_idx(i, src, buff_element_layout)
 
             # Evaluate the mask, skip OOB element copies
-            alias dim_0_shape = Int(dst.layout.shape[0])
+            comptime dim_0_shape = Int(dst.layout.shape[0])
             var dim_0 = i % dim_0_shape
             var dim_1 = i // dim_0_shape
             var mask_val = tile_mask.access_mask((dim_0, dim_1))
@@ -732,12 +724,8 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
 
             @parameter
             if is_async:
-                var src_ptr = src.data.address_space_cast[
-                    _GPUAddressSpace.GLOBAL
-                ]()
-                var dst_ptr = dst.ptr.address_space_cast[
-                    _GPUAddressSpace.SHARED
-                ]()
+                var src_ptr = src.data.address_space_cast[AddressSpace.GLOBAL]()
+                var dst_ptr = dst.ptr.address_space_cast[AddressSpace.SHARED]()
                 async_copy[4, fill=fill, eviction_policy=eviction_policy](
                     src_ptr + src_idx, dst_ptr + dst_idx
                 )
@@ -761,9 +749,9 @@ fn _copy_layout_tensor_to_nd_buffer[
         *_, **_,
     ],
 ):
-    alias src_rank = layout.rank()
-    alias tensor_element_layout = src.element_layout
-    alias num_elements = src.layout.size()
+    comptime src_rank = layout.rank()
+    comptime tensor_element_layout = src.element_layout
+    comptime num_elements = src.layout.size()
     constrained[src_rank == dst_rank, "src and dst should have same rank"]()
 
     # 1d-vector load/store
@@ -779,15 +767,15 @@ fn _copy_layout_tensor_to_nd_buffer[
         ]()
         constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
 
-        alias vec_size = Int(tensor_element_layout.shape[0])
-        alias alignment = align_of[src.element_type]()
+        comptime vec_size = Int(tensor_element_layout.shape[0])
+        comptime alignment = align_of[src.element_type]()
 
         @parameter
         for i in range(num_elements):
             var dst_idx = _get_element_idx(
                 i * vec_size, dst, buff_element_layout
             )
-            alias src_idx = make_layout(tensor_element_layout, src.layout)(
+            comptime src_idx = make_layout(tensor_element_layout, src.layout)(
                 i * vec_size
             )
 
@@ -801,22 +789,22 @@ fn _copy_layout_tensor_to_nd_buffer[
         tensor_element_layout.rank() == 2
         and tensor_element_layout.stride[1] == 1
     ):
-        alias num_copies = tensor_element_layout.shape[0].value()
-        alias vec_width = tensor_element_layout.shape[1].value()
+        comptime num_copies = tensor_element_layout.shape[0].value()
+        comptime vec_width = tensor_element_layout.shape[1].value()
 
         @parameter
         for i in range(num_elements):
             # Offset to the current element.
             var dst_offset = _get_element_idx(i, dst)
 
-            alias src_offset = layout(i)
+            comptime src_offset = layout(i)
 
             @parameter
             for j in range(num_copies):
                 var dst_idx = dst_offset + _get_element_idx(
                     j, buff_element_layout
                 )
-                alias src_idx = src_offset + tensor_element_layout(j)
+                comptime src_idx = src_offset + tensor_element_layout(j)
 
                 var src_vec = src.ptr.load[
                     width=vec_width,
@@ -832,7 +820,7 @@ fn _copy_layout_tensor_to_nd_buffer[
 
         @parameter
         for i in range(num_elements * src.element_size):
-            alias src_idx = make_layout(tensor_element_layout, src.layout)(i)
+            comptime src_idx = make_layout(tensor_element_layout, src.layout)(i)
             var dst_idx = _get_element_idx(i, dst, buff_element_layout)
             dst.data[dst_idx] = src.ptr[src_idx]
 
@@ -857,9 +845,9 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
     ],
     tile_mask: TileMask[mask_rank, mask_element_size, mask_element_stride],
 ):
-    alias num_elements = src.layout.size()
-    alias src_rank = layout.rank()
-    alias tensor_element_layout = src.element_layout
+    comptime num_elements = src.layout.size()
+    comptime src_rank = layout.rank()
+    comptime tensor_element_layout = src.element_layout
     constrained[src_rank == dst_rank, "src and dst should have same rank"]()
 
     constrained[
@@ -886,15 +874,15 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
         ]()
         constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
 
-        alias vec_size = Int(tensor_element_layout.shape[0])
-        alias alignment = align_of[src.element_type]()
+        comptime vec_size = Int(tensor_element_layout.shape[0])
+        comptime alignment = align_of[src.element_type]()
 
         @parameter
         for i in range(num_elements):
             var dst_idx = _get_element_idx(
                 i * vec_size, dst, buff_element_layout
             )
-            alias src_idx = make_layout(tensor_element_layout, src.layout)(
+            comptime src_idx = make_layout(tensor_element_layout, src.layout)(
                 i * vec_size
             )
 
@@ -908,22 +896,22 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
         tensor_element_layout.rank() == 2
         and tensor_element_layout.stride[1] == 1
     ):
-        alias num_copies = tensor_element_layout.shape[0].value()
-        alias vec_width = tensor_element_layout.shape[1].value()
+        comptime num_copies = tensor_element_layout.shape[0].value()
+        comptime vec_width = tensor_element_layout.shape[1].value()
 
         @parameter
         for i in range(num_elements):
             # Offset to the current element.
             var dst_offset = _get_element_idx(i, dst)
 
-            alias src_offset = layout(i)
+            comptime src_offset = layout(i)
 
             @parameter
             for j in range(num_copies):
                 var dst_idx = dst_offset + _get_element_idx(
                     j, buff_element_layout
                 )
-                alias src_idx = src_offset + tensor_element_layout(j)
+                comptime src_idx = src_offset + tensor_element_layout(j)
 
                 var src_vec = src.ptr.load[
                     width=vec_width,
@@ -940,7 +928,7 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
         @parameter
         for i in range(num_elements * src.element_size):
             # Evaluate the mask, skip OOB element copies
-            alias dim_0_shape = Int(src.layout.shape[0])
+            comptime dim_0_shape = Int(src.layout.shape[0])
             var dim_0 = i % dim_0_shape
             var dim_1 = i // dim_0_shape
             var mask_val = tile_mask.access_mask((dim_0, dim_1))
@@ -948,7 +936,7 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
             if not can_access:
                 continue
 
-            alias src_idx = make_layout(tensor_element_layout, src.layout)(i)
+            comptime src_idx = make_layout(tensor_element_layout, src.layout)(i)
             var dst_idx = _get_element_idx(i, dst, buff_element_layout)
             dst.data[dst_idx] = src.ptr[src_idx]
 
@@ -973,8 +961,8 @@ fn copy_from_nd_buffer[
     src: NDBuffer[mut=True, dtype, *_],
     thread_id: Int,
 ):
-    alias dst_rank = dst_data_layout.rank()
-    alias dst_element_layout = dst_thread_local.element_layout
+    comptime dst_rank = dst_data_layout.rank()
+    comptime dst_element_layout = dst_thread_local.element_layout
     # FIXME: Relax this to support any ranked data and thread layouts.
     constrained[src.rank == dst_rank, "src and dst should have same rank"]()
     constrained[dst_rank == 2, "Only rank-2 layouts is supported for now."]()
@@ -985,7 +973,7 @@ fn copy_from_nd_buffer[
         "Only rank-1, rank-2 vectoriztion is supported",
     ]()
 
-    alias threads_layout_rank = thread_layout.rank()
+    comptime threads_layout_rank = thread_layout.rank()
     constrained[
         threads_layout_rank == dst_rank,
         "thread and data layout should have the same rank",
@@ -996,7 +984,7 @@ fn copy_from_nd_buffer[
         var src_vectorized = vectorize[1, Int(dst_element_layout.shape[0])](src)
         var src_vectorized_buffer = src_vectorized[0]
         var src_element_layout = src_vectorized[1]
-        alias element_size = Int(dst_element_layout.shape[0])
+        comptime element_size = Int(dst_element_layout.shape[0])
         var src_thread_local = distribute[
             thread_layout=thread_layout,
             swizzle=swizzle,
@@ -1012,7 +1000,7 @@ fn copy_from_nd_buffer[
         ](src)
         var src_vectorized_buffer = src_vectorized[0]
         var src_element_layout = src_vectorized[1]
-        alias element_size = Int(dst_element_layout.shape[1])
+        comptime element_size = Int(dst_element_layout.shape[1])
         var src_thread_local = distribute[
             thread_layout=thread_layout,
             swizzle=swizzle,
@@ -1046,8 +1034,8 @@ fn copy_from_nd_buffer_masked[
     tile_mask: TileMask,
     thread_id: Int,
 ):
-    alias dst_rank = dst_data_layout.rank()
-    alias dst_element_layout = dst_thread_local.element_layout
+    comptime dst_rank = dst_data_layout.rank()
+    comptime dst_element_layout = dst_thread_local.element_layout
     # FIXME: Relax this to support any ranked data and thread layouts.
     constrained[src_rank == 2, "Only rank-2 layouts is supported for now."]()
 
@@ -1059,7 +1047,7 @@ fn copy_from_nd_buffer_masked[
         "Only rank-1, rank-2 vectoriztion is supported",
     ]()
 
-    alias threads_layout_rank = thread_layout.rank()
+    comptime threads_layout_rank = thread_layout.rank()
     constrained[
         threads_layout_rank == dst_rank,
         "thread and data layout should have the same rank",
@@ -1073,7 +1061,7 @@ fn copy_from_nd_buffer_masked[
         ](tile_mask)
         var src_vectorized_buffer = src_vectorized[0]
         var src_element_layout = src_vectorized[1]
-        alias element_size = Int(dst_element_layout.shape[0])
+        comptime element_size = Int(dst_element_layout.shape[0])
         var src_thread_local = distribute[
             thread_layout=thread_layout,
             swizzle=swizzle,
@@ -1102,7 +1090,7 @@ fn copy_from_nd_buffer_masked[
         ](tile_mask)
         var src_vectorized_buffer = src_vectorized[0]
         var src_element_layout = src_vectorized[1]
-        alias element_size = Int(dst_element_layout.shape[1])
+        comptime element_size = Int(dst_element_layout.shape[1])
         var src_thread_local = distribute[
             thread_layout=thread_layout,
             swizzle=swizzle,
@@ -1138,8 +1126,8 @@ fn copy_to_nd_buffer[
     ],
     thread_id: Int,
 ):
-    alias src_rank = src_data_layout.rank()
-    alias src_element_layout = src_thread_local.element_layout
+    comptime src_rank = src_data_layout.rank()
+    comptime src_element_layout = src_thread_local.element_layout
     # FIXME: Relax this to support any ranked data and thread layouts.
     constrained[src_rank == 2, "Only rank-2 layouts is supported for now."]()
 
@@ -1151,7 +1139,7 @@ fn copy_to_nd_buffer[
         "Only rank-1, rank-2 vectoriztion is supported",
     ]()
 
-    alias threads_layout_rank = thread_layout.rank()
+    comptime threads_layout_rank = thread_layout.rank()
     constrained[
         threads_layout_rank == dst_rank,
         "thread and data layout should have the same rank",
@@ -1200,8 +1188,8 @@ fn copy_to_nd_buffer_masked[
     tile_mask: TileMask,
     thread_id: Int,
 ):
-    alias src_rank = src_data_layout.rank()
-    alias src_element_layout = src_thread_local.element_layout
+    comptime src_rank = src_data_layout.rank()
+    comptime src_element_layout = src_thread_local.element_layout
     # FIXME: Relax this to support any ranked data and thread layouts.
     constrained[src_rank == 2, "Only rank-2 layouts is supported for now."]()
 
@@ -1213,7 +1201,7 @@ fn copy_to_nd_buffer_masked[
         "Only rank-1, rank-2 vectoriztion is supported",
     ]()
 
-    alias threads_layout_rank = thread_layout.rank()
+    comptime threads_layout_rank = thread_layout.rank()
     constrained[
         threads_layout_rank == dst_rank,
         "thread and data layout should have the same rank",
@@ -1305,7 +1293,7 @@ fn from_ndbuffer_row_major(
     """This function takes the underlying buffer from NDBuffer without explicitly
     copying any data.
     """
-    var runtime_layout = __type_of(result.runtime_layout).row_major(
+    var runtime_layout = type_of(result.runtime_layout).row_major(
         buffer.get_shape().cast[result.layout_int_type]()
     )
     return {buffer.data, runtime_layout}

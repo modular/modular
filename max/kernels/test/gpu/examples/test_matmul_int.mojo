@@ -23,19 +23,22 @@ from gpu import (
     thread_idx,
 )
 from gpu.host import DeviceContext
-from memory import memset_zero, stack_allocation
+from memory import (
+    memset_zero,
+    stack_allocation,
+)
 
 from utils.index import Index
 
-alias TILE_SZ_A = 128
-alias TILE_SZ_B = 16
-alias TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
+comptime TILE_SZ_A = 128
+comptime TILE_SZ_B = 16
+comptime TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
 
 
 fn matmul(
-    a_ptr: UnsafePointer[Scalar[DType.int]],
-    b_ptr: UnsafePointer[Scalar[DType.int]],
-    c_ptr: UnsafePointer[Scalar[DType.int]],
+    a_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
+    b_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
+    c_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -61,8 +64,8 @@ fn matmul(
     ]()
 
     # Thread indexing offsets.
-    var row: UInt = global_idx.x
-    var col: UInt = block_idx.y * TILE_SZ_B
+    var row = Int(global_idx.x)
+    var col = Int(block_idx.y * TILE_SZ_B)
 
     # Privatization of the C matrix.
     var c_reg = stack_allocation[TILE_SZ_B, DType.int]()
@@ -75,7 +78,7 @@ fn matmul(
         var j: UInt = thread_idx.x % TILE_SZ_B
 
         # Load the B matrix into shared memory.
-        var b_val = Int(b[tile_idx * TILE_SZ_RATIO + Int(i), Int(col) + Int(j)])
+        var b_val = Int(b[tile_idx * TILE_SZ_RATIO + Int(i), col + Int(j)])
         b_shared[i * TILE_SZ_B + j] = b_val
 
         barrier()
@@ -84,7 +87,7 @@ fn matmul(
         for idx in range(TILE_SZ_RATIO):
             # Load the A tile into the register.
             var a_reg: Int
-            if row < UInt(m) and tile_idx * TILE_SZ_RATIO + idx < k:
+            if row < m and tile_idx * TILE_SZ_RATIO + idx < k:
                 a_reg = Int(a[row, tile_idx * TILE_SZ_RATIO + idx])
             else:
                 a_reg = 0
@@ -98,20 +101,20 @@ fn matmul(
 
     # Store the values into the output matrix.
     for out_idx in range(TILE_SZ_B):
-        if row < UInt(m) and col + UInt(out_idx) < UInt(n):
-            c[Index(row, col + UInt(out_idx))] = c_reg.load(out_idx)
+        if row < m and col + out_idx < n:
+            c[Index(row, col + out_idx)] = c_reg.load(out_idx)
 
 
 fn run_matmul(ctx: DeviceContext) raises:
     print("== run_matmul")
 
-    alias m = 512
-    alias n = 512
-    alias k = 512
+    comptime m = 512
+    comptime n = 512
+    comptime k = 512
 
-    var a_host_ptr = UnsafePointer[Scalar[DType.int]].alloc(m * k)
-    var b_host_ptr = UnsafePointer[Scalar[DType.int]].alloc(k * n)
-    var c_host_ptr = UnsafePointer[Scalar[DType.int]].alloc(m * n)
+    var a_host_ptr = alloc[Scalar[DType.int]](m * k)
+    var b_host_ptr = alloc[Scalar[DType.int]](k * n)
+    var c_host_ptr = alloc[Scalar[DType.int]](m * n)
 
     var a_host = NDBuffer[DType.int, 2, _, DimList(m, k)](a_host_ptr)
     var b_host = NDBuffer[DType.int, 2, _, DimList(k, n)](b_host_ptr)

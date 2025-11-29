@@ -41,30 +41,14 @@ _EXTRA_CONSTRAINTS = {
     "test_tensor_core_fp8_mma_sync.mojo": ["//:h100_gpu"],
     "test_wmma.mojo": ["//:nvidia_gpu"],
     "test_wmma_amd.mojo": ["//:amd_gpu"],
-    "test_convert.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
-    "test_cast_roundtrip.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
     "test_debug_assert_gpu_error.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2405
-    "test_init_vector_gpu.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2415
     "test_print_elementwise.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2366
-    "test_prefix_sum.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2415
     "test_print.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -73,22 +57,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2405
-    "test_shuffle.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
     "test_printf.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2405
-    "test_fast_div.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2366
-    "test_sum.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2397
     "test_random.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -103,11 +75,11 @@ _EXTRA_CONSTRAINTS = {
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:internal_utils",
-            "@mojo//:kv_cache",
-            "@mojo//:linalg",
-            "@mojo//:nn",
-            "@mojo//:quantization",
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
             "@mojo//:stdlib",
         ],
     )
@@ -126,11 +98,11 @@ _EXTRA_CONSTRAINTS = {
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:internal_utils",
-            "@mojo//:kv_cache",
-            "@mojo//:linalg",
-            "@mojo//:nn",
-            "@mojo//:quantization",
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
             "@mojo//:stdlib",
         ],
     )
@@ -143,11 +115,11 @@ lit_tests(
     srcs = _LIT_TESTS,
     gpu_constraints = ["//:has_gpu"],
     mojo_deps = [
-        "@mojo//:internal_utils",
-        "@mojo//:kv_cache",
-        "@mojo//:linalg",
-        "@mojo//:nn",
-        "@mojo//:quantization",
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
         "@mojo//:stdlib",
     ],
     tags = ["gpu"],

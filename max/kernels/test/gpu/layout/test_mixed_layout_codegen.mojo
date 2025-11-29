@@ -21,7 +21,7 @@ from layout import Layout, RuntimeLayout
 from layout._mixed_layout import MixedLayout
 from layout._mixed_tuple import Idx, MixedTuple
 from layout.int_tuple import IntTuple
-from memory.unsafe_pointer import UnsafePointer
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal, assert_true
 
 
@@ -58,16 +58,18 @@ fn test_codegen_memory[
 fn kernel_mixed_dimensions(x: Int, ptr: UnsafePointer[Int32]):
     # Create layout with mixed compile-time and runtime dimensions
     var layout = MixedLayout(
-        shape=[Idx[8](), Idx(x)], stride=[Idx(x), Idx[1]()]
+        shape=(Idx[8](), Idx(x)), stride=(Idx(x), Idx[1]())
     )
     ptr[0] = Int32(layout(MixedTuple(Idx[0](), Idx(x - 1))))
 
 
 fn kernel_thread_idx(ptr: UnsafePointer[Int32]):
-    alias layout = MixedLayout(
-        shape=[Idx[8](), Idx[2]()], stride=[Idx[1](), Idx[1]()]
+    comptime layout = MixedLayout(
+        shape=(Idx[8](), Idx[2]()), stride=(Idx[1](), Idx[1]())
     )
-    ptr[0] = Int32(layout(MixedTuple(Idx(thread_idx.x), Idx(thread_idx.y))))
+    ptr[0] = Int32(
+        layout(MixedTuple(Idx(Int(thread_idx.x)), Idx(Int(thread_idx.y))))
+    )
 
 
 def main():

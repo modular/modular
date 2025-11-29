@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, grid_dim, thread_idx
+from gpu import block_dim, block_idx, grid_dim, thread_idx
 
 
 # CHECK-LABEL: test_amd_dims
@@ -33,7 +33,7 @@ fn test_amd_dims(ctx: DeviceContext) raises:
             print(grid_dim.x, grid_dim.y, grid_dim.z)
             print(block_dim.x, block_dim.y, block_dim.z)
 
-    alias kernel = test_dims_kernel
+    comptime kernel = test_dims_kernel
     ctx.enqueue_function_checked[kernel, kernel](
         grid_dim=(14, 15, 16),
         block_dim=(2, 3, 4),

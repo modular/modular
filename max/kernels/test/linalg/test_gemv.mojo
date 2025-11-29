@@ -20,11 +20,12 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim
 from linalg.gemv import gemv, naive_gemv
 from linalg.matmul import matmul
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_false
 
 from utils.index import Index
 
-alias alignment = 64
+comptime alignment = 64
 
 
 @parameter
@@ -36,20 +37,20 @@ fn bench_run[
 
 def test_gemv():
     print("== test_gemv")
-    alias type = DType.float32
-    alias absolute_tolerance = 1e-08
-    alias relative_tolerance = 1e-05
+    comptime type = DType.float32
+    comptime absolute_tolerance = 1e-08
+    comptime relative_tolerance = 1e-05
 
     # alias type = DType.float16
     # alias absolute_tolerance = 5e-02
     # alias relative_tolerance = 5e-01
 
-    alias simd_width = simd_width_of[type]()
+    comptime simd_width = simd_width_of[type]()
     # alias m = 22016
     # alias k = 4096
 
-    alias m = 4096
-    alias k = 11008
+    comptime m = 4096
+    comptime k = 11008
 
     var lhs_storage = UnsafePointer[Scalar[type],].alloc(
         m * k, alignment=alignment
@@ -89,7 +90,7 @@ def test_gemv():
             print("Serial Error")
             assert_false(True)
 
-    alias threads = 0
+    comptime threads = 0
 
     out.zero()
     gemv[parallelize=True](out, lhs, rhs)
@@ -105,8 +106,8 @@ def test_gemv():
             print("Parallel Error")
             assert_false(True)
 
-    alias bytes_per_iteration = 2 * m * k * size_of[type]()
-    alias gigabyte = 1024 * 1024 * 1024
+    comptime bytes_per_iteration = 2 * m * k * size_of[type]()
+    comptime gigabyte = 1024 * 1024 * 1024
 
     # Serial Gemv
     @always_inline

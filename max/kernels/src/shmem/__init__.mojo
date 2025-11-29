@@ -71,6 +71,7 @@ from .shmem_api import (
     shmem_get,
     shmem_get_nbi,
     shmem_init,
+    shmem_init_thread,
     shmem_malloc,
     shmem_module_init,
     shmem_my_pe,
@@ -88,6 +89,7 @@ from ._mpi import (
     MPI_Comm_size,
     MPI_Finalize,
     MPI_Init,
+    MPI_Init_thread,
     get_mpi_comm_world,
 )
 from .shmem_buffer import SHMEMBuffer

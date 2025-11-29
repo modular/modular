@@ -20,7 +20,7 @@ from nn.randn import random_normal
 fn test_random_normal():
     seed(0)
 
-    alias out_shape = Layout.row_major(2, 2)
+    comptime out_shape = Layout.row_major(2, 2)
     var output_stack = InlineArray[Float32, 4](uninitialized=True)
     var output = LayoutTensor[DType.float32, out_shape](output_stack).fill(0)
 

@@ -16,12 +16,10 @@ from sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
-from gpu import barrier
-from gpu import warp_id as get_warp_id
+from gpu import barrier, warp_id, lane_id
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, thread_idx
-from gpu.memory import AddressSpace
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu import block_idx, thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
@@ -35,7 +33,6 @@ from layout.tensor_core_async import (
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
@@ -56,33 +53,31 @@ fn _load_a_reg_tile[
     out ret: LayoutTensor[
         dtype,
         _compute_reg_tile_layout(layout, 16 // size_of[dtype]()),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ],
     smem_tile: LayoutTensor[
         dtype,
         layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         *_, **_,
     ],
 ):
     constrained[ret.layout[0].shape[0].value() > 0]()
-    ret = __type_of(ret).stack_allocation()
+    ret = type_of(ret).stack_allocation()
     var tid = thread_idx.x
-    var lane = tid % 32
-    var wgid = tid // 32
-    alias WGMMA_M = wgmma_shape[0]
-    alias WGMMA_K = wgmma_shape[2]
+    comptime WGMMA_M = wgmma_shape[0]
+    comptime WGMMA_K = wgmma_shape[2]
 
-    alias rows = product(layout[0].shape)
-    alias cols = product(layout[1].shape)
+    comptime rows = product(layout[0].shape)
+    comptime cols = product(layout[1].shape)
 
-    alias num_wgmma_m = ceildiv(rows, WGMMA_M)
-    alias num_wgmma_k = ceildiv(cols, WGMMA_K)
+    comptime num_wgmma_m = ceildiv(rows, WGMMA_M)
+    comptime num_wgmma_k = ceildiv(cols, WGMMA_K)
     constrained[num_wgmma_m * num_wgmma_k == ret.layout[0].shape[0].value()]()
 
-    alias simd_size = 4 // size_of[dtype]()
+    comptime simd_size = 4 // size_of[dtype]()
     var vret = ret.vectorize[1, simd_size]()
 
     @parameter
@@ -90,12 +85,12 @@ fn _load_a_reg_tile[
 
         @parameter
         for k_mma in range(num_wgmma_k):
-            alias r_id = m_mma + k_mma * num_wgmma_m
+            comptime r_id = m_mma + k_mma * num_wgmma_m
             var smem_wg = (
                 smem_tile.tile[WGMMA_M, WGMMA_K](m_mma, k_mma)
-                .tile[WGMMA_M // 4, WGMMA_K](wgid, 0)
+                .tile[WGMMA_M // 4, WGMMA_K](Int(warp_id()), 0)
                 .vectorize[1, simd_size]()
-                .distribute[Layout.row_major(8, 4)](lane)
+                .distribute[Layout.row_major(8, 4)](lane_id())
             )
             vret.tile[1, 4](r_id, 0).copy_from(smem_wg)
 
@@ -120,19 +115,19 @@ fn tma_wgmma_kernel[
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
-    alias num_m_mmas = BM // wgmma_shape[0]
-    alias num_n_mmas = BN // wgmma_shape[1]
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
+    comptime num_m_mmas = BM // wgmma_shape[0]
+    comptime num_n_mmas = BN // wgmma_shape[1]
 
-    alias a_smem_layout = tile_layout_k_major[
+    comptime a_smem_layout = tile_layout_k_major[
         a_type, BM, BK, swizzle_mode=a_swizzle
     ]()
-    alias b_smem_layout = tile_layout_k_major[
+    comptime b_smem_layout = tile_layout_k_major[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]() if transpose_b else tile_layout_mn_major[
         b_type, BN, BK, swizzle_mode=b_swizzle
@@ -141,7 +136,7 @@ fn tma_wgmma_kernel[
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -149,12 +144,12 @@ fn tma_wgmma_kernel[
     var b_smem_tile = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
-    alias accum_type = get_accum_type[a_type]()
+    comptime accum_type = get_accum_type[a_type]()
     wgmma_op = TensorCoreAsync[
         accum_type,
         a_type,
@@ -165,24 +160,24 @@ fn tma_wgmma_kernel[
         transpose_b=transpose_b,
     ]()
 
-    alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
+    comptime c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
     var c_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
     _ = c_reg_tile.fill(0.0)
 
-    alias a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
-    alias b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
-    alias expected_bytes = a_expected_bytes + b_expected_bytes
+    comptime a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
+    comptime b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
+    comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:
@@ -231,20 +226,19 @@ fn tma_wgmma_kernel[
 
         barrier()
 
-    c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
-    warp_id = get_warp_id()
+    c_gmem_tile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
     @parameter
     for m_mma in range(num_m_mmas):
 
         @parameter
         for n_mma in range(num_n_mmas):
-            alias mma_id = n_mma * num_m_mmas + m_mma
+            comptime mma_id = n_mma * num_m_mmas + m_mma
 
             # (m_mma, n_mma) is coordinates for a warp group's tile.
             # A warp group is 4x1 warps.
             warp_tile = c_gmem_tile.tile[wgmma_shape[0] // 4, wgmma_shape[1]](
-                m_mma * 4 + warp_id, n_mma
+                m_mma * 4 + Int(warp_id()), n_mma
             )
 
             # Tile at (mma_id, 0) is a long vector containing all fragments
@@ -270,13 +264,13 @@ def test_tma_wgmma[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     a_smem: Bool = True,
 ](ctx: DeviceContext):
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
 
-    alias WGMMA_M = wgmma_shape[0]
-    alias WGMMA_N = wgmma_shape[1]
-    alias WGMMA_K = wgmma_shape[2]
+    comptime WGMMA_M = wgmma_shape[0]
+    comptime WGMMA_N = wgmma_shape[1]
+    comptime WGMMA_K = wgmma_shape[2]
 
     print(
         "wgmma_"
@@ -293,9 +287,9 @@ def test_tma_wgmma[
         + String(b_swizzle)
     )
 
-    alias M = prob_shape[0]
-    alias N = prob_shape[1]
-    alias K = prob_shape[2]
+    comptime M = prob_shape[0]
+    comptime N = prob_shape[1]
+    comptime K = prob_shape[2]
 
     var a = ManagedLayoutTensor[
         a_type,
@@ -303,7 +297,7 @@ def test_tma_wgmma[
     ](ctx)
     arange(a.tensor[update=False]())
 
-    alias b_layout = Layout.row_major(
+    comptime b_layout = Layout.row_major(
         N, K
     ) if transpose_b else Layout.row_major(K, N)
     var b = ManagedLayoutTensor[b_type, b_layout](ctx)
@@ -328,15 +322,15 @@ def test_tma_wgmma[
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 
-    alias kernel = tma_wgmma_kernel[
+    comptime kernel = tma_wgmma_kernel[
         a_type,
         b_type,
         c_type,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
+        type_of(a_tma_op).layout,
+        type_of(b_tma_op).layout,
         Layout.row_major(M, N),
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
+        type_of(a_tma_op).desc_layout,
+        type_of(b_tma_op).desc_layout,
         block_tile_shape,
         wgmma_shape,
         transpose_b=transpose_b,
@@ -345,23 +339,22 @@ def test_tma_wgmma[
         a_smem=a_smem,
     ]
 
-    ctx.enqueue_function[kernel](
-        # ctx.enqueue_function[kernel, dump_llvm=Path("invalid.ll")](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c.device_tensor(),
-        K // BK,
-        grid_dim=(1, 1),
+        UInt(K // BK),
+        grid_dim=(N // BN, M // BM),
         block_dim=(128),
     )
 
     vendor_blas.matmul(
         ctx,
-        rebind[NDBuffer[c_type, 2, MutableAnyOrigin]](c_ref.device_buffer()),
-        rebind[NDBuffer[a_type, 2, MutableAnyOrigin]](
+        rebind[NDBuffer[c_type, 2, MutAnyOrigin]](c_ref.device_buffer()),
+        rebind[NDBuffer[a_type, 2, MutAnyOrigin]](
             a.device_buffer[update=False]()
         ),
-        rebind[NDBuffer[b_type, 2, MutableAnyOrigin]](
+        rebind[NDBuffer[b_type, 2, MutAnyOrigin]](
             b.device_buffer[update=False]()
         ),
         c_row_major=True,
@@ -439,30 +432,57 @@ def main():
             b_swizzle = TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)
 
-        test_tma_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(64, 128, 16),
-            Index(64, 128, 16),
-            Index(64, 64, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_NONE,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            transpose_b=False,
-        ](ctx)
+        @parameter
+        for log2BN in range(6, 8):
+            comptime BN = 1 << log2BN
+            test_tma_wgmma[
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                Index(128, 256, 64),
+                Index(64, BN, 64),
+                Index(64, 64, 16),
+                a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                transpose_b=True,
+            ](ctx)
 
-        test_tma_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(64, 128, 16),
-            Index(64, 128, 16),
-            Index(64, 64, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_NONE,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            a_smem=False,
-            transpose_b=False,
-        ](ctx)
+            test_tma_wgmma[
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                Index(128, 256, 64),
+                Index(64, BN, 64),
+                Index(64, 64, 16),
+                a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                transpose_b=False,
+            ](ctx)
+
+            test_tma_wgmma[
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                Index(128, 256, 16),
+                Index(64, BN, 16),
+                Index(64, 64, 16),
+                a_swizzle = TensorMapSwizzle.SWIZZLE_NONE,
+                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                transpose_b=False,
+            ](ctx)
+
+            test_tma_wgmma[
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                Index(128, 256, 16),
+                Index(64, BN, 16),
+                Index(64, 64, 16),
+                a_swizzle = TensorMapSwizzle.SWIZZLE_NONE,
+                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                a_smem=False,
+                transpose_b=False,
+            ](ctx)
 
         test_tma_wgmma[
             DType.bfloat16,

@@ -33,7 +33,7 @@ print(len(bs))          # Prints 0.
 
 
 from math import ceildiv
-from sys import simd_width_of
+from sys import simd_width_of, bit_width_of
 
 from algorithm import vectorize
 from bit import log2_floor, pop_count
@@ -45,24 +45,24 @@ from .inline_array import InlineArray
 # Utilities
 # ===-----------------------------------------------------------------------===#
 
-alias _WORD_BITS = DType.uint64.bit_width()
-alias _WORD_BITS_LOG2 = log2_floor(_WORD_BITS)
+comptime _WORD_BITS = bit_width_of[DType.int64]()
+comptime _WORD_BITS_LOG2 = log2_floor(_WORD_BITS)
 
 
 @always_inline
-fn _word_index(idx: UInt) -> UInt:
+fn _word_index(idx: Int) -> Int:
     """Computes the 0-based index of the 64-bit word containing bit `idx`."""
-    return UInt(idx >> UInt(_WORD_BITS_LOG2))
+    return idx >> _WORD_BITS_LOG2
 
 
 @always_inline
-fn _bit_mask(idx: UInt) -> UInt64:
-    """Returns a UInt64 mask with only the bit corresponding to `idx` set."""
-    return UInt64(1) << (idx & UInt(_WORD_BITS - 1))
+fn _bit_mask(idx: Int) -> Int:
+    """Returns a Int64 mask with only the bit corresponding to `idx` set."""
+    return 1 << (idx & _WORD_BITS - 1)
 
 
 @always_inline
-fn _check_index_bounds[operation_name: StaticString](idx: UInt, max_size: Int):
+fn _check_index_bounds[operation_name: StaticString](idx: Int, max_size: Int):
     """Checks if the index is within bounds for a BitSet operation.
 
     Parameters:
@@ -73,7 +73,7 @@ fn _check_index_bounds[operation_name: StaticString](idx: UInt, max_size: Int):
         max_size: The maximum size of the BitSet.
     """
     debug_assert(
-        idx < UInt(max_size),
+        idx < max_size,
         "BitSet index out of bounds when ",
         operation_name,
         " bit: ",
@@ -88,7 +88,7 @@ fn _check_index_bounds[operation_name: StaticString](idx: UInt, max_size: Int):
 # ===-----------------------------------------------------------------------===#
 
 
-struct BitSet[size: UInt](
+struct BitSet[size: Int](
     Boolable, Copyable, Defaultable, Movable, Sized, Stringable, Writable
 ):
     """A grow-only set storing non-negative integers efficiently using bits.
@@ -97,7 +97,7 @@ struct BitSet[size: UInt](
         size: The maximum number of bits the bitset can store.
 
     Each integer element is represented by a single bit within an array
-    of 64-bit words (`UInt64`). This structure is optimized for:
+    of 64-bit words (`Int64`). This structure is optimized for:
 
     *   **Compactness:** Uses 64 times less memory than `List[Bool]`.
     *   **Speed:** Offers O(1) time complexity for `set`, `clear`, `test`,
@@ -108,8 +108,8 @@ struct BitSet[size: UInt](
     lookup speed are critical.
     """
 
-    alias _words_size: Int = Int(max(1, ceildiv(size, UInt(_WORD_BITS))))
-    var _words: InlineArray[UInt64, Self._words_size]  # Payload storage.
+    comptime _words_size = max(1, ceildiv(Self.size, _WORD_BITS))
+    var _words: InlineArray[Int64, Self._words_size]  # Payload storage.
 
     # --------------------------------------------------------------------- #
     # Constructors
@@ -117,9 +117,9 @@ struct BitSet[size: UInt](
 
     fn __init__(out self):
         """Initializes an empty BitSet with zero capacity and size."""
-        self._words = __type_of(self._words)(fill=0)
+        self._words = type_of(self._words)(fill=0)
 
-    fn __init__(init: SIMD[DType.bool, _], out self: BitSet[UInt(init.size)]):
+    fn __init__(init: SIMD[DType.bool, _], out self: BitSet[init.size]):
         """Initializes a BitSet with the given SIMD vector of booleans.
 
         Args:
@@ -128,14 +128,14 @@ struct BitSet[size: UInt](
         constrained[
             max(init.size, _WORD_BITS) // _WORD_BITS == Self._words_size
         ]()
-        self._words = __type_of(self._words)(uninitialized=True)
-        alias step = min(init.size, _WORD_BITS)
+        self._words = type_of(self._words)(uninitialized=True)
+        comptime step = min(init.size, _WORD_BITS)
 
         @parameter
         for i in range(Self._words_size):
             self._words.unsafe_get(i) = pack_bits(
                 init.slice[step, offset = i * step]()
-            ).cast[DType.uint64]()
+            ).cast[DType.int64]()
 
     # --------------------------------------------------------------------- #
     # Capacity queries
@@ -152,13 +152,13 @@ struct BitSet[size: UInt](
         Returns:
             The total count of set bits (population count).
         """
-        var total: UInt = 0
+        var total = 0
 
         @parameter
         for i in range(self._words_size):
-            total += UInt(pop_count(self._words.unsafe_get(i)))
+            total += Int(pop_count(self._words.unsafe_get(i)))
 
-        return Int(total)
+        return total
 
     @always_inline
     fn __bool__(self) -> Bool:
@@ -174,7 +174,7 @@ struct BitSet[size: UInt](
     # --------------------------------------------------------------------- #
 
     @always_inline
-    fn set(mut self, idx: UInt):
+    fn set(mut self, idx: Int):
         """Sets the bit at the specified index `idx` to 1.
 
         If `idx` is greater than or equal to the current logical size,
@@ -184,12 +184,12 @@ struct BitSet[size: UInt](
         Args:
             idx: The non-negative index of the bit to set (must be < `size`).
         """
-        _check_index_bounds["set"](idx, Int(size))
+        _check_index_bounds["set"](idx, Self.size)
         var w = _word_index(idx)
         self._words.unsafe_get(w) |= _bit_mask(idx)
 
     @always_inline
-    fn clear(mut self, idx: UInt):
+    fn clear(mut self, idx: Int):
         """Clears the bit at the specified index `idx` (sets it to 0).
 
         Aborts if `idx` is negative or greater than or equal to the
@@ -198,12 +198,12 @@ struct BitSet[size: UInt](
         Args:
             idx: The non-negative index of the bit to clear (must be < `size`).
         """
-        _check_index_bounds["clearing"](idx, Int(size))
+        _check_index_bounds["clearing"](idx, Self.size)
         var w = _word_index(idx)
         self._words.unsafe_get(w) &= ~_bit_mask(idx)
 
     @always_inline
-    fn toggle(mut self, idx: UInt):
+    fn toggle(mut self, idx: Int):
         """Toggles (inverts) the bit at the specified index `idx`.
 
         If the bit becomes 1 and `idx` is greater than or equal to the
@@ -213,12 +213,12 @@ struct BitSet[size: UInt](
         Args:
             idx: The non-negative index of the bit to toggle (must be < `size`).
         """
-        _check_index_bounds["toggling"](idx, Int(size))
+        _check_index_bounds["toggling"](idx, Self.size)
         var w = _word_index(idx)
         self._words.unsafe_get(w) ^= _bit_mask(idx)
 
     @always_inline
-    fn test(self, idx: UInt) -> Bool:
+    fn test(self, idx: Int) -> Bool:
         """Tests if the bit at the specified index `idx` is set (is 1).
 
         Aborts if `idx` is negative or greater than or equal to the
@@ -230,7 +230,7 @@ struct BitSet[size: UInt](
         Returns:
             True if the bit at `idx` is set, False otherwise.
         """
-        _check_index_bounds["testing"](idx, Int(size))
+        _check_index_bounds["testing"](idx, Self.size)
         var w = _word_index(idx)
         return (self._words.unsafe_get(w) & _bit_mask(idx)) != 0
 
@@ -248,14 +248,14 @@ struct BitSet[size: UInt](
 
         @parameter
         for i in range(self._words_size):
-            self._words.unsafe_get(i) ^= ~UInt64(0)
+            self._words.unsafe_get(i) ^= ~0
 
     fn set_all(mut self):
         """Sets all bits in the set up to the compile-time `size`."""
 
         @parameter
         for i in range(self._words_size):
-            self._words.unsafe_get(i) = ~UInt64(0)
+            self._words.unsafe_get(i) = ~0
 
     # --------------------------------------------------------------------- #
     # Set operations
@@ -264,9 +264,9 @@ struct BitSet[size: UInt](
     @staticmethod
     fn _vectorize_apply[
         func: fn[simd_width: Int] (
-            SIMD[DType.uint64, simd_width],
-            SIMD[DType.uint64, simd_width],
-        ) capturing -> SIMD[DType.uint64, simd_width],
+            SIMD[DType.int64, simd_width],
+            SIMD[DType.int64, simd_width],
+        ) capturing -> SIMD[DType.int64, simd_width],
     ](left: Self, right: Self) -> Self:
         """Applies a vectorized binary operation between two bitsets.
 
@@ -293,16 +293,17 @@ struct BitSet[size: UInt](
             A new bitset containing the result of applying the function to each
             corresponding pair of words from the input bitsets.
         """
-        alias simd_width = simd_width_of[UInt64]()
+        comptime simd_width = simd_width_of[Int64]()
         var res = Self()
 
         # Define a vectorized operation that processes multiple words at once
-        @parameter
         @always_inline
-        fn _intersect[simd_width: Int](offset: Int):
+        fn _intersect[
+            simd_width: Int
+        ](offset: Int) unified {mut res, read left, read right}:
             # Initialize SIMD vectors to hold multiple words from each bitset
-            var left_vec = SIMD[DType.uint64, simd_width]()
-            var right_vec = SIMD[DType.uint64, simd_width]()
+            var left_vec = SIMD[DType.int64, simd_width]()
+            var right_vec = SIMD[DType.int64, simd_width]()
 
             # Load a batch of words from both bitsets into SIMD vectors
             @parameter
@@ -324,7 +325,7 @@ struct BitSet[size: UInt](
         if Self._words_size >= simd_width:
             # If we have enough words, use SIMD vectorization for better
             # performance
-            vectorize[_intersect, simd_width, size = Int(Self._words_size)]()
+            vectorize[simd_width](Self._words_size, _intersect)
         else:
             # For small bitsets, use a simple scalar implementation
             @parameter
@@ -351,9 +352,9 @@ struct BitSet[size: UInt](
         fn _union[
             simd_width: Int
         ](
-            left: SIMD[DType.uint64, simd_width],
-            right: SIMD[DType.uint64, simd_width],
-        ) -> SIMD[DType.uint64, simd_width]:
+            left: SIMD[DType.int64, simd_width],
+            right: SIMD[DType.int64, simd_width],
+        ) -> SIMD[DType.int64, simd_width]:
             return left | right
 
         return Self._vectorize_apply[_union](self, other)
@@ -373,9 +374,9 @@ struct BitSet[size: UInt](
         fn _intersection[
             simd_width: Int
         ](
-            left: SIMD[DType.uint64, simd_width],
-            right: SIMD[DType.uint64, simd_width],
-        ) -> SIMD[DType.uint64, simd_width]:
+            left: SIMD[DType.int64, simd_width],
+            right: SIMD[DType.int64, simd_width],
+        ) -> SIMD[DType.int64, simd_width]:
             return left & right
 
         return Self._vectorize_apply[_intersection](self, other)
@@ -395,9 +396,9 @@ struct BitSet[size: UInt](
         fn _difference[
             simd_width: Int
         ](
-            left: SIMD[DType.uint64, simd_width],
-            right: SIMD[DType.uint64, simd_width],
-        ) -> SIMD[DType.uint64, simd_width]:
+            left: SIMD[DType.int64, simd_width],
+            right: SIMD[DType.int64, simd_width],
+        ) -> SIMD[DType.int64, simd_width]:
             return left & ~right
 
         return Self._vectorize_apply[_difference](self, other)
@@ -443,7 +444,7 @@ struct BitSet[size: UInt](
                 var abs_idx = bit_idx_base + bit_pos
 
                 # Skip bits that would be beyond the maximum size
-                if abs_idx >= size:
+                if abs_idx >= Self.size:
                     break
 
                 if not first:

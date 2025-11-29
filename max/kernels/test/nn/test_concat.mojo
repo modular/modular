@@ -22,9 +22,9 @@ fn _tuple_to_list[
     elems_layout: Layout, //,
     dtype: DType,
 ](
-    elems: StaticTuple[LayoutTensor[dtype, elems_layout, MutableAnyOrigin], *_]
-) -> List[LayoutTensor[dtype, elems_layout, MutableAnyOrigin]]:
-    var output = List[LayoutTensor[dtype, elems_layout, MutableAnyOrigin]](
+    elems: StaticTuple[LayoutTensor[dtype, elems_layout, MutAnyOrigin], *_]
+) -> List[LayoutTensor[dtype, elems_layout, MutAnyOrigin]]:
+    var output = List[LayoutTensor[dtype, elems_layout, MutAnyOrigin]](
         capacity=len(elems)
     )
     for i in range(len(elems)):
@@ -35,18 +35,18 @@ fn _tuple_to_list[
 def test_concat():
     print("== test_concat")
 
-    alias dtype = DType.float32
-    alias rank = 4
-    alias concat_axis = 2
+    comptime dtype = DType.float32
+    comptime rank = 4
+    comptime concat_axis = 2
 
-    alias l1 = Layout.row_major(2, 2, 1, 2)
-    alias l2 = Layout.row_major(2, 2, 2, 2)
-    alias l3 = Layout.row_major(2, 2, 3, 2)
-    alias s1 = IndexList[rank](2, 2, 1, 2)
-    alias s2 = IndexList[rank](2, 2, 2, 2)
-    alias s3 = IndexList[rank](2, 2, 3, 2)
+    comptime l1 = Layout.row_major(2, 2, 1, 2)
+    comptime l2 = Layout.row_major(2, 2, 2, 2)
+    comptime l3 = Layout.row_major(2, 2, 3, 2)
+    comptime s1 = IndexList[rank](2, 2, 1, 2)
+    comptime s2 = IndexList[rank](2, 2, 2, 2)
+    comptime s3 = IndexList[rank](2, 2, 3, 2)
 
-    alias layout = Layout.row_major[rank]()
+    comptime layout = Layout.row_major[rank]()
 
     var x1_stack = InlineArray[Scalar[dtype], l1.size()](uninitialized=True)
     var x2_stack = InlineArray[Scalar[dtype], l2.size()](uninitialized=True)
@@ -54,18 +54,18 @@ def test_concat():
     var x1 = LayoutTensor[dtype, l1](x1_stack).fill(0)
     var x2 = LayoutTensor[dtype, l2](x2_stack).fill(1)
     var x3 = LayoutTensor[dtype, l3](x3_stack).fill(2)
-    var x1_dyn = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var x1_dyn = LayoutTensor[dtype, layout, MutAnyOrigin](
         x1.ptr, RuntimeLayout[layout].row_major(s1)
     )
-    var x2_dyn = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var x2_dyn = LayoutTensor[dtype, layout, MutAnyOrigin](
         x2.ptr, RuntimeLayout[layout].row_major(s2)
     )
-    var x3_dyn = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var x3_dyn = LayoutTensor[dtype, layout, MutAnyOrigin](
         x3.ptr, RuntimeLayout[layout].row_major(s3)
     )
 
-    alias out_layout = Layout.row_major(2, 2, 6, 2)
-    alias out_shape = IndexList[rank](2, 2, 6, 2)
+    comptime out_layout = Layout.row_major(2, 2, 6, 2)
+    comptime out_shape = IndexList[rank](2, 2, 6, 2)
     var out_stack = InlineArray[Scalar[dtype], out_layout.size()](
         uninitialized=True
     )
@@ -74,9 +74,9 @@ def test_concat():
         output.ptr, RuntimeLayout[layout].row_major(out_shape)
     )
 
-    var input_tuple = StaticTuple[
-        LayoutTensor[dtype, layout, MutableAnyOrigin], 3
-    ](x1_dyn, x2_dyn, x3_dyn)
+    var input_tuple = StaticTuple[LayoutTensor[dtype, layout, MutAnyOrigin], 3](
+        x1_dyn, x2_dyn, x3_dyn
+    )
 
     @parameter
     @always_inline
@@ -115,16 +115,16 @@ def test_concat():
 def test_concat_parallel():
     print("== test_concat_parallel")
 
-    alias dtype = DType.float32
-    alias rank = 4
-    alias concat_axis = 2
+    comptime dtype = DType.float32
+    comptime rank = 4
+    comptime concat_axis = 2
 
-    alias l1 = Layout.row_major(2, 2, 1, 2)
-    alias l2 = Layout.row_major(2, 2, 2, 2)
-    alias l3 = Layout.row_major(2, 2, 3, 2)
-    alias s1 = IndexList[rank](2, 2, 1, 2)
-    alias s2 = IndexList[rank](2, 2, 2, 2)
-    alias s3 = IndexList[rank](2, 2, 3, 2)
+    comptime l1 = Layout.row_major(2, 2, 1, 2)
+    comptime l2 = Layout.row_major(2, 2, 2, 2)
+    comptime l3 = Layout.row_major(2, 2, 3, 2)
+    comptime s1 = IndexList[rank](2, 2, 1, 2)
+    comptime s2 = IndexList[rank](2, 2, 2, 2)
+    comptime s3 = IndexList[rank](2, 2, 3, 2)
 
     var x1_stack = InlineArray[Scalar[dtype], l1.size()](uninitialized=True)
     var x1 = LayoutTensor[dtype, l1](x1_stack).fill(0)
@@ -132,19 +132,19 @@ def test_concat_parallel():
     var x2 = LayoutTensor[dtype, l2](x2_stack).fill(1)
     var x3_stack = InlineArray[Scalar[dtype], l3.size()](uninitialized=True)
     var x3 = LayoutTensor[dtype, l3](x3_stack).fill(2)
-    alias layout = Layout.row_major[rank]()
-    var x1_dyn = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    comptime layout = Layout.row_major[rank]()
+    var x1_dyn = LayoutTensor[dtype, layout, MutAnyOrigin](
         x1.ptr, RuntimeLayout[layout].row_major(s1)
     )
-    var x2_dyn = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var x2_dyn = LayoutTensor[dtype, layout, MutAnyOrigin](
         x2.ptr, RuntimeLayout[layout].row_major(s2)
     )
-    var x3_dyn = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var x3_dyn = LayoutTensor[dtype, layout, MutAnyOrigin](
         x3.ptr, RuntimeLayout[layout].row_major(s3)
     )
 
-    alias out_layout = Layout.row_major(2, 2, 6, 2)
-    alias out_shape = IndexList[rank](2, 2, 6, 2)
+    comptime out_layout = Layout.row_major(2, 2, 6, 2)
+    comptime out_shape = IndexList[rank](2, 2, 6, 2)
     var out_stack = InlineArray[Scalar[dtype], out_layout.size()](
         uninitialized=True
     )
@@ -153,9 +153,9 @@ def test_concat_parallel():
         output.ptr, RuntimeLayout[layout].row_major(out_shape)
     )
 
-    var input_tuple = StaticTuple[
-        LayoutTensor[dtype, layout, MutableAnyOrigin], 3
-    ](x1_dyn, x2_dyn, x3_dyn)
+    var input_tuple = StaticTuple[LayoutTensor[dtype, layout, MutAnyOrigin], 3](
+        x1_dyn, x2_dyn, x3_dyn
+    )
 
     @parameter
     @always_inline
@@ -196,16 +196,16 @@ def test_concat_parallel():
 def test_concat_inner():
     print("== test_concat_inner")
 
-    alias dtype = DType.float32
-    alias rank = 5
-    alias concat_axis = 2
+    comptime dtype = DType.float32
+    comptime rank = 5
+    comptime concat_axis = 2
 
-    alias l1 = Layout.row_major(1, 1, 1, 2, 2)
-    alias l2 = Layout.row_major(1, 1, 2, 2, 2)
-    alias l3 = Layout.row_major(1, 1, 3, 2, 2)
-    alias s1 = IndexList[rank](1, 1, 1, 2, 2)
-    alias s2 = IndexList[rank](1, 1, 2, 2, 2)
-    alias s3 = IndexList[rank](1, 1, 3, 2, 2)
+    comptime l1 = Layout.row_major(1, 1, 1, 2, 2)
+    comptime l2 = Layout.row_major(1, 1, 2, 2, 2)
+    comptime l3 = Layout.row_major(1, 1, 3, 2, 2)
+    comptime s1 = IndexList[rank](1, 1, 1, 2, 2)
+    comptime s2 = IndexList[rank](1, 1, 2, 2, 2)
+    comptime s3 = IndexList[rank](1, 1, 3, 2, 2)
 
     var x1_stack = InlineArray[Scalar[dtype], l1.size()](uninitialized=True)
     var x2_stack = InlineArray[Scalar[dtype], l2.size()](uninitialized=True)
@@ -213,19 +213,19 @@ def test_concat_inner():
     var x1 = LayoutTensor[dtype, l1](x1_stack).fill(0)
     var x2 = LayoutTensor[dtype, l2](x2_stack).fill(1)
     var x3 = LayoutTensor[dtype, l3](x3_stack).fill(2)
-    alias layout = Layout.row_major[rank]()
-    var x1_dyn = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    comptime layout = Layout.row_major[rank]()
+    var x1_dyn = LayoutTensor[dtype, layout, MutAnyOrigin](
         x1.ptr, RuntimeLayout[layout].row_major(s1)
     )
-    var x2_dyn = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var x2_dyn = LayoutTensor[dtype, layout, MutAnyOrigin](
         x2.ptr, RuntimeLayout[layout].row_major(s2)
     )
-    var x3_dyn = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var x3_dyn = LayoutTensor[dtype, layout, MutAnyOrigin](
         x3.ptr, RuntimeLayout[layout].row_major(s3)
     )
 
-    alias out_shape = IndexList[rank](1, 1, 6, 2, 2)
-    alias out_layout = Layout.row_major(1, 1, 6, 2, 2)
+    comptime out_shape = IndexList[rank](1, 1, 6, 2, 2)
+    comptime out_layout = Layout.row_major(1, 1, 6, 2, 2)
     var out_stack = InlineArray[Scalar[dtype], out_layout.size()](
         uninitialized=True
     )
@@ -234,9 +234,9 @@ def test_concat_inner():
         output.ptr, RuntimeLayout[layout].row_major(out_shape)
     )
 
-    var input_list = StaticTuple[
-        LayoutTensor[dtype, layout, MutableAnyOrigin], 3
-    ](x1_dyn, x2_dyn, x3_dyn)
+    var input_list = StaticTuple[LayoutTensor[dtype, layout, MutAnyOrigin], 3](
+        x1_dyn, x2_dyn, x3_dyn
+    )
 
     var input_vec = _tuple_to_list(input_list)
 

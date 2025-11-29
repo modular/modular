@@ -22,64 +22,34 @@ This module defines two traits that define the roles of the different structs
 - `KVCollectionT`: Defines the interface for a pair of caches (keys and values).
 """
 
-from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, IntTuple
 from layout.runtime_layout import RuntimeLayout
 from layout.tma_async import TMANestedTensorTile, create_nested_tma_tile
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 
 from utils import Index, IndexList
 from builtin.device_passable import DevicePassable
 
 
-@parameter
-fn _strides_from_shape[shape: DimList, *, skip: Int = 0]() -> DimList:
-    alias rank = len(shape)
-    var strides = List[Dim](length=UInt(rank), fill=Dim())
-    var stride = Dim(1)
-
-    # Skip over dimensions that are not contiguous. This occurs when computing the
-    # strides for a buffer slice where some intermediate dimensions needed to
-    # compute the full stride are not available. In the current use case, one of
-    # these dimensions is `num_layers` and this is not a statically known value at
-    # this time.
-    @parameter
-    for i in reversed(range(skip, rank)):
-        strides[i] = stride
-        stride *= shape.at[i]()
-
-    @parameter
-    if rank == 4:
-        return DimList(strides[0], strides[1], strides[2], strides[3])
-    elif rank == 6:
-        return DimList(
-            strides[0],
-            strides[1],
-            strides[2],
-            strides[3],
-            strides[4],
-            strides[5],
-        )
-    else:
-        constrained[False, "Extend to support additional ranks."]()
-        return DimList.create_unknown[rank]()
-
-
 @always_inline
 fn _compute_kv_cache_dynamic_shape_strides[
-    dtype: DType, rank: Int, //, kv_cache_rank: Int, drop_list: Tuple
-](blocks: NDBuffer[dtype, rank, **_]) -> (
+    dtype: DType, //, kv_cache_rank: Int, drop_list: Tuple
+](blocks: LayoutTensor[dtype, **_]) -> Tuple[
     IndexList[kv_cache_rank],
     IndexList[kv_cache_rank],
-):
+]:
     var kv_cache_shape = IndexList[kv_cache_rank]()
     var kv_cache_strides = IndexList[kv_cache_rank]()
     var out_index = kv_cache_rank - 1
     var stride = 1
 
     @parameter
-    for i in reversed(range(rank)):
+    for i in reversed(range(blocks.rank)):
         var dim = blocks.dim[i]()
 
         # Skip dimensions in the drop list (kv_idx and layer_idx).
@@ -95,7 +65,7 @@ fn _compute_kv_cache_dynamic_shape_strides[
 
 
 @register_passable("trivial")
-struct KVCacheStaticParams(EqualityComparable, ImplicitlyCopyable, Movable):
+struct KVCacheStaticParams(Equatable, ImplicitlyCopyable, Movable):
     var num_heads: UInt
     var head_size: UInt
     var is_mla: Bool
@@ -136,10 +106,13 @@ trait KVCacheT(DevicePassable, ImplicitlyCopyable, Movable):
     Represents a single (key or value) cache.
     """
 
-    alias dtype: DType
-    alias kv_params: KVCacheStaticParams
+    comptime dtype: DType
+    comptime kv_params: KVCacheStaticParams
+    comptime page_size_: Int
 
-    fn cache_lengths_nd(self) -> NDBuffer[DType.uint32, 1, MutableAnyOrigin]:
+    fn cache_lengths_nd(
+        self,
+    ) -> LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin]:
         """Returns the cache lengths as a NDBuffer."""
         ...
 
@@ -251,24 +224,28 @@ struct ContinuousBatchingKVCache[
     KERNELS.
     """
 
-    alias dtype = dtype_
-    alias kv_params = kv_params_
-
+    comptime dtype = Self.dtype_
+    comptime kv_params = Self.kv_params_
+    comptime page_size_ = 0
     # Shape is [num_blocks, max_seq_len, num_heads, head_size].
-    alias blocks_shape = DimList(
-        Dim(),
-        Dim(),
-        Dim(Int(Self.kv_params.num_heads)),
-        Dim(Int(Self.kv_params.head_size)),
+    comptime blocks_shape = IntTuple(
+        UNKNOWN_VALUE,
+        UNKNOWN_VALUE,
+        Int(Self.kv_params.num_heads),
+        Int(Self.kv_params.head_size),
     )
-    alias blocks_stride = _strides_from_shape[Self.blocks_shape, skip=1]()
-    alias blocks_type = NDBuffer[
-        Self.dtype, 4, MutableAnyOrigin, Self.blocks_shape, Self.blocks_stride
+    comptime blocks_layout = Layout.row_major(Self.blocks_shape)
+    comptime blocks_type = LayoutTensor[
+        Self.dtype, Self.blocks_layout, MutAnyOrigin
     ]
 
     var blocks: Self.blocks_type
-    var cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
-    var lookup_table: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+    var cache_lengths: LayoutTensor[
+        DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+    ]
+    var lookup_table: LayoutTensor[
+        DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+    ]
 
     # The length of the longest sequence in the current request.
     # This length only considers tokens not in the KVCache.
@@ -279,7 +256,7 @@ struct ContinuousBatchingKVCache[
     #   max(cache_lengths[i] + prompt_lengths[i] for i in range(batch_size)
     var max_cache_length: UInt32
 
-    alias device_type: AnyTrivialRegType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -318,8 +295,12 @@ struct ContinuousBatchingKVCache[
     fn __init__(
         out self,
         blocks: Self.blocks_type,
-        cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-        lookup_table: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+        cache_lengths: LayoutTensor[
+            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ],
+        lookup_table: LayoutTensor[
+            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
     ):
@@ -343,7 +324,9 @@ struct ContinuousBatchingKVCache[
         return self.cache_lengths.dim[0]()
 
     @always_inline
-    fn cache_lengths_nd(self) -> NDBuffer[DType.uint32, 1, MutableAnyOrigin]:
+    fn cache_lengths_nd(
+        self,
+    ) -> LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin]:
         return self.cache_lengths
 
     @always_inline
@@ -406,14 +389,14 @@ struct ContinuousBatchingKVCache[
 
     @always_inline
     fn _stride(self) -> UInt32:
-        return UInt32(self.blocks.dynamic_stride[0]) // UInt32(
-            self.kv_params.num_heads * self.kv_params.head_size
-        )
+        return UInt32(
+            Int(self.blocks.runtime_layout.stride.value[0])
+        ) // UInt32(self.kv_params.num_heads * self.kv_params.head_size)
 
     @always_inline
     fn row_idx(self, batch_idx: UInt32, tok_idx: UInt32) -> UInt32:
         """Returns the row idx when viewing the memory as a matrix."""
-        block_idx = self.lookup_table[Int(batch_idx)]
+        block_idx = self.lookup_table[Int(batch_idx)][0]
         return block_idx * self._stride() + tok_idx
 
     @always_inline
@@ -447,16 +430,16 @@ struct ContinuousBatchingKVCache[
         # yields number of rows:
         # (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
         var rows = (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
-        alias cols = Self.kv_params.num_heads * Self.kv_params.head_size
+        comptime cols = Self.kv_params.num_heads * Self.kv_params.head_size
 
-        alias layout = Layout.row_major(UNKNOWN_VALUE, cols)
+        comptime layout = Layout.row_major(UNKNOWN_VALUE, Int(cols))
         rt_layout = RuntimeLayout[layout].row_major(
-            IndexList[2](Int(rows), cols)
+            IndexList[2](Int(rows), Int(cols))
         )
 
         # Create a LayoutTensor view with compile-time shape
-        var tensor = LayoutTensor[Self.dtype, layout, MutableAnyOrigin](
-            self.blocks.data, rt_layout
+        var tensor = LayoutTensor[Self.dtype, layout, MutAnyOrigin](
+            self.blocks.ptr, rt_layout
         )
 
         return create_nested_tma_tile[
@@ -477,7 +460,7 @@ struct ContinuousBatchingKVCache[
         var full_block_idx = self._get_idx_tuple(
             block_idx, head_idx, start_tok_idx, head_dim_idx
         )
-        var offset_ptr = self.blocks._offset(full_block_idx)
+        var offset_ptr = self.blocks.ptr + self.blocks._offset(full_block_idx)
         return offset_ptr
 
 
@@ -496,24 +479,29 @@ struct PagedKVCache[
         page_size: The size of the page.
     """
 
-    alias dtype = dtype_
-    alias kv_params = kv_params_
+    comptime dtype = Self.dtype_
+    comptime kv_params = Self.kv_params_
+    comptime page_size_ = Self.page_size
 
     # Shape is [total_num_blocks, page_size, num_heads, head_size].
-    alias blocks_shape = DimList(
-        Dim(),
-        Dim(page_size),
-        Dim(Int(Self.kv_params.num_heads)),
-        Dim(Int(Self.kv_params.head_size)),
+    comptime blocks_shape = IntTuple(
+        UNKNOWN_VALUE,
+        Self.page_size,
+        Int(Self.kv_params.num_heads),
+        Int(Self.kv_params.head_size),
     )
-    alias blocks_stride = _strides_from_shape[Self.blocks_shape, skip=1]()
-    alias blocks_type = NDBuffer[
-        Self.dtype, 4, MutableAnyOrigin, Self.blocks_shape, Self.blocks_stride
+    comptime blocks_layout = Layout.row_major(Self.blocks_shape)
+    comptime blocks_type = LayoutTensor[
+        Self.dtype, Self.blocks_layout, MutAnyOrigin
     ]
 
     var blocks: Self.blocks_type
-    var cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
-    var lookup_table: NDBuffer[DType.uint32, 2, MutableAnyOrigin]
+    var cache_lengths: LayoutTensor[
+        DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+    ]
+    var lookup_table: LayoutTensor[
+        DType.uint32, Layout.row_major[2](), ImmutAnyOrigin
+    ]
 
     # The length of the longest sequence in the current request.
     # This length only considers tokens not in the KVCache.
@@ -524,7 +512,7 @@ struct PagedKVCache[
     #   max(cache_lengths[i] + prompt_lengths[i] for i in range(batch_size)
     var max_cache_length: UInt32
 
-    alias device_type: AnyTrivialRegType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -540,13 +528,17 @@ struct PagedKVCache[
     fn __init__(
         out self,
         blocks: Self.blocks_type,
-        cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-        lookup_table: NDBuffer[DType.uint32, 2, MutableAnyOrigin],
+        cache_lengths: LayoutTensor[
+            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ],
+        lookup_table: LayoutTensor[
+            DType.uint32, Layout.row_major[2](), ImmutAnyOrigin
+        ],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
     ):
         debug_assert(
-            blocks.dim[1]() == page_size,
+            blocks.dim[1]() == Self.page_size,
             "blocks.dim[1]() must be equal to page_size",
         )
         debug_assert(
@@ -567,10 +559,12 @@ struct PagedKVCache[
     @staticmethod
     fn max_tile_size() -> Int:
         """Returns the maximum tile size for the KVCache."""
-        return page_size
+        return Self.page_size
 
     @always_inline
-    fn cache_lengths_nd(self) -> NDBuffer[DType.uint32, 1, MutableAnyOrigin]:
+    fn cache_lengths_nd(
+        self,
+    ) -> LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin]:
         return self.cache_lengths
 
     fn cache_length(self, batch_idx: Int) -> Int:
@@ -579,7 +573,7 @@ struct PagedKVCache[
 
     @always_inline
     fn _stride(self) -> UInt32:
-        return self.blocks.dynamic_stride[0] // UInt32(
+        return Int(self.blocks.runtime_layout.stride.value[0]) // UInt32(
             self.kv_params.num_heads * self.kv_params.head_size
         )
 
@@ -594,7 +588,7 @@ struct PagedKVCache[
             "KVCache tok_idx out of range",
         )
 
-        debug_assert(batch_idx < len(self.cache_lengths), "batch_idx is oob")
+        debug_assert(batch_idx < self.cache_lengths.size(), "batch_idx is oob")
         debug_assert(
             lut_block_index < self.blocks.dim[0](),
             "block_idx is OOB. Attempted to access block index ",
@@ -602,7 +596,7 @@ struct PagedKVCache[
             " with num_blocks ",
             self.blocks.dim[0](),
         )
-        block_idx = self.lookup_table[Int(batch_idx), Int(lut_block_index)]
+        block_idx = self.lookup_table[Int(batch_idx), Int(lut_block_index)][0]
         # alias row_stride = Int(num_heads * head_size * Self.collection_size)
         return block_idx * self._stride() + tok_in_block_idx
 
@@ -640,8 +634,8 @@ struct PagedKVCache[
         # Create a view that accounts for the paged layout
         var total_blocks = self.blocks.dim[0]()
         var rows = (total_blocks - 1) * self._stride() + Self.page_size
-        alias cols = Int(Self.kv_params.num_heads * Self.kv_params.head_size)
-        alias layout = Layout.row_major(UNKNOWN_VALUE, cols)
+        comptime cols = Int(Self.kv_params.num_heads * Self.kv_params.head_size)
+        comptime layout = Layout.row_major(UNKNOWN_VALUE, cols)
         rt_layout = RuntimeLayout[layout].row_major(
             IndexList[2](Int(rows), cols)
         )
@@ -649,8 +643,8 @@ struct PagedKVCache[
         var tensor = LayoutTensor[
             Self.dtype,
             layout,
-            MutableAnyOrigin,
-        ](self.blocks.data, rt_layout)
+            MutAnyOrigin,
+        ](self.blocks.ptr, rt_layout)
 
         return create_nested_tma_tile[
             tile_m, tile_n, swizzle_mode, is_k_major=is_k_major
@@ -678,7 +672,7 @@ struct PagedKVCache[
             "KVCache tok_idx out of range",
         )
 
-        debug_assert(bs < len(self.cache_lengths), "batch_idx is oob")
+        debug_assert(bs < self.cache_lengths.size(), "batch_idx is oob")
         debug_assert(
             lut_block_index < self.blocks.dim[0](),
             "block_idx is OOB. Attempted to access block index ",
@@ -738,7 +732,7 @@ struct PagedKVCache[
         head_dim_idx: Int = 0,
     ) -> UnsafePointer[Scalar[Self.dtype]]:
         constrained[
-            tile_size <= page_size and page_size % tile_size == 0,
+            tile_size <= Self.page_size and Self.page_size % tile_size == 0,
             (
                 "Invalid tile size for PagedKVCache. tile_size must be less"
                 " than or equal to the page size and divisible by the page size"
@@ -749,17 +743,17 @@ struct PagedKVCache[
             batch_idx, head_idx, start_tok_idx, head_dim_idx
         )
 
-        var ptr = self.blocks._offset(full_block_idx)
+        var ptr = self.blocks.ptr + self.blocks._offset(full_block_idx)
         return ptr
 
 
 trait KVCollectionT(ImplicitlyCopyable, Movable):
     """Trait for a pair of caches (keys and values)."""
 
-    alias CacheType: KVCacheT
-    alias name_str: StaticString
-    alias dtype: DType
-    alias kv_params: KVCacheStaticParams
+    comptime CacheType: KVCacheT
+    comptime name_str: StaticString
+    comptime dtype: DType
+    comptime kv_params: KVCacheStaticParams
 
     fn get_key_cache(self, layer_idx: Int) -> Self.CacheType:
         ...
@@ -787,27 +781,31 @@ struct ContinuousBatchingKVCacheCollection[
     It does own the Pointer[NDBuffer[dtype, 3]] and valid_lengths buffer
     """
 
-    alias name_str = "continuous_batching"
-    alias dtype = dtype_
-    alias kv_params = kv_params_
-    alias CacheType = ContinuousBatchingKVCache[Self.dtype, Self.kv_params]
+    comptime name_str = "continuous_batching"
+    comptime dtype = Self.dtype_
+    comptime kv_params = Self.kv_params_
+    comptime CacheType = ContinuousBatchingKVCache[Self.dtype, Self.kv_params]
 
     # Shape is [num_blocks, 2, num_layers, max_seq_len, num_heads, head_size].
-    alias blocks_shape = DimList(
-        Dim(),
-        Dim(),
-        Dim(),
-        Dim(),
-        Dim(Int(Self.kv_params.num_heads)),
-        Dim(Int(Self.kv_params.head_size)),
+    comptime blocks_shape = IntTuple(
+        UNKNOWN_VALUE,
+        UNKNOWN_VALUE,
+        UNKNOWN_VALUE,
+        UNKNOWN_VALUE,
+        Int(Self.kv_params.num_heads),
+        Int(Self.kv_params.head_size),
     )
-    alias blocks_stride = _strides_from_shape[Self.blocks_shape]()
-    alias blocks_type = NDBuffer[
-        Self.dtype, 6, MutableAnyOrigin, Self.blocks_shape, Self.blocks_stride
+    comptime blocks_layout = Layout.row_major(Self.blocks_shape)
+    comptime blocks_type = LayoutTensor[
+        Self.dtype, Self.blocks_layout, MutAnyOrigin
     ]
 
-    var cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
-    var lookup_table: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+    var cache_lengths: LayoutTensor[
+        DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+    ]
+    var lookup_table: LayoutTensor[
+        DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+    ]
     var blocks: Self.blocks_type
     var max_seq_length: UInt32
     var max_cache_length: UInt32
@@ -816,12 +814,17 @@ struct ContinuousBatchingKVCacheCollection[
 
     fn __init__(
         out self,
-        blocks: NDBuffer[Self.dtype, 6, MutableAnyOrigin],
-        cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-        lookup_table: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+        blocks: LayoutTensor[Self.dtype, Layout.row_major[6](), MutAnyOrigin],
+        cache_lengths: LayoutTensor[
+            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ],
+        lookup_table: LayoutTensor[
+            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
     ):
+        constrained[blocks.rank == 6]()
         self.blocks = rebind[self.blocks_type](blocks)
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
@@ -842,16 +845,19 @@ struct ContinuousBatchingKVCacheCollection[
     @always_inline
     fn _get_cache[kv_idx: Int](self, layer_idx: Int) -> Self.CacheType:
         debug_assert(
-            kv_idx == 0 or self.blocks.dynamic_shape[1] > 1,
+            kv_idx == 0 or Int(self.blocks.runtime_layout.shape.value[1]) > 1,
             "invalid kv_idx for MLA cache",
         )
         return self.CacheType(
             self.CacheType.blocks_type(
-                self.blocks._offset(
+                self.blocks.ptr
+                + self.blocks._offset(
                     IndexList[6](0, kv_idx, layer_idx, 0, 0, 0)
                 ),
-                self.kv_cache_dynamic_shape,
-                self.kv_cache_dynamic_strides,
+                RuntimeLayout[self.CacheType.blocks_layout](
+                    self.kv_cache_dynamic_shape,
+                    self.kv_cache_dynamic_strides,
+                ),
             ),
             self.cache_lengths,
             self.lookup_table,
@@ -868,30 +874,38 @@ struct PagedKVCacheCollection[
     kv_params_: KVCacheStaticParams,
     page_size: Int,
 ](KVCollectionT):
-    alias name_str = "paged"
-    alias dtype = dtype_
-    alias kv_params = kv_params_
-    alias CacheType = PagedKVCache[Self.dtype, Self.kv_params, page_size]
+    comptime name_str = "paged"
+    comptime dtype = Self.dtype_
+    comptime kv_params = Self.kv_params_
+    comptime CacheType = PagedKVCache[
+        Self.dtype, Self.kv_params, Self.page_size
+    ]
 
     # Shape is [total_num_blocks, 2, num_layers, page_size, num_heads, head_size].
     # Matrix view is
     # (total_num_blocks, 2, num_layers, page_size) x (num_heads, head_size)
-    alias blocks_shape = DimList(
-        Dim(),
+    comptime blocks_shape = IntTuple(
+        UNKNOWN_VALUE,
         2 if not Self.kv_params.is_mla else 1,
-        Dim(),
-        Dim(page_size),
-        Dim(Int(Self.kv_params.num_heads)),
-        Dim(Int(Self.kv_params.head_size)),
+        UNKNOWN_VALUE,
+        Self.page_size,
+        Int(Self.kv_params.num_heads),
+        Int(Self.kv_params.head_size),
     )
-    alias blocks_stride = _strides_from_shape[Self.blocks_shape]()
-    alias blocks_type = NDBuffer[
-        Self.dtype, 6, MutableAnyOrigin, Self.blocks_shape, Self.blocks_stride
+    comptime blocks_layout = Layout.row_major(Self.blocks_shape)
+    comptime blocks_type = LayoutTensor[
+        Self.dtype, Self.blocks_layout, MutAnyOrigin
     ]
 
     var blocks: Self.blocks_type
-    var cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
-    var lookup_table: NDBuffer[DType.uint32, 2, MutableAnyOrigin]
+    comptime cache_lengths_type = LayoutTensor[
+        DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+    ]
+    var cache_lengths: Self.cache_lengths_type
+    comptime lookup_table_type = LayoutTensor[
+        DType.uint32, Layout.row_major[2](), ImmutAnyOrigin
+    ]
+    var lookup_table: Self.lookup_table_type
     var max_seq_length: UInt32
     var max_cache_length: UInt32
     var kv_cache_dynamic_shape: IndexList[4]
@@ -899,12 +913,17 @@ struct PagedKVCacheCollection[
 
     fn __init__(
         out self,
-        blocks: NDBuffer[Self.dtype, 6, MutableAnyOrigin],
-        cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-        lookup_table: NDBuffer[DType.uint32, 2, MutableAnyOrigin],
+        blocks: LayoutTensor[Self.dtype, Layout.row_major[6](), MutAnyOrigin],
+        cache_lengths: LayoutTensor[
+            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ],
+        lookup_table: LayoutTensor[
+            DType.uint32, Layout.row_major[2](), ImmutAnyOrigin
+        ],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
     ):
+        constrained[blocks.rank == 6]()
         self.blocks = rebind[Self.blocks_type](blocks)
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
@@ -934,11 +953,14 @@ struct PagedKVCacheCollection[
         ]()
         return self.CacheType(
             Self.CacheType.blocks_type(
-                self.blocks._offset(
+                self.blocks.ptr
+                + self.blocks._offset(
                     IndexList[6](0, kv_idx, layer_idx, 0, 0, 0)
                 ),
-                self.kv_cache_dynamic_shape,
-                self.kv_cache_dynamic_strides,
+                RuntimeLayout[self.CacheType.blocks_layout](
+                    self.kv_cache_dynamic_shape,
+                    self.kv_cache_dynamic_strides,
+                ),
             ),
             self.cache_lengths,
             self.lookup_table,

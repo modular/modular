@@ -11,12 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from math import ceildiv, isclose
 from random import rand
 from sys.info import simd_width_of
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from itertools import product
+from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -32,7 +33,7 @@ from nn.conv_utils import (
 
 from utils.index import Index, IndexList
 
-alias simd_size: Int = simd_width_of[DType.float32]()
+comptime simd_size: Int = simd_width_of[DType.float32]()
 
 
 # CHECK-LABEL: test_conv1d
@@ -52,9 +53,9 @@ fn test[
     print("== test_conv1d")
 
     var WO = (W + pad_w[0] + pad_w[1] - dilation * (S - 1) - 1) // stride + 1
-    alias HO = 1
-    alias H = 1
-    alias R = 1
+    comptime HO = 1
+    comptime H = 1
+    comptime R = 1
 
     var conv_shape = ConvShape[1](
         n=N,
@@ -82,25 +83,33 @@ fn test[
     rand[dtype](filter_ptr, S * C_per_group * F)
 
     # Find the tile size used in packing.
-    alias micro_kernel_height = get_direct_conv_micro_kernel_height()
-    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+    comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
+    comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
 
     var micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Buffers for direct conv.
-    var input = NDBuffer[dtype, 3](input_ptr, Index(N, W, C))
-    var filter = NDBuffer[dtype, 3](filter_ptr, Index(S, C_per_group, F))
+    comptime layout_3d = Layout.row_major[3]()
+    comptime layout_4d = Layout.row_major[4]()
+    var input = LayoutTensor[dtype, layout_3d](
+        input_ptr, RuntimeLayout[layout_3d].row_major(Index(N, W, C))
+    )
+    var filter = LayoutTensor[dtype, layout_3d](
+        filter_ptr, RuntimeLayout[layout_3d].row_major(Index(S, C_per_group, F))
+    )
     var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
 
     var packed_filter_ptr = UnsafePointer[Scalar[dtype]].alloc(
         packed_filter_shape.flattened_length()
     )
-    var packed_filter = NDBuffer[dtype, 4](
+    var packed_filter = LayoutTensor[dtype, layout_4d](
         packed_filter_ptr,
-        packed_filter_shape,
+        RuntimeLayout[layout_4d].row_major(packed_filter_shape),
     )
-    var output = NDBuffer[dtype, 3](output_ptr, Index(N, WO, F))
+    var output = LayoutTensor[dtype, layout_3d](
+        output_ptr, RuntimeLayout[layout_3d].row_major(Index(N, WO, F))
+    )
 
     @parameter
     if filter_packed:
@@ -127,20 +136,17 @@ fn test[
     )
 
     # Test direct conv
-    alias conv_attr = ConvInfoStatic[1]()
+    comptime conv_attr = ConvInfoStatic[1]()
 
     @parameter
     if filter_packed:
         ConvDirectNHWC[
-            3,
-            4,
-            3,
+            layout_3d,
+            layout_4d,
+            layout_3d,
             _,
             _,
             _,
-            DimList.create_unknown[3](),
-            DimList.create_unknown[4](),
-            DimList.create_unknown[3](),
             dtype,
             dtype,
             dtype,
@@ -149,15 +155,12 @@ fn test[
         ].run(output, input, packed_filter, conv_shape)
     else:
         ConvDirectNHWC[
-            3,
-            3,
-            3,
+            layout_3d,
+            layout_3d,
+            layout_3d,
             _,
             _,
             _,
-            DimList.create_unknown[3](),
-            DimList.create_unknown[3](),
-            DimList.create_unknown[3](),
             dtype,
             dtype,
             dtype,
@@ -171,26 +174,24 @@ fn test[
 
     # Check results, return on the first failed comparison.
     var idx = 0
-    for n in range(N):
-        for wo in range(WO):
-            for f in range(F):
-                if not isclose(
-                    output_ref_ptr[idx],
-                    output_ptr[idx],
-                    atol=1e-4,  # absolute error tolerance
-                    rtol=1e-4,  # relative error tolerance
-                ):
-                    print("Input shape NWC: ", Index(N, W, C))
-                    print("filter shape SCF: ", Index(S, C, F))
-                    print("filter packed", filter_packed)
-                    print("num groups", num_groups)
-                    print("Test failed at index: ", Index(n, wo, f))
-                    print("Golden value: ", output_ref_ptr[idx])
-                    print("Actual value: ", output_ptr[idx])
-                    output_ptr.free()
-                    output_ref_ptr.free()
-                    return
-                idx += 1
+    for n, wo, f in product(range(N), range(WO), range(F)):
+        if not isclose(
+            output_ref_ptr[idx],
+            output_ptr[idx],
+            atol=1e-4,  # absolute error tolerance
+            rtol=1e-4,  # relative error tolerance
+        ):
+            print("Input shape NWC: ", Index(N, W, C))
+            print("filter shape SCF: ", Index(S, C, F))
+            print("filter packed", filter_packed)
+            print("num groups", num_groups)
+            print("Test failed at index: ", Index(n, wo, f))
+            print("Golden value: ", output_ref_ptr[idx])
+            print("Actual value: ", output_ptr[idx])
+            output_ptr.free()
+            output_ref_ptr.free()
+            return
+        idx += 1
 
     output_ptr.free()
     output_ref_ptr.free()
@@ -200,7 +201,7 @@ fn test[
 
 
 def main():
-    alias dtype = DType.float32
+    comptime dtype = DType.float32
     # No packing or padding.
     test[dtype, False](1, 5, 1, 4, 4, 2, 1, Index(0, 0), 1)
     test[dtype, False](1, 12, 12, 3, 64, 1, 1, Index(0, 0), 1)

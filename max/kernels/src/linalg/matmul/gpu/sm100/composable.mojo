@@ -13,6 +13,10 @@
 
 from hashlib import default_comp_time_hasher
 from math import ceildiv
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from sys import size_of
 
 from buffer.buffer import NDBuffer
@@ -21,9 +25,9 @@ from gpu import WARP_SIZE, barrier
 from gpu import lane_id as get_lane_id
 from gpu.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, lane_id, thread_idx
-from gpu.memory import AddressSpace, external_memory
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu import block_idx, lane_id, thread_idx
+from gpu.memory import external_memory
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 
@@ -56,6 +60,7 @@ from layout.tma_async import (
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
+from builtin.device_passable import DevicePassable
 
 import ...vendor
 from ....arch.sm100 import MmaOpSM100_SS
@@ -67,8 +72,8 @@ trait OpArgs(ImplicitlyCopyable):
 
 
 # @register_passable("trivial")
-trait LoadOp:
-    alias args_type: OpArgs
+trait LoadOp(DevicePassable):
+    comptime args_type: OpArgs
 
     fn __init__(out self, args: Self.args_type):
         ...
@@ -102,14 +107,14 @@ struct TMALoadOpArgs[
     a_desc_layout: Layout = a_layout,
     b_desc_layout: Layout = b_layout,
 ](OpArgs):
-    var a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout]
-    var b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout]
+    var a_tma_op: TMATensorTile[Self.a_type, Self.a_layout, Self.a_desc_layout]
+    var b_tma_op: TMATensorTile[Self.b_type, Self.b_layout, Self.b_desc_layout]
 
     @always_inline
     fn __init__(
         out self,
-        a: TMATensorTile[a_type, a_layout, a_desc_layout],
-        b: TMATensorTile[b_type, b_layout, b_desc_layout],
+        a: TMATensorTile[Self.a_type, Self.a_layout, Self.a_desc_layout],
+        b: TMATensorTile[Self.b_type, Self.b_layout, Self.b_desc_layout],
     ):
         self.a_tma_op = a
         self.b_tma_op = b
@@ -127,43 +132,101 @@ struct TMALoadOp[
     cluster_shape: IndexList[3],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-](LoadOp):
-    alias a_tma_layout = Layout.row_major(
-        block_tile_shape[0] // cluster_shape[0], block_tile_shape[2]
+](ImplicitlyCopyable, LoadOp):
+    comptime a_tma_layout = Layout.row_major(
+        Self.block_tile_shape[0] // Self.cluster_shape[0],
+        Self.block_tile_shape[2],
     )
-    alias b_tma_layout = Layout.row_major(
-        block_tile_shape[1] // cluster_shape[1], block_tile_shape[2]
+    comptime b_tma_layout = Layout.row_major(
+        Self.block_tile_shape[1] // Self.cluster_shape[1],
+        Self.block_tile_shape[2],
     )
-    alias a_tma_desc_layout = _tma_desc_tile_layout[
-        a_type,
+    comptime a_tma_desc_layout = _tma_desc_tile_layout[
+        Self.a_type,
         2,
-        Index(block_tile_shape[0] // cluster_shape[0], block_tile_shape[2]),
+        Index(
+            Self.block_tile_shape[0] // Self.cluster_shape[0],
+            Self.block_tile_shape[2],
+        ),
         True,
-        a_swizzle,
+        Self.a_swizzle,
     ]()
-    alias b_tma_desc_layout = _tma_desc_tile_layout[
-        b_type,
+    comptime b_tma_desc_layout = _tma_desc_tile_layout[
+        Self.b_type,
         2,
-        Index(block_tile_shape[1] // cluster_shape[1], block_tile_shape[2]),
+        Index(
+            Self.block_tile_shape[1] // Self.cluster_shape[1],
+            Self.block_tile_shape[2],
+        ),
         True,
-        b_swizzle,
+        Self.b_swizzle,
     ]()
 
-    alias args_type = TMALoadOpArgs[
-        a_type,
-        b_type,
+    comptime args_type = TMALoadOpArgs[
+        Self.a_type,
+        Self.b_type,
         Self.a_tma_layout,
         Self.b_tma_layout,
         Self.a_tma_desc_layout,
         Self.b_tma_desc_layout,
     ]
 
-    alias a_tma_type = TMATensorTile[
-        a_type, Self.a_tma_layout, Self.a_tma_desc_layout
+    comptime a_tma_type = TMATensorTile[
+        Self.a_type, Self.a_tma_layout, Self.a_tma_desc_layout
     ]
-    alias b_tma_type = TMATensorTile[
-        b_type, Self.b_tma_layout, Self.b_tma_desc_layout
+    comptime b_tma_type = TMATensorTile[
+        Self.b_type, Self.b_tma_layout, Self.b_tma_desc_layout
     ]
+
+    comptime device_type = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Device type mapping is the identity function."""
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        """
+        Gets this type's name, for use in error messages when handing arguments
+        to kernels.
+        """
+        return String(
+            "TMALoadOp[a_type = ",
+            String(Self.a_type),
+            ", b_type = ",
+            String(Self.b_type),
+            ", block_tile_shape = ",
+            String(Self.block_tile_shape),
+            ", cluster_shape = ",
+            String(Self.cluster_shape),
+            ", a_swizzle = ",
+            String(Self.a_swizzle),
+            ", b_swizzle = ",
+            String(Self.b_swizzle),
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """
+        Gets device_type's name, for use in error messages when handing arguments
+        to kernels.
+        """
+        return String(
+            "TMALoadOp[a_type = ",
+            String(Self.a_type),
+            ", b_type = ",
+            String(Self.b_type),
+            ", block_tile_shape = ",
+            String(Self.block_tile_shape),
+            ", cluster_shape = ",
+            String(Self.cluster_shape),
+            ", a_swizzle = ",
+            String(Self.a_swizzle),
+            ", b_swizzle = ",
+            String(Self.b_swizzle),
+            "]",
+        )
 
     var a_tma_ptr: UnsafePointer[Self.a_tma_type]
     var b_tma_ptr: UnsafePointer[Self.b_tma_type]
@@ -180,18 +243,24 @@ struct TMALoadOp[
     @staticmethod
     @always_inline
     def to_kernel_args(
-        a: LayoutTensor[a_type, *_, **_],
-        b: LayoutTensor[b_type, *_, **_],
+        a: LayoutTensor[Self.a_type, *_, **_],
+        b: LayoutTensor[Self.b_type, *_, **_],
         ctx: DeviceContext,
     ) -> Self.args_type:
         var a_tma_op = create_tma_tile[
-            Index(block_tile_shape[0] // cluster_shape[0], block_tile_shape[2]),
-            swizzle_mode=a_swizzle,
+            Index(
+                Self.block_tile_shape[0] // Self.cluster_shape[0],
+                Self.block_tile_shape[2],
+            ),
+            swizzle_mode = Self.a_swizzle,
         ](ctx, a)
 
         var b_tma_op = create_tma_tile[
-            Index(block_tile_shape[1] // cluster_shape[1], block_tile_shape[2]),
-            swizzle_mode=b_swizzle,
+            Index(
+                Self.block_tile_shape[1] // Self.cluster_shape[1],
+                Self.block_tile_shape[2],
+            ),
+            swizzle_mode = Self.b_swizzle,
         ](ctx, b)
 
         return Self.args_type(
@@ -226,8 +295,8 @@ struct TMALoadOp[
         )
 
 
-trait OutputOp:
-    alias args_type: OpArgs
+trait OutputOp(DevicePassable):
+    comptime args_type: OpArgs
 
     fn __init__(out self, args: Self.args_type):
         ...
@@ -241,12 +310,12 @@ struct STOutputOpArgs[
     layout: Layout,
     sb: Origin,
 ](OpArgs):
-    var c: LayoutTensor[dtype, layout, sb]
+    var c: LayoutTensor[Self.dtype, Self.layout, Self.sb]
 
     @always_inline
     fn __init__(
         out self,
-        c: LayoutTensor[dtype, layout, sb],
+        c: LayoutTensor[Self.dtype, Self.layout, Self.sb],
     ):
         self.c = c
 
@@ -262,11 +331,61 @@ struct R2GOutputOp[
     num_threads: Int,
     mma_shape: IndexList[3],
     block_tile_shape: IndexList[3],
-    o: Origin,
-](OutputOp):
-    alias args_type = STOutputOpArgs[dtype, layout, o]
+    o: MutOrigin,
+](ImplicitlyCopyable, OutputOp):
+    comptime args_type = STOutputOpArgs[Self.dtype, Self.layout, Self.o]
 
-    var c: LayoutTensor[dtype, layout, o]
+    var c: LayoutTensor[Self.dtype, Self.layout, Self.o]
+
+    comptime device_type = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Device type mapping is the identity function."""
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        """
+        Gets this type's name, for use in error messages when handing arguments
+        to kernels.
+        """
+        return String(
+            "R2GOutputOp[accum_type = ",
+            String(Self.accum_type),
+            ", dtype = ",
+            String(Self.dtype),
+            ", layout = ",
+            String(Self.layout),
+            ", num_threads = ",
+            String(Self.num_threads),
+            ", mma_shape = ",
+            String(Self.mma_shape),
+            ", block_tile_shape = ",
+            String(Self.block_tile_shape),
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """
+        Gets device_type's name, for use in error messages when handing arguments
+        to kernels.
+        """
+        return String(
+            "R2GOutputOp[accum_type = ",
+            String(Self.accum_type),
+            ", dtype = ",
+            String(Self.dtype),
+            ", layout = ",
+            String(Self.layout),
+            ", num_threads = ",
+            String(Self.num_threads),
+            ", mma_shape = ",
+            String(Self.mma_shape),
+            ", block_tile_shape = ",
+            String(Self.block_tile_shape),
+            "]",
+        )
 
     @always_inline
     fn __init__(out self, args: Self.args_type):
@@ -275,74 +394,74 @@ struct R2GOutputOp[
     @staticmethod
     @always_inline
     fn to_kernel_args(
-        c: LayoutTensor[dtype, layout, o], ctx: DeviceContext
+        c: LayoutTensor[Self.dtype, Self.layout, Self.o], ctx: DeviceContext
     ) -> Self.args_type:
         return Self.args_type(c)
 
     @always_inline
     fn __call__(self, tmem_addr: UInt32):
-        alias BM = block_tile_shape[0]
-        alias BN = block_tile_shape[1]
-        alias MMA_M = mma_shape[0]
-        alias MMA_N = mma_shape[1]
+        comptime BM = Self.block_tile_shape[0]
+        comptime BN = Self.block_tile_shape[1]
+        comptime MMA_M = Self.mma_shape[0]
+        comptime MMA_N = Self.mma_shape[1]
 
-        alias num_m_mmas = BM // MMA_M
-        alias num_n_mmas = BN // MMA_N
-        alias c_frag_size = MMA_M * MMA_N // num_threads
+        comptime num_m_mmas = BM // MMA_M
+        comptime num_n_mmas = BN // MMA_N
+        comptime c_frag_size = MMA_M * MMA_N // Self.num_threads
 
         c_frag = tcgen05_ld[
             datapaths=16,
             bits=256,
             repeat = BN // 8,
-            dtype=accum_type,
+            dtype = Self.accum_type,
             pack=False,
             width=c_frag_size,
         ](tmem_addr)
 
         tcgen05_load_wait()  # wait for the load to finish
 
-        alias num_warps = num_threads // WARP_SIZE
+        comptime num_warps = Self.num_threads // WARP_SIZE
         # Extract last 2 bits so that warp_id is 0-3.
         var warp_id = (thread_idx.x // UInt(WARP_SIZE)) & 3
 
-        var ctile = self.c.tile[BM, BN](block_idx.y, block_idx.x)
+        var ctile = self.c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
         @parameter
         for m_mma in range(num_m_mmas):
 
             @parameter
             for n_mma in range(num_n_mmas):
-                alias mma_id = n_mma * num_m_mmas + m_mma
+                comptime mma_id = n_mma * num_m_mmas + m_mma
 
                 c_gmem_warp_tile = ctile.tile[MMA_M // num_warps, MMA_N](
-                    4 * m_mma + warp_id, n_mma
+                    4 * m_mma + Int(warp_id), n_mma
                 )
 
                 c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
                     Layout.row_major(8, 4)
                 ](lane_id())
 
-                alias num_vecs_m = c_gmem_frag.layout.shape[0].value()
-                alias num_vecs_n = c_gmem_frag.layout.shape[1].value()
+                comptime num_vecs_m = c_gmem_frag.layout.shape[0].value()
+                comptime num_vecs_n = c_gmem_frag.layout.shape[1].value()
 
                 @parameter
                 for n_vec in range(num_vecs_n):
 
                     @parameter
                     for m_vec in range(num_vecs_m):
-                        alias i_vec = n_vec * num_vecs_m + m_vec
+                        comptime i_vec = n_vec * num_vecs_m + m_vec
 
                         c_gmem_frag[m_vec, n_vec] = rebind[
                             c_gmem_frag.element_type
                         ](
-                            SIMD[accum_type, 2](
+                            SIMD[Self.accum_type, 2](
                                 c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
-                            ).cast[dtype]()
+                            ).cast[Self.dtype]()
                         )
 
 
 trait PipelineOp:
-    alias args_type: OpArgs
+    comptime args_type: OpArgs
 
     @staticmethod
     fn run(args: Self.args_type):
@@ -352,15 +471,49 @@ trait PipelineOp:
 struct PipelineArgs[
     loadop_t: LoadOp,
     outputop_t: OutputOp,
-](OpArgs):
-    var load_args: loadop_t.args_type
-    var output_args: outputop_t.args_type
+](DevicePassable, OpArgs):
+    comptime device_type = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Device type mapping is the identity function."""
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        """
+        Gets this type's name, for use in error messages when handing arguments
+        to kernels.
+        """
+        return String(
+            "PipelineArgs[loadop_t = ",
+            Self.loadop_t.get_type_name(),
+            ", outputop_t = ",
+            Self.outputop_t.get_type_name(),
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """
+        Gets device_type's name, for use in error messages when handing arguments
+        to kernels.
+        """
+        return String(
+            "PipelineArgs[loadop_t = ",
+            Self.loadop_t.get_device_type_name(),
+            ", outputop_t = ",
+            Self.outputop_t.get_device_type_name(),
+            "]",
+        )
+
+    var load_args: Self.loadop_t.args_type
+    var output_args: Self.outputop_t.args_type
     var num_iters: UInt
 
     fn __init__(
         out self,
-        load_args: loadop_t.args_type,
-        output_args: outputop_t.args_type,
+        load_args: Self.loadop_t.args_type,
+        output_args: Self.outputop_t.args_type,
         num_iters: UInt,
     ):
         self.load_args = load_args
@@ -379,33 +532,33 @@ struct Pipeline[
     loadop_t: LoadOp,
     outputop_t: OutputOp,
 ](PipelineOp):
-    alias args_type = PipelineArgs[loadop_t, outputop_t]
+    comptime args_type = PipelineArgs[Self.loadop_t, Self.outputop_t]
 
     @staticmethod
     @always_inline
     fn run(args: Self.args_type):
-        var loadop = loadop_t(args.load_args)
-        var outputop = outputop_t(args.output_args)
+        var loadop = Self.loadop_t(args.load_args)
+        var outputop = Self.outputop_t(args.output_args)
 
-        alias BM = block_tile_shape[0]
-        alias BN = block_tile_shape[1]
-        alias BK = block_tile_shape[2]
+        comptime BM = Self.block_tile_shape[0]
+        comptime BN = Self.block_tile_shape[1]
+        comptime BK = Self.block_tile_shape[2]
 
-        alias a_smem_layout = tile_layout_k_major[
-            a_type, BM, BK, swizzle_mode=a_swizzle
+        comptime a_smem_layout = tile_layout_k_major[
+            Self.a_type, BM, BK, swizzle_mode = Self.a_swizzle
         ]()
-        alias b_smem_layout = tile_layout_k_major[
-            b_type, BN, BK, swizzle_mode=b_swizzle
+        comptime b_smem_layout = tile_layout_k_major[
+            Self.b_type, BN, BK, swizzle_mode = Self.b_swizzle
         ]()
 
         a_smem = rebind[
             UnsafePointer[
-                Scalar[a_type],
+                Scalar[Self.a_type],
                 address_space = AddressSpace.SHARED,
             ]
         ](
             external_memory[
-                Scalar[a_type],
+                Scalar[Self.a_type],
                 address_space = AddressSpace.SHARED,
                 alignment=128,
                 name="tmem_test_dynamic_shared_memory",
@@ -413,31 +566,31 @@ struct Pipeline[
         )
 
         # a_smem_layout is a description of how tile is arranged in memory, and LayoutTensor is a pointer to memory + a layout, taking in a_smem as its pointer
-        alias a_smem_tile_t = LayoutTensor[
-            a_type,
+        comptime a_smem_tile_t = LayoutTensor[
+            Self.a_type,
             a_smem_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
             alignment=128,
         ]
-        alias b_smem_tile_t = LayoutTensor[
-            b_type,
+        comptime b_smem_tile_t = LayoutTensor[
+            Self.b_type,
             b_smem_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
             alignment=128,
         ]
 
-        alias a_size = a_smem_layout.size()
-        alias b_size = b_smem_layout.size()
+        comptime a_size = a_smem_layout.size()
+        comptime b_size = b_smem_layout.size()
 
         constrained[
-            ((a_size * size_of[a_type]()) % 128) == 0, "preserve alignment"
+            ((a_size * size_of[Self.a_type]()) % 128) == 0, "preserve alignment"
         ]()
         constrained[
-            ((b_size * size_of[b_type]()) % 16) == 0, "preserve alignment"
+            ((b_size * size_of[Self.b_type]()) % 16) == 0, "preserve alignment"
         ]()
-        var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
+        var b_smem = (a_smem + a_size).bitcast[Scalar[Self.b_type]]()
 
         var a_smem_tile = a_smem_tile_t(a_smem)
         var b_smem_tile = b_smem_tile_t(b_smem)
@@ -445,11 +598,11 @@ struct Pipeline[
         # Shared memory pointer to hold tensor memory address, after last smem pointer and expected smem size
         var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
 
-        alias accum_type = get_accum_type[a_type]()
+        comptime accum_type = get_accum_type[Self.a_type]()
 
-        alias a_expected_bytes = a_size * size_of[a_type]()
-        alias b_expected_bytes = b_size * size_of[b_type]()
-        alias expected_bytes = a_expected_bytes + b_expected_bytes
+        comptime a_expected_bytes = a_size * size_of[Self.a_type]()
+        comptime b_expected_bytes = b_size * size_of[Self.b_type]()
+        comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
         tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
         mma_mbar = tma_mbar + 1
@@ -464,7 +617,7 @@ struct Pipeline[
         var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
         var elect_one_thread = thread_idx.x == 0
         var elect_one_cta = block_rank_in_cluster() % 2 == 0
-        alias max_tmem_cols = 512
+        comptime max_tmem_cols = 512
 
         # allocate all 2^18 bytes of smem for tcgen05, all 512 cols allocated
         if elect_one_warp:
@@ -478,15 +631,15 @@ struct Pipeline[
 
         # Create MmaOpSM100_SS instance to handle MMA operations
         var mma_op = MmaOpSM100_SS[
-            c_type,
-            a_type,
-            b_type,
-            block_tile_shape,
-            mma_shape,
+            Self.c_type,
+            Self.a_type,
+            Self.b_type,
+            Self.block_tile_shape,
+            Self.mma_shape,
             accum_type=accum_type,
             cta_group=1,
-            a_swizzle=a_swizzle,
-            b_swizzle=b_swizzle,
+            a_swizzle = Self.a_swizzle,
+            b_swizzle = Self.b_swizzle,
             transpose_b=True,
         ]()
 
@@ -542,7 +695,7 @@ fn matmul_sm100[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
-    c_device: NDBuffer[c_type, 2, _, c_shape],
+    c_device: NDBuffer[mut=True, c_type, 2, _, c_shape],
     a_device: NDBuffer[a_type, 2, _, a_shape],
     b_device: NDBuffer[b_type, 2, _, b_shape],
     ctx: DeviceContext,
@@ -551,21 +704,23 @@ fn matmul_sm100[
     var b = from_ndbuffer_row_major(b_device)
     var c = from_ndbuffer_row_major(c_device)
 
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
     var M = c.dim[0]()
     var N = c.dim[1]()
-    alias K = a_shape.get[1]()
-    alias num_iters: UInt = UInt(K // BK)
+    comptime K = a_shape.get[1]()
+    comptime num_iters = UInt(K // BK)
 
-    alias smem_use = (BM * size_of[a_type]() + BN * size_of[b_type]()) * BK + 24
+    comptime smem_use = (
+        BM * size_of[a_type]() + BN * size_of[b_type]()
+    ) * BK + 24
 
-    alias accum_type = get_accum_type[a_type]()
+    comptime accum_type = get_accum_type[a_type]()
 
-    alias block_dim = 128
-    alias cluster_shape = Index(1, 1, 1)
-    alias loadop_t = TMALoadOp[
+    comptime block_dim = 128
+    comptime cluster_shape = Index(1, 1, 1)
+    comptime loadop_t = TMALoadOp[
         a_type,
         b_type,
         block_tile_shape,
@@ -573,7 +728,7 @@ fn matmul_sm100[
         a_swizzle,
         b_swizzle,
     ]
-    alias outputop_t = R2GOutputOp[
+    comptime outputop_t = R2GOutputOp[
         accum_type,
         c_type,
         c.layout,
@@ -582,7 +737,7 @@ fn matmul_sm100[
         block_tile_shape,
         c.origin,
     ]
-    alias pipeline_t = Pipeline[
+    comptime pipeline_t = Pipeline[
         a_type,
         b_type,
         c_type,
@@ -593,15 +748,15 @@ fn matmul_sm100[
         loadop_t,
         outputop_t,
     ]
-    alias pipeline_args_t = pipeline_t.args_type
+    comptime pipeline_args_t = pipeline_t.args_type
     var args = pipeline_args_t(
         loadop_t.to_kernel_args(a, b, ctx),
         outputop_t.to_kernel_args(c, ctx),
         num_iters,
     )
 
-    alias kernel = matmul_kernel[pipeline_t]
-    ctx.enqueue_function[kernel](
+    comptime kernel = matmul_kernel[pipeline_t]
+    ctx.enqueue_function_checked[kernel, kernel](
         args,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),

@@ -222,7 +222,7 @@ def test_inline_array_runs_destructors():
     """Ensure we delete the right number of elements."""
     var destructor_recorder = List[Int]()
     var ptr = UnsafePointer(to=destructor_recorder).as_immutable()
-    alias capacity = 32
+    comptime capacity = 32
     var inline_list = InlineArray[DelRecorder[ptr.origin], 4](
         DelRecorder(0, ptr),
         DelRecorder(10, ptr),
@@ -239,8 +239,8 @@ def test_inline_array_runs_destructors():
     assert_equal(destructor_recorder[3], 30)
 
 
-fn test_unsafe_ptr() raises:
-    alias N = 10
+def test_unsafe_ptr():
+    comptime N = 10
     var arr = InlineArray[Int, 10](fill=0)
     for i in range(N):
         arr[i] = i
@@ -250,18 +250,22 @@ fn test_unsafe_ptr() raises:
         assert_equal(arr[i], ptr[i])
 
 
-def test_size_of_array[current_type: Copyable & Movable, capacity: Int]():
+def _test_size_of_array[current_type: Copyable & Movable, capacity: Int]():
     """Testing if `size_of` the array equals capacity * `size_of` current_type.
 
     Parameters:
         current_type: The type of the elements of the `InlineList`.
         capacity: The capacity of the `InlineList`.
     """
-    alias size_of_current_type = size_of[current_type]()
+    comptime size_of_current_type = size_of[current_type]()
     assert_equal(
         size_of[InlineArray[current_type, capacity]](),
         capacity * size_of_current_type,
     )
+
+
+def test_size_of_array():
+    _test_size_of_array[Int, 32]()
 
 
 def test_move():
@@ -301,7 +305,7 @@ def test_move():
 
     var del_counter = List[Int]()
     var del_counter_ptr = UnsafePointer(to=del_counter).as_immutable()
-    var del_recorder = DelRecorder(0, del_counter_ptr)
+    var del_recorder = DelRecorder[del_counter_ptr.origin](0, del_counter_ptr)
     var arr3 = InlineArray[DelRecorder[del_counter_ptr.origin], 1](del_recorder)
 
     assert_equal(len(del_counter_ptr[]), 0)

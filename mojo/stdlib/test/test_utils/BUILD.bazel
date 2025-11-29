@@ -4,6 +4,7 @@ mojo_library(
     name = "test_utils",
     testonly = True,
     srcs = glob(["**/*.mojo"]),
+    validate_missing_docs = True,
     visibility = ["//visibility:public"],
     deps = [
         "@mojo//:stdlib",

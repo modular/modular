@@ -1,0 +1,42 @@
+load("//bazel:api.bzl", "modular_py_library", "pkg_files", "requirement", "strip_prefix")
+
+package(default_visibility = ["//visibility:public"])
+
+modular_py_library(
+    name = "lib",
+    srcs = glob(["**/*.py"]),
+    data = [
+        ":base_max_config_yaml_files",
+    ],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//max/python/max/config",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/interfaces",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/dataprocessing",
+        "//max/python/max/profiler",
+        "//max/python/max/serve/telemetry",
+        "//max/python/max/support",
+        requirement("gguf"),
+        requirement("hf-transfer"),
+        requirement("huggingface-hub"),
+        requirement("llguidance"),
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("transformers"),
+    ],
+)
+
+pkg_files(
+    name = "base_max_config_yaml_files",
+    srcs = glob(["configs/**/*.yaml"]),
+    prefix = "lib",
+    strip_prefix = strip_prefix.from_pkg(""),
+    visibility = ["//visibility:public"],
+)

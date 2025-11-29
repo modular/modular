@@ -20,6 +20,7 @@ from gpu import block_dim
 from gpu.host import DeviceContext
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import matmul_kernel_naive
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal
 
 
@@ -58,13 +59,13 @@ def test_vendor_blas[
 
     ctx.enqueue_copy(c_host, c_device)
 
-    alias BLOCK_DIM = 16
+    comptime BLOCK_DIM = 16
 
     var c_ref_tensor = from_ndbuffer_row_major(c_ref)
     var a_tensor = from_ndbuffer_row_major(a)
     var b_tensor = from_ndbuffer_row_major(b)
 
-    alias kernel = matmul_kernel_naive[
+    comptime kernel = matmul_kernel_naive[
         dtype,
         dtype,
         dtype,

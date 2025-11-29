@@ -20,15 +20,15 @@ from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
 from gpu.cluster import cluster_sync, cluster_sync_relaxed, elect_one_sync
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import (
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu import (
     block_id_in_cluster,
     block_idx,
     grid_dim,
     thread_idx,
 )
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
+from gpu.memory import external_memory, fence_mbarrier_init
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import LayoutTensorIter
@@ -60,7 +60,7 @@ fn default_config_sm90[
     transpose_b: Bool,
     wgmma_shape: IndexList[3],
 ]() -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
-    alias BN = wgmma_shape[1]
+    comptime BN = wgmma_shape[1]
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=Index(128, BN, 64),
         mma_shape=wgmma_shape,
@@ -86,46 +86,49 @@ fn grouped_matmul_sm90[
     ] = default_config_sm90[a_type, b_type, c_type, transpose_b, wgmma_shape](),
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
+    a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
     max_num_tokens_per_expert: Int,
-    b: NDBuffer[b_type, 3, MutableAnyOrigin, b_shape],
-    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
+    b: NDBuffer[b_type, 3, MutAnyOrigin, b_shape],
+    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    alias num_experts = b.shape.get[0]()
-    alias N = b.shape.get[1]()
-    alias K = b.shape.get[2]()
+    # Early-exit for empty inputs to avoid creating invalid TMA descriptors.
+    if num_active_experts == 0 or a.dim(0) == 0 or c.dim(0) == 0:
+        return
+    comptime num_experts = b.shape.get[0]()
+    comptime N = b.shape.get[1]()
+    comptime K = b.shape.get[2]()
 
-    alias cluster_shape = StaticTuple[Int32, 3](
+    comptime cluster_shape = StaticTuple[Int32, 3](
         config.cluster_shape[0],
         config.cluster_shape[1],
         config.cluster_shape[2],
     )
 
-    alias CLUSTER_N = UInt(cluster_shape[0])
-    alias CLUSTER_M = UInt(cluster_shape[1])
+    comptime CLUSTER_N = UInt(cluster_shape[0])
+    comptime CLUSTER_M = UInt(cluster_shape[1])
 
-    alias c_smem_layout = _get_c_smem_layout[
+    comptime c_smem_layout = _get_c_smem_layout[
         config.block_tile_shape,
         a_type,
         b_type,
         c_type,
         Int(config.num_pipeline_stages),
     ]()
-    alias c_smem_tile = Index(
+    comptime c_smem_tile = Index(
         c_smem_layout.shape[0].value(), c_smem_layout.shape[1].value()
     )
 
-    alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
-    alias b_swizzle = TensorMapSwizzle.SWIZZLE_128B
-    alias c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
+    comptime a_swizzle = TensorMapSwizzle.SWIZZLE_128B
+    comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
+    comptime c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
 
-    alias BM = config.block_tile_shape[0]
-    alias BN = config.block_tile_shape[1]
-    alias BK = config.block_tile_shape[2]
+    comptime BM = config.block_tile_shape[0]
+    comptime BN = config.block_tile_shape[1]
+    comptime BK = config.block_tile_shape[2]
 
     # Create TMA op for the entire A tensor including all tokens.
     a_tensor = from_ndbuffer_row_major(a)
@@ -137,7 +140,7 @@ fn grouped_matmul_sm90[
     b_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * N, K),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.GENERIC,
     ](b.data)
     b_tma_op = create_tma_tile[Index(BN, BK), swizzle_mode=b_swizzle](
@@ -150,14 +153,16 @@ fn grouped_matmul_sm90[
         ctx, c_tensor
     )
 
-    alias num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
-    alias smem_size = Int(config.num_pipeline_stages) * (
+    comptime num_threads = WARPGROUP_SIZE * Int(
+        config.num_consumer
+    ) + WARPGROUP_SIZE
+    comptime smem_size = Int(config.num_pipeline_stages) * (
         BM * BK * size_of[a_type]()
         + BN * BK * size_of[b_type]()
         + (size_of[Int64]() * 2)
     ) + c_smem_layout.size() * size_of[c_type]()
 
-    alias kernel = HopperMatmulSM90Kernel[
+    comptime kernel = HopperMatmulSM90Kernel[
         a_type,
         b_type,
         c_type,
@@ -182,12 +187,13 @@ fn grouped_matmul_sm90[
     ].run_grouped[
         a_tma_op.layout,
         b_tma_op.layout,
+        c_tma_op.layout,
         a_tma_op.desc_layout,
         b_tma_op.desc_layout,
         c_tma_op.desc_layout,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,

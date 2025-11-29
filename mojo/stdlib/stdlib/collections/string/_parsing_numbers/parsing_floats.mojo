@@ -27,6 +27,8 @@ from collections import InlineArray
 import bit
 import memory
 
+from builtin.globals import global_constant
+
 from .constants import (
     CONTAINER_SIZE,
     MANTISSA_EXPLICIT_BITS,
@@ -62,13 +64,13 @@ fn _get_w_and_q_from_float_string(
     "123.2481e-5" -> (1232481, -9)
     """
     # We read the number from right to left.
-    alias ord_0 = Byte(ord("0"))
-    alias ord_9 = Byte(ord("9"))
-    alias ord_dot = Byte(ord("."))
-    alias ord_minus = Byte(ord("-"))
-    alias ord_plus = Byte(ord("+"))
-    alias ord_e = Byte(ord("e"))
-    alias ord_E = Byte(ord("E"))
+    comptime ord_0 = Byte(ord("0"))
+    comptime ord_9 = Byte(ord("9"))
+    comptime ord_dot = Byte(ord("."))
+    comptime ord_minus = Byte(ord("-"))
+    comptime ord_plus = Byte(ord("+"))
+    comptime ord_e = Byte(ord("e"))
+    comptime ord_E = Byte(ord("E"))
 
     additional_exponent = 0
     exponent_multiplier = 1
@@ -77,8 +79,8 @@ fn _get_w_and_q_from_float_string(
     exponent = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
     significand = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
 
-    alias array_ptr = Pointer[
-        __type_of(exponent), __origin_of(exponent, significand)
+    comptime array_ptr = Pointer[
+        type_of(exponent), origin_of(exponent, significand)
     ]
     prt_to_array = array_ptr(to=exponent)
     array_index = CONTAINER_SIZE
@@ -152,11 +154,11 @@ fn _get_w_and_q_from_float_string(
     return (significand_as_integer, Int64(exponent_as_integer))
 
 
-fn strip_unused_characters(x: StringSlice[mut=False]) -> __type_of(x):
+fn strip_unused_characters(x: StringSlice[mut=False]) -> type_of(x):
     return x.strip().removeprefix("+").removesuffix("f").removesuffix("F")
 
 
-fn get_sign(x: StringSlice[mut=False]) -> Tuple[Float64, __type_of(x)]:
+fn get_sign(x: StringSlice[mut=False]) -> Tuple[Float64, type_of(x)]:
     if x.startswith("-"):
         return (-1.0, x[1:])
     return (1.0, x)
@@ -170,9 +172,9 @@ fn can_use_clinger_fast_path(w: UInt64, q: Int64) -> Bool:
 
 fn clinger_fast_path(w: UInt64, q: Int64) -> Float64:
     if q >= 0:
-        return Float64(w) * POWERS_OF_10[q]
+        return Float64(w) * global_constant[POWERS_OF_10]()[q]
     else:
-        return Float64(w) / POWERS_OF_10[-q]
+        return Float64(w) / global_constant[POWERS_OF_10]()[-q]
 
 
 fn full_multiplication(x: UInt64, y: UInt64) -> UInt128Decomposed:
@@ -184,7 +186,7 @@ fn full_multiplication(x: UInt64, y: UInt64) -> UInt128Decomposed:
 
 
 fn get_128_bit_truncated_product(w: UInt64, q: Int64) -> UInt128Decomposed:
-    alias bit_precision = MANTISSA_EXPLICIT_BITS + 3
+    comptime bit_precision = MANTISSA_EXPLICIT_BITS + 3
     index = 2 * (q - SMALLEST_POWER_OF_5)
     first_product = full_multiplication(w, get_power_of_5(Int(index)))
 
@@ -284,13 +286,13 @@ fn lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
     return create_float64(m, p)
 
 
-alias _ascii_lower: Byte = ord("A") ^ ord("a")
+comptime _ascii_lower: Byte = ord("A") ^ ord("a")
 
 
 @always_inline
 fn _is_nan(stripped: StringSlice) -> Bool:
-    alias `n` = Byte(ord("n"))
-    alias `a` = Byte(ord("a"))
+    comptime `n` = Byte(ord("n"))
+    comptime `a` = Byte(ord("a"))
     var ptr = stripped.unsafe_ptr()
     return stripped.byte_length() == 3 and (
         (ptr[0] | _ascii_lower == `n`)
@@ -301,11 +303,11 @@ fn _is_nan(stripped: StringSlice) -> Bool:
 
 @always_inline
 fn _is_inf(stripped: StringSlice) -> Bool:
-    alias `i` = Byte(ord("i"))
-    alias `n` = Byte(ord("n"))
-    alias `f` = Byte(ord("f"))
-    alias `t` = Byte(ord("t"))
-    alias `y` = Byte(ord("y"))
+    comptime `i` = Byte(ord("i"))
+    comptime `n` = Byte(ord("n"))
+    comptime `f` = Byte(ord("f"))
+    comptime `t` = Byte(ord("t"))
+    comptime `y` = Byte(ord("y"))
     var ptr = stripped.unsafe_ptr()
     var in_start = (ptr[0] | _ascii_lower == `i`) and (
         ptr[1] | _ascii_lower == `n`

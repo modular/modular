@@ -19,6 +19,7 @@ from gpu import Semaphore, block_dim, block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import matmul_kernel_naive
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
@@ -97,11 +98,11 @@ fn mac_loop[
 
     var tx = thread_idx.x
     var ty = thread_idx.y
-    var global_r = rm_base + ty
-    var global_c = rn_base + tx
+    var global_r = rm_base + Int(ty)
+    var global_c = rn_base + Int(tx)
     var accum = Scalar[c_type](0)
     var thread_id = thread_idx.x + thread_idx.y * block_dim.x
-    var sema = Semaphore(locks.offset(tile_id), thread_id)
+    var sema = Semaphore(locks.offset(tile_id), Int(thread_id))
     sema.fetch()
 
     for iter in range(start_iter, end_iter):
@@ -175,7 +176,7 @@ fn first_wave_kernel[
     )
 
     while start_iter < last_iter:
-        var remainder = iters_per_tile - (start_iter % UInt(iters_per_tile))
+        var remainder = iters_per_tile - Int(start_iter % UInt(iters_per_tile))
         var boundary = start_iter + UInt(remainder)
         var end_iter = boundary if (boundary < last_iter) else last_iter
         mac_loop(
@@ -193,8 +194,8 @@ fn first_wave_kernel[
             stride_cm,
             stride_cn,
             iters_per_tile,
-            start_iter,
-            end_iter,
+            Int(start_iter),
+            Int(end_iter),
             BLOCK_M,
             BLOCK_N,
             BLOCK_K,
@@ -227,7 +228,7 @@ fn full_tiles_kernel[
     stride_cn: Int,
     total_tiles_streamk: Int,
 ):
-    var tile_id = block_idx.x + UInt(total_tiles_streamk)
+    var tile_id = Int(block_idx.x + UInt(total_tiles_streamk))
     var pid: IndexList[2]
     if GROUP_M > 0:
         pid = swizzle_tile(tile_id, M, N, K, BLOCK_M, BLOCK_N, BLOCK_K, GROUP_M)
@@ -240,8 +241,8 @@ fn full_tiles_kernel[
     var tx = thread_idx.x
     var ty = thread_idx.y
 
-    var global_r = rm_base + ty
-    var global_c = rn_base + tx
+    var global_r = rm_base + Int(ty)
+    var global_c = rn_base + Int(tx)
     var accum = Scalar[c_type](0)
 
     var steps = (K + BLOCK_K - 1) // BLOCK_K
@@ -302,14 +303,14 @@ fn matmul_stream_k[
     K: Int,
     ctx: DeviceContext,
 ) raises:
-    alias BLK_M = 16
-    alias BLK_N = 16
-    alias BLK_K = 16
+    comptime BLK_M = 16
+    comptime BLK_N = 16
+    comptime BLK_K = 16
 
     var total_blocks_M = (M + BLK_M - 1) // BLK_M
     var total_blocks_N = (N + BLK_N - 1) // BLK_N
     var iters_per_tile = (K + BLK_K - 1) // BLK_K
-    alias GROUP_M = 8
+    comptime GROUP_M = 8
 
     var total_tiles = total_blocks_M * total_blocks_N
     var total_tiles_streamk = total_tiles % total_programs_streamk
@@ -354,7 +355,7 @@ fn matmul_stream_k[
     var b_buffer = DeviceBuffer[b_type](ctx, b.data, b.size(), owning=False)
 
     if total_programs_streamk > 0:
-        alias first_wave = first_wave_kernel[
+        comptime first_wave = first_wave_kernel[
             c_type,
             a_type,
             b_type,
@@ -387,7 +388,7 @@ fn matmul_stream_k[
         ctx.synchronize()
 
     if total_blocking_tiles > 0:
-        alias full_tiles = full_tiles_kernel[
+        comptime full_tiles = full_tiles_kernel[
             c_type,
             a_type,
             b_type,
@@ -450,9 +451,9 @@ fn run_matmul_stream_k[
         c_host[i] = val.cast[dtype]()
         c_host_n[i] = c_host[i]
 
-    alias a_shape = DimList(M, K)
-    alias b_shape = DimList(K, N)
-    alias c_shape = DimList(M, N)
+    comptime a_shape = DimList(M, K)
+    comptime b_shape = DimList(K, N)
+    comptime c_shape = DimList(M, N)
 
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](K * N)
@@ -472,7 +473,7 @@ fn run_matmul_stream_k[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias sm_count = ctx.default_device_info.sm_count
+    comptime sm_count = ctx.default_device_info.sm_count
 
     matmul_stream_k[total_programs_streamk=sm_count](
         rebind[NDBuffer[dtype, 2, c_buf.origin, c_shape]](c_buf),
@@ -487,7 +488,7 @@ fn run_matmul_stream_k[
     ctx.enqueue_copy(c_host, c_device)
     ctx.synchronize()
 
-    alias BLOCK_DIM = 16
+    comptime BLOCK_DIM = 16
 
     var c_buf_n = NDBuffer[dtype, 2](c_device_n.unsafe_ptr(), Index(M, N))
 
@@ -495,7 +496,7 @@ fn run_matmul_stream_k[
     var a_tensor = from_ndbuffer_row_major(a_buf)
     var b_tensor = from_ndbuffer_row_major(b_buf)
 
-    alias kernel = matmul_kernel_naive[
+    comptime kernel = matmul_kernel_naive[
         dtype,
         dtype,
         dtype,

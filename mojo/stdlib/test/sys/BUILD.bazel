@@ -6,12 +6,18 @@ _FILECHECK_TESTS = [
 
 _LIT_TESTS = [
     "test_invalid_paramenv.mojo",
+    "test_compile_sanitize_address.mojo",
 ]
 
 _PLATFORM_CONSTRAINTS = {
     "test_aarch64_target.mojo": ["@platforms//os:macos"],  # TODO (17471): Not all aarch64 have neon, so we need to guard against that, for now just require Apple Silicon.
     "test_linux_target.mojo": ["@platforms//os:linux"],
     "test_macos_target.mojo": ["@platforms//os:macos"],
+    # TODO(MSTDL-1965): Fix this ASAN issue.
+    "test_compile_debug.mojo": select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 }
 
 _MOJO_COMPILE_OPTS = {

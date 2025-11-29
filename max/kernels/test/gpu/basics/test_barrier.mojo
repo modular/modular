@@ -15,6 +15,7 @@ import gpu.warp as warp
 from gpu import barrier, global_idx
 from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
 
@@ -39,9 +40,9 @@ fn kernel[
 
 
 fn test_barrier[dtype: DType](ctx: DeviceContext) raises:
-    alias block_size = WARP_SIZE
-    alias buffer_size = block_size
-    alias constant_add: Scalar[dtype] = 42
+    comptime block_size = WARP_SIZE
+    comptime buffer_size = block_size
+    comptime constant_add: Scalar[dtype] = 42
     var input_host = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
     var output_host = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
     var shared_host = UnsafePointer[Scalar[dtype]].alloc(buffer_size)

@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 
 from python import Python, PythonObject
@@ -155,7 +156,7 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Movable, Representable):
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:
-            alias m = "Python method receiver object did not have the"
+            comptime m = "Python method receiver object did not have the"
             return abort[UnsafePointer[Self]](String(m, " expected type: ", e))
 
     @staticmethod

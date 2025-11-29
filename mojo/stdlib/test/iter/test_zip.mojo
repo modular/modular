@@ -98,15 +98,15 @@ fn test_zip_unequal_lengths() raises:
 
 @fieldwise_init
 struct TestIter(ImplicitlyCopyable, Iterable, Iterator, Movable):
-    alias Element = Int
-    alias IteratorType[
+    comptime Element = Int
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
     var lower: Int
     var upper: Optional[Int]
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     fn __has_next__(self) -> Bool:

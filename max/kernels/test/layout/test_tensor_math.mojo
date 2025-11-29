@@ -273,7 +273,7 @@ fn test_binary_broadcast_inner():
 fn test_softmax_math():
     print("== test_softmax_math")
     var tensor_5x4 = LayoutTensor[
-        DType.float32, Layout.row_major(5, 4), MutableAnyOrigin
+        DType.float32, Layout.row_major(5, 4), MutAnyOrigin
     ].stack_allocation()
     arange(tensor_5x4)
 
@@ -292,12 +292,12 @@ fn test_softmax_math():
 fn test_max_elemntwise():
     print("== test_max_elemntwise")
     var tensor_4x4_a = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
+        DType.float32, Layout.row_major(4, 4), MutAnyOrigin
     ].stack_allocation()
     arange(tensor_4x4_a)
 
     var tensor_4x4_b = (
-        LayoutTensor[DType.float32, Layout.row_major(4, 4), MutableAnyOrigin]
+        LayoutTensor[DType.float32, Layout.row_major(4, 4), MutAnyOrigin]
         .stack_allocation()
         .fill(5)
     )

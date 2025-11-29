@@ -13,10 +13,14 @@
 
 from algorithm import parallelize
 from collections.optional import OptionalReg
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort, getenv, setenv
+from builtin.variadics import VariadicOf
+from builtin.device_passable import DevicePassable
 from sys import (
     CompilationTarget,
     argv,
+    has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
@@ -56,6 +60,7 @@ from .shmem_api import (
     shmem_barrier_all_on_stream,
     shmem_finalize,
     shmem_init,
+    shmem_init_thread,
     shmem_module_init,
     shmem_team_t,
 )
@@ -112,12 +117,20 @@ fn shmem_launch[func: fn (ctx: SHMEMContext) raises]() raises:
     # Enable any exceptions inside the closure passed to abort with the original
     # error and device ID in the message, as `parallelize` can't run on raising
     # functions.
-    fn shmem_error_wrapper(mype_node: Int) capturing:
+    fn shmem_error_wrapper(device_id_node: Int) capturing:
         try:
-            with SHMEMContext(mype_node, npes_node) as shmem_ctx:
+            var ctx = DeviceContext(device_id=device_id_node)
+            with SHMEMContext(ctx) as shmem_ctx:
                 func(shmem_ctx)
         except e:
-            abort(String("SHMEM failure on mype_node: ", mype_node, ": ", e))
+            abort(
+                String(
+                    "SHMEM failure on local device id: ",
+                    device_id_node,
+                    ": ",
+                    e,
+                )
+            )
 
     # Same number of tasks as worker threads
     parallelize[shmem_error_wrapper](npes_node, npes_node)
@@ -162,8 +175,8 @@ struct SHMEMContext(ImplicitlyCopyable, Movable):
             If initialization fails.
         """
         constrained[
-            has_nvidia_gpu_accelerator(),
-            "SHMEMContext is currently only available on NVIDIA GPUs",
+            has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator(),
+            "SHMEMContext is currently only available on NVIDIA and AMD GPUs",
         ]()
         shmem_init()
         var mype = shmem_team_my_pe(team)
@@ -191,7 +204,7 @@ struct SHMEMContext(ImplicitlyCopyable, Movable):
         )
         self._thread_per_gpu = False
 
-    fn __init__(out self, mype_node: Int, npes_node: Int) raises:
+    fn __init__(out self, ctx: DeviceContext) raises:
         """Initializes a device context with SHMEM support, using one thread
         per GPU.
 
@@ -209,8 +222,9 @@ struct SHMEMContext(ImplicitlyCopyable, Movable):
             has_nvidia_gpu_accelerator(),
             "SHMEMContext is currently only available on NVIDIA GPUs",
         ]()
-        self._ctx = shmem_init(mype_node, npes_node)
 
+        shmem_init_thread(ctx)
+        self._ctx = ctx
         # Store main stream to avoid retrieving it in each collective launch.
         self._main_stream = self._ctx.stream()
 
@@ -408,9 +422,8 @@ struct SHMEMContext(ImplicitlyCopyable, Movable):
 
         ```mojo
         with DeviceContext() as ctx:
-            var compile_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -425,6 +438,110 @@ struct SHMEMContext(ImplicitlyCopyable, Movable):
         shmem_module_init(gpu_kernel)
 
         self._ctx._enqueue_function_unchecked(
+            gpu_kernel,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
+
+        shmem_module_finalize(gpu_kernel)
+
+    @always_inline
+    @parameter
+    fn enqueue_function_checked[
+        func_type: AnyTrivialRegType,
+        declared_arg_types: VariadicOf[AnyType], //,
+        func: func_type,
+        signature_func: fn (* args: * declared_arg_types) -> None,
+        *actual_arg_types: DevicePassable,
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        *args: *actual_arg_types,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        func_attribute: OptionalReg[FuncAttribute] = None,
+    ) raises:
+        """Compiles and enqueues a kernel for execution on this device.
+
+        Parameters:
+            func_type: The dtype of the function to launch.
+            declared_arg_types: The declared argument types from the function
+                signature (usually inferred).
+            func: The function to launch.
+            signature_func: The kernel function, passed again for type checking.
+                Typically the same as `func`.
+            actual_arg_types: The types of the arguments being passed (usually inferred).
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+
+        Args:
+            args: Variadic arguments which are passed to the `func`.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: Per-block memory shared between blocks.
+            attributes: A `List` of launch attributes.
+            constant_memory: A `List` of constant memory mappings.
+            func_attribute: `CUfunction_attribute` enum.
+
+        You can pass the function directly to `enqueue_function` without
+        compiling it first:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        fn kernel():
+            print("hello from the GPU")
+
+        with DeviceContext() as ctx:
+            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+
+        If you are reusing the same function and parameters multiple times, this
+        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile it
+        first to remove the overhead:
+
+        ```mojo
+        with DeviceContext() as ctx:
+            var compile_func = ctx.compile_function_checked[kernel, kernel]()
+            ctx.enqueue_function_checked(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked(compile_func, grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+        """
+        var gpu_kernel = self._ctx.compile_function_checked[
+            func,
+            signature_func,
+            dump_asm=dump_asm,
+            dump_llvm=dump_llvm,
+            _dump_sass=_dump_sass,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](func_attribute=func_attribute)
+
+        shmem_module_init(gpu_kernel)
+
+        self._ctx._enqueue_function_checked(
             gpu_kernel,
             args,
             grid_dim=grid_dim,
@@ -505,9 +622,8 @@ struct SHMEMContext(ImplicitlyCopyable, Movable):
 
         ```mojo
         with DeviceContext() as ctx:
-            var compile_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -575,6 +691,164 @@ struct SHMEMContext(ImplicitlyCopyable, Movable):
                 " GPU-side synchronization may cause hang"
             )
         self._priority_stream._enqueue_function_unchecked(
+            gpu_kernel,
+            args,
+            grid_dim=Dim(grid_x, grid_y, grid_z),
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
+        # Mark point in priority stream and wait for it to complete in main stream
+        self._priority_stream.record_event(self._end_event)
+        self._main_stream.enqueue_wait_for(self._end_event)
+        shmem_module_finalize(gpu_kernel)
+
+    @always_inline
+    @parameter
+    fn enqueue_function_collective_checked[
+        func_type: AnyTrivialRegType,
+        declared_arg_types: VariadicOf[AnyType], //,
+        func: func_type,
+        signature_func: fn (* args: * declared_arg_types) -> None,
+        *actual_arg_types: DevicePassable,
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        *args: *actual_arg_types,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        func_attribute: OptionalReg[FuncAttribute] = None,
+    ) raises:
+        """Compiles and enqueues a kernel for execution on this device.
+
+        Parameters:
+            func_type: The dtype of the function to launch.
+            declared_arg_types: The declared argument types from the function
+                signature (usually inferred).
+            func: The function to launch.
+            signature_func: The kernel function, passed again for type checking.
+                Typically the same as `func`.
+            actual_arg_types: The types of the arguments being passed (usually inferred).
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+
+        Args:
+            args: Variadic arguments which are passed to the `func`.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: Per-block memory shared between blocks.
+            attributes: A `List` of launch attributes.
+            constant_memory: A `List` of constant memory mappings.
+            func_attribute: `CUfunction_attribute` enum.
+
+        You can pass the function directly to `enqueue_function` without
+        compiling it first:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        fn kernel():
+            print("hello from the GPU")
+
+        with DeviceContext() as ctx:
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+
+        If you are reusing the same function and parameters multiple times, this
+        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile it
+        first to remove the overhead:
+
+        ```mojo
+        with DeviceContext() as ctx:
+            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+        """
+        var gpu_kernel = self._ctx.compile_function_checked[
+            func,
+            signature_func,
+            dump_asm=dump_asm,
+            dump_llvm=dump_llvm,
+            _dump_sass=_dump_sass,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](func_attribute=func_attribute)
+        shmem_module_init(gpu_kernel)
+
+        var block_size = block_dim[0] * block_dim[1] * block_dim[2]
+        var shared_mem_bytes_val = (
+            shared_mem_bytes.value() if shared_mem_bytes else 0
+        )
+        var max_blocks_sm = (
+            gpu_kernel.occupancy_max_active_blocks_per_multiprocessor(
+                block_size, shared_mem_bytes_val
+            )
+        )
+        var grid_size = -1
+        var launch_failed = True
+
+        var grid_x = grid_dim[0]
+        var grid_y = grid_dim[1]
+        var grid_z = grid_dim[2]
+        if grid_x == 0 and grid_y == 0 and grid_z == 0:
+            grid_size = 0
+        elif grid_x != 0 and grid_y != 0 and grid_z != 0:
+            grid_size = grid_x * grid_y * grid_z
+
+        if grid_size == 0:
+            if max_blocks_sm == 0:
+                launch_failed = False
+            grid_x = max_blocks_sm * self._multiprocessor_count
+            grid_y = 1
+            grid_z = 1
+        elif grid_size > 0:
+            if (
+                max_blocks_sm > 0
+                and grid_size <= max_blocks_sm * self._multiprocessor_count
+            ):
+                launch_failed = False
+
+        if launch_failed:
+            raise Error(
+                "One or more GPUs cannot collectively launch the kernel"
+            )
+
+        # Mark point in main stream and wait for it to complete in priority stream
+        self._main_stream.record_event(self._begin_event)
+        self._priority_stream.enqueue_wait_for(self._begin_event)
+
+        if self._cooperative:
+            attributes.append(
+                LaunchAttribute(
+                    id=LaunchAttributeID.COOPERATIVE,
+                    value=LaunchAttributeValue(True),
+                )
+            )
+        else:
+            print(
+                "Warning: cooperative launch not supported on at least one PE;"
+                " GPU-side synchronization may cause hang"
+            )
+        self._priority_stream._enqueue_function_checked(
             gpu_kernel,
             args,
             grid_dim=Dim(grid_x, grid_y, grid_z),

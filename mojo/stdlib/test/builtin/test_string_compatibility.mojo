@@ -48,17 +48,17 @@ def test_literals():
 
 def test_alias_expressions():
     """Test string alias expressions."""
-    alias alias_concat = "foo" + "bar"
-    alias alias_concat_string = "foo" + String("bar")
-    alias alias_concat_static = StaticString("foo") + "bar"
+    comptime alias_concat = "foo" + "bar"
+    comptime alias_concat_string = "foo" + String("bar")
+    comptime alias_concat_static = StaticString("foo") + "bar"
 
-    alias alias_or = "foo" or "bar"
-    alias alias_or_string = "" or String("bar")
-    alias alias_or_static = StaticString("foo") or "bar"
+    comptime alias_or = "foo" or "bar"
+    comptime alias_or_string = "" or String("bar")
+    comptime alias_or_static = StaticString("foo") or "bar"
 
-    alias alias_if = "foo" if True else "bar"
-    alias alias_if_string = "foo" if False else String("bar")
-    alias alias_if_static = StaticString("foo") if True else "bar"
+    comptime alias_if = "foo" if True else "bar"
+    comptime alias_if_string = "foo" if False else String("bar")
+    comptime alias_if_static = StaticString("foo") if True else "bar"
 
     # Test materialization of alias expressions
     assert_equal(alias_concat, "foobar")
@@ -216,7 +216,7 @@ def _test_with_collections(string: String, static_string: StaticString):
     assert_equal(string_dict[string + "_key"], static_string)
 
     # Test constructing a List with `StaticString` and `String` types
-    var list_of_strings = List[String](string, static_string)
+    var list_of_strings: List[String] = [string, static_string]
     assert_equal(list_of_strings[0], string)
     assert_equal(list_of_strings[1], static_string)
 
@@ -266,14 +266,14 @@ def _test_list_comprehensions(
     """Test list comprehensions with mixed string types."""
 
     # List comprehension with mixed string types and operations
-    var static_strings = List[String]("one", "two", "three")
+    var static_strings: List[String] = ["one", "two", "three"]
     var mixed_ops = [static_string + String("_") + s for s in static_strings]
     assert_equal(mixed_ops[0], String(static_string) + "_one")
     assert_equal(mixed_ops[1], String(static_string) + "_two")
     assert_equal(mixed_ops[2], String(static_string) + "_three")
 
     # List comprehension with complex conditional logic and mixed types
-    var test_strings = List[String]("short", "medium", "a", "long_string")
+    var test_strings: List[String] = ["short", "medium", "a", "long_string"]
     var categorized = [
         "short" if len(s) < 6 else ("medium" if len(s) < 11 else String("long"))
         for s in test_strings
@@ -284,7 +284,7 @@ def _test_list_comprehensions(
     assert_equal(categorized[3], "long")
 
     # List comprehension combining different string types
-    var string_types_list = List[String](string, static_string)
+    var string_types_list: List[String] = [string, static_string]
     var combined = [s + "_" + static_string for s in string_types_list]
     assert_equal(combined[0], string + "_" + static_string)
     assert_equal(combined[1], static_string + "_" + static_string)

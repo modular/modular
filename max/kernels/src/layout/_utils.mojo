@@ -18,10 +18,11 @@ from sys.intrinsics import readfirstlane
 from buffer import NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from gpu.intrinsics import AMDBufferResource
-from gpu.mma import mma
+from gpu.compute.mma import mma
 from layout import *
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
 from memory.unsafe import bitcast
+from memory import LegacyUnsafePointer as UnsafePointer
 
 from utils import IndexList
 
@@ -33,20 +34,24 @@ struct ManagedLayoutTensor[
     layout: Layout,
     *,
 ]:
-    alias index_type: DType = _get_index_type(layout, AddressSpace.GENERIC)
-    alias element_type: DType = _get_layout_type(layout, AddressSpace.GENERIC)
-    alias layout_tensor_type = LayoutTensor[
-        dtype,
-        layout,
-        MutableAnyOrigin,
+    comptime index_type: DType = _get_index_type(
+        Self.layout, AddressSpace.GENERIC
+    )
+    comptime element_type: DType = _get_layout_type(
+        Self.layout, AddressSpace.GENERIC
+    )
+    comptime layout_tensor_type = LayoutTensor[
+        Self.dtype,
+        Self.layout,
+        MutAnyOrigin,
         layout_int_type = Self.element_type,
         linear_idx_type = Self.index_type,
     ]
 
-    var device_data: Optional[DeviceBuffer[dtype]]
-    var host_data: HostBuffer[dtype]
+    var device_data: Optional[DeviceBuffer[Self.dtype]]
+    var host_data: HostBuffer[Self.dtype]
     var runtime_layout: RuntimeLayout[
-        layout,
+        Self.layout,
         element_type = Self.element_type,
         linear_idx_type = Self.index_type,
     ]
@@ -57,13 +62,15 @@ struct ManagedLayoutTensor[
         self.ctx = DeviceContext(api="cpu")
         self.runtime_layout = {}
         self.device_data = None
-        self.host_data = self.ctx.enqueue_create_host_buffer[dtype](
+        self.host_data = self.ctx.enqueue_create_host_buffer[Self.dtype](
             self.runtime_layout.size()
         )
         self.ctx.synchronize()
 
     @always_inline
-    fn __init__(out self, runtime_layout: RuntimeLayout[layout, **_]) raises:
+    fn __init__(
+        out self, runtime_layout: RuntimeLayout[Self.layout, **_]
+    ) raises:
         self.ctx = DeviceContext(api="cpu")
 
         constrained[
@@ -75,11 +82,11 @@ struct ManagedLayoutTensor[
             ".",
         ]()
 
-        self.runtime_layout = rebind[__type_of(self.runtime_layout)](
+        self.runtime_layout = rebind[type_of(self.runtime_layout)](
             runtime_layout
         )
         self.device_data = None
-        self.host_data = self.ctx.enqueue_create_host_buffer[dtype](
+        self.host_data = self.ctx.enqueue_create_host_buffer[Self.dtype](
             self.runtime_layout.size()
         )
         self.ctx.synchronize()
@@ -88,17 +95,19 @@ struct ManagedLayoutTensor[
     fn __init__(out self, ctx: DeviceContext) raises:
         self.ctx = ctx
         self.runtime_layout = {}
-        self.device_data = ctx.enqueue_create_buffer[dtype](
+        self.device_data = ctx.enqueue_create_buffer[Self.dtype](
             self.runtime_layout.size()
         )
-        self.host_data = self.ctx.enqueue_create_host_buffer[dtype](
+        self.host_data = self.ctx.enqueue_create_host_buffer[Self.dtype](
             self.runtime_layout.size()
         )
         self.ctx.synchronize()
 
     @always_inline
     fn __init__(
-        out self, runtime_layout: RuntimeLayout[layout, **_], ctx: DeviceContext
+        out self,
+        runtime_layout: RuntimeLayout[Self.layout, **_],
+        ctx: DeviceContext,
     ) raises:
         constrained[
             runtime_layout.element_type == Self.element_type,
@@ -122,13 +131,13 @@ struct ManagedLayoutTensor[
 
         self.ctx = ctx
 
-        self.runtime_layout = rebind[__type_of(self.runtime_layout)](
+        self.runtime_layout = rebind[type_of(self.runtime_layout)](
             runtime_layout
         )
-        self.device_data = ctx.enqueue_create_buffer[dtype](
+        self.device_data = ctx.enqueue_create_buffer[Self.dtype](
             self.runtime_layout.size()
         )
-        self.host_data = self.ctx.enqueue_create_host_buffer[dtype](
+        self.host_data = self.ctx.enqueue_create_host_buffer[Self.dtype](
             self.runtime_layout.size()
         )
         self.ctx.synchronize()
@@ -146,7 +155,7 @@ struct ManagedLayoutTensor[
             self._update_device()
 
         @parameter
-        if layout.all_dims_known():
+        if Self.layout.all_dims_known():
             return Self.layout_tensor_type(
                 self.device_data.value().unsafe_ptr(),
             )
@@ -158,18 +167,18 @@ struct ManagedLayoutTensor[
 
     fn device_buffer[
         update: Bool = True
-    ](self) raises -> NDBuffer[dtype, layout.rank(), MutableAnyOrigin]:
+    ](self) raises -> NDBuffer[Self.dtype, Self.layout.rank(), MutAnyOrigin]:
         @parameter
         if update:
             self._update_device()
 
-        var shape = IndexList[layout.rank()]()
+        var shape = IndexList[Self.layout.rank()]()
 
         @parameter
-        for r in range(layout.rank()):
+        for r in range(Self.layout.rank()):
             shape[r] = self.runtime_layout.dim(r)
 
-        return NDBuffer[dtype, layout.rank()](
+        return NDBuffer[Self.dtype, Self.layout.rank()](
             self.device_data.value().unsafe_ptr(), shape
         )
 
@@ -179,7 +188,7 @@ struct ManagedLayoutTensor[
             self._update_host()
 
         @parameter
-        if layout.all_dims_known():
+        if Self.layout.all_dims_known():
             return Self.layout_tensor_type(
                 self.host_data.unsafe_ptr(),
             )
@@ -191,18 +200,18 @@ struct ManagedLayoutTensor[
 
     fn buffer[
         update: Bool = True
-    ](self) raises -> NDBuffer[dtype, layout.rank(), MutableAnyOrigin]:
+    ](self) raises -> NDBuffer[Self.dtype, Self.layout.rank(), MutAnyOrigin]:
         @parameter
         if update:
             self._update_host()
 
-        var shape = IndexList[layout.rank()]()
+        var shape = IndexList[Self.layout.rank()]()
 
         @parameter
-        for r in range(layout.rank()):
+        for r in range(Self.layout.rank()):
             shape[r] = self.runtime_layout.dim(r)
 
-        return NDBuffer[dtype, layout.rank()](
+        return NDBuffer[Self.dtype, Self.layout.rank()](
             self.host_data.unsafe_ptr(), shape
         )
 
@@ -229,8 +238,8 @@ fn load_to_simd(
         tensor.layout.all_dims_known(),
         "load_to_simd is supported only for tensors with known layout",
     ]()
-    alias size = __type_of(res).size
-    return rebind[__type_of(res)](
+    comptime size = type_of(res).size
+    return rebind[type_of(res)](
         tensor.reshape[Layout(size)]().vectorize[size]()[0]
     )
 
@@ -248,9 +257,9 @@ fn _get_bounds(tensor: LayoutTensor) -> Int:
     if tensor.dim[0]() == 0 or tensor.dim[1]() == 0:
         return 0
 
-    alias element_layout = tensor.element_layout
-    alias element_offset = element_layout(element_layout.size() - 1)
-    alias tensor_t = __type_of(tensor)
+    comptime element_layout = tensor.element_layout
+    comptime element_offset = element_layout(element_layout.size() - 1)
+    comptime tensor_t = type_of(tensor)
     var strides = tensor.runtime_layout.stride.value
     var offset = tensor._get_offset(
         strides,
@@ -284,8 +293,8 @@ fn idx2crd[layout: Layout](idx: Int) -> IndexList[layout.rank()]:
 
     @parameter
     for i in range(layout.rank()):
-        alias stride = layout.stride[i].value()
-        alias shape = layout.shape[i].value()
+        comptime stride = layout.stride[i].value()
+        comptime shape = layout.shape[i].value()
         res[i] = (Int(idx) // stride) % shape
     return res
 
@@ -297,7 +306,7 @@ fn hash(tensor: LayoutTensor) -> Int:
         size_of[tensor.dtype]() == 2, "Only support 2 byte types for hash"
     ]()
     var hash_value: Int = 0
-    alias size = tensor.layout.size()
+    comptime size = tensor.layout.size()
 
     for i in range(tensor.dim[0]()):
         for j in range(tensor.dim[1]()):

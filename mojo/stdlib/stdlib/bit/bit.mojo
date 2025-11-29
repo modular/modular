@@ -19,8 +19,7 @@ from bit import count_leading_zeros
 ```
 """
 
-from sys import llvm_intrinsic
-from sys.info import bit_width_of
+from sys import llvm_intrinsic, bit_width_of, size_of
 
 from bit._mask import is_negative
 
@@ -67,8 +66,8 @@ fn count_leading_zeros[
     constrained[dtype.is_integral(), "must be integral"]()
 
     # HACK(#5003): remove this workaround
-    alias d = dtype if dtype is not DType.int else (
-        DType.int32 if dtype.size_of() == 4 else DType.int64
+    comptime d = dtype if dtype is not DType.int else (
+        DType.int32 if size_of[dtype]() == 4 else DType.int64
     )
     return llvm_intrinsic["llvm.ctlz", SIMD[d, width], has_side_effect=False](
         val.cast[d](), False
@@ -114,7 +113,7 @@ fn count_trailing_zeros[
         trailing zeros at position `i` of the input value.
     """
     constrained[dtype.is_integral(), "must be integral"]()
-    return llvm_intrinsic["llvm.cttz", __type_of(val), has_side_effect=False](
+    return llvm_intrinsic["llvm.cttz", type_of(val), has_side_effect=False](
         val, False
     )
 
@@ -159,7 +158,7 @@ fn bit_reverse[
     """
     constrained[dtype.is_integral(), "must be integral"]()
     return llvm_intrinsic[
-        "llvm.bitreverse", __type_of(val), has_side_effect=False
+        "llvm.bitreverse", type_of(val), has_side_effect=False
     ](val)
 
 
@@ -217,9 +216,9 @@ fn byte_swap[
     constrained[dtype.is_integral(), "must be integral"]()
 
     @parameter
-    if dtype.bit_width() < 16:
+    if bit_width_of[dtype]() < 16:
         return val
-    return llvm_intrinsic["llvm.bswap", __type_of(val), has_side_effect=False](
+    return llvm_intrinsic["llvm.bswap", type_of(val), has_side_effect=False](
         val
     )
 
@@ -263,7 +262,7 @@ fn pop_count[
         bits set in the element at position `i` of the input value.
     """
     constrained[dtype.is_integral(), "must be integral"]()
-    return llvm_intrinsic["llvm.ctpop", __type_of(val), has_side_effect=False](
+    return llvm_intrinsic["llvm.ctpop", type_of(val), has_side_effect=False](
         val
     )
 
@@ -312,7 +311,7 @@ fn bit_width(val: Int) -> Int:
     Returns:
         The number of bits required to represent the integer.
     """
-    alias bitwidth = bit_width_of[Int]()
+    comptime bitwidth = bit_width_of[Int]()
     return bitwidth - count_leading_zeros(select(val < 0, ~val, val))
 
 
@@ -336,7 +335,7 @@ fn bit_width[
         A SIMD value where the element at position `i` equals the number of bits required to represent the integer at position `i` of the input.
     """
     constrained[dtype.is_integral(), "must be integral"]()
-    alias bitwidth = dtype.bit_width()
+    comptime bitwidth = bit_width_of[dtype]()
 
     @parameter
     if dtype.is_unsigned():
@@ -377,7 +376,7 @@ fn log2_floor(val: UInt) -> UInt:
         The floor of the base-2 logarithm of the input value, which is equal to
         the position of the highest set bit. Returns UInt.MAX if val is 0.
     """
-    return UInt(bit_width_of[UInt]() - count_leading_zeros(val) - 1)
+    return UInt(bit_width_of[UInt]() - count_leading_zeros(Int(val)) - 1)
 
 
 @always_inline
@@ -399,7 +398,7 @@ fn log2_floor[
     """
     constrained[dtype.is_integral(), "dtype must be integral"]()
 
-    alias bitwidth = dtype.bit_width()
+    comptime bitwidth = bit_width_of[dtype]()
     var res = bitwidth - count_leading_zeros(val) - 1
 
     @parameter
@@ -430,7 +429,7 @@ fn log2_ceil(val: Int) -> Int:
 
 
 @always_inline
-fn log2_ceil(val: Scalar) -> __type_of(val):
+fn log2_ceil(val: Scalar) -> type_of(val):
     """Returns the ceiling of the base-2 logarithm of an integer value.
 
     Args:
@@ -441,7 +440,7 @@ fn log2_ceil(val: Scalar) -> __type_of(val):
         the input value. Returns 0 if `val` is 0.
     """
     constrained[val.dtype.is_integral(), "the input dtype must be integral"]()
-    return select(val <= 1, __type_of(val)(0), log2_floor(val - 1) + 1)
+    return select(val <= 1, type_of(val)(0), log2_floor(val - 1) + 1)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -642,8 +641,8 @@ fn rotate_bits_left[
     elif shift < 0:
         return rotate_bits_right[-shift](x)
     else:
-        return llvm_intrinsic["llvm.fshl", __type_of(x), has_side_effect=False](
-            x, x, __type_of(x)(shift)
+        return llvm_intrinsic["llvm.fshl", type_of(x), has_side_effect=False](
+            x, x, type_of(x)(shift)
         )
 
 
@@ -716,6 +715,6 @@ fn rotate_bits_right[
     elif shift < 0:
         return rotate_bits_left[-shift](x)
     else:
-        return llvm_intrinsic["llvm.fshr", __type_of(x), has_side_effect=False](
-            x, x, __type_of(x)(shift)
+        return llvm_intrinsic["llvm.fshr", type_of(x), has_side_effect=False](
+            x, x, type_of(x)(shift)
         )

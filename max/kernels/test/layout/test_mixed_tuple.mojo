@@ -21,20 +21,18 @@ from layout._mixed_tuple import (
     RuntimeInt,
     mixed_int_tuple_to_int_tuple,
 )
-from testing import assert_equal
+from testing import assert_equal, assert_true, TestSuite
 
 
 fn test_nested_layouts() raises:
-    print("== test_nested_layouts")
-
     # Create nested layouts
     var inner = MixedTuple(Idx[2](), Idx(3))
     var nested = MixedTuple(inner, Idx[4]())
     assert_equal(inner[1].value(), 3)
     assert_equal(nested[0][0].value(), 2)
     assert_equal(nested[1].value(), 4)
-    assert_equal(size_of[__type_of(inner)](), size_of[Int]())
-    assert_equal(size_of[__type_of(nested)](), size_of[Int]())
+    assert_equal(size_of[type_of(inner)](), size_of[Int]())
+    assert_equal(size_of[type_of(nested)](), size_of[Int]())
 
 
 fn test_int_tuple_conversion() raises:
@@ -46,16 +44,18 @@ fn test_int_tuple_conversion() raises:
 
 
 fn test_list_literal_construction() raises:
-    print("== test_list_literal_construction")
-    var t: MixedTuple[ComptimeInt[2], RuntimeInt[DType.int]] = [
+    var t = MixedTuple[ComptimeInt[2], RuntimeInt[DType.int]](
         Idx[2](),
         Idx(3),
-    ]
+    )
     assert_equal(t[0].value(), 2)
     assert_equal(t[1].value(), 3)
 
 
+fn test_flatten_empty() raises:
+    var t = MixedTuple[]()
+    assert_true(t.flatten() == t)
+
+
 def main():
-    test_nested_layouts()
-    test_list_literal_construction()
-    test_int_tuple_conversion()
+    TestSuite.discover_tests[__functions_in_module()]().run()

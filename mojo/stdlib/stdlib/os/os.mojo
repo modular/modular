@@ -22,14 +22,15 @@ from os import listdir
 
 from collections import InlineArray, List
 from collections.string.string_slice import _unsafe_strlen
+from io import FileDescriptor
 from sys import CompilationTarget, external_call, is_gpu
-from sys.ffi import c_char
+from sys.ffi import c_char, c_int
 
 from .path import isdir, split
 from .pathlike import PathLike
 
 # TODO move this to a more accurate location once nt/posix like modules are in stdlib
-alias sep = "/"
+comptime sep = "/"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -37,11 +38,11 @@ alias sep = "/"
 # ===----------------------------------------------------------------------=== #
 
 
-alias SEEK_SET: UInt8 = 0
+comptime SEEK_SET: UInt8 = 0
 """Seek from the beginning of the file."""
-alias SEEK_CUR: UInt8 = 1
+comptime SEEK_CUR: UInt8 = 1
 """Seek from the current position."""
-alias SEEK_END: UInt8 = 2
+comptime SEEK_END: UInt8 = 2
 """Seek from the end of the file."""
 
 
@@ -51,7 +52,7 @@ alias SEEK_END: UInt8 = 2
 
 
 struct _dirent_linux(Copyable, Movable):
-    alias MAX_NAME_SIZE = 256
+    comptime MAX_NAME_SIZE = 256
     var d_ino: Int64
     """File serial number."""
     var d_off: Int64
@@ -65,7 +66,7 @@ struct _dirent_linux(Copyable, Movable):
 
 
 struct _dirent_macos(Copyable, Movable):
-    alias MAX_NAME_SIZE = 1024
+    comptime MAX_NAME_SIZE = 1024
     var d_ino: Int64
     """File serial number."""
     var d_off: Int64
@@ -83,7 +84,7 @@ struct _dirent_macos(Copyable, Movable):
 struct _DirHandle:
     """Handle to an open directory descriptor opened via opendir."""
 
-    var _handle: OpaquePointer
+    var _handle: OpaquePointer[MutOrigin.external]
 
     fn __init__(out self, var path: String) raises:
         """Construct the _DirHandle using the path provided.
@@ -94,7 +95,7 @@ struct _DirHandle:
         if not isdir(path):
             raise Error("the directory '", path, "' does not exist")
 
-        self._handle = external_call["opendir", OpaquePointer](
+        self._handle = external_call["opendir", type_of(self._handle)](
             path.unsafe_cstr_ptr()
         )
 
@@ -127,16 +128,18 @@ struct _DirHandle:
         var res = List[String]()
 
         while True:
-            var ep = external_call["readdir", UnsafePointer[_dirent_linux]](
-                self._handle
-            )
+            var ep = external_call[
+                "readdir", UnsafePointer[_dirent_linux, MutOrigin.external]
+            ](self._handle)
             if not ep:
                 break
             var name = ep.take_pointee().name
             var name_ptr = name.unsafe_ptr().bitcast[Byte]()
-            var name_str = StringSlice[__origin_of(name)](
+            var name_str = StringSlice[origin_of(name)](
                 ptr=name_ptr,
-                length=_unsafe_strlen(name_ptr, _dirent_linux.MAX_NAME_SIZE),
+                length=Int(
+                    _unsafe_strlen(name_ptr, _dirent_linux.MAX_NAME_SIZE)
+                ),
             )
             if name_str == "." or name_str == "..":
                 continue
@@ -153,16 +156,18 @@ struct _DirHandle:
         var res = List[String]()
 
         while True:
-            var ep = external_call["readdir", UnsafePointer[_dirent_macos]](
-                self._handle
-            )
+            var ep = external_call[
+                "readdir", UnsafePointer[_dirent_macos, MutOrigin.external]
+            ](self._handle)
             if not ep:
                 break
             var name = ep.take_pointee().name
             var name_ptr = name.unsafe_ptr().bitcast[Byte]()
-            var name_str = StringSlice[__origin_of(name)](
+            var name_str = StringSlice[origin_of(name)](
                 ptr=name_ptr,
-                length=_unsafe_strlen(name_ptr, _dirent_macos.MAX_NAME_SIZE),
+                length=Int(
+                    _unsafe_strlen(name_ptr, _dirent_macos.MAX_NAME_SIZE)
+                ),
             )
             if name_str == "." or name_str == "..":
                 continue
@@ -202,6 +207,9 @@ fn listdir[PathLike: os.PathLike](path: PathLike) raises -> List[String]:
 
     Returns:
       Returns the list of entries in the path provided.
+
+    Raises:
+        If the operation fails.
     """
     var dir = _DirHandle(path.__fspath__())
     return dir.list()
@@ -269,6 +277,9 @@ fn remove[PathLike: os.PathLike](path: PathLike) raises:
     Args:
       path: The path to the file.
 
+
+    Raises:
+        If the operation fails.
     """
     var fspath = path.__fspath__()
     var error = external_call["unlink", Int32](fspath.unsafe_cstr_ptr())
@@ -293,6 +304,9 @@ fn unlink[PathLike: os.PathLike](path: PathLike) raises:
     Args:
       path: The path to the file.
 
+
+    Raises:
+        If the operation fails.
     """
     remove(path.__fspath__())
 
@@ -314,6 +328,9 @@ fn mkdir[PathLike: os.PathLike](path: PathLike, mode: Int = 0o777) raises:
     Args:
       path: The path to the directory.
       mode: The mode to create the directory with.
+
+    Raises:
+        If the operation fails.
     """
 
     var fspath = path.__fspath__()
@@ -322,9 +339,9 @@ fn mkdir[PathLike: os.PathLike](path: PathLike, mode: Int = 0o777) raises:
         raise Error("Can not create directory: ", fspath)
 
 
-def makedirs[
+fn makedirs[
     PathLike: os.PathLike
-](path: PathLike, mode: Int = 0o777, exist_ok: Bool = False) -> None:
+](path: PathLike, mode: Int = 0o777, exist_ok: Bool = False) raises -> None:
     """Creates a specified leaf directory along with any necessary intermediate
     directories that don't already exist.
 
@@ -335,6 +352,9 @@ def makedirs[
       path: The path to the directory.
       mode: The mode to create the directory with.
       exist_ok: Ignore error if `True` and path exists (default `False`).
+
+    Raises:
+        If the operation fails.
     """
     var head, tail = split(path)
     if not tail:
@@ -371,6 +391,9 @@ fn rmdir[PathLike: os.PathLike](path: PathLike) raises:
 
     Args:
       path: The path to the directory.
+
+    Raises:
+        If the operation fails.
     """
     var fspath = path.__fspath__()
     var error = external_call["rmdir", Int32](fspath.unsafe_cstr_ptr())
@@ -378,7 +401,7 @@ fn rmdir[PathLike: os.PathLike](path: PathLike) raises:
         raise Error("Can not remove directory: ", fspath)
 
 
-def removedirs[PathLike: os.PathLike](path: PathLike) -> None:
+fn removedirs[PathLike: os.PathLike](path: PathLike) raises -> None:
     """Removes a leaf directory and all empty intermediate ones.
 
     Directories corresponding to rightmost path segments will be pruned away
@@ -390,6 +413,9 @@ def removedirs[PathLike: os.PathLike](path: PathLike) -> None:
 
     Args:
       path: The path to the directory.
+
+    Raises:
+        If the operation fails.
     """
     rmdir(path)
     var head, tail = os.path.split(path)
@@ -401,3 +427,36 @@ def removedirs[PathLike: os.PathLike](path: PathLike) -> None:
         except:
             break
         head, tail = os.path.split(head)
+
+
+# ===----------------------------------------------------------------------=== #
+# isatty
+# ===----------------------------------------------------------------------=== #
+
+
+fn isatty(fd: Int) -> Bool:
+    """Checks whether a file descriptor refers to a terminal.
+
+    Returns `True` if the file descriptor `fd` is open and connected to a
+    tty(-like) device, otherwise `False`. On GPUs, the function always returns
+    `False`.
+
+    Args:
+        fd: A file descriptor.
+
+    Returns:
+        `True` if `fd` is connected to a terminal, `False` otherwise.
+
+    Examples:
+        ```mojo
+        from os import isatty
+
+        # Check if stdout (fd=1) is a terminal
+        if isatty(1):
+            print("Running in a terminal")
+        else:
+            print("Output is redirected")
+        ```
+    """
+
+    return FileDescriptor(fd).isatty()

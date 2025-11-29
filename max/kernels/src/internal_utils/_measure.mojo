@@ -19,6 +19,7 @@ from algorithm import elementwise, mean, sum, vectorize
 from algorithm.functional import unswitch
 from buffer import NDBuffer
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils import IndexList
 
 # ===----------------------------------------------------------------------=== #
@@ -26,7 +27,7 @@ from utils import IndexList
 # ===----------------------------------------------------------------------=== #
 
 
-fn kl_div(x: SIMD, y: __type_of(x)) -> __type_of(x):
+fn kl_div(x: SIMD, y: type_of(x)) -> type_of(x):
     """Elementwise function for computing Kullback-Leibler divergence.
 
     $$
@@ -51,8 +52,8 @@ fn kl_div[
     dtype: DType, //
 ](
     output: UnsafePointer[Scalar[dtype]],
-    x: __type_of(output),
-    y: __type_of(output),
+    x: type_of(output),
+    y: type_of(output),
     len: Int,
 ) raises:
     @parameter
@@ -74,17 +75,16 @@ fn kl_div[
     dtype: DType, //, out_type: DType = DType.float64
 ](
     x: UnsafePointer[Scalar[dtype]],
-    y: __type_of(x),
+    y: type_of(x),
     len: Int,
 ) -> Scalar[
     out_type
 ]:
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
     var accum_simd = SIMD[out_type, simd_width](0)
     var accum_scalar = Scalar[out_type](0)
 
-    @parameter
-    fn kl_div_elementwise[simd_width: Int](idx: Int):
+    fn kl_div_elementwise[simd_width: Int](idx: Int) unified {mut}:
         var xi = x.load[width=simd_width](idx).cast[out_type]()
         var yi = y.load[width=simd_width](idx).cast[out_type]()
         var kl = kl_div(xi, yi)
@@ -95,9 +95,9 @@ fn kl_div[
         if simd_width == 1:
             accum_scalar += kl[0]
         else:
-            accum_simd += rebind[__type_of(accum_simd)](kl)
+            accum_simd += rebind[type_of(accum_simd)](kl)
 
-    vectorize[kl_div_elementwise, simd_width](len)
+    vectorize[simd_width](len, kl_div_elementwise)
 
     return accum_simd.reduce_add() + accum_scalar
 
@@ -111,10 +111,10 @@ fn correlation[
     dtype: DType, //, out_type: DType = dtype
 ](
     u: UnsafePointer[Scalar[dtype]],
-    v: __type_of(u),
+    v: type_of(u),
     len: Int,
     *,
-    w: OptionalReg[__type_of(u)] = None,
+    w: OptionalReg[type_of(u)] = None,
     centered: Bool = True,
 ) raises -> Scalar[out_type]:
     """Compute the correlation distance between two 1-D arrays.
@@ -132,9 +132,9 @@ fn correlation[
     """
     var umu = Scalar[out_type]()
     var vmu = Scalar[out_type]()
-    var w_val = __type_of(u)()
+    var w_val = type_of(u)()
     if w:
-        w_val = __type_of(u).alloc(len)
+        w_val = type_of(u).alloc(len)
         _div(w_val, w.value(), _sum(w.value(), len), len)
     if centered:
         if w:
@@ -148,15 +148,14 @@ fn correlation[
     var uu = Scalar[out_type]()
     var vv = Scalar[out_type]()
 
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
     var uv_simd = SIMD[out_type, simd_width]()
     var uu_simd = SIMD[out_type, simd_width]()
     var vv_simd = SIMD[out_type, simd_width]()
 
     @parameter
     fn accumulate[weighted: Bool]():
-        @parameter
-        fn apply_wfn[simd_width: Int](idx: Int):
+        fn apply_wfn[simd_width: Int](idx: Int) unified {mut}:
             var ui = u.load[width=simd_width](idx).cast[out_type]() - umu
             var vi = v.load[width=simd_width](idx).cast[out_type]() - vmu
             var uw = ui
@@ -178,11 +177,11 @@ fn correlation[
                 uu += uuw[0]
                 vv += vvw[0]
             else:
-                uv_simd += rebind[__type_of(uv_simd)](uvw)
-                uu_simd += rebind[__type_of(uu_simd)](uuw)
-                vv_simd += rebind[__type_of(vv_simd)](vvw)
+                uv_simd += rebind[type_of(uv_simd)](uvw)
+                uu_simd += rebind[type_of(uu_simd)](uuw)
+                vv_simd += rebind[type_of(vv_simd)](vvw)
 
-        vectorize[apply_wfn, simd_width](len)
+        vectorize[simd_width](len, apply_wfn)
 
     unswitch[accumulate](w.__bool__())
 
@@ -199,7 +198,7 @@ fn uncentered_unweighted_correlation[
     dtype: DType, //, out_type: DType = dtype
 ](
     u: UnsafePointer[Scalar[dtype]],
-    v: __type_of(u),
+    v: type_of(u),
     len: Int,
 ) -> Scalar[
     out_type
@@ -222,7 +221,7 @@ fn uncentered_unweighted_correlation[
     var uv = _dot[out_type=out_type](u, v, len)
     var uu = _dot[out_type=out_type](u, u, len)
     var vv = _dot[out_type=out_type](v, v, len)
-    alias eps = Scalar[out_type](1e-6)
+    comptime eps = Scalar[out_type](1e-6)
     return uv / (sqrt(uu * vv) + eps)
 
 
@@ -233,7 +232,7 @@ fn uncentered_unweighted_correlation[
 
 fn cosine[
     dtype: DType, //,
-](u: UnsafePointer[Scalar[dtype]], v: __type_of(u), len: Int,) -> Float64:
+](u: UnsafePointer[Scalar[dtype]], v: type_of(u), len: Int,) -> Float64:
     """Compute the Cosine distance between 1-D arrays.
 
     The Cosine distance between `u` and `v`, is defined as
@@ -255,8 +254,8 @@ fn cosine[
 fn relative_difference[
     dtype: DType, //,
 ](
-    output: UnsafePointer[Scalar[dtype]],
-    ref_out: __type_of(output),
+    output: UnsafePointer[Scalar[dtype], mut=False],
+    ref_out: type_of(output),
     len: Int,
 ) -> Float64:
     var sum_abs_diff: Float64 = 0.0
@@ -285,7 +284,7 @@ fn relative_difference[
 
 fn _sqrt[
     dtype: DType, //
-](output: UnsafePointer[Scalar[dtype]], x: __type_of(output), len: Int) raises:
+](output: UnsafePointer[Scalar[dtype]], x: type_of(output), len: Int) raises:
     @parameter
     fn apply_fn[
         simd_width: Int, rank: Int, alignment: Int = 1
@@ -304,8 +303,8 @@ fn _mul[
     dtype: DType, //
 ](
     output: UnsafePointer[Scalar[dtype]],
-    x: __type_of(output),
-    y: __type_of(output),
+    x: type_of(output),
+    y: type_of(output),
     len: Int,
 ) raises:
     @parameter
@@ -327,7 +326,7 @@ fn _div[
     dtype: DType, //
 ](
     output: UnsafePointer[Scalar[dtype]],
-    x: __type_of(output),
+    x: type_of(output),
     c: Scalar[dtype],
     len: Int,
 ) raises:
@@ -358,17 +357,14 @@ fn _mean[
 
 fn _dot[
     dtype: DType, //, out_type: DType = dtype
-](x: UnsafePointer[Scalar[dtype]], y: __type_of(x), len: Int) -> Scalar[
-    out_type
-]:
+](x: UnsafePointer[Scalar[dtype]], y: type_of(x), len: Int) -> Scalar[out_type]:
     # loads are the expensive part, so we use the (probably) smaller
     # input type for determining simd width.
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
     var accum_simd = SIMD[out_type, simd_width](0)
     var accum_scalar = Scalar[out_type](0)
 
-    @parameter
-    fn apply_fn[simd_width: Int](idx: Int):
+    fn apply_fn[simd_width: Int](idx: Int) unified {mut}:
         var xi = x.load[width=simd_width](idx).cast[out_type]()
         var yi = y.load[width=simd_width](idx).cast[out_type]()
 
@@ -378,8 +374,8 @@ fn _dot[
         if simd_width == 1:
             accum_scalar += xi[0] * yi[0]
         else:
-            accum_simd += rebind[__type_of(accum_simd)](xi * yi)
+            accum_simd += rebind[type_of(accum_simd)](xi * yi)
 
-    vectorize[apply_fn, simd_width](len)
+    vectorize[simd_width](len, apply_fn)
 
     return accum_simd.reduce_add() + accum_scalar

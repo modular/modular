@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from random import rand, randint
 
 from benchmark import *
@@ -41,7 +42,7 @@ fn bench_gather(mut bencher: Bencher, spec: GatherSpec):
 
     var data_ptr = UnsafePointer[Float32].alloc(input_shape.flattened_length())
     rand(data_ptr, input_shape.flattened_length())
-    alias layout_2d = Layout.row_major[2]()
+    comptime layout_2d = Layout.row_major[2]()
     var data_tensor = LayoutTensor[DType.float32, layout_2d](
         data_ptr, RuntimeLayout[layout_2d].row_major(input_shape)
     )

@@ -14,19 +14,17 @@
 
 from gpu.host import ConstantMemoryMapping, DeviceContext
 from gpu.host.compile import _compile_code
-from gpu.id import thread_idx
-from gpu.memory import AddressSpace
-from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
+from gpu import thread_idx
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 from testing import assert_equal, assert_true
 
 
 def test_constant_memory_compile(ctx: DeviceContext):
     fn alloc[
         n: Int
-    ]() -> UnsafePointer[Float32, address_space = _GPUAddressSpace.CONSTANT]:
+    ]() -> UnsafePointer[Float32, address_space = AddressSpace.CONSTANT]:
         return stack_allocation[
-            n, Float32, address_space = _GPUAddressSpace.CONSTANT
+            n, Float32, address_space = AddressSpace.CONSTANT
         ]()
 
     assert_true(".const .align 4 .b8 " in _compile_code[alloc[20]]())
@@ -52,13 +50,13 @@ def test_constant_mem(ctx: DeviceContext):
         return ptr
 
     fn static_constant_kernel[n: Int](data: UnsafePointer[Float32]):
-        alias val = _fill_impl[n]()
+        comptime val = _fill_impl[n]()
         data[thread_idx.x] = val[thread_idx.x]
 
     var res_device = ctx.enqueue_create_buffer[DType.float32](16)
-    _ = res_device.enqueue_fill(0)
+    res_device.enqueue_fill(0)
 
-    alias kernel = static_constant_kernel[16]
+    comptime kernel = static_constant_kernel[16]
     ctx.enqueue_function_checked[kernel, kernel](
         res_device, grid_dim=1, block_dim=16
     )
@@ -88,13 +86,13 @@ def test_constant_mem_via_func(ctx: DeviceContext):
             Float32, address_space = AddressSpace.CONSTANT
         ]
     ](data: UnsafePointer[Float32]):
-        alias val = get_constant_memory()
+        comptime val = get_constant_memory()
         data[thread_idx.x] = val[thread_idx.x]
 
     var res_device = ctx.enqueue_create_buffer[DType.float32](16)
-    _ = res_device.enqueue_fill(0)
+    res_device.enqueue_fill(0)
 
-    alias kernel = static_constant_kernel[_fill_impl[20]]
+    comptime kernel = static_constant_kernel[_fill_impl[20]]
     ctx.enqueue_function_checked[kernel, kernel](
         res_device, grid_dim=1, block_dim=16
     )
@@ -117,25 +115,40 @@ def test_external_constant_mem(ctx: DeviceContext):
         ]()
         data[thread_idx.x] = static_constant[thread_idx.x]
 
-    var constant_memory = List[Float32](
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
-    )
+    var constant_memory: List[Float32] = [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+    ]
 
     var res_device = ctx.enqueue_create_buffer[DType.float32](16)
-    _ = res_device.enqueue_fill(0)
+    res_device.enqueue_fill(0)
 
-    alias kernel = static_constant_kernel
+    comptime kernel = static_constant_kernel
     ctx.enqueue_function_checked[kernel, kernel](
         res_device,
         grid_dim=1,
         block_dim=16,
-        constant_memory=List[ConstantMemoryMapping](
+        constant_memory=[
             ConstantMemoryMapping(
                 "static_constant",
                 constant_memory.unsafe_ptr().bitcast[NoneType](),
                 constant_memory.byte_length(),
             )
-        ),
+        ],
     )
 
     _ = constant_memory^

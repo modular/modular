@@ -21,17 +21,18 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
+from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from linalg.matmul.gpu import _matmul_gpu
 from nn.kv_cache import _fused_qkv_matmul_kv_cache_impl
 from testing import assert_almost_equal
 
 from utils import IndexList
 
-alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
-alias replit_num_q_heads = 24
+comptime kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
+comptime replit_num_q_heads = 24
 
-alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
-alias llama_num_q_heads = 32
+comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
+comptime llama_num_q_heads = 32
 
 
 def execute_fused_qkv_matmul[
@@ -45,11 +46,13 @@ def execute_fused_qkv_matmul[
     layer_idx: Int,
     ctx: DeviceContext,
 ):
-    alias hidden_size = num_q_heads * kv_params.head_size
-    alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
-    alias fused_hidden_size = (2 * kv_hidden_size) + hidden_size
-    alias num_blocks = 32
-    alias CollectionType = ContinuousBatchingKVCacheCollection[dtype, kv_params]
+    comptime hidden_size = num_q_heads * Int(kv_params.head_size)
+    comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
+    comptime fused_hidden_size = (2 * Int(kv_hidden_size)) + hidden_size
+    comptime num_blocks = 32
+    comptime CollectionType = ContinuousBatchingKVCacheCollection[
+        dtype, kv_params
+    ]
 
     debug_assert(
         batch_size < num_blocks,
@@ -146,8 +149,8 @@ def execute_fused_qkv_matmul[
             2,
             num_layers,
             max_seq_len,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         ),
     )
     kv_block_device = DeviceNDBuffer[dtype, 6](
@@ -156,8 +159,8 @@ def execute_fused_qkv_matmul[
             2,
             num_layers,
             max_seq_len,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         ),
         ctx=ctx,
     )
@@ -189,16 +192,62 @@ def execute_fused_qkv_matmul[
     ctx.enqueue_copy(lookup_table_device.buffer, lookup_table_host.tensor.data)
 
     var kv_collection_device = CollectionType(
-        kv_block_device.tensor,
-        cache_lengths_dev.tensor,
-        lookup_table_device.tensor,
+        LayoutTensor[
+            kv_block_device.dtype, Layout.row_major[6](), MutAnyOrigin
+        ](
+            kv_block_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_device.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_dev.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths_dev.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_dev.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_dev.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            lookup_table_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            lookup_table_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                lookup_table_device.to_layout_tensor().runtime_layout.shape.value,
+                lookup_table_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_seq_len,
         0 if is_context_encoding else max_seq_len,
     )
     var kv_collection_host = CollectionType(
-        kv_block_host.tensor,
-        cache_lengths_host.tensor,
-        lookup_table_host.tensor,
+        LayoutTensor[kv_block_host.dtype, Layout.row_major[6](), MutAnyOrigin](
+            kv_block_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_host.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_host.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_host.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            lookup_table_host.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            lookup_table_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                lookup_table_host.to_layout_tensor().runtime_layout.shape.value,
+                lookup_table_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_seq_len,
         0 if is_context_encoding else max_seq_len,
     )
@@ -244,13 +293,13 @@ def execute_fused_qkv_matmul[
                 assert_almost_equal(
                     ref_out[
                         bs * prompt_len + s,
-                        hidden_size + k_dim,
+                        hidden_size + Int(k_dim),
                     ],
                     k_cache_host.load[width=1](
                         bs,
-                        head_idx,
+                        Int(head_idx),
                         cache_sizes[bs] + s,
-                        head_dim_idx,
+                        Int(head_dim_idx),
                     ),
                 )
 
@@ -260,13 +309,13 @@ def execute_fused_qkv_matmul[
                 assert_almost_equal(
                     ref_out[
                         bs * prompt_len + s,
-                        hidden_size + kv_hidden_size + v_dim,
+                        hidden_size + Int(kv_hidden_size + v_dim),
                     ],
                     v_cache_host.load[width=1](
                         bs,
-                        head_idx,
+                        Int(head_idx),
                         cache_sizes[bs] + s,
-                        head_dim_idx,
+                        Int(head_dim_idx),
                     ),
                 )
 
@@ -287,11 +336,11 @@ def execute_fused_qkv_matmul[
 
 
 def execute_fused_matmul_suite(ctx: DeviceContext):
-    alias dtypes = (DType.float32, DType.bfloat16)
+    comptime dtypes = (DType.float32, DType.bfloat16)
 
     @parameter
     for dtype_idx in range(2):
-        alias dtype = dtypes[dtype_idx]
+        comptime dtype = dtypes[dtype_idx]
         for bs in [1, 16]:
             ce_cache_sizes = List[Int]()
             tg_cache_sizes = List[Int]()

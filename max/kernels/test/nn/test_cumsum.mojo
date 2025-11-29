@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from math import iota, isclose
 
 from layout import Layout, LayoutTensor, RuntimeLayout
@@ -23,8 +24,8 @@ from utils.index import IndexList
 # CHECK: 1.0 ,3.0 ,6.0 ,10.0 ,15.0 ,
 fn test_cumsum_1d():
     print("== test_cumsum_1d")
-    alias exclusive = False
-    alias reverse = False
+    comptime exclusive = False
+    comptime reverse = False
     var axis = 0
 
     var matrix_data = UnsafePointer[Float64].alloc(5)
@@ -50,10 +51,10 @@ fn test_cumsum_1d():
 # CHECK: Passed
 fn test_cumsum_1d_precision():
     print("== test_cumsum_1d_precision")
-    alias exclusive = False
-    alias reverse = False
+    comptime exclusive = False
+    comptime reverse = False
     var axis = 0
-    alias size = 1024
+    comptime size = 1024
 
     var f32_data = UnsafePointer[Float32].alloc(size)
     var f32_matrix = LayoutTensor[DType.float32, Layout.row_major[1](), **_](
@@ -106,8 +107,8 @@ fn test_cumsum_1d_precision():
 # CHECK: 0.0 ,1.0 ,3.0 ,6.0 ,10.0 ,
 fn test_cumsum_1d_exclusive():
     print("== test_cumsum_1d_exclusive")
-    alias exclusive = True
-    alias reverse = False
+    comptime exclusive = True
+    comptime reverse = False
     var axis = 0
 
     var matrix_data = UnsafePointer[Float64].alloc(5)
@@ -139,8 +140,8 @@ fn test_cumsum_1d_exclusive():
 # CHECK: 15.0 ,14.0 ,12.0 ,9.0 ,5.0 ,
 fn test_cumsum_1d_reverse():
     print("== test_cumsum_1d_reverse")
-    alias exclusive = False
-    alias reverse = True
+    comptime exclusive = False
+    comptime reverse = True
     var axis = 0
 
     var matrix_data = UnsafePointer[Float64].alloc(5)
@@ -172,8 +173,8 @@ fn test_cumsum_1d_reverse():
 # CHECK: 14.0 ,12.0 ,9.0 ,5.0 ,0.0 ,
 fn test_cumsum_1d_reverse_exclusive():
     print("== test_cumsum_1d_reverse_exclusive")
-    alias exclusive = True
-    alias reverse = True
+    comptime exclusive = True
+    comptime reverse = True
     var axis = 0
 
     var matrix_data = UnsafePointer[Float64].alloc(5)
@@ -205,8 +206,8 @@ fn test_cumsum_1d_reverse_exclusive():
 # CHECK: 1.0 ,2.0 ,3.0 ,5.0 ,7.0 ,9.0 ,
 fn test_cumsum_2d_axis_0():
     print("== test_cumsum_2d_axis_0")
-    alias exclusive = False
-    alias reverse = False
+    comptime exclusive = False
+    comptime reverse = False
     var axis = 0
 
     var matrix_data = UnsafePointer[Float64].alloc(6)
@@ -239,8 +240,8 @@ fn test_cumsum_2d_axis_0():
 # CHECK: 1.0 ,3.0 ,6.0 ,4.0 ,9.0 ,15.0 ,
 fn test_cumsum_2d_axis_1():
     print("== test_cumsum_2d_axis_1")
-    alias exclusive = False
-    alias reverse = False
+    comptime exclusive = False
+    comptime reverse = False
     var axis = 1
 
     var matrix_data = UnsafePointer[Float64].alloc(6)
@@ -273,8 +274,8 @@ fn test_cumsum_2d_axis_1():
 # CHECK: 1.0 ,3.0 ,6.0 ,4.0 ,9.0 ,15.0 ,
 fn test_cumsum_2d_negative_axis():
     print("== test_cumsum_2d_negative_axis")
-    alias exclusive = False
-    alias reverse = False
+    comptime exclusive = False
+    comptime reverse = False
     var axis = -1
 
     var matrix_data = UnsafePointer[Float64].alloc(6)

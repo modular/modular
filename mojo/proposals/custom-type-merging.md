@@ -80,12 +80,12 @@ Or pointers with origins that need to be unioned:
 
 ```mojo
 fn ptr_example(mut x: Int, mut y: Int, cond: Bool):
-  xptr = Pointer.address_of(x) # Type: Pointer[Int, __origin_of(x)]
-  yptr = Pointer.address_of(y) # Type: Pointer[Int, __origin_of(y)]
+  xptr = Pointer.address_of(x) # Type: Pointer[Int, origin_of(x)]
+  yptr = Pointer.address_of(y) # Type: Pointer[Int, origin_of(y)]
 
   # Currently error.
   xy_ptr = xptr if cond else yptr
-  # Desired type: Pointer[Int, __origin_of(x, y)]
+  # Desired type: Pointer[Int, origin_of(x, y)]
 
   xy_ptr[] += 42
 ```
@@ -110,7 +110,7 @@ We do this by defining a new dunder (we should support both the forward and the
 ```mojo
 struct StringLiteral[value: ...]:  # slightly simplified from StringLiteral.mojo
    fn __merge_with__[
-         other_type: __type_of(StringLiteral[_])
+         other_type: type_of(StringLiteral[_])
       ](self) -> StaticString:
         return self
 ```
@@ -144,8 +144,8 @@ generics:
 struct Pointer[type, origin]:  # slightly simplified from pointer.mojo
    # TODO: '_' doesn't work right in parameter lists currently, so the unbound
    # params of Pointer need to be explicitly declared.
-   fn __merge_with__[other_type: __type_of(Pointer[type, _])]
-      (self) -> Pointer[type, __origin_of(self.origin, other_type.origin)]:
+   fn __merge_with__[other_type: type_of(Pointer[type, _])]
+      (self) -> Pointer[type, origin_of(self.origin, other_type.origin)]:
         return {self._value}
 ```
 
@@ -156,7 +156,7 @@ This would also solve the numeric issue it would look like:
 
 ```mojo
 struct SIMD[type: DType, size: Int](
-    fn __merge_with__[other_type: __type_of(SIMD[_, size])]
+    fn __merge_with__[other_type: type_of(SIMD[_, size])]
       (self) -> SIMD[type.merged_with(other_type.type), size]:
         return {self} # Use explicit conversion ctor
 

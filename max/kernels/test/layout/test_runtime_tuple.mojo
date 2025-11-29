@@ -23,6 +23,7 @@ from layout.runtime_tuple import (
     idx2crd,
     prefix_product,
     shape_div,
+    coalesce_nested_tuple,
 )
 from testing import assert_equal
 
@@ -69,7 +70,7 @@ def test_prefix_product():
 def test_idx2crd():
     print("== test_idx2crd")
 
-    alias tuple = IntTuple(2, IntTuple(2, 4))
+    comptime tuple = IntTuple(2, IntTuple(2, 4))
 
     var r_tuple = RuntimeTuple[fill_like(tuple, UNKNOWN_VALUE)](2, 2, 4)
 
@@ -82,9 +83,9 @@ def test_idx2crd():
 
 def test_crd2idx():
     print("== test_crd2idx")
-    alias shape_t = IntTuple(4, 4)
-    alias stride_t = IntTuple(4, 1)
-    alias unk_r2_t = IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime shape_t = IntTuple(4, 4)
+    comptime stride_t = IntTuple(4, 1)
+    comptime unk_r2_t = IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     for i in range(4):
         for j in range(4):
@@ -102,8 +103,8 @@ def test_crd2idx():
 
 def test_shape_div():
     print("== test_shape_div")
-    alias shape_a_1 = IntTuple(4, 4)
-    alias shape_b_1 = IntTuple(2, 1)
+    comptime shape_a_1 = IntTuple(4, 4)
+    comptime shape_b_1 = IntTuple(2, 1)
     var shape_a_r_1 = RuntimeTuple[fill_like(shape_a_1, UNKNOWN_VALUE)](4, 4)
     var shape_b_r_1 = RuntimeTuple[fill_like(shape_b_1, UNKNOWN_VALUE)](2, 1)
     assert_equal(
@@ -112,8 +113,8 @@ def test_shape_div():
     )
     assert_equal(String(shape_div(shape_a_r_1, shape_b_r_1).S), "(-1, -1)")
 
-    alias shape_a_2 = IntTuple(3, 4)
-    alias shape_b_2 = 6
+    comptime shape_a_2 = IntTuple(3, 4)
+    comptime shape_b_2 = 6
     var shape_a_r_2 = RuntimeTuple[fill_like(shape_a_2, UNKNOWN_VALUE)](3, 4)
     var shape_b_r_2 = RuntimeTuple[fill_like(shape_b_2, UNKNOWN_VALUE)](6)
     assert_equal(
@@ -121,6 +122,37 @@ def test_shape_div():
         String(shape_div_int_tuple(shape_a_2, shape_b_2)),
     )
     assert_equal(String(shape_div(shape_a_r_2, shape_b_r_2).S), "(-1, -1)")
+
+
+def test_product_flatten():
+    print("== test_product_flatten")
+    var t1 = RuntimeTuple[
+        IntTuple(4, UNKNOWN_VALUE, IntTuple(7, UNKNOWN_VALUE))
+    ](4, 44, 7, 11)
+
+    var t2 = RuntimeTuple[IntTuple(4, 44, IntTuple(444, 4444))]()
+
+    var t3 = RuntimeTuple[
+        IntTuple(
+            UNKNOWN_VALUE, UNKNOWN_VALUE, IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
+        )
+    ](1, 2, 3, 4)
+
+    var t4 = RuntimeTuple[
+        IntTuple(
+            IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE)
+        )
+    ](1, 2, 3, 4)
+
+    var t1_p = coalesce_nested_tuple(t1)
+    var t2_p = coalesce_nested_tuple(t2)
+    var t3_p = coalesce_nested_tuple(t3)
+    var t4_p = coalesce_nested_tuple(t4)
+
+    assert_equal(String(t2_p), "(4, 44, 1973136)")
+    assert_equal(String(t1_p), "(4, 44, 77)")
+    assert_equal(String(t3_p), "(1, 2, 12)")
+    assert_equal(String(t4_p), "24")
 
 
 def main():
@@ -131,3 +163,4 @@ def main():
     test_idx2crd()
     test_crd2idx()
     test_shape_div()
+    test_product_flatten()

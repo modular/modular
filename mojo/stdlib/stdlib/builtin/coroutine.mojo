@@ -15,6 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import size_of
 
 # ===----------------------------------------------------------------------=== #
@@ -22,12 +23,12 @@ from sys import size_of
 # ===----------------------------------------------------------------------=== #
 
 
-alias AnyCoroutine = __mlir_type.`!co.routine`
+comptime AnyCoroutine = __mlir_type.`!co.routine`
 
 
 @always_inline
 fn _suspend_async[body: fn (AnyCoroutine) capturing -> None]():
-    __mlir_region await_body(hdl: AnyCoroutine):
+    __mlir_region await_body(hdl: __mlir_type.`!co.routine`):
         body(hdl)
         __mlir_op.`co.suspend.end`()
 
@@ -48,7 +49,7 @@ struct _CoroutineContext:
     and contain the resume function and a payload pointer."""
 
     # Passed the coroutine being completed and its context's payload.
-    alias _resume_fn_type = fn (AnyCoroutine) -> None
+    comptime _resume_fn_type = fn (AnyCoroutine) -> None
 
     var _resume_fn: Self._resume_fn_type
     var _parent_hdl: AnyCoroutine
@@ -112,7 +113,7 @@ struct Coroutine[type: AnyType, origins: OriginSet]:
         ](self._handle)
 
     @always_inline
-    fn _set_result_slot(self, slot: UnsafePointer[type, mut=True, **_]):
+    fn _set_result_slot(self, slot: UnsafePointer[Self.type, mut=True, **_]):
         __mlir_op.`co.set_byref_error_result`(self._handle, slot.address)
 
     @always_inline
@@ -136,7 +137,7 @@ struct Coroutine[type: AnyType, origins: OriginSet]:
         return self._handle
 
     @always_inline
-    fn __await__(deinit self, out result: type):
+    fn __await__(deinit self, out result: Self.type):
         """Suspends the current coroutine until the coroutine is complete.
 
         Returns:
@@ -198,7 +199,7 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet]:
     @always_inline
     fn _set_result_slot(
         self,
-        slot: UnsafePointer[type, mut=True, **_],
+        slot: UnsafePointer[Self.type, mut=True, **_],
         err: UnsafePointer[Error, mut=False, **_],
     ):
         __mlir_op.`co.set_byref_error_result`(
@@ -226,27 +227,29 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet]:
         __mlir_op.`co.destroy`(self._handle)
 
     @always_inline
-    fn __await__(var self, out result: type) raises:
+    fn __await__(var self, out result: Self.type) raises:
         """Suspends the current coroutine until the coroutine is complete.
 
         Returns:
-            The coroutine promise.
+            The result value from the completed coroutine.
+
+        Raises:
+            If the coroutine execution encounters an error.
         """
 
         # Black magic! Internal implementation detail!
         # Don't you dare copy this code! 😤
         var handle = self^._take_handle()
+        var error: Error
         if __mlir_op.`co.await`[_type = __mlir_type.i1](
             handle,
             __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(result)),
-            __mlir_op.`lit.ref.to_pointer`(
-                __get_mvalue_as_litref(__get_nearest_error_slot())
-            ),
+            __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(error)),
         ):
             __mlir_op.`lit.ownership.mark_initialized`(
-                __get_mvalue_as_litref(__get_nearest_error_slot())
+                __get_mvalue_as_litref(error)
             )
-            __mlir_op.`lit.raise`()
+            raise error^
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(result)
         )

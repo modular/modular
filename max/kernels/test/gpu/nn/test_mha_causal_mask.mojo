@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from collections import OptionalReg
 from math import isclose
 from random import rand
@@ -25,7 +26,7 @@ from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
 from nn.mha_utils import FlashAttentionAlgorithm, MHAConfig
-from testing import assert_almost_equal
+from testing import assert_almost_equal, assert_equal
 
 from utils.index import Index
 from utils.numerics import min_or_neg_inf
@@ -69,9 +70,9 @@ fn test[
         num_keys,
     )
     # Query, key, value dimensions.
-    alias batch_size = 1
-    alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
-    alias kv_num_heads = num_heads // group
+    comptime batch_size = 1
+    comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
+    comptime kv_num_heads = num_heads // group
 
     # Q, K, V shapes.
     var q_size = batch_size * num_heads * seq_len * depth
@@ -89,7 +90,7 @@ fn test[
     var flash_output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
 
     # Construct buffers.
-    alias layout_4d = Layout.row_major[4]()
+    comptime layout_4d = Layout.row_major[4]()
     var q = LayoutTensor[qkv_type, layout_4d](
         q_ptr,
         RuntimeLayout[layout_4d].row_major(
@@ -151,7 +152,7 @@ fn test[
     ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
     # Construct device buffers.
-    alias q_layout = Layout.row_major(
+    comptime q_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
     )
     var q_device = LayoutTensor[qkv_type, q_layout](
@@ -160,7 +161,7 @@ fn test[
             Index(batch_size, seq_len, num_heads, depth)
         ),
     )
-    alias k_layout = Layout.row_major(
+    comptime k_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
     )
     var k_device = LayoutTensor[qkv_type, k_layout](
@@ -169,7 +170,7 @@ fn test[
             Index(batch_size, num_keys, kv_num_heads, depth)
         ),
     )
-    alias v_layout = Layout.row_major(
+    comptime v_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
     )
     var v_device = LayoutTensor[qkv_type, v_layout](
@@ -184,7 +185,7 @@ fn test[
             Index(batch_size, num_heads, seq_len, num_keys)
         ),
     )
-    alias output_layout = Layout.row_major(
+    comptime output_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
     )
     var output_device = LayoutTensor[qkv_type, output_layout](
@@ -194,8 +195,7 @@ fn test[
         ),
     )
 
-    alias config = MHAConfig(
-        qkv_type,
+    comptime config = MHAConfig[qkv_type](
         UInt(num_heads),
         UInt(depth),
         BK=OptionalReg[UInt](UInt(128 // size_of[qkv_type]())),
@@ -221,7 +221,7 @@ fn test[
         )
 
     if is_benchmark:
-        alias nrun = 50
+        comptime nrun = 50
 
         # Warmup
         kernel_launch(ctx)
@@ -240,18 +240,14 @@ fn test[
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
     ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
-    alias output_ref_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
-    )
-    var output_device_ref = LayoutTensor[qkv_type, output_ref_layout](
+    var output_device_ref = LayoutTensor[qkv_type, output_layout](
         output_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_ref_layout].row_major(
+        RuntimeLayout[output_layout].row_major(
             Index(batch_size, seq_len, num_heads, depth)
         ),
     )
 
-    alias config_baseline = MHAConfig(
-        qkv_type,
+    comptime config_baseline = MHAConfig[qkv_type](
         UInt(num_heads),
         UInt(depth),
         BK=OptionalReg[UInt](UInt(128 // size_of[qkv_type]())),
@@ -271,7 +267,6 @@ fn test[
 
     ctx.synchronize()
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
-    _ = output_ref_device_ptr
 
     var rtol = 1e-2
     for s in range(seq_len):
@@ -313,11 +308,39 @@ fn test[
 
                 assert_almost_equal(actual, expect, atol=1e-5, rtol=rtol)
 
+    for repeat in range(16):
+        # test reproducibility
+        flash_attention[config=config](
+            output_device_ref,
+            q_device,
+            k_device,
+            v_device,
+            CausalMask(),
+            IdentityScoreMod(),
+            scale,
+            ctx,
+            num_partitions=num_partitions,
+        )
+        ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
+        ctx.synchronize()
+        for s in range(seq_len):
+            for h in range(num_heads):
+                for d in range(depth):
+                    orig = flash_output_ptr.load(
+                        d + depth * (h + s * num_heads)
+                    )
+                    rep = output_ptr.load(d + depth * (h + s * num_heads))
+                    if rep != orig:
+                        print("repeat s h d =", repeat, s, h, d)
+                    assert_equal(rep, orig)
+                    output_ptr.store(d + depth * (h + s * num_heads), 123.4567)
+
     _ = q_device_ptr
     _ = k_device_ptr
     _ = v_device_ptr
     _ = mask_device_ptr
     _ = output_device_ptr
+    _ = output_ref_device_ptr
 
     q_ptr.free()
     k_ptr.free()
@@ -337,12 +360,12 @@ fn construct_depths(is_sm90orsm100: Bool) -> List[Int]:
 
 def main():
     with DeviceContext() as ctx:
-        alias is_sm90orsm100 = ctx.default_device_info is H100 or ctx.default_device_info is B200
-        alias depths = construct_depths(is_sm90orsm100)
+        comptime is_sm90orsm100 = ctx.default_device_info is H100 or ctx.default_device_info is B200
+        comptime depths = construct_depths(is_sm90orsm100)
 
         @parameter
         for d in range(len(depths)):
-            alias depth = depths[d]
+            comptime depth = depths[d]
 
             @parameter
             if depth <= 128:

@@ -1,0 +1,25 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "scheduler",
+    srcs = glob(["**/*.py"]),
+    imports = ["../../.."],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/dataprocessing",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/serve:config",
+        "//max/python/max/serve:process_control",
+        "//max/python/max/serve/kvcache_agent",
+        "//max/python/max/serve/queue",
+        "//max/python/max/serve/telemetry",
+        requirement("msgspec"),
+        requirement("numpy"),
+        requirement("psutil"),
+        requirement("pyzmq"),
+    ],
+)

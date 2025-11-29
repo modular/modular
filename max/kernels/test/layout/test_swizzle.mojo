@@ -38,7 +38,7 @@ fn print_swizzle(thread_layout: Layout, swizzle: Swizzle):
 fn test_swizzle_basic():
     print("== test_swizzle_basic")
 
-    alias thread_layout = Layout.row_major(8, 8)
+    comptime thread_layout = Layout.row_major(8, 8)
 
     # swizzle every 16 threads by the least significant bit.
     var swizzle_bits1_per16 = Swizzle(1, 0, 4)
@@ -111,8 +111,8 @@ fn vectorize_layout[layout: Layout, *tile_sizes: Int]() -> Layout:
 fn vectorize_distribute_layout[
     *element_tile_sizes: Int, data_layout: Layout, thread_layout: Layout
 ]() -> Layout:
-    alias vlayout = vectorize_layout[data_layout, *element_tile_sizes]()
-    alias dlayout = _compute_distribute_layout[vlayout[1], thread_layout]()
+    comptime vlayout = vectorize_layout[data_layout, *element_tile_sizes]()
+    comptime dlayout = _compute_distribute_layout[vlayout[1], thread_layout]()
     return append_layout(vlayout[0], dlayout)
 
 
@@ -151,7 +151,7 @@ fn count_wavefronts[
     max_memop_bytes: Int = 16,
 ]() -> WaveFrontSummary:
     constrained[thread_layout.size() == num_banks]()
-    alias layout = vectorize_distribute_layout[
+    comptime layout = vectorize_distribute_layout[
         *element_tile_sizes,
         data_layout=data_layout,
         thread_layout=thread_layout,
@@ -160,15 +160,15 @@ fn count_wavefronts[
     # layout[1]: threads
     # layout[2]: individual memory accesses
     #
-    alias coalesced_element = coalesce(layout[0])
+    comptime coalesced_element = coalesce(layout[0])
     constrained[Int(coalesced_element.stride) == 1]()
     constrained[coalesced_element.rank() == 1]()
-    alias element_bytes = coalesced_element.size() * type_bytes
-    alias bytes_per_op = element_bytes if element_bytes < max_memop_bytes else max_memop_bytes
-    alias ops_per_element = element_bytes // bytes_per_op
-    alias vars_per_bank = bytes_per_bank // type_bytes if bytes_per_bank > type_bytes else 1
-    alias num_phases = bytes_per_op // bytes_per_bank
-    alias bank_group_size = num_banks // num_phases
+    comptime element_bytes = coalesced_element.size() * type_bytes
+    comptime bytes_per_op = element_bytes if element_bytes < max_memop_bytes else max_memop_bytes
+    comptime ops_per_element = element_bytes // bytes_per_op
+    comptime vars_per_bank = bytes_per_bank // type_bytes if bytes_per_bank > type_bytes else 1
+    comptime num_phases = bytes_per_op // bytes_per_bank
+    comptime bank_group_size = num_banks // num_phases
     var banks = StaticTuple[Int, num_banks]()
     # TODO: 6 bytes should be convertible to 4 + 2 byte ops, or 3x 2-byte ops.
     # Not a high priority, as these will likely result in poor performance anyway.
@@ -185,7 +185,7 @@ fn count_wavefronts[
         layout[2].size() * ops_per_element * num_phases
     )
     wavefronts.total_wavefronts = 0
-    alias thread_layout_perm = right_inverse(thread_layout)
+    comptime thread_layout_perm = right_inverse(thread_layout)
     # print(layout)
     # print("num_phases =", num_phases)
     # print("bank_group_size =", bank_group_size)
@@ -222,12 +222,12 @@ fn count_wavefronts[
 
 
 fn test_swizzle_gemm_store() raises:
-    alias WM = 64
-    alias WN = 64
-    alias MMA_M = 16
-    alias MMA_N = 8
-    alias noswizzle = Swizzle(0, 0, 1)
-    alias swizzle = make_swizzle[
+    comptime WM = 64
+    comptime WN = 64
+    comptime MMA_M = 16
+    comptime MMA_N = 8
+    comptime noswizzle = Swizzle(0, 0, 1)
+    comptime swizzle = make_swizzle[
         num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
     ]()
     var wfs_noswizzle_reg_to_smem_fp32 = count_wavefronts[

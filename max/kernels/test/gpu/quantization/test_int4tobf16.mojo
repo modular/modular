@@ -21,24 +21,24 @@ from sys.info import CompilationTarget, is_amd_gpu, is_apple_gpu
 from buffer import NDBuffer
 from gpu.host import DeviceContext
 from gpu.intrinsics import lop
-from gpu.memory import AddressSpace
+from memory import LegacyUnsafePointer as UnsafePointer
 from memory.unsafe import bitcast
 from testing import assert_equal
 
 
 # 8xint4 -> 8xbfloat16 interleaved conversion
 fn int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
-    alias MASK: Int32 = 0x000F000F
-    alias I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
+    comptime MASK: Int32 = 0x000F000F
+    comptime I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
 
     # 0xc308 = -136.0, 0xc300 = -128.0
-    alias BF16_BIAS = SIMD[DType.bfloat16, 2](-128, -128)
+    comptime BF16_BIAS = SIMD[DType.bfloat16, 2](-128, -128)
     # 0x3f80 = 1.0
-    alias BF16_ONE = SIMD[DType.bfloat16, 2](1, 1)
+    comptime BF16_ONE = SIMD[DType.bfloat16, 2](1, 1)
 
     var i4s: Int32 = i4
     var v: SIMD[DType.int32, 4] = 0
-    alias lut: Int32 = (0xF0 & 0xCC) | 0xAA
+    comptime lut: Int32 = (0xF0 & 0xCC) | 0xAA
     # This lut is operation: (A & B) | C
 
     @parameter
@@ -72,11 +72,11 @@ fn call_int4tobf16[
 
 def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext):
     var out_host = NDBuffer[
-        DType.bfloat16, 1, MutableAnyOrigin, 8
+        DType.bfloat16, 1, MutAnyOrigin, 8
     ].stack_allocation()
     var out_device = ctx.enqueue_create_buffer[DType.bfloat16](8)
 
-    alias kernel = call_int4tobf16[no_lop]
+    comptime kernel = call_int4tobf16[no_lop]
     ctx.enqueue_function_checked[kernel, kernel](
         Int32(0x76543210), out_device, grid_dim=1, block_dim=1
     )

@@ -13,23 +13,25 @@
 
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from gpu.id import block_idx
+from gpu import block_idx
 from linalg.grouped_matmul_tile_scheduler import TileScheduler
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from buffer import NDBuffer
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 
 from utils.index import Index
 
 
 fn test_kernel[
-    swizzle: Bool
-](group_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin]):
+    swizzle: Bool, shape: DimList
+](group_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin, shape]):
+    var offset_tensor = from_ndbuffer_row_major(group_offsets)
     scheduler = TileScheduler[
-        M=20,
+        static_MN=20,
         tile_shape = Index(4, 8, 16),
         cluster = Index(1, 1, 1),
         swizzle=swizzle,
-    ](group_offsets)
+    ](len(group_offsets) - 1, offset_tensor)
 
     while True:
         work_info = scheduler.fetch_next_work()
@@ -39,8 +41,8 @@ fn test_kernel[
 
 
 def test(ctx: DeviceContext):
-    alias group_len = 3
-    alias offset_shape = DimList(group_len + 1)
+    comptime group_len = 3
+    comptime offset_shape = DimList(group_len + 1)
     host_group_offsets = HostNDBuffer[DType.uint32, 1, offset_shape](
         offset_shape
     )
@@ -76,15 +78,18 @@ def test(ctx: DeviceContext):
     # CHECK-DAG: 0 (4, 18, True, False)
     # CHECK-DAG: 1 (8, 18, True, False)
     # CHECK-DAG: 2 (12, 18, True, False)
-    # CHECK-DAG: 3 (16, 42, False, False)
+    # CHECK-DAG: 3 (16, 18, True, False)
     # ----
     # CHECK-DAG: 0 (0, 24, True, False)
     # CHECK-DAG: 1 (4, 24, True, False)
     # CHECK-DAG: 2 (8, 24, True, False)
     # CHECK-DAG: 3 (12, 24, True, False)
     # ----
-    # CHECK-DAG: 0 (16, 56, False, False)
-    ctx.enqueue_function[test_kernel[False]](
+    # CHECK-DAG: 0 (16, 24, True, False)
+    ctx.enqueue_function_checked[
+        test_kernel[False, offset_shape],
+        test_kernel[False, offset_shape],
+    ](
         dev_group_offsets.tensor,
         grid_dim=(4),
         block_dim=(1),
@@ -115,15 +120,17 @@ def test(ctx: DeviceContext):
     # CHECK-DAG: 0 (4, 18, True, False)
     # CHECK-DAG: 1 (8, 18, True, False)
     # CHECK-DAG: 2 (12, 18, True, False)
-    # CHECK-DAG: 3 (76, 18, False, False)
+    # CHECK-DAG: 3 (16, 18, True, False)
     # ----
     # CHECK-DAG: 0 (0, 24, True, False)
     # CHECK-DAG: 1 (4, 24, True, False)
     # CHECK-DAG: 2 (8, 24, True, False)
     # CHECK-DAG: 3 (12, 24, True, False)
     # ----
-    # CHECK-DAG: 0 (96, 24, False, False)
-    ctx.enqueue_function[test_kernel[True]](
+    # CHECK-DAG: 0 (16, 24, True, False)
+    ctx.enqueue_function_checked[
+        test_kernel[True, offset_shape], test_kernel[True, offset_shape]
+    ](
         dev_group_offsets.tensor,
         grid_dim=(4),
         block_dim=(1),

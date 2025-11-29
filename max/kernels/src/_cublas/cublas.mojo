@@ -15,24 +15,32 @@ from os import abort
 from pathlib import Path
 from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle
+from sys.ffi import _Global, OwnedDLHandle
 
 from gpu.host._nvidia_cuda import CUstream
 
 from .dtype import DataType, Property
 from .result import Result
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 
-alias cublasContext = NoneType
+comptime cublasContext = NoneType
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_CUBLAS_LIBRARY_PATHS = List[Path](
+comptime CUDA_CUBLAS_LIBRARY_PATHS: List[Path] = [
+    "libcublas.so.13",
+    "/usr/local/cuda-13.1/lib64/libcublas.so.13",
+    "/usr/local/cuda-13.0/lib64/libcublas.so.13",
+    "/usr/local/cuda/lib64/libcublas.so.13",
     "libcublas.so.12",
     "/usr/local/cuda-12.8/lib64/libcublas.so.12",
     "/usr/local/cuda/lib64/libcublas.so.12",
-)
+]
 
 
 fn _on_error_msg() -> Error:
@@ -50,12 +58,12 @@ fn _on_error_msg() -> Error:
     )
 
 
-alias CUDA_CUBLAS_LIBRARY = _Global[
+comptime CUDA_CUBLAS_LIBRARY = _Global[
     "CUDA_CUBLAS_LIBRARY", _init_dylib, on_error_msg=_on_error_msg
 ]
 
 
-fn _init_dylib() -> _OwnedDLHandle:
+fn _init_dylib() -> OwnedDLHandle:
     return _find_dylib[abort_on_failure=False](
         materialize[CUDA_CUBLAS_LIBRARY_PATHS]()
     )
@@ -100,12 +108,16 @@ fn _convert_to_cublas_datatype[mojo_type: DType]() -> DataType:
         return DataType.R_8F_E4M3
     elif mojo_type is DType.float8_e5m2:
         return DataType.R_8F_E5M2
+    # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
+    # Replace this with float4-e2m1fn when GENAI-337 is fixed.
+    elif mojo_type is DType.uint8:
+        return DataType.R_4F_E2M1
     else:
         constrained[
             mojo_type is DType.bfloat16,
             (
-                "Only support FP32, FP16, BF16, E4M3, and E5M2. Please extend"
-                " it if more types are needed."
+                "Only support FP32, FP16, BF16, E4M3, E5M2, and E2M1x2 (UInt8)."
+                " Please extend it if more types are needed."
             ),
         ]()
         return DataType.R_16BF
@@ -782,8 +794,8 @@ fn cublasStrmv(
 @register_passable("trivial")
 struct cublasPointerMode_t:
     var _value: Int32
-    alias CUBLAS_POINTER_MODE_HOST = cublasPointerMode_t(0)
-    alias CUBLAS_POINTER_MODE_DEVICE = cublasPointerMode_t(1)
+    comptime CUBLAS_POINTER_MODE_HOST = cublasPointerMode_t(0)
+    comptime CUBLAS_POINTER_MODE_DEVICE = cublasPointerMode_t(1)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -943,11 +955,11 @@ fn cublasDgemmStridedBatched(
 @register_passable("trivial")
 struct cublasMath_t:
     var _value: Int32
-    alias CUBLAS_DEFAULT_MATH = cublasMath_t(0)
-    alias CUBLAS_TENSOR_OP_MATH = cublasMath_t(1)
-    alias CUBLAS_PEDANTIC_MATH = cublasMath_t(2)
-    alias CUBLAS_TF32_TENSOR_OP_MATH = cublasMath_t(3)
-    alias CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION = cublasMath_t(4)
+    comptime CUBLAS_DEFAULT_MATH = cublasMath_t(0)
+    comptime CUBLAS_TENSOR_OP_MATH = cublasMath_t(1)
+    comptime CUBLAS_PEDANTIC_MATH = cublasMath_t(2)
+    comptime CUBLAS_TF32_TENSOR_OP_MATH = cublasMath_t(3)
+    comptime CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION = cublasMath_t(4)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -2064,48 +2076,48 @@ struct Algorithm:
     # only useful algorithm options are default and algo0 - algo23.
     # We never specify 0-23 in practice.
 
-    alias DEFAULT = Self(-1)
-    alias ALGO0 = Self(0)
-    alias ALGO1 = Self(1)
-    alias ALGO2 = Self(2)
-    alias ALGO3 = Self(3)
-    alias ALGO4 = Self(4)
-    alias ALGO5 = Self(5)
-    alias ALGO6 = Self(6)
-    alias ALGO7 = Self(7)
-    alias ALGO8 = Self(8)
-    alias ALGO9 = Self(9)
-    alias ALGO10 = Self(10)
-    alias ALGO11 = Self(11)
-    alias ALGO12 = Self(12)
-    alias ALGO13 = Self(13)
-    alias ALGO14 = Self(14)
-    alias ALGO15 = Self(15)
-    alias ALGO16 = Self(16)
-    alias ALGO17 = Self(17)
-    alias ALGO18 = Self(18)
-    alias ALGO19 = Self(19)
-    alias ALGO20 = Self(20)
-    alias ALGO21 = Self(21)
-    alias ALGO22 = Self(22)
-    alias ALGO23 = Self(23)
-    alias DEFAULT_TENSOR_OP = Self(99)
-    alias ALGO0_TENSOR_OP = Self(100)
-    alias ALGO1_TENSOR_OP = Self(101)
-    alias ALGO2_TENSOR_OP = Self(102)
-    alias ALGO3_TENSOR_OP = Self(103)
-    alias ALGO4_TENSOR_OP = Self(104)
-    alias ALGO5_TENSOR_OP = Self(105)
-    alias ALGO6_TENSOR_OP = Self(106)
-    alias ALGO7_TENSOR_OP = Self(107)
-    alias ALGO8_TENSOR_OP = Self(108)
-    alias ALGO9_TENSOR_OP = Self(109)
-    alias ALGO10_TENSOR_OP = Self(110)
-    alias ALGO11_TENSOR_OP = Self(111)
-    alias ALGO12_TENSOR_OP = Self(112)
-    alias ALGO13_TENSOR_OP = Self(113)
-    alias ALGO14_TENSOR_OP = Self(114)
-    alias ALGO15_TENSOR_OP = Self(115)
+    comptime DEFAULT = Self(-1)
+    comptime ALGO0 = Self(0)
+    comptime ALGO1 = Self(1)
+    comptime ALGO2 = Self(2)
+    comptime ALGO3 = Self(3)
+    comptime ALGO4 = Self(4)
+    comptime ALGO5 = Self(5)
+    comptime ALGO6 = Self(6)
+    comptime ALGO7 = Self(7)
+    comptime ALGO8 = Self(8)
+    comptime ALGO9 = Self(9)
+    comptime ALGO10 = Self(10)
+    comptime ALGO11 = Self(11)
+    comptime ALGO12 = Self(12)
+    comptime ALGO13 = Self(13)
+    comptime ALGO14 = Self(14)
+    comptime ALGO15 = Self(15)
+    comptime ALGO16 = Self(16)
+    comptime ALGO17 = Self(17)
+    comptime ALGO18 = Self(18)
+    comptime ALGO19 = Self(19)
+    comptime ALGO20 = Self(20)
+    comptime ALGO21 = Self(21)
+    comptime ALGO22 = Self(22)
+    comptime ALGO23 = Self(23)
+    comptime DEFAULT_TENSOR_OP = Self(99)
+    comptime ALGO0_TENSOR_OP = Self(100)
+    comptime ALGO1_TENSOR_OP = Self(101)
+    comptime ALGO2_TENSOR_OP = Self(102)
+    comptime ALGO3_TENSOR_OP = Self(103)
+    comptime ALGO4_TENSOR_OP = Self(104)
+    comptime ALGO5_TENSOR_OP = Self(105)
+    comptime ALGO6_TENSOR_OP = Self(106)
+    comptime ALGO7_TENSOR_OP = Self(107)
+    comptime ALGO8_TENSOR_OP = Self(108)
+    comptime ALGO9_TENSOR_OP = Self(109)
+    comptime ALGO10_TENSOR_OP = Self(110)
+    comptime ALGO11_TENSOR_OP = Self(111)
+    comptime ALGO12_TENSOR_OP = Self(112)
+    comptime ALGO13_TENSOR_OP = Self(113)
+    comptime ALGO14_TENSOR_OP = Self(114)
+    comptime ALGO15_TENSOR_OP = Self(115)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -2630,8 +2642,8 @@ fn cublasRotgEx(
 @register_passable("trivial")
 struct cublasDiagType_t:
     var _value: Int32
-    alias CUBLAS_DIAG_NON_UNIT = cublasDiagType_t(0)
-    alias CUBLAS_DIAG_UNIT = cublasDiagType_t(1)
+    comptime CUBLAS_DIAG_NON_UNIT = cublasDiagType_t(0)
+    comptime CUBLAS_DIAG_UNIT = cublasDiagType_t(1)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -2658,17 +2670,17 @@ struct cublasDiagType_t:
 @register_passable("trivial")
 struct ComputeType:
     var _value: Int32
-    alias COMPUTE_16F = Self(64)
-    alias COMPUTE_16F_PEDANTIC = Self(65)
-    alias COMPUTE_32F = Self(68)
-    alias COMPUTE_32F_PEDANTIC = Self(69)
-    alias COMPUTE_32F_FAST_16F = Self(74)
-    alias COMPUTE_32F_FAST_16BF = Self(75)
-    alias COMPUTE_32F_FAST_TF32 = Self(77)
-    alias COMPUTE_64F = Self(70)
-    alias COMPUTE_64F_PEDANTIC = Self(71)
-    alias COMPUTE_32I = Self(72)
-    alias COMPUTE_32I_PEDANTIC = Self(73)
+    comptime COMPUTE_16F = Self(64)
+    comptime COMPUTE_16F_PEDANTIC = Self(65)
+    comptime COMPUTE_32F = Self(68)
+    comptime COMPUTE_32F_PEDANTIC = Self(69)
+    comptime COMPUTE_32F_FAST_16F = Self(74)
+    comptime COMPUTE_32F_FAST_16BF = Self(75)
+    comptime COMPUTE_32F_FAST_TF32 = Self(77)
+    comptime COMPUTE_64F = Self(70)
+    comptime COMPUTE_64F_PEDANTIC = Self(71)
+    comptime COMPUTE_32I = Self(72)
+    comptime COMPUTE_32I_PEDANTIC = Self(73)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -3599,7 +3611,7 @@ fn cublasCherk3mEx(
     )
 
 
-alias cublasLogCallback = fn (UnsafePointer[Int8]) -> None
+comptime cublasLogCallback = fn (UnsafePointer[Int8]) -> None
 
 
 fn cublasDtrmv(
@@ -4673,9 +4685,9 @@ fn cublasAsumEx(
 @register_passable("trivial")
 struct FillMode:
     var _value: Int32
-    alias LOWER = Self(0)
-    alias UPPER = Self(1)
-    alias FULL = Self(2)
+    comptime LOWER = Self(0)
+    comptime UPPER = Self(1)
+    comptime FULL = Self(2)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -6121,8 +6133,8 @@ fn cublasDtbmv(
 @register_passable("trivial")
 struct cublasAtomicsMode_t:
     var _value: Int32
-    alias CUBLAS_ATOMICS_NOT_ALLOWED = cublasAtomicsMode_t(0)
-    alias CUBLAS_ATOMICS_ALLOWED = cublasAtomicsMode_t(1)
+    comptime CUBLAS_ATOMICS_NOT_ALLOWED = cublasAtomicsMode_t(0)
+    comptime CUBLAS_ATOMICS_ALLOWED = cublasAtomicsMode_t(1)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -6422,8 +6434,8 @@ fn cublasCherkEx(
 @register_passable("trivial")
 struct cublasSideMode_t:
     var _value: Int32
-    alias CUBLAS_SIDE_LEFT = cublasSideMode_t(0)
-    alias CUBLAS_SIDE_RIGHT = cublasSideMode_t(1)
+    comptime CUBLAS_SIDE_LEFT = cublasSideMode_t(0)
+    comptime CUBLAS_SIDE_RIGHT = cublasSideMode_t(1)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -7049,11 +7061,11 @@ fn cublasStrmm(
 @register_passable("trivial")
 struct cublasOperation_t:
     var _value: Int32
-    alias CUBLAS_OP_N = cublasOperation_t(0)
-    alias CUBLAS_OP_T = cublasOperation_t(1)
-    alias CUBLAS_OP_C = cublasOperation_t(2)
-    alias CUBLAS_OP_HERMITAN = cublasOperation_t(2)
-    alias CUBLAS_OP_CONJG = cublasOperation_t(3)
+    comptime CUBLAS_OP_N = cublasOperation_t(0)
+    comptime CUBLAS_OP_T = cublasOperation_t(1)
+    comptime CUBLAS_OP_C = cublasOperation_t(2)
+    comptime CUBLAS_OP_HERMITAN = cublasOperation_t(2)
+    comptime CUBLAS_OP_CONJG = cublasOperation_t(3)
 
     fn __init__(out self, value: Int):
         self._value = value

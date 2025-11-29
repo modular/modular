@@ -16,16 +16,17 @@ from linalg.matmul.cpu.apple_accelerate import (
     apple_batched_matmul,
     apple_matmul,
 )
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import *
 
 from utils.index import Index
 
-alias alignment = 64
+comptime alignment = 64
 
 
-alias a_type = DType.float32
-alias b_type = DType.float32
-alias c_type = DType.float32
+comptime a_type = DType.float32
+comptime b_type = DType.float32
+comptime c_type = DType.float32
 
 
 fn gemm_naive(

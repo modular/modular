@@ -14,6 +14,7 @@
 from collections import OptionalReg
 from math import ceildiv, exp2, recip
 from math.constants import log2e
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import align_of, env_get_int, simd_width_of, size_of
 
 import gpu.warp as warp
@@ -24,13 +25,14 @@ from gpu import (
     block_dim,
     lane_id,
     thread_idx,
+    block_idx,
 )
 from gpu.globals import WARPGROUP_SIZE
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import H100
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import AddressSpace, external_memory
+from gpu.memory import external_memory
 from gpu.sync import named_barrier
 from layout.int_tuple import IntTuple, UNKNOWN_VALUE
 from layout.layout import Layout
@@ -92,7 +94,7 @@ from nn.softmax import (
     _rowmax_online_softmax,
     _rowsum,
 )
-from tensor_internal import ManagedTensorSlice
+from tensor import ManagedTensorSlice
 
 from utils.index import Index
 from utils.numerics import get_accum_type, min_or_neg_inf
@@ -115,46 +117,45 @@ fn mha_sm90_dispatch[
     sink: Bool,
     _is_cache_length_accurate: Bool,
 ](
-    output: UnsafePointer[Scalar[output_type]],
-    q_arg: UnsafePointer[Scalar[q_type]],
+    output: DeviceBuffer[output_type],
+    q_arg: DeviceBuffer[q_type],
     k: KVType,
     v: KVType,
     num_rows_q: Int,
     mask_functor: MaskType,
     score_mod: ScoreModType,
-    valid_length: UnsafePointer[UInt32],
+    valid_length: DeviceBuffer[DType.uint32],
     max_prompt_len_arg: MaxPromptLenType,
     max_cache_valid_length_arg: Int,
     scale: Float32,
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ],
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ],
 ) raises:
     constrained[
         config.dtype == KVType.dtype and config.dtype == q_type,
         "config, kv, and q types must all match for FA3.",
     ]()
-    alias swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
+    comptime swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
     q = rebind[UnsafePointer[Scalar[KVType.dtype]]](q_arg)
-    alias decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
-    alias new_config = MHAConfig(
-        config.dtype,
+    comptime decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
+    comptime new_config = MHAConfig[config.dtype](
         config.num_heads,
         config.depth,
         num_queries_per_block=OptionalReg[UInt](64),
         num_keys_per_block=OptionalReg[UInt](config.num_keys_per_block),
         BK=OptionalReg[UInt](config.BK),
     ) if decoding else config
-    alias BM = new_config.block_m()
-    alias BK = new_config.padded_depth
+    comptime BM = new_config.block_m()
+    comptime BK = new_config.padded_depth
     constrained[
         BM % 64 == 0,
         "SM90 requires BM%64==0, but BM==",
@@ -165,10 +166,10 @@ fn mha_sm90_dispatch[
         "H100 requires BK%64==0 as it uses 128B swizzles, but BK==",
         String(BK),
     ]()
-    alias BN = new_config.block_n()
+    comptime BN = new_config.block_n()
     # we add smem use for SharedMemBarrier synchronization
     # add the number of producer threads (i.e. 1 WARP_GROUP_SIZE)
-    alias num_threads = new_config.num_threads[True]()
+    comptime num_threads = new_config.num_threads[True]()
     constrained[num_threads % 128 == 0]()
 
     # Persistent kernels not currently supported with partitioning
@@ -176,7 +177,7 @@ fn mha_sm90_dispatch[
     # implying we don't have enough to make them persistent.
     # This also requires some tricky control flow handling to support,
     # which we haven't added yet.
-    alias persistent = 0 if PartitionType.do_partition else env_get_int[
+    comptime persistent = 0 if PartitionType.do_partition else env_get_int[
         "USE_EXPERIMENTAL_KERNELS", 0
     ]()
     constrained[new_config.algorithm == FlashAttentionAlgorithm(3)]()
@@ -187,41 +188,41 @@ fn mha_sm90_dispatch[
     # var max_num_prompt_tiles: UInt32 = ceildiv(max_prompt_len, BM)
     # var block_x: UInt32 = max_num_prompt_tiles * partition.num_partitions()
 
-    alias q_num_heads: Int = new_config.num_heads
-    alias num_scheduler_heads = q_num_heads // group if decoding else q_num_heads
+    comptime q_num_heads: Int = Int(new_config.num_heads)
+    comptime num_scheduler_heads = q_num_heads // group if decoding else q_num_heads
     # if decoding,
-    alias scheduler_tile_shape = 1 if decoding else BM
+    comptime scheduler_tile_shape = 1 if decoding else BM
     q_tma_op = rebind[
         QTMATile[
             KVType.dtype,
             swizzle_mode,
-            BM = new_config.block_m(),
-            depth = new_config.padded_depth,
+            BM = Int(new_config.block_m()),
+            depth = Int(new_config.padded_depth),
             group=group,
             decoding = _is_decoding[MaxPromptLenType](),
         ]
     ](
         q_out_tma[
             swizzle_mode,
-            BM=BM,
-            depth = new_config.depth,
-            padded_depth = new_config.padded_depth,
-            q_num_heads = new_config.num_heads,
+            BM = Int(BM),
+            depth = Int(new_config.depth),
+            padded_depth = Int(new_config.padded_depth),
+            q_num_heads = Int(new_config.num_heads),
             group=group,
             decoding=decoding,
         ](ctx, q, num_rows_q)
     )
     k_tma_op = k.create_tma_tile[
-        BN, new_config.padded_depth, swizzle_mode, is_k_major=True
+        Int(BN), Int(new_config.padded_depth), swizzle_mode, is_k_major=True
     ](ctx)
     v_tma_op = v.create_tma_tile[
-        BN, new_config.padded_depth, swizzle_mode, is_k_major=False
+        Int(BN), Int(new_config.padded_depth), swizzle_mode, is_k_major=False
     ](ctx)
 
     # materialize scheduler, call max prompt len
     @parameter
     if persistent == 0:
-        alias SchedulerType = TransientScheduler[
+        comptime SchedulerType = TransientScheduler[
             scheduler_tile_shape, num_scheduler_heads
         ]
         var scheduler: SchedulerType = SchedulerType()
@@ -258,7 +259,7 @@ fn mha_sm90_dispatch[
                     LayoutTensor[
                         KVType.dtype,
                         Layout.row_major(UNKNOWN_VALUE),
-                        MutableAnyOrigin,
+                        MutAnyOrigin,
                     ]
                 ]
             ](sink_weights),
@@ -268,7 +269,7 @@ fn mha_sm90_dispatch[
             ctx,
         )
     elif persistent == 2:
-        alias SchedulerType = TileScheduler[
+        comptime SchedulerType = TileScheduler[
             scheduler_tile_shape, num_scheduler_heads
         ]
         var scheduler: SchedulerType = SchedulerType()
@@ -305,7 +306,7 @@ fn mha_sm90_dispatch[
                     LayoutTensor[
                         KVType.dtype,
                         Layout.row_major(UNKNOWN_VALUE),
-                        MutableAnyOrigin,
+                        MutAnyOrigin,
                     ]
                 ]
             ](sink_weights),
@@ -315,12 +316,11 @@ fn mha_sm90_dispatch[
             ctx,
         )
     else:
-        alias SchedulerType = QueuedTileScheduler[
+        comptime SchedulerType = QueuedTileScheduler[
             scheduler_tile_shape, num_scheduler_heads, decoding=decoding
         ]
-        var schedule = ctx.enqueue_create_buffer[DType.uint32](1).enqueue_fill(
-            UInt32(H100.sm_count)
-        )
+        var schedule = ctx.enqueue_create_buffer[DType.uint32](1)
+        schedule.enqueue_fill(UInt32(H100.sm_count))
         ctx.synchronize()
         var scheduler: SchedulerType = SchedulerType(schedule.unsafe_ptr())
         _mha_sm90_sink_dispatch[
@@ -356,7 +356,7 @@ fn mha_sm90_dispatch[
                     LayoutTensor[
                         KVType.dtype,
                         Layout.row_major(UNKNOWN_VALUE),
-                        MutableAnyOrigin,
+                        MutAnyOrigin,
                     ]
                 ]
             ](sink_weights),
@@ -390,40 +390,40 @@ fn _mha_sm90_sink_dispatch[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM = config.block_m(),
-        depth = config.padded_depth,
+        BM = Int(config.block_m()),
+        depth = Int(config.padded_depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=True,
     ],
     v_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=False,
     ],
-    o_ptr_arg: UnsafePointer[Scalar[output_type]],
+    o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
     scale: Float32,
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    valid_length: UnsafePointer[UInt32],
+    valid_length: DeviceBuffer[DType.uint32],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ],
     sink_weights: OptionalReg[
         LayoutTensor[
-            KVLUTType.dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            KVLUTType.dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ],
     partition: PartitionType,
@@ -433,7 +433,7 @@ fn _mha_sm90_sink_dispatch[
 ) raises:
     @parameter
     if sink:
-        alias SinkType = NonNullPointer[KVLUTType.dtype]
+        comptime SinkType = NonNullPointer[KVLUTType.dtype]
         var sink_ptr: SinkType = {sink_weights.value().ptr}
         _mha_sm90_kv_input_row_offset_dispatch[
             SchedulerType=SchedulerType,
@@ -470,8 +470,8 @@ fn _mha_sm90_sink_dispatch[
             ctx,
         )
     else:
-        alias SinkType = NullPointer[KVLUTType.dtype]
-        alias sink_ptr: SinkType = {}
+        comptime SinkType = NullPointer[KVLUTType.dtype]
+        comptime sink_ptr: SinkType = {}
         _mha_sm90_kv_input_row_offset_dispatch[
             SchedulerType=SchedulerType,
             KVLUTType=KVLUTType,
@@ -535,35 +535,35 @@ fn _mha_sm90_kv_input_row_offset_dispatch[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM = config.block_m(),
-        depth = config.padded_depth,
+        BM = Int(config.block_m()),
+        depth = Int(config.padded_depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=True,
     ],
     v_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=False,
     ],
-    o_ptr_arg: UnsafePointer[Scalar[output_type]],
+    o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
     scale: Float32,
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    valid_length: UnsafePointer[UInt32],
+    valid_length: DeviceBuffer[DType.uint32],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ],
     sink_weights: SinkType,
@@ -572,8 +572,8 @@ fn _mha_sm90_kv_input_row_offset_dispatch[
     score_mod: ScoreModType,
     ctx: DeviceContext,
 ) raises:
-    alias KVRowOffsetsNonNull = NonNullPointer[DType.uint32]
-    alias KVRowOffsetsNull = NullPointer[DType.uint32]
+    comptime KVRowOffsetsNonNull = NonNullPointer[DType.uint32]
+    comptime KVRowOffsetsNull = NullPointer[DType.uint32]
     if kv_input_row_offsets:
         var kv_row_offsets: KVRowOffsetsNonNull = {
             kv_input_row_offsets.value().ptr
@@ -674,32 +674,32 @@ fn _mha_sm90_valid_length_dispatch[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM = config.block_m(),
-        depth = config.padded_depth,
+        BM = Int(config.block_m()),
+        depth = Int(config.padded_depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=True,
     ],
     v_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=False,
     ],
-    o_ptr_arg: UnsafePointer[Scalar[output_type]],
+    o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
     scale: Float32,
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    valid_length: UnsafePointer[UInt32],
+    valid_length: DeviceBuffer[DType.uint32],
     kv_input_row_offsets: KVRowOffsetsType,
     sink_weights: SinkType,
     partition: PartitionType,
@@ -709,7 +709,7 @@ fn _mha_sm90_valid_length_dispatch[
 ) raises:
     @parameter
     if ragged:
-        alias ValidLengthType = NonNullPointer[DType.uint32]
+        comptime ValidLengthType = NonNullPointer[DType.uint32]
         var valid_len: ValidLengthType = {valid_length}
         _mha_sm90_enqueue[
             SchedulerType=SchedulerType,
@@ -747,7 +747,7 @@ fn _mha_sm90_valid_length_dispatch[
             ctx,
         )
     else:
-        alias ValidLengthType = NullPointer[DType.uint32]
+        comptime ValidLengthType = NullPointer[DType.uint32]
         var valid_len: ValidLengthType = {}
         _mha_sm90_enqueue[
             SchedulerType=SchedulerType,
@@ -808,26 +808,26 @@ fn _mha_sm90_enqueue[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM = config.block_m(),
-        depth = config.padded_depth,
+        BM = Int(config.block_m()),
+        depth = Int(config.padded_depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=True,
     ],
     v_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=False,
     ],
-    o_ptr_arg: UnsafePointer[Scalar[output_type]],
+    o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
     scale: Float32,
     batch_size: UInt32,
@@ -842,7 +842,7 @@ fn _mha_sm90_enqueue[
     ctx: DeviceContext,
 ) raises:
     # the pack contains all possibly 0-sized objects
-    alias kernel_sm90 = _mha_sm90[
+    comptime kernel_sm90 = _mha_sm90[
         KVLUTType,
         output_type,
         MaskType,
@@ -859,7 +859,7 @@ fn _mha_sm90_enqueue[
         PartitionType,
         swizzle_mode,
     ]
-    alias PackType = Pack[
+    comptime PackType = Pack[
         MaskType,
         ScoreModType,
         SchedulerType,
@@ -885,9 +885,9 @@ fn _mha_sm90_enqueue[
     )
     var block_x: UInt32 = max_num_prompt_tiles * partition.num_partitions()
 
-    alias smem_use = config.shared_mem_bytes[True, sm_90=True]()
-    alias num_threads = config.num_threads[True]()
-    ctx.enqueue_function[kernel_sm90](
+    comptime smem_use = config.shared_mem_bytes[True, sm_90=True]()
+    comptime num_threads = config.num_threads[True]()
+    ctx.enqueue_function_checked[kernel_sm90, kernel_sm90](
         q_tma_op,
         k_tma_op,
         v_tma_op,
@@ -932,22 +932,22 @@ fn _mha_sm90[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM = config.block_m(),
-        depth = config.padded_depth,
+        BM = Int(config.block_m()),
+        depth = Int(config.padded_depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=True,
     ],
     v_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=False,
     ],
@@ -978,22 +978,22 @@ fn _mha_sm90[
       TODO: use more optimized kernels for them
 
     """
-    alias kv_type = KVLUTType.dtype
-    alias decoding: Bool = _is_decoding[MaxSeqLenType]()
+    comptime kv_type = KVLUTType.dtype
+    comptime decoding: Bool = _is_decoding[MaxSeqLenType]()
 
-    alias simd_size = simd_width_of[kv_type]()
-    alias ragged = not ValidLengthType.is_null
+    comptime simd_size = simd_width_of[kv_type]()
+    comptime ragged = not ValidLengthType.is_null
 
-    alias num_warps_m = config.num_warps_m()
-    alias num_consumer_threads = config.num_consumer_threads()
-    alias BM = config.block_m()
-    alias BN = config.block_n()
-    alias num_heads = config.num_heads
-    alias depth = config.depth
+    comptime num_warps_m = config.num_warps_m()
+    comptime num_consumer_threads = config.num_consumer_threads()
+    comptime BM = config.block_m()
+    comptime BN = config.block_n()
+    comptime num_heads = config.num_heads
+    comptime depth = config.depth
     # num_consumer_threads ignores the producers
     # actual number of threads is num_consumer_threads + 128
-    alias num_consumer = num_consumer_threads // UInt(WARPGROUP_SIZE)
-    alias pipeline_stages = Int(config.num_pipeline_stages)
+    comptime num_consumer = num_consumer_threads // UInt(WARPGROUP_SIZE)
+    comptime pipeline_stages = Int(config.num_pipeline_stages)
     var tid: UInt32 = thread_idx.x
     var warp_group_idx: UInt32 = warp.broadcast(tid // WARPGROUP_SIZE)
 
@@ -1016,22 +1016,24 @@ fn _mha_sm90[
 
     # Coordinates of the current warp.
     var warp_y: UInt32 = warp_id  # // num_warps_n
-    alias warp_x: UInt32 = 0  # warp_id % num_warps_n
 
-    alias q_smem_layout_consumer = tile_layout_k_major[
-        DType.bfloat16, BM, config.padded_depth, swizzle_mode=swizzle_mode
+    comptime q_smem_layout_consumer = tile_layout_k_major[
+        DType.bfloat16,
+        Int(BM),
+        Int(config.padded_depth),
+        swizzle_mode=swizzle_mode,
     ]()
-    alias k_smem_layout = k_tma_op.layout
-    alias v_smem_layout = v_tma_op.layout
+    comptime k_smem_layout = k_tma_op.layout
+    comptime v_smem_layout = v_tma_op.layout
     # for wgmma_0, we multiply BM x depth @ depth x BN -> BM x BN
     # for wgmma_1, we multiply BM x BN @ BN x depth -> BM x depth
     # For wgmma_0, we iterate over (depth//BK) tiles of size BKxBN
     # For wgmma_1, we iterate over (BN//BK) tiles of size BKxdepth
-    alias persistent = SchedulerType.may_advance
+    comptime persistent = SchedulerType.may_advance
 
     # The entire query block (BM x depth) is tiled in shared memory.
-    alias q_size = q_smem_layout_consumer.size()
-    alias q_smem_size = 2 * q_size if persistent else q_size
+    comptime q_size = q_smem_layout_consumer.size()
+    comptime q_smem_size = 2 * q_size if persistent else q_size
     q_smem = external_memory[
         Scalar[kv_type],
         address_space = AddressSpace.SHARED,
@@ -1039,7 +1041,7 @@ fn _mha_sm90[
         name="mha_dynamic_shared_memory",
     ]()
     # We have `num_pipeline_stages` instances of each
-    alias kv_smem_size = config.kv_smem_size(True)
+    comptime kv_smem_size = config.kv_smem_size(True)
     kv_smem = q_smem + q_smem_size
 
     # var head_idx: UInt32 = block_idx.y
@@ -1048,29 +1050,29 @@ fn _mha_sm90[
     # q tile has valid shape q_tile_num_rows x depth
     # q_tile_num_rows could be less than BM when seqlen % BM != 0
 
-    alias MMA_M = 16  # per warp
-    alias MMA_N0 = BN
-    alias MMA_N1 = config.padded_depth
-    alias MMA_K = 16
-    alias WM = config.WM
-    alias num_m_mmas = WM // MMA_M
+    comptime MMA_M = 16  # per warp
+    comptime MMA_N0 = BN
+    comptime MMA_N1 = config.padded_depth
+    comptime MMA_K = 16
+    comptime WM = config.WM
+    comptime num_m_mmas = WM // MMA_M
     constrained[num_m_mmas == 1, "FIXME: life this constraint"]()
     # alias WN = config.WN
     # alias num_n_mmas = WN // MMA_N
-    alias num_n_mmas = 1
+    comptime num_n_mmas = 1
     # alias num_k_mmas = BK // MMA_K
 
-    alias accum_type = get_accum_type[kv_type]()
-    alias p_frag_size = MMA_M * MMA_N0 // WARP_SIZE
-    alias o_frag_size = MMA_M * MMA_N1 // WARP_SIZE
-    alias frag_simdwidth = 2
+    comptime accum_type = get_accum_type[kv_type]()
+    comptime p_frag_size = MMA_M * Int(MMA_N0) // WARP_SIZE
+    comptime o_frag_size = MMA_M * Int(MMA_N1) // WARP_SIZE
+    comptime frag_simdwidth = 2
 
-    alias a_frag_size = MMA_M * MMA_K // WARP_SIZE
+    comptime a_frag_size = MMA_M * MMA_K // WARP_SIZE
     # MMA_N0 // MMA_K
-    alias frag_ratio = p_frag_size // a_frag_size
+    comptime frag_ratio = p_frag_size // a_frag_size
 
     # the first mma is BMxdepth @ depthxBN
-    alias wgmma_0 = TensorCoreAsync[
+    comptime wgmma_0 = TensorCoreAsync[
         accum_type,
         kv_type,
         kv_type,
@@ -1080,7 +1082,7 @@ fn _mha_sm90[
         transpose_b=True,
     ]()
     # the second mma is BMxBN @ BNxdepth
-    alias wgmma_1 = TensorCoreAsync[
+    comptime wgmma_1 = TensorCoreAsync[
         accum_type,
         kv_type,
         kv_type,
@@ -1090,7 +1092,7 @@ fn _mha_sm90[
         transpose_b=False,
     ]()
 
-    alias num_row_blocks_per_mma = 2
+    comptime num_row_blocks_per_mma = 2
     # a wgmma.m64n32k16 `D` fragment looks like
     #
     # 0,1  4,5   8, 9  12,13
@@ -1122,9 +1124,11 @@ fn _mha_sm90[
     #     ),
     # )
     # Vectorizing the layout:
-    alias element_layout = Layout.row_major(1, frag_simdwidth)
-    alias vec_output_row_shape = IntTuple(num_row_blocks_per_mma, num_m_mmas)
-    alias p_vec_output_layout = Layout(
+    comptime element_layout = Layout.row_major(1, frag_simdwidth)
+    comptime vec_output_row_shape = IntTuple(
+        num_row_blocks_per_mma, Int(num_m_mmas)
+    )
+    comptime p_vec_output_layout = Layout(
         IntTuple(
             vec_output_row_shape,
             IntTuple(
@@ -1136,11 +1140,11 @@ fn _mha_sm90[
             IntTuple(frag_simdwidth, p_frag_size),
             IntTuple(
                 num_row_blocks_per_mma * frag_simdwidth,
-                num_m_mmas * UInt(p_frag_size),
+                Int(num_m_mmas * UInt(p_frag_size)),
             ),
         ),
     )
-    alias o_vec_output_layout = Layout(
+    comptime o_vec_output_layout = Layout(
         IntTuple(
             vec_output_row_shape,
             IntTuple(
@@ -1152,21 +1156,21 @@ fn _mha_sm90[
             IntTuple(frag_simdwidth, o_frag_size),
             IntTuple(
                 num_row_blocks_per_mma * frag_simdwidth,
-                num_m_mmas * UInt(o_frag_size),
+                Int(num_m_mmas * UInt(o_frag_size)),
             ),
         ),
     )
-    alias num_rows_per_warp = p_vec_output_layout[0].size()
-    alias num_cols_p = p_vec_output_layout[1].size()
-    alias num_cols_output = o_vec_output_layout[1].size()
+    comptime num_rows_per_warp = p_vec_output_layout[0].size()
+    comptime num_cols_p = p_vec_output_layout[1].size()
+    comptime num_cols_output = o_vec_output_layout[1].size()
 
     # Rowwise max and sum for online softmax
-    alias accum_simd_width = simd_width_of[accum_type]()
-    alias row_alignment = align_of[SIMD[accum_type, accum_simd_width]]()
+    comptime accum_simd_width = simd_width_of[accum_type]()
+    comptime row_alignment = align_of[SIMD[accum_type, accum_simd_width]]()
     # Account for group query.
-    alias kv_num_heads = num_heads // UInt(group)
+    comptime kv_num_heads = num_heads // UInt(group)
 
-    alias mma_thread_layout = Layout.row_major(8, 4)
+    comptime mma_thread_layout = Layout.row_major(8, 4)
 
     # Handle sink_weights
     var sink_weights_ptr = UnsafePointer[Scalar[kv_type]]()
@@ -1183,12 +1187,12 @@ fn _mha_sm90[
     consumed_mbar_q = produced_mbar_q + 2
     block_idx_ptr = (consumed_mbar_q + 2).bitcast[UInt32]()
 
-    alias USE_TMA = True
+    comptime USE_TMA = True
     # https://github.com/Dao-AILab/flash-attention/blob/3b5047d2ce742848f45d44b143d511f211eba2d2/hopper/flash_fwd_kernel_sm90.h#L81-L82
-    alias num_producer_regs = 56 if num_consumer == 1 else (
+    comptime num_producer_regs = 56 if num_consumer == 1 else (
         (24 if USE_TMA else 56) if num_consumer == 2 else 32
     )
-    alias num_consumer_regs = 256 if num_consumer == 1 else (
+    comptime num_consumer_regs = 256 if num_consumer == 1 else (
         (240 if USE_TMA else 224) if num_consumer == 2 else 160
     )
     # alias num_producer_regs = 56
@@ -1250,8 +1254,14 @@ fn _mha_sm90[
                 produced_mbar_q[i].init(1)
                 consumed_mbar_q[i].init(num_consumer_threads)
 
-    alias PositionType = MHAPosition[
-        BM, BN, config.depth, config.padded_depth, num_heads, group, decoding
+    comptime PositionType = MHAPosition[
+        Int(BM),
+        Int(BN),
+        Int(config.depth),
+        Int(config.padded_depth),
+        Int(num_heads),
+        group,
+        decoding,
     ]
 
     @parameter
@@ -1261,14 +1271,14 @@ fn _mha_sm90[
         out k_smem: LayoutTensor[
             kv_type,
             k_smem_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
             layout_int_type = DType.int32,
             linear_idx_type = DType.int32,
             alignment=128,
         ],
     ):
-        alias sz = BN * config.padded_depth
+        comptime sz = BN * config.padded_depth
         k_smem = {kv_smem + sz * idx}
 
     @parameter
@@ -1278,25 +1288,25 @@ fn _mha_sm90[
         out v_smem: LayoutTensor[
             kv_type,
             v_smem_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
             layout_int_type = DType.int32,
             linear_idx_type = DType.int32,
             alignment=128,
         ],
     ):
-        alias sz = BN * config.padded_depth
+        comptime sz = BN * config.padded_depth
         v_smem = {kv_smem + sz * idx}
 
     @parameter
     @always_inline
     fn get_position(seq_info: SeqInfo) -> PositionType:
         return _get_position[
-            BM,
-            BN,
-            config.depth,
-            config.padded_depth,
-            num_heads,
+            Int(BM),
+            Int(BN),
+            Int(config.depth),
+            Int(config.padded_depth),
+            Int(num_heads),
             group,
             ragged,
             _is_cache_length_accurate,
@@ -1369,7 +1379,7 @@ fn _mha_sm90[
         ) -> LayoutTensor[
             kv_type,
             q_smem_layout_consumer,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
             alignment=128,
         ]:
@@ -1378,35 +1388,35 @@ fn _mha_sm90[
         # layout is
         # shape  = (2, num_m_mmas) x (2, num_n_mmas)
         # stride = (2, 4*num_n_mmas) x (1, 4)
-        alias s_reg_tile_layout = Layout.row_major(
-            num_m_mmas * num_n_mmas, p_frag_size
+        comptime s_reg_tile_layout = Layout.row_major(
+            Int(num_m_mmas * num_n_mmas), p_frag_size
         )
-        alias o_reg_tile_layout = Layout.row_major(
-            num_m_mmas * num_n_mmas, o_frag_size
+        comptime o_reg_tile_layout = Layout.row_major(
+            Int(num_m_mmas * num_n_mmas), o_frag_size
         )
         p_reg_tile = LayoutTensor[
             accum_type,
             s_reg_tile_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
         output_reg_tile = (
             LayoutTensor[
                 accum_type,
                 o_reg_tile_layout,
-                MutableAnyOrigin,
+                MutAnyOrigin,
                 address_space = AddressSpace.LOCAL,
             ]
             .stack_allocation()
             .fill(0)
         )
-        alias p_reg_tile_layout = Layout.row_major(
-            num_m_mmas * num_n_mmas * UInt(frag_ratio), a_frag_size
+        comptime p_reg_tile_layout = Layout.row_major(
+            Int(num_m_mmas * num_n_mmas * UInt(frag_ratio)), a_frag_size
         )
         p_frag = LayoutTensor[
             kv_type,
             p_reg_tile_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
 
@@ -1416,7 +1426,7 @@ fn _mha_sm90[
             out result: LayoutTensor[
                 accum_type,
                 p_vec_output_layout,
-                MutableAnyOrigin,
+                MutAnyOrigin,
                 address_space = AddressSpace.LOCAL,
                 element_layout=element_layout,
             ],
@@ -1429,7 +1439,7 @@ fn _mha_sm90[
             out result: LayoutTensor[
                 accum_type,
                 o_vec_output_layout,
-                MutableAnyOrigin,
+                MutAnyOrigin,
                 address_space = AddressSpace.LOCAL,
                 element_layout=element_layout,
             ],
@@ -1439,13 +1449,13 @@ fn _mha_sm90[
         rowmax = LayoutTensor[
             accum_type,
             Layout.row_major(num_rows_per_warp),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
         rowsum = LayoutTensor[
             accum_type,
             Layout.row_major(num_rows_per_warp),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
 
@@ -1473,10 +1483,10 @@ fn _mha_sm90[
             warpgroup_fence(p_reg_tile)
             wgmma_0.arrive()
             wgmma_0.wgmma[
-                num_consumer,
+                Int(num_consumer),
                 scale_c=0,
                 num_k_iters = OptionalReg[Int](
-                    depth // UInt(wgmma_0.mma_shape[2])
+                    Int(depth // UInt(wgmma_0.mma_shape[2]))
                 ),
             ](
                 q_smem_sub,
@@ -1524,7 +1534,9 @@ fn _mha_sm90[
             var max_len: UInt32 = (
                 num_keys_arg if decoding else max_seq_len.as_uint32()
             )
-            _apply_mask[WM, MMA_N0, num_m_mmas, num_n_mmas, use_score_mod](
+            _apply_mask[
+                Int(WM), Int(MMA_N0), Int(num_m_mmas), num_n_mmas, use_score_mod
+            ](
                 mask_warp_row,
                 position,
                 lane,
@@ -1539,7 +1551,7 @@ fn _mha_sm90[
 
         @parameter
         @always_inline
-        fn scale_output(correction: __type_of(rowmax)):
+        fn scale_output(correction: type_of(rowmax)):
             # we are now able to read/modify `output_reg_tile` and modify `p_frag`
             vout = vectorize_o_reg_tile()
 
@@ -1559,7 +1571,7 @@ fn _mha_sm90[
 
         @always_inline
         fn elementwise_reciprocal(
-            old_rowsum: __type_of(rowsum), new_rowsum: __type_of(rowsum)
+            old_rowsum: type_of(rowsum), new_rowsum: type_of(rowsum)
         ):
             # new_rowsum, old_rowsum = 1/old_rowsum, new_rowsum
             @parameter
@@ -1574,7 +1586,7 @@ fn _mha_sm90[
         fn write_output(
             position: PositionType,
             q_idx: UInt32,
-            rowsum_inv: __type_of(rowsum),
+            rowsum_inv: type_of(rowsum),
         ):
             vout = vectorize_o_reg_tile()
 
@@ -1596,34 +1608,23 @@ fn _mha_sm90[
                 )
             output_gmem_tile = position.q_out_gmem_tensor(output_ptr)
 
-            alias swizzle = make_swizzle[
-                num_rows = MMA_M // 2, row_size=BN, access_size=8
+            comptime swizzle = make_swizzle[
+                num_rows = MMA_M // 2, row_size = Int(BN), access_size=8
             ]()
             # Reuse a_smem for c tile in smem
-            alias q_tile_size: UInt32 = q_smem_size // 2
+            comptime q_tile_size: UInt32 = q_smem_size // 2
 
             # ensure all threads have finished reading `q_smem`
             named_barrier[num_consumer_threads]()
             accum_smem_tile = output_reg_to_smem[
-                BM,
-                BN,
-                WM,
-                config.padded_depth,
-                kv_type,
-                output_type,
-                accum_type,
-                o_reg_tile_layout,
-                o_frag_size,
-                num_consumer_threads,
-                simd_size,
+                Int(BM),
+                Int(config.depth),
+                Int(config.padded_depth),
                 swizzle,
-                num_m_mmas,
-                num_consumer,
-                mma_thread_layout,
+                Int(num_consumer),
             ](
                 tid,
                 local_warp_group_idx,
-                warp_x,
                 warp_y,
                 q_smem + q_idx * q_tile_size,
                 output_reg_tile,
@@ -1635,8 +1636,8 @@ fn _mha_sm90[
             # vector and stored using 16B store instruction.
             copy_sram_to_dram[
                 thread_layout = Layout.row_major(
-                    num_consumer_threads * UInt(simd_size) // config.depth,
-                    config.depth // UInt(simd_size),
+                    Int(num_consumer_threads * UInt(simd_size) // config.depth),
+                    Int(config.depth // UInt(simd_size)),
                 ),
                 swizzle=swizzle,
             ](
@@ -1690,15 +1691,19 @@ fn _mha_sm90[
 
         apply_mask(position, mask_status, kv_tile_start_row)
 
+        var sink_weight: Scalar[accum_type]
+
         # Include sink_weights in rowmax computation if present
         @parameter
         if not SinkType.is_null:
             var head_idx = position.head_idx
-            var sink_weight = sink_weights_ptr[head_idx] * log2e
+            sink_weight = sink_weights_ptr[head_idx].cast[accum_type]() * log2e
 
             @parameter
             for i in range(num_rows_per_warp):
-                rowmax[i] = sink_weight.cast[accum_type]()
+                rowmax[i] = sink_weight
+        else:
+            sink_weight = 0.0  # should b e
 
         # Compute initial rowmax
         var attention_rowmax = _rowmax_online_softmax[
@@ -1718,10 +1723,6 @@ fn _mha_sm90[
         # Add sink weight contribution to rowsum
         @parameter
         if not SinkType.is_null:
-            var head_idx = position.head_idx
-            var sink_weight = (
-                sink_weights_ptr[head_idx].cast[accum_type]() * log2e
-            )
 
             @parameter
             for i in range(num_rows_per_warp):
@@ -1764,7 +1765,7 @@ fn _mha_sm90[
                 ]().copy_from(  # copy new pfrag, used by `p_mul_v` on next iter
                     p_reg_tile.reshape[
                         Layout.row_major(
-                            num_m_mmas * num_n_mmas * UInt(frag_ratio),
+                            Int(num_m_mmas * num_n_mmas * UInt(frag_ratio)),
                             a_frag_size,
                         )
                     ]().vectorize[1, a_frag_size](),
@@ -1832,7 +1833,7 @@ fn _mha_sm90[
                             qk_max_ptr[q_head_idx] = rebind[
                                 Scalar[PartitionType.accum_dtype]
                             ](rowmax[0])
-                    score_frag_rowsum = rebind[__type_of(rowsum)](
+                    score_frag_rowsum = rebind[type_of(rowsum)](
                         _rowsum[mma_thread_layout](vectorize_p_reg_tile())
                     )
                     rowmax.copy_from(score_frag_rowmax)
@@ -1876,7 +1877,7 @@ fn _mha_sm90[
                     q_idx_old = q_idx_new
                     q_phase_old = q_pipeline_state.phase()
                 else:
-                    score_frag_rowsum = rebind[__type_of(rowsum)](
+                    score_frag_rowsum = rebind[type_of(rowsum)](
                         _rowsum[mma_thread_layout](vectorize_p_reg_tile())
                     )
 
@@ -1940,7 +1941,7 @@ fn _mha_sm90[
         p_frag.vectorize[1, a_frag_size]().copy_from(
             p_reg_tile.reshape[
                 Layout.row_major(
-                    num_m_mmas * num_n_mmas * UInt(frag_ratio), a_frag_size
+                    Int(num_m_mmas * num_n_mmas * UInt(frag_ratio)), a_frag_size
                 )
             ]().vectorize[1, a_frag_size](),
         )

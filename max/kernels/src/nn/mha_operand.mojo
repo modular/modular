@@ -11,13 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from kv_cache.types import KVCacheT
 from layout import Layout, LayoutTensor
 from layout.layout import UNKNOWN_VALUE, DimList
 from layout.runtime_layout import RuntimeLayout
 from layout.tma_async import TMANestedTensorTile, create_nested_tma_tile
 
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from utils import Index, IndexList
 
 from builtin.device_passable import DevicePassable
@@ -27,7 +31,8 @@ from builtin.device_passable import DevicePassable
 trait MHAOperand(DevicePassable):
     """This serves as the trait to support arguments to our MHA kernel."""
 
-    alias dtype: DType
+    comptime dtype: DType
+    comptime page_size: Int
 
     # TODO: change this to return a LayoutTensor once MOCO-1471 is fixed
     @always_inline
@@ -77,17 +82,20 @@ trait MHAOperand(DevicePassable):
 
 
 @register_passable("trivial")
-struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
+struct KVCacheMHAOperand[
+    cache_t: KVCacheT,
+](MHAOperand):
     """An implementation for `mo.opaque` KVCacheT arguments to MHA kernels.
 
     We can eventually remove this trait and just add it as a sub-trait in the
     KVCacheT type, but we need to solve some cyclic dependencies first.
     """
 
-    alias dtype = cache_t.dtype
-    var cache: cache_t
+    comptime dtype = Self.cache_t.dtype
+    comptime page_size = Self.cache_t.page_size_
+    var cache: Self.cache_t
 
-    alias device_type: AnyTrivialRegType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -100,7 +108,7 @@ struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
     fn get_device_type_name() -> String:
         return Self.get_type_name()
 
-    fn __init__(out self, cache: cache_t):
+    fn __init__(out self, cache: Self.cache_t):
         self.cache = cache
 
     @always_inline
@@ -160,10 +168,11 @@ struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
 struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
     """An implementation for NDBuffer arguments to MHA kernels."""
 
-    alias dtype = dtype_
-    var buffer: LayoutTensor[Self.dtype, layout, MutableAnyOrigin]
+    comptime dtype = Self.dtype_
+    comptime page_size = 0
+    var buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin]
 
-    alias device_type: AnyTrivialRegType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -178,7 +187,7 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
 
     fn __init__(
         out self,
-        buffer: LayoutTensor[Self.dtype, layout, MutableAnyOrigin],
+        buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin],
     ):
         self.buffer = buffer
 
@@ -240,11 +249,11 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
         # View the 4D buffer as a 2D matrix [batch*seq, heads*head_dim]
         var rows = self.buffer.dim[0]() * self.buffer.dim[1]()
         var cols = self.buffer.dim[2]() * self.buffer.dim[3]()
-        alias layout_ = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+        comptime layout_ = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
         rt_layout = RuntimeLayout[layout_].row_major(IndexList[2](rows, cols))
 
-        var tensor = LayoutTensor[Self.dtype, layout_, MutableAnyOrigin](
+        var tensor = LayoutTensor[Self.dtype, layout_, MutAnyOrigin](
             self.buffer.ptr, rt_layout
         )
 
@@ -259,13 +268,14 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
 ):
     """An implementation for ragged NDBuffer arguments to MHA kernels."""
 
-    alias dtype = dtype_
-    var buffer: LayoutTensor[Self.dtype, layout, MutableAnyOrigin]
+    comptime dtype = Self.dtype_
+    comptime page_size = 0
+    var buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin]
     var cache_row_offsets: LayoutTensor[
-        DType.uint32, cache_layout, MutableAnyOrigin
+        DType.uint32, Self.cache_layout, MutAnyOrigin
     ]
 
-    alias device_type: AnyTrivialRegType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -280,9 +290,9 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
 
     fn __init__(
         out self,
-        buffer: LayoutTensor[Self.dtype, layout, MutableAnyOrigin],
+        buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin],
         cache_row_offsets: LayoutTensor[
-            DType.uint32, cache_layout, MutableAnyOrigin
+            DType.uint32, Self.cache_layout, MutAnyOrigin
         ],
     ):
         constrained[
@@ -358,10 +368,10 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
         var rows = self.buffer.dim[0]()  # total tokens
         var cols = self.buffer.dim[1]() * self.buffer.dim[2]()
 
-        alias layout_ = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+        comptime layout_ = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
         rt_layout = RuntimeLayout[layout_].row_major(IndexList[2](rows, cols))
-        var tensor = LayoutTensor[Self.dtype, layout_, MutableAnyOrigin](
+        var tensor = LayoutTensor[Self.dtype, layout_, MutAnyOrigin](
             self.buffer.ptr, rt_layout
         )
 

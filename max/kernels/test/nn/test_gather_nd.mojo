@@ -29,11 +29,11 @@ fn main():
 
     fn test_gather_nd_eg1() raises:
         # Example 1
-        alias batch_dims = 0
-        alias data_rank = 2
-        alias data_type = DType.int32
+        comptime batch_dims = 0
+        comptime data_rank = 2
+        comptime data_type = DType.int32
         var data_stack = InlineArray[Scalar[data_type], 4](uninitialized=True)
-        alias data_layout = Layout.row_major[data_rank]()
+        comptime data_layout = Layout.row_major[data_rank]()
         var data = LayoutTensor[data_type, Layout.row_major(2, 2)](data_stack)
 
         data[0, 0] = 0
@@ -41,8 +41,8 @@ fn main():
         data[1, 0] = 2
         data[1, 1] = 3
 
-        alias indices_rank = 2
-        alias indices_layout = Layout.row_major[indices_rank]()
+        comptime indices_rank = 2
+        comptime indices_layout = Layout.row_major[indices_rank]()
         var indices_stack = InlineArray[Int64, 4](uninitialized=True)
         var indices = LayoutTensor[DType.int64, Layout.row_major(2, 2)](
             indices_stack
@@ -53,7 +53,7 @@ fn main():
         indices[1, 0] = 1
         indices[1, 1] = 1
 
-        alias output_rank = 1
+        comptime output_rank = 1
         var output_shape = gather_nd_shape[
             output_rank, data_type, DType.int64, batch_dims
         ](
@@ -75,7 +75,7 @@ fn main():
         var output_data_data = InlineArray[Scalar[data_type], 2](
             uninitialized=True
         )
-        alias output_layout = Layout.row_major[output_rank]()
+        comptime output_layout = Layout.row_major[output_rank]()
         var output_data_buffer = LayoutTensor[data_type, output_layout](
             output_data_data.unsafe_ptr(),
             RuntimeLayout[output_layout].row_major(output_shape),
@@ -101,10 +101,10 @@ fn main():
 
     fn test_gather_nd_eg2() raises:
         # Example 2
-        alias batch_dims = 0
-        alias data_rank = 2
-        alias data_type = DType.int8
-        alias data_layout = Layout.row_major[data_rank]()
+        comptime batch_dims = 0
+        comptime data_rank = 2
+        comptime data_type = DType.int8
+        comptime data_layout = Layout.row_major[data_rank]()
         var data_stack = InlineArray[Scalar[data_type], 4](uninitialized=True)
         var data = LayoutTensor[data_type, Layout.row_major(2, 2)](data_stack)
 
@@ -113,8 +113,8 @@ fn main():
         data[1, 0] = 2
         data[1, 1] = 3
 
-        alias indices_rank = 2
-        alias indices_layout = Layout.row_major[indices_rank]()
+        comptime indices_rank = 2
+        comptime indices_layout = Layout.row_major[indices_rank]()
         var indices_stack = InlineArray[Int64, 2](uninitialized=True)
         var indices = LayoutTensor[DType.int64, Layout.row_major(2, 1)](
             indices_stack
@@ -123,7 +123,7 @@ fn main():
         indices[0, 0] = 1
         indices[1, 0] = 0
 
-        alias output_rank = 2
+        comptime output_rank = 2
         var output_shape = gather_nd_shape[
             output_rank,
             data_type,
@@ -148,7 +148,7 @@ fn main():
         var output_data_data = InlineArray[Scalar[data_type], 4](
             uninitialized=True
         )
-        alias output_layout = Layout.row_major[output_rank]()
+        comptime output_layout = Layout.row_major[output_rank]()
         var output_data_buffer = LayoutTensor[data_type, output_layout](
             output_data_data.unsafe_ptr(),
             RuntimeLayout[output_layout].row_major(output_shape),
@@ -181,10 +181,10 @@ fn main():
 
     fn test_gather_nd_eg3() raises:
         # Example 3
-        alias batch_dims = 0
-        alias data_rank = 3
-        alias data_type = DType.float32
-        alias data_layout = Layout.row_major[data_rank]()
+        comptime batch_dims = 0
+        comptime data_rank = 3
+        comptime data_type = DType.float32
+        comptime data_layout = Layout.row_major[data_rank]()
         var data_stack = InlineArray[Scalar[data_type], 8](uninitialized=True)
         var data = LayoutTensor[data_type, Layout.row_major(2, 2, 2)](
             data_stack
@@ -199,8 +199,8 @@ fn main():
         data[1, 1, 0] = 6
         data[1, 1, 1] = 7
 
-        alias indices_rank = 2
-        alias indices_layout = Layout.row_major[indices_rank]()
+        comptime indices_rank = 2
+        comptime indices_layout = Layout.row_major[indices_rank]()
         var indices_stack = InlineArray[Int64, 4](uninitialized=True)
         var indices = LayoutTensor[DType.int64, Layout.row_major(2, 2)](
             indices_stack
@@ -211,7 +211,7 @@ fn main():
         indices[1, 0] = 1
         indices[1, 1] = 0
 
-        alias output_rank = 2
+        comptime output_rank = 2
         var output_shape = gather_nd_shape[
             output_rank, data_type, DType.int64, batch_dims
         ](
@@ -233,7 +233,7 @@ fn main():
         var output_data_data = InlineArray[Scalar[data_type], 4](
             uninitialized=True
         )
-        alias output_layout = Layout.row_major[output_rank]()
+        comptime output_layout = Layout.row_major[output_rank]()
         var output_data_buffer = LayoutTensor[data_type, output_layout](
             output_data_data.unsafe_ptr(),
             RuntimeLayout[output_layout].row_major(output_shape),
@@ -266,10 +266,10 @@ fn main():
 
     fn test_gather_nd_eg4() raises:
         # Example 4
-        alias batch_dims = 0
-        alias data_rank = 3
-        alias data_type = DType.int8
-        alias data_layout = Layout.row_major[data_rank]()
+        comptime batch_dims = 0
+        comptime data_rank = 3
+        comptime data_type = DType.int8
+        comptime data_layout = Layout.row_major[data_rank]()
         var data_stack = InlineArray[Scalar[data_type], 8](uninitialized=True)
         var data = LayoutTensor[data_type, Layout.row_major(2, 2, 2)](
             data_stack
@@ -284,8 +284,8 @@ fn main():
         data[1, 1, 0] = 6
         data[1, 1, 1] = 7
 
-        alias indices_rank = 3
-        alias indices_layout = Layout.row_major[indices_rank]()
+        comptime indices_rank = 3
+        comptime indices_layout = Layout.row_major[indices_rank]()
         var indices_stack = InlineArray[Int64, 4](uninitialized=True)
         var indices = LayoutTensor[DType.int64, Layout.row_major(2, 1, 2)](
             indices_stack
@@ -296,7 +296,7 @@ fn main():
         indices[1, 0, 0] = 1
         indices[1, 0, 1] = 0
 
-        alias output_rank = 3
+        comptime output_rank = 3
         var output_shape = gather_nd_shape[
             output_rank, data_type, DType.int64, batch_dims
         ](
@@ -318,7 +318,7 @@ fn main():
         var output_data_data = InlineArray[Scalar[data_type], 4](
             uninitialized=True
         )
-        alias output_layout = Layout.row_major[output_rank]()
+        comptime output_layout = Layout.row_major[output_rank]()
         var output_data_buffer = LayoutTensor[data_type, output_layout](
             output_data_data.unsafe_ptr(),
             RuntimeLayout[output_layout].row_major(output_shape),
@@ -351,10 +351,10 @@ fn main():
 
     fn test_gather_nd_eg5() raises:
         # Example 5
-        alias batch_dims = 1
-        alias data_rank = 3
-        alias data_type = DType.int32
-        alias data_layout = Layout.row_major[data_rank]()
+        comptime batch_dims = 1
+        comptime data_rank = 3
+        comptime data_type = DType.int32
+        comptime data_layout = Layout.row_major[data_rank]()
         var data_stack = InlineArray[Scalar[data_type], 8](uninitialized=True)
         var data = LayoutTensor[data_type, Layout.row_major(2, 2, 2)](
             data_stack
@@ -369,8 +369,8 @@ fn main():
         data[1, 1, 0] = 6
         data[1, 1, 1] = 7
 
-        alias indices_rank = 2
-        alias indices_layout = Layout.row_major[indices_rank]()
+        comptime indices_rank = 2
+        comptime indices_layout = Layout.row_major[indices_rank]()
         var indices_stack = InlineArray[Int64, 2](uninitialized=True)
         var indices = LayoutTensor[DType.int64, Layout.row_major(2, 1)](
             indices_stack
@@ -379,7 +379,7 @@ fn main():
         indices[0, 0] = 1
         indices[1, 0] = 0
 
-        alias output_rank = 2
+        comptime output_rank = 2
         var output_shape = gather_nd_shape[
             output_rank, data_type, DType.int64, batch_dims
         ](
@@ -401,7 +401,7 @@ fn main():
         var output_data_data = InlineArray[Scalar[data_type], 4](
             uninitialized=True
         )
-        alias output_layout = Layout.row_major[output_rank]()
+        comptime output_layout = Layout.row_major[output_rank]()
         var output_data_buffer = LayoutTensor[data_type, output_layout](
             output_data_data.unsafe_ptr(),
             RuntimeLayout[output_layout].row_major(output_shape),
@@ -434,10 +434,10 @@ fn main():
 
     fn test_gather_nd_eg6() raises:
         # Example 6
-        alias batch_dims = 2
-        alias data_rank = 3
-        alias data_type = DType.int8
-        alias data_layout = Layout.row_major[data_rank]()
+        comptime batch_dims = 2
+        comptime data_rank = 3
+        comptime data_type = DType.int8
+        comptime data_layout = Layout.row_major[data_rank]()
         var data_stack = InlineArray[Scalar[data_type], 2 * 3 * 4](
             uninitialized=True
         )
@@ -475,8 +475,8 @@ fn main():
         data[1, 2, 2] = 23
         data[1, 2, 3] = 24
 
-        alias indices_rank = 4
-        alias indices_layout = Layout.row_major[indices_rank]()
+        comptime indices_rank = 4
+        comptime indices_layout = Layout.row_major[indices_rank]()
         var indices_stack = InlineArray[Int64, 2 * 3](uninitialized=True)
         var indices = LayoutTensor[DType.int64, Layout.row_major(2, 3, 1, 1)](
             indices_stack
@@ -489,7 +489,7 @@ fn main():
         indices[1, 1, 0, 0] = 2
         indices[1, 2, 0, 0] = 2
 
-        alias output_rank = 3
+        comptime output_rank = 3
         var output_shape = gather_nd_shape[
             output_rank, data_type, DType.int64, batch_dims
         ](
@@ -511,7 +511,7 @@ fn main():
         var output_data_data = InlineArray[Scalar[data_type], 6](
             uninitialized=True
         )
-        alias output_layout = Layout.row_major[output_rank]()
+        comptime output_layout = Layout.row_major[output_rank]()
         var output_data_buffer = LayoutTensor[data_type, output_layout](
             output_data_data.unsafe_ptr(),
             RuntimeLayout[output_layout].row_major(output_shape),
@@ -548,11 +548,11 @@ fn main():
 
     fn test_gather_nd_eg7() raises:
         # Example 4
-        alias batch_dims = 0
-        alias data_rank = 3
-        alias data_type = DType.int8
+        comptime batch_dims = 0
+        comptime data_rank = 3
+        comptime data_type = DType.int8
         var data_stack = InlineArray[Scalar[data_type], 8](uninitialized=True)
-        alias data_layout = Layout.row_major[data_rank]()
+        comptime data_layout = Layout.row_major[data_rank]()
         var data = LayoutTensor[data_type, Layout.row_major(2, 2, 2)](
             data_stack
         )
@@ -566,8 +566,8 @@ fn main():
         data[1, 1, 0] = 6
         data[1, 1, 1] = 7
 
-        alias indices_rank = 3
-        alias indices_layout = Layout.row_major[indices_rank]()
+        comptime indices_rank = 3
+        comptime indices_layout = Layout.row_major[indices_rank]()
         var indices_stack = InlineArray[Int64, 2](uninitialized=True)
         var indices = LayoutTensor[DType.int64, Layout.row_major(2, 1, 1)](
             indices_stack
@@ -576,8 +576,8 @@ fn main():
         indices[0, 0, 0] = 0
         indices[1, 0, 0] = 1
 
-        alias output_rank = 4
-        alias output_layout = Layout.row_major[output_rank]()
+        comptime output_rank = 4
+        comptime output_layout = Layout.row_major[output_rank]()
         var output_shape = gather_nd_shape[
             output_rank, data_type, DType.int64, batch_dims
         ](
@@ -640,10 +640,10 @@ fn main():
 
     fn test_gather_nd_eg8() raises:
         # Example 2
-        alias batch_dims = 0
-        alias data_rank = 2
-        alias data_type = DType.int8
-        alias data_layout = Layout.row_major[data_rank]()
+        comptime batch_dims = 0
+        comptime data_rank = 2
+        comptime data_type = DType.int8
+        comptime data_layout = Layout.row_major[data_rank]()
         var data_stack = InlineArray[Scalar[data_type], 6](uninitialized=True)
         var data = LayoutTensor[data_type, Layout.row_major(2, 3)](data_stack)
 
@@ -654,8 +654,8 @@ fn main():
         data[1, 1] = 4
         data[1, 2] = 5
 
-        alias indices_rank = 2
-        alias indices_layout = Layout.row_major[indices_rank]()
+        comptime indices_rank = 2
+        comptime indices_layout = Layout.row_major[indices_rank]()
         var indices_stack = InlineArray[Int64, 2](uninitialized=True)
         var indices = LayoutTensor[DType.int64, Layout.row_major(2, 1)](
             indices_stack
@@ -664,7 +664,7 @@ fn main():
         indices[0, 0] = 1
         indices[1, 0] = 0
 
-        alias output_rank = 2
+        comptime output_rank = 2
         var output_shape = gather_nd_shape[
             output_rank,
             data_type,
@@ -686,7 +686,7 @@ fn main():
         )
         print("Output shape: ", output_shape)
 
-        alias output_layout = Layout.row_major[output_rank]()
+        comptime output_layout = Layout.row_major[output_rank]()
         var output_data_data = InlineArray[Scalar[data_type], 6](
             uninitialized=True
         )

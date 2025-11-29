@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import prefetch
 from sys.info import align_of
 from sys.intrinsics import PrefetchOptions
@@ -62,11 +63,11 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
         var b_ptr = b_packed._offset(Index(n_outer_idx, tile_n_k_idx[1], 0))
 
         # Prefetch B matrix.
-        alias prefetch_distance = get_matmul_prefetch_b_distance_k()
+        comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
 
         @parameter
         if prefetch_distance > 0:
-            alias prefetch_offset = prefetch_distance * kernel_cols
+            comptime prefetch_offset = prefetch_distance * kernel_cols
 
             @parameter
             for idx in range(kernel_cols // simd_size):
@@ -78,7 +79,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
         var K = a.dim[1]()
         var a_ptr = a.data.offset(global_offset.M * K + global_k)
 
-        alias c_type = c_local.dtype
+        comptime c_type = c_local.dtype
 
         # Loop over local accumulator tiles.
         @parameter
@@ -86,7 +87,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
 
             @parameter
             for idx1 in range(kernel_cols // simd_size):
-                alias alignment = align_of[SIMD[c_type, simd_size]]()
+                comptime alignment = align_of[SIMD[c_type, simd_size]]()
 
                 var a_val = a_ptr[idx0 * K]
                 var b_val = b_ptr.load[width=simd_size, alignment=alignment](

@@ -68,7 +68,7 @@ def main():
 
 
 fn mandelbrot(
-    tensor: LayoutTensor[int_dtype, layout, MutableAnyOrigin],
+    tensor: LayoutTensor[int_dtype, layout, MutAnyOrigin],
 ):
     """The per-element calculation of iterations to escape in the Mandelbrot set.
     """

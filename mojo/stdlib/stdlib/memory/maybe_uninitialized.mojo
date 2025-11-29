@@ -32,7 +32,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         ElementType: The type of the element to store.
     """
 
-    alias _mlir_type = __mlir_type[`!pop.array<1, `, Self.ElementType, `>`]
+    comptime _mlir_type = __mlir_type[`!pop.array<1, `, Self.ElementType, `>`]
 
     var _array: Self._mlir_type
 
@@ -161,7 +161,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         MovableType: Movable
     ](
         mut self: UnsafeMaybeUninitialized[MovableType],
-        other: UnsafePointer[MovableType],
+        other: UnsafePointer[mut=True, MovableType],
     ):
         """Move another object.
 
@@ -181,7 +181,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
     @always_inline
     fn write[
         MovableType: Movable
-    ](mut self: UnsafeMaybeUninitialized[MovableType], var value: MovableType,):
+    ](mut self: UnsafeMaybeUninitialized[MovableType], var value: MovableType):
         """Write a value into an uninitialized memory location.
 
         Calling this method assumes that the memory is uninitialized.
@@ -206,11 +206,9 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         return self.unsafe_ptr()[]
 
     @always_inline
-    fn unsafe_ptr[
-        mut: Bool, origin: Origin[mut], //
-    ](ref [origin]self) -> UnsafePointer[
-        Self.ElementType, mut=mut, origin = __origin_of(self._array)
-    ]:
+    fn unsafe_ptr(
+        ref self,
+    ) -> UnsafePointer[Self.ElementType, origin_of(self._array)]:
         """Get a pointer to the underlying element.
 
         Note that this method does not assumes that the memory is initialized

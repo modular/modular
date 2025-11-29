@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from random import rand
 
 from testing import TestSuite
@@ -19,7 +20,7 @@ from testing import TestSuite
 fn _sort_test[dtype: DType, name: StaticString](size: Int, max: Int) raises:
     var p = UnsafePointer[Scalar[dtype]].alloc(size)
     rand[dtype](p, size)
-    sort(Span[Scalar[dtype], MutableAnyOrigin](ptr=p, length=UInt(size)))
+    sort(Span[Scalar[dtype], MutAnyOrigin](ptr=p, length=size))
     for i in range(1, size - 1):
         if p[i] < p[i - 1]:
             print(name, "size:", size, "max:", max, "incorrect sort")

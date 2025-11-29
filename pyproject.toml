@@ -3,6 +3,8 @@ name = "modular"
 version = "0"
 requires-python = ">= 3.10"
 
+
+# TODO: restrict utils/packaging/conda/test_inputs to only test_format.mojo
 [tool.black]
 include = '\.mojo$'
 line-length = 80
@@ -18,7 +20,9 @@ force-exclude = '''
     | utils/mblack
     | KGEN/test/mojo-parser
     | KGEN/test/mojo-isolated
-    | SDK/lib/API/python/max/serve/schemas
+    | KGEN/test/mojo-tool/format
+    | max/python/max/serve/schemas
+    | utils/packaging/conda/test_inputs
   )/
 )
 '''
@@ -50,7 +54,6 @@ ignore = [
   "D104", # TODO: Enable missing docstrings in public packages
   "D105", # undocumented-magic-method
   "E402", # TODO: import top of file
-  "E712", # TODO: Unnecessary comparison to bool
   "E722", # bare except
   "E731", # TODO: Don't assign lambda
   "E741", # TODO: Ambiguous variable name
@@ -58,12 +61,11 @@ ignore = [
   "F405", # TODO: glob imports undefined
   "F821", # TODO: Undefined names, means script is invalid
   "F841", # TODO: unused variables
+  "FURB122", # Questionable readability improvement
   "RUF005", # Consider iterable unpacking instead of concatenation
-  "RUF009", # Do not perform function call in dataclass defaults
   "RUF010", # Use explicit conversion flag
   "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
   "RUF015", # Prefer `next(iter(iterable))` over single element slice
-  "SIM101", # Duplicate isinstance
   "SIM102", # Collapsible if
   "SIM105", # Suppressible exception
   "SIM108", # Use ternary operator
@@ -95,23 +97,10 @@ convention = "google"
 # To add more modules to this list, test them with:
 #   ./bazelw run //open-source/max/bazel/lint:ruff.check -- --select=D --no-cache <file>
 # and verify no errors are reported for that specific file.
-"!SDK/lib/API/python/max/{driver/__init__.py,driver/driver.py,driver/tensor.py,dtype/__init__.py,engine/__init__.py,engine/api.py,experimental/__init__.py,experimental/random.py,graph/__init__.py,graph/quantization.py,graph/weight.py,interfaces/context.py,interfaces/status.py,nn/embedding.py,nn/float8_config.py,nn/linear.py}" = ["D"]
+"!max/python/max/{driver/__init__.py,driver/driver.py,driver/tensor.py,dtype/__init__.py,engine/__init__.py,engine/api.py,experimental/__init__.py,experimental/random.py,graph/__init__.py,graph/quantization.py,graph/weight.py,interfaces/context.py,interfaces/status.py,nn/embedding.py,nn/float8_config.py,nn/linear.py}" = ["D"]
 # Ignore ANN001 (function argument missing type annotation) for auto-generated
 # stubfiles
 "*.pyi" = ["ANN001", "ANN201", "ANN202", "ANN205", "ANN206"]
 # Disable lints which complain about weird unicode characters in files that include
 # a large number of LLM test prompts.
-"SDK/integration-test/pipelines/python/test_common/test_data.py" = ["RUF001", "RUF003"]
-
-[tool.pyright]
-# TODO: Upgrade to strict mode
-typeCheckingMode = "basic"
-include = ["GenericML/tools/model/"]
-exclude = [
-  "**/node_modules",
-  "**/__pycache__",
-  "GenericML/tools/model/tests",
-  "utils/mblack",
-]
-force-exclude = ["GenericML/tools/model/tests", "utils/mblack"]
-reportMissingImports = false
+"max/tests/integration/pipelines/python/test_common/test_data.py" = ["RUF001", "RUF003"]

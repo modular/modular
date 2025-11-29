@@ -20,23 +20,23 @@ from testing import assert_equal
 
 from utils.index import Index
 
-alias type = DType.float32
-alias simd_size: Int = simd_width_of[DType.float32]()
-alias simd_cols: Int = 4
-alias kernel_cols: Int = simd_cols * simd_size
-alias width = 2 * kernel_cols
+comptime type = DType.float32
+comptime simd_size: Int = simd_width_of[DType.float32]()
+comptime simd_cols: Int = 4
+comptime kernel_cols: Int = simd_cols * simd_size
+comptime width = 2 * kernel_cols
 
-alias N: Int = 128
-alias K: Int = 128
-alias kc = 128
+comptime N: Int = 128
+comptime K: Int = 128
+comptime kc = 128
 
 
 @export(ABI="C")
 fn pack_b(
     packed_b: NDBuffer[
-        type, 3, MutableAnyOrigin, DimList(width // kernel_cols, K, kernel_cols)
+        type, 3, MutAnyOrigin, DimList(width // kernel_cols, K, kernel_cols)
     ],
-    b: NDBuffer[type, 2, MutableAnyOrigin, DimList(K, N)],
+    b: NDBuffer[type, 2, MutAnyOrigin, DimList(K, N)],
 ):
     PackMatrixCols[
         DimList(K, N),
@@ -59,10 +59,10 @@ fn pack_b(
 
 fn test_pack_b() raises:
     var packed_b = NDBuffer[
-        type, 3, MutableAnyOrigin, DimList(width // kernel_cols, K, kernel_cols)
+        type, 3, MutAnyOrigin, DimList(width // kernel_cols, K, kernel_cols)
     ].stack_allocation[alignment=64]()
     packed_b.fill(1)
-    var b = NDBuffer[type, 2, MutableAnyOrigin, DimList(K, N)].stack_allocation[
+    var b = NDBuffer[type, 2, MutAnyOrigin, DimList(K, N)].stack_allocation[
         alignment=64
     ]()
     b.fill(1)

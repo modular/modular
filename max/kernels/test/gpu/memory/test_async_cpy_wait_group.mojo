@@ -22,7 +22,7 @@ from gpu.memory import (
     async_copy_wait_all,
     async_copy_wait_group,
 )
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 from testing import assert_equal
 
 
@@ -140,7 +140,7 @@ fn copy_with_non_zero_fill[
 
 
 fn test_copy_with_src_size(ctx: DeviceContext) raises:
-    alias size = 4
+    comptime size = 4
 
     # Allocate arrays of different sizes to trigger an OOB address in test.
     var a_host = UnsafePointer[Float32].alloc(size)
@@ -157,8 +157,8 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(a_device, a_host)
 
-    alias kernel = copy_with_src_size
-    alias src_size = 3 * size_of[DType.float32]()
+    comptime kernel = copy_with_src_size
+    comptime src_size = 3 * size_of[DType.float32]()
 
     ctx.enqueue_function_checked[kernel, kernel](
         a_device,
@@ -188,7 +188,7 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
 
 
 fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
-    alias size = 8
+    comptime size = 8
 
     # Allocate arrays of different sizes to trigger an OOB address in test.
     var a_host = UnsafePointer[BFloat16].alloc(size)
@@ -205,9 +205,9 @@ fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(a_device, a_host)
 
-    alias kernel = copy_with_non_zero_fill[2 * size]
+    comptime kernel = copy_with_non_zero_fill[2 * size]
 
-    alias src_size = 3 * size_of[DType.bfloat16]()
+    comptime src_size = 3 * size_of[DType.bfloat16]()
 
     ctx.enqueue_function_checked[kernel, kernel](
         a_device,

@@ -33,6 +33,7 @@ from math import ceildiv
 from sys import simd_width_of
 
 from buffer import NDBuffer
+from memory import LegacyUnsafePointer as UnsafePointer
 from gpu import WARP_SIZE, block_dim, global_idx, grid_dim
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
@@ -48,9 +49,9 @@ fn _allgather_naive[
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus],
+    input_buffers: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
     output_buffers: InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus * ngpus
+        NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ],
     ctxs: List[DeviceContext],
 ) raises:
@@ -113,7 +114,7 @@ fn _allgather_p2p_kernel[
     Each GPU directly reads from all other GPUs and writes to its output buffers.
     Uses round-robin access pattern to balance NVLink traffic.
     """
-    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
 
     var global_tid = global_idx.x
     var stride = grid_dim.x * UInt(BLOCK_SIZE)
@@ -157,9 +158,9 @@ fn _allgather_p2p[
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus],
+    input_buffers: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
     output_buffers: InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus * ngpus
+        NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     max_num_blocks: Int,
@@ -176,7 +177,7 @@ fn _allgather_p2p[
         list_of_in_ptrs[i] = input_buffers[i].data
         lengths[i] = input_buffers[i].num_elements()
 
-    alias BLOCK_SIZE = 256
+    comptime BLOCK_SIZE = 256
 
     # Launch kernel on each GPU.
     for gpu_idx in range(ngpus):
@@ -195,7 +196,7 @@ fn _allgather_p2p[
         for i in range(ngpus):
             max_length = max(max_length, lengths[i])
 
-        alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+        comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
         # Use ceildiv for max_length to ensure we have enough threads.
         var grid_size = min(
             max_num_blocks,
@@ -203,13 +204,14 @@ fn _allgather_p2p[
         )
 
         # Launch kernel.
-        curr_ctx.enqueue_function[
-            _allgather_p2p_kernel[
-                dtype,
-                rank,
-                ngpus,
-                BLOCK_SIZE=BLOCK_SIZE,
-            ]
+        comptime allgather_p2p_kernel = _allgather_p2p_kernel[
+            dtype,
+            rank,
+            ngpus,
+            BLOCK_SIZE=BLOCK_SIZE,
+        ]
+        curr_ctx.enqueue_function_checked[
+            allgather_p2p_kernel, allgather_p2p_kernel
         ](
             output_ptrs,
             list_of_in_ptrs,
@@ -228,9 +230,9 @@ fn allgather[
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus],
+    input_buffers: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
     output_buffers: InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus * ngpus
+        NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     ctxs: List[DeviceContext],
@@ -259,6 +261,17 @@ fn allgather[
         _max_num_blocks: Maximum number of blocks for kernel launch (optional).
     """
 
+    # Return early, if all input buffers are empty
+    var all_empty = True
+
+    @parameter
+    for i in range(ngpus):
+        if input_buffers[i].num_elements() > 0:
+            all_empty = False
+            break
+    if all_empty:
+        return
+
     # Default max blocks if not specified.
     var max_num_blocks = _max_num_blocks.or_else(216)
 
@@ -279,9 +292,9 @@ fn allgather[
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus],
+    input_buffers: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
     output_buffers: InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus * ngpus
+        NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ],
     ctxs: List[DeviceContext],
 ) raises:

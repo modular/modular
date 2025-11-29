@@ -82,8 +82,8 @@ def main():
         "Shows algorithm.sum from stdlib with much better performance\n"
     )
     # Allocate and randomize data, then create two buffers
-    var ptr_small = UnsafePointer[Scalar[type]].alloc(size_small)
-    var ptr_large = UnsafePointer[Scalar[type]].alloc(size_large)
+    var ptr_small = alloc[Scalar[type]](size_small)
+    var ptr_large = alloc[Scalar[type]](size_large)
 
     rand(ptr_small, size_small)
     rand(ptr_large, size_large)

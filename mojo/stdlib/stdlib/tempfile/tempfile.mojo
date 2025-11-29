@@ -26,11 +26,11 @@ from sys import CompilationTarget
 
 from memory import Span
 
-alias TMP_MAX = 10_000
+comptime TMP_MAX = 10_000
 
 
 fn _get_random_name(size: Int = 8) -> String:
-    alias characters = "abcdefghijklmnopqrstuvwxyz0123456789_"
+    comptime characters = "abcdefghijklmnopqrstuvwxyz0123456789_"
     var name = String(capacity=size)
     for _ in range(size):
         var rand_index = Int(
@@ -45,7 +45,7 @@ fn _candidate_tempdir_list() -> List[String]:
     _get_default_tempdir will try."""
 
     var dirlist = List[String]()
-    var possible_env_vars = List[StaticString]("TMPDIR", "TEMP", "TMP")
+    var possible_env_vars: List[StaticString] = ["TMPDIR", "TEMP", "TMP"]
     var dirname: String
 
     # First, try the environment.
@@ -225,6 +225,9 @@ struct TemporaryDirectory:
             prefix: Prefix to use for the directory name.
             dir: Directory in which the directory will be created.
             ignore_cleanup_errors: Whether to ignore cleanup errors.
+
+        Raises:
+            If the operation fails.
         """
         self._ignore_cleanup_errors = ignore_cleanup_errors
 
@@ -239,7 +242,11 @@ struct TemporaryDirectory:
         return self.name
 
     fn __exit__(self) raises:
-        """Called when exiting the context with no error."""
+        """Called when exiting the context with no error.
+
+        Raises:
+            If the operation fails.
+        """
         _rmtree(self.name, ignore_errors=self._ignore_cleanup_errors)
 
     fn __exit__(self, err: Error) -> Bool:
@@ -310,6 +317,9 @@ struct NamedTemporaryFile(Movable):
             prefix: Prefix to use for the file name if name is not provided.
             dir: Directory in which the file will be created.
             delete: Whether the file is deleted on close.
+
+        Raises:
+            If the operation fails.
         """
 
         var final_dir = dir.value() if dir else _get_default_tempdir()
@@ -345,7 +355,11 @@ struct NamedTemporaryFile(Movable):
             pass
 
     fn close(mut self) raises:
-        """Closes the file handle."""
+        """Closes the file handle.
+
+        Raises:
+            If the operation fails.
+        """
         self._file_handle.close()
         if self._delete:
             os.remove(self.name)
@@ -358,6 +372,9 @@ struct NamedTemporaryFile(Movable):
 
         Returns:
             The contents of the file.
+
+        Raises:
+            If the operation fails.
         """
         return self._file_handle.read(size)
 
@@ -370,6 +387,9 @@ struct NamedTemporaryFile(Movable):
 
         Returns:
             The contents of the file.
+
+        Raises:
+            If the operation fails.
         """
         return self._file_handle.read_bytes(size)
 

@@ -18,6 +18,7 @@ from layout._fillers import arange, random
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import LayoutTensorIter
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils import IndexList
 
 
@@ -25,7 +26,7 @@ from utils import IndexList
 def test_fill_and_print():
     print("== test_fill_and_print")
 
-    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[
         layout, element_type = DType.int32, linear_idx_type = DType.int32
@@ -57,7 +58,7 @@ def test_fill_and_print():
 def test_set_and_get_items():
     print("== test_set_and_get_items")
 
-    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[
         layout, element_type = DType.int32, linear_idx_type = DType.int32
@@ -92,7 +93,7 @@ def test_set_and_get_items():
 def test_tile():
     print("== test_tile")
 
-    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[
         layout, element_type = DType.int32, linear_idx_type = DType.int32
@@ -141,7 +142,7 @@ def test_tile():
 fn test_tile_and_distribute():
     print("== test_tile_and_distribute")
 
-    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     var dynamic_layout = RuntimeLayout[
         layout, element_type = DType.int64, linear_idx_type = DType.int64
     ](
@@ -246,7 +247,7 @@ fn test_tile_and_distribute():
 fn test_tile_and_vectorize():
     print("== test_tile_and_vectorize")
 
-    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[
         layout, element_type = DType.int32, linear_idx_type = DType.int32
@@ -467,7 +468,7 @@ fn test_tile_and_vectorize():
 # CHECK-LABEL: test_copy_from
 fn test_copy_from():
     print("== test_copy_from")
-    alias layout = Layout(
+    comptime layout = Layout(
         IntTuple(8, 8), IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
     )
 
@@ -504,7 +505,7 @@ fn test_copy_from():
 # CHECK-LABEL: test_linspace_fill
 fn test_linspace_fill():
     print("== test_linspace_fill")
-    alias layout = Layout(
+    comptime layout = Layout(
         IntTuple(8, 8), IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
     )
 
@@ -569,9 +570,9 @@ fn test_linspace_fill():
 # CHECK-LABEL: test_random_fill
 fn test_random_fill():
     print("== test_random_fill")
-    alias layout = Layout(8 * 8 * 8 * 8)
+    comptime layout = Layout(8 * 8 * 8 * 8)
 
-    alias RuntimeLayoutType = RuntimeLayout[
+    comptime RuntimeLayoutType = RuntimeLayout[
         layout, element_type = DType.int32, linear_idx_type = DType.int32
     ]
 
@@ -609,7 +610,7 @@ fn test_random_fill():
 # CHECK-LABEL: test_iterator
 fn test_iterator():
     print("== test_iterator")
-    alias layout = Layout(IntTuple(UNKNOWN_VALUE, 8), IntTuple(8, 1))
+    comptime layout = Layout(IntTuple(UNKNOWN_VALUE, 8), IntTuple(8, 1))
 
     var dynamic_layout = RuntimeLayout[
         layout, element_type = DType.int32, linear_idx_type = DType.int32
@@ -655,7 +656,7 @@ fn test_iterator():
     # CHECK: 10.0 11.0
     # CHECK: 12.0 13.0
     # CHECK: 14.0 15.0
-    alias layout1 = Layout(
+    comptime layout1 = Layout(
         IntTuple(4, UNKNOWN_VALUE), IntTuple(2, UNKNOWN_VALUE)
     )
     var dynamic_layout1 = RuntimeLayout[
@@ -676,12 +677,12 @@ fn test_iterator():
     print(iter.bound, iter.offset, iter.stride)
     print(iter[])
 
-    alias M = 8
-    alias N = 8
-    alias BM = 2
-    alias BN = 2
-    alias type = DType.float32
-    alias unknown_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime M = 8
+    comptime N = 8
+    comptime BM = 2
+    comptime BN = 2
+    comptime type = DType.float32
+    comptime unknown_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     # alias layout = Layout.row_major(M, N)
     var runtime_layout = RuntimeLayout[
         unknown_layout,
@@ -720,7 +721,7 @@ fn test_split():
 
     var ptr = UnsafePointer[Float32].alloc(16)
 
-    alias layout_Ux4 = Layout(IntTuple(UNKNOWN_VALUE, 4), IntTuple(4, 1))
+    comptime layout_Ux4 = Layout(IntTuple(UNKNOWN_VALUE, 4), IntTuple(4, 1))
     var dynamic_layout_2x4 = RuntimeLayout[
         layout_Ux4, element_type = DType.int32, linear_idx_type = DType.int32
     ](
@@ -741,7 +742,7 @@ fn test_split():
     # CHECK: 6.0 7.0
     print(tensor_Ux4.split[axis=1](2, 1))
 
-    alias layout_4x4 = Layout(IntTuple(4, 4), IntTuple(4, 1))
+    comptime layout_4x4 = Layout(IntTuple(4, 4), IntTuple(4, 1))
     var dynamic_layout_4x4 = RuntimeLayout[
         layout_4x4, element_type = DType.int32, linear_idx_type = DType.int32
     ](
@@ -774,7 +775,7 @@ fn test_split():
     # CHECK: 12.0 13.0 14.0 15.0
     print(tensor_4x4_split1)
 
-    alias layout_Ux8 = Layout(IntTuple(UNKNOWN_VALUE, 8), IntTuple(8, 1))
+    comptime layout_Ux8 = Layout(IntTuple(UNKNOWN_VALUE, 8), IntTuple(8, 1))
     var dynamic_layout_Ux8 = RuntimeLayout[
         layout_Ux8, element_type = DType.int32, linear_idx_type = DType.int32
     ](
@@ -815,7 +816,7 @@ fn test_split():
     # CHECK: 14.0 15.0
     print(tensor_Ux8_split2)
 
-    alias layout_8x2 = Layout(IntTuple(8, 2), IntTuple(2, 1))
+    comptime layout_8x2 = Layout(IntTuple(8, 2), IntTuple(2, 1))
     var tensor_8x2 = LayoutTensor[DType.float32, layout_8x2](ptr)
     var tensor_8x2_split1 = tensor_8x2.split[0, split_alignment=3](3, 1)
     var tensor_8x2_split2 = tensor_8x2.split[0, split_alignment=3](3, 2)

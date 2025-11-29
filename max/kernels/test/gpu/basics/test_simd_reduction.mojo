@@ -16,11 +16,12 @@
 
 from gpu import global_idx
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
-alias buffer_size = 1024
-alias block_dim = 32
-alias simd_width = 4
+comptime buffer_size = 1024
+comptime block_dim = 32
+comptime simd_width = 4
 
 
 def test_simd_reduction(ctx: DeviceContext):
@@ -42,7 +43,8 @@ def test_simd_reduction(ctx: DeviceContext):
 
     var output_buffer = ctx.enqueue_create_buffer[DType.int](
         buffer_size // simd_width
-    ).enqueue_fill(9)
+    )
+    output_buffer.enqueue_fill(9)
 
     ctx.enqueue_copy(input_buffer, input_host)
 
@@ -51,7 +53,7 @@ def test_simd_reduction(ctx: DeviceContext):
         input: UnsafePointer[Scalar[DType.int]],
     ):
         output[global_idx.x] = input.load[width=simd_width](
-            simd_width * global_idx.x
+            simd_width * Int(global_idx.x)
         ).reduce_add()
 
     ctx.enqueue_function_checked[kernel, kernel](

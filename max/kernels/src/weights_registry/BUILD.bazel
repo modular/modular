@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:public"])
 mojo_library(
     name = "weights_registry",
     srcs = glob(["**/*.mojo"]),
+    validate_missing_docs = False,
     deps = [
         "@mojo//:stdlib",
     ],

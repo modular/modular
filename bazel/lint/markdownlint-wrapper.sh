@@ -20,13 +20,13 @@ readonly config=$(find $BUILD_WORKSPACE_DIRECTORY -name .markdownlint.yaml -path
 
 if [[ -n "${FAST:-}" ]]; then
     cd "$BUILD_WORKSPACE_DIRECTORY"
-    paths=$(git diff --name-only $(git merge-base --fork-point origin/main) -- '*.md' '*.mdx' ':!:third-party/*')
+    paths=$(git diff --diff-filter=d --name-only $(git merge-base origin/main HEAD) -- '*.md' '*.mdx' ':!:third-party/*')
     if [ ! -n "$paths" ]; then
         # markdownlint will just print help if no input paths, short circuit here
         exit 0
     fi
     # aspect_rules_js complains if we change directories and then run the binary, so go back
-    cd -
+    cd - >/dev/null
 else
     paths="."
 fi

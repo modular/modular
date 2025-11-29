@@ -31,8 +31,8 @@ from .shapes import get_sliding_window_out_dim
 @register_passable("trivial")
 struct PoolMethod(ImplicitlyCopyable, Movable):
     var value: Int
-    alias MAX = PoolMethod(0)  # Max pooling.
-    alias AVG = PoolMethod(1)  # Average pooling not counting padded regions.
+    comptime MAX = PoolMethod(0)  # Max pooling.
+    comptime AVG = PoolMethod(1)  # Average pooling not counting padded regions.
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: PoolMethod) -> Bool:
@@ -215,7 +215,7 @@ fn max_pool_cpu[
     var padding_w_low = 0 if empty_padding else Int(paddings[2])
     # var padding_w_high = 0 if empty_padding else Int(paddings[3])
 
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
 
     var pool_window_h = Int(filter[0])
     var pool_window_w = Int(filter[1])
@@ -226,8 +226,8 @@ fn max_pool_cpu[
     var dilation_h = Int(dilations[0])
     var dilation_w = Int(dilations[1])
 
-    alias stencil_rank = 2
-    alias stencil_axis = IndexList[
+    comptime stencil_rank = 2
+    comptime stencil_axis = IndexList[
         stencil_rank, element_type = output.layout_int_type
     ](1, 2)
 
@@ -245,10 +245,10 @@ fn max_pool_cpu[
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank, **_],
         IndexList[stencil_rank, **_],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride_h - padding_h_low,
             point[1] * stride_w - padding_w_low,
@@ -325,7 +325,7 @@ fn max_pool_cpu[
     fn dilation_fn(dim: Int) -> Int:
         return Int(dilations[dim])
 
-    alias stencil_with_padding = stencil[
+    comptime stencil_with_padding = stencil[
         output.rank,
         stencil_rank,
         stencil_axis,
@@ -339,7 +339,7 @@ fn max_pool_cpu[
         max_pool_compute_finalize,
     ]
 
-    alias stencil_empty_padding = stencil[
+    comptime stencil_empty_padding = stencil[
         output.rank,
         stencil_rank,
         stencil_axis,
@@ -414,7 +414,7 @@ fn max_pool_gpu[
     var padding_w_low = 0 if empty_padding else Int(paddings[2])
     # var padding_w_high = 0 if empty_padding else Int(paddings[3])
 
-    alias simd_width = 1
+    comptime simd_width = 1
 
     var pool_window_h = Int(filter[0])
     var pool_window_w = Int(filter[1])
@@ -427,8 +427,8 @@ fn max_pool_gpu[
     if dilations.runtime_layout.shape.value.flattened_length() > 2:
         raise Error("Dilation not supported for size > 2")
 
-    alias stencil_rank = 2
-    alias stencil_axis = IndexList[
+    comptime stencil_rank = 2
+    comptime stencil_axis = IndexList[
         stencil_rank, element_type = output.layout_int_type
     ](1, 2)
 
@@ -446,10 +446,10 @@ fn max_pool_gpu[
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride_h - padding_h_low,
             point[1] * stride_w - padding_w_low,
@@ -532,7 +532,7 @@ fn max_pool_gpu[
         else:
             return dilation_w
 
-    alias stencil_gpu_fn = stencil_gpu[
+    comptime stencil_gpu_fn = stencil_gpu[
         output.rank,
         stencil_rank,
         stencil_axis,
@@ -621,7 +621,7 @@ fn avg_pool_cpu[
         padding_h_high = padding_h_high + implicit_pad0
         padding_w_high = padding_w_high + implicit_pad1
 
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
 
     var output_height = output.dim[1]()
     var output_width = output.dim[2]()
@@ -635,8 +635,8 @@ fn avg_pool_cpu[
     var dilation_h = Int(dilations[0])
     var dilation_w = Int(dilations[1])
 
-    alias stencil_rank = 2
-    alias stencil_axis = IndexList[
+    comptime stencil_rank = 2
+    comptime stencil_axis = IndexList[
         stencil_rank, element_type = output.layout_int_type
     ](1, 2)
 
@@ -655,10 +655,10 @@ fn avg_pool_cpu[
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride_h - padding_h_low,
             point[1] * stride_w - padding_w_low,
@@ -794,7 +794,7 @@ fn avg_pool_cpu[
     fn dilation_fn(dim: Int) -> Int:
         return Int(dilations[dim])
 
-    alias stencil_with_padding = stencil[
+    comptime stencil_with_padding = stencil[
         output.rank,
         stencil_rank,
         stencil_axis,
@@ -808,7 +808,7 @@ fn avg_pool_cpu[
         avg_pool_compute_finalize,
     ]
 
-    alias stencil_with_padding_count_exclude_boundary = stencil[
+    comptime stencil_with_padding_count_exclude_boundary = stencil[
         output.rank,
         stencil_rank,
         stencil_axis,
@@ -822,7 +822,7 @@ fn avg_pool_cpu[
         avg_pool_compute_finalize_exclude_boundary,
     ]
 
-    alias stencil_empty_padding = stencil[
+    comptime stencil_empty_padding = stencil[
         output.rank,
         stencil_rank,
         stencil_axis,
@@ -938,7 +938,7 @@ fn avg_pool_gpu[
         padding_h_high = padding_h_high + implicit_pad0
         padding_w_high = padding_w_high + implicit_pad1
 
-    alias simd_width = 1  # Must be 1 for GPU
+    comptime simd_width = 1  # Must be 1 for GPU
 
     var output_height = output.dim(1)
     var output_width = output.dim(2)
@@ -954,8 +954,8 @@ fn avg_pool_gpu[
     if dilations.runtime_layout.shape.value.flattened_length() > 2:
         raise Error("Dilation not supported for size > 2")
 
-    alias stencil_rank = 2
-    alias stencil_axis = IndexList[
+    comptime stencil_rank = 2
+    comptime stencil_axis = IndexList[
         stencil_rank, element_type = output.layout_int_type
     ](1, 2)
 
@@ -974,10 +974,10 @@ fn avg_pool_gpu[
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride_h - padding_h_low,
             point[1] * stride_w - padding_w_low,
@@ -1117,7 +1117,7 @@ fn avg_pool_gpu[
         else:
             return dilation_w
 
-    alias stencil_gpu_fn = stencil_gpu[
+    comptime stencil_gpu_fn = stencil_gpu[
         output.rank,
         stencil_rank,
         stencil_axis,
@@ -1131,7 +1131,7 @@ fn avg_pool_gpu[
         avg_pool_compute_finalize,
     ]
 
-    alias stencil_gpu_count_exclude_boundary = stencil_gpu[
+    comptime stencil_gpu_count_exclude_boundary = stencil_gpu[
         output.rank,
         stencil_rank,
         stencil_axis,

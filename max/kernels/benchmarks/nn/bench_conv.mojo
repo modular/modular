@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from math import align_up, ceildiv
 from random import rand
 from sys import simd_width_of, size_of
@@ -18,8 +19,7 @@ from sys.param_env import env_get_int, env_get_string
 
 from benchmark import *
 from benchmark import keep
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv_utils import (
     ConvShape,
@@ -32,19 +32,19 @@ from utils.index import Index
 
 
 fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
-    alias input_type = spec.static_info.input_type
-    alias filter_type = spec.static_info.filter_type
-    alias output_type = spec.static_info.output_type
+    comptime input_type = spec.static_info.input_type
+    comptime filter_type = spec.static_info.filter_type
+    comptime output_type = spec.static_info.output_type
 
     # Alignment in terms of number of elmements.
-    alias alignment = 64
-    alias input_align = alignment // size_of[input_type]()
-    alias filter_align = alignment // size_of[filter_type]()
-    alias output_align = alignment // size_of[output_type]()
+    comptime alignment = 64
+    comptime input_align = alignment // size_of[input_type]()
+    comptime filter_align = alignment // size_of[filter_type]()
+    comptime output_align = alignment // size_of[output_type]()
 
-    alias simd_size = simd_width_of[filter_type]()
-    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
-    alias micro_kernel_f_size = micro_kernel_width * simd_size
+    comptime simd_size = simd_width_of[filter_type]()
+    comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
+    comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
     var f_per_group = spec.f // spec.num_groups
 
@@ -83,8 +83,8 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
     )
 
     # Set the total buffer allocation to be 4x L3 cache.
-    alias MB = 1024 * 1024
-    alias L3_cache = env_get_int["L3SIZE", 24]() * MB
+    comptime MB = 1024 * 1024
+    comptime L3_cache = env_get_int["L3SIZE", 24]() * MB
     var size_per_copy = (
         input_alloc_size * size_of[input_type]()
         + filter_alloc_size * size_of[filter_type]()
@@ -146,42 +146,39 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
         @always_inline
         @parameter
         fn bench_fn():
-            var input = NDBuffer[input_type, spec.static_info.rank + 2](
+            comptime layout_2 = Layout.row_major[spec.static_info.rank + 2]()
+            comptime layout_3 = Layout.row_major[spec.static_info.rank + 3]()
+            var input = LayoutTensor[input_type, layout_2](
                 input_ptr + (counter % num_copies) * input_alloc_size,
-                input_shape,
+                RuntimeLayout[layout_2].row_major(input_shape),
             )
-            var filter = NDBuffer[filter_type, spec.static_info.rank + 3](
+            var filter = LayoutTensor[filter_type, layout_3](
                 filter_ptr + (counter % num_copies) * filter_alloc_size,
-                packed_filter_shape,
+                RuntimeLayout[layout_3].row_major(packed_filter_shape),
             )
-            var output = NDBuffer[output_type, spec.static_info.rank + 2](
+            var output = LayoutTensor[output_type, layout_2](
                 output_ptr + (counter % num_copies) * output_alloc_size,
-                output_shape,
+                RuntimeLayout[layout_2].row_major(output_shape),
             )
 
             try:
                 ConvDirectNHWC[
-                    spec.static_info.rank + 2,
-                    spec.static_info.rank + 3,
-                    spec.static_info.rank + 2,
+                    layout_2,
+                    layout_3,
+                    layout_2,
                     _,
                     _,
                     _,
-                    DimList.create_unknown[spec.static_info.rank + 2](),
-                    DimList.create_unknown[spec.static_info.rank + 3](),
-                    DimList.create_unknown[spec.static_info.rank + 2](),
                     input_type,
                     filter_type,
                     output_type,
                     True,
-                    ConvInfoStatic[spec.static_info.rank + 2 - 2](),
+                    ConvInfoStatic[spec.static_info.rank](),
                 ].run(
                     output,
                     input,
                     filter,
-                    rebind[ConvShape[spec.static_info.rank + 2 - 2]](
-                        conv_shape
-                    ),
+                    conv_shape,
                 )
 
                 counter += 1
@@ -189,7 +186,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
             except e:
                 print(e)
 
-            keep(output.data)
+            keep(output.ptr)
 
         b.iter[bench_fn]()
 
@@ -197,7 +194,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
         BenchId("Conv", String(spec)),
         spec,
         # TODO: Pick relevant benchmetric.
-        ThroughputMeasure(BenchMetric.elements, spec.flops()),
+        [ThroughputMeasure(BenchMetric.elements, spec.flops())],
     )
 
     input_ptr.free()
@@ -219,13 +216,13 @@ struct ConvSpec[static_info: ConvSpecStatic](
     ImplicitlyCopyable, Movable, Stringable
 ):
     var n: Int
-    var input_dims: IndexList[static_info.rank]
+    var input_dims: IndexList[Self.static_info.rank]
     var c: Int
-    var filter_dims: IndexList[static_info.rank]
+    var filter_dims: IndexList[Self.static_info.rank]
     var f: Int
-    var stride: IndexList[static_info.rank]
-    var dilation: IndexList[static_info.rank]
-    var pad: IndexList[2 * static_info.rank]
+    var stride: IndexList[Self.static_info.rank]
+    var dilation: IndexList[Self.static_info.rank]
+    var pad: IndexList[2 * Self.static_info.rank]
     var num_groups: Int
 
     @no_inline
@@ -243,10 +240,10 @@ struct ConvSpec[static_info: ConvSpecStatic](
         # fmt: on
 
     fn flops(self) -> Int:
-        var output_dims = IndexList[static_info.rank](1)
+        var output_dims = IndexList[Self.static_info.rank](1)
 
         @parameter
-        for i in range(static_info.rank):
+        for i in range(Self.static_info.rank):
             output_dims[i] = (
                 self.input_dims[i]
                 + self.pad[2 * i]
@@ -268,7 +265,7 @@ struct ConvSpec[static_info: ConvSpecStatic](
 def main():
     var m = Bench(BenchConfig())
 
-    alias fp32_1d = ConvSpecStatic(
+    comptime fp32_1d = ConvSpecStatic(
         rank=1,
         input_type=DType.float32,
         filter_type=DType.float32,
@@ -303,7 +300,7 @@ def main():
         )
     # fmt: on
 
-    alias fp32_2d = ConvSpecStatic(
+    comptime fp32_2d = ConvSpecStatic(
         rank=2,
         input_type=DType.float32,
         filter_type=DType.float32,
@@ -344,7 +341,7 @@ def main():
             num_groups=ng,
         )
 
-    alias fp32_3d = ConvSpecStatic(
+    comptime fp32_3d = ConvSpecStatic(
         rank=3,
         input_type=DType.float32,
         filter_type=DType.float32,

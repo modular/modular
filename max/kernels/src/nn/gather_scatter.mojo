@@ -26,7 +26,7 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from memory import memcpy
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
-from tensor_internal import ManagedTensorSlice
+from tensor import ManagedTensorSlice
 
 from utils import Index, IndexList, StaticTuple
 
@@ -141,7 +141,7 @@ fn gather_reduce[
     # TODO: find a heuristic to replace the magic number.
     # This is about 4x larger than the default in gather, which makes sense
     # since this kernel performs far fewer writes
-    alias MIN_TASK_COPY_SIZE = 64 * 100 * 32 * 4  # bytes
+    comptime MIN_TASK_COPY_SIZE = 64 * 100 * 32 * 4  # bytes
     var num_threads = parallelism_level()
     var num_tasks = min(
         ceildiv(
@@ -162,7 +162,7 @@ fn gather_reduce[
     if output.rank == 3:
         output_2d_dims[1] = output.dim[2]()
 
-    alias layout_2d = Layout.row_major[2]()
+    comptime layout_2d = Layout.row_major[2]()
     var output_bind = LayoutTensor[
         dtype, layout_2d, address_space = output.address_space
     ](output.ptr, RuntimeLayout[layout_2d].row_major(output_2d_dims))
@@ -187,7 +187,7 @@ fn gather_reduce[
     )
     @parameter
     fn task_func(task_id: Int):
-        alias prefetch_offset = -1
+        comptime prefetch_offset = -1
 
         var output = output_bind
         var input = input_bind
@@ -200,7 +200,7 @@ fn gather_reduce[
         )
 
         # For multi-hot embeddings reduction, k is the embedding dim and j is the multi-hot dim
-        alias k_tile_sizes = VariadicList[Int](
+        comptime k_tile_sizes = VariadicList[Int](
             2 * simd_width, 1
         ) if CompilationTarget.has_neon() else VariadicList[Int](
             8 * simd_width, 4 * simd_width, 2 * simd_width, simd_width, 1
@@ -208,7 +208,7 @@ fn gather_reduce[
         # unroll the j loop on neon because it benefits from vectorized
         # blend instructions and avoids conditional flag dependencies
         # does not appear to help on other archs
-        alias j_tile_size = 4 if CompilationTarget.has_neon() else 1
+        comptime j_tile_size = 4 if CompilationTarget.has_neon() else 1
 
         for i in range(out_vec_start, out_vec_end):
 
@@ -290,7 +290,7 @@ fn gather[
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
     """
 
-    alias prefetch_offset = 12  # TODO: search
+    comptime prefetch_offset = 12  # TODO: search
 
     var end_indices_ptr = indices.ptr.offset(indices.size())
 
@@ -387,7 +387,7 @@ fn gather[
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
     """
 
-    alias prefetch_offset = 12  # TODO: search
+    comptime prefetch_offset = 12  # TODO: search
 
     var end_indices_ptr = indices.ptr.offset(indices.size())
 
@@ -493,7 +493,7 @@ fn gather_guards(
         raise Error("gather: axis must be less than input rank")
 
 
-alias error_index_fn_type = fn (Int) capturing -> None
+comptime error_index_fn_type = fn (Int) capturing -> None
 
 
 @always_inline
@@ -567,7 +567,7 @@ fn gather_elementwise_fn_wrapper[
                 @parameter
                 if error_index_fn:
                     if not (0 <= Int(normalized_idx) < input_shape[axis]):
-                        alias error_index_func = error_index_fn.value()
+                        comptime error_index_func = error_index_fn.value()
                         # Store the invalid index for debugging
                         error_index_func(Int(data_index))
                         return  # Early return on bounds error
@@ -588,7 +588,7 @@ fn gather_elementwise_fn_wrapper[
         # Load the data.
         @parameter
         if prefetch_fn:
-            alias func = prefetch_fn.value()
+            comptime func = prefetch_fn.value()
             func[input_shape.size, indices_shape.size](
                 data_indices, indices_index
             )
@@ -653,7 +653,7 @@ fn gather[
         fn error_index_fn(val: Int):
             error_index = val
 
-        alias error_fn = OptionalReg[error_index_fn_type](
+        comptime error_fn = OptionalReg[error_index_fn_type](
             error_index_fn
         ) if is_cpu[target]() else None
 
@@ -748,7 +748,7 @@ fn gather[
     Note that this is NOT the same as the default PyTorch gather (which is equivalent to
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
     """
-    alias compile_target = _current_target() if is_cpu[
+    comptime compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
 
@@ -770,7 +770,7 @@ fn gather[
         fn error_index_fn(val: Int):
             error_index = val
 
-        alias error_fn = OptionalReg[error_index_fn_type](
+        comptime error_fn = OptionalReg[error_index_fn_type](
             error_index_fn
         ) if is_cpu[target]() else None
 
@@ -905,7 +905,7 @@ fn scatter_nd_generator[
                 " indices_shape[-1] - 1"
             )
 
-        alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+        comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
         var output_flat = LayoutTensor[output.dtype, layout_1d](
             output.ptr, RuntimeLayout[layout_1d].row_major(Index(output.size()))
         )
@@ -1033,7 +1033,7 @@ fn scatter_nd_generator[
             # Also handling any reduction operation reduce_fn.
             @parameter
             if reduce_fn:
-                alias reduction_fn = reduce_fn.value()
+                comptime reduction_fn = reduce_fn.value()
 
                 for i in range(count_copy):
                     output_flat[output_offset + i] = reduction_fn[
@@ -1056,7 +1056,7 @@ fn scatter_nd_generator[
         for i in range(indices.rank - 1):
             iter_shape[i] = indices.dim[i]()
 
-        alias trace_description_str = get_static_string[
+        comptime trace_description_str = get_static_string[
             "elementwise_impl_" + _trace_description
         ]()
 
@@ -1613,10 +1613,10 @@ fn _gather_nd_impl[
             output_idx, data.load[width=simd_width](data_idx)
         )
 
-    alias compile_target = _current_target() if is_cpu[
+    comptime compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
-    alias target_simd_width = simd_width_of[dtype, target=compile_target]()
+    comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
 
     # Only use SIMD if:
     #   - the input data is contiguous

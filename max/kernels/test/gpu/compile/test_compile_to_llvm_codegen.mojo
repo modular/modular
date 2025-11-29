@@ -14,7 +14,8 @@
 from gpu import thread_idx
 from gpu.host import get_gpu_target
 from gpu.host.compile import _compile_code
-from gpu.memory import AddressSpace, external_memory
+from gpu.memory import external_memory
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 # CHECK-LABEL: test_array_offset

@@ -69,7 +69,7 @@ fn bitcast[
         source SIMD value.
     """
     constrained[
-        bit_width_of[SIMD[dtype, width]]() == bit_width_of[__type_of(val)](),
+        bit_width_of[SIMD[dtype, width]]() == bit_width_of[type_of(val)](),
         "the source and destination types must have the same bitwidth",
     ]()
 

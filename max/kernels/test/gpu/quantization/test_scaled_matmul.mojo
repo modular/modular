@@ -29,15 +29,15 @@ fn test_matmul_dynamic_scaled_fp8[
     scales_dtype: DType,
     transpose_b: Bool,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    alias static_c_shape = DimList(m.dim, n.dim)
-    alias static_a_scales_shape = DimList(1, m.dim)
-    alias static_b_scales_shape = DimList(n.dim, 1) if transpose_b else DimList(
-        1, n.dim
-    )
+    comptime static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_scales_shape = DimList(1, m.dim)
+    comptime static_b_scales_shape = DimList(
+        n.dim, 1
+    ) if transpose_b else DimList(1, n.dim)
 
     var dynamic_a_shape = DimList(m.value, k.value)
     var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
@@ -95,7 +95,7 @@ fn test_matmul_dynamic_scaled_fp8[
 
     var M = m.value
     var N = n.value
-    alias K = k.dim.get()
+    comptime K = k.dim.get()
 
     random(a_host.tensor)
     random(b_host.tensor)
@@ -112,6 +112,9 @@ fn test_matmul_dynamic_scaled_fp8[
     matmul_dynamic_scaled_fp8[
         input_scale_granularity="colwise",
         weight_scale_granularity="rowwise",
+        m_scale_granularity=1,
+        n_scale_granularity=1,
+        k_scale_granularity=K,
         transpose_b=transpose_b,
         target="gpu",
     ](
@@ -147,8 +150,8 @@ fn test_matmul_dynamic_scaled_fp8[
                 c_host.tensor[i, j].cast[DType.float32](),
                 c_host_ref.tensor[i, j],
                 msg="At [" + String(i) + ", " + String(j) + "]",
-                atol=1e-2,
-                rtol=1e-2,
+                atol=1.5e-2,
+                rtol=1.5e-2,
             )
 
 

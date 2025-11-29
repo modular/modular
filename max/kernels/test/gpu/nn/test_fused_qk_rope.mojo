@@ -18,6 +18,7 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from memory import memcpy
 from nn.fused_qk_rope import fused_qk_rope
 from testdata.fused_qk_rope_goldens import (
@@ -86,12 +87,12 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
     constrained[dtype is DType.float32, "goldens only for float32, currently"]()
 
     # Set up test hyperparameters.
-    alias batch_size = 2
-    alias start_positions = List[UInt32](0, 5)
-    alias seq_len = 3
-    alias max_seq_len = 16
-    alias num_layers = 1
-    var lookup_table = List[UInt32](0, 1)
+    comptime batch_size = 2
+    comptime start_positions: List[UInt32] = [0, 5]
+    comptime seq_len = 3
+    comptime max_seq_len = 16
+    comptime num_layers = 1
+    var lookup_table: List[UInt32] = [0, 1]
 
     fn _max[dtype: DType, items: List[Scalar[dtype]]]() -> Scalar[dtype]:
         constrained[len(items) > 0, "empty list in _max"]()
@@ -107,15 +108,15 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
         > (seq_len + Int(_max[DType.uint32, items=start_positions]())),
         "KV cache size smaller than sum of sequence length and start pos",
     ]()
-    alias num_heads = 2
-    alias dim = 16
-    alias head_dim = dim // num_heads
+    comptime num_heads = 2
+    comptime dim = 16
+    comptime head_dim = dim // num_heads
 
     # Create aliases for KV cache parameters.
-    alias kv_params = KVCacheStaticParams(
+    comptime kv_params = KVCacheStaticParams(
         num_heads=num_heads, head_size=head_dim
     )
-    alias block_shape = DimList(
+    comptime block_shape = DimList(
         batch_size, 2, num_layers, max_seq_len, num_heads, head_dim
     )
 
@@ -158,12 +159,29 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
     ctx.enqueue_copy(lookup_table_dev.buffer, lookup_table.unsafe_ptr())
 
     kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
-        blocks=kv_cache_block_dev.tensor,
-        cache_lengths=rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-            cache_lengths.tensor
+        blocks=LayoutTensor[
+            kv_cache_block_dev.dtype, Layout.row_major[6](), MutAnyOrigin
+        ](
+            kv_cache_block_dev.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()].row_major(
+                kv_cache_block_dev.to_layout_tensor().runtime_layout.shape.value
+            ),
         ),
-        lookup_table=rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-            lookup_table_dev.tensor
+        cache_lengths=LayoutTensor[
+            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                cache_lengths.to_layout_tensor().runtime_layout.shape.value
+            ),
+        ),
+        lookup_table=LayoutTensor[
+            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            lookup_table_dev.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                lookup_table_dev.to_layout_tensor().runtime_layout.shape.value
+            ),
         ),
         max_seq_length=seq_len,
         max_cache_length=max_cache_len_in_batch,

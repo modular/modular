@@ -55,6 +55,7 @@ fn check_token_expert_order(
             assert_equal(token_count, 0, "tokens are grouped incorrectly")
             expert_dictionary[current_expert_id] = 0
             current_expert_id = expert_id
+
             token_count = expert_dictionary.get(current_expert_id, 0) - 1
         else:
             token_count -= 1
@@ -135,12 +136,9 @@ fn check_restore_token_order(
         )
 
 
-fn test_moe_create_indices(
-    token_expert_order_length: Int,
-    ctx: DeviceContext,
-) raises:
-    alias num_experts = 32
-
+fn test_moe_create_indices[
+    expected_count: Int = 8192, num_experts: Int = 256
+](token_expert_order_length: Int, ctx: DeviceContext,) raises:
     var token_expert_order_buffer_host = ctx.enqueue_create_host_buffer[
         DType.uint32
     ](token_expert_order_length)
@@ -175,53 +173,45 @@ fn test_moe_create_indices(
         token_expert_order_length
     )
 
-    alias layout = Layout.row_major(UNKNOWN_VALUE)
+    comptime layout = Layout.row_major(UNKNOWN_VALUE)
 
-    var token_expert_order = LayoutTensor[
-        DType.uint32, layout, MutableAnyOrigin
-    ](
+    var token_expert_order = LayoutTensor[DType.uint32, layout, MutAnyOrigin](
         token_expert_order_buffer_device,
         RuntimeLayout[layout].row_major(
             IndexList[1](token_expert_order_length)
         ),
     )
 
-    var expert_start_indices = LayoutTensor[
-        DType.uint32, layout, MutableAnyOrigin
-    ](
+    var expert_start_indices = LayoutTensor[DType.uint32, layout, MutAnyOrigin](
         expert_start_indices_buffer.unsafe_ptr(),
         RuntimeLayout[layout].row_major(IndexList[1](num_experts + 1)),
     )
 
-    var restore_token_order = LayoutTensor[
-        DType.uint32, layout, MutableAnyOrigin
-    ](
+    var restore_token_order = LayoutTensor[DType.uint32, layout, MutAnyOrigin](
         restore_token_order_buffer.unsafe_ptr(),
         RuntimeLayout[layout].row_major(
             IndexList[1](token_expert_order_length)
         ),
     )
 
-    var expert_ids = LayoutTensor[DType.int32, layout, MutableAnyOrigin](
+    var expert_ids = LayoutTensor[DType.int32, layout, MutAnyOrigin](
         expert_ids_buffer.unsafe_ptr(),
         RuntimeLayout[layout].row_major(IndexList[1](num_experts)),
     )
 
-    var expert_usage_stats = LayoutTensor[
-        DType.uint32, layout, MutableAnyOrigin
-    ](
+    var expert_usage_stats = LayoutTensor[DType.uint32, layout, MutAnyOrigin](
         expert_usage_stats_buffer.unsafe_ptr(),
         RuntimeLayout[layout].row_major(IndexList[1](2)),
     )
 
-    var top_k = LayoutTensor[DType.uint32, layout, MutableAnyOrigin](
+    var top_k = LayoutTensor[DType.uint32, layout, MutAnyOrigin](
         top_k_buffer_device.unsafe_ptr(),
         RuntimeLayout[layout].row_major(
             IndexList[1](token_expert_order_length)
         ),
     )
 
-    var top_k_host = LayoutTensor[DType.uint32, layout, MutableAnyOrigin](
+    var top_k_host = LayoutTensor[DType.uint32, layout, MutAnyOrigin](
         top_k_buffer_host.unsafe_ptr(),
         RuntimeLayout[layout].row_major(
             IndexList[1](token_expert_order_length)
@@ -233,7 +223,7 @@ fn test_moe_create_indices(
     random(top_k_host, min=0, max=num_experts)
     ctx.enqueue_copy(top_k_buffer_device, top_k_buffer_host)
 
-    moe_create_indices["gpu"](
+    moe_create_indices["gpu", expected_count=expected_count](
         token_expert_order,
         expert_start_indices,
         restore_token_order,
@@ -307,4 +297,8 @@ def main():
         test_moe_create_indices(
             20660,
             ctx,
+        )
+
+        test_moe_create_indices[expected_count=256, num_experts=256](
+            100_000, ctx
         )

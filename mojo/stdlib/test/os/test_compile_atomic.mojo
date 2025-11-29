@@ -45,9 +45,9 @@ def test_compile_fence():
 
 
 def test_compile_compare_exchange():
-    fn my_cmpxchg_function(atom: Atomic[DType.int32, scope="agent"]) -> Bool:
+    fn my_cmpxchg_function(mut atm: Atomic[DType.int32, scope="agent"]) -> Bool:
         var expected = Int32(0)
-        return atom.compare_exchange(expected, 42)
+        return atm.compare_exchange(expected, 42)
 
     var asm = compile_info[my_cmpxchg_function, emission_kind="llvm"]()
 

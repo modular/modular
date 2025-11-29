@@ -41,7 +41,7 @@ fn _rope[
 # while in safetensors, the data is stored as real, …, real, imag, …, imag.
 # This function return the indices for the real and imaginary part.
 @always_inline
-fn get_safetensors_idx(head_dim_idx: Int, head_size: Int) -> (Int, Int):
+fn get_safetensors_idx(head_dim_idx: Int, head_size: Int) -> Tuple[Int, Int]:
     return (head_dim_idx // 2, head_dim_idx // 2 + head_size // 2)
 
 
@@ -68,7 +68,7 @@ fn apply_rope[
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
 ](
-    x: LayoutTensor[dtype, x_layout, MutableAnyOrigin],
+    x: LayoutTensor[dtype, x_layout, MutAnyOrigin],
     idx: IndexList[rank],
     freq_val: SIMD[freq_dtype, width],
 ):
@@ -77,7 +77,7 @@ fn apply_rope[
     var pos_im = idx
     pos_re[rank - 1] = indices[0]
     pos_im[rank - 1] = indices[1]
-    alias width_2 = width // 2
+    comptime width_2 = width // 2
 
     var val: SIMD[dtype, width]
 
@@ -118,18 +118,18 @@ fn rope_ragged[
     ) capturing -> None,
     mrope_section: Optional[IntTuple] = None,
 ](
-    x: LayoutTensor[dtype, x_layout, MutableAnyOrigin],
+    x: LayoutTensor[dtype, x_layout, MutAnyOrigin],
     input_row_offsets: LayoutTensor[
-        DType.uint32, input_row_offsets_layout, MutableAnyOrigin
+        DType.uint32, input_row_offsets_layout, MutAnyOrigin
     ],
-    start_pos: LayoutTensor[DType.uint32, start_pos_layout, MutableAnyOrigin],
-    freqs_cis: LayoutTensor[freq_dtype, freqs_cis_layout, MutableAnyOrigin],
+    start_pos: LayoutTensor[DType.uint32, start_pos_layout, MutAnyOrigin],
+    freqs_cis: LayoutTensor[freq_dtype, freqs_cis_layout, MutAnyOrigin],
     context: Optional[DeviceContext],
     position_ids: OptionalReg[
         LayoutTensor[
             DType.uint32,
             Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
-            MutableAnyOrigin,
+            MutAnyOrigin,
         ]
     ] = None,
 ) raises:
@@ -162,10 +162,10 @@ fn rope_ragged[
             " be batch_size"
         ),
     )
-    alias head_size = x.shape[2]()
-    alias rope_dim = freqs_cis.shape[1]()
-    alias unroped_dim = head_size - rope_dim
-    alias has_nope = unroped_dim > 0
+    comptime head_size = x.shape[2]()
+    comptime rope_dim = freqs_cis.shape[1]()
+    comptime unroped_dim = head_size - rope_dim
+    comptime has_nope = unroped_dim > 0
 
     @always_inline
     @parameter
@@ -203,7 +203,7 @@ fn rope_ragged[
 
                     @parameter
                     for i in range(len(mrope_section.value())):
-                        alias val = mrope_section.value().value(i)
+                        comptime val = mrope_section.value().value(i)
                         if head_dim_idx < val:
                             section_idx = i
                             break
@@ -246,11 +246,11 @@ fn rope_ragged[
     for i in range(x.layout.rank()):
         launch_shape_index_list[i] = launch_shape_int_tuple.dim(i)
 
-    alias compile_target = _current_target() if is_cpu[
+    comptime compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
-    alias target_simd_width = simd_width_of[dtype, target=compile_target]()
-    alias kernel_simd_width = gcd(target_simd_width, rope_dim)
+    comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
+    comptime kernel_simd_width = gcd(target_simd_width, rope_dim)
 
     @parameter
     if mrope_section:

@@ -271,7 +271,7 @@ available in an SDK; it was available only in web-hosted a JupyterLab
 environment. After we made Mojo available for local development, we
 shut down the JupyterLab environment and launched a new Mojo Playground
 for people to try Mojo on the web. But ever since we made the Mojo SDK
-avialable for Linux and Mac, Mojo Playground usage steadily declined.
+available for Linux and Mac, Mojo Playground usage steadily declined.
 The trickle of users we get now no longer justifies the maintenance
 and hosting costs.
 
@@ -305,14 +305,27 @@ more information.
 
 ### Does the Mojo SDK collect telemetry?
 
-Yes, the Mojo SDK collects some basic system information, basic
-compiler/runtime events, and crash reports that enable us to identify, analyze,
-and prioritize Mojo issues.
+Yes, the Mojo SDK collects some basic system information, crash reports, and
+some LSP events that enable us to identify, analyze, and prioritize Mojo
+issues. v25.6 and earlier versions also collected compiler/runtime events,
+but we've since removed them.
+
+Specifically, we collect:
+
+- **Crash reports**: When the Mojo compiler crashes with a stack trace, the
+  only information used in the report is the OS version and MAX/Mojo version.
+- **LSP performance metrics**: The Mojo LSP reports aggregate data on how long
+  it takes to respond to user input (parsing latency). The only information
+  used in the report is the milliseconds between user keystrokes and when the
+  Mojo LSP is able to show appropriate error or warning messages.
+
+No user information, such as source code, keystrokes, or any other user data,
+is ever collected or transmitted.
 
 This telemetry is crucial to help us quickly identify problems and improve our
 products. Without this telemetry, we would have to rely on user-submitted bug
 reports, and in our decades of experience building developer products, we know
-that most people don’t do that. The telemetry provides us the insights we need
+that most people don't do that. The telemetry provides us the insights we need
 to build better products for you.
 
 ## Versioning & compatibility

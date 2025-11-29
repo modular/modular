@@ -1,0 +1,10 @@
+load("@mojo//:mojo.bzl", "max_aliases")
+load("//bazel:config.bzl", "TOP_LEVEL_TAG")
+
+max_aliases()
+
+alias(
+    name = "max",
+    actual = "//max/python/max/entrypoints:pipelines",
+    tags = [TOP_LEVEL_TAG],
+)

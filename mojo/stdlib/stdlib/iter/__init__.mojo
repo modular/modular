@@ -57,11 +57,11 @@ trait Iterable:
     iterator.
     """
 
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Returns an iterator over the elements of this iterable.
 
         Returns:
@@ -80,7 +80,7 @@ trait Iterator(Copyable, Movable):
     iterator, e.g. in a `for` loop.
     """
 
-    alias Element: Copyable & Movable
+    comptime Element: Copyable & Movable
 
     fn __has_next__(self) -> Bool:
         """Checks if there are more elements in the iterator.
@@ -131,9 +131,7 @@ trait Iterator(Copyable, Movable):
 @always_inline
 fn iter[
     IterableType: Iterable
-](ref iterable: IterableType) -> IterableType.IteratorType[
-    __origin_of(iterable)
-]:
+](ref iterable: IterableType) -> IterableType.IteratorType[origin_of(iterable)]:
     """Constructs an iterator from an iterable.
 
     Parameters:
@@ -178,17 +176,19 @@ struct _Enumerate[InnerIteratorType: Iterator](
     original iterator.
     """
 
-    alias Element = Tuple[Int, InnerIteratorType.Element]
-    alias IteratorType[
+    comptime Element = Tuple[Int, Self.InnerIteratorType.Element]
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    var _inner: InnerIteratorType
+    var _inner: Self.InnerIteratorType
     var _count: Int
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __init__(out self, var iterator: InnerIteratorType, *, start: Int = 0):
+    fn __init__(
+        out self, var iterator: Self.InnerIteratorType, *, start: Int = 0
+    ):
         self._inner = iterator^
         self._count = start
 
@@ -208,7 +208,7 @@ struct _Enumerate[InnerIteratorType: Iterator](
 fn enumerate[
     IterableType: Iterable
 ](ref iterable: IterableType, *, start: Int = 0) -> _Enumerate[
-    IterableType.IteratorType[__origin_of(iterable)]
+    IterableType.IteratorType[origin_of(iterable)]
 ]:
     """Returns an iterator that yields tuples of the index and the element of
     the original iterator.
@@ -243,15 +243,17 @@ fn enumerate[
 struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
     Copyable, Iterable, Iterator, Movable
 ):
-    alias Element = Tuple[IteratorTypeA.Element, IteratorTypeB.Element]
-    alias IteratorType[
+    comptime Element = Tuple[
+        Self.IteratorTypeA.Element, Self.IteratorTypeB.Element
+    ]
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
-    var _inner_a: IteratorTypeA
-    var _inner_b: IteratorTypeB
+    var _inner_a: Self.IteratorTypeA
+    var _inner_b: Self.IteratorTypeB
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     fn copy(self) -> Self:
@@ -271,18 +273,20 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
 struct _Zip3[
     IteratorTypeA: Iterator, IteratorTypeB: Iterator, IteratorTypeC: Iterator
 ](Copyable, Iterable, Iterator, Movable):
-    alias Element = Tuple[
-        IteratorTypeA.Element, IteratorTypeB.Element, IteratorTypeC.Element
+    comptime Element = Tuple[
+        Self.IteratorTypeA.Element,
+        Self.IteratorTypeB.Element,
+        Self.IteratorTypeC.Element,
     ]
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
-    var _inner_a: IteratorTypeA
-    var _inner_b: IteratorTypeB
-    var _inner_c: IteratorTypeC
+    var _inner_a: Self.IteratorTypeA
+    var _inner_b: Self.IteratorTypeB
+    var _inner_c: Self.IteratorTypeC
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     fn copy(self) -> Self:
@@ -315,22 +319,22 @@ struct _Zip4[
     IteratorTypeC: Iterator,
     IteratorTypeD: Iterator,
 ](Copyable, Iterable, Iterator, Movable):
-    alias Element = Tuple[
-        IteratorTypeA.Element,
-        IteratorTypeB.Element,
-        IteratorTypeC.Element,
-        IteratorTypeD.Element,
+    comptime Element = Tuple[
+        Self.IteratorTypeA.Element,
+        Self.IteratorTypeB.Element,
+        Self.IteratorTypeC.Element,
+        Self.IteratorTypeD.Element,
     ]
-    alias IteratorType[
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
-    var _inner_a: IteratorTypeA
-    var _inner_b: IteratorTypeB
-    var _inner_c: IteratorTypeC
-    var _inner_d: IteratorTypeD
+    var _inner_a: Self.IteratorTypeA
+    var _inner_b: Self.IteratorTypeB
+    var _inner_c: Self.IteratorTypeC
+    var _inner_d: Self.IteratorTypeD
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     fn copy(self) -> Self:
@@ -370,8 +374,8 @@ struct _Zip4[
 fn zip[
     IterableTypeA: Iterable, IterableTypeB: Iterable
 ](ref iterable_a: IterableTypeA, ref iterable_b: IterableTypeB) -> _Zip2[
-    IterableTypeA.IteratorType[__origin_of(iterable_a)],
-    IterableTypeB.IteratorType[__origin_of(iterable_b)],
+    IterableTypeA.IteratorType[origin_of(iterable_a)],
+    IterableTypeB.IteratorType[origin_of(iterable_b)],
 ]:
     """Returns an iterator that yields tuples of the elements of the original
     iterables.
@@ -407,9 +411,9 @@ fn zip[
     ref iterable_b: IterableTypeB,
     ref iterable_c: IterableTypeC,
 ) -> _Zip3[
-    IterableTypeA.IteratorType[__origin_of(iterable_a)],
-    IterableTypeB.IteratorType[__origin_of(iterable_b)],
-    IterableTypeC.IteratorType[__origin_of(iterable_c)],
+    IterableTypeA.IteratorType[origin_of(iterable_a)],
+    IterableTypeB.IteratorType[origin_of(iterable_b)],
+    IterableTypeC.IteratorType[origin_of(iterable_c)],
 ]:
     """Returns an iterator that yields tuples of the elements of the original
     iterables.
@@ -452,10 +456,10 @@ fn zip[
     ref iterable_c: IterableTypeC,
     ref iterable_d: IterableTypeD,
 ) -> _Zip4[
-    IterableTypeA.IteratorType[__origin_of(iterable_a)],
-    IterableTypeB.IteratorType[__origin_of(iterable_b)],
-    IterableTypeC.IteratorType[__origin_of(iterable_c)],
-    IterableTypeD.IteratorType[__origin_of(iterable_d)],
+    IterableTypeA.IteratorType[origin_of(iterable_a)],
+    IterableTypeB.IteratorType[origin_of(iterable_b)],
+    IterableTypeC.IteratorType[origin_of(iterable_c)],
+    IterableTypeD.IteratorType[origin_of(iterable_d)],
 ]:
     """Returns an iterator that yields tuples of the elements of the original
     iterables.
@@ -502,21 +506,21 @@ struct _MapIterator[
     InnerIteratorType: Iterator, //,
     function: fn (var InnerIteratorType.Element) -> OutputType,
 ](Copyable, Iterable, Iterator, Movable):
-    alias Element = OutputType
-    alias IteratorType[
+    comptime Element = Self.OutputType
+    comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
-    var _inner: InnerIteratorType
+    var _inner: Self.InnerIteratorType
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     fn __has_next__(self) -> Bool:
         return self._inner.__has_next__()
 
     fn __next__(mut self) -> Self.Element:
-        return function(next(self._inner))
+        return Self.function(next(self._inner))
 
     fn copy(self) -> Self:
         return Self(self._inner.copy())
@@ -527,7 +531,7 @@ struct _MapIterator[
 
 @always_inline
 fn map[
-    origin: ImmutableOrigin,
+    origin: ImmutOrigin,
     IterableType: Iterable,
     ResultType: Copyable & Movable, //,
     function: fn (var IterableType.IteratorType[origin].Element) -> ResultType,

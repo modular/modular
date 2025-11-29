@@ -3,8 +3,8 @@ title: Unsafe pointers
 description: Using unsafe pointers to access dynamically-allocated memory.
 ---
 
-The [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) type is
-one of several pointer types available in the standard library to indirectly
+The [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) type
+is one of several pointer types available in the standard library to indirectly
 reference locations in memory.
 
 You can use an `UnsafePointer` to dynamically allocate and free memory, or to
@@ -20,6 +20,28 @@ In general, you should prefer safe pointer types when possible, reserving
 For a comparison of standard library pointer types, see [Intro to
 pointers](/mojo/manual/pointers/).
 
+:::note LegacyUnsafePointer
+
+The implementation of `UnsafePointer` documented here replaces an earlier
+version with a slightly different API. The old version has been renamed to
+[`LegacyUnsafePointer`](/mojo/stdlib/memory/legacy_unsafe_pointer/LegacyUnsafePointer/)
+and will be deprecated.
+
+The [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer)
+reference page briefly describes the differences between the new and old
+versions.
+
+To ease this transition, the library currently supports implicit conversion
+between `LegacyUnsafePointer` and `UnsafePointer`, so you can pass a legacy
+pointer to an `UnsafePointer` function, and vice versa.
+
+For more details on migrating to the new `UnsafePointer`, see the migration
+guide provided in the
+[UnsafePointer v2 proposal](https://github.com/modular/modular/blob/main/mojo/proposals/unsafe-pointer-v2.md#migration-guide-from-legacyunsafepointer-to-the-new-unsafepointer).
+
+:::
+
+
 ## Unsafe pointer basics
 
 An `UnsafePointer` is a type that holds an address to memory. You can store
@@ -29,7 +51,7 @@ value pointed to by a pointer is sometimes called a *pointee*.
 
 ```mojo
 # Allocate memory to hold a value
-var ptr = UnsafePointer[Int].alloc(1)
+var ptr = alloc[Int](1)
 # Initialize the allocated memory
 ptr.init_pointee_copy(100)
 ```
@@ -69,21 +91,21 @@ At any given time, a pointer can be in one of several states:
   be declared but uninitialized.
 
   ```mojo
-  var ptr: UnsafePointer[Int]
+  var ptr: UnsafePointer[Int, MutOrigin.external]
   ```
 
 - Null. A null pointer has an address of 0, indicating an invalid pointer.
 
   ```mojo
-  ptr = UnsafePointer[Int]()
+  ptr = {}
   ```
 
-- Pointing to allocated, uninitialized memory. The `alloc()` static method
+- Pointing to allocated, uninitialized memory. The `alloc()` function
   returns a pointer to a newly-allocated block of memory with space for the
   specified number of elements of the pointee's type.
 
   ```mojo
-  ptr = UnsafePointer[Int].alloc(1)
+  ptr = alloc[Int](1)
   ```
 
   Trying to dereference a pointer to uninitialized memory results in undefined
@@ -106,7 +128,7 @@ At any given time, a pointer can be in one of several states:
   syntax:
 
   ```mojo
-  oldValue = ptr[]
+  var oldValue = ptr[]
   ptr[] = newValue
   ```
 
@@ -132,12 +154,12 @@ The following diagram shows the lifecycle of an `UnsafePointer`:
 
 ### Allocating memory
 
-Use the static `alloc()` method to allocate memory. The method returns a new
+Use the `alloc()` function to allocate memory. This function returns a new
 pointer pointing to the requested memory. You can allocate space for one or
 more values of the pointee's type.
 
 ```mojo
-ptr = UnsafePointer[Int].alloc(10) # Allocate space for 10 Int values
+var ptr = alloc[Int](10) # Allocate space for 10 Int values
 ```
 
 The allocated space is *uninitialized*—like a variable that's been declared but
@@ -176,7 +198,7 @@ getting a pointer to a value on the stack, for example.
 
 ```mojo
 var counter: Int = 5
-ptr = UnsafePointer(to=counter)
+var ptr = UnsafePointer(to=counter)
 ```
 
 Note that when calling `UnsafePointer(to=value)`, you don't need to allocate
@@ -215,7 +237,7 @@ calls lifecycle methods on the existing pointee (such as the destructor, move
 constructor or copy constructor).
 
 ```mojo
-str_ptr = UnsafePointer[String].alloc(1)
+var str_ptr = alloc[String](1)
 # str_ptr[] = "Testing" # Undefined behavior!
 str_ptr.init_pointee_move("Testing")
 str_ptr[] += " pointers" # Works now
@@ -223,10 +245,9 @@ str_ptr[] += " pointers" # Works now
 
 ### Destroying or removing values
 
-The
-[`take_pointee()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#take_pointee)
-method moves the pointee from the memory location pointed to by `ptr`. This is
-a consuming move—it invokes `__moveinit__()` on the destination value. It leaves
+The [`take_pointee()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#take_pointee)
+method moves a pointee from the memory location pointed to by `ptr`. This is
+a consuming move. It invokes `__moveinit__()` on the destination value. It leaves
 the memory location uninitialized.
 
 The [`destroy_pointee()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#destroy_pointee)
@@ -237,14 +258,18 @@ Both `take_pointee()` and `destroy_pointee()` require that the pointer is
 non-null, and the memory location contains a valid, initialized value of the
 pointee's type; otherwise the function results in undefined behavior.
 
-The [`move_pointee_into(self, dst)`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#move_pointee_into)
-method moves the pointee from one pointer location to another. Both pointers
-must be non-null. The source location must contain a valid, initialized value of
-the pointee's type, and is left uninitialized after the call. The destination
-location is assumed to be uninitialized—if it contains a valid value, that
-value's destructor is not run. The value from the source location is moved to
-the destination location as a consuming move. This function also has undefined
-behavior if any of its prerequisites is not met.
+Calling [`init_pointee_move_from(self, src)`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer/#init_pointee_move_from)
+moves the value pointed to by `src` into the memory location pointed to by `self`.
+After this operation, ownership of that value transfers from `src` to `self`
+and the memory at `src` is uninitialized: 
+do not read from it, and do not invoke destructors on it.
+To make the memory valid again, initialize it with a new value using 
+one of the `init_pointee_*()` operations.
+
+:::note
+Mojo assumes the destination memory is uninitialized.
+It does not destroy existing contents before writing the value from `src`.
+:::
 
 ### Freeing memory
 
@@ -277,7 +302,7 @@ to a pointer returns a new pointer offset by the specified number of values from
 the original pointer:
 
 ```mojo
-third_ptr = first_ptr + 2
+var third_ptr = first_ptr + 2
 ```
 
 Pointers also support subtraction, as well as in-place addition and subtraction:
@@ -299,7 +324,7 @@ For example, the following example allocates memory to store 6 `Float64`
 values, and initializes them all to zero.
 
 ```mojo
-float_ptr = UnsafePointer[Float64].alloc(6)
+var float_ptr = alloc[Float64](6)
 for offset in range(6):
     (float_ptr+offset).init_pointee_copy(0.0)
 ```
@@ -318,7 +343,7 @@ for offset in range(6):
 
 ## `UnsafePointer` and origins
 
-The `UnsafePointer` struct has an optional `origin` parameter to track the
+The `UnsafePointer` struct has an `origin` parameter to track the
 origin of the memory it points to.
 
 For pointers initialized with the `to` keyword argument, the origin is set to
@@ -330,9 +355,11 @@ s = "Testing"
 s_ptr = UnsafePointer(to=s)
 ```
 
-When initializing an `UnsafePointer` in other ways, the `origin` defaults to
-`MutableAnyOrigin`—indicating a pointer that could reference anything in the
-current scope.
+When allocating memory with the `alloc()` function, the returned pointer has
+an `origin` value of `MutOrigin.external`. This value represents an origin that
+is mutable and does not _alias_ any existing value. (For example, it does not
+point to the memory allocated for any other variable.) This memory isn't tracked
+by Mojo's lifetime checker, so you're responsible for freeing it.
 
 If you're using a pointer in the implementation of a struct, you usually don't
 have to worry about the origin, as long as the pointer isn't exposed outside of
@@ -351,15 +378,9 @@ That method looks something like this:
 ```mojo
 fn unsafe_ptr(
     ref self,
-) -> UnsafePointer[
-    T,
-    mut = Origin(__origin_of(self)).mut,
-    origin = __origin_of(self),
-]:
+) -> UnsafePointer[T, origin_of(self)]:
 
-    return self.data.origin_cast[
-        mut = Origin(__origin_of(self)).mut, origin = __origin_of(self)
-    ]()
+    return self.data.unsafe_origin_cast[origin_of(self)]()
 ```
 
 This returns a copy of the original pointer, with the origin set to match the
@@ -382,9 +403,35 @@ When dealing with memory allocated elsewhere, you need to be aware of who's
 responsible for freeing the memory. Freeing memory allocated elsewhere
 can result in undefined behavior.
 
+When working with some foreign functions, you may need to supply a pointer with
+no specific type (a type-erased pointer, or "void pointer" in C/C++). This is
+equivalent to a Mojo `OpaquePointer`.
+
 You also need to be aware of the format of the data stored in memory, including
 data types and byte order. For more information, see
 [Converting data: bitcasting and byte order](#converting-data-bitcasting-and-byte-order).
+
+### Creating a Mojo pointer from a raw memory address
+
+You can create a `UnsafePointer` from a raw memory address using the
+`unsafe_from_address` initializer.
+
+```mojo
+fn write_to_address(mmio_address: Int, value: Int32):
+    var ptr = UnsafePointer[Int32, MutOrigin.external](
+      unsafe_from_address=mmio_address
+    )
+
+     # Writing to a raw memory address may require a volatile load/store as the
+     # operation may have side effects not visible to the compiler.
+     # You can specify this using the `volatile` parameter.
+    ptr.store[volatile = True](value)
+```
+
+This is unsafe, as the caller must ensure the address is valid before writing to
+it, and that the memory is initialized before reading from it. The caller must
+also ensure the pointer's origin and mutability is valid for the address,
+failure to to do may result in undefined behavior.
 
 ### Creating a Mojo pointer from a Python pointer
 
@@ -427,16 +474,43 @@ If you call a C/C++ function that returns a pointer using the
 the return type as an `UnsafePointer`, and Mojo will handle the type conversion
 for you.
 
+Notably, the `origin` parameter when working across FFI boundaries should often
+be set to `(MutOrigin/ImmutOrigin).external`, since the pointer points to memory
+external to the mojo program.
+
 ```mojo
 from sys.ffi import external_call
 
-def get_foreign_pointer() -> UnsafePointer[Int]:
-    ptr = external_call[
-        "my_c_function",   # external function name
-        UnsafePointer[Int] # return type
+def get_foreign_pointer() -> UnsafePointer[Int, MutOrigin.external]:
+    var ptr = external_call[
+        "my_c_function", # external function name
+        UnsafePointer[Int, MutOrigin.external] # return type
     ]()
     return ptr
 ```
+
+
+### Opaque pointers
+
+The `OpaquePointer` type is a pointer that does not have a specific type. In
+other languages, this is usually called a type-erased pointer or a void pointer.
+Opaque pointers are usually used when interfacing with non-Mojo code, such as a
+C library function that takes a void pointer.
+
+`OpaquePointer` is actually a type alias for `UnsafePointer[NoneType]`, so it
+has the same API as any other `UnsafePointer`.
+
+You can't dereference an opaque pointer, but you can cast it to a specific type
+using the `bitcast()` method. Similarly, you can create an opaque pointer from
+an existing pointer by bitcasting to `NoneType`. For example:
+
+```mojo
+var str = "Hello, world!"
+var str_ptr = UnsafePointer(to=str)
+var opaque_ptr = str_ptr.bitcast[NoneType]()
+# ... call some foreign function that takes a void pointer
+```
+
 
 ## Converting data: bitcasting and byte order
 
@@ -451,7 +525,9 @@ Each chunk begins with an 8-bit integer that identifies the number of values
 in the chunk.
 
 ```mojo
-def read_chunks(var ptr: UnsafePointer[UInt8]) -> List[List[UInt32]]:
+def read_chunks(
+  var ptr: UnsafePointer[mut=False, UInt8],
+) -> List[List[UInt32]]:
     chunks = List[List[UInt32]]()
     # A chunk size of 0 indicates the end of the data
     chunk_size = Int(ptr[])
@@ -522,7 +598,7 @@ that this function only handles images where the number of pixels is evenly
 divisible by eight.)
 
 ```mojo
-def invert_red_channel(ptr: UnsafePointer[UInt8], pixel_count: Int):
+def invert_red_channel(ptr: UnsafePointer[mut=True, UInt8], pixel_count: Int):
     # number of values loaded or stored at a time
     alias simd_width = 8
     # bytes per pixel, which is also the stride size

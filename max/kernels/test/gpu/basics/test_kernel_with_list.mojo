@@ -12,10 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 fn kernel_with_list(res: UnsafePointer[Float32]):
-    var list = List[Float32](10)
+    var list: List[Float32] = [10]
     for i in range(4):
         list.append(i + 1)
     res[] = list[0] * list[1] + list[2] * list[3]
@@ -24,7 +25,7 @@ fn kernel_with_list(res: UnsafePointer[Float32]):
 fn test_kernel_with_list(ctx: DeviceContext) raises:
     print("== test_kernel_with_list")
     var res_device = ctx.enqueue_create_buffer[DType.float32](1)
-    _ = res_device.enqueue_fill(0)
+    res_device.enqueue_fill(0)
     # CHECK: call.uni
     # CHECK: malloc,
     # CHECK: (
@@ -35,7 +36,7 @@ fn test_kernel_with_list(ctx: DeviceContext) raises:
     # CHECK: (
     # CHECK: param0
     # CHECK: );
-    alias kernel = kernel_with_list
+    comptime kernel = kernel_with_list
     ctx.enqueue_function_checked[kernel, kernel, dump_asm=True](
         res_device, block_dim=(1), grid_dim=(1)
     )

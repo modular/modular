@@ -14,7 +14,7 @@
 from io.io import _printf
 
 from gpu.host import DeviceContext
-from gpu.id import thread_idx
+from gpu import thread_idx
 from gpu.mma import mma
 
 
@@ -36,7 +36,7 @@ fn mma_sync_16x8x32_E4M3():
 
 def test_mma_sync_16x8x32_E4M3(ctx: DeviceContext):
     print("== test_mma_sync_16x8x32_E4M3")
-    alias kernel = mma_sync_16x8x32_E4M3
+    comptime kernel = mma_sync_16x8x32_E4M3
     ctx.enqueue_function_checked[kernel, kernel](
         grid_dim=(1),
         block_dim=(32),
@@ -62,7 +62,7 @@ fn mma_sync_16x8x32_E4M2():
 
 def test_mma_sync_16x8x32_E5M2(ctx: DeviceContext):
     print("== test_mma_sync_16x8x32_E5M2")
-    alias kernel = mma_sync_16x8x32_E4M2
+    comptime kernel = mma_sync_16x8x32_E4M2
     ctx.enqueue_function_checked[kernel, kernel](
         grid_dim=(1),
         block_dim=(32),

@@ -18,12 +18,12 @@ from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.compile import _compile_code
 from gpu.host.info import MI355X
 from gpu.intrinsics import AMDBufferResource
-from gpu.memory import AddressSpace, CacheOperation
-from memory import stack_allocation
+from gpu.memory import CacheOperation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 from testing import assert_equal, assert_true
 
-alias size = 257
-alias size_clip = size - 5
+comptime size = 257
+comptime size_clip = size - 5
 
 
 fn kernel[dtype: DType, width: Int](a: UnsafePointer[Scalar[dtype]]):
@@ -192,7 +192,7 @@ def test_buffer[dtype: DType, width: Int](ctx: DeviceContext):
 
     ctx.enqueue_copy(a_device_buf, a_host_buf)
 
-    alias kernel_func = kernel[dtype, width]
+    comptime kernel_func = kernel[dtype, width]
     ctx.enqueue_function_checked[kernel_func, kernel_func](
         a_device_buf, grid_dim=1, block_dim=1
     )
@@ -216,7 +216,7 @@ def test_buffer_lds[dtype: DType, width: Int](ctx: DeviceContext):
 
     ctx.enqueue_copy(a_device_buf, a_host_buf)
 
-    alias kernel_lds_func = kernel_lds[dtype, width]
+    comptime kernel_lds_func = kernel_lds[dtype, width]
     ctx.enqueue_function_checked[kernel_lds_func, kernel_lds_func](
         a_device_buf, grid_dim=1, block_dim=1
     )

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import _RegisterPackType, size_of
 from sys._assembly import inlined_assembly
 
@@ -22,8 +23,8 @@ from gpu.cluster import (
     clusterlaunchcontrol_try_cancel,
     elect_one_sync,
 )
-from gpu.id import block_id_in_cluster, block_idx, lane_id, warp_id
-from gpu.memory import AddressSpace, fence_async_view_proxy
+from gpu import block_id_in_cluster, block_idx, lane_id, warp_id
+from gpu.memory import fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier
 
 from utils.fast_div import FastDiv
@@ -76,10 +77,12 @@ struct TileScheduler[
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
 ]:
-    alias cluster_size = cluster_shape[0] * cluster_shape[1] * cluster_shape[2]
-    alias log_cluster_m = FastDiv[DType.uint32](cluster_shape[0])
-    alias log_cluster_n = FastDiv[DType.uint32](cluster_shape[1])
-    alias log_cluster_k = FastDiv[DType.uint32](cluster_shape[2])
+    comptime cluster_size = Self.cluster_shape[0] * Self.cluster_shape[
+        1
+    ] * Self.cluster_shape[2]
+    comptime log_cluster_m = FastDiv[DType.uint32](Self.cluster_shape[0])
+    comptime log_cluster_n = FastDiv[DType.uint32](Self.cluster_shape[1])
+    comptime log_cluster_k = FastDiv[DType.uint32](Self.cluster_shape[2])
 
     var cluster_dim: StaticTuple[Int32, 3]
     var log_cluster_dim_m: FastDiv[DType.uint32]
@@ -111,7 +114,7 @@ struct TileScheduler[
         ],
     ):
         constrained[
-            block_swizzle_size in [0, 1, 2, 4, 8],
+            Self.block_swizzle_size in [0, 1, 2, 4, 8],
             "block_swizzle_size must be 0, 1, 2, 4, or 8",
         ]()
 
@@ -126,9 +129,9 @@ struct TileScheduler[
     @always_inline
     @staticmethod
     fn work_info_from_clc_response(
-        result: UnsafePointer[UInt128, address_space = AddressSpace.SHARED]
+        result: UnsafePointer[UInt128, address_space = AddressSpace.SHARED],
     ) -> WorkInfo:
-        alias asm = """{
+        comptime asm = """{
             .reg .pred p1;
             .reg .b128 clc_result;
             ld.shared.b128 clc_result, [$4];
@@ -162,8 +165,7 @@ struct TileScheduler[
     ) -> WorkInfo:
         var normalized_m = Int(work_info.m) / Self.log_cluster_m
         var normalized_n = Int(work_info.n) / Self.log_cluster_n
-        var normalized_k = Int(work_info.k_start) / Self.log_cluster_k
-        alias log_block_swizzle_size = FastDiv[DType.uint32](
+        comptime log_block_swizzle_size = FastDiv[DType.uint32](
             Self.block_swizzle_size
         )
 
@@ -212,10 +214,11 @@ struct TileScheduler[
             new_n_global = new_normalized_n
 
         return WorkInfo(
-            m=Int(new_m_global) * Self.cluster_shape[0] + block_id_in_cluster.x,
-            n=Int(new_n_global) * Self.cluster_shape[1] + block_id_in_cluster.y,
-            k_start=Int(normalized_k) * Self.cluster_shape[2]
-            + block_id_in_cluster.z,
+            m=Int(new_m_global) * Self.cluster_shape[0]
+            + Int(block_id_in_cluster.x),
+            n=Int(new_n_global) * Self.cluster_shape[1]
+            + Int(block_id_in_cluster.y),
+            k_start=work_info.k_start,
             is_valid_tile=work_info.is_valid_tile,
         )
 
@@ -237,8 +240,14 @@ struct TileScheduler[
     fn fetch_next_work(
         self,
         work_info: WorkInfo,
-        consumer_state: PipelineState[num_stages],
+        consumer_state: PipelineState[Self.num_stages],
     ) -> WorkInfo:
+        # num_stages == 0 implies there is only one wave. Only initial
+        # work info is valid, next work info is invalid.
+        @parameter
+        if Self.num_stages == 0:
+            return WorkInfo(0, 0, 0, False)
+
         self.full_mbar[consumer_state.index()].wait(consumer_state.phase())
         var work_tile = self.work_info_from_clc_response(
             self.clc_response + consumer_state.index()
@@ -255,9 +264,9 @@ struct TileScheduler[
     @always_inline
     fn advance_to_next_work(
         self,
-        mut clc_state: PipelineState[num_stages],
-    ) -> PipelineState[num_stages]:
-        alias multicast = True if Self.cluster_size > 1 else False
+        mut clc_state: PipelineState[Self.num_stages],
+    ) -> PipelineState[Self.num_stages]:
+        comptime multicast = True if Self.cluster_size > 1 else False
         var lane_id = lane_id()
         var pred: UInt32 = 1 if lane_id < UInt(Self.cluster_size) else 0
         self.empty_mbar[clc_state.index()].wait(clc_state.phase())

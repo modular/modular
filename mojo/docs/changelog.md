@@ -10,7 +10,7 @@ what we publish.
 [//]: ### ✨ Highlights
 [//]: ### Language enhancements
 [//]: ### Language changes
-[//]: ### Standard library changes
+[//]: ### Library changes
 [//]: ### Tooling changes
 [//]: ### ❌ Removed
 [//]: ### 🛠️ Fixed
@@ -21,86 +21,136 @@ what we publish.
 
 ### Language enhancements
 
-- Literals now have a default type. For example, you can now bind `[1,2,3]` to
-  `T` in a call to a function defined as `fn zip[T: Iterable](impl:T)` because
-  it will default to the standard library's List type.
-
-- Mojo now has a `__functions_in_module` experimental intrinsic that allows
-  reflection over the functions declared in the module where it is called. For
-  example:
+- Mojo now differentiates between `...` and `pass` in trait methods. The use of
+  `...` continues to denote no default implementation - `pass` now specifies a
+  default do-nothing implementation. For example:
 
   ```mojo
-  fn foo(): pass
+  trait T:
+      # No default implementation
+      fn foo(self): ...
 
-  def bar(x: Int): pass
-
-  def main():
-    alias funcs = __functions_in_module()
-    # equivalent to:
-    alias same_funcs = Tuple(foo, bar)
+      # Default implementation that does nothing
+      fn bar(self) : pass
   ```
 
-  The intrinsic is currently limited for use from within `main`.
-
-- The `@implicit` decorator now accepts an optional `deprecated` keyword
-  argument. This can be used to phase out implicit conversions instead of just
-  removing the decorator (which can result in another, unintended implicit
-  conversion path). For example, the compiler now warns about the following:
+  The compiler will error on the use of `pass` to define a default
+  implementation for a trait method with results:
 
   ```mojo
-  struct MyStuff:
-    @implicit(deprecated=True)
-    fn __init__(out self, value: Int):
-      pass
-
-  fn deprecated_implicit_conversion():
-    # warning: deprecated implicit conversion from 'IntLiteral[1]' to 'MyStuff'
-    _: MyStuff = 1
-
-    _ = MyStuff(1)  # this is okay, because the conversion is already explicit.
+  trait T:
+      foo.mojo:2:26: error: trait method has results but default implementation returns no value; did you mean '...'?
+      fn foo(self) -> Int: pass
+                           ^
+      trait.mojo:2:8: note: in 'foo', declared here
+      fn foo(self) -> Int: pass
+         ^
   ```
+
+- The `deinit` argument convention can now be applied to any argument of a
+  struct method, but the argument type still must be of the enclosing struct
+  type.
 
 ### Language changes
 
-### Standard library changes
+- The compiler will now warn on unqualified access to struct parameters, e.g.
 
-- Added `unsafe_get`, `unsafe_swap_elements` and `unsafe_subspan` to `Span`.
+  ```mojo
+  @fieldwise_init
+  struct MyStuff[my_param: Int]:
+      fn give_me_stuff(self) -> Int:
+          # Warning: unqualified access to struct parameter 'my_param'; use 'Self.my_param' instead
+          return my_param
+  ```
 
-- The deprecated `DType.index` is now removed in favor of the `DType.int`.
+### Library changes
 
-- `math.isqrt` has been renamed to `rsqrt` since it performs reciprocal square
-  root functionality.
+- Tuples have been improved:
+  - Tuples can now be concatenated with `Tuple.concat(other)`.
+  - Tuple can now be reversed with `Tuple.reverse()`.
 
-- Added `swap_pointees` function to `UnsafePointer` as an alternative to `swap`
-  when the pointers may potentially alias each other.
+- New `ContiguousSlice` and `StridedSlice` types were added to
+  the `builtin_slice` module to support specialization for slicing without strides.
 
-- `memcpy` and `parallel_memcpy` without keyword arguments are deprecated.
+- `List` slicing without a stride now returns a `Span`, instead of a `List` and
+  no longer allocates memory.
 
-- The `math` package now has a mojo native implementation of `acos`, `asin`,
-  `cbrt`, and `erfc`.
+- The `random` module now uses a pure Mojo implementation based on the Philox
+  algorithm (via an internal wrapper), replacing the previous `CompilerRT` C++
+  dependency. The Philox algorithm provides excellent statistical quality, works
+  on both CPU and GPU, and makes random number generation fully transparent and
+  source-available. Note that this changes the random number sequence for a given
+  seed value, which may affect tests or code relying on reproducible sequences.
 
-- Added support for NVIDIA GeForce GTX 970.
+- Implicit conversion between `Int` and `UInt` have been removed.
 
-- Added support for NVIDIA Jetson Thor.
+- `UnsafePointer` can now be initialized from a raw memory address using the
+  `unsafe_from_address` initializer.
 
-- `Optional` now conforms to `Iterable` and `Iterator` acting as a collection of
-  size 1 or 0.
+- `alloc()` now has a `debug_assert` ensuring count is non-negative.
 
-- `origin_cast` for `LayoutTensor`, `NDBuffer` and `UnsafePointer` has been
-  deprecated. `LayoutTensor` and `NDBuffer` now supports a safer
-  `as_any_origin()` origin casting. `UnsafePointer` has the same
-  safe alternative and in addition, it has an additional safe `as_immutable`
-  casting function and explicitly unsafe `unsafe_mut_cast` and
-  `unsafe_origin_cast` casting function.
+- The `EqualityComparable` trait has been deprecated in favor of `Equatable`,
+  which has identical functionality.
 
 ### Tooling changes
 
-- Error messages now preserve symbolic calls to `always_inline("builtin")`
-  functions rather than inlining them into the error message.
+- The Mojo compiler now "diffs" very long types in error messages to explain
+  what is going on in a more easy to understand way.
+- Specifying CUDA architectures with `--target-accelerator` now expects a sm
+  version string rather than just a compute capability. For example
+  `--target-accelerator=nvidia:80` should be changed to
+  `--target-accelerator=nvidia:sm_80`. If an incorrect format is used for the
+  version, the compiler will default to the lowest supported sm version.
+- Elaboration error printing with different level of verbosity
+  which offers control on how parameter values are displayed as part of
+  elaboration errors when function instantiation fails.
+  `--elaboration-error-verbose=value` now takes a value, where:
+  - `no-params` means don't display any concrete parameter values.
+    This is helpful to collapse recursion related error message
+    into shorter blobs.
+  - `simple-params` display concretized parameter values for simple types,
+    including numeric types and strings, in a user-friendly format
+    (default value).
+  - `all-params` means show all concrete parameter values.
+    This is for advanced programmer who doesn't mind reading
+    MLIR attributes but wants more visibility of parameter values.
+- `--elaboration-max-depth` is added to control maximum elaborator
+   instantiation depth. This (unsigned) value helps to detect compile time
+   recursion. The default is `std::numeric_limits<unsigned>::max()`.
+
+### Experimental changes
+
+Changes described in this section are experimental and may be changed, replaced,
+or removed in future releases.
+
+- Mojo now supports compile-time trait conformance check (via `conforms_to()`)
+  and downcast (via `trait_downcast()`). This allows users to implement features
+  like static dispatching based on trait conformance. For example:
+
+  ```mojo
+  fn maybe_print[T : AnyType](maybe_printable : T):
+    @parameter
+    if conforms_to(T, Writable):
+      print(trait_downcast[Writable](maybe_printable))
+    else:
+      print("[UNPRINTABLE]")
+  ```
+
+- Added support for `DType` expressions in `where` clauses:
+
+  ```mojo
+  fn foo[dt: DType]() -> Int where dt is DType.int32:
+      return 42
+  ```
+
+  Currently, the following expressions are supported:
+  - equality and inequality
+  - `is_signed()`, `is_unsigned()`, `is_numeric()`, `is_integral()`,
+    `is_floating_point()`, `is_float8()`, `is_half_float()`
 
 ### ❌ Removed
 
 ### 🛠️ Fixed
 
-- The `math.cos` and `math.sin` function can now be evaluated at compile time
-  (fixes #5111).
+- [Issue #5578](https://github.com/modular/modular/issues/5578): ownership
+  overloading not working when used with `ref`.

@@ -21,6 +21,7 @@ from utils import StaticTuple
 
 from builtin.device_passable import DevicePassable
 from compile import get_type_name
+from memory import LegacyOpaquePointer
 
 # ===-----------------------------------------------------------------------===#
 # StaticTuple
@@ -49,35 +50,45 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         size: The size of the tuple.
     """
 
-    alias _mlir_type = __mlir_type[
-        `!pop.array<`, size._mlir_value, `, `, Self.element_type, `>`
+    comptime _mlir_type = __mlir_type[
+        `!pop.array<`, Self.size._mlir_value, `, `, Self.element_type, `>`
     ]
-    alias device_type: AnyTrivialRegType = Self
+    comptime device_type: AnyType = Self
 
     var _mlir_value: Self._mlir_type
     """The underlying storage for the static tuple."""
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: LegacyOpaquePointer):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
     fn get_type_name() -> String:
+        """Get the human-readable type name for this `StaticTuple`.
+
+        Returns:
+            A string representation of the type, e.g. "StaticTuple[Int, 3]".
+        """
         return String(
             "StaticTuple[",
             get_type_name[Self.element_type](),
             ", ",
-            size,
+            Self.size,
             "]",
         )
 
     @staticmethod
     fn get_device_type_name() -> String:
+        """Get the human-readable device type name for this `StaticTuple`.
+
+        Returns:
+            A string representation of the device type (same as type name for StaticTuple).
+        """
         return Self.get_type_name()
 
     @always_inline
     fn __init__(out self):
         """Constructs an empty (undefined) tuple."""
-        _static_tuple_construction_checks[size]()
+        _static_tuple_construction_checks[Self.size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @always_inline
@@ -96,10 +107,14 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         Args:
             fill: The value to fill the tuple with.
         """
-        _static_tuple_construction_checks[size]()
+        _static_tuple_construction_checks[Self.size]()
         self._mlir_value = __mlir_op.`pop.array.repeat`[
             _type = __mlir_type[
-                `!pop.array<`, size._mlir_value, `, `, Self.element_type, `>`
+                `!pop.array<`,
+                Self.size._mlir_value,
+                `, `,
+                Self.element_type,
+                `>`,
             ]
         ](fill)
 
@@ -110,7 +125,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         Args:
             elems: The element types.
         """
-        _static_tuple_construction_checks[size]()
+        _static_tuple_construction_checks[Self.size]()
         self = Self(values=elems)
 
     @always_inline
@@ -120,17 +135,19 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         Args:
             values: The list of values.
         """
-        _static_tuple_construction_checks[size]()
+        _static_tuple_construction_checks[Self.size]()
 
         if len(values) == 1:
             return Self(fill=values[0])
 
-        debug_assert(size == len(values), "mismatch in the number of elements")
+        debug_assert(
+            Self.size == len(values), "mismatch in the number of elements"
+        )
 
         self = Self()
 
         @parameter
-        for idx in range(size):
+        for idx in range(Self.size):
             self.__setitem__[idx](values[idx])
 
     @always_inline("nodebug")
@@ -140,7 +157,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         Returns:
             The size of the list.
         """
-        return size
+        return Self.size
 
     @always_inline("nodebug")
     fn __getitem__[index: Int](self) -> Self.element_type:
@@ -152,7 +169,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         Returns:
             The value at the specified position.
         """
-        constrained[index < size]()
+        constrained[index < Self.size]()
         var val = __mlir_op.`pop.array.get`[
             _type = Self.element_type,
             index = index._mlir_value,
@@ -172,7 +189,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         Returns:
             The value at the specified position.
         """
-        debug_assert(size > index(idx), "index must be within bounds")
+        debug_assert(Self.size > index(idx), "index must be within bounds")
         return self._unsafe_ref(index(idx))
 
     @always_inline("nodebug")
@@ -186,7 +203,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
             idx: The index into the tuple.
             val: The value to store.
         """
-        debug_assert(size > index(idx), "index must be within bounds")
+        debug_assert(Self.size > index(idx), "index must be within bounds")
         self._unsafe_ref(index(idx)) = val
 
     @always_inline("nodebug")
@@ -199,7 +216,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         Args:
             val: The value to store.
         """
-        constrained[idx < size]()
+        constrained[idx < Self.size]()
 
         self._unsafe_ref(idx) = val
 
@@ -223,11 +240,15 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         Returns:
             A new tuple with the specified element value replaced.
         """
-        constrained[idx < size]()
+        constrained[idx < Self.size]()
 
         var array = __mlir_op.`pop.array.replace`[
             _type = __mlir_type[
-                `!pop.array<`, size._mlir_value, `, `, Self.element_type, `>`
+                `!pop.array<`,
+                Self.size._mlir_value,
+                `, `,
+                Self.element_type,
+                `>`,
             ],
             index = idx._mlir_value,
         ](val, self._mlir_value)

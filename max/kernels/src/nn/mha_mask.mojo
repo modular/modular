@@ -12,12 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import iota
+from utils import StaticTuple
+from math import iota, ceildiv
 from sys import is_nvidia_gpu
 
 from layout import LayoutTensor, Layout, UNKNOWN_VALUE
+from memory import LegacyOpaquePointer as OpaquePointer
 
-from utils.index import IndexList
+from utils.index import IndexList, Index
 from builtin.device_passable import DevicePassable
 
 # ===-----------------------------------------------------------------------===#
@@ -30,12 +32,12 @@ struct MaskName(Stringable):
 
     var name: String
 
-    alias NULL = Self("null")
-    alias CAUSAL = Self("causal")
-    alias CHUNKED = Self("chunked")
-    alias SLIDING_WINDOW_CAUSAL = Self("sliding_window_causal")
-    alias MATERIALIZED = Self("materialized")
-    alias CHUNKED_CAUSAL = Self("chunked_causal")
+    comptime NULL = Self("null")
+    comptime CAUSAL = Self("causal")
+    comptime CHUNKED = Self("chunked")
+    comptime SLIDING_WINDOW_CAUSAL = Self("sliding_window_causal")
+    comptime MATERIALIZED = Self("materialized")
+    comptime CHUNKED_CAUSAL = Self("chunked_causal")
 
     fn __init__(out self, name: String):
         self.name = name
@@ -61,20 +63,30 @@ struct MaskName(Stringable):
 @fieldwise_init
 @register_passable("trivial")
 struct TileMaskStatus(
-    EqualityComparable, ImplicitlyCopyable, Movable, Stringable, Writable
+    Equatable,
+    Identifiable,
+    ImplicitlyCopyable,
+    Movable,
+    Stringable,
+    Writable,
 ):
     """A tile's masking status."""
 
     var status: UInt8
 
     # No element is masked.
-    alias NO_MASK = Self(0)
+    comptime NO_MASK = Self(0)
 
     # Some elements in the tile are masked.
-    alias PARTIAL_MASK = Self(1)
+    comptime PARTIAL_MASK = Self(1)
 
     # All elements in the tile are masked.
-    alias FULL_MASK = Self(3)
+    comptime FULL_MASK = Self(3)
+
+    # Unkown mask -- a further check needed.
+    # This is used by masks not yet supporting
+    # the predefined trip count information.
+    comptime UNKNOWN_MASK = Self(4)
 
     fn __eq__(self, rhs: Self) -> Bool:
         return self.status == rhs.status
@@ -84,9 +96,6 @@ struct TileMaskStatus(
 
     fn __is__(self, rhs: Self) -> Bool:
         return self.status == rhs.status
-
-    fn __is_not__(self, rhs: Self) -> Bool:
-        return self.status != rhs.status
 
     fn __str__(self) -> String:
         return String.write(self)
@@ -102,7 +111,9 @@ struct TileMaskStatus(
             return writer.write("not masked")
         if self is Self.PARTIAL_MASK:
             return writer.write("partially masked")
-        writer.write("fully masked")
+        if self is Self.FULL_MASK:
+            return writer.write("fully masked")
+        writer.write("unknown mask")
 
 
 # ===-----------------------------------------------------------------------===#
@@ -115,17 +126,17 @@ trait MHAMask(Copyable, DevicePassable):
     """The MHAMask trait describes masks for MHA kernels, such as the causal mask.
     """
 
-    alias apply_log2e_after_mask: Bool
+    comptime apply_log2e_after_mask: Bool
     """
     Does the mask require `log2e` to be applied after the mask, or
     can it be fused with the scaling?
     """
-    alias mask_out_of_bound: Bool
-    alias mask_safe_out_of_bounds: Bool
+    comptime mask_out_of_bound: Bool
+    comptime mask_safe_out_of_bounds: Bool
     """
     Is the mask safe to read out of bounds?
     """
-    alias check_mask_during_decoding: Bool
+    comptime check_mask_during_decoding: Bool
     """
     Should we check the mask during decoding, or should we assume that it
     does not return `FULL_MASK`?
@@ -158,12 +169,92 @@ trait MHAMask(Copyable, DevicePassable):
         """Given a tile's index range, return its masking status."""
         ...
 
+    fn start_column[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32) -> UInt32:
+        """
+        Returns the first column for which this mask does not return
+        `TileMaskStatus.FULL_MASK`.
+        This may not be a multiple of `BN`, in which case iterating using
+        `start_column` and `masked_set_ends` will not necessarilly produce
+        the same set or number of iterations as iterating from
+        `0` and checking `status` to skip.
+        The return value of `total_iters` should be less than or equal to
+        the number of non-skipped iterations.
+        The practical consequence is that all warp group specializations
+        within a kernel that loop over columns need to be in agreement.
+        Either they all loop over all columns and check status to skip,
+        or they loop using the `masked_set_ends`.
+        """
+        ...
+
+    fn total_iters[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> UInt32:
+        """
+        The total number of column iterations for which this mask returns either
+        `TileMaskStatus.NO_MASK' or 'TileMaskStatus.PARTIAL_MASK'.
+        This is to be used by warp specializations that do not need to
+        use `kv_row`.
+        """
+        ...
+
+    @staticmethod
+    fn count_nonfull_sets(BM: Int, BN: Int) -> Int:
+        """
+        The number of blocks that are all partial-masks or not masked.
+        """
+        ...
+
+    fn masked_set_ends[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> StaticTuple[
+        UInt32, Self.count_nonfull_sets(BM, BN)
+    ]:
+        """
+        For each set of iterations in `nonfull_sets`, indicate the end idx
+        belonging to that set (i.e., the last idx would be `end - 1`).
+        Note that the final `masked_set_ends` may not necessarilly equal
+        `total_iters`, if we have `UNKNOWN_MASK`s.
+        In case of `UNKNOWN_MASK`s, `masked_set_ends` with tile-skipping
+        must be used to have the correct kv_row values at each iteration.
+        """
+        ...
+
+    fn last_masked_set_end[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> UInt32:
+        """
+        Equivalent to `masked_set_ends[BM,BN,page_size](row, num_cols)[-1]`.
+        """
+        ...
+
+    @staticmethod
+    fn nonfull_sets[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
+        """
+        For each set of iterations that are either partially masked or not masked,
+        this indicates the mask status.
+        `UNKNOWN_MASK` here is an indicator meaning that we should check the status
+        at runtime.
+        It is semantically equivalent to `partial`, but with the optimization
+        hint that it's worth checking on each iteration at runtime for
+        `FULL_MASK` (in which case we can skip the tile) or `NO_MASK`
+        (in which case we can unswitch and avoid masking in an inner loop).
+        """
+        ...
+
+    @staticmethod
+    fn name() -> String:
+        ...
+
 
 # ===-----------------------------------------------------------------------===#
 # CausalMask
 # ===-----------------------------------------------------------------------===#
 
-alias MASK_VALUE = -10_000
+comptime MASK_VALUE = -10_000
 
 
 @fieldwise_init
@@ -171,18 +262,22 @@ alias MASK_VALUE = -10_000
 struct CausalMask(ImplicitlyCopyable, MHAMask, Movable):
     """MHA causal mask ensures a token is only affected by previous tokens."""
 
-    alias apply_log2e_after_mask: Bool = False
-    alias mask_out_of_bound: Bool = is_nvidia_gpu()
-    alias mask_safe_out_of_bounds: Bool = True
-    alias check_mask_during_decoding: Bool = False
+    comptime apply_log2e_after_mask: Bool = False
+    comptime mask_out_of_bound: Bool = is_nvidia_gpu()
+    comptime mask_safe_out_of_bounds: Bool = True
+    comptime check_mask_during_decoding: Bool = False
 
-    alias device_type: AnyTrivialRegType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
     fn get_type_name() -> String:
+        return "CausalMask"
+
+    @staticmethod
+    fn name() -> String:
         return "CausalMask"
 
     @staticmethod
@@ -200,7 +295,7 @@ struct CausalMask(ImplicitlyCopyable, MHAMask, Movable):
         coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
-        alias index_type = coord.element_type
+        comptime index_type = coord.element_type
 
         # coord[2] and coord[3] are the token index in query and key respectively.
         var q_idx = coord[2]
@@ -258,6 +353,65 @@ struct CausalMask(ImplicitlyCopyable, MHAMask, Movable):
         # (T, T) -> full mask
         return TileMaskStatus(min_q_lt_max_k + (max_q_lt_min_k << 1))
 
+    @always_inline
+    fn start_column[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32) -> UInt32:
+        # offset0 is row
+        # offset1 is col
+        # B is (row + BM, col) -- means fully masked (we skip)
+        # C is (row, col + BN) -- means not masked
+        # causal mask is
+        return 0
+
+    @always_inline
+    fn total_iters[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> UInt32:
+        # Masked off when row < col
+        # row + BM - 1 < BN * x
+        # We want the smallest value of `x` such that this is true
+        # NOTE: by not checking `num_cols`, this method assumes that
+        # `seq_len <= cache_len`.
+        # If `seq_len` (and thus `rows`) may be larger than
+        # `cache_len` (and thus `num_cols`), this will return the wrong result.
+        return ceildiv(min(row + BM, num_cols), BN)
+
+    @staticmethod
+    fn count_nonfull_sets(BM: Int, BN: Int) -> Int:
+        return 2
+
+    @always_inline
+    fn last_masked_set_end[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> UInt32:
+        return self.total_iters[BM, BN, page_size](row, num_cols)
+
+    @always_inline
+    fn masked_set_ends[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> StaticTuple[
+        UInt32, Self.count_nonfull_sets(BM, BN)
+    ]:
+        # Unmasked when row >= col
+        # We want to find the maximum `x` such that
+        # row >= x*BN - 1
+        # Each col tile extends from col...col+BN-1,
+        # so iter `i` (starting from 0) has maximum value
+        # `i*BN + BN - 1 = (i+1)*BN - 1`.
+        # Thus, iter `i` is fulle <= row if `row >= (i + 1)*BN - 1`.
+        # `x`, the number of unmasked iters, is thus
+        # x = i+1 = (row + 1) // BN
+        num_unmasked = (row + 1) // UInt32(BN)
+        partial_mask_end = self.total_iters[BM, BN, page_size](row, num_cols)
+        return {num_unmasked, partial_mask_end}
+
+    @staticmethod
+    fn nonfull_sets[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
+        return {TileMaskStatus.NO_MASK, TileMaskStatus.PARTIAL_MASK}
+
 
 # ===-----------------------------------------------------------------------===#
 # NullMask
@@ -269,18 +423,22 @@ struct CausalMask(ImplicitlyCopyable, MHAMask, Movable):
 struct NullMask(ImplicitlyCopyable, MHAMask, Movable):
     """Mask that's effectively a noop."""
 
-    alias apply_log2e_after_mask: Bool = False
-    alias mask_out_of_bound: Bool = True
-    alias mask_safe_out_of_bounds: Bool = True
-    alias check_mask_during_decoding: Bool = False
+    comptime apply_log2e_after_mask: Bool = False
+    comptime mask_out_of_bound: Bool = True
+    comptime mask_safe_out_of_bounds: Bool = True
+    comptime check_mask_during_decoding: Bool = False
 
-    alias device_type: AnyTrivialRegType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
     fn get_type_name() -> String:
+        return "NullMask"
+
+    @staticmethod
+    fn name() -> String:
         return "NullMask"
 
     @staticmethod
@@ -308,9 +466,49 @@ struct NullMask(ImplicitlyCopyable, MHAMask, Movable):
         # no mask
         return TileMaskStatus.NO_MASK
 
+    @always_inline
+    fn start_column[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32) -> UInt32:
+        return 0
+
+    @always_inline
+    fn total_iters[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> UInt32:
+        """
+        The total number of column iterations for which this mask returns either
+        `TileMaskStatus.NO_MASK' or 'TileMaskStatus.PARTIAL_MASK'.
+        """
+        return ceildiv(num_cols, UInt32(BN))
+
+    @always_inline
+    fn last_masked_set_end[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> UInt32:
+        return self.total_iters[BM, BN, page_size](row, num_cols)
+
+    @staticmethod
+    fn count_nonfull_sets(BM: Int, BN: Int) -> Int:
+        return 1
+
+    @always_inline
+    fn masked_set_ends[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> StaticTuple[
+        UInt32, Self.count_nonfull_sets(BM, BN)
+    ]:
+        return {self.total_iters[BM, BN, page_size](row, num_cols)}
+
+    @staticmethod
+    fn nonfull_sets[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
+        return {TileMaskStatus.NO_MASK}
+
 
 # ===-----------------------------------------------------------------------===#
-# ChunkedLocalMask
+# ChunkedMask
 # ===-----------------------------------------------------------------------===#
 
 
@@ -339,12 +537,12 @@ struct ChunkedMask[local_window_size: Int](
         6 | 0 0 0 0 0 0 0 0 1 1
     """
 
-    alias apply_log2e_after_mask: Bool = False
-    alias mask_out_of_bound: Bool = True
-    alias mask_safe_out_of_bounds: Bool = True
-    alias check_mask_during_decoding: Bool = True
+    comptime apply_log2e_after_mask: Bool = False
+    comptime mask_out_of_bound: Bool = True
+    comptime mask_safe_out_of_bounds: Bool = True
+    comptime check_mask_during_decoding: Bool = True
 
-    alias device_type: AnyTrivialRegType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -352,6 +550,10 @@ struct ChunkedMask[local_window_size: Int](
     @staticmethod
     fn get_type_name() -> String:
         return "ChunkedMask"
+
+    @staticmethod
+    fn name() -> String:
+        return "ChunkedMask[" + String(Self.local_window_size) + "]"
 
     @staticmethod
     fn get_device_type_name() -> String:
@@ -369,16 +571,16 @@ struct ChunkedMask[local_window_size: Int](
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
         constrained[
-            width <= local_window_size,
+            width <= Self.local_window_size,
             "SIMD width of chunked mask must be <= local window size",
         ]()
 
         var k_start_idx = coord.data[3]
         var k_end_idx = k_start_idx + width - 1
 
-        q_chunk_idx = Int(coord.data[2] // local_window_size)
-        k_start_chunk_idx = Int(k_start_idx) // local_window_size
-        k_end_chunk_idx = Int(k_end_idx) // local_window_size
+        q_chunk_idx = Int(coord.data[2] // Self.local_window_size)
+        k_start_chunk_idx = Int(k_start_idx) // Self.local_window_size
+        k_end_chunk_idx = Int(k_end_idx) // Self.local_window_size
 
         if q_chunk_idx == k_start_chunk_idx == k_end_chunk_idx:
             # fully unmasked, return the value
@@ -389,9 +591,10 @@ struct ChunkedMask[local_window_size: Int](
             var retval = score_vec
             var boundary = (
                 UInt32(
-                    (k_start_idx + local_window_size - 1) // local_window_size
+                    (k_start_idx + Self.local_window_size - 1)
+                    // Self.local_window_size
                 )
-                * local_window_size
+                * Self.local_window_size
             )
 
             var mask_val = SIMD[DType.bool, width](fill=False)
@@ -416,14 +619,14 @@ struct ChunkedMask[local_window_size: Int](
         tile_offset: IndexList[2, element_type=element_type],
         tile_size: IndexList[2, element_type=element_type],
     ) -> TileMaskStatus:
-        var q_start_window = tile_offset[0] // local_window_size
+        var q_start_window = tile_offset[0] // Self.local_window_size
         var q_end_window = (
             tile_offset[0] + tile_size[0] - 1
-        ) // local_window_size
-        var k_start_window = tile_offset[1] // local_window_size
+        ) // Self.local_window_size
+        var k_start_window = tile_offset[1] // Self.local_window_size
         var k_end_window = (
             tile_offset[1] + tile_size[1] - 1
-        ) // local_window_size
+        ) // Self.local_window_size
 
         var overlapping_windows = (
             k_end_window >= q_start_window and q_end_window >= k_start_window
@@ -435,6 +638,57 @@ struct ChunkedMask[local_window_size: Int](
             return TileMaskStatus.PARTIAL_MASK
         else:
             return TileMaskStatus.FULL_MASK
+
+    @always_inline
+    fn start_column[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32) -> UInt32:
+        # First column for which `row` is not masked is
+        var col: UInt32 = (
+            row // Self.local_window_size
+        ) * Self.local_window_size
+        comptime align_to = min(page_size, BN)
+
+        @parameter
+        if align_to == 1:
+            return col
+        else:
+            return (col // align_to) * align_to
+
+    @always_inline
+    fn total_iters[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> UInt32:
+        start_col = self.start_column[BM, BN, page_size](row)
+        # end_col is 1 past the end, the first that is masked off
+        end_col = (
+            1 + ((row + BM - 1) // Self.local_window_size)
+        ) * Self.local_window_size
+        return ceildiv(end_col - start_col, BN)
+
+    @staticmethod
+    fn count_nonfull_sets(BM: Int, BN: Int) -> Int:
+        return 1  # TODO: 3, for large chunk size
+
+    @always_inline
+    fn last_masked_set_end[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> UInt32:
+        return self.total_iters[BM, BN, page_size](row, num_cols)
+
+    @always_inline
+    fn masked_set_ends[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> StaticTuple[
+        UInt32, Self.count_nonfull_sets(BM, BN)
+    ]:
+        return {self.total_iters[BM, BN, page_size](row, num_cols)}
+
+    @staticmethod
+    fn nonfull_sets[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
+        return {TileMaskStatus.PARTIAL_MASK}
 
 
 # ===-----------------------------------------------------------------------===#
@@ -466,12 +720,12 @@ struct SlidingWindowCausalMask[window_size: Int](
         6 | 0 0 0 0 1 1 1
     """
 
-    alias apply_log2e_after_mask: Bool = False
-    alias mask_out_of_bound: Bool = True
-    alias mask_safe_out_of_bounds: Bool = True
-    alias check_mask_during_decoding: Bool = True
+    comptime apply_log2e_after_mask: Bool = False
+    comptime mask_out_of_bound: Bool = True
+    comptime mask_safe_out_of_bounds: Bool = True
+    comptime check_mask_during_decoding: Bool = True
 
-    alias device_type: AnyTrivialRegType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -479,6 +733,10 @@ struct SlidingWindowCausalMask[window_size: Int](
     @staticmethod
     fn get_type_name() -> String:
         return "SlidingWindowCausalMask"
+
+    @staticmethod
+    fn name() -> String:
+        return "SlidingWindowCausalMask[" + String(Self.window_size) + "]"
 
     @staticmethod
     fn get_device_type_name() -> String:
@@ -495,10 +753,10 @@ struct SlidingWindowCausalMask[window_size: Int](
         coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
-        alias index_type = coord.element_type
+        comptime index_type = coord.element_type
 
         constrained[
-            width <= window_size,
+            width <= Self.window_size,
             "SIMD width of sliding window mask must be <= window size",
         ]()
 
@@ -517,7 +775,7 @@ struct SlidingWindowCausalMask[window_size: Int](
         # that we have applied.
         return (
             (SIMD[index_type, width](q_idx) - iota[index_type, width](k_idx))
-            .lt(window_size)
+            .lt(Self.window_size)
             .select(masked_score_vec, SIMD[dtype, width](MASK_VALUE))
         )
 
@@ -553,7 +811,7 @@ struct SlidingWindowCausalMask[window_size: Int](
         # around zero.
 
         var lhs = tile_offset.data[0] + 1
-        var rhs = tile_offset.data[1] + tile_size.data[1] + window_size
+        var rhs = tile_offset.data[1] + tile_size.data[1] + Self.window_size
         var queries_too_far_ahead_of_keys = lhs >= rhs
 
         if query_ends_before_keys_begin or queries_too_far_ahead_of_keys:
@@ -573,7 +831,7 @@ struct SlidingWindowCausalMask[window_size: Int](
         # earliest key position
         var max_query_within_window_of_min_key = (
             tile_offset.data[0] + tile_size.data[0] - 1
-            < tile_offset.data[1] + window_size
+            < tile_offset.data[1] + Self.window_size
         )
 
         if min_query_after_max_key and max_query_within_window_of_min_key:
@@ -582,10 +840,140 @@ struct SlidingWindowCausalMask[window_size: Int](
         # If we reached here, some positions are masked and others aren't
         return TileMaskStatus.PARTIAL_MASK
 
+    @always_inline
+    fn start_column[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32) -> UInt32:
+        var col: UInt32 = UInt32(
+            max(Int32(row) - Int32(Self.window_size) + 1, 0)
+        )
+        comptime align_to = min(page_size, BN)
+
+        @parameter
+        if align_to == 1:
+            return col
+        else:
+            return (col // align_to) * align_to
+
+    @always_inline
+    fn total_iters[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> UInt32:
+        start_col = self.start_column[BM, BN, page_size](row)
+        end_col = min(row + BM, num_cols)  # one past end
+        return ceildiv(end_col - start_col, BN)
+
+    @staticmethod
+    fn count_nonfull_sets(BM: Int, BN: Int) -> Int:
+        if ((Self.window_size) // BN) > ((BM + BN - 2) // BN):
+            return 3
+        else:
+            return 1
+
+    @always_inline
+    fn masked_set_ends[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> StaticTuple[
+        UInt32, Self.count_nonfull_sets(BM, BN)
+    ]:
+        start_col = self.start_column[BM, BN, page_size](row)
+        # partial_exit_end_col = row + BM
+        partial_exit_end_col = min(row + BM, num_cols)
+        # partial's end uses `ceildiv` and unmasked uses floored division
+        # Partials must cover the entire `BN` tile with an masked entry
+        # The unmasked region can't handle a tile with any
+        #
+        # (unmasked_end_col - start_col) // BN -
+        #     ceildiv(partial_entry_end_col - start_col, BN)
+        #
+        # = (unmasked_end_col - start_col) // BN -
+        #       (partial_entry_end_col - start_col + BN - 1) // BN
+        # = (row + 1 - row + window_size - 1) // BN -
+        #       (row + BM - window_size - row + window_size - 1 + BN - 1) // BN
+        # = (window_size) // BN - (BM + BN - 2) // BN
+        #
+        # Thus, we will have unmasked iters when
+        # (window_size) // BN - (BM + BN - 2) // BN > 0
+        #
+        end_tile = ceildiv(partial_exit_end_col - start_col, BN)
+
+        @parameter
+        if ((Self.window_size) // BN) > ((BM + BN - 2) // BN):
+            # the partial entry region ends when row + BM - 1 is unmasked
+            var partial_entry_end_col: UInt32 = row + BM
+            if partial_entry_end_col > Self.window_size:
+                partial_entry_end_col -= Self.window_size
+            else:
+                partial_entry_end_col = 0
+            unmasked_end_col = row + 1
+            return {
+                ceildiv(partial_entry_end_col - start_col, BN),
+                (unmasked_end_col - start_col) // BN,
+                end_tile,
+            }
+        else:
+            return {end_tile}
+
+    @always_inline
+    fn last_masked_set_end[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> UInt32:
+        return self.total_iters[BM, BN, page_size](row, num_cols)
+
+    @staticmethod
+    fn nonfull_sets[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
+        @parameter
+        if (((Self.window_size) // BN) - ((BM + BN - 2) // BN)) > 0:
+            return {
+                TileMaskStatus.PARTIAL_MASK,
+                TileMaskStatus.NO_MASK,
+                TileMaskStatus.PARTIAL_MASK,
+            }
+        else:
+            return {
+                TileMaskStatus.PARTIAL_MASK,
+            }
+
 
 # ===-----------------------------------------------------------------------===#
 # MaterializedMask
 # ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn naively_compute_total_iters[
+    MaskType: MHAMask, //, BM: Int, BN: Int
+](mask: MaskType, q_row: UInt32, end: UInt32) -> UInt32:
+    var iter_count: UInt32 = 0
+    var kv_row: UInt32 = 0
+    while kv_row < end:
+        iter_count += Int(
+            mask.status(
+                Index[dtype = DType.int32](Int(q_row), Int(kv_row)),
+                Index[dtype = DType.int32](BM, BN),
+            )
+            != TileMaskStatus.FULL_MASK
+        )
+        kv_row += BN
+    return iter_count
+
+
+@always_inline
+fn naively_get_first_nonempty_mask_col[
+    MaskType: MHAMask, //, BM: Int, BN: Int
+](mask: MaskType, q_row: UInt32) -> UInt32:
+    var kv_row: UInt32 = 0
+    while (
+        mask.status(
+            Index[dtype = DType.int32](Int(q_row), Int(kv_row)),
+            Index[dtype = DType.int32](BM, BN),
+        )
+        == TileMaskStatus.FULL_MASK
+    ):
+        kv_row += BN
+    return kv_row
 
 
 @register_passable("trivial")
@@ -594,27 +982,31 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
 ):
     """Mask that's backed by a materialized tensor."""
 
-    alias apply_log2e_after_mask: Bool = True
-    alias mask_out_of_bound: Bool = True
-    alias mask_safe_out_of_bounds: Bool = False
-    alias check_mask_during_decoding: Bool = True
+    comptime apply_log2e_after_mask: Bool = True
+    comptime mask_out_of_bound: Bool = True
+    comptime mask_safe_out_of_bounds: Bool = False
+    comptime check_mask_during_decoding: Bool = True
 
-    alias MaskType = LayoutTensor[dtype_, layout_, MutableAnyOrigin]
+    comptime MaskType = LayoutTensor[Self.dtype_, Self.layout_, MutAnyOrigin]
     var mask_tensor: Self.MaskType
     var start_pos: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ]
     var is_multiple_of_2: Bool
 
-    alias device_type: AnyTrivialRegType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
     fn get_type_name() -> String:
+        return "MaterializedMask"
+
+    @staticmethod
+    fn name() -> String:
         return "MaterializedMask"
 
     @staticmethod
@@ -626,17 +1018,18 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
         mask_tensor: Self.MaskType,
         start_pos: OptionalReg[
             LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
             ]
         ] = None,
     ):
         constrained[
-            layout_.rank() in (3, 4), "Expected rank 3 or 4 for mask tensor"
+            Self.layout_.rank() in (3, 4),
+            "Expected rank 3 or 4 for mask tensor",
         ]()
         self.mask_tensor = mask_tensor
         self.start_pos = start_pos
         self.is_multiple_of_2 = (
-            self.mask_tensor.dim[layout_.rank() - 1]() % 2 == 0
+            self.mask_tensor.dim[Self.layout_.rank() - 1]() % 2 == 0
         )
 
     @always_inline
@@ -645,8 +1038,8 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
             return Int(self.start_pos.value()[batch_idx])
         else:
             return (
-                self.mask_tensor.dim[layout_.rank() - 1]()
-                - self.mask_tensor.dim[layout_.rank() - 2]()
+                self.mask_tensor.dim[Self.layout_.rank() - 1]()
+                - self.mask_tensor.dim[Self.layout_.rank() - 2]()
             )
 
     @always_inline
@@ -660,15 +1053,15 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
         coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
-        alias IndexListType = IndexList[
-            layout_.rank(), element_type=element_type
+        comptime IndexListType = IndexList[
+            Self.layout_.rank(), element_type=element_type
         ]
         var adjusted_coord: IndexListType
 
         var start_pos = self.get_start_pos(coord[0])
 
         @parameter
-        if layout_.rank() == 3:
+        if Self.layout_.rank() == 3:
             adjusted_coord = IndexListType(
                 coord[0], coord[2] - start_pos, coord[3]
             )
@@ -678,7 +1071,7 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
             )
 
         var retval = SIMD[dtype, width](MASK_VALUE)
-        alias rank = layout_.rank()
+        comptime rank = Self.layout_.rank()
         if adjusted_coord[rank - 2] < self.mask_tensor.dim[rank - 2]():
             if (
                 adjusted_coord[rank - 1] + width
@@ -714,6 +1107,42 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
         # always read the values for the tensor.
         return TileMaskStatus.PARTIAL_MASK
 
+    @always_inline
+    fn start_column[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32) -> UInt32:
+        return naively_get_first_nonempty_mask_col[BM, BN](self, row)
+
+    @always_inline
+    fn total_iters[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> UInt32:
+        return naively_compute_total_iters[BM, BN](self, row, num_cols)
+
+    @staticmethod
+    fn count_nonfull_sets(BM: Int, BN: Int) -> Int:
+        return 1
+
+    @always_inline
+    fn last_masked_set_end[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> UInt32:
+        return ceildiv(num_cols, UInt32(BN))
+
+    @always_inline
+    fn masked_set_ends[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> StaticTuple[
+        UInt32, Self.count_nonfull_sets(BM, BN)
+    ]:
+        return {self.last_masked_set_end[BM, BN, page_size](row, num_cols)}
+
+    @staticmethod
+    fn nonfull_sets[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
+        return {TileMaskStatus.UNKNOWN_MASK}
+
 
 # ===-----------------------------------------------------------------------===#
 # AndMask
@@ -727,12 +1156,12 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 ):
     """Mask that's the AND of two masks."""
 
-    alias apply_log2e_after_mask: Bool = T.apply_log2e_after_mask or S.apply_log2e_after_mask
-    alias mask_out_of_bound: Bool = T.mask_out_of_bound or S.mask_out_of_bound
-    alias mask_safe_out_of_bounds: Bool = T.mask_safe_out_of_bounds and S.mask_safe_out_of_bounds
-    alias check_mask_during_decoding: Bool = T.check_mask_during_decoding and S.check_mask_during_decoding
+    comptime apply_log2e_after_mask: Bool = Self.T.apply_log2e_after_mask or Self.S.apply_log2e_after_mask
+    comptime mask_out_of_bound: Bool = Self.T.mask_out_of_bound or Self.S.mask_out_of_bound
+    comptime mask_safe_out_of_bounds: Bool = Self.T.mask_safe_out_of_bounds and Self.S.mask_safe_out_of_bounds
+    comptime check_mask_during_decoding: Bool = Self.T.check_mask_during_decoding and Self.S.check_mask_during_decoding
 
-    alias device_type: AnyTrivialRegType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -740,6 +1169,10 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     @staticmethod
     fn get_type_name() -> String:
         return "AndMask"
+
+    @staticmethod
+    fn name() -> String:
+        return "AndMask[" + Self.T.name() + ", " + Self.S.name() + "]"
 
     @staticmethod
     fn get_device_type_name() -> String:
@@ -778,6 +1211,42 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 
         return lhs_status & rhs_status
 
+    @always_inline
+    fn start_column[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32) -> UInt32:
+        return naively_get_first_nonempty_mask_col[BM, BN](self, row)
+
+    @always_inline
+    fn total_iters[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> UInt32:
+        return naively_compute_total_iters[BM, BN](self, row, num_cols)
+
+    @staticmethod
+    fn count_nonfull_sets(BM: Int, BN: Int) -> Int:
+        return 1
+
+    @always_inline
+    fn last_masked_set_end[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> UInt32:
+        return ceildiv(num_cols, UInt32(BN))
+
+    @always_inline
+    fn masked_set_ends[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> StaticTuple[
+        UInt32, Self.count_nonfull_sets(BM, BN)
+    ]:
+        return {self.last_masked_set_end[BM, BN, page_size](row, num_cols)}
+
+    @staticmethod
+    fn nonfull_sets[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
+        return {TileMaskStatus.UNKNOWN_MASK}
+
 
 # ===-----------------------------------------------------------------------===#
 # OrMask
@@ -791,12 +1260,12 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 ):
     """Mask that's the OR of two masks."""
 
-    alias apply_log2e_after_mask: Bool = T.apply_log2e_after_mask or S.apply_log2e_after_mask
-    alias mask_out_of_bound: Bool = T.mask_out_of_bound and S.mask_out_of_bound
-    alias mask_safe_out_of_bounds: Bool = T.mask_safe_out_of_bounds and S.mask_safe_out_of_bounds
-    alias check_mask_during_decoding: Bool = T.check_mask_during_decoding or S.check_mask_during_decoding
+    comptime apply_log2e_after_mask: Bool = Self.T.apply_log2e_after_mask or Self.S.apply_log2e_after_mask
+    comptime mask_out_of_bound: Bool = Self.T.mask_out_of_bound and Self.S.mask_out_of_bound
+    comptime mask_safe_out_of_bounds: Bool = Self.T.mask_safe_out_of_bounds and Self.S.mask_safe_out_of_bounds
+    comptime check_mask_during_decoding: Bool = Self.T.check_mask_during_decoding or Self.S.check_mask_during_decoding
 
-    alias device_type: AnyTrivialRegType = Self
+    comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -804,6 +1273,10 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     @staticmethod
     fn get_type_name() -> String:
         return "OrMask"
+
+    @staticmethod
+    fn name() -> String:
+        return "OrMask[" + Self.T.name() + ", " + Self.S.name() + "]"
 
     @staticmethod
     fn get_device_type_name() -> String:
@@ -839,6 +1312,42 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
         var lhs_status = self.lhs.status(tile_offset, tile_size)
         var rhs_status = self.rhs.status(tile_offset, tile_size)
         return lhs_status | rhs_status
+
+    @always_inline
+    fn start_column[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32) -> UInt32:
+        return naively_get_first_nonempty_mask_col[BM, BN](self, row)
+
+    @always_inline
+    fn total_iters[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> UInt32:
+        return naively_compute_total_iters[BM, BN](self, row, num_cols)
+
+    @staticmethod
+    fn count_nonfull_sets(BM: Int, BN: Int) -> Int:
+        return 1
+
+    @always_inline
+    fn last_masked_set_end[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> UInt32:
+        return ceildiv(num_cols, UInt32(BN))
+
+    @always_inline
+    fn masked_set_ends[
+        BM: Int, BN: Int, page_size: Int
+    ](self, row: UInt32, num_cols: UInt32) -> StaticTuple[
+        UInt32, Self.count_nonfull_sets(BM, BN)
+    ]:
+        return {self.last_masked_set_end[BM, BN, page_size](row, num_cols)}
+
+    @staticmethod
+    fn nonfull_sets[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
+        return {TileMaskStatus.UNKNOWN_MASK}
 
 
 # ===-----------------------------------------------------------------------===#

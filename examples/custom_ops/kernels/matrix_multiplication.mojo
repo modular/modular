@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/tutorials/custom-ops-matmul.mdx
+# DOC: max/develop/custom-ops-matmul.mdx
 
 from math import ceildiv
 from sys.info import has_accelerator, has_amd_gpu_accelerator, simd_width_of
@@ -32,7 +32,7 @@ from layout.layout_tensor import Layout, LayoutTensor, copy_dram_to_sram_async
 from layout.math import outer_product_acc
 from layout.tensor_core import TensorCore
 from runtime.asyncrt import DeviceContextPtr
-from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
+from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
 from utils import StaticTuple
 from utils.index import Index
@@ -83,9 +83,9 @@ fn naive_matrix_multiplication[
     BM: Int,
     BN: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
-    c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
     GEMM kernel that performs matrix multiplication C = A * B.
@@ -151,9 +151,9 @@ fn coalescing_matrix_multiplication[
     BM: Int,
     BN: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
-    c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
     GEMM kernel that performs matrix multiplication C = A * B with
@@ -221,9 +221,9 @@ fn tiled_matrix_multiplication[
     BK: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
-    c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -258,19 +258,19 @@ fn tiled_matrix_multiplication[
     var row = thread_idx.x // UInt(BN)
 
     # Get the tile of the output matrix C that this thread block is responsible for
-    var dst = c.tile[BM, BN](block_idx.y, block_idx.x)
+    var dst = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
     # Allocate shared memory for tiles of input matrices A and B
     var a_smem = LayoutTensor[
         dtype,
         Layout.row_major(BM, BK),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -284,8 +284,8 @@ fn tiled_matrix_multiplication[
         alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
 
         # Get the tiles of A and B for the current iteration
-        var a_tile = a.tile[BM, BK](block_idx.y, block)
-        var b_tile = b.tile[BK, BN](block, block_idx.x)
+        var a_tile = a.tile[BM, BK](Int(block_idx.y), block)
+        var b_tile = b.tile[BK, BN](block, Int(block_idx.x))
 
         # Asynchronously copy tiles of A and B from global memory to shared memory
         copy_dram_to_sram_async[thread_layout=load_a_layout](a_smem, a_tile)
@@ -327,9 +327,9 @@ fn tiled_register_matrix_multiplication[
     TM: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
-    c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -367,19 +367,21 @@ fn tiled_register_matrix_multiplication[
 
     # Get the tile of the output matrix C that this thread is
     # responsible for computing.
-    var dst = c.tile[BM, BN](block_idx.y, block_idx.x).tile[TM, 1](row, col)
+    var dst = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[TM, 1](
+        Int(row), Int(col)
+    )
 
     # Allocate shared memory for tiles of A and B.
     var a_smem = LayoutTensor[
         dtype,
         Layout.row_major(BM, BK),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -387,7 +389,7 @@ fn tiled_register_matrix_multiplication[
     var dst_reg = LayoutTensor[
         dtype,
         Layout(TM),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     dst_reg.copy_from(dst)
@@ -400,8 +402,8 @@ fn tiled_register_matrix_multiplication[
         alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
 
         # Get the tiles of A and B for the current block.
-        var a_tile = a.tile[BM, BK](block_idx.y, block)
-        var b_tile = b.tile[BK, BN](block, block_idx.x)
+        var a_tile = a.tile[BM, BK](Int(block_idx.y), block)
+        var b_tile = b.tile[BK, BN](block, Int(block_idx.x))
 
         # Load the tiles of A and B into shared memory asynchronously.
         copy_dram_to_sram_async[thread_layout=load_a_layout](a_smem, a_tile)
@@ -415,7 +417,7 @@ fn tiled_register_matrix_multiplication[
         @parameter
         for k in range(BK):
             # Get the corresponding tiles from shared memory.
-            var a_tile = a_smem.tile[TM, 1](row, k)
+            var a_tile = a_smem.tile[TM, 1](Int(row), k)
             var b_tile = b_smem.tile[1, BN](k, 0)
             var b_val = b_tile[0, col]
 
@@ -450,9 +452,9 @@ fn block_tiled_matrix_multiplication[
     TN: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
-    c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B.
@@ -487,43 +489,43 @@ fn block_tiled_matrix_multiplication[
     matrix multiplication, i.e., the number of columns in A equals the number
     of rows in B.
     """
-    var partition_col = thread_idx.x % UInt(BN // TN)
-    var partition_row = thread_idx.x // UInt(BN // TN)
+    var partition_col = Int(thread_idx.x % UInt(BN // TN))
+    var partition_row = Int(thread_idx.x // UInt(BN // TN))
 
-    var dst = c.tile[BM, BN](block_idx.y, block_idx.x).tile[TM, TN](
+    var dst = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[TM, TN](
         partition_row, partition_col
     )
 
     var a_smem = LayoutTensor[
         dtype,
         Layout.row_major(BM, BK),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var dst_reg = LayoutTensor[
         dtype,
         Layout.row_major(TM, TN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     dst_reg.copy_from(dst)
     var a_reg = LayoutTensor[
         dtype,
         Layout(TM),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     var b_reg = LayoutTensor[
         dtype,
         Layout(TN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
@@ -532,8 +534,8 @@ fn block_tiled_matrix_multiplication[
     for block in range(ntiles):
         alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
         alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
-        var a_tile = a.tile[BM, BK](block_idx.y, block)
-        var b_tile = b.tile[BK, BN](block, block_idx.x)
+        var a_tile = a.tile[BM, BK](Int(block_idx.y), block)
+        var b_tile = b.tile[BK, BN](block, Int(block_idx.x))
         copy_dram_to_sram_async[thread_layout=load_a_layout](a_smem, a_tile)
         copy_dram_to_sram_async[thread_layout=load_b_layout](b_smem, b_tile)
 
@@ -571,9 +573,9 @@ fn block_tiled_vectorized_matrix_multiplication[
     TN: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
-    c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B with
@@ -612,12 +614,12 @@ fn block_tiled_vectorized_matrix_multiplication[
     """
 
     alias simd_width = simd_width_of[dtype]()
-    var partition_col = thread_idx.x % UInt(BN // TN)
-    var partition_row = thread_idx.x // UInt(BN // TN)
+    var partition_col = Int(thread_idx.x % UInt(BN // TN))
+    var partition_row = Int(thread_idx.x // UInt(BN // TN))
 
     # Get the tile of the output matrix C that this thread is responsible
     # for computing.
-    var dst = c.tile[BM, BN](block_idx.y, block_idx.x).tile[TM, TN](
+    var dst = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[TM, TN](
         partition_row, partition_col
     )
     var dst_vec = dst.vectorize[1, simd_width]()
@@ -627,13 +629,13 @@ fn block_tiled_vectorized_matrix_multiplication[
     var a_smem = LayoutTensor[
         dtype,
         Layout.col_major(BM, BK),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -641,7 +643,7 @@ fn block_tiled_vectorized_matrix_multiplication[
     var dst_reg = LayoutTensor[
         dtype,
         Layout.row_major(TM, TN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     var dst_reg_vec = dst_reg.vectorize[1, simd_width]()
@@ -650,13 +652,13 @@ fn block_tiled_vectorized_matrix_multiplication[
     var a_reg = LayoutTensor[
         dtype,
         Layout(TM),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     var b_reg = LayoutTensor[
         dtype,
         Layout(TN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
@@ -666,8 +668,8 @@ fn block_tiled_vectorized_matrix_multiplication[
     for block in range(ntiles):
         alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
         alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
-        var a_tile = a.tile[BM, BK](block_idx.y, block)
-        var b_tile = b.tile[BK, BN](block, block_idx.x)
+        var a_tile = a.tile[BM, BK](Int(block_idx.y), block)
+        var b_tile = b.tile[BK, BN](block, Int(block_idx.x))
 
         # Load the tiles of A and B into shared memory using vectorized
         # memory access.
@@ -720,9 +722,9 @@ fn tensor_core_matrix_multiplication[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: LayoutTensor[dtype, layout_a, MutableAnyOrigin],
-    B: LayoutTensor[dtype, layout_b, MutableAnyOrigin],
-    C: LayoutTensor[dtype, layout_c, MutableAnyOrigin],
+    A: LayoutTensor[dtype, layout_a, MutAnyOrigin],
+    B: LayoutTensor[dtype, layout_b, MutAnyOrigin],
+    C: LayoutTensor[dtype, layout_c, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -766,9 +768,9 @@ fn tensor_core_matrix_multiplication[
     warp_x = warp_id() % UInt(BN // WN)
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
-        warp_y, warp_x
-    )
+    C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
+        WM, WN
+    ](Int(warp_y), Int(warp_x))
 
     # Ensure warp tile dimensions are multiples of instruction shape
     constrained[
@@ -783,13 +785,13 @@ fn tensor_core_matrix_multiplication[
     A_sram_tile = LayoutTensor[
         A.dtype,
         Layout.row_major(BM, BK),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     B_sram_tile = LayoutTensor[
         B.dtype,
         Layout.row_major(BK, BN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -798,7 +800,7 @@ fn tensor_core_matrix_multiplication[
         LayoutTensor[
             C.dtype,
             Layout.row_major(WM // MMA_M, (WN * 4) // MMA_N),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -810,8 +812,8 @@ fn tensor_core_matrix_multiplication[
         barrier()  # Synchronize before loading new tiles
 
         # Get the tiles of A and B for the current iteration
-        A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
-        B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
+        A_dram_tile = A.tile[BM, BK](Int(block_idx.y), k_i)
+        B_dram_tile = B.tile[BK, BN](k_i, Int(block_idx.x))
 
         # Load tiles of A and B into shared memory asynchronously
         copy_dram_to_sram_async[thread_layout = Layout.row_major(4, 8)](
@@ -825,8 +827,8 @@ fn tensor_core_matrix_multiplication[
         barrier()  # Synchronize after loading tiles
 
         # Get the warp tiles of A and B from shared memory
-        A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
-        B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
+        A_warp_tile = A_sram_tile.tile[WM, BK](Int(warp_y), 0)
+        B_warp_tile = B_sram_tile.tile[BK, WN](0, Int(warp_x))
 
         # Iterate over the elements in the K dimension within the tiles
         @parameter
@@ -911,7 +913,9 @@ struct MatrixMultiplication[algorithm: StaticString]:
             gpu_ctx.enqueue_memset(
                 DeviceBuffer[output.dtype](
                     gpu_ctx,
-                    rebind[UnsafePointer[Scalar[output.dtype]]](out_layout.ptr),
+                    rebind[LegacyUnsafePointer[Scalar[output.dtype]]](
+                        out_layout.ptr
+                    ),
                     M * N,
                     owning=False,
                 ),
@@ -934,7 +938,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
             # In each case, the specific matrix multiplication function is
             # compiled and enqueued to run on the GPU.
             @parameter
-            if algorithm == "naive":
+            if Self.algorithm == "naive":
                 alias BM = 16
                 alias BN = 16
                 alias matmul_kernel = naive_matrix_multiplication[
@@ -952,7 +956,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(BN, BM),
                 )
-            elif algorithm == "coalescing":
+            elif Self.algorithm == "coalescing":
                 alias BM = OPTIMIZED_BLOCK_SIZE
                 alias BN = OPTIMIZED_BLOCK_SIZE
                 alias coalescing_matmul_kernel = coalescing_matrix_multiplication[
@@ -972,7 +976,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(BN, BM),
                 )
-            elif algorithm == "tiled":
+            elif Self.algorithm == "tiled":
                 alias BM = OPTIMIZED_BLOCK_SIZE
                 alias BN = OPTIMIZED_BLOCK_SIZE
                 alias BK = OPTIMIZED_BLOCK_SIZE
@@ -996,7 +1000,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(BM * BN),
                 )
-            elif algorithm == "tiled_register":
+            elif Self.algorithm == "tiled_register":
                 alias BM = 64
                 alias BN = 64
                 alias BK = 8
@@ -1022,7 +1026,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(NUM_THREADS),
                 )
-            elif algorithm == "block_tiled":
+            elif Self.algorithm == "block_tiled":
                 alias BM = 128
                 alias BN = 128
                 alias BK = 8
@@ -1050,7 +1054,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(NUM_THREADS),
                 )
-            elif algorithm == "block_tiled_vectorized":
+            elif Self.algorithm == "block_tiled_vectorized":
                 alias BM = 128
                 alias BN = 128
                 alias BK = 8
@@ -1079,7 +1083,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(NUM_THREADS),
                 )
-            elif algorithm == "tensor_core":
+            elif Self.algorithm == "tensor_core":
 
                 @parameter
                 if has_accelerator():
@@ -1120,7 +1124,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 else:
                     raise Error("Tensor Cores are not available on this device")
             else:
-                raise Error("No known matmul algorithm:", algorithm)
+                raise Error("No known matmul algorithm:", Self.algorithm)
 
         else:
             naive_matrix_multiplication_cpu(output, a, b)

@@ -21,20 +21,19 @@ fn test_scatter_set_constant(ctx: DeviceContext) raises:
     # TODO not sure why this doesn't work with InlineArray?
     var data_stack = InlineArray[Float32, 9](uninitialized=True)
     var data = LayoutTensor[
-        DType.float32, Layout.row_major(3, 3), MutableAnyOrigin
+        DType.float32, Layout.row_major(3, 3), MutAnyOrigin
     ](data_stack).fill(0.0)
     var data_ptr_gpu = ctx.enqueue_create_buffer[DType.float32](3 * 3)
     ctx.enqueue_copy(data_ptr_gpu, data_stack.unsafe_ptr())
 
     var data_gpu = LayoutTensor[
-        DType.float32, Layout.row_major(3, 3), MutableAnyOrigin
+        DType.float32, Layout.row_major(3, 3), MutAnyOrigin
     ](
         data_ptr_gpu,
     )
 
-    var indices = LayoutTensor[DType.int32, Layout.row_major(4, 2)](
-        InlineArray[Int32, 4 * 2](uninitialized=True),
-    )
+    var array = InlineArray[Int32, 4 * 2](uninitialized=True)
+    var indices = LayoutTensor[DType.int32, Layout.row_major(4, 2)](array)
 
     indices[0, 0] = 0
     indices[0, 1] = 1

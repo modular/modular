@@ -1,0 +1,20 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "router",
+    srcs = glob(["*.py"]),
+    imports = ["../../.."],
+    deps = [
+        "//max/python/max/serve/parser",
+        "//max/python/max/serve/pipelines",
+        "//max/python/max/serve/scheduler",
+        "//max/python/max/serve/schemas",
+        "//max/python/max/support",
+        requirement("aiofiles"),
+        requirement("fastapi"),
+        requirement("httpx"),
+        requirement("regex"),
+        requirement("sse-starlette"),
+        requirement("numpy"),
+    ],
+)

@@ -78,9 +78,9 @@ fn _get_run_name[
     )
 
 
-alias epilogue_func_type = fn[dtype: DType, width: Int, *, alignment: Int = 1] (
-    SIMD[dtype, width]
-) capturing -> SIMD[dtype, width]
+comptime epilogue_func_type = fn[
+    dtype: DType, width: Int, *, alignment: Int = 1
+] (SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
 @always_inline
@@ -118,12 +118,12 @@ fn bench_grouped_matmul[
     expert_ids: List[Int],
     init_type: InitializationType,
 ) raises:
-    alias N = expert_shape[0]
-    alias K = expert_shape[1]
+    comptime N = expert_shape[0]
+    comptime K = expert_shape[1]
 
-    alias a_type = in_type
-    alias b_type = in_type
-    alias c_type = out_type
+    comptime a_type = in_type
+    comptime b_type = in_type
+    comptime c_type = out_type
 
     # Total and max number of tokens
     total_num_tokens = 0
@@ -133,10 +133,10 @@ fn bench_grouped_matmul[
         max_num_tokens_by_expert = max(max_num_tokens_by_expert, num_tokens)
 
     # Create host A C buffers
-    alias static_a_shape = DimList(Dim(), K)
+    comptime static_a_shape = DimList(Dim(), K)
     var dynamic_a_shape = DimList(total_num_tokens, K)
     var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    alias static_c_shape = DimList(Dim(), N)
+    comptime static_c_shape = DimList(Dim(), N)
     var dynamic_c_shape = DimList(total_num_tokens, N)
     var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
     var a_offsets_host = HostNDBuffer[DType.uint32, 1, DimList(Dim())](
@@ -144,7 +144,7 @@ fn bench_grouped_matmul[
     )
 
     # Create host B buffers
-    alias static_b_shape = DimList(num_experts, N, K)
+    comptime static_b_shape = DimList(num_experts, N, K)
     var b_host = HostNDBuffer[b_type, 3, static_b_shape](static_b_shape)
     var expert_ids_host = HostNDBuffer[DType.int32, 1](num_active_experts)
 
@@ -248,10 +248,12 @@ fn bench_grouped_matmul[
             )
         ),
         # TODO: Pick relevant benchmetric
-        ThroughputMeasure(
-            BenchMetric.flops,
-            2 * total_num_tokens * N * K,
-        ),
+        [
+            ThroughputMeasure(
+                BenchMetric.flops,
+                2 * total_num_tokens * N * K,
+            )
+        ],
     )
 
     # Retain our buffers till the end.
@@ -311,8 +313,8 @@ fn string_to_list(string: String) raises -> List[Int]:
 
 
 def main():
-    alias in_type = env_get_dtype["in_type", DType.bfloat16]()
-    alias out_type = env_get_dtype["out_type", DType.bfloat16]()
+    comptime in_type = env_get_dtype["in_type", DType.bfloat16]()
+    comptime out_type = env_get_dtype["out_type", DType.bfloat16]()
 
     var num_active_experts = Int(arg_parse("num_active_experts", 1))
     var num_tokens_by_expert_string = String(
@@ -323,18 +325,18 @@ def main():
     var num_tokens_by_expert = string_to_list(num_tokens_by_expert_string)
     var expert_ids = string_to_list(expert_ids_string)
 
-    alias N = env_get_int["N", 256]()
-    alias K = env_get_int["K", 256]()
-    alias num_experts = env_get_int["num_experts", 1]()
+    comptime N = env_get_int["N", 256]()
+    comptime K = env_get_int["K", 256]()
+    comptime num_experts = env_get_int["num_experts", 1]()
 
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
     )
-    alias use_vendor_blas = env_get_bool["use_vendor_blas", False]()
-    alias has_epilogue = env_get_bool["has_epilogue", False]()
+    comptime use_vendor_blas = env_get_bool["use_vendor_blas", False]()
+    comptime has_epilogue = env_get_bool["has_epilogue", False]()
 
     var b = Bench()
-    alias expert_shape = IndexList[2](N, K)
+    comptime expert_shape = IndexList[2](N, K)
 
     with DeviceContext() as ctx:
         create_grouped_matmul_bench[

@@ -17,7 +17,7 @@ from sys import align_of, size_of
 from math import ceildiv
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 
 # Additional imports for testing
 from internal_utils import (
@@ -49,8 +49,8 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     transpose_b: Bool = True,
     use_epilogue: Bool = False,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,):
-    alias BLOCK_SCALE_K = 128
-    alias block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
+    comptime BLOCK_SCALE_K = 128
+    comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
 
     constrained[transpose_b, "transpose_b must be true"]()
 
@@ -89,14 +89,16 @@ def test_matmul_sm100_blockwise_scaled_fp8[
         "K must be divisible by BLOCK_SCALE_K",
     )
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_c_shape = DimList(m.dim, n.dim)
 
-    alias static_a_scales_shape = DimList(ceildiv(k.dim, BLOCK_SCALE_K), m.dim)
-    alias static_b_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList(
+        ceildiv(k.dim, BLOCK_SCALE_K), m.dim
+    )
+    comptime static_b_scales_shape = DimList(
         ceildiv(n.dim, BLOCK_SCALE_K), ceildiv(k.dim, BLOCK_SCALE_K)
     )
 

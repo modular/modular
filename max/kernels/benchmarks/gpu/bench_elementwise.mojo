@@ -24,19 +24,20 @@ from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import B200
 from internal_utils import arg_parse, parse_shape
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils import IndexList
 from utils.index import product
 
 
-fn add_const_fn(x: SIMD) -> __type_of(x):
+fn add_const_fn(x: SIMD) -> type_of(x):
     return x + 42
 
 
-fn copy_fn(x: SIMD) -> __type_of(x):
+fn copy_fn(x: SIMD) -> type_of(x):
     return x
 
 
-fn simd_sqrt(x: SIMD) -> __type_of(x):
+fn simd_sqrt(x: SIMD) -> type_of(x):
     return sqrt(x)
 
 
@@ -115,12 +116,12 @@ fn run_elementwise[
     ctx: DeviceContext,
 ) raises:
     # Blackwell support 32B ld/st, see KERN-2037
-    alias pack_size = 32 // size_of[
+    comptime pack_size = 32 // size_of[
         dtype
     ]() if ctx.default_device_info is B200 else simd_width_of[
         dtype, target = get_gpu_target()
     ]()
-    alias align = align_of[
+    comptime align = align_of[
         SIMD[dtype, pack_size], target = get_gpu_target()
     ]() if use_aligned_memory else 1
     var N = product(dims, rank)
@@ -219,7 +220,7 @@ fn run_elementwise[
                 name,
             ),
         ),
-        ThroughputMeasure(BenchMetric.bytes, num_bytes),
+        [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
     )
 
     ctx.synchronize()
@@ -236,21 +237,23 @@ fn list_to_static_tuple[x: List[Int]]() -> IndexList[len(x)]:
 
     @parameter
     for i in range(len(x)):
-        alias xi = x[i]
+        comptime xi = x[i]
         t[i] = xi
     return t
 
 
 def main():
     var op = arg_parse("op", "sqrt")
-    alias dtype = DType._from_str(env_get_string["dtype", "DType.bfloat16"]())
-    alias rank = env_get_int["rank", 3]()
-    alias dims_str = env_get_string["dims", "1x1024x3072"]()
-    alias dims = list_to_static_tuple[parse_shape[dims_str]()]()
-    alias aligned_memory_config = env_get_int[
+    comptime dtype = DType._from_str(
+        env_get_string["dtype", "DType.bfloat16"]()
+    )
+    comptime rank = env_get_int["rank", 3]()
+    comptime dims_str = env_get_string["dims", "1x1024x3072"]()
+    comptime dims = list_to_static_tuple[parse_shape[dims_str]()]()
+    comptime aligned_memory_config = env_get_int[
         "aligned_memory_config", 0
     ]()  # bool
-    alias emulate_graph_compiler = env_get_int[
+    comptime emulate_graph_compiler = env_get_int[
         "emulate_graph_compiler", 0
     ]()  # bool
 

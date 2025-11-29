@@ -20,6 +20,7 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from builtin._closure import __ownership_keepalive
 from gpu.host import DeviceContext
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from memory import LegacyUnsafePointer as UnsafePointer
 from nn.concat import _concat_gpu_elementwise
 
 from utils import IndexList, StaticTuple
@@ -33,15 +34,15 @@ fn bench_concat[
     ctx: DeviceContext,
     axis: Int,
 ) raises:
-    alias type = DType.float32
+    comptime type = DType.float32
     if num_inputs != len(shapes):
         raise Error("num_inputs does not match number of shapes provided")
-    alias layout = Layout.row_major[rank]()
+    comptime layout = Layout.row_major[rank]()
     var inputs = StaticTuple[
-        LayoutTensor[type, layout, MutableAnyOrigin], num_inputs
+        LayoutTensor[type, layout, MutAnyOrigin], num_inputs
     ]()
     var inputs_host = StaticTuple[
-        LayoutTensor[type, layout, MutableAnyOrigin], num_inputs
+        LayoutTensor[type, layout, MutAnyOrigin], num_inputs
     ]()
     var out_axis = 0
     var name = String()
@@ -53,7 +54,7 @@ fn bench_concat[
     inputs[0] = LayoutTensor[type, layout](
         input0_ptr, RuntimeLayout[layout].row_major(shape)
     ).as_any_origin()
-    inputs_host[0] = LayoutTensor[type, layout, MutableAnyOrigin](
+    inputs_host[0] = LayoutTensor[type, layout, MutAnyOrigin](
         UnsafePointer[Scalar[type]].alloc(size),
         RuntimeLayout[layout].row_major(shape),
     )
@@ -65,10 +66,10 @@ fn bench_concat[
     shape = shapes[1]
     size = shape.flattened_length()
     var input1_ptr = ctx.enqueue_create_buffer[type](size)
-    inputs[1] = LayoutTensor[type, layout, MutableAnyOrigin](
+    inputs[1] = LayoutTensor[type, layout, MutAnyOrigin](
         input1_ptr, RuntimeLayout[layout].row_major(shape)
     )
-    inputs_host[1] = LayoutTensor[type, layout, MutableAnyOrigin](
+    inputs_host[1] = LayoutTensor[type, layout, MutAnyOrigin](
         UnsafePointer[Scalar[type]].alloc(size),
         RuntimeLayout[layout].row_major(shape),
     )
@@ -110,10 +111,12 @@ fn bench_concat[
         BenchId("concat", name),
         out_shape,
         # TODO: Pick relevant benchmetric.
-        ThroughputMeasure(
-            BenchMetric.elements,
-            out_shape.flattened_length() * size_of[type]() * 2,
-        ),
+        [
+            ThroughputMeasure(
+                BenchMetric.elements,
+                out_shape.flattened_length() * size_of[type]() * 2,
+            )
+        ],
     )
 
     ctx.enqueue_copy(output_host.ptr, output_ptr)
@@ -138,17 +141,17 @@ fn bench_concat[
 
 
 def main():
-    alias num_inputs = env_get_int["num_inputs", 2]()
-    alias axis = env_get_int["axis", 0]()
-    alias W0 = env_get_int["W0", 1]()
-    alias X0 = env_get_int["X0", 1]()
-    alias Y0 = env_get_int["Y0", 1]()
-    alias Z0 = env_get_int["Z0", 1]()
+    comptime num_inputs = env_get_int["num_inputs", 2]()
+    comptime axis = env_get_int["axis", 0]()
+    comptime W0 = env_get_int["W0", 1]()
+    comptime X0 = env_get_int["X0", 1]()
+    comptime Y0 = env_get_int["Y0", 1]()
+    comptime Z0 = env_get_int["Z0", 1]()
 
-    alias W1 = env_get_int["W1", 1]()
-    alias X1 = env_get_int["X1", 1]()
-    alias Y1 = env_get_int["Y1", 1]()
-    alias Z1 = env_get_int["Z1", 1]()
+    comptime W1 = env_get_int["W1", 1]()
+    comptime X1 = env_get_int["X1", 1]()
+    comptime Y1 = env_get_int["Y1", 1]()
+    comptime Z1 = env_get_int["Z1", 1]()
 
     var b = Bench()
     with DeviceContext() as ctx:

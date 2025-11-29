@@ -63,7 +63,7 @@ fn _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
 
 
 struct Codepoint(
-    EqualityComparable, ImplicitlyCopyable, Intable, Movable, Stringable
+    Comparable, ImplicitlyCopyable, Intable, Movable, Stringable, Writable
 ):
     """A Unicode codepoint, typically a single user-recognizable character;
     restricted to valid Unicode scalar values.
@@ -198,7 +198,7 @@ struct Codepoint(
     @staticmethod
     fn unsafe_decode_utf8_codepoint(
         s: Span[mut=False, UInt8, *_],
-    ) -> (Codepoint, Int):
+    ) -> Tuple[Codepoint, Int]:
         """Decodes a single `Codepoint` and number of bytes read from a given
         UTF-8 string pointer.
 
@@ -280,18 +280,18 @@ struct Codepoint(
         """
         return self.to_u32() == other.to_u32()
 
-    fn __ne__(self, other: Self) -> Bool:
-        """Return True if this character has a different codepoint value from
+    fn __lt__(self, other: Self) -> Bool:
+        """Return True if this character is less than a different codepoint value from
         `other`.
 
         Args:
             other: The codepoint value to compare against.
 
         Returns:
-            True if this character and `other` have different codepoint values;
+            True if this character's value is less than the other codepoint value;
             False otherwise.
         """
-        return self.to_u32() != other.to_u32()
+        return self.to_u32() < other.to_u32()
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -318,6 +318,15 @@ struct Codepoint(
         _ = self.unsafe_write_utf8(result.unsafe_ptr_mut())
         return result
 
+    fn write_to(self, mut w: Some[Writer]):
+        """
+        Write a string representation of this `Codepoint` to the given writer.
+
+        Args:
+            w: The object to write to.
+        """
+        w.write(self.__str__())
+
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
@@ -340,8 +349,8 @@ struct Codepoint(
         Returns:
             True if the character is a digit.
         """
-        alias ord_0 = UInt32(ord("0"))
-        alias ord_9 = UInt32(ord("9"))
+        comptime ord_0 = UInt32(ord("0"))
+        comptime ord_9 = UInt32(ord("9"))
         return ord_0 <= self.to_u32() <= ord_9
 
     fn is_ascii_upper(self) -> Bool:
@@ -353,8 +362,8 @@ struct Codepoint(
         Returns:
             True if the character is uppercase.
         """
-        alias ord_a = UInt32(ord("A"))
-        alias ord_z = UInt32(ord("Z"))
+        comptime ord_a = UInt32(ord("A"))
+        comptime ord_z = UInt32(ord("Z"))
         return ord_a <= self.to_u32() <= ord_z
 
     fn is_ascii_lower(self) -> Bool:
@@ -366,8 +375,8 @@ struct Codepoint(
         Returns:
             True if the character is lowercase.
         """
-        alias ord_a = UInt32(ord("a"))
-        alias ord_z = UInt32(ord("z"))
+        comptime ord_a = UInt32(ord("a"))
+        comptime ord_z = UInt32(ord("z"))
         return ord_a <= self.to_u32() <= ord_z
 
     fn is_ascii_printable(self) -> Bool:
@@ -376,8 +385,8 @@ struct Codepoint(
         Returns:
             True if the character is a printable character, otherwise False.
         """
-        alias ord_space = UInt32(ord(" "))
-        alias ord_tilde = UInt32(ord("~"))
+        comptime ord_space = UInt32(ord(" "))
+        comptime ord_tilde = UInt32(ord("~"))
         return ord_space <= self.to_u32() <= ord_tilde
 
     @always_inline
@@ -411,9 +420,9 @@ struct Codepoint(
         ```
         """
 
-        alias next_line = Codepoint.from_u32(0x85).value()
-        alias unicode_line_sep = Codepoint.from_u32(0x2028).value()
-        alias unicode_paragraph_sep = Codepoint.from_u32(0x2029).value()
+        comptime next_line = Codepoint.from_u32(0x85).value()
+        comptime unicode_line_sep = Codepoint.from_u32(0x2028).value()
+        comptime unicode_paragraph_sep = Codepoint.from_u32(0x2029).value()
 
         return self.is_posix_space() or self in (
             next_line,
@@ -444,15 +453,15 @@ struct Codepoint(
         var c = UInt8(Int(self))
 
         # NOTE: a global LUT doesn't work at compile time so we can't use it here.
-        alias ` ` = UInt8(ord(" "))
-        alias `\t` = UInt8(ord("\t"))
-        alias `\n` = UInt8(ord("\n"))
-        alias `\r` = UInt8(ord("\r"))
-        alias `\f` = UInt8(ord("\f"))
-        alias `\v` = UInt8(ord("\v"))
-        alias `\x1c` = UInt8(ord("\x1c"))
-        alias `\x1d` = UInt8(ord("\x1d"))
-        alias `\x1e` = UInt8(ord("\x1e"))
+        comptime ` ` = UInt8(ord(" "))
+        comptime `\t` = UInt8(ord("\t"))
+        comptime `\n` = UInt8(ord("\n"))
+        comptime `\r` = UInt8(ord("\r"))
+        comptime `\f` = UInt8(ord("\f"))
+        comptime `\v` = UInt8(ord("\v"))
+        comptime `\x1c` = UInt8(ord("\x1c"))
+        comptime `\x1d` = UInt8(ord("\x1d"))
+        comptime `\x1e` = UInt8(ord("\x1e"))
 
         # This compiles to something very clever that's even faster than a LUT.
         return (
@@ -481,7 +490,7 @@ struct Codepoint(
     @always_inline
     fn unsafe_write_utf8[
         optimize_ascii: Bool = True, branchless: Bool = False
-    ](self, ptr: UnsafePointer[Byte, mut=True, **_]) -> UInt:
+    ](self, ptr: UnsafePointer[mut=True, Byte, **_]) -> Int:
         """Shift unicode to utf8 representation.
 
         Parameters:
@@ -528,8 +537,8 @@ struct Codepoint(
             else:
                 is_ascii = num_bytes == 1
 
-            alias cont_mask = 0b11_1111  # 6 set bits
-            alias cont_marker = 0b1000_0000  # marker for continuation bytes
+            comptime cont_mask = 0b11_1111  # 6 set bits
+            comptime cont_marker = 0b1000_0000  # marker for continuation bytes
 
             if is_ascii:
                 ptr[0] = c
@@ -561,7 +570,7 @@ struct Codepoint(
                     ptr[i] = ((c >> shift) & 0b0011_1111) | 0b1000_0000
             else:
                 var shift = 6 * (num_bytes - 1)
-                var mask = UInt8(0xFF) >> (num_bytes + UInt(Int(num_bytes > 1)))
+                var mask = UInt8(0xFF) >> (num_bytes + Int(num_bytes > 1))
                 var num_bytes_marker = UInt8(0xFF) << (8 - num_bytes)
                 ptr[0] = ((c >> shift) & mask) | (
                     num_bytes_marker & splat(num_bytes != 1)
@@ -569,10 +578,10 @@ struct Codepoint(
                 for i in range(1, num_bytes):
                     shift -= 6
                     ptr[i] = ((c >> shift) & 0b0011_1111) | 0b1000_0000
-        return num_bytes
+        return Int(num_bytes)
 
     @always_inline
-    fn utf8_byte_length(self) -> UInt:
+    fn utf8_byte_length(self) -> Int:
         """Returns the number of UTF-8 bytes required to encode this character.
 
         Returns:
@@ -584,8 +593,8 @@ struct Codepoint(
 
         # Minimum codepoint values (respectively) that can fit in a 1, 2, 3,
         # and 4 byte encoded UTF-8 sequence.
-        alias sizes = SIMD[DType.uint32, 4](0, 2**7, 2**11, 2**16)
+        comptime sizes = SIMD[DType.uint32, 4](0, 2**7, 2**11, 2**16)
 
         # Count how many of the minimums this codepoint exceeds, which is equal
         # to the number of bytes needed to encode it.
-        return UInt(sizes.le(self.to_u32()).cast[DType.uint8]().reduce_add())
+        return Int(sizes.le(self.to_u32()).cast[DType.uint8]().reduce_add())

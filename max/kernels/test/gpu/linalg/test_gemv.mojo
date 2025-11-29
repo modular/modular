@@ -26,11 +26,10 @@ from utils import IndexList
 from utils.index import Index
 from utils.numerics import isnan
 from internal_utils import assert_almost_equal
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
-def run_matvec[
-    reduction_method: warp.ReductionMethod
-](M: Int, N: Int, K: Int, *, ctx: DeviceContext):
+def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
     print("== run_matvec kernel")
 
     var iterations = 100
@@ -58,16 +57,13 @@ def run_matvec[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias WARPS_PER_BLOCK = 1024 // WARP_SIZE
+    comptime WARPS_PER_BLOCK = 1024 // WARP_SIZE
 
     @always_inline
     @parameter
     fn run_func_gemv(ctx: DeviceContext) raises:
-        alias kernel = gemv_kernel[
-            DType.float32,
-            DType.float32,
-            DType.float32,
-            reduction_method=reduction_method,
+        comptime kernel = gemv_kernel[
+            DType.float32, DType.float32, DType.float32
         ]
 
         ctx.enqueue_function_checked[kernel, kernel](
@@ -84,7 +80,7 @@ def run_matvec[
     @always_inline
     @parameter
     fn run_func_gevm(ctx: DeviceContext) raises:
-        alias kernel = gevm_kernel[
+        comptime kernel = gevm_kernel[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -128,12 +124,12 @@ def run_matvec[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias BLOCK_DIM = 16
+    comptime BLOCK_DIM = 16
 
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        alias kernel = matmul_kernel[
+        comptime kernel = matmul_kernel[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -164,7 +160,7 @@ def run_matvec[
 
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
-    alias errorTolerance = 1e-2
+    comptime errorTolerance = 1e-2
     var failed = False
     assert_almost_equal(
         c_host,
@@ -184,11 +180,11 @@ def run_matvec[
     _ = c_host_naive
 
 
-fn run_matvec_with_epilogue_fn[
-    reduction_method: warp.ReductionMethod
-](M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
-    alias c_stride = 5
-    alias seed_val = 42
+fn run_matvec_with_epilogue_fn(
+    M: Int, N: Int, K: Int, *, ctx: DeviceContext
+) raises:
+    comptime c_stride = 5
+    comptime seed_val = 42
 
     var iterations = 100
     var a_host = UnsafePointer[Float32].alloc(M * K)
@@ -235,16 +231,15 @@ fn run_matvec_with_epilogue_fn[
             ),
         )
 
-    alias WARPS_PER_BLOCK = 1024 // WARP_SIZE
+    comptime WARPS_PER_BLOCK = 1024 // WARP_SIZE
 
     @always_inline
     @parameter
     fn run_func_gemv(ctx: DeviceContext) raises:
-        alias kernel = gemv_kernel[
+        comptime kernel = gemv_kernel[
             DType.float32,
             DType.float32,
             DType.float32,
-            reduction_method=reduction_method,
             elementwise_lambda_fn=epilogue_fn,
         ]
         var func = ctx.compile_function_checked[kernel, kernel]()
@@ -263,7 +258,7 @@ fn run_matvec_with_epilogue_fn[
     @always_inline
     @parameter
     fn run_func_gevm(ctx: DeviceContext) raises:
-        alias kernel = gevm_kernel[
+        comptime kernel = gevm_kernel[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -313,12 +308,12 @@ fn run_matvec_with_epilogue_fn[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias BLOCK_DIM = 16
+    comptime BLOCK_DIM = 16
 
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        alias kernel = matmul_kernel[
+        comptime kernel = matmul_kernel[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -350,7 +345,7 @@ fn run_matvec_with_epilogue_fn[
 
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
-    alias errorTolerance = 1e-2
+    comptime errorTolerance = 1e-2
     var failed = False
     assert_almost_equal(
         c_host,
@@ -371,24 +366,11 @@ fn run_matvec_with_epilogue_fn[
 
 
 def main():
-    def run_tests[reduction_method: warp.ReductionMethod](ctx: DeviceContext):
+    with DeviceContext() as ctx:
         # gemv for matrix vector multiply
-        run_matvec[reduction_method=reduction_method](4096, 1, 4096, ctx=ctx)
-        run_matvec_with_epilogue_fn[reduction_method=reduction_method](
-            4096, 1, 4096, ctx=ctx
-        )
+        run_matvec(4096, 1, 4096, ctx=ctx)
+        run_matvec_with_epilogue_fn(4096, 1, 4096, ctx=ctx)
         # gevm for vector matrix multiply
         if has_nvidia_gpu_accelerator():
-            run_matvec[reduction_method=reduction_method](
-                1, 4096, 4096, ctx=ctx
-            )
-            run_matvec_with_epilogue_fn[reduction_method=reduction_method](
-                1, 4096, 4096, ctx=ctx
-            )
-
-    with DeviceContext() as ctx:
-        run_tests[warp.ReductionMethod.WARP](ctx)
-
-        @parameter
-        if has_nvidia_gpu_accelerator():
-            run_tests[warp.ReductionMethod.TENSOR_CORE](ctx)
+            run_matvec(1, 4096, 4096, ctx=ctx)
+            run_matvec_with_epilogue_fn(1, 4096, 4096, ctx=ctx)

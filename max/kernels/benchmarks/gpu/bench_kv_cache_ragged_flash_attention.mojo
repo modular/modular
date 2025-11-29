@@ -24,11 +24,13 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
+from memory import LegacyUnsafePointer as UnsafePointer
+from layout import UNKNOWN_VALUE, LayoutTensor, Layout, RuntimeLayout
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
-from tensor_internal import IOUnknown, ManagedTensorSlice
-from tensor_internal.managed_tensor_slice import StaticTensorSpec
+from tensor import IOUnknown, ManagedTensorSlice
+from tensor.managed_tensor_slice import StaticTensorSpec
 
 from utils import IndexList
 
@@ -77,11 +79,11 @@ def execute_kv_cache_ragged_flash_attention[
     cache_len: Int,
     use_random_cache_lengths: Bool,
 ):
-    alias num_layers = 1
-    alias layer_idx = 0
+    comptime num_layers = 1
+    comptime layer_idx = 0
 
     var num_blocks = batch_size * 2
-    alias CollectionType = ContinuousBatchingKVCacheCollection[
+    comptime CollectionType = ContinuousBatchingKVCacheCollection[
         dtype,
         KVCacheStaticParams(
             num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
@@ -159,6 +161,7 @@ def execute_kv_cache_ragged_flash_attention[
         IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
     )
     var output_device = output_host.copy_to_device(ctx)
+    var output_device_tensor = output_device.to_layout_tensor()
 
     # initialize our KVCache
     kv_block_host = HostNDBuffer[dtype, 6](
@@ -195,9 +198,33 @@ def execute_kv_cache_ragged_flash_attention[
     var lookup_table_device = lookup_table_host.copy_to_device(ctx)
 
     var kv_collection_device = CollectionType(
-        kv_block_device.tensor,
-        cache_lengths_device.tensor,
-        lookup_table_device.tensor,
+        LayoutTensor[
+            kv_block_device.dtype, Layout.row_major[6](), MutAnyOrigin
+        ](
+            kv_block_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_device.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            lookup_table_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            lookup_table_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                lookup_table_device.to_layout_tensor().runtime_layout.shape.value,
+                lookup_table_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_seq_length,
         max_context_length,
     )
@@ -210,7 +237,7 @@ def execute_kv_cache_ragged_flash_attention[
         q_device,
         k_cache_device,
         v_cache_device,
-        output_device,
+        output_device_tensor,
         dummy_mask,
         input_row_offsets_device,
     )
@@ -220,8 +247,8 @@ def execute_kv_cache_ragged_flash_attention[
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             flash_attention[ragged=True](
-                # TODO: remove the origin cast once unified closures are supported.
-                output_device.to_layout_tensor().origin_cast[True](),
+                # TODO: move to_layout_tensor here once unified closures are supported.
+                output_device_tensor.as_any_origin(),
                 q_device.to_layout_tensor(),
                 k_cache_device,
                 v_cache_device,
@@ -232,7 +259,10 @@ def execute_kv_cache_ragged_flash_attention[
                     static_spec = StaticTensorSpec[
                         DType.uint32, 1
                     ].create_unknown(),
-                ](input_row_offsets_device.tensor),
+                ](
+                    input_row_offsets_device.tensor.data,
+                    input_row_offsets_device.tensor.get_shape(),
+                ),
                 rsqrt(Float32(head_dim)),
                 ctx,
             )
@@ -249,7 +279,7 @@ def execute_kv_cache_ragged_flash_attention[
                 use_random_cache_lengths,
             )
         ),
-        ThroughputMeasure(BenchMetric.flops, flop_count),
+        [ThroughputMeasure(BenchMetric.flops, flop_count)],
     )
     _ = kv_block_device^
     _ = output_device^
@@ -260,11 +290,11 @@ def execute_kv_cache_ragged_flash_attention[
 
 
 def main():
-    alias dtype = env_get_dtype["dtype", DType.bfloat16]()
+    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
-    alias head_dim = env_get_int["head_dim", 128]()
-    alias num_q_heads = env_get_int["num_q_heads", 32]()
-    alias num_kv_heads = env_get_int["num_kv_heads", 8]()
+    comptime head_dim = env_get_int["head_dim", 128]()
+    comptime num_q_heads = env_get_int["num_q_heads", 32]()
+    comptime num_kv_heads = env_get_int["num_kv_heads", 8]()
 
     var batch_size = arg_parse("batch_size", 1)
     var use_random_seq_lengths = arg_parse("use_random_seq_lengths", False)

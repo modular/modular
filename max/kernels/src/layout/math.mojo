@@ -25,7 +25,7 @@ from utils.index import IndexList
 
 @always_inline
 fn outer_product_acc(
-    res: LayoutTensor,
+    res: LayoutTensor[mut=True, *_, **_],
     lhs: LayoutTensor,
     rhs: LayoutTensor,
 ):
@@ -57,10 +57,10 @@ fn outer_product_acc(
     constrained[lhs.rank == 1, "Only rank 1 lhs is allowed."]()
     constrained[rhs.rank == 1, "Only rank 1 rhs is allowed."]()
 
-    alias dtype = res.dtype
+    comptime dtype = res.dtype
 
-    alias M = res.shape[0]()
-    alias N = res.shape[1]()
+    comptime M = res.shape[0]()
+    comptime N = res.shape[1]()
 
     constrained[lhs.shape[0]() == M, "lhs shape mismatch"]()
     constrained[rhs.shape[0]() == N, "rhs shape mismatch"]()
@@ -82,7 +82,7 @@ fn _reduce[
     func: fn[dtype: DType, width: Int] (
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> (SIMD[dtype, width]),
-](inp: LayoutTensor, outp: LayoutTensor):
+](inp: LayoutTensor, outp: LayoutTensor[mut=True, **_]):
     constrained[
         inp.layout.known_shape() and outp.layout.known_shape(),
         "_reduce expects inputs with statically know shapes",
@@ -148,7 +148,7 @@ fn _reduce[
 
 
 @always_inline
-fn sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor):
+fn sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, **_]):
     """Computes sum reduction along specified axis.
 
     Reduces the input tensor by summing elements along the specified axis
@@ -202,7 +202,7 @@ fn sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor):
 
 
 @always_inline
-fn max[axis: Int](inp: LayoutTensor, outp: LayoutTensor):
+fn max[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, **_]):
     """Computes maximum reduction along specified axis.
 
     Reduces the input tensor by taking maximum elements along the specified
@@ -250,7 +250,7 @@ fn max[
     out res: LayoutTensor[
         inp.dtype,
         _reduce_res_row_major_shape(axis, inp.layout),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = inp.address_space,
         element_layout = inp.element_layout,
         layout_int_type = inp.layout_int_type,
@@ -278,7 +278,7 @@ fn max[
         Currently only supports rank-2 inputs.
     """
 
-    var res_tensor = __type_of(res).stack_allocation()
+    var res_tensor = type_of(res).stack_allocation()
     max[axis](inp, res_tensor)
     return res_tensor
 
@@ -288,7 +288,7 @@ fn max[
     dtype: DType, layout: Layout
 ](
     x: LayoutTensor[dtype, layout, **_], y: LayoutTensor[dtype, layout, **_]
-) -> __type_of(x).MutableAnyType:
+) -> type_of(x).MutableAnyType:
     """Computes element-wise maximum of two tensors.
 
     Returns a new tensor containing the element-wise maximum between the
@@ -312,11 +312,11 @@ fn max[
     constrained[
         x.layout.all_dims_known(), "max expects tensor of statically know shape"
     ]()
-    var res_tensor = __type_of(x).stack_allocation()
+    var res_tensor = type_of(x).stack_allocation()
 
     @parameter
     for i in range(res_tensor.layout.size()):
-        alias idx = x.layout(i)
+        comptime idx = x.layout(i)
         res_tensor.ptr[idx] = b_max(x.ptr[idx], y.ptr[idx])
     return res_tensor
 
@@ -329,7 +329,7 @@ fn sum[
     out res: LayoutTensor[
         inp.dtype,
         _reduce_res_row_major_shape(axis, inp.layout),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = inp.address_space,
         element_layout = inp.element_layout,
         layout_int_type = inp.layout_int_type,
@@ -357,7 +357,7 @@ fn sum[
         Currently only supports rank-2 inputs.
     """
 
-    var res_tensor = __type_of(res).stack_allocation()
+    var res_tensor = type_of(res).stack_allocation()
     sum[axis](inp, res_tensor)
     return res_tensor
 
@@ -370,6 +370,9 @@ fn mean(src: LayoutTensor[**_]) raises -> Scalar[src.dtype]:
 
     Returns:
         The mean value of the elements in the given buffer.
+
+    Raises:
+        May raise on GPU targets when a device error occurs.
     """
     constrained[src.rank == 1, "src must be of rank 1"]()
 
@@ -399,8 +402,11 @@ fn mean[
     Args:
         src: The input buffer.
         dst: The output buffer.
+
+    Raises:
+        May raise on GPU targets when a device error occurs.
     """
-    alias simd_width = simd_width_of[dst.dtype]()
+    comptime simd_width = simd_width_of[dst.dtype]()
     sum[reduce_axis](src, dst)
 
     var n = src.dim[reduce_axis]()
@@ -419,9 +425,9 @@ fn mean[
     if dst.dtype.is_integral():
 
         @always_inline
-        @__copy_capture(dst_1d, n)
-        @parameter
-        fn normalize_integral[simd_width: Int](idx: Int):
+        fn normalize_integral[
+            simd_width: Int
+        ](idx: Int) unified {var dst_1d, var n}:
             var idx_1d = dst_1d.runtime_layout(
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
             )
@@ -429,14 +435,14 @@ fn mean[
             var to_store = elem // n
             dst_1d.ptr.store(idx_1d, to_store)
 
-        vectorize[normalize_integral, simd_width](dst_1d.size())
+        vectorize[simd_width](dst_1d.size(), normalize_integral)
     else:
         var n_recip = Scalar[dst.dtype](1) / n
 
         @always_inline
-        @__copy_capture(dst_1d, n, n_recip)
-        @parameter
-        fn normalize_floating[simd_width: Int](idx: Int):
+        fn normalize_floating[
+            simd_width: Int
+        ](idx: Int) unified {var dst_1d, var n, var n_recip}:
             var idx_1d = dst_1d.runtime_layout(
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
             )
@@ -444,7 +450,7 @@ fn mean[
             var to_store = elem * n_recip
             dst_1d.ptr.store(idx_1d, to_store)
 
-        vectorize[normalize_floating, simd_width](dst_1d.size())
+        vectorize[simd_width](dst_1d.size(), normalize_floating)
 
 
 fn variance(
@@ -462,6 +468,9 @@ fn variance(
 
     Returns:
         The variance value of the elements in a buffer.
+
+    Raises:
+        May raise on GPU targets when a device error occurs.
     """
 
     @always_inline

@@ -58,7 +58,7 @@ struct _POpenHandle:
             * The data written by the subprocess is not valid UTF-8.
         """
         var len: Int = 0
-        var line = UnsafePointer[c_char]()
+        var line = UnsafePointer[c_char, MutOrigin.external]()
         var res = String()
 
         while True:
@@ -70,7 +70,7 @@ struct _POpenHandle:
 
             # Note: This will raise if the subprocess yields non-UTF-8 bytes.
             res += StringSlice(
-                from_utf8=Span(ptr=line.bitcast[Byte](), length=UInt(read))
+                from_utf8=Span(ptr=line.bitcast[Byte](), length=read)
             )
 
         if line:

@@ -59,17 +59,17 @@ struct StaticTensorSpec[
     rank: Int,
 ](ImplicitlyCopyable, Movable):
     # Represents the DimList type (not accessible from KGEN tests).
-    alias in_lambda_t = fn[simd_width: Int, element_alignment: Int = 1] (
-        IndexList[rank]
-    ) capturing -> SIMD[dtype, simd_width]
-    alias out_lambda_t = fn[simd_width: Int, element_alignment: Int = 1] (
-        IndexList[rank], SIMD[dtype, simd_width]
+    comptime in_lambda_t = fn[simd_width: Int, element_alignment: Int = 1] (
+        IndexList[Self.rank]
+    ) capturing -> SIMD[Self.dtype, simd_width]
+    comptime out_lambda_t = fn[simd_width: Int, element_alignment: Int = 1] (
+        IndexList[Self.rank], SIMD[Self.dtype, simd_width]
     ) capturing -> None
 
-    alias out_compute_lambda_t = fn[
+    comptime out_compute_lambda_t = fn[
         simd_width: Int, element_alignment: Int = 1
-    ] (IndexList[rank], SIMD[dtype, simd_width]) capturing -> SIMD[
-        dtype, simd_width
+    ] (IndexList[Self.rank], SIMD[Self.dtype, simd_width]) capturing -> SIMD[
+        Self.dtype, simd_width
     ]
 
     var shape: DimList
@@ -105,22 +105,22 @@ struct StaticTensorSpec[
 
     fn __init__(out self, shape: DimList):
         constrained[
-            rank > 0,
+            Self.rank > 0,
             (
                 "initializing `StaticTensorSpec` with just a shape only"
                 " supports rank 1 to 3"
             ),
         ]()
         debug_assert(
-            len(shape) == rank,
+            len(shape) == Self.rank,
             (
                 "initialized `StaticTensorSpec` with a shape length not equal"
                 "to the `rank` parameter"
             ),
         )
         self.shape = shape
-        self.strides = _row_major_strides[rank](shape)
-        self.alignment = align_of[dtype]()
+        self.strides = _row_major_strides[Self.rank](shape)
+        self.alignment = align_of[Self.dtype]()
         self.address_space = AddressSpace.GENERIC
         self.exclusive = False
         self.in_lambda = None
@@ -134,8 +134,8 @@ struct StaticTensorSpec[
         fields dynamic or defaulted.
         """
         return Self(
-            DimList.create_unknown[rank](),
-            DimList.create_unknown[rank](),
+            DimList.create_unknown[Self.rank](),
+            DimList.create_unknown[Self.rank](),
             1,
             AddressSpace.GENERIC,
             True,
@@ -148,9 +148,9 @@ struct StaticTensorSpec[
     fn with_layout[
         new_rank: Int
     ](self, new_shape: DimList, new_strides: DimList) -> StaticTensorSpec[
-        dtype, new_rank
+        Self.dtype, new_rank
     ]:
-        return StaticTensorSpec[dtype, new_rank](
+        return StaticTensorSpec[Self.dtype, new_rank](
             new_shape,
             new_strides,
             self.alignment,
@@ -166,8 +166,8 @@ struct StaticTensorSpec[
         new_rank: Int
     ](
         self, new_shape: DimList, new_strides: DimList, new_alignment: Int
-    ) -> StaticTensorSpec[dtype, new_rank]:
-        return StaticTensorSpec[dtype, new_rank](
+    ) -> StaticTensorSpec[Self.dtype, new_rank]:
+        return StaticTensorSpec[Self.dtype, new_rank](
             new_shape,
             new_strides,
             new_alignment,

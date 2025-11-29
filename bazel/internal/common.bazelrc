@@ -21,6 +21,9 @@ common --incompatible_avoid_hardcoded_objc_compilation_flags
 # https://github.com/aspect-build/tools_telemetry
 common --repo_env=ASPECT_TOOLS_TELEMETRY=-all
 
+# Prevent .pyc files from being generated for repository_rules, nice when debugging hermiticity
+common --repo_env=PYTHONDONTWRITEBYTECODE=true
+
 # Retry dependency download flakes
 common --experimental_repository_downloader_retries=5
 
@@ -72,15 +75,21 @@ build --flag_alias=mojocopt=@rules_mojo//:mojo_copt
 build --dynamic_mode=off
 build --features=-supports_dynamic_linker
 
+# Make sure repository rules don't use host tools
+common --repo_env=CC=false
+common --repo_env=CXX=false
+
+# Force hermetic toolchain, make sure we don't accidentally used the default one
+common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+common --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
+
 # Make sure we use llvm-ar on macOS for exec config too
 common --experimental_propagate_custom_flag=@rules_cc//cc/toolchains/args/archiver_flags:use_libtool_on_macos
 # Always use llvm-ar which works fine for macOS
 common --@rules_cc//cc/toolchains/args/archiver_flags:use_libtool_on_macos=false
 
-# Disable layering check for third parties since we don't care about their
-# layers, and we're not using this ourselves yet.
-build --features=-layering_check --host_features=-layering_check
-
+build --remote_retries=2
+build --remote_timeout=10m
 # Buildbuddy cache optimization recommendations
 build --experimental_profile_include_primary_output
 build --experimental_profile_include_target_label
@@ -119,6 +128,7 @@ common --incompatible_modify_execution_info_additive
 # Reduce the impact of transitions on rebuilding C++ files
 build --modify_execution_info=CppArchive=+supports-path-mapping
 build --modify_execution_info=CppCompile=+supports-path-mapping
+build --modify_execution_info=CppModuleMap=+supports-path-mapping
 build --modify_execution_info=Objc.*=+supports-path-mapping
 build --experimental_output_paths=strip
 
@@ -127,8 +137,8 @@ build --experimental_output_paths=strip
 # Set base macOS deployment target otherwise the target depends on the host OS
 build --macos_minimum_os=11.0 --host_macos_minimum_os=11.0
 
-build --@llvm_zstd//:llvm_enable_zstd=false
-build --experimental_propagate_custom_flag=@llvm_zstd//:llvm_enable_zstd
+build --@llvm-project//third-party:llvm_enable_zstd=false
+build --experimental_propagate_custom_flag=@llvm-project//third-party:llvm_enable_zstd
 build --@llvm-project//lldb:enable_libedit=true
 build --experimental_propagate_custom_flag=@llvm-project//lldb:enable_libedit
 build --@llvm-project//lldb:enable_curses=true
@@ -165,6 +175,8 @@ build:remote --repo_env=MODULAR_REMOTE_EXEC=1
 build --internal_spawn_scheduler
 build:linux --spawn_strategy=dynamic,remote,worker,sandboxed,standalone
 build:macos --spawn_strategy=remote,worker,sandboxed,standalone
+build:macos --strategy=CppCompile=dynamic,remote,worker,sandboxed,standalone
+build:macos --strategy=CppLink=dynamic,remote,worker,sandboxed,standalone
 
 # https://github.com/bazelbuild/bazel/issues/25221
 build --strategy=TestRunner=remote,worker,sandboxed,standalone
@@ -182,6 +194,8 @@ build:ci-no-config --ui_event_filters=+WARNING
 build:ci-no-config --verbose_failures
 # Disable dynamic execution for remote exec
 build:ci-no-config --spawn_strategy=remote,worker,sandboxed,standalone
+build:ci-no-config --strategy=CppCompile=remote,worker,sandboxed,standalone
+build:ci-no-config --strategy=CppLink=remote,worker,sandboxed,standalone
 
 build:ci --config=ci-no-config
 # Set CI builds to lower priority than local builds, some CI builds override this
@@ -217,19 +231,6 @@ build:ci-remote-b200 --config=ci-gpu-common
 build:ci-remote-b200 --config=remote-b200
 build:ci-remote-b200 --test_keep_going=false
 
-build:remote-mi300 --config=remote
-build:remote-mi300 --repo_env=MODULAR_SKIP_AUTO_PLATFORMS=1
-build:remote-mi300 --platforms=//:mi300-platform
-build:remote-mi300 --extra_execution_platforms=//:m7i-platform,//:mi300-platform,@mojo_host_platform
-build:remote-mi300 --spawn_strategy=remote,worker,sandboxed,standalone
-build:remote-mi300 --repo_env=MODULAR_TARGET=linux:x86_64
-build:remote-mi300 --build_metadata=TAG_GPU=mi300
-build:remote-mi300 --build_metadata=TAG_TARGET_OS=linux
-
-build:ci-remote-mi300 --config=ci-gpu-common
-build:ci-remote-mi300 --config=remote-mi300
-build:ci-remote-mi300 --test_keep_going=false
-
 build:remote-mi355 --config=remote
 build:remote-mi355 --repo_env=MODULAR_SKIP_AUTO_PLATFORMS=1
 build:remote-mi355 --platforms=//:mi355-platform
@@ -241,7 +242,8 @@ build:remote-mi355 --build_metadata=TAG_TARGET_OS=linux
 
 build:ci-remote-mi355 --config=ci-gpu-common
 build:ci-remote-mi355 --config=remote-mi355
-build:ci-remote-mi355 --test_keep_going=false
+# TODO: Enable once tests are fixed
+# build:ci-remote-mi355 --test_keep_going=false
 
 # TODO: Remove once transitives are fixed
-common --incompatible_autoload_externally=@rules_shell,@com_google_protobuf,java_binary,+JavaInfo
+common --incompatible_autoload_externally=@rules_shell,@com_google_protobuf,java_binary,+JavaInfo,+@rules_cc

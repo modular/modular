@@ -35,7 +35,7 @@ fn test_transpose_4x4_ndbuffer():
     var matrix = NDBuffer[
         DType.int,
         2,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         DimList(4, 4),
     ].stack_allocation()
 
@@ -111,13 +111,13 @@ fn test_transpose_4x4_ndbuffer():
 fn test_transpose_8x8_ndbuffer():
     print("== test_transpose_8x8_ndbuffer")
 
-    alias num_rows: Int = 8
-    alias num_cols: Int = 8
+    comptime num_rows: Int = 8
+    comptime num_cols: Int = 8
 
     var matrix = NDBuffer[
         DType.int,
         2,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         DimList(num_rows, num_cols),
     ].stack_allocation()
 
@@ -141,13 +141,13 @@ fn test_transpose_8x8_ndbuffer():
 fn test_transpose_16x16_ndbuffer():
     print("== test_transpose_16x16_ndbuffer")
 
-    alias num_rows: Int = 16
-    alias num_cols: Int = 16
+    comptime num_rows: Int = 16
+    comptime num_cols: Int = 16
 
     var matrix = NDBuffer[
         DType.int,
         2,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         DimList(num_rows, num_cols),
     ].stack_allocation()
 
@@ -171,13 +171,13 @@ fn test_transpose_16x16_ndbuffer():
 fn test_transpose_2d_identity_ndbuffer() raises:
     print("== test_transpose_2d_identity_ndbuffer")
 
-    alias in_shape = DimList(3, 3)
+    comptime in_shape = DimList(3, 3)
     # Create an input matrix of the form
     # [[1, 2, 3],
     #  [4, 5, 6],
     #  [7, 8, 9]]
     var input = NDBuffer[
-        DType.int, 2, MutableAnyOrigin, in_shape
+        DType.int, 2, MutAnyOrigin, in_shape
     ].stack_allocation()
     input[IndexList[2](0, 0)] = 1
     input[IndexList[2](0, 1)] = 2
@@ -191,7 +191,7 @@ fn test_transpose_2d_identity_ndbuffer() raises:
 
     # Create an identity permutation array of the form
     # [0, 1]
-    var perm = NDBuffer[DType.int, 1, MutableAnyOrigin, 2].stack_allocation()
+    var perm = NDBuffer[DType.int, 1, MutAnyOrigin, 2].stack_allocation()
     perm[0] = 0
     perm[1] = 1
 
@@ -199,9 +199,9 @@ fn test_transpose_2d_identity_ndbuffer() raises:
     # [[-1, -1, -1],
     #  [-1, -1, -1],
     #  [-1, -1, -1]]
-    alias out_shape = DimList(3, 3)
+    comptime out_shape = DimList(3, 3)
     var output = NDBuffer[
-        DType.int, 2, MutableAnyOrigin, out_shape
+        DType.int, 2, MutAnyOrigin, out_shape
     ].stack_allocation()
     output.fill(0)
 
@@ -237,13 +237,13 @@ fn test_transpose_2d_identity_ndbuffer() raises:
 fn test_transpose_2d_ndbuffer() raises:
     print("== test_transpose_2d_ndbuffer")
 
-    alias in_shape = DimList(3, 3)
+    comptime in_shape = DimList(3, 3)
     # Create an input matrix of the form
     # [[1, 2, 3],
     #  [4, 5, 6],
     #  [7, 8, 9]]
     var input = NDBuffer[
-        DType.int, 2, MutableAnyOrigin, in_shape
+        DType.int, 2, MutAnyOrigin, in_shape
     ].stack_allocation()
     input[IndexList[2](0, 0)] = 1
     input[IndexList[2](0, 1)] = 2
@@ -257,7 +257,7 @@ fn test_transpose_2d_ndbuffer() raises:
 
     # Create a permutation array of the form
     # [1, 0]
-    var perm = NDBuffer[DType.int, 1, MutableAnyOrigin, 2].stack_allocation()
+    var perm = NDBuffer[DType.int, 1, MutAnyOrigin, 2].stack_allocation()
     perm[0] = 1
     perm[1] = 0
 
@@ -265,9 +265,9 @@ fn test_transpose_2d_ndbuffer() raises:
     # [[-1, -1, -1],
     #  [-1, -1, -1],
     #  [-1, -1, -1]]
-    alias out_shape = DimList(3, 3)
+    comptime out_shape = DimList(3, 3)
     var output = NDBuffer[
-        DType.int, 2, MutableAnyOrigin, out_shape
+        DType.int, 2, MutAnyOrigin, out_shape
     ].stack_allocation()
     output.fill(0)
 
@@ -303,14 +303,14 @@ fn test_transpose_2d_ndbuffer() raises:
 fn test_transpose_3d_identity_ndbuffer() raises:
     print("== test_transpose_3d_identity_ndbuffer")
 
-    alias in_shape = DimList(2, 2, 3)
+    comptime in_shape = DimList(2, 2, 3)
     # Create an input matrix of the form
     # [[[1, 2, 3],
     #   [4, 5, 6]],
     #  [[7, 8, 9],
     #   [10, 11, 12]]]
     var input = NDBuffer[
-        DType.int, 3, MutableAnyOrigin, in_shape
+        DType.int, 3, MutAnyOrigin, in_shape
     ].stack_allocation()
     input[IndexList[3](0, 0, 0)] = 1
     input[IndexList[3](0, 0, 1)] = 2
@@ -327,7 +327,7 @@ fn test_transpose_3d_identity_ndbuffer() raises:
 
     # Create an identity permutation array of the form
     # [0, 1, 2]
-    var perm = NDBuffer[DType.int, 1, MutableAnyOrigin, 3].stack_allocation()
+    var perm = NDBuffer[DType.int, 1, MutAnyOrigin, 3].stack_allocation()
     perm[0] = 0
     perm[1] = 1
     perm[2] = 2
@@ -337,9 +337,9 @@ fn test_transpose_3d_identity_ndbuffer() raises:
     #   [-1, -1, -1]],
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
-    alias out_shape = DimList(2, 2, 3)
+    comptime out_shape = DimList(2, 2, 3)
     var output = NDBuffer[
-        DType.int, 3, MutableAnyOrigin, out_shape
+        DType.int, 3, MutAnyOrigin, out_shape
     ].stack_allocation()
     output.fill(0)
 
@@ -382,14 +382,14 @@ fn test_transpose_3d_identity_ndbuffer() raises:
 fn test_transpose_3d_ndbuffer() raises:
     print("== test_transpose_3d_ndbuffer")
 
-    alias in_shape = DimList(2, 2, 3)
+    comptime in_shape = DimList(2, 2, 3)
     # Create an input matrix of the form
     # [[[1, 2, 3],
     #   [4, 5, 6]],
     #  [[7, 8, 9],
     #   [10, 11, 12]]]
     var input = NDBuffer[
-        DType.int, 3, MutableAnyOrigin, in_shape
+        DType.int, 3, MutAnyOrigin, in_shape
     ].stack_allocation()
     input[IndexList[3](0, 0, 0)] = 1
     input[IndexList[3](0, 0, 1)] = 2
@@ -406,7 +406,7 @@ fn test_transpose_3d_ndbuffer() raises:
 
     # Create a identity permutation array of the form
     # [2, 0, 1]
-    var perm = NDBuffer[DType.int, 1, MutableAnyOrigin, 3].stack_allocation()
+    var perm = NDBuffer[DType.int, 1, MutAnyOrigin, 3].stack_allocation()
     perm[0] = 2
     perm[1] = 0
     perm[2] = 1
@@ -416,9 +416,9 @@ fn test_transpose_3d_ndbuffer() raises:
     #   [-1, -1, -1]],
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
-    alias out_shape = DimList(3, 2, 2)
+    comptime out_shape = DimList(3, 2, 2)
     var output = NDBuffer[
-        DType.int, 3, MutableAnyOrigin, out_shape
+        DType.int, 3, MutAnyOrigin, out_shape
     ].stack_allocation()
     output.fill(0)
 
@@ -463,14 +463,14 @@ fn test_transpose_3d_ndbuffer() raises:
 fn test_transpose_si64_ndbuffer() raises:
     print("== test_transpose_si64_ndbuffer")
 
-    alias in_shape = DimList(2, 2, 3)
+    comptime in_shape = DimList(2, 2, 3)
     # Create an input matrix of the form
     # [[[1, 2, 3],
     #   [4, 5, 6]],
     #  [[7, 8, 9],
     #   [10, 11, 12]]]
     var input = NDBuffer[
-        DType.int64, 3, MutableAnyOrigin, in_shape
+        DType.int64, 3, MutAnyOrigin, in_shape
     ].stack_allocation()
     input[IndexList[3](0, 0, 0)] = 1
     input[IndexList[3](0, 0, 1)] = 2
@@ -487,7 +487,7 @@ fn test_transpose_si64_ndbuffer() raises:
 
     # Create a identity permutation array of the form
     # [2, 1, 0]
-    var perm = NDBuffer[DType.int, 1, MutableAnyOrigin, 3].stack_allocation()
+    var perm = NDBuffer[DType.int, 1, MutAnyOrigin, 3].stack_allocation()
     perm[0] = 2
     perm[1] = 1
     perm[2] = 0
@@ -497,9 +497,9 @@ fn test_transpose_si64_ndbuffer() raises:
     #   [-1, -1, -1]],
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
-    alias out_shape = DimList(3, 2, 2)
+    comptime out_shape = DimList(3, 2, 2)
     var output = NDBuffer[
-        DType.int64, 3, MutableAnyOrigin, out_shape
+        DType.int64, 3, MutAnyOrigin, out_shape
     ].stack_allocation()
     output.fill(0)
 
@@ -674,7 +674,7 @@ fn test_transpose_4x4():
     #  [4, 5, 6, 7],
     # ...
     #  [12, 13, 14, 15]]
-    alias layout = Layout.row_major(4, 4)
+    comptime layout = Layout.row_major(4, 4)
     var stack = InlineArray[Scalar[DType.int], layout.size()](
         uninitialized=True
     )
@@ -752,10 +752,10 @@ fn test_transpose_4x4():
 fn test_transpose_8x8():
     print("== test_transpose_8x8")
 
-    alias num_rows: Int = 8
-    alias num_cols: Int = 8
+    comptime num_rows: Int = 8
+    comptime num_cols: Int = 8
 
-    alias layout = Layout.row_major(num_rows, num_cols)
+    comptime layout = Layout.row_major(num_rows, num_cols)
     var stack = InlineArray[Scalar[DType.int], layout.size()](
         uninitialized=True
     )
@@ -781,9 +781,9 @@ fn test_transpose_8x8():
 fn test_transpose_16x16():
     print("== test_transpose_16x16")
 
-    alias num_rows: Int = 16
-    alias num_cols: Int = 16
-    alias layout = Layout.row_major(num_rows, num_cols)
+    comptime num_rows: Int = 16
+    comptime num_cols: Int = 16
+    comptime layout = Layout.row_major(num_rows, num_cols)
     var stack = InlineArray[Scalar[DType.int], layout.size()](
         uninitialized=True
     )

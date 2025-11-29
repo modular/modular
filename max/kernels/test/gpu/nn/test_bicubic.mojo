@@ -27,7 +27,7 @@ from nn.bicubic import cpu_bicubic_kernel, gpu_bicubic_kernel, resize_bicubic
 from testing import assert_almost_equal
 from utils import Index, IndexList
 
-alias num_elements = 20
+comptime num_elements = 20
 
 
 """Tests the bicubic interpolation kernel against pre-computed values.
@@ -141,7 +141,7 @@ fn test_bicubic_kernel[
     # Call the bicubic upsampling kernel - convert to LayoutTensor
     var input_tensor = input_host.to_layout_tensor()
     var output_tensor = output_host.to_layout_tensor()
-    alias layout_4d = Layout.row_major[4]()
+    comptime layout_4d = Layout.row_major[4]()
     resize_bicubic[target="cpu"](output_tensor, input_tensor, ctx)
     print(
         "--------------------------------after calling the bicubic upsampling"
@@ -595,10 +595,10 @@ fn test_bicubic_kernel[
 
     ctx.enqueue_copy(input_dev.buffer, input_host.tensor.data)
 
-    alias N = output_dim.get[0]()
-    alias C = output_dim.get[1]()
-    alias H = output_dim.get[2]()
-    alias W = output_dim.get[3]()
+    comptime N = output_dim.get[0]()
+    comptime C = output_dim.get[1]()
+    comptime H = output_dim.get[2]()
+    comptime W = output_dim.get[3]()
 
     var input_dev_tensor = input_dev.to_layout_tensor()
     var output_dev_tensor = output_dev.to_layout_tensor()
@@ -638,8 +638,8 @@ fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
     """Test that GPU kernel can handle large images without exceeding thread limits.
     """
     # Test with 64x64 output which would exceed 1024 threads/block limit.
-    alias input_dim = DimList(1, 3, 32, 32)
-    alias output_dim = DimList(1, 3, 64, 64)
+    comptime input_dim = DimList(1, 3, 32, 32)
+    comptime output_dim = DimList(1, 3, 64, 64)
 
     var input_host = HostNDBuffer[dtype, 4, input_dim](input_dim)
     var output_host = HostNDBuffer[dtype, 4, output_dim](output_dim)
@@ -667,8 +667,8 @@ fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
 
     var input_dev_tensor = input_dev.to_layout_tensor()
     var output_dev_tensor = output_dev.to_layout_tensor()
-    alias layout_4d = Layout.row_major[4]()
-    alias kernel = gpu_bicubic_kernel[
+    comptime layout_4d = Layout.row_major[4]()
+    comptime kernel = gpu_bicubic_kernel[
         dtype, layout_4d, layout_4d, output_dev_tensor.address_space
     ]
 

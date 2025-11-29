@@ -35,7 +35,7 @@ fn expect_eq[*Ts: Writable](val: Bool, expected: Bool, *messages: *Ts) raises:
 fn api() -> String:
     @parameter
     if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
-        alias api = env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
+        comptime api = env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
 
         @parameter
         if api == "gpu":

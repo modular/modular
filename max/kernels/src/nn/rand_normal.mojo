@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from algorithm.functional import elementwise
-from gpu.random import NormalRandom
+from random import NormalRandom
 from runtime.asyncrt import DeviceContextPtr
-from tensor_internal._indexing import _dot_prod, _row_major_strides
+from tensor._indexing import _dot_prod, _row_major_strides
 
 from utils import IndexList
 
@@ -28,8 +28,8 @@ fn random_normal[
     target: StaticString,
 ](
     shape: IndexList[rank],
-    mean: Scalar[dtype],
-    stddev: Scalar[dtype],
+    mean: Float32,
+    stddev: Float32,
     seed_value: UInt64,
     ctx: DeviceContextPtr,
 ) raises:
@@ -63,14 +63,11 @@ fn random_normal[
     ](idx: IndexList[_rank],):
         constrained[width <= 8]()  # NormalRandom generates 8 values at a time
 
-        var offset = _dot_prod(rebind[__type_of(strides)](idx), strides)
+        var offset = _dot_prod(rebind[type_of(strides)](idx), strides)
 
         var generator = NormalRandom(seed=seed_value, offset=UInt64(offset))
 
-        var values = generator.step_normal(
-            mean=Float32(mean),
-            stddev=Float32(stddev),
-        )
+        var values = generator.step_normal(mean=mean, stddev=stddev)
 
         output_fn[width=width](idx, values.cast[dtype]().slice[width]())
 

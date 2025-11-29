@@ -14,6 +14,7 @@
 from math import *
 
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import TestSuite
 
 
@@ -34,55 +35,55 @@ fn run_func[
     _ = out
 
 
-fn hypot_fn(val: SIMD) -> __type_of(val):
+fn hypot_fn(val: SIMD) -> type_of(val):
     return hypot(val, val)
 
 
-fn remainder_fn(val: SIMD) -> __type_of(val):
+fn remainder_fn(val: SIMD) -> type_of(val):
     return remainder(val, val)
 
 
-fn scalb_fn(val: SIMD) -> __type_of(val):
+fn scalb_fn(val: SIMD) -> type_of(val):
     return scalb(val, val)
 
 
-fn gcd_fn(val: SIMD) -> __type_of(val):
+fn gcd_fn(val: SIMD) -> type_of(val):
     return gcd(Int(val), Int(val))
 
 
-fn lcm_fn(val: SIMD) -> __type_of(val):
+fn lcm_fn(val: SIMD) -> type_of(val):
     return lcm(Int(val), Int(val))
 
 
-fn sqrt_fn(val: SIMD) -> __type_of(val):
+fn sqrt_fn(val: SIMD) -> type_of(val):
     return sqrt(val)
 
 
-fn ldexp_fn(val: SIMD) -> __type_of(val):
+fn ldexp_fn(val: SIMD) -> type_of(val):
     return ldexp(val, 1)
 
 
-fn frexp_fn(val: SIMD) -> __type_of(val):
+fn frexp_fn(val: SIMD) -> type_of(val):
     return frexp(val)[0]
 
 
-fn floor_fn(val: SIMD) -> __type_of(val):
+fn floor_fn(val: SIMD) -> type_of(val):
     return floor(val)
 
 
-fn ceil_fn(val: SIMD) -> __type_of(val):
+fn ceil_fn(val: SIMD) -> type_of(val):
     return floor(val)
 
 
-fn pow_fn(val: SIMD) -> __type_of(val):
+fn pow_fn(val: SIMD) -> type_of(val):
     return val**val
 
 
-fn powi_fn(val: SIMD) -> __type_of(val):
+fn powi_fn(val: SIMD) -> type_of(val):
     return val**9
 
 
-fn powf_fn(val: SIMD) -> __type_of(val):
+fn powf_fn(val: SIMD) -> type_of(val):
     return val**3.2
 
 
@@ -95,11 +96,11 @@ def test_math():
                 SIMD[dtype, width]
             ) -> SIMD[dtype, width]
         ](ctx: DeviceContext) raises:
-            alias ls = stdlib.builtin.variadic_size(kernel_fns)
+            comptime ls = stdlib.builtin.variadic_size(kernel_fns)
 
             @parameter
             for idx in range(ls):
-                alias kernel_fn = kernel_fns[idx]
+                comptime kernel_fn = kernel_fns[idx]
                 run_func[DType.float32, kernel_fn[]](ctx)
                 run_func[DType.float16, kernel_fn[]](ctx)
 

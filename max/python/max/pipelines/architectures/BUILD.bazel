@@ -1,0 +1,25 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "architectures",
+    srcs = glob(["**/*.py"]),
+    imports = ["../../.."],
+    deps = [
+        requirement("numpy"),
+        requirement("pillow"),
+        # TODO: These are required for the llama3.1 model. Remove them if
+        # possible.
+        requirement("transformers"),
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/dataprocessing",
+        "//max/python/max/nn",
+        # Hooks added for convenience for when we want to print the model layers
+        "//max/python/max/nn/hooks",
+        "//max/python/max/profiler",
+        "//max/python/max/support",
+    ],
+)

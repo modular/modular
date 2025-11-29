@@ -13,6 +13,7 @@
 
 from asyncrt_test_utils import create_test_device_context
 from gpu.host import DeviceBuffer, DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import TestSuite
 
 
@@ -20,7 +21,7 @@ fn _run_badbuf(ctx: DeviceContext) raises:
     print("-")
     print("_run_badbuf()")
 
-    alias alloc_size = 256
+    comptime alloc_size = 256
 
     # Construct a bad buffer by adopting the host pointer.
     var host_ptr = UnsafePointer[Int8].alloc(alloc_size)

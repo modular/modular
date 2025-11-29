@@ -18,7 +18,14 @@ from algorithm._gpu.reduction import reduce_launch
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext, get_gpu_target
-from internal_utils import DeviceNDBuffer
+from internal_utils import (
+    DeviceNDBuffer,
+    arg_parse,
+    env_get_shape,
+    int_list_to_tuple,
+    update_bench_config_args,
+)
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
 from utils import IndexList, StaticTuple
@@ -27,7 +34,7 @@ from utils.index import product
 
 fn align_of_simd[dtype: DType, simd_target: _TargetType]() -> Int:
     # TODO: move this utility function to a module.
-    alias pack_size = simd_width_of[dtype, target=simd_target]()
+    comptime pack_size = simd_width_of[dtype, target=simd_target]()
     return align_of[SIMD[dtype, pack_size]]()
 
 
@@ -38,17 +45,17 @@ fn run_reduce[
     dtype: DType,
     rank: Int,
     num_reductions: Int = 1,
-](mut m: Bench, shape: IndexList[rank], ctx: DeviceContext,) raises:
+](mut m: Bench, shape: IndexList[rank], axis: Int, ctx: DeviceContext,) raises:
     print("run_reduce", shape)
-    var axis = rank - 1
+
     var out_shape = shape
     out_shape[axis] = 1
-    alias init: Scalar[dtype] = Scalar[dtype](0.0)
+    comptime init: Scalar[dtype] = Scalar[dtype](0.0)
 
     var in_size = shape.flattened_length()
-    var out_size = product(shape, rank - 1)
+    var out_size = in_size // shape[axis]
 
-    alias align = align_of_simd[dtype, simd_target = get_gpu_target()]()
+    comptime align = align_of_simd[dtype, simd_target = get_gpu_target()]()
     var expected_vals = UnsafePointer[Scalar[dtype]].alloc(
         out_size, alignment=align
     )
@@ -57,11 +64,11 @@ fn run_reduce[
     var res_host = UnsafePointer[Scalar[dtype]].alloc(out_size)
 
     for i in range(in_size):
-        in_host[i] = (i // shape[axis]) + 1
+        in_host[i] = 1
 
     # TODO: use reduce_fn to make this generic.
     for i in range(out_size):
-        expected_vals[i] = shape[axis] * Scalar[dtype](i + 1)
+        expected_vals[i] = shape[axis] * Scalar[dtype](1)
 
     var vec_device = DeviceNDBuffer[dtype, rank](shape, ctx=ctx)
     var res_device = DeviceNDBuffer[dtype, rank](out_shape, ctx=ctx)
@@ -116,8 +123,10 @@ fn run_reduce[
         b.iter_custom[kernel_launch](ctx)
 
     m.bench_function[bench_func](
-        BenchId("reduce", input_id=String(dtype, "/shape=", shape)),
-        ThroughputMeasure(BenchMetric.elements, in_size),
+        BenchId(
+            "reduce", input_id=String(dtype, "/shape=", shape, "/axis=", axis)
+        ),
+        [ThroughputMeasure(BenchMetric.elements, in_size)],
     )
 
     ctx.synchronize()
@@ -142,19 +151,19 @@ fn reduce_add[
 
 
 def main():
-    alias dtype = DType._from_str(env_get_string["dtype", "DType.bfloat16"]())
+    comptime dtype = DType._from_str(env_get_string["dtype", "DType.float16"]())
 
-    # DimList(1, 1, 4096) baby-llama-LPTG-kernels
-    alias M = env_get_int["M", 1]()
-    alias N = env_get_int["N", 1]()
-    alias K = env_get_int["K", 4096]()
+    comptime shape_in_list = env_get_shape["shape", "1x1x4096"]()
+    comptime shape = int_list_to_tuple[shape_in_list]()
+    comptime axis = env_get_int["axis", 1]()
 
     var m = Bench()
     with DeviceContext() as ctx:
-        alias dims = IndexList[3](M, N, K)
+        comptime dims = shape
         run_reduce[reduce_add, dtype](
             m,
             dims,
+            axis,
             ctx,
         )
 

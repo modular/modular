@@ -14,6 +14,7 @@
 from layout import *
 from layout.int_tuple import product
 from layout.layout_tensor import *
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
 
@@ -21,14 +22,14 @@ fn test_vectorize_2() raises:
     var tensor = LayoutTensor[
         DType.float32,
         Layout(IntTuple(IntTuple(16, 32), 4), IntTuple(IntTuple(32, 1), 512)),
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ].stack_allocation[stack_alignment=16]()
 
     var n = product(tensor.layout.shape)
     for i in range(n):
         tensor.ptr[i] = i
 
-    var frag = tensor._vectorize_2[__origin_of(), IntTuple(IntTuple(1, 4), 1)]()
+    var frag = tensor._vectorize_2[origin_of(), IntTuple(IntTuple(1, 4), 1)]()
     var crd = RuntimeTuple[IntTuple(2)]()
     var val = frag[crd]
     assert_equal(val[0], 64)
@@ -46,7 +47,7 @@ fn test_vectorize_2() raises:
     var three_dim_tensor = LayoutTensor[
         DType.float32,
         Layout(IntTuple(16, 32, 4), IntTuple(32, 1, 512)),
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ].stack_allocation[stack_alignment=16]()
 
     n = product(three_dim_tensor.layout.shape)
@@ -54,7 +55,7 @@ fn test_vectorize_2() raises:
         three_dim_tensor.ptr[i] = i
 
     var frag_3dt = three_dim_tensor._vectorize_2[
-        __origin_of(), IntTuple(1, 4, 1)
+        origin_of(), IntTuple(1, 4, 1)
     ]()
     var val_3dt = frag_3dt[crd]
     assert_equal(val_3dt[0], 64)
@@ -69,11 +70,11 @@ fn test_vectorize_2() raises:
     assert_equal(val_linear_3dt[2], 66)
     assert_equal(val_linear_3dt[3], 67)
 
-    alias layout = Layout(IntTuple(8, 8), IntTuple(8, 1))
+    comptime layout = Layout(IntTuple(8, 8), IntTuple(8, 1))
     var tensor2 = LayoutTensor[
         DType.float32,
         layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ].stack_allocation[stack_alignment=8]()
 
     n = product(tensor2.layout.shape)
@@ -94,7 +95,7 @@ fn test_vectorize_2() raises:
     assert_equal(val3[0], 16.0)
     assert_equal(val3[1], 17.0)
 
-    alias layout_unknown = Layout(
+    comptime layout_unknown = Layout(
         IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE), IntTuple(UNKNOWN_VALUE, 1)
     )
     var heap = UnsafePointer[Int32].alloc(64, alignment=8)

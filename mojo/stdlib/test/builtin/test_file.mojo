@@ -11,12 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from os import remove
 from pathlib import Path, _dir_of_current_file
+from stat import S_ISFIFO
+from subprocess import run
 from tempfile import gettempdir
+from time import sleep
 
-from testing import assert_equal, assert_true, TestSuite
+from testing import assert_equal, assert_raises, assert_true, TestSuite
 
-alias DUMMY_FILE_SIZE: UInt = 954
+comptime DUMMY_FILE_SIZE: UInt = 954
 
 
 def test_file_read():
@@ -74,6 +78,89 @@ def test_file_read_bytes_all():
         assert_equal(len(bytes_all), Int(DUMMY_FILE_SIZE))
 
 
+def test_file_read_bytes_zero():
+    """Test reading 0 bytes returns empty list."""
+    with open(
+        _dir_of_current_file() / "test_file_dummy_input.txt",
+        "r",
+    ) as f:
+        var bytes_zero = f.read_bytes(0)
+        assert_equal(len(bytes_zero), 0)
+
+
+def test_file_read_bytes_empty_file():
+    """Test reading from empty file returns empty list."""
+    var temp_file = Path(gettempdir().value()) / "test_file_read_bytes_empty"
+
+    # Create empty file
+    with open(temp_file, "w"):
+        pass
+
+    # Read all bytes from empty file
+    with open(temp_file, "r") as f:
+        var bytes_all = f.read_bytes(-1)
+        assert_equal(len(bytes_all), 0)
+
+    # Read specific size from empty file
+    with open(temp_file, "r") as f:
+        var bytes_sized = f.read_bytes(10)
+        assert_equal(len(bytes_sized), 0)
+
+
+def test_file_read_bytes_large_with_resizing():
+    """Test read_bytes() with size=-1 triggers buffer doubling for large files.
+
+    The DUMMY_FILE_SIZE is 954 bytes, which exceeds the initial 256 byte buffer,
+    so this tests the exponential growth logic (256 -> 512 -> 1024).
+    """
+    with open(
+        _dir_of_current_file() / "test_file_dummy_input.txt",
+        "r",
+    ) as f:
+        var all_bytes = f.read_bytes()  # size=-1 default
+        assert_equal(len(all_bytes), Int(DUMMY_FILE_SIZE))
+        # Verify content is correct
+        var content = String(bytes=all_bytes)
+        assert_true(content.startswith("Lorem ipsum"))
+
+
+def test_file_read_bytes_from_write_only():
+    """Test that read_bytes from write-only file raises error."""
+    var temp_file = (
+        Path(gettempdir().value()) / "test_file_read_bytes_writeonly"
+    )
+
+    var f = open(temp_file, "w")
+    # Should raise error with errno message (EBADF - Bad file descriptor)
+    with assert_raises(contains="Bad file"):
+        _ = f.read_bytes()
+    f.close()
+
+
+def test_file_read_bytes_sequential_small():
+    """Test multiple small sequential read_bytes() calls."""
+    var temp_file = Path(gettempdir().value()) / "test_file_read_bytes_seq"
+
+    # Create file with known content
+    var content = "0123456789" * 10  # 100 bytes
+    with open(temp_file, "w") as f:
+        f.write(content)
+
+    # Read in chunks of 10 bytes
+    with open(temp_file, "r") as f:
+        var total_read = 0
+        for _ in range(10):
+            var chunk = f.read_bytes(10)
+            assert_equal(len(chunk), 10)
+            total_read += len(chunk)
+
+        # Try to read more, should get 0 bytes (EOF)
+        var eof = f.read_bytes(10)
+        assert_equal(len(eof), 0)
+
+        assert_equal(total_read, 100)
+
+
 def test_file_read_all():
     with open(
         _dir_of_current_file() / "test_file_dummy_input.txt",
@@ -116,7 +203,7 @@ def test_file_read_context():
 
 
 def test_file_read_to_address():
-    alias DUMMY_FILE_SIZE = 954
+    comptime DUMMY_FILE_SIZE = 954
     # Test buffer size > file size
     with open(
         _dir_of_current_file() / "test_file_dummy_input.txt",
@@ -192,7 +279,7 @@ def test_file_seek():
         var pos = f.seek(6)
         assert_equal(pos, 6)
 
-        alias expected_msg1 = "ipsum dolor sit amet, consectetur adipiscing elit."
+        comptime expected_msg1 = "ipsum dolor sit amet, consectetur adipiscing elit."
         assert_equal(f.read(len(expected_msg1)), expected_msg1)
 
         # Seek from the end of the file
@@ -209,7 +296,7 @@ def test_file_seek():
         try:
             _ = f.seek(-12)
         except e:
-            alias expected_msg = "seek error"
+            comptime expected_msg = "Failed to seek"
             assert_equal(String(e)[: len(expected_msg)], expected_msg)
 
 
@@ -252,12 +339,76 @@ def test_file_write_again():
         assert_equal(read_file.read(), expected_content)
 
 
+def test_file_rw_mode_preserves_content():
+    """Test that opening a file in 'rw' mode does not truncate existing content.
+
+    The FileHandle "rw" mode should not truncate file contents before reading,
+    unlike "w" mode which should truncate.
+    """
+    var temp_file = Path(gettempdir().value()) / "test_file_rw_mode"
+
+    # First, create a file with some content using write mode
+    var expected_content = "hello\nworld"
+    with open(temp_file, "w") as f:
+        f.write(expected_content)
+
+    # Now open it in "rw" mode and verify we can read the existing content
+    with open(temp_file, "rw") as f:
+        _ = f.seek(0)
+        var content = f.read()
+        assert_equal(
+            content,
+            expected_content,
+            "rw mode should preserve existing file content",
+        )
+
+        # Also verify we can write to it
+        _ = f.seek(0)
+        f.write("new content")
+
+    # Verify the write succeeded
+    with open(temp_file, "r") as f:
+        assert_equal(f.read(), "new content")
+
+
+def test_file_write_mode_truncates():
+    """Test that opening a file in 'w' mode truncates existing content."""
+    var temp_file = Path(gettempdir().value()) / "test_file_write_mode"
+
+    # Create a file with some content
+    with open(temp_file, "w") as f:
+        f.write("initial content")
+
+    # Open in write mode and write less content
+    with open(temp_file, "w") as f:
+        f.write("new")
+
+    # Verify the file was truncated
+    with open(temp_file, "r") as f:
+        assert_equal(
+            f.read(), "new", "w mode should truncate existing file content"
+        )
+
+
 def test_file_get_raw_fd():
     # since JIT and build give different file descriptors, we test by checking
     # if we printed to the right file.
-    var f1 = open(Path(gettempdir().value()) / "test_file_dummy_1", "rw")
-    var f2 = open(Path(gettempdir().value()) / "test_file_dummy_2", "rw")
-    var f3 = open(Path(gettempdir().value()) / "test_file_dummy_3", "rw")
+    # First, ensure the test files are empty by opening in write mode
+    var temp1 = Path(gettempdir().value()) / "test_file_dummy_1"
+    var temp2 = Path(gettempdir().value()) / "test_file_dummy_2"
+    var temp3 = Path(gettempdir().value()) / "test_file_dummy_3"
+    # Ensure the files are empty by doing this cleanup at the beginning of the
+    # test
+    with open(temp1, "w"):
+        pass
+    with open(temp2, "w"):
+        pass
+    with open(temp3, "w"):
+        pass
+
+    var f1 = open(temp1, "rw")
+    var f2 = open(temp2, "rw")
+    var f3 = open(temp3, "rw")
 
     print(
         "test from file 1",
@@ -297,6 +448,266 @@ def test_file_get_raw_fd():
     f1.close()
     f2.close()
     f3.close()
+
+
+def test_file_append_mode():
+    """Test that opening a file in 'a' mode appends to existing content."""
+    var temp_file = Path(gettempdir().value()) / "test_file_append_mode"
+
+    # Create a file with initial content
+    var initial_content = "initial content"
+    with open(temp_file, "w") as f:
+        f.write(initial_content)
+
+    # Open in append mode and add more content
+    var appended_text = " appended"
+    with open(temp_file, "a") as f:
+        f.write(appended_text)
+
+    # Verify the content was appended, not overwritten
+    with open(temp_file, "r") as f:
+        var content = f.read()
+        assert_equal(
+            content,
+            initial_content + appended_text,
+            "append mode should add to existing content",
+        )
+
+    # Test multiple append operations
+    with open(temp_file, "a") as f:
+        f.write(" more")
+    with open(temp_file, "a") as f:
+        f.write(" text")
+
+    with open(temp_file, "r") as f:
+        var final_content = f.read()
+        assert_equal(
+            final_content,
+            initial_content + appended_text + " more text",
+            "multiple appends should accumulate",
+        )
+
+
+def test_file_append_mode_creates_file():
+    """Test that append mode creates a new file if it doesn't exist."""
+    var temp_file = Path(gettempdir().value()) / "test_file_append_new"
+
+    # Delete the file if it exists
+    try:
+        remove(temp_file)
+    except:
+        pass
+
+    # Open in append mode (should create the file)
+    var content = "new file content"
+    with open(temp_file, "a") as f:
+        f.write(content)
+
+    # Verify the file was created with the content
+    with open(temp_file, "r") as f:
+        assert_equal(
+            f.read(), content, "append mode should create new file if missing"
+        )
+
+
+def test_file_append_mode_with_unicode():
+    """Test that append mode works correctly with Unicode characters."""
+    var temp_file = Path(gettempdir().value()) / "test_file_append_unicode"
+
+    # Create a file with Unicode content
+    with open(temp_file, "w") as f:
+        f.write("Hello 🔥")
+
+    # Append more Unicode content
+    with open(temp_file, "a") as f:
+        f.write(" World 🚀")
+
+    # Verify both parts are present
+    with open(temp_file, "r") as f:
+        var content = f.read()
+        assert_equal(
+            content,
+            "Hello 🔥 World 🚀",
+            "append mode should handle Unicode correctly",
+        )
+
+
+def test_file_open_fifo():
+    """Test that opening a FIFO in write mode doesn't attempt to remove it.
+
+    Regression test for bug where `FileHandle` should not try to remove
+    special files (FIFOs, devices, sockets) when opening in write mode.
+    Only regular files should be removed/truncated in write mode.
+
+    This test creates a FIFO and verifies that attempting to open it doesn't
+    raise the "unable to remove existing file" error. We use a background
+    reader process to avoid blocking.
+    """
+    var fifo_path = Path(gettempdir().value()) / "test_file_fifo"
+
+    # Clean up any existing FIFO from previous test runs
+    try:
+        remove(fifo_path)
+    except:
+        pass
+
+    # Create a FIFO using mkfifo command. In the future, we should add a
+    # `mkfifo` function in the stdlib itself.
+    # Note that `mkfifo` is mandatory in POSIX which is all we currently
+    # support, so no need to guard against availability.
+    _ = run("mkfifo " + String(fifo_path))
+
+    # Verify the FIFO was created
+    assert_true(fifo_path.exists())
+
+    # Start a background reader with explicit synchronization
+    # Create a flag file that signals when the reader is ready
+    var ready_flag = Path(gettempdir().value()) / "test_file_fifo_ready"
+    try:
+        remove(ready_flag)
+    except:
+        pass
+
+    # Start the reader and signal when it's ready
+    # The reader opens the FIFO first, then creates the ready flag
+    var start_reader = (
+        "sh -c '(cat "
+        + String(fifo_path)
+        + " > /dev/null & echo $! > "
+        + String(gettempdir().value())
+        + "/fifo_reader_pid; sleep 0.1; touch "
+        + String(ready_flag)
+        + ") &' >/dev/null 2>&1"
+    )
+    try:
+        _ = run(start_reader)
+    except:
+        print("Warning: Could not start background reader, skipping test")
+        try:
+            remove(fifo_path)
+        except:
+            pass
+        return
+
+    # Wait for reader to signal it's ready (with timeout)
+    var max_wait = 20  # 20 iterations * 0.1s = 2 seconds max
+    var reader_ready = False
+    for _ in range(max_wait):
+        if ready_flag.exists():
+            reader_ready = True
+            break
+        sleep(0.1)
+
+    if not reader_ready:
+        print("Warning: Reader not ready after timeout, skipping test")
+        try:
+            remove(fifo_path)
+            remove(ready_flag)
+        except:
+            pass
+        return
+
+    # The key test: opening a FIFO in write mode should NOT raise
+    # "unable to remove existing file" error. The bug was that `FileHandle`
+    # tried to remove the FIFO before opening it, which failed.
+    # If this raises an error, the test will fail.
+    var f = open(fifo_path, "w")
+    f.write("test data\n")
+    f.close()
+
+    # Clean up the FIFO and ready flag
+    try:
+        remove(fifo_path)
+        remove(ready_flag)
+    except:
+        pass
+
+
+def test_file_read_from_closed_file():
+    """Test that reading from a closed file raises an error with proper message.
+    """
+    var temp_file = Path(gettempdir().value()) / "test_file_read_closed"
+
+    # Create a file with some content
+    with open(temp_file, "w") as f:
+        f.write("test content")
+
+    # Open and immediately close the file
+    var f = open(temp_file, "r")
+    f.close()
+
+    # Trying to read from closed file should raise error with "invalid file handle"
+    with assert_raises(contains="invalid file handle"):
+        _ = f.read()
+
+
+def test_file_read_from_write_only_file():
+    """Test that reading from a write-only file raises an error with errno."""
+    var temp_file = Path(gettempdir().value()) / "test_file_read_writeonly"
+
+    # Open in write-only mode and try to read
+    var f = open(temp_file, "w")
+
+    # Should raise error with "Bad file" (EBADF) in the message
+    with assert_raises(contains="Bad file"):
+        _ = f.read()
+
+    f.close()
+
+
+def test_file_seek_invalid_file():
+    """Test that seeking on a closed file raises an error with proper message.
+    """
+    var temp_file = Path(gettempdir().value()) / "test_file_seek_closed"
+
+    with open(temp_file, "w") as f:
+        f.write("test content")
+
+    var f = open(temp_file, "r")
+    f.close()
+
+    # Trying to seek on closed file should raise error with "invalid file handle"
+    with assert_raises(contains="invalid file handle"):
+        _ = f.seek(0)
+
+
+def test_file_read_bytes_to_span_from_closed():
+    """Test that reading bytes into a Span from a closed file raises an error.
+    """
+    var temp_file = Path(gettempdir().value()) / "test_file_read_span_closed"
+
+    with open(temp_file, "w") as f:
+        f.write("test content")
+
+    var f = open(temp_file, "r")
+    f.close()
+
+    # Try to read into a buffer from closed file - should get "invalid file handle"
+    var buffer = InlineArray[UInt8, size=10](fill=0)
+    with assert_raises(contains="invalid file handle"):
+        _ = f.read(buffer)
+
+
+def test_file_multiple_close():
+    """Test that closing a file multiple times is safe."""
+    var temp_file = Path(gettempdir().value()) / "test_file_multiple_close"
+
+    with open(temp_file, "w") as f:
+        f.write("test")
+
+    var f = open(temp_file, "r")
+
+    # First close should succeed
+    try:
+        f.close()
+    except e:
+        assert_true(False, "First close should not raise: " + String(e))
+
+    # Second close should also succeed (be a no-op)
+    try:
+        f.close()
+    except e:
+        assert_true(False, "Second close should not raise: " + String(e))
 
 
 def main():

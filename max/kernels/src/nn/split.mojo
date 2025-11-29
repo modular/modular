@@ -33,7 +33,7 @@ fn split[
     num_outputs: Int,
     target: StaticString,
     trace_description: StaticString,
-    outputs_origin: MutableOrigin,
+    outputs_origin: MutOrigin,
     outputs_layout: Layout,
 ](
     input: LayoutTensor[dtype, **_],
@@ -114,10 +114,12 @@ fn split[
 
     # Can vectorize only if not splitting over last dim.
     if axis != input.rank - 1:
-        alias compile_target = _current_target() if is_cpu[
+        comptime compile_target = _current_target() if is_cpu[
             target
         ]() else get_gpu_target()
-        alias target_simd_width = simd_width_of[dtype, target=compile_target]()
+        comptime target_simd_width = simd_width_of[
+            dtype, target=compile_target
+        ]()
 
         elementwise[
             elementwise_fn_wrapper,

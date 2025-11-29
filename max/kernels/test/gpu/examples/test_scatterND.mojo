@@ -24,7 +24,7 @@ from utils.index import Index
 
 # This is DeviceAttribute.MAX_THREADS_PER_BLOCK (in ONNXRT it is a global
 # with value of 256).
-alias MAX_THREADS_PER_BLOCK = 256
+comptime MAX_THREADS_PER_BLOCK = 256
 
 
 # TODO: Follow-up: Eliminate offsets calculations and use NDBuffers directly.
@@ -32,10 +32,10 @@ fn scatter_nd_gpu[
     dtype: DType,
     indices_type: DType,
 ](
-    output_data_ptr: UnsafePointer[Scalar[dtype]],
-    indices_data_ptr: UnsafePointer[Scalar[indices_type]],
-    element_counts_and_input_dims_ptr: UnsafePointer[Int64],
-    updates_data_ptr: UnsafePointer[Scalar[dtype]],
+    output_data_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    indices_data_ptr: UnsafePointer[Scalar[indices_type], MutAnyOrigin],
+    element_counts_and_input_dims_ptr: UnsafePointer[Int64, MutAnyOrigin],
+    updates_data_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     num_indices: Int,
     last_index_dimension: Int,
     num_updates_elements: Int,
@@ -182,7 +182,7 @@ fn scatter_nd[
 
     # NDBuffer below will store both input_strides and data NDBuffer dimensions.
     # (combine both in one to reduce number of memcpy from H->D).
-    var ptr = UnsafePointer[Int64].alloc(last_shape_of_indices * 2)
+    var ptr = alloc[Int64](last_shape_of_indices * 2)
     var element_counts_and_input_dims = NDBuffer[DType.int64, 1](
         ptr, DimList(last_shape_of_indices * 2)
     )
@@ -191,7 +191,7 @@ fn scatter_nd[
     # e.g., for a shape of 2, 3, 4, 5
     #       input_strides --> [3*4*5, 4*5, 5, 1]
     var input_strides = NDBuffer[
-        DType.int64, 1, MutableAnyOrigin, DimList(data_rank)
+        DType.int64, 1, MutAnyOrigin, DimList(data_rank)
     ]().stack_allocation()
     for i in range(data_rank):
         var total_stride = 1
@@ -229,7 +229,7 @@ fn scatter_nd[
         num_indices *= indices.get_shape()[i]
 
     var num_updates_elements = count_copy
-    alias kernel = scatter_nd_gpu[dtype=dtype, indices_type=indices_type]
+    comptime kernel = scatter_nd_gpu[dtype=dtype, indices_type=indices_type]
 
     ctx.enqueue_function_checked[kernel, kernel](
         output_device,
@@ -258,7 +258,7 @@ fn scatter_nd[
 fn linear_fill[
     dtype: DType
 ](
-    buf: NDBuffer[dtype, _, MutableAnyOrigin, *_],
+    buf: NDBuffer[dtype, _, MutAnyOrigin, *_],
     elems: VariadicList[Scalar[dtype]],
 ):
     debug_assert(
@@ -280,20 +280,18 @@ fn test_case[
     updates_vals: VariadicList[Scalar[dtype]],
     output_ref_vals: VariadicList[Scalar[dtype]],
 ) raises:
-    var data = NDBuffer[
-        dtype, 3, MutableAnyOrigin, input_shape
-    ].stack_allocation()
+    var data = NDBuffer[dtype, 3, MutAnyOrigin, input_shape].stack_allocation()
     linear_fill(data, data_vals)
     var indices = NDBuffer[
-        DType.int64, 2, MutableAnyOrigin, indices_shape
+        DType.int64, 2, MutAnyOrigin, indices_shape
     ].stack_allocation()
     linear_fill(indices, indices_vals)
     var updates = NDBuffer[
-        dtype, 3, MutableAnyOrigin, updates_shape
+        dtype, 3, MutAnyOrigin, updates_shape
     ].stack_allocation()
     linear_fill(updates, updates_vals)
     var output = NDBuffer[
-        dtype, 3, MutableAnyOrigin, input_shape
+        dtype, 3, MutAnyOrigin, input_shape
     ].stack_allocation()
 
     # Note: This is for the specific set of examples
@@ -306,7 +304,7 @@ fn test_case[
     _ = updates
 
     var output_ref = NDBuffer[
-        dtype, 3, MutableAnyOrigin, input_shape
+        dtype, 3, MutAnyOrigin, input_shape
     ].stack_allocation()
     linear_fill(output_ref, output_ref_vals)
 

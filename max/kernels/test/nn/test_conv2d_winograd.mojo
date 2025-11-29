@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from math import isclose
 from random import rand
 
@@ -63,30 +64,34 @@ fn winograd_2d_convolution_3x3[
     # Winograd transformation matrices as stack-allocated NDBuffers
     # fmt: off
     var b_stack = InlineArray[Scalar[dtype], 16](uninitialized=True)
-    var B = NDBuffer[dtype, 2,_, DimList((4, 4))](b_stack)
+    var B = NDBuffer[dtype, 2,_, DimList((4, 4))](b_stack.unsafe_ptr())
     B[0,0] = 1.0; B[0,1] =  0.0; B[0,2] = -1.0; B[0,3] =  0.0
     B[1,0] = 0.0; B[1,1] =  1.0; B[1,2] =  1.0; B[1,3] =  0.0
     B[2,0] = 0.0; B[2,1] = -1.0; B[2,2] =  1.0; B[2,3] =  0.0
     B[3,0] = 0.0; B[3,1] =  1.0; B[3,2] =  0.0; B[3,3] = -1.0
 
     var g_stack = InlineArray[Scalar[dtype], 12](uninitialized=True)
-    var G = NDBuffer[dtype, 2, _,DimList((4, 3))](g_stack)
+    var G = NDBuffer[dtype, 2, _,DimList((4, 3))](g_stack.unsafe_ptr())
     G[0,0] = 1.0; G[0,1] =  0.0; G[0,2] = 0.0
     G[1,0] = 0.5; G[1,1] =  0.5; G[1,2] = 0.5
     G[2,0] = 0.5; G[2,1] = -0.5; G[2,2] = 0.5
     G[3,0] = 0.0; G[3,1] =  0.0; G[3,2] = 1.0
 
     var a_stack = InlineArray[Scalar[dtype], 8](uninitialized=True)
-    var A = NDBuffer[dtype, 2,_, DimList((2, 4))](a_stack)
+    var A = NDBuffer[dtype, 2,_, DimList((2, 4))](a_stack.unsafe_ptr())
     A[0,0] = 1.0; A[0,1] = 1.0; A[0,2] =  1.0; A[0,3] =  0.0
     A[1,0] = 0.0; A[1,1] = 1.0; A[1,2] = -1.0; A[1,3] = -1.0
     # fmt: on
 
     # Temporary buffers for intermediate results
     var scratch_stack = InlineArray[Scalar[dtype], 16](uninitialized=True)
-    var scratch = NDBuffer[dtype, 2, _, DimList((4, 4))](scratch_stack)
+    var scratch = NDBuffer[dtype, 2, _, DimList((4, 4))](
+        scratch_stack.unsafe_ptr()
+    )
     var g_t_stack = InlineArray[Scalar[dtype], 16](uninitialized=True)
-    var g_transformed = NDBuffer[dtype, 2, _, DimList((4, 4))](g_t_stack)
+    var g_transformed = NDBuffer[dtype, 2, _, DimList((4, 4))](
+        g_t_stack.unsafe_ptr()
+    )
 
     # Transform kernel: G @ kernel @ G^T
     matmul[4, 3, 3, False](scratch, G, kernel)
@@ -100,11 +105,11 @@ fn winograd_2d_convolution_3x3[
 
     # Additional temporary buffers
     var d_stack = InlineArray[Scalar[dtype], 16](uninitialized=True)
-    var d = NDBuffer[dtype, 2, _, DimList((4, 4))](d_stack)
+    var d = NDBuffer[dtype, 2, _, DimList((4, 4))](d_stack.unsafe_ptr())
     var m_stack = InlineArray[Scalar[dtype], 16](uninitialized=True)
-    var m = NDBuffer[dtype, 2, _, DimList((4, 4))](m_stack)
+    var m = NDBuffer[dtype, 2, _, DimList((4, 4))](m_stack.unsafe_ptr())
     var y_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var y = NDBuffer[dtype, 2, _, DimList((2, 2))](y_stack)
+    var y = NDBuffer[dtype, 2, _, DimList((2, 2))](y_stack.unsafe_ptr())
 
     for i in range(0, Oh, 2):
         for j in range(0, Ow, 2):
@@ -171,10 +176,10 @@ fn outputs_are_close[
 # CHECK-LABEL: test_conv2d_winograd
 fn test[dtype: DType, H: Int, W: Int]():  # Input Height/Width
     print("test_conv2d_winograd")
-    alias Kh: Int = 3  # Filter height
-    alias Kw: Int = 3  # Filter width
-    alias Oh: Int = H - Kh + 1  # Output height
-    alias Ow: Int = W - Kw + 1  # Output width
+    comptime Kh: Int = 3  # Filter height
+    comptime Kw: Int = 3  # Filter width
+    comptime Oh: Int = H - Kh + 1  # Output height
+    comptime Ow: Int = W - Kw + 1  # Output width
 
     # Allocate memory for input, filter, and both outputs
     var input_ptr = UnsafePointer[Scalar[dtype]].alloc(H * W)
@@ -200,14 +205,14 @@ fn test[dtype: DType, H: Int, W: Int]():  # Input Height/Width
     winograd_2d_convolution_3x3[dtype](input, filter, output_winograd)
 
     # Perform Naive convolution
-    alias output_shape = Index(1, 1, Oh, Ow, 1)
-    alias input_shape = Index(1, 1, H, W, 1)
-    alias filter_shape = Index(1, Kh, Kw, 1, 1)
-    alias pad_d = Index(0, 0)
-    alias pad_h = Index(0, 0)
-    alias pad_w = Index(0, 0)
-    alias stride = Index(1, 1, 1)
-    alias dilation = Index(1, 1, 1)
+    comptime output_shape = Index(1, 1, Oh, Ow, 1)
+    comptime input_shape = Index(1, 1, H, W, 1)
+    comptime filter_shape = Index(1, Kh, Kw, 1, 1)
+    comptime pad_d = Index(0, 0)
+    comptime pad_h = Index(0, 0)
+    comptime pad_w = Index(0, 0)
+    comptime stride = Index(1, 1, 1)
+    comptime dilation = Index(1, 1, 1)
 
     Naive2dConvolution[dtype, dtype, dtype].run(
         output_ptr_naive,
@@ -239,7 +244,7 @@ fn test[dtype: DType, H: Int, W: Int]():  # Input Height/Width
 
 
 def main():
-    alias dtype = DType.float32
+    comptime dtype = DType.float32
 
     # power of 2
     test[dtype, 4, 4]()

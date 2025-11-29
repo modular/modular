@@ -24,8 +24,8 @@ def test_basic_lock():
     var lock = BlockingSpinLock()
     var rawCounter = 0
     var counter = Atomic[DType.int64](0)
-    alias maxI = 100
-    alias maxJ = 100
+    comptime maxI = 100
+    comptime maxJ = 100
 
     @parameter
     async fn inc():
@@ -47,7 +47,7 @@ def test_basic_lock():
         for _ in range(0, maxI):
             for _ in range(0, maxJ):
                 tg.create_task(inc())
-        tg.wait[__origin_of(lock)]()
+        tg.wait[origin_of(lock)]()
 
     _ = time_function[test_atomic]()
     _ = lock^

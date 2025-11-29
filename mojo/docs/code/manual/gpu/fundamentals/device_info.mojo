@@ -11,7 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import exit, has_accelerator, has_amd_gpu_accelerator
+from sys import (
+    exit,
+    has_accelerator,
+    has_amd_gpu_accelerator,
+    has_apple_gpu_accelerator,
+)
 
 from gpu.host import DeviceAttribute, DeviceContext
 
@@ -27,35 +32,16 @@ def main():
 
         ctx = DeviceContext()  # Get context for the default device, 0
         print("Device ID:", ctx.id())
-        print("Device api:", ctx.name())
+        print("Device API:", ctx.api())
+        print("Device name:", ctx.name())
         print("Device API version:", ctx.get_api_version())
         mem_info = ctx.get_memory_info()
         print("Total memory:", mem_info[1])
         print("Free memory:", mem_info[0])
 
         print(
-            "DeviceAttribute.MULTIPROCESSOR_COUNT:",
-            ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
-        )
-        print(
-            "DeviceAttribute.MAX_THREADS_PER_MULTIPROCESSOR:",
-            ctx.get_attribute(DeviceAttribute.MAX_THREADS_PER_MULTIPROCESSOR),
-        )
-        print(
             "DeviceAttribute.MAX_THREADS_PER_BLOCK:",
             ctx.get_attribute(DeviceAttribute.MAX_THREADS_PER_BLOCK),
-        )
-        print(
-            "DeviceAttribute.WARP_SIZE:",
-            ctx.get_attribute(DeviceAttribute.WARP_SIZE),
-        )
-        print(
-            "DeviceAttribute.MAX_REGISTERS_PER_MULTIPROCESSOR:",
-            ctx.get_attribute(DeviceAttribute.MAX_REGISTERS_PER_MULTIPROCESSOR),
-        )
-        print(
-            "DeviceAttribute.MAX_REGISTERS_PER_BLOCK:",
-            ctx.get_attribute(DeviceAttribute.MAX_REGISTERS_PER_BLOCK),
         )
         print(
             "DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK:",
@@ -63,8 +49,37 @@ def main():
         )
 
         @parameter
-        if not has_amd_gpu_accelerator():
-            # Not currently defined for AMD GPUs
+        if not has_apple_gpu_accelerator():
+            # Not currently defined for Apple GPUs
+
+            print(
+                "DeviceAttribute.MULTIPROCESSOR_COUNT:",
+                ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+            )
+            print(
+                "DeviceAttribute.MAX_THREADS_PER_MULTIPROCESSOR:",
+                ctx.get_attribute(
+                    DeviceAttribute.MAX_THREADS_PER_MULTIPROCESSOR
+                ),
+            )
+            print(
+                "DeviceAttribute.WARP_SIZE:",
+                ctx.get_attribute(DeviceAttribute.WARP_SIZE),
+            )
+            print(
+                "DeviceAttribute.MAX_REGISTERS_PER_MULTIPROCESSOR:",
+                ctx.get_attribute(
+                    DeviceAttribute.MAX_REGISTERS_PER_MULTIPROCESSOR
+                ),
+            )
+            print(
+                "DeviceAttribute.MAX_REGISTERS_PER_BLOCK:",
+                ctx.get_attribute(DeviceAttribute.MAX_REGISTERS_PER_BLOCK),
+            )
+
+        @parameter
+        if not (has_amd_gpu_accelerator() or has_apple_gpu_accelerator()):
+            # Not currently defined for AMD and Apple GPUs
 
             print(
                 "DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR:",

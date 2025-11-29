@@ -13,10 +13,11 @@
 
 from collections import OptionalReg
 from math import fma
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys import CompilationTarget, simd_width_of
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle
+from sys.ffi import _Global, OwnedDLHandle
 
 from algorithm import elementwise, vectorize
 from algorithm.functional import (
@@ -37,7 +38,7 @@ from ...utils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
 
-alias cblas_gemm_type = fn (
+comptime cblas_gemm_type = fn (
     _CBLASOrder,
     _CBLASTranspose,
     _CBLASTranspose,
@@ -58,7 +59,7 @@ alias cblas_gemm_type = fn (
 # Constants
 # ===-----------------------------------------------------------------------===#
 
-alias LIB_ACC_PATH = "/System/Library/Frameworks/Accelerate.framework/Accelerate"
+comptime LIB_ACC_PATH = "/System/Library/Frameworks/Accelerate.framework/Accelerate"
 
 
 # ===-----------------------------------------------------------------------===#
@@ -78,18 +79,18 @@ fn _on_error_msg() -> Error:
     )
 
 
-alias APPLE_ACCELERATE = _Global[
+comptime APPLE_ACCELERATE = _Global[
     "APPLE_ACCELERATE", _init_dylib, on_error_msg=_on_error_msg
 ]
 
 
-fn _init_dylib() -> _OwnedDLHandle:
+fn _init_dylib() -> OwnedDLHandle:
     # Note: we can't use _find_dylib here because this is not a real path
     # (it's a framework path).
     try:
-        return _OwnedDLHandle(LIB_ACC_PATH)
+        return OwnedDLHandle(LIB_ACC_PATH)
     except:
-        return _OwnedDLHandle(unsafe_uninitialized=True)
+        return OwnedDLHandle(unsafe_uninitialized=True)
 
 
 @always_inline
@@ -146,17 +147,17 @@ fn use_apple_accelerate_lib[
 @register_passable("trivial")
 struct _CBLASOrder(ImplicitlyCopyable, Movable):
     var value: Int32
-    alias ROW_MAJOR = _CBLASOrder(101)
-    alias COL_MAJOR = _CBLASOrder(102)
+    comptime ROW_MAJOR = _CBLASOrder(101)
+    comptime COL_MAJOR = _CBLASOrder(102)
 
 
 @fieldwise_init
 @register_passable("trivial")
 struct _CBLASTranspose(ImplicitlyCopyable, Movable):
     var value: Int32
-    alias NO_TRANSPOSE = _CBLASTranspose(111)
-    alias TRANSPOSE = _CBLASTranspose(112)
-    alias CONJ_TRANSPOSE = _CBLASTranspose(113)
+    comptime NO_TRANSPOSE = _CBLASTranspose(111)
+    comptime TRANSPOSE = _CBLASTranspose(112)
+    comptime CONJ_TRANSPOSE = _CBLASTranspose(113)
 
 
 # _cblas_f32 used by apple_batched_matmul (via the corresponding apple_matmul)
@@ -259,7 +260,7 @@ fn apple_gemv[
     var K = a.dim[1]() if b_packed else b.dim[0]()
     var N = b.dim[0]() if transpose_b or b_packed else b.dim[1]()
 
-    var transposed_b = NDBuffer[b.type, 2, MutableAnyOrigin]()
+    var transposed_b = NDBuffer[b.type, 2, MutAnyOrigin]()
     var transposed_b_ptr = UnsafePointer[Scalar[b.type]]()
 
     # If both b_packed and transpose_b are False, we need to transpose B at
@@ -287,7 +288,7 @@ fn apple_gemv[
     if b_packed == False and transpose_b == True:
         K = b.dim(1)
 
-    alias simd_width = simd_width_of[c.type]()
+    comptime simd_width = simd_width_of[c.type]()
 
     @always_inline
     @__copy_capture(c, a, b, K)
@@ -298,8 +299,7 @@ fn apple_gemv[
             var acc_scalar = Scalar[c.type]()
 
             @always_inline
-            @parameter
-            fn compute_fn[width: Int](k: Int):
+            fn compute_fn[width: Int](k: Int) unified {mut}:
                 var a_val = a.load[width=width](0, k).cast[c.type]()
                 var b_val = (
                     b.load[width=width](n, k).cast[c.type]() if b_packed
@@ -322,19 +322,19 @@ fn apple_gemv[
                         acc_vector,
                     )
 
-            vectorize[compute_fn, simd_width](K)
+            vectorize[simd_width](K, compute_fn)
 
             var val = acc_vector.reduce_add() + acc_scalar
 
             @parameter
             if elementwise_lambda_fn:
-                alias func = elementwise_lambda_fn.value()
+                comptime func = elementwise_lambda_fn.value()
                 func[c.type, 1](Index(0, n), val)
             else:
                 c[Index(0, n)] = val
 
     # TODO: Experiment with this.
-    alias parallelism_grain_size = 16
+    comptime parallelism_grain_size = 16
     parallelize_over_rows[process_rows](
         IndexList[2](N, K), 1, parallelism_grain_size
     )
@@ -364,8 +364,8 @@ fn apple_matmul[
         var ldb = n if not transpose_b else k
         var ldc = n
 
-        alias alpha = 1.0
-        alias beta = 0.0
+        comptime alpha = 1.0
+        comptime beta = 0.0
 
         _cblas_f32[transpose_b=transpose_b](
             cblas_gemm_fn,
@@ -392,8 +392,8 @@ fn apple_matmul[
         if elementwise_lambda_fn:
             var m = c.dim[0]()
             var n = c.dim[1]()
-            alias epilogue = elementwise_lambda_fn.value()
-            alias simd_size = simd_width_of[c.type]()
+            comptime epilogue = elementwise_lambda_fn.value()
+            comptime simd_size = simd_width_of[c.type]()
 
             @always_inline
             @parameter
@@ -465,7 +465,7 @@ fn apple_batched_matmul[
             b3.data + (b_shape[0] * b_shape[1]) * batch, b_shape
         )
 
-        alias rank = c.rank
+        comptime rank = c.rank
         var batch_coords = _get_start_indices_of_nth_subvolume[2](
             batch, rebind[IndexList[rank]](c.get_shape())
         )
@@ -479,7 +479,7 @@ fn apple_batched_matmul[
             local_batch_coords[rank - 1] = out_coords[1]
             local_batch_coords[rank - 2] = out_coords[0]
 
-            alias func = elementwise_epilogue_fn.value()
+            comptime func = elementwise_epilogue_fn.value()
             func[c_type, width, rank](local_batch_coords, out_val)
 
         apple_matmul[

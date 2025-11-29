@@ -22,7 +22,7 @@ from layout import Layout, RuntimeLayout
 from layout.int_tuple import IntTuple, size
 from layout.layout import expand_modes_alike, flatten
 from layout.layout_tensor import LayoutTensor
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 from testing import assert_false
 
 from utils import StaticTuple
@@ -31,16 +31,16 @@ from utils import StaticTuple
 fn matmul_naive[
     layoutC: Layout, layoutA: Layout, layoutB: Layout, elt: DType
 ](
-    C: LayoutTensor[elt, layoutC, MutableAnyOrigin],
-    A: LayoutTensor[elt, layoutA, MutableAnyOrigin],
-    B: LayoutTensor[elt, layoutB, MutableAnyOrigin],
+    C: LayoutTensor[elt, layoutC, MutAnyOrigin],
+    A: LayoutTensor[elt, layoutA, MutAnyOrigin],
+    B: LayoutTensor[elt, layoutB, MutAnyOrigin],
 ):
     constrained[len(layoutC) == 2]()
     constrained[len(layoutA) == 2]()
     constrained[len(layoutB) == 2]()
-    alias M: Int = size(layoutC.shape[0])
-    alias N: Int = size(layoutC.shape[1])
-    alias K: Int = size(layoutA.shape[1])
+    comptime M: Int = size(layoutC.shape[0])
+    comptime N: Int = size(layoutC.shape[1])
+    comptime K: Int = size(layoutA.shape[1])
     constrained[M == size(layoutA.shape[0])]()
     constrained[N == size(layoutB.shape[1])]()
     constrained[K == size(layoutB.shape[0])]()
@@ -53,7 +53,7 @@ fn matmul_naive[
                 C[m, n] += A[m, k] * B[k, n]
 
 
-alias cacheline_size: Int = 64
+comptime cacheline_size: Int = 64
 
 
 # We should be able to support 1-access per cacheline
@@ -89,11 +89,11 @@ fn matmul_ukern[
     B: UnsafePointer[Scalar[elt]],
     inc: Bool,
 ):
-    alias Align: Int = size_of[elt]() * width
-    alias Astride: Int = stride[elt](nr * width)
-    alias CstoreReps: Int = nr * width // Astride
+    comptime Align: Int = size_of[elt]() * width
+    comptime Astride: Int = stride[elt](nr * width)
+    comptime CstoreReps: Int = nr * width // Astride
     constrained[CstoreReps * Astride == nr * width]()
-    alias CstoresPer: Int = Astride // width
+    comptime CstoresPer: Int = Astride // width
     constrained[CstoresPer * width == Astride]()
     constrained[CstoresPer * CstoreReps == nr]()
     # for n0 in range(CstoreReps):
@@ -207,12 +207,12 @@ fn matmul[
     layoutA: Layout,
     layoutB: Layout,
 ](
-    C: LayoutTensor[elt, layoutC, MutableAnyOrigin],
-    A: LayoutTensor[elt, layoutA, MutableAnyOrigin],
-    B: LayoutTensor[elt, layoutB, MutableAnyOrigin],
+    C: LayoutTensor[elt, layoutC, MutAnyOrigin],
+    A: LayoutTensor[elt, layoutA, MutAnyOrigin],
+    B: LayoutTensor[elt, layoutB, MutAnyOrigin],
 ):
-    alias WNr = W * Nr
-    alias Stride = stride[elt](WNr)
+    comptime WNr = W * Nr
+    comptime Stride = stride[elt](WNr)
 
     constrained[len(layoutC) == 2]()
     constrained[len(layoutA) == 2]()
@@ -281,7 +281,7 @@ fn matmul[
     constrained[size(layoutB.stride[1].tuple()[1]) == WNr * Kc]()
     constrained[size(layoutB.stride[1].tuple()[2]) == Nc * K]()
 
-    alias Ptr = UnsafePointer[Scalar[elt]]
+    comptime Ptr = UnsafePointer[Scalar[elt]]
     var pc: UnsafePointer[Scalar[elt]] = C.ptr
     var pa: UnsafePointer[Scalar[elt]] = A.ptr
     # TODO: nontemporal prefetches on the microkernel slices of `B`
@@ -291,7 +291,7 @@ fn matmul[
     # NOTE: Read comments within the loop from the inside out.
     for _ in range(M // Mc):
         var pb: UnsafePointer[Scalar[elt]] = B.ptr
-        var pak: __type_of(pb) = pa
+        var pak: type_of(pb) = pa
         for _ in range(N // Nc):
             var pck: UnsafePointer[Scalar[elt]] = pc
             pak = pa
@@ -314,8 +314,8 @@ fn matmul[
 
 fn alloc_tensor[
     elt: DType, layout: Layout
-]() -> LayoutTensor[elt, layout, MutableAnyOrigin]:
-    return LayoutTensor[elt, layout, MutableAnyOrigin](
+]() -> LayoutTensor[elt, layout, MutAnyOrigin]:
+    return LayoutTensor[elt, layout, MutAnyOrigin](
         UnsafePointer[Scalar[elt]].alloc(layout.size(), alignment=64)
     )
 
@@ -323,9 +323,9 @@ fn alloc_tensor[
 fn alloc_tensor[
     elt: DType, layout: Layout
 ](rtlayout: RuntimeLayout[layout, **_]) -> LayoutTensor[
-    elt, layout, MutableAnyOrigin
+    elt, layout, MutAnyOrigin
 ]:
-    return LayoutTensor[elt, layout, MutableAnyOrigin](
+    return LayoutTensor[elt, layout, MutAnyOrigin](
         UnsafePointer[Scalar[elt]].alloc(rtlayout.size(), alignment=64),
         rtlayout,
     )
@@ -397,9 +397,9 @@ fn vectorize_flat[
     @parameter
     if len(shape) == 1:
         # perform the copy
-        alias int_stride_a: Int = stride_a[0]
-        alias int_stride_b: Int = stride_b[0]
-        alias size = shape[0]
+        comptime int_stride_a: Int = stride_a[0]
+        comptime int_stride_b: Int = stride_b[0]
+        comptime size = shape[0]
 
         @always_inline
         @parameter
@@ -413,10 +413,10 @@ fn vectorize_flat[
         ](size)
     else:
         # we find the maximum min stride, subset, and loop over it.
-        alias max_idx = max_min_idx_positive(stride_b, stride_a)
-        alias subset_shape = delete_idx(shape, max_idx)
-        alias subset_stride_b = delete_idx(stride_b, max_idx)
-        alias subset_stride_a = delete_idx(stride_a, max_idx)
+        comptime max_idx = max_min_idx_positive(stride_b, stride_a)
+        comptime subset_shape = delete_idx(shape, max_idx)
+        comptime subset_stride_b = delete_idx(stride_b, max_idx)
+        comptime subset_stride_a = delete_idx(stride_a, max_idx)
         for i in range(shape[max_idx]):
             vectorize_flat[
                 f,
@@ -447,15 +447,15 @@ fn vectorize_layout_tensor[
     simd_width: Int = max(simd_width_of[elt_a](), simd_width_of[elt_b]()),
     unroll_factor: Int = 4,
 ](
-    a: LayoutTensor[elt_a, layout_a, MutableAnyOrigin],
-    b: LayoutTensor[elt_b, layout_b, MutableAnyOrigin],
+    a: LayoutTensor[elt_a, layout_a, MutAnyOrigin],
+    b: LayoutTensor[elt_b, layout_b, MutAnyOrigin],
 ):
-    alias expanded = expand_modes_alike(
+    comptime expanded = expand_modes_alike(
         layout_a.shape, layout_a.stride, layout_b.shape, layout_b.stride
     )
-    alias shape = tolist(expanded[0])
-    alias stride_a = tolist(expanded[1])
-    alias stride_b = tolist(expanded[2])
+    comptime shape = tolist(expanded[0])
+    comptime stride_a = tolist(expanded[1])
+    comptime stride_b = tolist(expanded[2])
     vectorize_flat[f, simd_width, unroll_factor, shape, stride_a, stride_b](
         a.ptr, b.ptr
     )
@@ -469,8 +469,8 @@ fn copy_to[
     simd_width: Int = max(simd_width_of[elt_dst](), simd_width_of[elt_src]()),
     unroll_factor: Int = 4,
 ](
-    dst: LayoutTensor[elt_dst, layout_dst, MutableAnyOrigin],
-    src: LayoutTensor[elt_src, layout_src, MutableAnyOrigin],
+    dst: LayoutTensor[elt_dst, layout_dst, MutAnyOrigin],
+    src: LayoutTensor[elt_src, layout_src, MutAnyOrigin],
 ):
     @always_inline
     @parameter
@@ -500,8 +500,8 @@ fn check_approx_equal[
     rtol: Float64 = 1e-05,
     equal_nan: Bool = False,
 ](
-    dst: LayoutTensor[elt_dst, layout_dst, MutableAnyOrigin],
-    src: LayoutTensor[elt_src, layout_src, MutableAnyOrigin],
+    dst: LayoutTensor[elt_dst, layout_dst, MutAnyOrigin],
+    src: LayoutTensor[elt_src, layout_src, MutAnyOrigin],
 ) raises:
     var fail: Bool = False
 
@@ -541,14 +541,14 @@ fn matmulb2b[
     layoutB: Layout,
     layoutC: Layout,
 ](
-    D: LayoutTensor[elt, layoutD, MutableAnyOrigin],
-    A: LayoutTensor[elt, layoutA, MutableAnyOrigin],
-    B: LayoutTensor[elt, layoutB, MutableAnyOrigin],
-    C: LayoutTensor[elt, layoutC, MutableAnyOrigin],
+    D: LayoutTensor[elt, layoutD, MutAnyOrigin],
+    A: LayoutTensor[elt, layoutA, MutAnyOrigin],
+    B: LayoutTensor[elt, layoutB, MutAnyOrigin],
+    C: LayoutTensor[elt, layoutC, MutAnyOrigin],
 ):
-    alias WNr = W * Nr
-    alias Stride = stride[elt](WNr)
-    alias Kc = Nc
+    comptime WNr = W * Nr
+    comptime Stride = stride[elt](WNr)
+    comptime Kc = Nc
 
     constrained[len(layoutD) == 2]()
     constrained[len(layoutA) == 2]()
@@ -791,9 +791,9 @@ fn bench_b2b[
     Nr: Int,
     Kr: Int,
 ](do_benchmark: Bool) raises:
-    alias WNr: Int = W * Nr
-    alias Stride: Int = stride[elt](WNr)
-    alias Kc = Nc
+    comptime WNr: Int = W * Nr
+    comptime Stride: Int = stride[elt](WNr)
+    comptime Kc = Nc
     constrained[Nc % Stride == 0]()
     constrained[Kc % (Kr * Stride) == 0]()
 
@@ -805,7 +805,7 @@ fn bench_b2b[
     constrained[L % Nc == 0]()
     constrained[N % Nc == 0]()
 
-    alias layout_D: Layout = Layout(
+    comptime layout_D: Layout = Layout(
         IntTuple(
             IntTuple(Mr, Mc // Mr, M // Mc),
             IntTuple(Stride, WNr // Stride, Nc // WNr, N // Nc),
@@ -815,7 +815,7 @@ fn bench_b2b[
             IntTuple(1, Mr * Stride, Mr * WNr, Mc * Nc),
         ),
     )
-    alias layout_AB: Layout = Layout(
+    comptime layout_AB: Layout = Layout(
         IntTuple(
             IntTuple(Mr, Mc // Mr, M // Mc),
             IntTuple(Stride, WNr // Stride, Kc // WNr, L // Kc),
@@ -825,7 +825,7 @@ fn bench_b2b[
             IntTuple(1, Mr * Stride, Mr * WNr, Mc * Nc),
         ),
     )
-    alias layout_A: Layout = Layout(
+    comptime layout_A: Layout = Layout(
         IntTuple(
             IntTuple(Mr, Mc // Mr, M // Mc),
             IntTuple(Stride, WNr // Stride, Kc // WNr, K // Kc),
@@ -840,7 +840,7 @@ fn bench_b2b[
             ),
         ),
     )
-    alias layout_B: Layout = Layout(
+    comptime layout_B: Layout = Layout(
         IntTuple(
             IntTuple(Stride, Kc // Stride, K // Kc),
             IntTuple(WNr, Nc // WNr, L // Kc),
@@ -854,7 +854,7 @@ fn bench_b2b[
             ),
         ),
     )
-    alias layout_CL_b2b: Layout = Layout(
+    comptime layout_CL_b2b: Layout = Layout(
         IntTuple(
             IntTuple(Stride, Kc // Stride, L // Kc),
             IntTuple(WNr, Nc // WNr, N // Nc),
@@ -868,7 +868,7 @@ fn bench_b2b[
             ),
         ),
     )
-    alias layout_C: Layout = Layout(
+    comptime layout_C: Layout = Layout(
         IntTuple(
             IntTuple(Stride, Kc // Stride, L // Kc),
             IntTuple(WNr, Nc // WNr, N // Nc),
@@ -963,21 +963,21 @@ fn getNr() -> Int:
 
 
 fn main() raises -> None:
-    alias elt = DType.float32
-    alias W = simd_width_of[elt]()
-    alias Mr = getMr()
-    alias Nr = getNr()
-    alias Kr = 2
-    alias Mc = 50 * Mr
+    comptime elt = DType.float32
+    comptime W = simd_width_of[elt]()
+    comptime Mr = getMr()
+    comptime Nr = getNr()
+    comptime Kr = 2
+    comptime Mc = 50 * Mr
 
-    alias Nc = 20 * Nr * W
-    alias Stride = stride[DType.float32](W * Nr)
-    alias Kc = Nc
+    comptime Nc = 20 * Nr * W
+    comptime Stride = stride[DType.float32](W * Nr)
+    comptime Kc = Nc
     constrained[Kc % Stride == 0]()
-    alias M = 4 * Mc
-    alias N = 6 * Nc
-    alias K = 2 * Kc
-    alias L = 5 * Kc
+    comptime M = 4 * Mc
+    comptime N = 6 * Nc
+    comptime K = 2 * Kc
+    comptime L = 5 * Kc
     print("Multiplying M =", M, "; N =", N, "; K =", K, "; L =", L, "\n")
     constrained[Kc == Nc, "b2b requires Kc == Nc"]()
     var do_benchmark: Bool = False

@@ -64,7 +64,6 @@ modular_py_library(
 
 gpu_toolchain_alias(
     name = "current_gpu_toolchain",
-    testonly = True,
     visibility = ["//visibility:public"],
 )
 
@@ -72,6 +71,7 @@ modular_cc_library(
     name = "debugging_test_lib",
     srcs = ["debugging_test_lib.cpp"],
     hdrs = ["debugging_test_lib.h"],
+    includes = ["."],
     tags = ["manual"],
 )
 

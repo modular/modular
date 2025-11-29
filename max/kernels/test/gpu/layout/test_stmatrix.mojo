@@ -16,13 +16,12 @@ from random import random_si64
 
 from gpu import WARP_SIZE, barrier, lane_id, thread_idx
 from gpu.host import DeviceContext
-from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma, st_matrix
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu import matmul_kernel_naive
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 from testing import assert_almost_equal
 
 from utils.index import IndexList
@@ -37,27 +36,27 @@ fn test_stmatrix(
     n: Int,
     k: Int,
 ):
-    alias mma_m: UInt = 16
-    alias mma_n: UInt = 8
-    alias mma_k: UInt = 8
+    comptime mma_m: UInt = 16
+    comptime mma_n: UInt = 8
+    comptime mma_k: UInt = 8
 
     var d_reg = SIMD[DType.float32, 4](0)
     var tid = thread_idx.x
     var a_shared = stack_allocation[
-        mma_m * mma_k,
+        Int(mma_m * mma_k),
         DType.float32,
         alignment=32,
         address_space = AddressSpace.SHARED,
     ]()
     var b_shared = stack_allocation[
-        mma_n * mma_k,
+        Int(mma_n * mma_k),
         DType.float32,
         alignment=32,
         address_space = AddressSpace.SHARED,
     ]()
 
     var c_shared = stack_allocation[
-        mma_m * mma_n,
+        Int(mma_m * mma_n),
         DType.float32,
         alignment=32,
         address_space = AddressSpace.SHARED,
@@ -68,9 +67,9 @@ fn test_stmatrix(
 
     # Transpose B to fit ld_matrix layout.
     for i in range(tid, mma_k * mma_n, WARP_SIZE):
-        var x = i % mma_n
-        var y = i // mma_n
-        b_shared[x * mma_k + y] = b_ptr[i]
+        var x = i % Int(mma_n)
+        var y = i // Int(mma_n)
+        b_shared[x * Int(mma_k) + y] = b_ptr[i]
 
     barrier()
 
@@ -107,15 +106,15 @@ fn test_stmatrix_gen[
     a_ptr: UnsafePointer[Scalar[input_type]],
     b_ptr: UnsafePointer[Scalar[input_type]],
 ):
-    alias accum_type = get_accum_type[input_type]()
-    alias mma_shape = get_mma_shape[input_type, accum_type]()
-    alias M = mma_shape[0]
-    alias N = mma_shape[1]
-    alias K = mma_shape[2]
-    alias frag_size = get_fragment_size[mma_shape]()
-    alias a_frag_size = frag_size[0]
-    alias b_frag_size = frag_size[1]
-    alias c_frag_size = frag_size[2]
+    comptime accum_type = get_accum_type[input_type]()
+    comptime mma_shape = get_mma_shape[input_type, accum_type]()
+    comptime M = mma_shape[0]
+    comptime N = mma_shape[1]
+    comptime K = mma_shape[2]
+    comptime frag_size = get_fragment_size[mma_shape]()
+    comptime a_frag_size = frag_size[0]
+    comptime b_frag_size = frag_size[1]
+    comptime c_frag_size = frag_size[2]
 
     var lane = lane_id()
     var d_reg = SIMD[accum_type, c_frag_size](0)
@@ -175,11 +174,11 @@ fn check_stmatrix_gen[
     print("== test stmatrix bf16")
 
     # Shape for a single mma.
-    alias accum_type = get_accum_type[input_type]()
-    alias mma_shape = get_mma_shape[input_type, accum_type]()
-    alias M = mma_shape[0]
-    alias N = mma_shape[1]
-    alias K = mma_shape[2]
+    comptime accum_type = get_accum_type[input_type]()
+    comptime mma_shape = get_mma_shape[input_type, accum_type]()
+    comptime M = mma_shape[0]
+    comptime N = mma_shape[1]
+    comptime K = mma_shape[2]
 
     var a_host = UnsafePointer[Scalar[input_type]].alloc(M * K)
     var b_host = UnsafePointer[Scalar[input_type]].alloc(K * N)
@@ -204,7 +203,7 @@ fn check_stmatrix_gen[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias kernel_type = test_stmatrix_gen[input_type, output_type]
+    comptime kernel_type = test_stmatrix_gen[input_type, output_type]
     ctx.enqueue_function_checked[kernel_type, kernel_type](
         c_device,
         a_device,
@@ -222,8 +221,8 @@ fn check_stmatrix_gen[
     var b_tensor = LayoutTensor[input_type, Layout.row_major(K, N)](b_device)
 
     # Run naive matmul.
-    alias BLOCK_DIM = 16
-    alias kernel_naive_type = matmul_kernel_naive[
+    comptime BLOCK_DIM = 16
+    comptime kernel_naive_type = matmul_kernel_naive[
         output_type,
         input_type,
         input_type,
@@ -293,10 +292,10 @@ fn check_stmatrix(
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias WARP_PER_BLOCK = 1
-    alias MMA_M = 16
-    alias MMA_N = 8
-    alias MMA_K = 8
+    comptime WARP_PER_BLOCK = 1
+    comptime MMA_M = 16
+    comptime MMA_N = 8
+    comptime MMA_K = 8
 
     ctx.enqueue_function_checked[test_stmatrix, test_stmatrix](
         c_device,
@@ -314,9 +313,9 @@ fn check_stmatrix(
     ctx.enqueue_copy(c_host, c_device)
 
     # Run naive matmul.
-    alias BLOCK_DIM = 16
+    comptime BLOCK_DIM = 16
 
-    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var c_tensor_ref = LayoutTensor[DType.float32, layout](
         c_device_ref,
@@ -333,7 +332,7 @@ fn check_stmatrix(
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
 
-    alias kernel = matmul_kernel_naive[
+    comptime kernel = matmul_kernel_naive[
         DType.float32,
         DType.float32,
         DType.float32,

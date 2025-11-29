@@ -36,11 +36,13 @@ from testing import assert_almost_equal
 from utils import IndexList
 from utils.index import Index
 
-alias init_fn_type = fn (buff: NDBuffer[mut=True, *_]) capturing -> None
+comptime init_fn_type = fn (buff: NDBuffer[mut=True, *_]) capturing -> None
 
-alias epilogue_func_type = fn[dtype: DType, width: Int, *, alignment: Int = 1] (
-    IndexList[2], IndexList[2], SIMD[dtype, width]
-) capturing -> SIMD[dtype, width]
+comptime epilogue_func_type = fn[
+    dtype: DType, width: Int, *, alignment: Int = 1
+] (IndexList[2], IndexList[2], SIMD[dtype, width]) capturing -> SIMD[
+    dtype, width
+]
 
 
 @parameter
@@ -108,11 +110,11 @@ fn test[
     var K = k.value
     print(M, "x", N, "x", K)
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_c_shape = DimList(m.dim, n.dim)
     var dynamic_a_shape = DimList(m.value, k.value)
     var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
         k.value, n.value
@@ -140,14 +142,14 @@ fn test[
     # Initialize matmul operands
     @parameter
     if init_a:
-        alias init_a_fn = init_a.value()
+        comptime init_a_fn = init_a.value()
         init_a_fn(a_host.tensor)
     else:
         random(a_host.tensor)
 
     @parameter
     if init_b:
-        alias init_b_fn = init_b.value()
+        comptime init_b_fn = init_b.value()
         init_b_fn(b_host.tensor)
     else:
         random(b_host.tensor)
@@ -178,7 +180,7 @@ fn test[
 
         @parameter
         if lambda_fn:
-            alias func = lambda_fn.value()
+            comptime func = lambda_fn.value()
             update_val = func(idx, (M, N), update_val)
         c_tensor.store[alignment=alignment](
             idx, rebind[SIMD[dtype, width]](update_val)
@@ -221,7 +223,7 @@ fn test[
     )
 
     var c_ref_tensor = c_device_ref.tensor
-    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
     @always_inline
     @__copy_capture(c_ref_tensor, M, N)
@@ -237,7 +239,7 @@ fn test[
 
         @parameter
         if lambda_fn:
-            alias element_lambda = lambda_fn.value()
+            comptime element_lambda = lambda_fn.value()
             update_val = element_lambda(idx, (M, N), val)
 
         c_ref_tensor.store(
@@ -266,7 +268,7 @@ fn test[
             var actual = c_host_tensor[m, n]
 
             @parameter
-            if dtype.bit_width() <= 16:
+            if bit_width_of[dtype]() <= 16:
                 var ulp_dist = ulp_distance(actual, expect)
                 if ulp_dist <= _max_ulp_distance:
                     continue

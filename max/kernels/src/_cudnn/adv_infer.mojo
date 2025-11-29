@@ -11,11 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from os import abort
 from pathlib import Path
 from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle
+from sys.ffi import _Global, OwnedDLHandle
 
 from .infer import (
     cudnnContext,
@@ -31,20 +35,20 @@ from .infer import (
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_CUDNN_ADV_INFER_LIBRARY_PATHS = List[Path](
+comptime CUDA_CUDNN_ADV_INFER_LIBRARY_PATHS: List[Path] = [
     "libcudnn_adv_infer.so",
     "libcudnn_adv_infer.so.9",
     "libcudnn_adv_infer.so.8",
     "/usr/lib/x86_64-linux-gnu/libcudnn_adv_infer.so.9",
     "/usr/lib/x86_64-linux-gnu/libcudnn_adv_infer.so.8",
-)
+]
 
-alias CUDA_CUDNN_ADV_INFER_LIBRARY = _Global[
+comptime CUDA_CUDNN_ADV_INFER_LIBRARY = _Global[
     "CUDA_CUDNN_ADV_INFER_LIBRARY", _init_dylib
 ]
 
 
-fn _init_dylib() -> _OwnedDLHandle:
+fn _init_dylib() -> OwnedDLHandle:
     return _find_dylib["CUDA cuDNN Adv Infer"](
         materialize[CUDA_CUDNN_ADV_INFER_LIBRARY_PATHS]()
     )
@@ -65,14 +69,14 @@ fn _get_dylib_function[
 # Bindings
 # ===-----------------------------------------------------------------------===#
 
-alias cudnnRNNStruct = OpaquePointer
-alias cudnnDropoutStruct = OpaquePointer
-alias cudnnAlgorithmStruct = OpaquePointer
-alias cudnnRNNDataStruct = OpaquePointer
-alias cudnnAttnStruct = OpaquePointer
-alias cudnnTensorStruct = OpaquePointer
-alias cudnnSeqDataStruct = OpaquePointer
-alias cudnnPersistentRNNPlan = NoneType
+comptime cudnnRNNStruct = OpaquePointer
+comptime cudnnDropoutStruct = OpaquePointer
+comptime cudnnAlgorithmStruct = OpaquePointer
+comptime cudnnRNNDataStruct = OpaquePointer
+comptime cudnnAttnStruct = OpaquePointer
+comptime cudnnTensorStruct = OpaquePointer
+comptime cudnnSeqDataStruct = OpaquePointer
+comptime cudnnPersistentRNNPlan = NoneType
 
 
 @fieldwise_init
@@ -80,9 +84,9 @@ alias cudnnPersistentRNNPlan = NoneType
 struct cudnnRNNInputMode_t:
     var _value: Int32
 
-    alias LINEAR_INPUT = Self(0)
+    comptime LINEAR_INPUT = Self(0)
     """Adjustable weight matrix in first layer input GEMM."""
-    alias SKIP_INPUT = Self(1)
+    comptime SKIP_INPUT = Self(1)
     """Fixed identity matrix in the first layer input GEMM."""
 
 
@@ -91,9 +95,9 @@ struct cudnnRNNInputMode_t:
 struct cudnnDirectionMode_t:
     var _value: Int32
 
-    alias UNIDIRECTIONAL = Self(0)
+    comptime UNIDIRECTIONAL = Self(0)
     """Single direction network."""
-    alias BIDIRECTIONAL = Self(1)
+    comptime BIDIRECTIONAL = Self(1)
     """Output concatenation at each layer."""
 
 
@@ -102,9 +106,9 @@ struct cudnnDirectionMode_t:
 struct cudnnRNNClipMode_t:
     var _value: Int32
 
-    alias NONE = Self(0)
+    comptime NONE = Self(0)
     """Disables LSTM cell clipping."""
-    alias MINMAX = Self(1)
+    comptime MINMAX = Self(1)
     """Enables LSTM cell clipping."""
 
 
@@ -112,13 +116,13 @@ struct cudnnRNNClipMode_t:
 @register_passable("trivial")
 struct cudnnRNNMode_t:
     var _value: Int32
-    alias RNN_RELU = Self(0)
+    comptime RNN_RELU = Self(0)
     """Basic RNN cell type with ReLu activation."""
-    alias RNN_TANH = Self(1)
+    comptime RNN_TANH = Self(1)
     """Basic RNN cell type with tanh activation."""
-    alias LTSM = Self(2)
+    comptime LTSM = Self(2)
     """LSTM with optional recurrent projection and clipping."""
-    alias GRU = Self(3)
+    comptime GRU = Self(3)
     """Using h' = tanh(r * Uh(t-1) + Wx) and h = (1 - z) * h' + z * h(t-1)."""
 
 
@@ -127,28 +131,28 @@ struct cudnnRNNMode_t:
 struct cudnnMultiHeadAttnWeightKind_t:
     var _value: Int32
 
-    alias ATTN_Q_WEIGHTS = Self(0)
+    comptime ATTN_Q_WEIGHTS = Self(0)
     "Input projection weights for 'queries'."
 
-    alias ATTN_K_WEIGHTS = Self(1)
+    comptime ATTN_K_WEIGHTS = Self(1)
     "Input projection weights for 'keys'."
 
-    alias ATTN_V_WEIGHTS = Self(2)
+    comptime ATTN_V_WEIGHTS = Self(2)
     "Input projection weights for 'values'."
 
-    alias ATTN_O_WEIGHTS = Self(3)
+    comptime ATTN_O_WEIGHTS = Self(3)
     "Output projection weights."
 
-    alias ATTN_Q_BIASES = Self(4)
+    comptime ATTN_Q_BIASES = Self(4)
     "Input projection bias for 'queries'."
 
-    alias ATTN_K_BIASES = Self(5)
+    comptime ATTN_K_BIASES = Self(5)
     "Input projection bias for 'keys'."
 
-    alias ATTN_V_BIASES = Self(6)
+    comptime ATTN_V_BIASES = Self(6)
     "Input projection bias for 'values'."
 
-    alias ATTN_O_BIASES = Self(6)
+    comptime ATTN_O_BIASES = Self(6)
     "Output projection bias."
 
 
@@ -157,13 +161,13 @@ struct cudnnMultiHeadAttnWeightKind_t:
 struct cudnnRNNBiasMode_t:
     var _value: Int32
 
-    alias NO_BIAS = Self(0)
+    comptime NO_BIAS = Self(0)
     """Rnn cell formulas do not use biases."""
-    alias SINGLE_INP_BIAS = Self(1)
+    comptime SINGLE_INP_BIAS = Self(1)
     """Rnn cell formulas use one input bias in input GEMM."""
-    alias DOUBLE_BIAS = Self(2)
+    comptime DOUBLE_BIAS = Self(2)
     """Default, rnn cell formulas use two bias vectors."""
-    alias SINGLE_REC_BIAS = Self(3)
+    comptime SINGLE_REC_BIAS = Self(3)
     """Rrnn cell formulas use one recurrent bias in recurrent GEMMs."""
 
 
@@ -171,11 +175,11 @@ struct cudnnRNNBiasMode_t:
 @register_passable("trivial")
 struct cudnnRNNDataLayout_t:
     var _value: Int32
-    alias SEQ_MAJOR_UNPACKED = Self(0)
+    comptime SEQ_MAJOR_UNPACKED = Self(0)
     """Padded, outer stride from one time-step to the next."""
-    alias SEQ_MAJOR_PACKED = Self(1)
+    comptime SEQ_MAJOR_PACKED = Self(1)
     """Sequence length sorted and packed as in basic RNN api."""
-    alias BATCH_MAJOR_UNPACKED = Self(2)
+    comptime BATCH_MAJOR_UNPACKED = Self(2)
     """Padded, outer stride from one batch to the next."""
 
 
@@ -221,10 +225,10 @@ fn cudnnGetRNNDescriptor_v6(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnForwardMode_t(EqualityComparable, Identifiable, Writable):
+struct cudnnForwardMode_t(Equatable, Identifiable, Writable):
     var _value: Int8
-    alias CUDNN_FWD_MODE_INFERENCE = Self(0)
-    alias CUDNN_FWD_MODE_TRAINING = Self(1)
+    comptime CUDNN_FWD_MODE_INFERENCE = Self(0)
+    comptime CUDNN_FWD_MODE_TRAINING = Self(1)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -514,11 +518,11 @@ fn cudnnGetAttnDescriptor(
     )
 
 
-alias cudnnRNNDescriptor_t = UnsafePointer[cudnnRNNStruct]
+comptime cudnnRNNDescriptor_t = UnsafePointer[cudnnRNNStruct]
 
-alias cudnnRNNDataDescriptor_t = UnsafePointer[cudnnRNNDataStruct]
+comptime cudnnRNNDataDescriptor_t = UnsafePointer[cudnnRNNDataStruct]
 
-alias cudnnPersistentRNNPlan_t = UnsafePointer[cudnnPersistentRNNPlan]
+comptime cudnnPersistentRNNPlan_t = UnsafePointer[cudnnPersistentRNNPlan]
 
 
 fn cudnnRNNSetClip(
@@ -621,9 +625,9 @@ fn cudnnGetRNNPaddingMode(
     ]()(rnn_desc, padding_mode)
 
 
-alias cudnnAttnDescriptor_t = UnsafePointer[cudnnAttnStruct]
+comptime cudnnAttnDescriptor_t = UnsafePointer[cudnnAttnStruct]
 
-alias cudnnAttnQueryMap_t = Int16
+comptime cudnnAttnQueryMap_t = Int16
 
 
 fn cudnnGetRNNLinLayerBiasParams(
@@ -775,12 +779,12 @@ fn cudnnGetRNNDescriptor_v8(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnSeqDataAxis_t(EqualityComparable, Identifiable, Writable):
+struct cudnnSeqDataAxis_t(Equatable, Identifiable, Writable):
     var _value: Int8
-    alias CUDNN_SEQDATA_TIME_DIM = Self(0)
-    alias CUDNN_SEQDATA_BATCH_DIM = Self(1)
-    alias CUDNN_SEQDATA_BEAM_DIM = Self(2)
-    alias CUDNN_SEQDATA_VECT_DIM = Self(3)
+    comptime CUDNN_SEQDATA_TIME_DIM = Self(0)
+    comptime CUDNN_SEQDATA_BATCH_DIM = Self(1)
+    comptime CUDNN_SEQDATA_BEAM_DIM = Self(2)
+    comptime CUDNN_SEQDATA_VECT_DIM = Self(3)
 
     fn __init__(out self, value: Int):
         self._value = value

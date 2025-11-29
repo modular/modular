@@ -11,18 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections.string.string_slice import get_static_string
-from os import abort
+from memory import LegacyUnsafePointer as UnsafePointer
+from os import abort, getenv
 from pathlib import Path
 from sys import argv, size_of
 from sys.ffi import (
     _find_dylib,
     _get_dylib_function,
     _Global,
-    _OwnedDLHandle,
+    OwnedDLHandle,
     c_int,
     c_uint,
     c_size_t,
     external_call,
+    RTLD,
 )
 from sys.info import CompilationTarget, is_nvidia_gpu
 
@@ -34,12 +36,6 @@ from ._mpi import MPI_Comm_rank, MPI_Init, MPIComm, get_mpi_comm_world
 # ===-----------------------------------------------------------------------===#
 # Library Load
 # ===-----------------------------------------------------------------------===#
-
-alias NVSHMEM_LIBRARY_PATHS = List[Path](
-    "libnvshmem_host.so.3.4.5",
-    "libnvshmem_host.so.3",
-    "libnvshmem_host.so",
-)
 
 
 @register_passable
@@ -54,28 +50,23 @@ struct NVSHMEMIVersion:
         self.patch = 5
 
 
-fn _on_error_msg() -> Error:
-    return Error(
-        (
-            "Cannot find the NVShmem libraries. Please make sure that "
-            "the CUDA toolkit is installed and that the library path is "
-            "correctly set in one of the following paths ["
-        ),
-        ", ".join(materialize[NVSHMEM_LIBRARY_PATHS]()),
-        (
-            "]. You may need to make sure that you are using the non-slim"
-            " version of the MAX container."
-        ),
-    )
+comptime NVSHMEM_LIBRARY = _Global["NVSHMEM_LIBRARY", _init_nvshmem_dylib]
 
 
-alias NVSHMEM_LIBRARY = _Global[
-    "NVSHMEM_LIBRARY", _init_nvshmem_dylib, on_error_msg=_on_error_msg
-]
-
-
-fn _init_nvshmem_dylib() -> _OwnedDLHandle:
-    return _find_dylib["NVSHMEM"](materialize[NVSHMEM_LIBRARY_PATHS]())
+fn _init_nvshmem_dylib() -> OwnedDLHandle:
+    var lib = "libnvshmem_host.so.3"
+    # If provided, allow an override directory for nvshmem bootstrap libs.
+    # Example:
+    #   export MODULAR_SHMEM_LIB_DIR="/path/to/venv/lib"
+    # will dlopen the library from:
+    #   /path/to/venv/lib/libnvshmem_host.so.3
+    if dir_name := getenv("MODULAR_SHMEM_LIB_DIR"):
+        lib = String(Path(dir_name) / lib)
+    try:
+        return OwnedDLHandle(path=lib)
+    except e:
+        abort(String("failed to load NVSHMEM library: ", e))
+        return OwnedDLHandle(unsafe_uninitialized=True)
 
 
 @always_inline
@@ -96,71 +87,71 @@ fn _get_nvshmem_function[
 # Types
 # ===-----------------------------------------------------------------------===#
 
-alias nvshmem_team_id_t = Int32
+comptime nvshmem_team_id_t = Int32
 
 # ===-----------------------------------------------------------------------===#
 # Constants
 # ===-----------------------------------------------------------------------===#
 
-alias NVSHMEM_SUCCESS = 0
+comptime NVSHMEM_SUCCESS = 0
 
-alias NVSHMEMX_INIT_WITH_MPI_COMM = 1 << 1
+comptime NVSHMEMX_INIT_WITH_MPI_COMM = 1 << 1
 
-alias CHANNEL_BUF_SIZE: c_int = 1 << 22
-alias CHANNEL_BUF_SIZE_LOG: c_int = 22
-alias CHANNEL_ENTRY_BYTES: c_int = 8
+comptime CHANNEL_BUF_SIZE: c_int = 1 << 22
+comptime CHANNEL_BUF_SIZE_LOG: c_int = 22
+comptime CHANNEL_ENTRY_BYTES: c_int = 8
 
-alias NVSHMEMX_ERROR_INTERNAL = 1
-alias NVSHMEM_MAX_NAME_LEN: c_int = 256
+comptime NVSHMEMX_ERROR_INTERNAL = 1
+comptime NVSHMEM_MAX_NAME_LEN: c_int = 256
 
-alias NVSHMEM_THREAD_SINGLE: c_int = 0
-alias NVSHMEM_THREAD_FUNNELED: c_int = 1
-alias NVSHMEM_THREAD_SERIALIZED: c_int = 2
-alias NVSHMEM_THREAD_MULTIPLE: c_int = 3
-alias NVSHMEM_THREAD_TYPE_SENTINEL: c_int = c_int.MAX
+comptime NVSHMEM_THREAD_SINGLE: c_int = 0
+comptime NVSHMEM_THREAD_FUNNELED: c_int = 1
+comptime NVSHMEM_THREAD_SERIALIZED: c_int = 2
+comptime NVSHMEM_THREAD_MULTIPLE: c_int = 3
+comptime NVSHMEM_THREAD_TYPE_SENTINEL: c_int = c_int.MAX
 
-alias NVSHMEM_CMP_EQ: c_int = 0
-alias NVSHMEM_CMP_NE: c_int = 1
-alias NVSHMEM_CMP_GT: c_int = 2
-alias NVSHMEM_CMP_LE: c_int = 3
-alias NVSHMEM_CMP_LT: c_int = 4
-alias NVSHMEM_CMP_GE: c_int = 5
-alias NVSHMEM_CMP_SENTINEL: c_int = c_int.MAX
+comptime NVSHMEM_CMP_EQ: c_int = 0
+comptime NVSHMEM_CMP_NE: c_int = 1
+comptime NVSHMEM_CMP_GT: c_int = 2
+comptime NVSHMEM_CMP_LE: c_int = 3
+comptime NVSHMEM_CMP_LT: c_int = 4
+comptime NVSHMEM_CMP_GE: c_int = 5
+comptime NVSHMEM_CMP_SENTINEL: c_int = c_int.MAX
 
-alias PROXY_GLOBAL_EXIT_INIT: c_int = 1
-alias PROXY_GLOBAL_EXIT_REQUESTED: c_int = 2
-alias PROXY_GLOBAL_EXIT_FINISHED: c_int = 3
-alias PROXY_GLOBAL_EXIT_MAX_STATE: c_int = c_int.MAX
+comptime PROXY_GLOBAL_EXIT_INIT: c_int = 1
+comptime PROXY_GLOBAL_EXIT_REQUESTED: c_int = 2
+comptime PROXY_GLOBAL_EXIT_FINISHED: c_int = 3
+comptime PROXY_GLOBAL_EXIT_MAX_STATE: c_int = c_int.MAX
 
-alias PROXY_DMA_REQ_BYTES: c_int = 32
-alias PROXY_AMO_REQ_BYTES: c_int = 40
-alias PROXY_INLINE_REQ_BYTES: c_int = 24
+comptime PROXY_DMA_REQ_BYTES: c_int = 32
+comptime PROXY_AMO_REQ_BYTES: c_int = 40
+comptime PROXY_INLINE_REQ_BYTES: c_int = 24
 
-alias NVSHMEM_STATUS_NOT_INITIALIZED: c_int = 0
-alias NVSHMEM_STATUS_IS_BOOTSTRAPPED: c_int = 1
-alias NVSHMEM_STATUS_IS_INITIALIZED: c_int = 2
-alias NVSHMEM_STATUS_LIMITED_MPG: c_int = 4
-alias NVSHMEM_STATUS_FULL_MPG: c_int = 5
-alias NVSHMEM_STATUS_INVALID: c_int = c_int.MAX
+comptime NVSHMEM_STATUS_NOT_INITIALIZED: c_int = 0
+comptime NVSHMEM_STATUS_IS_BOOTSTRAPPED: c_int = 1
+comptime NVSHMEM_STATUS_IS_INITIALIZED: c_int = 2
+comptime NVSHMEM_STATUS_LIMITED_MPG: c_int = 4
+comptime NVSHMEM_STATUS_FULL_MPG: c_int = 5
+comptime NVSHMEM_STATUS_INVALID: c_int = c_int.MAX
 
-alias NVSHMEM_SIGNAL_SET: c_int = 9
-alias NVSHMEM_SIGNAL_ADD: c_int = 10
+comptime NVSHMEM_SIGNAL_SET: c_int = 9
+comptime NVSHMEM_SIGNAL_ADD: c_int = 10
 
-alias NVSHMEM_TEAM_INVALID: nvshmem_team_id_t = -1
-alias NVSHMEM_TEAM_WORLD: nvshmem_team_id_t = 0
-alias NVSHMEM_TEAM_WORLD_INDEX: nvshmem_team_id_t = 0
-alias NVSHMEM_TEAM_SHARED: nvshmem_team_id_t = 1
-alias NVSHMEM_TEAM_SHARED_INDEX: nvshmem_team_id_t = 1
-alias NVSHMEMX_TEAM_NODE: nvshmem_team_id_t = 2
-alias NVSHMEM_TEAM_NODE_INDEX: nvshmem_team_id_t = 2
-alias NVSHMEMX_TEAM_SAME_MYPE_NODE: nvshmem_team_id_t = 3
-alias NVSHMEM_TEAM_SAME_MYPE_NODE_INDEX: nvshmem_team_id_t = 3
-alias NVSHMEMI_TEAM_SAME_GPU: nvshmem_team_id_t = 4
-alias NVSHMEM_TEAM_SAME_GPU_INDEX: nvshmem_team_id_t = 4
-alias NVSHMEMI_TEAM_GPU_LEADERS: nvshmem_team_id_t = 5
-alias NVSHMEM_TEAM_GPU_LEADERS_INDEX: nvshmem_team_id_t = 5
-alias NVSHMEM_TEAMS_MIN: nvshmem_team_id_t = 6
-alias NVSHMEM_TEAM_INDEX_MAX: nvshmem_team_id_t = nvshmem_team_id_t.MAX
+comptime NVSHMEM_TEAM_INVALID: nvshmem_team_id_t = -1
+comptime NVSHMEM_TEAM_WORLD: nvshmem_team_id_t = 0
+comptime NVSHMEM_TEAM_WORLD_INDEX: nvshmem_team_id_t = 0
+comptime NVSHMEM_TEAM_SHARED: nvshmem_team_id_t = 1
+comptime NVSHMEM_TEAM_SHARED_INDEX: nvshmem_team_id_t = 1
+comptime NVSHMEMX_TEAM_NODE: nvshmem_team_id_t = 2
+comptime NVSHMEM_TEAM_NODE_INDEX: nvshmem_team_id_t = 2
+comptime NVSHMEMX_TEAM_SAME_MYPE_NODE: nvshmem_team_id_t = 3
+comptime NVSHMEM_TEAM_SAME_MYPE_NODE_INDEX: nvshmem_team_id_t = 3
+comptime NVSHMEMI_TEAM_SAME_GPU: nvshmem_team_id_t = 4
+comptime NVSHMEM_TEAM_SAME_GPU_INDEX: nvshmem_team_id_t = 4
+comptime NVSHMEMI_TEAM_GPU_LEADERS: nvshmem_team_id_t = 5
+comptime NVSHMEM_TEAM_GPU_LEADERS_INDEX: nvshmem_team_id_t = 5
+comptime NVSHMEM_TEAMS_MIN: nvshmem_team_id_t = 6
+comptime NVSHMEM_TEAM_INDEX_MAX: nvshmem_team_id_t = nvshmem_team_id_t.MAX
 
 
 # Structs
@@ -341,16 +332,23 @@ fn nvshmemx_init() raises:
         raise Error("failed to initialize NVSHMEM")
 
 
-# Modular specific init, run one GPU per thread and return associated DeviceContext
-fn nvshmemx_init(mype_node: Int, npes_node: Int) raises -> DeviceContext:
-    var ctx = DeviceContext(mype_node)
+# Modular specific, initialize a DeviceContext on this thread to be SHMEM
+# enabled.
+fn nvshmemx_init_thread(
+    ctx: DeviceContext, number_of_devices_node: Int = -1
+) raises:
+    # Must set the associated CUcontext on this thread prior to init
     ctx.set_as_current()
+    var nranks = (
+        number_of_devices_node if number_of_devices_node
+        > 0 else ctx.number_of_devices()
+    )
 
     # Initialize NVSHMEM with MPI
     var mpi_comm = get_mpi_comm_world()
     var attr = NVSHMEMXInitAttr(UnsafePointer(to=mpi_comm))
-    attr.args.uid_args.myrank = mype_node
-    attr.args.uid_args.nranks = npes_node
+    attr.args.uid_args.myrank = Int32(ctx.id())
+    attr.args.uid_args.nranks = nranks
 
     var status = nvshmemx_hostlib_init_attr(
         NVSHMEMX_INIT_WITH_MPI_COMM, UnsafePointer(to=attr)
@@ -361,8 +359,6 @@ fn nvshmemx_init(mype_node: Int, npes_node: Int) raises -> DeviceContext:
     status = nvshmemx_init_status()
     if status != 2:
         raise Error("failed to initialize NVSHMEM with status:", status)
-
-    return ctx
 
 
 fn nvshmemx_hostlib_init_attr(
@@ -489,7 +485,7 @@ fn nvshmem_put[
     nelems: c_size_t,
     pe: c_int,
 ):
-    alias symbol = _dtype_to_nvshmem_type[
+    comptime symbol = _dtype_to_nvshmem_type[
         _get_prefix[scope](), dtype, "_put", scope.value
     ]()
     external_call[symbol, NoneType](dest, source, nelems, pe)
@@ -504,7 +500,7 @@ fn nvshmem_put_nbi[
     nelems: c_size_t,
     pe: c_int,
 ):
-    alias symbol = _dtype_to_nvshmem_type[
+    comptime symbol = _dtype_to_nvshmem_type[
         _get_prefix[scope](), dtype, "_put_nbi", scope.value
     ]()
     external_call[symbol, NoneType](dest, source, nelems, pe)
@@ -513,7 +509,7 @@ fn nvshmem_put_nbi[
 fn nvshmem_p[
     dtype: DType
 ](dest: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], pe: c_int):
-    alias symbol = _dtype_to_nvshmem_type["nvshmem_", dtype, "_p"]()
+    comptime symbol = _dtype_to_nvshmem_type["nvshmem_", dtype, "_p"]()
     external_call[symbol, NoneType](dest, value, pe)
 
 
@@ -526,7 +522,7 @@ fn nvshmem_get[
     nelems: c_size_t,
     pe: c_int,
 ):
-    alias symbol = _dtype_to_nvshmem_type[
+    comptime symbol = _dtype_to_nvshmem_type[
         _get_prefix[scope](), dtype, "_get", scope.value
     ]()
     external_call[symbol, NoneType](dest, source, nelems, pe)
@@ -541,7 +537,7 @@ fn nvshmem_get_nbi[
     nelems: c_size_t,
     pe: c_int,
 ):
-    alias symbol = _dtype_to_nvshmem_type[
+    comptime symbol = _dtype_to_nvshmem_type[
         _get_prefix[scope](), dtype, "_get_nbi", scope.value
     ]()
     external_call[symbol, NoneType](dest, source, nelems, pe)
@@ -550,7 +546,7 @@ fn nvshmem_get_nbi[
 fn nvshmem_g[
     dtype: DType
 ](source: UnsafePointer[Scalar[dtype]], pe: c_int) -> Scalar[dtype]:
-    alias symbol = _dtype_to_nvshmem_type["nvshmem_", dtype, "_g"]()
+    comptime symbol = _dtype_to_nvshmem_type["nvshmem_", dtype, "_g"]()
     return external_call[symbol, Scalar[dtype]](source, pe)
 
 
@@ -578,7 +574,7 @@ fn nvshmem_put_signal_nbi[
     sig_op: c_int,
     pe: c_int,
 ):
-    alias symbol = _dtype_to_nvshmem_type[
+    comptime symbol = _dtype_to_nvshmem_type[
         "nvshmem_", dtype, "_put_signal_nbi"
     ]()
     external_call[symbol, NoneType](

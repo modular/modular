@@ -78,7 +78,7 @@ fn _user_home_path(path: String) -> String:
     # Special POSIX syntax for ~[user-name]/path
     if len(path) > 1 and user_end > 1:
         try:
-            return pwd.getpwnam(path[1:user_end]).pw_dir
+            return pwd.getpwnam(String(path[1:user_end])).pw_dir
         except:
             return ""
     else:
@@ -110,6 +110,9 @@ fn expanduser[PathLike: os.PathLike, //](path: PathLike) raises -> String:
 
     Returns:
         The expanded path.
+
+    Raises:
+        If the operation fails.
     """
     var fspath = path.__fspath__()
     if not fspath.startswith("~"):
@@ -220,7 +223,7 @@ fn dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
     """
     var fspath = path.__fspath__()
     var i = fspath.rfind(os.sep) + 1
-    var head = fspath[:i]
+    var head = String(fspath[:i])
     if head and head != os.sep * len(head):
         return String(head.rstrip(os.sep))
     return head
@@ -276,7 +279,7 @@ fn realpath[PathLike: os.PathLike, //](path: PathLike) raises -> String:
 
     # We wrote the data directly into the String buffer
     # now we need to figure out the length
-    string.set_byte_length(_unsafe_strlen(string._ptr_or_data))
+    string.set_byte_length(Int(_unsafe_strlen(string._ptr_or_data)))
     string._set_nul_terminated()
 
     return string^
@@ -346,6 +349,9 @@ fn getsize[PathLike: os.PathLike, //](path: PathLike) raises -> Int:
 
     Returns:
         The size of the path in bytes.
+
+    Raises:
+        If the operation fails.
     """
     return stat(path.__fspath__()).st_size
 
@@ -410,7 +416,7 @@ fn join(var path: String, *paths: String) -> String:
 # ===----------------------------------------------------------------------=== #
 
 
-def split[PathLike: os.PathLike, //](path: PathLike) -> (String, String):
+fn split[PathLike: os.PathLike, //](path: PathLike) -> Tuple[String, String]:
     """
     Split a given pathname into two components: head and tail. This is useful
     for separating the directory path from the filename. If the input path ends
@@ -432,8 +438,8 @@ def split[PathLike: os.PathLike, //](path: PathLike) -> (String, String):
     var i = fspath.rfind(os.sep) + 1
     var head, tail = fspath[:i], fspath[i:]
     if head and head != String(os.sep) * len(head):
-        head = String(head.rstrip(sep))
-    return head, tail
+        head = head.rstrip(sep)
+    return String(head), String(tail)
 
 
 fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
@@ -459,7 +465,7 @@ fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
     var head = fspath[i:]
     if head and head != os.sep * len(head):
         return String(head.rstrip(os.sep))
-    return head
+    return String(head)
 
 
 # TODO uncomment this when unpacking is supported
@@ -540,6 +546,9 @@ fn split_extension[
 
     Returns:
         A tuple containing two strings: (root, extension).
+
+    Raises:
+        If the operation fails.
     """
     return _split_extension(path.__fspath__(), sep, "", ".")
 
@@ -564,20 +573,20 @@ fn splitroot[
         A tuple containing three strings: (drive, root, tail).
     """
     var p = path.__fspath__()
-    alias empty = ""
+    comptime empty = ""
 
     # Relative path, e.g.: 'foo'
-    if p[:1] != sep:
+    if p[:1] != StringSlice(sep):
         return empty, empty, p
 
     # Absolute path, e.g.: '/foo', '///foo', '////foo', etc.
-    elif p[1:2] != sep or p[2:3] == sep:
-        return empty, String(sep), p[1:]
+    elif p[1:2] != StringSlice(sep) or p[2:3] == StringSlice(sep):
+        return empty, String(sep), String(p[1:])
 
     # Precisely two leading slashes, e.g.: '//foo'. Implementation defined per POSIX, see
     # https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13
     else:
-        return empty, p[:2], p[2:]
+        return empty, String(p[:2]), String(p[2:])
 
 
 # ===----------------------------------------------------------------------=== #
@@ -594,7 +603,7 @@ fn _is_shell_special_variable(byte: Byte) -> Bool:
     Returns:
         True if the byte is a special shell variable and False otherwise.
     """
-    alias shell_variables = InlineArray[Int, 17](
+    comptime shell_variables = InlineArray[Int, 17](
         ord("*"),
         ord("#"),
         ord("$"),
@@ -638,7 +647,7 @@ fn _is_alphanumeric(byte: Byte) -> Bool:
 
 
 fn _parse_variable_name[
-    immutable: ImmutableOrigin
+    immutable: ImmutOrigin
 ](bytes: Span[Byte, immutable]) -> Tuple[StringSlice[immutable], Int]:
     """Returns the environment variable name and the byte count required to extract it.
     For `${}` expansions, two additional bytes are added to the byte count to account for the braces.
@@ -698,7 +707,7 @@ fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
     while j < len(bytes):
         if bytes[j] == ord("$") and j + 1 < len(bytes):
             if not buf:
-                buf.reserve(new_capacity=UInt(2 * len(bytes)))
+                buf.reserve(new_capacity=2 * len(bytes))
             buf.write_bytes(bytes[i:j])
 
             var name, length = _parse_variable_name(bytes[j + 1 :])

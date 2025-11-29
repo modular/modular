@@ -54,16 +54,16 @@ fn multistage_gemm_simple[
     binary_lambda_fn: binary_fn_type,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim[0]()
     var N = c.dim[1]()
 
     # Dispatch w/o split K
-    alias kernel = multistage_gemm_kernel[
+    comptime kernel = multistage_gemm_kernel[
         c_type,
         c_layout,
         a_type,
@@ -106,9 +106,9 @@ fn naive_dual_gemm[
     binary_lambda_fn: binary_fn_type,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c01: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b01: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+    c01: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b01: LayoutTensor[b_type, b_layout, MutAnyOrigin],
     ctx: DeviceContext,
 ):
     try:
@@ -118,10 +118,10 @@ fn naive_dual_gemm[
             binary_lambda_fn=binary_sub,
         ](c01, a, b01, ctx)
 
-        alias simd_width = simd_width_of[
+        comptime simd_width = simd_width_of[
             c_type, target = get_gpu_target["sm_80"]()
         ]()
-        alias align = align_of[SIMD[c_type, simd_width]]()
+        comptime align = align_of[SIMD[c_type, simd_width]]()
 
         var M = c01.dim[0]()
         var N = c01.dim[1]() // 2
@@ -156,7 +156,7 @@ fn runtime_row_major[
         Layout(IntTuple(UNKNOWN_VALUE, cols), IntTuple(cols, 1))
     ],
 ):
-    return __type_of(res).row_major(
+    return type_of(res).row_major(
         IndexList[2, element_type = res.element_type](rows, cols)
     )
 
@@ -164,11 +164,11 @@ fn runtime_row_major[
 fn test_dual_matmul[
     transpose_b: Bool, N: Int = 512, K: Int = 512
 ](ctx: DeviceContext, M: Int = 512, do_benchmark: Bool = False) raises:
-    alias dst_type = DType.float32
-    alias src_type = DType.bfloat16
-    alias warp_shape = Index(64, 64, _bk_base[src_type]())
-    alias config = MatmulConfig[src_type, src_type, dst_type, transpose_b]()
-    alias M128_N28672_K4096_config = MatmulConfig[
+    comptime dst_type = DType.float32
+    comptime src_type = DType.bfloat16
+    comptime warp_shape = Index(64, 64, _bk_base[src_type]())
+    comptime config = MatmulConfig[src_type, src_type, dst_type, transpose_b]()
+    comptime M128_N28672_K4096_config = MatmulConfig[
         src_type, src_type, dst_type, transpose_b
     ](
         block_tile_shape=Index(128, 128, 32),
@@ -176,7 +176,7 @@ fn test_dual_matmul[
         num_pipeline_stages=4,
         num_k_partitions=1,
     )
-    alias M256_N28672_K4096_config_a100 = MatmulConfig[
+    comptime M256_N28672_K4096_config_a100 = MatmulConfig[
         src_type, src_type, dst_type, transpose_b
     ](
         block_tile_shape=Index(64, 256, 64),
@@ -184,8 +184,8 @@ fn test_dual_matmul[
         num_pipeline_stages=4,
         num_k_partitions=1,
     )
-    alias M256_N28672_K4096_config = M256_N28672_K4096_config_a100 if M256_N28672_K4096_config_a100.shared_mem_usage() <= ctx.default_device_info.shared_memory_per_multiprocessor else config
-    alias M512_N28672_K4096_config = MatmulConfig[
+    comptime M256_N28672_K4096_config = M256_N28672_K4096_config_a100 if M256_N28672_K4096_config_a100.shared_mem_usage() <= ctx.default_device_info.shared_memory_per_multiprocessor else config
+    comptime M512_N28672_K4096_config = MatmulConfig[
         src_type, src_type, dst_type, transpose_b
     ](
         block_tile_shape=Index(128, 128, 32),
@@ -195,7 +195,7 @@ fn test_dual_matmul[
     )
 
     var layout_a = runtime_row_major[K](M)
-    alias layout_b = Layout.row_major(
+    comptime layout_b = Layout.row_major(
         N, K
     ) if transpose_b else Layout.row_major(K, N)
     var layout_c = runtime_row_major[N](M)
@@ -274,11 +274,11 @@ fn test_dual_matmul[
     else:
         run_dual_gemm()
 
-    alias layout_b01 = Layout.row_major(
+    comptime layout_b01 = Layout.row_major(
         2 * N, K
     ) if transpose_b else Layout.row_major(K, 2 * N)
     var mat_b01 = ManagedLayoutTensor[src_type, layout_b01](ctx)
-    alias src_simd_width = simd_width_of[src_type]()
+    comptime src_simd_width = simd_width_of[src_type]()
 
     var mat_b01v = mat_b01.tensor().vectorize[1, src_simd_width]()
     var mat_b0_tensor = mat_b0.tensor()
@@ -295,7 +295,7 @@ fn test_dual_matmul[
                     SIMD[src_type, mat_b01v.element_size]
                 ](mat_b1_tensor.vectorize[1, src_simd_width]()[n, k])
     else:
-        alias Niter = N // src_simd_width
+        comptime Niter = N // src_simd_width
         for k in range(K):
             for n in range(Niter):
                 mat_b01v[k, n] = rebind[SIMD[src_type, mat_b01v.element_size]](
@@ -375,8 +375,8 @@ fn test_dual_matmul[
     _ = mat_a^
     _ = mat_b01^
 
-    alias cbrt_eps = exp2(FPUtils[dst_type].mantissa_width() / -3)
-    alias dst_simd_width = simd_width_of[dst_type]()
+    comptime cbrt_eps = exp2(FPUtils[dst_type].mantissa_width() / -3)
+    comptime dst_simd_width = simd_width_of[dst_type]()
     # elementwise
     for m in range(M):
         for n in range(N // dst_simd_width):
@@ -404,10 +404,10 @@ def main():
     with DeviceContext() as ctx:
         test_dual_matmul[transpose_b=False](ctx, do_benchmark=do_benchmark)
         test_dual_matmul[transpose_b=True](ctx, do_benchmark=do_benchmark)
-        alias Ms = StaticTuple[Int, 3](128, 256, 1024)
-        alias Ms_transpose = StaticTuple[Int, 4](1, 128, 256, 1024)
-        alias N = 14336
-        alias K = 4096
+        comptime Ms = StaticTuple[Int, 3](128, 256, 1024)
+        comptime Ms_transpose = StaticTuple[Int, 4](1, 128, 256, 1024)
+        comptime N = 14336
+        comptime K = 4096
         for m_idx in range(len(Ms)):
             var M = Ms[m_idx]
             test_dual_matmul[transpose_b=False, N=N, K=K](

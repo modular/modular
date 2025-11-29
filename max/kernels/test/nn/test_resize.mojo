@@ -65,9 +65,9 @@ def test_case_linear[
 def main():
     fn test_upsample_sizes_nearest_1() raises:
         print("== test_upsample_sizes_nearest_1")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
-            DimList(1, 1, 2, 2), List[Scalar[dtype]](1, 2, 3, 4)
+            DimList(1, 1, 2, 2), [Scalar[dtype](1), 2, 3, 4]
         )
         var output = TestTensor[dtype, 4](DimList(1, 1, 4, 6))
         test_case_nearest[
@@ -80,9 +80,9 @@ def main():
 
     fn test_downsample_sizes_nearest() raises:
         print("== test_downsample_sizes_nearest")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
-            DimList(1, 1, 2, 4), List[Scalar[dtype]](1, 2, 3, 4, 5, 6, 7, 8)
+            DimList(1, 1, 2, 4), [Scalar[dtype](1), 2, 3, 4, 5, 6, 7, 8]
         )
         var output = TestTensor[dtype, 4](DimList(1, 1, 1, 2))
 
@@ -96,12 +96,27 @@ def main():
 
     fn test_downsample_sizes_nearest_half_pixel_1D() raises:
         print("== test_downsample_sizes_nearest_half_pixel_1D")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 4, 4),
-            List[Scalar[dtype]](
-                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
-            ),
+            [
+                Scalar[dtype](0),
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+            ],
         )
         var output = TestTensor[dtype, 4](DimList(1, 1, 1, 2))
 
@@ -115,9 +130,9 @@ def main():
 
     fn test_upsample_sizes_nearest_2() raises:
         print("== test_upsample_sizes_nearest_2")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
-            DimList(1, 1, 2, 2), List[Scalar[dtype]](1, 2, 3, 4)
+            DimList(1, 1, 2, 2), [Scalar[dtype](1), 2, 3, 4]
         )
         var output = TestTensor[dtype, 4](DimList(1, 1, 7, 8))
 
@@ -131,12 +146,27 @@ def main():
 
     fn test_upsample_sizes_nearest_floor_align_corners() raises:
         print("== test_upsample_sizes_nearest_floor_align_corners")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 4, 4),
-            List[Scalar[dtype]](
-                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
-            ),
+            [
+                Scalar[dtype](1),
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+                16,
+            ],
         )
         var output = TestTensor[dtype, 4](DimList(1, 1, 8, 8))
 
@@ -150,12 +180,27 @@ def main():
 
     fn test_upsample_sizes_nearest_round_half_up_asymmetric() raises:
         print("== test_upsample_sizes_nearest_round_half_up_asymmetric")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 4, 4),
-            List[Scalar[dtype]](
-                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
-            ),
+            [
+                Scalar[dtype](1),
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+                16,
+            ],
         )
         var output = TestTensor[dtype, 4](DimList(1, 1, 8, 8))
 
@@ -169,12 +214,27 @@ def main():
 
     fn test_upsample_sizes_nearest_ceil_half_pixel() raises:
         print("== test_upsample_sizes_nearest_ceil_half_pixel")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 4, 4),
-            List[Scalar[dtype]](
-                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
-            ),
+            [
+                Scalar[dtype](1),
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+                16,
+            ],
         )
         var output = TestTensor[dtype, 4](DimList(1, 1, 8, 8))
 
@@ -188,10 +248,10 @@ def main():
 
     fn test_upsample_sizes_linear() raises:
         print("== test_upsample_sizes_linear")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 2, 2),
-            List[Scalar[dtype]](1, 2, 3, 4),
+            [Scalar[dtype](1), 2, 3, 4],
         )
         var output = TestTensor[dtype, 4](DimList(1, 1, 4, 4))
 
@@ -202,8 +262,8 @@ def main():
 
         var reference = TestTensor[dtype, 4](
             DimList(1, 1, 4, 4),
-            List[Scalar[dtype]](
-                1.0000,
+            [
+                Scalar[dtype](1.0000),
                 1.2500,
                 1.7500,
                 2.0000,
@@ -219,7 +279,7 @@ def main():
                 3.2500,
                 3.7500,
                 4.0000,
-            ),
+            ],
         )
 
         test_case_linear[4, CoordinateTransformationMode.HalfPixel, False](
@@ -232,10 +292,10 @@ def main():
 
     fn test_upsample_sizes_linear_align_corners() raises:
         print("== test_upsample_sizes_linear_align_corners")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 2, 2),
-            List[Scalar[dtype]](1, 2, 3, 4),
+            [Scalar[dtype](1), 2, 3, 4],
         )
         var output = TestTensor[dtype, 4](DimList(1, 1, 4, 4))
 
@@ -246,8 +306,8 @@ def main():
         # print(y.flatten())
         var reference = TestTensor[dtype, 4](
             DimList(1, 1, 4, 4),
-            List[Scalar[dtype]](
-                1.0000,
+            [
+                Scalar[dtype](1.0000),
                 1.3333,
                 1.6667,
                 2.0000,
@@ -263,7 +323,7 @@ def main():
                 3.3333,
                 3.6667,
                 4.0000,
-            ),
+            ],
         )
 
         test_case_linear[4, CoordinateTransformationMode.AlignCorners, False](
@@ -276,10 +336,10 @@ def main():
 
     fn test_downsample_sizes_linear() raises:
         print("== test_downsample_sizes_linear")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 2, 4),
-            List[Scalar[dtype]](1, 2, 3, 4, 5, 6, 7, 8),
+            [Scalar[dtype](1), 2, 3, 4, 5, 6, 7, 8],
         )
         var output = TestTensor[dtype, 4](DimList(1, 1, 1, 2))
         # TORCH REFERENCE:
@@ -287,7 +347,7 @@ def main():
         # y = torch.nn.functional.interpolate(torch.Tensor(x), (1, 2), mode="bilinear")
         # print(y.flatten())
         var reference = TestTensor[dtype, 4](
-            DimList(1, 1, 1, 2), List[Scalar[dtype]](3.50000, 5.50000)
+            DimList(1, 1, 1, 2), [Scalar[dtype](3.50000), 5.50000]
         )
 
         test_case_linear[4, CoordinateTransformationMode.HalfPixel, False](
@@ -300,9 +360,9 @@ def main():
 
     fn test_downsample_sizes_linear_align_corners() raises:
         print("== test_downsample_sizes_linear_align_corners")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
-            DimList(1, 1, 2, 4), List[Scalar[dtype]](1, 2, 3, 4, 5, 6, 7, 8)
+            DimList(1, 1, 2, 4), [Scalar[dtype](1), 2, 3, 4, 5, 6, 7, 8]
         )
         var output = TestTensor[dtype, 4](DimList(1, 1, 1, 2))
         # TORCH REFERENCE:
@@ -312,7 +372,7 @@ def main():
         # )
         # print(y.flatten())
         var reference = TestTensor[dtype, 4](
-            DimList(1, 1, 1, 2), List[Scalar[dtype]](1, 4)
+            DimList(1, 1, 1, 2), [Scalar[dtype](1), 4]
         )
 
         test_case_linear[4, CoordinateTransformationMode.AlignCorners, False](
@@ -325,12 +385,27 @@ def main():
 
     fn test_upsample_sizes_trilinear() raises:
         print("== test_upsample_sizes_trilinear")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 4, 2, 2),
-            List[Scalar[dtype]](
-                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
-            ),
+            [
+                Scalar[dtype](0),
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+            ],
         )
         var output = TestTensor[dtype, 4](DimList(1, 6, 4, 4))
 
@@ -343,7 +418,8 @@ def main():
         var reference = TestTensor[dtype, 4](
             DimList(1, 6, 4, 4),
             # fmt: off
-            List[Scalar[dtype]](0.00000,  0.25000,  0.75000,  1.00000,  0.50000,  0.75000,  1.25000,
+            [
+                Scalar[dtype](0.00000),  0.25000,  0.75000,  1.00000,  0.50000,  0.75000,  1.25000,
                 1.50000,  1.50000,  1.75000,  2.25000,  2.50000,  2.00000,  2.25000,
                 2.75000,  3.00000,  2.00000,  2.25000,  2.75000,  3.00000,  2.50000,
                 2.75000,  3.25000,  3.50000,  3.50000,  3.75000,  4.25000,  4.50000,
@@ -356,7 +432,8 @@ def main():
                 11.25000, 11.50000, 11.50000, 11.75000, 12.25000, 12.50000, 12.00000,
                 12.25000, 12.75000, 13.00000, 12.00000, 12.25000, 12.75000, 13.00000,
                 12.50000, 12.75000, 13.25000, 13.50000, 13.50000, 13.75000, 14.25000,
-                14.50000, 14.00000, 14.25000, 14.75000, 15.00000)
+                14.50000, 14.00000, 14.25000, 14.75000, 15.00000
+            ]
             # fmt: on
         )
 
@@ -370,12 +447,27 @@ def main():
 
     fn test_downsample_sizes_linear_antialias() raises:
         print("== test_downsample_sizes_linear_antialias")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 4, 4),
-            List[Scalar[dtype]](
-                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
-            ),
+            [
+                Scalar[dtype](0),
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+            ],
         )
         var output = TestTensor[dtype, 4](DimList(1, 1, 2, 2))
 
@@ -387,7 +479,7 @@ def main():
         # print(y.flatten())
         var reference = TestTensor[dtype, 4](
             DimList(1, 1, 2, 2),
-            List[Scalar[dtype]](3.57143, 5.14286, 9.85714, 11.42857),
+            [Scalar[dtype](3.57143), 5.14286, 9.85714, 11.42857],
         )
 
         test_case_linear[4, CoordinateTransformationMode.HalfPixel, True](
@@ -400,21 +492,21 @@ def main():
 
     fn test_no_resize() raises:
         print("== test_no_resize")
-        alias dtype = DType.float32
+        comptime dtype = DType.float32
         var input = TestTensor[dtype, 4](
             DimList(1, 1, 2, 2),
-            List[Scalar[dtype]](1, 1, 1, 1),
+            [Scalar[dtype](1), 1, 1, 1],
         )
         var output = TestTensor[dtype, 4](DimList(1, 1, 2, 2))
 
         var reference = TestTensor[dtype, 4](
             DimList(1, 1, 2, 2),
-            List[Scalar[dtype]](
+            [
+                Scalar[dtype](1.0000),
                 1.0000,
                 1.0000,
                 1.0000,
-                1.0000,
-            ),
+            ],
         )
 
         test_case_linear[4, CoordinateTransformationMode.HalfPixel, False](

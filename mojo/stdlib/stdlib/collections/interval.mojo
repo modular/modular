@@ -73,7 +73,7 @@ trait IntervalElement(Comparable, Copyable, Intable, Movable, Writable):
 
 struct Interval[T: IntervalElement](
     Boolable,
-    EqualityComparable,
+    Equatable,
     ImplicitlyCopyable,
     Movable,
     Representable,
@@ -89,13 +89,13 @@ struct Interval[T: IntervalElement](
         T: The type of the interval bounds.
     """
 
-    var start: T
+    var start: Self.T
     """The inclusive start of the interval."""
 
-    var end: T
+    var end: Self.T
     """The exclusive end of the interval."""
 
-    fn __init__(out self, start: T, end: T):
+    fn __init__(out self, start: Self.T, end: Self.T):
         """Initialize an interval with start and end values.
 
         Args:
@@ -109,7 +109,7 @@ struct Interval[T: IntervalElement](
         self.start = start.copy()
         self.end = end.copy()
 
-    fn __init__(out self, interval: Tuple[T, T], /):
+    fn __init__(out self, interval: Tuple[Self.T, Self.T], /):
         """Initialize an interval with a tuple of start and end values.
 
         Args:
@@ -187,7 +187,7 @@ struct Interval[T: IntervalElement](
         var end = self.end.copy() if self.end < other.end else other.end.copy()
         return Self(start, end)
 
-    fn __contains__(self, other: T) -> Bool:
+    fn __contains__(self, other: Self.T) -> Bool:
         """Returns whether a value is contained within this interval.
 
         Args:
@@ -325,22 +325,22 @@ struct _IntervalNode[
           and collection operations.
     """
 
-    var interval: Interval[T]
+    var interval: Interval[Self.T]
     """The interval contained in this node."""
 
-    var data: U
+    var data: Self.U
     """The data associated with this interval."""
 
-    var max_end: T
+    var max_end: Self.T
     """The maximum end value of this node."""
 
-    var left: UnsafePointer[Self]
+    var left: UnsafePointer[Self, MutOrigin.external]
     """The left child of this node."""
 
-    var right: UnsafePointer[Self]
+    var right: UnsafePointer[Self, MutOrigin.external]
     """The right child of this node."""
 
-    var parent: UnsafePointer[Self]
+    var parent: UnsafePointer[Self, MutOrigin.external]
     """The parent of this node."""
 
     var _is_red: Bool
@@ -348,13 +348,13 @@ struct _IntervalNode[
 
     fn __init__(
         out self,
-        start: T,
-        end: T,
-        data: U,
+        start: Self.T,
+        end: Self.T,
+        data: Self.U,
         *,
-        left: Optional[UnsafePointer[Self]] = None,
-        right: Optional[UnsafePointer[Self]] = None,
-        parent: Optional[UnsafePointer[Self]] = None,
+        left: Optional[UnsafePointer[Self, MutOrigin.external]] = None,
+        right: Optional[UnsafePointer[Self, MutOrigin.external]] = None,
+        parent: Optional[UnsafePointer[Self, MutOrigin.external]] = None,
         is_red: Bool = True,
     ):
         """Creates a new interval node.
@@ -379,12 +379,12 @@ struct _IntervalNode[
 
     fn __init__(
         out self,
-        interval: Interval[T],
-        data: U,
+        interval: Interval[Self.T],
+        data: Self.U,
         *,
-        left: Optional[UnsafePointer[Self]] = None,
-        right: Optional[UnsafePointer[Self]] = None,
-        parent: Optional[UnsafePointer[Self]] = None,
+        left: Optional[UnsafePointer[Self, MutOrigin.external]] = None,
+        right: Optional[UnsafePointer[Self, MutOrigin.external]] = None,
+        parent: Optional[UnsafePointer[Self, MutOrigin.external]] = None,
         is_red: Bool = True,
     ):
         """Creates a new interval node.
@@ -499,7 +499,11 @@ struct IntervalTree[
           and collection operations.
     """
 
-    var _root: UnsafePointer[_IntervalNode[T, U]]
+    comptime _IntervalNodePointer = UnsafePointer[
+        _IntervalNode[Self.T, Self.U], MutOrigin.external
+    ]
+
+    var _root: Self._IntervalNodePointer
     """The root node of the interval tree."""
 
     var _len: Int
@@ -511,10 +515,11 @@ struct IntervalTree[
         self._len = 0
 
     fn __del__(deinit self):
+        """Destructor that frees the interval tree's memory."""
         Self._del_helper(self._root)
 
     @staticmethod
-    fn _del_helper(node: UnsafePointer[_IntervalNode[T, U]]):
+    fn _del_helper(node: Self._IntervalNodePointer):
         if node[].left:
             Self._del_helper(node[].left)
         if node[].right:
@@ -522,9 +527,7 @@ struct IntervalTree[
         node.destroy_pointee()
         node.free()
 
-    fn _left_rotate(
-        mut self, rotation_node: UnsafePointer[_IntervalNode[T, U]]
-    ):
+    fn _left_rotate(mut self, rotation_node: Self._IntervalNodePointer):
         """Performs a left rotation around node x in the red-black tree.
 
         This method performs a left rotation around the given node x, which is a
@@ -591,9 +594,7 @@ struct IntervalTree[
                 rotation_right_child[].right[].max_end,
             )
 
-    fn _right_rotate(
-        mut self, rotation_node: UnsafePointer[_IntervalNode[T, U]]
-    ):
+    fn _right_rotate(mut self, rotation_node: Self._IntervalNodePointer):
         """Performs a right rotation around node y in the red-black tree.
 
         This method performs a right rotation around the given node y, which is a
@@ -653,7 +654,7 @@ struct IntervalTree[
                 rotation_left_child[].left[].max_end,
             )
 
-    fn insert(mut self, interval: Tuple[T, T], data: U):
+    fn insert(mut self, interval: Tuple[Self.T, Self.T], data: Self.U):
         """Insert a new interval into the tree using a tuple representation.
 
         Args:
@@ -662,7 +663,7 @@ struct IntervalTree[
         """
         self.insert(Interval(interval[0], interval[1]), data)
 
-    fn insert(mut self, interval: Interval[T], data: U):
+    fn insert(mut self, interval: Interval[Self.T], data: Self.U):
         """Insert a new interval into the tree.
 
         This method inserts a new interval and its associated data into the interval tree.
@@ -675,7 +676,7 @@ struct IntervalTree[
         """
         # Allocate memory for a new node and initialize it with the interval
         # and data
-        var new_node = UnsafePointer[_IntervalNode[T, U]].alloc(1)
+        var new_node = alloc[_IntervalNode[Self.T, Self.U]](1)
         new_node.init_pointee_move(_IntervalNode(interval, data))
         self._len += 1
 
@@ -687,7 +688,7 @@ struct IntervalTree[
 
         # Find the insertion point by traversing down the tree
         # parent_node tracks the parent of the current node
-        var parent_node = __type_of(self._root)()
+        var parent_node = type_of(self._root)()
         # current_node traverses down the tree until we find an empty spot
         var current_node = self._root
         while current_node:
@@ -710,9 +711,7 @@ struct IntervalTree[
 
         self._insert_fixup(new_node)
 
-    fn _insert_fixup(
-        mut self, current_node0: UnsafePointer[_IntervalNode[T, U]]
-    ):
+    fn _insert_fixup(mut self, current_node0: Self._IntervalNodePointer):
         """Fixes up the red-black tree properties after an insertion.
 
         This method restores the red-black tree properties that may have been violated
@@ -810,7 +809,7 @@ struct IntervalTree[
     ](
         self,
         mut writer: w,
-        node: UnsafePointer[_IntervalNode[T, U]],
+        node: Self._IntervalNodePointer,
         indent: String,
         is_last: Bool,
     ):
@@ -863,9 +862,7 @@ struct IntervalTree[
         if not self._root:
             return writer.write("Empty")
 
-        var work_list = Deque[
-            Tuple[UnsafePointer[_IntervalNode[T, U]], String, Bool]
-        ]()
+        var work_list = Deque[Tuple[Self._IntervalNodePointer, String, Bool]]()
         work_list.append((self._root, String(), True))
 
         while work_list:
@@ -914,9 +911,7 @@ struct IntervalTree[
                 row.append(" ")  # Initialize with spaces
             grid.append(row^)
 
-        var work_list = Deque[
-            Tuple[UnsafePointer[_IntervalNode[T, U]], Int, Int, Int]
-        ]()
+        var work_list = Deque[Tuple[Self._IntervalNodePointer, Int, Int, Int]]()
         work_list.append((self._root, 0, 0, width))
 
         while work_list:
@@ -971,8 +966,8 @@ struct IntervalTree[
 
     fn transplant(
         mut self,
-        mut u: UnsafePointer[_IntervalNode[T, U]],
-        mut v: UnsafePointer[_IntervalNode[T, U]],
+        mut u: Self._IntervalNodePointer,
+        mut v: Self._IntervalNodePointer,
     ):
         """Transplants the subtree rooted at node u with the subtree rooted at node v.
 
@@ -990,7 +985,7 @@ struct IntervalTree[
         if v:
             v[].parent = u[].parent
 
-    fn search(self, interval: Tuple[T, T]) raises -> List[U]:
+    fn search(self, interval: Tuple[Self.T, Self.T]) raises -> List[Self.U]:
         """Searches for intervals overlapping with the given tuple.
 
         Args:
@@ -998,10 +993,13 @@ struct IntervalTree[
 
         Returns:
             A list of data associated with overlapping intervals.
+
+        Raises:
+            If the operation fails.
         """
         return self.search(Interval(interval[0], interval[1]))
 
-    fn search(self, interval: Interval[T]) raises -> List[U]:
+    fn search(self, interval: Interval[Self.T]) raises -> List[Self.U]:
         """Searches for intervals overlapping with the given interval.
 
         Args:
@@ -1009,14 +1007,17 @@ struct IntervalTree[
 
         Returns:
             A list of data associated with overlapping intervals.
+
+        Raises:
+            If the operation fails.
         """
         return self._search_helper(self._root, interval)
 
     fn _search_helper(
-        self, node: UnsafePointer[_IntervalNode[T, U]], interval: Interval[T]
-    ) raises -> List[U]:
-        var result = List[U]()
-        var work_list = Deque[UnsafePointer[_IntervalNode[T, U]]]()
+        self, node: Self._IntervalNodePointer, interval: Interval[Self.T]
+    ) raises -> List[Self.U]:
+        var result = List[Self.U]()
+        var work_list = Deque[Self._IntervalNodePointer]()
         work_list.append(node)
 
         while work_list:

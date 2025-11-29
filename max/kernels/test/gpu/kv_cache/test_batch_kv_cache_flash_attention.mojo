@@ -13,6 +13,7 @@
 
 from collections import Set
 from math import rsqrt
+from memory import LegacyUnsafePointer as UnsafePointer
 from random import random_ui64, seed
 
 from buffer import Dim, DimList, NDBuffer
@@ -26,17 +27,17 @@ from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
-from tensor_internal import IOUnknown, ManagedTensorSlice
-from tensor_internal.managed_tensor_slice import StaticTensorSpec
+from tensor import IOUnknown, ManagedTensorSlice
+from tensor.managed_tensor_slice import StaticTensorSpec
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
 
-alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
-alias replit_num_q_heads = 24
+comptime kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
+comptime replit_num_q_heads = 24
 
-alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
-alias llama_num_q_heads = 32
+comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
+comptime llama_num_q_heads = 32
 
 
 def execute_flash_attention[
@@ -50,8 +51,10 @@ def execute_flash_attention[
     cache_valid_length: NDBuffer[DType.uint32, 1],
     ctx: DeviceContext,
 ):
-    alias num_blocks = 32
-    alias CollectionType = ContinuousBatchingKVCacheCollection[dtype, kv_params]
+    comptime num_blocks = 32
+    comptime CollectionType = ContinuousBatchingKVCacheCollection[
+        dtype, kv_params
+    ]
 
     debug_assert(
         batch_size < num_blocks,
@@ -76,7 +79,7 @@ def execute_flash_attention[
         dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_len, num_q_heads, kv_params.head_size
+            batch_size, max_prompt_len, num_q_heads, Int(kv_params.head_size)
         )
     )
 
@@ -92,7 +95,7 @@ def execute_flash_attention[
         dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_len, num_q_heads, kv_params.head_size
+            batch_size, max_prompt_len, num_q_heads, Int(kv_params.head_size)
         ),
         ctx=ctx,
     )
@@ -112,14 +115,14 @@ def execute_flash_attention[
         dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_len, num_q_heads, kv_params.head_size
+            batch_size, max_prompt_len, num_q_heads, Int(kv_params.head_size)
         ),
     )
     ref_output_device = DeviceNDBuffer[
         dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_len, num_q_heads, kv_params.head_size
+            batch_size, max_prompt_len, num_q_heads, Int(kv_params.head_size)
         ),
         ctx=ctx,
     )
@@ -129,14 +132,14 @@ def execute_flash_attention[
         dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_len, num_q_heads, kv_params.head_size
+            batch_size, max_prompt_len, num_q_heads, Int(kv_params.head_size)
         ),
     )
     test_output_device = DeviceNDBuffer[
         dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_len, num_q_heads, kv_params.head_size
+            batch_size, max_prompt_len, num_q_heads, Int(kv_params.head_size)
         ),
         ctx=ctx,
     )
@@ -145,16 +148,11 @@ def execute_flash_attention[
     var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
 
     ctx.enqueue_copy(cache_lengths_dev, cache_valid_length.data)
-    var cache_lengths_device_nd = NDBuffer[DType.uint32, 1](
-        cache_lengths_dev.unsafe_ptr(), Index(batch_size)
-    )
-    var cache_lengths_device_lt = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+    var cache_lengths_device = LayoutTensor[
+        DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
     ](
         cache_lengths_dev.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            Index(batch_size)
-        ),
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
     )
     kv_block_host = HostNDBuffer[dtype, 6](
         IndexList[6](
@@ -162,8 +160,8 @@ def execute_flash_attention[
             2,
             num_layers,
             max_seq_len,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         ),
     )
     random(kv_block_host.tensor)
@@ -192,9 +190,27 @@ def execute_flash_attention[
     ctx.enqueue_copy(lookup_table_device.buffer, lookup_table_host.tensor.data)
 
     var kv_collection_device = CollectionType(
-        kv_block_device.tensor,
-        cache_lengths_device_nd,
-        lookup_table_device.tensor,
+        LayoutTensor[
+            kv_block_device.dtype,
+            Layout.row_major[6](),
+            MutAnyOrigin,
+        ](
+            kv_block_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_device.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        cache_lengths_device,
+        LayoutTensor[
+            lookup_table_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            lookup_table_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                lookup_table_device.to_layout_tensor().runtime_layout.shape.value,
+                lookup_table_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_prompt_len,
         max_context_len,
     )
@@ -210,23 +226,33 @@ def execute_flash_attention[
         MaterializedMask(
             LayoutTensor[
                 mask_device.dtype,
-                __type_of(mask_device.to_layout_tensor()).layout,
-                MutableAnyOrigin,
+                type_of(mask_device.to_layout_tensor()).layout,
+                MutAnyOrigin,
             ](
                 mask_device.to_layout_tensor().ptr,
                 RuntimeLayout[
-                    __type_of(mask_device.to_layout_tensor()).layout
+                    type_of(mask_device.to_layout_tensor()).layout
                 ].row_major(
                     mask_device.to_layout_tensor().runtime_layout.shape.value.canonicalize()
                 ),
             ),
-            start_pos=cache_lengths_device_lt,
+            start_pos=LayoutTensor[
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            ](
+                cache_lengths_dev.unsafe_ptr(),
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    Index(batch_size)
+                ),
+            ),
         ),
         IdentityScoreMod(),
         ManagedTensorSlice[
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](valid_lengths_device.tensor),
+        ](
+            valid_lengths_device.tensor.data,
+            valid_lengths_device.tensor.get_shape(),
+        ),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -238,30 +264,40 @@ def execute_flash_attention[
         MaterializedMask(
             LayoutTensor[
                 mask_device.dtype,
-                __type_of(mask_device.to_layout_tensor()).layout,
-                MutableAnyOrigin,
+                type_of(mask_device.to_layout_tensor()).layout,
+                MutAnyOrigin,
             ](
                 mask_device.to_layout_tensor().ptr,
                 RuntimeLayout[
-                    __type_of(mask_device.to_layout_tensor()).layout
+                    type_of(mask_device.to_layout_tensor()).layout
                 ].row_major(
                     mask_device.to_layout_tensor().runtime_layout.shape.value.canonicalize()
                 ),
             ),
-            start_pos=cache_lengths_device_lt,
+            start_pos=LayoutTensor[
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            ](
+                cache_lengths_dev.unsafe_ptr(),
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    Index(batch_size)
+                ),
+            ),
         ),
         ref_output_device.to_layout_tensor(),
         ManagedTensorSlice[
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](valid_lengths_device.tensor),
+        ](
+            valid_lengths_device.tensor.data,
+            valid_lengths_device.tensor.get_shape(),
+        ),
         rsqrt(Float32(kv_params.head_size)),
         batch_size,
         max_prompt_len,
         max_context_len,
         num_q_heads,  # TODO fix this for GQA
-        kv_params.head_size,
-        num_q_heads // kv_params.num_heads,
+        Int(kv_params.head_size),
+        num_q_heads // Int(kv_params.num_heads),
         ctx,
     )
 
@@ -276,8 +312,8 @@ def execute_flash_attention[
             for h in range(Int(num_q_heads)):
                 for hd in range(kv_params.head_size):
                     assert_almost_equal(
-                        ref_out[bs, s, h, hd],
-                        test_out[bs, s, h, hd],
+                        ref_out[bs, s, h, Int(hd)],
+                        test_out[bs, s, h, Int(hd)],
                         atol=1e-5,
                         rtol=8e-3,
                     )
@@ -297,7 +333,7 @@ def execute_flash_attention[
 
 
 def execute_flash_attention_suite(ctx: DeviceContext):
-    alias dtypes = (DType.float32, DType.bfloat16)
+    comptime dtypes = (DType.float32, DType.bfloat16)
     var bs = 2
     var valid_length_ptr = UnsafePointer[UInt32].alloc(bs)
     var valid_length = NDBuffer[DType.uint32, 1](valid_length_ptr, Index(bs))
@@ -309,7 +345,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
 
     @parameter
     for dtype_idx in range(len(dtypes)):
-        alias dtype = dtypes[dtype_idx]
+        comptime dtype = dtypes[dtype_idx]
 
         # Replit context encoding [testing even query valid lengths].
         valid_length[0] = 128

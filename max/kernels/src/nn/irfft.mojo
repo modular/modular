@@ -12,8 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 """Inverse real FFT kernel using cuFFT."""
 
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    UnsafePointer as UnsafePointerV2,
+)
 from sys.ffi import external_call
-from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 
 from _cufft.cufft import (
     cufftCreate,
@@ -131,7 +135,9 @@ fn _get_fft_plan[
         cached_plan_key,
         # we are bitcasting the integer plan to a void * to cache it,
         # because that's what KGEN_CompilerRT_InsertGlobal expects.
-        _unsafe_aliasing_address_to_pointer[NoneType](Int(plan)),
+        UnsafePointerV2[NoneType, MutOrigin.external](
+            unsafe_from_address=Int(plan)
+        ),
     )
 
     return plan

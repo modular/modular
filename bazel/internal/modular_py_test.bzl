@@ -1,7 +1,7 @@
 """A helper macro for running python tests with pytest"""
 
 load("@rules_python//python:defs.bzl", "py_test")
-load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "runtime_sanitizer_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", requirement = "pip_requirement")
 load(":modular_py_venv.bzl", "modular_py_venv")
 load(":mojo_collect_deps_aspect.bzl", "collect_transitive_mojoinfo")
@@ -40,7 +40,7 @@ def modular_py_test(
         **kwargs: Extra arguments passed through to py_test
     """
 
-    validate_gpu_tags(tags, gpu_constraints)
+    validate_gpu_tags(tags, target_compatible_with + gpu_constraints)
     toolchains = [
         "//bazel/internal:current_gpu_toolchain",
         "//bazel/internal:lib_toolchain",
@@ -56,13 +56,10 @@ def modular_py_test(
     if not main and not has_test:
         fail("At least 1 file in modular_py_test must start with 'test_' for pytest to discover them")
 
-    extra_env = {
+    extra_env = runtime_sanitizer_env() | {
         "PYTHONUNBUFFERED": "set",
     }
-    extra_data = [
-        "//bazel/internal:lsan-suppressions.txt",
-    ]
-
+    extra_data = RUNTIME_SANITIZER_DATA
     transitive_mojo_deps = name + ".mojo_deps"
     collect_transitive_mojoinfo(
         name = transitive_mojo_deps,
@@ -73,7 +70,7 @@ def modular_py_test(
 
     env_name = name + ".mojo_test_env"
     toolchains.append(env_name)
-    extra_data.append(env_name)
+    extra_data += [env_name]  # buildifier: disable=list-append
     extra_env |= {
         "MODULAR_MOJO_MAX_COMPILERRT_PATH": "$(COMPILER_RT_PATH)",
         "MODULAR_MOJO_MAX_DRIVER_PATH": "$(MOJO_BINARY_PATH)",
@@ -117,7 +114,7 @@ def modular_py_test(
                 "@rules_python//python/runfiles",
             ],
             direct = False,
-            env = extra_env | env_for_available_tools() | env | {
+            env = env_for_available_tools() | extra_env | env | {
                 "DEBUG_SRCS": ":".join(["$(location {})".format(src) for src in srcs]),
                 # TODO: This should be PYTHONINSPECT but that doesn't work. We're avoiding args so lldb works without --
                 "PYTHONSTARTUP": "$(location //bazel/internal:test_debug_shim.py)",
@@ -148,7 +145,7 @@ def modular_py_test(
                 name = test_name,
                 data = data + extra_data,
                 toolchains = toolchains,
-                env = extra_env | env_for_available_tools() | env,
+                env = env_for_available_tools() | extra_env | env,
                 deps = deps + [
                     requirement("pytest"),
                     "@rules_python//python/runfiles",
@@ -170,7 +167,7 @@ def modular_py_test(
             name = name,
             data = data + extra_data,
             toolchains = toolchains,
-            env = extra_env | env_for_available_tools() | env,
+            env = env_for_available_tools() | extra_env | env,
             deps = deps + [
                 requirement("pytest"),
                 "@rules_python//python/runfiles",

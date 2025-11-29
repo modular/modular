@@ -13,17 +13,17 @@
 
 from gpu import block_idx, global_idx, thread_idx
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
-alias buffer_size = 1024
-alias block_dim = 32
+comptime buffer_size = 1024
+comptime block_dim = 32
 
 
 def test_fill_thread_idx(ctx: DeviceContext):
     var output_host = UnsafePointer[Scalar[DType.int]].alloc(buffer_size)
-    var output_buffer = ctx.enqueue_create_buffer[DType.int](
-        buffer_size
-    ).enqueue_fill(9)
+    var output_buffer = ctx.enqueue_create_buffer[DType.int](buffer_size)
+    output_buffer.enqueue_fill(9)
 
     fn kernel(output: UnsafePointer[Scalar[DType.int]]):
         output[global_idx.x] = thread_idx.x
@@ -46,9 +46,8 @@ def test_fill_thread_idx(ctx: DeviceContext):
 
 def test_fill_block_idx(ctx: DeviceContext):
     var output_host = UnsafePointer[Scalar[DType.int]].alloc(buffer_size)
-    var output_buffer = ctx.enqueue_create_buffer[DType.int](
-        buffer_size
-    ).enqueue_fill(9)
+    var output_buffer = ctx.enqueue_create_buffer[DType.int](buffer_size)
+    output_buffer.enqueue_fill(9)
 
     fn kernel(output: UnsafePointer[Scalar[DType.int]]):
         output[global_idx.x] = block_idx.x

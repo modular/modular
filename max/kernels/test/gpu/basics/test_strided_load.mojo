@@ -14,7 +14,7 @@
 from sys.intrinsics import strided_load
 
 from gpu.host.compile import _compile_code
-from gpu.memory import AddressSpace
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_true
 
 

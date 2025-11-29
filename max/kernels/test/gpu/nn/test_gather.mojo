@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys.info import size_of
 
 from gpu.host import DeviceContext
@@ -27,10 +28,10 @@ fn test_gather(ctx: DeviceContext) raises:
     @no_inline
     @parameter
     fn _test_gather[indices_type: DType]() raises:
-        alias num_rows = 16
-        alias row_size = 4
+        comptime num_rows = 16
+        comptime row_size = 4
 
-        alias layout_2d = Layout.row_major[2]()
+        comptime layout_2d = Layout.row_major[2]()
         var input_host_ptr = UnsafePointer[Float32].alloc(num_rows * row_size)
         var input_host = LayoutTensor[
             DType.float32,
@@ -48,7 +49,7 @@ fn test_gather(ctx: DeviceContext) raises:
             Layout.row_major(num_rows, row_size),
         ](input_device_ptr.unsafe_ptr())
 
-        alias num_indices = 16
+        comptime num_indices = 16
         var indices_host_ptr = UnsafePointer[Scalar[indices_type]].alloc(
             num_indices
         )
@@ -87,9 +88,9 @@ fn test_gather(ctx: DeviceContext) raises:
             Layout.row_major(num_indices, row_size),
         ](output_device_ptr.unsafe_ptr())
 
-        alias output_layout = Layout.row_major[output_device.rank]()
-        alias input_layout = Layout.row_major[input_device.rank]()
-        alias indices_layout = Layout.row_major[indices_device.rank]()
+        comptime output_layout = Layout.row_major[output_device.rank]()
+        comptime input_layout = Layout.row_major[input_device.rank]()
+        comptime indices_layout = Layout.row_major[indices_device.rank]()
 
         gather[axis=0, target="gpu"](
             LayoutTensor[output_device.dtype, output_layout](

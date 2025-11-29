@@ -107,25 +107,29 @@ trait Quackable:
 
 A trait looks a lot like a struct, except it's introduced by the `trait`
 keyword. Note that the `quack()` method signature is followed three dots
-(`...`), which indicates it isn't implemented. This is a *required method*
-that must be implemented by any conforming struct.
+(`...`). This indicates it isn't implemented within the trait. In this
+example, `quack` is a *required method* and must be implemented by
+any conforming struct.
 
-A trait can also supply a default implementation for a required method, so
-that conforming structs don't need to implement it. For more information, see
+A trait can supply a default implementation so conforming structs
+don’t need to implement the method themselves. You can provide a full
+implementation or use the `pass` keyword. Using `pass` creates a
+no-op method that does nothing. In your conforming struct, you
+can chose to override this default implementation:
+
+```mojo
+trait Quackable:
+    fn quack(self):
+        pass
+```
+
+For more information, see
 [Default method implementations](#default-method-implementations).
 
 A trait can also include associated aliases—compile-time constant values that
 must be defined by conforming structs. Associated aliases are useful for writing
 traits that describe generic types. For more information, see
 [Associated aliases for generics](#associated-aliases-for-generics).
-
-:::note
-
-Currently, Mojo treats a trait method as not implemented if the function body
-starts with `...` or `pass`. In the future only `...` will mark a trait method
-as not implemented.
-
-:::
 
 ### Adding traits to structs
 
@@ -252,11 +256,11 @@ default implementations listed as *provided methods*.
 
 
 The
-[`EqualityComparable`](/mojo/stdlib/builtin/equality_comparable/EqualityComparable/)
+[`Equatable`](/mojo/stdlib/builtin/equality_comparable/Equatable/)
 trait is a good example of the use case for default implementations. The trait
 includes two methods: `__eq__()` (corresponding to the `==` operator) and
 `__ne__()` (corresponding to the `!=` operator). Every type that conforms to
-`EqualityComparable` needs to define the `__eq__()` method for itself, but the
+`Equatable` needs to define the `__eq__()` method for itself, but the
 trait supplies a default implementation for `__ne__()`. Given an `__eq__()`
 method, the definition of `__ne__()` is trivial for most types:
 
@@ -646,7 +650,7 @@ needs to copy a value, the compiler needs to verify that the type can be copied.
 
 The [`List`](/mojo/stdlib/collections/list) type is an example of a
 generic container. A single `List` can only hold a single type of data.
-The list elments must conform to the `Copyable` and `Movable` traits:
+The list elements must conform to the `Copyable` and `Movable` traits:
 
 ```mojo
 struct List[T: Copyable & Movable]:
@@ -696,7 +700,7 @@ struct Doublespeak(Repeater):
     alias count: Int = 2
 
 struct Multispeak[verbosity: Int](Repeater):
-    alias count: Int = verbosity*2+1
+    alias count: Int = Self.verbosity * 2 + 1
 ```
 
 The `Doublespeak` struct has a constant value for the alias, but the `Multispeak`
@@ -735,7 +739,7 @@ underlying storage:
 ```mojo
 struct MyStack[type: Copyable & Movable](Stacklike):
     """A simple Stack built using a List."""
-    alias EltType = type
+    alias EltType = Self.type
     alias list_type = List[Self.EltType]
 
     var list: Self.list_type

@@ -16,9 +16,10 @@ from math import ceildiv
 from gpu import block, global_idx, warp
 from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
-alias dtype = DType.uint64
+comptime dtype = DType.uint64
 
 
 fn warp_prefix_sum_kernel[
@@ -36,8 +37,8 @@ fn warp_prefix_sum_kernel[
 
 
 def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext):
-    alias size = WARP_SIZE
-    alias BLOCK_SIZE = WARP_SIZE
+    comptime size = WARP_SIZE
+    comptime BLOCK_SIZE = WARP_SIZE
 
     # Allocate and initialize host memory
     var in_host = UnsafePointer[Scalar[dtype]].alloc(size)
@@ -54,7 +55,7 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext):
 
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
-    alias kernel = warp_prefix_sum_kernel[dtype=dtype, exclusive=exclusive]
+    comptime kernel = warp_prefix_sum_kernel[dtype=dtype, exclusive=exclusive]
     ctx.enqueue_function_checked[kernel, kernel](
         out_device,
         in_device,
@@ -109,8 +110,8 @@ fn block_prefix_sum_kernel[
 def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext):
     # Initialize a block with several warps. The prefix sum for each warp is
     # tested above.
-    alias BLOCK_SIZE = WARP_SIZE * 13
-    alias size = BLOCK_SIZE
+    comptime BLOCK_SIZE = WARP_SIZE * 13
+    comptime size = BLOCK_SIZE
 
     # Allocate and initialize host memory
     var in_host = UnsafePointer[Scalar[dtype]].alloc(size)
@@ -127,7 +128,7 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext):
 
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
-    alias kernel = block_prefix_sum_kernel[
+    comptime kernel = block_prefix_sum_kernel[
         dtype=dtype, block_size=BLOCK_SIZE, exclusive=exclusive
     ]
     ctx.enqueue_function_checked[kernel, kernel](

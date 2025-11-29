@@ -16,7 +16,10 @@ from random import rand
 
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext
+from layout import Layout, LayoutTensor, RuntimeLayout
+from layout.layout import UNKNOWN_VALUE
 from linalg.matmul.gpu import split_k_reduce
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -35,7 +38,7 @@ fn _size[rank: Int](dims: IndexList[rank]) -> Int:
 fn _create_device_buffer[
     dtype: DType, rank: Int, shape: DimList
 ](ctx: DeviceContext, dynamic_shape: IndexList[rank]) raises -> Tuple[
-    DeviceBuffer[dtype], NDBuffer[dtype, rank, MutableAnyOrigin, shape]
+    DeviceBuffer[dtype], NDBuffer[dtype, rank, MutAnyOrigin, shape]
 ]:
     var storage = ctx.enqueue_create_buffer[dtype](_size(dynamic_shape))
     return (
@@ -49,7 +52,7 @@ fn _create_device_buffer[
 fn _create_host_buffer[
     dtype: DType, rank: Int, shape: DimList
 ](dynamic_shape: IndexList[rank]) raises -> NDBuffer[
-    dtype, rank, MutableAnyOrigin, shape
+    dtype, rank, MutAnyOrigin, shape
 ]:
     var storage_ptr = UnsafePointer[Scalar[dtype]].alloc(_size(dynamic_shape))
     return NDBuffer[dtype, rank, _, shape](
@@ -80,7 +83,7 @@ fn _split_k_reduce_verify[
             var idx = IndexList[2]((i, j))
             var vec = A[idx]
             for k in range(num_partition):
-                vec += B[i, j + k * UInt(N)]
+                vec += B[i, j + Int(k * UInt(N))]
             A.store(idx, vec)
 
 
@@ -129,9 +132,20 @@ def test_split_k_reduce_rank3[
     ctx.enqueue_copy(work_space_device, work_space_host)
     ctx.enqueue_copy(epilogue_data_device, epilogue_data_host)
 
-    var c = NDBuffer[c_type, 2](c_device.unsafe_ptr(), Index(M, N))
-    var work_space = NDBuffer[work_space_type, 3](
-        work_space_device.unsafe_ptr(), Index(num_partitions, M, N)
+    comptime c_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime work_space_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
+    )
+
+    # Create LayoutTensors
+    var c = LayoutTensor[c_type, c_layout, MutAnyOrigin](
+        c_device, RuntimeLayout[c_layout].row_major(Index(M, N))
+    )
+    var work_space = LayoutTensor[
+        work_space_type, work_space_layout, ImmutAnyOrigin
+    ](
+        work_space_device,
+        RuntimeLayout[work_space_layout].row_major(Index(num_partitions, M, N)),
     )
     var epilogue_buffer = NDBuffer[c_type, 2](
         epilogue_data_device.unsafe_ptr(), Index(M, N)
@@ -152,7 +166,7 @@ def test_split_k_reduce_rank3[
 
     ctx.enqueue_copy(c_host, c_device)
 
-    alias rtol = 1e-4 if c_type is DType.float32 else 1e-2
+    comptime rtol = 1e-4 if c_type is DType.float32 else 1e-2
     for i in range(M * N):
         if not isclose(c_host[i], c_host_ref[i], rtol=rtol):
             print(

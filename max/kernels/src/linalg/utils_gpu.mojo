@@ -13,6 +13,10 @@
 
 from hashlib.hasher import Hasher
 from math import ceildiv
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from sys import env_get_int, has_nvidia_gpu_accelerator, size_of
 from sys.ffi import external_call
 
@@ -32,15 +36,15 @@ from utils.numerics import get_accum_type
 
 
 fn block_swizzle(
-    block_idx: IndexList[2, **_], grid_dim: __type_of(block_idx)
-) -> __type_of(block_idx):
+    block_idx: IndexList[2, **_], grid_dim: type_of(block_idx)
+) -> type_of(block_idx):
     return _block_swizzle_by_scale[3](block_idx, grid_dim)
 
 
 @always_inline
 fn _block_swizzle_by_scale[
     scale0: UInt
-](block_idx: IndexList[2, **_], grid_dim: __type_of(block_idx)) -> __type_of(
+](block_idx: IndexList[2, **_], grid_dim: type_of(block_idx)) -> type_of(
     block_idx
 ):
     """
@@ -58,18 +62,18 @@ fn _block_swizzle_by_scale[
     """
     var scale = scale0
     # basically num_partitions = 2^3 = 8
-    var num_partitions = 1 << scale
+    var num_partitions = 1 << Int(scale)
     # while griddim_x not divisible by num_partitions, reduce scale till scale is 0
     while (grid_dim.data[0] & (num_partitions - 1)) and scale > 0:
         scale -= 1
-        num_partitions = 1 << scale
+        num_partitions = 1 << Int(scale)
 
     # bx is the x coordinate of the block
     # by is the y coordinate of the block
     # bx = block_idx.data[0] >> scale
     var bx = block_idx.data[0] >> scale
     var by = (block_idx.data[1] << scale) + (
-        (block_idx.data[0]) & ((1 << scale) - 1)
+        (block_idx.data[0]) & ((1 << Int(scale)) - 1)
     )
 
     # for the number of rows of overflow, we want to move to next stripe
@@ -118,7 +122,7 @@ struct MatmulConfig[
 
     var _pdl_level: PDLLevel
 
-    alias accum_type = get_accum_type[a_type]()  # TODO: factor b_type
+    comptime accum_type = get_accum_type[Self.a_type]()  # TODO: factor b_type
 
     # MMA is typically accumulated in FP32. The reduction over partitions may be
     # done in lower precision to reduce traffic to intermediate buffer. This is
@@ -126,21 +130,23 @@ struct MatmulConfig[
     # We see some discrepancy between BF16 and FP32 in KERN-933 and use FP32
     # by default to be safe. TODO: set via env var KERN-1002.
 
-    alias split_k_reduction_scheme = env_get_int["SPLITK_REDUCTION_SCHEME", 2]()
+    comptime split_k_reduction_scheme = env_get_int[
+        "SPLITK_REDUCTION_SCHEME", 2
+    ]()
 
-    alias OUTPUT_PRECISION = 2
+    comptime OUTPUT_PRECISION = 2
 
-    alias ACCUM_PRECISION = 1
+    comptime ACCUM_PRECISION = 1
 
     # TODO: output precision will break the integration test.
-    alias split_k_reduction_type = c_type if Self.OUTPUT_PRECISION == Self.split_k_reduction_scheme else Self.accum_type
+    comptime split_k_reduction_type = Self.c_type if Self.OUTPUT_PRECISION == Self.split_k_reduction_scheme else Self.accum_type
 
     fn __init__(
         out self,
         *,
         block_tile_shape: IndexList[3] = Index(128, 128, 32),
         warp_tile_shape: IndexList[3] = Index(64, 64, 32),
-        mma_shape: IndexList[3] = get_mma_shape[a_type, Self.accum_type](),
+        mma_shape: IndexList[3] = get_mma_shape[Self.a_type, Self.accum_type](),
         cluster_shape: IndexList[3] = Index(1, 1, 1),
         num_pipeline_stages: UInt = 4,
         num_k_partitions: UInt = 1,
@@ -175,8 +181,12 @@ struct MatmulConfig[
         self.partitioned_multicast = other.partitioned_multicast
         self._pdl_level = other._pdl_level
 
-    fn swapAB(self) -> MatmulConfig[b_type, a_type, c_type, transpose_b]:
-        var new_config = MatmulConfig[b_type, a_type, c_type, transpose_b]()
+    fn swapAB(
+        self,
+    ) -> MatmulConfig[Self.b_type, Self.a_type, Self.c_type, Self.transpose_b]:
+        var new_config = MatmulConfig[
+            Self.b_type, Self.a_type, Self.c_type, Self.transpose_b
+        ]()
         new_config.copy_field(self)
         return new_config
 
@@ -196,7 +206,7 @@ struct MatmulConfig[
 
     fn shared_mem_usage(self) -> Int:
         return Int(
-            _shared_memory_usage[a_type, b_type, c_type](
+            _shared_memory_usage[Self.a_type, Self.b_type, Self.c_type](
                 self.block_tile_shape,
                 Int(self.num_pipeline_stages),
                 Int(self.num_warp_k_partitions),
@@ -220,7 +230,7 @@ struct MatmulConfig[
         return self._pdl_level
 
     fn __eq__(self, rhs: MatmulConfig) -> Bool:
-        alias static_info_match = a_type == rhs.a_type and b_type == rhs.b_type and c_type == rhs.c_type and transpose_b == rhs.transpose_b
+        comptime static_info_match = Self.a_type == rhs.a_type and Self.b_type == rhs.b_type and Self.c_type == rhs.c_type and Self.transpose_b == rhs.transpose_b
 
         @parameter
         if static_info_match:
@@ -236,8 +246,8 @@ struct MatmulConfig[
 
     fn write_to(self, mut writer: Some[Writer]):
         writer.write("kernel_")
-        writer.write(a_type, "_")
-        writer.write(c_type, "_")
+        writer.write(Self.a_type, "_")
+        writer.write(Self.c_type, "_")
         # Use BNxBM to match cublas
         writer.write(
             self.block_tile_shape[1], "x", self.block_tile_shape[0], "_"
@@ -250,7 +260,7 @@ struct MatmulConfig[
         # transpose A
         writer.write("N")
         # transpose B
-        writer.write("T" if transpose_b else "N")
+        writer.write("T" if Self.transpose_b else "N")
 
     fn __repr__(self) -> String:
         return String.write(self)
@@ -264,10 +274,10 @@ struct MatmulConfig[
         Args:
             hasher: The hasher instance.
         """
-        hasher.update(a_type)
-        hasher.update(b_type)
-        hasher.update(c_type)
-        hasher.update(transpose_b)
+        hasher.update(Self.a_type)
+        hasher.update(Self.b_type)
+        hasher.update(Self.c_type)
+        hasher.update(Self.transpose_b)
         hasher.update(self.block_tile_shape)
         hasher.update(self.warp_tile_shape)
         hasher.update(self.cluster_shape)
@@ -327,31 +337,41 @@ struct MatmulKernels[
     BK, mma shape, and warp tile shape are decided internally.
     """
 
-    alias hopper_128x128_4 = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=Index(128, 128, _bk_base[a_type]()),
-        warp_tile_shape=Index(64, 64, _bk_base[a_type]()),
+    comptime hopper_128x128_4 = MatmulConfig[
+        Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
+    ](
+        block_tile_shape=Index(128, 128, _bk_base[Self.a_type]()),
+        warp_tile_shape=Index(64, 64, _bk_base[Self.a_type]()),
         num_pipeline_stages=4,
     )
 
-    alias ampere_128x128_4 = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=Index(128, 128, _bk_base[a_type]()),
-        warp_tile_shape=Index(64, 64, _bk_base[a_type]()),
+    comptime ampere_128x128_4 = MatmulConfig[
+        Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
+    ](
+        block_tile_shape=Index(128, 128, _bk_base[Self.a_type]()),
+        warp_tile_shape=Index(64, 64, _bk_base[Self.a_type]()),
         num_pipeline_stages=4,
     )
 
-    alias ampere_256x64_4 = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=Index(64, 256, _bk_base[a_type]()),
-        warp_tile_shape=Index(64, 64, _bk_base[a_type]()),
+    comptime ampere_256x64_4 = MatmulConfig[
+        Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
+    ](
+        block_tile_shape=Index(64, 256, _bk_base[Self.a_type]()),
+        warp_tile_shape=Index(64, 64, _bk_base[Self.a_type]()),
         num_pipeline_stages=4,
     )
 
-    alias ampere_256x128_3 = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=Index(128, 256, 2 * _bk_base[a_type]()),
-        warp_tile_shape=Index(64, 64, 2 * _bk_base[a_type]()),
+    comptime ampere_256x128_3 = MatmulConfig[
+        Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
+    ](
+        block_tile_shape=Index(128, 256, 2 * _bk_base[Self.a_type]()),
+        warp_tile_shape=Index(64, 64, 2 * _bk_base[Self.a_type]()),
         num_pipeline_stages=3,
     )
 
-    alias tuning_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+    comptime tuning_config = MatmulConfig[
+        Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
+    ](
         block_tile_shape=Index(
             env_get_int["TUNE_BM", 128](),
             env_get_int["TUNE_BN", 128](),
@@ -388,11 +408,11 @@ fn select_config[
     # * num_waves is the maximum thread blocks that are dispatched to a SM.
     #   E.g. 128 blocks to A100's 108 SMs, one SM at most computes two blocks.
 
-    alias gpu_info = ctx.default_device_info
+    comptime gpu_info = ctx.default_device_info
 
     # TODO(KERN-1310): This disables split-k for AMD, enable it after fixing KERN-1310.
-    alias max_num_k_partitions = 8 if has_nvidia_gpu_accelerator() else 1
-    alias min_k_partition = 1024
+    comptime max_num_k_partitions = 8 if has_nvidia_gpu_accelerator() else 1
+    comptime min_k_partition = 1024
 
     # Initial values overwritten in loop
     var best_bmnk = Index(128, 128, _bk_base[a_type]())
@@ -401,17 +421,17 @@ fn select_config[
     var min_num_waves = Int.MAX
     var min_work_per_SM = Int.MAX
 
-    alias _128x128_4 = Index(128, 128, _bk_base[a_type](), 4)
-    alias _256x64_4 = Index(64, 256, _bk_base[a_type](), 4)
+    comptime _128x128_4 = Index(128, 128, _bk_base[a_type](), 4)
+    comptime _256x64_4 = Index(64, 256, _bk_base[a_type](), 4)
     # Only enable this when the target is exactly A100. We use A100 properties
     # for target="gpu" (default) on A10, L4. This avoids breaking tests there.
     # The tile is skipped in the loop for exceeding shared memory capacity when
     # sm_80 is present in target.
-    alias _256x128_3 = Index(
+    comptime _256x128_3 = Index(
         128, 256, 2 * _bk_base[a_type](), 3
     ) if gpu_info is A100 else Index(1024, 1024, 1024, 1024)
 
-    alias opt_list = [_128x128_4, _256x64_4, _256x128_3]
+    comptime opt_list = [_128x128_4, _256x64_4, _256x128_3]
 
     for bmnk_stage in materialize[opt_list]():
         var bm = bmnk_stage[0]
