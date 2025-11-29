@@ -92,6 +92,9 @@ what we publish.
 - The `EqualityComparable` trait has been deprecated in favor of `Equatable`,
   which has identical functionality.
 
+- `assert_equal` and `assert_not_equal` now take in `Writable` arguments instead
+  of `Stringable` ones.
+
 ### Tooling changes
 
 - The Mojo compiler now "diffs" very long types in error messages to explain
