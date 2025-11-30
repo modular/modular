@@ -628,6 +628,9 @@ fn call_test_typed_raises_fn() raises (Int):
     # CHECK-NEXT: lit.call @decls::@"test_typed_raises_fn{{.*}}(%__error__, %__call_result_tmp__)
     _ = test_typed_raises_fn()
 
+    # CHECK: %test_type_of = lit.var.decl {{.*}} : !lit.ref<!String,
+    var test_type_of : type_of(test_typed_raises_fn())
+
 fn parametric_raise_example[ErrorType: AnyType](fp: fn () raises (ErrorType)) raises (ErrorType):
     fp()
 

@@ -1582,11 +1582,9 @@ void IREmitter::emitExpressionWithOutEvaluatingIt(
 
   // Go further and add a 'try' op to it, ensuring that throwing functions are
   // allowed in this expression.
-  ASTType errorType = shared.getBuiltinErrorType(declScope, loc);
-  if (!errorType)
-    return;
-  VarDeclOp errDecl = tmpEmitter.emitVarDecl(
-      "__try_error__", errorType, location, VarDeclKind::Synthesized);
+  VarDeclOp errDecl =
+      tmpEmitter.emitVarDecl("__try_error__", UnresolvedType::get(getContext()),
+                             location, VarDeclKind::Synthesized);
   auto tryOp = TryOp::create(*tmpEmitter.builder, location, errDecl);
 
   // Parse the expression into the try block.
