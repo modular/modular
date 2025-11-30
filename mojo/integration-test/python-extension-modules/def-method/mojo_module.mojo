@@ -16,7 +16,7 @@ from os import abort
 
 from python import Python, PythonObject
 from python.bindings import PythonModuleBuilder, TypeObjectSlot
-from python._cpython import PyObjectPtr
+from python._cpython import PyObjectPtr, Py_EQ
 
 
 @export
@@ -283,8 +283,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
         self_ptr: PyObjectPtr, other: PyObjectPtr, op: Int
     ) raises -> Bool:
         """Implement the rich compare functionality."""
-        # Py_EQ = 2 (equal comparison)
-        if op == 2:
+        if op == Py_EQ:
             # First check if they're the same object (identity)
             if self_ptr == other:
                 return True
