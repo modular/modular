@@ -55,20 +55,20 @@ from max.pipelines.lib import (
 from max.profiler import Tracer, traced
 from transformers import AutoConfig
 
-from .context import QwenImageEdit2511TextAndVisionContext, VisionEncodingData
-from .model_config import QwenImageEdit2511Config
+from .context import ZImageTextAndVisionContext, VisionEncodingData
+from .model_config import ZImageConfig
 from .nn.data_processing import get_rope_index
-from .qwen_image_edit_2511 import QwenImageEdit2511
+from .z_image import ZImage
 from .util import compute_scatter_gather_indices
 
 logger = logging.getLogger("max.pipelines")
 
 
 @dataclass(eq=False)
-class QwenImageEdit2511Inputs(ModelInputs):
-    """A class representing inputs for the QwenImageEdit2511 model.
+class ZImageInputs(ModelInputs):
+    """A class representing inputs for the ZImage model.
 
-    This class encapsulates the input tensors required for the QwenImageEdit2511 model execution,
+    This class encapsulates the input tensors required for the ZImage model execution,
     including both text and vision inputs. Vision inputs are optional and can be None
     for text-only processing."""
 
@@ -132,10 +132,10 @@ class QwenImageEdit2511Inputs(ModelInputs):
         return self.pixel_values is not None
 
 
-class QwenImageEdit2511Model(
+class ZImageModel(
     AlwaysSignalBuffersMixin, PipelineModel[TextAndVisionContext], KVCacheMixin
 ):
-    """A QwenImageEdit2511 pipeline model for multimodal text generation."""
+    """A ZImage pipeline model for multimodal text generation."""
 
     vision_model: Model
     """The compiled vision model for processing images."""
@@ -143,8 +143,8 @@ class QwenImageEdit2511Model(
     language_model: Model
     """The compiled language model for text generation."""
 
-    model_config: QwenImageEdit2511Config | None
-    """The QwenImageEdit2511 model configuration."""
+    model_config: ZImageConfig | None
+    """The ZImage model configuration."""
 
     _input_row_offsets_prealloc: list[Tensor]
     """Pre-allocated per-device tensors for input row offsets in multi-step execution."""
@@ -184,8 +184,8 @@ class QwenImageEdit2511Model(
     def calculate_max_seq_len(
         pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
-        """Calculates the maximum sequence length for the QwenImageEdit2511 model."""
-        return QwenImageEdit2511Config.calculate_max_seq_len(
+        """Calculates the maximum sequence length for the ZImage model."""
+        return ZImageConfig.calculate_max_seq_len(
             pipeline_config, huggingface_config
         )
 
@@ -197,15 +197,15 @@ class QwenImageEdit2511Model(
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        """Gets the parameters required to configure the KV cache for QwenImageEdit2511."""
-        return QwenImageEdit2511Config.get_kv_params(
+        """Gets the parameters required to configure the KV cache for ZImage."""
+        return ZImageConfig.get_kv_params(
             huggingface_config, n_devices, kv_cache_config, cache_dtype
         )
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         """Gets the number of hidden layers from the HuggingFace configuration."""
-        return QwenImageEdit2511Config.get_num_layers(huggingface_config)
+        return ZImageConfig.get_num_layers(huggingface_config)
 
     @classmethod
     def estimate_kv_cache_size(
@@ -217,9 +217,9 @@ class QwenImageEdit2511Model(
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> int:
-        """Estimates the size of the KV cache required for the QwenImageEdit2511 model in bytes."""
+        """Estimates the size of the KV cache required for the ZImage model in bytes."""
         return estimate_kv_cache_size(
-            params=QwenImageEdit2511Config.get_kv_params(
+            params=ZImageConfig.get_kv_params(
                 huggingface_config=huggingface_config,
                 n_devices=len(devices),
                 kv_cache_config=kv_cache_config,
@@ -254,7 +254,7 @@ class QwenImageEdit2511Model(
         return kv_caches_per_dev
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
-        """Loads the compiled QwenImageEdit2511 models into the MAX Engine session.
+        """Loads the compiled ZImage models into the MAX Engine session.
 
         Returns:
             A tuple of (vision_model, language_model).
@@ -270,7 +270,7 @@ class QwenImageEdit2511Model(
         # because we need to know if word embeddings are tied or not.
         if not isinstance(self.weights, SafetensorWeights):
             raise ValueError(
-                "QwenImageEdit2511 currently only supports safetensors weights"
+                "ZImage currently only supports safetensors weights"
             )
         if self.adapter:
             model_state_dict = self.adapter(
@@ -293,8 +293,8 @@ class QwenImageEdit2511Model(
                     f"Key: {key} is not part of the vision or language model"
                 )
 
-        # Generate QwenImageEdit2511 config from HuggingFace config
-        QwenImageEdit2511_config = QwenImageEdit2511Config.generate(
+        # Generate ZImage config from HuggingFace config
+        ZImage_config = ZImageConfig.generate(
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
             vae_state_dict=vae_state_dict,
@@ -306,11 +306,11 @@ class QwenImageEdit2511Model(
             kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
         )
-        self.model_config = QwenImageEdit2511_config
+        self.model_config = ZImage_config
 
         if self.model_config is None:
             raise RuntimeError("Model config must be initialized")
-        self.model: Module = QwenImageEdit2511(self.model_config)
+        self.model: Module = ZImage(self.model_config)
         self.model.load_state_dict(model_state_dict, strict=True)
 
         logger.info("Building and compiling vision model...")
@@ -343,9 +343,9 @@ class QwenImageEdit2511Model(
         Now supports multi-GPU processing for the vision encoder.
         """
 
-        # Create QwenImageEdit2511 model and vision encoder
-        if not isinstance(self.model, QwenImageEdit2511):
-            raise TypeError(f"Expected QwenImageEdit2511 model, got {type(self.model).__name__}")
+        # Create ZImage model and vision encoder
+        if not isinstance(self.model, ZImage):
+            raise TypeError(f"Expected ZImage model, got {type(self.model).__name__}")
         vision_encoder = self.model.vision_encoder
         # Define vision graph input types - one per device
         # vision_seq_len is the number of patches in all images and videos in the request
@@ -428,7 +428,7 @@ class QwenImageEdit2511Model(
 
         # Build the vision graph
         with Graph(
-            "QwenImageEdit2511_vision",
+            "ZImage_vision",
             input_types=tuple(
                 [
                     *pixel_values_types,
@@ -494,8 +494,8 @@ class QwenImageEdit2511Model(
     def _build_language_graph(self) -> Graph:
         """Build the language model graph for text generation with image embeddings."""
 
-        if not isinstance(self.model, QwenImageEdit2511):
-            raise TypeError(f"Expected QwenImageEdit2511 model, got {type(self.model).__name__}")
+        if not isinstance(self.model, ZImage):
+            raise TypeError(f"Expected ZImage model, got {type(self.model).__name__}")
         language_model = self.model.language_model
 
         # Generate DeviceRef
@@ -572,7 +572,7 @@ class QwenImageEdit2511Model(
         ]
 
         with Graph(
-            "QwenImageEdit2511_language",
+            "ZImage_language",
             input_types=(
                 input_ids_type,
                 return_n_logits_type,
@@ -671,7 +671,7 @@ class QwenImageEdit2511Model(
         ).to(self.devices)
 
     def _batch_image_token_indices(
-        self, context_batch: Sequence[QwenImageEdit2511TextAndVisionContext]
+        self, context_batch: Sequence[ZImageTextAndVisionContext]
     ) -> tuple[list[Tensor], list[Tensor]]:
         """Batch image token indices from multiple contexts, adjusting for
         position in batch.
@@ -701,8 +701,8 @@ class QwenImageEdit2511Model(
         )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        """Executes the QwenImageEdit2511 model with the prepared inputs."""
-        if not isinstance(model_inputs, QwenImageEdit2511Inputs):
+        """Executes the ZImage model with the prepared inputs."""
+        if not isinstance(model_inputs, ZImageInputs):
             raise ValueError("Invalid model inputs")
 
         # Process vision inputs if present
@@ -835,11 +835,11 @@ class QwenImageEdit2511Model(
     @traced
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[QwenImageEdit2511TextAndVisionContext],  # type: ignore[override]
+        context_batch: Sequence[ZImageTextAndVisionContext],  # type: ignore[override]
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
-    ) -> QwenImageEdit2511Inputs:
-        """Prepares the initial inputs for the first execution pass of the QwenImageEdit2511 model."""
+    ) -> ZImageInputs:
+        """Prepares the initial inputs for the first execution pass of the ZImage model."""
 
         if kv_cache_inputs is None:
             raise ValueError("KV Cache Inputs must be provided")
@@ -848,9 +848,9 @@ class QwenImageEdit2511Model(
         vision_datas: list[VisionEncodingData] = []
         for ctx in context_batch:
             # Validate all contexts are the correct type
-            if not isinstance(ctx, QwenImageEdit2511TextAndVisionContext):
+            if not isinstance(ctx, ZImageTextAndVisionContext):
                 raise TypeError(
-                    f"Expected QwenImageEdit2511TextAndVisionContext, got {type(ctx).__name__}"
+                    f"Expected ZImageTextAndVisionContext, got {type(ctx).__name__}"
                 )
             if ctx.needs_vision_encoding:
                 if ctx.vision_data is None:
@@ -975,7 +975,7 @@ class QwenImageEdit2511Model(
             )
 
         if not any_needs_vision_encoding:
-            return QwenImageEdit2511Inputs(
+            return ZImageInputs(
                 input_ids=input_ids,
                 input_row_offsets=input_row_offsets_tensors,
                 position_ids=decoder_position_ids,
@@ -1108,7 +1108,7 @@ class QwenImageEdit2511Model(
             )
             max_window_seqlen = [window_max_seqlen_tensor for _ in self.devices]
 
-        return QwenImageEdit2511Inputs(
+        return ZImageInputs(
             input_ids=input_ids,
             input_row_offsets=input_row_offsets_tensors,
             signal_buffers=self.signal_buffers,
@@ -1133,12 +1133,12 @@ class QwenImageEdit2511Model(
         self,
         next_tokens: Tensor,
         prev_model_inputs: ModelInputs,
-    ) -> QwenImageEdit2511Inputs:
+    ) -> ZImageInputs:
         """Prepares the inputs for subsequent execution steps in a multi-step generation."""
         # TODO: This is still buggy. Use max_num_steps=1 until this is fixed.
-        if not isinstance(prev_model_inputs, QwenImageEdit2511Inputs):
+        if not isinstance(prev_model_inputs, ZImageInputs):
             raise TypeError(
-                f"Expected QwenImageEdit2511Inputs, got {type(prev_model_inputs).__name__}"
+                f"Expected ZImageInputs, got {type(prev_model_inputs).__name__}"
             )
 
         # input_ids, old_row_offsets, Optional: [pixel_values, attention_mask]
@@ -1161,7 +1161,7 @@ class QwenImageEdit2511Model(
         )
         position_ids = Tensor.from_numpy(position_ids_np).to(self.devices[0])
 
-        return QwenImageEdit2511Inputs(
+        return ZImageInputs(
             signal_buffers=self.signal_buffers,
             input_ids=next_tokens,
             input_row_offsets=next_row_offsets,
@@ -1185,9 +1185,9 @@ class QwenImageEdit2511Model(
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
     ) -> PagedKVCacheManager | NullKVCacheManager:
-        """Loads and initializes the PagedKVCacheManager for the QwenImageEdit2511 model."""
+        """Loads and initializes the PagedKVCacheManager for the ZImage model."""
         return load_kv_manager(
-            params=QwenImageEdit2511Config.get_kv_params(
+            params=ZImageConfig.get_kv_params(
                 huggingface_config=self.huggingface_config,
                 n_devices=len(self.devices),
                 kv_cache_config=self.kv_cache_config,

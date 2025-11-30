@@ -10,23 +10,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the QwenImageEdit2511 multimodal model architecture."""
+"""Implements the ZImage multimodal model architecture."""
 
 from max.nn import (
     Module,
 )
 
-from .model_config import QwenImageEdit2511Config
+from .model_config import ZImageConfig
 from .scheduling_flow_match_euler_discrete import FlowMatchEulerDiscreteScheduler
-from .nn.autoencoderkl_qwenimage import AutoencoderKLQwenImage
-from .nn.transformer_qwenimage import QwenImageTransformer2DModel
+from .nn.autoencoderkl import AutoencoderKL
+from .nn.transformer_z_image import ZImageTransformer2DModel
 from max.pipelines.architectures.qwen2_5vl.model import Qwen2_5VLModel
 
 
-class QwenImageEdit2511(Module):
-    """The overall interface to the QwenImageEdit2511 model."""
+class ZImage(Module):
+    """The overall interface to the ZImage model."""
 
-    def __init__(self, config: QwenImageEdit2511Config) -> None:
+    def __init__(self, config: ZImageConfig) -> None:
         self.config = config
         self.scheduler = self.build_scheduler()
         self.vae = self.build_vae()
@@ -37,20 +37,20 @@ class QwenImageEdit2511(Module):
         """Build the scheduler component."""
         return FlowMatchEulerDiscreteScheduler(self.config.scheduler_config)
 
-    def build_vae(self) -> AutoencoderKLQwenImage:
+    def build_vae(self) -> AutoencoderKL:
         """Build the VAE component."""
-        return AutoencoderKLQwenImage(self.config.vae_config)
+        return AutoencoderKL(self.config.vae_config)
 
     def build_text_encoder(self) -> Qwen2_5VLModel:
         """Build the text encoder component."""
         return Qwen2_5VLModel(**self.config.text_encoder_config)
 
-    def build_transformer(self) -> QwenImageTransformer2DModel:
+    def build_transformer(self) -> ZImageTransformer2DModel:
         """Build the transformer component."""
-        return QwenImageTransformer2DModel(self.config.transformer_config)
+        return ZImageTransformer2DModel(self.config.transformer_config)
 
     def __call__(self, *args, **kwargs):
         """This class is not meant to be called directly. Use the component models instead."""
         raise NotImplementedError(
-            "QwenImageEdit2511 is a container class. Use scheduler(), vae(), text_encoder(), or transformer() instead"
+            "ZImage is a container class. Use scheduler(), vae(), text_encoder(), or transformer() instead"
         )

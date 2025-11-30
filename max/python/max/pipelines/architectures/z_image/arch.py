@@ -15,19 +15,19 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.lib import RopeType, SupportedArchitecture, SupportedEncoding
 
-from .model import QwenImageEdit2511Model
-from ..qwen2_5vl import qwen2_5_vl_arch
-from ..qwen2_5vl.tokenizer import Qwen2_5VLTokenizer
-from .nn.transformer_qwenimage import QwenImageTransformer2DModel
-from .nn.autoencoderkl_qwenimage import AutoencoderKLQwenImage
+from .model import ZImageModel
+from ..qwen3 import qwen3_arch
+from ..qwen3.tokenizer import Qwen3Tokenizer
+from .nn.transformer_z_image import ZImageTransformer2DModel
+from .nn.autoencoderkl import AutoencoderKL
 from .scheduling_flow_match_euler_discrete import FlowMatchEulerDiscreteScheduler
-from .weight_adapters import convert_qwen_image_edit_2511_model_state_dict
+from .weight_adapters import convert_z_image_model_state_dict
 
-qwen_image_edit_2511_arch = SupportedArchitecture(
-    name="QwenImageEdit2511Pipeline",
+z_image_arch = SupportedArchitecture(
+    name="ZImagePipeline",
     task=PipelineTask.IMAGE_GENERATION,
     example_repo_ids=[
-        "Qwen/Qwen-Image-Edit-2511",
+        "Tongyi-MAI/Z-Image-Turbo",
     ],
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
@@ -37,14 +37,14 @@ qwen_image_edit_2511_arch = SupportedArchitecture(
         SupportedEncoding.bfloat16: None,
     },
     weight_adapters={
-        WeightsFormat.safetensors: convert_qwen_image_edit_2511_model_state_dict,
+        WeightsFormat.safetensors: convert_z_image_model_state_dict,
     },
-    pipeline_model=QwenImageEdit2511Model,
+    pipeline_model=ZImageModel,
     scheduler=FlowMatchEulerDiscreteScheduler,
-    vae=AutoencoderKLQwenImage,
-    text_encoder=qwen2_5_vl_arch,
-    tokenizer=Qwen2_5VLTokenizer,
-    transformer=QwenImageTransformer2DModel,
+    vae=AutoencoderKL,
+    text_encoder=qwen3_arch,
+    tokenizer=Qwen3Tokenizer,
+    transformer=ZImageTransformer2DModel,
     rope_type=RopeType.normal,
     required_arguments={
         "enable_chunked_prefill": False,
