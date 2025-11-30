@@ -78,6 +78,8 @@ what we publish.
 
 ### Library changes
 
+- `Span` now conforms to `Iterable`.
+
 - `any` and `all` now work over `Iterable`s,
   which means they can act over the result of `map`.
 

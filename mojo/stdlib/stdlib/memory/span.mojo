@@ -37,7 +37,7 @@ struct _SpanIter[
     T: Copyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable, Iterable, Iterator, Movable):
     """Iterator for Span.
 
     Parameters:
@@ -47,11 +47,16 @@ struct _SpanIter[
         forward: The iteration direction. False is backwards.
     """
 
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+    comptime Element = Self.T
+
     var index: Int
     var src: Span[Self.T, Self.origin]
 
     @always_inline
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     @always_inline
@@ -73,10 +78,20 @@ struct _SpanIter[
             self.index -= 1
             return self.src[self.index]
 
+    @always_inline
+    fn __next__(mut self) -> Self.T:
+        return self.__next_ref__().copy()
+
 
 @register_passable("trivial")
 struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
-    Boolable, Defaultable, DevicePassable, ImplicitlyCopyable, Movable, Sized
+    Boolable,
+    Defaultable,
+    DevicePassable,
+    ImplicitlyCopyable,
+    Iterable,
+    Movable,
+    Sized,
 ):
     """A non-owning view of contiguous data.
 
@@ -95,6 +110,9 @@ struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
         Self.T,
         Self.origin,
     ]
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _SpanIter[Self.T, Self.origin]
     """The UnsafePointer type that corresponds to this `Span`."""
     # Fields
     var _data: Self.UnsafePointerType
@@ -247,9 +265,7 @@ struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
         )
 
     @always_inline
-    fn __iter__(
-        self,
-    ) -> _SpanIter[Self.T, Self.origin,]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Get an iterator over the elements of the `Span`.
 
         Returns:
