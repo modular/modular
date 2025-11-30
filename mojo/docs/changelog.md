@@ -21,6 +21,68 @@ what we publish.
 
 ### Language enhancements
 
+- Mojo now supports "typed throws", where a function can specify a specific
+  error type that it raises instead of defaulting to the `Error` type by
+  specifying it after the `raises` keyword in parentheses, e.g.
+  `fn foo() raises (CustomError) -> Int`.
+
+  Raised errors in Mojo are very efficient - they work as an alternate return
+  value: for example, a function like `fn () raises (Int) -> Float32:` compiles
+  into code that returns either an `Int` or a `Float32` and uses an implicit
+  boolean result to determine which one is valid - there is no expensive stack
+  unwinding or slow dynamic logic that is implied.  This means that thrown
+  errors work fine on GPUs and other embedded targets.
+
+  The 'caught' type in a `try` block is automatically inferred to be the first
+  thrown type inside of the try body, e.g.:
+
+  ```mojo
+  try:
+      print(foo())
+  except err:       # "err" is typed as CustomError
+      print(err)
+  ```
+
+  Typed throws "just work" with generics, allowing the definition of higher
+  order functions like:
+
+  ```mojo
+  fn parametric_raise_example[ErrorType: AnyType](fp: fn () raises (ErrorType)) raises (ErrorType):
+      # ... presumably some iteration or other exciting stuff happening here.
+      fp()
+  ```
+
+  This dovetails with other support to allow contextually generic thrown types,
+  e.g.:
+
+  ```mojo
+  fn call_parametric_raise_example[GenTy: AnyType](func_ptr: fn () raises (GenTy)):
+    fn raise_int() raises (Int): pass
+    try:
+        parametric_raise_example(raise_int)
+    except err_int:   # Typed as Int
+        ref x: Int = err_int
+
+    fn raise_string() raises (String): pass
+    try:
+      parametric_raise_example(raise_string)
+    except err_string: # Typed as String
+        ref s: String = err_string
+
+    try:
+      parametric_raise_example(func_ptr)
+    except err_gen: # Typed as GenTy
+        ref s: GenTy = err_gen
+  ```
+
+  This support should be reliable, but there are a few limitations: 1) `with`
+  blocks are still hard coded to `Error`.  2) Thrown errors must exactly match
+  the contextual thrown type, no implicit conversions are allowed. 3)
+  Parentheses are required around the thrown type for now. 4) Mojo has no
+  equivalent of the Swift `Never` type for making parametricly-raising functions
+  be treated as non-throwing when working with non-throwing higher order
+  functions.
+
 - Mojo now allows implicit conversions between function types from a non-raising
   function to a raising function.  It also allows implicit conversions between
   function types whose result types are implicitly convertible:
