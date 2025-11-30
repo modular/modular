@@ -78,7 +78,6 @@ from memory import (
     memcpy,
     pack_bits,
 )
-from memory.memory import _memcmp_impl_unconstrained
 from python import ConvertibleToPython, Python, PythonObject
 
 comptime StaticString = StringSlice[StaticConstantOrigin]
@@ -987,7 +986,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         var len1 = len(self)
         var len2 = len(rhs)
-        return Int(len1 < len2) > _memcmp_impl_unconstrained(
+        return Int(len1 < len2) > memcmp(
             self.unsafe_ptr(), rhs.unsafe_ptr(), min(len1, len2)
         )
 
