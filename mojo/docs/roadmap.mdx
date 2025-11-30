@@ -34,7 +34,6 @@ items in each list aren't necessarily ordered by priority and some items may be
 
 :::
 
-
 ## Mojo's north star
 
 As described in the [Mojo vision](/mojo/vision), we created Mojo to unite
@@ -119,6 +118,10 @@ proposal](https://github.com/modular/modular/blob/main/mojo/proposals/parametric
 
 - ✅ **Default trait methods**: Enable static composition (mixin-style).
 
+- ✅ **Parametric raises**: The ability to throw types other than `Error` and
+therefore support higher order functions like `map` that propagate the
+"raisability" of their closure argument.
+
 - 🚧 **Closure refinement**: Improve capture modeling and unify
 compile-time/runtime representations.
 
@@ -138,10 +141,6 @@ conformance.
 
 - ⬜ **Stabilization markers**: Mechanism to tag standard library APIs with
 maturity levels.
-
-- ⬜ **Parametric raises**: The ability to throw types other than `Error` and
-therefore support higher order functions like `map` that propagate the
-"raisability" of their closure argument.
 
 ### Python interoperability
 

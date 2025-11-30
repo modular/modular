@@ -55,14 +55,9 @@ struct _OwnedStringRef(Boolable, Defaultable):
         if self.data:
             self.data.free()
 
-    fn consume_as_error(var self) -> Error:
-        result = Error()
-        result.data = self.data
-        result.loaded_length = -self.length
-
-        # Don't free self.data in our dtor.
-        self.data = {}
-        return result
+    fn get_as_error(self) -> Error:
+        byte_span = Span(ptr=self.data.bitcast[Byte](), length=self.length)
+        return Error(String(bytes=byte_span))
 
     fn __bool__(self) -> Bool:
         return self.length != 0
@@ -102,7 +97,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         if err_msg:
             self.handle = {}
-            raise err_msg^.consume_as_error()
+            raise err_msg.get_as_error()
 
         self.handle = handle
 
@@ -128,7 +123,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         )
 
         if err_msg:
-            raise err_msg^.consume_as_error()
+            raise err_msg.get_as_error()
 
         self.handle = {}
 
