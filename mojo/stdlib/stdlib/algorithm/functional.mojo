@@ -130,8 +130,8 @@ fn vectorize[
     ```
 
     On a machine with a SIMD register size of 128, this will set 4xInt32 values
-    on each iteration. The optimized tail handling will process these 2 elements in a
-    single iteration of width 2, rather than two scalar iterations:
+    on each iteration. The optimized tail handling will process the remainder
+    (10 % 4 = 2) in a single iteration of width 2:
 
     ```plaintext
     storing 4 els at pos 0
@@ -146,12 +146,13 @@ fn vectorize[
     of binary size:
 
     ```
-    vectorize[closure, width, unroll_factor=2](size)
+    vectorize[width, unroll_factor=2](size, closure)
     ```
 
     In the generated assembly the function calls will be repeated, resulting in
     fewer arithmetic, comparison, and conditional jump operations. The assembly
-    would look like this in pseudocode:
+    logic uses **Bitmask Dispatching** for the tail, which looks like this in
+    pseudocode:
 
     ```
     closure[4](0)
@@ -163,10 +164,9 @@ fn vectorize[
     if (remainder & 1): closure[1](10)
     ```
 
-    You can pass `size` as a parameter if it's compile time known, the compiler
-    will perform Dead Code Elimination on the bitmask checks. This results in a
-    completely branchless sequence of calls perfectly matched to the exact data
-    size.
+    You can pass `size` as a parameter if it's compile time known. This allows
+    the compiler to perform Dead Code Elimination on the tail checks, resulting
+    in a completely branchless sequence.
     """
     constrained[simd_width > 0, "simd width must be > 0"]()
     constrained[unroll_factor > 0, "unroll factor must be > 0"]()
@@ -208,9 +208,12 @@ fn vectorize[
     unroll_factor: Int = size if sys.is_gpu() else 1,
 ](closure: func):
     """Simplifies SIMD optimized loops by mapping a function across a range from
-    0 to `size`, incrementing by `simd_width` at each step. The remainder of
-    `size % simd_width` will run in a single iteration if it's an exponent of
-    2.
+    0 to `size`, incrementing by `simd_width` at each step.
+
+    Since `size` is known at compile time, this function performs **fully static
+    decomposition** of the loop range. The compiler generates a straight-line
+    sequence of function calls perfectly matching the data size, eliminating
+    all runtime loop overhead and conditional branches.
 
     Parameters:
         func: The function that will be called in the loop body.
@@ -245,38 +248,38 @@ fn vectorize[
         vectorize[simd_width](size, closure)
         print(p.load[width=simd_width]())
         print(p.load[width=simd_width](simd_width))
+        print(p.load[width=2](2 * simd_width))
     ```
 
     On a machine with a SIMD register size of 128, this will set 4xInt32 values
-    on each iteration. The remainder of 10 % 4 is 2, so those last two elements
-    will be set in a single iteration:
+    on each iteration. The remainder of 10 % 4 is 2. The compiler statically
+    analyzes this and generates a single width-2 call for the tail:
 
     ```plaintext
     storing 4 els at pos 0
     storing 4 els at pos 4
     storing 2 els at pos 8
-    [0, 0, 0, 0, 4, 4, 4, 4, 8, 8]
+    [0, 0, 0, 0]
+    [4, 4, 4, 4]
+    [8, 8]
     ```
 
-    If the remainder is not an exponent of 2 (2, 4, 8, 16 ...) there will be a
-    separate iteration for each element. However passing `size` as a parameter
-    also allows the loop for the remaining elements to be unrolled.
+    The remainder of `size % simd_width` is automatically decomposed into a
+    static series of SIMD operations with decreasing powers of 2.
 
-    You can also unroll the main loop to potentially improve performance at the
-    cost of binary size:
+    For example, with `size=7` and `width=4` (remainder 3), the function
+    resolves at compile time to the equivalent of this branchless code:
 
+    ```mojo
+    closure[4](0)  # Main loop
+    closure[2](4)  # Tail (Static part 1)
+    closure[1](6)  # Tail (Static part 2)
     ```
+
+    You can also unroll the main loop to further reduce arithmetic operations:
+
+    ```mojo
     vectorize[width, size=size, unroll_factor=2](closure)
-    ```
-
-    In the generated assembly the function calls will be repeated, resulting in
-    fewer arithmetic, comparison, and conditional jump operations. The assembly
-    would look like this in pseudocode:
-
-    ```
-    closure[4](0)
-    closure[4](4)
-    closure[2](8)
     ```
     """
     constrained[simd_width > 0, "simd width must be > 0"]()
