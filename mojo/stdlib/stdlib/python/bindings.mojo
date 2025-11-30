@@ -13,6 +13,7 @@
 
 from sys.ffi import _Global, c_int, c_long
 from sys.info import size_of
+from os import abort
 
 from builtin._startup import _ensure_current_or_global_runtime_init
 from compile.reflection import get_type_name
@@ -1016,12 +1017,8 @@ struct PythonTypeBuilder(Copyable, Movable):
         @parameter
         if tp_slot._tp_slot == Py_mp_subscript:
             self._insert_slot(
-                PyType_Slot(
-                    Py_mp_subscript,
-                    rebind[OpaquePointer](
-                        _mp_subscript_wrapper[method_type, method]
-                        # _py_c_function_wrapper[method, is_method=True]()
-                    ),
+                PyType_Slot.mp_subscript(
+                    _mp_subscript_wrapper[method_type, method]
                 ),
             )
         else:
@@ -1035,12 +1032,20 @@ struct PythonTypeBuilder(Copyable, Movable):
     fn def_rich_compare[
         method: fn (PyObjectPtr, PyObjectPtr, Int) raises -> Bool
     ](mut self: Self) -> ref [self] Self:
-        """Sets the rich compare method."""
+        """Sets the rich compare method, see https://peps.python.org/pep-0207.
+
+        Parameters:
+            method: The user method to install as the compare method. The API matches the python richcompare protocol.
+
+        Returns:
+            A refence to self for easier chaining.
+
+        References:
+        - https://docs.python.org/3/c-api/typeobj.html#c.PyTypeObject.tp_richcompare .
+        """
+
         self._insert_slot(
-            PyType_Slot(
-                Py_tp_richcompare,
-                rebind[OpaquePointer](_richcompare_wrapper[method]),
-            )
+            PyType_Slot.tp_richcompare(_richcompare_wrapper[method])
         )
 
         return self

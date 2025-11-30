@@ -499,6 +499,18 @@ struct PyType_Slot(ImplicitlyCopyable, Movable):
         )
 
     @staticmethod
+    fn tp_richcompare(func: Typed_richcompare) -> Self:
+        return PyType_Slot(
+            Py_tp_richcompare, rebind[OpaquePointer[MutAnyOrigin]](func)
+        )
+
+    @staticmethod
+    fn mp_subscript(func: binaryfunc) -> Self:
+        return PyType_Slot(
+            Py_mp_subscript, rebind[OpaquePointer[MutAnyOrigin]](func)
+        )
+
+    @staticmethod
     fn null() -> Self:
         return PyType_Slot(0, OpaquePointer[MutAnyOrigin]())
 
