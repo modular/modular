@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Config for QwenImageEdit2511 model."""
+"""Config for ZImage model."""
 
 from dataclasses import dataclass
 from typing import Literal
@@ -286,11 +286,11 @@ class DenoiserConfig:
 
 
 @dataclass
-class QwenImageEdit2511ConfigBase:
-    """Base configuration for QwenImageEdit2511 models with required fields."""
+class ZImageConfigBase:
+    """Base configuration for ZImage models with required fields."""
 
     devices: list[DeviceRef]
-    """Devices that the QwenImageEdit2511 model is parallelized over."""
+    """Devices that the ZImage model is parallelized over."""
 
     # Multimodal parameters
     image_token_id: int
@@ -326,8 +326,8 @@ class QwenImageEdit2511ConfigBase:
 
 
 @dataclass
-class QwenImageEdit2511Config(MAXModelConfig, QwenImageEdit2511ConfigBase):
-    """Implementation of MAXModelConfig for QwenImageEdit2511 models."""
+class ZImageConfig(MAXModelConfig, ZImageConfigBase):
+    """Implementation of MAXModelConfig for ZImage models."""
 
     @staticmethod
     def help() -> dict[str, str]:
@@ -365,7 +365,7 @@ class QwenImageEdit2511Config(MAXModelConfig, QwenImageEdit2511ConfigBase):
     def calculate_max_seq_len(
         pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
-        """Calculate maximum sequence length for QwenImageEdit2511."""
+        """Calculate maximum sequence length for ZImage."""
         # Delegate to Llama3Config for language model parameters.
         llm_config = getattr(
             huggingface_config, "text_config", huggingface_config
@@ -388,8 +388,8 @@ class QwenImageEdit2511Config(MAXModelConfig, QwenImageEdit2511ConfigBase):
         kv_cache_config: KVCacheConfig,
         return_logits: ReturnLogits,
         norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "layer_norm",
-    ) -> QwenImageEdit2511Config:
-        """Generate QwenImageEdit2511Config from pipeline and HuggingFace configs.
+    ) -> ZImageConfig:
+        """Generate ZImageConfig from pipeline and HuggingFace configs.
 
         Args:
             pipeline_config: Pipeline configuration.
@@ -405,7 +405,7 @@ class QwenImageEdit2511Config(MAXModelConfig, QwenImageEdit2511ConfigBase):
             norm_method: Normalization method.
 
         Returns:
-            Configured QwenImageEdit2511Config instance.
+            Configured ZImageConfig instance.
         """
         # Create SchedulerConfig from the scheduler config
         hf_scheduler_config = getattr(huggingface_config, "scheduler_config", None)
@@ -452,7 +452,7 @@ class QwenImageEdit2511Config(MAXModelConfig, QwenImageEdit2511ConfigBase):
             denoiser_state_dict,
         )
 
-        return QwenImageEdit2511Config(
+        return ZImageConfig(
             devices=[
                 DeviceRef(spec.device_type, spec.id)
                 for spec in pipeline_config.model_config.device_specs
