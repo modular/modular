@@ -78,6 +78,9 @@ what we publish.
 
 ### Library changes
 
+- `any` and `all` now work over `Iterable`s,
+  which means they can act over the result of `map`.
+
 - Tuples have been improved:
   - Tuples can now be concatenated with `Tuple.concat(other)`.
   - Tuple can now be reversed with `Tuple.reverse()`.

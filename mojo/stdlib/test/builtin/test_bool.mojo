@@ -146,5 +146,36 @@ def test_float_conversion():
     assert_equal((False).__float__(), 0.0)
 
 
+def test_all():
+    assert_true(all([True, True, True]))
+    assert_false(all({True, False, True}))
+    # empty
+    assert_true(all(List[Int]()))
+
+    fn gt0(x: Int) -> Bool:
+        return x > 0
+
+    var l = [1, 2, 3]
+    assert_true(all(map[gt0](l)))
+    var l2 = [-1, 2, 3]
+    assert_false(all(map[gt0](l2)))
+
+
+def test_any():
+    assert_true(any([True, True, True]))
+    assert_false(any([False, False, False]))
+    assert_false(any({False}))
+    # empty
+    assert_false(any(List[Int]()))
+
+    fn gt0(x: Int) -> Bool:
+        return x > 0
+
+    var l = [1, 2, 3]
+    assert_true(any(map[gt0](l)))
+    var l2 = [-1, -2, -3]
+    assert_false(any(map[gt0](l2)))
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

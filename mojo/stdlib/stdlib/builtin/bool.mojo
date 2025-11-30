@@ -25,6 +25,7 @@ from python import (
     PythonObject,
 )
 
+from builtin.rebind import trait_downcast
 from utils._select import _select_register_value as select
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -569,41 +570,25 @@ struct Bool(
 # ===----------------------------------------------------------------------=== #
 
 
-# TODO: Combine these into Iterators over Boolable elements
-
-
-fn any[T: Boolable & Copyable & Movable, //](list: List[T, *_]) -> Bool:
-    """Checks if **any** element in the list is truthy.
+fn any[
+    IterableType: Iterable
+](iterable: IterableType) -> Bool where conforms_to(
+    IterableType.IteratorType[origin_of(iterable)].Element, Boolable
+):
+    """Checks if **all** elements in the list are truthy.
 
     Parameters:
-        T: The type of elements to check.
+        IterableType: The type of the iterable containing `Boolable` items.
 
     Args:
-        list: The list to check.
+        iterable: The iterable to check.
 
     Returns:
         `True` if **any** element in the list is truthy, `False` otherwise.
     """
-    for item in list:
-        if item:
-            return True
-    return False
 
-
-fn any[T: Boolable & KeyElement, //](set: Set[T]) -> Bool:
-    """Checks if **any** element in the set is truthy.
-
-    Parameters:
-        T: The type of elements to check.
-
-    Args:
-        set: The set to check.
-
-    Returns:
-        `True` if **any** element in the set is truthy, `False` otherwise.
-    """
-    for item in set:
-        if item:
+    for item in iterable:
+        if trait_downcast[Boolable](item):
             return True
     return False
 
@@ -626,41 +611,24 @@ fn any(value: SIMD) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-# TODO: Combine these into Iterators over Boolable elements
-
-
-fn all[T: Boolable & Copyable & Movable, //](list: List[T, *_]) -> Bool:
+fn all[
+    IterableType: Iterable
+](iterable: IterableType) -> Bool where conforms_to(
+    IterableType.IteratorType[origin_of(iterable)].Element, Boolable
+):
     """Checks if **all** elements in the list are truthy.
 
     Parameters:
-        T: The type of elements to check.
+        IterableType: The type of the iterable containing `Boolable` items.
 
     Args:
-        list: The list to check.
+        iterable: The iterable to check.
 
     Returns:
-        `True` if **all** elements in the list are truthy, `False` otherwise.
+        `True` if **all** elements in the iterable are truthy, `False` otherwise.
     """
-    for item in list:
-        if not item:
-            return False
-    return True
-
-
-fn all[T: Boolable & KeyElement, //](set: Set[T]) -> Bool:
-    """Checks if **all** elements in the set are truthy.
-
-    Parameters:
-        T: The type of elements to check.
-
-    Args:
-        set: The set to check.
-
-    Returns:
-        `True` if **all** elements in the set are truthy, `False` otherwise.
-    """
-    for item in set:
-        if not item:
+    for item in iterable:
+        if not trait_downcast[Boolable](item):
             return False
     return True
 
