@@ -1,6 +1,8 @@
 load("//bazel:api.bzl", "mojo_library")
 
-package(default_visibility = ["//visibility:private"])
+# gazelle:default_visibility @mojo//:__pkg__
+
+package(default_visibility = ["@mojo//:__pkg__"])
 
 mojo_library(
     name = "test_utils",

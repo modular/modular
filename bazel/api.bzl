@@ -47,7 +47,7 @@ def _has_internal_reference(deps):
 def modular_py_library(
         name,
         deps = [],
-        visibility = ["//visibility:public"],
+        visibility = None,
         **kwargs):
     if name == "_mlir":
         native.alias(name = name, actual = "@modular_wheel//:wheel", visibility = visibility)
