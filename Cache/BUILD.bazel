@@ -7,6 +7,7 @@ package(default_visibility = ["//Cache:consumers"])
 package_group(
     name = "consumers",
     packages = [
+        "//Cache/...",
         "//GenericML/...",
         "//KGEN/...",
     ],
