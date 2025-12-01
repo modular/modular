@@ -3153,58 +3153,69 @@ def sgmv_lora_qkv_shrink(
 def sgmv_qkv_lora_kernel(
     input: TensorValue,
     lora_a: TensorValue,
-    lora_b: TensorValue,
+    lora_b_q: TensorValue,
+    lora_b_kv: TensorValue,
     lora_ids: TensorValue,
     lora_ranks: TensorValue,
     input_row_offsets: TensorValue,
     lora_grouped_offsets: TensorValue,
-    lora_input_slice_idx: TensorValue,
+    lora_end_idx: TensorValue,
+    batch_seq_len: TensorValue,
+    lora_ids_kv: TensorValue,
+    lora_grouped_offsets_kv: TensorValue,
     kv_collection: PagedCacheValues,
     kv_params: KVCacheParams,
     layer_idx: TensorValue,
     max_lora_seq_len: int,
     max_rank: int,
-    q_dim: int,
-    kv_dim: int,
     bias: TensorValue | None = None,
 ) -> TensorValue:
     """
     Computes the SGMV QKV LoRA kernel for Q, K, V projections with LoRA.
 
     Args:
-        input: The input tensor
-        lora_a: The LoRA tensor for A
-        lora_b: The LoRA tensor for B
-        lora_ids: Ids of the LoRAs used for each sequence
-        lora_ranks: The ranks of the LoRAs ihn the batch
-        input_row_offsets: The sequence offsets that use LoRA
-        kv_collection: The KV cache
-        kv_params: The KV params
-        layer_idx: The layer index to retrieve the KV cache
-        max_lora_seq_len: The maximum sequence length of any given LoRA in the batch
-        max_rank: The maximum rank for the LoRAs
-        q_dim: The q dimension
-        kv_dim: The kv dimension
-        bias: Optional LoRA bias
+        input: The input tensor.
+        lora_a: The LoRA A tensor.
+        lora_b_q: The LoRA B tensor for Q projection.
+        lora_b_kv: The LoRA B tensor for K and V projections (stacked).
+        lora_ids: IDs of the LoRAs used for each sequence.
+        lora_ranks: The ranks of the LoRAs in the batch.
+        input_row_offsets: The sequence offsets that use LoRA.
+        lora_grouped_offsets: Grouped offsets for LoRA sequences.
+        lora_end_idx: End index of LoRA tokens in the batch.
+        batch_seq_len: Total sequence length of the batch.
+        lora_ids_kv: LoRA IDs for KV projections (with offset for V portion).
+        lora_grouped_offsets_kv: Grouped offsets for KV LoRA sequences.
+        kv_collection: The KV cache.
+        kv_params: The KV params.
+        layer_idx: The layer index to retrieve the KV cache.
+        max_lora_seq_len: The maximum sequence length of any given LoRA in the batch.
+        max_rank: The maximum rank for the LoRAs.
+        bias: Optional LoRA bias.
     """
     if kv_params.cache_strategy != KVCacheStrategy.PAGED:
         raise ValueError("KV cache SGMV only supports Paged KV cache.")
 
     assert kv_params.page_size is not None
 
-    v_qkv = sgmv_kernel(
-        input,
-        lora_a,
-        lora_ids,
-        lora_ranks,
-        lora_grouped_offsets,
-        max_lora_seq_len,
-        bias,
+    # shrink GMM:      [M, K] @ [G, 3*N, K]     // unchanged
+    # transpose:       [M, 3, N] => [3, M, N]   // shall be fused into above
+    v_qkv = sgmv_lora_qkv_shrink(
+        input=input,
+        lora_a=lora_a,
+        lora_ids=lora_ids,
+        lora_grouped_offsets=lora_grouped_offsets,
+        max_lora_seq_len=max_lora_seq_len,
+        max_rank=max_rank,
     )
 
+    # slice for Q:     [0, M, N] (materialized)
+    # slice for KV:    [1:,M, N] (materialized)
+
+    # expand GMM-Q:    [M, N]  @ [G, Qdim, N]
     q_out = sgmv_kernel(
-        v_qkv[:, :max_rank],
-        lora_b[:, :q_dim, :],
+        v_qkv[0, :, :],
+        lora_b_q,
         lora_ids,
         lora_ranks,
         lora_grouped_offsets,
@@ -3212,36 +3223,28 @@ def sgmv_qkv_lora_kernel(
         bias,
     )
 
-    k_out = sgmv_kernel(
-        v_qkv[:, max_rank:],
-        lora_b[:, q_dim : q_dim + kv_dim, :],
-        lora_ids,
+    v_kv = ops.reshape(v_qkv[1:, :, :], [2 * input.shape[0], -1])
+
+    # expand GMM-KV:   [2M, N] @ [2G, KVdim, N] // KV stacked in dim 0
+    kv_out = sgmv_kernel(
+        v_kv,
+        lora_b_kv,
+        lora_ids_kv,
         lora_ranks,
-        lora_grouped_offsets,
+        lora_grouped_offsets_kv,
         max_lora_seq_len,
         bias,
     )
 
-    v_out = sgmv_kernel(
-        v_qkv[:, 2 * max_rank :],
-        lora_b[:, q_dim + kv_dim :, :],
-        lora_ids,
-        lora_ranks,
-        lora_grouped_offsets,
-        max_lora_seq_len,
-        bias,
-    )
-
-    ops.inplace_custom(
-        "mo.kv_cache.ragged.paged.radd",
-        device=input.device,
-        values=[
-            ops.concat([k_out, v_out], axis=1),
-            *kv_collection,
-            input_row_offsets,
-            ops.constant(0, DType.uint32, DeviceRef.CPU()),
-            layer_idx,
-        ],
+    # write to cache:  write [2M, KVdim] directly w/o transforming to [M, 2*KVdim]
+    kv_cache_ragged_2m_iadd(
+        kv_params=kv_params,
+        a=kv_out,
+        kv_collection=kv_collection,
+        input_row_offsets=input_row_offsets,
+        lora_end_idx=lora_end_idx,
+        batch_seq_len=batch_seq_len,
+        layer_idx=layer_idx,
     )
 
     return q_out

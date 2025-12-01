@@ -18,14 +18,17 @@ from __future__ import annotations
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight
 from max.graph.quantization import QuantizationEncoding
-from max.nn.float8_config import Float8Config
 from max.nn.lora.interfaces import SupportsLoRA
 
-from ..kernels import sgmv_lora_kernel
-from ..linear import Linear
+from ..kernels import sgmv_lora_kernel, sgmv_qkv_lora_kernel, sliced_add
+from ..kv_cache import (
+    KVCacheParams,
+    PagedCacheValues,
+)
+from ..layer import Module
 
 
-class LinearLoRA(Linear, SupportsLoRA):
+class LinearLoRA(Module, SupportsLoRA):
     def __init__(
         self,
         in_dim: int,
@@ -34,11 +37,9 @@ class LinearLoRA(Linear, SupportsLoRA):
         max_lora_rank: int,
         dtype: DType,
         device: DeviceRef,
-        has_bias: bool = False,
         has_lora_bias: bool = False,
         name: str | None = None,
         quantization_encoding: QuantizationEncoding | None = None,
-        float8_config: Float8Config | None = None,
     ):
         """
         Applies a linear transformation and LoRA to input:
@@ -72,18 +73,13 @@ class LinearLoRA(Linear, SupportsLoRA):
             output = linear_layer(input_tensor)
         """
 
-        super().__init__(
-            in_dim=in_dim,
-            out_dim=out_dim,
-            dtype=dtype,
-            device=device,
-            has_bias=has_bias,
-            quantization_encoding=quantization_encoding,
-            float8_config=float8_config,
-        )
+        super().__init__()
+
         self.max_num_loras = max_num_loras
         self.max_lora_rank = max_lora_rank
         self.in_dim = in_dim
+        self.out_dim = out_dim
+        self.device = device
 
         self.lora_A = Weight(
             name=f"{name}.lora_A.weight" if name else "lora_A.weight",
@@ -115,35 +111,47 @@ class LinearLoRA(Linear, SupportsLoRA):
         )
         self.lora_ids: TensorValue | None = None
         self.lora_ranks: TensorValue | None = None
-        self.lora_input_slice_idx: TensorValue | None = None
+        self.num_active_loras: TensorValue | None = None
+        self.lora_end_idx: TensorValue | None = None
+        self.batch_seq_len: TensorValue | None = None
         self.lora_grouped_offsets: TensorValue | None = None
+        self.lora_ids_kv: TensorValue | None = None
+        self.lora_grouped_offsets_kv: TensorValue | None = None
 
     def set_lora_batch_info(
         self,
         lora_ids: TensorValue,
         lora_ranks: TensorValue,
         lora_grouped_offsets: TensorValue,
-        lora_input_slice_idx: TensorValue,
+        num_active_loras: TensorValue,
+        lora_end_idx: TensorValue,
+        batch_seq_len: TensorValue,
+        lora_ids_kv: TensorValue,
+        lora_grouped_offsets_kv: TensorValue,
     ) -> None:
         self.lora_ids = lora_ids
         self.lora_ranks = lora_ranks
         self.lora_grouped_offsets = lora_grouped_offsets
-        self.lora_input_slice_idx = lora_input_slice_idx
+        self.num_active_loras = num_active_loras
+        self.lora_end_idx = lora_end_idx
+        self.batch_seq_len = batch_seq_len
+        self.lora_ids_kv = lora_ids_kv
+        self.lora_grouped_offsets_kv = lora_grouped_offsets_kv
 
-    def apply_lora(self, x: TensorValue) -> TensorValue:
-        y = self(x)
-
+    def __call__(self, x: TensorValue, y: TensorValue) -> TensorValue:
         if (
             self.lora_ids is None
             or self.lora_ranks is None
             or self.lora_grouped_offsets is None
-            or self.lora_input_slice_idx is None
+            or self.num_active_loras is None
+            or self.lora_end_idx is None
+            or self.batch_seq_len is None
         ):
             raise ValueError(
                 "'set_lora_batch_info' not called before executing forward pass."
             )
 
-        return y + sgmv_lora_kernel(
+        y_lora = sgmv_lora_kernel(
             input=x,
             lora_a=self.lora_A,
             lora_b=self.lora_B,
@@ -153,3 +161,150 @@ class LinearLoRA(Linear, SupportsLoRA):
             max_lora_seq_len=self.in_dim,
             bias=self.lora_bias,
         )
+
+        y = sliced_add(y, y_lora, self.lora_end_idx)
+
+        return y
+
+
+class QKVLinearLoRA(Module, SupportsLoRA):
+    def __init__(
+        self,
+        in_dim: int,
+        q_dim: int,
+        kv_dim: int,
+        max_num_loras: int,
+        max_lora_rank: int,
+        dtype: DType,
+        device: DeviceRef,
+        name: str | None = None,
+        quantization_encoding: QuantizationEncoding | None = None,
+    ):
+        super().__init__()
+
+        self.max_num_loras = max_num_loras
+        self.max_lora_rank = max_lora_rank
+        self.in_dim = in_dim
+        self.q_dim = q_dim
+        self.kv_dim = kv_dim
+
+        self.lora_A = Weight(
+            name=f"{name}.lora_A.weight" if name else "lora_A.weight",
+            dtype=dtype,
+            shape=[max_num_loras, 3 * max_lora_rank, in_dim],
+            device=device,
+            quantization_encoding=quantization_encoding,
+            _has_alias=True,
+        )
+
+        self.lora_B_q = Weight(
+            name=f"{name}.lora_B_q.weight" if name else "lora_B_q.weight",
+            dtype=dtype,
+            shape=[max_num_loras, q_dim, max_lora_rank],
+            device=device,
+            quantization_encoding=quantization_encoding,
+            _has_alias=True,
+        )
+        self.lora_B_kv = Weight(
+            name=f"{name}.lora_B_kv.weight" if name else "lora_B_kv.weight",
+            dtype=dtype,
+            shape=[2 * max_num_loras, kv_dim, max_lora_rank],
+            device=device,
+            quantization_encoding=quantization_encoding,
+            _has_alias=True,
+        )
+
+        self.lora_ids: TensorValue | None = None
+        self.lora_ranks: TensorValue | None = None
+        self.num_active_loras: TensorValue | None = None
+        self.lora_end_idx: TensorValue | None = None
+        self.batch_seq_len: TensorValue | None = None
+        self.lora_grouped_offsets: TensorValue | None = None
+        self.lora_ids_kv: TensorValue | None = None
+        self.lora_grouped_offsets_kv: TensorValue | None = None
+
+    def set_lora_batch_info(
+        self,
+        lora_ids: TensorValue,
+        lora_ranks: TensorValue,
+        lora_grouped_offsets: TensorValue,
+        num_active_loras: TensorValue,
+        lora_end_idx: TensorValue,
+        batch_seq_len: TensorValue,
+        lora_ids_kv: TensorValue,
+        lora_grouped_offsets_kv: TensorValue,
+    ) -> None:
+        self.lora_ids = lora_ids
+        self.lora_ranks = lora_ranks
+        self.lora_grouped_offsets = lora_grouped_offsets
+        self.num_active_loras = num_active_loras
+        self.lora_end_idx = lora_end_idx
+        self.batch_seq_len = batch_seq_len
+        self.lora_ids_kv = lora_ids_kv
+        self.lora_grouped_offsets_kv = lora_grouped_offsets_kv
+
+    def __call__(
+        self,
+        x: TensorValue,
+        xq: TensorValue,
+        kv_collection: PagedCacheValues,
+        kv_params: KVCacheParams,
+        input_row_offsets: TensorValue,
+        layer_idx: TensorValue,
+        max_seq_len: int,
+    ) -> TensorValue:
+        """
+        Computes fused query, key, and value LoRAs with ragged input.
+
+        Args:
+            x (TensorValue): The input tensor of shape [total_tokens, hidden_dim].
+            qkv_loras (list[LinearLoRA]): List of 3 LinearLoRA modules for Q, K, and V projections.
+            input_row_offsets (TensorValue): 1D tensor indicating the start index of each sequence in `x`.
+            kv_collection (PagedCacheValues):
+                The key/value cache collection structure.
+            layer_idx (TensorValue): Index of the current transformer layer (used for caching).
+
+        Returns:
+            TensorValue: The query projections.
+
+        Raises:
+            ValueError: If 'set_lora_batch_info' has not been called on the LoRAs.
+        """
+        if (
+            self.lora_ids is None
+            or self.lora_ranks is None
+            or self.lora_grouped_offsets is None
+            or self.num_active_loras is None
+            or self.lora_end_idx is None
+            or self.batch_seq_len is None
+            or self.lora_ids_kv is None
+            or self.lora_grouped_offsets_kv is None
+        ):
+            raise ValueError(
+                "'set_lora_batch_info' not called before executing forward pass."
+            )
+
+        xq_lora = sgmv_qkv_lora_kernel(
+            input=x,
+            lora_a=self.lora_A,
+            lora_b_q=self.lora_B_q,
+            lora_b_kv=self.lora_B_kv,
+            lora_ids=self.lora_ids,
+            lora_ranks=self.lora_ranks,
+            input_row_offsets=input_row_offsets,
+            lora_grouped_offsets=self.lora_grouped_offsets,
+            lora_end_idx=self.lora_end_idx,
+            batch_seq_len=self.batch_seq_len,
+            lora_ids_kv=self.lora_ids_kv,
+            lora_grouped_offsets_kv=self.lora_grouped_offsets_kv,
+            kv_collection=kv_collection,
+            kv_params=kv_params,
+            layer_idx=layer_idx,
+            max_lora_seq_len=max_seq_len,
+            max_rank=self.max_lora_rank,
+            bias=None,
+        )
+
+        xq = sliced_add(xq, xq_lora, self.lora_end_idx)
+
+        return xq

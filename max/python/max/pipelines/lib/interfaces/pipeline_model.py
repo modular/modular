@@ -185,6 +185,9 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                 pipeline_config.lora_config,
                 pipeline_config.model_config.model_name,
                 self.dtype,
+                huggingface_config.num_attention_heads,
+                huggingface_config.num_key_value_heads,
+                huggingface_config.head_dim,
                 pipeline_config.zmq_endpoint_base,
             )
             if pipeline_config.lora_config

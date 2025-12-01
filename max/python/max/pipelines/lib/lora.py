@@ -28,9 +28,9 @@ import numpy as np
 import numpy.typing as npt
 from max.driver import CPU, Device, DLPackArray, Tensor
 from max.dtype import DType
-from max.graph import Weight
+from max.graph.quantization import QuantizationEncoding
 from max.graph.tensor_utils import cast_dlpack_to, cast_tensor_to
-from max.graph.type import DeviceRef, TensorType
+from max.graph.type import DeviceRef, Shape, TensorType
 from max.graph.value import TensorValue
 from max.graph.weights import WeightData, WeightsFormat, load_weights
 from max.interfaces import (
@@ -225,6 +225,9 @@ class LoRAModel:
         path: str,
         base_dtype: DType,
         max_lora_rank: int,
+        n_heads: int,
+        n_kv_heads: int,
+        head_dim: int,
         strict: bool = True,
     ) -> None:
         """
@@ -232,7 +235,8 @@ class LoRAModel:
 
         .. code-block:: python
 
-            lora = LoRAModel("my_adapter", "/path/to/lora", base_dtype, max_lora_rank)
+            lora = LoRAModel("my_adapter", "/path/to/lora", base_dtype, max_lora_rank,
+                             n_heads=32, n_kv_heads=8, head_dim=128)
 
         Args:
             name:
@@ -243,6 +247,12 @@ class LoRAModel:
                 The base model dtype.
             max_lora_rank:
                 The maximum LoRA rank supported by the system.
+            n_heads:
+                Number of attention heads in the base model.
+            n_kv_heads:
+                Number of key-value heads in the base model.
+            head_dim:
+                Dimension of each attention head.
             strict:
                 Whether to enforce strict validation while loading the adapter.
 
@@ -252,8 +262,12 @@ class LoRAModel:
         """
         self.name = name
         self.path = path
-        self.strict = strict
+        self.base_dtype = base_dtype
         self.max_lora_rank = max_lora_rank
+        self.n_heads = n_heads
+        self.n_kv_heads = n_kv_heads
+        self.head_dim = head_dim
+        self.strict = strict
         self._lora_A: dict[str, WeightData] = {}
         self._lora_B: dict[str, WeightData] = {}
         self._lora_bias: dict[str, WeightData] = {}
@@ -362,6 +376,239 @@ class LoRAModel:
         else:
             return key
 
+    def _pad_lora_a_weight(
+        self, weight_np: npt.NDArray[Any], rank: int
+    ) -> npt.NDArray[Any]:
+        """Pad LoRA A weights from [rank, in_features] to [max_rank, in_features]."""
+        if rank < self.max_lora_rank:
+            padded = np.zeros(
+                (self.max_lora_rank, weight_np.shape[-1]),
+                dtype=weight_np.dtype,
+            )
+            padded[:rank, :] = weight_np
+            return padded
+        return weight_np
+
+    def _pad_lora_b_weight(
+        self, weight_np: npt.NDArray[Any], rank: int
+    ) -> npt.NDArray[Any]:
+        """Pad LoRA B weights from [out_features, rank] to [out_features, max_rank]."""
+        if rank < self.max_lora_rank:
+            padded = np.zeros(
+                (weight_np.shape[0], self.max_lora_rank),
+                dtype=weight_np.dtype,
+            )
+            padded[:, :rank] = weight_np
+            return padded
+        return weight_np
+
+    def _cast_all_weights(self, base_dtype: DType) -> None:
+        """
+        Cast all LoRA weights to base_dtype.
+
+        Called after _combine_qkv_weights() so that all weights (including
+        the concatenated QKV weights) are cast in one place.
+        """
+        for data in self._lora_A.values():
+            if isinstance(data.data, np.ndarray):
+                weight_tensor = Tensor.from_numpy(data.data)
+                data.data = cast_tensor_to(weight_tensor, base_dtype)
+
+        for data in self._lora_B.values():
+            if isinstance(data.data, np.ndarray):
+                weight_tensor = Tensor.from_numpy(data.data)
+                data.data = cast_tensor_to(weight_tensor, base_dtype)
+
+    def _combine_qkv_weights(self) -> None:
+        """
+        Combines separate q_proj, k_proj, v_proj LoRA weights into qkv_lora weights.
+
+        This method identifies sets of Q, K, V weights for the same layer and combines them:
+        - For lora_A: concatenates across rank dimension (dim 0)
+        - For lora_B: concatenates across output dimension (dim 0)
+
+        The combined weights are stored with 'qkv_lora' keys, making them ready for use
+        by the fused QKV attention layers.
+        """
+        # Find all unique layer prefixes that have q_proj, k_proj, v_proj
+        # LoRA A and B always come in pairs, so we only need to check one
+        layer_prefixes: set[str] = set()
+        for key in self._lora_A:
+            # Extract the layer prefix (e.g., "layers.0.self_attn")
+            match = re.match(
+                r"(layers\.\d+\.self_attn)\.(q_proj|k_proj|v_proj)", key
+            )
+            if match:
+                layer_prefixes.add(match.group(1))
+
+        # Determine default dtype from first available weight, or use base-dtype
+        if self._lora_A:
+            first_data = next(iter(self._lora_A.values()))
+            default_dtype = first_data.dtype
+        else:
+            default_dtype = self.base_dtype
+
+        # For each layer, combine q, k, v weights
+        for layer_prefix in layer_prefixes:
+            self._combine_qkv_for_layer(layer_prefix, default_dtype)
+
+    def _weight_to_numpy(self, weight_data: WeightData) -> npt.NDArray[Any]:
+        """Convert WeightData to numpy array (data may already be numpy or dlpack)."""
+        if isinstance(weight_data.data, np.ndarray):
+            return weight_data.data
+        return Tensor.from_dlpack(weight_data.data).to_numpy()
+
+    def _create_weight_data(
+        self,
+        np_array: npt.NDArray[Any],
+        key: str,
+        dtype: DType,
+        quantization_encoding: QuantizationEncoding | None,
+    ) -> WeightData:
+        """Create WeightData from numpy array."""
+        return WeightData(
+            np_array,
+            key,
+            dtype,
+            Shape(np_array.shape),
+            quantization_encoding,
+        )
+
+    def _get_qkv_keys(
+        self, layer_prefix: str, lora_type: LoRAType
+    ) -> tuple[str, str, str]:
+        """Generate Q, K, V weight keys for a layer and LoRA type."""
+        return (
+            f"{layer_prefix}.q_proj.{lora_type.value}.weight",
+            f"{layer_prefix}.k_proj.{lora_type.value}.weight",
+            f"{layer_prefix}.v_proj.{lora_type.value}.weight",
+        )
+
+    def _combine_qkv_for_layer(
+        self, layer_prefix: str, default_dtype: DType
+    ) -> None:
+        """
+        Combines Q, K, V weights for a specific layer.
+
+        Args:
+            layer_prefix: The layer prefix (e.g., "layers.0.self_attn")
+            default_dtype: Default DType to use if no weights are present.
+        """
+        self._combine_lora_a_weights(layer_prefix, default_dtype)
+        self._combine_lora_b_weights(layer_prefix, default_dtype)
+
+    def _combine_lora_a_weights(
+        self, layer_prefix: str, default_dtype: DType
+    ) -> None:
+        """Combine Q, K, V lora_A weights into a single concatenated weight."""
+        q_key, k_key, v_key = self._get_qkv_keys(layer_prefix, LoRAType.A)
+        keys = (q_key, k_key, v_key)
+        present_keys = [k for k in keys if k in self._lora_A]
+
+        # LoRA A input dimension is the hidden size (n_heads * head_dim)
+        in_features = self.n_heads * self.head_dim
+
+        # Use first present key as reference for dtype/quantization, or defaults
+        if present_keys:
+            ref_data = self._lora_A[present_keys[0]]
+            src_dtype = ref_data.dtype
+            quantization_encoding = ref_data.quantization_encoding
+        else:
+            src_dtype = default_dtype
+            quantization_encoding = None
+
+        np_dtype = src_dtype.to_numpy()
+
+        # LoRA A shape: [max_rank, in_features]
+        def get_or_zeros(key: str) -> npt.NDArray[Any]:
+            if key in self._lora_A:
+                return self._weight_to_numpy(self._lora_A[key])
+            return np.zeros((self.max_lora_rank, in_features), dtype=np_dtype)
+
+        q_np = get_or_zeros(q_key)
+        k_np = get_or_zeros(k_key)
+        v_np = get_or_zeros(v_key)
+
+        # Shape: [rank, in_features] -> [3*rank, in_features]
+        combined_np = np.concatenate([q_np, k_np, v_np], axis=0)
+
+        combined_key = f"{layer_prefix}.qkv_lora.{LoRAType.A.value}.weight"
+        self._lora_A[combined_key] = self._create_weight_data(
+            combined_np,
+            combined_key,
+            src_dtype,
+            quantization_encoding,
+        )
+
+        for key in present_keys:
+            del self._lora_A[key]
+
+    def _combine_lora_b_weights(
+        self, layer_prefix: str, default_dtype: DType
+    ) -> None:
+        """Combine Q, K, V lora_B weights into separate Q and stacked KV weights."""
+        q_key, k_key, v_key = self._get_qkv_keys(layer_prefix, LoRAType.B)
+        keys = (q_key, k_key, v_key)
+        present_keys = [k for k in keys if k in self._lora_B]
+
+        # Compute output dimensions from model config
+        q_out_features = self.n_heads * self.head_dim
+        kv_out_features = self.n_kv_heads * self.head_dim
+
+        # Use first present key as reference for dtype/quantization, or defaults
+        if present_keys:
+            ref_data = self._lora_B[present_keys[0]]
+            src_dtype = ref_data.dtype
+            quantization_encoding = ref_data.quantization_encoding
+        else:
+            src_dtype = default_dtype
+            quantization_encoding = None
+
+        np_dtype = src_dtype.to_numpy()
+
+        # LoRA B shape: [out_features, max_rank]
+        def get_q_or_zeros() -> npt.NDArray[Any]:
+            if q_key in self._lora_B:
+                return self._weight_to_numpy(self._lora_B[q_key])
+            return np.zeros(
+                (q_out_features, self.max_lora_rank), dtype=np_dtype
+            )
+
+        def get_kv_or_zeros(key: str) -> npt.NDArray[Any]:
+            if key in self._lora_B:
+                return self._weight_to_numpy(self._lora_B[key])
+            return np.zeros(
+                (kv_out_features, self.max_lora_rank), dtype=np_dtype
+            )
+
+        q_np = get_q_or_zeros()
+        k_np = get_kv_or_zeros(k_key)
+        v_np = get_kv_or_zeros(v_key)
+
+        # Q weight: shape [q_out_features, rank]
+        q_combined_key = f"{layer_prefix}.qkv_lora.{LoRAType.B.value}_q.weight"
+        self._lora_B[q_combined_key] = self._create_weight_data(
+            q_np,
+            q_combined_key,
+            src_dtype,
+            quantization_encoding,
+        )
+
+        # KV weight: shape [2, kv_out_features, rank]
+        kv_np = np.stack([k_np, v_np])
+        kv_combined_key = (
+            f"{layer_prefix}.qkv_lora.{LoRAType.B.value}_kv.weight"
+        )
+        self._lora_B[kv_combined_key] = self._create_weight_data(
+            kv_np,
+            kv_combined_key,
+            src_dtype,
+            quantization_encoding,
+        )
+
+        for key in present_keys:
+            del self._lora_B[key]
+
     def _load_weights(self, base_dtype: DType) -> dict[str, Any]:
         """
         Loads LoRA adapter weights and configuration from disk.
@@ -412,57 +659,39 @@ class LoRAModel:
             raise ValueError("LoRA only supports files in safetensors format.")
 
         scale = adapter_config["lora_alpha"] / adapter_config["r"]
+        rank = adapter_config["r"]
+
+        # load all weights as numpy arrays
         for key, weight in weights.items():
             key = self._normalize_lora_key(key)
             data = weight.data()
 
-            # TODO: Need to pad the tensors since max.driver.Tensors don't allow for
-            #  non-contiguous copies. Move padding to max, if possible.
             if LoRAType.A.value in key:
-                # Convert to numpy array
                 weight_np = Tensor.from_dlpack(data.data).to_numpy()
-
-                # Pad LoRA A weights from [rank, in_features] to [max_rank, in_features]
-                if adapter_config["r"] < self.max_lora_rank:
-                    padded = np.zeros(
-                        (self.max_lora_rank, weight_np.shape[-1]),
-                        dtype=weight_np.dtype,
-                    )
-                    padded[: adapter_config["r"], :] = weight_np
-                    weight_np = padded
-
-                # Cast to base dtype after padding
-                weight_tensor = Tensor.from_numpy(weight_np)
-                data.data = cast_tensor_to(weight_tensor, base_dtype)
+                data.data = self._pad_lora_a_weight(weight_np, rank)
                 self._lora_A[key] = data
+
             elif LoRAType.B.value in key:
-                # A minor optimization so we don't have to multiply scale
-                # by LoRA B in the kernel every forward.
+                # Pre-multiply scale to avoid doing it in the kernel every forward.
                 # The loaded safetensors weights are read-only, so we must copy.
                 weight_np = (
                     Tensor.from_dlpack(data.data).copy().to_numpy() * scale
                 )
-
-                # Pad LoRA B weights from [out_features, rank] to [out_features, max_rank]
-                if adapter_config["r"] < self.max_lora_rank:
-                    padded = np.zeros(
-                        (weight_np.shape[0], self.max_lora_rank),
-                        dtype=weight_np.dtype,
-                    )
-                    padded[:, : adapter_config["r"]] = weight_np
-                    weight_np = padded
-
-                # Cast to base dtype after padding
-                weight_tensor = Tensor.from_numpy(weight_np)
-                data.data = cast_tensor_to(weight_tensor, base_dtype)
+                data.data = self._pad_lora_b_weight(weight_np, rank)
                 self._lora_B[key] = data
+
             elif LoRAType.BIAS.value in key:
                 data.data = cast_dlpack_to(
                     data.data, data.dtype, base_dtype, CPU()
                 )
                 self._lora_bias[key] = data
+
             else:
                 raise ValueError(f"Invalid LoRA type got key: {key}")
+
+        # Combine Q, K, V weights into fused QKV weights
+        self._combine_qkv_weights()
+        self._cast_all_weights(base_dtype)
 
         return adapter_config
 
@@ -482,6 +711,9 @@ class LoRAManager:
         config: LoRAConfig,
         base_model_path: str,
         base_dtype: DType,
+        n_heads: int,
+        n_kv_heads: int,
+        head_dim: int,
         zmq_endpoint_base: str,
     ):
         """
@@ -491,13 +723,18 @@ class LoRAManager:
             config (LoRAConfig): The LoRA config.
             base_model_path (str): The name/path of the base model.
             base_dtype (DType): The base model dtype.
-            max_num_loras (int): The maximum number of LoRA models to manage concurrently.
+            n_heads (int): Number of attention heads in the base model.
+            n_kv_heads (int): Number of key-value heads in the base model.
+            head_dim (int): Dimension of each attention head.
             zmq_endpoint_base (str): The ZMQ endpoint base used to construct ZMQ lora request and response endpoints.
         """
         self.base_model_path = base_model_path
         self.base_dtype = base_dtype
         self.max_num_loras = config.max_num_loras
         self.max_lora_rank = config.max_lora_rank
+        self.n_heads = n_heads
+        self.n_kv_heads = n_kv_heads
+        self.head_dim = head_dim
 
         self._loras: dict[str, LoRAModel] = dict()
         self._active_loras: LoRALRUCache = LoRALRUCache(
@@ -596,20 +833,66 @@ class LoRAManager:
             grouped_ids.index(-1) if -1 in grouped_ids else len(grouped_ids)
         )
 
+        grouped_offsets = grouped_offsets[: last_lora_idx + 1]
+        grouped_ids = grouped_ids[:last_lora_idx]
+        grouped_ranks = grouped_ranks[:last_lora_idx]
+
+        # For KV cache iadd optimization with shape [2M, N]
+        # We need offsets for both K (first M rows) and V (next M rows)
+        # Create duplicate offsets: first for K portion, then for V portion
+        batch_end = input_row_offsets[-1]
+        grouped_offsets_kv = []
+        grouped_ids_kv = []
+
+        # Add K portion: G groups with G+1 offsets (includes batch_end)
+        for offset in grouped_offsets:  # Include all offsets
+            grouped_offsets_kv.append(offset)
+        for id_ in grouped_ids:
+            grouped_ids_kv.append(id_)
+
+        # Add V portion: G groups with G offsets (skip first to avoid duplicate batch_end)
+        for offset in grouped_offsets[
+            1:
+        ]:  # Skip first offset, start from second
+            grouped_offsets_kv.append(batch_end + offset)
+        for id_ in grouped_ids:
+            grouped_ids_kv.append(id_ + self.max_num_loras)
+
         lora_ids = Tensor.from_numpy(np.array(grouped_ids, dtype=np.int32)).to(
             device
         )
-        lora_ranks = Tensor.from_numpy(
-            np.array(grouped_ranks, dtype=np.uint32)
-        ).to(device)
+        lora_ranks = Tensor.from_numpy(np.array(grouped_ranks, dtype=np.uint32))
         lora_grouped_offsets = Tensor.from_numpy(
             np.array(grouped_offsets, dtype=np.uint32)
         ).to(device)
-        lora_input_slice_idx = Tensor.from_numpy(
+        num_active_loras = Tensor.from_numpy(
             np.array([last_lora_idx], dtype=np.int64)
         )
+        lora_end_idx = Tensor.from_numpy(
+            np.array([grouped_offsets[-1]], dtype=np.int64)
+        )
+        batch_seq_len = Tensor.from_numpy(
+            np.array([input_row_offsets[-1]], dtype=np.int64)
+        )
 
-        return lora_ids, lora_ranks, lora_grouped_offsets, lora_input_slice_idx
+        # KV-specific tensors for [2M, N] shape
+        lora_ids_kv = Tensor.from_numpy(
+            np.array(grouped_ids_kv, dtype=np.int32)
+        ).to(device)
+        lora_grouped_offsets_kv = Tensor.from_numpy(
+            np.array(grouped_offsets_kv, dtype=np.uint32)
+        ).to(device)
+
+        return (
+            lora_ids,
+            lora_ranks,
+            lora_grouped_offsets,
+            num_active_loras,
+            lora_end_idx,
+            batch_seq_len,
+            lora_ids_kv,
+            lora_grouped_offsets_kv,
+        )
 
     def _validate_lora_path(self, path: str) -> LoRAStatus:
         """
@@ -689,9 +972,15 @@ class LoRAManager:
 
             try:
                 lora = LoRAModel(
-                    name, path, self.base_dtype, self.max_lora_rank
+                    name,
+                    path,
+                    self.base_dtype,
+                    self.max_lora_rank,
+                    self.n_heads,
+                    self.n_kv_heads,
+                    self.head_dim,
                 )
-            except ValueError as e:
+            except ValueError:
                 return LoRAStatus.LOAD_INVALID_ADAPTER
 
             self._loras[lora.name] = lora
@@ -793,79 +1082,32 @@ class LoRAManager:
         for state_key in self._alias_buffers:
             buffer = Tensor.from_dlpack(self._alias_buffers[state_key])
 
-            if lora_weight := lora.get(state_key):
+            lora_weight = lora.get(state_key)
+            weight: Tensor
+            if lora_weight:
                 weight = Tensor.from_dlpack(lora_weight.data)
-
-                if (
-                    LoRAType.A.value in state_key
-                    or LoRAType.B.value in state_key
-                ):
-                    buffer[slot, :, :].inplace_copy_from(weight)
-                elif LoRAType.BIAS.value in state_key:
-                    buffer[slot, :].inplace_copy_from(weight)
             else:
-                # If this LoRA doesn't have this weight, zero out the slot
-                if LoRAType.A.value in state_key:
-                    zeros = Tensor.zeros(
-                        (self.max_lora_rank, buffer.shape[-1]),
-                        dtype=buffer.dtype,
-                        device=buffer.device,
+                weight = Tensor.zeros(
+                    buffer.shape[1:],
+                    dtype=buffer.dtype,
+                    device=buffer.device,
+                )
+
+            if LoRAType.B_KV.value in state_key:
+                if lora_weight:
+                    buffer[slot, :, :].inplace_copy_from(weight[0, :, :])
+                    buffer[slot + self.max_num_loras, :, :].inplace_copy_from(
+                        weight[1, :, :]
                     )
-                    buffer[slot, :, :].inplace_copy_from(zeros)
-                elif LoRAType.B.value in state_key:
-                    zeros = Tensor.zeros(
-                        (buffer.shape[1], self.max_lora_rank),
-                        dtype=buffer.dtype,
-                        device=buffer.device,
+                else:
+                    buffer[slot, :, :].inplace_copy_from(weight)
+                    buffer[slot + self.max_num_loras, :, :].inplace_copy_from(
+                        weight
                     )
-                    buffer[slot, :, :].inplace_copy_from(zeros)
-                elif LoRAType.BIAS.value in state_key:
-                    zeros = Tensor.zeros(
-                        buffer.shape[1:],
-                        dtype=buffer.dtype,
-                        device=buffer.device,
-                    )
-                    buffer[slot, :].inplace_copy_from(zeros)
-
-    def _get_lora_weights(self, key: str, base_weight: Weight) -> WeightData:
-        """
-        Gets the LoRA weights for the specified key for each LoRA that is loaded.
-        If the LoRAs don't contain the weight for the key, a zero-weight is returned.
-
-        Args:
-            key: Key for LoRA selection.
-            base_weight: Weight used to provide WeightData properties.
-
-        Returns:
-            A WeightData object with the weights from the loaded LoRAs.
-        """
-        weight_np = np.zeros(base_weight.shape.static_dims, dtype=np.float32)
-
-        for lora, slot in self._active_loras.values():
-            if lora_weight := lora.get(key):
-                if LoRAType.A.value in key:
-                    weight_np[slot, : lora.rank, :] = lora_weight.data  # type: ignore
-                elif LoRAType.B.value in key:
-                    weight_np[slot, :, : lora.rank] = lora_weight.data  # type: ignore
-                elif LoRAType.BIAS.value in key:
-                    weight_np[slot, :] = lora_weight.data  # type: ignore
-
-        # cast from fp32 -> target dtype
-        # if target dtype is bfloat16, this technically returns a float16 np.ndarray
-        # we then view the MAX Tensor to get the correct dtype
-        weight_tensor = Tensor.from_numpy(weight_np)
-        weight = cast_tensor_to(weight_tensor, base_weight.dtype).copy(
-            base_weight.device.to_device()
-        )
-
-        lora_weights = WeightData(
-            weight,
-            key,
-            base_weight.dtype,
-            base_weight.shape,
-            base_weight.quantization_encoding,
-        )
-        return lora_weights
+            elif LoRAType.BIAS.value in state_key:
+                buffer[slot, :].inplace_copy_from(weight)
+            else:
+                buffer[slot, :, :].inplace_copy_from(weight)
 
     def _get_lora_leaf_layers(self, model: Module) -> dict[str, Module]:
         """
@@ -919,13 +1161,20 @@ class LoRAManager:
         self._lora_layers = self._get_lora_leaf_layers(model)
 
         for key, layer in self._lora_layers.items():
-            for weight_key, weight in layer.layer_weights.items():
+            for weight_key, base_weight in layer.layer_weights.items():
                 if not is_lora_kind(weight_key):
                     continue
 
                 state_key = f"{key}.{weight_key}"
-                state_dict[state_key] = self._get_lora_weights(
-                    state_key, weight
+                weight = Tensor.zeros(
+                    base_weight.shape.static_dims, base_weight.dtype
+                ).copy(base_weight.device.to_device())
+                state_dict[state_key] = WeightData(
+                    weight,
+                    key,
+                    base_weight.dtype,
+                    base_weight.shape,
+                    base_weight.quantization_encoding,
                 )
 
                 self._alias_buffers[state_key] = state_dict[state_key].data
@@ -944,20 +1193,36 @@ class LoRAManager:
             DType.int32, shape=["lora_ids"], device=device_ref
         )
         lora_ranks_type = TensorType(
-            DType.uint32, shape=["lora_ranks"], device=device_ref
+            DType.uint32, shape=["lora_ranks"], device=DeviceRef.CPU()
         )
         lora_grouped_offsets_type = TensorType(
             DType.uint32, shape=["lora_grouped_offsets"], device=device_ref
         )
-        lora_input_slice_idx = TensorType(
+        num_active_loras_type = TensorType(
             DType.int64, shape=[1], device=DeviceRef.CPU()
+        )
+        lora_end_idx_type = TensorType(
+            DType.int64, shape=[1], device=DeviceRef.CPU()
+        )
+        batch_seq_len_type = TensorType(
+            DType.int64, shape=[1], device=DeviceRef.CPU()
+        )
+        lora_ids_kv_type = TensorType(
+            DType.int32, shape=["lora_ids_kv"], device=device_ref
+        )
+        lora_grouped_offsets_kv_type = TensorType(
+            DType.uint32, shape=["lora_grouped_offsets_kv"], device=device_ref
         )
 
         return [
             lora_ids_type,
             lora_ranks_type,
             lora_grouped_offsets_type,
-            lora_input_slice_idx,
+            num_active_loras_type,
+            lora_end_idx_type,
+            batch_seq_len_type,
+            lora_ids_kv_type,
+            lora_grouped_offsets_kv_type,
         ]
 
     def set_graph_info(
@@ -965,7 +1230,11 @@ class LoRAManager:
         lora_ids: TensorValue,
         lora_ranks: TensorValue,
         lora_grouped_offsets: TensorValue,
-        lora_input_slice_idx: TensorValue,
+        num_active_loras: TensorValue,
+        lora_end_idx: TensorValue,
+        batch_seq_len: TensorValue,
+        lora_ids_kv: TensorValue,
+        lora_grouped_offsets_kv: TensorValue,
     ) -> None:
         """
         Sets the lora batch info required for the forward-pass.
@@ -973,6 +1242,12 @@ class LoRAManager:
         Args:
             lora_ids: IDs of the LoRAs used in the batch.
             lora_ranks: Ranks of the LoRAs used in the batch.
+            lora_grouped_offsets: Cumulative offsets for each LoRA group.
+            num_active_loras: Number of active LoRA adapters in the batch.
+            lora_end_idx: End index of LoRA token portion.
+            batch_seq_len: Total sequence length in the batch.
+            lora_ids_kv: LoRA IDs for KV cache (includes K and V portions).
+            lora_grouped_offsets_kv: Cumulative offsets for KV LoRA groups.
         """
         for _, layer in self._lora_layers.items():
             if isinstance(layer, SupportsLoRA):
@@ -980,7 +1255,11 @@ class LoRAManager:
                     lora_ids,
                     lora_ranks,
                     lora_grouped_offsets,
-                    lora_input_slice_idx,
+                    num_active_loras,
+                    lora_end_idx,
+                    batch_seq_len,
+                    lora_ids_kv,
+                    lora_grouped_offsets_kv,
                 )
 
     def sort_lora_batch(

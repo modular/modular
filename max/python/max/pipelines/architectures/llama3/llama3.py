@@ -31,7 +31,6 @@ from max.nn import (
     GPTQAttentionWithRope,
     GPTQLinear,
     Linear,
-    LinearLoRA,
     Module,
     RMSNorm,
     Transformer,
@@ -121,12 +120,6 @@ class Llama3(Transformer):
             linear_cls = functools.partial(
                 GPTQLinear, quantization_config=config.quantization_config
             )
-        elif config.lora_config is not None:
-            linear_cls = functools.partial(
-                LinearLoRA,
-                max_num_loras=config.lora_config.max_num_loras,
-                max_lora_rank=config.lora_config.max_lora_rank,
-            )
         else:
             linear_cls = functools.partial(
                 Linear, float8_config=config.float8_config
@@ -165,6 +158,8 @@ class Llama3(Transformer):
                 scale=config.attention_multiplier,
                 clip_qkv=config.clip_qkv,
                 has_bias=config.attention_bias,
+                max_num_loras=config.lora_config.max_num_loras,
+                max_lora_rank=config.lora_config.max_lora_rank,
             )
         else:
             attention_cls = functools.partial(
@@ -268,9 +263,16 @@ class Llama3(Transformer):
             DType.uint32, shape=["input_row_offsets_len"], device=device_ref
         )
         if lora_manager is not None:
-            lora_ids, lora_ranks, lora_grouped_offsets, lora_input_slice_idx = (
-                lora_manager.get_symbolic_inputs(device_ref)
-            )
+            (
+                lora_ids,
+                lora_ranks,
+                lora_grouped_offsets,
+                num_active_loras,
+                lora_end_idx,
+                batch_seq_len,
+                lora_ids_kv,
+                lora_grouped_offsets_kv,
+            ) = lora_manager.get_symbolic_inputs(device_ref)
             return (
                 tokens_type,
                 input_row_offsets_type,
@@ -278,7 +280,11 @@ class Llama3(Transformer):
                 lora_ids,
                 lora_ranks,
                 lora_grouped_offsets,
-                lora_input_slice_idx,
+                num_active_loras,
+                lora_end_idx,
+                batch_seq_len,
+                lora_ids_kv,
+                lora_grouped_offsets_kv,
                 *kv_inputs[0],
             )
         else:
