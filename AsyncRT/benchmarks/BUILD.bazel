@@ -20,3 +20,15 @@ modular_cc_binary(
         "//Support:MicroBenchmark",
     ],
 )
+
+modular_cc_binary(
+    name = "bench_gpu_kernel_enqueue_devicecontext",
+    srcs = [
+        "bench_gpu_kernel_enqueue_devicecontext.cpp",
+    ],
+    target_compatible_with = ["//:nvidia_gpu"],
+    deps = [
+        "//AsyncRT:DeviceContext",
+        "//Support:MicroBenchmark",
+    ],
+)

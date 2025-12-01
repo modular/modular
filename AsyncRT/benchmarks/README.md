@@ -27,3 +27,19 @@ br //AsyncRT/benchmarks:bench_gpu_kernel_enqueue_cuda
 ```
 
 **Requirements:** NVIDIA GPU
+
+### bench_gpu_kernel_enqueue_devicecontext
+
+Measures GPU kernel enqueue latency using the AsyncRT DeviceContext API. This
+benchmark uses the `Support/MicroBenchmark.h` framework to measure the time
+taken to enqueue (not execute) GPU kernels through the DeviceContext interface.
+This provides a comparison point for the overhead of the AsyncRT abstraction
+layer compared to the raw CUDA driver API.
+
+**Build and run:**
+
+```bash
+br //AsyncRT/benchmarks:bench_gpu_kernel_enqueue_devicecontext
+```
+
+**Requirements:** NVIDIA GPU
