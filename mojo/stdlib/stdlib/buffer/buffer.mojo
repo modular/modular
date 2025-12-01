@@ -927,7 +927,7 @@ struct NDBuffer[
             The simd value starting at the `idx` position and ending at
             `idx+width`.
         """
-        constrained[idx.size == Self.rank, "invalid index size"]()
+        __comptime_assert idx.size == Self.rank, "invalid index size"
         return self.load[width=width, alignment=alignment](
             rebind[IndexList[Self.rank, element_type = idx.element_type]](
                 idx
@@ -1156,7 +1156,7 @@ struct NDBuffer[
             True if the buffer is contiguous in memory and False otherwise.
         """
 
-        constrained[Self.rank > 0, "rank must be positive"]()
+        __comptime_assert Self.rank > 0, "rank must be positive"
         return self.stride[Self.rank - 1]() == 1
 
     @always_inline

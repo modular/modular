@@ -86,7 +86,7 @@ fn ldg[
         - Particularly beneficial for read-only texture-like access patterns.
         - May improve performance on memory-bound kernels.
     """
-    constrained[dtype.is_numeric(), "the dtype must be numeric"]()
+    __comptime_assert dtype.is_numeric(), "the dtype must be numeric"
     return x.load[width=width, alignment=alignment, invariant=True]()
 
 
@@ -761,7 +761,7 @@ fn store_release[
         - Ensures all previous memory operations complete before this store.
         - Critical for implementing synchronization primitives.
     """
-    constrained[is_gpu(), "atomic store only supported on GPU"]()
+    __comptime_assert is_gpu(), "atomic store only supported on GPU"
 
     @parameter
     if is_nvidia_gpu():
@@ -832,7 +832,7 @@ fn store_relaxed[
         ptr: Pointer to the memory location.
         value: Value to store.
     """
-    constrained[is_gpu(), "atomic store only supported on GPU"]()
+    __comptime_assert is_gpu(), "atomic store only supported on GPU"
 
     @parameter
     if is_nvidia_gpu():
@@ -893,7 +893,7 @@ fn load_acquire[
         - Ensures subsequent memory operations don't execute until after load.
         - Critical for implementing synchronization primitives.
     """
-    constrained[is_gpu(), "atomic load only supported on GPU"]()
+    __comptime_assert is_gpu(), "atomic load only supported on GPU"
 
     @parameter
     if is_nvidia_gpu():
@@ -967,7 +967,7 @@ fn load_relaxed[
     Returns:
         The loaded value.
     """
-    constrained[is_gpu(), "atomic load only supported on GPU"]()
+    __comptime_assert is_gpu(), "atomic load only supported on GPU"
 
     @parameter
     if is_nvidia_gpu():

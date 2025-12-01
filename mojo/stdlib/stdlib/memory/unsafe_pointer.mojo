@@ -71,7 +71,7 @@ fn alloc[
     """
     comptime size_of_t = size_of[type]()
     comptime type_name = get_type_name[type]()
-    constrained[size_of_t > 0, "size must be greater than zero"]()
+    __comptime_assert size_of_t > 0, "size must be greater than zero"
     debug_assert(
         count >= 0,
         "alloc[",

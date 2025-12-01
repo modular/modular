@@ -157,8 +157,8 @@ fn vectorize[
     exponent of 2 (2, 4, 8, 16, ...). The remainder loop will still unroll for
     performance improvements if not an exponent of 2.
     """
-    constrained[simd_width > 0, "simd width must be > 0"]()
-    constrained[unroll_factor > 0, "unroll factor must be > 0"]()
+    __comptime_assert simd_width > 0, "simd width must be > 0"
+    __comptime_assert unroll_factor > 0, "unroll factor must be > 0"
     debug_assert(size >= 0, "size must be >= 0")
 
     comptime unrolled_simd_width = simd_width * unroll_factor
@@ -261,9 +261,9 @@ fn vectorize[
     closure[2](8)
     ```
     """
-    constrained[simd_width > 0, "simd width must be > 0"]()
-    constrained[unroll_factor > 0, "unroll factor must be > 0"]()
-    constrained[size >= 0, "size must be >= 0"]()
+    __comptime_assert simd_width > 0, "simd width must be > 0"
+    __comptime_assert unroll_factor > 0, "unroll factor must be > 0"
+    __comptime_assert size >= 0, "size must be >= 0"
 
     comptime unrolled_simd_width = simd_width * unroll_factor
     comptime simd_end = align_down(size, simd_width)
@@ -1102,7 +1102,7 @@ fn _get_start_indices_of_nth_subvolume[
         subvolume_rank <= rank,
         "subvolume rank cannot be greater than indices rank",
     ]()
-    constrained[subvolume_rank >= 0, "subvolume rank must be non-negative"]()
+    __comptime_assert subvolume_rank >= 0, "subvolume rank must be non-negative"
 
     # fast impls for common cases
     @parameter
@@ -1459,7 +1459,7 @@ fn _elementwise_impl_cpu_1d[
     Args:
         shape: The shape of the buffer.
     """
-    constrained[rank == 1, "Specialization for 1D"]()
+    __comptime_assert rank == 1, "Specialization for 1D"
 
     comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
@@ -1520,7 +1520,7 @@ fn _elementwise_impl_cpu_nd[
     Args:
         shape: The shape of the buffer.
     """
-    constrained[rank > 1, "Specialization for ND where N > 1"]()
+    __comptime_assert rank > 1, "Specialization for ND where N > 1"
 
     comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
@@ -1836,7 +1836,7 @@ fn _stencil_impl_cpu[
         shape: The shape of the output buffer.
         input_shape: The shape of the input buffer.
     """
-    constrained[rank == 4, "Only stencil of rank-4 supported"]()
+    __comptime_assert rank == 4, "Only stencil of rank-4 supported"
     constrained[
         stencil_axis[0] == 1 and stencil_axis[1] == 2,
         "Only stencil spatial axes [1, 2] are supported",
@@ -2001,7 +2001,7 @@ fn _stencil_impl_gpu[
         shape: The shape of the output buffer.
         input_shape: The shape of the input buffer.
     """
-    constrained[rank == 4, "Only stencil of rank-4 supported"]()
+    __comptime_assert rank == 4, "Only stencil of rank-4 supported"
     constrained[
         stencil_axis[0] == 1 and stencil_axis[1] == 2,
         "Only stencil spatial axes [1, 2] are supported",

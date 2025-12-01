@@ -57,7 +57,9 @@ fn block_reduce[
     fn reduce_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        constrained[reduction_idx < num_reductions, "invalid reduction index"]()
+        __comptime_assert (
+            reduction_idx < num_reductions
+        ), "invalid reduction index"
         return reduce_fn(lhs, rhs)
 
     var val_tup = StaticTuple[SIMD[dtype, simd_width], num_reductions](val)
@@ -186,7 +188,9 @@ fn row_reduce[
     fn reduce_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        constrained[reduction_idx < num_reductions, "invalid reduction index"]()
+        __comptime_assert (
+            reduction_idx < num_reductions
+        ), "invalid reduction index"
         return reduce_fn(lhs, rhs)
 
     var init_tup = StaticTuple[Scalar[dtype], num_reductions](init)

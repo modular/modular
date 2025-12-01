@@ -280,7 +280,7 @@ fn _try_write_int[
     The maximum supported radix is 36 unless a custom `digit_chars` mapping is
     provided.
     """
-    constrained[dtype.is_integral(), "Expected integral"]()
+    __comptime_assert dtype.is_integral(), "Expected integral"
 
     # Check that the radix and available digit characters are valid
     if radix < 2:

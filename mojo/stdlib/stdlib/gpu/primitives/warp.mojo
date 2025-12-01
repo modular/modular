@@ -120,7 +120,7 @@ fn _shuffle[
             )
             return bitcast[dtype, simd_width](result_packed)
     elif dtype is DType.bool:
-        constrained[simd_width == 1, "unhandled simd width"]()
+        __comptime_assert simd_width == 1, "unhandled simd width"
         return _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
             mask, val.cast[DType.int32](), offset
         ).cast[dtype]()
@@ -142,7 +142,7 @@ fn _shuffle_amd_helper[
         )
         return bitcast[dtype, simd_width](result_packed)
     else:
-        constrained[simd_width == 1, "Unsupported simd width"]()
+        __comptime_assert simd_width == 1, "Unsupported simd width"
 
         @parameter
         if dtype is DType.bool:
@@ -1247,7 +1247,7 @@ fn vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
 
     @parameter
     if is_nvidia_gpu():
-        constrained[ret_type is DType.uint32, "Unsupported return type"]()
+        __comptime_assert ret_type is DType.uint32, "Unsupported return type"
         return rebind[Scalar[ret_type]](_vote_nvidia_helper(val))
     elif is_amd_gpu():
         return _vote_amd_helper[ret_type](val)

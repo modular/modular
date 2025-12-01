@@ -989,7 +989,7 @@ struct Bench(Stringable, Writable):
         Returns:
             A string padded to the given width.
         """
-        constrained[len(pad_str) == 1, "pad_str must be length 1."]()
+        __comptime_assert len(pad_str) == 1, "pad_str must be length 1."
 
         if self.config.format == Format.csv:
             return ""

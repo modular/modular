@@ -77,4 +77,4 @@ fn constrained[cond: Bool]():
     Parameters:
         cond: The bool value to assert.
     """
-    constrained[cond, "param assertion failed"]()
+    __comptime_assert cond, "param assertion failed"

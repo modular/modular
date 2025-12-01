@@ -1833,7 +1833,7 @@ struct PyObjectFunction[
 
     @always_inline("nodebug")
     fn _call_method(self, py_self: PO, py_args: PO) raises -> PO:
-        constrained[not Self._has_arity(0), "method arity must not be 0"]()
+        __comptime_assert not Self._has_arity(0), "method arity must not be 0"
 
         @parameter
         if Self._has_arity(1):
@@ -2083,7 +2083,7 @@ struct PyObjectFunction[
 
     @always_inline("nodebug")
     fn _call_method(self, py_self: PO, py_args: PO, py_kwargs: PO) raises -> PO:
-        constrained[not Self._has_arity(0), "method arity must not be 0"]()
+        __comptime_assert not Self._has_arity(0), "method arity must not be 0"
         constrained[
             Self.has_kwargs,
             "should only be used for methods that accept kwargs",

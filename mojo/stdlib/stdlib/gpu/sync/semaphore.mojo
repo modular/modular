@@ -42,7 +42,7 @@ from memory import LegacyUnsafePointer as UnsafePointer
 
 @always_inline
 fn _barrier_and(state: Int32) -> Int32:
-    constrained[is_nvidia_gpu(), "target must be an nvidia GPU"]()
+    __comptime_assert is_nvidia_gpu(), "target must be an nvidia GPU"
     return llvm_intrinsic["llvm.nvvm.barrier0.and", Int32](state)
 
 
@@ -72,7 +72,7 @@ struct Semaphore:
             thread_id: Thread ID within the CTA, used to determine if this thread
                       should perform atomic operations.
         """
-        constrained[is_nvidia_gpu(), "target must be cuda"]()
+        __comptime_assert is_nvidia_gpu(), "target must be cuda"
         self._lock = lock
         self._wait_thread = thread_id <= 0
         self._state = -1
@@ -160,7 +160,7 @@ struct NamedBarrierSemaphore[
             thread_id: Thread ID within the CTA, used to determine if this thread
                       should perform atomic operations.
         """
-        constrained[is_nvidia_gpu(), "target must be cuda"]()
+        __comptime_assert is_nvidia_gpu(), "target must be cuda"
         constrained[
             Self.id_offset + Self.max_num_barriers < MaxHardwareBarriers,
             "max number of barriers is " + String(MaxHardwareBarriers),

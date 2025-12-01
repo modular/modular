@@ -740,7 +740,9 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Returns:
             The list casted to the target type.
         """
-        constrained[dtype.is_integral(), "the target type must be integral"]()
+        __comptime_assert (
+            dtype.is_integral()
+        ), "the target type must be integral"
         result = {}
 
         @parameter

@@ -1286,7 +1286,9 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
     - The memory barrier should be properly initialized before use.
     - The multicast_mask must be properly configured based on cluster size and desired distribution.
     """
-    constrained[rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"]()
+    __comptime_assert (
+        rank == 1 or rank == 2
+    ), "Expecting rank-1 or rank-2 tensors"
 
     constrained[cta_group in (1, 2), "cta_group must be 1 or 2"]()
     comptime tma_asm = String(
@@ -1492,7 +1494,9 @@ fn cp_async_bulk_tensor_reduce[
     - The TMA descriptor must be properly initialized before use.
     - The reduction operation is performed atomically to ensure correctness.
     """
-    constrained[rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"]()
+    __comptime_assert (
+        rank == 1 or rank == 2
+    ), "Expecting rank-1 or rank-2 tensors"
     comptime cache_hint: Bool = eviction_policy is not CacheEviction.EVICT_NORMAL
 
     @parameter
@@ -1569,7 +1573,7 @@ fn _load_impl[
         - Prefetch size must be 64, 128, or 256 bytes if specified.
         - Read-only not supported on AMD GPUs.
     """
-    constrained[dtype.is_numeric(), "type must be numeric"]()
+    __comptime_assert dtype.is_numeric(), "type must be numeric"
 
     @parameter
     if is_amd_gpu():
@@ -1815,7 +1819,7 @@ fn _get_multimem_ld_reduce_asm[
     constrained[
         _is_sm_9x_or_newer(), "multimem is only supported on SM90+ GPUs"
     ]()
-    constrained[dtype.is_floating_point(), "type must be floating point"]()
+    __comptime_assert dtype.is_floating_point(), "type must be floating point"
     constrained[
         consistency
         in (Consistency.WEAK, Consistency.RELAXED, Consistency.ACQUIRE),
@@ -2057,7 +2061,7 @@ fn _get_multimem_st_asm[
     constrained[
         _is_sm_9x_or_newer(), "multimem is only supported on SM90+ GPUs"
     ]()
-    constrained[dtype.is_floating_point(), "type must be floating point"]()
+    __comptime_assert dtype.is_floating_point(), "type must be floating point"
     constrained[
         consistency
         in (Consistency.WEAK, Consistency.RELAXED, Consistency.RELEASE),

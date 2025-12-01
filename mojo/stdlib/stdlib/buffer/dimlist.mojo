@@ -459,7 +459,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
         Returns:
             The static dimension value at the specified index.
         """
-        constrained[i >= 0, "index must be positive"]()
+        __comptime_assert i >= 0, "index must be positive"
         return self.value[i].get()
 
     @always_inline("nodebug")
@@ -472,7 +472,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
         Returns:
             The dimension at the specified index.
         """
-        constrained[i >= 0, "index must be positive"]()
+        __comptime_assert i >= 0, "index must be positive"
         return self.value[i]
 
     @always_inline("nodebug")
@@ -485,7 +485,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
         Returns:
             Whether the specified dimension has a static value.
         """
-        constrained[i >= 0, "index must be positive"]()
+        __comptime_assert i >= 0, "index must be positive"
         return self.value[i].__bool__()
 
     @always_inline
@@ -638,7 +638,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
         Returns:
             A list of all dynamic dimension values.
         """
-        constrained[length > 0, "length must be positive"]()
+        __comptime_assert length > 0, "length must be positive"
 
         return Self(
             VariadicList[Dim](

@@ -1003,7 +1003,7 @@ fn _scientific_notation_digits[dtype: DType]() -> StaticString:
     """Get the number of digits as a StaticString for the scientific notation
     representation of a float.
     """
-    constrained[dtype.is_floating_point(), "expected floating point type"]()
+    __comptime_assert dtype.is_floating_point(), "expected floating point type"
 
     @parameter
     if dtype.is_float8():

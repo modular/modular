@@ -504,7 +504,7 @@ struct Range:
         color: Optional[Color] = None,
         category: Int = _TraceType_MAX,
     ) raises:
-        constrained[_is_enabled(), "GPU tracing must be enabled"]()
+        __comptime_assert _is_enabled(), "GPU tracing must be enabled"
         self._info = EventAttributes(
             message=message, color=color, category=category
         )
@@ -552,7 +552,7 @@ struct RangeStack:
         color: Optional[Color] = None,
         category: Int = _TraceType_MAX,
     ) raises:
-        constrained[_is_enabled(), "GPU tracing must be enabled"]()
+        __comptime_assert _is_enabled(), "GPU tracing must be enabled"
         self._info = EventAttributes(
             message=message, color=color, category=category
         )

@@ -933,7 +933,9 @@ fn implicitarg_ptr(
     Returns:
         A pointer to LLVM's implicit arguments table.
     """
-    constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "This intrinsic is only defined for AMD GPUs"
     result = llvm_intrinsic[
         "llvm.amdgcn.implicitarg.ptr",
         type_of(result),
@@ -956,7 +958,9 @@ fn readfirstlane(value: Int32) -> Int32:
     Returns:
         The value in the lowest active lane of the input operand.
     """
-    constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "This intrinsic is only defined for AMD GPUs"
     return llvm_intrinsic["llvm.amdgcn.readfirstlane.i32", Int32, Int32](value)
 
 
@@ -972,7 +976,9 @@ fn readfirstlane(value: UnsafePointer) -> type_of(value):
     Returns:
         The value in the lowest active lane of the input operand.
     """
-    constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "This intrinsic is only defined for AMD GPUs"
     return llvm_intrinsic[
         "llvm.amdgcn.readfirstlane", type_of(value), type_of(value)
     ](value)
@@ -989,7 +995,9 @@ fn readfirstlane(value: Int) -> type_of(value):
     Returns:
         The value in the lowest active lane of the input operand.
     """
-    constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "This intrinsic is only defined for AMD GPUs"
     return llvm_intrinsic[
         "llvm.amdgcn.readfirstlane", type_of(value), type_of(value)
     ](value)
@@ -1010,7 +1018,9 @@ fn sendmsg(opcode: Int32, msg: Int32):
         opcode: The operation to perform.
         msg: The message to send.
     """
-    constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "This intrinsic is only defined for AMD GPUs"
     _ = llvm_intrinsic["llvm.amdgcn.s.sendmsg", NoneType, Int32, Int32](
         opcode, msg
     )
@@ -1037,7 +1047,9 @@ fn ballot[dtype: DType](value: Bool) -> Scalar[dtype]:
     Returns:
         A bitfield(Int32 or Int64) containing the result of its Bool argument in all active lanes.
     """
-    constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "This intrinsic is only defined for AMD GPUs"
     constrained[
         dtype == DType.int32 or dtype == DType.int64,
         "This intrinsic is only defined for i32 or i64",

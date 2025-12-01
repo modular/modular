@@ -79,7 +79,7 @@ fn lane_id() -> UInt:
     Returns:
         The lane ID (0 to WARP_SIZE-1) of the current thread.
     """
-    constrained[is_gpu(), "This function only applies to GPUs."]()
+    __comptime_assert is_gpu(), "This function only applies to GPUs."
 
     @parameter
     if is_nvidia_gpu():

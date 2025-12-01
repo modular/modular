@@ -267,7 +267,7 @@ fn _b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
 
 
 fn _repeat_until[width: Int](v: SIMD) -> SIMD[v.dtype, width]:
-    constrained[width >= v.size, "width must be at least v.size"]()
+    __comptime_assert width >= v.size, "width must be at least v.size"
 
     @parameter
     if width == v.size:

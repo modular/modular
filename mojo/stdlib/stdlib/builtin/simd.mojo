@@ -3912,7 +3912,7 @@ fn _modf_scalar(x: Scalar) -> Tuple[type_of(x), type_of(x)]:
 
 
 fn _modf(x: SIMD) -> Tuple[type_of(x), type_of(x)]:
-    constrained[x.dtype.is_numeric(), "the type must be numeric"]()
+    __comptime_assert x.dtype.is_numeric(), "the type must be numeric"
 
     @parameter
     if x.dtype.is_integral():

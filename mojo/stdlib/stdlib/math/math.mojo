@@ -290,7 +290,7 @@ fn rsqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The elementwise reciprocal square root of x.
     """
-    constrained[dtype.is_floating_point(), "type must be floating point"]()
+    __comptime_assert dtype.is_floating_point(), "type must be floating point"
 
     @parameter
     if is_nvidia_gpu():
@@ -348,7 +348,7 @@ fn recip[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The elementwise reciprocal of x.
     """
-    constrained[dtype.is_floating_point(), "type must be floating point"]()
+    __comptime_assert dtype.is_floating_point(), "type must be floating point"
 
     @parameter
     if is_nvidia_gpu():
@@ -620,7 +620,9 @@ fn exp[
         A SIMD vector containing $e$ raised to the power $X_i$ where $X_i$ is an
         element in the input SIMD vector.
     """
-    constrained[dtype.is_floating_point(), "must be a floating point value"]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "must be a floating point value"
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
 
     @parameter
@@ -804,7 +806,7 @@ fn _frexp_mask1[
     elif dtype is DType.float32:
         return 0x7F800000
     else:
-        constrained[dtype is DType.float64, "unhandled fp type"]()
+        __comptime_assert dtype is DType.float64, "unhandled fp type"
         return 0x7FF0000000000000
 
 
@@ -820,7 +822,7 @@ fn _frexp_mask2[
     elif dtype is DType.float32:
         return 0x3F000000
     else:
-        constrained[dtype is DType.float64, "unhandled fp type"]()
+        __comptime_assert dtype is DType.float64, "unhandled fp type"
         return 0x3FE0000000000000
 
 
@@ -847,7 +849,9 @@ fn frexp[
         of the input floating point values.
     """
     # Based on the implementation in boost/simd/arch/common/simd/function/ifrexp.hpp
-    constrained[dtype.is_floating_point(), "must be a floating point value"]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "must be a floating point value"
     comptime T = SIMD[dtype, width]
     comptime zero = T(0)
     # Add one to the resulting exponent up by subtracting 1 from the bias
@@ -890,7 +894,9 @@ fn _log_base[
     # Based on the Cephes approximation.
     comptime sqrt2_div_2 = 0.70710678118654752440
 
-    constrained[base == 2 or base == 27, "input base must be either 2 or 27"]()
+    __comptime_assert (
+        base == 2 or base == 27
+    ), "input base must be either 2 or 27"
 
     var frexp_result = frexp(x)
     var x1 = frexp_result[0]
@@ -1035,7 +1041,7 @@ fn copysign[
     Returns:
         Copies the sign from sign to magnitude.
     """
-    constrained[dtype.is_numeric(), "operands must be a numeric type"]()
+    __comptime_assert dtype.is_numeric(), "operands must be a numeric type"
 
     @parameter
     if dtype.is_unsigned():
@@ -1072,7 +1078,9 @@ fn erf[
     Returns:
         The result of the elementwise Erf operation.
     """
-    constrained[dtype.is_floating_point(), "must be a floating point value"]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "must be a floating point value"
     var x_abs = abs(x)
 
     var r_large = polynomial_evaluate[
@@ -3059,7 +3067,9 @@ fn ulp[
         The ULP of x.
     """
 
-    constrained[dtype.is_floating_point(), "the type must be floating point"]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "the type must be floating point"
 
     var nan_mask = isnan(x)
     var xabs = abs(x)

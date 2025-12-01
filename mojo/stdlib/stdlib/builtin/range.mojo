@@ -744,7 +744,7 @@ struct _StridedScalarRange[dtype: DType](
 
     @always_inline
     fn __len__(self) -> Scalar[Self.dtype]:
-        constrained[Self.dtype.is_integral(), "dtype must be integral"]()
+        __comptime_assert Self.dtype.is_integral(), "dtype must be integral"
 
         @parameter
         if Self.dtype.is_unsigned():

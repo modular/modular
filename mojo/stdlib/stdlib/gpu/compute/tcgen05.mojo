@@ -77,7 +77,9 @@ fn tcgen05_alloc[
         This function is only available on NVIDIA Blackwell GPUs (SM 100+).
     """
     check_blackwell_constraint()
-    constrained[cta_group == 1 or cta_group == 2, "cta_group must be 1 or 2"]()
+    __comptime_assert (
+        cta_group == 1 or cta_group == 2
+    ), "cta_group must be 1 or 2"
     inlined_assembly[
         "tcgen05.alloc.cta_group::"
         + String(cta_group)
@@ -109,7 +111,9 @@ fn tcgen05_dealloc[cta_group: Int32](tmem_addr: UInt32, num_cols: UInt32):
         This function is only available on NVIDIA Blackwell GPUs (SM 100+).
     """
     check_blackwell_constraint()
-    constrained[cta_group == 1 or cta_group == 2, "cta_group must be 1 or 2"]()
+    __comptime_assert (
+        cta_group == 1 or cta_group == 2
+    ), "cta_group must be 1 or 2"
     inlined_assembly[
         "tcgen05.dealloc.cta_group::"
         + String(cta_group)
@@ -429,7 +433,9 @@ fn tcgen05_release_allocation_lock[cta_group: Int32]():
         This function is only available on NVIDIA Blackwell GPUs (SM 100+).
     """
     check_blackwell_constraint()
-    constrained[cta_group == 1 or cta_group == 2, "cta_group must be 1 or 2"]()
+    __comptime_assert (
+        cta_group == 1 or cta_group == 2
+    ), "cta_group must be 1 or 2"
 
     inlined_assembly[
         "tcgen05.relinquish_alloc_permit.cta_group::"
@@ -538,7 +544,9 @@ fn tcgen05_cp[
         This function is only available on NVIDIA Blackwell GPUs (SM 100+).
     """
     check_blackwell_constraint()
-    constrained[cta_group == 1 or cta_group == 2, "cta_group must be 1 or 2"]()
+    __comptime_assert (
+        cta_group == 1 or cta_group == 2
+    ), "cta_group must be 1 or 2"
 
     constrained[
         (datapaths == 128 and bits == 256)

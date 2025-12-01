@@ -103,7 +103,7 @@ fn randint[
         low: The minimal value for random.
         high: The maximal value for random.
     """
-    constrained[dtype.is_integral(), "dtype must be integral"]()
+    __comptime_assert dtype.is_integral(), "dtype must be integral"
 
     @parameter
     if dtype.is_signed():

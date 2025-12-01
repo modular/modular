@@ -725,7 +725,7 @@ fn _compare_exchange_integral_impl[
     expected_ptr: UnsafePointer[mut=True, Scalar[dtype], **_],
     desired: Scalar[dtype],
 ) -> Bool:
-    constrained[dtype.is_integral(), "the input type must be integral"]()
+    __comptime_assert dtype.is_integral(), "the input type must be integral"
 
     var cmpxchg_res = __mlir_op.`pop.atomic.cmpxchg`[
         failure_ordering = failure_ordering.__mlir_attr(),

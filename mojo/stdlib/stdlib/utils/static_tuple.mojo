@@ -36,7 +36,9 @@ fn _static_tuple_construction_checks[size: Int]():
     Parameters:
       size: The number of elements.
     """
-    constrained[size >= 0, "number of elements in `StaticTuple` must be >= 0"]()
+    __comptime_assert (
+        size >= 0
+    ), "number of elements in `StaticTuple` must be >= 0"
 
 
 @register_passable("trivial")
