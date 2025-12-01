@@ -1,6 +1,9 @@
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
 
-package(default_visibility = ["//max/tests:__subpackages__"])
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+])
 
 modular_py_library(
     name = "hf_repo_lock",
@@ -45,7 +48,6 @@ modular_py_binary(
         ),
     },
     imports = ["."],
-    visibility = ["//visibility:public"],
     deps = [
         "//max/tests/integration/pipelines/python/test_common",
         requirement("click"),
@@ -69,7 +71,6 @@ modular_py_binary(
         # required by models that use Expert Parallelism.
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
-    visibility = ["//visibility:public"],
     deps = [
         ":verify",
         "//max/tests/integration/tools:generate_llm_logits",
@@ -85,7 +86,6 @@ modular_py_binary(
     data = glob([
         "smoke_tests/chartqa_modular/**",
     ]),
-    visibility = ["//visibility:public"],
     deps = [
         requirement("click"),
         requirement("requests"),
@@ -97,7 +97,6 @@ modular_py_binary(
 modular_py_binary(
     name = "smoke_test_github_matrix",
     srcs = ["smoke_tests/smoke_test_github_matrix.py"],
-    visibility = ["//visibility:public"],
     deps = [
         requirement("click"),
     ],
@@ -124,7 +123,6 @@ modular_py_binary(
         ),
     },
     main = "verify_layers/cli.py",
-    visibility = ["//visibility:public"],
     deps = [
         ":verify",
         "//max/tests/integration/pipelines/python/test_common",

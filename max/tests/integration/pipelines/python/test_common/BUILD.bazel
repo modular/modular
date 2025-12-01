@@ -6,7 +6,10 @@ load(
     "requirement",
 )
 
-package(default_visibility = ["//max/tests:__subpackages__"])
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+])
 
 modular_py_library(
     name = "test_common",
@@ -179,7 +182,6 @@ modular_py_library(
     testonly = True,
     srcs = ["torch_utils.py"],
     imports = [".."],
-    visibility = ["//visibility:public"],
     deps = [
         ":evaluate",
         ":test_data",
@@ -195,7 +197,6 @@ modular_py_library(
     testonly = True,
     srcs = ["numerics.py"],
     imports = [".."],
-    visibility = ["//visibility:public"],
     deps = [
         requirement("torch"),
     ],
@@ -212,7 +213,6 @@ modular_py_library(
         "mocks/tokenizer.py",
     ],
     imports = [".."],
-    visibility = ["//visibility:public"],
     deps = [
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
@@ -228,7 +228,6 @@ modular_py_library(
         "process_isolation.py",
     ],
     imports = [".."],
-    visibility = ["//visibility:public"],
 )
 
 modular_py_library(
@@ -240,7 +239,6 @@ modular_py_library(
         "verify_utils.py",
     ],
     imports = [".."],
-    visibility = ["//visibility:public"],
     deps = [
         requirement("rich"),
         requirement("scipy"),
@@ -252,7 +250,6 @@ modular_py_library(
     testonly = True,
     srcs = ["lora_utils.py"],
     imports = [".."],
-    visibility = ["//visibility:public"],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/nn",
@@ -269,7 +266,6 @@ modular_py_library(
     testonly = True,
     srcs = ["torch_print_hook.py"],
     imports = [".."],
-    visibility = ["//visibility:public"],
     deps = [
         "//max/python/max/nn/hooks:base_print_hook",
         requirement("torch"),
@@ -281,7 +277,6 @@ modular_py_library(
     testonly = True,
     srcs = ["storage.py"],
     imports = [".."],
-    visibility = ["//visibility:public"],
     deps = [
         requirement("boto3"),
         requirement("pillow"),

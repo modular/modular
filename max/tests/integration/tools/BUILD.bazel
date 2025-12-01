@@ -1,6 +1,9 @@
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
 
-package(default_visibility = ["//max/tests:__subpackages__"])
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+])
 
 modular_py_library(
     name = "debugging_utils",
@@ -8,7 +11,6 @@ modular_py_library(
     srcs = [
         "debugging_utils.py",
     ],
-    visibility = ["//visibility:public"],
     deps = [
         ":generate_llm_logits",
         "//max/python/max/driver",
@@ -21,7 +23,6 @@ modular_py_library(
     name = "create_pipelines",
     testonly = True,
     srcs = ["create_pipelines.py"],
-    visibility = ["//visibility:public"],
     deps = [
         "//max/python/max/pipelines/architectures",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
@@ -55,7 +56,6 @@ modular_py_binary(
     },
     imports = ["."],
     main = "generate_llm_logits.py",
-    visibility = ["//visibility:public"],
     deps = [
         "//max/python/max/entrypoints",
         "//max/python/max/pipelines/architectures",

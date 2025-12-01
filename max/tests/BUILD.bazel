@@ -1,3 +1,6 @@
-# gazelle:default_visibility //max/tests:__subpackages__
+# gazelle:default_visibility //max/tests:__subpackages__,//:__pkg__
 
-package(default_visibility = ["//max/tests:__subpackages__"])
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+])

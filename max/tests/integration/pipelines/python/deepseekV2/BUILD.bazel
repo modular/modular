@@ -7,7 +7,10 @@ load(
     "requirement",
 )
 
-package(default_visibility = ["//max/tests:__subpackages__"])
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+])
 
 modular_py_library(
     name = "torch_reference",
@@ -21,7 +24,6 @@ modular_py_library(
         "torch_reference",
     ],  # Ensure imports work as expected
     tags = ["no-mypy"],
-    visibility = ["//visibility:public"],
     deps = [
         requirement("torch"),
         requirement("transformers"),

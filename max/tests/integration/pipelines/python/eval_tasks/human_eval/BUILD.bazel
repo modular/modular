@@ -1,13 +1,13 @@
 load("//bazel:api.bzl", "modular_py_library")
 
-package(default_visibility = ["//max/tests:__subpackages__"])
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+])
 
 modular_py_library(
     name = "human_eval",
     srcs = glob(["**/*.py"]),
     imports = [".."],
     tags = ["no-mypy"],
-    visibility = ["//visibility:public"],
-    deps = [
-    ],
 )

@@ -6,7 +6,10 @@ load(
     "requirement",
 )
 
-package(default_visibility = ["//max/tests:__subpackages__"])
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+])
 
 modular_py_test(
     name = "qwen3",
