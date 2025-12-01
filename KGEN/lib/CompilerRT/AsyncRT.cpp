@@ -136,29 +136,6 @@ KGEN_CompilerRT_AsyncRT_AndThen(void (*resume)(int8_t *),
   unwrap(chain).andThenAsync([hdl, resume]() { resume(hdl); });
 }
 
-/// Execute a coroutine and block the current routine until it is complete.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_AsyncRT_ExecuteAndWait(void (*resume)(int8_t *), int8_t *hdl,
-                                       AsyncRTAsyncChainRef chain) {
-  auto rt = Runtime::getCurrentRuntimeOrNull();
-  checkUniqueRuntime(*rt);
-  rt->getWorkQueue()->addTask([resume, hdl] { resume(hdl); });
-  await(unwrap(chain));
-}
-
-/// Execute a coroutine. Register a completion handler to resume another
-/// coroutine when the scheduled coroutine completes.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_AsyncRT_ExecuteAndResume(void (*resume)(int8_t *),
-                                         int8_t *execHdl,
-                                         AsyncRTAsyncChainRef chain,
-                                         int8_t *resumeHdl) {
-  auto rt = Runtime::getCurrentRuntimeOrNull();
-  checkUniqueRuntime(*rt);
-  rt->getWorkQueue()->addTask([resume, execHdl]() { resume(execHdl); });
-  unwrap(chain).andThenAsync([resumeHdl, resume]() { resume(resumeHdl); });
-}
-
 //===----------------------------------------------------------------------===//
 // Runtime
 //===----------------------------------------------------------------------===//
@@ -217,24 +194,6 @@ KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error(
     else
       value = value.createError(runtime, std::move(diagnostic));
   }
-}
-
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_CreateAsyncVoidStar(void *data,
-                                    AsyncRTWrapper<AnyAsyncValueRef> async) {
-  Runtime &runtime = *Runtime::getCurrentRuntimeOrNull();
-  AnyAsyncValueRef &value = unwrap(async);
-  if (value.getPointer() && value.getPointer()->isIndirect()) {
-    value.copy().emplaceIndirect<void *>(data);
-  } else {
-    assert(!value.isReady());
-    value = value.createReady<void *>(runtime, data);
-  }
-}
-
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_MojoValueFreeBuffer(void *ptr) {
-  MojoValue::freeBuffer(ptr);
 }
 
 //===----------------------------------------------------------------------===//
