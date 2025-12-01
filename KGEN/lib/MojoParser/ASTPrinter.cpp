@@ -696,6 +696,26 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   if (auto upcast = dyn_cast<UpcastAttr>(param))
     return printParam(os, upcast.getInputTypeValue(), diagShared);
 
+  if (auto downcast = dyn_cast<DowncastAttr>(param)) {
+    ASTType(downcast.getInputTypeValue()).print(os, diagShared);
+    os << "(";
+    ASTType(downcast.getType()).print(os, diagShared);
+    os << ")";
+    return;
+  }
+
+  if (auto conformsTo = dyn_cast<TypeConformsToTraitAttr>(param)) {
+    os << "conforms_to(" << ASTType(conformsTo.getTypeValue()) << ", ";
+    llvm::interleave(
+        conformsTo.getTraitNames().getValues(), os,
+        [&](TypedAttr traitName) {
+          os << cast<StringAttr>(traitName).getValue();
+        },
+        " & ");
+    os << ")";
+    return;
+  }
+
   if (auto extractAttr = dyn_cast<LIT::StructExtractAttr>(param)) {
     printParam(os, extractAttr.getStructValue(), diagShared);
     os << '.' << extractAttr.getField().getValue();
@@ -1322,14 +1342,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
     else
       ASTType(resultType).print(os, diagShared);
   } else if (auto paramRef = dyn_cast<ParamType>(type)) {
-    if (auto downcast = dyn_cast<DowncastAttr>(paramRef.getParam())) {
-      ASTType(downcast.getInputTypeValue()).print(os, diagShared);
-      os << "(";
-      ASTType(downcast.getType()).print(os, diagShared);
-      os << ")";
-    } else {
-      printParam(os, paramRef.getParam(), diagShared);
-    }
+    printParam(os, paramRef.getParam(), diagShared);
   } else if (isa<TypeType>(type)) {
     os << "AnyTrivialRegType";
   } else if (auto fnType = dyn_cast<FunctionType>(type)) {
