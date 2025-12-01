@@ -5,6 +5,7 @@ modular_py_test(
     size = "large",
     srcs = [
         "conftest.py",
+        "test_bfloat16_utils.py",
         "test_cli.py",
         "test_context.py",
         "test_cumsum.py",
