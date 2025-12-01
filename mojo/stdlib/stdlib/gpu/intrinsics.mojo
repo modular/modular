@@ -43,7 +43,12 @@ from sys.info import (
     _is_sm_9x_or_newer,
     align_of,
     bit_width_of,
+    _cdna_3_or_newer,
     _cdna_4_or_newer,
+    _is_amd_rdna1,
+    _is_amd_rdna2,
+    _is_amd_rdna3,
+    _is_amd_rdna4,
 )
 from sys.intrinsics import llvm_intrinsic, readfirstlane
 
@@ -1116,8 +1121,26 @@ struct AMDBufferResource:
         # assuming 0 stride currently
         self.desc[1] = address[1]
         self.desc[2] = size_of[dtype]() * num_records
+
+        # Architecture-specific word 3 value for buffer resource.
         # https://github.com/ROCm/composable_kernel/blob/3b2302081eab4975370e29752343058392578bcb/include/ck/ck.hpp#L84
-        self.desc[3] = 0x00020000
+        @parameter
+        if _is_amd_rdna3() or _is_amd_rdna4():
+            # GFX11/GFX12 (RDNA3/RDNA4)
+            self.desc[3] = 0x31004000
+        elif _is_amd_rdna1() or _is_amd_rdna2():
+            # GFX10.x (RDNA1/RDNA2)
+            self.desc[3] = 0x31014000
+        else:
+            constrained[
+                _cdna_3_or_newer(),
+                (
+                    "The AMDBufferResource struct is only defined for CDNA 3+"
+                    " and RDNA 1-4 GPUs."
+                ),
+            ]()
+            # GFX9 (CDNA/GCN)
+            self.desc[3] = 0x00020000
 
     @always_inline("nodebug")
     fn __init__(out self):
