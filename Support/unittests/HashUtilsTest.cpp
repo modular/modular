@@ -21,7 +21,7 @@ TEST(HashUtils, GetBytecodeHashBasic) {
   auto loc = builder.getUnknownLoc();
   mlir::OwningOpRef<mlir::ModuleOp> moduleOp = mlir::ModuleOp::create(loc);
 
-  FailureOr<std::string> result = BytecodeHasher().getBytecodeHash(*moduleOp);
+  FailureOr<std::string> result = getBytecodeHash(*moduleOp);
   ASSERT_TRUE(succeeded(result));
   EXPECT_FALSE(result->empty());
 
@@ -40,8 +40,8 @@ TEST(HashUtils, GetBytecodeHashEquivalentOps) {
   mlir::OwningOpRef<mlir::ModuleOp> moduleOp1 = mlir::ModuleOp::create(loc);
   mlir::OwningOpRef<mlir::ModuleOp> moduleOp2 = mlir::ModuleOp::create(loc);
 
-  FailureOr<std::string> hash1 = BytecodeHasher().getBytecodeHash(*moduleOp1);
-  FailureOr<std::string> hash2 = BytecodeHasher().getBytecodeHash(*moduleOp2);
+  FailureOr<std::string> hash1 = getBytecodeHash(*moduleOp1);
+  FailureOr<std::string> hash2 = getBytecodeHash(*moduleOp2);
 
   EXPECT_TRUE(succeeded(hash1));
   EXPECT_TRUE(succeeded(hash2));
@@ -63,8 +63,8 @@ TEST(HashUtils, GetBytecodeHashDifferentOps) {
   builder.setInsertionPointToStart(moduleOp2->getBody());
   ModuleOp::create(builder, loc);
 
-  FailureOr<std::string> hash1 = BytecodeHasher().getBytecodeHash(*moduleOp1);
-  FailureOr<std::string> hash2 = BytecodeHasher().getBytecodeHash(*moduleOp2);
+  FailureOr<std::string> hash1 = getBytecodeHash(*moduleOp1);
+  FailureOr<std::string> hash2 = getBytecodeHash(*moduleOp2);
 
   EXPECT_TRUE(succeeded(hash1));
   EXPECT_TRUE(succeeded(hash2));
@@ -84,8 +84,8 @@ TEST(HashUtils, GetBytecodeHashIgnoresLocation) {
   mlir::OwningOpRef<mlir::ModuleOp> moduleOp1 = mlir::ModuleOp::create(loc1);
   mlir::OwningOpRef<mlir::ModuleOp> moduleOp2 = mlir::ModuleOp::create(loc2);
 
-  FailureOr<std::string> hash1 = BytecodeHasher().getBytecodeHash(*moduleOp1);
-  FailureOr<std::string> hash2 = BytecodeHasher().getBytecodeHash(*moduleOp2);
+  FailureOr<std::string> hash1 = getBytecodeHash(*moduleOp1);
+  FailureOr<std::string> hash2 = getBytecodeHash(*moduleOp2);
 
   EXPECT_TRUE(succeeded(hash1));
   EXPECT_TRUE(succeeded(hash2));

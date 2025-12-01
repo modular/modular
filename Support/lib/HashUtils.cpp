@@ -41,25 +41,29 @@ std::string M::raw_xxhash_stream::hashString() {
   return std::string(output);
 }
 
-static LogicalResult writeBytecode(Operation *op, llvm::raw_ostream &os,
-                                   mlir::AttrTypeReplacer &replacer) {
+static LogicalResult writeBytecode(Operation *op, llvm::raw_ostream &os) {
   OwningOpRef<Operation *> cloned = op->clone();
-  replacer.recursivelyReplaceElementsIn(*cloned,
-                                        /*replaceAttrs=*/true,
-                                        /*replaceLocs=*/true,
-                                        /*replaceTypes=*/true);
+
+  auto unknownLoc = UnknownLoc::get(op->getContext());
+
+  // Strip the debug info from all operations.
+  cloned->walk([&](Operation *op) {
+    op->setLoc(unknownLoc);
+    // Strip block arguments debug info.
+    for (Region &region : op->getRegions()) {
+      for (Block &block : region.getBlocks()) {
+        for (BlockArgument &arg : block.getArguments())
+          arg.setLoc(unknownLoc);
+      }
+    }
+  });
+
   return mlir::writeBytecodeToFile(*cloned, os);
 }
 
-M::BytecodeHasher::BytecodeHasher() {
-  // Add replacement which strips location information.
-  replacer.addReplacement(
-      [](LocationAttr loc) { return UnknownLoc::get(loc.getContext()); });
-}
-
-FailureOr<std::string> M::BytecodeHasher::getBytecodeHash(Operation *op) {
+FailureOr<std::string> M::getBytecodeHash(Operation *op) {
   raw_xxhash_stream ostream;
-  if (failed(writeBytecode(op, ostream, replacer)))
+  if (failed(writeBytecode(op, ostream)))
     return op->emitError("Failed to write bytecode");
   return ostream.hashString();
 }
@@ -68,7 +72,7 @@ struct ModuleHashCache {
   ModuleHashCache() = default;
 
   LogicalResult computeHash(Operation *op) {
-    auto result = hasher.getBytecodeHash(op);
+    auto result = M::getBytecodeHash(op);
     if (failed(result))
       return failure();
 
@@ -81,7 +85,6 @@ struct ModuleHashCache {
     other = ModuleHashCache();
   }
 
-  M::BytecodeHasher hasher;
   llvm::SmallVector<std::string> hashes;
 };
 

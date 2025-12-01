@@ -42,20 +42,9 @@ public:
   uint64_t current_pos() const override { return 0; }
 };
 
-/// BytecodeHasher provides stable IR hashing which ignores source location
-/// information. The hash function is based on hashing MLIR's bytecode
-/// format.
-class BytecodeHasher {
-public:
-  BytecodeHasher();
-
-  FailureOr<std::string> getBytecodeHash(mlir::Operation *op);
-
-private:
-  /// Replacer which will strip location information and any other
-  /// replacements provided by the caller.
-  mlir::AttrTypeReplacer replacer;
-};
+/// Compute the xxhash for the given MLIR operation.
+/// The hash ignores source location information.
+FailureOr<std::string> getBytecodeHash(mlir::Operation *op);
 
 /// This function computes the bytecode hash similar to getBytecodeHash, but
 /// does so by hashing each individual operation in the module in parallel
