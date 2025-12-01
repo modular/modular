@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "modular_cc_binary")
 
-package(default_visibility = ["//visibility:private"])
+package(default_visibility = ["//Cache:__subpackages__"])
 
 modular_cc_binary(
     name = "cache-mgr",
