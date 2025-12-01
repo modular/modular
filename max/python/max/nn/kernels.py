@@ -3094,6 +3094,62 @@ def sgmv_lora_kernel(
     return output
 
 
+def sgmv_lora_qkv_shrink(
+    input: TensorValue,
+    lora_a: TensorValue,
+    lora_ids: TensorValue,
+    lora_grouped_offsets: TensorValue,
+    max_lora_seq_len: int,
+    max_rank: int,
+) -> TensorValue:
+    """LoRA shrink grouped matmul with planar Q/K/V output.
+
+    Performs the LoRA 'shrink' operation for routed tokens using SGMV (segmented
+    grouped matrix-vector multiplication). Computes `[M, K] @ [G, 3*rank, K]^T`
+    per active LoRA adapter, then permutes the flat `[M, 3*rank]` result into a
+    planar layout `[3, M, rank]` representing separate Q, K, V projections.
+
+    Args:
+        input: Routed activation matrix with shape (M, K), where M is the total
+            number of tokens and K is the hidden dimension.
+        lora_a: Shrink weights for all LoRA adapters, shape (G, 3*rank, K) where
+            G is the number of adapters and rank is the LoRA rank.
+        lora_ids: Expert/adapter indices for each active group, shape (num_active,).
+            Values in range [0, G). May use -1 to indicate inactive slots.
+        lora_grouped_offsets: Inclusive prefix sums of tokens per active adapter,
+            shape (num_active + 1,). Defines per-adapter [start, end) ranges in
+            input. Must be non-decreasing with offsets[0] == 0.
+        max_lora_seq_len: Upper bound on tokens for any active adapter. Used for
+            kernel tuning and memory allocation.
+        max_rank: The maximum LoRA rank, determines output shape.
+
+    Returns:
+        Output tensor with planar Q/K/V layout, shape (3, M, max_rank).
+    """
+    return ops.custom(
+        "mo.lora_sgmv.qkv_shrink.ragged",
+        device=input.device,
+        values=[
+            input,
+            lora_a,
+            lora_grouped_offsets,
+            lora_ids,
+            ops.constant(
+                max_lora_seq_len,
+                DType.uint32,
+                device=DeviceRef.CPU(),
+            ),
+        ],
+        out_types=[
+            TensorType(
+                dtype=input.dtype,
+                shape=[3, input.shape[0], max_rank],
+                device=input.device,
+            ),
+        ],
+    )[0].tensor
+
+
 def sgmv_qkv_lora_kernel(
     input: TensorValue,
     lora_a: TensorValue,
@@ -3191,6 +3247,73 @@ def sgmv_qkv_lora_kernel(
     return q_out
 
 
+def kv_cache_ragged_2m_iadd(
+    kv_params: KVCacheParams,
+    a: TensorValue,
+    kv_collection: PagedCacheValues,
+    input_row_offsets: TensorValue,
+    lora_end_idx: TensorValue,
+    batch_seq_len: TensorValue,
+    layer_idx: TensorValue,
+) -> None:
+    """In-place add to paged KV cache with interleaved K/V layout.
+
+    Performs an in-place addition of new key-value projections to paged KV cache.
+    The input tensor `a` uses a "2M" layout where keys and values are interleaved:
+    rows [0, m) contain keys and rows [m, 2m) contain values, where m is the number
+    of tokens.
+
+    Args:
+        kv_params: KV cache configuration parameters. Must have cache_strategy
+            set to PAGED and page_size must be defined.
+        a: Input tensor with interleaved K/V data, shape (2*m, hidden_size) where
+            m is the number of tokens. Rows [0, m) are keys, rows [m, 2m) are values.
+        kv_collection: The paged KV cache collection containing cache blocks,
+            cache lengths, lookup tables, and max lengths tensors.
+        input_row_offsets: Ragged tensor offsets indicating where each batch starts and ends
+        lora_end_idx: End index of LoRA token portion. Marks the boundary between
+            LoRA sequences and base model sequences in the batch.
+        batch_seq_len: Total sequence length in the batch. Used for indexing
+            into the value portion of `a`.
+        layer_idx: The transformer layer index to update in the KV cache.
+
+    Raises:
+        ValueError: If `a` does not have rank 2.
+        ValueError: If `input_row_offsets` does not have rank 1.
+        ValueError: If `kv_params.cache_strategy` is not PAGED.
+        ValueError: If `kv_params.page_size` is None.
+    """
+
+    if a.rank != 2:
+        raise ValueError(f"Expected a to have rank 2 but got {a.rank}")
+
+    if input_row_offsets.rank != 1:
+        raise ValueError(
+            f"Expected input_row_offsets to have rank 1 but got {input_row_offsets.rank}"
+        )
+
+    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
+        raise ValueError(
+            f"Expected kv_params to have cache strategy PAGED but got {kv_params.cache_strategy}"
+        )
+
+    if kv_params.page_size is None:
+        raise ValueError("Expected kv_params.page_size to be set")
+
+    ops.inplace_custom(
+        "mo.kv_cache.ragged.paged.2m_iadd",
+        device=input_row_offsets.device,
+        values=[
+            a,
+            *kv_collection,
+            input_row_offsets,
+            lora_end_idx,
+            batch_seq_len,
+            layer_idx,
+        ],
+    )
+
+
 def spatial_merge(
     input: TensorValue,
     grid_thw: TensorValue,
@@ -3257,6 +3380,40 @@ def spatial_merge(
                 dtype=input.dtype,
                 shape=[input.shape[0], hidden_size],
                 device=input.device,
+            )
+        ],
+    )[0].tensor
+
+
+def sliced_add(
+    x: TensorValue,
+    y: TensorValue,
+    lora_end_idx: TensorValue,
+) -> TensorValue:
+    """Adds tensors x and y element-wise for rows < lora_end_idx, otherwise copies x.
+
+    This is used for LoRA where only some sequences have LoRA applied.
+    For rows in [0, lora_end_idx): c = x + y
+    For rows in [lora_end_idx, batch_seq_len): c = x
+
+    Args:
+        x: First input tensor.
+        y: Second input tensor.
+        lora_end_idx: End index of LoRA token portion (rows to apply add).
+    """
+    return ops.custom(
+        "mo.sliced.add.ragged",
+        device=x.device,
+        values=[
+            x,
+            y,
+            lora_end_idx,
+        ],
+        out_types=[
+            TensorType(
+                dtype=x.dtype,
+                shape=x.shape,
+                device=x.device,
             )
         ],
     )[0].tensor

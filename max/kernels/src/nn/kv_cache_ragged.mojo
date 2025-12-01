@@ -3322,3 +3322,132 @@ fn kv_cache_store_ragged[
         ]()
 
         elementwise[write_to_cache, simd_width, target=target](input_shape)
+
+
+# ===-----------------------------------------------------------------------===#
+# KV cache ragged 2M iadd dispatch
+# ===-----------------------------------------------------------------------===#
+
+
+fn kv_cache_2m_iadd_dispatch[
+    dtype: DType,
+    collection_t: KVCollectionT, //,
+    target: StaticString,
+](
+    kv: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    cache: collection_t,
+    input_row_offsets: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
+    lora_end_idx: LayoutTensor[
+        DType.int64, address_space = AddressSpace.GENERIC, **_
+    ],
+    batch_seq_len: LayoutTensor[
+        DType.int64, address_space = AddressSpace.GENERIC, **_
+    ],
+    layer_idx: UInt32,
+    ctx: Optional[DeviceContext],
+) raises:
+    """
+    In-place add to paged KV cache with interleaved K/V layout. This kernel is
+    only used for LoRA.
+
+    Performs an in-place addition of new key-value projections to paged KV cache.
+    The input tensor `a` uses a "2M" layout where keys and values are interleaved:
+    rows [0, M) contain keys and rows [M, 2M) contain values, where M is the number
+    of tokens. We use the `lora_end_idx` as our stop-gap on whether we write the LoRA
+    values to KV-cache. We call this value `m` since this value will be a subset of the
+    total tokens in the batch. We write tokens to K as [0, m) and V as [M, M + m).
+    """
+    comptime hidden_size = collection_t.kv_params.head_size * collection_t.kv_params.num_heads
+    var kv_shape = kv.runtime_layout.shape.value.canonicalize()
+    constrained[
+        dtype == collection_t.dtype,
+        "Mismatch in dtype between computation and KV tensors",
+    ]()
+    constrained[
+        kv.layout.shape[1] != UNKNOWN_VALUE,
+        "Input tensor must have known shape in last dim",
+    ]()
+    constrained[
+        Int(kv.layout.shape[1]) == Int(hidden_size),
+        "Mismatch in hidden size between input "
+        + String(Int(kv.layout.shape[1]))
+        + " and KV tensors "
+        + String(hidden_size),
+    ]()
+
+    var layer_idx_cast = Int(layer_idx)
+    var k_cache = cache.get_key_cache(layer_idx_cast)
+    var v_cache = cache.get_value_cache(layer_idx_cast)
+    var m = Int(lora_end_idx[0])
+    var M = Int(batch_seq_len[0])
+
+    # [2m, N]
+    var elementwise_shape = IndexList[2](2 * m, kv_shape[1])
+
+    @parameter
+    @__copy_capture(kv, k_cache, v_cache, input_row_offsets, m, M)
+    fn iadd[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+        constrained[rank == 2, "Rank must be 2"]()
+
+        var cache: collection_t.CacheType
+        var batch_idx: Int
+        var row_idx: Int
+        var major_idx: Int
+
+        if idx[0] < m:
+            cache = k_cache
+            row_idx = Int(idx[0])
+            major_idx = row_idx
+            batch_idx = get_batch_from_row_offsets(input_row_offsets, row_idx)
+        else:
+            cache = v_cache
+            row_idx = Int(idx[0] - m)
+            major_idx = Int(row_idx + M)
+            batch_idx = get_batch_from_row_offsets(input_row_offsets, row_idx)
+
+        var tok_idx = Int(row_idx - input_row_offsets[batch_idx])
+
+        # For shape [2M, N], idx[1] is the hidden dimension
+        # Decompose it into head index and head dimension index
+        var h_idx: UInt
+        var hd_idx: UInt
+        h_idx, hd_idx = divmod(UInt(idx[1]), collection_t.kv_params.head_size)
+
+        var cache_length = cache.cache_length(batch_idx)
+        var cache_token_idx = Int(tok_idx) + cache_length
+
+        var old_val = cache.load[width=width](
+            batch_idx, Int(h_idx), cache_token_idx, Int(hd_idx)
+        )
+        var a_val = rebind[type_of(old_val)](
+            kv.load[width=width](major_idx, idx[1])
+        )
+
+        cache.store(
+            batch_idx,
+            Int(h_idx),
+            cache_token_idx,
+            Int(hd_idx),
+            a_val + old_val,
+        )
+
+    @parameter
+    if is_gpu[target]():
+        with Trace[TraceLevel.OP, target=target](
+            "kv-cache-2m-iadd",
+            task_id=Int(ctx.value().id()),
+        ):
+            debug_assert(ctx is not None, "ctx is None")
+            comptime compile_target = get_gpu_target()
+            comptime simd_width = simd_width_of[dtype, target=compile_target]()
+
+            elementwise[iadd, simd_width, target=target](
+                elementwise_shape, ctx.value()
+            )
+    else:
+        comptime compile_target = _current_target()
+        comptime simd_width = simd_width_of[dtype, target=compile_target]()
+
+        elementwise[iadd, simd_width, target=target](elementwise_shape)

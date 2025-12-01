@@ -37,7 +37,7 @@ from math import (
 from memory import LegacyUnsafePointer as UnsafePointer
 from random import randn, seed
 from sys import align_of, external_call, llvm_intrinsic
-from sys.info import simd_width_of, size_of
+from sys.info import simd_width_of, size_of, _current_target
 from sys.intrinsics import _type_is_eq
 
 import compiler_internal as compiler
@@ -48,7 +48,7 @@ import compiler_internal as compiler
 from algorithm import max as reduce_max
 from algorithm import mean
 from algorithm import min as reduce_min
-from algorithm import product, sum
+from algorithm import elementwise, product, sum
 from algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -56,7 +56,7 @@ from builtin.simd import _pow
 from comm.allgather import allgather
 from comm.allreduce import MAX_GPUS, Signal, allreduce
 from compiler_internal import StaticTensorSpec
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -83,6 +83,7 @@ from linalg.grouped_matmul_sm100_blockwise_fp8 import (
 )
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
 from linalg.grouped_matmul import grouped_matmul, grouped_matmul_vendor
+from linalg.lora import shrink_qkv_permute_3mn_sm100
 from linalg.matmul import matmul
 from linalg.matrix_band_part import matrix_band_part
 from linalg.packing import _pack_b_ndbuffer_impl, pack_matmul_b_shape_func
@@ -172,6 +173,7 @@ from nn.kv_cache_ragged import (
     generic_kv_cache_radd_dispatch,
     k_matmul_ragged_paged,
     k_matmul_ragged_paged_scale,
+    kv_cache_2m_iadd_dispatch,
     kv_cache_store_ragged,
     kv_matmul_ragged_paged,
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
@@ -210,6 +212,7 @@ from nn.slice import (
     slice_as_view,
     slice_dim_as_view,
     slice_shape,
+    sliced_add,
 )
 from nn.softmax import logsoftmax, softmax
 from nn.split import split
@@ -8894,8 +8897,49 @@ struct Struct_lora_sgmv_ragged:
     ) raises:
         constrained[is_gpu[target](), "SGMV only supported on GPUs"]()
         cuda_ctx = context.get_device_context()
+        var a_tensor = managed_tensor_slice_to_ndbuffer(a)
+
+        if a_tensor.dim[0]() == 0:
+            return
 
         grouped_matmul(
+            managed_tensor_slice_to_ndbuffer(c),
+            managed_tensor_slice_to_ndbuffer(a),
+            managed_tensor_slice_to_ndbuffer(b),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            managed_tensor_slice_to_ndbuffer(lora_ids),
+            Int(max_seq_length),
+            lora_ids.dim_size[0](),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.lora_sgmv.qkv_shrink.ragged")
+struct Struct_lora_sgmv_qkv_shrink_ragged:
+    @always_inline
+    @staticmethod
+    fn execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType, //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=3],
+        a: InputTensor[dtype=a_type, rank=2],
+        b: InputTensor[dtype=b_type, rank=3],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        lora_ids: InputTensor[dtype = DType.int32, rank=1],
+        max_seq_length: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        constrained[is_gpu[target](), "SGMV only supported on GPUs"]()
+        cuda_ctx = context.get_device_context()
+        var a_tensor = managed_tensor_slice_to_ndbuffer(a)
+
+        if a_tensor.dim[0]() == 0:
+            return
+
+        shrink_qkv_permute_3mn_sm100(
             managed_tensor_slice_to_ndbuffer(c),
             managed_tensor_slice_to_ndbuffer(a),
             managed_tensor_slice_to_ndbuffer(b),
@@ -8978,3 +9022,102 @@ struct SpatialMerge:
             Int(merge_size),
             cuda_ctx,
         )
+
+
+# ===-----------------------------------------------------------------------===#
+# KV Cache Ragged 2m IAdd Kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.kv_cache.ragged.paged.2m_iadd")
+struct Struct_kv_cache_ragged_paged_2m_iadd:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType, //,
+        target: StaticString,
+    ](
+        kv: InputTensor[dtype=dtype, rank=2],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        lora_end_idx: InputTensor[dtype = DType.int64, rank=1],
+        batch_seq_len: InputTensor[dtype = DType.int64, rank=1],
+        layer_idx: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        var kv_layout_tensor = kv.to_layout_tensor()
+
+        if kv_layout_tensor.shape[0]() == 0:
+            return
+
+        cuda_ctx: Optional[DeviceContext] = None
+        if is_gpu[target]():
+            cuda_ctx = context.get_device_context()
+
+        kv_cache_2m_iadd_dispatch[target=target,](
+            kv_layout_tensor,
+            kv_collection,
+            input_row_offsets.to_layout_tensor(),
+            lora_end_idx.to_layout_tensor(),
+            batch_seq_len.to_layout_tensor(),
+            layer_idx,
+            cuda_ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Slice IAdd Kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.sliced.add.ragged")
+struct Struct_sliced_add_ragged:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType, //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=dtype, rank=2],
+        a: InputTensor[dtype=dtype, rank=2],
+        b: InputTensor[dtype=dtype, rank=2],
+        lora_end_idx: InputTensor[dtype = DType.int64, rank=1],
+        context: DeviceContextPtr,
+    ) raises:
+        var c_layout_tensor = c.to_layout_tensor()
+        var a_layout_tensor = a.to_layout_tensor()
+        var b_layout_tensor = b.to_layout_tensor()
+
+        with Trace[TraceLevel.OP, target=target](
+            "sliced-add",
+            task_id=get_safe_task_id(context),
+        ):
+
+            @parameter
+            if is_gpu[target]():
+                ctx: Optional[DeviceContext] = context.get_device_context()
+                sliced_add[target=target](
+                    c_layout_tensor,
+                    a_layout_tensor,
+                    b_layout_tensor,
+                    lora_end_idx.to_layout_tensor(),
+                    ctx,
+                )
+            else:
+                sliced_add[target=target](
+                    c_layout_tensor,
+                    a_layout_tensor,
+                    b_layout_tensor,
+                    lora_end_idx.to_layout_tensor(),
+                    None,
+                )
