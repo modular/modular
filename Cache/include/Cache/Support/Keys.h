@@ -68,10 +68,7 @@ using BufferKey = TypeKey<M::BufferRef>;
 template <>
 struct TypeKey<mlir::Operation *> {
   using KeyTy = mlir::Operation *;
-  static std::string hashKey(KeyTy key) {
-    BytecodeHasher hasher;
-    return std::move(*hasher.getBytecodeHash(key));
-  }
+  static std::string hashKey(KeyTy key) { return *M::getBytecodeHash(key); }
 };
 using OperationKey = TypeKey<mlir::Operation *>;
 
