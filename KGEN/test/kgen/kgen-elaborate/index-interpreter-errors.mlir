@@ -9,9 +9,9 @@
 // expected-note @below {{failed to interpret function @minus}}
 kgen.generator @minus(%arg0: index, %arg1: index) -> index {
   // CHECK-PARAM: failed to interpret operation index.sub(4294967295 : index, -4294967295 : index)
-  // CHECK-PARAM: `index.sub` failed due to overflow
+  // CHECK-PARAM: value '4294967295' of the operation `index.sub` is too large for 32-bit index
   // expected-note @below {{failed to interpret operation index.sub(4294967295 : index, -4294967295 : index)}}
-  // expected-note @below {{`index.sub` failed due to overflow}}
+  // expected-note @below {{value '4294967295' of the operation `index.sub` is too large for 32-bit index}}
   %0 = index.sub %arg0, %arg1
   kgen.return %0 : index
 }
@@ -21,7 +21,7 @@ kgen.generator @minus(%arg0: index, %arg1: index) -> index {
 kgen.generator export @callIt() -> index {
   // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
-  kgen.param.declare value : index = <apply(:(index, index) -> index @minus, 4294967295, -4294967295)>
+  kgen.param.declare value : index = <apply(:(index, index) -> index @minus, 0x00000000ffffffff, -4294967295)>
   %0 = kgen.param.constant: index = <value>
   kgen.return %0 : index
 }

@@ -235,10 +235,11 @@ std::optional<int64_t> SIMDType::getTypeSize(TargetInfoAttr target) const {
 
   switch (dtype->getValue()) {
   case KGENDType::address:
-  case KGENDType::index:
-  case KGENDType::uindex:
     return llvm::divideCeil(target.getDataLayout().getPointerBitWidth() * *size,
                             CHAR_BIT);
+  case KGENDType::index:
+  case KGENDType::uindex:
+    return llvm::divideCeil(target.resolveIndexBitWidth() * *size, CHAR_BIT);
   default:
     break;
   }
@@ -298,7 +299,7 @@ ErrorOrSuccess SIMDType::writeTo(TypedAttr value, int64_t addr,
 
 ErrorOr<TypedAttr> SIMDType::readFrom(int64_t addr,
                                       InterpreterState &state) const {
-  DType dtype = *getResolvedDType();
+  KGENDType dtype = *getResolvedDType();
   int64_t vecSize = *getTypeSize(state.getTarget());
   ErrorOr<const void *> mem = state.getReadableMemory(addr, vecSize);
   if (mem.isError())
@@ -323,9 +324,11 @@ ErrorOr<TypedAttr> SIMDType::readFrom(int64_t addr,
   }
 
   // Other dtypes are multiples of bytes in memory.
-  int64_t bitWidth = dtype.getWidthInBits();
+  int64_t bitWidth = dtype.getWidthInBits(state.getTarget());
   int64_t byteSize = vecSize / *getResolvedSize();
   int64_t shiftBits = byteSize * CHAR_BIT - bitWidth;
+  int64_t storageBitWidth =
+      dtype.isIndex() ? IndexType::kInternalStorageBitWidth : bitWidth;
 
   SmallVector<DTypeValue> values;
   APInt value(byteSize * CHAR_BIT, 0);
@@ -337,7 +340,9 @@ ErrorOr<TypedAttr> SIMDType::readFrom(int64_t addr,
     } else {
       // For FloatTF32, right Shift 32 bit data by 13 bits and trunc to 19 bits;
       // other types, lshr and trunc are no ops.
-      values.emplace_back(value.lshr(shiftBits).trunc(bitWidth), dtype);
+      values.emplace_back(
+          value.lshr(shiftBits).trunc(bitWidth).sextOrTrunc(storageBitWidth),
+          dtype);
     }
   }
   return SIMDAttr::get(values, *this);

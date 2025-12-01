@@ -48,13 +48,40 @@ interpretBinaryOp(Location loc, MLIRContext *ctx, ArrayRef<Attribute> operands,
   uint64_t targetBitwidth = state.getTarget().resolveIndexBitWidth();
   APInt lhs;
   APInt rhs;
-  if constexpr (isSigned) {
-    lhs = lhsInt.getValue().truncSSat(targetBitwidth);
-    rhs = rhsInt.getValue().truncSSat(targetBitwidth);
-  } else {
-    lhs = lhsInt.getValue().truncUSat(targetBitwidth);
-    rhs = rhsInt.getValue().truncUSat(targetBitwidth);
-  }
+  auto checkIfValueCanFit = [&](IntegerAttr valueAttr) -> ErrorTreeOrSuccess {
+    APInt value = valueAttr.getValue();
+    unsigned bitWidth = value.getBitWidth();
+    if (bitWidth <= targetBitwidth)
+      return success();
+    bool isSignedValue = isSigned || value.isSignedIntN(bitWidth);
+    APInt maxValue;
+    APInt minValue;
+    if (isSignedValue) {
+      maxValue = APInt::getSignedMaxValue(targetBitwidth).sext(bitWidth);
+      minValue = APInt::getSignedMinValue(targetBitwidth).sext(bitWidth);
+    } else {
+      maxValue = APInt::getMaxValue(targetBitwidth).zext(bitWidth);
+      minValue = APInt::getMinValue(targetBitwidth).zext(bitWidth);
+    }
+
+    if ((!isSignedValue && value.ugt(maxValue)) ||
+        (isSignedValue && (value.sgt(maxValue) || value.slt(minValue)))) {
+      std::string str;
+      llvm::raw_string_ostream ss(str);
+      ss << "value '" << value << "' of the operation `index." << opName
+         << "` is too large for " << targetBitwidth << "-bit index";
+      return ErrorTree(loc, str);
+    }
+    return success();
+  };
+
+  if (ErrorTreeOrSuccess error = checkIfValueCanFit(lhsInt))
+    return error;
+  if (ErrorTreeOrSuccess error = checkIfValueCanFit(rhsInt))
+    return error;
+
+  lhs = lhsInt.getValue().trunc(targetBitwidth);
+  rhs = rhsInt.getValue().trunc(targetBitwidth);
 
   APInt result;
   if constexpr (withOverflowCheck) {
