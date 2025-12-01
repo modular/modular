@@ -259,7 +259,7 @@ private:
                     function_ref<Value(Capture, int, Value)> replacementFn);
 
   llvm::SetVector<ParamDeclAttr>
-  collectCapturedParams(llvm::SetVector<Value> const &captures,
+  collectCapturedParams(DenseMap<Value, Attribute> const &captures,
                         GeneratorOp generator, Region &region);
 };
 } // namespace
@@ -758,7 +758,7 @@ Value ClosureLifter::liftThinClosure(OpBuilder &b,
 }
 
 llvm::SetVector<ParamDeclAttr>
-ClosureLifter::collectCapturedParams(llvm::SetVector<Value> const &captures,
+ClosureLifter::collectCapturedParams(DenseMap<Value, Attribute> const &captures,
                                      GeneratorOp generator, Region &region) {
   llvm::SetVector<ParamDeclAttr> capturedParamDecls;
   ParameterUseDefGraph uses(generator.getBodyRegion());
@@ -774,7 +774,7 @@ ClosureLifter::collectCapturedParams(llvm::SetVector<Value> const &captures,
   // Because the parameter use-def graph does not consider operands, only
   // results and regions, explicitly collect parameter usages from the captured
   // values.
-  for (Value capture : captures) {
+  for (Value capture : captures.keys()) {
     bool unused = false;
     collector.collectUsesFromType(capture.getType(), capturedUses, unused);
   }
@@ -852,7 +852,7 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
     return failure();
 
   llvm::SetVector<ParamDeclAttr> capturedParamDecls =
-      collectCapturedParams(captures, generator, region);
+      collectCapturedParams(captureToSymbol, generator, region);
 
   // Create the capture struct type and collect symbols.
   // In order to create the move constructor, we need the move constructors of
