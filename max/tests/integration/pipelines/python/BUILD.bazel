@@ -164,7 +164,6 @@ modular_py_test(
     name = "test_pipelines_cli_gpu",
     size = "enormous",
     srcs = ["test_pipelines_cli_gpu.py"],
-    env_inherit = ["HF_TOKEN"],
     exec_properties = {
         "test.resources:gpu-memory": "21.25",
     },

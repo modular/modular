@@ -18,7 +18,6 @@ modular_py_test(
         "MODULAR_PATH": ".",
         "MODULAR_TELEMETRY_ENABLED": "true",
     },
-    env_inherit = ["HF_TOKEN"],
     exec_properties = {
         "test.resources:gpu-memory": "20",
     },
@@ -28,8 +27,10 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     tags = [
         "gpu",
+        "manual",
         "no-sandbox",
         "requires-network",
+        "run-in-hf-workflow",  # TODO(AITLIB-293): Remove this once we have a way to run these tests on CI.
     ],
     deps = [
         "//max/python/max",

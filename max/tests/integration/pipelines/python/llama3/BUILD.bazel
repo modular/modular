@@ -28,7 +28,6 @@ load(
                 "max/tests/integration/pipelines/python/llama3/testdata"
             ),
         },
-        env_inherit = ["HF_TOKEN"],
         imports = ["."],
         tags = [
             "no-sandbox",
@@ -83,7 +82,6 @@ modular_py_test(
             "max/tests/integration/pipelines/python/llama3/testdata"
         ),
     },
-    env_inherit = ["HF_TOKEN"],
     exec_properties = {
         "test.resources:gpu-memory": "20",
     },

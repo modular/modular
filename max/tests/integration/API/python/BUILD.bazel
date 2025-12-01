@@ -37,7 +37,6 @@ modular_py_test(
         "MODULAR_PATH": ".",
         "MODULAR_TELEMETRY_ENABLED": "true",
     },
-    env_inherit = ["HF_TOKEN"],
     exec_properties = {
         "test.resources:gpu-memory": "20",
     },
@@ -78,7 +77,6 @@ modular_py_test(
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
     },
-    env_inherit = ["HF_TOKEN"],
     exec_properties = {
         "test.resources:gpu-memory": "20",
     },
@@ -137,7 +135,6 @@ modular_py_test(
         "//max/tests/integration/API:pytest_inputs",
     ],
     env = {"MODULAR_PATH": "."},
-    env_inherit = ["HF_TOKEN"],
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//:a10_gpu": ["@platforms//:incompatible"],  # FIXME: SDLC-2564
@@ -168,7 +165,6 @@ modular_py_test(
     env = {
         "MODULAR_PATH": ".",
     },
-    env_inherit = ["HF_TOKEN"],
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
