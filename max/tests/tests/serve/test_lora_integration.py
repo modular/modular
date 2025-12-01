@@ -86,6 +86,9 @@ def lora_manager(monkeypatch: pytest.MonkeyPatch) -> Iterator[LoRAManager]:
         config=config,
         base_model_path="/mock/path",
         base_dtype=DType.float32,
+        n_heads=32,
+        n_kv_heads=8,
+        head_dim=128,
         zmq_endpoint_base="fake",
     )
 
@@ -355,6 +358,9 @@ def test_lora_bias_config_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
                 config=config,
                 base_model_path="/mock/path",
                 base_dtype=DType.float32,
+                n_heads=32,
+                n_kv_heads=8,
+                head_dim=128,
                 zmq_endpoint_base="fake",
             )
 
@@ -415,6 +421,9 @@ def test_lora_bias_none_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
             config=config,
             base_model_path="/mock/path",
             base_dtype=DType.float32,
+            n_heads=32,
+            n_kv_heads=8,
+            head_dim=128,
             zmq_endpoint_base="fake",
         )
 
@@ -471,6 +480,9 @@ def test_lora_allocation_respects_protected_tg_loras(
         config=config,
         base_model_path="/mock/path",
         base_dtype=DType.float32,
+        n_heads=32,
+        n_kv_heads=8,
+        head_dim=128,
         zmq_endpoint_base="fake",
     )
 
