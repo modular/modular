@@ -16,12 +16,7 @@ from os import abort
 from random import random_float64
 from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
-from gpu import (
-    WARP_SIZE,
-    block_dim,
-    global_idx,
-    grid_dim,
-)
+from gpu import WARP_SIZE, block_dim, global_idx, grid_dim
 from gpu.host import DeviceContext
 from layout import *
 from layout._utils import ManagedLayoutTensor
@@ -37,9 +32,9 @@ fn mma_layout_tc[
     layout_a: Layout,
     layout_b: Layout,
 ](
-    mat_c: LayoutTensor[out_type, layout_c, MutableAnyOrigin],
-    mat_a: LayoutTensor[in_type, layout_a, MutableAnyOrigin],
-    mat_b: LayoutTensor[in_type, layout_b, MutableAnyOrigin],
+    mat_c: LayoutTensor[out_type, layout_c, MutAnyOrigin],
+    mat_a: LayoutTensor[in_type, layout_a, MutAnyOrigin],
+    mat_b: LayoutTensor[in_type, layout_b, MutAnyOrigin],
 ):
     var tc = TensorCore[out_type, in_type, shape]()
     # alias shapes = TensorCore().get_shapes[out_type, in_type]()
@@ -57,9 +52,9 @@ fn matmul_naive[
     layout_a: Layout,
     layout_b: Layout,
 ](
-    mat_c: LayoutTensor[out_type, layout_c, MutableAnyOrigin],
-    mat_a: LayoutTensor[in_type, layout_a, MutableAnyOrigin],
-    mat_b: LayoutTensor[in_type, layout_b, MutableAnyOrigin],
+    mat_c: LayoutTensor[out_type, layout_c, MutAnyOrigin],
+    mat_a: LayoutTensor[in_type, layout_a, MutAnyOrigin],
+    mat_b: LayoutTensor[in_type, layout_b, MutAnyOrigin],
 ):
     var x = global_idx.x
     var y = global_idx.y
@@ -91,9 +86,9 @@ fn test_layout_mma[
 ) raises:
     print("== run layout mma => ", String(out_type), String(in_type), M, N, K)
 
-    alias layout_a = Layout(IntTuple(M, K), IntTuple(K, 1))
-    alias layout_b = Layout(IntTuple(K, N), IntTuple(N, 1))
-    alias layout_c = Layout(IntTuple(M, N), IntTuple(N, 1))
+    comptime layout_a = Layout(IntTuple(M, K), IntTuple(K, 1))
+    comptime layout_b = Layout(IntTuple(K, N), IntTuple(N, 1))
+    comptime layout_c = Layout(IntTuple(M, N), IntTuple(N, 1))
 
     var mat_a = ManagedLayoutTensor[in_type, layout_a](ctx)
     var mat_b = ManagedLayoutTensor[in_type, layout_b](ctx)
@@ -128,7 +123,7 @@ fn test_layout_mma[
             mat_c_tensor[i, j] = val.cast[out_type]()
             mat_c_n_tensor[i, j] = mat_c_tensor[i, j]
 
-    alias kernel = mma_layout_tc[
+    comptime kernel = mma_layout_tc[
         out_type, in_type, shape, layout_c, layout_a, layout_b
     ]
     ctx.enqueue_function_checked[kernel, kernel](
@@ -141,8 +136,8 @@ fn test_layout_mma[
 
     ctx.synchronize()
 
-    alias warps_per_block = 16
-    alias naive_func = matmul_naive[
+    comptime warps_per_block = 16
+    comptime naive_func = matmul_naive[
         out_type, in_type, layout_c, layout_a, layout_b
     ]
     ctx.enqueue_function_checked[kernel, kernel](
@@ -177,9 +172,26 @@ def main():
 
         @parameter
         if has_nvidia_gpu_accelerator():
-            alias shape_1684 = IndexList[3](16, 8, 4)
-            alias shape_1688 = IndexList[3](16, 8, 8)
-            alias shape_16816 = IndexList[3](16, 8, 16)
+            comptime shape_884 = IndexList[3](8, 8, 4)
+            comptime shape_1684 = IndexList[3](16, 8, 4)
+            comptime shape_1688 = IndexList[3](16, 8, 8)
+            comptime shape_16816 = IndexList[3](16, 8, 16)
+
+            test_layout_mma[DType.float64, DType.float64, shape_884, 8, 8, 4](
+                ctx, rtol=1e-01
+            )
+
+            test_layout_mma[DType.float64, DType.float64, shape_1684, 16, 8, 4](
+                ctx, rtol=1e-01
+            )
+
+            test_layout_mma[DType.float64, DType.float64, shape_1688, 16, 8, 8](
+                ctx, rtol=1e-01
+            )
+
+            test_layout_mma[
+                DType.float64, DType.float64, shape_16816, 16, 8, 16
+            ](ctx, rtol=1e-01)
 
             test_layout_mma[DType.float32, DType.float32, shape_1684, 16, 8, 4](
                 ctx, rtol=1e-01
@@ -194,8 +206,8 @@ def main():
                 ctx, rtol=1e-01
             )
         elif has_amd_gpu_accelerator():
-            alias shape_161616 = IndexList[3](16, 16, 16)
-            alias shape_16164 = IndexList[3](16, 16, 4)
+            comptime shape_161616 = IndexList[3](16, 16, 16)
+            comptime shape_16164 = IndexList[3](16, 16, 4)
 
             test_layout_mma[
                 DType.float32, DType.float16, shape_161616, 16, 16, 16

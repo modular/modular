@@ -1,0 +1,27 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_ep_combine
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_ep_combine.mojo
+
+params:
+# Example parameter configurations for ep_combine benchmark
+
+- hidden_size: [3576, 7168]
+  top_k: [8]
+  n_experts: [128, 256]
+  n_ranks: [8]
+  n_tokens_per_rank: [128]
+  num_gpus: 8
+  token_dtype: [DType.bfloat16, DType.float8_e4m3fn]
+  scales_dtype: [DType.float32]

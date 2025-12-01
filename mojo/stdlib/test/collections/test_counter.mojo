@@ -14,6 +14,7 @@
 from collections.counter import Counter
 
 from testing import assert_equal, assert_false, assert_raises, assert_true
+from testing import TestSuite
 
 
 def test_and():
@@ -139,6 +140,13 @@ def test_iter():
 
     assert_equal(keys, "ab")
 
+    var keys_list = ["a", "b"]
+    var keys_count = 0
+    for i, e in enumerate(c):
+        assert_equal(i, keys_count)
+        assert_equal(e, keys_list[i])
+        keys_count += 1
+
 
 def test_iter_keys():
     var c = Counter[String]()
@@ -256,17 +264,36 @@ def test_lt_le_gt_and_ge():
     c2["b"] = 2
     c2["c"] = 0
 
-    assert_false(c1.__lt__(c2))
-    assert_true(c1.__le__(c2))
-    assert_false(c1.__gt__(c2))
-    assert_true(c1.__ge__(c2))
+    assert_false(c1.lt(c2))
+    assert_false(c2.lt(c1))
+    assert_true(c1.le(c2))
+    assert_true(c2.le(c1))
+    assert_false(c1.gt(c2))
+    assert_false(c2.gt(c1))
+    assert_true(c1.ge(c2))
+    assert_true(c2.ge(c1))
+
+    c2["a"] = 2
+    assert_false(c1.lt(c2))
+    assert_false(c2.lt(c1))
+    assert_true(c1.le(c2))
+    assert_false(c2.le(c1))
+    assert_false(c1.gt(c2))
+    assert_false(c2.gt(c1))
+    assert_false(c1.ge(c2))
+    assert_true(c2.ge(c1))
 
     c2["b"] = 3
-    assert_true(c1.__lt__(c2))
-    assert_true(c1.__le__(c2))
-    assert_false(c1.__gt__(c2))
-    assert_true(c2.__gt__(c1))
-    assert_false(c1.__ge__(c2))
+    c2["c"] = 1
+    c2["d"] = 1
+    assert_true(c1.lt(c2))
+    assert_false(c2.lt(c1))
+    assert_true(c1.le(c2))
+    assert_false(c2.le(c1))
+    assert_false(c1.gt(c2))
+    assert_true(c2.gt(c1))
+    assert_false(c1.ge(c2))
+    assert_true(c2.ge(c1))
 
 
 def test_elements():
@@ -364,7 +391,8 @@ def test_sub():
 
     assert_equal(c3["a"], 3)
     assert_equal(c3["b"], 4)
-    assert_equal(c3["c"], -3)
+    assert_equal(c3["c"], 0)
+
     # Check that the original counters are not modified
     assert_equal(c1["a"], 4)
     assert_equal(c1["b"], 2)
@@ -372,8 +400,8 @@ def test_sub():
 
     c2 -= c1
 
-    assert_equal(c2["a"], -3)
-    assert_equal(c2["b"], -4)
+    assert_equal(c2["a"], 0)
+    assert_equal(c2["b"], 0)
     assert_equal(c2["c"], 3)
 
 
@@ -456,31 +484,4 @@ def test_popitem():
 
 
 def main():
-    test_add()
-    test_and()
-    test_bool()
-    test_clear()
-    test_contains()
-    test_copy()
-    test_counter_construction()
-    test_counter_getitem()
-    test_counter_setitem()
-    test_elements()
-    test_eq_and_ne()
-    test_fromkeys()
-    test_get()
-    test_iter()
-    test_iter_keys()
-    test_iter_items()
-    test_iter_values()
-    test_iter_values_mut()
-    test_len()
-    test_lt_le_gt_and_ge()
-    test_most_common()
-    test_neg()
-    test_or()
-    test_pop()
-    test_popitem()
-    test_subtract()
-    test_total()
-    test_update()
+    TestSuite.discover_tests[__functions_in_module()]().run()

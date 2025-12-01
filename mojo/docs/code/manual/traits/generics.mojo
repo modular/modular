@@ -25,7 +25,7 @@ trait Stacklike:
 struct MyStack[type: Copyable & Movable](Stacklike):
     """A simple Stack built using a List."""
 
-    alias EltType = type
+    alias EltType = Self.type
     alias list_type = List[Self.EltType]
 
     var list: Self.list_type

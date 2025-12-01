@@ -14,7 +14,7 @@
 from math import ceildiv
 from sys import has_accelerator
 
-from complex import ComplexSIMD
+from complex import ComplexSIMD, ComplexScalar
 from gpu import global_idx
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
@@ -54,7 +54,7 @@ def main():
     alias ROW_BLOCKS = ceildiv(GRID_HEIGHT, BLOCK_SIZE)
 
     # Launch the Mandelbrot kernel on the GPU with a 2D grid of thread blocks.
-    ctx.enqueue_function[mandelbrot](
+    ctx.enqueue_function_checked[mandelbrot, mandelbrot](
         out_tensor,
         grid_dim=(COL_BLOCKS, ROW_BLOCKS),
         block_dim=(BLOCK_SIZE, BLOCK_SIZE),
@@ -68,7 +68,7 @@ def main():
 
 
 fn mandelbrot(
-    tensor: LayoutTensor[int_dtype, layout, MutableAnyOrigin],
+    tensor: LayoutTensor[int_dtype, layout, MutAnyOrigin],
 ):
     """The per-element calculation of iterations to escape in the Mandelbrot set.
     """
@@ -82,10 +82,10 @@ fn mandelbrot(
     # Calculate the complex C corresponding to that grid location.
     var cx = MIN_X + col * SCALE_X
     var cy = MIN_Y + row * SCALE_Y
-    var c = ComplexSIMD[float_dtype, 1](cx, cy)
+    var c = ComplexScalar[float_dtype](cx, cy)
 
     # Perform the Mandelbrot iteration loop calculation.
-    var z = ComplexSIMD[float_dtype, 1](0, 0)
+    var z = ComplexScalar[float_dtype](0, 0)
     var iters = Scalar[int_dtype](0)
 
     var in_set_mask = Scalar[DType.bool](True)

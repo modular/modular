@@ -14,7 +14,7 @@
 
 from random import random_ui64
 
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 from utils import IndexList
 
@@ -27,8 +27,8 @@ fn gen_perm() -> IndexList[64]:
     return result
 
 
-def main():
-    alias p = gen_perm()
+def test_issue_1505():
+    comptime p = gen_perm()
 
     # generate random data to prevent that everything gets simplified
     var data1 = SIMD[DType.uint8, 64]()
@@ -104,3 +104,7 @@ def main():
 
     for i in range(64):
         assert_equal(data1[p[i]], data2[i])
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

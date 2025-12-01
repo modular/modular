@@ -17,27 +17,29 @@ from sys.info import CompilationTarget
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from linalg.matmul import GemmShape, KernelConfig
-from linalg.matmul_default import Inner_matmul_default
-from linalg.matmul_i8mm import Inner_matmul_i8mm
-from linalg.matmul_neon import Inner_matmul_neon
-from linalg.matmul_vnni import Inner_matmul_vnni
+from linalg.matmul.cpu.default import Inner_matmul_default
+from linalg.matmul.cpu.i8mm import Inner_matmul_i8mm
+from linalg.matmul.cpu.neon import Inner_matmul_neon
+from linalg.matmul.cpu.vnni import Inner_matmul_vnni
 from linalg.utils import (
+    GemmShape,
     InnerKernelID,
+    KernelConfig,
     get_kernel_config,
     get_matmul_arch_factor,
     select_inner_kernel,
     use_i8mm_fn,
     use_vnni_fn,
 )
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
 from utils import IndexList
 from utils.index import Index
 
-alias M: Int = 64
-alias N: Int = 64
-alias K: Int = 256
+comptime M: Int = 64
+comptime N: Int = 64
+comptime K: Int = 256
 
 
 fn _matmul_inner_loop[
@@ -54,7 +56,7 @@ fn _matmul_inner_loop[
     tile_n_k: IndexList[2],
     skip_boundary_check: Bool,
 ):
-    alias kernel_id = select_inner_kernel[a.type, b_packed.type, c.type]()
+    comptime kernel_id = select_inner_kernel[a.type, b_packed.type, c.type]()
 
     @parameter
     if kernel_id == InnerKernelID.DEFAULT:
@@ -141,27 +143,28 @@ fn test_micro_kernel[
     a_type: DType, b_type: DType, c_type: DType, saturated_vnni: Bool = False
 ](m: Int, n: Int, k: Int) raises:
     print("== test_micro_kernel")
-    alias a_shape = DimList.create_unknown[2]()
-    alias b_shape = DimList.create_unknown[2]()
-    alias c_shape = DimList.create_unknown[2]()
-    alias b_packed_shape = DimList.create_unknown[3]()
+    comptime a_shape = DimList.create_unknown[2]()
+    comptime b_shape = DimList.create_unknown[2]()
+    comptime c_shape = DimList.create_unknown[2]()
+    comptime b_packed_shape = DimList.create_unknown[3]()
 
-    alias config = get_kernel_config[a_type, b_type, c_type]()
-    alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
-    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
-    alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
+    comptime config = get_kernel_config[a_type, b_type, c_type]()
+    comptime use_vnni = use_vnni_fn[a_type, b_type, c_type]()
+    comptime use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+    comptime factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
     var np = align_up(n, config.kernel_cols)
     var kh = align_up(k, factor)
 
-    alias alignment = align_of[SIMD[c_type, config.simd_size]]()
+    comptime alignment = align_of[SIMD[c_type, config.simd_size]]()
 
-    var a_ptr = UnsafePointer[Scalar[a_type], alignment=alignment].alloc(m * k)
-    var b_packed_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(
+    var a_ptr = UnsafePointer[Scalar[a_type],].alloc(m * k, alignment=alignment)
+    var b_packed_ptr = UnsafePointer[Scalar[b_type]].alloc(
         (np // config.kernel_cols)
         * (kh // factor)
-        * (factor * config.kernel_cols)
+        * (factor * config.kernel_cols),
+        alignment=alignment,
     )
-    var c_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(m * n)
+    var c_ptr = UnsafePointer[Scalar[c_type],].alloc(m * n, alignment=alignment)
     var a = NDBuffer[a_type, 2, _, a_shape](a_ptr, Index(m, k))
 
     var b_packed = NDBuffer[b_type, 3, _, config.packed_shape](
@@ -192,19 +195,12 @@ fn kernel_export_dynamic(m: Int, n: Int, k: Int) raises:
     test_micro_kernel[DType.float32, DType.float32, DType.float32](m, n, k)
 
 
-fn main() raises:
+def main():
     test_micro_kernel[DType.float32, DType.float32, DType.float32](M, N, K)
     test_micro_kernel[DType.uint8, DType.int8, DType.int32](M, N, K)
     test_micro_kernel[
         DType.uint8, DType.int8, DType.int32, saturated_vnni=True
     ](M, N, K)
 
-    # TODO(KERN-228): Re-enable after we resolve llvm lowering issues.
-    @parameter
-    if not CompilationTarget.has_neon():
-        test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.bfloat16](
-            M, N, K
-        )
-        test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.float32](
-            M, N, K
-        )
+    test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.bfloat16](M, N, K)
+    test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.float32](M, N, K)

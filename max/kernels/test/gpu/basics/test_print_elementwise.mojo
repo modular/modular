@@ -14,8 +14,7 @@
 from sys import simd_width_of
 
 from algorithm.functional import elementwise
-from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext, get_gpu_target
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
@@ -29,7 +28,7 @@ fn test_elementwise_print[
 ](c01: LayoutTensor[c_type, c_layout], ctx: DeviceContext) raises:
     var M = c01.dim[0]()
     var N = c01.dim[1]() // 2
-    alias simd_width = simd_width_of[
+    comptime simd_width = simd_width_of[
         c_type, target = get_gpu_target["sm_80"]()
     ]()
 
@@ -59,13 +58,13 @@ fn runtime_row_major[
         Layout(IntTuple(UNKNOWN_VALUE, cols), IntTuple(cols, 1))
     ],
 ):
-    return __type_of(res).row_major(IndexList[2]((rows, cols)))
+    return type_of(res).row_major(IndexList[2]((rows, cols)))
 
 
 fn test_dual_matmul[
     N: Int = 512, K: Int = 512
 ](ctx: DeviceContext, M: Int = 512) raises:
-    alias dst_type = DType.float32
+    comptime dst_type = DType.float32
     var layout_c01 = runtime_row_major[2 * N](M)
     var mat_c01 = ManagedLayoutTensor[dst_type](layout_c01, ctx)
     test_elementwise_print(
@@ -76,6 +75,6 @@ fn test_dual_matmul[
     _ = mat_c01^
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_dual_matmul(ctx)

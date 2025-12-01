@@ -17,7 +17,7 @@
 
 
 def main():
-    alias res = test_debug_assert_compile_time()
+    comptime res = test_debug_assert_compile_time()
 
     # CHECK: 33
     print(res)

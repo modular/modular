@@ -13,26 +13,35 @@
 """Provides tracing utilities."""
 
 
-from collections.optional import OptionalReg, Optional
+from collections.optional import Optional, OptionalReg
 from sys import external_call, stderr
 from sys.param_env import env_get_int, is_defined
 
 import gpu.host._tracing as gpu_tracing
+import logger.logger as logger
 from buffer import NDBuffer
+from gpu.host import DeviceContext
+from gpu.host._tracing import Color
 from gpu.host._tracing import _end_range as _end_gpu_range
 from gpu.host._tracing import _is_enabled as _gpu_is_enabled
 from gpu.host._tracing import _is_enabled_details as _gpu_is_enabled_details
 from gpu.host._tracing import _mark as _mark_gpu
 from gpu.host._tracing import _start_range as _start_gpu_range
-from gpu.host._tracing import Color
-from gpu.host import DeviceContext
 from runtime.asyncrt import DeviceContextPtr
 
 from utils import IndexList, Variant
 
+comptime log = logger.Logger[logger.Level.INFO](fd=sys.stderr, prefix="[OP] ")
+
 
 fn get_safe_task_id(ctx: DeviceContextPtr) -> OptionalReg[Int]:
     """Safely extract task_id from DeviceContextPtr, returning None if null/invalid.
+
+    Args:
+        ctx: The device context pointer to extract the task ID from.
+
+    Returns:
+        An OptionalReg containing the task ID if valid, None otherwise.
     """
     # Check if the underlying handle is null
     if not ctx._handle:
@@ -46,6 +55,12 @@ fn get_safe_task_id(ctx: DeviceContextPtr) -> OptionalReg[Int]:
 
 fn get_safe_task_id(ctx: DeviceContext) -> OptionalReg[Int]:
     """Safely extract task_id from DeviceContext, returning None if null/invalid.
+
+    Args:
+        ctx: The device context to extract the task ID from.
+
+    Returns:
+        An OptionalReg containing the task ID if valid, None otherwise.
     """
     return get_safe_task_id(DeviceContextPtr(ctx))
 
@@ -64,14 +79,14 @@ fn _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
 
 @fieldwise_init
 @register_passable("trivial")
-struct TraceCategory(EqualityComparable, Identifiable, Intable):
+struct TraceCategory(Equatable, Identifiable, Intable):
     """An enum-like struct specifying the type of tracing to perform."""
 
-    alias OTHER = Self(0)
-    alias ASYNCRT = Self(1)
-    alias MEM = Self(2)
-    alias Kernel = Self(3)
-    alias MAX = Self(4)
+    comptime OTHER = Self(0)
+    comptime ASYNCRT = Self(1)
+    comptime MEM = Self(2)
+    comptime Kernel = Self(3)
+    comptime MAX = Self(4)
 
     var value: Int
     """The integer value representing the trace category. Used for bitwise operations
@@ -129,14 +144,12 @@ struct TraceCategory(EqualityComparable, Identifiable, Intable):
 
 
 @register_passable("trivial")
-struct TraceLevel(
-    EqualityComparable, Identifiable, ImplicitlyCopyable, Movable
-):
+struct TraceLevel(Comparable, Identifiable, ImplicitlyCopyable, Movable):
     """An enum-like struct specifying the level of tracing to perform."""
 
-    alias ALWAYS = Self(0)
-    alias OP = Self(1)
-    alias THREAD = Self(2)
+    comptime ALWAYS = Self(0)
+    comptime OP = Self(1)
+    comptime THREAD = Self(2)
 
     var value: Int
     """The integer value representing the trace level.
@@ -169,28 +182,16 @@ struct TraceLevel(
         return self.value == rhs.value
 
     @always_inline("nodebug")
-    fn __ne__(self, rhs: Self) -> Bool:
-        """Compares for inequality.
+    fn __lt__(self, rhs: Self) -> Bool:
+        """Performs less than comparison.
 
         Args:
             rhs: The value to compare.
 
         Returns:
-            True if they are not equal.
+            True if this value is less than to `rhs`.
         """
-        return self.value != rhs.value
-
-    @always_inline("nodebug")
-    fn __le__(self, rhs: Self) -> Bool:
-        """Performs less than or equal to comparison.
-
-        Args:
-            rhs: The value to compare.
-
-        Returns:
-            True if this value is less than or equal to `rhs`.
-        """
-        return self.value <= rhs.value
+        return self.value < rhs.value
 
     @always_inline("nodebug")
     fn __is__(self, rhs: Self) -> Bool:
@@ -231,13 +232,13 @@ fn is_profiling_enabled[type: TraceCategory, level: TraceLevel]() -> Bool:
     Returns:
         True if profiling is enabled for the specified type and level.
     """
-    alias kProfilingTypeWidthBits = 3
+    comptime kProfilingTypeWidthBits = 3
 
     @parameter
     if level == TraceLevel.ALWAYS:
         return True
 
-    alias max_profiling_level = _build_info_asyncrt_max_profiling_level()
+    comptime max_profiling_level = _build_info_asyncrt_max_profiling_level()
     if not max_profiling_level:
         return False
 
@@ -289,10 +290,10 @@ fn _is_gpu_profiler_detailed_enabled[
 @always_inline
 fn _is_op_logging_enabled[level: TraceLevel]() -> Bool:
     @parameter
-    if not is_defined["MODULAR_ENABLE_OP_LOGGING"]():
+    if logger.DEFAULT_LEVEL == logger.Level.NOTSET:
         return False
 
-    return level == TraceLevel.OP
+    return level <= TraceLevel.OP
 
 
 @always_inline
@@ -318,11 +319,6 @@ fn _validate_single_tracing_enabled() -> Bool:
 
     # Check GPU profiling
     if _gpu_is_enabled():
-        enabled_count += 1
-
-    # Check op logging
-    @parameter
-    if is_defined["MODULAR_ENABLE_OP_LOGGING"]():
         enabled_count += 1
 
     return enabled_count <= 1
@@ -446,7 +442,7 @@ struct Trace[
         # Debug assert the AsyncRT profiler => StaticString invariant for now,
         # to avoid making this raising.
         debug_assert(
-            is_profiling_disabled[category, level]()
+            is_profiling_disabled[Self.category, Self.level]()
             or _name_value.isa[StaticString](),
             "the AsyncRT profiler only supports `StaticString` names",
         )
@@ -458,7 +454,7 @@ struct Trace[
         )
 
         @parameter
-        if _is_gpu_profiler_enabled[category, level]():
+        if _is_gpu_profiler_enabled[Self.category, Self.level]():
             self._name_value = _name_value^
 
             @parameter
@@ -468,17 +464,17 @@ struct Trace[
                 self.detail = ""
             self.int_payload = None
         elif (
-            is_profiling_enabled[category, level]()
-            or _is_op_logging_enabled[level]()
+            is_profiling_enabled[Self.category, Self.level]()
+            or _is_op_logging_enabled[Self.level]()
         ):
             self._name_value = _name_value^
             self.detail = detail
 
             @parameter
-            if target:
+            if Self.target:
                 if self.detail:
                     self.detail += ";"
-                self.detail += String("target=", target.value())
+                self.detail += String("target=", Self.target.value())
             self.int_payload = task_id
         else:
             self._name_value = StaticString("")
@@ -574,10 +570,21 @@ struct Trace[
         """Enters the trace context.
 
         This begins recording of the trace event.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
-        if _is_gpu_profiler_enabled[category, level]():
+        if _is_op_logging_enabled[Self.level]():
+            # Since Mojo does not support module-level globals yet, we need to
+            # put this atomic counter variable in C++ code.
+            self.event_id = external_call["KGEN_CompilerRT_GetNextOpId", Int]()
+            self._emit_op_log("LAUNCH")
+            return
+
+        @parameter
+        if _is_gpu_profiler_enabled[Self.category, Self.level]():
 
             @parameter
             if _gpu_is_enabled_details():
@@ -590,7 +597,7 @@ struct Trace[
                             self.name(),
                             (String("/", self.detail) if self.detail else ""),
                         ),
-                        category=Int(category),
+                        category=Int(Self.category),
                         color=self.color,
                     )
                 )
@@ -598,22 +605,14 @@ struct Trace[
                 self.event_id = Int(
                     _start_gpu_range(
                         message=self.name(),
-                        category=Int(category),
+                        category=Int(Self.category),
                         color=self.color,
                     )
                 )
             return
 
         @parameter
-        if _is_op_logging_enabled[level]():
-            # Since Mojo does not support module-level globals yet, we need to
-            # put this atomic counter variable in C++ code.
-            self.event_id = external_call["KGEN_CompilerRT_GetNextOpId", Int]()
-            self._emit_op_log("LAUNCH")
-            return
-
-        @parameter
-        if is_profiling_disabled[category, level]():
+        if is_profiling_disabled[Self.category, Self.level]():
             return
 
         # The tracing builtins below expect the string to live beyond begin/end
@@ -672,20 +671,23 @@ struct Trace[
         """Exits the trace context.
 
         This finishes recording of the trace event.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
-        if _is_gpu_profiler_enabled[category, level]():
-            _end_gpu_range(gpu_tracing.RangeID(self.event_id))
-            return
-
-        @parameter
-        if _is_op_logging_enabled[level]():
+        if _is_op_logging_enabled[Self.level]():
             self._emit_op_log("COMPLETE")
             return
 
         @parameter
-        if is_profiling_disabled[category, level]():
+        if _is_gpu_profiler_enabled[Self.category, Self.level]():
+            _end_gpu_range(gpu_tracing.RangeID(self.event_id))
+            return
+
+        @parameter
+        if is_profiling_disabled[Self.category, Self.level]():
             return
         if self.event_id == 0:
             return
@@ -701,10 +703,13 @@ struct Trace[
         """Marks the tracer with the info at the specific point of time.
 
         This creates a point event in the trace timeline rather than a range.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
-        if _is_gpu_profiler_enabled[category, level]():
+        if _is_gpu_profiler_enabled[Self.category, Self.level]():
             var message = self.name()
 
             @parameter
@@ -734,8 +739,8 @@ struct Trace[
 
         @parameter
         if (
-            is_profiling_enabled[category, level]()
-            or _is_gpu_profiler_detailed_enabled[category, level]()
+            is_profiling_enabled[Self.category, Self.level]()
+            or _is_gpu_profiler_detailed_enabled[Self.category, Self.level]()
         ):
             return detail_fn()
         else:
@@ -746,6 +751,9 @@ struct Trace[
         """Start recording trace event.
 
         This begins recording of the trace event, similar to __enter__.
+
+        Raises:
+            If the operation fails.
         """
         self.__enter__()
 
@@ -754,26 +762,28 @@ struct Trace[
         """End recording trace event.
 
         This finishes recording of the trace event, similar to __exit__.
+
+        Raises:
+            If the operation fails.
         """
         self.__exit__()
 
-    fn _emit_op_log(self, action: StaticString) -> None:
+    fn _emit_op_log(self, op_name: StringSlice):
         """
         Emit a log message for op tracing to stderr.
         """
         var detail = self.detail
         if self.int_payload:
-            detail += ":" + String(self.int_payload.value())
-        print(
-            "[OP] "
-            + action
-            + " "
-            + self.name()
-            + " [id="
-            + String(self.event_id)
-            + "] "
-            + detail,
-            file=stderr,
+            detail += String(":", self.int_payload.value())
+        log.info(
+            op_name,
+            " ",
+            self.name(),
+            " [id=",
+            self.event_id,
+            "] ",
+            detail,
+            sep="",
         )
 
 

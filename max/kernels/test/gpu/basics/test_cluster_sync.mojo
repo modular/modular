@@ -13,7 +13,7 @@
 
 from gpu.cluster import block_rank_in_cluster, cluster_sync
 from gpu.host import DeviceContext, Dim
-from gpu.id import cluster_dim
+from gpu import cluster_dim
 
 
 fn test_cluster_sync_kernel():
@@ -37,7 +37,7 @@ fn test_cluster_sync_kernel():
 # CHECK: 7
 fn test_cluster_sync(ctx: DeviceContext) raises:
     print("== test_cluster_sync")
-    alias kernel = test_cluster_sync_kernel
+    comptime kernel = test_cluster_sync_kernel
     ctx.enqueue_function_checked[kernel, kernel](
         grid_dim=(2, 2, 2),
         block_dim=(1),

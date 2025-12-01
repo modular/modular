@@ -22,7 +22,8 @@ import benchmark
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.bmm import batched_matmul
-from linalg.matmul import _matmul_cpu, matmul
+from linalg.matmul import matmul
+from linalg.matmul.cpu import matmul as _matmul_cpu
 from linalg.packing import (
     _pack_b_ndbuffer_impl,
     _pack_matmul_b_shape_func_impl,
@@ -31,13 +32,14 @@ from linalg.packing import (
     pack_transposed_b_ndbuffer,
 )
 from linalg.utils import elementwise_epilogue_type
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal, assert_true
 
 from utils.index import Index, IndexList
 
-alias alignment = 64
-alias some_constant = 20
-alias do_benchmarking = False
+comptime alignment = 64
+comptime some_constant = 20
+comptime do_benchmarking = False
 
 
 @parameter
@@ -109,7 +111,7 @@ def test_matmul[
     k: Int,
     kernel_type_m: Int,
 ) -> Int:
-    var c1_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(m * n)
+    var c1_ptr = UnsafePointer[Scalar[c_type]].alloc(m * n, alignment=alignment)
     var golden = NDBuffer[c_type, 2, _, c_shape](c1_ptr, Index(m, n))
     for i in range(m):
         for j in range(n):
@@ -240,19 +242,19 @@ def test_matmul[
     transpose_b: Bool,
 ](m: Int, n: Int, k: Int):
     print("== test_matmul")
-    var errors = 0
+    var errors: Int
     var kernel_type_m = m if mixed_kernels else 0
-    alias a_shape = DimList.create_unknown[2]()
-    alias b_shape = DimList.create_unknown[2]()
-    alias c_shape = DimList.create_unknown[2]()
+    comptime a_shape = DimList.create_unknown[2]()
+    comptime b_shape = DimList.create_unknown[2]()
+    comptime c_shape = DimList.create_unknown[2]()
 
-    var a_ptr = UnsafePointer[Scalar[a_type], alignment=alignment].alloc(m * k)
-    var b_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(k * n)
+    var a_ptr = UnsafePointer[Scalar[a_type]].alloc(m * k, alignment=alignment)
+    var b_ptr = UnsafePointer[Scalar[b_type]].alloc(k * n, alignment=alignment)
     var b = NDBuffer[b_type, 2, _, b_shape](
         b_ptr, Index(n, k) if transpose_b else Index(k, n)
     )
 
-    var padded_n_k = IndexList[2]()
+    var padded_n_k: IndexList[2]
     if kernel_type_m != 0:
         padded_n_k = _pack_matmul_b_shape_func_impl[
             a_type,
@@ -283,10 +285,10 @@ def test_matmul[
         padded_n_k[0] if b_packed or (not b_packed and transpose_b) else k
     )
 
-    var c0_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(m * n)
+    var c0_ptr = UnsafePointer[Scalar[c_type]].alloc(m * n, alignment=alignment)
 
-    var bp_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(
-        padded_k * padded_n
+    var bp_ptr = UnsafePointer[Scalar[b_type]].alloc(
+        padded_k * padded_n, alignment=alignment
     )
 
     var bp = NDBuffer[b_type, 2, _, DimList.create_unknown[2]()](
@@ -490,8 +492,8 @@ def test_batched_matmul[
     n: Int,
     k: Int,
 ):
-    var golden_ptr = UnsafePointer[Scalar[c.type], alignment=alignment].alloc(
-        batches * m * n
+    var golden_ptr = UnsafePointer[Scalar[c.type]].alloc(
+        batches * m * n, alignment=alignment
     )
     var golden = NDBuffer[c.type, 3](golden_ptr, Index(batches, m, n))
 
@@ -602,18 +604,18 @@ def test_batched_matmul[
 
 
 def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int):
-    alias c_type = DType.float32
-    alias a_type = DType.float32
-    alias b_type = DType.float32
+    comptime c_type = DType.float32
+    comptime a_type = DType.float32
+    comptime b_type = DType.float32
 
-    var c_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(
-        batch * m * n
+    var c_ptr = UnsafePointer[Scalar[c_type]].alloc(
+        batch * m * n, alignment=alignment
     )
-    var a_ptr = UnsafePointer[Scalar[a_type], alignment=alignment].alloc(
-        batch * m * k
+    var a_ptr = UnsafePointer[Scalar[a_type]].alloc(
+        batch * m * k, alignment=alignment
     )
-    var b_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(
-        batch * k * n
+    var b_ptr = UnsafePointer[Scalar[b_type]].alloc(
+        batch * k * n, alignment=alignment
     )
 
     var c = NDBuffer[c_type, 3](c_ptr, Index(batch, m, n))

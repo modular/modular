@@ -11,20 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import (
-    assert_equal,
-    assert_false,
-    assert_true,
-)
+from testing import assert_equal, assert_false, assert_true, TestSuite
 
-alias nan = FloatLiteral.nan
-alias neg_zero = FloatLiteral.negative_zero
-alias inf = FloatLiteral.infinity
-alias neg_inf = FloatLiteral.negative_infinity
+comptime nan = FloatLiteral.nan
+comptime neg_zero = FloatLiteral.negative_zero
+comptime inf = FloatLiteral.infinity
+comptime neg_inf = FloatLiteral.negative_infinity
 
 
 def test_init():
-    alias n: IntLiteral[(4).value] = 4
+    comptime n: IntLiteral[(4).value] = 4
     assert_equal(4.0, FloatLiteral(n))
 
 
@@ -176,12 +172,4 @@ def test_float_conversion():
 
 
 def main():
-    test_init()
-    test_division()
-    test_mod()
-    test_int_conversion()
-    test_bool()
-    test_is_special_value()
-    test_abs()
-    test_comparison()
-    test_float_conversion()
+    TestSuite.discover_tests[__functions_in_module()]().run()

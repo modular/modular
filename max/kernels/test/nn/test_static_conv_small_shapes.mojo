@@ -11,13 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# Use `kgen --emit-asm %s -o %t.asm` to exam the assembly code.
+# Use `kgen --emit=asm %s -o %t.asm` to exam the assembly code.
 
 from math import ceildiv
 from sys.info import simd_width_of
 
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from layout import IntTuple, LayoutTensor, Layout, RuntimeLayout
 from nn.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv_utils import (
     ConvShape,
@@ -27,51 +26,53 @@ from nn.conv_utils import (
 
 from utils.index import Index
 
-alias N = 1
-alias H = 14
-alias W = 14
-alias C = 8
-alias R = 3
-alias S = 3
-alias F = 8
-alias stride_h = 1
-alias stride_w = 1
-alias pad_left = 1
-alias pad_right = 1
-alias pad_top = 1
-alias pad_bottom = 1
-alias dilation_h = 1
-alias dilation_w = 1
-alias HO = (H + pad_left + pad_right - dilation_h * (R - 1) - 1) // stride_h + 1
-alias WO = (W + pad_top + pad_bottom - dilation_w * (S - 1) - 1) // stride_w + 1
-alias num_groups = 1
+comptime N = 1
+comptime H = 14
+comptime W = 14
+comptime C = 8
+comptime R = 3
+comptime S = 3
+comptime F = 8
+comptime stride_h = 1
+comptime stride_w = 1
+comptime pad_left = 1
+comptime pad_right = 1
+comptime pad_top = 1
+comptime pad_bottom = 1
+comptime dilation_h = 1
+comptime dilation_w = 1
+comptime HO = (
+    H + pad_left + pad_right - dilation_h * (R - 1) - 1
+) // stride_h + 1
+comptime WO = (
+    W + pad_top + pad_bottom - dilation_w * (S - 1) - 1
+) // stride_w + 1
+comptime num_groups = 1
 
-alias conv_attr = ConvInfoStatic[2](
-    DimList(pad_bottom, pad_left, pad_top, pad_right),
-    DimList(stride_h, stride_w),
-    DimList(dilation_h, dilation_w),
-    Dim(num_groups),
+comptime conv_attr = ConvInfoStatic[2](
+    IntTuple(pad_bottom, pad_left, pad_top, pad_right),
+    IntTuple(stride_h, stride_w),
+    IntTuple(dilation_h, dilation_w),
+    num_groups,
 )
 
-alias value_type = DType.float32
-alias simd_size = simd_width_of[value_type]()
-alias micro_kernel_shape = get_micro_kernel_shape[
+comptime value_type = DType.float32
+comptime simd_size = simd_width_of[value_type]()
+comptime micro_kernel_shape = get_micro_kernel_shape[
     2, WO, F, conv_attr, simd_size
 ]()
 # alias micro_kernel_width = get_direct_conv_micro_kernel_width()
-alias micro_kernel_f_size = micro_kernel_shape[1] * simd_size
-alias num_micro_tile = ceildiv(F, micro_kernel_f_size)
+comptime micro_kernel_f_size = micro_kernel_shape[1] * simd_size
+comptime num_micro_tile = ceildiv(F, micro_kernel_f_size)
 
 
 @export(ABI="C")
 fn static_conv(
-    output: NDBuffer[mut=True, value_type, 4, _, DimList(N, HO, WO, F)],
-    input: NDBuffer[value_type, 4, _, DimList(N, H, W, C)],
-    filter: NDBuffer[
+    output: LayoutTensor[mut=True, value_type, Layout.row_major(N, HO, WO, F)],
+    input: LayoutTensor[value_type, Layout.row_major(N, H, W, C)],
+    filter: LayoutTensor[
         value_type,
-        5,
-        _,
-        DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
+        Layout.row_major(num_micro_tile, R, S, C, micro_kernel_f_size),
     ],
 ):
     var conv_shape = ConvShape[2](
@@ -96,15 +97,12 @@ fn static_conv(
 
     try:
         ConvDirectNHWC[
-            4,
-            5,
-            4,
+            Layout.row_major(N, H, W, C),
+            Layout.row_major(num_micro_tile, R, S, C, micro_kernel_f_size),
+            Layout.row_major(N, HO, WO, F),
             _,
             _,
             _,
-            DimList(N, H, W, C),
-            DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
-            DimList(N, HO, WO, F),
             value_type,
             value_type,
             value_type,
@@ -122,24 +120,22 @@ def test_static_conv():
     var output_stack = InlineArray[Scalar[value_type], N * HO * WO * F](
         uninitialized=True
     )
-    var output = NDBuffer[value_type, 4, _, DimList(N, HO, WO, F)](output_stack)
+    var output = LayoutTensor[value_type, Layout.row_major(N, HO, WO, F)](
+        output_stack
+    ).fill(0.0)
     var input_stack = InlineArray[Scalar[value_type], N * H * W * C](
         uninitialized=True
     )
-    var input = NDBuffer[value_type, 4, _, DimList(N, H, W, C)](input_stack)
+    var input = LayoutTensor[value_type, Layout.row_major(N, H, W, C)](
+        input_stack
+    ).fill(1.0)
     var filter_stack = InlineArray[
         Scalar[value_type], num_micro_tile * R * S * C * micro_kernel_f_size
     ](uninitialized=True)
-    var filter = NDBuffer[
+    var filter = LayoutTensor[
         value_type,
-        5,
-        _,
-        DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
-    ](filter_stack)
-
-    output.fill(0.0)
-    input.fill(1.0)
-    filter.fill(1.0)
+        Layout.row_major(num_micro_tile, R, S, C, micro_kernel_f_size),
+    ](filter_stack).fill(1.0)
 
     static_conv(output, input, filter)
 

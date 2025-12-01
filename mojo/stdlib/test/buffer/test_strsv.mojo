@@ -12,8 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer
+from memory import LegacyUnsafePointer as UnsafePointer
+from testing import TestSuite
 
-alias simd_width = 8
+comptime simd_width = 8
 
 
 fn strsv[
@@ -27,7 +29,7 @@ fn strsv[
     var L_ptr = UnsafePointer[Float32](L.data)
     var n: Int = size
     var x_solved = NDBuffer[
-        DType.float32, 1, MutableAnyOrigin, simd_width * simd_width
+        DType.float32, 1, MutAnyOrigin, simd_width * simd_width
     ].stack_allocation[alignment=64]()
 
     while True:
@@ -97,16 +99,16 @@ fn naive_strsv[
 
 
 # CHECK-LABEL: test_strsv
-fn test_strsv():
+def test_strsv():
     print("== test_strsv")
 
-    alias size: Int = 64
+    comptime size: Int = 64
     var l_stack = InlineArray[Float32, size * size](uninitialized=True)
-    var L = NDBuffer[DType.float32, 1, _, size * size](l_stack)
+    var L = NDBuffer[DType.float32, 1, _, size * size](l_stack.unsafe_ptr())
     var x0_stack = InlineArray[Float32, size * size](uninitialized=True)
-    var x0 = NDBuffer[DType.float32, 1, _, size](x0_stack)
+    var x0 = NDBuffer[DType.float32, 1, _, size](x0_stack.unsafe_ptr())
     var x1_stack = InlineArray[Float32, size * size](uninitialized=True)
-    var x1 = NDBuffer[DType.float32, 1, _, size](x1_stack)
+    var x1 = NDBuffer[DType.float32, 1, _, size](x1_stack.unsafe_ptr())
 
     fill_L[size](L)
     fill_x[size](x0)
@@ -122,5 +124,5 @@ fn test_strsv():
     print(err)
 
 
-fn main():
-    test_strsv()
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

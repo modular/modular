@@ -14,6 +14,7 @@
 from math import inf, isinf, isnan
 
 from testing import assert_equal, assert_raises, assert_true
+from testing import TestSuite
 
 
 def test_basic_parsing():
@@ -92,8 +93,8 @@ def test_error_cases():
         _ = atof("47421763.548648646474532187448684")
 
 
-alias T = Tuple[Float64, String]
-alias numbers_to_test = [
+comptime T = Tuple[Float64, String]
+comptime numbers_to_test = [
     T(5e-324, "5e-324"),  # smallest value possible with float64
     T(1e-309, "1e-309"),  # subnormal float64
     T(84.5e-309, "84.5e-309"),  # subnormal float64
@@ -137,7 +138,7 @@ alias numbers_to_test = [
 
 
 def test_atof_generate_cases():
-    for number, number_as_str in numbers_to_test:
+    for number, number_as_str in materialize[numbers_to_test]():
         for suffix in ["", "f", "F"]:
             for exponent in ["e", "E"]:
                 for multiplier in ["", "-"]:
@@ -152,11 +153,4 @@ def test_atof_generate_cases():
 
 
 def main():
-    test_basic_parsing()
-    test_scientific_notation()
-    test_nan_and_inf()
-    test_leading_decimal()
-    test_trailing_f()
-    test_large_exponents()
-    test_error_cases()
-    test_atof_generate_cases()
+    TestSuite.discover_tests[__functions_in_module()]().run()

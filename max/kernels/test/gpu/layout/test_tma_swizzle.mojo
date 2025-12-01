@@ -15,15 +15,14 @@ from sys import size_of
 
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, thread_idx
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu import block_idx, thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import arange, random
 from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 
 from utils.index import Index, IndexList
 
@@ -36,25 +35,25 @@ fn tma_swizzle_load_kernel[
     tile_layout: Layout,
     desc_layout: Layout,
 ](
-    dst: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    dst: LayoutTensor[dtype, layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, tile_layout, desc_layout],
 ):
-    alias tileM = tile_layout.shape[0].value()
-    alias tileN = tile_layout.shape[1].value()
-    alias expected_bytes = tile_layout.size() * size_of[dtype]()
+    comptime tileM = tile_layout.shape[0].value()
+    comptime tileN = tile_layout.shape[1].value()
+    comptime expected_bytes = tile_layout.size() * size_of[dtype]()
 
     tile = LayoutTensor[
         dtype,
         tile_layout,
-        MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -64,13 +63,13 @@ fn tma_swizzle_load_kernel[
         tma_tile.async_copy(
             tile,
             mbar[0],
-            (UInt(block_idx.x * tileN), UInt(block_idx.y * tileM)),
+            (UInt(block_idx.x * UInt(tileN)), UInt(block_idx.y * UInt(tileM))),
         )
     # Ensure all threads sees initialized mbarrier
     barrier()
     mbar[0].wait()
 
-    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
+    dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
 
     if thread_idx.x == 0:
         dst_tile.copy_from(tile)
@@ -87,7 +86,7 @@ def test_tma_swizzle[
         shape == tile_shape, "Only support same shape and tile shape."
     ]()
 
-    alias layout = Layout.row_major(shape[0], shape[1])
+    comptime layout = Layout.row_major(shape[0], shape[1])
     var src = ManagedLayoutTensor[dtype, layout](ctx)
     var dst = ManagedLayoutTensor[dtype, layout](ctx)
 
@@ -100,37 +99,35 @@ def test_tma_swizzle[
         arange(dst.tensor[update=False](), 0)
 
     var tma_tensor = create_tma_tile[
-        dtype,
-        2,
         tile_shape,
         swizzle_mode=swizzle_mode,
         is_k_major=is_k_major,
     ](ctx, src.device_tensor())
 
     # print test info
-    alias use_multiple_loads = (
+    comptime use_multiple_loads = (
         tma_tensor.layout.size() > tma_tensor.desc_layout.size()
     )
-    alias test_name = "test " + String(dtype) + (
+    comptime test_name = "test " + String(dtype) + (
         " multiple " if use_multiple_loads else " single "
     ) + "tma w/ " + String(swizzle_mode) + " k-major " + String(is_k_major)
     print(test_name)
 
     # Descriptor tile is the copy per tma instruction. One load could have multiple tma copies.
-    alias descM = __type_of(tma_tensor).desc_layout.shape[0].value()
-    alias descN = __type_of(tma_tensor).desc_layout.shape[1].value()
-    alias desc_tile_size = descM * descN
+    comptime descM = type_of(tma_tensor).desc_layout.shape[0].value()
+    comptime descN = type_of(tma_tensor).desc_layout.shape[1].value()
+    comptime desc_tile_size = descM * descN
     desc_tile = LayoutTensor[
-        dtype, __type_of(tma_tensor).desc_layout, MutableAnyOrigin
+        dtype, type_of(tma_tensor).desc_layout, MutAnyOrigin
     ].stack_allocation()
 
-    alias kernel = tma_swizzle_load_kernel[
-        __type_of(tma_tensor).dtype,
+    comptime kernel = tma_swizzle_load_kernel[
+        type_of(tma_tensor).dtype,
         layout,
-        __type_of(tma_tensor).layout,
-        __type_of(tma_tensor).desc_layout,
+        type_of(tma_tensor).layout,
+        type_of(tma_tensor).desc_layout,
     ]
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(shape[1] // tile_shape[1], shape[0] // tile_shape[0]),
@@ -140,7 +137,7 @@ def test_tma_swizzle[
     src_host = src.tensor()
     dst_host = dst.tensor()
 
-    alias swizzle = make_swizzle[dtype, swizzle_mode]()
+    comptime swizzle = make_swizzle[dtype, swizzle_mode]()
 
     dst_tile_ptr = dst_host.ptr
     for desc_tile_m in range(shape[0] // descM):

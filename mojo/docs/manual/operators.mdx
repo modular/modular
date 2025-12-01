@@ -41,7 +41,7 @@ operators from the highest precedence to the lowest precedence.
 | `x[index]`, `x[index:index]` | Subscripting, slicing | Left to right |
 | `**` | Exponentiation | Right to left |
 | `+x`, `-x`, `~x` | Positive, negative, bitwise NOT | Right to left |
-| `*`, `@`, `/`, `//`, `%` | Multiplication, matrix, division, floor division, remainder | Left to right |
+| `*`, `@`, `/`, `//`, `%` | Multiplication, matrix multiplication, division, floor division, remainder | Left to right |
 | `+`, `–` | Addition and subtraction | Left to right |
 | `<<`, `>>` | Shifts | Left to right |
 | `&` | Bitwise AND | Left to right |
@@ -141,7 +141,7 @@ var j_uint: UInt = 8
 sum_uint = i_uint + j_uint  # Result is type UInt
 print("UInt sum:", sum_uint)
 
-sum_mixed = a_int + i_uint  # Result is type Int
+sum_mixed = a_int + Int(i_uint)  # Result is type Int
 print("Mixed sum:", sum_mixed)
 
 quotient_int = a_int / b_int  # Result is type Float64
@@ -212,7 +212,7 @@ result = i8 * f64
 ```
 
 ```output
-error: invalid call to '__mul__': could not deduce parameter 'type' of parent struct 'SIMD'
+error: invalid call to '__mul__': failed to infer parameter 'type' of parent struct 'SIMD'
     result = i8 * f64
              ~~~^~~~~
 ```
@@ -244,7 +244,8 @@ print("simd7:", simd7)
 
 ```output
 simd6: [-2.2, 6.6, -13.200001, 22.0]
-simd7: [1, 5, 1, 9]```
+simd7: [1, 5, 1, 9]
+```
 
 One exception is that the exponentiation operator, `**`, is overloaded so that
 you can specify an `Int` type exponent. All values in the `SIMD` are
@@ -340,7 +341,6 @@ There are three operators related to division:
     Result int32: [5, -6, 7, -8]
     ```
 
-
 #### `IntLiteral` and `FloatLiteral` values
 
 [`IntLiteral`](/mojo/stdlib/builtin/int_literal/IntLiteral) and
@@ -390,66 +390,45 @@ Mojo supports a standard set of comparison operators: `==`, `!=`, `<`, `<=`,
 `>`, and `>=`. However their behavior depends on the type of values being
 compared.
 
+The remainder of this section describes numerical comparison operators. String
+comparisons are discussed in the [String operators](#string-operators). Several
+other types in the Mojo standard library support various comparison operators,
+in particular the "equal" and "not equal" comparisons. Consult the
+[API documentation](/mojo/lib) for a type to determine whether any comparison
+operators are supported.
+
+#### `Bool`-returning comparisons
+
+These comparisons return a single `Bool` value:
+
 - `Int`, `UInt`, `IntLiteral`, and any type that can be implicitly converted to
   `Int` or `UInt` do standard numerical comparison with a `Bool` result.
-- Two `SIMD` values can be compared only if they are the same `DType` and size.
-  (If you need to compare two `SIMD` values of different types, you can
-  explicitly convert a value so that they have the same type either by invoking
-  its [`cast()`](/mojo/stdlib/builtin/simd/SIMD#cast) method or by passing it as
-  an argument to the constructor of the target type.) Mojo performs elementwise
-  comparison with a `SIMD[DType.bool]` result. For example:
+- Equality operators (`==` and `!=`) with multi-element `SIMD` values return a
+  `Bool` result using reduction semantics. The comparison is `True` only if it's
+  true for all corresponding elements. For example:
 
     ```mojo
-    simd1 = SIMD[DType.int16, 4](-1, 2, -3, 4)
-    simd2 = SIMD[DType.int16, 4](0, 1, 2, 3)
-    simd3 = simd1.gt(simd2)  # SIMD[DType.bool, 4]
-    print(simd3)
+    simd8 = SIMD[DType.int32, 4](1, 2, 3, 2)
+    simd9 = SIMD[DType.int32, 4](1, 2, 4, 2)
+    print("simd8 == simd9:", simd8 == simd9)  # False (element 2 differs)
+    print("simd8 != simd9:", simd8 != simd9)  # True (not all elements equal)
     ```
 
     ```output
-    [False, True, False, True]
+    simd8 == simd9: False
+    simd8 != simd9: True
     ```
 
-- An integral type `SIMD` can be compared to an `IntLiteral`, `Int`, `UInt`, or
-  any type that can be implicitly converted to `Int` or `UInt`. Mojo performs
-  elementwise comparison against the value provided and produces a
-  `SIMD[DType.bool]` result. For example:
-
-    ```mojo
-    simd4 = SIMD[DType.int16, 4](-1, 2, -3, 4)
-    simd5 = simd4 > 2  # SIMD[DType.bool, 4]
-    print(simd5)
-    ```
-
-    ```output
-    [False, False, False, True]
-    ```
-
-- A floating point type `SIMD` can be compared to a `FloatLiteral`,
-  `IntLiteral`, `Int`, `UInt`, or any type that can be implicitly converted to
-  `Int` or `UInt`. Mojo performs elementwise comparison against the value
-  provided and produces a `SIMD[DType.bool]` result. For example:
-
-    ```mojo
-    simd6 = SIMD[DType.float32, 4](1.1, -2.2, 3.3, -4.4)
-    simd7 = simd6 > 0.5  # SIMD[DType.bool, 4]
-    print(simd7)
-    ```
-
-    ```output
-    [True, False, True, False]
-    ```
-
-- `Scalar` values are simply aliases for single-element `SIMD` vectors.
-  Therefore, the same restrictions apply against comparing different types. In
-  other words, you can't compare a `Float16` value to a `Float32` value unless
-  you convert the values to the same type. You can convert a `Scalar` value by
-  passing it as an argument to the constructor of the target type:
+- Inequality operators (`<`, `<=`, `>`, `>=`) with multi-element `SIMD` values
+  are not supported. These operators only work with scalar (single-element)
+  `SIMD` values.
+- `Scalar` values are simply aliases for single-element `SIMD` vectors and
+  support all comparison operators with `Bool` results:
 
     ```mojo
     var float1: Float16 = 12.345         # SIMD[DType.float16, 1]
     var float2: Float32 = 0.5            # SIMD[DType.float32, 1]
-    result = Float32(float1) > float2    # Result is SIMD[DType.bool, 1]
+    result = Float32(float1) > float2    # Result is Bool
     print(result)
     ```
 
@@ -457,25 +436,53 @@ compared.
     True
     ```
 
-    :::note
+#### Elementwise comparisons
 
-    Note that the result of comparing a `Scalar` value is a `SIMD[DType.bool, 1]`,
-    which is not the same as a `Bool` value. However, `SIMD` values of size
-    1 implement the `Boolable` trait, which provides for implicit conversion to
-    a `Bool` value when used in a boolean expression.
+For elementwise comparisons that return a `SIMD[DType.bool]` result, use the
+comparison methods: `eq()`, `ne()`, `lt()`, `le()`, `gt()`, and `ge()`. These
+methods work with both `SIMD`-to-`SIMD` and `SIMD`-to-scalar comparisons. Here
+are examples showing all six elementwise comparison methods:
 
-    :::
+    ```mojo
+    simd8 = SIMD[DType.int32, 4](1, 2, 3, 2)
+    simd9 = SIMD[DType.int32, 4](1, 2, 4, 2)
 
-- `String` and `StringLiteral` values can be compared using standard
-  lexicographical ordering, producing a `Bool`. (For example, "Zebra" is treated
-  as less than "ant" because upper case letters occur before lower case letters
-  in the character encoding.) String comparisons are discussed further in the
-  [String operators](#string-operators) section below.
+    print("simd8.eq(simd9):", simd8.eq(simd9))    # Equal
+    print("simd8.ne(simd9):", simd8.ne(simd9))    # Not equal
+    print("simd8.lt(simd9):", simd8.lt(simd9))    # Less than
+    print("simd8.le(simd9):", simd8.le(simd9))    # Less than or equal
+    print("simd8.gt(simd9):", simd8.gt(simd9))    # Greater than
+    print("simd8.ge(simd9):", simd8.ge(simd9))    # Greater than or equal
+    ```
 
-Several other types in the Mojo standard library support various comparison
-operators, in particular the equality and inequality comparisons. Consult the
-[API documentation](/mojo/lib) for a type to determine whether any comparison
-operators are supported.
+    ```output
+    simd8.eq(simd9): [True, True, False, True]
+    simd8.ne(simd9): [False, False, True, False]
+    simd8.lt(simd9): [False, False, True, False]
+    simd8.le(simd9): [True, True, True, True]
+    simd8.gt(simd9): [False, False, False, False]
+    simd8.ge(simd9): [True, True, False, True]
+    ```
+
+    You can also use these methods for `SIMD`-to-scalar comparisons:
+
+    ```mojo
+    simd4 = SIMD[DType.int16, 4](-1, 2, -3, 4)
+    simd5 = simd4.gt(2)  # SIMD[DType.bool, 4]
+    print("simd4.gt(2):", simd5)
+
+    simd6 = SIMD[DType.float32, 4](1.1, -2.2, 3.3, -4.4)
+    simd7 = simd6.gt(0.5)  # SIMD[DType.bool, 4]
+    print("simd6.gt(0.5):", simd7)
+    ```
+
+    ```output
+    simd4.gt(2): [False, False, False, True]
+    simd6.gt(0.5): [True, False, True, False]
+    ```
+
+Use elementwise comparison methods when you need to compare each element
+individually and work with the resulting boolean mask for further processing.
 
 ### String operators
 
@@ -679,7 +686,7 @@ slice in the form `[start:end]` returns a substring starting with the character
 index specified by `start` and continuing up to but not including the character
 at index `end`. You can use positive or negative indexing for both the start and
 end values. Omitting `start` is the same as specifying `0`, and omitting `end`
-is the same as specifying 1 plus the length of the string.
+is the same as specifying the length of the string.
 
 ```mojo
 var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" # String type value
@@ -833,7 +840,7 @@ struct MyType(Movable, Copyable):
     def __bool__(self) -> Bool:
         return self.val > 0
 
-    def __merge_with__[other_type: __type_of(Int)](self) -> Int:
+    def __merge_with__[other_type: type_of(Int)](self) -> Int:
         return Int(self.val)
 
 def main():
@@ -993,20 +1000,21 @@ comparison.
 
 There are two traits associated with the comparison dunder methods. A type that
 implements the [`Comparable`](/mojo/stdlib/builtin/comparable/Comparable) trait
-must define all of the comparison methods. However, some types don't have a
-natural ordering (for example, complex numbers). For those types you can decide
-to implement the
-[`EqualityComparable`](/mojo/stdlib/builtin/equality_comparable/EqualityComparable)
-trait, which requires defining only the equality and inequality comparison
-methods.
+defines all of the comparison methods, and authors are required to implement at
+least the "less-than" and "equal" methods, since the trait provides defaults
+for the rest. However, some types don't have a natural ordering (for example,
+complex numbers). For those types you can decide to implement the
+[`Equatable`](/mojo/stdlib/builtin/equality_comparable/Equatable)
+trait, which defines only the "equal" and "not equal" comparison methods, with
+"equal" being required to implement by conforming structs.
 
 The supported comparison operators and their corresponding methods are shown in
 the table below.
 
 | **Operator** | **Dunder method** |
 | ------------ | ----------------- |
-| `==` equality | `__eq__()` |
-| `!=` inequality | `__ne__()` |
+| `==` equal | `__eq__()` |
+| `!=` not equal | `__ne__()` |
 | `<` less than | `__lt__()` |
 | `<=` less than or equal | `__le__()` |
 | `>` greater than | `__gt__()` |
@@ -1014,7 +1022,7 @@ the table below.
 
 :::note
 
-The `Comparable` and `EqualityComparable` traits don't allow the comparison
+The `Comparable` and `Equatable` traits don't allow the comparison
 dunder methods to raise errors. Because using `def` to define a method implies
 that it can raise an error, you must use `fn` to implement the comparison
 methods declared by these traits. See [Functions](/mojo/manual/functions) for
@@ -1024,32 +1032,22 @@ more information on the differences between defining functions with `def` and
 :::
 
 As an example, consider implementing support for all of the comparison operator
-dunder methods for a custom `MyInt` struct.
+dunder methods for a custom `MyInt` struct by relying on the default
+implementations provided by the `Comparable` (and transitively the
+`Equatable`) traits.
 
 ```mojo
 @fieldwise_init
-struct MyInt(
-    Comparable
-):
+struct MyInt(Comparable):
     var value: Int
 
     fn __eq__(self, rhs: MyInt) -> Bool:
         return self.value == rhs.value
 
-    fn __ne__(self, rhs: MyInt) -> Bool:
-        return self.value != rhs.value
-
     fn __lt__(self, rhs: MyInt) -> Bool:
         return self.value < rhs.value
 
-    fn __le__(self, rhs: MyInt) -> Bool:
-        return self.value <= rhs.value
-
-    fn __gt__(self, rhs: MyInt) -> Bool:
-        return self.value > rhs.value
-
-    fn __ge__(self, rhs: MyInt) -> Bool:
-        return self.value >= rhs.value
+    # `__ne__`, `__le__`, `__gt__`, and `__ge__` have default implementations.
 ```
 
 ### Membership operator dunder methods
@@ -1059,6 +1057,19 @@ The `in` and `not in` operators depend on a type implementing the
 `Dict`, and `Set`) implement this method. It should accept the right-hand side
 value as an argument and return a `Bool` indicating whether the value is present
 in the collection or not.
+
+### Identity operator dunder methods
+
+The `is` and `is not` operators compare the identity of two values.
+
+When a type conforms to [`Identifiable`](https://docs.modular.com/mojo/stdlib/builtin/identifiable/Identifiable),
+these operators call the [`__is__()`](https://docs.modular.com/mojo/stdlib/builtin/identifiable/Identifiable/#__is__)
+method to determine whether the left-hand operand has the same identity as the right-hand operand. For example,
+you might compare raw values or use some other way to establish what "identity" means in your work.
+
+The `is not` operator uses the automatically provided
+[`__isnot__()`](https://docs.modular.com/mojo/stdlib/builtin/identifiable/Identifiable/#__isnot__) method, which
+returns the logical negation of `__is__()`.
 
 ### Subscript and slicing dunder methods
 
@@ -1588,7 +1599,7 @@ c4 /= 2.0 => (1.702247191011236 - 0.6235955056179775i)
 
 The field of complex numbers is not an ordered field, so it doesn't make sense
 for us to implement the `Comparable` trait and the `>`, `>=`, `<`, and `<=`
-operators. However, we can implement the `EqualityComparable` trait and the `==`
+operators. However, we can implement the `Equatable` trait and the `==`
 and `!=` operators. (Of course, this suffers the same limitation of comparing
 floating point numbers for equality because of the limited precision of
 representing floating point numbers when performing arithmetic operations. But
@@ -1596,7 +1607,7 @@ we'll go ahead and implement the operators for completeness.)
 
 ```mojo
 struct Complex(
-    EqualityComparable,
+    Equatable,
     Formattable,
     Stringable,
 ):
@@ -1610,7 +1621,7 @@ struct Complex(
 
 :::note
 
-The `EqualityComparable` trait doesn't allow the `__eq__()` and `__ne__()`
+The `Equatable` trait doesn't allow the `__eq__()` and `__ne__()`
 methods to raise errors. Because defining a method with `def` implies that it
 can raise an error, we instead have to define these methods with `fn`. See
 [Functions](/mojo/manual/functions) for more information on the differences

@@ -87,10 +87,12 @@ uninitialized, the code won't compile.)
 
 :::
 
-Once you have a constructor, you can create an instance of `MyPair` and set the
-fields:
+## Constructing a struct type
 
-```mojo
+Once you have a constructor, with `__init__` or using `@fieldwise_init`, 
+you can create an instance of `MyPair` and set the fields:
+
+```mojo title="Construct an instance"
 var mine = MyPair(2, 4)
 print(mine.first)
 ```
@@ -99,48 +101,131 @@ print(mine.first)
 2
 ```
 
+Initializer lists make it simple to construct instances without spelling out the type name.
+For example, here's the standard way to call a function:
+
+```mojo title="Calling a function"
+def process_pair(pair: MyPair):
+    ...
+
+process_pair(MyPair(2, 4))
+```
+
+Because `process_pair` expects a `MyPair` instance, Mojo infers that
+from context. Use braces to construct the instance with an initializer
+list:
+
+```mojo title="Using an initializer list"
+process_pair({2, 4})
+```
+
+Initializer lists support all Mojo argument styles, including keyword
+arguments. For example:
+
+```mojo title="Initializer lists with a keyword argument"
+def utility_function(argument: CustomType):
+    ...
+
+utility_function(CustomType(0.5, fish="swordfish"))
+
+...is equivalent to...
+
+utility_function({0.5, fish="swordfish"})
+```
+
+The result is concise, and both calls are functionally identical in the
+preceding example.
+
+You can also update declared instances with initializer lists.
+Mojo knows the variable's type. For example:
+
+```mojo title="Reassignment with initializer lists"
+# Construct a new instance
+myCustomType = CustomType(0.5, fish="swordfish")
+
+# Use the instance
+...
+
+# Update the instance before further use
+myCustomType = {0.7, fish="salmon"}
+```
+
 ## Making a struct copyable and movable
 
-Mojo structs are not copyable or movable by default. For example, the following
-code produces an error:
+Mojo structs are not copyable or movable by default.
+
+For example, the following code produces errors:
 
 ```mojo
 var a = MyPair(1, 2)
-var b = a  # 'MyPair' is not copyable because it has no '__copyinit__'mojo
+
+# Implicit copy
+var b = a  # value of type 'MyPair' is not implicitly copyable, it does not
+           # conform to 'ImplicitlyCopyable'
+
+# Explicit copy
+var c = a.copy()  # 'MyPair' value has no attribute 'copy'
+
+# Move
+var d = a^  #  value of type 'MyPair' cannot be copied or moved; consider
+            # conforming it to 'Movable'
+
 ```
 
-Making a struct copyable and movable requires two more special methods, the copy
-constructor, `__copyinit__()` and the move constructor, `__moveinit__()`.
-For most cases, you won't have to write your own copy and move constructors
-because you can make your struct copyable and movable using
-[traits](/mojo/manual/traits).
+In most cases, you can make a struct copyable and movable just by adding the
+appropriate [traits](/mojo/manual/traits).
 
-- To make a struct copyable, add the `Copyable` trait:
+### Copyability
+
+To make a struct copyable, add the `Copyable` trait:
 
   ```mojo
   struct MyPair(Copyable):
-  ...
+    ...
   ```
 
-  Mojo will generate a copy constructor for you. You don't need to write your
-  own `__copyinit__()` method unless you need custom logic in the copy
-  constructor—for example, if your struct dynamically allocates memory. For more
-  information, see the section on
-  [copy constructors](/mojo/manual/lifecycle/life#copy-constructor).
+In most cases, that's all you need to do. Mojo will generate a copy constructor
+( `__copyinit__()` method) for you. You don't need to write your own unless you
+need custom logic in the copy constructor—for example, if your struct
+dynamically allocates memory. For more information, see the section on
+[copy constructors](/mojo/manual/lifecycle/life#copy-constructor).
 
-- To make a struct movable, add the `Movable` trait:
+The `Copyable` trait also supplies the `copy()` method, which
+provides a more user-friendly way to copy a value than invoking the
+copy constructor directly.
+
+### Implicit copyability
+
+To make a struct implicitly copyable, add the `ImplicitlyCopyable` trait:
+
+```mojo
+struct MyPair(ImplicitlyCopyable):
+    ...
+```
+
+`ImplicitlyCopyable` automatically implies `Copyable`, so all
+the notes related to copyability apply here. A type should only be implicitly
+copyable if copying the type is inexpensive and has no side effects. Unnecessary
+copies can be a big drain on memory and performance, so use this trait with
+caution.
+
+### Movability
+
+To make a struct movable, add the `Movable` trait:
 
   ```mojo
   struct MyPair(Copyable, Movable):
   ...
   ```
 
-  Mojo will generate a move constructor for you. You have rarely need to
-  write your own custom move constructor. For more information,
-  see the section on
-  [move constructors](/mojo/manual/lifecycle/life#move-constructor).
+Mojo will generate a move constructor for you. You have rarely need to
+write your own custom move constructor. For more information,
+see the section on
+[move constructors](/mojo/manual/lifecycle/life#move-constructor).
 
-Here's a movable and copyable version of `MyPair`:
+### A movable, copyable `MyPair`
+
+Here's a movable and implicitly copyable version of `MyPair`:
 
 ```mojo
 @fieldwise_init
@@ -149,14 +234,17 @@ struct MyPair(ImplicitlyCopyable, Movable):
     var second: Int
 ```
 
+Since the `MyPair` struct is a simple data structure that holds two `Int`
+values, there's no harm in making it implicitly copyable.
+
 And here's how to exercise the copy and move constructors:
 
 ```mojo
 var original_pair = MyPair(2, 6)
-var copied_pair = original_pair  # copy
+var copied_pair = original_pair  # implicit copy
+var another_pair = original_pair.copy()  # explicit copy
 var moved_pair = original_pair^  # move
 ```
-
 
 ## Methods
 

@@ -17,7 +17,6 @@ from algorithm.functional import tile_and_unswitch
 from buffer import DimList, NDBuffer
 from gpu import barrier, block_dim, global_idx, thread_idx
 from gpu.host import DeviceContext
-from gpu.memory import AddressSpace
 from memory import stack_allocation
 from testing import assert_false
 
@@ -25,13 +24,13 @@ from utils.index import Index
 
 # Tile size for tiling in shared memory.
 # Thread block would have shape (tile_size, tile_size, 1)
-alias tile_size = 32
+comptime tile_size = 32
 
 
 fn matmul_sram(
-    a_ptr: UnsafePointer[Float32],
-    b_ptr: UnsafePointer[Float32],
-    c_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     M: Int,
     N: Int,
     K: Int,
@@ -92,31 +91,35 @@ fn matmul_sram(
 
         @parameter
         if not full_tile:
-            a_val = a[row, offset + localCol] if (
-                row < UInt(M) and offset + localCol < K
+            a_val = a[Int(row), offset + Int(localCol)] if (
+                row < UInt(M) and offset + Int(localCol) < K
             ) else 0.0
         else:
-            a_val = a[row, offset + localCol] if row < UInt(M) else 0.0
-        a_shared[localRow * tile_size + localCol] = a_val
+            a_val = (
+                a[Int(row), offset + Int(localCol)] if row < UInt(M) else 0.0
+            )
+        a_shared[localRow * UInt(tile_size) + localCol] = a_val
 
         # Load B tile into shared memory.
         var b_val: Float32
 
         @parameter
         if not full_tile:
-            b_val = b[offset + localRow, col] if (
-                col < UInt(N) and offset + localRow < K
+            b_val = b[offset + Int(localRow), Int(col)] if (
+                col < UInt(N) and offset + Int(localRow) < K
             ) else 0.0
         else:
-            b_val = b[offset + localRow, col] if col < UInt(N) else 0.0
-        b_shared[localRow * tile_size + localCol] = b_val
+            b_val = (
+                b[offset + Int(localRow), Int(col)] if col < UInt(N) else 0.0
+            )
+        b_shared[localRow * UInt(tile_size) + localCol] = b_val
 
         barrier()
 
         for k in range(tile_size):
-            result += a_shared.load(localRow * tile_size + k) * b_shared.load(
-                k * tile_size + localCol
-            )
+            result += a_shared.load(
+                localRow * UInt(tile_size) + UInt(k)
+            ) * b_shared.load(k * tile_size + Int(localCol))
 
         barrier()
 
@@ -132,15 +135,15 @@ fn run_matmul(ctx: DeviceContext) raises:
     print("== run_matmul_sram")
 
     # Should be able to handle non-divisible values.
-    alias M = 513
-    alias N = 502
-    alias K = 511
+    comptime M = 513
+    comptime N = 502
+    comptime K = 511
 
-    var a_host_ptr = UnsafePointer[Float32].alloc(M * K)
+    var a_host_ptr = alloc[Float32](M * K)
     var a_host = NDBuffer[DType.float32, 2, _, DimList(M, K)](a_host_ptr)
-    var b_host_ptr = UnsafePointer[Float32].alloc(K * N)
+    var b_host_ptr = alloc[Float32](K * N)
     var b_host = NDBuffer[DType.float32, 2, _, DimList(K, N)](b_host_ptr)
-    var c_host_ptr = UnsafePointer[Float32].alloc(M * N)
+    var c_host_ptr = alloc[Float32](M * N)
     var c_host = NDBuffer[DType.float32, 2, _, DimList(M, N)](c_host_ptr)
 
     for i in range(M):
@@ -162,7 +165,7 @@ fn run_matmul(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_function[matmul_sram](
+    ctx.enqueue_function_checked[matmul_sram, matmul_sram](
         a_device,
         b_device,
         c_device,

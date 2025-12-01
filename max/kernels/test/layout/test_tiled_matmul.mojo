@@ -39,7 +39,7 @@ struct Dim(ImplicitlyCopyable, Movable, Stringable):
 trait TiledOp:
     @staticmethod
     fn op(
-        mut dst: LayoutTensor,
+        dst: LayoutTensor[mut=True, *_, **_],
         lhs: LayoutTensor,
         rhs: LayoutTensor,
     ):
@@ -50,15 +50,15 @@ trait TiledOp:
 struct MMA(TiledOp):
     @staticmethod
     fn op(
-        mut dst: LayoutTensor,
+        dst: LayoutTensor[mut=True, *_, **_],
         lhs: LayoutTensor,
         rhs: LayoutTensor,
     ):
-        alias dtype = dst.dtype
+        comptime dtype = dst.dtype
 
-        alias M = dst.shape[0]()
-        alias N = dst.shape[1]()
-        alias K = lhs.shape[1]()
+        comptime M = dst.shape[0]()
+        comptime N = dst.shape[1]()
+        comptime K = lhs.shape[1]()
 
         for m in range(M):
             for n in range(N):
@@ -72,21 +72,20 @@ struct MMA(TiledOp):
 struct MMA_Vec(TiledOp):
     @staticmethod
     fn op(
-        mut dst: LayoutTensor,
+        dst: LayoutTensor[mut=True, *_, **_],
         lhs: LayoutTensor,
         rhs: LayoutTensor,
     ):
-        alias M = dst.shape[0]()
-        alias N = dst.shape[1]()
-        alias K = lhs.shape[1]()
+        comptime M = dst.shape[0]()
+        comptime N = dst.shape[1]()
+        comptime K = lhs.shape[1]()
 
-        alias width = simd_width_of[dst.dtype]() * 2
+        comptime width = simd_width_of[dst.dtype]() * 2
 
         for m in range(M):
             for n in range(N):
 
-                @parameter
-                fn dot[width: Int](k: Int):
+                fn dot[width: Int](k: Int) unified {mut}:
                     dst.store[width](
                         m,
                         n,
@@ -97,22 +96,24 @@ struct MMA_Vec(TiledOp):
                         * rhs.load[width](n, k).cast[dst.dtype](),
                     )
 
-                vectorize[dot, width, size=K]()
+                vectorize[width, size=K](dot)
 
 
 fn gemm_l2_cache[
     mma: TiledOp, L1: Dim, L2: Dim
-](dst: LayoutTensor, lhs: LayoutTensor, rhs: LayoutTensor) raises:
-    alias M = dst.shape[0]()
-    alias N = dst.shape[1]()
-    alias K = lhs.shape[1]()
+](
+    dst: LayoutTensor[mut=True, *_, **_], lhs: LayoutTensor, rhs: LayoutTensor
+) raises:
+    comptime M = dst.shape[0]()
+    comptime N = dst.shape[1]()
+    comptime K = lhs.shape[1]()
 
     # Dimensions of the Operation
-    alias op_dim = Dim(M, N, K)
+    comptime op_dim = Dim(M, N, K)
 
     # L1 and L2 Tiile ranges
-    alias l1_size = op_dim.subrange(L1)
-    alias l2_size = L1.subrange(L2)
+    comptime l1_size = op_dim.subrange(L1)
+    comptime l2_size = L1.subrange(L2)
 
     # Cache matrix to materialize L2 transposed tiles
     var l2_rhs_cache = ManagedLayoutTensor[
@@ -155,17 +156,17 @@ fn gemm_l2_cache[
 
 fn gemm_l1_cache[
     mma: TiledOp, L1: Dim, L2: Dim
-](dst: LayoutTensor, lhs: LayoutTensor, rhs: LayoutTensor):
-    alias M = dst.shape[0]()
-    alias N = dst.shape[1]()
-    alias K = lhs.shape[1]()
+](dst: LayoutTensor[mut=True, *_, **_], lhs: LayoutTensor, rhs: LayoutTensor):
+    comptime M = dst.shape[0]()
+    comptime N = dst.shape[1]()
+    comptime K = lhs.shape[1]()
 
     # Dimensions of the Operation
-    alias op_dim = Dim(M, N, K)
+    comptime op_dim = Dim(M, N, K)
 
     # L1 and L2 Tiile ranges
-    alias l1_size = op_dim.subrange(L1)
-    alias l2_size = L1.subrange(L2)
+    comptime l1_size = op_dim.subrange(L1)
+    comptime l2_size = L1.subrange(L2)
 
     # Cache the L1 RHS and LHS tiles to reuse across the k_1 loop
     # The RHS tile is also cached to minimize the transpose operatipons.
@@ -184,10 +185,10 @@ fn gemm_l1_cache[
     fn process_raw(m_1: Int):
         # Cache the current lhs tile and reuse it for all rhs tiles in the column
         var l1_lhs_cache = LayoutTensor[
-            dst.dtype, Layout(IntTuple(L1.m, L1.k)), MutableAnyOrigin
+            dst.dtype, Layout(IntTuple(L1.m, L1.k)), MutAnyOrigin
         ].stack_allocation()
         var l1_rhs_cache = LayoutTensor[
-            dst.dtype, Layout(IntTuple(L1.n, L1.k)), MutableAnyOrigin
+            dst.dtype, Layout(IntTuple(L1.n, L1.k)), MutAnyOrigin
         ].stack_allocation()
 
         for k_1 in range(l1_size.k):
@@ -258,7 +259,7 @@ fn test_tiled_matmul[use_l1_cache: Bool]() raises:
     _ = dst^
 
 
-fn main() raises:
+def main():
     # CHECK: === test_tiled_matmul_l1_cache
     # CHECK: 1120.0   1148.0   1176.0   1204.0   1232.0   1260.0   1288.0   1316.0
     # CHECK: 2912.0   3004.0   3096.0   3188.0   3280.0   3372.0   3464.0   3556.0

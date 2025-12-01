@@ -21,6 +21,11 @@ from typing import Any
 _PEP_491_SHEBANG = b"#!python"
 
 
+def _is_shared_lib(p: Path) -> bool:
+    # Linux: libfoo.so or libfoo.so.N[.M]; macOS: libfoo.dylib
+    return p.suffix in (".dylib", ".so") or ".so." in p.name
+
+
 def _write_pth(site_packages: Path, imports: list[str]) -> None:
     pth_imports = []
     for imp in imports:
@@ -37,8 +42,11 @@ def _write_pth(site_packages: Path, imports: list[str]) -> None:
 
 
 def _create_symlink(src: Path, dest: Path, overwrite: bool = False) -> None:
+    if overwrite:
+        dest.unlink(missing_ok=True)
+
     # NOTE: Ignore duplicate files that would end up in the same place. First one wins.
-    if dest.exists() and not overwrite:
+    if dest.exists():
         return
 
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -104,13 +112,15 @@ def _symlink_files(
         )
         if src.suffix == ".mojopkg":
             _create_symlink(src, venv_path / "lib" / "mojo" / src.name)
-        elif src.suffix in (".dylib", ".so"):
+        elif _is_shared_lib(src):
             _create_symlink(src, venv_path / "lib" / src.name)
         elif src.read_bytes().startswith(b"#!/usr/bin/env python3"):
             # Skip py_binary data dependency
             continue
         else:
             _create_symlink(src, venv_path / "bin" / src.name)
+            if src.name == "mojo-compiler-only":
+                _create_symlink(src, venv_path / "bin" / "mojo")
 
 
 def _create_venv(manifest: dict[str, Any], venv_path: Path) -> None:

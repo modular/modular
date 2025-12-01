@@ -13,6 +13,7 @@
 
 from gpu import *
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
 
@@ -30,7 +31,7 @@ fn vec_func(
 
 
 fn test(ctx: DeviceContext) raises:
-    alias length = 1024
+    comptime length = 1024
 
     # Allocate the input buffers as sub buffers of a bigger one
     var in_host = UnsafePointer[Float32].alloc(2 * length)
@@ -51,7 +52,7 @@ fn test(ctx: DeviceContext) raises:
     var block_dim = 32
     var supplement = 5
 
-    ctx.enqueue_function[vec_func](
+    ctx.enqueue_function_checked[vec_func, vec_func](
         in0_device,
         in1_device,
         out_device,

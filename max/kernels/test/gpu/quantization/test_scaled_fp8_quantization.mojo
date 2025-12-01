@@ -18,17 +18,18 @@ from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,
     quantize_static_scaled_fp8,
+    batched_quantize_dynamic_scaled_fp8,
 )
 from testing import assert_equal
 
 from utils.numerics import max_finite, min_finite
 
 
-fn test_scaled_fp8_quant[
+fn test_static_scaled_fp8_quant[
     out_dtype: DType,
     in_dtype: DType,
 ](ctx: DeviceContext, scale: Float32, m: ValOrDim, n: ValOrDim,) raises:
-    alias static_shape = DimList(m.dim, n.dim)
+    comptime static_shape = DimList(m.dim, n.dim)
     var dynamic_shape = DimList(m.value, n.value)
 
     var in_host = HostNDBuffer[in_dtype, 2, static_shape](dynamic_shape)
@@ -82,10 +83,10 @@ fn test_dynamic_fp8_quant[
     in_dtype: DType,
     group_size_or_per_token: Int,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim,) raises:
-    alias group_size = n.dim if group_size_or_per_token == -1 else group_size_or_per_token
+    comptime group_size = n.dim if group_size_or_per_token == -1 else group_size_or_per_token
 
-    alias static_shape = DimList(m.dim, n.dim)
-    alias static_scales_shape = DimList(n.dim // group_size, m.dim)
+    comptime static_shape = DimList(m.dim, n.dim)
+    comptime static_scales_shape = DimList(n.dim // group_size, m.dim)
     var dynamic_shape = DimList(m.value, n.value)
     var dynamic_scales_shape = DimList(n.value // group_size, m.value)
 
@@ -155,18 +156,104 @@ fn test_dynamic_fp8_quant[
                 )
 
 
-fn main() raises:
+fn test_batched_dynamic_fp8_quant[
+    out_dtype: DType,
+    in_dtype: DType,
+    group_size_or_per_token: Int,
+](ctx: DeviceContext, bs: ValOrDim, m: ValOrDim, k: ValOrDim,) raises:
+    comptime group_size = k.dim if group_size_or_per_token == -1 else group_size_or_per_token
+
+    comptime static_shape = DimList(bs.dim, m.dim, k.dim)
+    comptime static_scales_shape = DimList(bs.dim, k.dim // group_size, m.dim)
+    var dynamic_shape = DimList(bs.value, m.value, k.value)
+    var dynamic_scales_shape = DimList(bs.value, k.value // group_size, m.value)
+
+    var in_host = HostNDBuffer[in_dtype, 3, static_shape](dynamic_shape)
+    var out_host = HostNDBuffer[out_dtype, 3, static_shape](dynamic_shape)
+    var scales_host = HostNDBuffer[in_dtype, 3, static_scales_shape](
+        dynamic_scales_shape
+    )
+
+    var in_device = DeviceNDBuffer[in_dtype, 3, static_shape](
+        dynamic_shape, ctx=ctx
+    )
+    var out_device = DeviceNDBuffer[out_dtype, 3, static_shape](
+        dynamic_shape, ctx=ctx
+    )
+    var scales_device = DeviceNDBuffer[in_dtype, 3, static_scales_shape](
+        dynamic_scales_shape, ctx=ctx
+    )
+
+    random(in_host.tensor)
+
+    ctx.enqueue_copy(in_device.buffer, in_host.tensor.data)
+
+    batched_quantize_dynamic_scaled_fp8[group_size_or_per_token](
+        out_device.tensor, scales_device.tensor, in_device.tensor, 1200.0, ctx
+    )
+
+    ctx.enqueue_copy(out_host.tensor.data, out_device.buffer)
+    ctx.enqueue_copy(scales_host.tensor.data, scales_device.buffer)
+    ctx.synchronize()
+
+    for batch_idx in range(bs.value):
+        for i in range(m.value):
+            for group_idx in range(k.value // group_size):
+                var group_max = Scalar[in_dtype](0)
+                for j in range(group_size):
+                    group_max = max(
+                        group_max,
+                        abs(
+                            in_host.tensor[
+                                batch_idx, i, j + group_idx * Int(group_size)
+                            ]
+                        ),
+                    )
+
+                var scale_factor = (
+                    min(group_max, 1200.0)
+                    / Scalar[out_dtype].MAX_FINITE.cast[in_dtype]()
+                )
+
+                assert_equal(
+                    scales_host.tensor[batch_idx, group_idx, i].cast[
+                        DType.float64
+                    ](),
+                    scale_factor.cast[DType.float64](),
+                )
+
+                for j in range(group_size):
+                    var in_val = in_host.tensor[
+                        batch_idx, i, j + group_idx * Int(group_size)
+                    ]
+                    var out_val = out_host.tensor[
+                        batch_idx, i, j + group_idx * Int(group_size)
+                    ]
+
+                    assert_equal(
+                        out_val.cast[DType.float32](),
+                        (in_val / scale_factor)
+                        .cast[out_dtype]()
+                        .cast[DType.float32](),
+                        msg="At ["
+                        + String(i)
+                        + ", "
+                        + String(j + group_idx * Int(group_size))
+                        + "]",
+                    )
+
+
+def main():
     with DeviceContext() as ctx:
-        test_scaled_fp8_quant[DType.float8_e4m3fn, DType.bfloat16](
+        test_static_scaled_fp8_quant[DType.float8_e4m3fn, DType.bfloat16](
             ctx, 0.5, dynamic(32), static[16]()
         )
-        test_scaled_fp8_quant[DType.float8_e4m3fn, DType.float16](
+        test_static_scaled_fp8_quant[DType.float8_e4m3fn, DType.float16](
             ctx, 0.33, dynamic(31), static[15]()
         )
-        test_scaled_fp8_quant[DType.float8_e4m3fn, DType.bfloat16](
+        test_static_scaled_fp8_quant[DType.float8_e4m3fn, DType.bfloat16](
             ctx, 0.3323, dynamic(31), static[15]()
         )
-
         test_dynamic_fp8_quant[DType.float8_e4m3fn, DType.bfloat16, -1](
             ctx, dynamic(1), static[256]()
         )
@@ -178,4 +265,23 @@ fn main() raises:
         )
         test_dynamic_fp8_quant[DType.float8_e4m3fn, DType.bfloat16, 128](
             ctx, dynamic(4), static[16384]()
+        )
+        test_dynamic_fp8_quant[DType.float8_e4m3fn, DType.float32, 128](
+            ctx, dynamic(4), static[576]()
+        )
+
+        test_batched_dynamic_fp8_quant[DType.float8_e4m3fn, DType.bfloat16, -1](
+            ctx, dynamic(2), dynamic(1), static[256]()
+        )
+        test_batched_dynamic_fp8_quant[DType.float8_e4m3fn, DType.bfloat16, -1](
+            ctx, dynamic(3), dynamic(1), static[1024]()
+        )
+        test_batched_dynamic_fp8_quant[DType.float8_e4m3fn, DType.bfloat16, -1](
+            ctx, dynamic(4), dynamic(1), static[16384]()
+        )
+        test_batched_dynamic_fp8_quant[
+            DType.float8_e4m3fn, DType.bfloat16, 128
+        ](ctx, dynamic(128), dynamic(400), static[512]())
+        test_batched_dynamic_fp8_quant[DType.float8_e4m3fn, DType.float32, 128](
+            ctx, dynamic(128), dynamic(1024), static[128]()
         )

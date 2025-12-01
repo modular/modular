@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 
 @fieldwise_init
@@ -47,6 +47,4 @@ def test_none_representation():
 
 
 def main():
-    test_explicit_conformance()
-    test_implicit_conformance()
-    test_none_representation()
+    TestSuite.discover_tests[__functions_in_module()]().run()

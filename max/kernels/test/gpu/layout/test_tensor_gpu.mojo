@@ -12,12 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu import block_idx, grid_dim
-from gpu.host import DeviceContext
+from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import (
-    _GPUAddressSpace,
+    AddressSpace,
     async_copy_commit_group,
     async_copy_wait_group,
 )
+from memory import LegacyUnsafePointer as UnsafePointer
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import Layout, LayoutTensor
@@ -26,7 +27,7 @@ from testing import assert_true
 
 def test_copy_dram_to_sram_async(ctx: DeviceContext):
     print("== test_copy_dram_to_sram_async")
-    alias tensor_layout = Layout.row_major(4, 16)
+    comptime tensor_layout = Layout.row_major(4, 16)
     var tensor = ManagedLayoutTensor[DType.float32, tensor_layout](ctx)
     arange(tensor.tensor())
 
@@ -35,15 +36,15 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
     fn copy_to_sram_test_kernel[
         layout: Layout,
     ](
-        dram_tensor: LayoutTensor[DType.float32, layout, MutableAnyOrigin],
-        flag: UnsafePointer[Bool],
+        dram_tensor: LayoutTensor[DType.float32, layout, MutAnyOrigin],
+        flag: UnsafePointer[Scalar[DType.bool]],
     ):
-        var dram_tile = dram_tensor.tile[4, 4](0, block_idx.x)
+        var dram_tile = dram_tensor.tile[4, 4](0, Int(block_idx.x))
         var sram_tensor = LayoutTensor[
             DType.float32,
             Layout.row_major(4, 4),
-            MutableAnyOrigin,
-            address_space = _GPUAddressSpace.SHARED,
+            MutAnyOrigin,
+            address_space = AddressSpace.SHARED,
         ].stack_allocation()
         sram_tensor.copy_from_async(dram_tile)
 
@@ -54,12 +55,19 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
 
         for r in range(4):
             for c in range(4):
-                if sram_tensor[r, c] != r * 16 + col_offset + c:
+                if sram_tensor[r, c] != r * 16 + Int(col_offset) + c:
                     flag[] = False
 
-    ctx.enqueue_function[copy_to_sram_test_kernel[tensor_layout]](
+    comptime kernel = copy_to_sram_test_kernel[tensor_layout]
+    var ptr = UnsafePointer(to=check_state).bitcast[Scalar[DType.bool]]()
+    ctx.enqueue_function_checked[kernel, kernel](
         tensor.device_tensor(),
-        UnsafePointer(to=check_state),
+        DeviceBuffer[DType.bool](
+            ctx,
+            rebind[UnsafePointer[Scalar[DType.bool]]](ptr),
+            1,
+            owning=False,
+        ),
         grid_dim=(4),
         block_dim=(1),
     )

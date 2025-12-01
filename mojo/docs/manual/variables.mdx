@@ -9,7 +9,25 @@ mutable—their value can be changed. (If you want to define a constant value th
 can't change at runtime, see the
 [`alias` keyword](/mojo/manual/parameters/#alias-named-parameter-expressions).)
 
-Mojo has two kinds of variables:
+When you declare a variable in Mojo, you allocate a logical storage location,
+and bind a name to that storage location.
+
+```mojo
+var greeting: String = "Hello World"
+```
+
+The `var` statement above does three things:
+
+- It declares a logical storage location (in this case, a storage location sized
+  to hold a `String` struct).
+- It binds the name `greeting` to this logical storage location.
+- It *initializes* the storage space with a newly-created `String` value,
+  with the text, “Hello World”. The new value is *owned by* the variable.
+  No other variable can own this value unless we intentionally transfer it.
+
+## Variable declarations
+
+Mojo has two ways to declare a variable:
 
 * Explicitly-declared variables are created with the `var` keyword.
 
@@ -237,6 +255,7 @@ For more details on implicit conversion, see
 [Constructors and implicit
 conversion](/mojo/manual/lifecycle/life/#constructors-and-implicit-conversion).
 
+
 ## Variable scopes
 
 Variables declared with `var` are bound by *lexical scoping*. This
@@ -259,8 +278,6 @@ def lexical_scopes():
         dig = 2             # Updates the outer-scope "dig"
     print("num:", num)      # Reads the outer-scope "num"
     print("dig:", dig)      # Reads the outer-scope "dig"
-
-lexical_scopes()
 ```
 
 ```output
@@ -294,8 +311,6 @@ def function_scopes():
         num = 2      # Updates the function-scope variable
         print(num)   # Reads the function-scope "num"
     print(num)       # Reads the function-scope "num"
-
-function_scopes()
 ```
 
 ```output
@@ -308,30 +323,121 @@ Now, the last `print()` function sees the updated `num` value from the inner
 scope, because implicitly-declared variables (Python-style variables) use function-level
 scope (instead of lexical scope).
 
+## Copying and moving values
+
+Remember that a variable owns its value, and only one variable can own a given
+value at a time. To take this one step further, you can think of an assignment
+statement as assigning *ownership* of a value to a variable:
+
+```mojo
+owning_variable = "Owned value"
+```
+
+This means the value on the right-hand side of the assignment statement must be
+transferrable to the new variable. Here's an example where that doesn't work:
+
+```mojo
+first = [1, 2, 3]
+second = first  # error: 'List[Int]' is not implicitly copyable because it does
+                 # not conform to 'ImplicitlyCopyable'
+```
+
+The first assignment is no problem: the expression `[1, 2, 3]` creates a new
+`List` value that doesn't belong to any variable, so its ownership can be
+transferred directly to the `first` variable.
+
+But the second assignment causes an error. Since the `List` is owned by the
+`first` variable, it can't simply be transferred to the `second` variable
+without an explicit signal from the user. Does the user want to transfer the
+value from `first` to `second`? Or create a copy of the original value?
+
+These choices depend on some features of the type of the values involved:
+specifically, if the values are movable, copyable, or implicitly copyable.
+
+- A *copyable* type can be copied explicitly, by calling its `copy()` method.
+
+  ```mojo
+  second = first.copy()
+  ```
+
+  This leaves `first` unchanged and assigns `second` its own, uniquely owned copy
+  of the list.
+
+- An *implicitly copyable* type can be copied without an explicit signal from
+  the user.
+
+  ```mojo
+  one_value = 15
+  another_value = one_value  # implicit copy
+  ```
+
+  Here `one_value` is unchanged, and `another_value` gets a copy of the value.
+
+  Implicitly copyable types are generally simple value types like `Int`,
+  `Float64`, and `Bool` which can be copied trivially.
+
+- The ownership of a value can be  be explicitly transferred from one variable
+  to another by appending the *transfer sigil* (`^`) after the value to
+  transfer:
+
+  ```mojo
+  second = first^
+  ```
+
+  This moves the value to `second`, and leaves `first` uninitialized.
+
+  In many cases, this ownership transfer also involves moving the value from
+  one memory location to another, which requires the value to be either movable
+  or copyable.
+
+You don't have to digest all of these details now: copyability and movabiltiy
+are discussed in more detail in the section on
+[making structs copyable and movable](/mojo/manual/structs#making-a-struct-copyable-and-movable)
+and in the section on the [value lifecycle](/mojo/manual/lifecycle/life).
+
 ## Reference bindings
 
 Some APIs return
 [references](/mojo/manual/values/lifetimes#working-with-references) to values
 owned elsewhere. References can be useful to avoid copying values. For example,
-when you retrieve a value from a collection, the collection returns a reference.
-Assigning a reference to a variable creates a copy:
+when you retrieve a value from a collection, the collection returns a reference,
+instead of a copy.
+
+```mojo
+animals: List[String] = ["Cats", "Dogs, "Zebras"]
+print(animals[2])  # Prints "Zebras", does not copy the value.
+```
+
+But if you assign a reference to a *variable*, it creates a copy (if the value
+is implicitly copyable) or produces an error (if it isn't).
 
 ```mojo
 items = [99, 77, 33, 12]
 item = items[1]  # item is a copy of items[1]
 item += 1  # increments item
+print(items[1])  # prints 77
 ```
 
-To hold on to reference, use the `ref` keyword to create a reference binding:
+To hold on to a reference, use the `ref` keyword to create a reference binding:
 
 ```mojo
-ref item_ref = items[1] # item_ref is a reference to item[1]
-item_ref += 1 # increments items[1]
+ref item_ref = items[1]  # item_ref is a reference to item[1]
+item_ref += 1  # increments items[1]
+print(items[1])  # prints 78
 ```
 
-Here the name `item_ref` is bound to the reference to `items[1]`. Once this
-binding is assigned, it can't be changed. All reads and writes to `item_ref` go
-to the referenced item.
+Here the name `item_ref` is bound to the reference to `items[1]`. All reads and
+writes to `item_ref` go to the referenced item.
+
+Reference bindings can also be used when iterating through collections with
+[`for` loops](/mojo/manual/control-flow#iterating-using-references).
+
+Once a reference binding is assigned, it can't be re-bound to a different
+location. For example:
+
+```mojo
+ref item_ref = items[2]  # error: invalid redefinition of item_ref
+```
 
 For more information on references, see
 [Working with references](/mojo/manual/values/lifetimes#working-with-references).

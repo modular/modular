@@ -15,15 +15,14 @@ from sys import size_of
 
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, grid_dim, thread_idx
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu import block_idx, grid_dim, thread_idx
 from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from testing import assert_equal
 
 from utils.index import Index
@@ -38,7 +37,7 @@ fn test_tma_3d_load_kernel[
     desc_layout: Layout,
     smem_layout: Layout,
 ](
-    dst: LayoutTensor[dtype, dst_layout, MutableAnyOrigin],
+    dst: LayoutTensor[dtype, dst_layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, cta_tile_layout, desc_layout],
 ):
     constrained[
@@ -51,12 +50,12 @@ fn test_tma_3d_load_kernel[
         "for these test cases cta and smem should have the same size",
     ]()
 
-    alias dst_dim0 = dst_layout.shape[0].value()
-    alias dst_dim1 = dst_layout.shape[1].value()
+    comptime dst_dim0 = dst_layout.shape[0].value()
+    comptime dst_dim1 = dst_layout.shape[1].value()
 
-    alias cta_tile_dim0 = cta_tile_layout.shape[0].value()
-    alias cta_tile_dim1 = cta_tile_layout.shape[1].value()
-    alias cta_tile_dim2 = cta_tile_layout.shape[2].value()
+    comptime cta_tile_dim0 = cta_tile_layout.shape[0].value()
+    comptime cta_tile_dim1 = cta_tile_layout.shape[1].value()
+    comptime cta_tile_dim2 = cta_tile_layout.shape[2].value()
 
     constrained[
         dst_dim1 == cta_tile_dim2,
@@ -66,17 +65,17 @@ fn test_tma_3d_load_kernel[
     smem_tile = LayoutTensor[
         dtype,
         smem_layout,
-        MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
-    alias expected_bytes = cta_tile_layout.size() * size_of[dtype]()
+    comptime expected_bytes = cta_tile_layout.size() * size_of[dtype]()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -87,29 +86,27 @@ fn test_tma_3d_load_kernel[
             smem_tile,
             mbar[0],
             (
-                UInt(block_idx.x * cta_tile_dim2),
-                UInt(block_idx.y * cta_tile_dim1),
-                UInt(block_idx.z * cta_tile_dim0),
+                UInt(block_idx.x * UInt(cta_tile_dim2)),
+                UInt(block_idx.y * UInt(cta_tile_dim1)),
+                UInt(block_idx.z * UInt(cta_tile_dim0)),
             ),
         )
     # Ensure all threads sees initialized mbarrier
     barrier()
     mbar[0].wait()
 
-    alias smem_dim0 = smem_layout.shape[0].value()
-    alias smem_dim1 = smem_layout.shape[1].value()
-    alias smem_dim2 = smem_layout.shape[2].value()
+    comptime smem_dim0 = smem_layout.shape[0].value()
+    comptime smem_dim1 = smem_layout.shape[1].value()
+    comptime smem_dim2 = smem_layout.shape[2].value()
 
     var idx = (
-        block_idx.z * grid_dim.x * grid_dim.y
-        + block_idx.y * grid_dim.x
-        + block_idx.x
-    )
+        block_idx.z * grid_dim.y + block_idx.y
+    ) * grid_dim.x + block_idx.x
     for i in range(cta_tile_dim0):
         smem_tile_i = smem_tile.tile[1, cta_tile_dim1, cta_tile_dim2](i)
 
         dst_tile = dst.tile[cta_tile_dim1, cta_tile_dim2](
-            idx * cta_tile_dim0 + i, 0
+            Int(idx * UInt(cta_tile_dim0) + UInt(i)), 0
         )
         if thread_idx.x == 0:
             dst_tile.copy_from(smem_tile_i)
@@ -124,15 +121,15 @@ def test_tma_3d_load_row_major[
 ](ctx: DeviceContext):
     print("test_tma_3d_load")
 
-    alias src_dim0 = src_layout.shape[0].value()
-    alias src_dim1 = src_layout.shape[1].value()
-    alias src_dim2 = src_layout.shape[2].value()
+    comptime src_dim0 = src_layout.shape[0].value()
+    comptime src_dim1 = src_layout.shape[1].value()
+    comptime src_dim2 = src_layout.shape[2].value()
 
-    alias cta_tile_dim0 = cta_tile_layout.shape[0].value()
-    alias cta_tile_dim1 = cta_tile_layout.shape[1].value()
-    alias cta_tile_dim2 = cta_tile_layout.shape[2].value()
+    comptime cta_tile_dim0 = cta_tile_layout.shape[0].value()
+    comptime cta_tile_dim1 = cta_tile_layout.shape[1].value()
+    comptime cta_tile_dim2 = cta_tile_layout.shape[2].value()
 
-    alias dst_layout = Layout.row_major(
+    comptime dst_layout = Layout.row_major(
         src_dim0 * src_dim1 * src_dim2 // cta_tile_dim2, cta_tile_dim2
     )
 
@@ -142,8 +139,6 @@ def test_tma_3d_load_row_major[
     arange(src.tensor(), 1)
 
     tma_tensor = create_tma_tile[
-        dtype,
-        3,
         Index(cta_tile_dim0, cta_tile_dim1, cta_tile_dim2),
         swizzle_mode=swizzle_mode,
         __tile_layout=cta_tile_layout,
@@ -153,16 +148,16 @@ def test_tma_3d_load_row_major[
 
     print("src layout:", src_layout)
     print("cta tile layout:", cta_tile_layout)
-    print("desc layout:", __type_of(tma_tensor).desc_layout)
+    print("desc layout:", type_of(tma_tensor).desc_layout)
 
-    alias kernel = test_tma_3d_load_kernel[
-        __type_of(tma_tensor).dtype,
+    comptime kernel = test_tma_3d_load_kernel[
+        type_of(tma_tensor).dtype,
         dst_layout,  # dst layout
-        __type_of(tma_tensor).layout,  # cta_tile
-        __type_of(tma_tensor).desc_layout,  # desc_tile
+        type_of(tma_tensor).layout,  # cta_tile
+        type_of(tma_tensor).desc_layout,  # desc_tile
         smem_tile_layout,  # smem layout
     ]
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(
@@ -176,20 +171,20 @@ def test_tma_3d_load_row_major[
     src_host = src.tensor()
     dst_host = dst.tensor()
 
-    alias swizzle = make_swizzle[dtype, swizzle_mode]()
+    comptime swizzle = make_swizzle[dtype, swizzle_mode]()
 
-    alias cta_tile_size = cta_tile_layout.size()
+    comptime cta_tile_size = cta_tile_layout.size()
 
-    alias desc_tile_dim0 = __type_of(tma_tensor).desc_layout.shape[0].value()
-    alias desc_tile_dim1 = __type_of(tma_tensor).desc_layout.shape[1].value()
-    alias desc_tile_dim2 = __type_of(tma_tensor).desc_layout.shape[2].value()
+    comptime desc_tile_dim0 = type_of(tma_tensor).desc_layout.shape[0].value()
+    comptime desc_tile_dim1 = type_of(tma_tensor).desc_layout.shape[1].value()
+    comptime desc_tile_dim2 = type_of(tma_tensor).desc_layout.shape[2].value()
 
-    alias desc_tile_size = desc_tile_dim1 * desc_tile_dim2
+    comptime desc_tile_size = desc_tile_dim1 * desc_tile_dim2
 
     desc_tile = LayoutTensor[
         dtype,
         Layout.row_major(desc_tile_dim1, desc_tile_dim2),
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ].stack_allocation()
 
     var dest_ptr = dst_host.ptr

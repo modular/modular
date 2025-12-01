@@ -6,34 +6,39 @@ GPUs into 3 tiers:
 
 We provide full support and testing for the following data center GPUs:
 
+- NVIDIA B200 (Blackwell)
 - NVIDIA H100 and H200 (Hopper)
-- NVIDIA A100 and A10 (Ampere)
+- AMD Instinct MI355X (CDNA4)
 - AMD Instinct MI300X and MI325X (CDNA3)
 
 #### Tier 2: Confirmed compatibility
 
-We've confirmed full compatibility with the following GPUs but we currently
+We've confirmed full compatibility with the following GPUs but we
 don't maintain tests for them:
 
+- NVIDIA A100 and A10 (Ampere)
 - NVIDIA L4 and L40 (Ada Lovelace)
+- NVIDIA RTX 50XX series (Blackwell)
 - NVIDIA RTX 40XX series (Ada Lovelace)
 - NVIDIA RTX 30XX series (Ampere)
+- NVIDIA Jetson Orin and Orin Nano (Ampere)
 
 #### Tier 3: Limited compatibility
 
 We've either confirmed or received reports that the following GPUs work for GPU
-programming with Mojo and can execute basic graphs with MAX APIs. However,
-these GPUs currently can't run some GenAI models for various reasons:
+programming with Mojo. Some can also execute basic graphs with MAX APIs.
+However, none of these currently run major GenAI models with MAX:
 
-- NVIDIA Tesla P100 (Pascal)
+- Apple Silicon GPUs (M1 - M4)
 - NVIDIA RTX 20XX series (Turing)
 - NVIDIA T4 (Turing)
-- NVIDIA Jetson Orin and Orin Nano (Ampere)
-- NVIDIA GeForce RTX 3090 (Ampere)
-- NVIDIA GeForce GTX 1080 Ti (Pascal)
+- NVIDIA GTX 10XX series (Pascal)
+- NVIDIA Tesla P100 (Pascal)
+- AMD Radeon RX 9000 series (RDNA4)
+- AMD Radeon 800M series (RDNA3.5)
+- AMD Radeon 8050S / 8060S (RDNA3.5)
 - AMD Radeon 700M series (RDNA3)
 - AMD Radeon RX 7000 series (RDNA3)
-- AMD Radeon RX 9000 series (RDNA4)
 
 If you've had success with any GPUs not listed here, please [let us know on
 Discord](https://discord.gg/modular).
@@ -44,7 +49,7 @@ Make sure you have the corresponding GPU software:
 
 - If you're on an **NVIDIA GPU**:
 
-  - NVIDIA GPU driver version 550 or higher
+  - NVIDIA GPU driver version 580 or higher
 
     - Check your NVIDIA GPU driver version using
   [nvidia-smi](https://developer.nvidia.com/system-management-interface)

@@ -11,18 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from python import Python
 from python._cpython import (
     CPython,
     Py_eval_input,
+    Py_file_input,
     Py_ssize_t,
     PyMethodDef,
     PyObjectPtr,
+    Py_TPFLAGS_LONG_SUBCLASS,
+    Py_TPFLAGS_LIST_SUBCLASS,
 )
-from testing import assert_equal, assert_false, assert_raises, assert_true
+from testing import (
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+    TestSuite,
+)
 
 
-def test_very_high_level_api(cpy: CPython):
+def _test_very_high_level_api(cpy: CPython):
     assert_equal(cpy.PyRun_SimpleString("None"), 0)
 
     var d = cpy.PyDict_New()
@@ -34,7 +44,7 @@ def test_very_high_level_api(cpy: CPython):
     assert_true(cpy.PyEval_EvalCode(co, d, d))
 
 
-def test_reference_counting_api(cpy: CPython):
+def _test_reference_counting_api(cpy: CPython):
     # this is the smallest integer that's GC'd by the Python interpreter
     var n = cpy.PyLong_FromSsize_t(257)
     assert_equal(cpy._Py_REFCNT(n), 1)
@@ -45,8 +55,11 @@ def test_reference_counting_api(cpy: CPython):
     cpy.Py_DecRef(n)
     assert_equal(cpy._Py_REFCNT(n), 1)
 
+    var m = cpy.Py_NewRef(n)
+    assert_equal(cpy._Py_REFCNT(m), 2)
 
-def test_exception_handling_api(cpy: CPython):
+
+def _test_exception_handling_api(cpy: CPython):
     var ValueError = cpy.get_error_global("PyExc_ValueError")
     var msg = "some error message"
 
@@ -56,7 +69,7 @@ def test_exception_handling_api(cpy: CPython):
     assert_true(cpy.PyErr_Occurred())
     cpy.PyErr_Clear()
 
-    cpy.PyErr_SetString(ValueError, msg.unsafe_cstr_ptr())
+    cpy.PyErr_SetString(ValueError, msg.as_c_string_slice().unsafe_ptr())
     assert_true(cpy.PyErr_Occurred())
 
     if cpy.version.minor < 12:
@@ -72,24 +85,23 @@ def test_exception_handling_api(cpy: CPython):
     _ = msg
 
 
-def test_threading_api(cpy: CPython):
+def _test_threading_api(cpy: CPython):
     var gstate = cpy.PyGILState_Ensure()
     var save = cpy.PyEval_SaveThread()
     cpy.PyEval_RestoreThread(save)
     cpy.PyGILState_Release(gstate)
 
 
-def test_importing_module_api(cpy: CPython):
+def _test_importing_module_api(cpy: CPython):
     assert_true(cpy.PyImport_ImportModule("builtins"))
     assert_true(cpy.PyImport_AddModule("test"))
 
 
-def test_object_protocol_api(cpy: CPython):
+def _test_object_protocol_api(cpy: CPython):
     var n = cpy.PyLong_FromSsize_t(42)
     var z = cpy.PyLong_FromSsize_t(0)
     var l = cpy.PyList_New(1)
-    cpy.Py_IncRef(z)
-    _ = cpy.PyList_SetItem(l, 0, z)
+    _ = cpy.PyList_SetItem(l, 0, cpy.Py_NewRef(z))
 
     assert_equal(cpy.PyObject_HasAttrString(n, "__hash__"), 1)
     assert_true(cpy.PyObject_GetAttrString(n, "__hash__"))
@@ -111,7 +123,7 @@ def test_object_protocol_api(cpy: CPython):
     assert_equal(cpy.PyObject_GetIter(it), it)
 
 
-def test_call_protocol_api(cpy: CPython):
+def _test_call_protocol_api(cpy: CPython):
     var dict_func = PyObjectPtr(upcast_from=cpy.PyDict_Type())
     var t = cpy.PyTuple_New(0)
     var d = cpy.PyDict_New()
@@ -120,7 +132,7 @@ def test_call_protocol_api(cpy: CPython):
     assert_true(cpy.PyObject_Call(dict_func, t, d))
 
 
-def test_number_protocol_api(cpy: CPython):
+def _test_number_protocol_api(cpy: CPython):
     var n = cpy.PyLong_FromSsize_t(42)
 
     var long_value = cpy.PyNumber_Long(n)
@@ -132,11 +144,10 @@ def test_number_protocol_api(cpy: CPython):
     assert_equal(cpy.PyFloat_AsDouble(float_value), 42.0)
 
 
-def test_iterator_protocol_api(cpy: CPython):
+def _test_iterator_protocol_api(cpy: CPython):
     var n = cpy.PyLong_FromSsize_t(42)
     var l = cpy.PyList_New(1)
-    cpy.Py_IncRef(n)
-    _ = cpy.PyList_SetItem(l, 0, n)
+    _ = cpy.PyList_SetItem(l, 0, cpy.Py_NewRef(n))
 
     var it = cpy.PyObject_GetIter(l)
 
@@ -145,38 +156,95 @@ def test_iterator_protocol_api(cpy: CPython):
     assert_true(cpy.PyIter_Next(it))
 
 
-def test_type_object_api(cpy: CPython):
+def _test_type_object_api(cpy: CPython):
     var dict_type = cpy.PyDict_Type()
     assert_true(cpy.PyType_GetName(dict_type))
 
 
-def test_integer_object_api(cpy: CPython):
+def _helper_instantiate_derived_class(
+    base_class: String, cpy: CPython
+) -> PyObjectPtr:
+    """Create a derived class from one of the basic types and
+    then instantiate it.
+    """
+    # Setup the environment for PyRun_String.
+    var test_mod = cpy.PyModule_Create("test_mod")
+    var globals = cpy.PyDict_New()
+    var locals = cpy.PyModule_GetDict(test_mod)
+    # Create a derived class.
+    #
+    # Note: the second argument must be Py_file_input otherwise the
+    # result is NULL.
+    _ = cpy.PyRun_String(
+        "class D({}):\n    pass\n\n".format(base_class),
+        Py_file_input,
+        globals,
+        locals,
+    )
+    # Get a handle to the constructor we have just created.
+    var constructor = cpy.PyObject_GetAttrString(test_mod, "D")
+    # We need to pass in some arguments from the newly defined constructor.
+    var args = cpy.PyTuple_New(0)
+    return cpy.PyObject_CallObject(constructor, args)
+
+
+def _test_integer_object_api(cpy: CPython):
     var n = cpy.PyLong_FromSsize_t(-42)
     assert_true(n)
     assert_equal(cpy.PyLong_AsSsize_t(n), -42)
+    assert_true(cpy.PyLong_Check(n))
+    assert_true(cpy.PyLong_CheckExact(n))
+    assert_true(cpy.PyObject_TypeCheck(n, cpy.PyLong_Type()))
 
     var z = cpy.PyLong_FromSize_t(57)
     assert_true(z)
     assert_equal(cpy.PyLong_AsSsize_t(z), 57)
 
+    var none = cpy.Py_None()
+    assert_false(cpy.PyLong_Check(none))
+    assert_false(cpy.PyLong_CheckExact(none))
 
-def test_boolean_object_api(cpy: CPython):
+    # Derive a class from int to be able to test some more the Check* API.
+    var instantiated = _helper_instantiate_derived_class("int", cpy)
+    assert_true(cpy.PyLong_Check(instantiated))
+    assert_false(cpy.PyLong_CheckExact(instantiated))
+
+
+def _test_boolean_object_api(cpy: CPython):
     var t = cpy.PyBool_FromLong(1)
     assert_true(t)
     assert_equal(cpy.PyObject_IsTrue(t), 1)
+    assert_true(cpy.PyBool_Check(t))
+    assert_true(cpy.PyObject_TypeCheck(t, cpy.PyBool_Type()))
 
     var f = cpy.PyBool_FromLong(0)
     assert_true(f)
     assert_equal(cpy.PyObject_IsTrue(f), 0)
+    assert_true(cpy.PyBool_Check(t))
+    assert_true(cpy.PyObject_TypeCheck(t, cpy.PyBool_Type()))
+
+    var none = cpy.Py_None()
+    assert_false(cpy.PyBool_Check(none))
 
 
-def test_floating_point_object_api(cpy: CPython):
+def _test_floating_point_object_api(cpy: CPython):
     var f = cpy.PyFloat_FromDouble(3.14)
     assert_true(f)
     assert_equal(cpy.PyFloat_AsDouble(f), 3.14)
+    assert_true(cpy.PyFloat_Check(f))
+    assert_true(cpy.PyFloat_CheckExact(f))
+    assert_true(cpy.PyObject_TypeCheck(f, cpy.PyFloat_Type()))
+
+    var none = cpy.Py_None()
+    assert_false(cpy.PyFloat_Check(none))
+    assert_false(cpy.PyFloat_CheckExact(none))
+    # Derive a class from float to be able to test some more the Check* API.
+    var instantiated = _helper_instantiate_derived_class("float", cpy)
+    assert_true(cpy.PyFloat_Check(instantiated))
+    assert_false(cpy.PyFloat_CheckExact(instantiated))
 
 
-def test_unicode_object_api(cpy: CPython):
+def _test_unicode_object_api(cpy: CPython):
     var str = "Hello, World!"
 
     var py_str = cpy.PyUnicode_DecodeUTF8(str)
@@ -186,7 +254,7 @@ def test_unicode_object_api(cpy: CPython):
     assert_equal(res, str)
 
 
-def test_tuple_object_api(cpy: CPython):
+def _test_tuple_object_api(cpy: CPython):
     var n = cpy.PyLong_FromSsize_t(42)
     var t = cpy.PyTuple_New(1)
     assert_true(t)
@@ -197,7 +265,7 @@ def test_tuple_object_api(cpy: CPython):
     assert_equal(cpy.PyTuple_GetItem(t, 0), n)
 
 
-def test_list_object_api(cpy: CPython):
+def _test_list_object_api(cpy: CPython):
     var n = cpy.PyLong_FromSsize_t(42)
     var l = cpy.PyList_New(1)
     assert_true(l)
@@ -208,7 +276,7 @@ def test_list_object_api(cpy: CPython):
     assert_equal(cpy.PyList_GetItem(l, 0), n)
 
 
-def test_dictionary_object_api(cpy: CPython):
+def _test_dictionary_object_api(cpy: CPython):
     var d = cpy.PyDict_New()
     var b = cpy.PyBool_FromLong(0)
 
@@ -239,7 +307,7 @@ def test_dictionary_object_api(cpy: CPython):
     assert_false(succ)
 
 
-def test_set_object_api(cpy: CPython):
+def _test_set_object_api(cpy: CPython):
     var s = cpy.PySet_New({})
     assert_true(s)
 
@@ -247,7 +315,7 @@ def test_set_object_api(cpy: CPython):
     assert_equal(cpy.PySet_Add(s, n), 0)
 
 
-def test_module_object_api(cpy: CPython):
+def _test_module_object_api(cpy: CPython):
     var mod = cpy.PyModule_Create("module")
 
     assert_true(mod)
@@ -258,22 +326,24 @@ def test_module_object_api(cpy: CPython):
     assert_equal(cpy.PyModule_AddFunctions(mod, funcs.unsafe_ptr()), 0)
     _ = funcs
 
-    if cpy.version.minor >= 10:
-        var n = cpy.PyLong_FromSsize_t(0)
-        var name = "n"
-        # returns 0 on success, -1 on failure
-        assert_equal(
-            cpy.PyModule_AddObjectRef(mod, name.unsafe_cstr_ptr(), n), 0
-        )
-        _ = name
+    var n = cpy.PyLong_FromSsize_t(0)
+    var name = "n"
+    # returns 0 on success, -1 on failure
+    assert_equal(
+        cpy.PyModule_AddObjectRef(
+            mod, name.as_c_string_slice().unsafe_ptr(), n
+        ),
+        0,
+    )
+    _ = name
 
 
-def test_slice_object_api(cpy: CPython):
+def _test_slice_object_api(cpy: CPython):
     var n = cpy.PyLong_FromSsize_t(42)
     assert_true(cpy.PySlice_New(n, n, n))
 
 
-def test_capsule_api(cpy: CPython):
+def _test_capsule_api(cpy: CPython):
     var o = PyObjectPtr()
     with assert_raises(contains="called with invalid PyCapsule object"):
         _ = cpy.PyCapsule_GetPointer(o, "some_name")
@@ -287,7 +357,7 @@ def test_capsule_api(cpy: CPython):
         capsule_impl.bitcast[NoneType](), "some_name", empty_dtor
     )
     var capsule_pointer = cpy.PyCapsule_GetPointer(capsule, "some_name")
-    assert_equal(capsule_impl.bitcast[NoneType](), capsule_pointer)
+    assert_equal(Int(capsule_impl.bitcast[NoneType]()), Int(capsule_pointer))
 
     with assert_raises(contains="called with incorrect name"):
         _ = cpy.PyCapsule_GetPointer(capsule, "some_other_name")
@@ -295,14 +365,14 @@ def test_capsule_api(cpy: CPython):
     capsule_impl.free()
 
 
-def test_memory_management_api(cpy: CPython):
+def _test_memory_management_api(cpy: CPython):
     var ptr = cpy.lib.call["PyObject_Malloc", UnsafePointer[NoneType]](64)
     assert_true(ptr)
 
     cpy.PyObject_Free(ptr)
 
 
-def test_common_object_structure_api(cpy: CPython):
+def _test_common_object_structure_api(cpy: CPython):
     var n = cpy.PyLong_FromSsize_t(42)
     assert_true(cpy.Py_Is(n, n))
 
@@ -316,64 +386,143 @@ def test_common_object_structure_api(cpy: CPython):
     )
 
 
-def main():
+def test_with_cpython_very_high_level_api():
     var python = Python()
     ref cpython = python.cpython()
+    _test_very_high_level_api(cpython)
 
-    # The Very High Level Layer
-    test_very_high_level_api(cpython)
 
-    # Reference Counting
-    test_reference_counting_api(cpython)
+def test_with_cpython_reference_counting_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_reference_counting_api(cpython)
 
-    # Exception Handling
-    test_exception_handling_api(cpython)
 
-    # Initialization, Finalization, and Threads
-    test_threading_api(cpython)
+def test_with_cpython_exception_handling_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_exception_handling_api(cpython)
 
-    # Importing Modules
-    test_importing_module_api(cpython)
 
-    # Abstract Objects Layer
-    # Object Protocol
-    test_object_protocol_api(cpython)
-    # Call Protocol
-    test_call_protocol_api(cpython)
-    # Number Protocol
-    test_number_protocol_api(cpython)
-    # Iterator Protocol
-    test_iterator_protocol_api(cpython)
+def test_with_cpython_threading_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_threading_api(cpython)
 
-    # Concrete Objects Layer
-    # Type Objects
-    test_type_object_api(cpython)
-    # Integer Objects
-    test_integer_object_api(cpython)
-    # Boolean Objects
-    test_boolean_object_api(cpython)
-    # Floating-Point Objects
-    test_floating_point_object_api(cpython)
-    # Unicode Objects and Codecs
-    test_unicode_object_api(cpython)
-    # Tuple Objects
-    test_tuple_object_api(cpython)
-    # List Objects
-    test_list_object_api(cpython)
-    # Dictionary Objects
-    test_dictionary_object_api(cpython)
-    # Set Objects
-    test_set_object_api(cpython)
-    # Module Objects
-    test_module_object_api(cpython)
-    # Slice Objects
-    test_slice_object_api(cpython)
-    # Capsules
-    test_capsule_api(cpython)
 
-    # Memory Management
-    test_memory_management_api(cpython)
+def test_with_cpython_importing_module_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_importing_module_api(cpython)
 
-    # Object Implementation Support
-    # Common Object Structures
-    test_common_object_structure_api(cpython)
+
+def test_with_cpython_object_protocol_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_object_protocol_api(cpython)
+
+
+def test_with_cpython_call_protocol_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_call_protocol_api(cpython)
+
+
+def test_with_cpython_number_protocol_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_number_protocol_api(cpython)
+
+
+def test_with_cpython_iterator_protocol_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_iterator_protocol_api(cpython)
+
+
+def test_with_cpython_type_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_type_object_api(cpython)
+
+
+def test_with_cpython_integer_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_integer_object_api(cpython)
+
+
+def test_with_cpython_boolean_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_boolean_object_api(cpython)
+
+
+def test_with_cpython_floating_point_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_floating_point_object_api(cpython)
+
+
+def test_with_cpython_unicode_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_unicode_object_api(cpython)
+
+
+def test_with_cpython_tuple_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_tuple_object_api(cpython)
+
+
+def test_with_cpython_list_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_list_object_api(cpython)
+
+
+def test_with_cpython_dictionary_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_dictionary_object_api(cpython)
+
+
+def test_with_cpython_set_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_set_object_api(cpython)
+
+
+def test_with_cpython_module_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_module_object_api(cpython)
+
+
+def test_with_cpython_slice_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_slice_object_api(cpython)
+
+
+def test_with_cpython_capsule_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_capsule_api(cpython)
+
+
+def test_with_cpython_memory_management_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_memory_management_api(cpython)
+
+
+def test_with_cpython_common_object_structure_api():
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_common_object_structure_api(cpython)
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

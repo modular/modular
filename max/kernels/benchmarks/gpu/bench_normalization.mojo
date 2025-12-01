@@ -18,12 +18,13 @@ from benchmark import Bench, BenchConfig, Bencher, BenchId
 from gpu.host import DeviceContext
 from internal_utils import env_get_shape, int_list_to_tuple
 from layout import (
+    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
+from memory import LegacyUnsafePointer as UnsafePointer
 from layout.int_tuple import fill_like
 from nn.normalization import layer_norm_gpu, rms_norm_gpu
 
@@ -60,16 +61,16 @@ fn bench_layer_norm_gpu[
 
     var param_shape = IndexList[1](cols)
 
-    alias layout = Layout.row_major[rank]()
-    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    comptime layout = Layout.row_major[rank]()
+    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var data_buf = LayoutTensor[dtype, layout](
-        data_d.unsafe_ptr(), RuntimeLayout[layout].row_major(shape)
+        data_d, RuntimeLayout[layout].row_major(shape)
     )
     var gamma = LayoutTensor[dtype, layout_1d](
-        gamma_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+        gamma_d, RuntimeLayout[layout_1d].row_major(param_shape)
     )
     var beta = LayoutTensor[dtype, layout_1d](
-        beta_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+        beta_d, RuntimeLayout[layout_1d].row_major(param_shape)
     )
     var epsilon = Scalar[dtype]()
 
@@ -175,13 +176,13 @@ fn bench_rms_norm_gpu[
 
     var param_shape = IndexList[1](cols)
 
-    alias layout = Layout.row_major[rank]()
-    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    comptime layout = Layout.row_major[rank]()
+    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var data_buf = LayoutTensor[dtype, layout](
-        data_d.unsafe_ptr(), RuntimeLayout[layout].row_major(shape)
+        data_d, RuntimeLayout[layout].row_major(shape)
     )
     var gamma = LayoutTensor[dtype, layout_1d](
-        gamma_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+        gamma_d, RuntimeLayout[layout_1d].row_major(param_shape)
     )
     var epsilon = Scalar[dtype](0.001)
     var weight_offset = Scalar[dtype](0.0)
@@ -244,8 +245,8 @@ fn bench_rms_norm_gpu[
 
 
 def main():
-    alias dtype = env_get_dtype["dtype", DType.bfloat16]()
-    alias shape = int_list_to_tuple[env_get_shape["shape", "256x256"]()]()
+    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
+    comptime shape = int_list_to_tuple[env_get_shape["shape", "256x256"]()]()
 
     var m = Bench(BenchConfig(num_repetitions=1))
     with DeviceContext() as ctx:

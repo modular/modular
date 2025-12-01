@@ -1,0 +1,230 @@
+load("@rules_cc//cc:cc_import.bzl", "cc_import")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc/toolchains:artifacts.bzl", "cc_artifact_name_pattern")
+load("@rules_cc//cc/toolchains:make_variable.bzl", "cc_make_variable")
+load("@rules_cc//cc/toolchains:toolchain.bzl", "cc_toolchain")
+load("@rules_cc//cc/toolchains/args:sysroot.bzl", "cc_sysroot")
+load("//bazel:config.bzl", "TOP_LEVEL_TAG")
+load("//bazel/internal/cc-toolchain/features:features.bzl", "MARKER_FEATURES")  # buildifier: disable=bzl-visibility
+load("//bazel/internal/cc-toolchain/tools:tools.bzl", "PLATFORMS")  # buildifier: disable=bzl-visibility
+
+cc_sysroot(
+    name = "linux_sysroot_aarch64",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:compile_actions",
+        "@rules_cc//cc/toolchains/actions:link_actions",
+    ],
+    data = ["@sysroot-jammy-aarch64"],
+    sysroot = "@sysroot-jammy-aarch64//:root",
+)
+
+cc_sysroot(
+    name = "linux_sysroot_x86_64",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:compile_actions",
+        "@rules_cc//cc/toolchains/actions:link_actions",
+    ],
+    data = ["@sysroot-jammy-x86_64"],
+    sysroot = "@sysroot-jammy-x86_64//:root",
+)
+
+cc_sysroot(
+    name = "macos_sysroot",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:compile_actions",
+        "@rules_cc//cc/toolchains/actions:link_actions",
+    ],
+    data = ["@sysroot-macos"],
+    sysroot = "@sysroot-macos//:root",
+)
+
+[
+    cc_toolchain(
+        name = "{}_clang_toolchain".format(platform),
+        args = select({
+            "//:linux_x86_64": [":linux_sysroot_x86_64"],
+            "//:linux_aarch64": [":linux_sysroot_aarch64"],
+            "@platforms//os:macos": [":macos_sysroot"],
+        }) + [
+            "//bazel/internal/cc-toolchain/args:resource_dir_args",
+            "//bazel/internal/cc-toolchain/args:compile_and_link_args",
+            "//bazel/internal/cc-toolchain/args:compile_args",
+            "//bazel/internal/cc-toolchain/args:cpp_compile_args",
+            "//bazel/internal/cc-toolchain/args:link_args",
+            "//bazel/internal/cc-toolchain/args:link_executable_args",
+            "//bazel/internal/cc-toolchain/args/modular:first_party",
+            "//bazel/internal/cc-toolchain/args/modular:third_party",
+            "//bazel/internal/cc-toolchain/args:compile_warnings",
+            "//bazel/internal/cc-toolchain/args:compile_warnings_as_errors",
+            "//bazel/internal/cc-toolchain/args/modular:assertions",  # Comes after warnings to allow disabling them
+            "//bazel/internal/cc-toolchain/args:ignore_unused_command_line_argument",
+        ] + select({
+            "@platforms//os:linux": [
+                "@rules_cc//cc/toolchains/args/soname_flags:set_soname",
+            ],
+            "//conditions:default": [],
+        }),
+        artifact_name_patterns = select({
+            "@platforms//os:macos": [":macos-dylib-pattern"],
+            "//conditions:default": [],
+        }),
+        compiler = "clang",
+        enabled_features = select({
+            # NOTE: Must come before default features which can override these
+            "//:modular_config_asan": ["//bazel/internal/cc-toolchain/features:asan"],
+            "//:modular_config_tsan": ["//bazel/internal/cc-toolchain/features:tsan"],
+            "//:modular_config_ubsan": ["//bazel/internal/cc-toolchain/features:ubsan"],
+            "//conditions:default": [],
+        }) + [
+            # Features where order doesn't matter
+            "//bazel/internal/cc-toolchain/features:archive_param_file",
+            "//bazel/internal/cc-toolchain/features:gcc_quoting_for_param_files",
+            "//bazel/internal/cc-toolchain/features:module_maps",
+            "//bazel/internal/cc-toolchain/features:non_opt_feature",
+            "//bazel/internal/cc-toolchain/features:sysroot",
+            "@rules_cc//cc/toolchains/args/preprocessor_defines:feature",
+            "@rules_cc//cc/toolchains/args/random_seed:feature",
+            "//bazel/internal/cc-toolchain/features:external_include_paths",
+
+            # NOTE: Order matters, some flags must come before default flags
+            "//bazel/internal/cc-toolchain/features:parse_headers_shim",
+            "//bazel/internal/cc-toolchain/features:opt_feature",
+            "@rules_cc//cc/toolchains/args:experimental_replace_legacy_action_config_features",
+            "//bazel/internal/cc-toolchain/features:supports_start_end_lib",  # https://github.com/bazelbuild/rules_cc/issues/322
+        ],
+        known_features = [
+            # Only optional features need to be included here
+            "//bazel/internal/cc-toolchain/features:asan",
+            "//bazel/internal/cc-toolchain/features:tsan",
+            "//bazel/internal/cc-toolchain/features:ubsan",
+            "//bazel/internal/cc-toolchain/features:dbg_stub",
+            "//bazel/internal/cc-toolchain/features:fastbuild_stub",
+            "//bazel/internal/cc-toolchain/features:opt_stub",
+            "//bazel/internal/cc-toolchain/features:layering_check",
+            "//bazel/internal/cc-toolchain/features:use_module_maps",
+            "//bazel/internal/cc-toolchain/features:parse_headers",
+            "@rules_cc//cc/toolchains/args/generate_linkmap:feature",
+        ] + [
+            "//bazel/internal/cc-toolchain/features:" + name
+            for name in MARKER_FEATURES
+        ] + select({
+            "@platforms//os:macos": [
+                "//bazel/internal/cc-toolchain/features:generate_dsym",
+            ],
+            "//conditions:default": [],
+        }),
+        make_variables = select({
+            "@platforms//os:macos": [":macos_stack_frame"],
+            "//conditions:default": [],
+        }),
+        module_map = "//bazel/internal/cc-toolchain/tools:builtin_module_map",
+        supports_header_parsing = True,
+        tags = [TOP_LEVEL_TAG],  # Used below, unclear why this is needed
+        tool_map = "//bazel/internal/cc-toolchain/tools:{}_tools".format(platform),
+    )
+    for platform in PLATFORMS
+]
+
+cc_artifact_name_pattern(
+    name = "macos-dylib-pattern",
+    category = "@rules_cc//cc/toolchains/artifacts:dynamic_library",
+    extension = ".dylib",
+    prefix = "lib",
+)
+
+cc_make_variable(
+    name = "macos_stack_frame",
+    value = "-Wframe-larger-than=100000000 -Wno-vla",
+    variable_name = "STACK_FRAME_UNLIMITED",
+)
+
+toolchain(
+    name = "linux-aarch64-toolchain",
+    exec_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+    tags = [TOP_LEVEL_TAG],  # Used from MODULE.bazel
+    toolchain = ":linux-aarch64_clang_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+toolchain(
+    name = "linux-x86_64-toolchain",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    tags = [TOP_LEVEL_TAG],  # Used from MODULE.bazel
+    toolchain = ":linux-x86_64_clang_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+toolchain(
+    name = "macos-toolchain",
+    exec_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:macos",
+    ],
+    tags = [TOP_LEVEL_TAG],  # Used from MODULE.bazel
+    toolchain = ":macos_clang_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+# gazelle:ignore
+cc_library(name = "empty_lib")
+
+# Explicitly depend on the asan lib so that it appears in runfiles and works with 'bazel run'
+cc_import(
+    name = "asan_lib",
+    shared_library = select({
+        "//:linux_aarch64": "@clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so",
+        "//:linux_x86_64": "@clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so",
+        "@platforms//os:macos": "@clang-macos//:lib/clang/20/lib/darwin/libclang_rt.asan_osx_dynamic.dylib",
+    }),
+)
+
+cc_import(
+    name = "tsan_macos_lib",
+    shared_library = "@clang-macos//:lib/clang/20/lib/darwin/libclang_rt.tsan_osx_dynamic.dylib",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+cc_import(
+    name = "ubsan_macos_lib",
+    shared_library = "@clang-macos//:lib/clang/20/lib/darwin/libclang_rt.ubsan_osx_dynamic.dylib",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+alias(
+    name = "extra_lib",
+    actual = select({
+        "//:asan": ":asan_lib",
+        "//:tsan_macos": ":tsan_macos_lib",
+        "//:ubsan_macos": ":ubsan_macos_lib",
+        "//conditions:default": ":empty_lib",
+    }),
+    tags = [TOP_LEVEL_TAG],  # Used from .bazelrc
+)
+
+filegroup(
+    name = "coverage_support",
+    srcs = [
+        ":collect-cc-coverage.sh",
+        "@bazel_tools//tools/test:coverage_support",
+    ] + select({
+        "//:linux_aarch64": [
+            "@clang-linux-aarch64//:bin/llvm-cov",
+            "@clang-linux-aarch64//:bin/llvm-profdata",
+        ],
+        "//:linux_x86_64": [
+            "@clang-linux-x86_64//:bin/llvm-cov",
+            "@clang-linux-x86_64//:bin/llvm-profdata",
+        ],
+        "@platforms//os:macos": [
+            "@clang-macos//:bin/llvm-cov",
+            "@clang-macos//:bin/llvm-profdata",
+        ],
+    }),
+    tags = [TOP_LEVEL_TAG],  # Used from .bazelrc
+)

@@ -21,20 +21,22 @@ def main():
 
     assert_true(
         # NVIDIA
-        accelerator_arch == "nvidia:80"
-        or accelerator_arch == "nvidia:84"
-        or accelerator_arch == "nvidia:86"
-        or accelerator_arch == "nvidia:89"
-        or accelerator_arch == "nvidia:90"
-        or accelerator_arch == "nvidia:90a"
-        or accelerator_arch == "nvidia:100"
-        or accelerator_arch == "nvidia:100a"
+        accelerator_arch == "nvidia:sm_80"
+        or accelerator_arch == "nvidia:sm_84"
+        or accelerator_arch == "nvidia:sm_86"
+        or accelerator_arch == "nvidia:sm_89"
+        or accelerator_arch == "nvidia:sm_90"
+        or accelerator_arch == "nvidia:sm_90a"
+        or accelerator_arch == "nvidia:sm_100"
+        or accelerator_arch == "nvidia:sm_100a"
         # AMD
         or accelerator_arch == "amdgpu:gfx942"
+        or accelerator_arch == "amdgpu:gfx950"
         or accelerator_arch == "amdgpu:gfx1101"
         or accelerator_arch == "amdgpu:gfx1102"
         or accelerator_arch == "amdgpu:gfx1103"
         or accelerator_arch == "amdgpu:gfx1200"
-        or accelerator_arch == "amdgpu:gfx1201",
+        or accelerator_arch == "amdgpu:gfx1201"
+        or accelerator_arch == "metal:3",
         "Expected specific accelerator_archs, got: " + accelerator_arch,
     )

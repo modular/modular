@@ -19,7 +19,6 @@ from os import setenv
 ```
 """
 
-
 from sys import CompilationTarget, external_call
 from sys.ffi import c_int
 
@@ -40,14 +39,9 @@ fn setenv(var name: String, var value: String, overwrite: Bool = True) -> Bool:
       False if the name is empty or contains an `=` character. In any other
       case, True is returned.
     """
-
-    @parameter
-    if CompilationTarget.is_windows():
-        return False
-
     var status = external_call["setenv", Int32](
-        name.unsafe_cstr_ptr(),
-        value.unsafe_cstr_ptr(),
+        name.as_c_string_slice().unsafe_ptr(),
+        value.as_c_string_slice().unsafe_ptr(),
         Int32(1 if overwrite else 0),
     )
     return status == 0
@@ -62,12 +56,10 @@ fn unsetenv(var name: String) -> Bool:
     Returns:
         True if unsetting the variable succeeded. Otherwise, False is returned.
     """
-    constrained[
-        not CompilationTarget.is_windows(),
-        "operating system must be Linux or macOS",
-    ]()
-
-    return external_call["unsetenv", c_int](name.unsafe_cstr_ptr()) == 0
+    return (
+        external_call["unsetenv", c_int](name.as_c_string_slice().unsafe_ptr())
+        == 0
+    )
 
 
 fn getenv(var name: String, default: String = "") -> String:
@@ -85,14 +77,9 @@ fn getenv(var name: String, default: String = "") -> String:
     Returns:
       The value of the environment variable.
     """
-
-    @parameter
-    if CompilationTarget.is_windows():
-        return default
-
-    var ptr = external_call["getenv", UnsafePointer[UInt8]](
-        name.unsafe_cstr_ptr()
-    )
+    var ptr = external_call[
+        "getenv", UnsafePointer[UInt8, ImmutOrigin.external]
+    ](name.as_c_string_slice().unsafe_ptr())
     if not ptr:
         return default
     return String(unsafe_from_utf8_ptr=ptr)

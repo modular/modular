@@ -11,11 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/tutorials/serve-custom-model-architectures.mdx
+# DOC: max/develop/serve-custom-model-architectures.mdx
 
 from __future__ import annotations
-
-from typing import Optional
 
 from max.driver import Device
 from max.engine import InferenceSession
@@ -41,7 +39,7 @@ class Qwen2Model(Llama3Model):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
+        adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         super().__init__(

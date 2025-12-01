@@ -12,17 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 import sys
-from pathlib import Path
 from collections import Set
+from pathlib import Path
 from subprocess import run
 
 # We can't check much more than this at the moment, because the license year
 # changes and the language is not mature enough to do regex yet.
-alias LICENSE = """# ===----------------------------------------------------------------------=== #
+comptime LICENSE = """# ===----------------------------------------------------------------------=== #
 # Copyright (c)"""
 
 # NOTE: This copyright year needs to be updated (m)annually
-alias LICENSE_TO_ADD = """# ===----------------------------------------------------------------------=== #
+comptime LICENSE_TO_ADD = """# ===----------------------------------------------------------------------=== #
 # Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
@@ -48,8 +48,8 @@ fn is_ignored_file(filename: StringSlice) -> Bool:
 
     # Generated files
     if (
-        filename == "max/serve/schemas/kserve.py"
-        or filename == "max/serve/schemas/openai.py"
+        filename == "max/python/max/serve/schemas/kserve.py"
+        or filename == "max/python/max/serve/schemas/openai.py"
     ):
         return True
 
@@ -80,7 +80,9 @@ fn check_path(path: Path, mut files_without_license: List[Path]) raises:
 
     # Ignore #! in scripts
     if file_text.startswith("#!"):
-        has_license = "\n".join(file_text.splitlines()[1:]).startswith(LICENSE)
+        has_license = "\n".join(List(file_text.splitlines()[1:])).startswith(
+            LICENSE
+        )
     else:
         has_license = file_text.startswith(LICENSE)
 
@@ -88,7 +90,7 @@ fn check_path(path: Path, mut files_without_license: List[Path]) raises:
         files_without_license.append(path)
 
 
-fn main() raises:
+def main():
     target_paths = sys.argv()
 
     fix = False

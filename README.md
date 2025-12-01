@@ -29,32 +29,29 @@ You don't need to clone this repo.
 You can install Modular as a `pip` or `conda` package and then start an
 OpenAI-compatible endpoint with a model of your choice.
 
-If we trim the ceremonial steps, you can start a local LLM endpoint with just
-two commands:
+To get started with the Modular Platform and serve a model using the MAX
+framework, see [the quickstart guide](https://docs.modular.com/max/get-started).
 
-```sh
-pip install modular
-```
+> [!NOTE]
+> **Nightly vs. stable releases**
+> If you cloned the repo and want a stable release, run
+  `git checkout modular/vX.X` to match the version.
+> The `main` branch tracks nightly builds, while the `stable` branch matches
+  the latest released version.
 
-```sh
-max serve --model-path=modularai/Llama-3.1-8B-Instruct-GGUF
-```
+After your model endpoint is up and running, you can start sending the model
+inference requests using
+[our OpenAI-compatible REST API](https://docs.modular.com/max/api/serve).
 
-Then start sending the Llama 3 model inference requests using [our
-OpenAI-compatible REST API](https://docs.modular.com/max/api/serve).
-
-Or try running hundreds of other models from [our model
-repository](https://builds.modular.com/?category=models).
-
-For a complete walkthrough, see [the quickstart
-guide](https://docs.modular.com/max/get-started).
+Try running hundreds of other models from
+[our model repository](https://builds.modular.com/?category=models).
 
 ## Deploy our container
 
 The MAX container is our Kubernetes-compatible Docker container for convenient
-deployment, using the same inference server you get from the `max serve`
-command shown above. We have separate containers for NVIDIA and AMD GPU
-environments, and a unified container that works with both.
+deployment, which uses the MAX framework's built-in inference server. We have
+separate containers for NVIDIA and AMD GPU environments, and a unified container
+that works with both.
 
 For example, you can start a container for an NVIDIA GPU with this command:
 
@@ -62,8 +59,8 @@ For example, you can start a container for an NVIDIA GPU with this command:
 docker run --gpus=1 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     -p 8000:8000 \
-    docker.modular.com/modular/max-nvidia-full:latest \
-    --model-path modularai/Llama-3.1-8B-Instruct-GGUF
+    modular/max-nvidia-full:latest \
+    --model-path google/gemma-3-27b-it
 ```
 
 For more information, see our [MAX container

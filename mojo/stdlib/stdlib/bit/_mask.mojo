@@ -19,7 +19,7 @@ from bit.mask import is_negative
 ```
 """
 
-from sys.info import bit_width_of
+from sys.info import size_of, bit_width_of
 
 
 @always_inline
@@ -33,11 +33,11 @@ fn is_negative(value: Int) -> Int:
         A bitmask filled with `1` if the value is negative, filled with `0`
         otherwise.
     """
-    return Int(is_negative(Scalar[DType.index](value)))
+    return Int(is_negative(Scalar[DType.int](value)))
 
 
 @always_inline
-fn is_negative[dtype: DType, //](value: SIMD[dtype, _]) -> __type_of(value):
+fn is_negative[dtype: DType, //](value: SIMD[dtype, _]) -> type_of(value):
     """Get a bitmask of whether the value is negative.
 
     Parameters:
@@ -56,8 +56,8 @@ fn is_negative[dtype: DType, //](value: SIMD[dtype, _]) -> __type_of(value):
     ]()
 
     # HACK(#5003): remove this workaround
-    alias d = dtype if dtype is not DType.index else (
-        DType.int32 if dtype.size_of() == 4 else DType.int64
+    comptime d = dtype if dtype is not DType.int else (
+        DType.int32 if size_of[dtype]() == 4 else DType.int64
     )
     return (value.cast[d]() >> (bit_width_of[d]() - 1)).cast[dtype]()
 
@@ -95,4 +95,4 @@ fn splat(value: Bool) -> Int:
         A bitmask filled with `1` if the value is `True`, filled with `0`
         otherwise.
     """
-    return Int(splat[DType.index](Scalar[DType.bool](value)))
+    return Int(splat[DType.int](Scalar[DType.bool](value)))

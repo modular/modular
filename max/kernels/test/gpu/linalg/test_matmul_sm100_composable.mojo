@@ -11,35 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
-from math import ceildiv
 from hashlib import default_comp_time_hasher
+from math import ceildiv
+from sys import size_of
+
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-
 from gpu import WARP_SIZE, barrier
+from gpu.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, lane_id, thread_idx
-from gpu.memory import AddressSpace, external_memory
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu import block_idx, lane_id, thread_idx
+from gpu.memory import external_memory
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
-from layout import Layout, LayoutTensor
-from layout.int_tuple import IntTuple
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-)
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from gpu.cluster import block_rank_in_cluster
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-from linalg import vendor_blas
-from linalg.mmaop_sm100 import MmaOpSM100_SS
-from linalg.matmul_sm100_composable import matmul_sm100
-
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
 
 # Additional imports for testing
 from internal_utils import (
@@ -50,6 +36,17 @@ from internal_utils import (
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
+from layout import Layout, LayoutTensor
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout.int_tuple import IntTuple
+from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
+from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from linalg.arch.sm100 import MmaOpSM100_SS
+from linalg.matmul.gpu.sm100.composable import matmul_sm100
+
+from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
+from utils.static_tuple import StaticTuple
 
 
 def test_blackwell_matmul_tma_umma[
@@ -68,11 +65,11 @@ def test_blackwell_matmul_tma_umma[
     if not benchmark:
         print(M, "x", N, "x", K)
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_c_shape = DimList(m.dim, n.dim)
     var dynamic_a_shape = DimList(m.value, k.value)
     var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
         k.value, n.value
@@ -115,7 +112,7 @@ def test_blackwell_matmul_tma_umma[
     var b = from_ndbuffer_row_major(b_device.tensor)
     var c = from_ndbuffer_row_major(c_device.tensor)
 
-    alias block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
+    comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
 
     matmul_sm100[mma_shape=umma_shape, block_tile_shape=block_tile_shape](
         c_device.tensor, a_device.tensor, b_device.tensor, ctx
@@ -137,7 +134,7 @@ def test_blackwell_matmul_tma_umma[
     ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
     ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
     ctx.synchronize()
-    alias rtol = 1e-2
+    comptime rtol = 1e-2
     assert_almost_equal(
         c_host.tensor,
         c_host_ref.tensor,
@@ -181,8 +178,7 @@ def main():
             BK=64,
         ](ctx, dynamic(1024), static[2048](), static[2048]())
 
-        alias BK_list = List[Int](64, 128)
-        # alias BK_list = List[Int](64, 128)
+        comptime BK_list: List[Int] = [64, 128]
 
         @parameter
         for BK in BK_list:

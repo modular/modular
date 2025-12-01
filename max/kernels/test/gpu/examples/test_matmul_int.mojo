@@ -23,26 +23,29 @@ from gpu import (
     thread_idx,
 )
 from gpu.host import DeviceContext
-from memory import memset_zero, stack_allocation
+from memory import (
+    memset_zero,
+    stack_allocation,
+)
 
 from utils.index import Index
 
-alias TILE_SZ_A = 128
-alias TILE_SZ_B = 16
-alias TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
+comptime TILE_SZ_A = 128
+comptime TILE_SZ_B = 16
+comptime TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
 
 
 fn matmul(
-    a_ptr: UnsafePointer[Scalar[DType.index]],
-    b_ptr: UnsafePointer[Scalar[DType.index]],
-    c_ptr: UnsafePointer[Scalar[DType.index]],
+    a_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
+    b_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
+    c_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
 ):
-    var a = NDBuffer[DType.index, 2](a_ptr, Index(m, k))
-    var b = NDBuffer[DType.index, 2](b_ptr, Index(k, n))
-    var c = NDBuffer[DType.index, 2](c_ptr, Index(m, n))
+    var a = NDBuffer[DType.int, 2](a_ptr, Index(m, k))
+    var b = NDBuffer[DType.int, 2](b_ptr, Index(k, n))
+    var c = NDBuffer[DType.int, 2](c_ptr, Index(m, n))
 
     # Compute C = A x B
     #   where A is a (m x k) matrix
@@ -56,16 +59,16 @@ fn matmul(
     # Allocate B array into shared memory for tiling.
     var b_shared = stack_allocation[
         TILE_SZ_RATIO * TILE_SZ_B,
-        DType.index,
+        DType.int,
         address_space = AddressSpace.SHARED,
     ]()
 
     # Thread indexing offsets.
-    var row: UInt = global_idx.x
-    var col: UInt = block_idx.y * TILE_SZ_B
+    var row = Int(global_idx.x)
+    var col = Int(block_idx.y * TILE_SZ_B)
 
     # Privatization of the C matrix.
-    var c_reg = stack_allocation[TILE_SZ_B, DType.index]()
+    var c_reg = stack_allocation[TILE_SZ_B, DType.int]()
 
     memset_zero(c_reg, TILE_SZ_B)
 
@@ -75,7 +78,7 @@ fn matmul(
         var j: UInt = thread_idx.x % TILE_SZ_B
 
         # Load the B matrix into shared memory.
-        var b_val = Int(b[tile_idx * TILE_SZ_RATIO + Int(i), Int(col) + Int(j)])
+        var b_val = Int(b[tile_idx * TILE_SZ_RATIO + Int(i), col + Int(j)])
         b_shared[i * TILE_SZ_B + j] = b_val
 
         barrier()
@@ -84,7 +87,7 @@ fn matmul(
         for idx in range(TILE_SZ_RATIO):
             # Load the A tile into the register.
             var a_reg: Int
-            if row < UInt(m) and tile_idx * TILE_SZ_RATIO + idx < k:
+            if row < m and tile_idx * TILE_SZ_RATIO + idx < k:
                 a_reg = Int(a[row, tile_idx * TILE_SZ_RATIO + idx])
             else:
                 a_reg = 0
@@ -98,24 +101,24 @@ fn matmul(
 
     # Store the values into the output matrix.
     for out_idx in range(TILE_SZ_B):
-        if row < UInt(m) and col + out_idx < n:
+        if row < m and col + out_idx < n:
             c[Index(row, col + out_idx)] = c_reg.load(out_idx)
 
 
 fn run_matmul(ctx: DeviceContext) raises:
     print("== run_matmul")
 
-    alias m = 512
-    alias n = 512
-    alias k = 512
+    comptime m = 512
+    comptime n = 512
+    comptime k = 512
 
-    var a_host_ptr = UnsafePointer[Scalar[DType.index]].alloc(m * k)
-    var b_host_ptr = UnsafePointer[Scalar[DType.index]].alloc(k * n)
-    var c_host_ptr = UnsafePointer[Scalar[DType.index]].alloc(m * n)
+    var a_host_ptr = alloc[Scalar[DType.int]](m * k)
+    var b_host_ptr = alloc[Scalar[DType.int]](k * n)
+    var c_host_ptr = alloc[Scalar[DType.int]](m * n)
 
-    var a_host = NDBuffer[DType.index, 2, _, DimList(m, k)](a_host_ptr)
-    var b_host = NDBuffer[DType.index, 2, _, DimList(k, n)](b_host_ptr)
-    var c_host = NDBuffer[DType.index, 2, _, DimList(m, n)](c_host_ptr)
+    var a_host = NDBuffer[DType.int, 2, _, DimList(m, k)](a_host_ptr)
+    var b_host = NDBuffer[DType.int, 2, _, DimList(k, n)](b_host_ptr)
+    var c_host = NDBuffer[DType.int, 2, _, DimList(m, n)](c_host_ptr)
 
     for i in range(m):
         for j in range(k):
@@ -129,14 +132,14 @@ fn run_matmul(ctx: DeviceContext) raises:
         for j in range(n):
             c_host[i, j] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.index](m * k)
-    var b_device = ctx.enqueue_create_buffer[DType.index](k * n)
-    var c_device = ctx.enqueue_create_buffer[DType.index](m * n)
+    var a_device = ctx.enqueue_create_buffer[DType.int](m * k)
+    var b_device = ctx.enqueue_create_buffer[DType.int](k * n)
+    var c_device = ctx.enqueue_create_buffer[DType.int](m * n)
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_function[matmul](
+    ctx.enqueue_function_checked[matmul, matmul](
         a_device,
         b_device,
         c_device,

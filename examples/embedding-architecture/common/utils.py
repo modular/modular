@@ -24,7 +24,7 @@ ACTIVATIONS = {
 }
 
 
-def _quantization_encoding(pipeline_config: PipelineConfig):
+def _quantization_encoding(pipeline_config: PipelineConfig):  # noqa: ANN202
     """Helper to get quantization encoding from pipeline config."""
     if supported_encoding := pipeline_config.model_config.quantization_encoding:
         return supported_encoding.quantization_encoding

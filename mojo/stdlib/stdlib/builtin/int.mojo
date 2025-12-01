@@ -15,23 +15,24 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+from collections.interval import IntervalElement
 from collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
 )
-from collections.interval import IntervalElement
 from hashlib.hasher import Hasher
-from math import CeilDivable, Ceilable, Floorable, Truncable
-from sys import bit_width_of
+from math import Ceilable, CeilDivable, Floorable, Truncable
 from sys.info import is_32bit
+from sys.info import bit_width_of
 
 from builtin.device_passable import DevicePassable
 from builtin.math import Absable, DivModable, Powable
+from memory import LegacyOpaquePointer as OpaquePointer
 from python import (
-    Python,
-    PythonObject,
     ConvertibleFromPython,
     ConvertibleToPython,
+    Python,
+    PythonObject,
 )
 
 from utils._select import _select_register_value as select
@@ -49,7 +50,7 @@ trait Indexer:
     types like `UInt` to not have to be converted to an `Int` first.
     """
 
-    fn __index__(self) -> __mlir_type.index:
+    fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:
@@ -65,7 +66,7 @@ trait Indexer:
 
 @always_inline("nodebug")
 fn index[T: Indexer](idx: T, /) -> Int:
-    """Returns the value of `__index__` for the given value.
+    """Returns the value of `__mlir_index__` for the given value.
 
     Parameters:
         T: A type conforming to the `Indexer` trait.
@@ -76,7 +77,7 @@ fn index[T: Indexer](idx: T, /) -> Int:
     Returns:
         An `__mlir_type` representing the index value.
     """
-    return Int(mlir_value=idx.__index__())
+    return Int(mlir_value=idx.__mlir_index__())
 
 
 # ===----------------------------------------------------------------------=== #
@@ -164,45 +165,6 @@ trait IntableRaising:
         ...
 
 
-trait ImplicitlyIntable(Intable):
-    """The `ImplicitlyIntable` trait describes a type that can be converted to
-    an Int implicitly.
-
-    This trait requires the type to implement the `__as_int__()` method. For
-    example:
-
-    ```mojo
-    struct Foo(ImplicitlyIntable):
-        var i: Int
-
-        fn __int__(self) -> Int:
-            return self.i
-
-        fn __as_int__(self) -> Int:
-            return self.__int__()
-
-    ```
-
-    Now you can use `Foo` anywhere that an `Int` is expected, e.g. equality
-    checks:
-
-    ```mojo
-    %# from testing import assert_equal
-    foo = Foo(42)
-    assert_equal(Int(42), foo)
-    ```
-    """
-
-    fn __as_int__(self) -> Int:
-        """Implicitly convert to an integral representation of the value,
-        wherever an `Int` is expected.
-
-        Returns:
-            The integral representation of the value.
-        """
-        ...
-
-
 @lldb_formatter_wrapping_type
 @register_passable("trivial")
 struct Int(
@@ -244,16 +206,16 @@ struct Int(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias BITWIDTH = Int(bit_width_of[DType.index]())
+    comptime BITWIDTH = Int(bit_width_of[DType.int]())
     """The bit width of the integer type."""
 
-    alias MAX = Int(Scalar[DType.index].MAX)
+    comptime MAX = Int(Scalar[DType.int].MAX)
     """Returns the maximum integer value."""
 
-    alias MIN = Int(Scalar[DType.index].MIN)
+    comptime MIN = Int(Scalar[DType.int].MIN)
     """Returns the minimum value of type."""
 
-    alias device_type: AnyTrivialRegType = Self
+    comptime device_type: AnyType = Self
     """Int is remapped to the same type when passed to accelerator devices."""
 
     fn _to_device_type(self, target: OpaquePointer):
@@ -297,8 +259,7 @@ struct Int(
 
     @doc_private
     @always_inline("builtin")
-    @implicit
-    fn __init__(out self, mlir_value: __mlir_type.index):
+    fn __init__(out self, *, mlir_value: __mlir_type.index):
         """Construct Int from the given index value.
 
         Args:
@@ -329,7 +290,6 @@ struct Int(
         self = value.__int__()
 
     @always_inline("builtin")
-    @implicit
     fn __init__(out self, value: UInt):
         """Construct Int from the given UInt value.
 
@@ -364,19 +324,6 @@ struct Int(
             If the type does not have an integral representation.
         """
         self = value.__int__()
-
-    @always_inline("nodebug")
-    @implicit
-    fn __init__[I: ImplicitlyIntable](out self, value: I):
-        """Construct Int from implicitly convertible type.
-
-        Parameters:
-            I: The type that is implicitly convertible to an `Int`.
-
-        Args:
-            value: The init value.
-        """
-        self = value.__as_int__()
 
     @always_inline("nodebug")
     fn __init__(out self, value: StringSlice, base: UInt = 10) raises:
@@ -583,7 +530,7 @@ struct Int(
         """
         return Float64(self) / Float64(rhs)
 
-    @always_inline("builtin")
+    @always_inline("nodebug")
     fn __floordiv__(self, rhs: Int) -> Int:
         """Return the division of `self` and `rhs` rounded down to the nearest
         integer.
@@ -601,7 +548,7 @@ struct Int(
         var res = select(((rhs < 0) ^ (self < 0)) & (rem != 0), div - 1, div)
         return select(rhs == 0, 0, res)
 
-    @always_inline("builtin")
+    @always_inline("nodebug")
     fn __mod__(self, rhs: Int) -> Int:
         """Return the remainder of self divided by rhs.
 
@@ -1018,7 +965,7 @@ struct Int(
         return self.__bool__()
 
     @always_inline("builtin")
-    fn __index__(self) -> __mlir_type.index:
+    fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:
@@ -1195,6 +1142,9 @@ struct Int(
 
         Returns:
             A PythonObject representing the value.
+
+        Raises:
+            If the Python runtime is not initialized or conversion fails.
         """
         return PythonObject(self)
 

@@ -12,37 +12,32 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string import StaticString
-from math import align_up, erf, exp, isqrt, log, sin, sqrt, tanh
-from sys import (
-    align_of,
-    env_get_int,
-    env_get_string,
-    simd_width_of,
-    size_of,
-)
+from math import align_up, erf, exp, rsqrt, log, sin, sqrt, tanh
+from sys import align_of, env_get_int, env_get_string, simd_width_of, size_of
 from sys.intrinsics import strided_load
 
 from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.buffer import _compute_ndbuffer_offset
-from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext, get_gpu_target
+from gpu.host.info import B200
 from internal_utils import arg_parse, parse_shape
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils import IndexList
 from utils.index import product
 
 
-fn add_const_fn(x: SIMD) -> __type_of(x):
+fn add_const_fn(x: SIMD) -> type_of(x):
     return x + 42
 
 
-fn copy_fn(x: SIMD) -> __type_of(x):
+fn copy_fn(x: SIMD) -> type_of(x):
     return x
 
 
-fn simd_sqrt(x: SIMD) -> __type_of(x):
+fn simd_sqrt(x: SIMD) -> type_of(x):
     return sqrt(x)
 
 
@@ -120,8 +115,13 @@ fn run_elementwise[
     name: StaticString,
     ctx: DeviceContext,
 ) raises:
-    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
-    alias align = align_of[
+    # Blackwell support 32B ld/st, see KERN-2037
+    comptime pack_size = 32 // size_of[
+        dtype
+    ]() if ctx.default_device_info is B200 else simd_width_of[
+        dtype, target = get_gpu_target()
+    ]()
+    comptime align = align_of[
         SIMD[dtype, pack_size], target = get_gpu_target()
     ]() if use_aligned_memory else 1
     var N = product(dims, rank)
@@ -134,11 +134,11 @@ fn run_elementwise[
         // size_of[dtype]()
     )
 
-    var in_host_ptr = UnsafePointer[Scalar[dtype], alignment=align].alloc(
-        N_cache
+    var in_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+        N_cache, alignment=align
     )
-    var out_host_ptr = UnsafePointer[Scalar[dtype], alignment=align].alloc(
-        N_cache
+    var out_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+        N_cache, alignment=align
     )
 
     var in_host = NDBuffer[dtype, rank](in_host_ptr, dims)
@@ -220,7 +220,7 @@ fn run_elementwise[
                 name,
             ),
         ),
-        ThroughputMeasure(BenchMetric.bytes, num_bytes),
+        [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
     )
 
     ctx.synchronize()
@@ -237,20 +237,23 @@ fn list_to_static_tuple[x: List[Int]]() -> IndexList[len(x)]:
 
     @parameter
     for i in range(len(x)):
-        t[i] = x[i]
+        comptime xi = x[i]
+        t[i] = xi
     return t
 
 
-fn main() raises:
+def main():
     var op = arg_parse("op", "sqrt")
-    alias dtype = DType._from_str(env_get_string["dtype", "DType.bfloat16"]())
-    alias rank = env_get_int["rank", 3]()
-    alias dims_str = env_get_string["dims", "1x1024x3072"]()
-    alias dims = list_to_static_tuple[parse_shape[dims_str]()]()
-    alias aligned_memory_config = env_get_int[
+    comptime dtype = DType._from_str(
+        env_get_string["dtype", "DType.bfloat16"]()
+    )
+    comptime rank = env_get_int["rank", 3]()
+    comptime dims_str = env_get_string["dims", "1x1024x3072"]()
+    comptime dims = list_to_static_tuple[parse_shape[dims_str]()]()
+    comptime aligned_memory_config = env_get_int[
         "aligned_memory_config", 0
     ]()  # bool
-    alias emulate_graph_compiler = env_get_int[
+    comptime emulate_graph_compiler = env_get_int[
         "emulate_graph_compiler", 0
     ]()  # bool
 
@@ -272,15 +275,15 @@ fn main() raises:
                 emulate_graph_compiler = emulate_graph_compiler != 0,
             ](m, "sqrt", dims, name=dims_str, ctx=ctx)
 
-        elif op == "isqrt":
+        elif op == "rsqrt":
             run_elementwise[
                 dtype,
-                isqrt,
+                rsqrt,
                 use_aligned_memory = aligned_memory_config != 0,
                 emulate_graph_compiler = emulate_graph_compiler != 0,
             ](
                 m,
-                "isqrt",
+                "rsqrt",
                 dims,
                 name=dims_str,
                 ctx=ctx,

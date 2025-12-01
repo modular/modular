@@ -12,12 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from sys import size_of, has_amd_gpu_accelerator
+
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm.allgather import allgather
+import comm.vendor.ccl as vendor_ccl
 from comm.allreduce import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext
-from sys import size_of
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal, assert_true
 
 
@@ -86,27 +89,65 @@ def all_gather_test[
         out_bufs_list.append(device_outputs^)
 
     # Create input NDBuffers.
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
+    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
         fill={}
     )
 
     for i in range(ngpus):
         in_bufs[i] = NDBuffer[dtype, rank](
-            in_bufs_list[i]._unsafe_ptr(), DimList(lengths[i])
+            in_bufs_list[i].unsafe_ptr(), DimList(lengths[i])
         )
 
     # Create flat output buffer array (ngpus * ngpus).
     var out_bufs = InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus * ngpus
+        NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ](fill={})
 
     for device_idx in range(ngpus):
         for input_idx in range(ngpus):
             var output_idx = device_idx * ngpus + input_idx
             out_bufs[output_idx] = NDBuffer[dtype, rank](
-                out_bufs_list[device_idx][input_idx]._unsafe_ptr(),
+                out_bufs_list[device_idx][input_idx].unsafe_ptr(),
                 DimList(lengths[input_idx]),
             )
+
+    # Optional: vendor CCL (only if all lengths are equal; NCCL/RCCL requires uniform count).
+    var uniform = True
+    for i in range(1, ngpus):
+        if lengths[i] != lengths[0]:
+            uniform = False
+            break
+
+    if uniform and has_amd_gpu_accelerator():
+        # Reset outputs for vendor test
+        for device_idx in range(ngpus):
+            for input_idx in range(ngpus):
+                list_of_ctx[device_idx].enqueue_memset[dtype](
+                    out_bufs_list[device_idx][input_idx], val=0
+                )
+
+        var flat_out = InlineArray[
+            NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
+        ](fill={})
+        for device_idx in range(ngpus):
+            for input_idx in range(ngpus):
+                var idx = device_idx * ngpus + input_idx
+                flat_out[idx] = NDBuffer[dtype, rank](
+                    out_bufs_list[device_idx][input_idx].unsafe_ptr(),
+                    DimList(lengths[input_idx]),
+                )
+
+        try:
+            print("  Testing vendor CCL allgather (uniform counts)")
+            vendor_ccl.allgather[dtype=dtype, rank=rank, ngpus=ngpus](
+                in_bufs, flat_out, list_of_ctx
+            )
+
+            for i in range(ngpus):
+                list_of_ctx[i].synchronize()
+            _verify_results[dtype](out_bufs_list, list_of_ctx, lengths, ngpus)
+        except:
+            pass
 
     # Test the naive implementation explicitly.
     print("  Testing backward compatible implementation (naive path)")
@@ -196,7 +237,7 @@ def main() -> None:
     )
 
     # Test configurations.
-    alias test_lengths = (
+    comptime test_lengths = (
         List[Int](8 * 1024, 8 * 1024),
         List[Int](128 * 1024, 8 * 1024),
         List[Int](8 * 1024, 256 * 1024),
@@ -208,12 +249,16 @@ def main() -> None:
         List[Int](4, 3, 3),
         # Another uneven case with 2 GPUs.
         List[Int](1025, 1024),
+        # Zero length cases
+        List[Int](0, 0),
+        List[Int](8 * 1024, 0),
+        List[Int](0, 8 * 1024),
     )
 
     @parameter
     for test_idx in range(len(test_lengths)):
-        alias lengths = test_lengths[test_idx]
-        alias num_gpus = len(lengths)
+        comptime lengths = test_lengths[test_idx]
+        comptime num_gpus = len(lengths)
 
         if DeviceContext.number_of_devices() < num_gpus:
             continue
@@ -223,4 +268,6 @@ def main() -> None:
             ctx.append(DeviceContext(device_id=i))
 
         print("  Testing configuration:", test_idx, "with", num_gpus, "GPUs")
-        all_gather_test[DType.bfloat16, rank=1, ngpus=num_gpus](ctx, lengths)
+        all_gather_test[DType.bfloat16, rank=1, ngpus=num_gpus](
+            ctx, materialize[lengths]()
+        )

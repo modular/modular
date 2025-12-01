@@ -14,35 +14,31 @@
 from collections import OptionalReg
 from math import ceildiv
 from sys import size_of
-from testing import assert_true
+
 from gpu.globals import WARPGROUP_SIZE
-from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu.host.compile import _compile_code
 from gpu.host.info import H100
 from layout import Layout
-from linalg.matmul_tile_scheduler import MatmulSchedule
-from stdlib.bit import log2_floor
-
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
-
+from layout.tma_async import _tma_desc_tile_layout
+from linalg.matmul.gpu.sm90.matmul import (
+    HopperMatmulSM90Kernel,
+    _get_c_smem_layout,
+    _get_grid_shape,
+    _is_valid_grid_shape,
+)
+from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
 from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from linalg.utils_gpu import (
-    MatmulConfig,
-)
-from layout.tma_async import _tma_desc_tile_layout
+from linalg.utils_gpu import MatmulConfig
+from stdlib.bit import log2_floor
+from testing import assert_true
 
-from linalg.matmul_sm90 import (
-    _is_valid_grid_shape,
-    _get_grid_shape,
-    _get_c_smem_layout,
-    tma_wgmma_warp_specialized_gemm_kernel,
-    tma_wgmma_warp_specialized_gemm_kernel_persistent,
-)
+from utils.index import Index, IndexList
+from utils.static_tuple import StaticTuple
 
 
 fn compile_sm90_matmul_ptx[
@@ -64,9 +60,9 @@ fn compile_sm90_matmul_ptx[
     schedule: MatmulSchedule = MatmulSchedule.NONE,
     hilbert_swizzle: Bool = False,
 ]() raises:
-    alias BM = config.block_tile_shape[0]
-    alias BN = config.block_tile_shape[1]
-    alias BK = config.block_tile_shape[2]
+    comptime BM = config.block_tile_shape[0]
+    comptime BN = config.block_tile_shape[1]
+    comptime BK = config.block_tile_shape[2]
 
     constrained[
         (a_type == b_type is DType.float8_e4m3fn)
@@ -95,7 +91,7 @@ fn compile_sm90_matmul_ptx[
             grid_shape is not None,
             "Grid shape must be provided for DS scheduler",
         ]()
-        alias ds_grid_shape = grid_shape.value()
+        comptime ds_grid_shape = grid_shape.value()
         constrained[
             ds_grid_shape[0] <= H100.sm_count and ds_grid_shape[1] == 1,
             "Deepseek scheduler only accepts grid shape with 1 column",
@@ -117,67 +113,71 @@ fn compile_sm90_matmul_ptx[
             ),
         ]()
 
-    alias grid_shape_adjusted = grid_shape.value() if grid_shape else _get_grid_shape[
+    comptime grid_shape_adjusted = grid_shape.value() if grid_shape else _get_grid_shape[
         config.cluster_shape
     ](
         ceildiv(N, BN)
     )
 
-    alias cluster_shape = StaticTuple[Int32, 3](
+    comptime cluster_shape = StaticTuple[Int32, 3](
         config.cluster_shape[0],
         config.cluster_shape[1],
         config.cluster_shape[2],
     )
 
-    alias CLUSTER_N = UInt(cluster_shape[0])
-    alias CLUSTER_M = UInt(cluster_shape[1])
+    comptime CLUSTER_N = UInt(cluster_shape[0])
+    comptime CLUSTER_M = UInt(cluster_shape[1])
 
-    alias c_smem_layout = _get_c_smem_layout[
+    comptime c_smem_layout = _get_c_smem_layout[
         config.block_tile_shape,
         a_type,
         b_type,
         c_type,
-        config.num_pipeline_stages,
+        Int(config.num_pipeline_stages),
     ]()
-    alias c_smem_tile = Index(
+    comptime c_smem_tile = Index(
         c_smem_layout.shape[0].value(),
-        c_smem_layout.shape[1].value() // config.num_consumer,
+        c_smem_layout.shape[1].value() // Int(config.num_consumer),
     )
 
-    alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
-    alias b_swizzle = TensorMapSwizzle.SWIZZLE_128B
+    comptime a_swizzle = TensorMapSwizzle.SWIZZLE_128B
+    comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     # make sure TMA_BN = 64 -> 128B swizzle, 32 -> 64B swizzle and etc.
-    alias c_swizzle = TensorMapSwizzle(
+    comptime c_swizzle = TensorMapSwizzle(
         min(log2_floor(c_smem_tile[1] // 8), 3)
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
-    alias a_layout = Layout.row_major(M, K)
-    alias b_layout = Layout.row_major(
+    comptime a_layout = Layout.row_major(M, K)
+    comptime b_layout = Layout.row_major(
         N, K
     ) if transpose_b else Layout.row_major(K, N)
-    alias c_layout = Layout.row_major(M, N)
+    comptime c_layout = Layout.row_major(M, N)
 
-    alias a_tile_shape = Index(
-        BM // CLUSTER_N, BK
+    comptime a_tile_shape = Index(
+        BM // Int(CLUSTER_N), BK
     ) if config.partitioned_multicast else Index(BM, BK)
-    alias b_tile_shape = Index(
-        BN // CLUSTER_M, BK
+    comptime b_tile_shape = Index(
+        BN // Int(CLUSTER_M), BK
     ) if config.partitioned_multicast else Index(BN, BK)
 
-    alias a_tile_layout = Layout.row_major(a_tile_shape[0], a_tile_shape[1])
-    alias b_tile_layout = Layout.row_major(b_tile_shape[0], b_tile_shape[1])
-    alias c_tile_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1])
+    comptime a_tile_layout = Layout.row_major(a_tile_shape[0], a_tile_shape[1])
+    comptime b_tile_layout = Layout.row_major(b_tile_shape[0], b_tile_shape[1])
+    comptime c_tile_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1])
 
-    alias a_tma_desc_layout = _tma_desc_tile_layout[
+    comptime a_tma_desc_layout = _tma_desc_tile_layout[
         a_type, 2, a_tile_shape, is_k_major=True, swizzle_mode=a_swizzle
     ]()
-    alias b_tma_desc_layout = _tma_desc_tile_layout[
+    comptime b_tma_desc_layout = _tma_desc_tile_layout[
         b_type, 2, b_tile_shape, is_k_major=True, swizzle_mode=b_swizzle
     ]()
-    alias c_tma_desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1])
+    comptime c_tma_desc_layout = Layout.row_major(
+        c_smem_tile[0], c_smem_tile[1]
+    )
 
-    alias num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
-    alias smem_size = Int(config.num_pipeline_stages) * (
+    comptime num_threads = WARPGROUP_SIZE * Int(
+        config.num_consumer
+    ) + WARPGROUP_SIZE
+    comptime smem_size = Int(config.num_pipeline_stages) * (
         BM * BK * size_of[a_type]()
         + BN * BK * size_of[b_type]()
         + (size_of[Int64]() * 2)
@@ -190,34 +190,39 @@ fn compile_sm90_matmul_ptx[
 
     @parameter
     if schedule != MatmulSchedule.NONE:
-        alias kernel = tma_wgmma_warp_specialized_gemm_kernel_persistent[
+        comptime kernel = HopperMatmulSM90Kernel[
             a_type,
             b_type,
             c_type,
             a_layout,
             b_layout,
-            a_tile_layout,
-            b_tile_layout,
             c_layout,
+            c_smem_layout,
             config.block_tile_shape,
             config.mma_shape,
-            a_tma_desc_layout,
-            b_tma_desc_layout,
-            c_tma_desc_layout,
-            c_tile_layout,
-            c_smem_layout,
-            c_swizzle=c_swizzle,
-            cluster_shape=cluster_shape,
-            grid_shape=grid_shape_adjusted,
-            schedule=schedule,
+            cluster_shape,
+            Int(config.num_pipeline_stages),
+            num_threads,
             transpose_b=True,
-            num_threads=num_threads,
-            pipeline_stages = config.num_pipeline_stages,
+            a_swizzle=a_swizzle,
+            b_swizzle=b_swizzle,
+            c_swizzle=c_swizzle,
             partitioned_multicast = config.partitioned_multicast,
             use_tma_store=use_tma_store,
+            promotion_frequency=1,
             pdl_level = config.pdl_level(),
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            hilbert_swizzle=False,
+        ].run_persistent[
+            a_tile_layout,
+            b_tile_layout,
+            c_tile_layout,
+            a_tma_desc_layout,
+            b_tma_desc_layout,
+            c_tma_desc_layout,
+            grid_shape=grid_shape_adjusted,
+            schedule=schedule,
         ]
 
         var asm = _compile_code[
@@ -226,33 +231,37 @@ fn compile_sm90_matmul_ptx[
         ]().asm
         assert_true("ld.local" not in asm and "st.local" not in asm)
     else:
-        alias kernel = tma_wgmma_warp_specialized_gemm_kernel[
+        comptime kernel = HopperMatmulSM90Kernel[
             a_type,
             b_type,
             c_type,
             a_layout,
             b_layout,
-            a_tile_layout,
-            b_tile_layout,
             c_layout,
+            c_smem_layout,
             config.block_tile_shape,
             config.mma_shape,
-            a_tma_desc_layout,
-            b_tma_desc_layout,
-            c_tma_desc_layout,
-            c_tile_layout,
-            c_smem_layout,
-            c_swizzle=c_swizzle,
-            cluster_shape=cluster_shape,
+            cluster_shape,
+            Int(config.num_pipeline_stages),
+            num_threads,
             transpose_b=True,
-            num_threads=num_threads,
-            pipeline_stages = config.num_pipeline_stages,
+            a_swizzle=a_swizzle,
+            b_swizzle=b_swizzle,
+            c_swizzle=c_swizzle,
             partitioned_multicast = config.partitioned_multicast,
             use_tma_store=use_tma_store,
+            promotion_frequency=1,
             pdl_level = config.pdl_level(),
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             hilbert_swizzle=hilbert_swizzle,
+        ].run[
+            a_tile_layout,
+            b_tile_layout,
+            c_tile_layout,
+            a_tma_desc_layout,
+            b_tma_desc_layout,
+            c_tma_desc_layout,
         ]
         var asm = _compile_code[
             kernel,
@@ -264,7 +273,7 @@ fn compile_sm90_matmul_ptx[
 fn test_local_memory_access() raises:
     print("== test_local_memory_access")
 
-    alias M8192_N14336_K8192_config = MatmulConfig[
+    comptime M8192_N14336_K8192_config = MatmulConfig[
         DType.bfloat16,
         DType.bfloat16,
         DType.bfloat16,
@@ -287,7 +296,7 @@ fn test_local_memory_access() raises:
         schedule = MatmulSchedule.TILE2D,
     ]()
 
-    alias M2048_N14336_K8192_config = MatmulConfig[
+    comptime M2048_N14336_K8192_config = MatmulConfig[
         DType.bfloat16,
         DType.bfloat16,
         DType.bfloat16,
@@ -310,7 +319,7 @@ fn test_local_memory_access() raises:
         schedule = MatmulSchedule.TILE2D,
     ]()
 
-    alias M2048_N4096_K256_config = MatmulConfig[
+    comptime M2048_N4096_K256_config = MatmulConfig[
         DType.bfloat16,
         DType.bfloat16,
         DType.bfloat16,
@@ -331,7 +340,7 @@ fn test_local_memory_access() raises:
         config=M2048_N4096_K256_config,
     ]()
 
-    alias M512_N2560_K8192_config_fp8 = MatmulConfig[
+    comptime M512_N2560_K8192_config_fp8 = MatmulConfig[
         DType.float8_e4m3fn,
         DType.float8_e4m3fn,
         DType.bfloat16,
@@ -354,7 +363,7 @@ fn test_local_memory_access() raises:
         grid_shape = Index(H100.sm_count, 1),
     ]()
 
-    alias M8192_N14336_K8192_config_fp8 = MatmulConfig[
+    comptime M8192_N14336_K8192_config_fp8 = MatmulConfig[
         DType.float8_e4m3fn,
         DType.float8_e4m3fn,
         DType.bfloat16,
@@ -377,7 +386,7 @@ fn test_local_memory_access() raises:
         schedule = MatmulSchedule.TILE2D,
     ]()
 
-    alias M2048_N14336_K8192_config_fp8 = MatmulConfig[
+    comptime M2048_N14336_K8192_config_fp8 = MatmulConfig[
         DType.float8_e4m3fn,
         DType.float8_e4m3fn,
         DType.bfloat16,
@@ -400,7 +409,7 @@ fn test_local_memory_access() raises:
         schedule = MatmulSchedule.TILE2D,
     ]()
 
-    alias M2048_N4096_K256_config_fp8 = MatmulConfig[
+    comptime M2048_N4096_K256_config_fp8 = MatmulConfig[
         DType.float8_e4m3fn,
         DType.float8_e4m3fn,
         DType.bfloat16,
@@ -422,5 +431,5 @@ fn test_local_memory_access() raises:
     ]()
 
 
-fn main() raises:
+def main():
     test_local_memory_access()

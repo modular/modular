@@ -11,19 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from math import sqrt
+from sys.info import CompilationTarget
 
+from itertools import product
 from layout import (
-    LayoutTensor,
+    UNKNOWN_VALUE,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from nn.normalization import *
 from testing import assert_almost_equal
-from sys.info import CompilationTarget
 
 from utils.index import Index, IndexList
 
@@ -34,7 +36,7 @@ fn compute_rms[
     DType.float32
 ]:
     constrained[data.rank == 1, "data.rank must be 1"]()
-    var sum_of_squares = Scalar[DType.float32]()
+    var sum_of_squares = Float32()
     for i in range(size):
         var d = data.ptr[i].cast[DType.float32]()
         sum_of_squares += d * d
@@ -59,7 +61,7 @@ fn run_rms_norm_cpu[
 
     var param_shape = Index(cols)
 
-    alias layout = Layout.row_major[rank]()
+    comptime layout = Layout.row_major[rank]()
     var input_buf = LayoutTensor[dtype, layout](
         input_ptr, RuntimeLayout[layout].row_major(shape)
     )
@@ -106,7 +108,7 @@ fn run_rms_norm_cpu[
         weight_offset,
     )
 
-    for r in range(rows):
+    for r, c in product(range(rows), range(cols)):
         var vec = LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE)](
             input_ptr + r * cols,
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -114,14 +116,13 @@ fn run_rms_norm_cpu[
             ),
         )
         var rms_ref = compute_rms(vec, cols, epsilon)
-        for c in range(cols):
-            var idx = r * cols + c
-            # PyTorch converts the input to float32 before computing the RMS norm
-            # https://github.com/meta-llama/llama/blob/689c7f261b9c5514636ecc3c5fefefcbb3e6eed7/llama/model.py#L76
-            var val = (input_ptr[idx].cast[DType.float32]() / rms_ref).cast[
-                dtype
-            ]() * (gamma_ptr[c] + weight_offset)
-            assert_almost_equal(val, output_ptr[idx], rtol=rtol)
+        var idx = r * cols + c
+        # PyTorch converts the input to float32 before computing the RMS norm
+        # https://github.com/meta-llama/llama/blob/689c7f261b9c5514636ecc3c5fefefcbb3e6eed7/llama/model.py#L76
+        var val = (input_ptr[idx].cast[DType.float32]() / rms_ref).cast[
+            dtype
+        ]() * (gamma_ptr[c] + weight_offset)
+        assert_almost_equal(val, output_ptr[idx], rtol=rtol)
 
     input_ptr.free()
     output_ptr.free()

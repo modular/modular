@@ -19,8 +19,7 @@ from sys.info import simd_width_of
 from algorithm import elementwise
 from bit import next_power_of_two
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
-from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
@@ -68,7 +67,7 @@ fn _argsort_cpu[
         Span[
             Scalar[indices.dtype],
             indices.origin,
-        ](ptr=indices.ptr, length=UInt(indices.size()))
+        ](ptr=indices.ptr, length=indices.size())
     )
 
 
@@ -117,15 +116,20 @@ fn _argsort_gpu_impl[
     debug_assert(n.is_power_of_two(), "n must be a power of two")
 
     # Define block size for GPU kernel execution
-    alias BLOCK_SIZE = 256
+    comptime BLOCK_SIZE = 256
 
     # Bitonic sort algorithm implementation
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
     )
-    fn bitonic_sort_step(
-        indices: LayoutTensor[mut=True, indices.dtype, indices.layout],
-        input: LayoutTensor[mut=True, input.dtype, input.layout],
+    fn bitonic_sort_step[
+        indices_dtype: DType,
+        input_dtype: DType,
+        indices_layout: Layout,
+        input_layout: Layout,
+    ](
+        indices: LayoutTensor[indices_dtype, indices_layout, MutAnyOrigin],
+        input: LayoutTensor[input_dtype, input_layout, MutAnyOrigin],
         n: Int,
         step: Int,
         stage: Int,
@@ -145,9 +149,9 @@ fn _argsort_gpu_impl[
         if i >= UInt(n):
             return
 
-        var partner = i ^ step
+        var partner = i ^ UInt(step)
 
-        if partner > i and partner < n:
+        if partner > i and partner < UInt(n):
             var cmp_val: Bool
 
             @parameter
@@ -157,7 +161,7 @@ fn _argsort_gpu_impl[
                 cmp_val = Bool(input[i] < input[partner])
 
             # Determine if we are in ascending or descending part of bitonic merge.
-            var bitonic_merge_direction = (i & stage) == 0
+            var bitonic_merge_direction = (i & UInt(stage)) == 0
 
             if cmp_val == bitonic_merge_direction:
                 swap(input[i], input[partner])
@@ -169,7 +173,10 @@ fn _argsort_gpu_impl[
         var j = k // 2
         while j > 0:
             # Launch GPU kernel for each stage of the bitonic sort
-            ctx.enqueue_function[bitonic_sort_step](
+            comptime kernel = bitonic_sort_step[
+                indices.dtype, input.dtype, indices.layout, input.layout
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 indices,
                 input,
                 n,

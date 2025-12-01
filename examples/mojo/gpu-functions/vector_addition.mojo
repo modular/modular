@@ -36,8 +36,8 @@ def main():
     var out_buffer = ctx.enqueue_create_buffer[float_dtype](VECTOR_WIDTH)
 
     # Fill in values across the entire width
-    _ = lhs_buffer.enqueue_fill(1.25)
-    _ = rhs_buffer.enqueue_fill(2.5)
+    lhs_buffer.enqueue_fill(1.25)
+    rhs_buffer.enqueue_fill(2.5)
 
     # Wrap the device buffers in tensors
     var lhs_tensor = LayoutTensor[float_dtype, layout](lhs_buffer)
@@ -48,7 +48,7 @@ def main():
     var grid_dim = ceildiv(VECTOR_WIDTH, BLOCK_SIZE)
 
     # Launch the vector_addition function as a GPU kernel
-    ctx.enqueue_function[vector_addition](
+    ctx.enqueue_function_checked[vector_addition, vector_addition](
         lhs_tensor,
         rhs_tensor,
         out_tensor,
@@ -64,9 +64,9 @@ def main():
 
 
 fn vector_addition(
-    lhs_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
-    rhs_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
-    out_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
+    lhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
+    rhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
+    out_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
     size: Int,
 ):
     """The calculation to perform across the vector on the GPU."""

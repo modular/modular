@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from layout import Layout, LayoutTensor
 from nn.argsort import argsort
 from testing import assert_true
@@ -23,7 +24,7 @@ fn test_argsort[
 ]() raises:
     print("== test_argsort")
 
-    alias n = 16384
+    comptime n = 16384
 
     var input_ptr = UnsafePointer[Float32].alloc(n)
     var input = LayoutTensor[DType.float32, Layout.row_major(n)](input_ptr)
@@ -130,7 +131,7 @@ fn test_argsort[
     indices_ptr.free()
 
 
-fn main() raises:
+def main():
     fn linear_filler(i: Int, n: Int) -> Float32:
         return i
 

@@ -12,16 +12,24 @@
 # ===----------------------------------------------------------------------=== #
 
 from logger import Level, Logger
+from testing import TestSuite
 
 
-def main():
+def test_log_critical():
     var log = Logger[Level.CRITICAL]()
 
-    # CHECK-NOT: DEBUG::: hello world
+    # CHECK-NOT: DEBUG
+    # CHECK-NOT: ::: hello world
     log.debug("hello", "world")
 
-    # CHECK-NOT: DEBUG::: hello world
+    # CHECK-NOT: DEBUG
+    # CHECK-NOT: ::: hello world
     log.info("hello", "world")
 
-    # CHECK: CRITICAL::: hello
+    # CHECK: CRITICAL
+    # CHECK: ::: hello
     log.critical("hello")
+
+
+fn main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -25,7 +25,13 @@ mojo_test(
         "full",
         "-O0",
     ],
+    # TODO(MSTDL-1965): Fix this ASAN timeout.
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "@mojo//:stdlib",
+        "@mojo//:test_utils",
     ],
 )

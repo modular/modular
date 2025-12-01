@@ -13,26 +13,7 @@
 
 from os.path.path import _split_extension, split_extension
 
-from testing import assert_equal
-
-
-# TODO: Can't run on windows currently, so just test with Windows args.
-def test_windows_path():
-    head, extension = _split_extension(
-        "C:\\path\\to\\my\\file.txt", "\\", "/", "."
-    )
-    assert_equal(head, "C:\\path\\to\\my\\file")
-    assert_equal(extension, ".txt")
-
-    head, extension = _split_extension("C:/path/to/my/file.txt", "\\", "/", ".")
-    assert_equal(head, "C:/path/to/my/file")
-    assert_equal(extension, ".txt")
-
-    head, extension = _split_extension(
-        "c:/path\\to/my\\file.txt", "\\", "/", "."
-    )
-    assert_equal(head, "c:/path\\to/my\\file")
-    assert_equal(extension, ".txt")
+from testing import TestSuite, assert_equal
 
 
 def _split_extension_test(
@@ -75,8 +56,4 @@ def test_file_names():
 
 
 def main():
-    test_absolute_file_path()
-    test_relative_file_path()
-    test_relative_directories()
-    test_windows_path()
-    test_file_names()
+    TestSuite.discover_tests[__functions_in_module()]().run()

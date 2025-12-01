@@ -10,29 +10,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug --target-accelerator=nvidia:80 %s | FileCheck --check-prefix=CHECK-NV80 %s
-# RUN: %mojo-no-debug --target-accelerator=nvidia:90 %s | FileCheck --check-prefix=CHECK-NV90 %s
-# RUN: %mojo-no-debug --target-accelerator=nvidia:120 %s | FileCheck --check-prefix=CHECK-NV120 %s
+# RUN: %mojo-no-debug --target-accelerator=nvidia:sm_80 %s | FileCheck --check-prefix=CHECK-NV80 %s
+# RUN: %mojo-no-debug --target-accelerator=nvidia:sm_90a %s | FileCheck --check-prefix=CHECK-NV90 %s
+# RUN: %mojo-no-debug --target-accelerator=nvidia:sm_120a %s | FileCheck --check-prefix=CHECK-NV120 %s
 
 from sys.info import _accelerator_arch, _is_sm_9x, _is_sm_9x_or_newer
 
-from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
+from gpu.host.compile import _compile_code
 from testing import *
 
 
 fn check_sm9x() -> Bool:
-    alias v = _is_sm_9x()
+    comptime v = _is_sm_9x()
     return v
 
 
 fn check_sm9x_or_newer() -> Bool:
-    alias v = _is_sm_9x_or_newer()
+    comptime v = _is_sm_9x_or_newer()
     return v
 
 
 def main():
-    alias accelerator_arch = _accelerator_arch()
+    comptime accelerator_arch = _accelerator_arch()
 
     # CHECK-NV80: ret i1 false
     # CHECK-NV90: ret i1 true

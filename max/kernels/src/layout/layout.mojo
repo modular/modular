@@ -110,7 +110,7 @@ trait LayoutTrait(ImplicitlyCopyable):
     different layout implementations to be used interchangeably in algorithms.
     """
 
-    alias has_shape: Bool
+    comptime has_shape: Bool
     """Indicates whether the layout has a valid shape.
 
     Layouts and ComposedLayouts with at least one Layout have valid shapes
@@ -184,9 +184,9 @@ fn make_layout(*layouts: Layout) -> Layout:
     """
     var shape = IntTuple()
     var stride = IntTuple()
-    for i in range(len(layouts)):
-        shape.append(layouts[i].shape)
-        stride.append(layouts[i].stride)
+    for layout in layouts:
+        shape.append(layout.shape)
+        stride.append(layout.stride)
     return Layout(shape, stride)
 
 
@@ -238,7 +238,7 @@ fn make_ordered_layout(shape: IntTuple, order: IntTuple) -> Layout:
         IntTuple(2, 3, 4, 5),
         IntTuple(1, 4, 3, 2)
     )
-    # Result: Layout with shape (2,3,4,5) and stride (1,24,6,2)
+    # Result: Layout with shape (2,3,4,5) and stride (1,40,10,2)
     ```
     """
     var stride = compact_order(shape, order)
@@ -246,7 +246,9 @@ fn make_ordered_layout(shape: IntTuple, order: IntTuple) -> Layout:
 
 
 @fieldwise_init
-struct _LayoutIter[origin: ImmutableOrigin](ImplicitlyCopyable, Movable):
+struct _LayoutIter[origin: ImmutOrigin](
+    ImplicitlyCopyable, Iterable, Iterator, Movable
+):
     """Iterator for traversing Layout dimensions.
 
     This internal iterator allows traversing the dimensions of a Layout object,
@@ -254,17 +256,21 @@ struct _LayoutIter[origin: ImmutableOrigin](ImplicitlyCopyable, Movable):
     and stride for that dimension.
 
     Parameters:
-        origin: The origin type for the `Layout` pointer, must be `ImmutableOrigin`.
+        origin: The origin type for the `Layout` pointer, must be `ImmutOrigin`.
 
     Attributes:
         index: Current position in the iteration.
         layout: Pointer to the `Layout` being iterated.
     """
 
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+    comptime Element = Layout
     var index: Int
-    var layout: Pointer[Layout, origin]
+    var layout: Pointer[Layout, Self.origin]
 
-    fn __next__(mut self) -> Layout:
+    fn __next__(mut self) -> Self.Element:
         """Returns the next sub-layout in the iteration.
 
         Advances the iterator and returns a Layout containing the shape and stride
@@ -298,11 +304,21 @@ struct _LayoutIter[origin: ImmutableOrigin](ImplicitlyCopyable, Movable):
         """
         return len(self.layout[].shape) - self.index
 
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self
+
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var size = len(self.layout[].shape) - self.index
+        return (size, {size})
+
 
 struct Layout(
     Defaultable,
-    EqualityComparable,
+    Equatable,
     ImplicitlyCopyable,
+    Iterable,
     LayoutTrait,
     Movable,
     Sized,
@@ -330,25 +346,29 @@ struct Layout(
     for complex memory access patterns like blocked or tiled layouts.
     """
 
-    alias has_shape = True
+    comptime has_shape = True
     """Indicates whether the layout has a valid shape."""
 
     var shape: IntTuple
     """The dimensions of the layout.
 
     This field defines the size of each dimension in the logical coordinate space.
-    For example, a shape of (3, 4) represents a 3×4 grid of elements.
+    For example, a shape of (3, 4) represents a 3x4 grid of elements.
     """
 
     var stride: IntTuple
     """The memory step sizes for each dimension.
 
     This field defines how many elements to skip in memory when moving one unit
-    in each dimension. For example, in a row-major 3×4 layout, the strides might
+    in each dimension. For example, in a row-major 3x4 layout, the strides might
     be (4, 1), meaning moving one unit in the first dimension requires skipping
     4 elements in memory, while moving one unit in the second dimension requires
     skipping 1 element.
     """
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _LayoutIter[ImmutOrigin.cast_from[iterable_origin]]
 
     # ===------------------------------------------------------------------===#
     # Initializers
@@ -843,7 +863,7 @@ struct Layout(
         return len(self.shape)
 
     @always_inline("nodebug")
-    fn __iter__(self) -> _LayoutIter[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Returns an iterator over the layout's dimensions.
 
         Each iteration yields a Layout containing the shape and stride for one dimension.
@@ -1026,7 +1046,7 @@ fn cosize(l: Layout) -> Int:
     return l.cosize()
 
 
-alias LayoutList = List[Layout]
+comptime LayoutList = List[Layout]
 
 
 @always_inline("nodebug")
@@ -1042,7 +1062,7 @@ fn MakeLayoutList(v0: Layout, v1: Layout) -> LayoutList:
     Returns:
         A LayoutList containing the two provided layouts.
     """
-    return LayoutList(v0, v1)
+    return [v0, v1]
 
 
 fn MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
@@ -1059,13 +1079,13 @@ fn MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
         A LayoutList containing layouts for each tile size.
     """
 
-    alias num_tiles = stdlib.builtin.variadic_size(tile_sizes)
+    comptime num_tiles = stdlib.builtin.variadic_size(tile_sizes)
 
     var layout_list = LayoutList(capacity=num_tiles)
 
     @parameter
     for i in range(num_tiles):
-        alias arg = tile_sizes[i]
+        comptime arg = tile_sizes[i]
         layout_list.append(Layout(arg, 1))
 
     return layout_list^
@@ -1261,8 +1281,8 @@ fn composition(layout_a: Layout, tiler: LayoutList) -> Layout:
     ```
     """
     var result = Layout()
-    for i in range(len(tiler)):
-        result.append(composition(layout_a[i], tiler[i]))
+    for layout_item, tiler_item in zip(layout_a, tiler):
+        result.append(composition(layout_item, tiler_item))
 
     # Remainder if tiler is shorter.
     for i in range(len(tiler), len(layout_a)):
@@ -2007,14 +2027,14 @@ fn expand_modes_alike(
     from layout import Layout, IntTuple
     from layout.layout import expand_modes_alike
 
-    alias layout_0 = Layout(
+    comptime layout_0 = Layout(
         IntTuple(IntTuple(3, IntTuple(5, 2)), 4),
         IntTuple(IntTuple(1, IntTuple(24, 12)), 3),
     )
-    alias layout_1 = Layout(
+    comptime layout_1 = Layout(
         IntTuple(30, IntTuple(2, 2)), IntTuple(2, IntTuple(60, 1))
     )
-    alias uc = expand_modes_alike(layout_0, layout_1)
+    comptime uc = expand_modes_alike(layout_0, layout_1)
     print(uc[0])
     # (((3, (5, 2)), (2, 2)):((1, (24, 12)), (3, 6)))
     print(uc[1])
@@ -2055,11 +2075,14 @@ fn right_inverse(layout: Layout) -> Layout:
     return Layout(shape, stride)
 
 
-fn upcast(layout: Layout, factor: Int) -> Layout:
+fn upcast[check: Bool = True](layout: Layout, factor: Int) -> Layout:
     """Fuses consecutive elements in a layout to create a coarser layout.
 
     This function is useful for converting between different data type granularities,
     such as from bytes to larger data types like bfloat16 or tf32.
+
+    Parameters:
+        check: Whether to check for incompatible factors.
 
     Args:
         layout: The layout to upcast.
@@ -2073,10 +2096,10 @@ fn upcast(layout: Layout, factor: Int) -> Layout:
             return layout
         else:
             var fac = IntTuple(factor)
-            var up_shape = shape_div(
-                layout.shape, shape_div(fac, layout.stride)
+            var up_shape = shape_div[check](
+                layout.shape, shape_div[check](fac, layout.stride)
             )
-            var up_stride = shape_div(layout.stride, fac)
+            var up_stride = shape_div[check](layout.stride, fac)
             return Layout(up_shape, up_stride)
     else:
         var res = Layout()

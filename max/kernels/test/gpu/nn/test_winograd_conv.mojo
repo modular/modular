@@ -26,7 +26,7 @@ from math import ceildiv
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, thread_idx
+from gpu import block_dim, block_idx, thread_idx
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -40,8 +40,8 @@ from utils.numerics import get_accum_type
 @always_inline
 fn _get_b[
     dtype: DType
-](out B: LayoutTensor[dtype, Layout.row_major(4, 4), MutableAnyOrigin]):
-    B = __type_of(B).stack_allocation()
+](out B: LayoutTensor[dtype, Layout.row_major(4, 4), MutAnyOrigin]):
+    B = type_of(B).stack_allocation()
     # fmt:off
     B[0,0] = 1.0; B[0,1] =  0.0; B[0,2] = -1.0; B[0,3] =  0.0
     B[1,0] = 0.0; B[1,1] =  1.0; B[1,2] =  1.0; B[1,3] =  0.0
@@ -53,8 +53,8 @@ fn _get_b[
 @always_inline
 fn _get_g[
     dtype: DType
-](out G: LayoutTensor[dtype, Layout.row_major(4, 3), MutableAnyOrigin]):
-    G = __type_of(G).stack_allocation()
+](out G: LayoutTensor[dtype, Layout.row_major(4, 3), MutAnyOrigin]):
+    G = type_of(G).stack_allocation()
     # fmt:off
     G[0,0] = 1.0; G[0,1] =  0.0; G[0,2] = 0.0
     G[1,0] = 0.5; G[1,1] =  0.5; G[1,2] = 0.5
@@ -66,8 +66,8 @@ fn _get_g[
 @always_inline
 fn _get_a[
     dtype: DType
-](out A: LayoutTensor[dtype, Layout.row_major(2, 4), MutableAnyOrigin]):
-    A = __type_of(A).stack_allocation()
+](out A: LayoutTensor[dtype, Layout.row_major(2, 4), MutAnyOrigin]):
+    A = type_of(A).stack_allocation()
     # fmt:off
     A[0,0] = 1.0; A[0,1] = 1.0; A[0,2] =  1.0; A[0,3] =  0.0
     A[1,0] = 0.0; A[1,1] = 1.0; A[1,2] = -1.0; A[1,3] = -1.0
@@ -87,18 +87,18 @@ fn matmul[
     s_type: DType = get_accum_type[c_type](),
 ](
     C: LayoutTensor[
-        c_type, c_layout, MutableAnyOrigin, element_layout=element_layout, **_
+        c_type, c_layout, MutAnyOrigin, element_layout=element_layout, **_
     ],
     A: LayoutTensor[
-        a_type, a_layout, MutableAnyOrigin, element_layout=element_layout, **_
+        a_type, a_layout, MutAnyOrigin, element_layout=element_layout, **_
     ],
     B: LayoutTensor[
-        b_type, b_layout, MutableAnyOrigin, element_layout=element_layout, **_
+        b_type, b_layout, MutAnyOrigin, element_layout=element_layout, **_
     ],
 ):
-    alias M = Int(c_layout.shape[0])
-    alias N = Int(c_layout.shape[1])
-    alias K = Int(a_layout.shape[1])
+    comptime M = Int(c_layout.shape[0])
+    comptime N = Int(c_layout.shape[1])
+    comptime K = Int(a_layout.shape[1])
 
     @parameter
     if transpose_b:
@@ -123,18 +123,16 @@ fn matmul[
 fn get_tile[
     dtype: DType, layout: Layout, //, tile_size: Int
 ](
-    input_tensor: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    input_tensor: LayoutTensor[dtype, layout, MutAnyOrigin],
     n: Int,
     h: Int,
     w: Int,
     c: Int,
-) -> LayoutTensor[
-    dtype, Layout.row_major(tile_size, tile_size), MutableAnyOrigin
-]:
+) -> LayoutTensor[dtype, Layout.row_major(tile_size, tile_size), MutAnyOrigin]:
     # TODO: Issue because returning a stack variable? Workaround
     # with @always_inline
     var result = LayoutTensor[
-        dtype, Layout.row_major(tile_size, tile_size), MutableAnyOrigin
+        dtype, Layout.row_major(tile_size, tile_size), MutAnyOrigin
     ].stack_allocation()
 
     for i in range(tile_size):
@@ -155,9 +153,9 @@ fn winograd_conv2d_gpu_nhwc[
     output_type: DType,
     block_size: Int,
 ](
-    input: NDBuffer[input_type, 4, MutableAnyOrigin, input_dim],
-    filter: NDBuffer[filter_type, 4, MutableAnyOrigin, filter_dim],
-    output: NDBuffer[mut=True, output_type, 4, MutableAnyOrigin, output_dim],
+    input: NDBuffer[input_type, 4, MutAnyOrigin, input_dim],
+    filter: NDBuffer[filter_type, 4, MutAnyOrigin, filter_dim],
+    output: NDBuffer[mut=True, output_type, 4, MutAnyOrigin, output_dim],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
@@ -207,19 +205,19 @@ fn winograd_conv2d_gpu_nhwc[
 
     # Allocate scratch space
     var scratch = LayoutTensor[
-        input_type, Layout.row_major(4, 3), MutableAnyOrigin
+        input_type, Layout.row_major(4, 3), MutAnyOrigin
     ].stack_allocation()
     var scratch_2 = LayoutTensor[
-        input_type, Layout.row_major(4, 4), MutableAnyOrigin
+        input_type, Layout.row_major(4, 4), MutAnyOrigin
     ].stack_allocation()
     var scratch_3 = LayoutTensor[
-        input_type, Layout.row_major(2, 4), MutableAnyOrigin
+        input_type, Layout.row_major(2, 4), MutAnyOrigin
     ].stack_allocation()
     var m = LayoutTensor[
-        output_type, Layout.row_major(4, 4), MutableAnyOrigin
+        output_type, Layout.row_major(4, 4), MutAnyOrigin
     ].stack_allocation()
     var g_transformed = LayoutTensor[
-        input_type, Layout.row_major(4, 4), MutableAnyOrigin
+        input_type, Layout.row_major(4, 4), MutAnyOrigin
     ].stack_allocation()
 
     # Pre-transform filter (G^T * filter * G)
@@ -232,7 +230,7 @@ fn winograd_conv2d_gpu_nhwc[
     # Process each output channel
     for c_out in range(C_out):
         var output_tile = LayoutTensor[
-            output_type, Layout.row_major(2, 2), MutableAnyOrigin
+            output_type, Layout.row_major(2, 2), MutAnyOrigin
         ].stack_allocation()
 
         # Process each input channel
@@ -241,7 +239,9 @@ fn winograd_conv2d_gpu_nhwc[
 
             # TODO: Can we do something like this instead?
             # var input_tile = input_tensor.tile[1,1,4,4](c_out, c_in)
-            var input_tile = get_tile[4](input_tensor, n, h_out, w_out, c_in)
+            var input_tile = get_tile[4](
+                input_tensor, Int(n), Int(h_out), Int(w_out), c_in
+            )
 
             # 2. Transform input (B^T * d * B)
             matmul[transpose_b=False](scratch_2, b, input_tile)
@@ -265,7 +265,7 @@ fn winograd_conv2d_gpu_nhwc[
             for di in range(2):
                 for dj in range(2):
                     output_tensor[
-                        n, h_out + di, w_out + dj, c_out
+                        n, h_out + UInt(di), w_out + UInt(dj), c_out
                     ] = output_tile[di, dj]
 
 
@@ -279,10 +279,10 @@ fn winograd_conv2d_gpu_launcher[
     filter_type: DType,
     output_type: DType,
 ](
-    input: NDBuffer[input_type, input_rank, MutableAnyOrigin, input_dim],
-    filter: NDBuffer[filter_type, filter_rank, MutableAnyOrigin, filter_dim],
+    input: NDBuffer[input_type, input_rank, MutAnyOrigin, input_dim],
+    filter: NDBuffer[filter_type, filter_rank, MutAnyOrigin, filter_dim],
     output: NDBuffer[
-        mut=True, output_type, input_rank, MutableAnyOrigin, output_dim
+        mut=True, output_type, input_rank, MutAnyOrigin, output_dim
     ],
     stride: IndexList[2],
     dilation: IndexList[2],
@@ -290,7 +290,7 @@ fn winograd_conv2d_gpu_launcher[
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
-    alias block_size = 16
+    comptime block_size = 16
 
     # TODO: Is assert_true the right way to do this?
     assert_true(
@@ -323,7 +323,7 @@ fn winograd_conv2d_gpu_launcher[
     var grid_dim_y = ceildiv(output_dim.get[1](), 2 * block_size)
     var grid_dim_z = input_dim.get[0]()
 
-    alias kernel = winograd_conv2d_gpu_nhwc[
+    comptime kernel = winograd_conv2d_gpu_nhwc[
         input_dim,
         filter_dim,
         output_dim,
@@ -353,25 +353,25 @@ fn get_output_dim[
     dilation: IndexList[2],
     pad: IndexList[2],
 ]() -> DimList:
-    alias N = input_dim.get[0]()
-    alias H = input_dim.get[1]()
-    alias W = input_dim.get[2]()
-    alias C = input_dim.get[3]()
+    comptime N = input_dim.get[0]()
+    comptime H = input_dim.get[1]()
+    comptime W = input_dim.get[2]()
+    comptime C = input_dim.get[3]()
 
-    alias R = filter_dim.get[0]()
-    alias S = filter_dim.get[1]()
-    alias F = filter_dim.get[3]()
+    comptime R = filter_dim.get[0]()
+    comptime S = filter_dim.get[1]()
+    comptime F = filter_dim.get[3]()
 
-    alias pad_h = IndexList[2](pad[0], pad[0])
-    alias pad_w = IndexList[2](pad[1], pad[1])
+    comptime pad_h = IndexList[2](pad[0], pad[0])
+    comptime pad_w = IndexList[2](pad[1], pad[1])
 
-    alias HO = (H + pad_h[0] + pad_h[1] - dilation[0] * (R - 1) - 1) // stride[
-        0
-    ] + 1
-    alias WO = (W + pad_w[0] + pad_w[1] - dilation[1] * (S - 1) - 1) // stride[
-        1
-    ] + 1
-    alias output_dim = DimList(N, HO, WO, F)
+    comptime HO = (
+        H + pad_h[0] + pad_h[1] - dilation[0] * (R - 1) - 1
+    ) // stride[0] + 1
+    comptime WO = (
+        W + pad_w[0] + pad_w[1] - dilation[1] * (S - 1) - 1
+    ) // stride[1] + 1
+    comptime output_dim = DimList(N, HO, WO, F)
     return output_dim
 
 
@@ -386,7 +386,7 @@ fn test_winograd_conv_gpu[
 ](ctx: DeviceContext) raises:
     print("== test_conv_winograd_gpu")
 
-    alias output_dim = get_output_dim[
+    comptime output_dim = get_output_dim[
         input_dim, filter_dim, stride, dilation, pad
     ]()
 
@@ -402,10 +402,17 @@ fn test_winograd_conv_gpu[
     var device_input = host_input.copy_to_device(ctx)
     var device_filter = host_filter.copy_to_device(ctx)
 
-    conv_gpu[4, 4, input_dim, filter_dim, output_dim, dtype, dtype, dtype](
-        device_input.tensor,
-        device_filter.tensor,
-        device_output_ref.tensor,
+    conv_gpu[
+        type_of(device_input.to_layout_tensor()).layout,
+        type_of(device_filter.to_layout_tensor()).layout,
+        type_of(device_output_ref.to_layout_tensor()).layout,
+        dtype,
+        dtype,
+        dtype,
+    ](
+        device_input.to_layout_tensor().as_any_origin(),
+        device_filter.to_layout_tensor().as_any_origin(),
+        device_output_ref.to_layout_tensor().as_any_origin(),
         stride,
         dilation,
         pad,
@@ -431,8 +438,8 @@ fn test_winograd_conv_gpu[
     var host_output = device_output.copy_from_device(ctx)
 
     # TODO: Should tolerances really this high for BFloat16?
-    alias atol = 1e-06 if dtype is DType.float32 else 1e-1
-    alias rtol = 1e-06 if dtype is DType.float32 else 1e-4
+    comptime atol = 1e-06 if dtype is DType.float32 else 1e-1
+    comptime rtol = 1e-06 if dtype is DType.float32 else 1e-4
 
     for x in range(output_dim.product().get()):
         assert_almost_equal(
@@ -443,8 +450,8 @@ fn test_winograd_conv_gpu[
         )
 
 
-fn main() raises:
-    alias dtype = DType.float32
+def main():
+    comptime dtype = DType.float32
 
     with DeviceContext() as ctx:
         test_winograd_conv_gpu[

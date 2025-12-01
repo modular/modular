@@ -15,30 +15,39 @@ from math import ceildiv
 from sys import CompilationTarget, align_of, simd_width_of, size_of
 
 from algorithm import sync_parallelize, tile
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from linalg.accumulate import _Accumulator
+from linalg.arch.cpu.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
+from linalg.arch.cpu.vnni_intrinsics import (
+    dot_i8_to_i32_saturated_x86,
+    pmaddubs,
+    pmaddw,
+)
 from linalg.matmul import elementwise_epilogue_type
-from linalg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
 from linalg.utils import partition_work
-from linalg.vnni_intrinsics import dot_i8_to_i32_saturated_x86, pmaddubs, pmaddw
-from memory import bitcast, stack_allocation
+from memory import (
+    LegacyUnsafePointer as UnsafePointer,
+    bitcast,
+    stack_allocation,
+)
 from runtime.asyncrt import parallelism_level
 
 from utils.index import Index
 
 from ._utils import roundeven_to_int32
 
-alias K_BATCH_SIZE = 512
+comptime K_BATCH_SIZE = 512
 """Defines the batch size of K used to pack A and unpack B weights."""
 
 
 def matmul_qint4_pack_b[
     group_size: Int
-](b: NDBuffer[DType.uint8, 2], b_rot: NDBuffer[DType.uint8, 2]):
-    alias n_tiles = 2
-    alias n_groups = n_tiles * simd_width_of[DType.float32]()
-    alias bytes_per_group_int4 = size_of[DType.float16]() + (group_size // 2)
+](b: LayoutTensor[DType.uint8, **_], b_rot: LayoutTensor[DType.uint8, **_]):
+    constrained[b.rank == 2]()
+    constrained[b_rot.rank == 2]()
+    comptime n_tiles = 2
+    comptime n_groups = n_tiles * simd_width_of[DType.float32]()
+    comptime bytes_per_group_int4 = size_of[DType.float16]() + (group_size // 2)
 
     var N = b.dim[0]()
     var K = b.dim[1]() // bytes_per_group_int4 * group_size
@@ -48,8 +57,8 @@ def matmul_qint4_pack_b[
 
     var k_groups = ceildiv(K, group_size)
 
-    var src_ptr = b.data
-    var dst_ptr = b_rot.data
+    var src_ptr = b.ptr
+    var dst_ptr = b_rot.ptr
 
     for _ in range(0, N, n_groups):
         for nn in range(n_groups):
@@ -80,8 +89,10 @@ def matmul_qint4_pack_b[
 
 fn _quantize_a_block[
     group_size: Int, aq_type: DType, dtype: DType
-](a_ptr: UnsafePointer[Scalar[dtype]]) -> (SIMD[aq_type, group_size], Float32):
-    alias a_zero_point = 128 if aq_type.is_unsigned() else 0
+](a_ptr: UnsafePointer[Scalar[dtype]]) -> Tuple[
+    SIMD[aq_type, group_size], Float32
+]:
+    comptime a_zero_point = 128 if aq_type.is_unsigned() else 0
 
     var fp_data = a_ptr.load[width=group_size]()
     var max_value = abs(fp_data).reduce_max()
@@ -103,9 +114,9 @@ fn _quantize_a_buffer[
     *,
     aq_interleave: Int = group_size,
 ](
-    a: NDBuffer[dtype, 2],
-    a_quant: NDBuffer[aq_type, 2],
-    a_scale: NDBuffer[DType.float32, 2],
+    a: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    a_quant: LayoutTensor[aq_type, **_],
+    a_scale: LayoutTensor[DType.float32, **_],
 ):
     """Converts a floating point buffer to a symmetrically quantized
     representation. The data is in a packed layout that can be efficiently
@@ -115,18 +126,21 @@ fn _quantize_a_buffer[
         (group_size % aq_interleave) == 0,
         "interleave must be a factor of group size",
     ]()
+    constrained[a.rank == 2]()
+    constrained[a_quant.rank == 2]()
+    constrained[a_scale.rank == 2]()
 
     var M = a.dim[0]()
     var K = a.dim[1]()
 
-    var a_quant_ptr = a_quant.data
-    var a_scale_ptr = a_scale.data
+    var a_quant_ptr = a_quant.ptr
+    var a_scale_ptr = a_scale.ptr
 
     # Pack the quantized integers and scales in batches of K.
     for ko in range(0, K, K_BATCH_SIZE):
         var ko_count = min(K_BATCH_SIZE, K - ko)
 
-        var am_ptr = a.data + ko
+        var am_ptr = a.ptr + ko
 
         @parameter
         @always_inline
@@ -220,7 +234,9 @@ fn _unpack_weights[
 
                 @parameter
                 if needs_correction:
-                    alias a_zero_point = SIMD[DType.uint8, simd_width * 4](128)
+                    comptime a_zero_point = SIMD[DType.uint8, simd_width * 4](
+                        128
+                    )
                     var a_zp = bitcast[DType.int32, simd_width](a_zero_point)
                     var b_lo = bitcast[DType.int32, simd_width](b_data_i4_lo)
                     var b_hi = bitcast[DType.int32, simd_width](b_data_i4_hi)
@@ -382,9 +398,9 @@ trait _MatmulQInt4Kernel:
     fn quantize_a_buffer[
         group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: NDBuffer[dtype, 2],
-        a_quant: NDBuffer[aq_type, 2],
-        a_scale: NDBuffer[DType.float32, 2],
+        a: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+        a_quant: LayoutTensor[aq_type, **_],
+        a_scale: LayoutTensor[DType.float32, **_],
     ):
         ...
 
@@ -429,10 +445,13 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
     fn quantize_a_buffer[
         group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: NDBuffer[dtype, 2],
-        a_quant: NDBuffer[aq_type, 2],
-        a_scale: NDBuffer[DType.float32, 2],
+        a: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+        a_quant: LayoutTensor[aq_type, **_],
+        a_scale: LayoutTensor[DType.float32, **_],
     ):
+        constrained[a.rank == 2]()
+        constrained[a_quant.rank == 2]()
+        constrained[a_scale.rank == 2]()
         return _quantize_a_buffer[group_size](a, a_quant, a_scale)
 
     @staticmethod
@@ -470,7 +489,7 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
                 var b_data_i4_lo = (b_data_packed & 15).cast[DType.int8]() - 8
                 var b_data_i4_hi = (b_data_packed >> 4).cast[DType.int8]() - 8
 
-                alias a_zero_point = SIMD[DType.uint8, simd_width * 4](128)
+                comptime a_zero_point = SIMD[DType.uint8, simd_width * 4](128)
 
                 b_column_sums[col] = dot_i8_to_i32_saturated_x86(
                     b_column_sums[col],
@@ -573,10 +592,13 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
     fn quantize_a_buffer[
         group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: NDBuffer[dtype, 2],
-        a_quant: NDBuffer[aq_type, 2],
-        a_scale: NDBuffer[DType.float32, 2],
+        a: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+        a_quant: LayoutTensor[aq_type, **_],
+        a_scale: LayoutTensor[DType.float32, **_],
     ):
+        constrained[a.rank == 2]()
+        constrained[a_quant.rank == 2]()
+        constrained[a_scale.rank == 2]()
         return _quantize_a_buffer[group_size](a, a_quant, a_scale)
 
     @staticmethod
@@ -618,7 +640,7 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
                 var b_data_i4_lo = (b_data_packed & 15).cast[DType.int8]() - 8
                 var b_data_i4_hi = (b_data_packed >> 4).cast[DType.int8]() - 8
 
-                alias a_zero_point = SIMD[DType.uint8, simd_width * 4](128)
+                comptime a_zero_point = SIMD[DType.uint8, simd_width * 4](128)
 
                 var a_zp = bitcast[DType.int32, simd_width](a_zero_point)
                 var b_lo = bitcast[DType.int32, simd_width](b_data_i4_lo)
@@ -742,10 +764,13 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
     fn quantize_a_buffer[
         group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: NDBuffer[dtype, 2],
-        a_quant: NDBuffer[aq_type, 2],
-        a_scale: NDBuffer[DType.float32, 2],
+        a: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+        a_quant: LayoutTensor[aq_type, **_],
+        a_scale: LayoutTensor[DType.float32, **_],
     ):
+        constrained[a.rank == 2]()
+        constrained[a_quant.rank == 2]()
+        constrained[a_scale.rank == 2]()
         return _quantize_a_buffer[group_size](a, a_quant, a_scale)
 
     @staticmethod
@@ -860,10 +885,14 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
     fn quantize_a_buffer[
         group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: NDBuffer[dtype, 2],
-        a_quant: NDBuffer[aq_type, 2],
-        a_scale: NDBuffer[DType.float32, 2],
+        a: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+        a_quant: LayoutTensor[aq_type, **_],
+        a_scale: LayoutTensor[DType.float32, **_],
     ):
+        constrained[a.rank == 2]()
+        constrained[a_quant.rank == 2]()
+        constrained[a_scale.rank == 2]()
+
         # Interleave the quantized data to produce the block format required
         # for the NEON `smmla` instruction.
         return _quantize_a_buffer[group_size, aq_interleave=8](
@@ -897,7 +926,7 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
         b_correction_ptr: UnsafePointer[Int32],
         mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
     ):
-        alias block_m = max(tile_m // 2, 1)
+        comptime block_m = max(tile_m // 2, 1)
         var c_int32_block = _Accumulator[
             DType.int32, block_m, tile_n * 2, simd_width
         ]()
@@ -969,22 +998,31 @@ fn _matmul_qint4_m_1[
     kernel: _MatmulQInt4Kernel,
     group_size: Int,
     aq_type: DType,
-    b_static_shape: DimList = DimList.create_unknown[2](),
+    b_layout: Layout = Layout.row_major[2](),
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    a_quant: NDBuffer[aq_type, 2],
-    a_scale: NDBuffer[DType.float32, 2],
-    b: NDBuffer[DType.uint8, 2, _, b_static_shape],
-    c: NDBuffer[DType.float32, 2],
+    a_quant: LayoutTensor[aq_type, address_space = AddressSpace.GENERIC, **_],
+    a_scale: LayoutTensor[
+        DType.float32, address_space = AddressSpace.GENERIC, **_
+    ],
+    b: LayoutTensor[
+        DType.uint8, b_layout, address_space = AddressSpace.GENERIC, **_
+    ],
+    c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
 ):
-    alias simd_width = simd_width_of[DType.float32]()
-    alias bytes_per_group_int4 = size_of[DType.float16]() + (group_size // 2)
+    constrained[a_quant.rank == 2]()
+    constrained[a_scale.rank == 2]()
+    constrained[b.rank == 2]()
+    constrained[c.rank == 2]()
+
+    comptime simd_width = simd_width_of[DType.float32]()
+    comptime bytes_per_group_int4 = size_of[DType.float16]() + (group_size // 2)
 
     var N = b.dim[0]()
     var K = a_quant.dim[1]()
     var k_groups = K // group_size
 
-    alias grain_size = simd_width * 2
+    comptime grain_size = simd_width * 2
 
     var work_count = ceildiv(N, grain_size)
     var num_workers = min(work_count, parallelism_level())
@@ -996,7 +1034,7 @@ fn _matmul_qint4_m_1[
         var task_n_start = block_range[0] * grain_size
         var task_n_count = block_range[1] * grain_size
 
-        var b_ptr = b.data.bitcast[Int8]()
+        var b_ptr = b.ptr.bitcast[Int8]()
 
         @parameter
         @always_inline
@@ -1007,8 +1045,8 @@ fn _matmul_qint4_m_1[
 
             c_float.init()
 
-            var ak_ptr = a_quant.data.bitcast[Int8]()
-            var ak_scale_ptr = a_scale.data
+            var ak_ptr = a_quant.ptr.bitcast[Int8]()
+            var ak_scale_ptr = a_scale.ptr
             var bk_ptr = b_ptr + n * k_groups * bytes_per_group_int4
 
             for k in range(0, K, group_size):
@@ -1020,11 +1058,11 @@ fn _matmul_qint4_m_1[
                 ak_scale_ptr += 1
                 bk_ptr += tile_n * simd_width * bytes_per_group_int4
 
-            c_float.store(c._offset(Index(0, n)), N)
+            c_float.store(c.ptr + c._offset(Index(0, n)), N)
 
             @parameter
             if elementwise_lambda_fn:
-                alias func = elementwise_lambda_fn.value()
+                comptime func = elementwise_lambda_fn.value()
 
                 @parameter
                 for nn in range(tile_n):
@@ -1044,24 +1082,28 @@ fn _matmul_qint4_m_any[
     kernel: _MatmulQInt4Kernel,
     group_size: Int,
     aq_type: DType,
-    b_static_shape: DimList = DimList.create_unknown[2](),
+    b_layout: Layout = Layout.row_major[2](),
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    a_quant: NDBuffer[aq_type, 2],
-    a_scale: NDBuffer[DType.float32, 2],
-    b: NDBuffer[DType.uint8, 2, _, b_static_shape],
-    c: NDBuffer[DType.float32, 2],
+    a_quant: LayoutTensor[aq_type, address_space = AddressSpace.GENERIC, **_],
+    a_scale: LayoutTensor[
+        DType.float32, address_space = AddressSpace.GENERIC, **_
+    ],
+    b: LayoutTensor[
+        DType.uint8, b_layout, address_space = AddressSpace.GENERIC, **_
+    ],
+    c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
 ):
-    alias simd_width = simd_width_of[DType.float32]()
-    alias alignment = align_of[SIMD[DType.float32, simd_width]]()
-    alias bytes_per_group_int4 = size_of[DType.float16]() + (group_size // 2)
+    comptime simd_width = simd_width_of[DType.float32]()
+    comptime alignment = align_of[SIMD[DType.float32, simd_width]]()
+    comptime bytes_per_group_int4 = size_of[DType.float16]() + (group_size // 2)
 
     var M = a_quant.dim[0]()
     var N = b.dim[0]()
     var K = a_quant.dim[1]()
     var k_groups = K // group_size
 
-    alias grain_size = simd_width * 2
+    comptime grain_size = simd_width * 2
 
     var work_count = ceildiv(N, grain_size)
     var num_workers = min(work_count, parallelism_level())
@@ -1073,7 +1115,7 @@ fn _matmul_qint4_m_any[
         var task_n_start = block_range[0] * grain_size
         var task_n_count = block_range[1] * grain_size
 
-        var b_ptr = b.data
+        var b_ptr = b.ptr
 
         for ko in range(0, K, K_BATCH_SIZE):
             var ko_count = min(K_BATCH_SIZE, K - ko)
@@ -1084,7 +1126,7 @@ fn _matmul_qint4_m_any[
             fn process_cols[tile_n: Int](n_idx: Int):
                 var n = task_n_start + n_idx * simd_width
 
-                alias k_batch_groups = K_BATCH_SIZE // group_size
+                comptime k_batch_groups = K_BATCH_SIZE // group_size
 
                 var b_s8_buf = stack_allocation[
                     K_BATCH_SIZE * tile_n * simd_width,
@@ -1100,7 +1142,7 @@ fn _matmul_qint4_m_any[
                 # If the A matrix is quantized using an unsigned data type,
                 # then a zero point correction is required to the block int32
                 # accumulator.
-                alias needs_correction = aq_type.is_unsigned()
+                comptime needs_correction = aq_type.is_unsigned()
 
                 var b_correction_buf = stack_allocation[
                     k_batch_groups * tile_n * simd_width,
@@ -1126,13 +1168,13 @@ fn _matmul_qint4_m_any[
                     ko_count,
                 )
 
-                var ak_ptr = a_quant.data + ko * M
-                var ak_scale_ptr = a_scale.data + ko_group * M
+                var ak_ptr = a_quant.ptr + ko * M
+                var ak_scale_ptr = a_scale.ptr + ko_group * M
 
                 @parameter
                 @always_inline
                 fn process_rows[tile_m: Int](m: Int):
-                    var c_ptr = c._offset(Index(m, n))
+                    var c_ptr = c.ptr + c._offset(Index(m, n))
                     var c_float = _Accumulator[
                         DType.float32, tile_m, tile_n, simd_width
                     ]()
@@ -1171,7 +1213,7 @@ fn _matmul_qint4_m_any[
 
                         @parameter
                         if elementwise_lambda_fn:
-                            alias func = elementwise_lambda_fn.value()
+                            comptime func = elementwise_lambda_fn.value()
 
                             @parameter
                             for mm in range(tile_m):
@@ -1199,32 +1241,36 @@ fn _matmul_qint4_m_any[
 fn _matmul_qint4[
     kernel: _MatmulQInt4Kernel,
     group_size: Int,
-    b_static_shape: DimList = DimList.create_unknown[2](),
+    b_layout: Layout = Layout.row_major[2](),
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    a: NDBuffer[DType.float32, 2],
-    b: NDBuffer[DType.uint8, 2, _, b_static_shape],
-    c: NDBuffer[DType.float32, 2],
+    a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
+    b: LayoutTensor[
+        DType.uint8, b_layout, address_space = AddressSpace.GENERIC, **_
+    ],
+    c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
 ):
-    alias simd_width = simd_width_of[DType.float32]()
-    alias alignment = align_of[SIMD[DType.float32, simd_width]]()
+    comptime simd_width = simd_width_of[DType.float32]()
+    comptime alignment = align_of[SIMD[DType.float32, simd_width]]()
 
     var M = a.dim[0]()
-    var N = b.dim[0]()
     var K = a.dim[1]()
     var k_groups = K // group_size
 
-    alias aq_type = kernel.aq_type()
+    comptime aq_type = kernel.aq_type()
 
-    var a_quant_base_ptr = UnsafePointer[
-        Scalar[aq_type],
-        alignment=alignment,
-    ].alloc(M * K)
+    var a_quant_base_ptr = UnsafePointer[Scalar[aq_type]].alloc(
+        M * K, alignment=alignment
+    )
     var a_scale_base_ptr = UnsafePointer[Float32].alloc(M * k_groups)
 
-    var a_quant = NDBuffer[aq_type, 2](a_quant_base_ptr, Index(M, K))
-    var a_scale = NDBuffer[DType.float32, 2](
-        a_scale_base_ptr, Index(M, k_groups)
+    var a_quant = LayoutTensor[aq_type, Layout.row_major[2]()](
+        a_quant_base_ptr,
+        RuntimeLayout[Layout.row_major[2]()].row_major(Index(M, K)),
+    )
+    var a_scale = LayoutTensor[DType.float32, Layout.row_major[2]()](
+        a_scale_base_ptr,
+        RuntimeLayout[Layout.row_major[2]()].row_major(Index(M, k_groups)),
     )
 
     kernel.quantize_a_buffer[group_size](a, a_quant, a_scale)
@@ -1244,12 +1290,14 @@ fn _matmul_qint4[
 
 fn matmul_qint4[
     group_size: Int,
-    b_static_shape: DimList = DimList.create_unknown[2](),
+    b_layout: Layout = Layout.row_major[2](),
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    a: NDBuffer[DType.float32, 2],
-    b: NDBuffer[DType.uint8, 2, _, b_static_shape],
-    c: NDBuffer[DType.float32, 2],
+    a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
+    b: LayoutTensor[
+        DType.uint8, b_layout, address_space = AddressSpace.GENERIC, **_
+    ],
+    c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
 ):
     @parameter
     fn kernel_dispatch[kernel: _MatmulQInt4Kernel]():

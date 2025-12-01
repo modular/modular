@@ -12,22 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import isclose, isqrt
+from math import isclose, rsqrt
 from random import rand
 from sys import env_get_dtype, env_get_int
 
-from benchmark import (
-    Bench,
-    Bencher,
-    BenchId,
-    BenchMetric,
-    ThroughputMeasure,
-)
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from gpu import *
 from gpu.host import DeviceContext
 from internal_utils import arg_parse
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from memory import LegacyUnsafePointer as UnsafePointer
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
@@ -49,13 +43,13 @@ fn run_mha[
     num_keys: Int,
     batch_size: Int,
     num_partitions: Int,
-    bench_and_verify: Bool,
-    mode: String,
+    bench: Bool,
+    verify: Bool,
     ctx: DeviceContext,
 ) raises:
     # Query, key, value dimensions.
-    alias scale = Float32(0.125)  # isqrt[type, 1](Float32(depth))
-    alias kv_num_heads = num_heads // group
+    comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
+    comptime kv_num_heads = num_heads // group
 
     # Q, K, V shapes.
     var q_size = batch_size * num_heads * seq_len * depth
@@ -78,8 +72,12 @@ fn run_mha[
     rand[qkv_type](v_ptr, v_size)
 
     # Initialize causal mask
-    var mask = NDBuffer[mask_type, 4](
-        mask_ptr, Index(batch_size, num_heads, seq_len, num_keys)
+    comptime layout_4d = Layout.row_major[4]()
+    var mask = LayoutTensor[mask_type, layout_4d](
+        mask_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, num_heads, seq_len, num_keys)
+        ),
     )
     for b in range(batch_size):
         for h in range(num_heads):
@@ -105,49 +103,52 @@ fn run_mha[
     ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
     # Construct device buffers.
-    var q_device = NDBuffer[
-        qkv_type, 4, MutableAnyOrigin, DimList(Dim(), Dim(), num_heads, depth)
-    ](
+    comptime q_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
+    )
+    var q_device = LayoutTensor[qkv_type, q_layout](
         q_device_ptr.unsafe_ptr(),
-        Index(batch_size, seq_len, num_heads, depth),
+        RuntimeLayout[q_layout].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
-    var k_device = NDBuffer[
-        qkv_type,
-        4,
-        MutableAnyOrigin,
-        DimList(Dim(), Dim(), kv_num_heads, depth),
-    ](
+    comptime k_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
+    )
+    var k_device = LayoutTensor[qkv_type, k_layout](
         k_device_ptr.unsafe_ptr(),
-        Index(batch_size, num_keys, kv_num_heads, depth),
+        RuntimeLayout[k_layout].row_major(
+            Index(batch_size, num_keys, kv_num_heads, depth)
+        ),
     )
-    var v_device = NDBuffer[
-        qkv_type,
-        4,
-        MutableAnyOrigin,
-        DimList(Dim(), Dim(), kv_num_heads, depth),
-    ](
+    comptime v_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
+    )
+    var v_device = LayoutTensor[qkv_type, v_layout](
         v_device_ptr.unsafe_ptr(),
-        Index(batch_size, num_keys, kv_num_heads, depth),
+        RuntimeLayout[v_layout].row_major(
+            Index(batch_size, num_keys, kv_num_heads, depth)
+        ),
     )
-    var mask4d = NDBuffer[
-        mask_type, 4, MutableAnyOrigin, DimList.create_unknown[4]()
-    ](
+    var mask4d = LayoutTensor[mask_type, Layout.row_major[4]()](
         mask_device_ptr.unsafe_ptr(),
-        Index(batch_size, num_heads, seq_len, num_keys),
+        RuntimeLayout[Layout.row_major[4]()].row_major(
+            Index(batch_size, num_heads, seq_len, num_keys)
+        ),
     )
-    var output_device = NDBuffer[
-        qkv_type, 4, MutableAnyOrigin, DimList(Dim(), Dim(), num_heads, depth)
-    ](
+    comptime output_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
+    )
+    var output_device = LayoutTensor[qkv_type, output_layout](
         output_device_ptr.unsafe_ptr(),
-        Index(batch_size, seq_len, num_heads, depth),
+        RuntimeLayout[output_layout].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
-
-    alias q_tile_num_rows = 32
-    alias k_tile_num_rows = 128
 
     @parameter
     @always_inline
-    @__copy_capture(q_device, k_device, v_device, mask4d, output_device)
+    @__copy_capture(q_device, k_device, v_device, output_device)
     fn kernel_launch(ctx: DeviceContext) raises:
         flash_attention(
             output_device,
@@ -161,7 +162,7 @@ fn run_mha[
             num_partitions if num_partitions > 0 else OptionalReg[Int](None),
         )
 
-    if bench_and_verify:
+    if bench:
 
         @parameter
         @always_inline
@@ -174,7 +175,8 @@ fn run_mha[
             b.iter_custom[_kernel_launch](ctx)
 
         fn compute_flops() -> Int:
-            return 4 * batch_size * num_heads * seq_len * num_keys * depth
+            # Using causal mask, skip half of tiles.
+            return 2 * batch_size * num_heads * seq_len * num_keys * depth
 
         m.bench_function[bench_func](
             BenchId(
@@ -186,11 +188,10 @@ fn run_mha[
                 "/seq_len=", seq_len,
                 "/num_keys=", num_keys,
                 "/batch_size=", batch_size,
-                "/mode=", mode,
             ),
                 # fmt: on
             ),
-            ThroughputMeasure(BenchMetric.flops, compute_flops()),
+            [ThroughputMeasure(BenchMetric.flops, compute_flops())],
         )
     else:
         kernel_launch(ctx)
@@ -198,16 +199,16 @@ fn run_mha[
     ctx.synchronize()
     ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
 
-    if bench_and_verify:
+    if verify:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
-        var output_ref_device = NDBuffer[
-            qkv_type,
-            4,
-            MutableAnyOrigin,
-            DimList(Dim(), Dim(), num_heads, depth),
-        ](
+        comptime output_ref_layout = Layout.row_major(
+            UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
+        )
+        var output_ref_device = LayoutTensor[qkv_type, output_ref_layout](
             output_ref_device_ptr.unsafe_ptr(),
-            Index(batch_size, seq_len, num_heads, depth),
+            RuntimeLayout[output_ref_layout].row_major(
+                Index(batch_size, seq_len, num_heads, depth)
+            ),
         )
         ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
@@ -281,21 +282,21 @@ struct MHA_cfg(ImplicitlyCopyable, Movable):
         # fmt: on
 
 
-fn main() raises:
-    alias qkv_type = env_get_dtype["qkv_type", DType.bfloat16]()
-    alias mask_type = env_get_dtype["mask_type", DType.float32]()
-    alias depth = env_get_int["depth", 128]()
-    alias num_heads = env_get_int["num_heads", 32]()
-    alias group = env_get_int["group", 1]()
+def main():
+    comptime qkv_type = env_get_dtype["qkv_type", DType.bfloat16]()
+    comptime mask_type = env_get_dtype["mask_type", DType.float32]()
+    comptime depth = env_get_int["depth", 128]()
+    comptime num_heads = env_get_int["num_heads", 32]()
+    comptime group = env_get_int["group", 1]()
 
     var seq_len = Int(arg_parse("seq_len", 64))
     var num_keys = Int(arg_parse("num_keys", 64))
     var batch_size = Int(arg_parse("batch_size", 1))
     var num_partitions = Int(arg_parse("num_partitions", 1))
-    var mode = String(arg_parse("mode", "none"))
-    var bench_and_verify = arg_parse("benchmark_and_verify", True)
+    var bench = arg_parse("benchmark", True)
+    var verify = arg_parse("verify", True)
 
-    alias cfg = MHA_cfg(
+    comptime cfg = MHA_cfg(
         qkv_type=qkv_type,
         mask_type=mask_type,
         depth=depth,
@@ -317,8 +318,8 @@ fn main() raises:
             num_keys,
             batch_size,
             num_partitions,
-            bench_and_verify,
-            mode,
+            bench,
+            verify,
             ctx,
         )
     m.dump_report()

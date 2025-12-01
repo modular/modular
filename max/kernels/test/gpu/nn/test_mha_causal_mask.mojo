@@ -11,23 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from collections import OptionalReg
 from math import isclose
 from random import rand
 from sys import argv, size_of
 
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from bit import count_trailing_zeros
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host.info import A100, H100, B200
+from gpu.host.info import A100, B200, H100
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
-from nn.mha_utils import MHAConfig, FlashAttentionAlgorithm
-from testing import assert_almost_equal
-
-from bit import count_trailing_zeros
+from nn.mha_utils import FlashAttentionAlgorithm, MHAConfig
+from testing import assert_almost_equal, assert_equal
 
 from utils.index import Index
 from utils.numerics import min_or_neg_inf
@@ -71,9 +70,9 @@ fn test[
         num_keys,
     )
     # Query, key, value dimensions.
-    alias batch_size = 1
-    alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
-    alias kv_num_heads = num_heads // group
+    comptime batch_size = 1
+    comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
+    comptime kv_num_heads = num_heads // group
 
     # Q, K, V shapes.
     var q_size = batch_size * num_heads * seq_len * depth
@@ -91,20 +90,36 @@ fn test[
     var flash_output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
 
     # Construct buffers.
-    var q = NDBuffer[qkv_type, 4](
-        q_ptr, Index(batch_size, seq_len, num_heads, depth)
+    comptime layout_4d = Layout.row_major[4]()
+    var q = LayoutTensor[qkv_type, layout_4d](
+        q_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
-    var k = NDBuffer[qkv_type, 4](
-        k_ptr, Index(batch_size, num_keys, kv_num_heads, depth)
+    var k = LayoutTensor[qkv_type, layout_4d](
+        k_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, num_keys, kv_num_heads, depth)
+        ),
     )
-    var v = NDBuffer[qkv_type, 4](
-        v_ptr, Index(batch_size, num_keys, kv_num_heads, depth)
+    var v = LayoutTensor[qkv_type, layout_4d](
+        v_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, num_keys, kv_num_heads, depth)
+        ),
     )
-    var mask = NDBuffer[mask_type, 4](
-        mask_ptr, Index(batch_size, num_heads, seq_len, num_keys)
+    var mask = LayoutTensor[mask_type, layout_4d](
+        mask_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, num_heads, seq_len, num_keys)
+        ),
     )
-    var output = NDBuffer[qkv_type, 4](
-        output_ptr, Index(batch_size, seq_len, num_heads, depth)
+    var output = LayoutTensor[qkv_type, layout_4d](
+        output_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
 
     # Q, K, V are randomly initialized.
@@ -137,37 +152,50 @@ fn test[
     ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
     # Construct device buffers.
-    var q_device = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
-    ](
-        q_device_ptr._unsafe_ptr(),
-        Index(batch_size, seq_len, num_heads, depth),
+    comptime q_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
     )
-    var k_device = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), kv_num_heads, depth)
-    ](
-        k_device_ptr._unsafe_ptr(),
-        Index(batch_size, num_keys, kv_num_heads, depth),
+    var q_device = LayoutTensor[qkv_type, q_layout](
+        q_device_ptr.unsafe_ptr(),
+        RuntimeLayout[q_layout].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
-    var v_device = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), kv_num_heads, depth)
-    ](
-        v_device_ptr._unsafe_ptr(),
-        Index(batch_size, num_keys, kv_num_heads, depth),
+    comptime k_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
     )
-    var mask4d = NDBuffer[mask_type, 4, _, DimList.create_unknown[4]()](
-        mask_device_ptr._unsafe_ptr(),
-        Index(batch_size, num_heads, seq_len, num_keys),
+    var k_device = LayoutTensor[qkv_type, k_layout](
+        k_device_ptr.unsafe_ptr(),
+        RuntimeLayout[k_layout].row_major(
+            Index(batch_size, num_keys, kv_num_heads, depth)
+        ),
     )
-    var output_device = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
-    ](
-        output_device_ptr._unsafe_ptr(),
-        Index(batch_size, seq_len, num_heads, depth),
+    comptime v_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
+    )
+    var v_device = LayoutTensor[qkv_type, v_layout](
+        v_device_ptr.unsafe_ptr(),
+        RuntimeLayout[v_layout].row_major(
+            Index(batch_size, num_keys, kv_num_heads, depth)
+        ),
+    )
+    var mask4d = LayoutTensor[mask_type, Layout.row_major[4]()](
+        mask_device_ptr.unsafe_ptr(),
+        RuntimeLayout[Layout.row_major[4]()].row_major(
+            Index(batch_size, num_heads, seq_len, num_keys)
+        ),
+    )
+    comptime output_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
+    )
+    var output_device = LayoutTensor[qkv_type, output_layout](
+        output_device_ptr.unsafe_ptr(),
+        RuntimeLayout[output_layout].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
 
-    alias config = MHAConfig(
-        qkv_type,
+    comptime config = MHAConfig[qkv_type](
         UInt(num_heads),
         UInt(depth),
         BK=OptionalReg[UInt](UInt(128 // size_of[qkv_type]())),
@@ -193,7 +221,7 @@ fn test[
         )
 
     if is_benchmark:
-        alias nrun = 50
+        comptime nrun = 50
 
         # Warmup
         kernel_launch(ctx)
@@ -212,15 +240,14 @@ fn test[
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
     ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
-    var output_device_ref = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
-    ](
-        output_ref_device_ptr._unsafe_ptr(),
-        Index(batch_size, seq_len, num_heads, depth),
+    var output_device_ref = LayoutTensor[qkv_type, output_layout](
+        output_ref_device_ptr.unsafe_ptr(),
+        RuntimeLayout[output_layout].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
 
-    alias config_baseline = MHAConfig(
-        qkv_type,
+    comptime config_baseline = MHAConfig[qkv_type](
         UInt(num_heads),
         UInt(depth),
         BK=OptionalReg[UInt](UInt(128 // size_of[qkv_type]())),
@@ -240,7 +267,6 @@ fn test[
 
     ctx.synchronize()
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
-    _ = output_ref_device_ptr
 
     var rtol = 1e-2
     for s in range(seq_len):
@@ -282,11 +308,39 @@ fn test[
 
                 assert_almost_equal(actual, expect, atol=1e-5, rtol=rtol)
 
+    for repeat in range(16):
+        # test reproducibility
+        flash_attention[config=config](
+            output_device_ref,
+            q_device,
+            k_device,
+            v_device,
+            CausalMask(),
+            IdentityScoreMod(),
+            scale,
+            ctx,
+            num_partitions=num_partitions,
+        )
+        ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
+        ctx.synchronize()
+        for s in range(seq_len):
+            for h in range(num_heads):
+                for d in range(depth):
+                    orig = flash_output_ptr.load(
+                        d + depth * (h + s * num_heads)
+                    )
+                    rep = output_ptr.load(d + depth * (h + s * num_heads))
+                    if rep != orig:
+                        print("repeat s h d =", repeat, s, h, d)
+                    assert_equal(rep, orig)
+                    output_ptr.store(d + depth * (h + s * num_heads), 123.4567)
+
     _ = q_device_ptr
     _ = k_device_ptr
     _ = v_device_ptr
     _ = mask_device_ptr
     _ = output_device_ptr
+    _ = output_ref_device_ptr
 
     q_ptr.free()
     k_ptr.free()
@@ -306,12 +360,12 @@ fn construct_depths(is_sm90orsm100: Bool) -> List[Int]:
 
 def main():
     with DeviceContext() as ctx:
-        alias is_sm90orsm100 = ctx.default_device_info is H100 or ctx.default_device_info is B200
-        alias depths = construct_depths(is_sm90orsm100)
+        comptime is_sm90orsm100 = ctx.default_device_info is H100 or ctx.default_device_info is B200
+        comptime depths = construct_depths(is_sm90orsm100)
 
         @parameter
         for d in range(len(depths)):
-            alias depth = depths[d]
+            comptime depth = depths[d]
 
             @parameter
             if depth <= 128:

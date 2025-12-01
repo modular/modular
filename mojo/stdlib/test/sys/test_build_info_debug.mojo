@@ -14,6 +14,7 @@
 from sys._build import is_debug_build, is_release_build
 
 from testing import assert_false, assert_true
+from testing import TestSuite
 
 
 def test_is_debug():
@@ -22,4 +23,4 @@ def test_is_debug():
 
 
 def main():
-    test_is_debug()
+    TestSuite.discover_tests[__functions_in_module()]().run()

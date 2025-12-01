@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from algorithm.functional import elementwise
-from gpu.random import Random
+from random import Random
 from runtime.asyncrt import DeviceContextPtr
-from tensor_internal._indexing import _dot_prod, _row_major_strides
+from tensor._indexing import _dot_prod, _row_major_strides
 
 from utils import IndexList
 
@@ -55,7 +55,7 @@ fn random_uniform[
         raise Error("lower_bound must be less than upper_bound")
 
     var strides = _row_major_strides(shape)
-    var delta = Scalar[DType.float32](upper_bound - lower_bound)
+    var delta = Float32(upper_bound - lower_bound)
 
     @parameter
     @always_inline
@@ -65,12 +65,12 @@ fn random_uniform[
     ](idx: IndexList[_rank],):
         constrained[width <= 4]()
 
-        var offset = _dot_prod(rebind[__type_of(strides)](idx), strides)
+        var offset = _dot_prod(rebind[type_of(strides)](idx), strides)
 
         var generator = Random(seed=seed_value, offset=UInt64(offset))
 
         var values: SIMD[DType.float32, 4] = generator.step_uniform()
-        values = values * delta + Scalar[DType.float32](lower_bound)
+        values = values * delta + Float32(lower_bound)
 
         output_fn[width=width](idx, values.cast[dtype]().slice[width]())
 

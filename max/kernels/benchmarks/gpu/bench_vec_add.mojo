@@ -18,6 +18,7 @@ from builtin._closure import __ownership_keepalive
 from gpu import *
 from gpu.host import DeviceContext
 from internal_utils import update_bench_config_args
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
 
@@ -37,7 +38,7 @@ fn vec_func(
 fn bench_vec_add(
     mut b: Bench, *, block_dim: Int, length: Int, context: DeviceContext
 ) raises:
-    alias dtype = DType.float32
+    comptime dtype = DType.float32
     var in0_host = UnsafePointer[Scalar[dtype]].alloc(length)
     var in1_host = UnsafePointer[Scalar[dtype]].alloc(length)
     var out_host = UnsafePointer[Scalar[dtype]].alloc(length)
@@ -77,7 +78,7 @@ fn bench_vec_add(
 
     b.bench_function[bench_func](
         BenchId("vec_add", input_id=String("block_dim=", block_dim)),
-        ThroughputMeasure(BenchMetric.flops, length),
+        [ThroughputMeasure(BenchMetric.flops, length)],
     )
     context.synchronize()
     context.enqueue_copy(out_host, out_device)
@@ -93,7 +94,7 @@ fn bench_vec_add(
 
 
 def main():
-    alias block_dim = env_get_int["block_dim", 32]()
+    comptime block_dim = env_get_int["block_dim", 32]()
     var m = Bench()
     update_bench_config_args(m)
 

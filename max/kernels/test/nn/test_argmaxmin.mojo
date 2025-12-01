@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from nn.argmaxmin import argmax, argmin
 
@@ -21,12 +22,12 @@ from utils.index import IndexList
 fn test_argn() raises:
     print("== test_argn")
 
-    alias size = 93
+    comptime size = 93
 
     var vector_stack = InlineArray[Int32, size](uninitialized=True)
     var vector = LayoutTensor[DType.int32, Layout.row_major(size)](vector_stack)
-    var output_stack = InlineArray[Scalar[DType.index], 1](uninitialized=True)
-    var output = LayoutTensor[DType.index, Layout.row_major(1)](output_stack)
+    var output_stack = InlineArray[Scalar[DType.int], 1](uninitialized=True)
+    var output = LayoutTensor[DType.int, Layout.row_major(1)](output_stack)
 
     for i in range(size):
         vector[i] = i
@@ -39,7 +40,7 @@ fn test_argn() raises:
             ),
         ),
         0,
-        LayoutTensor[DType.index, Layout.row_major(UNKNOWN_VALUE)](
+        LayoutTensor[DType.int, Layout.row_major(UNKNOWN_VALUE)](
             output_stack,
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                 IndexList[1](1)
@@ -58,7 +59,7 @@ fn test_argn() raises:
             ),
         ),
         0,
-        LayoutTensor[DType.index, Layout.row_major(UNKNOWN_VALUE)](
+        LayoutTensor[DType.int, Layout.row_major(UNKNOWN_VALUE)](
             output_stack,
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                 IndexList[1](1)
@@ -74,8 +75,8 @@ fn test_argn() raises:
 fn test_argn_2() raises:
     print("== test_argn_2")
 
-    alias batch_size = 4
-    alias size = 91
+    comptime batch_size = 4
+    comptime size = 91
 
     var vector_stack = InlineArray[Float32, batch_size * size](
         uninitialized=True
@@ -88,11 +89,11 @@ fn test_argn_2() raises:
             IndexList[2](batch_size, size)
         ),
     )
-    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+    var output_stack = InlineArray[Scalar[DType.int], batch_size](
         uninitialized=True
     )
     var output = LayoutTensor[
-        DType.index, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+        DType.int, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     ](
         output_stack,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
@@ -127,8 +128,8 @@ fn test_argn_2() raises:
 fn test_argn_2_test_2() raises:
     print("== test_argn_2_test_2")
 
-    alias batch_size = 2
-    alias size = 3
+    comptime batch_size = 2
+    comptime size = 3
 
     var vector_stack = InlineArray[Float32, batch_size * size](
         uninitialized=True
@@ -142,11 +143,11 @@ fn test_argn_2_test_2() raises:
             IndexList[2](batch_size, size)
         ),
     )
-    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+    var output_stack = InlineArray[Scalar[DType.int], batch_size](
         uninitialized=True
     )
     var output = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
     ](
         output_stack,
@@ -180,8 +181,8 @@ fn test_argn_2_test_2() raises:
 fn test_argn_2_neg_axis() raises:
     print("== test_argn_2_neg_axis")
 
-    alias batch_size = 2
-    alias size = 3
+    comptime batch_size = 2
+    comptime size = 3
 
     var vector_stack = InlineArray[Float32, batch_size * size](
         uninitialized=True
@@ -195,11 +196,11 @@ fn test_argn_2_neg_axis() raises:
             IndexList[2](batch_size, size)
         ),
     )
-    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+    var output_stack = InlineArray[Scalar[DType.int], batch_size](
         uninitialized=True
     )
     var output = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
     ](
         output_stack,
@@ -233,8 +234,8 @@ fn test_argn_2_neg_axis() raises:
 fn test_argn_test_zeros() raises:
     print("== test_argn_test_zeros")
 
-    alias batch_size = 1
-    alias size = 16
+    comptime batch_size = 1
+    comptime size = 16
 
     var vector_stack = InlineArray[Float32, batch_size * size](
         uninitialized=True
@@ -248,11 +249,11 @@ fn test_argn_test_zeros() raises:
             IndexList[2](batch_size, size)
         ),
     )
-    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+    var output_stack = InlineArray[Scalar[DType.int], batch_size](
         uninitialized=True
     )
     var output = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
     ](
         output_stack,
@@ -282,8 +283,8 @@ fn test_argn_test_zeros() raises:
 fn test_argn_test_identity() raises:
     print("== test_argn_test_identity")
 
-    alias batch_size = 3
-    alias size = 5
+    comptime batch_size = 3
+    comptime size = 5
 
     var vector_stack = InlineArray[Int64, batch_size * size](uninitialized=True)
     var vector = LayoutTensor[
@@ -295,11 +296,11 @@ fn test_argn_test_identity() raises:
             IndexList[2](batch_size, size)
         ),
     )
-    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+    var output_stack = InlineArray[Scalar[DType.int], batch_size](
         uninitialized=True
     )
     var output = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
     ](
         output_stack,
@@ -338,11 +339,11 @@ fn test_argn_test_identity() raises:
 fn test_argn_3d_identity() raises:
     print("== test_argn_3d_identity")
 
-    alias batch_size = 2
-    alias seq_len = 2
-    alias hidden_dim = 5
+    comptime batch_size = 2
+    comptime seq_len = 2
+    comptime hidden_dim = 5
 
-    alias vector_shape = Layout.row_major(batch_size, seq_len, hidden_dim)
+    comptime vector_shape = Layout.row_major(batch_size, seq_len, hidden_dim)
     var vector_stack = InlineArray[Int64, vector_shape.size()](
         uninitialized=True
     )
@@ -358,11 +359,11 @@ fn test_argn_3d_identity() raises:
         0
     )
 
-    var output_stack = InlineArray[Scalar[DType.index], batch_size * seq_len](
+    var output_stack = InlineArray[Scalar[DType.int], batch_size * seq_len](
         uninitialized=True
     )
     var output = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE),
     ](
         output_stack,
@@ -403,8 +404,8 @@ fn test_argn_3d_identity() raises:
 fn test_argn_less_than_simd() raises:
     print("== test_argn_less_than_simd")
 
-    alias batch_size = 2
-    alias hidden_dim = 3  # assumes simd_width of 4
+    comptime batch_size = 2
+    comptime hidden_dim = 3  # assumes simd_width of 4
 
     var vector_stack = InlineArray[Int64, batch_size * hidden_dim](
         uninitialized=True
@@ -420,11 +421,11 @@ fn test_argn_less_than_simd() raises:
         0
     )
 
-    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+    var output_stack = InlineArray[Scalar[DType.int], batch_size](
         uninitialized=True
     )
     var output = LayoutTensor[
-        DType.index, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+        DType.int, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     ](
         output_stack,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
@@ -467,7 +468,7 @@ fn test_argn_simd_index_order() raises:
     #   [0, 0, 1, 0, 0, 1, 0, 0, 0]
     #   <--------->  <-------->  <>
     #          ^        ^
-    alias size = 17
+    comptime size = 17
 
     var vector_stack = InlineArray[Int32, size](uninitialized=True)
     var vector = LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE)](
@@ -476,8 +477,8 @@ fn test_argn_simd_index_order() raises:
             IndexList[1](size)
         ),
     ).fill(0)
-    var output_stack = InlineArray[Scalar[DType.index], 1](uninitialized=True)
-    var output = LayoutTensor[DType.index, Layout.row_major(UNKNOWN_VALUE)](
+    var output_stack = InlineArray[Scalar[DType.int], 1](uninitialized=True)
+    var output = LayoutTensor[DType.int, Layout.row_major(UNKNOWN_VALUE)](
         output_stack,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             IndexList[1](1)
@@ -505,8 +506,8 @@ fn test_argn_parallelize() raises:
     print("== test_argn_parallelize")
 
     # Checks argn's performance when the size of the NDBuffer exceeds the threshold to enable parallelism
-    alias batch_size = 8
-    alias hidden_dim = 16384
+    comptime batch_size = 8
+    comptime hidden_dim = 16384
 
     var input_ptr = UnsafePointer[Float32].alloc(batch_size * hidden_dim)
     var input = LayoutTensor[
@@ -520,11 +521,11 @@ fn test_argn_parallelize() raises:
         0
     )
 
-    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+    var output_stack = InlineArray[Scalar[DType.int], batch_size](
         uninitialized=True
     )
     var output = LayoutTensor[
-        DType.index, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+        DType.int, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     ](
         output_stack,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
@@ -590,7 +591,7 @@ fn test_argn_parallelize() raises:
     input_ptr.free()
 
 
-fn main() raises:
+def main():
     test_argn()
     test_argn_2()
     test_argn_2_test_2()

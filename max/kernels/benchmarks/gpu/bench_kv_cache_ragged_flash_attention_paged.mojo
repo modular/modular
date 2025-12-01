@@ -12,20 +12,21 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Set
-from math import ceildiv, isqrt
+from math import ceildiv, rsqrt
 from random import random_ui64, seed
 from sys import env_get_dtype, env_get_int
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import Dim, DimList, NDBuffer
+from buffer import Dim, DimList
 from gpu.host import DeviceContext
 from internal_utils import HostNDBuffer, arg_parse, random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
-from tensor_internal import IOUnknown, ManagedTensorSlice
-from tensor_internal.managed_tensor_slice import StaticTensorSpec
+from tensor import IOUnknown, ManagedTensorSlice
+from tensor.managed_tensor_slice import StaticTensorSpec
 
 from utils import IndexList
 
@@ -89,11 +90,12 @@ def execute_kv_cache_ragged_flash_attention[
     use_random_seq_lengths: Bool,
     cache_len: Int,
     use_random_cache_lengths: Bool,
+    run_benchmark: Bool,
 ):
-    alias num_layers = 1
-    alias layer_idx = 0
+    comptime num_layers = 1
+    comptime layer_idx = 0
     var num_pages = batch_size * ceildiv(seq_len + cache_len, page_size) * 2
-    alias CollectionType = PagedKVCacheCollection[
+    comptime CollectionType = PagedKVCacheCollection[
         dtype,
         KVCacheStaticParams(
             num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
@@ -154,17 +156,12 @@ def execute_kv_cache_ragged_flash_attention[
     random(q_host.tensor)
     var q_device = q_host.copy_to_device(ctx)
 
-    # initialize mask tensor
-    # dummy mask to satisfy the argument.
-    dummy_mask = NDBuffer[dtype, 4](
-        UnsafePointer[Scalar[dtype]](), IndexList[4]()
-    )
-
     # initialize reference output
     output_host = HostNDBuffer[dtype, 3, DimList(Dim(), num_q_heads, head_dim)](
         IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
     )
     var output_device = output_host.copy_to_device(ctx)
+    var output_device_tensor = output_device.to_layout_tensor()
     paged_lut_host = HostNDBuffer[DType.uint32, 2](
         IndexList[2](batch_size, ceildiv(max_context_length, page_size))
     )
@@ -195,9 +192,33 @@ def execute_kv_cache_ragged_flash_attention[
     kv_block_paged_device = kv_block_paged_host.copy_to_device(ctx)
 
     kv_collection_device = CollectionType(
-        kv_block_paged_device.tensor,
-        cache_lengths_device.tensor,
-        paged_lut_device.tensor,
+        LayoutTensor[
+            kv_block_paged_device.dtype, Layout.row_major[6](), MutAnyOrigin
+        ](
+            kv_block_paged_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_paged_device.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_paged_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            paged_lut_device.dtype, Layout.row_major[2](), ImmutAnyOrigin
+        ](
+            paged_lut_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut_device.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_seq_length,
         max_context_length,
     )
@@ -205,58 +226,89 @@ def execute_kv_cache_ragged_flash_attention[
     k_cache_device = kv_collection_device.get_key_cache(layer_idx)
     v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
-    @parameter
-    @__copy_capture(
-        q_device,
-        k_cache_device,
-        v_cache_device,
-        output_device,
-        dummy_mask,
-        input_row_offsets_device,
-    )
-    @always_inline
-    fn bench_func(mut b: Bencher):
+    if run_benchmark:
+
         @parameter
+        @__copy_capture(
+            q_device,
+            k_cache_device,
+            v_cache_device,
+            output_device_tensor,
+            input_row_offsets_device,
+        )
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
-            flash_attention[ragged=True](
-                output_device.tensor,
-                q_device.tensor,
-                k_cache_device,
-                v_cache_device,
-                CausalMask(),
-                IdentityScoreMod(),
-                ManagedTensorSlice[
-                    io_spec=IOUnknown,
-                    static_spec = StaticTensorSpec[
-                        DType.uint32, 1
-                    ].create_unknown(),
-                ](input_row_offsets_device.tensor),
-                isqrt(Float32(head_dim)),
-                ctx,
-            )
+        fn bench_func(mut b: Bencher):
+            @parameter
+            @always_inline
+            fn kernel_launch(ctx: DeviceContext) raises:
+                flash_attention[ragged=True](
+                    # TODO: move to_layout_tensor here once unified closures are supported.
+                    output_device_tensor.as_any_origin(),
+                    q_device.to_layout_tensor(),
+                    k_cache_device,
+                    v_cache_device,
+                    CausalMask(),
+                    IdentityScoreMod(),
+                    ManagedTensorSlice[
+                        io_spec=IOUnknown,
+                        static_spec = StaticTensorSpec[
+                            DType.uint32, 1
+                        ].create_unknown(),
+                    ](
+                        input_row_offsets_device.tensor.data,
+                        input_row_offsets_device.tensor.get_shape(),
+                    ),
+                    rsqrt(Float32(head_dim)),
+                    ctx,
+                )
 
-        b.iter_custom[kernel_launch](ctx)
+            b.iter_custom[kernel_launch](ctx)
 
-    flop_count = flops(
-        batch_size,
-        num_q_heads,
-        seq_len,
-        cache_len + seq_len,
-        head_dim,
-    )
-    m.bench_function[bench_func](
-        BenchId(
-            _get_run_name[dtype, num_q_heads, num_kv_heads, head_dim](
-                batch_size,
-                seq_len,
-                use_random_seq_lengths,
-                cache_len,
-                use_random_cache_lengths,
-            )
-        ),
-        ThroughputMeasure(BenchMetric.flops, flop_count),
-    )
+        flop_count = flops(
+            batch_size,
+            num_q_heads,
+            seq_len,
+            cache_len + seq_len,
+            head_dim,
+        )
+        m.bench_function[bench_func](
+            BenchId(
+                _get_run_name[dtype, num_q_heads, num_kv_heads, head_dim](
+                    batch_size,
+                    seq_len,
+                    use_random_seq_lengths,
+                    cache_len,
+                    use_random_cache_lengths,
+                )
+            ),
+            [ThroughputMeasure(BenchMetric.flops, flop_count)],
+        )
+    else:
+        # `False` is useful for profiling with NCU.
+        # We don't want to run the benchmark, as this makes the profiling
+        # take a very long time and bloats the prof full of extra runs that
+        # we don't look at.
+        flash_attention[ragged=True](
+            # TODO: move to_layout_tensor here once unified closures are supported.
+            output_device_tensor.as_any_origin(),
+            q_device.to_layout_tensor(),
+            k_cache_device,
+            v_cache_device,
+            CausalMask(),
+            IdentityScoreMod(),
+            ManagedTensorSlice[
+                io_spec=IOUnknown,
+                static_spec = StaticTensorSpec[
+                    DType.uint32, 1
+                ].create_unknown(),
+            ](
+                input_row_offsets_device.tensor.data,
+                input_row_offsets_device.tensor.get_shape(),
+            ),
+            rsqrt(Float32(head_dim)),
+            ctx,
+        )
+
     _ = kv_block_paged_device^
     _ = output_device^
     _ = q_device^
@@ -266,17 +318,18 @@ def execute_kv_cache_ragged_flash_attention[
 
 
 def main():
-    alias dtype = env_get_dtype["dtype", DType.bfloat16]()
+    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
-    alias head_dim = env_get_int["head_dim", 128]()
-    alias num_q_heads = env_get_int["num_q_heads", 32]()
-    alias num_kv_heads = env_get_int["num_kv_heads", 8]()
+    comptime head_dim = env_get_int["head_dim", 128]()
+    comptime num_q_heads = env_get_int["num_q_heads", 32]()
+    comptime num_kv_heads = env_get_int["num_kv_heads", 8]()
 
     var batch_size = arg_parse("batch_size", 1)
     var use_random_seq_lengths = arg_parse("use_random_seq_lengths", False)
     var seq_len = arg_parse("seq_len", 1)
     var cache_len = arg_parse("cache_len", 1)
     var use_random_cache_lengths = arg_parse("use_random_cache_lengths", False)
+    var run_benchmark = arg_parse("run_benchmark", True)
 
     seed(0)
 
@@ -298,6 +351,7 @@ def main():
                 use_random_seq_lengths,
                 cache_len,
                 use_random_cache_lengths,
+                run_benchmark,
             )
 
     except e:

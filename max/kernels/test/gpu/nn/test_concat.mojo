@@ -11,11 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from collections import OptionalReg
+from sys import size_of
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from gpu.host import DeviceContext
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from layout._fillers import arange
 from nn.concat import (
     _concat_gpu,
     _concat_inner_most_single_dim,
@@ -24,87 +26,87 @@ from nn.concat import (
 from testing import assert_true
 
 from utils import IndexList, StaticTuple
+from utils.index import product
 
 
 fn _create_buffer_host[
     rank: Int, dtype: DType
-](dims: DimList) -> NDBuffer[dtype, rank, MutableAnyOrigin]:
-    var total_size: Int = dims.product[rank]().get()
+](dims: IndexList[rank]) -> LayoutTensor[
+    dtype, Layout.row_major[rank](), MutAnyOrigin
+]:
+    var total_size: Int = product(dims)
     var mem_ptr = UnsafePointer[Scalar[dtype]].alloc(total_size)
-    var buffer = NDBuffer[dtype, rank](mem_ptr, dims)
+    comptime layout = Layout.row_major[rank]()
+    var buffer = LayoutTensor[dtype, layout, MutAnyOrigin](
+        mem_ptr, RuntimeLayout[layout].row_major(dims)
+    )
     return buffer
-
-
-fn _fill_buffer[
-    rank: Int, dtype: DType
-](buffer: NDBuffer[mut=True, dtype, rank]):
-    for i in range(buffer.num_elements()):
-        buffer.flatten()[i] = i
-
-
-fn _fill_buffer[
-    rank: Int, dtype: DType
-](buffer: NDBuffer[mut=True, dtype, rank], val: Scalar[dtype]):
-    for i in range(buffer.num_elements()):
-        buffer.flatten()[i] = val
 
 
 fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     print("== test_concat_4_inputs_rank5")
 
-    alias rank = 5
-    alias dtype = DType.float32
+    comptime rank = 5
+    comptime dtype = DType.float32
 
-    alias d0 = 1
-    alias d1 = 128
-    alias d2 = 32
-    alias d3 = 64
-    alias d4 = 1
+    comptime d0 = 1
+    comptime d1 = 128
+    comptime d2 = 32
+    comptime d3 = 64
+    comptime d4 = 1
 
-    var input_shape = DimList(d0, d1, d2, d3, d4)
-    var output_shape = DimList(d0, d1, d2, d3, 4)
+    var input_layout = Layout.row_major(d0, d1, d2, d3, d4)
+    var output_layout = Layout.row_major(d0, d1, d2, d3, 4)
+    var input_shape = IndexList[5](d0, d1, d2, d3, d4)
+    var output_shape = IndexList[5](d0, d1, d2, d3, 4)
 
     var input_0_host = _create_buffer_host[rank, dtype](input_shape)
     var input_1_host = _create_buffer_host[rank, dtype](input_shape)
     var input_2_host = _create_buffer_host[rank, dtype](input_shape)
     var input_3_host = _create_buffer_host[rank, dtype](input_shape)
 
-    _fill_buffer(input_0_host)
-    _fill_buffer(input_1_host)
-    _fill_buffer(input_2_host)
-    _fill_buffer(input_3_host)
+    arange(input_0_host)
+    arange(input_1_host)
+    arange(input_2_host)
+    arange(input_3_host)
 
-    var total_size_inp: Int = input_shape.product[rank]().get()
+    var total_size_inp: Int = product(input_shape)
     var input_0_device = ctx.enqueue_create_buffer[dtype](total_size_inp)
     var input_1_device = ctx.enqueue_create_buffer[dtype](total_size_inp)
     var input_2_device = ctx.enqueue_create_buffer[dtype](total_size_inp)
     var input_3_device = ctx.enqueue_create_buffer[dtype](total_size_inp)
 
-    var input_0_device_ref = NDBuffer[dtype, rank](
-        input_0_device._unsafe_ptr(), input_shape
+    comptime layout = Layout.row_major[rank]()
+    var input_0_device_ref = LayoutTensor[dtype, layout](
+        input_0_device,
+        RuntimeLayout[layout].row_major(input_shape),
     )
-    var input_1_device_ref = NDBuffer[dtype, rank](
-        input_1_device._unsafe_ptr(), input_shape
+    var input_1_device_ref = LayoutTensor[dtype, layout](
+        input_1_device,
+        RuntimeLayout[layout].row_major(input_shape),
     )
-    var input_2_device_ref = NDBuffer[dtype, rank](
-        input_2_device._unsafe_ptr(), input_shape
+    var input_2_device_ref = LayoutTensor[dtype, layout](
+        input_2_device,
+        RuntimeLayout[layout].row_major(input_shape),
     )
-    var input_3_device_ref = NDBuffer[dtype, rank](
-        input_3_device._unsafe_ptr(), input_shape
+    var input_3_device_ref = LayoutTensor[dtype, layout](
+        input_3_device,
+        RuntimeLayout[layout].row_major(input_shape),
     )
 
-    ctx.enqueue_copy(input_0_device, input_0_host.data)
-    ctx.enqueue_copy(input_1_device, input_1_host.data)
-    ctx.enqueue_copy(input_2_device, input_2_host.data)
-    ctx.enqueue_copy(input_3_device, input_3_host.data)
+    ctx.enqueue_copy(input_0_device, input_0_host.ptr)
+    ctx.enqueue_copy(input_1_device, input_1_host.ptr)
+    ctx.enqueue_copy(input_2_device, input_2_host.ptr)
+    ctx.enqueue_copy(input_3_device, input_3_host.ptr)
 
-    var total_size_outp: Int = output_shape.product[rank]().get()
+    var total_size_outp: Int = product(output_shape)
     var output_device = ctx.enqueue_create_buffer[dtype](total_size_outp)
-    var output_device_ref = NDBuffer[dtype, rank](
-        output_device._unsafe_ptr(), output_shape
+    var output_device_ref = LayoutTensor[dtype, layout](
+        output_device,
+        RuntimeLayout[layout].row_major(output_shape),
     )
 
-    alias B_SIZE = 32
+    comptime B_SIZE = 32
 
     @parameter
     @always_inline
@@ -117,8 +119,9 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
             rebind[SIMD[dtype, width]](val + 1),
         )
 
-    alias kernel = _concat_inner_most_single_dim[
-        rank=rank,
+    comptime kernel = _concat_inner_most_single_dim[
+        output_layout=layout,
+        inputs_layout=layout,
         dtype=dtype,
         num_inputs=4,
         block_size=B_SIZE,
@@ -138,12 +141,12 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     @parameter
     fn run_concat_inner_most_single_dim(ctx: DeviceContext) raises:
         ctx.enqueue_function_checked[kernel, kernel](
-            output_device_ref,
-            StaticTuple[NDBuffer[dtype, rank, MutableAnyOrigin], 4](
-                input_0_device_ref,
-                input_1_device_ref,
-                input_2_device_ref,
-                input_3_device_ref,
+            output_device_ref.as_any_origin(),
+            StaticTuple[LayoutTensor[dtype, layout, MutAnyOrigin], 4](
+                input_0_device_ref.as_any_origin(),
+                input_1_device_ref.as_any_origin(),
+                input_2_device_ref.as_any_origin(),
+                input_3_device_ref.as_any_origin(),
             ),
             grid_dim=(d0 * d1 * d2 * d3 * d4 // B_SIZE),
             block_dim=(B_SIZE),
@@ -153,19 +156,24 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     print("concat_inner_most_single_dim time = ", nstime_kernel * 1e-6, " ms")
     print(
         "transfer rate = ",
-        output_device_ref.bytecount() * 2 * 1e9 / (1024**3) / nstime_kernel,
+        output_device_ref.size()
+        * size_of[UInt8]()
+        * 2
+        * 1e9
+        / (1024**3)
+        / nstime_kernel,
         "GB/s",
     )
 
     var output_host = _create_buffer_host[rank, dtype](output_shape)
-    ctx.enqueue_copy(output_host.data, output_device)
+    ctx.enqueue_copy(output_host.ptr, output_device)
 
     fn validate_results() raises:
         for i in range(d0):
             for j in range(d1):
                 for k in range(d2):
                     for l in range(d3):
-                        alias tail_val = 1 if test_epilogue else 0
+                        comptime tail_val = 1 if test_epilogue else 0
                         var not_match_0 = (
                             output_host[i, j, k, l, 0]
                             != input_0_host[i, j, k, l, 0] + tail_val
@@ -211,13 +219,13 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
                 epilogue_plus_one
             ) if test_epilogue else None
         ](
-            output_device_ref,
+            output_device_ref.as_any_origin(),
             4,
-            StaticTuple[NDBuffer[dtype, rank, MutableAnyOrigin], 4](
-                input_0_device_ref,
-                input_1_device_ref,
-                input_2_device_ref,
-                input_3_device_ref,
+            StaticTuple[LayoutTensor[dtype, layout, MutAnyOrigin], 4](
+                input_0_device_ref.as_any_origin(),
+                input_1_device_ref.as_any_origin(),
+                input_2_device_ref.as_any_origin(),
+                input_3_device_ref.as_any_origin(),
             ),
             ctx,
         )
@@ -226,11 +234,16 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     print("concat_gpu time = ", nstime * 1e-6, " ms")
     print(
         "transfer rate = ",
-        output_device_ref.bytecount() * 2 * 1e9 / (1024**3) / nstime,
+        output_device_ref.size()
+        * size_of[UInt8]()
+        * 2
+        * 1e9
+        / (1024**3)
+        / nstime,
         "GB/s",
     )
 
-    ctx.enqueue_copy(output_host.data, output_device)
+    ctx.enqueue_copy(output_host.ptr, output_device)
 
     validate_results()
 

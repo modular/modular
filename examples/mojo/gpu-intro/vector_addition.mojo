@@ -10,11 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+# DOC: mojo/docs/manual/gpu/intro-tutorial.mdx
+
 from math import ceildiv
 from sys import has_accelerator
 
 from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, thread_idx
+from gpu import block_dim, block_idx, thread_idx
 from layout import Layout, LayoutTensor
 
 # Vector data type and size
@@ -29,9 +32,9 @@ alias num_blocks = ceildiv(vector_size, block_size)
 
 
 fn vector_addition(
-    lhs_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
-    rhs_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
-    out_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
+    lhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
+    rhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
+    out_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
 ):
     """Calculate the element-wise sum of two vectors on the GPU."""
 
@@ -51,18 +54,30 @@ def main():
         # Get the context for the attached GPU
         ctx = DeviceContext()
 
+        # Create HostBuffers for input vectors
+        lhs_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
+            vector_size
+        )
+        rhs_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
+            vector_size
+        )
+        ctx.synchronize()
+
+        # Initialize the input vectors
+        for i in range(vector_size):
+            lhs_host_buffer[i] = Float32(i)
+            rhs_host_buffer[i] = Float32(i * 0.5)
+
+        print("LHS buffer: ", lhs_host_buffer)
+        print("RHS buffer: ", rhs_host_buffer)
+
         # Create DeviceBuffers for the input vectors
         lhs_device_buffer = ctx.enqueue_create_buffer[float_dtype](vector_size)
         rhs_device_buffer = ctx.enqueue_create_buffer[float_dtype](vector_size)
 
-        with lhs_device_buffer.map_to_host() as lhs_host_buffer:
-            with rhs_device_buffer.map_to_host() as rhs_host_buffer:
-                for i in range(vector_size):
-                    lhs_host_buffer[i] = Float32(i)
-                    rhs_host_buffer[i] = Float32(i * 0.5)
-
-                print("LHS buffer: ", lhs_host_buffer)
-                print("RHS buffer: ", rhs_host_buffer)
+        # Copy the input vectors from the HostBuffers to the DeviceBuffers
+        ctx.enqueue_copy(dst_buf=lhs_device_buffer, src_buf=lhs_host_buffer)
+        ctx.enqueue_copy(dst_buf=rhs_device_buffer, src_buf=rhs_host_buffer)
 
         # Create a DeviceBuffer for the result vector
         result_device_buffer = ctx.enqueue_create_buffer[float_dtype](
@@ -75,7 +90,7 @@ def main():
         result_tensor = LayoutTensor[float_dtype, layout](result_device_buffer)
 
         # Compile and enqueue the kernel
-        ctx.enqueue_function[vector_addition](
+        ctx.enqueue_function_checked[vector_addition, vector_addition](
             lhs_tensor,
             rhs_tensor,
             result_tensor,
@@ -83,5 +98,17 @@ def main():
             block_dim=block_size,
         )
 
-        with result_device_buffer.map_to_host() as result_host_buffer:
-            print("Result buffer: ", result_host_buffer)
+        # Create a HostBuffer for the result vector
+        result_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
+            vector_size
+        )
+
+        # Copy the result vector from the DeviceBuffer to the HostBuffer
+        ctx.enqueue_copy(
+            dst_buf=result_host_buffer, src_buf=result_device_buffer
+        )
+
+        # Finally, synchronize the DeviceContext to run all enqueued operations
+        ctx.synchronize()
+
+        print("Result vector:", result_host_buffer)

@@ -11,29 +11,30 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from random import random_si64
 from sys import simd_width_of, size_of
 
 from benchmark import Bench, Bencher, BenchId
-from buffer import NDBuffer
+from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from nn.gather_scatter import gather_reduce
 
 from utils import IndexList
 
 
 @always_inline
-fn add(x: SIMD, y: __type_of(x)) -> __type_of(x):
+fn add(x: SIMD, y: type_of(x)) -> type_of(x):
     return x + y
 
 
 @parameter
 fn bench_gather_reduce(mut b: Bencher):
-    alias type = DType.float32
+    comptime type = DType.float32
     var num_rows = 500000
     var embedding_dim = 32
     var multi_hot_dim = 100
-    alias l3_size = 32  # mb
-    alias clear_size = l3_size * 2 * 1_000_000
+    comptime l3_size = 32  # mb
+    comptime clear_size = l3_size * 2 * 1_000_000
     var num_indices = clear_size // (
         size_of[type]() * embedding_dim * multi_hot_dim
     )
@@ -49,14 +50,19 @@ fn bench_gather_reduce(mut b: Bencher):
     var indices_storage = UnsafePointer[Int32].alloc(
         indices_shape.flattened_length()
     )
-    var input = NDBuffer[type, 2](input_storage, input_shape)
-    var output = NDBuffer[type, 2](output_storage, output_shape)
-    var indices = NDBuffer[DType.int32, 2](indices_storage, indices_shape)
-    input.fill(1)
-    output.zero()
-    for i in range(indices.get_shape()[0]):
-        for j in range(indices.get_shape()[1]):
-            indices[i][j] = random_si64(0, num_rows).cast[DType.int32]()
+    comptime layout_2d = Layout.row_major[2]()
+    var input = LayoutTensor[type, layout_2d](
+        input_storage, RuntimeLayout[layout_2d].row_major(input_shape)
+    ).fill(1)
+    var output = LayoutTensor[type, layout_2d](
+        output_storage, RuntimeLayout[layout_2d].row_major(output_shape)
+    ).fill(0)
+    var indices = LayoutTensor[DType.int32, layout_2d](
+        indices_storage, RuntimeLayout[layout_2d].row_major(indices_shape)
+    )
+    for i in range(indices.runtime_layout.shape.value[0]):
+        for j in range(indices.runtime_layout.shape.value[1]):
+            indices[i, j] = random_si64(0, num_rows).cast[DType.int32]()
 
     @parameter
     fn to_bench():
@@ -70,9 +76,9 @@ fn bench_gather_reduce(mut b: Bencher):
     b.iter[to_bench]()
 
     print(output[0, 0])
-    input.data.free()
-    output.data.free()
-    indices.data.free()
+    input.ptr.free()
+    output.ptr.free()
+    indices.ptr.free()
 
 
 def main():

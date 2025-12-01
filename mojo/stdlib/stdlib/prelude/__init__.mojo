@@ -14,13 +14,7 @@
 that are automatically imported into every Mojo program.
 """
 
-from collections import (
-    Dict,
-    InlineArray,
-    KeyElement,
-    List,
-    Optional,
-)
+from collections import Dict, InlineArray, KeyElement, List, Optional
 from collections.string import (
     Codepoint,
     StaticString,
@@ -33,32 +27,26 @@ from collections.string import (
     ord,
 )
 from hashlib.hash import Hashable, hash
+from io import Writable, Writer
+from io.file import FileHandle, open
+from io.file_descriptor import FileDescriptor
+from io.io import input, print
 
-from builtin.anytype import AnyType, UnknownDestructibility, Some
+from builtin.anytype import AnyType, Some, UnknownDestructibility
 from builtin.bool import Bool, Boolable, ImplicitlyBoolable, all, any
 from builtin.breakpoint import breakpoint
 from builtin.builtin_slice import Slice, slice
-from builtin.comparable import (
-    Comparable,
-    GreaterThanComparable,
-    GreaterThanOrEqualComparable,
-    LessThanComparable,
-    LessThanOrEqualComparable,
-)
+from builtin.comparable import Comparable, Equatable
 from builtin.constrained import constrained
 from builtin.coroutine import AnyCoroutine, Coroutine, RaisingCoroutine
 from builtin.debug_assert import debug_assert
 from builtin.dtype import DType
-from builtin.equality_comparable import EqualityComparable
 from builtin.error import Error
-from io.file import FileHandle, open
-from io.file_descriptor import FileDescriptor
 from builtin.float_literal import FloatLiteral
 from builtin.floatable import Floatable, FloatableRaising
 from builtin.format_int import bin, hex, oct
 from builtin.identifiable import Identifiable
 from builtin.int import (
-    ImplicitlyIntable,
     Indexer,
     Int,
     Intable,
@@ -66,7 +54,6 @@ from builtin.int import (
     index,
 )
 from builtin.int_literal import IntLiteral
-from io.io import input, print
 from builtin.len import Sized, SizedRaising, UIntSized, len
 from builtin.math import (
     Absable,
@@ -81,7 +68,7 @@ from builtin.math import (
 )
 from builtin.none import NoneType
 from builtin.range import range
-from builtin.rebind import rebind
+from builtin.rebind import rebind, rebind_var, trait_downcast
 from builtin.repr import Representable, repr
 from builtin.reversed import ReversibleRange, reversed
 from builtin.simd import (
@@ -116,10 +103,14 @@ from builtin.swap import swap
 from builtin.tuple import Tuple
 from builtin.type_aliases import (
     AnyTrivialRegType,
+    ImmutAnyOrigin,
     ImmutableAnyOrigin,
     ImmutableOrigin,
+    ImmutOrigin,
+    MutAnyOrigin,
     MutableAnyOrigin,
     MutableOrigin,
+    MutOrigin,
     Origin,
     OriginSet,
     StaticConstantOrigin,
@@ -131,11 +122,22 @@ from builtin.value import (
     ExplicitlyCopyable,
     ImplicitlyCopyable,
     Movable,
+    materialize,
 )
 from builtin.variadics import VariadicList, VariadicListMem, VariadicPack
 from documentation import doc_private
-from memory import AddressSpace, Pointer, Span, UnsafePointer, OpaquePointer
-
-from io import Writable, Writer
-
-from iter import Iterator, Iterable, iter, next, enumerate, zip
+from iter import Iterable, Iterator, enumerate, iter, map, next, zip
+from memory import (
+    alloc,
+    AddressSpace,
+    LegacyOpaquePointer,
+    LegacyUnsafePointer,
+    ImmutOpaquePointer,
+    MutOpaquePointer,
+    OpaquePointer,
+    Pointer,
+    Span,
+    ImmutUnsafePointer,
+    MutUnsafePointer,
+    UnsafePointer,
+)

@@ -13,22 +13,23 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from testing import TestSuite
 
 from utils.index import Index
 
 
 # CHECK-LABEL: test_sub_matrix
-fn test_sub_matrix():
+def test_sub_matrix():
     print("== test_sub_matrix")
-    alias num_row = 4
-    alias num_col = 4
+    comptime num_row = 4
+    comptime num_col = 4
 
     var matrix_stack = InlineArray[Float32, num_row * num_col](
         uninitialized=True
     )
     # Create a 4x4 matrix.
     var matrix = NDBuffer[DType.float32, 2, _, DimList(num_row, num_col)](
-        matrix_stack
+        matrix_stack.unsafe_ptr()
     )
     for i in range(num_row):
         for j in range(num_col):
@@ -80,13 +81,13 @@ fn test_sub_matrix():
 
 
 # CHECK-LABEL: test_broadcast
-fn test_broadcast():
+def test_broadcast():
     print("== test_broadcast")
 
     # Create a buffer holding a single value with zero stride.
     var arr = InlineArray[Float32, 1](uninitialized=True)
     var stride_buf = NDBuffer[DType.float32, 1, _, DimList(100)](
-        arr, DimList(100), Index(0)
+        arr.unsafe_ptr(), DimList(100), Index(0)
     )
 
     # CHECK: 2.0
@@ -97,6 +98,5 @@ fn test_broadcast():
     print(stride_buf[99])
 
 
-fn main():
-    test_sub_matrix()
-    test_broadcast()
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -11,12 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from random import rand, randint
 
 from benchmark import *
 from buffer.dimlist import Dim
 from nn.gather_scatter import scatter_elements
-from tensor_internal import DynamicTensor
+from tensor import DynamicTensor
 
 from utils.index import Index
 

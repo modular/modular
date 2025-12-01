@@ -11,16 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, thread_idx
 from math import iota
-from sys import exit
-from sys.info import has_accelerator
+from sys import exit, has_accelerator
+
+from gpu.host import DeviceContext
+from gpu import block_dim, block_idx, thread_idx
 
 alias num_elements = 20
 
 
-fn scalar_add(vector: UnsafePointer[Float32], size: Int, scalar: Float32):
+fn scalar_add(
+    vector: UnsafePointer[Float32, MutAnyOrigin], size: Int, scalar: Float32
+):
     """
     Kernel function to add a scalar to all elements of a vector.
 

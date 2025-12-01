@@ -181,12 +181,12 @@ like this:
 
 ```mojo
 struct GenericArray[ElementType: Copyable & Movable]:
-    var data: UnsafePointer[ElementType]
+    var data: UnsafePointer[Self.ElementType, MutOrigin.external]
     var size: Int
 
-    fn __init__(out self, var *elements: ElementType):
+    fn __init__(out self, var *elements: Self.ElementType):
         self.size = len(elements)
-        self.data = UnsafePointer[ElementType].alloc(self.size)
+        self.data = alloc[Self.ElementType](self.size)
         for i in range(self.size):
             (self.data + i).init_pointee_move(elements[i].copy())
 
@@ -195,7 +195,7 @@ struct GenericArray[ElementType: Copyable & Movable]:
             (self.data + i).destroy_pointee()
         self.data.free()
 
-    fn __getitem__(self, i: Int) raises -> ref [self] ElementType:
+    fn __getitem__(self, i: Int) raises -> ref [self] Self.ElementType:
         if i < self.size:
             return self.data[i]
         else:
@@ -242,12 +242,12 @@ struct GenericArray[ElementType: Copyable & Movable]:
     ...
 
     @staticmethod
-    fn splat(count: Int, value: ElementType) -> Self:
+    fn splat(count: Int, value: Self.ElementType) -> Self:
         # Create a new array with count instances of the given value
 ```
 
-Here, `Self` is equivalent to writing `GenericArray[ElementType]`. That is, you
-can call the `splat()` method like this:
+Here, `Self` is equivalent to writing `GenericArray[Self.ElementType]`. That is,
+you can call the `splat()` method like this:
 
 ```mojo
 GenericArray[Float64].splat(8, 0)
@@ -279,7 +279,7 @@ to `Writable` as well as `Movable`:
 ```mojo
 @fieldwise_init
 struct Container[ElementType: Movable]:
-    var element: ElementType
+    var element: Self.ElementType
 
     def __str__[
         StrElementType: Writable & Movable, //
@@ -350,14 +350,14 @@ struct SIMD[type: DType, size: Int]:
     var value: … # Some low-level MLIR stuff here
 
     # Create a new SIMD from a number of scalars
-    fn __init__(out self, *elems: SIMD[type, 1]):  ...
+    fn __init__(out self, *elems: SIMD[Self.type, 1]):  ...
 
     # Fill a SIMD with a duplicated scalar value.
     @staticmethod
-    fn splat(x: SIMD[type, 1]) -> SIMD[type, size]: ...
+    fn splat(x: SIMD[Self.type, 1]) -> SIMD[Self.type, Self.size]: ...
 
     # Cast the elements of the SIMD to a different elt type.
-    fn cast[target: DType](self) -> SIMD[target, size]: ...
+    fn cast[target: DType](self) -> SIMD[target, Self.size]: ...
 
     # Many standard operators are supported.
     fn __add__(self, rhs: Self) -> Self: ...
@@ -440,46 +440,76 @@ bound to `DType.float32`.
 The code above shows the use of concrete types (that is, the parameters are all
 bound to known values). But the major power of parameters comes from the
 ability to define parametric algorithms and types (code that uses the parameter
-values). For example, here's how to define a parametric algorithm with `SIMD`
-that is type- and width-agnostic:
+values). For example, here's how to define a parametric algorithm with `Scalar`
+that is datatype agnostic:
 
 ```mojo
 from math import sqrt
 
-fn rsqrt[dt: DType, width: Int](x: SIMD[dt, width]) -> SIMD[dt, width]:
+fn rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
     return 1 / sqrt(x)
 
 def main():
-    var v = SIMD[DType.float16, 4](42)
+    var v = Scalar[DType.float16](42)
     print(rsqrt(v))
 ```
 
 ```output
-[0.154296875, 0.154296875, 0.154296875, 0.154296875]
+0.154296875
 ```
 
-Notice that the `x` argument is actually a `SIMD` type based on the function
-parameters. The runtime program can use the value of the parameters, because the
-parameters are resolved at compile-time before they are needed by the runtime
-program (but compile-time parameter expressions cannot use runtime values).
+Notice that the `x` argument is a `Scalar` type that's parameterized
+based on the `dt` function parameter. And note that the actual call to `rsqrt()`
+doesn't specify the `dt` parameter, because it can be _inferred_ from the
+argument's type (here, `Scalar[DType.float16]`).
 
 ### Parameter inference
 
 The Mojo compiler can often *infer* parameter values, so you don't always have
 to specify them. For example, you can call the `rsqrt()` function defined above
-without any parameters:
+without specifying the `dt` parameter:
 
 ```mojo
-var v = SIMD[DType.float16, 4](33)
-print(rsqrt(v))
+from math import sqrt
+
+fn rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
+    return 1 / sqrt(x)
+
+def main():
+    var v = Scalar[DType.float16](33)
+    print(rsqrt(v))
 ```
 
 ```output
-[0.174072265625, 0.174072265625, 0.174072265625, 0.174072265625]
+0.174072265625
 ```
 
-The compiler infers its parameters based on the parametric `v`
-value passed into it, as if you wrote `rsqrt[DType.float16, 4](v)` explicitly.
+The compiler infers the `dt` parameter based on the parametric `v`
+value passed into it, as if you wrote `rsqrt[DType.float16](v)` explicitly.
+Figure 1 shows a mental model for how parameter inference works.
+
+<figure>
+
+![](../images/parameters/parameter-inference.png#light)
+![](../images/parameters/parameter-inference-dark.png#dark)
+
+<figcaption><b>Figure 1.</b> Parameter inference</figcaption>
+</figure>
+
+Parameter inference can seem a little confusing: it might seem like the compiler
+is inferring compile-time parameter values from run-time argument values. But in
+fact it's inferring parameters from the statically-known *types* of the
+arguments.
+
+:::note Inference failures
+
+If parameter inference fails, the compiler will report an error, usually "failed
+to infer parameter 'param_name'". Unfortunately, the compiler also sometimes
+reports this error incorrectly, for example, when the actual error is a type
+mismatch. In these cases, specifying the missing parameters explicitly will
+often allow Mojo to report the correct error.
+
+:::
 
 Mojo can also infer the values of struct parameters from the arguments passed to
 a constructor or static method.
@@ -488,15 +518,15 @@ For example, consider the following struct:
 
 ```mojo
 struct One[Type: Writable & Copyable & Movable]:
-    var value: Type
+    var value: Self.Type
 
-    fn __init__(out self, value: Type):
+    fn __init__(out self, value: Self.Type):
         self.value = value.copy()
 
 
 def use_one():
-    s1 = One(123)
-    s2 = One("Hello")
+    s1 = One(123)  # equivalent to One[Int](123)
+    s2 = One("Hello")  # equivalent to One[String]("Hello")
 ```
 
 Note that you can create an instance of `One` without specifying the `Type`
@@ -507,16 +537,16 @@ or static method:
 
 ```mojo
 struct Two[Type: Writable & Copyable & Movable]:
-    var val1: Type
-    var val2: Type
+    var val1: Self.Type
+    var val2: Self.Type
 
-    fn __init__(out self, one: One[Type], another: One[Type]):
+    fn __init__(out self, one: One[Self.Type], another: One[Self.Type]):
         self.val1 = one.value.copy()
         self.val2 = another.value.copy()
         print(String(self.val1), String(self.val2))
 
     @staticmethod
-    fn fire(thing1: One[Type], thing2: One[Type]):
+    fn fire(thing1: One[Self.Type], thing2: One[Self.Type]):
         print("🔥", String(thing1.value), String(thing2.value))
 
 def use_two():
@@ -606,7 +636,7 @@ parameters in a struct:
 ```mojo
 struct KwParamStruct[greeting: String = "Hello", name: String = "🔥mojo🔥"]:
     fn __init__(out self):
-        print(greeting, name)
+        print(Self.greeting, Self.name)
 
 fn use_kw_params():
     var a = KwParamStruct[]()                 # prints 'Hello 🔥mojo🔥'
@@ -694,7 +724,7 @@ define a `Span` that requires a mutable origin.
 def mutate_span(span: Span[mut=True, Byte]):
     for i in range(0, len(span), 2):
         if i + 1 < len(span):
-            span.swap_elements(UInt(i), UInt(i + 1))
+            span.swap_elements(i, i + 1)
 ```
 
 If the compiler can't infer the value of an infer-only parameter, and it's not
@@ -803,7 +833,7 @@ fn reduce_add(x: SIMD) -> Int:
 
 
 def main():
-    var x = SIMD[DType.index, 4](1, 2, 3, 4)
+    var x = SIMD[DType.int, 4](1, 2, 3, 4)
     print(x)
     print("Elements sum:", reduce_add(x))
 ```
@@ -836,7 +866,7 @@ values:
 
 ```mojo
 @fieldwise_init
-struct Sentiment(EqualityComparable):
+struct Sentiment(Equatable, ImplicitlyCopyable):
     var _value: Int
 
     alias NEGATIVE = Sentiment(0)
@@ -1013,10 +1043,9 @@ MyType["Hello", _, _, _]
 ```
 
 The `*_` expression specifically matches any parameters that can be specified by
-position (positional-only or positional-or-keyword). To unbind keyword-only
-parameters, use the double-star-underscore expression, `**_`, which matches any
-parameters that can be specified by keyword (positional-or-keyword or
-keyword-only).
+position (positional-only or positional-or-keyword). To unbind all parameters
+that can be specified by keyword (positional-or-keyword or keyword-only), use
+the double-star-underscore expression, `**_`.
 
 ```mojo
 @fieldwise_init
@@ -1031,9 +1060,9 @@ def main():
     use_kw_struct(KeyWordStruct[10, kw_only=11]())
 ```
 
-When a parameter is explicitly unbound with the `_`, `*_`, or `**_` expressions, you
-**must** specify a value for that parameter to use the type. Any default value from the
-original type declaration is ignored.
+When a parameter is explicitly unbound with the `_`, `*_`, or `**_` expressions,
+you **must** specify a value for that parameter to use the type.
+The default values of explicitly unbound parameters are ignored.
 
 Partially-bound and unbound parametric types can be used in some contexts where
 the missing (unbound) parameters will be supplied later—such as in
@@ -1042,24 +1071,31 @@ the missing (unbound) parameters will be supplied later—such as in
 
 ### Omitted parameters
 
-Mojo also supports an alternate format for unbound parameter where the parameter
-is simply omitted from the expression:
+Mojo also supports an alternate format for unbound parameters where parameters
+are simply omitted from the expression:
+
+```mojo
+@fieldwise_init
+struct MyComplicatedType[a: Int = 7, /, b: Int = 8, *, c: Int, d: Int = 9]:
+    pass
+
+# Unbound
+fn my_func(t: MyComplicatedType):
+    pass
+```
+
+This is equivalent to `fn my_func(t: MyComplicatedType[*_, **_]): pass`.
+That is, all parameters (positional-only, positional-or-keyword, keyword-only)
+are unbound and their default values (if any) ignored.
+
+Note that when an argument type is _partially bound_, default values will be
+bound:
 
 ```mojo
 # Partially bound
-MyType["Hi there"]
-# Unbound
-MyType
-```
-
-This format differs from the explicit unbinding syntax described above in that
-the default values for omitted parameters are bound immediately. For example,
-the following expressions are equivalent:
-
-```mojo
-MyType["Hi there"]
-# equivalent to
-MyType["Hi there", _, _, True] # Uses the default value for `b`
+MyComplicatedType[1]
+# Equivalent to
+MyComplicatedType[1, 8, c=_, d=9]  # Uses default values for `b` and `d`.
 ```
 
 :::note
@@ -1139,7 +1175,7 @@ For example, if you want your function to take two SIMD vectors with the same
 type and size, you can write code like this:
 
 ```mojo
-fn interleave(v1: SIMD, v2: __type_of(v1)) -> SIMD[v1.type, v1.size*2]:
+fn interleave(v1: SIMD, v2: type_of(v1)) -> SIMD[v1.type, v1.size*2]:
     var result = SIMD[v1.type, v1.size*2]()
     for i in range(v1.size):
         result[i*2] = SIMD[v1.type, 1](v1[i])
@@ -1156,7 +1192,7 @@ print(c)
 [1, 0, 2, 0, 3, 0, 4, 0]
 ```
 
-As shown in the example, you can use the magic `__type_of(x)` call if you just want to
+As shown in the example, you can use the magic `type_of(x)` call if you just want to
 match the type of an argument. In this case, it's more convenient and compact that
 writing the equivalent `SIMD[v1.type, v1.size]`.
 
@@ -1195,7 +1231,9 @@ For example, suppose we have a `Fudge` struct with three parameters:
 @fieldwise_init
 struct Fudge[sugar: Int, cream: Int, chocolate: Int = 7](Stringable):
     fn __str__(self) -> String:
-        return String.write("Fudge (", sugar, ",", cream, ",", chocolate, ")")
+        return String.write(
+            "Fudge (", Self.sugar, ",", Self.cream, ",", Self.chocolate, ")"
+        )
 ```
 
 We can write a function that takes a `Fudge` argument with just one bound

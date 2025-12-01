@@ -13,9 +13,10 @@
 
 from gpu import *
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal, assert_true
 
-from utils.numerics import inf, nan, neg_inf, isnan
+from utils.numerics import inf, isnan, nan, neg_inf
 
 
 fn id(
@@ -33,7 +34,7 @@ fn id(
 fn run_vec_add(ctx: DeviceContext) raises:
     print("== run_vec_add")
 
-    alias length = 1024
+    comptime length = 1024
 
     var in_host = UnsafePointer[Float32].alloc(length)
 
@@ -52,7 +53,7 @@ fn run_vec_add(ctx: DeviceContext) raises:
 
     var block_dim = 32
 
-    alias kernel = id
+    comptime kernel = id
     ctx.enqueue_function_checked[kernel, kernel](
         in_device,
         out_device,
@@ -61,7 +62,7 @@ fn run_vec_add(ctx: DeviceContext) raises:
         block_dim=(block_dim),
     )
 
-    var expected = List[Float32](
+    var expected: List[Float32] = [
         0.0,
         1.0,
         2.0,
@@ -72,7 +73,7 @@ fn run_vec_add(ctx: DeviceContext) raises:
         -0.0,
         8.0,
         9.0,
-    )
+    ]
     with out_device.map_to_host() as out_host:
         for i in range(10):
             print("at index", i, "the value is", out_host[i])

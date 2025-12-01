@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-import linalg.vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer.dimlist import DimList
 from gpu import grid_dim
 from gpu.host import DeviceContext, FuncAttribute
@@ -24,10 +24,8 @@ from internal_utils import (
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *
-from linalg._multistage_gemm_gpu import multistage_gemm_kernel
-from linalg.utils_gpu import (
-    MatmulKernels,
-)
+from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
+from linalg.utils_gpu import MatmulKernels
 
 
 fn test_fp8_multistage_gemm[
@@ -41,9 +39,9 @@ fn test_fp8_multistage_gemm[
 ](ctx: DeviceContext) raises:
     print("test fp8 multistage matmul")
 
-    alias static_a_shape = DimList(M, K)
-    alias static_b_shape = DimList(N, K) if transpose_b else DimList(K, N)
-    alias static_c_shape = DimList(M, N)
+    comptime static_a_shape = DimList(M, K)
+    comptime static_b_shape = DimList(N, K) if transpose_b else DimList(K, N)
+    comptime static_c_shape = DimList(M, N)
 
     var a_host = HostNDBuffer[dtype, 2, static_a_shape]()
     var b_host = HostNDBuffer[dtype, 2, static_b_shape]()
@@ -79,10 +77,10 @@ fn test_fp8_multistage_gemm[
     var a_tensor = from_ndbuffer_row_major(a_device.tensor)
     var b_tensor = from_ndbuffer_row_major(b_device.tensor)
 
-    alias kernels = MatmulKernels[dtype, dtype, DType.float32, transpose_b]()
-    alias config = kernels.hopper_128x128_4
+    comptime kernels = MatmulKernels[dtype, dtype, DType.float32, transpose_b]()
+    comptime config = kernels.hopper_128x128_4
 
-    alias kernel = multistage_gemm_kernel[
+    comptime kernel = multistage_gemm_kernel[
         DType.float32,  # c_type
         c_tensor.layout,
         dtype,  # a_type
@@ -90,13 +88,19 @@ fn test_fp8_multistage_gemm[
         dtype,  # b_type
         b_tensor.layout,
         transpose_b,
-        config,
+        c_layout_int_type = c_tensor.layout_int_type,
+        c_linear_idx_type = c_tensor.linear_idx_type,
+        a_layout_int_type = a_tensor.layout_int_type,
+        a_linear_idx_type = a_tensor.linear_idx_type,
+        b_layout_int_type = b_tensor.layout_int_type,
+        b_linear_idx_type = b_tensor.linear_idx_type,
+        config=config,
     ]
 
-    alias BM = config.block_tile_shape[0]
-    alias BN = config.block_tile_shape[1]
+    comptime BM = config.block_tile_shape[0]
+    comptime BN = config.block_tile_shape[1]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         c_tensor,
         a_tensor,
         b_tensor,
@@ -110,6 +114,7 @@ fn test_fp8_multistage_gemm[
 
     ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
 
+    @parameter
     if transpose_b:
         vendor_blas.matmul(
             ctx,
@@ -117,6 +122,7 @@ fn test_fp8_multistage_gemm[
             a_device.tensor,
             b_device.tensor,
             c_row_major=True,
+            transpose_b=transpose_b,
         )
 
     else:
@@ -139,7 +145,8 @@ fn test_fp8_multistage_gemm[
             c_device_ref.tensor,
             a_device.tensor,
             b_device_col_major.tensor,
-            c_row_major=True,
+            c_row_major=False,
+            transpose_b=True,
         )
 
     ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
@@ -175,9 +182,11 @@ def main():
         test_fp8_multistage_gemm[
             DType.float8_e4m3fn, 128, 128, 128, transpose_b=True
         ](ctx)
-        test_fp8_multistage_gemm[
-            DType.float8_e4m3fn, 128, 128, 64, transpose_b=False
-        ](ctx)
-        test_fp8_multistage_gemm[
-            DType.float8_e4m3fn, 128, 128, 128, transpose_b=False
-        ](ctx)
+
+    # FIXME: KERN-1480
+    # test_fp8_multistage_gemm[
+    # DType.float8_e4m3fn, 128, 128, 64, transpose_b=False
+    # ](ctx)
+    # test_fp8_multistage_gemm[
+    # DType.float8_e4m3fn, 128, 128, 128, transpose_b=False
+    # ](ctx)

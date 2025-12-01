@@ -14,13 +14,11 @@
 from hashlib._ahash import AHasher
 
 from memory import memset_zero
-from testing import assert_equal, assert_not_equal, assert_true
-
 from test_utils import (
-    dif_bits,
-    gen_word_pairs,
     assert_dif_hashes,
     assert_fill_factor,
+    dif_bits,
+    gen_word_pairs,
     words_ar,
     words_el,
     words_en,
@@ -28,19 +26,18 @@ from test_utils import (
     words_lv,
     words_pl,
     words_ru,
-    dif_bits,
 )
+from testing import assert_equal, assert_not_equal, assert_true, TestSuite
 
-
-alias hasher0 = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
-alias hasher1 = AHasher[SIMD[DType.uint64, 4](1, 0, 0, 0)]
+comptime hasher0 = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
+comptime hasher1 = AHasher[SIMD[DType.uint64, 4](1, 0, 0, 0)]
 
 
 def test_hash_byte_array():
-    alias a = StaticString("a")
-    alias b = StaticString("b")
-    alias c = StaticString("c")
-    alias d = StaticString("d")
+    comptime a = StaticString("a")
+    comptime b = StaticString("b")
+    comptime c = StaticString("c")
+    comptime d = StaticString("d")
 
     assert_equal(hash[HasherType=hasher0](a), hash[HasherType=hasher0](a))
     assert_equal(hash[HasherType=hasher1](a), hash[HasherType=hasher1](a))
@@ -164,22 +161,22 @@ def test_hash_simd_values():
         hasher._update_with_simd(value)
         return hasher^.finish()
 
-    assert_equal(hash(SIMD[DType.float16, 1](1.5)), 17170570249477226196)
-    assert_equal(hash(SIMD[DType.float32, 1](1.5)), 13132675331935815936)
-    assert_equal(hash(SIMD[DType.float64, 1](1.5)), 5099020174652265565)
-    assert_equal(hash(SIMD[DType.float16, 1](1)), 2425465491952508383)
-    assert_equal(hash(SIMD[DType.float32, 1](1)), 7268380206556411294)
-    assert_equal(hash(SIMD[DType.float64, 1](1)), 1824371972732385641)
+    assert_equal(hash(Float16(1.5)), 17170570249477226196)
+    assert_equal(hash(Float32(1.5)), 13132675331935815936)
+    assert_equal(hash(Float64(1.5)), 5099020174652265565)
+    assert_equal(hash(Float16(1)), 2425465491952508383)
+    assert_equal(hash(Float32(1)), 7268380206556411294)
+    assert_equal(hash(Float64(1)), 1824371972732385641)
 
-    assert_equal(hash(SIMD[DType.bool, 1](True)), 7121024052126637824)
-    assert_equal(hash(SIMD[DType.int8, 1](1)), 7121024052126637824)
-    assert_equal(hash(SIMD[DType.int16, 1](1)), 7121024052126637824)
-    assert_equal(hash(SIMD[DType.int32, 1](1)), 7121024052126637824)
-    assert_equal(hash(SIMD[DType.int64, 1](1)), 7121024052126637824)
-    assert_equal(hash(SIMD[DType.uint8, 1](1)), 7121024052126637824)
-    assert_equal(hash(SIMD[DType.int128, 1](1)), 5122900632109575720)
+    assert_equal(hash(Scalar[DType.bool](True)), 7121024052126637824)
+    assert_equal(hash(Int8(1)), 7121024052126637824)
+    assert_equal(hash(Int16(1)), 7121024052126637824)
+    assert_equal(hash(Int32(1)), 7121024052126637824)
+    assert_equal(hash(Int64(1)), 7121024052126637824)
+    assert_equal(hash(UInt8(1)), 7121024052126637824)
+    assert_equal(hash(Int128(1)), 5122900632109575720)
     assert_equal(hash(SIMD[DType.int64, 2](1, 0)), 5122900632109575720)
-    assert_equal(hash(SIMD[DType.int256, 1](1)), 1160009272114074316)
+    assert_equal(hash(Int256(1)), 1160009272114074316)
     assert_equal(hash(SIMD[DType.int64, 4](1, 0, 0, 0)), 1160009272114074316)
     assert_equal(hash(SIMD[DType.int256, 2](1)), 8329308917989271970)
     assert_equal(
@@ -190,16 +187,16 @@ def test_hash_simd_values():
         hash(SIMD[DType.uint64, 8](1, 0, 0, 0, 1, 0, 0, 0)), 8329308917989271970
     )
 
-    assert_equal(hash(SIMD[DType.int8, 1](-1)), 14422269892667380249)
-    assert_equal(hash(SIMD[DType.int16, 1](-1)), 11448219905088272650)
-    assert_equal(hash(SIMD[DType.int32, 1](-1)), 3690585083486137738)
-    assert_equal(hash(SIMD[DType.int64, 1](-1)), 3480139124131340807)
-    assert_equal(hash(SIMD[DType.int128, 1](-1)), 11199890586389833974)
+    assert_equal(hash(Int8(-1)), 14422269892667380249)
+    assert_equal(hash(Int16(-1)), 11448219905088272650)
+    assert_equal(hash(Int32(-1)), 3690585083486137738)
+    assert_equal(hash(Int64(-1)), 3480139124131340807)
+    assert_equal(hash(Int128(-1)), 11199890586389833974)
     assert_equal(hash(SIMD[DType.int64, 2](-1)), 11199890586389833974)
-    assert_equal(hash(SIMD[DType.int256, 1](-1)), 17522107111403053621)
+    assert_equal(hash(Int256(-1)), 17522107111403053621)
     assert_equal(hash(SIMD[DType.int64, 4](-1)), 17522107111403053621)
 
-    assert_equal(hash(SIMD[DType.int8, 1](0)), 14824966480498192933)
+    assert_equal(hash(Int8(0)), 14824966480498192933)
     assert_equal(hash(SIMD[DType.int8, 2](0)), 4666323910194780317)
     assert_equal(hash(SIMD[DType.int8, 4](0)), 17500360606583578786)
     assert_equal(hash(SIMD[DType.int8, 8](0)), 17090405845262319422)
@@ -207,7 +204,7 @@ def test_hash_simd_values():
     assert_equal(hash(SIMD[DType.int8, 32](0)), 10765559911200264018)
     assert_equal(hash(SIMD[DType.int8, 64](0)), 810077408472869726)
 
-    assert_equal(hash(SIMD[DType.int32, 1](0)), 14824966480498192933)
+    assert_equal(hash(Int32(0)), 14824966480498192933)
     assert_equal(hash(SIMD[DType.int32, 2](0)), 4666323910194780317)
     assert_equal(hash(SIMD[DType.int32, 4](0)), 17500360606583578786)
     assert_equal(hash(SIMD[DType.int32, 8](0)), 17090405845262319422)
@@ -217,8 +214,4 @@ def test_hash_simd_values():
 
 
 def main():
-    test_hash_byte_array()
-    test_avalanche()
-    test_trailing_zeros()
-    test_fill_factor()
-    test_hash_simd_values()
+    TestSuite.discover_tests[__functions_in_module()]().run()

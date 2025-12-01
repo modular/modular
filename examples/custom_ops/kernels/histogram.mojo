@@ -16,10 +16,11 @@ from os import Atomic
 
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx, thread_idx
 from gpu.host.info import is_cpu
+from gpu.host import DeviceBuffer
 from gpu.memory import AddressSpace
 from memory import stack_allocation
 from runtime.asyncrt import DeviceContextPtr
-from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
+from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
 from utils import StaticTuple
 
@@ -27,6 +28,9 @@ alias bin_width = Int(UInt8.MAX)
 
 
 fn _histogram_cpu(output: ManagedTensorSlice, input: ManagedTensorSlice):
+    for i in range(output.dim_size(0)):
+        output[i] = 0
+
     for i in range(input.dim_size(0)):
         output[Int(input[i])] += 1
 
@@ -45,7 +49,9 @@ fn _histogram_gpu(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](block_dim)
     )
     fn kernel(
-        output: UnsafePointer[Int64], input: UnsafePointer[UInt8], n: Int
+        output: UnsafePointer[Int64, MutAnyOrigin],
+        input: UnsafePointer[UInt8, MutAnyOrigin],
+        n: Int,
     ):
         var tid = global_idx.x
 
@@ -78,9 +84,19 @@ fn _histogram_gpu(
 
     var ctx = ctx_ptr.get_device_context()
 
-    ctx.enqueue_function[kernel](
-        output.unsafe_ptr(),
-        input.unsafe_ptr(),
+    var output_device = DeviceBuffer[output.dtype](
+        ctx, output.unsafe_ptr(), output.size(), owning=False
+    )
+    var input_device = DeviceBuffer[input.dtype](
+        ctx, input.unsafe_ptr(), input.size(), owning=False
+    )
+
+    # Zero initialize the output buffer
+    ctx.enqueue_memset(output_device, 0)
+
+    ctx.enqueue_function_checked[kernel, kernel](
+        output_device,
+        input_device,
         n,
         block_dim=block_dim,
         grid_dim=grid_dim,

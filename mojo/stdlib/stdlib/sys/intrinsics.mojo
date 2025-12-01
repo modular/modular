@@ -24,21 +24,9 @@ from collections.string.string_slice import _get_kgen_string
 from sys import is_compile_time
 from sys.info import _is_sm_9x_or_newer, is_gpu
 
-from memory.pointer import _GPUAddressSpace
 
 from ._assembly import inlined_assembly
 from .info import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, size_of
-
-
-# Check that the dimension is either x, y, or z.
-# TODO: Some day we should use typed string literals or 'requires' clauses to
-#       enforce this at the type system level.
-# https://github.com/modular/modular/issues/1278
-fn _verify_xyz[dim: StaticString]():
-    constrained[
-        dim == "x" or dim == "y" or dim == "z",
-        "the dimension must be x, y, or z",
-    ]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -71,7 +59,7 @@ fn llvm_intrinsic[
 
     var loaded_pack = args.get_loaded_kgen_pack()
 
-    alias intrin_kgen_string = _get_kgen_string[intrin]()
+    comptime intrin_kgen_string = _get_kgen_string[intrin]()
 
     @parameter
     if _mlirtype_is_eq[type, NoneType]():
@@ -95,23 +83,17 @@ fn llvm_intrinsic[
 # ===-----------------------------------------------------------------------===#
 
 
-# NOTE: Converting from a scalar to a pointer is unsafe! The resulting pointer
-# is assumed not to alias any Mojo-derived pointer. DO NOT proliferate usage of
-# this function!
-fn _unsafe_aliasing_address_to_pointer[
-    dtype: DType
-](var addr: Scalar[DType.index]) -> UnsafePointer[Scalar[dtype]]:
-    return UnsafePointer(to=addr).bitcast[UnsafePointer[Scalar[dtype]]]()[]
-
-
 @always_inline("nodebug")
 fn gather[
-    dtype: DType, size: Int, //, *, invariant: Bool = False
+    dtype: DType,
+    size: Int, //,
+    *,
+    invariant: Bool = False,
+    alignment: Int = 0,
 ](
-    var base: SIMD[DType.index, size],
+    var base: SIMD[DType.int, size],
     mask: SIMD[DType.bool, size],
     passthrough: SIMD[dtype, size],
-    alignment: Int = 0,
 ) -> SIMD[dtype, size]:
     """Reads scalar values from a SIMD vector, and gathers them into one vector.
 
@@ -141,6 +123,8 @@ fn gather[
       dtype: DType of the return SIMD buffer.
       size: Size of the return SIMD buffer.
       invariant: Whether the memory is load invariant.
+      alignment: The alignment of the source addresses. Must be 0 or a power
+        of two constant integer value.
 
     Args:
       base: The vector containing memory addresses that gather will access.
@@ -148,8 +132,6 @@ fn gather[
         the base vector.
       passthrough: In the result vector, the masked-off lanes are replaced
         with the passthrough vector.
-      alignment: The alignment of the source addresses. Must be 0 or a power
-        of two constant integer value.
 
     Returns:
       A SIMD[dtype, size] containing the result of the gather operation.
@@ -157,9 +139,9 @@ fn gather[
 
     @parameter
     if size == 1:
-        return _unsafe_aliasing_address_to_pointer[dtype](base[0]).load[
-            invariant=invariant
-        ]() if mask else passthrough[0]
+        return UnsafePointer[Scalar[dtype], MutOrigin.external](
+            unsafe_from_address=Int(base[0])
+        ).load[invariant=invariant]() if mask else passthrough[0]
 
     @parameter
     if is_gpu() and invariant:
@@ -167,8 +149,8 @@ fn gather[
 
         @parameter
         for i in range(size):
-            result[i] = _unsafe_aliasing_address_to_pointer[dtype](
-                base[i]
+            result[i] = UnsafePointer[Scalar[dtype], MutOrigin.external](
+                unsafe_from_address=Int(base[i])
             ).load[invariant=invariant]() if mask[i] else passthrough[i]
         return result
 
@@ -194,12 +176,13 @@ fn gather[
 
 @always_inline("nodebug")
 fn scatter[
-    dtype: DType, size: Int, //
+    dtype: DType,
+    size: Int, //,
+    alignment: Int = 0,
 ](
     value: SIMD[dtype, size],
-    var base: SIMD[DType.index, size],
+    var base: SIMD[DType.int, size],
     mask: SIMD[DType.bool, size],
-    alignment: Int = 0,
 ):
     """Takes scalar values from a SIMD vector and `scatters` them into a
     vector of pointers.
@@ -238,20 +221,22 @@ fn scatter[
     Parameters:
       dtype: DType of `value`, the result SIMD buffer.
       size: Size of `value`, the result SIMD buffer.
+      alignment: The alignment of the source addresses. Must be 0 or a power
+        of two constant integer value.
 
     Args:
       value: The vector that will contain the result of the scatter operation.
       base: The vector containing memory addresses that scatter will access.
       mask: A binary vector which prevents memory access to certain lanes of
         the base vector.
-      alignment: The alignment of the source addresses. Must be 0 or a power
-        of two constant integer value.
     """
 
     @parameter
     if size == 1:
         if mask:
-            var ptr = _unsafe_aliasing_address_to_pointer[dtype](base[0])
+            var ptr = UnsafePointer[Scalar[dtype], MutOrigin.external](
+                unsafe_from_address=Int(base[0])
+            )
             ptr.store(value[0])
         return
     llvm_intrinsic["llvm.masked.scatter", NoneType](
@@ -281,13 +266,13 @@ struct PrefetchLocality:
 
     var value: Int32
     """The prefetch locality to use. It should be a value in [0, 3]."""
-    alias NONE = PrefetchLocality(0)
+    comptime NONE = PrefetchLocality(0)
     """No locality."""
-    alias LOW = PrefetchLocality(1)
+    comptime LOW = PrefetchLocality(1)
     """Low locality."""
-    alias MEDIUM = PrefetchLocality(2)
+    comptime MEDIUM = PrefetchLocality(2)
     """Medium locality."""
-    alias HIGH = PrefetchLocality(3)
+    comptime HIGH = PrefetchLocality(3)
     """Extremely local locality (keep in cache)."""
 
     @always_inline("nodebug")
@@ -307,9 +292,9 @@ struct PrefetchRW:
 
     var value: Int32
     """The read-write prefetch. It should be in [0, 1]."""
-    alias READ = PrefetchRW(0)
+    comptime READ = PrefetchRW(0)
     """Read prefetch."""
-    alias WRITE = PrefetchRW(1)
+    comptime WRITE = PrefetchRW(1)
     """Write prefetch."""
 
     @always_inline("nodebug")
@@ -322,6 +307,18 @@ struct PrefetchRW:
         """
         self.value = value
 
+    @always_inline
+    fn __eq__(self, other: Self) -> Bool:
+        """Checks if two prefetch read-write options are equal.
+
+        Args:
+            other: The option to compare with.
+
+        Returns:
+            True if the two prefetch read-write options are equal and False otherwise.
+        """
+        return self.value == other.value
+
 
 # LLVM prefetch cache type
 @register_passable("trivial")
@@ -330,9 +327,9 @@ struct PrefetchCache:
 
     var value: Int32
     """The cache prefetch. It should be in [0, 1]."""
-    alias INSTRUCTION = PrefetchCache(0)
+    comptime INSTRUCTION = PrefetchCache(0)
     """The instruction prefetching option."""
-    alias DATA = PrefetchCache(1)
+    comptime DATA = PrefetchCache(1)
     """The data prefetching option."""
 
     @always_inline("nodebug")
@@ -491,6 +488,11 @@ fn prefetch[
       addr: The data pointer to prefetch.
     """
 
+    constrained[
+        params.rw == PrefetchRW.READ or type_of(addr).mut == True,
+        "prefetch pointer mutability must match the prefetch read-write option",
+    ]()
+
     @parameter
     if is_nvidia_gpu():
         inlined_assembly[
@@ -515,12 +517,13 @@ fn prefetch[
 
 @always_inline("nodebug")
 fn masked_load[
-    dtype: DType, //, size: Int
+    dtype: DType, //,
+    size: Int,
+    alignment: Int = 1,
 ](
-    addr: UnsafePointer[Scalar[dtype], mut=False, **_],
+    addr: UnsafePointer[mut=False, Scalar[dtype], **_],
     mask: SIMD[DType.bool, size],
     passthrough: SIMD[dtype, size],
-    alignment: Int = 1,
 ) -> SIMD[dtype, size]:
     """Loads data from memory and return it, replacing masked lanes with values
     from the passthrough vector.
@@ -528,6 +531,8 @@ fn masked_load[
     Parameters:
       dtype: DType of the return SIMD buffer.
       size: Size of the return SIMD buffer.
+      alignment: The alignment of the destination locations. Must be 0 or a
+        power of two constant integer value. Default is 1.
 
     Args:
       addr: The base pointer for the load.
@@ -535,12 +540,11 @@ fn masked_load[
         the memory stored at addr.
       passthrough: In the result vector, the masked-off lanes are replaced
         with the passthrough vector.
-      alignment: The alignment of the source addresses. Must be 0 or a power
-        of two constant integer value. Default is 1.
 
     Returns:
       The loaded memory stored in a vector of type SIMD[dtype, size].
     """
+    debug_assert(addr, "masked_load requires a valid (non-null) pointer")
 
     @parameter
     if size == 1:
@@ -561,26 +565,27 @@ fn masked_load[
 
 @always_inline("nodebug")
 fn masked_store[
-    size: Int
+    size: Int,
+    alignment: Int = 1,
 ](
     value: SIMD,
-    addr: UnsafePointer[Scalar[value.dtype], mut=True, **_],
+    addr: UnsafePointer[mut=True, Scalar[value.dtype], **_],
     mask: SIMD[DType.bool, size],
-    alignment: Int = 1,
 ):
     """Stores a value at a memory location, skipping masked lanes.
 
     Parameters:
       size: Size of `value`, the data to store.
+      alignment: The alignment of the destination locations. Must be 0 or a
+        power of two constant integer value. Default is 1.
 
     Args:
       value: The vector containing data to store.
       addr: A vector of memory location to store data at.
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
-      alignment: The alignment of the destination locations. Must be 0 or a
-        power of two constant integer value.
     """
+    debug_assert(addr, "masked_store requires a valid (non-null) pointer")
 
     @parameter
     if size == 1:
@@ -606,7 +611,7 @@ fn compressed_store[
     dtype: DType, size: Int
 ](
     value: SIMD[dtype, size],
-    addr: UnsafePointer[Scalar[dtype], mut=True, **_],
+    addr: UnsafePointer[mut=True, Scalar[dtype], **_],
     mask: SIMD[DType.bool, size],
 ):
     """Compresses the lanes of `value`, skipping `mask` lanes, and stores
@@ -622,6 +627,7 @@ fn compressed_store[
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
     """
+    debug_assert(addr, "compressed_store requires a valid (non-null) pointer")
 
     @parameter
     if size == 1:
@@ -645,7 +651,7 @@ fn compressed_store[
 fn strided_load[
     dtype: DType, //, simd_width: Int, *, invariant: Bool = False
 ](
-    addr: UnsafePointer[Scalar[dtype], mut=False, **_],
+    addr: UnsafePointer[mut=False, Scalar[dtype], **_],
     stride: Int,
     mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](
         fill=True
@@ -667,6 +673,7 @@ fn strided_load[
     Returns:
       A vector containing the loaded data.
     """
+    debug_assert(addr, "strided_load requires a valid (non-null) pointer")
 
     @parameter
     if simd_width == 1:
@@ -674,7 +681,7 @@ fn strided_load[
 
     var offset = (
         Int(addr)
-        + stride * size_of[dtype]() * math.iota[DType.index, simd_width]()
+        + stride * size_of[dtype]() * math.iota[DType.int, simd_width]()
     )
     var passthrough = SIMD[dtype, simd_width]()
     return gather[invariant=invariant](offset, mask, passthrough)
@@ -690,7 +697,7 @@ fn strided_store[
     dtype: DType, //, simd_width: Int
 ](
     value: SIMD[dtype, simd_width],
-    addr: UnsafePointer[Scalar[dtype], mut=True, **_],
+    addr: UnsafePointer[mut=True, Scalar[dtype], **_],
     stride: Int,
     mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](
         fill=True
@@ -709,6 +716,7 @@ fn strided_store[
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
     """
+    debug_assert(addr, "strided_store requires a valid (non-null) pointer")
 
     @parameter
     if simd_width == 1:
@@ -718,7 +726,7 @@ fn strided_store[
 
     var offset = (
         Int(addr)
-        + stride * size_of[dtype]() * math.iota[DType.index, simd_width]()
+        + stride * size_of[dtype]() * math.iota[DType.int, simd_width]()
     )
     scatter(value, offset, mask)
 
@@ -774,6 +782,30 @@ fn _type_is_eq[t1: AnyType, t2: AnyType]() -> Bool:
     ]
 
 
+@always_inline("builtin")
+fn _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
+    """Compares the two type for equality at parse-time.
+
+    Parameters:
+        t1: The LHS of the type comparison.
+        t2: The RHS of the type comparison.
+
+    Returns:
+        Returns True if t1 and t2 are the same type and False otherwise.
+    """
+    return __mlir_attr[
+        `#kgen.param.expr<eq,`,
+        `#kgen.type<`,
+        +t1,
+        `> : !kgen.type`,
+        `,`,
+        `#kgen.type<`,
+        +t2,
+        `> : !kgen.type`,
+        `> : i1`,
+    ]
+
+
 # ===----------------------------------------------------------------------=== #
 # Transitional type used for llvm_intrinsic
 # ===----------------------------------------------------------------------=== #
@@ -781,10 +813,10 @@ fn _type_is_eq[t1: AnyType, t2: AnyType]() -> Bool:
 
 @register_passable("trivial")
 struct _RegisterPackType[*a: AnyTrivialRegType]:
-    var storage: __mlir_type[`!kgen.pack<`, a, `>`]
+    var storage: __mlir_type[`!kgen.pack<`, Self.a, `>`]
 
     @always_inline("nodebug")
-    fn __getitem__[i: Int](self) -> a[i]:
+    fn __getitem__[i: Int](self) -> Self.a[i]:
         """Get the element.
 
         Parameters:
@@ -793,7 +825,7 @@ struct _RegisterPackType[*a: AnyTrivialRegType]:
         Returns:
             The tuple element at the requested index.
         """
-        return __mlir_op.`kgen.pack.extract`[index = i._mlir_value](
+        return __mlir_op.`kgen.pack.extract`[index = i.__mlir_index__()](
             self.storage
         )
 
@@ -885,60 +917,15 @@ fn assume(val: Bool):
 
 
 # ===-----------------------------------------------------------------------===#
-# lane_id
-# ===-----------------------------------------------------------------------===#
-
-
-@always_inline("nodebug")
-fn lane_id() -> UInt:
-    """Returns the lane ID of the current thread.
-
-    Returns:
-        The lane ID of the current thread.
-    """
-    constrained[is_gpu(), "This function only applies to GPUs."]()
-
-    @parameter
-    if is_nvidia_gpu():
-        return UInt(
-            Int(
-                llvm_intrinsic[
-                    "llvm.nvvm.read.ptx.sreg.laneid",
-                    Int32,
-                    has_side_effect=False,
-                ]().cast[DType.uint32]()
-            )
-        )
-
-    elif is_amd_gpu():
-        alias none = Scalar[DType.int32](-1)
-        alias zero = Scalar[DType.int32](0)
-        var t = llvm_intrinsic[
-            "llvm.amdgcn.mbcnt.lo", Int32, has_side_effect=False
-        ](none, zero)
-        return UInt(
-            Int(
-                llvm_intrinsic[
-                    "llvm.amdgcn.mbcnt.hi", Int32, has_side_effect=False
-                ](none, t).cast[DType.uint32]()
-            )
-        )
-
-    else:
-        return CompilationTarget.unsupported_target_error[
-            UInt,
-            operation="lane_id",
-        ]()
-
-
-# ===-----------------------------------------------------------------------===#
 # implicitarg_ptr
 # ===-----------------------------------------------------------------------===#
 
 
 @always_inline
-fn implicitarg_ptr() -> (
-    UnsafePointer[UInt8, address_space = _GPUAddressSpace.CONSTANT]
+fn implicitarg_ptr(
+    out result: UnsafePointer[
+        UInt8, MutOrigin.external, address_space = AddressSpace.CONSTANT
+    ]
 ):
     """
     Get a pointer to AMD's implicit arguments table.
@@ -947,9 +934,9 @@ fn implicitarg_ptr() -> (
         A pointer to LLVM's implicit arguments table.
     """
     constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
-    return llvm_intrinsic[
+    result = llvm_intrinsic[
         "llvm.amdgcn.implicitarg.ptr",
-        UnsafePointer[UInt8, address_space = _GPUAddressSpace.CONSTANT],
+        type_of(result),
     ]()
 
 
@@ -975,7 +962,7 @@ fn readfirstlane(value: Int32) -> Int32:
 
 # TODO: this can be parameterized for AnyTrivialRegType but I am hitting compiler errors so skipping for now
 @always_inline
-fn readfirstlane(value: UnsafePointer) -> __type_of(value):
+fn readfirstlane(value: UnsafePointer) -> type_of(value):
     """
     Get the value in the lowest active lane of the input operand.
 
@@ -987,12 +974,12 @@ fn readfirstlane(value: UnsafePointer) -> __type_of(value):
     """
     constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
     return llvm_intrinsic[
-        "llvm.amdgcn.readfirstlane", __type_of(value), __type_of(value)
+        "llvm.amdgcn.readfirstlane", type_of(value), type_of(value)
     ](value)
 
 
 @always_inline
-fn readfirstlane(value: Int) -> __type_of(value):
+fn readfirstlane(value: Int) -> type_of(value):
     """
     Get the value in the lowest active lane of the input operand.
 
@@ -1004,7 +991,7 @@ fn readfirstlane(value: Int) -> __type_of(value):
     """
     constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
     return llvm_intrinsic[
-        "llvm.amdgcn.readfirstlane", __type_of(value), __type_of(value)
+        "llvm.amdgcn.readfirstlane", type_of(value), type_of(value)
     ](value)
 
 
@@ -1056,376 +1043,3 @@ fn ballot[dtype: DType](value: Bool) -> Scalar[dtype]:
         "This intrinsic is only defined for i32 or i64",
     ]()
     return llvm_intrinsic["llvm.amdgcn.ballot", Scalar[dtype]](value)
-
-
-# ===-----------------------------------------------------------------------===#
-# thread_idx
-# ===-----------------------------------------------------------------------===#
-
-
-@register_passable("trivial")
-struct _ThreadIdx(Defaultable):
-    """ThreadIdx provides static methods for getting the x/y/z coordinates of
-    a thread within a block."""
-
-    @always_inline("nodebug")
-    fn __init__(out self):
-        return
-
-    @always_inline("nodebug")
-    @staticmethod
-    fn _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
-        @parameter
-        if is_nvidia_gpu():
-            return "llvm.nvvm.read.ptx.sreg.tid." + dim
-        elif is_amd_gpu():
-            return "llvm.amdgcn.workitem.id." + dim
-        elif is_apple_gpu():
-            return "llvm.air.thread_position_in_threadgroup." + dim
-        else:
-            return CompilationTarget.unsupported_target_error[
-                StaticString,
-                operation="thread_idx field access",
-            ]()
-
-    @always_inline("nodebug")
-    fn __getattr__[dim: StringLiteral](self) -> UInt:
-        """Gets the `x`, `y`, or `z` coordinates of a thread within a block.
-
-        Returns:
-            The `x`, `y`, or `z` coordinates of a thread within a block.
-        """
-        _verify_xyz[dim]()
-        alias intrinsic_name = Self._get_intrinsic_name[dim]()
-        return UInt(
-            llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
-        )
-
-
-alias thread_idx = _ThreadIdx()
-
-
-# ===-----------------------------------------------------------------------===#
-# block_idx
-# ===-----------------------------------------------------------------------===#
-
-
-@register_passable("trivial")
-struct _BlockIdx(Defaultable):
-    """BlockIdx provides static methods for getting the x/y/z coordinates of
-    a block within a grid."""
-
-    @always_inline("nodebug")
-    fn __init__(out self):
-        return
-
-    @always_inline("nodebug")
-    @staticmethod
-    fn _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
-        @parameter
-        if is_nvidia_gpu():
-            return "llvm.nvvm.read.ptx.sreg.ctaid." + dim
-        elif is_amd_gpu():
-            return "llvm.amdgcn.workgroup.id." + dim
-        elif is_apple_gpu():
-            return "llvm.air.threadgroup_position_in_grid." + dim
-        else:
-            return CompilationTarget.unsupported_target_error[
-                StaticString,
-                operation="block_idx field access",
-            ]()
-
-    @always_inline("nodebug")
-    fn __getattr__[dim: StringLiteral](self) -> UInt:
-        """Gets the `x`, `y`, or `z` coordinates of a block within a grid.
-
-        Returns:
-            The `x`, `y`, or `z` coordinates of a block within a grid.
-        """
-        _verify_xyz[dim]()
-        alias intrinsic_name = Self._get_intrinsic_name[dim]()
-        return UInt(
-            llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
-        )
-
-
-alias block_idx = _BlockIdx()
-
-# ===-----------------------------------------------------------------------===#
-# block_dim
-# ===-----------------------------------------------------------------------===#
-
-
-@always_inline
-fn _get_gcn_idx[offset: Int, dtype: DType]() -> UInt:
-    var ptr = llvm_intrinsic[
-        "llvm.amdgcn.implicitarg.ptr",
-        UnsafePointer[Scalar[dtype], address_space = _GPUAddressSpace.CONSTANT],
-        has_side_effect=False,
-    ]()
-    return UInt(ptr.load[alignment=4](offset))
-
-
-@register_passable("trivial")
-struct _BlockDim(Defaultable):
-    """BlockDim provides static methods for getting the x/y/z dimension of a
-    block."""
-
-    @always_inline("nodebug")
-    fn __init__(out self):
-        return
-
-    @always_inline("nodebug")
-    fn __getattr__[dim: StaticString](self) -> UInt:
-        """Gets the `x`, `y`, or `z` dimension of the block.
-
-        Returns:
-            The `x`, `y`, or `z` dimension of the block.
-        """
-        _verify_xyz[dim]()
-
-        @parameter
-        if is_nvidia_gpu():
-            alias intrinsic_name = "llvm.nvvm.read.ptx.sreg.ntid." + dim
-            return UInt(
-                Int(
-                    llvm_intrinsic[
-                        intrinsic_name, Int32, has_side_effect=False
-                    ]()
-                )
-            )
-        elif is_apple_gpu():
-            return UInt(
-                Int(
-                    llvm_intrinsic[
-                        "llvm.air.threads_per_threadgroup." + dim,
-                        Int32,
-                        has_side_effect=False,
-                    ]()
-                )
-            )
-        elif is_amd_gpu():
-
-            @parameter
-            fn _get_offset() -> Int:
-                @parameter
-                if dim == "x":
-                    return 6
-                elif dim == "y":
-                    return 7
-                else:
-                    constrained[dim == "z"]()
-                    return 8
-
-            return _get_gcn_idx[_get_offset(), DType.uint16]()
-
-        else:
-            return CompilationTarget.unsupported_target_error[
-                UInt,
-                operation="block_dim field access",
-            ]()
-
-
-alias block_dim = _BlockDim()
-
-# ===-----------------------------------------------------------------------===#
-# grid_dim
-# ===-----------------------------------------------------------------------===#
-
-
-@register_passable("trivial")
-struct _GridDim(Defaultable):
-    """GridDim provides static methods for getting the x/y/z dimension of a
-    grid."""
-
-    @always_inline("nodebug")
-    fn __init__(out self):
-        return
-
-    @always_inline("nodebug")
-    fn __getattr__[dim: StaticString](self) -> UInt:
-        """Gets the `x`, `y`, or `z` dimension of the grid.
-
-        Returns:
-            The `x`, `y`, or `z` dimension of the grid.
-        """
-        _verify_xyz[dim]()
-
-        @parameter
-        if is_nvidia_gpu():
-            alias intrinsic_name = "llvm.nvvm.read.ptx.sreg.nctaid." + dim
-            return UInt(
-                Int(
-                    llvm_intrinsic[
-                        intrinsic_name, Int32, has_side_effect=False
-                    ]()
-                )
-            )
-        elif is_amd_gpu():
-
-            @parameter
-            fn _get_offset() -> Int:
-                @parameter
-                if dim == "x":
-                    return 0
-                elif dim == "y":
-                    return 1
-                else:
-                    constrained[dim == "z"]()
-                    return 2
-
-            return _get_gcn_idx[_get_offset(), DType.uint32]()
-        else:
-            return CompilationTarget.unsupported_target_error[
-                UInt,
-                operation="grid_dim field access",
-            ]()
-
-
-alias grid_dim = _GridDim()
-
-# ===-----------------------------------------------------------------------===#
-# grid_idx
-# ===-----------------------------------------------------------------------===#
-
-
-@register_passable("trivial")
-struct _GridIdx(Defaultable):
-    """GlobalIdx provides static methods for getting the x/y/z global offset of
-    the kernel launch."""
-
-    @always_inline("nodebug")
-    fn __init__(out self):
-        return
-
-    @always_inline("nodebug")
-    fn __getattr__[dim: StringLiteral](self) -> UInt:
-        """Gets the `x`, `y`, or `z` dimension of the program.
-
-        Returns:
-            The `x`, `y`, or `z` dimension of the program.
-        """
-        _verify_xyz[dim]()
-        var thread_idx = thread_idx.__getattr__[dim]()
-        var block_idx = block_idx.__getattr__[dim]()
-        var block_dim = block_dim.__getattr__[dim]()
-
-        return math.fma(block_idx, block_dim, thread_idx)
-
-
-alias global_idx = _GridIdx()
-
-
-# ===-----------------------------------------------------------------------===#
-# cluster_dim
-# ===-----------------------------------------------------------------------===#
-
-
-@register_passable("trivial")
-struct _ClusterDim(Defaultable):
-    """ClusterDim provides static methods for getting the x/y/z dimension of a
-    Cluster."""
-
-    @always_inline("nodebug")
-    fn __init__(out self):
-        return
-
-    @always_inline("nodebug")
-    fn __getattr__[dim: StaticString](self) -> UInt:
-        """Gets the `x`, `y`, or `z` dimension of the cluster.
-
-        Returns:
-            The `x`, `y`, or `z` dimension of the cluster.
-        """
-        constrained[
-            _is_sm_9x_or_newer(),
-            "cluster_id is only supported on NVIDIA SM90+ GPUs",
-        ]()
-        _verify_xyz[dim]()
-
-        alias intrinsic_name = "llvm.nvvm.read.ptx.sreg.cluster.nctaid." + dim
-        return UInt(
-            Int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
-        )
-
-
-alias cluster_dim = _ClusterDim()
-
-# ===-----------------------------------------------------------------------===#
-# cluster_idx
-# ===-----------------------------------------------------------------------===#
-
-
-@register_passable("trivial")
-struct _ClusterIdx(Defaultable):
-    """_ClusterIdx provides static methods for getting the x/y/z coordinates of
-    a cluster within a grid."""
-
-    @always_inline("nodebug")
-    fn __init__(out self):
-        return
-
-    @always_inline("nodebug")
-    @staticmethod
-    fn _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
-        return "llvm.nvvm.read.ptx.sreg.clusterid." + dim
-
-    @always_inline("nodebug")
-    fn __getattr__[dim: StringLiteral](self) -> UInt:
-        """Gets the `x`, `y`, or `z` coordinates of a cluster within a grid.
-
-        Returns:
-            The `x`, `y`, or `z` coordinates of a cluster within a grid.
-        """
-        constrained[
-            _is_sm_9x_or_newer(),
-            "cluster_id is only supported on NVIDIA SM90+ GPUs",
-        ]()
-        _verify_xyz[dim]()
-        alias intrinsic_name = Self._get_intrinsic_name[dim]()
-        return UInt(
-            Int(llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]())
-        )
-
-
-alias cluster_idx = _ClusterIdx()
-
-
-# ===-----------------------------------------------------------------------===#
-# block_id_in_cluster
-# ===-----------------------------------------------------------------------===#
-
-
-@register_passable("trivial")
-struct _Cluster_BlockIdx(Defaultable):
-    """_Cluster_BlockIdx provides static methods for getting the x/y/z coordinates of
-    a threadblock within a cluster."""
-
-    @always_inline("nodebug")
-    fn __init__(out self):
-        return
-
-    @always_inline("nodebug")
-    @staticmethod
-    fn _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
-        return "llvm.nvvm.read.ptx.sreg.cluster.ctaid." + dim
-
-    @always_inline("nodebug")
-    fn __getattr__[dim: StringLiteral](self) -> UInt:
-        """Gets the `x`, `y`, or `z` coordinates of a threadblock within a cluster.
-
-        Returns:
-            The `x`, `y`, or `z` coordinates of a threadblock within a cluster.
-        """
-        constrained[
-            _is_sm_9x_or_newer(),
-            "cluster_id is only supported on NVIDIA SM90+ GPUs",
-        ]()
-        _verify_xyz[dim]()
-        alias intrinsic_name = Self._get_intrinsic_name[dim]()
-        return UInt(
-            Int(llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]())
-        )
-
-
-alias block_id_in_cluster = _Cluster_BlockIdx()

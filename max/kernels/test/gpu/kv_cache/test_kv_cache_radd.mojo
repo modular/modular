@@ -11,20 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from utils import IndexList
-from internal_utils import (
-    HostNDBuffer,
-    DeviceNDBuffer,
-    initialize,
-    InitializationType,
-)
-from kv_cache.types import PagedKVCacheCollection, KVCacheStaticParams
-from math import ceildiv
 from collections import Set
+from math import ceildiv
 from random import random_ui64
-from nn.kv_cache_ragged import generic_kv_cache_radd_dispatch
+
 from buffer import Dim, DimList
+from gpu.host import DeviceContext
+from internal_utils import (
+    DeviceNDBuffer,
+    HostNDBuffer,
+    InitializationType,
+    initialize,
+)
+from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from nn.kv_cache_ragged import generic_kv_cache_radd_dispatch
+
+from utils import IndexList
 
 
 fn test_kv_cache_radd[
@@ -39,7 +42,7 @@ fn test_kv_cache_radd[
     num_active_loras: Int,
     ctx: DeviceContext,
 ) raises:
-    alias num_layers = 2
+    comptime num_layers = 2
     debug_assert(
         num_active_loras <= batch_size,
         "num_active_loras must be less than or equal to batch_size",
@@ -123,9 +126,33 @@ fn test_kv_cache_radd[
         ),
         page_size,
     ](
-        kv_block_paged_device.tensor,
-        cache_lengths_device.tensor,
-        paged_lut_device.tensor,
+        LayoutTensor[
+            kv_block_paged_device.dtype, Layout.row_major[6](), MutAnyOrigin
+        ](
+            kv_block_paged_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_paged_device.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_paged_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            paged_lut_device.dtype, Layout.row_major[2](), ImmutAnyOrigin
+        ](
+            paged_lut_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut_device.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_prompt_length,
         max_full_context_length,
     )
@@ -138,9 +165,9 @@ fn test_kv_cache_radd[
 
     var layer_idx = 1
     generic_kv_cache_radd_dispatch[target="gpu"](
-        a_device.tensor,
+        a_device.to_layout_tensor(),
         kv_collection_device,
-        input_row_offsets_slice_device.tensor,
+        input_row_offsets_slice_device.to_layout_tensor(),
         num_active_loras_slice_start,
         layer_idx,
         ctx,
@@ -160,9 +187,33 @@ fn test_kv_cache_radd[
         ),
         page_size,
     ](
-        kv_block_paged_host.tensor,
-        cache_lengths_host.tensor,
-        paged_lut_host.tensor,
+        LayoutTensor[
+            kv_block_paged_host.dtype, Layout.row_major[6](), MutAnyOrigin
+        ](
+            kv_block_paged_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_paged_host.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_paged_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_host.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_host.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            paged_lut_host.dtype, Layout.row_major[2](), ImmutAnyOrigin
+        ](
+            paged_lut_host.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut_host.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut_host.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_prompt_length,
         max_full_context_length,
     )
@@ -254,7 +305,7 @@ fn test_kv_cache_radd[
     _ = paged_lut_host
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_kv_cache_radd[DType.float32, 8, 128, 128, 4,](
             IndexList[4](10, 20, 30, 40),

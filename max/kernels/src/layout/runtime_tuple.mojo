@@ -36,7 +36,7 @@ from layout.int_tuple import UNKNOWN_VALUE, IntTuple, flatten
 from layout.int_tuple import idx2crd as idx2crd_int_tuple
 from layout.int_tuple import prefix_product as prefix_product_int_tuple
 from layout.int_tuple import shape_div as shape_div_int_tuple
-
+from layout.int_tuple import product as product_int_tuple
 from utils import IndexList
 
 
@@ -80,15 +80,14 @@ struct RuntimeTuple[
     values and runtime-determined values.
 
     Parameters:
-        origin: The origin corresponding to the `IntTuple`.
         S: `IntTuple` with compile-time known values (or `UNKNOWN_VALUE` for runtime values).
         element_type: Integer type of the underlying elements.
     """
 
-    alias scalar_length = len(flatten(S))
+    comptime scalar_length = len(flatten(Self.S))
     """The total number of scalar elements in this RuntimeTuple after flattening nested tuples."""
 
-    var value: IndexList[Self.scalar_length, element_type=element_type]
+    var value: IndexList[Self.scalar_length, element_type = Self.element_type]
     """Storage for the actual tuple values, implemented as an IndexList with the appropriate size and element type."""
 
     @always_inline
@@ -100,11 +99,11 @@ struct RuntimeTuple[
         """
         self.value = {}
 
-        alias f = flatten(S)
+        comptime f = flatten(Self.S)
 
         @parameter
         for i in range(Self.scalar_length):
-            alias v = f[i].value()
+            comptime v = f[i].value()
 
             @parameter
             if v != UNKNOWN_VALUE:
@@ -119,7 +118,7 @@ struct RuntimeTuple[
         Args:
             values: Variadic number of integer values to initialize the tuple with.
         """
-        self.value = __type_of(self.value)(values)
+        self.value = type_of(self.value)(values)
 
     @always_inline
     @implicit
@@ -133,9 +132,17 @@ struct RuntimeTuple[
             values: `IndexList` to initialize from. Must have same length as the `RuntimeTuple`.
                     The values will be cast to the appropriate element type if needed.
         """
-        constrained[Self.scalar_length == l, "Must use same tuple length"]()
-        self.value = rebind[__type_of(self.value)](
-            values.cast[__type_of(values).element_type]()
+        constrained[
+            Self.scalar_length == l,
+            String(
+                "Must use same tuple length, expected ",
+                Self.scalar_length,
+                " but got ",
+                l,
+            ),
+        ]()
+        self.value = rebind[type_of(self.value)](
+            values.cast[type_of(values).element_type]()
         )
 
     @staticmethod
@@ -157,11 +164,11 @@ struct RuntimeTuple[
 
         @parameter
         for j in range(i):
-            result += len(flatten(S[j]))
+            result += len(flatten(Self.S[j]))
         return result
 
     @always_inline
-    fn get_int(self) -> Scalar[element_type]:
+    fn get_int(self) -> Scalar[Self.element_type]:
         """Returns the integer value of this RuntimeTuple.
 
         For tuples with a known compile-time value, returns that value.
@@ -171,7 +178,7 @@ struct RuntimeTuple[
         Returns:
             The integer value of this RuntimeTuple.
         """
-        alias comptime_value: Scalar[element_type] = S.value()
+        comptime comptime_value: Scalar[Self.element_type] = Self.S.value()
 
         @parameter
         if comptime_value != UNKNOWN_VALUE:
@@ -182,7 +189,7 @@ struct RuntimeTuple[
     @always_inline
     fn __getitem__[
         i: Int
-    ](self) -> RuntimeTuple[S[i], element_type=element_type]:
+    ](self, out res: RuntimeTuple[Self.S[i], element_type = Self.element_type]):
         """Retrieves the element at the specified index in the tuple.
 
         This method provides array-like indexing for RuntimeTuple, allowing access
@@ -195,16 +202,15 @@ struct RuntimeTuple[
         Returns:
             A new `RuntimeTuple` containing the element or sub-tuple at the specified index.
         """
-        var res = RuntimeTuple[S[i], element_type=element_type]()
-        alias offset = Self.offset_until[i]()
+        comptime offset = Self.offset_until[i]()
+        res = {}
 
         @parameter
         for i in range(res.scalar_length):
             res.value[i] = self.value[i + offset]
-        return res
 
     @always_inline
-    fn __setitem__[i: Int](mut self, val: Scalar[element_type]):
+    fn __setitem__[i: Int](mut self, val: Scalar[Self.element_type]):
         """Sets the value of the element at the specified index in the tuple.
 
         This method enables array-like assignment for RuntimeTuple elements,
@@ -217,7 +223,7 @@ struct RuntimeTuple[
         Args:
             val: The new value to assign to the element.
         """
-        alias offset = Self.offset_until[i]()
+        comptime offset = Self.offset_until[i]()
         self.value[offset] = Int(val)
 
     @no_inline
@@ -237,8 +243,10 @@ struct RuntimeTuple[
         R: IntTuple
     ](
         self,
-        rhs: RuntimeTuple[R, element_type=element_type],
-        out result: RuntimeTuple[concat(S, R), element_type=element_type],
+        rhs: RuntimeTuple[R, element_type = Self.element_type],
+        out result: RuntimeTuple[
+            concat(Self.S, R), element_type = Self.element_type
+        ],
     ):
         """Concatenates two `RuntimeTuple`s together.
 
@@ -255,32 +263,32 @@ struct RuntimeTuple[
         Returns:
             A new `RuntimeTuple` containing all elements from both tuples in sequence.
         """
-        var out = __type_of(result)()
+        result = {}
 
-        alias S_flat = flatten(S)
+        comptime S_flat = flatten(Self.S)
 
         @parameter
         for i in range(Self.scalar_length):
 
             @parameter
             if S_flat[i] == UNKNOWN_VALUE:
-                out.value[i] = self.value[i]
+                result.value[i] = self.value[i]
 
-        alias R_flat = flatten(R)
+        comptime R_flat = flatten(R)
 
         @parameter
         for i in range(rhs.scalar_length):
 
             @parameter
             if R_flat[i] == UNKNOWN_VALUE:
-                out.value[Self.scalar_length + i] = rhs.value[i]
-
-        return out
+                result.value[Self.scalar_length + i] = rhs.value[i]
 
     @always_inline
     fn flatten(
         self,
-        out result: RuntimeTuple[flatten(S), element_type=element_type],
+        out result: RuntimeTuple[
+            flatten(Self.S), element_type = Self.element_type
+        ],
     ):
         """Flattens a potentially nested `RuntimeTuple` into a single-level tuple.
         This method converts a hierarchical structure of tuples into a flat representation,
@@ -290,7 +298,7 @@ struct RuntimeTuple[
         Returns:
             A new `RuntimeTuple` containing all elements in a flat (non-nested) structure.
         """
-        return __type_of(result)(self.value)
+        return {self.value}
 
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the RuntimeTuple to a Writer object.
@@ -304,12 +312,12 @@ struct RuntimeTuple[
         """
 
         @parameter
-        if S.is_value():
+        if Self.S.is_value():
             writer.write(self.value[0])
         else:
             writer.write("(")
 
-            alias size = len(S)
+            comptime size = len(Self.S)
 
             @parameter
             for i in range(size):
@@ -332,13 +340,13 @@ struct RuntimeTuple[
         Returns:
             The number of top-level elements in the tuple.
         """
-        alias l = len(S)
+        comptime l = len(Self.S)
         return l
 
     @always_inline
     fn cast[
         dtype: DType
-    ](self, out result: RuntimeTuple[S, element_type=dtype]):
+    ](self, out result: RuntimeTuple[Self.S, element_type=dtype]):
         """Casts the RuntimeTuple to use a different numeric type.
         This method creates a new RuntimeTuple with the same structure and values
         but using a different underlying numeric type for storage. This is useful
@@ -350,7 +358,7 @@ struct RuntimeTuple[
         Returns:
             A new `RuntimeTuple` with elements cast to the specified type.
         """
-        return __type_of(result)(self.value.cast[dtype]())
+        return {self.value.cast[dtype]()}
 
     @always_inline
     fn __int__(self) -> Int:
@@ -362,7 +370,7 @@ struct RuntimeTuple[
         Returns:
             The integer value of the tuple.
         """
-        constrained[S.is_value(), "tuple must be a single int value"]()
+        constrained[Self.S.is_value(), "tuple must be a single int value"]()
         return self.value[0]
 
 
@@ -490,11 +498,13 @@ fn idx2crd[
         The index must be a scalar value (not a tuple).
     """
 
-    var res = __type_of(result)()
     constrained[idx_t.is_value(), "Only scalar index is supported"]()
-    for i in range(res.scalar_length):
-        res.value[i] = (Int(idx) // stride.value[i]) % shape.value[i]
-    return res
+
+    result = {}
+
+    @parameter
+    for i in range(result.scalar_length):
+        result.value[i] = (Int(idx) // stride.value[i]) % shape.value[i]
 
 
 # take shape as return type
@@ -575,7 +585,7 @@ fn crd2idx[
             ),
         ]()
         var r: Scalar[out_type] = 0
-        alias size = min(min(len(crd_t), len(shape_t)), len(stride_t))
+        comptime size = min(min(len(crd_t), len(shape_t)), len(stride_t))
 
         @parameter
         for i in range(size):
@@ -592,7 +602,7 @@ fn crd2idx[
             ]()
             var result: Scalar[out_type] = 0
 
-            alias last_elem_idx = len(shape_t) - 1
+            comptime last_elem_idx = len(shape_t) - 1
 
             @parameter
             for i in range(last_elem_idx):
@@ -695,16 +705,8 @@ fn shape_div[
 
                 # FIXME: this used to be simpler
                 # vb = Int(to_int(shape_div(vb, product(a[i]))))
-                vb = __type_of(vb)(
-                    Int(
-                        shape_div(
-                            vb,
-                            RuntimeTuple[IntTuple(UNKNOWN_VALUE)](
-                                product(a[i])
-                            ),
-                        )
-                    )
-                )
+                var t = RuntimeTuple[IntTuple(UNKNOWN_VALUE)](product(a[i]))
+                vb = {Int(shape_div(vb, t))}
             return res
     else:
 
@@ -718,6 +720,87 @@ fn shape_div[
             if not (va % vb == 0 or vb % va == 0):
                 abort(String("Incompatible shape values: ", va, " ", vb))
 
-            return __type_of(result)(
-                va // vb if va % vb == 0 else signum(va * vb)
-            )
+            return {va // vb if va % vb == 0 else signum(va * vb)}
+
+
+fn to_index_list[
+    rank: Int, t: IntTuple
+](tuple: RuntimeTuple[t, **_]) -> IndexList[rank]:
+    """
+    Converts a RuntimeTuple to an IndexList with the same values.
+
+    Parameters:
+        rank: The rank of the resulting IndexList.
+        t: The IntTuple template parameter of the RuntimeTuple.
+
+    Args:
+        tuple: The RuntimeTuple to convert.
+
+    Returns:
+        An IndexList filled with the values of the RuntimeTuple.
+    """
+    var res = IndexList[rank]()
+    for i in range(rank):
+        res[i] = Int(tuple.value[i])
+    return res
+
+
+fn _int_tuple_product_flatten[t: IntTuple]() -> IntTuple:
+    comptime rank = len(t)
+    var tup = IntTuple(num_elems=rank)
+
+    @parameter
+    for i in range(rank):
+        comptime known = t[i].all_known()
+
+        @parameter
+        if known:
+            comptime product = product_int_tuple(t[i])
+            tup.replace_entry(i, int_value=product)
+        else:
+            tup.replace_entry(i, int_value=UNKNOWN_VALUE)
+
+    return tup
+
+
+fn coalesce_nested_tuple[
+    t: IntTuple,
+    out_t: IntTuple = _int_tuple_product_flatten[t](),
+](tuple: RuntimeTuple[t, **_]) -> RuntimeTuple[out_t, **_]:
+    """Coalesces a nested `RuntimeTuple` into a single-level `RuntimeTuple`, by multiplying all the
+    values together.
+
+    Parameters:
+        t: The underlying Compile-time IntTuple backing the RuntimeTuple.
+        out_t: The flattened Compile-time IntTuple.
+
+    Args:
+        tuple: The RuntimeTuple to convert.
+
+    Returns:
+        A new `IntTuple` containing the products of each top level tuple, in a flat structure.
+    """
+
+    comptime rank = len(out_t)
+    var idxs = IndexList[rank]()
+
+    @parameter
+    for i in range(rank):
+        comptime known = out_t[i].all_known()
+
+        @parameter
+        if known:
+            idxs[i] = out_t[i].value()
+        else:
+            var slice = tuple[i]
+            var product = 1
+
+            constrained[slice.scalar_length > 0, "Slice is empty"]()
+
+            @parameter
+            for j in range(slice.scalar_length):
+                product *= Int(slice[j])
+
+            idxs[i] = product
+
+    return RuntimeTuple[out_t](idxs)

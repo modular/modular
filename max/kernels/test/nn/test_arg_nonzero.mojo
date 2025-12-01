@@ -11,9 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from itertools import product
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
 from testing import assert_equal
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 
 from utils import IndexList
 
@@ -21,8 +22,8 @@ from utils import IndexList
 # CHECK-LABEL: test_where_size
 def test_where_size():
     print("== test_where_size")
-    alias rank = 3
-    alias values_shape = Layout.row_major(3, 2, 1)
+    comptime rank = 3
+    comptime values_shape = Layout.row_major(3, 2, 1)
     var values_stack = InlineArray[Float32, values_shape.size()](
         uninitialized=True
     )
@@ -35,7 +36,7 @@ def test_where_size():
     values[2, 0, 0] = 0.0
     values[2, 1, 0] = -3.0
 
-    alias layout_unknown = Layout.row_major(
+    comptime layout_unknown = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
     )
     var output_shape = arg_nonzero_shape[DType.float32, True](
@@ -54,8 +55,8 @@ def test_where_size():
 # CHECK-LABEL: test_where_size_bool
 def test_where_size_bool():
     print("== test_where_size_bool")
-    alias rank = 3
-    alias values_shape = Layout.row_major(3, 2, 1)
+    comptime rank = 3
+    comptime values_shape = Layout.row_major(3, 2, 1)
     var values_stack = InlineArray[Scalar[DType.bool], values_shape.size()](
         uninitialized=True
     )
@@ -68,7 +69,7 @@ def test_where_size_bool():
     values[2, 0, 0] = Scalar[DType.bool](False)
     values[2, 1, 0] = Scalar[DType.bool](True)
 
-    alias layout_unknown = Layout.row_major(
+    comptime layout_unknown = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
     )
     var output_shape = arg_nonzero_shape[DType.bool, True](
@@ -87,8 +88,8 @@ def test_where_size_bool():
 # CHECK-LABEL: test_where
 def test_where():
     print("== test_where")
-    alias rank = 3
-    alias values_shape = Layout.row_major(3, 2, 1)
+    comptime rank = 3
+    comptime values_shape = Layout.row_major(3, 2, 1)
     var values_stack = InlineArray[Float32, values_shape.size()](
         uninitialized=True
     )
@@ -101,15 +102,15 @@ def test_where():
     values[2, 0, 0] = 0.0
     values[2, 1, 0] = -3.0
 
-    var computed_stack = InlineArray[Scalar[DType.index], 9](uninitialized=True)
+    var computed_stack = InlineArray[Scalar[DType.int], 9](uninitialized=True)
     var computed_outputs = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(3, 3),
     ](computed_stack)
 
-    var golden_stack = InlineArray[Scalar[DType.index], 9](uninitialized=True)
+    var golden_stack = InlineArray[Scalar[DType.int], 9](uninitialized=True)
     var golden_outputs = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(3, 3),
     ](golden_stack)
 
@@ -123,10 +124,10 @@ def test_where():
     golden_outputs[2, 1] = 1
     golden_outputs[2, 2] = 0
 
-    alias layout_unknown_3d = Layout.row_major(
+    comptime layout_unknown_3d = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
     )
-    alias layout_unknown_2d = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout_unknown_2d = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     arg_nonzero(
         LayoutTensor[DType.float32, layout_unknown_3d](
             values_stack,
@@ -134,7 +135,7 @@ def test_where():
                 IndexList[3](3, 2, 1),
             ),
         ),
-        LayoutTensor[DType.index, layout_unknown_2d](
+        LayoutTensor[DType.int, layout_unknown_2d](
             computed_stack,
             RuntimeLayout[layout_unknown_2d].row_major(
                 IndexList[2](3, 3),
@@ -142,16 +143,15 @@ def test_where():
         ),
     )
 
-    for i in range(3):
-        for j in range(3):
-            assert_equal(computed_outputs[i, j], golden_outputs[i, j])
+    for i, j in product(range(3), range(3)):
+        assert_equal(computed_outputs[i, j], golden_outputs[i, j])
 
 
 # CHECK-LABEL: test_where_1d
 def test_where_1d():
     print("== test_where_1d")
-    alias num_elements = 12
-    alias num_indices = 6
+    comptime num_elements = 12
+    comptime num_indices = 6
 
     var values_stack = InlineArray[Float32, num_elements](uninitialized=True)
     var values = LayoutTensor[DType.float32, Layout.row_major(num_elements)](
@@ -171,19 +171,19 @@ def test_where_1d():
     values[10] = 0.0
     values[11] = 1.0
 
-    var computed_stack = InlineArray[Scalar[DType.index], num_indices](
+    var computed_stack = InlineArray[Scalar[DType.int], num_indices](
         uninitialized=True
     )
     var computed_outputs = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(num_indices, 1),
     ](computed_stack)
 
-    var golden_stack = InlineArray[Scalar[DType.index], num_indices](
+    var golden_stack = InlineArray[Scalar[DType.int], num_indices](
         uninitialized=True
     )
     var golden_outputs = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(num_indices),
     ](golden_stack)
 
@@ -194,8 +194,8 @@ def test_where_1d():
     golden_outputs[4] = 9
     golden_outputs[5] = 11
 
-    alias layout_unknown_1d = Layout.row_major(UNKNOWN_VALUE)
-    alias layout_unknown_2d = Layout.row_major(UNKNOWN_VALUE, 1)
+    comptime layout_unknown_1d = Layout.row_major(UNKNOWN_VALUE)
+    comptime layout_unknown_2d = Layout.row_major(UNKNOWN_VALUE, 1)
 
     arg_nonzero(
         LayoutTensor[DType.float32, layout_unknown_1d](
@@ -204,7 +204,7 @@ def test_where_1d():
                 IndexList[1](num_elements),
             ),
         ),
-        LayoutTensor[DType.index, layout_unknown_2d](
+        LayoutTensor[DType.int, layout_unknown_2d](
             computed_stack,
             RuntimeLayout[layout_unknown_2d].row_major(
                 IndexList[2](num_indices, 1),
@@ -219,8 +219,8 @@ def test_where_1d():
 # CHECK-LABEL: test_where_bool
 def test_where_bool():
     print("== test_where_bool")
-    alias rank = 3
-    alias values_shape = Layout.row_major(3, 2, 1)
+    comptime rank = 3
+    comptime values_shape = Layout.row_major(3, 2, 1)
     var values_stack = InlineArray[
         Scalar[DType.bool], Int(values_shape.size())
     ](uninitialized=True)
@@ -233,15 +233,15 @@ def test_where_bool():
     values[2, 0, 0] = False
     values[2, 1, 0] = True
 
-    var computed_stack = InlineArray[Scalar[DType.index], 9](uninitialized=True)
+    var computed_stack = InlineArray[Scalar[DType.int], 9](uninitialized=True)
     var computed_outputs = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(3, 3),
     ](computed_stack)
 
-    var golden_stack = InlineArray[Scalar[DType.index], 9](uninitialized=True)
+    var golden_stack = InlineArray[Scalar[DType.int], 9](uninitialized=True)
     var golden_outputs = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(3, 3),
     ](golden_stack)
 
@@ -255,10 +255,10 @@ def test_where_bool():
     golden_outputs[2, 1] = 1
     golden_outputs[2, 2] = 0
 
-    alias layout_unknown_3d = Layout.row_major(
+    comptime layout_unknown_3d = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
     )
-    alias layout_unknown_2d = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout_unknown_2d = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     arg_nonzero(
         LayoutTensor[DType.bool, layout_unknown_3d](
@@ -267,7 +267,7 @@ def test_where_bool():
                 IndexList[3](3, 2, 1),
             ),
         ),
-        LayoutTensor[DType.index, layout_unknown_2d](
+        LayoutTensor[DType.int, layout_unknown_2d](
             computed_stack,
             RuntimeLayout[layout_unknown_2d].row_major(
                 IndexList[2](3, 3),
@@ -275,9 +275,8 @@ def test_where_bool():
         ),
     )
 
-    for i in range(3):
-        for j in range(3):
-            assert_equal(computed_outputs[i, j], golden_outputs[i, j])
+    for i, j in product(range(3), range(3)):
+        assert_equal(computed_outputs[i, j], golden_outputs[i, j])
 
 
 def main():

@@ -31,13 +31,13 @@ from memory import Span, bitcast, memcpy
 
 from utils import IndexList
 
-alias Bytes = SIMD[DType.uint8, _]
+comptime Bytes = SIMD[DType.uint8, _]
 
 
 fn _base64_simd_mask[
     simd_width: Int
 ](nb_value_to_load: Int) -> SIMD[DType.bool, simd_width]:
-    alias mask = iota[DType.uint8, simd_width]()
+    comptime mask = iota[DType.uint8, simd_width]()
     return mask.lt(UInt8(nb_value_to_load))
 
 
@@ -57,7 +57,7 @@ fn _6bit_to_byte[width: Int](input: Bytes[width]) -> Bytes[width]:
     constrained[width in [4, 8, 16, 32, 64], "width must be between 4 and 64"]()
 
     fn indices() -> IndexList[width]:
-        alias perm = [1, 0, 2, 1]
+        var perm = [1, 0, 2, 1]
         var res = IndexList[width]()
         for i in range(width // 4):
             for j in range(4):
@@ -95,8 +95,8 @@ fn _6bit_to_byte[width: Int](input: Bytes[width]) -> Bytes[width]:
 # | 62          | +           | 11           | -19                     |
 # | 63          | /           | 12           | -16                     |
 # fmt: off
-alias UNUSED = 0
-alias OFFSETS = Bytes[16](
+comptime UNUSED = 0
+comptime OFFSETS = Bytes[16](
     71,                                     # a ... z
     -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, # 0 ... 9
     -19,                                    # +
@@ -104,8 +104,8 @@ alias OFFSETS = Bytes[16](
     65,                                     # A ... Z
     UNUSED, UNUSED
 )
-alias END_FIRST_RANGE = 25
-alias END_SECOND_RANGE = 51
+comptime END_FIRST_RANGE = 25
+comptime END_SECOND_RANGE = 51
 # fmt: on
 
 
@@ -142,7 +142,7 @@ fn _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load[
 fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load[
     max_size: Int
 ](nb_of_elements_to_load: Int) -> Int:
-    alias table = _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load[
+    comptime table = _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load[
         max_size
     ]()
     return Int(table[nb_of_elements_to_load])
@@ -177,7 +177,7 @@ fn _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equa
 fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign[
     max_size: Int
 ](nb_of_elements_to_load: Int) -> Int:
-    alias table = _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign[
+    comptime table = _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign[
         max_size
     ]()
     return Int(table[nb_of_elements_to_load])
@@ -186,7 +186,7 @@ fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign
 fn load_incomplete_simd[
     width: Int
 ](
-    pointer: UnsafePointer[UInt8, mut=False], nb_of_elements_to_load: Int
+    pointer: UnsafePointer[mut=False, UInt8], nb_of_elements_to_load: Int
 ) -> SIMD[DType.uint8, width]:
     var result = SIMD[DType.uint8, width](0)
     var tmp_buffer_pointer = UnsafePointer(to=result).bitcast[UInt8]()
@@ -196,9 +196,9 @@ fn load_incomplete_simd[
 
 @no_inline
 fn _b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
-    alias simd_width = sys.simd_byte_width()
-    alias input_simd_width = simd_width * 3 // 4
-    alias equal_vector = SIMD[DType.uint8, simd_width](ord("="))
+    comptime simd_width = sys.simd_byte_width()
+    comptime input_simd_width = simd_width * 3 // 4
+    comptime equal_vector = SIMD[DType.uint8, simd_width](ord("="))
 
     # 4 character bytes for each 3 bytes (or less) block
     result.resize(
@@ -254,7 +254,9 @@ fn _b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
         )
 
         var v_ptr = UnsafePointer(to=result_vector_with_equals).bitcast[Byte]()
-        memcpy(res_ptr + res_offset, v_ptr, nb_of_elements_to_store)
+        memcpy(
+            dest=res_ptr + res_offset, src=v_ptr, count=nb_of_elements_to_store
+        )
         res_offset += nb_of_elements_to_store
         input_index += input_simd_width
 
@@ -269,11 +271,11 @@ fn _repeat_until[width: Int](v: SIMD) -> SIMD[v.dtype, width]:
 
     @parameter
     if width == v.size:
-        return v._refine[size=width]()
+        return v._refine[new_size=width]()
     return _repeat_until[width](v.join(v))
 
 
-fn _rshift_bits_in_u16[shift: Int](input: Bytes) -> __type_of(input):
+fn _rshift_bits_in_u16[shift: Int](input: Bytes) -> type_of(input):
     var u16 = bitcast[DType.uint16, input.size // 2](input)
     var res = bit.rotate_bits_right[shift](u16)
     return bitcast[DType.uint8, input.size](res)
@@ -286,4 +288,4 @@ fn _sub_with_saturation[
     DType.uint8, width
 ]:
     # generates a single `vpsubusb` on x86 with AVX
-    return llvm_intrinsic["llvm.usub.sat", __type_of(a)](a, b)
+    return llvm_intrinsic["llvm.usub.sat", type_of(a)](a, b)

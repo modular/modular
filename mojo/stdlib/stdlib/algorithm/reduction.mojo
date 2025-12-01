@@ -21,7 +21,7 @@ from algorithm import map_reduce
 
 from collections import OptionalReg
 from math import align_down, ceildiv
-from sys.info import simd_width_of, size_of, align_of
+from sys.info import align_of, simd_width_of, size_of
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_num_workers
@@ -34,12 +34,11 @@ from builtin.math import min as _min
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
 from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel, trace_arg, get_safe_task_id
+from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from utils.index import Index, IndexList, StaticTuple
 
 from ._gpu.reduction import reduce_launch
-
 
 # ===-----------------------------------------------------------------------===#
 # ND indexing helper
@@ -48,8 +47,8 @@ from ._gpu.reduction import reduce_launch
 
 @always_inline
 fn _get_nd_indices_from_flat_index(
-    flat_index: Int, shape: IndexList, skip_dim: Int
-) -> __type_of(shape):
+    flat_index: Int, shape: IndexList, skip_dim: Int, out res: type_of(shape)
+):
     """Converts a flat index into ND indices but skip over one of the dimensions.
 
     The ND indices will iterate from right to left. I.E
@@ -77,11 +76,11 @@ fn _get_nd_indices_from_flat_index(
     @parameter
     if shape.size == 2:
         if skip_dim == 1:
-            return __type_of(shape)(flat_index, 0)
+            return {flat_index, 0}
         else:
-            return __type_of(shape)(0, flat_index)
+            return {0, flat_index}
 
-    var out = __type_of(shape)()
+    res = {}
     var curr_index = flat_index
 
     @parameter
@@ -89,12 +88,10 @@ fn _get_nd_indices_from_flat_index(
         # There is one dimension we skip, this represents the inner loop that
         # is being traversed.
         if i == skip_dim:
-            out[i] = 0
+            res[i] = 0
         else:
-            out[i] = curr_index._positive_rem(shape[i])
+            res[i] = curr_index._positive_rem(shape[i])
             curr_index = curr_index._positive_div(shape[i])
-
-    return out
 
 
 # ===-----------------------------------------------------------------------===#
@@ -191,9 +188,29 @@ fn map_reduce[
         idx: Int, val: SIMD[dtype_, width]
     ) capturing -> None,
 ](length: Int, init: Scalar[acc_type]) -> Scalar[acc_type]:
-    alias unroll_factor = 8  # TODO: search
+    """Performs a vectorized map-reduce operation over a sequence.
+
+    Parameters:
+        simd_width: The SIMD vector width to use.
+        dtype: The data type of the input elements.
+        acc_type: The data type of the accumulator.
+        origins_gen: Origin set for the input generation function.
+        input_gen_fn: Function that generates input values at each index.
+        origins_vec: Origin set for the reduction function.
+        reduce_vec_to_vec_fn: Function that reduces a vector into the accumulator.
+        reduce_vec_to_scalar_fn: Function that reduces a final vector to a scalar.
+        output_fn: Function to output intermediate results.
+
+    Args:
+        length: The number of elements to process.
+        init: The initial accumulator value.
+
+    Returns:
+        The final reduced scalar value.
+    """
+    comptime unroll_factor = 8  # TODO: search
     # TODO: explicitly unroll like vectorize_unroll does.
-    alias unrolled_simd_width = simd_width * unroll_factor
+    comptime unrolled_simd_width = simd_width * unroll_factor
     var unrolled_vector_end = align_down(length, unrolled_simd_width)
     var vector_end = align_down(length, simd_width)
 
@@ -238,6 +255,9 @@ fn reduce[
 
     Returns:
         The computed reduction value.
+
+    Raises:
+        If the operation fails.
     """
 
     @always_inline
@@ -302,10 +322,10 @@ fn reduce_boolean[
     Returns:
         The computed reduction value.
     """
-    alias simd_width = simd_width_of[src.type]()
-    alias unroll_factor = 8  # TODO: search
+    comptime simd_width = simd_width_of[src.type]()
+    comptime unroll_factor = 8  # TODO: search
     # TODO: explicitly unroll like vectorize_unroll does.
-    alias unrolled_simd_width = simd_width * unroll_factor
+    comptime unrolled_simd_width = simd_width * unroll_factor
 
     var length = len(src)
     var unrolled_vector_end = align_down(length, unrolled_simd_width)
@@ -339,7 +359,7 @@ fn _reduce_3D[
 ](src: NDBuffer, dst: NDBuffer[mut=True, **_], init: Scalar[dst.type]) raises:
     """Performs a reduction across axis 1 of a 3D input buffer."""
 
-    alias simd_width = simd_width_of[dst.type]()
+    comptime simd_width = simd_width_of[dst.type]()
 
     var h = src.dim[0]()
     var w = src.dim[1]()
@@ -352,7 +372,7 @@ fn _reduce_3D[
         @__copy_capture(h, w)
         @parameter
         fn reduce_inner_axis() raises:
-            alias sz = src.shape.at[1]()
+            comptime sz = src.shape.at[1]()
             # TODO: parallelize
             for i in range(h):
                 var offset = src._offset(IndexList[src.rank](i, 0, 0))
@@ -376,19 +396,21 @@ fn _reduce_3D[
     # reuse the full cache line when an element of C is loaded.
     @parameter
     fn get_unroll_factor[simd_width: Int, dtype_size: Int]() -> Int:
-        alias cache_line_size = 64
-        alias unroll_factor = cache_line_size // (simd_width * dtype_size)
+        comptime cache_line_size = 64
+        comptime unroll_factor = cache_line_size // (simd_width * dtype_size)
         constrained[unroll_factor > 0, "unroll_factor must be > 0"]()
         return unroll_factor
 
-    alias unroll_factor = get_unroll_factor[simd_width, size_of[dst.type]()]()
-    alias usimd_width = unroll_factor * simd_width
+    comptime unroll_factor = get_unroll_factor[
+        simd_width, size_of[dst.type]()
+    ]()
+    comptime usimd_width = unroll_factor * simd_width
     for i in range(h):
 
         @always_inline
-        @__copy_capture(w)
-        @parameter
-        fn reduce_w_chunked[simd_width: Int](idx: Int):
+        fn reduce_w_chunked[
+            simd_width: Int
+        ](idx: Int) unified {var w, read i, read src, read dst, read init}:
             var accum = SIMD[init.dtype, simd_width](init)
             for j in range(w):
                 var chunk = src.load[width=simd_width](
@@ -397,7 +419,7 @@ fn _reduce_3D[
                 accum = map_fn(accum, chunk)
             dst.store(IndexList[dst.rank](i, idx), accum)
 
-        vectorize[reduce_w_chunked, usimd_width](c)
+        vectorize[usimd_width](c, reduce_w_chunked)
 
 
 @parameter
@@ -433,18 +455,21 @@ fn reduce[
         src: The input buffer.
         dst: The output buffer.
         init: The initial value to use in accumulator.
+
+    Raises:
+        If the operation fails.
     """
 
     var h_dynamic = prod_dims[0, reduce_axis](src)
     var w_dynamic = src.dim[reduce_axis]()
     var c_dynamic = prod_dims[reduce_axis + 1, src.rank](src)
 
-    alias h_static = src.shape.product[reduce_axis]()
-    alias w_static = src.shape.at[reduce_axis]()
-    alias c_static = src.shape.product[reduce_axis + 1, src.rank]()
+    comptime h_static = src.shape.product[reduce_axis]()
+    comptime w_static = src.shape.at[reduce_axis]()
+    comptime c_static = src.shape.product[reduce_axis + 1, src.rank]()
 
-    alias input_3d_shape = DimList(h_static, w_static, c_static)
-    alias output_2d_shape = DimList(h_static, c_static)
+    comptime input_3d_shape = DimList(h_static, w_static, c_static)
+    comptime output_2d_shape = DimList(h_static, c_static)
 
     var input_3d = NDBuffer[
         src.type,
@@ -513,6 +538,10 @@ fn _reduce_generator[
         context: The pointer to DeviceContext.
     """
     constrained[is_valid_target[target](), "unsupported target"]()
+
+    for i in range(len(shape)):
+        if shape[i] == 0:
+            return
 
     @parameter
     if is_cpu[target]():
@@ -610,7 +639,7 @@ fn _reduce_generator_cpu[
     shape: IndexList[_, element_type = DType.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
-) raises:
+):
     """Reduce the given tensor using the given reduction function on CPU. The
     num_reductions parameter enables callers to execute fused reductions. The
     reduce_0_fn and output_0_fn should be implemented in a way which routes
@@ -631,7 +660,7 @@ fn _reduce_generator_cpu[
         reduce_dim: The dimension we are reducing.
     """
 
-    alias rank = shape.size
+    comptime rank = shape.size
 
     var reduce_dim_normalized = (
         rank + reduce_dim
@@ -764,7 +793,7 @@ fn _reduce_generator[
         context: The pointer to DeviceContext.
     """
 
-    alias num_reductions = 1
+    comptime num_reductions = 1
 
     @always_inline
     @parameter
@@ -833,9 +862,9 @@ fn _reduce_along_inner_dimension[
 
     var chunk_size = ceildiv(parallelism_size, num_workers)
 
-    alias unroll_factor = 8
-    alias simd_width = simd_width_of[init_type]()
-    alias unrolled_simd_width = simd_width * unroll_factor
+    comptime unroll_factor = 8
+    comptime simd_width = simd_width_of[init_type]()
+    comptime unrolled_simd_width = simd_width * unroll_factor
 
     var unrolled_simd_compatible_size = align_down(
         reduce_dim_size, unrolled_simd_width
@@ -1007,12 +1036,12 @@ fn _reduce_along_outer_dimension[
         init: The value to start the reduction from.
         reduce_dim: The dimension we are reducing.
     """
-    alias rank = shape.size
-    alias dtype = init.element_type
+    comptime rank = shape.size
+    comptime dtype = init.element_type
 
     # Compute the number of workers to allocate based on ALL work, not just
     # the dimensions we split across.
-    alias simd_width = simd_width_of[dtype]()
+    comptime simd_width = simd_width_of[dtype]()
 
     var total_size: Int = shape.flattened_length()
     if total_size == 0:
@@ -1050,8 +1079,7 @@ fn _reduce_along_outer_dimension[
         for slice_idx in range(start_parallel_offset, end_parallel_offset):
 
             @always_inline
-            @parameter
-            fn reduce_chunk[simd_width: Int](inner_dim_idx: Int):
+            fn reduce_chunk[simd_width: Int](inner_dim_idx: Int) unified {read}:
                 var acc_simd_tup = StaticTuple[
                     SIMD[init_type, simd_width], num_reductions
                 ]()
@@ -1081,7 +1109,7 @@ fn _reduce_along_outer_dimension[
                     indices, acc_simd_tup
                 )
 
-            vectorize[reduce_chunk, simd_width](inner_dim)
+            vectorize[simd_width](inner_dim, reduce_chunk)
 
     @parameter
     if single_thread_blocking_override:
@@ -1128,6 +1156,9 @@ fn max(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
 
     Returns:
         The maximum of the buffer elements.
+
+    Raises:
+        If the operation fails.
     """
     return reduce[_simd_max_elementwise](src, Scalar[src.type].MIN)
 
@@ -1143,6 +1174,9 @@ fn max[
     Args:
         src: The input buffer.
         dst: The output buffer.
+
+    Raises:
+        If the operation fails.
     """
     return reduce[_simd_max_elementwise, _simd_max, reduce_axis](
         src, dst, Scalar[src.type].MIN
@@ -1184,6 +1218,9 @@ fn max[
         input_shape: The input shape.
         reduce_dim: The axis to perform the max on.
         context: The pointer to DeviceContext.
+
+    Raises:
+        If the operation fails.
     """
 
     @always_inline
@@ -1251,6 +1288,9 @@ fn min(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
 
     Returns:
         The minimum of the buffer elements.
+
+    Raises:
+        If the operation fails.
     """
     return reduce[_simd_min_elementwise](src, Scalar[src.type].MAX)
 
@@ -1266,6 +1306,9 @@ fn min[
     Args:
         src: The input buffer.
         dst: The output buffer.
+
+    Raises:
+        If the operation fails.
     """
     return reduce[_simd_min_elementwise, _simd_min, reduce_axis](
         src, dst, Scalar[src.type].MAX
@@ -1307,6 +1350,9 @@ fn min[
         input_shape: The input shape.
         reduce_dim: The axis to perform the min on.
         context: The pointer to DeviceContext.
+
+    Raises:
+        If the operation fails.
     """
 
     @always_inline
@@ -1374,6 +1420,9 @@ fn sum(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
 
     Returns:
         The sum of the buffer elements.
+
+    Raises:
+        If the operation fails.
     """
 
     @parameter
@@ -1397,6 +1446,9 @@ fn sum[
     Args:
         src: The input buffer.
         dst: The output buffer.
+
+    Raises:
+        If the operation fails.
     """
     return reduce[_simd_sum_elementwise, _simd_sum, reduce_axis=reduce_axis](
         src, dst, Scalar[src.type](0)
@@ -1438,6 +1490,9 @@ fn sum[
         input_shape: The input shape.
         reduce_dim: The axis to perform the sum on.
         context: The pointer to DeviceContext.
+
+    Raises:
+        If the operation fails.
     """
 
     @always_inline
@@ -1571,6 +1626,9 @@ fn product(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
 
     Returns:
         The product of the buffer elements.
+
+    Raises:
+        If the operation fails.
     """
     return reduce[_simd_product_elementwise](src, Scalar[src.type](1))
 
@@ -1586,6 +1644,9 @@ fn product[
     Args:
         src: The input buffer.
         dst: The output buffer.
+
+    Raises:
+        If the operation fails.
     """
     return reduce[_simd_product_elementwise, _simd_product, reduce_axis](
         src, dst, Scalar[src.type](1)
@@ -1627,6 +1688,9 @@ fn product[
         input_shape: The input shape.
         reduce_dim: The axis to perform the product on.
         context: The pointer to DeviceContext.
+
+    Raises:
+        If the operation fails.
     """
 
     @always_inline
@@ -1672,6 +1736,9 @@ fn mean(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
 
     Returns:
         The mean value of the elements in the given buffer.
+
+    Raises:
+        If the operation fails.
     """
 
     debug_assert(len(src) != 0, "input must not be empty")
@@ -1697,8 +1764,11 @@ fn mean[
     Args:
         src: The input buffer.
         dst: The output buffer.
+
+    Raises:
+        If the operation fails.
     """
-    alias simd_width = simd_width_of[dst.dtype]()
+    comptime simd_width = simd_width_of[dst.dtype]()
     sum[reduce_axis](src, dst)
 
     var n = src.dim[reduce_axis]()
@@ -1708,26 +1778,26 @@ fn mean[
     if dst.type.is_integral():
 
         @always_inline
-        @__copy_capture(dst_1d, n)
-        @parameter
-        fn normalize_integral[simd_width: Int](idx: Int):
+        fn normalize_integral[
+            simd_width: Int
+        ](idx: Int) unified {var dst_1d, var n}:
             var elem = dst_1d.load[width=simd_width](idx)
             var to_store = elem // n
             dst_1d.store(idx, to_store)
 
-        vectorize[normalize_integral, simd_width](len(dst_1d))
+        vectorize[simd_width](len(dst_1d), normalize_integral)
     else:
         var n_recip = Scalar[dst.type](1) / n
 
         @always_inline
-        @__copy_capture(dst_1d, n, n_recip)
-        @parameter
-        fn normalize_floating[simd_width: Int](idx: Int):
+        fn normalize_floating[
+            simd_width: Int
+        ](idx: Int) unified {var dst_1d, var n_recip}:
             var elem = dst_1d.load[width=simd_width](idx)
             var to_store = elem * n_recip
             dst_1d.store(idx, to_store)
 
-        vectorize[normalize_floating, simd_width](len(dst_1d))
+        vectorize[simd_width](len(dst_1d), normalize_floating)
 
 
 @always_inline
@@ -1745,7 +1815,7 @@ fn mean[
 ](
     input_shape: IndexList[_, element_type = DType.int64],
     reduce_dim: Int,
-    output_shape: __type_of(input_shape),
+    output_shape: type_of(input_shape),
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Computes the mean across the input and output shape.
@@ -1767,6 +1837,9 @@ fn mean[
         reduce_dim: The axis to perform the mean on.
         output_shape: The output shape.
         context: The pointer to DeviceContext.
+
+    Raises:
+        If the operation fails.
     """
 
     @always_inline
@@ -1862,8 +1935,21 @@ fn mean[
         dtype_, width
     ],
 ](length: Int) raises -> Scalar[dtype]:
-    # TODO docstring.
+    """Computes the arithmetic mean of values generated by a function.
 
+    Parameters:
+        dtype: The data type of the elements.
+        input_fn_1d: A function that generates SIMD values at each index.
+
+    Args:
+        length: The number of elements to average.
+
+    Returns:
+        The mean value. For integral types, uses integer division.
+
+    Raises:
+        To comply with how generators are used in this module.
+    """
     var total = sum[dtype, input_fn_1d](length)
 
     @parameter
@@ -1896,6 +1982,9 @@ fn variance(
 
     Returns:
         The variance value of the elements in a buffer.
+
+    Raises:
+        If the operation fails.
     """
 
     debug_assert(len(src) > 1, "input length must be greater than 1")
@@ -1919,7 +2008,34 @@ fn variance[
 ](length: Int, mean_value: Scalar[dtype], correction: Int = 1) raises -> Scalar[
     dtype
 ]:
-    # TODO docstring.
+    """Computes the variance of values generated by a function.
+
+    Variance is calculated as:
+
+    $$
+    \\operatorname{variance}(X) =  \\frac{ \\sum_{i=0}^{length-1} (X_i - \\operatorname{E}(X_i))^2}{size - correction}
+    $$
+
+    where `E` represents the deviation of a sample from the mean.
+
+    This version takes the mean value as an argument to avoid a second pass
+    over the data.
+
+    Parameters:
+        dtype: The data type of the elements.
+        input_fn_1d: A function that generates SIMD values at each index.
+
+    Args:
+        length: The number of elements.
+        mean_value: The pre-computed mean value.
+        correction: Normalize variance by size - correction (default: 1 for sample variance).
+
+    Returns:
+        The variance value.
+
+    Raises:
+        If length is less than or equal to correction.
+    """
 
     @always_inline
     @parameter
@@ -1978,6 +2094,9 @@ fn variance(
 
     Returns:
         The variance value of the elements in a buffer.
+
+    Raises:
+        If the operation fails.
     """
 
     @always_inline
@@ -1996,6 +2115,24 @@ fn variance[
         dtype_, width
     ],
 ](length: Int, correction: Int = 1) raises -> Scalar[dtype]:
+    """Computes the variance of values generated by a function.
+
+    This version computes the mean automatically in a first pass.
+
+    Parameters:
+        dtype: The data type of the elements.
+        input_fn_1d: A function that generates SIMD values at each index.
+
+    Args:
+        length: The number of elements.
+        correction: Normalize variance by size - correction (default: 1 for sample variance).
+
+    Returns:
+        The variance value.
+
+    Raises:
+        If length is less than or equal to correction.
+    """
     var mean_value = mean[dtype, input_fn_1d](length)
     return variance[dtype, input_fn_1d](length, mean_value, correction)
 
@@ -2127,7 +2264,7 @@ fn cumsum(dst: NDBuffer[mut=True, rank=1], src: NDBuffer[dst.type, 1, *_]):
     debug_assert(len(src) != 0, "Input must not be empty")
     debug_assert(len(dst) != 0, "Output must not be empty")
 
-    alias simd_width = simd_width_of[dst.type]()
+    comptime simd_width = simd_width_of[dst.type]()
 
     # For length less than simd_width do serial cumulative sum.
     # Similarly, for the case when simd_width == 2 serial should be faster.
@@ -2144,7 +2281,7 @@ fn cumsum(dst: NDBuffer[mut=True, rank=1], src: NDBuffer[dst.type, 1, *_]):
     var div_size = align_down(len(dst), simd_width)
 
     # Number of inner-loop iterations (for shift previous result and add).
-    alias rep = log2_floor(simd_width)
+    comptime rep = log2_floor(simd_width)
 
     for i in range(0, div_size, simd_width):
         var x_simd = src.load[width=simd_width](i)

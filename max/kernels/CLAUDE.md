@@ -39,13 +39,19 @@ This project uses Bazel for building. Commands should be run through the
 # Run GPU tests with specific hardware
 ./bazelw test --config=remote-a10 //max/kernels/test/gpu/...  # For A10 GPU
 ./bazelw test --config=remote-h100 //max/kernels/test/gpu/... # For H100 GPU
-./bazelw test --config=remote-mi300 //max/kernels/test/gpu/... # For MI300 GPU
+./bazelw test --config=remote-mi355 //max/kernels/test/gpu/... # For MI300 GPU
 ```
 
 ### Running Mojo Files Directly
 
 ```bash
-# Run a Mojo file
+# Always include the setup script first if you haven't done so
+source utils/start-modular.sh
+
+# Run a mojo test in this directory
+mojo /path/to/file.mojo
+
+# Alternaitve ways include
 ./bazelw run //KGEN/tools/mojo -- /path/to/file.mojo
 
 # Or use the bmojo alias (after sourcing start-modular.sh)
@@ -158,7 +164,7 @@ mojo format ./
 Many benchmarks and tests use environment variables for configuration:
 
 - `env_get_int[]`: Get integer values
-- `env_get_bool[]`: Get boolean flags  
+- `env_get_bool[]`: Get boolean flags
 - `env_get_dtype[]`: Get data type specifications
 
 Example:

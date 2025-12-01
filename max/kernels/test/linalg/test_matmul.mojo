@@ -19,18 +19,20 @@ from sys.info import CompilationTarget
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from linalg.matmul import _matmul_cpu, matmul
+from linalg.matmul import matmul
+from linalg.matmul.cpu import matmul as _matmul_cpu
 from linalg.packing import (
     _pack_b_ndbuffer_impl,
     _pack_matmul_b_shape_func_impl,
     pack_b_ndbuffer,
     pack_matmul_b_shape_func,
 )
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal, assert_equal
 
 from utils.index import Index, IndexList
 
-alias alignment = 64
+comptime alignment = 64
 
 
 fn gemm_naive[](
@@ -60,11 +62,11 @@ def test_matmul[
     b_packed: Bool,
     saturated: Bool,
 ](m: Int, n: Int, k: Int, kernel_type_m: Int):
-    var a_ptr = UnsafePointer[Scalar[a_type], alignment=alignment].alloc(m * k)
-    var b_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(k * n)
+    var a_ptr = UnsafePointer[Scalar[a_type],].alloc(m * k, alignment=alignment)
+    var b_ptr = UnsafePointer[Scalar[b_type],].alloc(k * n, alignment=alignment)
     var b = NDBuffer[b_type, 2, _, b_shape](b_ptr, Index(k, n))
 
-    var padded_n_k = IndexList[2]()
+    var padded_n_k: IndexList[2]
     if kernel_type_m != 0:
         padded_n_k = _pack_matmul_b_shape_func_impl[
             a_type,
@@ -91,11 +93,15 @@ def test_matmul[
     var padded_n = padded_n_k[1] if b_packed else n
     var padded_k = padded_n_k[0] if b_packed else k
 
-    var bp_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(
-        padded_k * padded_n
+    var bp_ptr = UnsafePointer[Scalar[b_type],].alloc(
+        padded_k * padded_n, alignment=alignment
     )
-    var c0_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(m * n)
-    var c1_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(m * n)
+    var c0_ptr = UnsafePointer[Scalar[c_type],].alloc(
+        m * n, alignment=alignment
+    )
+    var c1_ptr = UnsafePointer[Scalar[c_type],].alloc(
+        m * n, alignment=alignment
+    )
 
     var a = NDBuffer[a_type, 2, _, a_shape](a_ptr, Index(m, k))
 
@@ -203,9 +209,9 @@ def test_matmul[
     saturated: Bool,
     mixed_kernels: Bool,
 ](m: Int, n: Int, k: Int):
-    alias a_shape = DimList.create_unknown[2]()
-    alias b_shape = DimList.create_unknown[2]()
-    alias c_shape = DimList.create_unknown[2]()
+    comptime a_shape = DimList.create_unknown[2]()
+    comptime b_shape = DimList.create_unknown[2]()
+    comptime c_shape = DimList.create_unknown[2]()
     test_matmul[
         a_type,
         a_shape,

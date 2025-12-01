@@ -11,16 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 
 from python import Python, PythonObject
+from python._cpython import PyObjectPtr
 from python.bindings import (
+    PythonModuleBuilder,
     check_and_get_arg,
     check_and_get_or_convert_arg,
     check_arguments_arity,
-    PythonModuleBuilder,
 )
-from python._cpython import PyObjectPtr
 
 
 @export
@@ -88,7 +89,9 @@ fn case_raise_string_error() -> PythonObject:
 
     var error_type = cpython.get_error_global("PyExc_ValueError")
 
-    cpython.PyErr_SetString(error_type, "sample value error".unsafe_cstr_ptr())
+    cpython.PyErr_SetString(
+        error_type, "sample value error".as_c_string_slice().unsafe_ptr()
+    )
 
     return PythonObject(from_owned=PyObjectPtr())
 
@@ -155,7 +158,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
     ) raises -> PythonObject:
         var self0 = UnsafePointer[Self, **_](
             unchecked_downcast_value=self_
-        ).origin_cast[mut=True]()
+        ).unsafe_mut_cast[True]()
 
         if len(new_name) > len(self0[].name.codepoints()):
             raise Error("cannot make name longer than current name")

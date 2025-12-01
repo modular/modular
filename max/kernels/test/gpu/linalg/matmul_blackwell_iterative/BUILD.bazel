@@ -16,8 +16,8 @@ load("//bazel:api.bzl", "mojo_test")
             "//:b200_gpu",
         ],
         deps = [
-            "@mojo//:internal_utils",
-            "@mojo//:linalg",
+            "//max:internal_utils",
+            "//max:linalg",
             "@mojo//:stdlib",
             "@mojo//:test_utils",
         ],

@@ -27,7 +27,7 @@ struct NoneType(
 ):
     """Represents the absence of a value."""
 
-    alias _mlir_type = __mlir_type.`!kgen.none`
+    comptime _mlir_type = __mlir_type.`!kgen.none`
     """Raw MLIR type of the `None` value."""
 
     var _value: Self._mlir_type

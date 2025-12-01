@@ -29,7 +29,7 @@ from math.polynomial import polynomial_evaluate
 fn polynomial_evaluate[
     dtype: DType,
     width: Int, //,
-    coefficients: List[Scalar[dtype], *_],
+    coefficients: Span[Scalar[dtype], *_],
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Evaluates the polynomial.
 
@@ -57,7 +57,7 @@ fn polynomial_evaluate[
 fn _horner_evaluate[
     dtype: DType,
     width: Int, //,
-    coefficients: List[Scalar[dtype], *_],
+    coefficients: Span[Scalar[dtype], *_],
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Evaluates the polynomial using the passed in value and the specified
     coefficients using the Horner scheme. The Horner scheme evaluates the
@@ -80,15 +80,30 @@ fn _horner_evaluate[
     Returns:
         The polynomial specified by the coefficients evaluated at value x.
     """
-    alias num_coefficients = len(coefficients)
-    alias c_last = coefficients[num_coefficients - 1]
-    alias c_second_from_last = coefficients[num_coefficients - 2]
+    comptime num_coefficients = len(coefficients)
+    constrained[
+        num_coefficients > 0,
+        (
+            "the number of coefficients for the polynomial evaluation should be"
+            " a positive number"
+        ),
+    ]()
+
+    comptime c_last = coefficients[num_coefficients - 1]
+
+    @parameter
+    if num_coefficients == 1:
+        # The degenerate case is when the number of coefficients is 1. In those
+        # cases we need to return c0.
+        return c_last
+
+    comptime c_second_from_last = coefficients[num_coefficients - 2]
 
     var result = x.fma(c_last, c_second_from_last)
 
     @parameter
     for i in reversed(range(num_coefficients - 2)):
-        alias c = coefficients[i]
+        comptime c = coefficients[i]
         result = result.fma(x, c)
 
     return result

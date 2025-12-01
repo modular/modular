@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from io.io import _printf
+
 from gpu import WARP_SIZE, barrier
 from gpu.host import DeviceContext
-from gpu.id import thread_idx
-from gpu.memory import _GPUAddressSpace as AddressSpace
+from gpu import thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor, load_to_simd
@@ -33,8 +33,8 @@ fn mma_load_and_multiply[
     inst_shape: IndexList[3],
     transpose_b: Bool = False,
 ](
-    lhs: LayoutTensor[dtype, lhs_layout, MutableAnyOrigin],
-    rhs: LayoutTensor[dtype, rhs_layout, MutableAnyOrigin],
+    lhs: LayoutTensor[dtype, lhs_layout, MutAnyOrigin],
+    rhs: LayoutTensor[dtype, rhs_layout, MutAnyOrigin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
     var a_reg_tile = mma.load_a(lhs)
@@ -140,11 +140,11 @@ fn mma_write_operand_kernel[
     dtype: DType,
     layout: Layout,
     inst_shape: IndexList[3],
-](output: LayoutTensor[dst_dtype, layout, MutableAnyOrigin]):
+](output: LayoutTensor[dst_dtype, layout, MutAnyOrigin]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape]()
     var thread_reg_tile = mma.c_reg_tile_type.stack_allocation()
     var thread_reg_tile_v = thread_reg_tile.vectorize[1, mma.c_reg_type.size]()
-    thread_reg_tile_v[0, 0] = rebind[__type_of(thread_reg_tile_v[0, 0])](
+    thread_reg_tile_v[0, 0] = rebind[type_of(thread_reg_tile_v[0, 0])](
         mma.c_reg_type(thread_idx.x)
     )
     mma.store_d(output, thread_reg_tile)
@@ -156,22 +156,24 @@ def test_load_and_mma_and_multiply_operands[
     shape: IndexList[3],
     transpose_b: Bool = False,
 ](ctx: DeviceContext):
-    alias M = shape[0]
-    alias N = shape[1]
-    alias K = shape[2]
+    comptime M = shape[0]
+    comptime N = shape[1]
+    comptime K = shape[2]
 
     var lhs = ManagedLayoutTensor[dtype, Layout.row_major(M, K)](ctx)
     arange(lhs.tensor())
-    alias rhs_layout = Layout.row_major(
+    comptime rhs_layout = Layout.row_major(
         N, K
     ) if transpose_b else Layout.row_major(K, N)
     var rhs = ManagedLayoutTensor[dtype, rhs_layout](ctx)
     arange(rhs.tensor())
-    alias mma_load_and_print_kernel_fn = mma_load_and_multiply[
+    comptime mma_load_and_print_kernel_fn = mma_load_and_multiply[
         dst_dtype, dtype, lhs.layout, rhs.layout, shape, transpose_b
     ]
 
-    ctx.enqueue_function[mma_load_and_print_kernel_fn](
+    ctx.enqueue_function_checked[
+        mma_load_and_print_kernel_fn, mma_load_and_print_kernel_fn
+    ](
         lhs.device_tensor(),
         rhs.device_tensor(),
         grid_dim=(1, 1),
@@ -186,18 +188,18 @@ def test_load_and_mma_and_multiply_operands[
 def test_write_res_operand[
     dst_dtype: DType, dtype: DType, shape: IndexList[3]
 ](ctx: DeviceContext):
-    alias M = shape[0]
-    alias N = shape[1]
-    alias K = shape[2]
+    comptime M = shape[0]
+    comptime N = shape[1]
+    comptime K = shape[2]
 
     var dst = ManagedLayoutTensor[dst_dtype, Layout.row_major(M, N)](ctx)
     _ = dst.tensor().fill(0)
-    alias mma_load_and_print_kernel_fn = mma_write_operand_kernel[
+    comptime mma_load_and_print_kernel_fn = mma_write_operand_kernel[
         dst_dtype, dtype, dst.layout, shape
     ]
-    ctx.enqueue_function[mma_load_and_print_kernel_fn](
-        dst.device_tensor(), grid_dim=(1, 1), block_dim=(WARP_SIZE)
-    )
+    ctx.enqueue_function_checked[
+        mma_load_and_print_kernel_fn, mma_load_and_print_kernel_fn
+    ](dst.device_tensor(), grid_dim=(1, 1), block_dim=(WARP_SIZE))
     ctx.synchronize()
 
     print(dst.tensor())
@@ -213,36 +215,36 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
     inst_shape: IndexList[3],
     transpose_b: Bool = False,
 ](
-    lhs: LayoutTensor[dtype, lhs_layout, MutableAnyOrigin],
-    rhs: LayoutTensor[dtype, rhs_layout, MutableAnyOrigin],
+    lhs: LayoutTensor[dtype, lhs_layout, MutAnyOrigin],
+    rhs: LayoutTensor[dtype, rhs_layout, MutAnyOrigin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
     var a_smem = LayoutTensor[
         dtype,
         lhs.layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem = LayoutTensor[
         dtype,
         rhs.layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
-    alias thread_layout = Layout.row_major(WARP_SIZE // 4, 4)
+    comptime thread_layout = Layout.row_major(WARP_SIZE // 4, 4)
     copy_dram_to_sram[thread_layout=thread_layout](a_smem, lhs)
     copy_dram_to_sram[thread_layout=thread_layout](b_smem, rhs)
     barrier()
 
-    alias a_simd_width = mma.a_reg_type.size
-    alias b_simd_width = mma.b_reg_type.size
+    comptime a_simd_width = mma.a_reg_type.size
+    comptime b_simd_width = mma.b_reg_type.size
     var a_reg_tile = (
         LayoutTensor[
             dtype,
             Layout.row_major(1, a_simd_width),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -253,7 +255,7 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
         LayoutTensor[
             dtype,
             Layout.row_major(1, b_simd_width),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -323,19 +325,21 @@ def test_load_operands_ldmatrix[
     shape: IndexList[3],
     transpose_b: Bool = False,
 ](ctx: DeviceContext):
-    alias M = shape[0]
-    alias N = shape[1]
-    alias K = shape[2]
+    comptime M = shape[0]
+    comptime N = shape[1]
+    comptime K = shape[2]
 
     var lhs = ManagedLayoutTensor[dtype, Layout.row_major(M, K)](ctx)
     arange(lhs.tensor())
     var rhs = ManagedLayoutTensor[dtype, Layout.row_major(K, N)](ctx)
     arange(rhs.tensor())
 
-    alias mma_load_and_print_kernel_fn = mma_load_and_print_operands_kernel_ldmatrix[
+    comptime mma_load_and_print_kernel_fn = mma_load_and_print_operands_kernel_ldmatrix[
         dst_dtype, dtype, lhs.layout, rhs.layout, shape, transpose_b
     ]
-    ctx.enqueue_function[mma_load_and_print_kernel_fn](
+    ctx.enqueue_function_checked[
+        mma_load_and_print_kernel_fn, mma_load_and_print_kernel_fn
+    ](
         lhs.device_tensor(),
         rhs.device_tensor(),
         grid_dim=(1, 1),

@@ -21,16 +21,15 @@ from os import abort
 from sys import CompilationTarget, bit_width_of, size_of
 from sys.intrinsics import _type_is_eq
 
-
-alias _mIsSigned = UInt8(1)
-alias _mIsInteger = UInt8(1 << 7)
-alias _mIsNotInteger = UInt8(~(1 << 7))
-alias _mIsFloat = UInt8(1 << 6)
+comptime _mIsSigned = __mlir_attr.`#pop.simd<1> : !pop.scalar<ui8>`
+comptime _mIsInteger = __mlir_attr.`#pop.simd<128> : !pop.scalar<ui8>`
+comptime _mIsNotInteger = __mlir_attr.`#pop.simd<127> : !pop.scalar<ui8>`
+comptime _mIsFloat = __mlir_attr.`#pop.simd<64> : !pop.scalar<ui8>`
 
 
 @register_passable("trivial")
 struct DType(
-    EqualityComparable,
+    Equatable,
     Hashable,
     Identifiable,
     ImplicitlyCopyable,
@@ -59,8 +58,8 @@ struct DType(
       for SIMD vectors, tensors, and other data structures
     - **Type parameters**: Pass `DType` values as compile-time parameters to
       parameterized types like `SIMD[dtype, size]`
-    - **Type introspection**: Call methods like `.bitwidth()`, `.is_floating_point()`
-      to query type properties at compile time
+    - **Type introspection**: Call methods like `.is_floating_point()` to query
+      type properties at compile time
     - **Type conversion**: Use in casting operations to convert between different
       numeric representations
 
@@ -74,7 +73,6 @@ struct DType(
     var dtype = data.dtype
 
     print("Is float:", dtype.is_floating_point())  # True
-    print("Bit width:", dtype.bitwidth())          # 16
     print("Is signed:", dtype.is_signed())         # True
     ```
     """
@@ -83,7 +81,7 @@ struct DType(
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    alias _mlir_type = __mlir_type.`!kgen.dtype`
+    comptime _mlir_type = __mlir_type.`!kgen.dtype`
 
     var _mlir_value: Self._mlir_type
     """The underlying storage for the DType value."""
@@ -92,82 +90,114 @@ struct DType(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias invalid = DType(
+    comptime invalid = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<invalid> : !kgen.dtype`
     )
     """Represents an invalid or unknown data type."""
 
-    alias bool = DType(
+    comptime bool = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`
     )
     """Represents a boolean data type."""
 
-    alias index = DType(
+    comptime int = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`
     )
     """Represents an integral type whose bitwidth is the maximum integral value
     on the system."""
 
-    alias _uint1 = DType(
+    comptime uint = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<uindex> : !kgen.dtype`
+    )
+    """Represents an unsigned integral type whose bitwidth is the maximum
+    unsigned integral value on the system."""
+
+    comptime _uint1 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<ui1> : !kgen.dtype`
     )
-    alias _uint2 = DType(
+    comptime _uint2 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<ui2> : !kgen.dtype`
     )
-    alias _uint4 = DType(
+    comptime _uint4 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<ui4> : !kgen.dtype`
     )
 
-    alias uint8 = DType(
+    comptime uint8 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<ui8> : !kgen.dtype`
     )
     """Represents an unsigned integer type whose bitwidth is 8."""
-    alias int8 = DType(
+    comptime int8 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<si8> : !kgen.dtype`
     )
     """Represents a signed integer type whose bitwidth is 8."""
-    alias uint16 = DType(
+    comptime uint16 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<ui16> : !kgen.dtype`
     )
     """Represents an unsigned integer type whose bitwidth is 16."""
-    alias int16 = DType(
+    comptime int16 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<si16> : !kgen.dtype`
     )
     """Represents a signed integer type whose bitwidth is 16."""
-    alias uint32 = DType(
+    comptime uint32 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<ui32> : !kgen.dtype`
     )
     """Represents an unsigned integer type whose bitwidth is 32."""
-    alias int32 = DType(
+    comptime int32 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`
     )
     """Represents a signed integer type whose bitwidth is 32."""
-    alias uint64 = DType(
+    comptime uint64 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<ui64> : !kgen.dtype`
     )
     """Represents an unsigned integer type whose bitwidth is 64."""
-    alias int64 = DType(
+    comptime int64 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<si64> : !kgen.dtype`
     )
     """Represents a signed integer type whose bitwidth is 64."""
-    alias uint128 = DType(
+    comptime uint128 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<ui128> : !kgen.dtype`
     )
     """Represents an unsigned integer type whose bitwidth is 128."""
-    alias int128 = DType(
+    comptime int128 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<si128> : !kgen.dtype`
     )
     """Represents a signed integer type whose bitwidth is 128."""
-    alias uint256 = DType(
+    comptime uint256 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<ui256> : !kgen.dtype`
     )
     """Represents an unsigned integer type whose bitwidth is 256."""
-    alias int256 = DType(
+    comptime int256 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<si256> : !kgen.dtype`
     )
     """Represents a signed integer type whose bitwidth is 256."""
 
-    alias float8_e3m4 = DType(
+    comptime float4_e2m1fn = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<f4e2m1fn> : !kgen.dtype`
+    )
+    """Represents a 4-bit `e2m1` floating point format, encoded as
+    `s.ee.m` and defined by the [Open Compute MX Format Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf):
+
+    - (s)ign: 1 bit
+    - (e)xponent: 2 bits
+    - (m)antissa: 1 bits
+    - exponent_bias: 1
+    """
+
+    comptime float8_e8m0fnu = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e8m0fnu> : !kgen.dtype`
+    )
+    """Represents the 8-bit `E8M0Fnu` floating point format defined in the
+    [OFP8 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1),
+    encoded as `eeeeeeee`:
+
+    - (e)xponent: 8 bits
+    - (m)antissa: 0 bits
+    - exponent bias: 127
+    - nan: 11111111
+    - fn: finite (no inf or -inf encodings)
+    - u: no sign or zero value.
+    """
+    comptime float8_e3m4 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e3m4> : !kgen.dtype`
     )
     """Represents an 8-bit `e3m4` floating point format, encoded as
@@ -181,11 +211,7 @@ struct DType(
     - fn: finite (no inf or -inf encodings)
     - -0: 1.000.0000
     """
-
-    # reference for the 4 float8 types
-    # https://onnx.ai/onnx/technical/float8.html
-
-    alias float8_e4m3fn = DType(
+    comptime float8_e4m3fn = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e4m3fn> : !kgen.dtype`
     )
     """Represents the 8-bit `E4M3` floating point format defined in the
@@ -206,7 +232,7 @@ struct DType(
     - fn: finite (no inf or -inf encodings)
     - -0: 1.0000.000
     """
-    alias float8_e4m3fnuz = DType(
+    comptime float8_e4m3fnuz = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e4m3fnuz> : !kgen.dtype`
     )
     """Represents an 8-bit `e4m3fnuz` floating point format
@@ -220,7 +246,7 @@ struct DType(
     - fn: finite (no inf or -inf encodings)
     - uz: unsigned zero (no -0 encoding)
     """
-    alias float8_e5m2 = DType(
+    comptime float8_e5m2 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e5m2> : !kgen.dtype`
     )
     """Represents the 8-bit `E5M2` floating point format defined in the
@@ -235,7 +261,7 @@ struct DType(
     - inf: {0,1}.11111.00
     - -0: 1.00000.00
     """
-    alias float8_e5m2fnuz = DType(
+    comptime float8_e5m2fnuz = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e5m2fnuz> : !kgen.dtype`
     )
     """Represents an 8-bit `e5m2fnuz` floating point format
@@ -250,21 +276,21 @@ struct DType(
     - uz: unsigned zero (no -0 encoding)
     """
 
-    alias bfloat16 = DType(
+    comptime bfloat16 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<bf16> : !kgen.dtype`
     )
     """Represents a brain floating point value whose bitwidth is 16."""
-    alias float16 = DType(
+    comptime float16 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<f16> : !kgen.dtype`
     )
     """Represents an IEEE754-2008 `binary16` floating point value."""
 
-    alias float32 = DType(
+    comptime float32 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
     )
     """Represents an IEEE754-2008 `binary32` floating point value."""
 
-    alias float64 = DType(
+    comptime float64 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`
     )
     """Represents an IEEE754-2008 `binary64` floating point value."""
@@ -293,8 +319,10 @@ struct DType(
             return Self._from_str(str.removeprefix("DType."))
         elif str == "bool":
             return DType.bool
-        elif str == "index":
-            return DType.index
+        elif str == "int":
+            return DType.int
+        elif str == "uint":
+            return DType.uint
 
         elif str == "uint8":
             return DType.uint8
@@ -321,12 +349,17 @@ struct DType(
         elif str == "int256":
             return DType.int256
 
+        elif str == "float4_e2m1fn":
+            return DType.float4_e2m1fn
+
         elif str == "float8_e3m4":
             return DType.float8_e3m4
         elif str == "float8_e4m3fn":
             return DType.float8_e4m3fn
         elif str == "float8_e4m3fnuz":
             return DType.float8_e4m3fnuz
+        elif str == "float8_e8m0fnu":
+            return DType.float8_e8m0fnu
         elif str == "float8_e5m2":
             return DType.float8_e5m2
         elif str == "float8_e5m2fnuz":
@@ -367,8 +400,10 @@ struct DType(
 
         if self is DType.bool:
             return writer.write("bool")
-        elif self is DType.index:
-            return writer.write("index")
+        elif self is DType.int:
+            return writer.write("int")
+        elif self is DType.uint:
+            return writer.write("uint")
 
         elif self is DType.uint8:
             return writer.write("uint8")
@@ -395,12 +430,17 @@ struct DType(
         elif self is DType.int256:
             return writer.write("int256")
 
+        elif self is DType.float4_e2m1fn:
+            return writer.write("float4_e2m1fn")
+
         elif self is DType.float8_e3m4:
             return writer.write("float8_e3m4")
         elif self is DType.float8_e4m3fn:
             return writer.write("float8_e4m3fn")
         elif self is DType.float8_e4m3fnuz:
             return writer.write("float8_e4m3fnuz")
+        elif self is DType.float8_e8m0fnu:
+            return writer.write("float8_e8m0fnu")
         elif self is DType.float8_e5m2:
             return writer.write("float8_e5m2")
         elif self is DType.float8_e5m2fnuz:
@@ -442,30 +482,39 @@ struct DType(
 
     @doc_private
     @staticmethod
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn _from_ui8(ui8: UInt8._mlir_type) -> DType:
-        var res = __mlir_op.`pop.dtype.from_ui8`(
-            __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.ui8](ui8)
+        return DType(
+            mlir_value=__mlir_op.`pop.dtype.from_ui8`(
+                __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.ui8](ui8)
+            )
         )
-        return DType(mlir_value=res)
 
     @doc_private
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn _as_ui8(self) -> UInt8._mlir_type:
         return __mlir_op.`pop.cast_from_builtin`[_type = UInt8._mlir_type](
             __mlir_op.`pop.dtype.to_ui8`(self._mlir_value)
         )
 
     @doc_private
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn _match(self, mask: UInt8) -> Bool:
-        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
-            __mlir_op.`pop.simd.and`(self._as_ui8(), mask._mlir_value),
-            __mlir_attr.`#pop.simd<0> : !pop.scalar<ui8>`,
-        )
-        return Bool(mlir_value=res)
+        return self._match(mask._mlir_value)
 
-    @always_inline("nodebug")
+    @doc_private
+    @always_inline("builtin")
+    fn _match(self, mask: UInt8._mlir_type) -> Bool:
+        return Bool(
+            mlir_value=__mlir_op.`pop.cmp`[
+                pred = __mlir_attr.`#pop<cmp_pred ne>`
+            ](
+                __mlir_op.`pop.simd.and`(self._as_ui8(), mask),
+                __mlir_attr.`#pop.simd<0> : !pop.scalar<ui8>`,
+            )
+        )
+
+    @always_inline("builtin")
     fn __is__(self, rhs: DType) -> Bool:
         """Compares one DType to another for equality.
 
@@ -477,7 +526,19 @@ struct DType(
         """
         return self == rhs
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
+    fn __isnot__(self, rhs: DType) -> Bool:
+        """Compares one DType to another for inequality.
+
+        Args:
+            rhs: The DType to compare against.
+
+        Returns:
+            True if the DTypes are the different and False otherwise.
+        """
+        return not (self == rhs)
+
+    @always_inline("builtin")
     fn __eq__(self, rhs: DType) -> Bool:
         """Compares one DType to another for equality.
 
@@ -487,12 +548,13 @@ struct DType(
         Returns:
             True if the DTypes are the same and False otherwise.
         """
-        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](
-            self._as_ui8(), rhs._as_ui8()
+        return Bool(
+            mlir_value=__mlir_op.`pop.cmp`[
+                pred = __mlir_attr.`#pop<cmp_pred eq>`
+            ](self._as_ui8(), rhs._as_ui8())
         )
-        return Bool(mlir_value=res)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ne__(self, rhs: DType) -> Bool:
         """Compares one DType to another for inequality.
 
@@ -502,10 +564,11 @@ struct DType(
         Returns:
             False if the DTypes are the same and True otherwise.
         """
-        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
-            self._as_ui8(), rhs._as_ui8()
+        return Bool(
+            mlir_value=__mlir_op.`pop.cmp`[
+                pred = __mlir_attr.`#pop<cmp_pred ne>`
+            ](self._as_ui8(), rhs._as_ui8())
         )
-        return Bool(mlir_value=res)
 
     fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with this `DType` value.
@@ -518,27 +581,31 @@ struct DType(
         """
         hasher._update_with_simd(UInt8(mlir_value=self._as_ui8()))
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn is_unsigned(self) -> Bool:
         """Returns True if the type parameter is unsigned and False otherwise.
 
         Returns:
             Returns True if the input type parameter is unsigned.
         """
-        return self._is_non_index_integral() and not self._match(_mIsSigned)
+        return (
+            self is DType.uint
+            or self._is_non_index_integral()
+            and not self._match(_mIsSigned)
+        )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn is_signed(self) -> Bool:
         """Returns True if the type parameter is signed and False otherwise.
 
         Returns:
             Returns True if the input type parameter is signed.
         """
-        if self.is_floating_point():
-            return True
-        return self.is_integral() and self._match(_mIsSigned)
+        return self.is_floating_point() or (
+            self.is_integral() and self._match(_mIsSigned)
+        )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn _is_non_index_integral(self) -> Bool:
         """Returns True if the type parameter is a non-index integer value and False otherwise.
 
@@ -547,16 +614,20 @@ struct DType(
         """
         return self._match(_mIsInteger)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn is_integral(self) -> Bool:
         """Returns True if the type parameter is an integer and False otherwise.
 
         Returns:
             Returns True if the input type parameter is an integer.
         """
-        return self is DType.index or self._is_non_index_integral()
+        return (
+            self is DType.int
+            or self is DType.uint
+            or self._is_non_index_integral()
+        )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn is_floating_point(self) -> Bool:
         """Returns True if the type parameter is a floating-point and False
         otherwise.
@@ -566,7 +637,7 @@ struct DType(
         """
         return self._match(_mIsFloat)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn is_float8(self) -> Bool:
         """Returns True if the dtype is a 8bit-precision floating point type,
         e.g. float8_e5m2, float8_e5m2fnuz, float8_e4m3fn and float8_e4m3fnuz.
@@ -575,15 +646,16 @@ struct DType(
             True if the dtype is a 8bit-precision float, false otherwise.
         """
 
-        return self in (
-            DType.float8_e3m4,
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fnuz,
-            DType.float8_e5m2,
-            DType.float8_e5m2fnuz,
+        return (
+            self is DType.float8_e8m0fnu
+            or self is DType.float8_e3m4
+            or self is DType.float8_e4m3fn
+            or self is DType.float8_e4m3fnuz
+            or self is DType.float8_e5m2
+            or self is DType.float8_e5m2fnuz
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn is_half_float(self) -> Bool:
         """Returns True if the dtype is a half-precision floating point type,
         e.g. either fp16 or bf16.
@@ -592,9 +664,9 @@ struct DType(
             True if the dtype is a half-precision float, false otherwise..
         """
 
-        return self in (DType.bfloat16, DType.float16)
+        return self is DType.bfloat16 or self is DType.float16
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn is_numeric(self) -> Bool:
         """Returns True if the type parameter is numeric (i.e. you can perform
         arithmetic operations on).
@@ -603,72 +675,13 @@ struct DType(
             Returns True if the input type parameter is either integral or
               floating-point.
         """
-        return self.is_integral() or self.is_floating_point()
-
-    @always_inline
-    fn size_of(self) -> Int:
-        """Returns the size in bytes of the current DType.
-
-        Returns:
-            Returns the size in bytes of the current DType.
-        """
-
-        if self._is_non_index_integral():
-            return Int(
-                UInt8(
-                    mlir_value=__mlir_op.`pop.shl`(
-                        UInt8(1)._mlir_value,
-                        __mlir_op.`pop.sub`(
-                            __mlir_op.`pop.shr`(
-                                __mlir_op.`pop.simd.and`(
-                                    self._as_ui8(),
-                                    _mIsNotInteger._mlir_value,
-                                ),
-                                UInt8(1)._mlir_value,
-                            ),
-                            UInt8(3)._mlir_value,
-                        ),
-                    )
-                )
+        return self.is_integral() or (
+            self.is_floating_point()
+            and (
+                self is not DType.float4_e2m1fn
+                and self is not DType.float8_e8m0fnu
             )
-
-        elif self is DType.bool:
-            return size_of[DType.bool]()
-        elif self is DType.index:
-            return size_of[DType.index]()
-
-        elif self is DType.float8_e3m4:
-            return size_of[DType.float8_e3m4]()
-        elif self is DType.float8_e4m3fn:
-            return size_of[DType.float8_e4m3fn]()
-        elif self is DType.float8_e4m3fnuz:
-            return size_of[DType.float8_e4m3fnuz]()
-        elif self is DType.float8_e5m2:
-            return size_of[DType.float8_e5m2]()
-        elif self is DType.float8_e5m2fnuz:
-            return size_of[DType.float8_e5m2fnuz]()
-
-        elif self is DType.bfloat16:
-            return size_of[DType.bfloat16]()
-        elif self is DType.float16:
-            return size_of[DType.float16]()
-
-        elif self is DType.float32:
-            return size_of[DType.float32]()
-
-        elif self is DType.float64:
-            return size_of[DType.float64]()
-
-        return size_of[DType.invalid]()
-
-    @always_inline
-    fn bitwidth(self) -> Int:
-        """Returns the size in bits of the current DType.
-
-        Returns:
-            Returns the size in bits of the current DType.
-        """
-        return 8 * self.size_of()
+        )
 
     # ===-------------------------------------------------------------------===#
     # Floating point generics
@@ -704,7 +717,9 @@ struct DType(
         constrained[dtype.is_floating_point(), "dtype must be floating point"]()
 
         @parameter
-        if dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+        if dtype is DType.float4_e2m1fn:
+            return 2
+        elif dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
             return 8
         elif dtype in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
             return 16
@@ -730,7 +745,9 @@ struct DType(
         constrained[dtype.is_floating_point(), "dtype must be floating point"]()
 
         @parameter
-        if dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+        if dtype is DType.float4_e2m1fn:
+            return 2
+        elif dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
             return 4
         elif dtype in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
             return 5
@@ -761,139 +778,6 @@ struct DType(
             return DType.max_exponent[dtype]() - 1
 
     # ===-------------------------------------------------------------------===#
-    # dispatch_integral
-    # ===-------------------------------------------------------------------===#
-
-    @always_inline
-    fn dispatch_integral[
-        func: fn[dtype: DType] () capturing [_] -> None
-    ](self) raises:
-        """Dispatches an integral function corresponding to the current DType.
-
-        Constraints:
-            DType must be integral.
-
-        Parameters:
-            func: A parametrized on dtype function to dispatch.
-        """
-
-        # fmt: off
-        alias dtypes = [
-            DType.index,
-            DType.uint8, DType.int8,
-            DType.uint16, DType.int16,
-            DType.uint32, DType.int32,
-            DType.uint64, DType.int64,
-            DType.uint128, DType.int128,
-            DType.uint256, DType.int256,
-        ]
-        # fmt: on
-
-        @parameter
-        for dtype in dtypes:
-            if self is dtype:
-                return func[dtype]()
-        raise Error("only integral types are supported")
-
-    # ===-------------------------------------------------------------------===#
-    # dispatch_floating
-    # ===-------------------------------------------------------------------===#
-
-    @always_inline
-    fn dispatch_floating[
-        func: fn[dtype: DType] () capturing [_] -> None
-    ](self) raises:
-        """Dispatches a floating-point function corresponding to the current DType.
-
-        Constraints:
-            DType must be floating-point or integral.
-
-        Parameters:
-            func: A parametrized on dtype function to dispatch.
-        """
-        if self is DType.float16:
-            func[DType.float16]()
-        # TODO(#15473): Enable after extending LLVM support
-        # elif self is DType.bfloat16:
-        #     func[DType.bfloat16]()
-        elif self is DType.float32:
-            func[DType.float32]()
-        elif self is DType.float64:
-            func[DType.float64]()
-        else:
-            raise Error(
-                "only floating point types with bitwidth in [16, 32, 64] are"
-                " supported"
-            )
-
-    @always_inline
-    fn _dispatch_bitwidth[
-        func: fn[dtype: DType] () capturing [_] -> None,
-    ](self) raises:
-        """Dispatches a function corresponding to the current DType's bitwidth.
-        This should only be used if func only depends on the bitwidth of the dtype,
-        and not other properties of the dtype.
-
-        Parameters:
-            func: A parametrized on dtype function to dispatch.
-        """
-        var bitwidth = self.bitwidth()
-        if bitwidth == 8:
-            func[DType.uint8]()
-        elif bitwidth == 16:
-            func[DType.uint16]()
-        elif bitwidth == 32:
-            func[DType.uint32]()
-        elif bitwidth == 64:
-            func[DType.uint64]()
-        else:
-            raise Error(
-                "bitwidth_dispatch only supports types with bitwidth [8, 16,"
-                " 32, 64]"
-            )
-
-    @always_inline
-    fn _dispatch_custom[
-        func: fn[dtype: DType] () capturing [_] -> None, *dtypes: DType
-    ](self) raises:
-        """Dispatches a function corresponding to current DType if it matches
-        any type in the dtypes parameter.
-
-        Parameters:
-            func: A parametrized on dtype function to dispatch.
-            dtypes: A list of DTypes on which to do dispatch.
-        """
-
-        @parameter
-        for dtype in VariadicList(dtypes):
-            if self is dtype:
-                return func[dtype]()
-
-        raise Error(
-            "dispatch_custom: dynamic_type does not match any dtype parameters"
-        )
-
-    # ===-------------------------------------------------------------------===#
-    # dispatch_arithmetic
-    # ===-------------------------------------------------------------------===#
-
-    @always_inline
-    fn dispatch_arithmetic[
-        func: fn[dtype: DType] () capturing [_] -> None
-    ](self) raises:
-        """Dispatches a function corresponding to the current DType.
-
-        Parameters:
-            func: A parametrized on dtype function to dispatch.
-        """
-        if self.is_floating_point():
-            self.dispatch_floating[func]()
-        elif self.is_integral():
-            self.dispatch_integral[func]()
-        else:
-            raise Error("only arithmetic types are supported")
-
-    # ===-------------------------------------------------------------------===#
     # __mlir_type
     # ===-------------------------------------------------------------------===#
 
@@ -908,7 +792,7 @@ struct DType(
         if self is DType.bool:
             return __mlir_attr.i1
 
-        if self is DType.index:
+        if self is DType.int:
             return __mlir_attr.index
 
         if self is DType.uint8:
@@ -936,6 +820,11 @@ struct DType(
         if self is DType.int256:
             return __mlir_attr.si256
 
+        if self is DType.float4_e2m1fn:
+            return __mlir_attr.f4E2M1FN
+
+        if self is DType.float8_e8m0fnu:
+            return __mlir_attr.f8E8M0FNU
         if self is DType.float8_e3m4:
             return __mlir_attr.f8E3M4
         if self is DType.float8_e4m3fn:
@@ -979,8 +868,10 @@ struct DType(
         @parameter
         if _type_is_eq[T, SIMD[DType.bool, size]]():
             return DType.bool
-        elif _type_is_eq[T, SIMD[DType.index, size]]():
-            return DType.index
+        elif _type_is_eq[T, SIMD[DType.int, size]]():
+            return DType.int
+        elif _type_is_eq[T, SIMD[DType.uint, size]]():
+            return DType.uint
 
         elif _type_is_eq[T, SIMD[DType.uint8, size]]():
             return DType.uint8
@@ -1007,6 +898,11 @@ struct DType(
         elif _type_is_eq[T, SIMD[DType.int256, size]]():
             return DType.int256
 
+        elif _type_is_eq[T, SIMD[DType.float4_e2m1fn, size]]():
+            return DType.float4_e2m1fn
+
+        elif _type_is_eq[T, SIMD[DType.float8_e8m0fnu, size]]():
+            return DType.float8_e8m0fnu
         elif _type_is_eq[T, SIMD[DType.float8_e3m4, size]]():
             return DType.float8_e3m4
         elif _type_is_eq[T, SIMD[DType.float8_e4m3fn, size]]():
@@ -1184,8 +1080,6 @@ fn _index_printf_format() -> StaticString:
     @parameter
     if bit_width_of[Int]() == 32:
         return "%d"
-    elif CompilationTarget.is_windows():
-        return "%lld"
     else:
         return "%ld"
 
@@ -1193,9 +1087,7 @@ fn _index_printf_format() -> StaticString:
 @always_inline
 fn _get_dtype_printf_format[dtype: DType]() -> StaticString:
     @parameter
-    if dtype is DType.bool:
-        return _index_printf_format()
-    elif dtype is DType.index:
+    if dtype in (DType.bool, DType.int, DType.uint):
         return _index_printf_format()
 
     elif dtype is DType.uint8:
@@ -1211,19 +1103,9 @@ fn _get_dtype_printf_format[dtype: DType]() -> StaticString:
     elif dtype is DType.int32:
         return "%i"
     elif dtype is DType.int64:
-
-        @parameter
-        if CompilationTarget.is_windows():
-            return "%lld"
-        else:
-            return "%ld"
+        return "%ld"
     elif dtype is DType.uint64:
-
-        @parameter
-        if CompilationTarget.is_windows():
-            return "%llu"
-        else:
-            return "%lu"
+        return "%lu"
 
     elif dtype.is_floating_point():
         return "%.17g"

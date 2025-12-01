@@ -51,6 +51,7 @@ run_fold((5,6), (3,2), stride=1, dilation=1, padding=0)
 ```
 """
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from nn.fold import fold
 from runtime.asyncrt import DeviceContextPtr
@@ -74,18 +75,18 @@ fn test[
 ) raises:
     print("== test_fold")
 
-    alias unknown_layout_3d = Layout.row_major(
+    comptime unknown_layout_3d = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
     )
     var input_layout = RuntimeLayout[unknown_layout_3d].row_major(input_shape)
     var input_data = UnsafePointer[Scalar[dtype]].alloc(input_layout.size())
-    var input = LayoutTensor[dtype, unknown_layout_3d, MutableAnyOrigin](
+    var input = LayoutTensor[dtype, unknown_layout_3d, MutAnyOrigin](
         input_data,
         input_layout,
     )
     _copy_values_to_layout_tensor(input, input_values)
 
-    alias unknown_layout_4d = Layout.row_major(
+    comptime unknown_layout_4d = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
     )
     var runtime_layout_4d = RuntimeLayout[unknown_layout_4d].row_major(
@@ -94,7 +95,7 @@ fn test[
     var expected_data = UnsafePointer[Scalar[dtype]].alloc(
         runtime_layout_4d.size()
     )
-    var expected = LayoutTensor[dtype, unknown_layout_4d, MutableAnyOrigin](
+    var expected = LayoutTensor[dtype, unknown_layout_4d, MutAnyOrigin](
         expected_data,
         runtime_layout_4d,
     )
@@ -103,7 +104,7 @@ fn test[
     var output_data = UnsafePointer[Scalar[dtype]].alloc(
         runtime_layout_4d.size()
     )
-    var output = LayoutTensor[dtype, unknown_layout_4d, MutableAnyOrigin](
+    var output = LayoutTensor[dtype, unknown_layout_4d, MutAnyOrigin](
         output_data,
         runtime_layout_4d,
     )
@@ -160,7 +161,7 @@ fn _copy_values_to_layout_tensor[
     dtype: DType,
     layout: Layout,
 ](
-    tensor: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    tensor: LayoutTensor[dtype, layout, MutAnyOrigin],
     values: List[Scalar[dtype]],
 ) raises:
     var num_elements = tensor.size()
@@ -172,8 +173,8 @@ fn _copy_values_to_layout_tensor[
         tensor.ptr[i] = values[i]
 
 
-fn main() raises:
-    alias dtype = DType.float32
+def main():
+    comptime dtype = DType.float32
     # fmt: off
     test[
         input_shape = IndexList[3](1, 6, 15),
@@ -184,21 +185,21 @@ fn main() raises:
     ](
         output_size=Index(5, 6),
         kernel_size=Index(3, 2),
-        input_values=List[Scalar[dtype]](
-            24., 43., 47., 13., 27., 24., 16.,  1., 41.,  1., 45., 24.,  4.,  7., 36.,
+        input_values=[
+            Scalar[dtype](24.), 43., 47., 13., 27., 24., 16.,  1., 41.,  1., 45., 24.,  4.,  7., 36.,
             11., 13., 36., 14.,  1., 28.,  2., 20., 20., 45., 27., 44., 20., 40., 14.,
             36., 45., 12., 30., 35., 15., 34.,  7., 32., 18., 32., 13.,  4., 39., 4.,
             38., 36., 24., 27., 16., 11., 49., 30., 37.,  1., 46.,  6., 41., 31., 26.,
             47., 45.,  7., 36., 14., 40., 23., 27.,  4., 22., 11.,  9., 28., 19., 48.,
             26., 26.,  8., 32.,  4., 23., 11., 34., 46., 15., 31., 45., 33.,  3., 17.
-        ),
-        expected_output=List[Scalar[dtype]](
-            24.,  54.,  60.,  49.,  41.,   1.,
+        ],
+        expected_output=[
+            Scalar[dtype](24.),  54.,  60.,  49.,  41.,   1.,
             60., 127.,  51., 115.,  83.,  61.,
             107., 167., 137., 133., 177.,  19.,
             72., 105.,  48., 118., 103.,  41.,
             11.,  40.,  73.,  52.,  51.,  17.
-        ),
+        ],
     )
 
     # Test with dilation.
@@ -211,21 +212,21 @@ fn main() raises:
     ](
         output_size=Index(5, 6),
         kernel_size=Index(3, 2),
-        input_values=List[Scalar[dtype]](
-            49., 24., 22.,  9.,
+        input_values=[
+            Scalar[dtype](49.), 24., 22.,  9.,
             48., 38., 32., 30.,
             8., 35.,  1.,  1.,
             5., 13., 16., 10.,
             2., 26., 14., 47.,
             14., 46., 38.,  7.
-        ),
-        expected_output=List[Scalar[dtype]](
-            49., 24., 70., 47., 32., 30.,
+        ],
+        expected_output=[
+            Scalar[dtype](49.), 24., 70., 47., 32., 30.,
             0.,  0.,  0.,  0.,  0.,  0.,
             8., 35.,  6., 14., 16., 10.,
             0.,  0.,  0.,  0.,  0.,  0.,
             2., 26., 28., 93., 38.,  7.
-        ),
+        ],
     )
 
     # Test with stride and dilation.
@@ -238,21 +239,21 @@ fn main() raises:
     ](
         output_size=Index(5, 6),
         kernel_size=Index(3, 2),
-        input_values=List[Scalar[dtype]](
-            6.,  8.,
+        input_values=[
+            Scalar[dtype](6.),  8.,
             39., 43.,
             43., 32.,
             32., 12.,
             13., 12.,
             44., 27.
-        ),
-        expected_output=List[Scalar[dtype]](
-            6.,  0., 47.,  0., 43.,  0.,
+        ],
+        expected_output=[
+            Scalar[dtype](6.),  0., 47.,  0., 43.,  0.,
             0.,  0.,  0.,  0.,  0.,  0.,
             43.,  0., 64.,  0., 12.,  0.,
             0.,  0.,  0.,  0.,  0.,  0.,
             13.,  0., 56.,  0., 27.,  0.
-        ),
+        ],
     )
 
     # Test with stride, dilation and padding.
@@ -265,21 +266,21 @@ fn main() raises:
     ](
         output_size=Index(5, 6),
         kernel_size=Index(3, 2),
-        input_values=List[Scalar[dtype]](
-            20., 23., 46., 16., 22., 40.,  9.,  6., 17., 31., 31.,  7.,
+        input_values=[
+            Scalar[dtype](20.), 23., 46., 16., 22., 40.,  9.,  6., 17., 31., 31.,  7.,
             6.,  3., 26.,  6., 34., 15.,  2., 21., 10.,  8., 48., 37.,
             16., 49., 10., 49.,  1., 47., 40., 26., 26., 42.,  4., 34.,
             9., 26., 18., 35., 18.,  5.,  4., 20., 21., 29., 18., 22.,
             43., 21., 18., 23., 33.,  4.,  2., 26., 46., 43., 15., 46.,
             6., 34.,  8.,  1., 34., 46., 39., 14.,  3., 44., 12., 22.
-        ),
-        expected_output=List[Scalar[dtype]](
-            9., 49., 26., 10., 18., 49.,
+        ],
+        expected_output=[
+            Scalar[dtype](9.), 49., 26., 10., 18., 49.,
             40., 61., 49., 27., 10., 29.,
             18., 47.,  5., 40.,  4., 26.,
             44., 35., 54., 33., 87., 33.,
             21., 42., 29.,  4., 18., 34.
-        ),
+        ],
     )
 
     # Test with batch > 1.
@@ -292,8 +293,8 @@ fn main() raises:
     ](
         output_size=Index(2, 3),
         kernel_size=Index(2, 2),
-        input_values=List[Scalar[dtype]](
-            39., 32.,
+        input_values=[
+            Scalar[dtype](39.), 32.,
             42., 31.,
             36., 48.,
             36.,  7.,
@@ -301,13 +302,13 @@ fn main() raises:
             49., 47.,
             36., 32.,
             9.,  4.
-        ),
-        expected_output=List[Scalar[dtype]](
-            39., 74., 31.,
+        ],
+        expected_output=[
+            Scalar[dtype](39.), 74., 31.,
             36., 84.,  7.,
             3., 61., 47.,
             36., 41.,  4.
-        ),
+        ],
     )
 
 
@@ -321,8 +322,8 @@ fn main() raises:
     ](
         output_size=Index(2, 3),
         kernel_size=Index(2, 2),
-        input_values=List[Scalar[dtype]](
-            42.,  3.,
+        input_values=[
+            Scalar[dtype](42.),  3.,
             39., 27.,
             37., 26.,
             25., 49.,
@@ -330,13 +331,13 @@ fn main() raises:
             29., 32.,
             38., 32.,
             18., 34.
-        ),
-        expected_output=List[Scalar[dtype]](
-            42., 42., 27.,
+        ],
+        expected_output=[
+            Scalar[dtype](42.), 42., 27.,
             37., 51., 49.,
             6., 71., 32.,
             38., 50., 34.
-        ),
+        ],
     )
 
     # fmt: on

@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from math import iota
 from random import random_float64
 
@@ -20,33 +21,34 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer
+from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.softmax import softmax
 from nn.toppminp_gpu import min_p_sampling_gpu, top_p_sampling_gpu
 from testing import assert_almost_equal, assert_equal
 
 from utils import IndexList
 
-alias DEBUG_BENCH = False
-alias PRINT_OUTPUT = False
+comptime DEBUG_BENCH = False
+comptime PRINT_OUTPUT = False
 
 
 struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
     ImplicitlyCopyable, Movable
 ):
-    alias is_top_p = _is_top_p
-    alias dtype = _dtype
-    alias out_idx_type = _out_idx_type
+    comptime is_top_p = Self._is_top_p
+    comptime dtype = Self._dtype
+    comptime out_idx_type = Self._out_idx_type
     var batch_size: Int
     var vocab_size: Int
-    var temperature: Scalar[_dtype]
-    var p_threshold: Scalar[_dtype]
+    var temperature: Scalar[Self.dtype]
+    var p_threshold: Scalar[Self.dtype]
 
     fn __init__(
         out self,
         batch_size: Int,
         vocab_size: Int,
-        temperature: Scalar[_dtype] = Scalar[_dtype](1.0),
-        p_threshold: Scalar[_dtype] = Scalar[_dtype](0.9),
+        temperature: Scalar[Self.dtype] = Scalar[Self.dtype](1.0),
+        p_threshold: Scalar[Self.dtype] = Scalar[Self.dtype](0.9),
     ):
         self.batch_size = batch_size
         self.vocab_size = vocab_size
@@ -74,8 +76,8 @@ fn time_kernel[
 fn fill_random[
     rank: Int, dtype: DType
 ](mut buffer: NDBuffer[mut=True, dtype, rank]):
-    alias min_val = -1e6
-    alias max_val = 1e6
+    comptime min_val = -1e6
+    comptime max_val = 1e6
     var total_elements = buffer.num_elements()
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
@@ -190,7 +192,7 @@ fn test_is_sorted_descending[
                     sorted_flag[batch_id] = False
                     break
 
-    alias parallelism_grain_size = 1
+    comptime parallelism_grain_size = 1
     # Create shape with batch_size as the second dimension
     var shape = IndexList[1](
         batch_size,
@@ -233,10 +235,10 @@ fn test_case_sampling[
     ) capturing -> None,
 ](ctx: DeviceContext, test_case: TestCase) raises:
     print_test_case(test_case)
-    alias rank = 2
-    alias dtype = test_case.dtype
-    alias out_idx_type = test_case.out_idx_type
-    alias is_top_p = test_case.is_top_p
+    comptime rank = 2
+    comptime dtype = test_case.dtype
+    comptime out_idx_type = test_case.out_idx_type
+    comptime is_top_p = test_case.is_top_p
     var batch_size = test_case.batch_size
     var vocab_size = test_case.vocab_size
     var temperature = rebind[Scalar[dtype]](test_case.temperature)
@@ -300,7 +302,29 @@ fn test_case_sampling[
     for i in range(in_logits.num_elements()):
         in_logits_cpu_test.data[i] = in_logits.data[i] / temperature
 
-    softmax[simd_width=1](in_logits_cpu_test, probs_cpu_test, axis=1)
+    softmax[simd_width=1, rank=rank](
+        LayoutTensor[
+            in_logits_cpu_test.type,
+            Layout.row_major[in_logits_cpu_test.rank](in_logits_cpu_test.shape),
+        ](
+            in_logits_cpu_test.data,
+            RuntimeLayout[
+                Layout.row_major[in_logits_cpu_test.rank](
+                    in_logits_cpu_test.shape
+                )
+            ].row_major(in_logits_cpu_test.get_shape().canonicalize()),
+        ),
+        LayoutTensor[
+            probs_cpu_test.type,
+            Layout.row_major[probs_cpu_test.rank](probs_cpu_test.shape),
+        ](
+            probs_cpu_test.data,
+            RuntimeLayout[
+                Layout.row_major[probs_cpu_test.rank](probs_cpu_test.shape)
+            ].row_major(probs_cpu_test.get_shape().canonicalize()),
+        ),
+        axis=1,
+    )
     in_logits_cpu_test_ptr.free()
     sort_buf_descending(probs_cpu_test, vocab_size)
 
@@ -402,13 +426,13 @@ fn test_toppminp_gpu[
         mut NDBuffer[mut=True, dtype, rank]
     ) capturing -> None,
 ](ctx: DeviceContext) raises:
-    alias test_case1 = TestCase[dtype, out_idx_type, _is_top_p=True](
+    comptime test_case1 = TestCase[dtype, out_idx_type, _is_top_p=True](
         batch_size=1, vocab_size=1024, temperature=1.0, p_threshold=0.9
     )
-    alias test_case2 = TestCase[dtype, out_idx_type, _is_top_p=True](
+    comptime test_case2 = TestCase[dtype, out_idx_type, _is_top_p=True](
         batch_size=16, vocab_size=32000, temperature=10.0, p_threshold=0.95
     )
-    alias test_case3 = TestCase[dtype, out_idx_type, _is_top_p=False](
+    comptime test_case3 = TestCase[dtype, out_idx_type, _is_top_p=False](
         batch_size=64,
         vocab_size=128256,
         temperature=0.7,
@@ -442,7 +466,7 @@ fn test_all_types[
     test_all_out_idx_types[DType.bfloat16, fill_fn](ctx)
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         print("\n====== Testing Fill Iota ======\n")
         test_all_types[fill_iota](ctx)

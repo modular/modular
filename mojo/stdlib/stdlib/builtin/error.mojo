@@ -17,11 +17,16 @@ These are Mojo built-ins, so you don't need to import them.
 
 
 from collections.string.format import _CurlyEntryFormattable
-from sys import external_call, is_gpu, _libc
-from sys.ffi import c_char
-
-from memory import memcpy, ArcPointer
 from io.write import _WriteBufferStack
+from sys import _libc, external_call, is_gpu
+from sys.ffi import c_char, CStringSlice
+
+from memory import (
+    ArcPointer,
+    OwnedPointer,
+    memcpy,
+)
+from io.write import _WriteBufferStack, _TotalWritableBytes
 
 
 # ===-----------------------------------------------------------------------===#
@@ -31,15 +36,19 @@ from io.write import _WriteBufferStack
 struct StackTrace(ImplicitlyCopyable, Stringable):
     """Holds a stack trace of a location when StackTrace is constructed."""
 
-    var value: ArcPointer[UnsafePointer[UInt8]]
-    """A reference counting pointer to a char array containing the stack trace."""
+    var value: ArcPointer[OwnedPointer[UInt8]]
+    """A reference counting pointer to a char array containing the stack trace.
 
-    @always_inline("nodebug")
+        Note: This owned pointer _can be null_. We'd use Optional[OwnedPointer] but
+        we don't have good niche optimization and Optional[T] requires T: Copyable
+    """
+
+    @no_inline
     fn __init__(out self):
         """Construct an empty stack trace."""
-        self.value = ArcPointer(UnsafePointer[UInt8]())
+        self.value = ArcPointer(OwnedPointer[UInt8](unsafe_from_raw_pointer={}))
 
-    @always_inline("nodebug")
+    @no_inline
     fn __init__(out self, *, depth: Int):
         """Construct a new stack trace.
 
@@ -58,28 +67,20 @@ struct StackTrace(ImplicitlyCopyable, Stringable):
             self = StackTrace()
             return
 
-        var buffer = UnsafePointer[UInt8]()
+        var buffer = UnsafePointer[UInt8, MutOrigin.external]()
         var num_bytes = external_call["KGEN_CompilerRT_GetStackTrace", Int](
             UnsafePointer(to=buffer), depth
         )
         # When num_bytes is zero, the stack trace was not collected.
         if num_bytes == 0:
-            self.value = ArcPointer(UnsafePointer[UInt8]())
+            self.value = ArcPointer(
+                OwnedPointer[UInt8](unsafe_from_raw_pointer={})
+            )
             return
 
-        var ptr = UnsafePointer[UInt8]().alloc(num_bytes)
-        self.value = ArcPointer[UnsafePointer[UInt8]](ptr)
-        memcpy(self.value[], buffer, num_bytes)
-        # Explicitly free the buffer using free() instead of the Mojo allocator.
-        _libc.free(buffer.bitcast[NoneType]())
-
-    fn __copyinit__(out self, existing: Self):
-        """Creates a copy of an existing stack trace.
-
-        Args:
-            existing: The stack trace to copy from.
-        """
-        self.value = existing.value
+        self.value = ArcPointer[OwnedPointer[UInt8]](
+            OwnedPointer(unsafe_from_raw_pointer=buffer)
+        )
 
     fn __str__(self) -> String:
         """Converts the StackTrace to string representation.
@@ -87,12 +88,12 @@ struct StackTrace(ImplicitlyCopyable, Stringable):
         Returns:
             A String of the stack trace.
         """
-        if not self.value[]:
+        if not self.value[].unsafe_ptr():
             return (
                 "stack trace was not collected. Enable stack trace collection"
                 " with environment variable `MOJO_ENABLE_STACK_TRACE_ON_ERROR`"
             )
-        return String(unsafe_from_utf8_ptr=self.value[])
+        return String(unsafe_from_utf8_ptr=self.value[].unsafe_ptr())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -100,7 +101,19 @@ struct StackTrace(ImplicitlyCopyable, Stringable):
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable
+@fieldwise_init
+struct _ErrorWriter(Writer):
+    var data: List[Byte]
+
+    fn write_bytes(mut self, bytes: Span[Byte, _]):
+        self.data.extend(bytes)
+
+    fn write[*Ts: Writable](mut self, *args: *Ts):
+        @parameter
+        for i in range(args.__len__()):
+            args[i].write_to(self)
+
+
 struct Error(
     Boolable,
     Defaultable,
@@ -117,16 +130,9 @@ struct Error(
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var data: UnsafePointer[UInt8]
-    """A pointer to the beginning of the string data being referenced."""
+    var data: String
+    """The message of the error."""
 
-    var loaded_length: Int
-    """The length of the string being referenced.
-    Error instances conditionally own their error message. To reduce
-    the size of the error instance we use the sign bit of the length field
-    to store the ownership value. When loaded_length is negative it indicates
-    ownership and a free is executed in the destructor.
-    """
     var stack_trace: StackTrace
     """The stack trace of the error.
     By default the stack trace is not collected for the Error, unless user
@@ -138,11 +144,21 @@ struct Error(
     # ===-------------------------------------------------------------------===#
 
     @always_inline
+    @implicit
+    fn __init__(out self, var value: String, *, depth: Int = -1):
+        """Construct an Error object with a given String.
+
+        Args:
+            value: The error message.
+            depth: The depth of the stack trace to collect.
+        """
+        self.data = value^
+        self.stack_trace = StackTrace(depth=depth)
+
+    @always_inline
     fn __init__(out self):
         """Default constructor."""
-        self.data = UnsafePointer[UInt8]()
-        self.loaded_length = 0
-        self.stack_trace = StackTrace(depth=-1)
+        self = Error(String())
 
     @always_inline
     @implicit
@@ -151,89 +167,31 @@ struct Error(
 
         Args:
             value: The error message.
-
         """
-        self.data = value.unsafe_ptr()
-        self.loaded_length = value.byte_length()
-        self.stack_trace = StackTrace(depth=0)
-
-    @implicit
-    fn __init__(out self, src: String):
-        """Construct an Error object with a given string.
-
-        Args:
-            src: The error message.
-        """
-        var length = src.byte_length()
-        var dest = UnsafePointer[UInt8].alloc(length + 1)
-        memcpy(dest, src.unsafe_ptr(), length)
-        dest[length] = 0
-        self.data = dest
-        self.loaded_length = -length
-        self.stack_trace = StackTrace(depth=0)
-
-    @implicit
-    fn __init__(out self, src: StringSlice):
-        """Construct an Error object with a given string ref.
-
-        Args:
-            src: The error message.
-        """
-        var length = src.byte_length()
-        var dest = UnsafePointer[UInt8].alloc(length + 1)
-        memcpy(dest, src.unsafe_ptr(), length)
-        dest[length] = 0
-        self.data = dest
-        self.loaded_length = -length
-        self.stack_trace = StackTrace(depth=0)
+        self = Error(String(value), depth=0)
 
     @no_inline
-    fn __init__[
-        *Ts: Writable
-    ](out self, *args: *Ts, sep: StaticString = "", end: StaticString = "",):
+    @implicit
+    fn __init__(out self, arg: Some[Writable]):
+        """Construct an Error from a Writable argument.
+
+        Args:
+            arg: A Writable argument.
         """
-        Construct an Error by concatenating a sequence of Writable arguments.
+        self = Error(String(arg), depth=0)
+
+    @no_inline
+    fn __init__[*Ts: Writable](out self, *args: *Ts):
+        """Construct an Error by concatenating a sequence of Writable arguments.
 
         Args:
             args: A sequence of Writable arguments.
-            sep: The separator used between elements.
-            end: The String to write after printing the elements.
 
         Parameters:
             Ts: The types of the arguments to format. Each type must be satisfy
                 `Writable`.
         """
-        var output = String()
-        var buffer = _WriteBufferStack(output)
-
-        @parameter
-        for i in range(args.__len__()):
-            args[i].write_to(buffer)
-
-        buffer.flush()
-        self = Error(output)
-
-    fn __del__(deinit self):
-        """Releases memory if allocated."""
-        if self.loaded_length < 0:
-            self.data.free()
-
-    fn __copyinit__(out self, existing: Self):
-        """Creates a deep copy of an existing error.
-
-        Args:
-            existing: The error to copy from.
-        """
-        if existing.loaded_length < 0:
-            var length = -existing.loaded_length
-            var dest = UnsafePointer[UInt8].alloc(length + 1)
-            memcpy(dest, existing.data, length)
-            dest[length] = 0
-            self.data = dest
-        else:
-            self.data = existing.data
-        self.loaded_length = existing.loaded_length
-        self.stack_trace = existing.stack_trace
+        self = Error(String(args), depth=0)
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -254,7 +212,7 @@ struct Error(
         Returns:
             A String of the error message.
         """
-        return String.write(self)
+        return self.data
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -266,7 +224,7 @@ struct Error(
         """
         if not self:
             return
-        writer.write(self.as_string_slice())
+        writer.write(self.data)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -275,46 +233,11 @@ struct Error(
         Returns:
             A printable representation of the error message.
         """
-        return String("Error(", repr(self.as_string_slice()), ")")
-
-    fn byte_length(self) -> Int:
-        """Get the length of the Error string in bytes.
-
-        Returns:
-            The length of the Error string in bytes.
-
-        Notes:
-            This does not include the trailing null terminator in the count.
-        """
-        return abs(self.loaded_length)
+        return String("Error('", self.data, "')")
 
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
-
-    fn unsafe_cstr_ptr(self) -> UnsafePointer[c_char]:
-        """Retrieves a C-string-compatible pointer to the underlying memory.
-
-        The returned pointer is guaranteed to be NUL terminated, and not null.
-
-        Returns:
-            The pointer to the underlying memory.
-        """
-        return self.data.bitcast[c_char]()
-
-    fn as_string_slice(self) -> StringSlice[ImmutableAnyOrigin]:
-        """Returns a string slice of the data maybe owned by the Error.
-
-        Returns:
-            A string slice pointing to the data maybe owned by the Error.
-
-        Notes:
-            Since the data is not guaranteed to be owned by the Error, the
-            resulting StringSlice is given an ImmutableAnyOrigin.
-        """
-        return StringSlice[ImmutableAnyOrigin](
-            ptr=self.data, length=UInt(self.byte_length())
-        )
 
     fn get_stack_trace(self) -> StackTrace:
         """Returns the stack trace of the error.

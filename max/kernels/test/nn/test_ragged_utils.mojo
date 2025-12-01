@@ -11,44 +11,47 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from internal_utils import HostNDBuffer
+from buffer import DimList
+from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from nn._ragged_utils import get_batch_from_row_offsets
 from testing import assert_equal
-from buffer import DimList
+from utils import Index
 
 
 def test_get_batch_from_row_offsets():
-    batch_size = 9
-    prefix_sums = HostNDBuffer[DType.uint32, 1](DimList(batch_size + 1))
-    prefix_sums.tensor[0] = 0
-    prefix_sums.tensor[1] = 100
-    prefix_sums.tensor[2] = 200
-    prefix_sums.tensor[3] = 300
-    prefix_sums.tensor[4] = 400
-    prefix_sums.tensor[5] = 500
-    prefix_sums.tensor[6] = 600
-    prefix_sums.tensor[7] = 700
-    prefix_sums.tensor[8] = 800
-    prefix_sums.tensor[9] = 900
+    comptime batch_size = 9
+    var storage = InlineArray[UInt32, batch_size + 1](uninitialized=True)
+    prefix_sums = LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)](
+        storage,
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size + 1)),
+    )
+    prefix_sums[0] = 0
+    prefix_sums[1] = 100
+    prefix_sums[2] = 200
+    prefix_sums[3] = 300
+    prefix_sums[4] = 400
+    prefix_sums[5] = 500
+    prefix_sums[6] = 600
+    prefix_sums[7] = 700
+    prefix_sums[8] = 800
+    prefix_sums[9] = 900
 
     assert_equal(
-        get_batch_from_row_offsets(prefix_sums.tensor, 100),
+        get_batch_from_row_offsets(prefix_sums, 100),
         1,
     )
     assert_equal(
-        get_batch_from_row_offsets(prefix_sums.tensor, 0),
+        get_batch_from_row_offsets(prefix_sums, 0),
         0,
     )
     assert_equal(
-        get_batch_from_row_offsets(prefix_sums.tensor, 899),
+        get_batch_from_row_offsets(prefix_sums, 899),
         8,
     )
     assert_equal(
-        get_batch_from_row_offsets(prefix_sums.tensor, 555),
+        get_batch_from_row_offsets(prefix_sums, 555),
         5,
     )
-
-    _ = prefix_sums^
 
 
 def main():

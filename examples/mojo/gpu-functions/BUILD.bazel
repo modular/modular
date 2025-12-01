@@ -7,7 +7,7 @@ mojo_binary(
     srcs = ["vector_addition.mojo"],
     target_compatible_with = ["//:has_gpu"],
     deps = [
-        "@mojo//:layout",
+        "//max:layout",
         "@mojo//:stdlib",
     ],
 )
@@ -23,7 +23,7 @@ mojo_binary(
     srcs = ["grayscale.mojo"],
     target_compatible_with = ["//:has_gpu"],
     deps = [
-        "@mojo//:layout",
+        "//max:layout",
         "@mojo//:stdlib",
     ],
 )
@@ -40,7 +40,7 @@ mojo_binary(
     tags = ["manual"],  # TODO: Fix compilation and remove this tag
     target_compatible_with = ["//:has_gpu"],
     deps = [
-        "@mojo//:layout",
+        "//max:layout",
         "@mojo//:stdlib",
     ],
 )
@@ -59,7 +59,7 @@ mojo_binary(
     srcs = ["mandelbrot.mojo"],
     target_compatible_with = ["//:has_gpu"],
     deps = [
-        "@mojo//:layout",
+        "//max:layout",
         "@mojo//:stdlib",
     ],
 )
@@ -71,24 +71,24 @@ modular_run_binary_test(
 )
 
 mojo_binary(
-    name = "vector_addition_metal",
-    srcs = ["vector_addition_metal.mojo"],
-    env = {
-        "MOJO_ENABLE_HAS_GPU_FOR_APPLE": "1",
-    },
-    target_compatible_with = ["//:apple_gpu"],
+    name = "reduction",
+    srcs = ["reduction.mojo"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
-        "@mojo//:layout",
+        "//max:layout",
         "@mojo//:stdlib",
     ],
 )
 
 modular_run_binary_test(
-    name = "vector_addition_metal_test",
-    binary = "vector_addition_metal",
-    tags = [
-        "apple_gpu",
-        # This uses MacOS 15 and M2+ specific features
-        "skip-external-ci-macos-15",
-    ],
+    name = "reduction_test",
+    binary = "reduction",
+    gpu_constraints = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
 )

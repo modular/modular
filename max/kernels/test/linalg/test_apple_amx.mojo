@@ -16,38 +16,39 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
-from linalg.apple_amx_intrinsics import *
+from layout import Layout, LayoutTensor
+from linalg.arch.cpu.apple_amx_intrinsics import *
 from testing import *
 
 
-fn fill_a(buf: NDBuffer[mut=True, *_]):
+fn fill_a(buf: LayoutTensor[mut=True, *_, **_]):
     # Fills the A matrix with the following values row + 2*col
     for i in range(buf.dim[0]()):
         for j in range(buf.dim[1]()):
-            buf[i, j] = Scalar[buf.type](i // (j + 1) + j)
+            buf[i, j] = Scalar[buf.dtype](i // (j + 1) + j)
 
 
-fn fill_b(buf: NDBuffer[mut=True, *_]):
+fn fill_b(buf: LayoutTensor[mut=True, *_, **_]):
     # Fills the A matrix with the following values row/(col + 1) + col
     for i in range(buf.dim[0]()):
         for j in range(buf.dim[1]()):
-            buf[i, j] = Scalar[buf.type](i // (j + 1) + j)
+            buf[i, j] = Scalar[buf.dtype](i // (j + 1) + j)
 
 
-fn clear_c(buf: NDBuffer[mut=True, *_, **_]):
-    buf.zero()
+fn clear_c(buf: LayoutTensor[mut=True, *_, **_]):
+    _ = buf.fill(0)
 
 
-def test_dot_at_b[dtype: DType, shape: DimList]():
-    var a_matrix = NDBuffer[
-        dtype, 2, MutableAnyOrigin, shape=shape
+def test_dot_at_b[dtype: DType, M: Int, N: Int]():
+    # Create LayoutTensors with static shapes
+    var a_matrix = LayoutTensor[
+        dtype, Layout.row_major(M, N), MutAnyOrigin
     ].stack_allocation()
-    var b_matrix = NDBuffer[
-        dtype, 2, MutableAnyOrigin, shape=shape
+    var b_matrix = LayoutTensor[
+        dtype, Layout.row_major(M, N), MutAnyOrigin
     ].stack_allocation()
-    var c_matrix = NDBuffer[
-        dtype, 2, MutableAnyOrigin, shape=shape
+    var c_matrix = LayoutTensor[
+        dtype, Layout.row_major(M, N), MutAnyOrigin
     ].stack_allocation()
 
     fill_a(a_matrix)
@@ -60,7 +61,7 @@ def test_dot_at_b[dtype: DType, shape: DimList]():
         for n in range(c_matrix.dim[1]()):
             var golden = Scalar[dtype](0)
             for k in range(a_matrix.dim[1]()):
-                golden += a_matrix[k, m] * b_matrix[k, n]
+                golden += a_matrix[k, m][0] * b_matrix[k, n][0]
             assert_almost_equal(
                 c_matrix[m, n],
                 golden,
@@ -69,5 +70,5 @@ def test_dot_at_b[dtype: DType, shape: DimList]():
 
 
 def main():
-    test_dot_at_b[DType.float32, DimList(16, 16)]()
-    test_dot_at_b[DType.float16, DimList(32, 32)]()
+    test_dot_at_b[DType.float32, 16, 16]()
+    test_dot_at_b[DType.float16, 32, 32]()

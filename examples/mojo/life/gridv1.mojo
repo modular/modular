@@ -11,12 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: mojo/docs/manual/get-started.mdx
+
 import random
 from collections import Optional
 
 
 @fieldwise_init
-struct Grid(ImplicitlyCopyable, Movable, Stringable):
+struct Grid(Copyable, Movable, Stringable):
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
@@ -24,15 +26,6 @@ struct Grid(ImplicitlyCopyable, Movable, Stringable):
     var rows: Int
     var cols: Int
     var data: List[List[Int]]
-
-    # ===-------------------------------------------------------------------===#
-    # Lifecycle
-    # ===-------------------------------------------------------------------===#
-
-    fn __copyinit__(out self, existing: Self):
-        self.rows = existing.rows
-        self.cols = existing.cols
-        self.data = existing.data.copy()
 
     # ===-------------------------------------------------------------------===#
     # Indexing
@@ -80,7 +73,7 @@ struct Grid(ImplicitlyCopyable, Movable, Stringable):
             [0, 0, 0, 0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0, 0, 0, 0],
         ]
-        return Grid(8, 8, glider)
+        return Grid(8, 8, glider^)
 
     @staticmethod
     fn random(rows: Int, cols: Int, seed: Optional[Int] = None) -> Self:

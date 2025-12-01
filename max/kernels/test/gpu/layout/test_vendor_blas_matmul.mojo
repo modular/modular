@@ -24,9 +24,9 @@ from internal_utils import (
     random,
     zero,
 )
-from linalg.matmul_gpu import matmul_kernel_naive
-from linalg.vendor_blas import matmul
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.matmul.gpu import matmul_kernel_naive
+from linalg.matmul.vendor.blas import matmul
 
 
 fn test_matmul[
@@ -34,10 +34,10 @@ fn test_matmul[
 ](ctx: DeviceContext) raises:
     print("== test_vendor_blas", input_type, "x", M, "x", N, "x", K)
 
-    alias transpose_b = True
-    alias static_a_shape = DimList(M, K)
-    alias static_b_shape = DimList(N, K) if transpose_b else DimList(K, N)
-    alias static_c_shape = DimList(M, N)
+    comptime transpose_b = True
+    comptime static_a_shape = DimList(M, K)
+    comptime static_b_shape = DimList(N, K) if transpose_b else DimList(K, N)
+    comptime static_c_shape = DimList(M, N)
 
     var a_host = HostNDBuffer[input_type, 2, static_a_shape]()
     var b_host = HostNDBuffer[input_type, 2, static_b_shape]()
@@ -74,19 +74,18 @@ fn test_matmul[
     var b_tensor = from_ndbuffer_row_major(b_device.tensor)
 
     # Run naive matmul.
-    alias BLOCK_DIM = 16
-    ctx.enqueue_function[
-        matmul_kernel_naive[
-            DType.float32,
-            input_type,
-            input_type,
-            c_tensor_ref.layout,
-            a_tensor.layout,
-            b_tensor.layout,
-            BLOCK_DIM,
-            transpose_b=True,
-        ]
-    ](
+    comptime BLOCK_DIM = 16
+    comptime kernel = matmul_kernel_naive[
+        DType.float32,
+        input_type,
+        input_type,
+        c_tensor_ref.layout,
+        a_tensor.layout,
+        b_tensor.layout,
+        BLOCK_DIM,
+        transpose_b=True,
+    ]
+    ctx.enqueue_function_checked[kernel, kernel](
         c_tensor_ref,
         a_tensor,
         b_tensor,
@@ -128,7 +127,7 @@ fn test_matmul[input_types: List[DType]]() raises:
             test_matmul[input_type, 512, 2560, 512](ctx)
 
 
-fn main() raises:
+def main():
     @parameter
     if has_amd_gpu_accelerator():
         test_matmul[[DType.float8_e4m3fnuz, DType.bfloat16]]()

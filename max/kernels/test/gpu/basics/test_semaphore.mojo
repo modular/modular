@@ -11,13 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from gpu.id import block_idx, grid_dim, thread_idx
 from gpu import NamedBarrierSemaphore
+from gpu.host import DeviceContext
+from gpu import block_idx, grid_dim, thread_idx
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
-alias NUM_BLOCKS = 32
-alias NUM_THREADS = 64
+comptime NUM_BLOCKS = 32
+comptime NUM_THREADS = 64
 
 
 fn test_named_barrier_semaphore_equal_kernel(
@@ -25,7 +26,7 @@ fn test_named_barrier_semaphore_equal_kernel(
     shared_ptr: UnsafePointer[Int32],
 ):
     var sema = NamedBarrierSemaphore[Int32(NUM_THREADS), 4, 1](
-        locks_ptr, thread_idx.x
+        locks_ptr, Int(thread_idx.x)
     )
 
     sema.wait_eq(0, block_idx.x)
@@ -39,14 +40,14 @@ fn test_named_barrier_semaphore_equal_kernel(
 fn test_named_barrier_semaphore_equal(ctx: DeviceContext) raises:
     print("== test_named_barrier_semaphore_equal")
 
-    var a_host = UnsafePointer[Scalar[DType.int32]].alloc(NUM_BLOCKS)
+    var a_host = UnsafePointer[Int32].alloc(NUM_BLOCKS)
 
     var locks_data = ctx.enqueue_create_buffer[DType.int32](1)
     var shared_data = ctx.enqueue_create_buffer[DType.int32](NUM_BLOCKS)
     ctx.enqueue_memset(locks_data, 0)
     ctx.enqueue_memset(shared_data, NUM_BLOCKS)
 
-    alias kernel = test_named_barrier_semaphore_equal_kernel
+    comptime kernel = test_named_barrier_semaphore_equal_kernel
     ctx.enqueue_function_checked[kernel, kernel](
         locks_data,
         shared_data,
@@ -69,7 +70,7 @@ fn test_named_barrier_semaphore_less_than_kernel(
     shared_ptr: UnsafePointer[Int32],
 ):
     var sema = NamedBarrierSemaphore[Int32(NUM_THREADS), 4, 1](
-        locks_ptr, thread_idx.x
+        locks_ptr, Int(thread_idx.x)
     )
 
     sema.wait_lt(0, block_idx.x)
@@ -83,14 +84,14 @@ fn test_named_barrier_semaphore_less_than_kernel(
 fn test_named_barrier_semaphore_less_than(ctx: DeviceContext) raises:
     print("== test_named_barrier_semaphore_less_than")
 
-    var a_host = UnsafePointer[Scalar[DType.int32]].alloc(NUM_BLOCKS)
+    var a_host = UnsafePointer[Int32].alloc(NUM_BLOCKS)
 
     var locks_data = ctx.enqueue_create_buffer[DType.int32](1)
     var shared_data = ctx.enqueue_create_buffer[DType.int32](NUM_BLOCKS)
     ctx.enqueue_memset(locks_data, 0)
     ctx.enqueue_memset(shared_data, NUM_BLOCKS)
 
-    alias kernel = test_named_barrier_semaphore_less_than_kernel
+    comptime kernel = test_named_barrier_semaphore_less_than_kernel
     ctx.enqueue_function_checked[kernel, kernel](
         locks_data,
         shared_data,

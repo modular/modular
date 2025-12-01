@@ -21,7 +21,7 @@ fn main():
     print("== test_fail")
     # CHECK: formatted failure message: 2, 4
     debug_assert[assert_mode="safe"](
-        False, "formatted failure message: ", 2, ", ", Scalar[DType.uint8](4)
+        False, "formatted failure message: ", 2, ", ", UInt8(4)
     )
     # CHECK-NOT: is never reached
     print("is never reached")

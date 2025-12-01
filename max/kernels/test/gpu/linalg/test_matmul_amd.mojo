@@ -16,12 +16,16 @@
 from collections.optional import OptionalReg
 from random import random_si64
 
-import linalg.vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
+from gpu.host.info import MI355X
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from internal_utils._utils import ValOrDim, dynamic, static
-from linalg.matmul_gpu import _matmul_gpu
+from linalg.matmul.gpu import (
+    _amdgpu_matmul_config_from_block_shape,
+    _matmul_gpu,
+)
 from linalg.utils_gpu import MatmulConfig
 from testing import assert_equal
 
@@ -47,11 +51,11 @@ fn test[
     var K = k.value
     print(M, "x", N, "x", K)
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_c_shape = DimList(m.dim, n.dim)
 
     var dynamic_a_shape = DimList(m.value, k.value)
     var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
@@ -78,8 +82,8 @@ fn test[
         dynamic_c_shape, ctx=ctx
     )
 
-    alias rand_min = -100
-    alias rand_max = 100
+    comptime rand_min = -100
+    comptime rand_max = 100
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -222,13 +226,13 @@ def test_block_k(ctx: DeviceContext):
     def test_block_k[
         in_type: DType, out_type: DType, block_k: Int
     ](m: ValOrDim, n: ValOrDim, k: ValOrDim):
-        alias config = MatmulConfig[in_type, in_type, out_type, True](
+        comptime config = MatmulConfig[in_type, in_type, out_type, True](
             block_tile_shape=Index(64, 64, block_k),
             warp_tile_shape=Index(32, 32, block_k),
         )
         test[config](ctx, m, n, k)
 
-    alias block_ks = List[Int](32, 64, 128, 256)
+    comptime block_ks: List[Int] = [32, 64, 128, 256]
 
     @parameter
     for i in range(len(block_ks)):
@@ -244,8 +248,8 @@ def test_warp_k_partitions(ctx: DeviceContext):
     def test_warp_k_partitions[
         in_type: DType, out_type: DType
     ](m: ValOrDim, n: ValOrDim, k: ValOrDim):
-        alias config_type = MatmulConfig[in_type, in_type, out_type, True]
-        alias configs = List[config_type](
+        comptime config_type = MatmulConfig[in_type, in_type, out_type, True]
+        comptime configs: List[config_type] = [
             # TEST: num_warps=(1, 4, 1).
             config_type(
                 block_tile_shape=Index(16, 128, 128),
@@ -268,7 +272,7 @@ def test_warp_k_partitions(ctx: DeviceContext):
                 warp_tile_shape=Index(16, 64, 64),
                 num_warp_k_partitions=2,
             ),
-        )
+        ]
 
         @parameter
         for i in range(len(configs)):
@@ -279,10 +283,67 @@ def test_warp_k_partitions(ctx: DeviceContext):
     )
 
 
+def test_matmul_config_from_block_shape(ctx: DeviceContext):
+    # This test takes too long to execute for CI, but is maintained here as a useful
+    # unit test for verifying changes to parts of the matmul dispatcher.
+    print("=== test_matmul_config_from_block_shape")
+
+    comptime in_type = DType.bfloat16
+    comptime out_type = DType.float32
+    comptime transpose_b = True
+
+    # The test is intended to cover partial and complete blocks.
+    var m = static[1012]()
+    var n = static[1016]()
+
+    comptime block_sizes = [16, 32, 64, 96, 128, 160, 192, 224, 256]
+
+    @parameter
+    for block_m in block_sizes:
+
+        @parameter
+        for block_n in block_sizes:
+
+            @parameter
+            def test_block_shape[block_m: Int, block_n: Int, k: Int]():
+                comptime config = _amdgpu_matmul_config_from_block_shape[
+                    out_type, in_type, in_type, transpose_b, k
+                ](Index(block_m, block_n))
+                print(
+                    block_m,
+                    block_n,
+                    config.block_tile_shape,
+                    config.warp_tile_shape,
+                    config.num_warp_k_partitions,
+                )
+                test[config](ctx, m, n, static[k]())
+
+            @parameter
+            if block_m <= 32 and block_n <= 32:
+                # Exercise the warp_k partitioning where the number of partitions
+                # depends on breaking K into even chunks.
+                @parameter
+                for k in [256, 384, 512, 768, 1024]:
+                    test_block_shape[block_m, block_n, k]()
+            else:
+                # Exercise the logic where block_k is increased, but only if K is
+                # multiple of the increased block size.
+                @parameter
+                for k in [320, 768]:
+                    test_block_shape[block_m, block_n, k]()
+
+
 def main():
     with DeviceContext() as ctx:
         test_bf16(ctx)
-        test_float8[DType.float8_e4m3fnuz](ctx)
-        test_float8[DType.float8_e5m2fnuz](ctx)
+
+        @parameter
+        if ctx.default_device_info is MI355X:
+            test_float8[DType.float8_e4m3fn](ctx)
+            test_float8[DType.float8_e5m2](ctx)
+        else:
+            test_float8[DType.float8_e4m3fnuz](ctx)
+            test_float8[DType.float8_e5m2fnuz](ctx)
+
         test_block_k(ctx)
         test_warp_k_partitions(ctx)

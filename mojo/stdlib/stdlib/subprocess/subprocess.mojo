@@ -34,15 +34,13 @@ struct _POpenHandle:
           cmd: The command to open.
           mode: The mode to open the file in (the mode can be "r" or "w").
         """
-        constrained[
-            not CompilationTarget.is_windows(),
-            "popen is only available on unix systems",
-        ]()
-
         if mode != "r" and mode != "w":
             raise Error("the mode specified `", mode, "` is not valid")
 
-        self._handle = popen(cmd.unsafe_cstr_ptr(), mode.unsafe_cstr_ptr())
+        self._handle = popen(
+            cmd.as_c_string_slice().unsafe_ptr(),
+            mode.as_c_string_slice().unsafe_ptr(),
+        )
 
         if not self._handle:
             raise Error("unable to execute the command `", cmd, "`")
@@ -63,7 +61,7 @@ struct _POpenHandle:
             * The data written by the subprocess is not valid UTF-8.
         """
         var len: Int = 0
-        var line = UnsafePointer[c_char]()
+        var line = UnsafePointer[c_char, MutOrigin.external]()
         var res = String()
 
         while True:
@@ -75,7 +73,7 @@ struct _POpenHandle:
 
             # Note: This will raise if the subprocess yields non-UTF-8 bytes.
             res += StringSlice(
-                from_utf8=Span(ptr=line.bitcast[Byte](), length=UInt(read))
+                from_utf8=Span(ptr=line.bitcast[Byte](), length=read)
             )
 
         if line:

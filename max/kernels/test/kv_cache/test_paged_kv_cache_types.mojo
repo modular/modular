@@ -11,39 +11,49 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from internal_utils import HostNDBuffer
-from kv_cache.types import (
-    KVCacheStaticParams,
-    PagedKVCacheCollection,
-)
-from layout import IntTuple, Layout
+from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from memory import alloc
 
 from utils.index import IndexList
 
-alias kv_params = KVCacheStaticParams(num_heads=16, head_size=16)
+comptime kv_params = KVCacheStaticParams(num_heads=16, head_size=16)
 
 
 def do_test[page_size: Int, layout_block_size: Int]():
-    var batch_size = 16
-    var max_num_blocks = 100
-    var blocks = HostNDBuffer[DType.float32, 6](
-        IndexList[6](
-            100,
-            2,
-            1,
-            page_size,
-            kv_params.num_heads,
-            kv_params.head_size,
-        )
+    comptime batch_size = 16
+    comptime max_num_blocks = 100
+    comptime shape = IndexList[6](
+        100,
+        2,
+        1,
+        page_size,
+        Int(kv_params.num_heads),
+        Int(kv_params.head_size),
     )
-    var cache_lengths = HostNDBuffer[DType.uint32, 1](IndexList[1](batch_size))
-    var lookup_table = HostNDBuffer[DType.uint32, 2](
-        IndexList[2](batch_size, max_num_blocks)
-    )
+
+    var blocks_ptr = alloc[Float32](shape.flattened_length())
+    var blocks = LayoutTensor[DType.float32, Layout.row_major[6]()](
+        blocks_ptr, RuntimeLayout[Layout.row_major[6]()].row_major(shape)
+    ).fill(0)
+    comptime layout_1d = Layout(UNKNOWN_VALUE)
+    var cache_lengths_ptr = alloc[UInt32](batch_size)
+    var cache_lengths = LayoutTensor[DType.uint32, layout_1d](
+        cache_lengths_ptr,
+        RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
+    ).fill(0)
+    comptime layout_2d = Layout.row_major[2]()
+    var lookup_table_ptr = alloc[UInt32](batch_size * max_num_blocks)
+    var lookup_table = LayoutTensor[DType.uint32, layout_2d](
+        lookup_table_ptr,
+        RuntimeLayout[layout_2d].row_major(
+            IndexList[2](batch_size, max_num_blocks)
+        ),
+    ).fill(0)
     for i in range(batch_size):
-        cache_lengths.tensor[i] = i
+        cache_lengths[i] = i
         for j in range(max_num_blocks):
-            lookup_table.tensor[i, j] = j
+            lookup_table[i, j] = j
 
     var max_seq_length = UInt32(2048)
     var max_cache_length = UInt32(2048)
@@ -51,14 +61,34 @@ def do_test[page_size: Int, layout_block_size: Int]():
     var collection = PagedKVCacheCollection[
         DType.float32, kv_params, page_size
     ](
-        blocks.tensor,
-        cache_lengths.tensor,
-        lookup_table.tensor,
+        LayoutTensor[blocks.dtype, Layout.row_major[6](), MutAnyOrigin](
+            blocks.ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                blocks.runtime_layout.shape.value,
+                blocks.runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths.ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths.runtime_layout.shape.value,
+                cache_lengths.runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[lookup_table.dtype, Layout.row_major[2](), ImmutAnyOrigin](
+            lookup_table.ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                lookup_table.runtime_layout.shape.value,
+                lookup_table.runtime_layout.stride.value,
+            ),
+        ),
         max_seq_length,
         max_cache_length,
     )
 
-    alias layout = Layout(
+    comptime layout = Layout(
         IntTuple(layout_block_size, Int(kv_params.head_size)),
         IntTuple(Int(kv_params.num_heads * kv_params.head_size), 1),
     )
@@ -67,7 +97,11 @@ def do_test[page_size: Int, layout_block_size: Int]():
     var layout_tensor = cache.block_paged_ptr[layout_block_size](
         1, layout_block_size, 0
     )
-    print(layout_tensor)
+
+    # Clean up heap allocations
+    blocks_ptr.free()
+    cache_lengths_ptr.free()
+    lookup_table_ptr.free()
 
 
 def main():

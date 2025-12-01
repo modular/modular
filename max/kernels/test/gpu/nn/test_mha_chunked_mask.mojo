@@ -69,7 +69,7 @@ def test_chunked_mask_apply():
     score_vec[2] = 3.0
     score_vec[3] = 4.0
 
-    alias SIMD_T = SIMD[DType.float32, 4]
+    comptime SIMD_T = SIMD[DType.float32, 4]
     var inf_vec = SIMD_T(MASK_VALUE)
 
     # first two dims should be arbitrary, we pass in junk just to help confirm.

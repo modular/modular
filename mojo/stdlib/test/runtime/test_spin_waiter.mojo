@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_true
+from testing import assert_true, TestSuite
 
 from utils.lock import SpinWaiter
 
 
 def test_spin_waiter():
     var waiter = SpinWaiter()
-    alias RUNS = 1000
+    comptime RUNS = 1000
     for _ in range(RUNS):
         waiter.wait()
     assert_true(True)
 
 
 def main():
-    test_spin_waiter()
+    TestSuite.discover_tests[__functions_in_module()]().run()

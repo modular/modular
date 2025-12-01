@@ -2,6 +2,26 @@ load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
 _EXTRA_MOJO_TEST_CONSTRAINTS = {
     "test_dump_sass.mojo": ["//:nvidia_gpu"],
+    "test_function_attributes.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "test_device_stream.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: GEX-2554
+    "test_device_event.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: GEX-2555
+    "test_external_shared_mem.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2397
+    "test_device_context_sub_buffer.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: GEX-2562
 }
 
 [
@@ -12,11 +32,11 @@ _EXTRA_MOJO_TEST_CONSTRAINTS = {
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_MOJO_TEST_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:internal_utils",
-            "@mojo//:kv_cache",
-            "@mojo//:linalg",
-            "@mojo//:nn",
-            "@mojo//:quantization",
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
             "@mojo//:stdlib",
         ],
     )
@@ -34,17 +54,13 @@ mojo_filecheck_test(
     srcs = ["test_function_error.mojo"],
     expect_crash = True,
     tags = ["gpu"],
-    target_compatible_with = ["//:nvidia_gpu"] + select({
-        "//:h100_gpu": ["@platforms//:incompatible"],
-        "//:b200_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
+    target_compatible_with = ["//:nvidia_gpu"],
     deps = [
-        "@mojo//:internal_utils",
-        "@mojo//:kv_cache",
-        "@mojo//:linalg",
-        "@mojo//:nn",
-        "@mojo//:quantization",
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
         "@mojo//:stdlib",
     ],
 )
@@ -57,17 +73,13 @@ mojo_filecheck_test(
     },
     expect_crash = True,
     tags = ["gpu"],
-    target_compatible_with = ["//:nvidia_gpu"] + select({
-        "//:h100_gpu": ["@platforms//:incompatible"],
-        "//:b200_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
+    target_compatible_with = ["//:nvidia_gpu"],
     deps = [
-        "@mojo//:internal_utils",
-        "@mojo//:kv_cache",
-        "@mojo//:linalg",
-        "@mojo//:nn",
-        "@mojo//:quantization",
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
         "@mojo//:stdlib",
     ],
 )

@@ -15,11 +15,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from testing import TestSuite
+
 
 def main():
-    test_debug_assert()
-    test_debug_assert_multiple_args()
-    test_debug_assert_writable()
+    TestSuite.discover_tests[__functions_in_module()]().run()
 
 
 # CHECK-LABEL: test_debug_assert

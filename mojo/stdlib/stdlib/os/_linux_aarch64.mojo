@@ -17,15 +17,15 @@ from time.time import _CTimeSpec
 
 from .fstat import stat_result
 
-alias dev_t = Int64
-alias mode_t = Int32
-alias nlink_t = Int32
+comptime dev_t = Int64
+comptime mode_t = Int32
+comptime nlink_t = Int32
 
-alias uid_t = Int32
-alias gid_t = Int32
-alias off_t = Int64
-alias blkcnt_t = Int64
-alias blksize_t = Int32
+comptime uid_t = Int32
+comptime gid_t = Int32
+comptime off_t = Int64
+comptime blkcnt_t = Int64
+comptime blksize_t = Int32
 
 
 struct _c_stat(Copyable, Defaultable, Movable, Stringable, Writable):
@@ -132,7 +132,7 @@ struct _c_stat(Copyable, Defaultable, Movable, Stringable, Writable):
 fn _stat(var path: String) raises -> _c_stat:
     var stat = _c_stat()
     var err = external_call["__xstat", Int32](
-        Int32(0), path.unsafe_cstr_ptr(), Pointer(to=stat)
+        Int32(0), path.as_c_string_slice().unsafe_ptr(), Pointer(to=stat)
     )
     if err == -1:
         raise Error("unable to stat '", path, "'")
@@ -143,7 +143,7 @@ fn _stat(var path: String) raises -> _c_stat:
 fn _lstat(var path: String) raises -> _c_stat:
     var stat = _c_stat()
     var err = external_call["__lxstat", Int32](
-        Int32(0), path.unsafe_cstr_ptr(), Pointer(to=stat)
+        Int32(0), path.as_c_string_slice().unsafe_ptr(), Pointer(to=stat)
     )
     if err == -1:
         raise Error("unable to lstat '", path, "'")

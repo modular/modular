@@ -18,12 +18,14 @@ from gpu import WARP_SIZE, block_idx
 from gpu.host import DeviceContext
 from gpu.mma import mma
 from gpu.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
-from linalg.matmul_gpu import matmul_kernel_naive
-from testing import assert_false
-from layout import Layout, UNKNOWN_VALUE, LayoutTensor
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
-from utils.numerics import isnan
+from linalg.matmul.gpu import matmul_kernel_naive
+from memory import LegacyUnsafePointer as UnsafePointer
+from testing import assert_false
+
 from utils.index import IndexList
+from utils.numerics import isnan
 
 
 # TF32 Tensor core Matmul with shape m16n8k8
@@ -35,18 +37,18 @@ fn mma_kernel_fp32_tf32(
     n: Int,
     k: Int,
 ):
-    alias mma_m = 16
-    alias mma_n = 8
-    alias mma_k = 8
+    comptime mma_m = 16
+    comptime mma_n = 8
+    comptime mma_k = 8
 
     var d_reg = SIMD[DType.float32, 4](0)
     var tile_loops = k // mma_k
 
     for i in range(tile_loops):
-        var a_tile_row = block_idx.x * mma_m
+        var a_tile_row = Int(block_idx.x * mma_m)
         var a_tile_col = i * mma_k
         var b_tile_row = i * mma_k
-        var b_tile_col = block_idx.y * mma_n
+        var b_tile_col = Int(block_idx.y * mma_n)
 
         var a_reg = load_matrix_a[mma_m, mma_n, mma_k](
             a_ptr, a_tile_row, a_tile_col, k
@@ -58,8 +60,8 @@ fn mma_kernel_fp32_tf32(
         # Perform mma (d = a * b + d)
         mma(d_reg, a_reg, b_reg, d_reg)
 
-    var c_tile_row = block_idx.x * mma_m
-    var c_tile_col = block_idx.y * mma_n
+    var c_tile_row = Int(block_idx.x * mma_m)
+    var c_tile_col = Int(block_idx.y * mma_n)
     store_matrix_d[mma_m, mma_n, mma_k](c_ptr, d_reg, c_tile_row, c_tile_col, n)
 
 
@@ -72,18 +74,18 @@ fn mma_kernel_fp32_bf16(
     n: Int,
     k: Int,
 ):
-    alias mma_m = 16
-    alias mma_n = 8
-    alias mma_k = 8
+    comptime mma_m = 16
+    comptime mma_n = 8
+    comptime mma_k = 8
 
     var d_reg = SIMD[DType.float32, 4](0)
     var tile_loops = k // mma_k
 
     for i in range(tile_loops):
-        var a_tile_row = block_idx.x * mma_m
+        var a_tile_row = Int(block_idx.x * mma_m)
         var a_tile_col = i * mma_k
         var b_tile_row = i * mma_k
-        var b_tile_col = block_idx.y * mma_n
+        var b_tile_col = Int(block_idx.y * mma_n)
 
         var a_reg = load_matrix_a[mma_m, mma_n, mma_k](
             a_ptr, a_tile_row, a_tile_col, k
@@ -95,8 +97,8 @@ fn mma_kernel_fp32_bf16(
         # Perform mma (d = a * b + d)
         mma(d_reg, a_reg, b_reg, d_reg)
 
-    var c_tile_row = block_idx.x * mma_m
-    var c_tile_col = block_idx.y * mma_n
+    var c_tile_row = Int(block_idx.x * mma_m)
+    var c_tile_col = Int(block_idx.y * mma_n)
     store_matrix_d[mma_m, mma_n, mma_k](c_ptr, d_reg, c_tile_row, c_tile_col, n)
 
 
@@ -109,18 +111,18 @@ fn mma_kernel_fp32_bf16_2(
     n: Int,
     k: Int,
 ):
-    alias mma_m = 16
-    alias mma_n = 8
-    alias mma_k = 16
+    comptime mma_m = 16
+    comptime mma_n = 8
+    comptime mma_k = 16
 
     var d_reg = SIMD[DType.float32, 4](0)
     var tile_loops = k // mma_k
 
     for i in range(tile_loops):
-        var a_tile_row = block_idx.x * mma_m
+        var a_tile_row = Int(block_idx.x * mma_m)
         var a_tile_col = i * mma_k
         var b_tile_row = i * mma_k
-        var b_tile_col = block_idx.y * mma_n
+        var b_tile_col = Int(block_idx.y * mma_n)
 
         var a_reg = load_matrix_a[mma_m, mma_n, mma_k](
             a_ptr, a_tile_row, a_tile_col, k
@@ -132,8 +134,8 @@ fn mma_kernel_fp32_bf16_2(
         # Perform mma (d = a * b + d)
         mma(d_reg, a_reg, b_reg, d_reg)
 
-    var c_tile_row = block_idx.x * mma_m
-    var c_tile_col = block_idx.y * mma_n
+    var c_tile_row = Int(block_idx.x * mma_m)
+    var c_tile_col = Int(block_idx.y * mma_n)
     store_matrix_d[mma_m, mma_n, mma_k](c_ptr, d_reg, c_tile_row, c_tile_col, n)
 
 
@@ -146,18 +148,18 @@ fn mma_kernel_fp32_fp16(
     n: Int,
     k: Int,
 ):
-    alias mma_m = 16
-    alias mma_n = 8
-    alias mma_k = 8
+    comptime mma_m = 16
+    comptime mma_n = 8
+    comptime mma_k = 8
 
     var d_reg = SIMD[DType.float32, 4](0)
     var tile_loops = k // mma_k
 
     for i in range(tile_loops):
-        var a_tile_row = block_idx.x * mma_m
+        var a_tile_row = Int(block_idx.x * mma_m)
         var a_tile_col = i * mma_k
         var b_tile_row = i * mma_k
-        var b_tile_col = block_idx.y * mma_n
+        var b_tile_col = Int(block_idx.y * mma_n)
 
         var a_reg = load_matrix_a[mma_m, mma_n, mma_k](
             a_ptr, a_tile_row, a_tile_col, k
@@ -169,8 +171,8 @@ fn mma_kernel_fp32_fp16(
         # Perform mma (d = a * b + d)
         mma(d_reg, a_reg, b_reg, d_reg)
 
-    var c_tile_row = block_idx.x * mma_m
-    var c_tile_col = block_idx.y * mma_n
+    var c_tile_row = Int(block_idx.x * mma_m)
+    var c_tile_col = Int(block_idx.y * mma_n)
     store_matrix_d[mma_m, mma_n, mma_k](c_ptr, d_reg, c_tile_row, c_tile_col, n)
 
 
@@ -183,18 +185,18 @@ fn mma_kernel_fp16_fp16(
     n: Int,
     k: Int,
 ):
-    alias mma_m = 16
-    alias mma_n = 8
-    alias mma_k = 8
+    comptime mma_m = 16
+    comptime mma_n = 8
+    comptime mma_k = 8
 
     var d_reg = SIMD[DType.float16, 4](0)
     var tile_loops = k // mma_k
 
     for i in range(tile_loops):
-        var a_tile_row = block_idx.x * mma_m
+        var a_tile_row = Int(block_idx.x * mma_m)
         var a_tile_col = i * mma_k
         var b_tile_row = i * mma_k
-        var b_tile_col = block_idx.y * mma_n
+        var b_tile_col = Int(block_idx.y * mma_n)
 
         var a_reg = load_matrix_a[mma_m, mma_n, mma_k](
             a_ptr, a_tile_row, a_tile_col, k
@@ -206,8 +208,8 @@ fn mma_kernel_fp16_fp16(
         # Perform mma (d = a * b + d)
         mma(d_reg, a_reg, b_reg, d_reg)
 
-    var c_tile_row = block_idx.x * mma_m
-    var c_tile_col = block_idx.y * mma_n
+    var c_tile_row = Int(block_idx.x * mma_m)
+    var c_tile_col = Int(block_idx.y * mma_n)
     store_matrix_d[mma_m, mma_n, mma_k](c_ptr, d_reg, c_tile_row, c_tile_col, n)
 
 
@@ -254,15 +256,15 @@ fn run_mma_fp32_tf32(
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias WARP_PER_BLOCK = 1
-    alias MMA_M = 16
-    alias MMA_N = 8
-    alias MMA_K = 8
+    comptime WARP_PER_BLOCK = 1
+    comptime MMA_M = 16
+    comptime MMA_N = 8
+    comptime MMA_K = 8
 
     @always_inline
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
-        alias kernel = mma_kernel_fp32_tf32
+        comptime kernel = mma_kernel_fp32_tf32
         ctx.enqueue_function_checked[kernel, kernel](
             c_device,
             a_device,
@@ -288,29 +290,29 @@ fn run_mma_fp32_tf32(
     ctx.enqueue_copy(a_device_ref, a_host_ref)
     ctx.enqueue_copy(b_device_ref, b_host_ref)
 
-    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var a_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        a_device_ref._unsafe_ptr(),
+    var a_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
+        a_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
-    var b_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        b_device_ref._unsafe_ptr(),
+    var b_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
+        b_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
 
-    var c_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        c_device_ref._unsafe_ptr(),
+    var c_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
+        c_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
-    alias BLOCK_DIM = 16
+    comptime BLOCK_DIM = 16
 
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        alias kernel = matmul_kernel_naive[
+        comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -421,15 +423,15 @@ fn run_mma_fp32_bf16(
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias WARP_PER_BLOCK = 1
-    alias MMA_M = 16
-    alias MMA_N = 8
-    alias MMA_K = 8
+    comptime WARP_PER_BLOCK = 1
+    comptime MMA_M = 16
+    comptime MMA_N = 8
+    comptime MMA_K = 8
 
     @always_inline
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
-        alias kernel = mma_kernel_fp32_bf16
+        comptime kernel = mma_kernel_fp32_bf16
         ctx.enqueue_function_checked[kernel, kernel](
             c_device,
             a_device,
@@ -455,28 +457,28 @@ fn run_mma_fp32_bf16(
     ctx.enqueue_copy(a_device_ref, a_host_ref)
     ctx.enqueue_copy(b_device_ref, b_host_ref)
 
-    alias BLOCK_DIM = 16
-    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime BLOCK_DIM = 16
+    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var a_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        a_device_ref._unsafe_ptr(),
+    var a_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
+        a_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
-    var b_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        b_device_ref._unsafe_ptr(),
+    var b_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
+        b_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
 
-    var c_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        c_device_ref._unsafe_ptr(),
+    var c_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
+        c_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        alias kernel = matmul_kernel_naive[
+        comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -585,15 +587,15 @@ fn run_mma_fp32_bf16_2(
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias WARP_PER_BLOCK = 1
-    alias MMA_M = 16
-    alias MMA_N = 8
-    alias MMA_K = 8
+    comptime WARP_PER_BLOCK = 1
+    comptime MMA_M = 16
+    comptime MMA_N = 8
+    comptime MMA_K = 8
 
     @always_inline
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
-        alias kernel = mma_kernel_fp32_bf16_2
+        comptime kernel = mma_kernel_fp32_bf16_2
         ctx.enqueue_function_checked[kernel, kernel](
             c_device,
             a_device,
@@ -619,29 +621,29 @@ fn run_mma_fp32_bf16_2(
     ctx.enqueue_copy(a_device_ref, a_host_ref)
     ctx.enqueue_copy(b_device_ref, b_host_ref)
 
-    alias BLOCK_DIM = 16
+    comptime BLOCK_DIM = 16
 
-    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var a_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        a_device_ref._unsafe_ptr(),
+    var a_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
+        a_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
-    var b_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        b_device_ref._unsafe_ptr(),
+    var b_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
+        b_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
 
-    var c_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        c_device_ref._unsafe_ptr(),
+    var c_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
+        c_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        alias kernel = matmul_kernel_naive[
+        comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -750,15 +752,15 @@ fn run_mma_fp32_fp16(
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias WARP_PER_BLOCK = 1
-    alias MMA_M = 16
-    alias MMA_N = 8
-    alias MMA_K = 8
+    comptime WARP_PER_BLOCK = 1
+    comptime MMA_M = 16
+    comptime MMA_N = 8
+    comptime MMA_K = 8
 
     @always_inline
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
-        alias kernel = mma_kernel_fp32_fp16
+        comptime kernel = mma_kernel_fp32_fp16
         ctx.enqueue_function_checked[kernel, kernel](
             c_device,
             a_device,
@@ -784,28 +786,28 @@ fn run_mma_fp32_fp16(
     ctx.enqueue_copy(a_device_ref, a_host_ref)
     ctx.enqueue_copy(b_device_ref, b_host_ref)
 
-    alias BLOCK_DIM = 16
-    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime BLOCK_DIM = 16
+    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var a_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        a_device_ref._unsafe_ptr(),
+    var a_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
+        a_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
-    var b_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        b_device_ref._unsafe_ptr(),
+    var b_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
+        b_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
 
-    var c_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        c_device_ref._unsafe_ptr(),
+    var c_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
+        c_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        alias kernel = matmul_kernel_naive[
+        comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -915,15 +917,15 @@ fn run_mma_fp16_fp16(
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias WARP_PER_BLOCK = 1
-    alias MMA_M = 16
-    alias MMA_N = 8
-    alias MMA_K = 8
+    comptime WARP_PER_BLOCK = 1
+    comptime MMA_M = 16
+    comptime MMA_N = 8
+    comptime MMA_K = 8
 
     @always_inline
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
-        alias kernel = mma_kernel_fp16_fp16
+        comptime kernel = mma_kernel_fp16_fp16
         ctx.enqueue_function_checked[kernel, kernel](
             c_device,
             a_device,
@@ -949,28 +951,28 @@ fn run_mma_fp16_fp16(
     ctx.enqueue_copy(a_device_ref, a_host_ref)
     ctx.enqueue_copy(b_device_ref, b_host_ref)
 
-    alias BLOCK_DIM = 16
-    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime BLOCK_DIM = 16
+    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var a_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        a_device_ref._unsafe_ptr(),
+    var a_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
+        a_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
-    var b_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        b_device_ref._unsafe_ptr(),
+    var b_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
+        b_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
 
-    var c_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        c_device_ref._unsafe_ptr(),
+    var c_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
+        c_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        alias kernel = matmul_kernel_naive[
+        comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,
             DType.float32,

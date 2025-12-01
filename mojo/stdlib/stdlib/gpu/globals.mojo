@@ -23,12 +23,13 @@ are used to optimize code generation and ensure hardware compatibility.
 
 from sys.info import (
     CompilationTarget,
+    _accelerator_arch,
+    _is_amd_rdna,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
-    _is_amd_rdna,
     is_amd_gpu,
+    is_apple_gpu,
     is_nvidia_gpu,
-    _accelerator_arch,
 )
 
 from .host.info import GPUInfo
@@ -38,7 +39,7 @@ from .host.info import GPUInfo
 # ===-----------------------------------------------------------------------===#
 
 
-alias WARP_SIZE = _resolve_warp_size()
+comptime WARP_SIZE = _resolve_warp_size()
 """The number of threads that execute in lockstep within a warp on the GPU.
 
 This constant represents the hardware warp size, which is the number of threads that execute
@@ -64,6 +65,8 @@ fn _resolve_warp_size() -> Int:
         return 32
     elif is_amd_gpu():
         return 64
+    elif is_apple_gpu():
+        return 32
     elif _accelerator_arch() == "":
         return 0
     else:
@@ -75,7 +78,7 @@ fn _resolve_warp_size() -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
-alias WARPGROUP_SIZE = _resolve_warpgroup_size()
+comptime WARPGROUP_SIZE = _resolve_warpgroup_size()
 """The number of threads in a warpgroup on Nvidia GPUs.
 
 On Nvidia GPUs after hopper, a warpgroup consists of 4 subsequent arps
@@ -97,7 +100,7 @@ fn _resolve_warpgroup_size() -> Int:
 # MAX_THREADS_PER_BLOCK_METADATA
 # ===-----------------------------------------------------------------------===#
 
-alias MAX_THREADS_PER_BLOCK_METADATA = _resolve_max_threads_per_block_metadata()
+comptime MAX_THREADS_PER_BLOCK_METADATA = _resolve_max_threads_per_block_metadata()
 """This is metadata tag that is used in conjunction with __llvm_metadata to
 give a hint to the compiler about the max threads per block that's used."""
 
@@ -108,6 +111,9 @@ fn _resolve_max_threads_per_block_metadata() -> __mlir_type.`!kgen.string`:
         return "nvvm.maxntid".value
     elif is_amd_gpu() or has_amd_gpu_accelerator():
         return "rocdl.flat_work_group_size".value
+    elif is_apple_gpu():
+        # That attribute is used to represent Metal's [[max_total_threads_per_threadgroup(x)]]
+        return "pop.air.max_work_group_size".value
     else:
         return CompilationTarget.unsupported_target_error[
             __mlir_type.`!kgen.string`,

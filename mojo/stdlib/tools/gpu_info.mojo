@@ -45,7 +45,7 @@ fn compute_capability_to_arch_name(major: Int, minor: Int) -> StaticString:
     return "Unknown"
 
 
-fn main() raises:
+def main():
     var args = argv()
     var api: String = "cuda"
     var device_id: Int = 0
@@ -77,14 +77,7 @@ fn main() raises:
         print(
             "compute=" + String(Float32(major) + (Float32(minor) / 10)) + ", "
         )
-        print(
-            'version="sm_'
-            + (
-                String(compute_capability)
-                + ("a" if compute_capability >= 90 else "")
-            )
-            + '",'
-        )
+        print('version="' + arch_name + '", ')
         print(
             "sm_count="
             + String(

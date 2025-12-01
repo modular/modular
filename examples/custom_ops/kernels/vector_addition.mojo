@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/tutorials/build-custom-ops.mdx
+# DOC: max/develop/build-custom-ops.mdx
 
 from math import ceildiv
 
 from gpu import block_dim, block_idx, thread_idx
 from runtime.asyncrt import DeviceContextPtr
-from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
+from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
 from utils.index import IndexList
 
@@ -56,7 +56,7 @@ fn _vector_addition_gpu(
     fn vector_addition_gpu_kernel(length: Int):
         var tid = block_dim.x * block_idx.x + thread_idx.x
         if tid < UInt(length):
-            var idx = IndexList[output.rank](tid)
+            var idx = IndexList[output.rank](Int(tid))
             var result = lhs.load[1](idx) + rhs.load[1](idx)
             output.store[1](idx, result)
 
@@ -66,9 +66,9 @@ fn _vector_addition_gpu(
 
     # The GPU function is compiled and enqueued to run on the GPU across the
     # 1-D vector, split into blocks of `BLOCK_SIZE` width.
-    gpu_ctx.enqueue_function[vector_addition_gpu_kernel](
-        vector_length, grid_dim=num_blocks, block_dim=BLOCK_SIZE
-    )
+    gpu_ctx.enqueue_function_checked[
+        vector_addition_gpu_kernel, vector_addition_gpu_kernel
+    ](vector_length, grid_dim=num_blocks, block_dim=BLOCK_SIZE)
 
 
 @compiler.register("vector_addition")

@@ -14,11 +14,7 @@
 from math import align_down, align_up, ceildiv
 from sys import align_of
 from sys._build import is_debug_build
-from sys.info import (
-    CompilationTarget,
-    simd_width_of,
-    size_of,
-)
+from sys.info import CompilationTarget, simd_width_of, size_of
 
 from algorithm import vectorize
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
@@ -26,13 +22,14 @@ from buffer.dimlist import DimList
 from layout.layout import *
 from layout.layout_tensor import LayoutTensor
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils.index import Index, IndexList
 
-alias elementwise_epilogue_type = fn[
+comptime elementwise_epilogue_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
 ] (IndexList[2], SIMD[dtype, width]) capturing -> None
 
-alias elementwise_compute_lambda_type = fn[
+comptime elementwise_compute_lambda_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
 ] (IndexList[2], SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
@@ -218,10 +215,10 @@ fn calculate_tile_n_k[
         The calculated tile size to partition the matmul as (TileN, TileK).
     """
 
-    alias pack_cache_size = get_pack_data_size[b_type]()
-    alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
-    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
-    alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
+    comptime pack_cache_size = get_pack_data_size[b_type]()
+    comptime use_vnni = use_vnni_fn[a_type, b_type, c_type]()
+    comptime use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+    comptime factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
 
     var least_tile_n: Int = kernel_cols
 
@@ -331,7 +328,7 @@ fn get_matmul_kernel_shape_ARM[
         else:
             return MicroKernelShape(8, 2)
     else:
-        alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+        comptime use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
 
         @parameter
         if use_i8mm:
@@ -350,7 +347,7 @@ fn get_matmul_kernel_shape_ARM[
 fn get_matmul_kernel_shape[
     a_type: DType, b_type: DType, c_type: DType, kernel_type: Bool
 ]() -> MicroKernelShape:
-    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+    comptime use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
 
     @parameter
     if CompilationTarget.has_neon():
@@ -414,7 +411,7 @@ fn get_matmul_num_tasks[
     # support partition in k dim yet. E.x. 32x32x1024 uses 16 threads by min
     # task complexity but we only want it to use <= 4 threads for now since
     # M and N are very small.
-    alias kernel_shape = get_matmul_kernel_shape[
+    comptime kernel_shape = get_matmul_kernel_shape[
         a_type, b_type, c_type, kernel_type
     ]()
     var max_row_tasks = ceildiv(m, 2 * kernel_shape.simd_rows)
@@ -469,7 +466,7 @@ fn get_partitioned_matmul[
     kernel_rows: Int,
     kernel_cols: Int,
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
-    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+    comptime use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
 
     @parameter
     if use_i8mm:
@@ -568,7 +565,7 @@ fn get_pack_data_size[dtype: DType]() -> Int:
     Returns:
         The number of elements to pack.
     """
-    alias KB = 1024
+    comptime KB = 1024
 
     @parameter
     if is_debug_build():
@@ -605,9 +602,9 @@ fn get_kernel_config[
     Functions.
         TODO: Add target dependent configuration parameters.
     """
-    alias simd_size = simd_width_of[c_type]()
+    comptime simd_size = simd_width_of[c_type]()
 
-    alias kernel_shape = get_matmul_kernel_shape[
+    comptime kernel_shape = get_matmul_kernel_shape[
         a_type, b_type, c_type, kernel_type
     ]()
 
@@ -702,9 +699,9 @@ fn packA_i8mm[
     a_packed_ptr: UnsafePointer[Scalar[a_type]],
 ):
     @always_inline
-    @__copy_capture(k)
-    @parameter
-    fn packA_helper[nrow: Int](offset: Int):
+    fn packA_helper[
+        nrow: Int
+    ](offset: Int) unified {var k, var t0, read a_ptr, read a_packed_ptr}:
         var kl = align_down(k, 8)
         var kh = align_up(k, 8)
         var j = t0 + offset
@@ -727,16 +724,16 @@ fn packA_i8mm[
                 t0,
             )
 
-    vectorize[packA_helper, 2](t1 - t0)
+    vectorize[2](t1 - t0, packA_helper)
 
 
 @fieldwise_init
 @register_passable("trivial")
 struct InnerKernelID(ImplicitlyCopyable, Movable):
-    alias DEFAULT = InnerKernelID(0)
-    alias VNNI = InnerKernelID(1)
-    alias NEON = InnerKernelID(2)
-    alias I8MM = InnerKernelID(3)
+    comptime DEFAULT = InnerKernelID(0)
+    comptime VNNI = InnerKernelID(1)
+    comptime NEON = InnerKernelID(2)
+    comptime I8MM = InnerKernelID(3)
 
     var value: Int
 
@@ -749,8 +746,8 @@ struct InnerKernelID(ImplicitlyCopyable, Movable):
 fn select_inner_kernel[
     a_type: DType, b_type: DType, c_type: DType
 ]() -> InnerKernelID:
-    alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
-    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+    comptime use_vnni = use_vnni_fn[a_type, b_type, c_type]()
+    comptime use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
 
     @parameter
     if use_i8mm:
@@ -779,22 +776,22 @@ fn apply_epilogue[
         and src.element_layout.stride[1] == 1
     ):
         # update an element tensor.
-        alias num_copies = src.element_layout.shape[0].value()
-        alias vec_width = src.element_layout.shape[1].value()
+        comptime num_copies = src.element_layout.shape[0].value()
+        comptime vec_width = src.element_layout.shape[1].value()
 
         @parameter
         for i in range(dst_layout.size()):
             # Offset to the current element.
-            alias src_offset = src.layout(i)
-            alias dst_offset = dst_layout(i)
+            comptime src_offset = src.layout(i)
+            comptime dst_offset = dst_layout(i)
 
             @parameter
             for j in range(num_copies):
-                alias src_idx = src_offset + src.element_layout(j)
-                alias dst_idx = dst_offset + dst_element_layout(j)
+                comptime src_idx = src_offset + src.element_layout(j)
+                comptime dst_idx = dst_offset + dst_element_layout(j)
                 # C matrix dimension. For 2D simd tile, element_layout preserves
                 # the matrix dimension, layout doesn't.
-                alias N = dst_element_layout.stride[0].value()
+                comptime N = dst_element_layout.stride[0].value()
 
                 var vec = src.ptr.load[
                     width=vec_width,
@@ -813,11 +810,11 @@ fn apply_epilogue[
 
         @parameter
         for i in range(src.layout.size() * src.element_size):
-            alias src_idx = make_layout(src.element_layout, src.layout)(i)
-            alias dst_idx = make_layout(dst_element_layout, dst_layout)(i)
+            comptime src_idx = make_layout(src.element_layout, src.layout)(i)
+            comptime dst_idx = make_layout(dst_element_layout, dst_layout)(i)
             # C matrix dimension. For scalar or 1D vector element, the layout
             # preserves the matrix dimension.
-            alias N = dst_layout.stride[0].value()
+            comptime N = dst_layout.stride[0].value()
 
             var m = (src_idx + offset) // N
             var n = (src_idx + offset) % N

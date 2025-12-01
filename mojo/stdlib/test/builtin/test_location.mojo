@@ -18,7 +18,7 @@ from builtin._location import (
     __source_location,
     _SourceLocation,
 )
-from testing import assert_equal, assert_true
+from testing import assert_equal, assert_true, TestSuite
 
 
 fn check_source_loc(line: Int, col: Int, source_loc: _SourceLocation) raises:
@@ -28,7 +28,7 @@ fn check_source_loc(line: Int, col: Int, source_loc: _SourceLocation) raises:
     assert_true(String(source_loc.file_name).endswith("test_location.mojo"))
 
 
-fn get_locs() -> (_SourceLocation, _SourceLocation):
+fn get_locs() -> Tuple[_SourceLocation, _SourceLocation]:
     return (
         __source_location(),
         source_loc_with_debug(),
@@ -36,7 +36,7 @@ fn get_locs() -> (_SourceLocation, _SourceLocation):
 
 
 @always_inline
-fn get_locs_inlined() -> (_SourceLocation, _SourceLocation):
+fn get_locs_inlined() -> Tuple[_SourceLocation, _SourceLocation]:
     return (
         __source_location(),
         source_loc_with_debug(),
@@ -44,10 +44,12 @@ fn get_locs_inlined() -> (_SourceLocation, _SourceLocation):
 
 
 fn get_four_locs() -> (
-    _SourceLocation,
-    _SourceLocation,
-    _SourceLocation,
-    _SourceLocation,
+    Tuple[
+        _SourceLocation,
+        _SourceLocation,
+        _SourceLocation,
+        _SourceLocation,
+    ]
 ):
     var p1 = get_locs()
     var p2 = get_locs_inlined()
@@ -56,10 +58,12 @@ fn get_four_locs() -> (
 
 @always_inline
 fn get_four_locs_inlined() -> (
-    _SourceLocation,
-    _SourceLocation,
-    _SourceLocation,
-    _SourceLocation,
+    Tuple[
+        _SourceLocation,
+        _SourceLocation,
+        _SourceLocation,
+        _SourceLocation,
+    ]
 ):
     var p1 = get_locs()
     var p2 = get_locs_inlined()
@@ -68,8 +72,8 @@ fn get_four_locs_inlined() -> (
 
 fn test_builtin_source_loc() raises:
     var source_loc = __source_location()
-    check_source_loc(70, 39, source_loc)
-    check_source_loc(72, 47, __source_location())
+    check_source_loc(74, 39, source_loc)
+    check_source_loc(76, 47, __source_location())
 
     var l = (33, 34, 41, 42)
     var c = (26, 30, 26, 30)
@@ -109,20 +113,20 @@ fn get_callsite_statically() -> _SourceLocation:
 
 fn test_parameter_context() raises:
     # TODO: enable these in parameter contexts
-    alias sloc = __source_location()
+    comptime sloc = __source_location()
     assert_equal(sloc.line, 0)
     assert_equal(sloc.col, 0)
     assert_equal(sloc.file_name, "<unknown location in parameter context>")
 
-    alias cloc = get_callsite_statically()
+    comptime cloc = get_callsite_statically()
     assert_equal(cloc.line, 0)
     assert_equal(cloc.col, 0)
     assert_equal(cloc.file_name, "<unknown location in parameter context>")
 
-    alias iloc = get_inner_location_statically()
-    check_source_loc(98, 29, iloc)
-    alias iloc2 = get_inner_location_statically_with_debug()
-    check_source_loc(102, 33, iloc2)
+    comptime iloc = get_inner_location_statically()
+    check_source_loc(102, 29, iloc)
+    comptime iloc2 = get_inner_location_statically_with_debug()
+    check_source_loc(106, 33, iloc2)
 
 
 @always_inline
@@ -145,7 +149,7 @@ fn capture_call_loc_nodebug[
     return _SourceLocation(-1, -1, "")
 
 
-fn get_call_locs() -> (_SourceLocation, _SourceLocation):
+fn get_call_locs() -> Tuple[_SourceLocation, _SourceLocation]:
     return (
         capture_call_loc(),
         capture_call_loc_nodebug(),
@@ -155,7 +159,7 @@ fn get_call_locs() -> (_SourceLocation, _SourceLocation):
 @always_inline("nodebug")
 fn get_call_locs_inlined[
     depth: Int = 1
-]() -> (_SourceLocation, _SourceLocation):
+]() -> Tuple[_SourceLocation, _SourceLocation]:
     return (
         capture_call_loc[depth](),
         capture_call_loc_nodebug[depth](),
@@ -165,15 +169,17 @@ fn get_call_locs_inlined[
 @always_inline
 fn get_call_locs_inlined_twice[
     depth: Int = 1
-]() -> (_SourceLocation, _SourceLocation):
+]() -> Tuple[_SourceLocation, _SourceLocation]:
     return get_call_locs_inlined[depth]()
 
 
 fn get_four_call_locs() -> (
-    _SourceLocation,
-    _SourceLocation,
-    _SourceLocation,
-    _SourceLocation,
+    Tuple[
+        _SourceLocation,
+        _SourceLocation,
+        _SourceLocation,
+        _SourceLocation,
+    ]
 ):
     var p1 = get_call_locs()
     var p2 = get_call_locs_inlined()
@@ -182,10 +188,12 @@ fn get_four_call_locs() -> (
 
 @always_inline
 fn get_four_call_locs_inlined() -> (
-    _SourceLocation,
-    _SourceLocation,
-    _SourceLocation,
-    _SourceLocation,
+    Tuple[
+        _SourceLocation,
+        _SourceLocation,
+        _SourceLocation,
+        _SourceLocation,
+    ]
 ):
     var p1 = get_call_locs()
     var p2 = get_call_locs_inlined()
@@ -193,7 +201,7 @@ fn get_four_call_locs_inlined() -> (
 
 
 fn test_builtin_call_loc() raises:
-    var l = (150, 151, 160, 161)
+    var l = (154, 155, 164, 165)
     var c = (25, 33, 32, 40)
     var loc_pair = get_call_locs()
     check_source_loc(l[0], c[0], loc_pair[0])
@@ -204,8 +212,8 @@ fn test_builtin_call_loc() raises:
     check_source_loc(l[3], c[3], loc_pair[1])
 
     loc_pair = get_call_locs_inlined_twice[2]()
-    check_source_loc(169, 40, loc_pair[0])
-    check_source_loc(169, 40, loc_pair[1])
+    check_source_loc(173, 40, loc_pair[0])
+    check_source_loc(173, 40, loc_pair[1])
 
     var loc_quad = get_four_call_locs()
     check_source_loc(l[0], c[0], loc_quad[0])
@@ -227,11 +235,11 @@ fn source_loc_with_debug() -> _SourceLocation:
     var file_name: __mlir_type.`!kgen.string`
     line, col, file_name = __mlir_op.`kgen.source_loc`[
         inlineCount = Int(0)._mlir_value,
-        _type = (
+        _type = Tuple[
             __mlir_type.index,
             __mlir_type.index,
             __mlir_type.`!kgen.string`,
-        ),
+        ],
     ]()
 
     return _SourceLocation(
@@ -246,8 +254,5 @@ fn test_source_location_struct() raises:
     assert_equal(String(source_loc), "/path/to/some_file.mojo:50:60")
 
 
-fn main() raises:
-    test_source_location_struct()
-    test_builtin_source_loc()
-    test_parameter_context()
-    test_builtin_call_loc()
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

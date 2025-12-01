@@ -30,7 +30,6 @@ from gpu import (
 )
 from gpu.host import DeviceContext
 from gpu.intrinsics import ldg
-from gpu.memory import AddressSpace
 from linalg.utils import elementwise_epilogue_type
 from memory import stack_allocation
 
@@ -38,7 +37,7 @@ from utils import StaticTuple
 from utils.index import Index
 from utils.numerics import isnan
 
-alias BLOCK_DIM = 8
+comptime BLOCK_DIM = 8
 
 
 # BM: The threadblock size for M dimension SMEM caching.
@@ -72,9 +71,9 @@ fn sgemm_warp_tiling_kernel[
     NUM_THREADS: Int,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    mat_c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
-    mat_a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    mat_b: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
+    mat_c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
+    mat_a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
+    mat_b: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
     alpha: Scalar[c_type],
     beta: Scalar[c_type],
 ):
@@ -86,73 +85,75 @@ fn sgemm_warp_tiling_kernel[
 
     # Placement of the warp in the threadblock tile.
     var warp_idx = warp_id()  # the warp this thread is in
-    var warp_col = warp_idx % (BN // WN)
-    var warp_row = warp_idx // (BN // WN)
+    var warp_col = warp_idx % UInt(BN // WN)
+    var warp_row = warp_idx // UInt(BN // WN)
 
-    # Size of the warp subtile.
-    alias w_sub_m = WM // WMITER  # 64/2=32
-    alias w_sub_n = WN // WNITER  # 32/2=16
+    # Size of the warp sub-tile.
+    comptime w_sub_m = WM // WMITER  # 64/2=32
+    comptime w_sub_n = WN // WNITER  # 32/2=16
 
-    # Placement of the thread in the warp subtile.
-    var thread_Idx_In_warp = thread_idx.x % WARP_SIZE  # [0, 31]
-    var thread_col_in_warp = thread_Idx_In_warp % (w_sub_n // TN)  # i%(16/4)
-    var thread_row_in_warp = thread_Idx_In_warp // (w_sub_n // TN)  # i/4
+    # Placement of the thread in the warp sub-tile.
+    var thread_Idx_In_warp = thread_idx.x % UInt(WARP_SIZE)  # [0, 31]
+    var thread_col_in_warp = thread_Idx_In_warp % UInt(
+        w_sub_n // TN
+    )  # i%(16/4)
+    var thread_row_in_warp = thread_Idx_In_warp // UInt(w_sub_n // TN)  # i/4
 
     # Allocate space for the current blocktile in SMEM.
     # Pad the A tile in share memory to avoid bank conflicts.
     # Use 4 to comply with f4 alignment used in accumulation.
-    alias sram_bank_padding_size = 4
-    alias BM_padded = BM + sram_bank_padding_size
+    comptime sram_bank_padding_size = 4
+    comptime BM_padded = BM + sram_bank_padding_size
     var a_sram = NDBuffer[
         a_type,
         1,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         DimList(Int(BK * BM_padded)),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     var b_sram = NDBuffer[
         b_type,
         1,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         DimList(Int(BK * BN)),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     # Move blocktile to beginning of A's row and B's column.
-    var aa_ptr = mat_a._offset(Index(c_row * BM, 0))
-    var bb_ptr = mat_b._offset(Index(0, c_col * BN))
+    var aa_ptr = mat_a._offset(Index(c_row * UInt(BM), 0))
+    var bb_ptr = mat_b._offset(Index(0, c_col * UInt(BN)))
     # Move C_ptr to warp's output tile
-    var M_offset_warp = c_row * BM + warp_row * WM
-    var N_offset_warp = c_col * BN + warp_col * WN
+    var M_offset_warp = c_row * UInt(BM) + warp_row * UInt(WM)
+    var N_offset_warp = c_col * UInt(BN) + warp_col * UInt(WN)
     var cc_ptr = mat_c._offset(Index(M_offset_warp, N_offset_warp))
 
     # Calculate the indices that this thread will load into SMEM.
     # We load 128bit / 32bit = 4 elements per thread at each step.
-    var inner_row_a = thread_idx.x // (BK // 4)
-    var inner_col_a = thread_idx.x % (BK // 4)
-    alias row_stride_a = (NUM_THREADS * 4) // BK
-    var inner_row_b = thread_idx.x // (BN // 4)
-    var inner_co_ib = thread_idx.x % (BN // 4)
-    alias row_stride_b = NUM_THREADS // (BN // 4)
+    var inner_row_a = thread_idx.x // UInt(BK // 4)
+    var inner_col_a = thread_idx.x % UInt(BK // 4)
+    comptime row_stride_a = (NUM_THREADS * 4) // BK
+    var inner_row_b = thread_idx.x // UInt(BN // 4)
+    var inner_co_ib = thread_idx.x % UInt(BN // 4)
+    comptime row_stride_b = NUM_THREADS // (BN // 4)
 
     # TODO: We want these to be register-allocated!
     # Allocate thread-local cache for results in register file.
     var thread_results = NDBuffer[
         c_type,
         4,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         DimList(Int(WMITER), Int(WNITER), Int(TM), Int(TN)),
     ]().stack_allocation()
     thread_results.zero()
 
     # We cache into registers on the warptile level.
     var reg_m = NDBuffer[
-        a_type, 2, MutableAnyOrigin, DimList(Int(WMITER), Int(TM))
+        a_type, 2, MutAnyOrigin, DimList(Int(WMITER), Int(TM))
     ]().stack_allocation()
     reg_m.zero()
 
     var reg_n = NDBuffer[
-        b_type, 2, MutableAnyOrigin, DimList(Int(WNITER), Int(TN))
+        b_type, 2, MutAnyOrigin, DimList(Int(WNITER), Int(TN))
     ]().stack_allocation()
     reg_n.zero()
 
@@ -161,24 +162,36 @@ fn sgemm_warp_tiling_kernel[
         for offset in range(0, Int(BM - row_stride_a + 1), Int(row_stride_a)):
             # Load 4 elements at a time and store to shared memory.
             var tmp = ldg[width=4](
-                aa_ptr.offset(Int((inner_row_a + offset) * K + inner_col_a * 4))
+                aa_ptr.offset(
+                    Int(
+                        (inner_row_a + UInt(offset)) * UInt(K) + inner_col_a * 4
+                    )
+                )
             )
 
             @parameter
             for i in range(4):
                 a_sram[
                     Int(
-                        (inner_col_a * 4 + i) * BM_padded + inner_row_a + offset
+                        (inner_col_a * 4 + UInt(i)) * UInt(BM_padded)
+                        + inner_row_a
+                        + UInt(offset)
                     )
                 ] = tmp[i]
 
         for offset in range(0, Int(BK - row_stride_b + 1), Int(row_stride_b)):
             # Load 4 elements at a time and store to shared memory.
             var tmp = ldg[width=4](
-                bb_ptr.offset(Int((inner_row_b + offset) * N + inner_co_ib * 4))
+                bb_ptr.offset(
+                    Int(
+                        (inner_row_b + UInt(offset)) * UInt(N) + inner_co_ib * 4
+                    )
+                )
             )
             b_sram.store[alignment=16](
-                Index((inner_row_b + offset) * BN + inner_co_ib * 4),
+                Index(
+                    (inner_row_b + UInt(offset)) * UInt(BN) + inner_co_ib * 4
+                ),
                 tmp,
             )
 
@@ -192,13 +205,11 @@ fn sgemm_warp_tiling_kernel[
                 @parameter
                 for i in range(0, Int(TM), 4):
                     var vec = a_sram.load[width=4, alignment=16](
-                        Int(
-                            (dot_idx * BM_padded)
-                            + warp_row * WM
-                            + w_sub_row_idx * w_sub_m
-                            + thread_row_in_warp * TM
-                            + i
-                        )
+                        (dot_idx * BM_padded)
+                        + Int(warp_row) * WM
+                        + w_sub_row_idx * w_sub_m
+                        + Int(thread_row_in_warp) * TM
+                        + i
                     )
                     reg_m.store(Index(w_sub_row_idx, i), vec)
 
@@ -208,12 +219,10 @@ fn sgemm_warp_tiling_kernel[
                 @parameter
                 for i in range(0, Int(TN), 4):
                     var vec = b_sram.load[width=4, alignment=16](
-                        Int(
-                            (dot_idx * BN)
-                            + warp_col * WN
-                            + w_sub_col_idx * w_sub_n
-                            + thread_col_in_warp * TN
-                        )
+                        (dot_idx * BN)
+                        + Int(warp_col) * WN
+                        + w_sub_col_idx * w_sub_n
+                        + Int(thread_col_in_warp) * TN
                     )
                     reg_n.store(Index(w_sub_col_idx, i), vec)
 
@@ -250,7 +259,7 @@ fn sgemm_warp_tiling_kernel[
 
         @parameter
         for w_sub_col_idx in range(WNITER):
-            # Move C pointer to current warp subtile.
+            # Move C pointer to current warp sub-tile.
             var M_offset_subtile = w_sub_row_idx * w_sub_m
             var N_offset_subtile = w_sub_col_idx * w_sub_n
             var C_interim = cc_ptr.offset(
@@ -262,9 +271,13 @@ fn sgemm_warp_tiling_kernel[
 
                 @parameter
                 for res_idx_n in range(0, Int(TN), 4):
-                    var M_offset_val = thread_row_in_warp * TM + res_idx_m
-                    var N_offset_val = thread_col_in_warp * TN + res_idx_n
-                    var c_idx = M_offset_val * N + N_offset_val
+                    var M_offset_val = thread_row_in_warp * UInt(TM) + UInt(
+                        res_idx_m
+                    )
+                    var N_offset_val = thread_col_in_warp * UInt(TN) + UInt(
+                        res_idx_n
+                    )
+                    var c_idx = M_offset_val * UInt(N) + N_offset_val
                     var result_vec = thread_results.load[width=4](
                         Index(
                             w_sub_row_idx,
@@ -280,11 +293,15 @@ fn sgemm_warp_tiling_kernel[
 
                     @parameter
                     if elementwise_lambda_fn:
-                        alias elementwise_lambda = elementwise_lambda_fn.value()
+                        comptime elementwise_lambda = elementwise_lambda_fn.value()
                         elementwise_lambda[c_type, 4](
                             Index(
-                                M_offset_warp + M_offset_subtile + M_offset_val,
-                                N_offset_warp + N_offset_subtile + N_offset_val,
+                                M_offset_warp
+                                + UInt(M_offset_subtile)
+                                + M_offset_val,
+                                N_offset_warp
+                                + UInt(N_offset_subtile)
+                                + N_offset_val,
                             ),
                             vec,
                         )
@@ -293,17 +310,17 @@ fn sgemm_warp_tiling_kernel[
 
 
 fn matmul_naive(
-    a_ptr: UnsafePointer[Float32],
-    b_ptr: UnsafePointer[Float32],
-    c_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
 ):
-    var x: UInt = global_idx.x
-    var y: UInt = global_idx.y
+    var x = Int(global_idx.x)
+    var y = Int(global_idx.y)
 
-    if x >= UInt(m) or y >= UInt(n):
+    if x >= m or y >= n:
         return
 
     var a = NDBuffer[DType.float32, 2](a_ptr, Index(m, k))
@@ -319,9 +336,9 @@ fn matmul_naive(
 fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     print("== run_matmul_kernel_10")
 
-    alias M = 4096
-    alias N = 4096
-    alias K = 4096
+    comptime M = 4096
+    comptime N = 4096
+    comptime K = 4096
 
     # TODO: Find best for target GPU.
     #       For A100 see below (based on siboehm repo).
@@ -336,18 +353,18 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     # alias K10_TN = 4
     # alias K10_TM = 4
     # Settings for A6000
-    alias K10_NUM_THREADS = 256 if has_amd_gpu_accelerator() else 128
-    alias K10_BN = 128
-    alias K10_BM = 256 if has_amd_gpu_accelerator() else 128
-    alias K10_BK = 16
-    alias K10_WN = 64
-    alias K10_WM = 128 if has_amd_gpu_accelerator() else 64
-    alias K10_WNITER = 4
-    alias K10_TN = 4
-    alias K10_TM = 8
+    comptime K10_NUM_THREADS = 256 if has_amd_gpu_accelerator() else 128
+    comptime K10_BN = 128
+    comptime K10_BM = 256 if has_amd_gpu_accelerator() else 128
+    comptime K10_BK = 16
+    comptime K10_WN = 64
+    comptime K10_WM = 128 if has_amd_gpu_accelerator() else 64
+    comptime K10_WNITER = 4
+    comptime K10_TN = 4
+    comptime K10_TM = 8
 
-    alias NUM_WARPS = K10_NUM_THREADS / WARP_SIZE
-    alias K10_WMITER = (K10_WM * K10_WN) // (
+    comptime NUM_WARPS = K10_NUM_THREADS / WARP_SIZE
+    comptime K10_WMITER = (K10_WM * K10_WN) // (
         WARP_SIZE * K10_TM * K10_TN * K10_WNITER
     )
 
@@ -355,12 +372,12 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     constrained[(K10_BN % K10_WN == 0) and (K10_BM % K10_WM == 0)]()
     constrained[(K10_BN / K10_WN) * (K10_BM / K10_WM) == NUM_WARPS]()
 
-    # Threads in warpsubtile.
+    # Threads in the warp sub-tile.
     constrained[
         (K10_WM * K10_WN) % (WARP_SIZE * K10_TM * K10_TN * K10_WNITER) == 0
     ]()
 
-    # Warpsubtile in warptile.
+    # Warp sub-tile in warp tile.
     constrained[(K10_WM % K10_WMITER == 0) and (K10_WN % K10_WNITER == 0)]()
 
     constrained[
@@ -408,10 +425,10 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         "TN must be a multiple of 4",
     ]()
 
-    var a_host = UnsafePointer[Float32].alloc(M * K)
-    var b_host = UnsafePointer[Float32].alloc(K * N)
-    var c_host = UnsafePointer[Float32].alloc(M * N)
-    var c_host_naive = UnsafePointer[Float32].alloc(M * N)
+    var a_host = alloc[Float32](M * K)
+    var b_host = alloc[Float32](K * N)
+    var c_host = alloc[Float32](M * N)
+    var c_host_naive = alloc[Float32](M * N)
 
     for i in range(M * K):
         a_host[i] = i
@@ -434,16 +451,16 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     ctx.enqueue_copy(c_device, c_host)
 
     var c_buffer = NDBuffer[DType.float32, 2, _, DimList(M, N)](
-        c_device._unsafe_ptr()
+        c_device.unsafe_ptr()
     )
     var a_buffer = NDBuffer[DType.float32, 2, _, DimList(M, K)](
-        a_device._unsafe_ptr()
+        a_device.unsafe_ptr()
     )
     var b_buffer = NDBuffer[DType.float32, 2, _, DimList(K, N)](
-        b_device._unsafe_ptr()
+        b_device.unsafe_ptr()
     )
 
-    alias sgemm_type = sgemm_warp_tiling_kernel[
+    comptime sgemm_type = sgemm_warp_tiling_kernel[
         DType.float32,
         DimList(M, N),
         DType.float32,
@@ -468,7 +485,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         @parameter
         @always_inline
         fn run_func(ctx: DeviceContext) raises:
-            ctx.enqueue_function[sgemm_type](
+            ctx.enqueue_function_checked[sgemm_type, sgemm_type](
                 c_buffer,
                 a_buffer,
                 b_buffer,
@@ -482,7 +499,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
 
     m.bench_function[bench_matmul_10](
         BenchId("matmul_sgemm_10"),
-        ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
+        [ThroughputMeasure(BenchMetric.elements, 2 * M * N * K)],
     )
     _ = a_buffer
     _ = b_buffer
@@ -502,7 +519,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         @parameter
         @always_inline
         fn run_func_naive(ctx: DeviceContext) raises:
-            ctx.enqueue_function[matmul_naive](
+            ctx.enqueue_function_checked[matmul_naive, matmul_naive](
                 a_device,
                 b_device,
                 c_device,
@@ -518,7 +535,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     m.bench_function[bench_naive](
         BenchId("matmul_naive"),
         # TODO: Pick relevant benchmetric
-        ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
+        [ThroughputMeasure(BenchMetric.elements, 2 * M * N * K)],
     )
 
     ctx.enqueue_copy(c_host_naive, c_device)

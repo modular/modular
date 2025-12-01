@@ -18,6 +18,7 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -44,15 +45,17 @@ fn bench_stencil_avg_pool[
     pool_window_w: Int,
     num_channels: Int,
 ](ctx: DeviceContext, mut m: Bench) raises:
-    alias rank = 4
-    alias dilation = 1
-    alias stencil_rank = 2
-    alias simd_width = 1
+    comptime rank = 4
+    comptime dilation = 1
+    comptime stencil_rank = 2
+    comptime simd_width = 1
 
-    alias input_shape = DimList(1, input_height, input_width, num_channels)
-    alias output_height = input_height - pool_window_h + 1
-    alias output_width = input_width - pool_window_w + 1
-    alias output_shape = DimList(1, output_height, output_width, num_channels)
+    comptime input_shape = DimList(1, input_height, input_width, num_channels)
+    comptime output_height = input_height - pool_window_h + 1
+    comptime output_width = input_width - pool_window_w + 1
+    comptime output_shape = DimList(
+        1, output_height, output_width, num_channels
+    )
 
     # Create host buffers
     var h_input_ptr = UnsafePointer[Scalar[dtype]].alloc(
@@ -93,10 +96,10 @@ fn bench_stencil_avg_pool[
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](point[0], point[1])
         var upper_bound = IndexList[stencil_rank](
             point[0] + pool_window_h, point[1] + pool_window_w
@@ -150,7 +153,7 @@ fn bench_stencil_avg_pool[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            alias stencil_axis = IndexList[stencil_rank](1, 2)
+            comptime stencil_axis = IndexList[stencil_rank](1, 2)
             stencil_gpu[
                 rank,
                 stencil_rank,
@@ -193,7 +196,7 @@ fn bench_stencil_avg_pool[
         @parameter
         @always_inline
         fn kernel_launch():
-            alias stencil_axis = IndexList[stencil_rank](1, 2)
+            comptime stencil_axis = IndexList[stencil_rank](1, 2)
             stencil[
                 rank,
                 stencil_rank,
@@ -230,14 +233,15 @@ fn bench_stencil_avg_pool[
         "x",
         num_channels,
     )
+    var flops = ThroughputMeasure(BenchMetric.flops, compute_flops())
     m.bench_function[bench_gpu](
         BenchId(bench_name + "_gpu"),
-        ThroughputMeasure(BenchMetric.flops, compute_flops()),
+        [flops],
     )
 
     m.bench_function[bench_cpu](
         BenchId(bench_name + "_cpu"),
-        ThroughputMeasure(BenchMetric.flops, compute_flops()),
+        [flops],
     )
 
     # Ensure correctness
@@ -261,15 +265,17 @@ fn bench_stencil_max_pool[
     pool_window_w: Int,
     num_channels: Int,
 ](ctx: DeviceContext, mut m: Bench) raises:
-    alias rank = 4
-    alias dilation = 1
-    alias stencil_rank = 2
-    alias simd_width = 1
+    comptime rank = 4
+    comptime dilation = 1
+    comptime stencil_rank = 2
+    comptime simd_width = 1
 
-    alias input_shape = DimList(1, input_height, input_width, num_channels)
-    alias output_height = input_height - pool_window_h + 1
-    alias output_width = input_width - pool_window_w + 1
-    alias output_shape = DimList(1, output_height, output_width, num_channels)
+    comptime input_shape = DimList(1, input_height, input_width, num_channels)
+    comptime output_height = input_height - pool_window_h + 1
+    comptime output_width = input_width - pool_window_w + 1
+    comptime output_shape = DimList(
+        1, output_height, output_width, num_channels
+    )
 
     # Create host buffers
     var h_input_ptr = UnsafePointer[Scalar[dtype]].alloc(
@@ -310,10 +316,10 @@ fn bench_stencil_max_pool[
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](point[0], point[1])
         var upper_bound = IndexList[stencil_rank](
             point[0] + pool_window_h, point[1] + pool_window_w
@@ -366,7 +372,7 @@ fn bench_stencil_max_pool[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            alias stencil_axis = IndexList[stencil_rank](1, 2)
+            comptime stencil_axis = IndexList[stencil_rank](1, 2)
             stencil_gpu[
                 rank,
                 stencil_rank,
@@ -408,7 +414,7 @@ fn bench_stencil_max_pool[
         @parameter
         @always_inline
         fn kernel_launch():
-            alias stencil_axis = IndexList[stencil_rank](1, 2)
+            comptime stencil_axis = IndexList[stencil_rank](1, 2)
             stencil[
                 rank,
                 stencil_rank,
@@ -442,14 +448,15 @@ fn bench_stencil_max_pool[
         "x",
         num_channels,
     )
+    var flops = ThroughputMeasure(BenchMetric.flops, compute_flops())
     m.bench_function[bench_gpu](
         BenchId(bench_name + "_gpu"),
-        ThroughputMeasure(BenchMetric.flops, compute_flops()),
+        [flops],
     )
 
     m.bench_function[bench_cpu](
         BenchId(bench_name + "_cpu"),
-        ThroughputMeasure(BenchMetric.flops, compute_flops()),
+        [flops],
     )
 
     # Ensure correctness
@@ -474,15 +481,15 @@ fn bench_stencil_avg_pool_padded[
     pad_h: Int,
     pad_w: Int,
 ](ctx: DeviceContext, mut m: Bench) raises:
-    alias rank = 4
-    alias stencil_rank = 2
-    alias simd_width = 1
-    alias dilation = 1
+    comptime rank = 4
+    comptime stencil_rank = 2
+    comptime simd_width = 1
+    comptime dilation = 1
 
-    alias input_shape = DimList(1, input_height, input_width, 1)
-    alias output_height = input_height - pool_window_h + pad_h * 2 + 1
-    alias output_width = input_width - pool_window_w + pad_w * 2 + 1
-    alias output_shape = DimList(1, output_height, output_width, 1)
+    comptime input_shape = DimList(1, input_height, input_width, 1)
+    comptime output_height = input_height - pool_window_h + pad_h * 2 + 1
+    comptime output_width = input_width - pool_window_w + pad_w * 2 + 1
+    comptime output_shape = DimList(1, output_height, output_width, 1)
 
     # Create host buffers
     var h_input_ptr = UnsafePointer[Scalar[dtype]].alloc(
@@ -523,10 +530,10 @@ fn bench_stencil_avg_pool_padded[
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] - pad_h, point[1] - pad_w
         )
@@ -582,7 +589,7 @@ fn bench_stencil_avg_pool_padded[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            alias stencil_axis = IndexList[stencil_rank](1, 2)
+            comptime stencil_axis = IndexList[stencil_rank](1, 2)
             stencil_gpu[
                 rank,
                 stencil_rank,
@@ -625,7 +632,7 @@ fn bench_stencil_avg_pool_padded[
         @parameter
         @always_inline
         fn kernel_launch():
-            alias stencil_axis = IndexList[stencil_rank](1, 2)
+            comptime stencil_axis = IndexList[stencil_rank](1, 2)
             stencil[
                 rank,
                 stencil_rank,
@@ -665,14 +672,15 @@ fn bench_stencil_avg_pool_padded[
         pad_w,
     )
 
+    var flops = ThroughputMeasure(BenchMetric.flops, compute_flops())
     m.bench_function[bench_gpu](
         BenchId(bench_name + "_gpu"),
-        ThroughputMeasure(BenchMetric.flops, compute_flops()),
+        [flops],
     )
 
     m.bench_function[bench_cpu](
         BenchId(bench_name + "_cpu"),
-        ThroughputMeasure(BenchMetric.flops, compute_flops()),
+        [flops],
     )
 
     # Ensure correctness
@@ -687,18 +695,18 @@ fn bench_stencil_avg_pool_padded[
     h_output_ref_ptr.free()
 
 
-fn main() raises:
-    alias dtype = env_get_dtype["dtype", DType.bfloat16]()
-    alias batch_size = env_get_int["batch_size", 128]()
-    alias input_height = env_get_int["input_height", 1024]()
-    alias input_width = env_get_int["input_width", 1024]()
-    alias num_channels = env_get_int["num_channels", 3]()
-    alias pool_window_h = env_get_int["pool_window_h", 3]()
-    alias pool_window_w = env_get_int["pool_window_w", 3]()
+def main():
+    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
+    comptime batch_size = env_get_int["batch_size", 128]()
+    comptime input_height = env_get_int["input_height", 1024]()
+    comptime input_width = env_get_int["input_width", 1024]()
+    comptime num_channels = env_get_int["num_channels", 3]()
+    comptime pool_window_h = env_get_int["pool_window_h", 3]()
+    comptime pool_window_w = env_get_int["pool_window_w", 3]()
 
-    alias pad_h = env_get_int["pad_h", 0]()
-    alias pad_w = env_get_int["pad_w", 0]()
-    alias method = env_get_string["method", "max_pool"]()
+    comptime pad_h = env_get_int["pad_h", 0]()
+    comptime pad_w = env_get_int["pad_w", 0]()
+    comptime method = env_get_string["method", "max_pool"]()
 
     var m = Bench()
     with DeviceContext() as ctx:

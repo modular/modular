@@ -11,24 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv, exp, inf, log
+
 from algorithm.functional import parallelize
 from compiler_internal import register
 from gpu import global_idx
 from gpu.host.info import is_cpu, is_gpu
-from math import ceildiv, exp, inf, log
 from nn._ragged_utils import get_batch_from_row_offsets
 from runtime.asyncrt import DeviceContextPtr
-from tensor_internal import InputTensor, OutputTensor
-from tensor_internal.transitional import managed_tensor_slice_to_ndbuffer
+from tensor import InputTensor, OutputTensor
+from tensor.transitional import managed_tensor_slice_to_ndbuffer
+
 from utils.index import IndexList
 
 
 struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
-    alias num_elements = 2**levels - 1
-    var k_array: InlineArray[Scalar[k_dtype], Self.num_elements]
-    var v_array: InlineArray[Scalar[v_dtype], Self.num_elements]
+    comptime num_elements = 2**Self.levels - 1
+    var k_array: InlineArray[Scalar[Self.k_dtype], Self.num_elements]
+    var v_array: InlineArray[Scalar[Self.v_dtype], Self.num_elements]
 
-    fn __init__(out self, *, fill_k: Scalar[k_dtype], fill_v: Scalar[v_dtype]):
+    fn __init__(
+        out self, *, fill_k: Scalar[Self.k_dtype], fill_v: Scalar[Self.v_dtype]
+    ):
         self.k_array = InlineArray[size = Self.num_elements](fill=fill_k)
         self.v_array = InlineArray[size = Self.num_elements](fill=fill_v)
 
@@ -41,7 +45,7 @@ struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
         var current_index = 0
 
         @parameter
-        for level in range(levels - 1):
+        for level in range(Self.levels - 1):
             # Must ensure:
             # arr[cur] < arr[left] && arr[cur] < arr[right]
             var left_index = current_index * 2 + 1
@@ -59,9 +63,9 @@ struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
                 current_index = smaller_index
 
 
-alias logit_dtype = DType.float32
-alias token_dtype = DType.uint32
-alias offset_dtype = DType.uint32
+comptime logit_dtype = DType.float32
+comptime token_dtype = DType.uint32
+comptime offset_dtype = DType.uint32
 
 
 fn compute_log_probabilities_1tok[
@@ -79,7 +83,7 @@ fn compute_log_probabilities_1tok[
 ) -> None:
     var vocab_size = logits.shape()[1]
     var batch_index = get_batch_from_row_offsets(
-        managed_tensor_slice_to_ndbuffer(lp_output_offsets), output_token_index
+        lp_output_offsets.to_layout_tensor(), output_token_index
     )
     var reverse_index_in_seq = (
         lp_output_offsets[batch_index + 1] - output_token_index - 1
@@ -178,7 +182,7 @@ struct LogProbabilitiesRagged:
                 var output_token_index = global_idx.x
                 if output_token_index < UInt(num_output_tokens):
                     compute_log_probabilities_1tok[target, levels](
-                        output_token_index=output_token_index,
+                        output_token_index=Int(output_token_index),
                         lp_logits=lp_logits,
                         lp_tokens=lp_tokens,
                         logits=logits,
@@ -189,7 +193,7 @@ struct LogProbabilitiesRagged:
                         lp_output_offsets=lp_output_offsets,
                     )
 
-            alias block_size = 64
+            comptime block_size = 64
             ctx.get_device_context().enqueue_function_checked[
                 raw_lp_kernel, raw_lp_kernel
             ](

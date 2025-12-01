@@ -11,29 +11,31 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isqrt
+from memory import LegacyUnsafePointer as UnsafePointer
+from math import rsqrt
 
-from layout.math import mean, variance
+from itertools import product
 from layout import (
+    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
+from layout.math import mean, variance
 from nn.normalization import *
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
 
-alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
 
 
 fn run_layer_norm_cpu[
     dtype: DType, rank: Int
 ](shape: IndexList[rank], rtol: Float64 = 0.01) raises:
-    alias layout = Layout.row_major[rank]()
+    comptime layout = Layout.row_major[rank]()
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
@@ -107,20 +109,19 @@ fn run_layer_norm_cpu[
 
     layer_norm_cpu[input_fn, gamma_fn, output_fn](shape, beta, epsilon)
 
-    for r in range(rows):
+    for r, c in product(range(rows), range(cols)):
         var vec = LayoutTensor[dtype, layout_1d](
             input_ptr + r * cols,
             RuntimeLayout[layout_1d].row_major(IndexList[1](cols)),
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
-        var norm_factor_ref = isqrt(var_ref + epsilon)
-        for c in range(cols):
-            var idx = r * cols + c
-            var val = (
-                (input_ptr[idx] - mean_ref) * norm_factor_ref
-            ) * gamma_ptr[c] + beta_ptr[c]
-            assert_almost_equal(val, output_ptr[idx], rtol=rtol)
+        var norm_factor_ref = rsqrt(var_ref + epsilon)
+        var idx = r * cols + c
+        var val = ((input_ptr[idx] - mean_ref) * norm_factor_ref) * gamma_ptr[
+            c
+        ] + beta_ptr[c]
+        assert_almost_equal(val, output_ptr[idx], rtol=rtol)
 
     input_ptr.free()
     output_ptr.free()

@@ -20,7 +20,7 @@ import click
 import yaml
 
 
-def shell(arg_str: str, check: bool = False, verbose=True):  # noqa: ANN001
+def shell(arg_str: str, check: bool = False, verbose=True):  # noqa: ANN001, ANN201
     if not arg_str:
         return None
     print(f"$ [{arg_str}]")
@@ -68,7 +68,7 @@ def export_arg_env() -> None:
         export_env(k, v)
 
 
-def check_argo_workflow_exists(git_sha):  # noqa: ANN001
+def check_argo_workflow_exists(git_sha):  # noqa: ANN001, ANN201
     # check if workflow exists and return the output of argo list as yaml else None
     result = shell(
         f'argo list --prefix "kernels-{git_sha}" --completed -o yaml'
@@ -79,7 +79,7 @@ def check_argo_workflow_exists(git_sha):  # noqa: ANN001
     return None
 
 
-def search_workflows(branch_sha, last_n_commits=100, timeout_secs=60):  # noqa: ANN001
+def search_workflows(branch_sha, last_n_commits=100, timeout_secs=60):  # noqa: ANN001, ANN201
     print(
         f"Checking {last_n_commits} of origin/main for existing CI workflows"
         " (baseline)"
@@ -98,7 +98,7 @@ def search_workflows(branch_sha, last_n_commits=100, timeout_secs=60):  # noqa: 
     while True:
         ref_branch_yaml = check_argo_workflow_exists(branch_sha)
         if not ref_branch_yaml:
-            print(f"could'nt find, check back in {timeout_secs} seconds")
+            print(f"couldn't find, check back in {timeout_secs} seconds")
             sleep(timeout_secs)
         else:
             break
@@ -149,7 +149,7 @@ def download_artifacts(
         f" {target_name}|grep csv"
     )
     kp = shell(
-        "$MODULAR_PYTHON $KERNEL_BENCHMARKS_ROOT/autotune/kplot.py"
+        "./bazelw run -- //max/kernels/benchmarks/autotune:kplot"
         f" {target_path_main[0]} {target_path_branch[0]} "
         f"--label=main/{target_name} --label=branch/{target_name} "
         f" -o {output_dir}/main_vs_branch_{target_name} -x {extension}"
@@ -225,13 +225,13 @@ kdiff: compare performance with origin/main
 )
 @click.argument("branch_sha", nargs=-1, type=click.UNPROCESSED)
 def cli(
-    branch_sha: click.UNPROCESSED,
+    branch_sha,  # noqa: ANN001
     run_branch,  # noqa: ANN001
     output_path,  # noqa: ANN001
     extension,  # noqa: ANN001
     targets,  # noqa: ANN001
     verbose,  # noqa: ANN001
-) -> bool:
+) -> None:
     assert len(branch_sha) == 1
     assert output_path
     assert len(targets) > 0
@@ -273,4 +273,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
+        os.chdir(directory)
     main()

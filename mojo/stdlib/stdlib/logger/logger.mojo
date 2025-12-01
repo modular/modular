@@ -38,15 +38,18 @@ stdout). Messages below the configured level will be silently ignored.
 """
 
 import sys
+from io.write import _WriteBufferStack
 from os import abort
 from sys.param_env import env_get_string
-from io.write import _WriteBufferStack
+from utils._ansi import Text, Color
+
+from builtin._location import __call_location, _SourceLocation
 
 # ===-----------------------------------------------------------------------===#
 # DEFAULT_LEVEL
 # ===-----------------------------------------------------------------------===#
 
-alias DEFAULT_LEVEL = Level._from_str(
+comptime DEFAULT_LEVEL = Level._from_str(
     env_get_string["LOGGING_LEVEL", "NOTSET"]()
 )
 
@@ -57,7 +60,7 @@ alias DEFAULT_LEVEL = Level._from_str(
 
 @fieldwise_init
 struct Level(
-    EqualityComparable,
+    Comparable,
     Identifiable,
     ImplicitlyCopyable,
     Movable,
@@ -71,27 +74,27 @@ struct Level(
 
     var _value: Int
 
-    alias NOTSET = Self(0)
+    comptime NOTSET = Self(0)
     """Lowest level, used when no level is set."""
 
-    alias TRACE = Self(10)
-    """Repetitive trace information, Indicates repeated execution or IO-coupled 
-    activity, typically only of interest when diagnosing hangs or ensuring a 
+    comptime TRACE = Self(10)
+    """Repetitive trace information, Indicates repeated execution or IO-coupled
+    activity, typically only of interest when diagnosing hangs or ensuring a
     section of code is executing."""
 
-    alias DEBUG = Self(20)
+    comptime DEBUG = Self(20)
     """Detailed information, typically of interest only when diagnosing problems."""
 
-    alias INFO = Self(30)
+    comptime INFO = Self(30)
     """Confirmation that things are working as expected."""
 
-    alias WARNING = Self(40)
+    comptime WARNING = Self(40)
     """Indication that something unexpected happened, or may happen in the near future."""
 
-    alias ERROR = Self(50)
+    comptime ERROR = Self(50)
     """Due to a more serious problem, the software has not been able to perform some function."""
 
-    alias CRITICAL = Self(60)
+    comptime CRITICAL = Self(60)
     """A serious error indicating that the program itself may be unable to continue running."""
 
     fn __eq__(self, other: Self) -> Bool:
@@ -105,28 +108,6 @@ struct Level(
         """
         return self._value == other._value
 
-    fn __gt__(self, other: Self) -> Bool:
-        """Returns True if this level is greater than the other level.
-
-        Args:
-            other: The level to compare with.
-
-        Returns:
-            Bool: True if this level is greater than the other level, False otherwise.
-        """
-        return self._value > other._value
-
-    fn __ge__(self, other: Self) -> Bool:
-        """Returns True if this level is greater than or equal to the other level.
-
-        Args:
-            other: The level to compare with.
-
-        Returns:
-            Bool: True if this level is greater than or equal to the other level, False otherwise.
-        """
-        return self._value >= other._value
-
     fn __lt__(self, other: Self) -> Bool:
         """Returns True if this level is less than the other level.
 
@@ -138,17 +119,6 @@ struct Level(
         """
         return self._value < other._value
 
-    fn __le__(self, other: Self) -> Bool:
-        """Returns True if this level is less than or equal to the other level.
-
-        Args:
-            other: The level to compare with.
-
-        Returns:
-            Bool: True if this level is less than or equal to the other level, False otherwise.
-        """
-        return self._value <= other._value
-
     fn __is__(self, other: Self) -> Bool:
         """Returns True if this level is identical to the other level.
 
@@ -159,6 +129,27 @@ struct Level(
             Bool: True if this level is identical to the other level, False otherwise.
         """
         return self == other
+
+    fn color(self) -> Color:
+        """Returns the ANSI color of the level.
+
+        Returns:
+            The corresponding Color of the level.
+        """
+        if self is Self.TRACE:
+            return Color.GREEN
+        if self is Self.DEBUG:
+            return Color.GREEN
+        if self is Self.INFO:
+            return Color.YELLOW
+        if self is Self.WARNING:
+            return Color.BLUE
+        if self is Self.ERROR:
+            return Color.MAGENTA
+        if self is Self.CRITICAL:
+            return Color.RED
+
+        return Color("")
 
     @staticmethod
     fn _from_str(name: StringSlice) -> Self:
@@ -213,7 +204,8 @@ struct Level(
         """Returns the string representation of this level.
 
         Returns:
-            String: A human-readable string representation of the level (e.g., "DEBUG", "INFO").
+            String: A human-readable string representation of the level
+                (e.g., "DEBUG", "INFO").
         """
         return String.write(self)
 
@@ -222,7 +214,8 @@ struct Level(
         """Returns the detailed string representation of this level.
 
         Returns:
-            String: A string representation including the type name and level value (e.g., "Level.DEBUG").
+            String: A string representation including the type name and level
+                value (e.g., "Level.DEBUG").
         """
         return String("Level.", self)
 
@@ -232,7 +225,7 @@ struct Level(
 # ===-----------------------------------------------------------------------===#
 
 
-struct Logger[level: Level = DEFAULT_LEVEL]:
+struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
     """A logger that outputs messages at or above a specified severity level.
 
     Parameters:
@@ -240,14 +233,28 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
     """
 
     var _fd: FileDescriptor
+    var _prefix: String
+    var _source_location: Bool
 
-    fn __init__(out self, fd: FileDescriptor = sys.stdout):
+    fn __init__(
+        out self,
+        fd: FileDescriptor = sys.stdout,
+        *,
+        prefix: String = "",
+        source_location: Bool = False,
+    ):
         """Initializes a new Logger.
 
         Args:
             fd: The file descriptor to write log messages to (defaults to stdout).
+            prefix: The prefix to prepend to each log message (defaults to an
+                empty string).
+            source_location: Whether to include the source location in the log
+                message (defaults to False).
         """
         self._fd = fd
+        self._prefix = prefix
+        self._source_location = source_location
 
     @always_inline
     @staticmethod
@@ -260,11 +267,22 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         Returns:
             True if logging at the target level is disabled, False otherwise.
         """
-        if level == Level.NOTSET:
-            return True
-        return level > target_level
 
-    fn trace[*Ts: Writable](self, *values: *Ts):
+        @parameter
+        if Self.level == Level.NOTSET:
+            return True
+        return Self.level > target_level
+
+    @always_inline
+    fn trace[
+        *Ts: Writable
+    ](
+        self,
+        *values: *Ts,
+        sep: StaticString = " ",
+        end: StaticString = "\n",
+        location: Optional[_SourceLocation] = None,
+    ):
         """Logs a trace message.
 
         Parameters:
@@ -272,14 +290,32 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         Args:
             values: The values to log.
+            sep: The separator to use between values (defaults to a space).
+            end: The string to append to the end of the message
+                (defaults to a newline).
+            location: The location of the error (defaults to `__call_location`).
         """
-        alias target_level = Level.TRACE
+        comptime target_level = Level.TRACE
 
         @parameter
         if not Self._is_disabled[target_level]():
-            self._write_out[target_level](values)
+            self._write_out[target_level](
+                values,
+                sep=sep,
+                end=end,
+                location=location.or_else(__call_location()),
+            )
 
-    fn debug[*Ts: Writable](self, *values: *Ts):
+    @always_inline
+    fn debug[
+        *Ts: Writable
+    ](
+        self,
+        *values: *Ts,
+        sep: StaticString = " ",
+        end: StaticString = "\n",
+        location: Optional[_SourceLocation] = None,
+    ):
         """Logs a debug message.
 
         Parameters:
@@ -287,14 +323,32 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         Args:
             values: The values to log.
+            sep: The separator to use between values (defaults to a space).
+            end: The string to append to the end of the message
+                (defaults to a newline).
+            location: The location of the error (defaults to `__call_location`).
         """
-        alias target_level = Level.DEBUG
+        comptime target_level = Level.DEBUG
 
         @parameter
         if not Self._is_disabled[target_level]():
-            self._write_out[target_level](values)
+            self._write_out[target_level](
+                values,
+                sep=sep,
+                end=end,
+                location=location.or_else(__call_location()),
+            )
 
-    fn info[*Ts: Writable](self, *values: *Ts):
+    @always_inline
+    fn info[
+        *Ts: Writable
+    ](
+        self,
+        *values: *Ts,
+        sep: StaticString = " ",
+        end: StaticString = "\n",
+        location: Optional[_SourceLocation] = None,
+    ):
         """Logs an info message.
 
         Parameters:
@@ -302,14 +356,32 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         Args:
             values: The values to log.
+            sep: The separator to use between values (defaults to a space).
+            end: The string to append to the end of the message
+                (defaults to a newline).
+            location: The location of the error (defaults to `__call_location`).
         """
-        alias target_level = Level.INFO
+        comptime target_level = Level.INFO
 
         @parameter
         if not Self._is_disabled[target_level]():
-            self._write_out[target_level](values)
+            self._write_out[target_level](
+                values,
+                sep=sep,
+                end=end,
+                location=location.or_else(__call_location()),
+            )
 
-    fn warning[*Ts: Writable](self, *values: *Ts):
+    @always_inline
+    fn warning[
+        *Ts: Writable
+    ](
+        self,
+        *values: *Ts,
+        sep: StaticString = " ",
+        end: StaticString = "\n",
+        location: Optional[_SourceLocation] = None,
+    ):
         """Logs a warning message.
 
         Parameters:
@@ -317,14 +389,32 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         Args:
             values: The values to log.
+            sep: The separator to use between values (defaults to a space).
+            end: The string to append to the end of the message
+                (defaults to a newline).
+            location: The location of the error (defaults to `__call_location`).
         """
-        alias target_level = Level.WARNING
+        comptime target_level = Level.WARNING
 
         @parameter
         if not Self._is_disabled[target_level]():
-            self._write_out[target_level](values)
+            self._write_out[target_level](
+                values,
+                sep=sep,
+                end=end,
+                location=location.or_else(__call_location()),
+            )
 
-    fn error[*Ts: Writable](self, *values: *Ts):
+    @always_inline
+    fn error[
+        *Ts: Writable
+    ](
+        self,
+        *values: *Ts,
+        sep: StaticString = " ",
+        end: StaticString = "\n",
+        location: Optional[_SourceLocation] = None,
+    ):
         """Logs an error message.
 
         Parameters:
@@ -332,14 +422,32 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         Args:
             values: The values to log.
+            sep: The separator to use between values (defaults to a space).
+            end: The string to append to the end of the message
+                (defaults to a newline).
+            location: The location of the error (defaults to `__call_location`).
         """
-        alias target_level = Level.ERROR
+        comptime target_level = Level.ERROR
 
         @parameter
         if not Self._is_disabled[target_level]():
-            self._write_out[target_level](values)
+            self._write_out[target_level](
+                values,
+                sep=sep,
+                end=end,
+                location=location.or_else(__call_location()),
+            )
 
-    fn critical[*Ts: Writable](self, *values: *Ts):
+    @always_inline
+    fn critical[
+        *Ts: Writable
+    ](
+        self,
+        *values: *Ts,
+        sep: StaticString = " ",
+        end: StaticString = "\n",
+        location: Optional[_SourceLocation] = None,
+    ):
         """Logs a critical message and aborts execution.
 
         Parameters:
@@ -347,31 +455,57 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         Args:
             values: The values to log.
+            sep: The separator to use between values (defaults to a space).
+            end: The string to append to the end of the message
+                (defaults to a newline).
+            location: The location of the error (defaults to `__call_location`).
+
         """
-        alias target_level = Level.CRITICAL
+        comptime target_level = Level.CRITICAL
 
         @parameter
         if not Self._is_disabled[target_level]():
-            self._write_out[target_level](values)
+            self._write_out[target_level](
+                values,
+                sep=sep,
+                end=end,
+                location=location.or_else(__call_location()),
+            )
 
         abort()
 
     fn _write_out[
-        level: Level
-    ](self, values: VariadicPack[element_trait=Writable]):
+        _level: Level
+    ](
+        self,
+        values: VariadicPack[element_trait=Writable],
+        *,
+        location: _SourceLocation,
+        sep: StaticString = " ",
+        end: StaticString = "\n",
+    ):
+        comptime color = _level.color()
+
         var file = self._fd
         var buffer = _WriteBufferStack(file)
 
-        buffer.write(String(level))
-        buffer.write("::: ")
+        if self._prefix:
+            buffer.write(Text[color](self._prefix))
+        else:
+            buffer.write(Text[color](_level), "::: ")
 
-        alias length = values.__len__()
+        if self._source_location:
+            buffer.write("[", location, "] ")
+
+        comptime length = values.__len__()
 
         @parameter
         for i in range(length):
             values[i].write_to(buffer)
-            if i < length - 1:
-                buffer.write(" ")
 
-        buffer.write("\n")
+            @parameter
+            if i < length - 1:
+                buffer.write(sep)
+
+        buffer.write(end)
         buffer.flush()

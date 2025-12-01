@@ -10,21 +10,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# COM: rm -rf %t && mkdir -p %t
-# COM: ln -s %S %t/tmp
-# COM: %mojo  -D TEMP_DIR=%t/tmp %s
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: ln -s %S %t/tmp
+# RUN: %mojo  -D TEMP_DIR=%t/tmp %s
+# RUN: rm -rf %t
 
 from os.path import isdir, islink
 from pathlib import Path
 from sys import env_get_string
 
-from testing import assert_false, assert_true
+from testing import TestSuite, assert_false, assert_true
 
-alias TEMP_DIR = env_get_string["TEMP_DIR"]()
+comptime TEMP_DIR = env_get_string["TEMP_DIR"]()
+
+
+def test_islink():
+    assert_true(
+        isdir(Path(TEMP_DIR)), String("Not a directory: {0}").format(TEMP_DIR)
+    )
+    assert_true(
+        isdir(TEMP_DIR), String("Not a directory: {0}").format(TEMP_DIR)
+    )
+    assert_true(islink(TEMP_DIR), String("Not a link: {0}").format(TEMP_DIR))
+    assert_false(islink(String(Path(TEMP_DIR) / "nonexistent")))
 
 
 def main():
-    assert_true(isdir(Path(TEMP_DIR)))
-    assert_true(isdir(TEMP_DIR))
-    assert_true(islink(TEMP_DIR))
-    assert_false(islink(String(Path(TEMP_DIR) / "nonexistent")))
+    TestSuite.discover_tests[__functions_in_module()]().run()

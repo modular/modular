@@ -11,21 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import has_nvidia_gpu_accelerator
 
 from benchmark import Bench
-from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
-from internal_utils import (
-    HostNDBuffer,
-    assert_almost_equal,
-    random,
-    zero,
-)
 from layout.layout_tensor import (
     Layout,
     LayoutTensor,
+    RuntimeLayout,
+    UNKNOWN_VALUE,
 )
+from layout._fillers import random
 from matmul_kernels import (
     run_cublas,
     run_gemm_kernel_1,
@@ -36,8 +33,10 @@ from matmul_kernels import (
     run_gemm_kernel_6,
     run_gemm_kernel_tc,
 )
+from testing import assert_almost_equal
+from utils import IndexList
 
-alias run_gemm_kernel_type = fn (
+comptime run_gemm_kernel_type = fn (
     mut m: Bench,
     ctx: DeviceContext,
     a: LayoutTensor,
@@ -58,116 +57,119 @@ struct test_matmul[
     var N: Int
     var K: Int
 
-    var a_host: HostNDBuffer[dtype, 2]
-    var b_host: HostNDBuffer[dtype, 2]
-    var c_host: HostNDBuffer[dtype, 2]
-    var c_host_ref: HostNDBuffer[dtype, 2]
-
-    var a_device_buffer: DeviceBuffer[dtype]
-    var b_device_buffer: DeviceBuffer[dtype]
-    var c_device_buffer: DeviceBuffer[dtype]
-    var c_device_buffer_ref: DeviceBuffer[dtype]
+    var a_device_buffer: DeviceBuffer[Self.dtype]
+    var b_device_buffer: DeviceBuffer[Self.dtype]
+    var c_device_buffer: DeviceBuffer[Self.dtype]
+    var c_device_buffer_ref: DeviceBuffer[Self.dtype]
 
     fn __init__(out self, mut m: Bench, ctx: DeviceContext) raises:
         self.ctx = ctx
-        self.M = a_layout.shape[0].value()
-        self.N = b_layout.shape[1].value()
-        self.K = b_layout.shape[0].value()
-        var a_shape = DimList(self.M, self.K)
-        var b_shape = DimList(self.K, self.N)
-        var c_shape = DimList(self.M, self.N)
+        self.M = Self.a_layout.shape[0].value()
+        self.N = Self.b_layout.shape[1].value()
+        self.K = Self.b_layout.shape[0].value()
+        var a_shape = IndexList[2](self.M, self.K)
+        var b_shape = IndexList[2](self.K, self.N)
+        var c_shape = IndexList[2](self.M, self.N)
+        alias layout_2d = Layout.row_major[2]()
 
-        self.a_host = HostNDBuffer[dtype, 2](a_shape)
-        self.b_host = HostNDBuffer[dtype, 2](b_shape)
-        self.c_host = HostNDBuffer[dtype, 2](c_shape)
-        self.c_host_ref = HostNDBuffer[dtype, 2](c_shape)
-
-        self.a_device_buffer = ctx.enqueue_create_buffer[dtype](
-            a_shape.product().get()
+        self.a_device_buffer = ctx.enqueue_create_buffer[Self.dtype](
+            a_shape.flattened_length()
         )
-        self.b_device_buffer = ctx.enqueue_create_buffer[dtype](
-            b_shape.product().get()
+        self.b_device_buffer = ctx.enqueue_create_buffer[Self.dtype](
+            b_shape.flattened_length()
         )
-        self.c_device_buffer = ctx.enqueue_create_buffer[dtype](
-            c_shape.product().get()
+        self.c_device_buffer = ctx.enqueue_create_buffer[Self.dtype](
+            c_shape.flattened_length()
         )
-        self.c_device_buffer_ref = ctx.enqueue_create_buffer[dtype](
-            c_shape.product().get()
+        self.c_device_buffer_ref = ctx.enqueue_create_buffer[Self.dtype](
+            c_shape.flattened_length()
         )
 
-        random(self.a_host.tensor)
-        random(self.b_host.tensor)
-        zero(self.c_host.tensor)
-        zero(self.c_host_ref.tensor)
+        with self.a_device_buffer.map_to_host() as a_host_buffer:
+            random(
+                LayoutTensor[Self.dtype, layout_2d](
+                    a_host_buffer, RuntimeLayout[layout_2d].row_major(a_shape)
+                )
+            )
+        with self.b_device_buffer.map_to_host() as b_host_buffer:
+            random(
+                LayoutTensor[Self.dtype, layout_2d](
+                    b_host_buffer, RuntimeLayout[layout_2d].row_major(b_shape)
+                )
+            )
+        with self.c_device_buffer.map_to_host() as c_host_buffer:
+            _ = LayoutTensor[Self.dtype, layout_2d](
+                c_host_buffer, RuntimeLayout[layout_2d].row_major(c_shape)
+            ).fill(0)
+        with self.c_device_buffer_ref.map_to_host() as c_host_ref_buffer:
+            _ = LayoutTensor[Self.dtype, layout_2d](
+                c_host_ref_buffer, RuntimeLayout[layout_2d].row_major(c_shape)
+            ).fill(0)
 
-        ctx.enqueue_copy(self.a_device_buffer, self.a_host.tensor.data)
-        ctx.enqueue_copy(self.b_device_buffer, self.b_host.tensor.data)
-        ctx.enqueue_memset(self.c_device_buffer_ref, 0)
-
-        run_cublas[dtype, enable_tc](
+        run_cublas[Self.dtype, Self.enable_tc](
             m,
             ctx,
             self.M,
             self.N,
             self.K,
-            self.a_device_buffer._unsafe_ptr(),
-            self.b_device_buffer._unsafe_ptr(),
-            self.c_device_buffer_ref._unsafe_ptr(),
+            self.a_device_buffer.unsafe_ptr(),
+            self.b_device_buffer.unsafe_ptr(),
+            self.c_device_buffer_ref.unsafe_ptr(),
         )
-
-        ctx.enqueue_copy(self.c_host_ref.tensor.data, self.c_device_buffer_ref)
 
     fn run_test[gemm: run_gemm_kernel_type](self, mut m: Bench) raises:
         print("=== test_matmul")
 
         var ctx = self.ctx
-        ctx.enqueue_memset(self.c_device_buffer_ref, 0)
 
         fn create_tensor[
             layout: Layout
         ](
             m: Int,
             n: Int,
-            ptr: UnsafePointer[Scalar[dtype]],
-            out result: LayoutTensor[dtype, layout, ptr.origin],
+            ptr: UnsafePointer[Scalar[Self.dtype]],
+            out result: LayoutTensor[Self.dtype, layout, ptr.origin],
         ):
-            var dynamic_layout = __type_of(result.runtime_layout)(
-                __type_of(result.runtime_layout.shape)(m, n),
-                __type_of(result.runtime_layout.stride)(n, 1),
+            var dynamic_layout = type_of(result.runtime_layout)(
+                type_of(result.runtime_layout.shape)(m, n),
+                type_of(result.runtime_layout.stride)(n, 1),
             )
-            return __type_of(result)(ptr, dynamic_layout)
+            return {ptr, dynamic_layout}
 
-        var a = create_tensor[a_layout](
-            self.M, self.K, self.a_device_buffer._unsafe_ptr()
+        var a = create_tensor[Self.a_layout](
+            self.M, self.K, self.a_device_buffer.unsafe_ptr()
         )
-        var b = create_tensor[b_layout](
-            self.K, self.N, self.b_device_buffer._unsafe_ptr()
+        var b = create_tensor[Self.b_layout](
+            self.K, self.N, self.b_device_buffer.unsafe_ptr()
         )
-        var c = create_tensor[c_layout](
-            self.M, self.N, self.c_device_buffer._unsafe_ptr()
+        var c = create_tensor[Self.c_layout](
+            self.M, self.N, self.c_device_buffer.unsafe_ptr()
         )
 
         gemm(m, ctx, a, b, c)
 
-        ctx.enqueue_copy(self.c_host.tensor.data, self.c_device_buffer)
-        assert_almost_equal(
-            self.c_host_ref.tensor,
-            self.c_host.tensor,
-            atol=0.0001,
-            rtol=0.01,
-        )
+        with self.c_device_buffer_ref.map_to_host() as c_host_ref:
+            with self.c_device_buffer.map_to_host() as c_host:
+                for i in range(len(c_host_ref)):
+                    assert_almost_equal(
+                        c_host_ref[i],
+                        c_host[i],
+                        atol=0.0001,
+                        rtol=0.01,
+                        msg=String("not equal at index: ", i),
+                    )
 
 
 def main():
-    alias N = 4096
-    alias M = N
-    alias K = M
+    comptime N = 4096
+    comptime M = N
+    comptime K = M
 
     var m = Bench()
     with DeviceContext() as ctx:
-        alias a_layout = Layout.row_major(M, K)
-        alias b_layout = Layout.row_major(K, N)
-        alias c_layout = Layout.row_major(M, N)
+        comptime a_layout = Layout.row_major(M, K)
+        comptime b_layout = Layout.row_major(K, N)
+        comptime c_layout = Layout.row_major(M, N)
 
         var test = test_matmul[
             DType.float32, a_layout, b_layout, c_layout, False
@@ -177,35 +179,35 @@ def main():
             DType.float32, a_layout, b_layout, c_layout, True
         ](m, ctx)
 
-        alias k1 = run_gemm_kernel_1[
+        comptime k1 = run_gemm_kernel_1[
             DType.float32, a_layout, b_layout, c_layout, 32, 32
         ]
 
-        alias k2 = run_gemm_kernel_2[
+        comptime k2 = run_gemm_kernel_2[
             DType.float32, a_layout, b_layout, c_layout, 32, 32
         ]
 
-        alias k3 = run_gemm_kernel_3[
+        comptime k3 = run_gemm_kernel_3[
             DType.float32, a_layout, b_layout, c_layout, 32, 32, 32
         ]
 
-        alias k4 = run_gemm_kernel_4[
+        comptime k4 = run_gemm_kernel_4[
             DType.float32, a_layout, b_layout, c_layout, 64, 64, 8, 8
         ]
 
-        alias k5 = run_gemm_kernel_5[
+        comptime k5 = run_gemm_kernel_5[
             DType.float32, a_layout, b_layout, c_layout, 128, 128, 8, 8, 8
         ]
 
-        alias k6 = run_gemm_kernel_6[
+        comptime k6 = run_gemm_kernel_6[
             DType.float32, a_layout, b_layout, c_layout, 128, 128, 8, 8, 8
         ]
 
-        alias MMA_M = 16
-        alias MMA_N = 8 if has_nvidia_gpu_accelerator() else 16
-        alias MMA_K = 8 if has_nvidia_gpu_accelerator() else 4
+        comptime MMA_M = 16
+        comptime MMA_N = 8 if has_nvidia_gpu_accelerator() else 16
+        comptime MMA_K = 8 if has_nvidia_gpu_accelerator() else 4
 
-        alias k_tc = run_gemm_kernel_tc[
+        comptime k_tc = run_gemm_kernel_tc[
             DType.float32,
             a_layout,
             b_layout,

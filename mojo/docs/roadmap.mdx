@@ -34,7 +34,6 @@ items in each list aren't necessarily ordered by priority and some items may be
 
 :::
 
-
 ## Mojo's north star
 
 As described in the [Mojo vision](/mojo/vision), we created Mojo to unite
@@ -119,12 +118,16 @@ proposal](https://github.com/modular/modular/blob/main/mojo/proposals/parametric
 
 - ✅ **Default trait methods**: Enable static composition (mixin-style).
 
+- ✅ **Parametric raises**: The ability to throw types other than `Error` and
+therefore support higher order functions like `map` that propagate the
+"raisability" of their closure argument.
+
 - 🚧 **Closure refinement**: Improve capture modeling and unify
 compile-time/runtime representations.
 
-- 🚧 **`requires` clauses**: Enable early constraint checking and better error
-messages for generics. See the [requires clause
-proposal](https://github.com/modular/modular/blob/main/mojo/proposals/requires-clause.md).
+- 🚧 **`where` clauses**: Enable early constraint checking and better error
+messages for generics. See the [where clauses
+proposal](https://github.com/modular/modular/blob/main/mojo/proposals/where_clauses.md).
 
 - 🚧 **Conditional conformance**: Allow trait conformance based on predicates
 over parameters.
@@ -138,10 +141,6 @@ conformance.
 
 - ⬜ **Stabilization markers**: Mechanism to tag standard library APIs with
 maturity levels.
-
-- ⬜ **Parametric raises**: The ability to throw types other than `Error` and
-therefore support higher order functions like `map` that propagate the
-"raisability" of their closure argument.
 
 ### Python interoperability
 
@@ -361,13 +360,8 @@ accept your contributions there. Although this roadmap mentions some standard
 library types because they depend on changes in the Mojo compiler, a lot of
 work on the standard library is not accounted for here.
 
-You can learn more about standard library plans from the following docs:
-
-- [Standard library
-vision](https://github.com/modular/modular/blob/main/mojo/stdlib/docs/vision.md)
-
-- [Standard library
-roadmap](https://github.com/modular/modular/blob/main/mojo/stdlib/docs/roadmap.md)
+You can learn more about contributing to the standard library from the
+contributor doc below:
 
 - [Contributor
 guide](https://github.com/modular/modular/blob/main/mojo/CONTRIBUTING.md)

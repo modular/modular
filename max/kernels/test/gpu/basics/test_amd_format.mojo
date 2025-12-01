@@ -20,11 +20,11 @@ from memory import memcmp, memcpy
 
 
 struct Buffer[capacity: Int](Defaultable, Writer):
-    var data: InlineArray[UInt8, capacity]
+    var data: InlineArray[UInt8, Self.capacity]
     var pos: Int
 
     fn __init__(out self):
-        self.data = InlineArray[UInt8, capacity](fill=0)
+        self.data = InlineArray[UInt8, Self.capacity](fill=0)
         self.pos = 0
 
     fn write_bytes(mut self, bytes: Span[Byte, _]):
@@ -33,7 +33,11 @@ struct Buffer[capacity: Int](Defaultable, Writer):
         if len_bytes == 0:
             return
         # Continue writing to buffer
-        memcpy(self.data.unsafe_ptr() + self.pos, bytes.unsafe_ptr(), len_bytes)
+        memcpy(
+            dest=self.data.unsafe_ptr() + self.pos,
+            src=bytes.unsafe_ptr(),
+            count=len_bytes,
+        )
         self.pos += len_bytes
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
@@ -100,13 +104,13 @@ def main():
     # TODO(KERN-1259): Add tests for fnuz types when they're working
     with DeviceContext() as ctx:
         print("== test_format_float8_e5m2")
-        alias kernel_0 = test_format_float8_e5m2
+        comptime kernel_0 = test_format_float8_e5m2
         ctx.enqueue_function_checked[kernel_0, kernel_0](
             grid_dim=1, block_dim=1
         )
 
         print("== test_format_float8_e4m3fn")
-        alias kernel_1 = test_format_float8_e4m3fn
+        comptime kernel_1 = test_format_float8_e4m3fn
         ctx.enqueue_function_checked[kernel_1, kernel_1](
             grid_dim=1, block_dim=1
         )

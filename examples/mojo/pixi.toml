@@ -1,4 +1,4 @@
-[project]
+[workspace]
 name = "Mojo examples"
 version = "0.1.0"
 description = "A collection of Mojo code examples"

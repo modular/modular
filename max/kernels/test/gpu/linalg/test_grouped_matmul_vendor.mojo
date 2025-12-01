@@ -15,12 +15,8 @@ from collections import OptionalReg
 
 from buffer.dimlist import Dim, DimList
 from gpu.host import DeviceContext
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    random,
-)
-from linalg.grouped_matmul import naive_grouped_matmul, grouped_matmul_vendor
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random
+from linalg.grouped_matmul import grouped_matmul_vendor, naive_grouped_matmul
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -54,12 +50,12 @@ fn test_vendor[
         print(expert_ids[i], end=" ")
     print()
 
-    alias a_type = in_type
-    alias b_type = in_type
-    alias c_type = out_type
+    comptime a_type = in_type
+    comptime b_type = in_type
+    comptime c_type = out_type
 
-    alias N = expert_shape[0]
-    alias K = expert_shape[1]
+    comptime N = expert_shape[0]
+    comptime K = expert_shape[1]
 
     # Total and max number of tokens
     total_num_tokens = 0
@@ -71,10 +67,10 @@ fn test_vendor[
         )
 
     # Create host A C buffers
-    alias static_a_shape = DimList(Dim(), K)
+    comptime static_a_shape = DimList(Dim(), K)
     var dynamic_a_shape = DimList(total_num_tokens, K)
     var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    alias static_c_shape = DimList(Dim(), N)
+    comptime static_c_shape = DimList(Dim(), N)
     var dynamic_c_shape = DimList(total_num_tokens, N)
     var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
     var c_ref_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
@@ -83,7 +79,7 @@ fn test_vendor[
     )
 
     # Create host B buffers
-    alias static_b_shape = DimList(num_experts, N, K)
+    comptime static_b_shape = DimList(num_experts, N, K)
     var b_host = HostNDBuffer[b_type, 3, static_b_shape](static_b_shape)
     var expert_ids_host = HostNDBuffer[DType.int32, 1](num_active_experts)
 
@@ -196,12 +192,12 @@ fn test_negative_lora_id_vendor[
         print(expert_ids[i], end=" ")
     print()
 
-    alias a_type = in_type
-    alias b_type = in_type
-    alias c_type = out_type
+    comptime a_type = in_type
+    comptime b_type = in_type
+    comptime c_type = out_type
 
-    alias N = expert_shape[0]
-    alias K = expert_shape[1]
+    comptime N = expert_shape[0]
+    comptime K = expert_shape[1]
 
     # Total and max number of tokens
     total_num_tokens = 0
@@ -213,10 +209,10 @@ fn test_negative_lora_id_vendor[
         )
 
     # Create host A C buffers
-    alias static_a_shape = DimList(Dim(), K)
+    comptime static_a_shape = DimList(Dim(), K)
     var dynamic_a_shape = DimList(total_num_tokens, K)
     var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    alias static_c_shape = DimList(Dim(), N)
+    comptime static_c_shape = DimList(Dim(), N)
     var dynamic_c_shape = DimList(total_num_tokens, N)
     var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
     var a_offsets_host = HostNDBuffer[DType.uint32, 1, DimList(Dim())](
@@ -224,7 +220,7 @@ fn test_negative_lora_id_vendor[
     )
 
     # Create host B buffers
-    alias static_b_shape = DimList(num_experts, N, K)
+    comptime static_b_shape = DimList(num_experts, N, K)
     var b_host = HostNDBuffer[b_type, 3, static_b_shape](static_b_shape)
     var expert_ids_host = HostNDBuffer[DType.int32, 1](num_active_experts)
 
@@ -336,7 +332,7 @@ fn test_negative_lora_id_vendor[
     )
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         # Single matmul
         test_vendor[
@@ -344,14 +340,14 @@ fn main() raises:
             DType.bfloat16,
             num_experts=1,
             expert_shape = Index(256, 256),
-        ](1, List[Int](128), List[Int](0), ctx)
+        ](1, [128], [0], ctx)
 
         test_vendor[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=1,
             expert_shape = Index(512, 1024),
-        ](1, List[Int](256), List[Int](0), ctx)
+        ](1, [256], [0], ctx)
 
         # Multiple matmuls selecting part of experts
         test_vendor[
@@ -359,7 +355,7 @@ fn main() raises:
             DType.bfloat16,
             num_experts=4,
             expert_shape = Index(768, 1024),
-        ](2, List[Int](128, 256), List[Int](0, 2), ctx)
+        ](2, [128, 256], [0, 2], ctx)
 
         # Multiple matmuls selecting part of experts
         # num_tokens not multiple of tile size
@@ -368,7 +364,7 @@ fn main() raises:
             DType.bfloat16,
             num_experts=6,
             expert_shape = Index(1280, 1024),
-        ](4, List[Int](27, 1500, 300, 150), List[Int](0, 3, 2, 4), ctx)
+        ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Multiple matmuls selecting part of experts
         # num_tokens not multiple of tile size
@@ -378,7 +374,7 @@ fn main() raises:
             DType.bfloat16,
             num_experts=6,
             expert_shape = Index(192, 1024),
-        ](4, List[Int](27, 1500, 300, 150), List[Int](0, 3, 2, 4), ctx)
+        ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Test that expert id of -1 results in 0s in the output
         test_vendor[
@@ -386,7 +382,7 @@ fn main() raises:
             DType.bfloat16,
             num_experts=2,
             expert_shape = Index(256, 512),
-        ](2, List[Int](64, 128), List[Int](0, -1), ctx)
+        ](2, [64, 128], [0, -1], ctx)
 
         # Test negative lora_id behavior with vendor matmul
         test_negative_lora_id_vendor[
@@ -394,7 +390,7 @@ fn main() raises:
             DType.bfloat16,
             num_experts=2,
             expert_shape = Index(256, 512),
-        ](2, List[Int](64, 128), List[Int](0, -1), ctx)
+        ](2, [64, 128], [0, -1], ctx)
 
         # Additional test cases for different data types
         test_vendor[
@@ -402,7 +398,7 @@ fn main() raises:
             DType.float32,
             num_experts=3,
             expert_shape = Index(384, 768),
-        ](2, List[Int](100, 200), List[Int](1, 2), ctx)
+        ](2, [100, 200], [1, 2], ctx)
 
         # Test with mixed valid and invalid expert ids
         test_vendor[
@@ -410,6 +406,6 @@ fn main() raises:
             DType.bfloat16,
             num_experts=4,
             expert_shape = Index(512, 512),
-        ](3, List[Int](50, 100, 75), List[Int](0, -1, 2), ctx)
+        ](3, [50, 100, 75], [0, -1, 2], ctx)
 
         print("\n✅ All vendor grouped matmul tests passed!")

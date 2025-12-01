@@ -11,18 +11,20 @@ def custom_op_example_py_binary(
     modular_py_binary(
         name = name,
         srcs = srcs,
-        data = extra_data,
+        data = [
+            ":kernel_sources",
+        ] + extra_data,
         imports = ["."],
         mojo_deps = [
-            "@mojo//:compiler",
-            "@mojo//:layout",
+            "//max:compiler",
+            "//max:layout",
             "@mojo//:stdlib",
-            "@mojo//:tensor_internal",
+            "//max:tensor",
         ],
         deps = [
-            "//SDK/lib/API/python/max/driver",
-            "//SDK/lib/API/python/max/engine",
-            "//SDK/lib/API/python/max/graph",
+            "//max/python/max/driver",
+            "//max/python/max/engine",
+            "//max/python/max/graph",
             requirement("numpy"),
         ] + extra_deps,
         visibility = ["//visibility:private"],

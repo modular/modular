@@ -26,20 +26,21 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from builtin.math import max as _max
 from builtin.math import min as _min
+from testing import TestSuite
 
 from utils.index import Index, IndexList, StaticTuple
 
 
 # CHECK-LABEL: test_reductions
-fn test_reductions() raises:
+def test_reductions():
     print("== test_reductions")
 
-    alias simd_width = 4
-    alias size = 100
+    comptime simd_width = 4
+    comptime size = 100
 
     # Create a mem of size size
     var vector_stack = InlineArray[Float32, size](uninitialized=True)
-    var vector = NDBuffer[DType.float32, 1, _, size](vector_stack)
+    var vector = NDBuffer[DType.float32, 1, _, size](vector_stack.unsafe_ptr())
 
     for i in range(size):
         vector[i] = i + 1
@@ -54,15 +55,27 @@ fn test_reductions() raises:
     print(sum(vector))
 
 
+def test_reductions_zero_size():
+    print("== test_reductions_zero_size")
+
+    comptime size = 0
+    var vector_stack = InlineArray[Float32, size](uninitialized=True)
+    var vector = NDBuffer[DType.float32, 1, _, size](vector_stack.unsafe_ptr())
+
+    print(min(vector))
+    print(max(vector))
+    print(sum(vector))
+
+
 # CHECK-LABEL: test_fused_reductions_inner
-fn test_fused_reductions_inner() raises:
+def test_fused_reductions_inner():
     print("== test_fused_redtest_fused_reductions_inneructions")
 
-    alias size = 100
-    alias test_type = DType.float32
-    alias num_reductions = 3
+    comptime size = 100
+    comptime test_type = DType.float32
+    comptime num_reductions = 3
     var vector_stack = InlineArray[Float32, size](uninitialized=True)
-    var vector = NDBuffer[test_type, 1, _, size](vector_stack)
+    var vector = NDBuffer[test_type, 1, _, size](vector_stack.unsafe_ptr())
 
     for i in range(size):
         vector[i] = i + 1
@@ -136,14 +149,14 @@ fn test_fused_reductions_inner() raises:
 
 
 # CHECK-LABEL: test_fused_reductions_outer
-fn test_fused_reductions_outer() raises:
+def test_fused_reductions_outer():
     print("== test_fused_reductions_outer")
 
-    alias size = 100
-    alias test_type = DType.float32
-    alias num_reductions = 3
+    comptime size = 100
+    comptime test_type = DType.float32
+    comptime num_reductions = 3
     var vector_stack = InlineArray[Float32, size](uninitialized=True)
-    var vector = NDBuffer[test_type, 1, _, size](vector_stack)
+    var vector = NDBuffer[test_type, 1, _, size](vector_stack.unsafe_ptr())
 
     # COM: For the purposes of this test, we reinterpret this as a tensor
     # COM: of shape [50, 2] and reduce along the outer dimension.
@@ -217,15 +230,15 @@ fn test_fused_reductions_outer() raises:
 
 # We use a smaller vector so that we do not overflow
 # CHECK-LABEL: test_product
-fn test_product() raises:
+def test_product():
     print("== test_product")
 
-    alias simd_width = 4
-    alias size = 10
+    comptime simd_width = 4
+    comptime size = 10
 
     # Create a mem of size size
     var vector_stack = InlineArray[Float32, size](uninitialized=True)
-    var vector = NDBuffer[DType.float32, 1, _, size](vector_stack)
+    var vector = NDBuffer[DType.float32, 1, _, size](vector_stack.unsafe_ptr())
 
     for i in range(size):
         vector[i] = i + 1
@@ -235,15 +248,15 @@ fn test_product() raises:
 
 
 # CHECK-LABEL: test_mean_variance
-fn test_mean_variance() raises:
+def test_mean_variance():
     print("== test_mean_variance")
 
-    alias simd_width = 4
-    alias size = 100
+    comptime simd_width = 4
+    comptime size = 100
 
     # Create a mem of size size
     var vector_stack = InlineArray[Float32, size](uninitialized=True)
-    var vector = NDBuffer[DType.float32, 1, _, size](vector_stack)
+    var vector = NDBuffer[DType.float32, 1, _, size](vector_stack.unsafe_ptr())
 
     for i in range(size):
         vector[i] = i + 1
@@ -263,15 +276,19 @@ fn _test_3d_reductions[
     reduce_axis: Int,
 ]() raises:
     print("== test_3d_reductions reduce_axis=", reduce_axis)
-    alias simd_width = 4
+    comptime simd_width = 4
     var input_stack = InlineArray[Float32, Int(input_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[DType.float32, 3, _, input_shape](input_stack)
+    var input = NDBuffer[DType.float32, 3, _, input_shape](
+        input_stack.unsafe_ptr()
+    )
     var output_stack = InlineArray[Float32, Int(output_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[DType.float32, 3, _, output_shape](output_stack)
+    var output = NDBuffer[DType.float32, 3, _, output_shape](
+        output_stack.unsafe_ptr()
+    )
     output.fill(0)
 
     for i in range(input.size()):
@@ -284,7 +301,7 @@ fn _test_3d_reductions[
 
 
 # CHECK-LABEL: test_3d_reductions reduce_axis= 0
-fn test_3d_reductions_axis_0() raises:
+def test_3d_reductions_axis_0():
     # CHECK: 8.0
     # CHECK-NEXT: 10.0
     # CHECK-NEXT: 12.0
@@ -301,7 +318,7 @@ fn test_3d_reductions_axis_0() raises:
 
 
 # CHECK-LABEL: test_3d_reductions reduce_axis= 1
-fn test_3d_reductions_axis_1() raises:
+def test_3d_reductions_axis_1():
     # CHECK: 4.0
     # CHECK-NEXT: 6.0
     # CHECK-NEXT: 8.0
@@ -318,7 +335,7 @@ fn test_3d_reductions_axis_1() raises:
 
 
 # CHECK-LABEL: test_3d_reductions reduce_axis= 2
-fn test_3d_reductions_axis_2() raises:
+def test_3d_reductions_axis_2():
     # CHECK: 6.0
     # CHECK-NEXT: 22.0
     # CHECK-NEXT: 38.0
@@ -331,15 +348,15 @@ fn test_3d_reductions_axis_2() raises:
 
 
 # CHECK-LABEL: test_boolean
-fn test_boolean():
+def test_boolean():
     print("== test_boolean")
 
-    alias simd_width = 2
-    alias size = 5
+    comptime simd_width = 2
+    comptime size = 5
 
     # Create a mem of size size
     var vector_stack = InlineArray[Scalar[DType.bool], size](uninitialized=True)
-    var vector = NDBuffer[DType.bool, 1, _, size](vector_stack)
+    var vector = NDBuffer[DType.bool, 1, _, size](vector_stack.unsafe_ptr())
     vector[0] = True
     vector[1] = False
     vector[2] = False
@@ -389,17 +406,21 @@ fn test_boolean():
 
 
 # CHECK-LABEL: test_cumsum
-fn test_cumsum():
+def test_cumsum():
     print("== test_cumsum")
 
     var vector_stack = InlineArray[Float32, 150](uninitialized=True)
-    var vector = NDBuffer[DType.float32, 1, _, vector_stack.size](vector_stack)
+    var vector = NDBuffer[DType.float32, 1, _, vector_stack.size](
+        vector_stack.unsafe_ptr()
+    )
     for i in range(len(vector)):
         vector[i] = i + 1
     var cumsum_out1_stack = InlineArray[Float32, vector_stack.size](
         uninitialized=True
     )
-    var cumsum_out1 = NDBuffer[DType.float32, 1, _, 150](cumsum_out1_stack)
+    var cumsum_out1 = NDBuffer[DType.float32, 1, _, 150](
+        cumsum_out1_stack.unsafe_ptr()
+    )
     # cumsum[150, DType.float32](cumsum_out1, vector)
     # cumsum(cumsum_out1, vector)
     cumsum(cumsum_out1, vector)
@@ -427,12 +448,14 @@ fn test_cumsum():
     print()
 
     var vector2_stack = InlineArray[Int64, 128](uninitialized=True)
-    var vector2 = NDBuffer[DType.int64, 1, _, vector2_stack.size](vector2_stack)
+    var vector2 = NDBuffer[DType.int64, 1, _, vector2_stack.size](
+        vector2_stack.unsafe_ptr()
+    )
     for i in range(vector2.__len__()):
         vector2[i] = i + 1
     var cumsum_out2_stack = InlineArray[Int64, 128](uninitialized=True)
     var cumsum_out2 = NDBuffer[DType.int64, 1, _, vector2_stack.size](
-        cumsum_out2_stack
+        cumsum_out2_stack.unsafe_ptr()
     )
     # cumsum[128, DType.int64](cumsum_out2, vector2)
     # cumsum(cumsum_out2, vector2)
@@ -452,14 +475,5 @@ fn test_cumsum():
         print(cumsum_out2[i], ",", end="")
 
 
-fn main() raises:
-    test_reductions()
-    test_fused_reductions_inner()
-    test_fused_reductions_outer()
-    test_product()
-    test_mean_variance()
-    test_3d_reductions_axis_0()
-    test_3d_reductions_axis_1()
-    test_3d_reductions_axis_2()
-    test_boolean()
-    test_cumsum()
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

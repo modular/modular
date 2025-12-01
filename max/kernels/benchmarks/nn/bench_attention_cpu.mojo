@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from random import rand
 
 from benchmark import *
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from nn.flash_attention import flash_attention
 
 from utils import IndexList
@@ -61,11 +61,22 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec):
     rand(v_ptr, kv_shape.flattened_length())
     rand(mask_ptr, mask_shape.flattened_length())
 
-    var q = NDBuffer[dtype, 3](q_ptr, q_shape)
-    var k = NDBuffer[dtype, 3](k_ptr, kv_shape)
-    var v = NDBuffer[dtype, 3](v_ptr, kv_shape)
-    var mask = NDBuffer[dtype, 3](mask_ptr, mask_shape)
-    var output = NDBuffer[dtype, 3](output_ptr, q_shape)
+    comptime layout = Layout.row_major[3]()
+    var q = LayoutTensor[dtype, layout](
+        q_ptr, RuntimeLayout[layout].row_major(q_shape)
+    )
+    var k = LayoutTensor[dtype, layout](
+        k_ptr, RuntimeLayout[layout].row_major(kv_shape)
+    )
+    var v = LayoutTensor[dtype, layout](
+        v_ptr, RuntimeLayout[layout].row_major(kv_shape)
+    )
+    var mask = LayoutTensor[dtype, layout](
+        mask_ptr, RuntimeLayout[layout].row_major(mask_shape)
+    )
+    var output = LayoutTensor[dtype, layout](
+        output_ptr, RuntimeLayout[layout].row_major(q_shape)
+    )
 
     @parameter
     @always_inline
@@ -88,44 +99,38 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec):
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return mask.load[width=simd_width](rebind[IndexList[3]](idx))
 
-    alias scale = 0.25
+    comptime scale = 0.25
 
     @always_inline
     @parameter
     fn flash_bench_fn(mut b: Bencher):
         @always_inline
         @parameter
-        fn iter_fn[depth_static_dim: Dim]():
-            alias output_static_shape = DimList(Dim(), Dim(), depth_static_dim)
+        fn iter_fn[depth_static_dim: Int]():
+            comptime output_static_shape = IndexList[3](
+                UNKNOWN_VALUE, UNKNOWN_VALUE, depth_static_dim
+            )
             flash_attention[input_k_fn, input_v_fn, mask_fn](
-                q.make_dims_unknown(),
-                k.get_shape(),
-                v.get_shape(),
-                mask.get_shape(),
-                rebind[NDBuffer[dtype, 3, output.origin, output_static_shape]](
-                    output
-                ),
+                q,
+                k.runtime_layout.shape.value.canonicalize(),
+                v.runtime_layout.shape.value.canonicalize(),
+                mask.runtime_layout.shape.value.canonicalize(),
+                output,
                 scale=scale,
             )
 
-        alias depth_static_dims = VariadicList[Int](40, 64, 80, 128, 160)
+        comptime depth_static_dims = VariadicList[Int](40, 64, 80, 128, 160)
 
         @parameter
         for idx in range(len(depth_static_dims)):
             if depth_static_dims[idx] == spec.depth_dim:
-                b.iter[iter_fn[Dim(depth_static_dims[idx])]]()
+                b.iter[iter_fn[depth_static_dims[idx]]]()
                 return
 
         # Fallback to dispatch with a dynamic shape.
-        b.iter[iter_fn[Dim()]]()
+        b.iter[iter_fn[UNKNOWN_VALUE]]()
 
     m.bench_function[flash_bench_fn](BenchId("flash", String(spec)))
-
-    _ = q
-    _ = k
-    _ = v
-    _ = mask
-    _ = output
 
 
 def main():

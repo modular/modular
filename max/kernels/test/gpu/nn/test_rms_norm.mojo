@@ -11,12 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from math import sqrt
+from random import rand
 
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.normalization import *
-from random import rand
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
@@ -28,7 +29,7 @@ fn compute_rms[
     dtype
 ]:
     constrained[data.rank == 1, "data.rank must be 1"]()
-    alias accum_type = get_accum_type[dtype]()
+    comptime accum_type = get_accum_type[dtype]()
     var sum_of_squares = Scalar[accum_type]()
     for i in range(size):
         var val = data[i][0].cast[accum_type]()
@@ -59,13 +60,13 @@ fn run_rms_norm_gpu[
 
     var param_shape = Index(cols)
 
-    alias layout = Layout.row_major[rank]()
-    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    comptime layout = Layout.row_major[rank]()
+    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var data_buf = LayoutTensor[dtype, layout](
-        data_d.unsafe_ptr(), RuntimeLayout[layout].row_major(shape)
+        data_d, RuntimeLayout[layout].row_major(shape)
     )
     var gamma = LayoutTensor[dtype, layout_1d](
-        gamma_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+        gamma_d, RuntimeLayout[layout_1d].row_major(param_shape)
     )
     var epsilon = Scalar[dtype](0.001)
     var weight_offset = Scalar[dtype](0.0)

@@ -34,13 +34,15 @@ alias max_y = 1.5
 
 
 struct Matrix[dtype: DType, rows: Int, cols: Int]:
-    var data: UnsafePointer[Scalar[dtype]]
+    var data: UnsafePointer[Scalar[Self.dtype], MutOrigin.external]
 
     fn __init__(out self):
-        self.data = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
+        self.data = alloc[Scalar[Self.dtype]](Self.rows * Self.cols)
 
-    fn store[nelts: Int](self, row: Int, col: Int, val: SIMD[dtype, nelts]):
-        self.data.store(row * cols + col, val)
+    fn store[
+        nelts: Int
+    ](self, row: Int, col: Int, val: SIMD[Self.dtype, nelts]):
+        self.data.store(row * Self.cols + col, val)
 
 
 fn mandelbrot_kernel_SIMD[
@@ -65,7 +67,7 @@ fn mandelbrot_kernel_SIMD[
     return iters
 
 
-fn main() raises:
+def main():
     var matrix = Matrix[int_type, rows, cols]()
 
     @parameter
@@ -73,8 +75,7 @@ fn main() raises:
         alias scale_x = (max_x - min_x) / cols
         alias scale_y = (max_y - min_y) / rows
 
-        @parameter
-        fn compute_vector[simd_width: Int](col: Int):
+        fn compute_vector[simd_width: Int](col: Int) unified {mut}:
             """Each time we operate on a `simd_width` vector of pixels."""
             var cx = min_x + (col + iota[float_type, simd_width]()) * scale_x
             var cy = min_y + row * SIMD[float_type, simd_width](scale_y)
@@ -82,7 +83,7 @@ fn main() raises:
             matrix.store(row, col, mandelbrot_kernel_SIMD(c))
 
         # Vectorize the call to compute_vector with a chunk of pixels.
-        vectorize[compute_vector, simd_width, size=cols]()
+        vectorize[simd_width, size=cols](compute_vector)
 
     @parameter
     fn bench():

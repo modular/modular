@@ -14,10 +14,11 @@
 from python import Python, PythonObject
 from testing import (
     assert_equal,
-    assert_false,
-    assert_true,
     assert_equal_pyobj,
+    assert_false,
     assert_raises,
+    assert_true,
+    TestSuite,
 )
 
 
@@ -101,10 +102,4 @@ def test_numpy_float():
 
 
 def main():
-    test_string()
-    test_range()
-    test_int()
-    test_float()
-    test_bool()
-    test_numpy_int()
-    test_numpy_float()
+    TestSuite.discover_tests[__functions_in_module()]().run()

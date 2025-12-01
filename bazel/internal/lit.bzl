@@ -1,7 +1,7 @@
 """Helpers for running lit tests in bazel"""
 
 load("@rules_python//python/private:py_test_rule.bzl", upstream_py_test = "py_test")  # buildifier: disable=bzl-visibility
-load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "runtime_sanitizer_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
 load(":mojo_test_environment.bzl", "mojo_test_environment")  # buildifier: disable=bzl-visibility
 
 _HEADER_PATH_ADDITIONS = """
@@ -87,6 +87,7 @@ def _generate_site_cfg_impl(ctx):
         arguments = [ctx.file.src.path, tools_loader.path],
         inputs = [ctx.file.src, tools_loader],
         outputs = [combined_cfg],
+        use_default_shell_env = True,
     )
 
     ctx.actions.expand_template(
@@ -185,7 +186,7 @@ def lit_tests(
         exec_properties: Remote exec resources https://www.buildbuddy.io/docs/rbe-platforms/#runner-resource-allocation
     """
 
-    validate_gpu_tags(tags, gpu_constraints)
+    validate_gpu_tags(tags, target_compatible_with + gpu_constraints)
 
     tool_names = []
     tool_paths = []
@@ -212,11 +213,12 @@ def lit_tests(
             outs = [name + ".cfg.py"],
             cmd = """
 cat > $(OUTS) <<EOF
-config.name = "//{package}"
+import os
+
+config.name = os.environ["TEST_TARGET"]
 config.suffixes = [{extensions_string}]
 EOF
             """.format(
-                package = native.package_name(),
                 extensions_string = extensions_string,
             ),
             testonly = True,
@@ -281,11 +283,9 @@ EOF
         "LIT_PRESERVES_TMP": "1",
         "MODULAR_LIT_TEST": "1",
         "ZERO_AR_DATE": "1",
-    } | GPU_TEST_ENV | get_default_test_env(exec_properties)
+    } | GPU_TEST_ENV | runtime_sanitizer_env(preload = False) | get_default_test_env(exec_properties)
 
-    extra_data = [
-        "//bazel/internal:lsan-suppressions.txt",
-    ]
+    extra_data = RUNTIME_SANITIZER_DATA
     default_args = ["--config-prefix=" + name]
     kwargs = {
         "deps": deps + mojo_test_deps + [

@@ -20,16 +20,16 @@ from buffer import NDBuffer
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from linalg.gemv import gemv_kernel, gevm_kernel
-from linalg.matmul_gpu import matmul_kernel
+from linalg.matmul.gpu import matmul_kernel
 
 from utils import IndexList
 from utils.index import Index
 from utils.numerics import isnan
+from internal_utils import assert_almost_equal
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
-def run_matvec[
-    reduction_method: warp.ReductionMethod
-](M: Int, N: Int, K: Int, *, ctx: DeviceContext):
+def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
     print("== run_matvec kernel")
 
     var iterations = 100
@@ -57,19 +57,16 @@ def run_matvec[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias WARPS_PER_BLOCK = 1024 // WARP_SIZE
+    comptime WARPS_PER_BLOCK = 1024 // WARP_SIZE
 
     @always_inline
     @parameter
     fn run_func_gemv(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            gemv_kernel[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                reduction_method=reduction_method,
-            ]
-        ](
+        comptime kernel = gemv_kernel[
+            DType.float32, DType.float32, DType.float32
+        ]
+
+        ctx.enqueue_function_checked[kernel, kernel](
             c_device,
             a_device,
             b_device,
@@ -83,14 +80,14 @@ def run_matvec[
     @always_inline
     @parameter
     fn run_func_gevm(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            gevm_kernel[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                tile_size = WARP_SIZE * WARPS_PER_BLOCK,
-            ]
-        ](
+        comptime kernel = gevm_kernel[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            tile_size = WARP_SIZE * WARPS_PER_BLOCK,
+        ]
+
+        ctx.enqueue_function_checked[kernel, kernel](
             c_device,
             a_device,
             b_device,
@@ -127,19 +124,19 @@ def run_matvec[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias BLOCK_DIM = 16
+    comptime BLOCK_DIM = 16
 
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            matmul_kernel[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                BLOCK_DIM,
-            ]
-        ](
+        comptime kernel = matmul_kernel[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            BLOCK_DIM,
+        ]
+
+        ctx.enqueue_function_checked[kernel, kernel](
             c_device,
             a_device,
             b_device,
@@ -163,25 +160,15 @@ def run_matvec[
 
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
-    alias errorTolerance = 0.0001
+    comptime errorTolerance = 1e-2
     var failed = False
-    for i in range(M * N):
-        var outVal = c_host[i]
-        var outRef = c_host_naive[i]
-        var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
-        if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
-            failed = True
-
-    # CHECK: Success
-    if not failed:
-        print("Success 🎉: results match")
-        print(
-            "Performance warp-shuffle matvec vs. shmem matmul: ",
-            sectime2 / sectime,
-            "x",
-        )
-    else:
-        print("Failed ❌: results mismatch")
+    assert_almost_equal(
+        c_host,
+        c_host_naive,
+        num_elements=M * N,
+        atol=1e-4,
+        rtol=errorTolerance,
+    )
 
     _ = a_device
     _ = b_device
@@ -193,11 +180,11 @@ def run_matvec[
     _ = c_host_naive
 
 
-fn run_matvec_with_epilogue_fn[
-    reduction_method: warp.ReductionMethod
-](M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
-    alias c_stride = 5
-    alias seed_val = 42
+fn run_matvec_with_epilogue_fn(
+    M: Int, N: Int, K: Int, *, ctx: DeviceContext
+) raises:
+    comptime c_stride = 5
+    comptime seed_val = 42
 
     var iterations = 100
     var a_host = UnsafePointer[Float32].alloc(M * K)
@@ -224,7 +211,7 @@ fn run_matvec_with_epilogue_fn[
     var c_device = ctx.enqueue_create_buffer[DType.float32](M * N * c_stride)
 
     var c_device_nd = NDBuffer[DType.float32, 2](
-        c_device._unsafe_ptr(), Index(M, N), Index(N * c_stride, c_stride)
+        c_device.unsafe_ptr(), Index(M, N), Index(N * c_stride, c_stride)
     )
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -244,16 +231,15 @@ fn run_matvec_with_epilogue_fn[
             ),
         )
 
-    alias WARPS_PER_BLOCK = 1024 // WARP_SIZE
+    comptime WARPS_PER_BLOCK = 1024 // WARP_SIZE
 
     @always_inline
     @parameter
     fn run_func_gemv(ctx: DeviceContext) raises:
-        alias kernel = gemv_kernel[
+        comptime kernel = gemv_kernel[
             DType.float32,
             DType.float32,
             DType.float32,
-            reduction_method=reduction_method,
             elementwise_lambda_fn=epilogue_fn,
         ]
         var func = ctx.compile_function_checked[kernel, kernel]()
@@ -272,7 +258,7 @@ fn run_matvec_with_epilogue_fn[
     @always_inline
     @parameter
     fn run_func_gevm(ctx: DeviceContext) raises:
-        alias kernel = gevm_kernel[
+        comptime kernel = gevm_kernel[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -322,12 +308,12 @@ fn run_matvec_with_epilogue_fn[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias BLOCK_DIM = 16
+    comptime BLOCK_DIM = 16
 
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        alias kernel = matmul_kernel[
+        comptime kernel = matmul_kernel[
             DType.float32,
             DType.float32,
             DType.float32,
@@ -359,26 +345,15 @@ fn run_matvec_with_epilogue_fn[
 
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
-    alias errorTolerance = 0.0001
+    comptime errorTolerance = 1e-2
     var failed = False
-    for i in range(M * N * c_stride):
-        var outVal = c_host.load(i)
-        var outRef = c_host_naive.load(i)
-        var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
-        if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
-            print(i, relDiff, outVal, outRef)
-            failed = True
-
-    # CHECK: Success
-    if not failed:
-        print("Success 🎉: results match")
-        print(
-            "Performance warp-shuffle matvec vs. shmem matmul: ",
-            sectime2 / sectime,
-            "x",
-        )
-    else:
-        print("Failed ❌: results mismatch")
+    assert_almost_equal(
+        c_host,
+        c_host_naive,
+        num_elements=M * N * c_stride,
+        atol=1e-4,
+        rtol=errorTolerance,
+    )
 
     _ = a_device
     _ = b_device
@@ -391,24 +366,11 @@ fn run_matvec_with_epilogue_fn[
 
 
 def main():
-    def run_tests[reduction_method: warp.ReductionMethod](ctx: DeviceContext):
+    with DeviceContext() as ctx:
         # gemv for matrix vector multiply
-        run_matvec[reduction_method=reduction_method](4096, 1, 4096, ctx=ctx)
-        run_matvec_with_epilogue_fn[reduction_method=reduction_method](
-            4096, 1, 4096, ctx=ctx
-        )
+        run_matvec(4096, 1, 4096, ctx=ctx)
+        run_matvec_with_epilogue_fn(4096, 1, 4096, ctx=ctx)
         # gevm for vector matrix multiply
         if has_nvidia_gpu_accelerator():
-            run_matvec[reduction_method=reduction_method](
-                1, 4096, 4096, ctx=ctx
-            )
-            run_matvec_with_epilogue_fn[reduction_method=reduction_method](
-                1, 4096, 4096, ctx=ctx
-            )
-
-    with DeviceContext() as ctx:
-        run_tests[warp.ReductionMethod.WARP](ctx)
-
-        @parameter
-        if has_nvidia_gpu_accelerator():
-            run_tests[warp.ReductionMethod.TENSOR_CORE](ctx)
+            run_matvec(1, 4096, 4096, ctx=ctx)
+            run_matvec_with_epilogue_fn(1, 4096, 4096, ctx=ctx)

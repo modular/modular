@@ -11,11 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from math import isclose
 from random import rand
 
-from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention
 from nn.mha_mask import (
     MASK_VALUE,
@@ -36,7 +37,7 @@ def build_ChunkedCausalMask[
     num_heads: Int,
     seq_len: Int,
     num_keys: Int,
-    mask: NDBuffer[mask_type, 4, MutableAnyOrigin],
+    mask: LayoutTensor[mut=True, mask_type, **_],
 ):
     # Initialize causal mask.
     for b in range(batch_size):
@@ -51,7 +52,7 @@ def build_ChunkedCausalMask[
                     var masked = chunk_masked or causal_masked
                     mask.store(
                         Index(b, h, q_idx, k_idx),
-                        Scalar[mask.type](0 if not masked else MASK_VALUE),
+                        Scalar[mask.dtype](0 if not masked else MASK_VALUE),
                     )
 
 
@@ -81,9 +82,9 @@ fn test_attention[
         num_keys,
     )
     # Query, key, value dimensions.
-    alias batch_size = 1
-    alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
-    alias kv_num_heads = num_heads // group
+    comptime batch_size = 1
+    comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
+    comptime kv_num_heads = num_heads // group
 
     # Q, K, V shapes.
     var q_size = batch_size * num_heads * seq_len * depth
@@ -101,20 +102,36 @@ fn test_attention[
     var flash_output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
 
     # Construct buffers.
-    var q = NDBuffer[qkv_type, 4](
-        q_ptr, Index(batch_size, seq_len, num_heads, depth)
+    comptime layout_4d = Layout.row_major[4]()
+    var q = LayoutTensor[qkv_type, layout_4d](
+        q_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
-    var k = NDBuffer[qkv_type, 4](
-        k_ptr, Index(batch_size, num_keys, kv_num_heads, depth)
+    var k = LayoutTensor[qkv_type, layout_4d](
+        k_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, num_keys, kv_num_heads, depth)
+        ),
     )
-    var v = NDBuffer[qkv_type, 4](
-        v_ptr, Index(batch_size, num_keys, kv_num_heads, depth)
+    var v = LayoutTensor[qkv_type, layout_4d](
+        v_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, num_keys, kv_num_heads, depth)
+        ),
     )
-    var mask = NDBuffer[mask_type, 4, MutableAnyOrigin](
-        mask_ptr, Index(batch_size, num_heads, seq_len, num_keys)
+    var mask = LayoutTensor[mask_type, layout_4d, MutAnyOrigin](
+        mask_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, num_heads, seq_len, num_keys)
+        ),
     )
-    var output = NDBuffer[qkv_type, 4](
-        output_ptr, Index(batch_size, seq_len, num_heads, depth)
+    var output = LayoutTensor[qkv_type, layout_4d](
+        output_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
 
     # Q, K, V are randomly initialized.
@@ -141,33 +158,47 @@ fn test_attention[
     ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
     # Construct device buffers.
-    var q_device = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
-    ](
+    comptime q_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
+    )
+    var q_device = LayoutTensor[qkv_type, q_layout](
         q_device_ptr.unsafe_ptr(),
-        Index(batch_size, seq_len, num_heads, depth),
+        RuntimeLayout[q_layout].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
-    var k_device = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), kv_num_heads, depth)
-    ](
+    comptime k_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
+    )
+    var k_device = LayoutTensor[qkv_type, k_layout](
         k_device_ptr.unsafe_ptr(),
-        Index(batch_size, num_keys, kv_num_heads, depth),
+        RuntimeLayout[k_layout].row_major(
+            Index(batch_size, num_keys, kv_num_heads, depth)
+        ),
     )
-    var v_device = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), kv_num_heads, depth)
-    ](
+    comptime v_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
+    )
+    var v_device = LayoutTensor[qkv_type, v_layout](
         v_device_ptr.unsafe_ptr(),
-        Index(batch_size, num_keys, kv_num_heads, depth),
+        RuntimeLayout[v_layout].row_major(
+            Index(batch_size, num_keys, kv_num_heads, depth)
+        ),
     )
-    var mask4d = NDBuffer[mask_type, 4, _, DimList.create_unknown[4]()](
+    var mask4d = LayoutTensor[mask_type, Layout.row_major[4]()](
         mask_device_ptr.unsafe_ptr(),
-        Index(batch_size, num_heads, seq_len, num_keys),
+        RuntimeLayout[Layout.row_major[4]()].row_major(
+            Index(batch_size, num_heads, seq_len, num_keys)
+        ),
     )
-    var output_device = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
-    ](
+    comptime output_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
+    )
+    var output_device = LayoutTensor[qkv_type, output_layout](
         output_device_ptr.unsafe_ptr(),
-        Index(batch_size, seq_len, num_heads, depth),
+        RuntimeLayout[output_layout].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
 
     flash_attention(
@@ -188,11 +219,14 @@ fn test_attention[
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
     ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
-    var output_device_ref = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
-    ](
+    comptime output_ref_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
+    )
+    var output_device_ref = LayoutTensor[qkv_type, output_ref_layout](
         output_ref_device_ptr.unsafe_ptr(),
-        Index(batch_size, seq_len, num_heads, depth),
+        RuntimeLayout[output_ref_layout].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
     flash_attention(
         output_device_ref,
@@ -239,11 +273,11 @@ fn test_attention[
 
 
 def test_attention_suite(ctx: DeviceContext):
-    alias types = (DType.bfloat16, DType.float32)
+    comptime types = (DType.bfloat16, DType.float32)
 
     @parameter
     for type_idx in range(len(types)):
-        alias type = types[type_idx]
+        comptime type = types[type_idx]
         # context encoding
         test_attention[
             type,
@@ -342,7 +376,7 @@ def test_mask_status():
 
 
 def test_mask_apply():
-    alias local_window_size = 4
+    comptime local_window_size = 4
     var mask = ChunkedCausalMask[local_window_size]()
 
     var score_vec = SIMD[DType.float32, 4](0.0)
@@ -351,9 +385,9 @@ def test_mask_apply():
     score_vec[2] = 3.0
     score_vec[3] = 4.0
 
-    alias simd_width = 4
-    alias SIMD_T = SIMD[DType.float32, simd_width]
-    alias UNMASKED_INPUT = SIMD_T(0.0)
+    comptime simd_width = 4
+    comptime SIMD_T = SIMD[DType.float32, simd_width]
+    comptime UNMASKED_INPUT = SIMD_T(0.0)
     var inf_vec = SIMD_T(MASK_VALUE)
 
     # first two dims should be arbitrary, we pass in junk just to help confirm.

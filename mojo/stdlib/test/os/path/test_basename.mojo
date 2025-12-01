@@ -15,10 +15,10 @@ from os.path import basename
 from pathlib import Path
 
 from builtin._location import __source_location
-from testing import assert_equal
+from testing import TestSuite, assert_equal
 
 
-def main():
+def test_basename():
     # Root directories
     assert_equal("", basename("/"))
 
@@ -82,3 +82,7 @@ def main():
     assert_equal(
         "some_file.txt", basename(Path.home() / "dir" / "some_file.txt")
     )
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

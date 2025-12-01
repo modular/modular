@@ -16,26 +16,25 @@ from ._testing import assert_almost_equal, assert_equal, assert_with_measure
 from ._utils import (
     DeviceNDBuffer,
     HostNDBuffer,
+    InitializationType,
     Mode,
     TestTensor,
+    Timer,
     arange,
     arg_parse,
     array_equal,
     bench_compile_time,
     env_get_shape,
     fill,
+    init_vector_launch,
+    initialize,
     int_list_to_tuple,
     ndbuffer_to_str,
     parse_shape,
     random,
     update_bench_config_args,
     zero,
-    Timer,
-    initialize,
-    InitializationType,
-    init_vector_launch,
 )
-
-from .dispatch_utils import TuningConfig, Table
-from .nvidia_configs import TuningConfigNvidia, TuningTableNvidia
 from .amd_configs import TuningConfigAMD, TuningTableAMD
+from .dispatch_utils import Table, TuningConfig
+from .nvidia_configs import TuningConfigNvidia, TuningTableNvidia

@@ -11,11 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import barrier
+from gpu import barrier, warp_id, lane_id
 from gpu.host import DeviceContext
-from gpu.id import thread_idx
+from gpu import thread_idx
 from gpu.intrinsics import threadfence
-from gpu.memory import AddressSpace
 from gpu.mma import (
     WGMMADescriptor,
     wgmma_async,
@@ -42,23 +41,21 @@ fn wgmma_kernel[
     a_type: DType,
     b_type: DType,
 ](
-    operand_a: LayoutTensor[a_type, Layout.row_major(M, K), MutableAnyOrigin],
-    operand_b: LayoutTensor[b_type, Layout.row_major(K, N), MutableAnyOrigin],
-    result_c: LayoutTensor[
-        DType.int32, Layout.row_major(M, N), MutableAnyOrigin
-    ],
+    operand_a: LayoutTensor[a_type, Layout.row_major(M, K), MutAnyOrigin],
+    operand_b: LayoutTensor[b_type, Layout.row_major(K, N), MutAnyOrigin],
+    result_c: LayoutTensor[DType.int32, Layout.row_major(M, N), MutAnyOrigin],
 ):
     var smem_operand_a = LayoutTensor[
         a_type,
         smem_operand_a_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var smem_operand_b = LayoutTensor[
         b_type,
         smem_operand_b_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -93,8 +90,6 @@ fn wgmma_kernel[
         threadfence()
         wgmma_fence_aligned()
 
-    var warp_id = thread_idx.x // 32
-    var lan_id = thread_idx.x % 32
     # Refer to this layout:
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-D.png
     # Each warp updates a 16x8 tile, and within each tile,
@@ -102,9 +97,9 @@ fn wgmma_kernel[
     # is as follows:
     c0 = bitcast[DType.int32, 4](c_reg)
     var th_local_res = (
-        result_c.tile[16, 8](warp_id, 0)
+        result_c.tile[16, 8](Int(warp_id()), 0)
         .vectorize[1, 2]()
-        .distribute[Layout.row_major(8, 4)](lan_id)
+        .distribute[Layout.row_major(8, 4)](lane_id())
     )
     th_local_res[0, 0][0] = c0[0]
     th_local_res[0, 0][1] = c0[1]
@@ -179,11 +174,11 @@ fn wgmma_kernel[
 # CHECK: 286 259 292 270 273 286 259 292
 def wgmma_s8_s8_s32_64x8x32(ctx: DeviceContext):
     print("== wgmma_s8_s8_s32_64x8x32")
-    alias M = 64
-    alias N = 8
-    alias K = 32
-    alias a_type = DType.int8
-    alias b_type = DType.int8
+    comptime M = 64
+    comptime N = 8
+    comptime K = 32
+    comptime a_type = DType.int8
+    comptime b_type = DType.int8
 
     var lhs = ManagedLayoutTensor[a_type, Layout.row_major(M, K)](ctx)
     arange(lhs.tensor(), end=9)
@@ -196,18 +191,18 @@ def wgmma_s8_s8_s32_64x8x32(ctx: DeviceContext):
     var res = ManagedLayoutTensor[DType.int32, Layout.row_major(M, N)](ctx)
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-A.png
-    alias a_smem_layout = Layout(
+    comptime a_smem_layout = Layout(
         IntTuple(IntTuple(8, 8), IntTuple(16, 2)),
         IntTuple(IntTuple(16, 128), IntTuple(1, 1024)),
     )
     # print_layout(a_smem_layout)
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-B.png
-    alias b_smem_layout = Layout(
+    comptime b_smem_layout = Layout(
         IntTuple(IntTuple(16, 2), 8), IntTuple(IntTuple(1, 128), 16)
     )
     # print_layout(b_smem_layout)
 
-    alias kernel = wgmma_kernel[
+    comptime kernel = wgmma_kernel[
         M,
         N,
         K,
@@ -300,11 +295,11 @@ def wgmma_s8_s8_s32_64x8x32(ctx: DeviceContext):
 # CHECK: 237 239 241 258 245 237 239 241
 def wgmma_u8_u8_s32_64x8x32(ctx: DeviceContext):
     print("== wgmma_u8_u8_s32_64x8x32")
-    alias M = 64
-    alias N = 8
-    alias K = 32
-    alias a_type = DType.uint8
-    alias b_type = DType.uint8
+    comptime M = 64
+    comptime N = 8
+    comptime K = 32
+    comptime a_type = DType.uint8
+    comptime b_type = DType.uint8
 
     var lhs = ManagedLayoutTensor[a_type, Layout.row_major(M, K)](ctx)
     arange(lhs.tensor(), end=9)
@@ -317,18 +312,18 @@ def wgmma_u8_u8_s32_64x8x32(ctx: DeviceContext):
     var res = ManagedLayoutTensor[DType.int32, Layout.row_major(M, N)](ctx)
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-A.png
-    alias a_smem_layout = Layout(
+    comptime a_smem_layout = Layout(
         IntTuple(IntTuple(8, 8), IntTuple(16, 2)),
         IntTuple(IntTuple(16, 128), IntTuple(1, 1024)),
     )
     # print_layout(a_smem_layout)
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-B.png
-    alias b_smem_layout = Layout(
+    comptime b_smem_layout = Layout(
         IntTuple(IntTuple(16, 2), 8), IntTuple(IntTuple(1, 128), 16)
     )
     # print_layout(b_smem_layout)
 
-    alias kernel = wgmma_kernel[
+    comptime kernel = wgmma_kernel[
         M,
         N,
         K,
@@ -421,11 +416,11 @@ def wgmma_u8_u8_s32_64x8x32(ctx: DeviceContext):
 # CHECK: 282 285 263 281 269 282 285 263
 def wgmma_s8_u8_s32_64x8x32(ctx: DeviceContext):
     print("== wgmma_s8_u8_s32_64x8x32")
-    alias M = 64
-    alias N = 8
-    alias K = 32
-    alias a_type = DType.int8
-    alias b_type = DType.uint8
+    comptime M = 64
+    comptime N = 8
+    comptime K = 32
+    comptime a_type = DType.int8
+    comptime b_type = DType.uint8
 
     var lhs = ManagedLayoutTensor[a_type, Layout.row_major(M, K)](ctx)
     var lhs_tensor = lhs.tensor()
@@ -440,18 +435,18 @@ def wgmma_s8_u8_s32_64x8x32(ctx: DeviceContext):
     var res = ManagedLayoutTensor[DType.int32, Layout.row_major(M, N)](ctx)
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-A.png
-    alias a_smem_layout = Layout(
+    comptime a_smem_layout = Layout(
         IntTuple(IntTuple(8, 8), IntTuple(16, 2)),
         IntTuple(IntTuple(16, 128), IntTuple(1, 1024)),
     )
     # print_layout(a_smem_layout)
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-B.png
-    alias b_smem_layout = Layout(
+    comptime b_smem_layout = Layout(
         IntTuple(IntTuple(16, 2), 8), IntTuple(IntTuple(1, 128), 16)
     )
     # print_layout(b_smem_layout)
 
-    alias kernel = wgmma_kernel[
+    comptime kernel = wgmma_kernel[
         M,
         N,
         K,
@@ -544,11 +539,11 @@ def wgmma_s8_u8_s32_64x8x32(ctx: DeviceContext):
 # CHECK: 219 236 268 225 272 219 236 268
 def wgmma_u8_s8_s32_64x8x32(ctx: DeviceContext):
     print("== wgmma_u8_s8_s32_64x8x32")
-    alias M = 64
-    alias N = 8
-    alias K = 32
-    alias a_type = DType.uint8
-    alias b_type = DType.int8
+    comptime M = 64
+    comptime N = 8
+    comptime K = 32
+    comptime a_type = DType.uint8
+    comptime b_type = DType.int8
 
     var lhs = ManagedLayoutTensor[a_type, Layout.row_major(M, K)](ctx)
     var lhs_tensor = lhs.tensor()
@@ -563,18 +558,18 @@ def wgmma_u8_s8_s32_64x8x32(ctx: DeviceContext):
     var res = ManagedLayoutTensor[DType.int32, Layout.row_major(M, N)](ctx)
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-A.png
-    alias a_smem_layout = Layout(
+    comptime a_smem_layout = Layout(
         IntTuple(IntTuple(8, 8), IntTuple(16, 2)),
         IntTuple(IntTuple(16, 128), IntTuple(1, 1024)),
     )
     # print_layout(a_smem_layout)
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-B.png
-    alias b_smem_layout = Layout(
+    comptime b_smem_layout = Layout(
         IntTuple(IntTuple(16, 2), 8), IntTuple(IntTuple(1, 128), 16)
     )
     # print_layout(b_smem_layout)
 
-    alias kernel = wgmma_kernel[
+    comptime kernel = wgmma_kernel[
         M,
         N,
         K,

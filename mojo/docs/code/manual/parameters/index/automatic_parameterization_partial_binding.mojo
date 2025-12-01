@@ -15,7 +15,9 @@
 @fieldwise_init
 struct Fudge[sugar: Int, cream: Int, chocolate: Int = 7](Stringable):
     fn __str__(self) -> String:
-        return String.write("Fudge (", sugar, ",", cream, ",", chocolate, ")")
+        return String.write(
+            "Fudge (", Self.sugar, ",", Self.cream, ",", Self.chocolate, ")"
+        )
 
 
 fn eat(f: Fudge[5, *_]):

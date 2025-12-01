@@ -19,123 +19,14 @@ from memory import Pointer
 ```
 """
 
-
 # ===-----------------------------------------------------------------------===#
 # AddressSpace
 # ===-----------------------------------------------------------------------===#
 
 
 @register_passable("trivial")
-struct _GPUAddressSpace(
-    EqualityComparable, Identifiable, ImplicitlyCopyable, Movable
-):
-    var _value: Int
-
-    # See https://docs.nvidia.com/cuda/nvvm-ir-spec/#address-space
-    # And https://llvm.org/docs/AMDGPUUsage.html#address-spaces
-    alias GENERIC = AddressSpace(0)
-    """Generic address space."""
-    alias GLOBAL = AddressSpace(1)
-    """Global address space."""
-    alias SHARED = AddressSpace(3)
-    """Shared address space."""
-    alias CONSTANT = AddressSpace(4)
-    """Constant address space."""
-    alias LOCAL = AddressSpace(5)
-    """Local address space."""
-
-    @always_inline("builtin")
-    fn __init__(out self, value: Int):
-        self._value = value
-
-    @always_inline("builtin")
-    fn value(self) -> Int:
-        """The integral value of the address space.
-
-        Returns:
-          The integral value of the address space.
-        """
-        return self._value
-
-    @always_inline("builtin")
-    fn __int__(self) -> Int:
-        """The integral value of the address space.
-
-        Returns:
-          The integral value of the address space.
-        """
-        return self._value
-
-    @always_inline("nodebug")
-    fn __eq__(self, other: Self) -> Bool:
-        """Checks if the two address spaces are equal.
-
-        Returns:
-          True if the two address spaces are equal and False otherwise.
-        """
-        return self is other
-
-    @always_inline("nodebug")
-    fn __eq__(self, other: AddressSpace) -> Bool:
-        """Checks if the two address spaces are equal.
-
-        Returns:
-          True if the two address spaces are equal and False otherwise.
-        """
-        return self is other
-
-    @always_inline("nodebug")
-    fn __ne__(self, other: AddressSpace) -> Bool:
-        """Checks if the two address spaces are not equal.
-
-        Args:
-          other: The other address space value.
-
-        Returns:
-          True if the two address spaces are inequal and False otherwise.
-        """
-        return self is not other
-
-    @always_inline("nodebug")
-    fn __is__(self, other: Self) -> Bool:
-        """Checks if the two address spaces are equal.
-
-        Args:
-          other: The other address space value.
-
-        Returns:
-          True if the two address spaces are equal and False otherwise.
-        """
-        return self.value() == other.value()
-
-    @always_inline("nodebug")
-    fn __is__(self, other: AddressSpace) -> Bool:
-        """Checks if the two address spaces are equal.
-
-        Args:
-          other: The other address space value.
-
-        Returns:
-          True if the two address spaces are equal and False otherwise.
-        """
-        return self.value() == other.value()
-
-    @always_inline("nodebug")
-    fn __isnot__(self, other: AddressSpace) -> Bool:
-        """Checks if the two address spaces are not equal.
-
-        Args:
-          other: The other address space value.
-
-        Returns:
-          True if the two address spaces are not equal and False otherwise.
-        """
-        return self.value() != other.value()
-
-
-@register_passable("trivial")
 struct AddressSpace(
-    EqualityComparable,
+    Equatable,
     Identifiable,
     ImplicitlyCopyable,
     Intable,
@@ -143,12 +34,33 @@ struct AddressSpace(
     Stringable,
     Writable,
 ):
-    """Address space of the pointer."""
+    """Address space of the pointer.
+
+    This type represents memory address spaces for both CPU and GPU targets.
+    On CPUs, typically only GENERIC is used. On GPUs (NVIDIA/AMD), various
+    address spaces provide access to different memory regions with different
+    performance characteristics.
+    """
 
     var _value: Int
 
-    alias GENERIC = AddressSpace(0)
-    """Generic address space."""
+    # CPU address space
+    comptime GENERIC = AddressSpace(0)
+    """Generic address space. Used for CPU memory and default GPU memory."""
+
+    # GPU address spaces
+    # See https://docs.nvidia.com/cuda/nvvm-ir-spec/#address-space
+    # And https://llvm.org/docs/AMDGPUUsage.html#address-spaces
+    comptime GLOBAL = AddressSpace(1)
+    """Global GPU memory address space."""
+    comptime SHARED = AddressSpace(3)
+    """Shared GPU memory address space (per thread block/workgroup)."""
+    comptime CONSTANT = AddressSpace(4)
+    """Constant GPU memory address space (read-only)."""
+    comptime LOCAL = AddressSpace(5)
+    """Local GPU memory address space (per thread, private)."""
+    comptime SHARED_CLUSTER = AddressSpace(7)
+    """Shared cluster GPU memory address space (NVIDIA-specific)."""
 
     @always_inline("builtin")
     fn __init__(out self, value: Int):
@@ -158,15 +70,6 @@ struct AddressSpace(
           value: The address space value.
         """
         self._value = value
-
-    @always_inline("builtin")
-    fn __init__(out self, value: _GPUAddressSpace):
-        """Initializes the address space from the underlying integral value.
-
-        Args:
-          value: The address space value.
-        """
-        self._value = value._value
 
     @always_inline("builtin")
     fn value(self) -> Int:
@@ -185,15 +88,6 @@ struct AddressSpace(
           The integral value of the address space.
         """
         return self._value
-
-    @always_inline("builtin")
-    fn __index__(self) -> __mlir_type.index:
-        """Convert to index.
-
-        Returns:
-            The corresponding __mlir_type.index value.
-        """
-        return self._value._mlir_value
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
@@ -249,8 +143,31 @@ struct AddressSpace(
         """
         if self is AddressSpace.GENERIC:
             writer.write("AddressSpace.GENERIC")
+        elif self is AddressSpace.GLOBAL:
+            writer.write("AddressSpace.GLOBAL")
+        elif self is AddressSpace.SHARED:
+            writer.write("AddressSpace.SHARED")
+        elif self is AddressSpace.CONSTANT:
+            writer.write("AddressSpace.CONSTANT")
+        elif self is AddressSpace.LOCAL:
+            writer.write("AddressSpace.LOCAL")
+        elif self is AddressSpace.SHARED_CLUSTER:
+            writer.write("AddressSpace.SHARED_CLUSTER")
         else:
             writer.write("AddressSpace(", self.value(), ")")
+
+
+# ===-----------------------------------------------------------------------===#
+# Deprecated aliases for backward compatibility
+# ===-----------------------------------------------------------------------===#
+
+comptime _GPUAddressSpace = AddressSpace
+"""Deprecated: Use `AddressSpace` instead. This alias is provided for backward
+compatibility and will be removed in a future release."""
+
+comptime GPUAddressSpace = AddressSpace
+"""Deprecated: Use `AddressSpace` instead. This alias is provided for backward
+compatibility and will be removed in a future release."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -278,20 +195,20 @@ struct Pointer[
     """
 
     # Aliases
-    alias _mlir_type = __mlir_type[
+    comptime _mlir_type = __mlir_type[
         `!lit.ref<`,
-        type,
+        Self.type,
         `, `,
-        origin._mlir_origin,
+        Self.origin._mlir_origin,
         `, `,
-        address_space._value._mlir_value,
+        Self.address_space._value._mlir_value,
         `>`,
     ]
-    alias _with_origin = Pointer[type, _, address_space]
+    comptime _with_origin = Pointer[Self.type, _, Self.address_space]
 
-    alias Mutable = Self._with_origin[MutableOrigin.cast_from[origin]]
+    comptime Mutable = Self._with_origin[MutOrigin.cast_from[Self.origin]]
     """The mutable version of the `Pointer`."""
-    alias Immutable = Self._with_origin[ImmutableOrigin.cast_from[origin]]
+    comptime Immutable = Self._with_origin[ImmutOrigin.cast_from[Self.origin]]
     """The immutable version of the `Pointer`."""
     # Fields
     var _value: Self._mlir_type
@@ -306,14 +223,14 @@ struct Pointer[
     @always_inline("nodebug")
     fn __init__(
         other: Self._with_origin[_],
-        out self: Self._with_origin[ImmutableOrigin.cast_from[other.origin]],
+        out self: Self._with_origin[ImmutOrigin.cast_from[other.origin]],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 
         Args:
             other: The `Pointer` to cast.
         """
-        self = __type_of(self)(_mlir_value=other._value)
+        self = {_mlir_value = other._value}
 
     @doc_private
     @always_inline("nodebug")
@@ -327,7 +244,9 @@ struct Pointer[
 
     @always_inline("nodebug")
     fn __init__(
-        out self, *, ref [origin, address_space._value._mlir_value]to: type
+        out self,
+        *,
+        ref [Self.origin, Self.address_space._value._mlir_value]to: Self.type,
     ):
         """Constructs a Pointer from a reference to a value.
 
@@ -339,10 +258,10 @@ struct Pointer[
     @always_inline
     fn get_immutable(self) -> Self.Immutable:
         """Constructs a new Pointer with the same underlying target
-        and an ImmutableOrigin.
+        and an ImmutOrigin.
 
         Returns:
-            A new Pointer with the same target as self and an ImmutableOrigin.
+            A new Pointer with the same target as self and an ImmutOrigin.
 
         Notes:
             This does **not** copy the underlying data.
@@ -354,7 +273,7 @@ struct Pointer[
     # ===------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn __getitem__(self) -> ref [origin, address_space] type:
+    fn __getitem__(self) -> ref [Self.origin, Self.address_space] Self.type:
         """Enable subscript syntax `ptr[]` to access the element.
 
         Returns:
@@ -368,7 +287,7 @@ struct Pointer[
     # accesses to the origin.
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
-    fn __eq__(self, rhs: Pointer[type, _, address_space]) -> Bool:
+    fn __eq__(self, rhs: Pointer[Self.type, _, Self.address_space]) -> Bool:
         """Returns True if the two pointers are equal.
 
         Args:
@@ -381,7 +300,7 @@ struct Pointer[
 
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
-    fn __ne__(self, rhs: Pointer[type, _, address_space]) -> Bool:
+    fn __ne__(self, rhs: Pointer[Self.type, _, Self.address_space]) -> Bool:
         """Returns True if the two pointers are not equal.
 
         Args:
@@ -403,14 +322,14 @@ struct Pointer[
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(Pointer[type, _, address_space]),
+        other_type: type_of(Pointer[Self.type, _, Self.address_space]),
     ](
         self,
         out result: Pointer[
-            mut = mut & other_type.origin.mut,
-            type=type,
-            origin = __origin_of(origin, other_type.origin),
-            address_space=address_space,
+            mut = Self.mut & other_type.origin.mut,
+            type = Self.type,
+            origin = origin_of(Self.origin, other_type.origin),
+            address_space = Self.address_space,
         ],
     ):
         """Returns a pointer merged with the specified `other_type`.
@@ -421,6 +340,4 @@ struct Pointer[
         Returns:
             A pointer merged with the specified `other_type`.
         """
-        return __type_of(result)(
-            _mlir_value=self._value
-        )  # allow lit.ref to convert.
+        return {_mlir_value = self._value}  # allow lit.ref to convert.

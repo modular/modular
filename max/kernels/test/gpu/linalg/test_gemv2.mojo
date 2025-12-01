@@ -15,19 +15,19 @@
 
 from random import random_si64
 
-import linalg.vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from internal_utils._utils import ValOrDim, dynamic, static
-from linalg.matmul_gpu import _matmul_gpu
+from linalg.matmul.gpu import _matmul_gpu
 
 from utils import IndexList
 
-alias epilogue_func_type = fn[type: DType, width: Int, *, alignment: Int = 1] (
-    IndexList[2], IndexList[2], SIMD[type, width]
-) capturing -> SIMD[type, width]
+comptime epilogue_func_type = fn[
+    type: DType, width: Int, *, alignment: Int = 1
+] (IndexList[2], IndexList[2], SIMD[type, width]) capturing -> SIMD[type, width]
 
 
 @parameter
@@ -76,11 +76,11 @@ fn test[
     var K = k.value
     print(M, "x", N, "x", K, "transpose_b", transpose_b)
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_c_shape = DimList(m.dim, n.dim)
 
     var dynamic_a_shape = DimList(m.value, k.value)
     var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
@@ -107,8 +107,8 @@ fn test[
         dynamic_c_shape, ctx=ctx
     )
 
-    alias rand_min = -100
-    alias rand_max = 100
+    comptime rand_min = -100
+    comptime rand_max = 100
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -179,7 +179,7 @@ fn test[
 
     bench.bench_function[bench_func](
         BenchId("mojo matmul"),
-        ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
+        [ThroughputMeasure(BenchMetric.elements, 2 * M * N * K)],
     )
 
     @parameter
@@ -201,7 +201,7 @@ fn test[
 
     bench.bench_function[bench_func_vendor_blas](
         BenchId("vendor_blas matmul"),
-        ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
+        [ThroughputMeasure(BenchMetric.elements, 2 * M * N * K)],
     )
 
     _ = c_device

@@ -19,7 +19,7 @@
 
 from sys.info import CompilationTarget
 
-from linalg.neon_intrinsics import _neon_matmul
+from linalg.arch.cpu.neon_intrinsics import _neon_matmul
 
 
 # CHECK-LABEL: test_has_neon_int8_matmul

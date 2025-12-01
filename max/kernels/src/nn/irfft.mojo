@@ -12,8 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 """Inverse real FFT kernel using cuFFT."""
 
-from complex import ComplexFloat32
-from gpu._cufft.cufft import (
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    UnsafePointer as UnsafePointerV2,
+)
+from sys.ffi import external_call
+
+from _cufft.cufft import (
     cufftCreate,
     cufftEstimate1d,
     cufftExecC2R,
@@ -24,14 +30,12 @@ from gpu._cufft.cufft import (
     cufftSetStream,
     cufftSetWorkArea,
 )
-from gpu._cufft.types import Type
-from gpu._cufft.utils import check_error
+from _cufft.types import Type
+from _cufft.utils import check_error
+from complex import ComplexFloat32
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import CUDA
 from layout import LayoutTensor
-
-from sys.ffi import external_call
-from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 
 
 # This should eventually be moved to ffi.mojo with a more general global cache method
@@ -54,7 +58,10 @@ fn global_cache_insert(key: String, value: OpaquePointer):
 fn _get_fft_workarea(
     buffer_size: Int, ctx: DeviceContext
 ) raises -> OpaquePointer:
-    var fft_buffer_key = String("CUFFT_BUFFER_PTR_", buffer_size)
+    # Include device ID in cache key to ensure per-device workspace buffers.
+    var fft_buffer_key = String(
+        "CUFFT_BUFFER_PTR_", buffer_size, "_DEV_", ctx.id()
+    )
 
     if lookup := global_cache_lookup(fft_buffer_key):
         # we found the allocated device buffer
@@ -81,7 +88,10 @@ fn _get_fft_plan[
     workspace_size: Int,
     ctx: DeviceContext,
 ) raises -> cufftHandle:
-    var cached_plan_key = String("CUFFT_PLAN_", output_size, ",", batch_size)
+    # Include device ID in cache key to ensure per-device cuFFT plans.
+    var cached_plan_key = String(
+        "CUFFT_PLAN_", output_size, ",", batch_size, "_DEV_", ctx.id()
+    )
 
     if lookup := global_cache_lookup(cached_plan_key):
         # We found the plan in the cache, so just return it
@@ -125,15 +135,15 @@ fn _get_fft_plan[
         cached_plan_key,
         # we are bitcasting the integer plan to a void * to cache it,
         # because that's what KGEN_CompilerRT_InsertGlobal expects.
-        _unsafe_aliasing_address_to_pointer[DType.index](Int(plan)).bitcast[
-            NoneType
-        ](),
+        UnsafePointerV2[NoneType, MutOrigin.external](
+            unsafe_from_address=Int(plan)
+        ),
     )
 
     return plan
 
 
-fn irfft[
+fn _irfft[
     input_type: DType,
     output_type: DType,
     alignment: Int,
@@ -153,17 +163,6 @@ fn irfft[
     buffer_size_mb: Int,
     ctx: DeviceContext,
 ) raises:
-    """Compute the inverse real FFT of the input tensor.
-
-    Currently, only applies it to the last dimension.
-
-    Args:
-        input: Complex input tensor (NDBuffer).
-        output: Real output tensor (NDBuffer).
-        n: Output signal size (if <= 0, computed as 2*(input.size(axis) - 1)).
-        buffer_size_mb: Esimated buffer size in MB.
-        ctx: Device context.
-    """
     constrained[
         input.rank == output.rank, "Input and output must have the same rank"
     ]()
@@ -231,7 +230,7 @@ fn irfft[
 
         # Set up cuda stream.
         # Notice that we do not want to have this part of the cache
-        # The stream is set everytime the call is executed and we get the
+        # The stream is set every time the call is executed and we get the
         # stream from the context we are executing within
         check_error(cufftSetStream(plan, cuda_stream))
 
@@ -308,3 +307,39 @@ fn irfft[
                     output_ptr.bitcast[Float32](),
                 )
             )
+
+
+fn irfft[
+    input_type: DType,
+    output_type: DType,
+    alignment: Int,
+](
+    input: LayoutTensor[
+        input_type,
+        alignment=alignment,
+        address_space = AddressSpace.GENERIC, **_,
+    ],
+    output: LayoutTensor[
+        mut=True,
+        output_type,
+        alignment=alignment,
+        address_space = AddressSpace.GENERIC, **_,
+    ],
+    n: Int,
+    buffer_size_mb: Int,
+    ctx: DeviceContext,
+) raises:
+    """Compute the inverse real FFT of the input tensor.
+
+    Currently, only applies it to the last dimension.
+
+    Args:
+        input: Complex input tensor (NDBuffer).
+        output: Real output tensor (NDBuffer).
+        n: Output signal size (if <= 0, computed as 2*(input.size(axis) - 1)).
+        buffer_size_mb: Estimated buffer size in MB.
+        ctx: Device context.
+    """
+    # Set `ctx`'s CUcontext as current to satisfy cuFFT's stateful API.
+    with ctx.push_context():
+        _irfft(input, output, n, buffer_size_mb, ctx)

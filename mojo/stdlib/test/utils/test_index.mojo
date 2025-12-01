@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
+from testing import TestSuite, assert_equal
 
 from utils import Index, IndexList
 
@@ -50,7 +50,7 @@ def test_cast():
         String(IndexList[2, element_type = DType.int32](1, 2)),
         "(1, 2)",
     )
-    alias s = String(
+    comptime s = String(
         IndexList[2, element_type = DType.int32](1, 2).cast[DType.int64]()
     )
     assert_equal(s, "(1, 2)")
@@ -70,7 +70,4 @@ def test_list_literal():
 
 
 def main():
-    test_basics()
-    test_cast()
-    test_index()
-    test_list_literal()
+    TestSuite.discover_tests[__functions_in_module()]().run()

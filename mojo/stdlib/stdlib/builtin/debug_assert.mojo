@@ -16,20 +16,18 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 
-from os import abort
-from sys import is_amd_gpu, is_gpu, is_nvidia_gpu
-from sys._build import is_debug_build
-from sys.intrinsics import block_idx, thread_idx, assume
-from sys.param_env import env_get_string
-from io.write import _WriteBufferHeap
 from io.io import _printf
-from sys import is_compile_time
-from sys._amdgpu import printf_begin, printf_append_string_n, printf_append_args
+from io.write import _WriteBufferHeap
+from os import abort
+from sys import is_amd_gpu, is_apple_gpu, is_compile_time, is_gpu, is_nvidia_gpu
+from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
+from sys._build import is_debug_build
+from sys.intrinsics import assume
+from sys.param_env import env_get_string
 
 from builtin._location import __call_location, _SourceLocation
 
-
-alias ASSERT_MODE = env_get_string["ASSERT", "safe"]()
+comptime ASSERT_MODE = env_get_string["ASSERT", "safe"]()
 
 
 @no_inline
@@ -50,8 +48,9 @@ fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
         " but must be one of: none, safe",
     ]()
 
+    # FIXME: Enable assertions on Apple GPU after MOCO-2405 is fixed
     @parameter
-    if ASSERT_MODE == "none" or (is_gpu() and cpu_only):
+    if ASSERT_MODE == "none" or (is_gpu() and cpu_only) or is_apple_gpu():
         return False
     elif ASSERT_MODE == "all" or ASSERT_MODE == "warn" or is_debug_build():
         return True
@@ -161,7 +160,8 @@ fn debug_assert[
 
         message.nul_terminate()
 
-        _debug_assert_msg(message.data, message.pos, __call_location())
+        var span = message.as_span()
+        _debug_assert_msg(span.unsafe_ptr(), len(span), __call_location())
 
 
 @always_inline
@@ -269,7 +269,8 @@ fn debug_assert[
 
         message.nul_terminate()
 
-        _debug_assert_msg(message.data, message.pos, __call_location())
+        var span = message.as_span()
+        _debug_assert_msg(span.unsafe_ptr(), len(span), __call_location())
 
     elif _use_compiler_assume:
         assume(cond)
@@ -368,7 +369,7 @@ fn debug_assert[
         if cond:
             return
         _debug_assert_msg(
-            message.unsafe_cstr_ptr().bitcast[Byte](),
+            message.unsafe_ptr(),
             len(message) + 1,  # include null terminator
             __call_location(),
         )
@@ -378,7 +379,7 @@ fn debug_assert[
 
 @no_inline
 fn _debug_assert_msg(
-    message: UnsafePointer[Byte], length: Int, loc: _SourceLocation
+    message: UnsafePointer[mut=False, Byte], length: Int, loc: _SourceLocation
 ):
     """Aborts with (or prints) the given message and location.
 
@@ -397,10 +398,12 @@ fn _debug_assert_msg(
             abort()
         return
 
-    alias fmt = "At: %s:%llu:%llu: block: [%llu,%llu,%llu] thread: [%llu,%llu,%llu] Assert Error: %s\n"
+    comptime fmt = "At: %s:%llu:%llu: block: [%llu,%llu,%llu] thread: [%llu,%llu,%llu] Assert Error: %s\n"
 
     @parameter
     if is_nvidia_gpu():
+        from gpu.primitives.id import block_idx, thread_idx
+
         _printf[fmt](
             loc.file_name.unsafe_ptr(),
             loc.line,
@@ -415,6 +418,8 @@ fn _debug_assert_msg(
         )
     # TODO(MSTDL-1783): fix `_printf` not working on AMDGPU with %s args
     elif is_amd_gpu():
+        from gpu.primitives.id import block_idx, thread_idx
+
         var fd = printf_begin()
         _ = printf_append_string_n(fd, fmt.as_bytes(), False)
         # Runtime %s types must be passed as separate append_string calls
@@ -435,9 +440,7 @@ fn _debug_assert_msg(
         # Pass last arg
         _ = printf_append_args(fd, 1, UInt64(thread_idx.z), 0, 0, 0, 0, 0, 0, 0)
         # Append message and finalize
-        _ = printf_append_string_n(
-            fd, Span(ptr=message, length=UInt(length)), True
-        )
+        _ = printf_append_string_n(fd, Span(ptr=message, length=length), True)
     else:
         _printf["At: %s:%llu:%llu: Assert Error: %s\n"](
             loc.file_name.unsafe_ptr(),

@@ -89,7 +89,7 @@ modular_py_binary(
     srcs = ["addition.py"],
     imports = ["."],
     deps = [
-        "//SDK/lib/API/python/max",
+        "//max/python/max",
         requirement("numpy"),
     ],
 )
@@ -131,7 +131,7 @@ mojo_binary(
     ],
     target_compatible_with = ["//:has_gpu"],
     deps = [
-        "@mojo//:layout",
+        "//max:layout",
         "@mojo//:stdlib",
     ],
 )

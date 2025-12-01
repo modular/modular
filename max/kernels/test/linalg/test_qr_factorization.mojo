@@ -15,13 +15,9 @@ from os import abort
 from random import rand, seed
 
 import internal_utils
-from layout.layout_tensor import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-)
+from layout.layout_tensor import UNKNOWN_VALUE, Layout, LayoutTensor
 from linalg.qr_factorization import form_q, qr_factorization
-from memory import memcpy
+from memory import LegacyUnsafePointer as UnsafePointer, memcpy
 from testing import assert_almost_equal
 
 
@@ -32,7 +28,7 @@ fn trmm[
 ](
     A: LayoutTensor[dtype, element_layout=element_layout, **_],
     B: LayoutTensor[dtype, element_layout=element_layout, **_],
-    C: LayoutTensor[dtype, element_layout=element_layout, **_],
+    C: LayoutTensor[mut=True, dtype, element_layout=element_layout, **_],
 ):
     m, k1 = Int(A.runtime_layout.shape[0]), Int(A.runtime_layout.shape[1])
     k, n = Int(B.runtime_layout.shape[0]), Int(B.runtime_layout.shape[1])
@@ -55,7 +51,7 @@ fn a_mul_bt[
 ](
     A: LayoutTensor[dtype, element_layout=element_layout, **_],
     B: LayoutTensor[dtype, element_layout=element_layout, **_],
-    C: LayoutTensor[dtype, element_layout=element_layout, **_],
+    C: LayoutTensor[mut=True, dtype, element_layout=element_layout, **_],
 ):
     m, k1 = Int(A.runtime_layout.shape[0]), Int(A.runtime_layout.shape[1])
     n, k = Int(B.runtime_layout.shape[0]), Int(B.runtime_layout.shape[1])
@@ -95,11 +91,11 @@ fn create_vector[
     ptr: UnsafePointer[Scalar[dtype]],
     out result: LayoutTensor[dtype, layout, ptr.origin],
 ):
-    var dynamic_layout = __type_of(result.runtime_layout)(
-        __type_of(result.runtime_layout.shape)(m),
-        __type_of(result.runtime_layout.stride)(1),
+    var dynamic_layout = type_of(result.runtime_layout)(
+        type_of(result.runtime_layout.shape)(m),
+        type_of(result.runtime_layout.stride)(1),
     )
-    return __type_of(result)(ptr, dynamic_layout)
+    return {ptr, dynamic_layout}
 
 
 fn create_tensor[
@@ -110,11 +106,11 @@ fn create_tensor[
     ptr: UnsafePointer[Scalar[dtype]],
     out result: LayoutTensor[dtype, layout, ptr.origin],
 ):
-    var dynamic_layout = __type_of(result.runtime_layout)(
-        __type_of(result.runtime_layout.shape)(m, n),
-        __type_of(result.runtime_layout.stride)(1, m),
+    var dynamic_layout = type_of(result.runtime_layout)(
+        type_of(result.runtime_layout.shape)(m, n),
+        type_of(result.runtime_layout.stride)(1, m),
     )
-    return __type_of(result)(ptr, dynamic_layout)
+    return {ptr, dynamic_layout}
 
 
 def main():
@@ -122,16 +118,16 @@ def main():
     rtol = 1e-3
     m, n = 80, 50
     min_mn = min(m, n)
-    alias a_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    alias v_layout = Layout(UNKNOWN_VALUE)
-    alias T = Scalar[DType.float32]
+    comptime a_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime v_layout = Layout(UNKNOWN_VALUE)
+    comptime T = Float32
     var a_ptr = UnsafePointer[T]().alloc(m * n)
     var a_ptr_copy = UnsafePointer[T]().alloc(m * n)
     var v_ptr = UnsafePointer[T]().alloc(min_mn)
     seed(123)
     rand[DType.float32](a_ptr, m * n)
     var a = create_tensor[DType.float32, a_layout](m, n, a_ptr)
-    memcpy(a_ptr_copy, a_ptr, m * n)
+    memcpy(dest=a_ptr_copy, src=a_ptr, count=m * n)
     # factorize
     var a_copy = create_tensor[DType.float32, a_layout](m, n, a_ptr_copy)
     var v = create_vector[DType.float32, v_layout](min_mn, v_ptr)
@@ -152,3 +148,10 @@ def main():
     var q_mul_qt = create_tensor[DType.float32, a_layout](m, m, q_mul_qt_ptr)
     a_mul_bt[DType.float32](q, q, q_mul_qt)
     all_almost_id(q_mul_qt, atol=atol, rtol=rtol)
+
+    a_ptr.free()
+    a_ptr_copy.free()
+    v_ptr.free()
+    q_ptr.free()
+    q_mul_r_ptr.free()
+    q_mul_qt_ptr.free()

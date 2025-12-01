@@ -14,16 +14,17 @@
 
 from sys import external_call
 from sys.ffi import _get_global
+from sys.compile import SanitizeAddress
 
 
-fn _init_global_runtime() -> OpaquePointer:
+fn _init_global_runtime() -> OpaquePointer[MutOrigin.external]:
     return external_call[
         "KGEN_CompilerRT_AsyncRT_CreateRuntime",
-        OpaquePointer,
+        OpaquePointer[MutOrigin.external],
     ](0)
 
 
-fn _destroy_global_runtime(ptr: OpaquePointer):
+fn _destroy_global_runtime(ptr: OpaquePointer[MutOrigin.external]):
     """Destroy the global runtime if ever used."""
     external_call["KGEN_CompilerRT_AsyncRT_DestroyRuntime", NoneType](ptr)
 
@@ -31,7 +32,7 @@ fn _destroy_global_runtime(ptr: OpaquePointer):
 @always_inline
 fn _ensure_current_or_global_runtime_init():
     var current_runtime = external_call[
-        "KGEN_CompilerRT_AsyncRT_GetCurrentRuntime", OpaquePointer
+        "KGEN_CompilerRT_AsyncRT_GetCurrentRuntime", OpaquePointer[MutAnyOrigin]
     ]()
     if current_runtime:
         return
@@ -48,6 +49,10 @@ fn __wrap_and_execute_main[
 
     # Initialize the global runtime.
     _ensure_current_or_global_runtime_init()
+
+    @parameter
+    if SanitizeAddress:
+        external_call["KGEN_CompilerRT_SetAsanAllocators", NoneType]()
 
     # Initialize the mojo argv with those provided.
     external_call["KGEN_CompilerRT_SetArgV", NoneType](argc, argv)
@@ -79,6 +84,10 @@ fn __wrap_and_execute_raising_main[
 
     # Initialize the global runtime.
     _ensure_current_or_global_runtime_init()
+
+    @parameter
+    if SanitizeAddress:
+        external_call["KGEN_CompilerRT_SetAsanAllocators", NoneType]()
 
     # Initialize the mojo argv with those provided.
     external_call["KGEN_CompilerRT_SetArgV", NoneType](argc, argv)

@@ -155,8 +155,8 @@ fn _read_write_to_tensors[
 
     # Tensor to store the packed data
     constrained[num_elements % group_size == 0]()
-    alias num_blocks = ceildiv(num_elements, group_size)
-    alias block_size = size_of[Q4sym[group_size]]()
+    comptime num_blocks = ceildiv(num_elements, group_size)
+    comptime block_size = size_of[Q4sym[group_size]]()
     var packed_blob_backing = InlineArray[UInt8, num_blocks * block_size](
         uninitialized=True
     )
@@ -240,8 +240,8 @@ fn test_read_write_to_tensors[rtol: FloatLiteral, atol: FloatLiteral]() raises:
     print()
 
 
-fn main() raises:
-    alias l2_tolerance = 0.1
+def main():
+    comptime l2_tolerance = 0.1
 
     test_fake_quant_error[l2_tolerance]()
 

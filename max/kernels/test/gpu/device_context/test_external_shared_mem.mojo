@@ -11,12 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.id import thread_idx, global_idx, block_dim
-from gpu.memory import AddressSpace, external_memory
-from gpu.sync import barrier
-from testing import assert_equal, assert_almost_equal
 from sys import align_of
+
+from gpu.host import DeviceContext, FuncAttribute
+from gpu import block_dim, global_idx, thread_idx
+from gpu.memory import external_memory
+from gpu.sync import barrier
+from memory import LegacyUnsafePointer as UnsafePointer
+from testing import assert_almost_equal, assert_equal
 
 
 fn test_external_shared_mem(ctx: DeviceContext) raises:
@@ -38,7 +40,7 @@ fn test_external_shared_mem(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(res_device, res_host_ptr)
 
-    alias kernel = dynamic_smem_kernel
+    comptime kernel = dynamic_smem_kernel
     ctx.enqueue_function_checked[kernel, kernel](
         res_device,
         grid_dim=1,
@@ -139,7 +141,7 @@ fn test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
     var simple_func = ctx.compile_function[occupancy_test_kernel]()
 
     # Test with different block sizes
-    var block_sizes = List[Int](32, 64, 128, 256, 512, 1024)
+    var block_sizes: List[Int] = [32, 64, 128, 256, 512, 1024]
 
     print("\nTesting occupancy with different block sizes (no shared memory):")
     for i in range(len(block_sizes)):
@@ -169,9 +171,14 @@ fn test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
     var shared_func = ctx.compile_function[shared_memory_kernel]()
 
     print("\nTesting occupancy with different shared memory sizes:")
-    var shared_memory_sizes = List[Int](
-        0, 1024, 4096, 8192, 16384, 32768
-    )  # bytes
+    var shared_memory_sizes: List[Int] = [
+        0,
+        1024,
+        4096,
+        8192,
+        16384,
+        32768,
+    ]  # bytes
 
     for i in range(len(shared_memory_sizes)):
         var shared_mem_size = shared_memory_sizes[i]
@@ -214,7 +221,7 @@ fn test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
     # Test actual kernel execution to verify the function works
     print("\nVerifying kernel execution with optimized block size:")
 
-    alias length = 1024
+    comptime length = 1024
     var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
     var output_host = ctx.enqueue_create_host_buffer[DType.float32](length)
 
@@ -245,7 +252,7 @@ fn test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
 
     # Launch the kernel
     var grid_dim = (length + optimal_block_size - 1) // optimal_block_size
-    alias kernel = occupancy_test_kernel
+    comptime kernel = occupancy_test_kernel
     ctx.enqueue_function_checked[kernel, kernel](
         input_device,
         output_device,

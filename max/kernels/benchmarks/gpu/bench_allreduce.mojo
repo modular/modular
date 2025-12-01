@@ -13,23 +13,36 @@
 
 from collections import InlineArray
 from math import floor
-from sys import env_get_dtype, env_get_int, env_get_bool, size_of
+from sys import env_get_bool, env_get_dtype, env_get_int, size_of
+from utils.numerics import get_accum_type
 
-from benchmark import (
-    Bench,
-    Bencher,
-    BenchId,
-    BenchMetric,
-    ThroughputMeasure,
-)
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm.allreduce import MAX_GPUS, Signal, allreduce, can_enable_p2p
+import comm.vendor.ccl as vendor_ccl
 from gpu.host import DeviceBuffer, DeviceContext, DeviceMulticastBuffer
-from internal_utils import arg_parse, init_vector_launch, InitializationType
+from internal_utils import InitializationType, arg_parse
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal, assert_true
 
 from utils.index import IndexList, StaticTuple
+
+
+@always_inline
+fn _pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
+    # Returns (rtol, atol) modeled after PyTorch defaults.
+    @parameter
+    if dtype is DType.float16:
+        return (1e-3, 1e-5)
+    elif dtype is DType.bfloat16:
+        return (1.6e-2, 1e-5)
+    elif dtype is DType.float32:
+        return (1.3e-6, 1e-5)
+    elif dtype is DType.float64:
+        return (1e-7, 1e-7)
+    else:
+        return (0.0, 0.0)
 
 
 fn _pretty_print_float(val: Float64) -> String:
@@ -42,9 +55,9 @@ fn _pretty_print_float(val: Float64) -> String:
 
 
 fn _human_memory(size: Int) -> String:
-    alias KB = 1024
-    alias MB = KB * KB
-    alias GB = MB * KB
+    comptime KB = 1024
+    comptime MB = KB * KB
+    comptime GB = MB * KB
 
     if size >= GB:
         return _pretty_print_float(Float64(size) / GB) + "GB"
@@ -58,10 +71,30 @@ fn _human_memory(size: Int) -> String:
     return String(size) + "B"
 
 
+@always_inline
+@parameter
+fn _per_gpu_value[
+    dtype: DType,
+](gpu_rank: Int, j: Int) -> Scalar[dtype]:
+    # 251 is the largest prime < 256; using a prime avoids power-of-two aliasing.
+    return Scalar[dtype](Scalar[dtype](gpu_rank + 1) + Scalar[dtype](j % 251))
+
+
 # TODO: convert 'ngpus' to runtime variable
 fn bench_reduce[
-    dtype: DType, rank: Int, ngpus: Int, max_num_blocks: Int, use_multimem: Bool
-](mut m: Bench, list_of_ctx: List[DeviceContext], num_bytes: Int) raises:
+    dtype: DType,
+    rank: Int,
+    ngpus: Int,
+    *,
+    use_multimem: Bool,
+    use_quickreduce: Bool,
+    use_vendor_ccl: Bool = False,
+](
+    mut m: Bench,
+    list_of_ctx: List[DeviceContext],
+    num_bytes: Int,
+    max_num_blocks: Optional[Int],
+) raises:
     constrained[ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"]()
     constrained[rank == 1, "this test code currently assumes rank 1"]()
 
@@ -70,7 +103,7 @@ fn bench_reduce[
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var host_buffers = List[UnsafePointer[Scalar[dtype]]](capacity=ngpus)
 
-    alias num_buffers = 1 if use_multimem else ngpus
+    comptime num_buffers = 1 if use_multimem else ngpus
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
@@ -82,50 +115,47 @@ fn bench_reduce[
 
     # Initialize buffers for each GPU
     @parameter
-    for i in range(ngpus):
+    for gpu_idx in range(ngpus):
         # Create and store device buffers (outputs)
         out_bufs_list.append(
-            list_of_ctx[i].enqueue_create_buffer[dtype](length)
+            list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](length)
         )
 
         # Create and initialize host buffers
         var host_buffer = UnsafePointer[Scalar[dtype]].alloc(length)
         host_buffers.append(host_buffer)
 
+        for j in range(length):
+            host_buffer[j] = _per_gpu_value[dtype](gpu_idx, j)
+
         @parameter
-        if use_multimem:
-            # Initialize host buffer with values (i + 1)
-            var host_nd_buf = NDBuffer[dtype, rank](
-                host_buffer, DimList(length)
-            )
-            host_nd_buf.fill(Scalar[dtype](i + 1))
-        else:
-            # Create and initialize per-GPU input buffers on device
+        if not use_multimem:
+            # Create per-GPU input buffers on device and copy from host
             in_bufs_list.append(
-                list_of_ctx[i].enqueue_create_buffer[dtype](length)
+                list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](length)
             )
-            init_vector_launch[dtype](
-                in_bufs_list[i],
-                length,
-                InitializationType.fill,
-                list_of_ctx[i],
-                value=Scalar[dtype](i + 1),
+            list_of_ctx[gpu_idx].enqueue_copy(
+                in_bufs_list[gpu_idx], host_buffer
             )
 
         # Create and initialize signal buffers
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](
+            list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
                 size_of[Signal]() + temp_buffer_num_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+        list_of_ctx[gpu_idx].enqueue_memset[DType.uint8](
+            signal_buffers[gpu_idx], 0
+        )
+        rank_sigs[gpu_idx] = (
+            signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
+        )
 
     # Create and initialize input and output buffers.
-    var in_bufs = InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], num_buffers
-    ](fill={})
-    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
+    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], num_buffers](
+        fill={}
+    )
+    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
         fill={}
     )
 
@@ -159,10 +189,16 @@ fn bench_reduce[
         # Ensure setup has propagated.
         list_of_ctx[i].synchronize()
 
+    # Zero device output buffers once before benchmarking so verification isn't
+    # affected by any stale data in case a kernel path doesn't overwrite fully.
+    @parameter
+    for i in range(ngpus):
+        list_of_ctx[i].enqueue_memset(out_bufs_list[i], 0)
+
     # Copy-capture in registers since the lambda will be used on GPU.
     var out_bufs_capture = StaticTuple[
-        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus
-    ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+        NDBuffer[dtype, rank, MutAnyOrigin], ngpus
+    ](NDBuffer[dtype, rank, MutAnyOrigin]())
 
     @parameter
     for i in range(ngpus):
@@ -170,20 +206,8 @@ fn bench_reduce[
             out_bufs_list[i].unsafe_ptr(), DimList(length)
         )
 
-    @always_inline
-    @parameter
-    @__copy_capture(out_bufs_capture)
-    fn outputs_lambda[
-        input_index: Int,
-        _dtype: DType,
-        _rank: Int,
-        _width: Int,
-        *,
-        _alignment: Int,
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
-        out_bufs_capture[input_index].store[width=_width, alignment=_alignment](
-            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, _width]](val)
-        )
+    # Monotonic iteration counter to color quickreduce flags across launches.
+    var iter = 0
 
     @parameter
     @always_inline
@@ -192,54 +216,77 @@ fn bench_reduce[
         @always_inline
         fn call_fn() raises:
             @parameter
-            if max_num_blocks:
-
-                @parameter
-                for i in range(ngpus):
-                    allreduce[
-                        ngpus=ngpus,
-                        output_lambda = outputs_lambda[input_index=i],
-                        use_multimem=use_multimem,
-                    ](
-                        in_bufs,
-                        out_bufs[i],
-                        rank_sigs,
-                        list_of_ctx[i],
-                        max_num_blocks,
-                    )
+            if use_vendor_ccl:
+                constrained[
+                    not use_multimem,
+                    "vendor CCL does not support multimem path",
+                ]()
+                if not vendor_ccl.is_allreduce_available():
+                    raise "Vendor CCL not available; skipping vendor path."
+                vendor_ccl.allreduce[dtype=dtype, rank=rank, ngpus=ngpus](
+                    rebind[
+                        InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus]
+                    ](in_bufs),
+                    out_bufs,
+                    list_of_ctx,
+                )
             else:
 
                 @parameter
                 for i in range(ngpus):
                     allreduce[
                         ngpus=ngpus,
-                        output_lambda = outputs_lambda[input_index=i],
                         use_multimem=use_multimem,
-                    ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
+                        use_quickreduce=use_quickreduce,
+                    ](
+                        in_bufs,
+                        out_bufs[i],
+                        rank_sigs,
+                        list_of_ctx[i],
+                        max_num_blocks,
+                        iter,
+                    )
+                iter += 1
 
         b.iter_custom_multicontext[call_fn](list_of_ctx)
 
-    var name = String(_get_test_str[dtype, use_multimem](ngpus, num_bytes))
+    var vendor_tag = "-vendor_ccl" if use_vendor_ccl else ""
+    var name = String(
+        _get_test_str[dtype, use_multimem](ngpus, num_bytes), vendor_tag
+    )
     m.bench_function[bench_iter](
         BenchId(name),
         # add data movement to measures
-        ThroughputMeasure(BenchMetric.bytes, num_bytes),
+        [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
     )
 
     # Copy results back and verify
-    var expected_sum = Scalar[dtype](0)
-
     @parameter
     for i in range(ngpus):
-        expected_sum += i + 1
         list_of_ctx[i].enqueue_copy(host_buffers[i], out_bufs_list[i])
 
     # Verify results
+    # For low-precision dtypes (e.g., bfloat16), inputs were quantized to `dtype`
+    # before reduction on device. Mirror the device path here by:
+    #  - quantizing each per-GPU term to `dtype` by calling _per_gpu_value[dtype](...)
+    #  - accumulating in Float32
+    #  - finally casting to `dtype` for the expected value
     @parameter
     for i in range(ngpus):
         for j in range(length):
+            comptime accum_t = get_accum_type[dtype]()
+            var accum = Scalar[accum_t](0)
+
+            @parameter
+            for k in range(ngpus):
+                var term_dtype = _per_gpu_value[dtype](k, j)
+                accum += Scalar[accum_t](term_dtype)
+            var expected_sum = Scalar[dtype](accum)
             try:
-                assert_almost_equal(host_buffers[i][j], expected_sum)
+                var rtol, atol = _pytorch_like_tolerances_for[dtype]()
+                assert_almost_equal(
+                    host_buffers[i][j], expected_sum, atol=atol, rtol=rtol
+                )
             except e:
                 print("Verification failed at GPU", i, "index", j)
                 print("Value:", host_buffers[i][j])
@@ -270,12 +317,17 @@ fn _get_test_str[
 def main():
     var num_bytes = arg_parse("num_bytes", 16 * 1024)
 
-    alias dtype = env_get_dtype["dtype", DType.bfloat16]()
-    alias num_gpus = env_get_int["num_gpus", 2]()
-    alias rank = env_get_int["rank", 1]()
+    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
+    comptime num_gpus = env_get_int["num_gpus", 2]()
+    comptime rank = env_get_int["rank", 1]()
     # Force passing `max_num_blocks` explicitly.
-    alias max_num_blocks = env_get_int["TUNE_MAX_NUM_BLOCKS", -1]()
-    alias use_multimem = env_get_bool["multimem", False]()
+    var max_nb = env_get_int["TUNE_MAX_NUM_BLOCKS", -1]()
+    var max_num_blocks: Optional[Int] = Optional[Int]()
+    if max_nb > 0:
+        max_num_blocks = Optional[Int](max_nb)
+    comptime use_multimem = env_get_bool["multimem", False]()
+    comptime use_quickreduce = env_get_bool["quickreduce", False]()
+    comptime use_vendor_ccl = env_get_bool["use_vendor_ccl", False]()
 
     var num_gpus_found = DeviceContext.number_of_devices()
     assert_true(
@@ -299,12 +351,68 @@ def main():
 
     var m = Bench()
 
+    if use_quickreduce:
+        bench_allreduce_push[
+            dtype=dtype,
+            rank=rank,
+            ngpus=num_gpus,
+            use_vendor_ccl=use_vendor_ccl,
+        ](m, ctx, num_bytes, max_num_blocks)
+    else:
+        bench_allreduce_pull[
+            dtype=dtype,
+            rank=rank,
+            ngpus=num_gpus,
+            use_multimem=use_multimem,
+            use_vendor_ccl=use_vendor_ccl,
+        ](m, ctx, num_bytes, max_num_blocks)
+
+    m.dump_report()
+
+
+# Convenience wrappers matching reviewer terminology.
+fn bench_allreduce_pull[
+    dtype: DType,
+    rank: Int,
+    ngpus: Int,
+    *,
+    use_multimem: Bool = False,
+    use_vendor_ccl: Bool = False,
+](
+    mut m: Bench,
+    list_of_ctx: List[DeviceContext],
+    num_bytes: Int,
+    max_num_blocks: Optional[Int],
+) raises:
+    # Pull path: default allreduce (use_quickreduce=False)
     bench_reduce[
         dtype=dtype,
         rank=rank,
-        ngpus=num_gpus,
-        max_num_blocks=max_num_blocks,
+        ngpus=ngpus,
         use_multimem=use_multimem,
-    ](m, ctx, num_bytes)
+        use_quickreduce=False,
+        use_vendor_ccl=use_vendor_ccl,
+    ](m, list_of_ctx, num_bytes, max_num_blocks)
 
-    m.dump_report()
+
+fn bench_allreduce_push[
+    dtype: DType,
+    rank: Int,
+    ngpus: Int,
+    *,
+    use_vendor_ccl: Bool = False,
+](
+    mut m: Bench,
+    list_of_ctx: List[DeviceContext],
+    num_bytes: Int,
+    max_num_blocks: Optional[Int],
+) raises:
+    # Push path: quickreduce (use_quickreduce=True)
+    bench_reduce[
+        dtype=dtype,
+        rank=rank,
+        ngpus=ngpus,
+        use_multimem=False,
+        use_quickreduce=True,
+        use_vendor_ccl=use_vendor_ccl,
+    ](m, list_of_ctx, num_bytes, max_num_blocks)

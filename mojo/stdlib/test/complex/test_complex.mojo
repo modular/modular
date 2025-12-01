@@ -15,10 +15,18 @@ import math
 
 from complex import ComplexFloat32, ComplexFloat64, ComplexSIMD, abs
 from testing import assert_almost_equal, assert_equal
+from testing import TestSuite
 
 
 def test_init():
+    comptime F32_2 = SIMD[DType.float32, 2]
     var x = ComplexFloat32(1, 2)
+    assert_equal(x.re, 1)
+    assert_equal(x.im, 2)
+    x = ComplexFloat32(from_interleaved=F32_2(1, 2))
+    assert_equal(x.re, 1)
+    assert_equal(x.im, 2)
+    x = ComplexFloat32(from_deinterleaved=F32_2(1, 2))
     assert_equal(x.re, 1)
     assert_equal(x.im, 2)
 
@@ -26,9 +34,17 @@ def test_init():
     assert_equal(y.re, 3)
     assert_equal(y.im, 0)
 
-    var z = ComplexSIMD[DType.float32, 2](SIMD[DType.float32, 2](1, 2))
-    assert_equal(z.re, SIMD[DType.float32, 2](1, 2))
-    assert_equal(z.im, SIMD[DType.float32, 2](0, 0))
+    comptime ComplexF32_2 = ComplexSIMD[DType.float32, 2]
+    var z = ComplexF32_2(F32_2(1, 2))
+    assert_equal(z.re, F32_2(1, 2))
+    assert_equal(z.im, F32_2(0, 0))
+    comptime F32_4 = SIMD[DType.float32, 4]
+    z = ComplexF32_2(from_interleaved=F32_4(1, 2, 3, 4))
+    assert_equal(z.re, F32_2(1, 3))
+    assert_equal(z.im, F32_2(2, 4))
+    z = ComplexF32_2(from_deinterleaved=F32_4(1, 3, 2, 4))
+    assert_equal(z.re, F32_2(1, 3))
+    assert_equal(z.im, F32_2(2, 4))
 
 
 def test_conj():
@@ -106,10 +122,4 @@ def test_exp():
 
 
 def main():
-    test_init()
-    test_conj()
-    test_math()
-    test_abs()
-    test_complex_str()
-    test_fma()
-    test_exp()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -10,11 +10,1514 @@ This is a list of changes to the Mojo language, standard library, and tools.
 To check your current version, run `mojo --version`. To install or update
 Mojo, see the [install guide](/mojo/manual/install).
 
-## v25.6 nightly
+## Nightly: v0.26.1
 
 This version is still a work in progress.
 
 <!-- INSERT HERE : This line is required for post-process-docs.py -->
+
+## v0.25.7 (2025-11-20)
+
+### ✨ Highlights
+
+- A new, improved
+  [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) type has
+  been added, and the old version renamed to
+  [`LegacyUnsafePointer`](/mojo/stdlib/memory/legacy_unsafe_pointer/LegacyUnsafePointer).
+  The new version fixes several issues with the old `LegacyUnsafePointer`.
+
+  - `LegacyUnsafePointer` had constructors that allowed unsafe implicit
+    mutability and origin casts, making it easy to make unsafe changes by accident.
+    The new `UnsafePointer` eliminates these.
+  - The new `UnsafePointer` now has an inferred mutability parameter,
+    simplifying the API.
+  - `UnsafePointer` does not have a default value for its origin parameter, so
+    it must be explicitly specified or unbound. `LegacyUnsafePointer` defaults
+    to `MutAnyOrigin`, which results in the lifetimes of many values being
+    extended needlessly.
+
+  For more information, see
+  [Pointer and memory changes](#25-7-pointer-and-memory-changes).
+
+- Many enhancements to compile-time errors, including suppressing extraneous
+  messages and preserving more human-readable display for many aliases and
+  parameters. For details, see [Tooling changes](#25-7-tooling-changes).
+
+- Added a new document on
+  [GPU block and warp operations and synchronization](/mojo/manual/gpu/block-and-warp).
+
+### Language enhancements {#25-7-language-enhancements}
+
+- Mojo now supports the `comptime` keyword as a synonym for `alias`. The
+  `comptime` keyword can be used interchangeably with `alias` for compile-time
+  declarations. Both keywords are fully supported and produce identical
+  behavior. For example:
+
+  ```mojo
+  comptime x = 5      # New preferred syntax
+  alias y = 10        # Still fully supported
+  comptime MyType[T: AnyType] = T  # Works with parametric declarations
+  ```
+
+  Note: Future updates will migrate error messages and internal terminology to
+  use "comptime". The `alias` keyword will remain supported for backward
+  compatibility for now.
+
+- Mojo now supports unpacking an alias/comptime tuple with a single statement
+  when it is not inside a struct or trait. For example:
+
+  ```mojo
+  comptime i, f = (1, 3.0)
+  comptime q, v = divmod(4, 5)
+  ```
+
+- [Issue #3925](https://github.com/modular/modular/issues/3925): Mojo now allows
+  methods to be overloaded based on "owned" vs "by-ref" argument conventions,
+  selecting the owned overload when given an owned value, and selecting the
+  by-ref version otherwise.  This allows somewhat more efficient algorithms,
+  e.g. consuming vs borrowing iterators:
+
+  ```mojo
+  struct MyCollection:
+    fn __iter__(var self) -> Self.ConsumingIterator: ...
+    fn __iter__(self) -> Self.BorrowingIterator: ...
+  ```
+
+- Collection literals now have a default type. For example, you can now bind
+  `[1,2,3]` to `T` in a call to a function defined as
+  `fn zip[T: Iterable](impl:T)` because it will default to the standard
+  library's `List` type.
+
+- Mojo now has a `__functions_in_module()` experimental intrinsic that allows
+  reflection over the functions declared in the module where it is called. For
+  example:
+
+  ```mojo
+  fn foo(): pass
+
+  def bar(x: Int): pass
+
+  def main():
+    alias funcs = __functions_in_module()
+    # equivalent to:
+    alias same_funcs = Tuple(foo, bar)
+  ```
+
+  The intrinsic is currently limited for use from within the `main()` function.
+  For an example of using `__functions_in_module()` in a test suite, see
+  [Running tests with TestSuite](/mojo/tools/testing/#running-tests-with-testsuite)
+
+- The `@implicit` decorator now accepts an optional `deprecated` keyword
+  argument. This can be used to phase out implicit conversions instead of just
+  removing the decorator (which can result in another, unintended implicit
+  conversion path). For example, the compiler now warns about the following:
+
+  ```mojo
+  struct MyStuff:
+    @implicit(deprecated=True)
+    fn __init__(out self, value: Int):
+      pass
+
+  fn deprecated_implicit_conversion():
+    # warning: deprecated implicit conversion from 'IntLiteral[1]' to 'MyStuff'
+    _: MyStuff = 1
+
+    _ = MyStuff(1)  # this is okay, because the conversion is already explicit.
+  ```
+
+- The `@deprecated` decorator can now take a target symbol with the `use` keyword
+  argument. This is mutually exclusive with the existing positional string
+  argument. A deprecation warning will be automatically generated.
+
+  ```mojo
+  @deprecated(use=new)
+  fn old():
+    pass
+
+  fn new():
+    pass
+
+  fn main():
+    old() # 'old' is deprecated, use 'new' instead
+  ```
+
+- In struct instances that declare a parametric `__call__()` method, but not
+  one of the subscript methods (`__getitem__()`, `__setitem__()`, or
+  `__getattr__()`), the `__call__()` method can now be invoked with parameters:
+
+  ```mojo
+  struct Callable:
+    fn __init__(out self):
+      pass
+
+    fn __call__[x: Int](self, y: Int) -> Int:
+      return x + y
+
+    fn main():
+      var c = Callable()
+      print(c[1](2)) # 3
+  ```
+
+  Previously you would have needed to explicitly look up `__call__()`:
+
+  ```mojo
+  print(c.__call__[1](2))
+  ```
+
+- Added `DType.float4_e2m1fn` as the 4bit float `e2m1` format. This
+  `Float4_e2m1` type is defined by the
+  [Open Compute MX Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf).
+
+- `deinit` methods may now transfer all of `self` to another `deinit` method.
+
+- Mojo now uses system allocators in programs built with
+  `mojo build --sanitize address`. This means ASan can see Mojo heap allocations
+  and should now be able to detect many more heap memory errors.
+
+### Language changes {#25-7-language-changes}
+
+- The `__type_of()` magic function has been renamed to `type_of()`. Using the
+  old spelling will yield an error. Similarly, `__origin_of()` has been renamed
+  to `origin_of()`.
+
+- An expression like `(Int, Float64)` is no longer syntax sugar for a tuple types
+  like `Tuple[Int, Float64]`.
+
+### Library changes {#25-7-library-changes}
+
+#### Pointer and memory changes {#25-7-pointer-and-memory-changes}
+
+- `UnsafePointer` has been renamed to
+  [`LegacyUnsafePointer`](/mojo/stdlib/memory/legacy_unsafe_pointer/LegacyUnsafePointer/)
+  and a new
+  [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer/) has
+  [taken its place](https://forum.modular.com/t/proposal-unsafepointer-v2/2411?u=nate).
+  Similarly, `OpaquePointer` has been renamed to
+  [`LegacyOpaquePointer`](/mojo/stdlib/memory/legacy_unsafe_pointer/#legacyopaquepointer)
+  and a new
+  [`OpaquePointer`](/mojo/stdlib/memory/unsafe_pointer/#opaquepointer) has taken
+  its place. The primary difference is the ordering of parameters, which now
+  looks like this:
+
+  ```mojo
+  struct UnsafePointer[
+    mut: Bool, //, # Inferred mutability
+    type: AnyType,
+    origin: Origin[mut], # Non-defaulted origin
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+  ]
+
+  alias OpaquePointer[
+    mut: Bool, //, # Inferred mutability
+    origin: Origin[mut], # Non-defaulted origin
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+  ] = UnsafePointer[NoneType, origin, address_space=address_space]
+  ```
+
+  Its implicit constructors now no longer allow for unsafe casting between
+  pointers with different mutability and origin values. Code will need to update
+  to the new `UnsafePointer`, however, in the interim, users can
+  find-and-replace their current usages of `UnsafePointer` and rename them to
+  `LegacyUnsafePointer`. Another option is users can add the following import
+  statement to the beginning of any files relying on the old pointer type:
+
+  ```mojo
+  from memory import LegacyUnsafePointer as UnsafePointer
+  # and/or if you use OpaquePointer
+  from memory import LegacyOpaquePointer as OpaquePointer
+  ```
+
+  Users can also use the `as_legacy_pointer()` and `as_unsafe_pointer()`
+  conversion methods to convert between the two pointer types during this
+  migration period.
+
+  *Note*: `LegacyUnsafePointer` and `LegacyOpaquePointer` will eventually be
+  deprecated and removed in a future version of Mojo.
+
+  There are a few new helpful type aliases for `UnsafePointer`:
+  - `MutUnsafePointer`
+  - `ImmutUnsafePointer`
+  - `MutOpaquePointer`
+  - `ImmutOpaquePointer`
+
+  Lastly, [`alloc()`](/mojo/stdlib/memory/unsafe_pointer/alloc) has been moved
+  from a static method on `UnsafePointer` to a free standing `alloc()` function.
+  Therefore, code that was written as:
+
+  ```mojo
+  var ptr = UnsafePointer[Int].alloc(3)
+  ```
+
+  Must be changed to:
+
+  ```mojo
+  var ptr = alloc[Int](3)
+  ```
+
+  For more details on migrating to the new `UnsafePointer`, see the migration
+  guide provided in the
+  [UnsafePointer v2 proposal](https://github.com/modular/modular/blob/main/mojo/proposals/unsafe-pointer-v2.md#migration-guide-from-legacyunsafepointer-to-the-new-unsafepointer).
+
+- Added a `swap_pointees()` function to `UnsafePointer` as an alternative to
+  `swap()` when the pointers may potentially alias each other.
+
+- `origin_cast()` for
+  [`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor/),
+  [`NDBuffer`](/mojo/stdlib/buffer/buffer/NDBuffer/) and `UnsafePointer` has
+  been deprecated and removed. `LayoutTensor` and `NDBuffer` now support a safer
+  `as_any_origin()` origin casting method. `UnsafePointer` has the same safe
+  alternative and in addition, it has a safe `as_immutable()`
+  casting function and explicitly unsafe `unsafe_mut_cast()` and
+  `unsafe_origin_cast()` casting methods.
+
+- The `empty` origin has been renamed to `external`. This origin represents a
+  value that's not tracked by the Mojo lifetime checker. Newly-allocated memory
+  from `alloc()` is returned with the origin `MutOrigin.external`.
+
+- Renamed `MutableOrigin` to `MutOrigin` and `ImmutableOrigin` to `ImmutOrigin`.
+
+- Renamed `MutableAnyOrigin` to `MutAnyOrigin` and `ImmutableAnyOrigin` to
+  `ImmutAnyOrigin`.
+
+- [`memcpy()`](/mojo/stdlib/memory/memory/memcpy/) and
+  [`parallel_memcpy()`](/mojo/stdlib/algorithm/memory/parallel_memcpy/) without
+  keyword arguments are deprecated.
+
+#### Collections and iterators
+
+- [`Span`](/mojo/stdlib/memory/span/Span/) and
+  [`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice/)
+  constructors now accept `Int` for length parameters instead of `UInt`. This
+  change makes these types more ergonomic to use with integer literals and other
+  `Int`-based APIs.
+
+- Added `Span.binary_search_by()` which allows binary searching with a custom
+  comparator function.
+
+- Added `unsafe_get()`, `unsafe_swap_elements()` and `unsafe_subspan()` to
+  the `Span` struct.
+
+- [`Optional`](/mojo/stdlib/collections/optional/Optional/) now conforms to
+  `Iterable` and `Iterator` acting as a collection of size 1 or 0.
+
+- New [`ContiguousSlice`](/mojo/stdlib/builtin/builtin_slice/ContiguousSlice)
+  and
+  [`StridedSlice`](/mojo/stdlib/builtin/builtin_slice/StridedSlice)
+  types were added to the `builtin_slice` module to support specialization for
+  slicing without strides.
+
+- [`List`](/mojo/stdlib/collections/list/List/) slicing without a stride now
+  returns a `Span`, instead of a `List` and no longer allocates memory.
+
+- Several standard library APIs have been updated to use `Int` instead of `UInt`
+  for improved ergonomics, eliminating the need for explicit casts when using
+  `Int` values (the default type for integer literals and loop indices):
+  - `BitSet[size: Int]` - Changed parameter from `UInt` to `Int`
+  - `BitSet.set(idx: Int)`, `BitSet.clear(idx: Int)`, `BitSet.toggle(idx: Int)`,
+    `BitSet.test(idx: Int)` - Changed from `UInt` to `Int`
+  - `String(unsafe_uninit_length: Int)` - Changed from `UInt` to `Int`
+  - `String.capacity() -> Int` - Changed return type from `UInt` to `Int`
+  - `String.reserve(new_capacity: Int)` - Changed from `UInt` to `Int`
+  - `List(length: Int, fill: T)` - Changed from `UInt` to `Int`
+  - `Codepoint.unsafe_write_utf8() -> Int` - Changed return type from `UInt` to
+    `Int`
+  - `Codepoint.utf8_byte_length() -> Int` - Changed return type from `UInt` to
+    `Int`
+
+- Added [`repeat()`](/mojo/stdlib/itertools/itertools/repeat/) function to the
+  `itertools` module that creates an iterator which repeats an element a
+  specified number of times. Unlike Python's `itertools.repeat()`, infinite
+  iteration is not currently supported - the `times` parameter is required.
+  Example usage:
+
+  ```mojo
+  from itertools import repeat
+
+  for val in repeat(42, times=3):
+      print(val)  # Prints: 42, 42, 42
+  ```
+
+- Tuples now support comparison operations if the element types are also
+  comparable. For example, one can now write `(1, "a") == (1, "a")` or
+  `(1, "a") < (1, "b")`.
+
+#### String and text
+
+- [`Codepoint`](/mojo/stdlib/collections/string/codepoint/Codepoint/) now
+  conforms to [`Writable`](/mojo/stdlib/io/write/Writable/).
+
+- `Codepoint` now conforms to
+  [`Comparable`](/mojo/stdlib/builtin/comparable/Comparable/) adding `__le__()`,
+  `__lt__()`, `__ge__()`, and `__gt__()` implementations.
+
+#### Math and numeric types
+
+- The deprecated `DType.index` is now removed in favor of the
+  [`DType.int`](/mojo/stdlib/builtin/dtype/DType/#int).
+
+- Added `DType.float4_e2m1fn` as the 4bit float `e2m1` format. This
+  `Float4_e2m1` type is defined by the
+  [Open Compute MX Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf).
+
+- `math.isqrt()` has been renamed to [`rsqrt()`](/mojo/stdlib/math/math/rsqrt/)
+  since it performs reciprocal square root functionality.
+
+- The [`math`](/mojo/stdlib/math/math/) package now has a Mojo native
+  implementation of `acos()`, `asin()`, `cbrt()`, and `erfc()`.
+
+- [`SIMD`](/mojo/stdlib/builtin/simd/SIMD/) now implements the
+  [`DivModable`](/mojo/stdlib/builtin/math/DivModable/) trait.
+
+- Implicit conversions between `Int` and `UInt` are now deprecated.
+
+  The `@implicit` decorator on `Int.__init__(UInt)` and `UInt.__init__(Int)`
+  will be removed in a future version of Mojo. Code that currently performs
+  implicit conversions between `Int` and `UInt` will issue a deprecation warning,
+  and should be updated to explicitly read `Int(uint_val)` or `UInt(int_val)`
+  respectively.
+
+- The `ImplicitlyIntable` trait has been removed. Types implementing this trait
+  could be implicitly converted to `Int`.
+
+  `Bool` was the only Mojo standard library type to implement
+  `ImplicitlyIntable`. Conversions from `Bool` to `Int` can now be performed
+  explicitly, using `Int(bool-val)` (via the remaining `Intable` trait, which
+  only supports *explicit* conversions).
+
+#### GPU support
+
+- Added support for NVIDIA GeForce GTX 970.
+
+- [`gpu.sync.syncwarp()`](/mojo/stdlib/gpu/sync/sync/syncwarp/) now supports
+  Apple GPUs via `SIMDGROUP` barrier implementation. On Apple GPUs, this
+  provides execution synchronization for all active lanes using a `SIMDGROUP`
+  barrier with no memory fence. For threadgroup memory ordering, use
+  [`barrier()`](/mojo/stdlib/gpu/sync/sync/barrier/) instead. Note that lane
+  masks are not supported on Apple GPUs, so the mask argument is ignored.
+
+- [`gpu.primitives.warp`](/mojo/stdlib/gpu/primitives/warp/) now supports Apple
+  GPUs with native SIMD-group shuffle operations. This enables `shuffle_idx()`,
+  `shuffle_up()`, `shuffle_down()`, and `shuffle_xor()` on Apple hardware by
+  mapping Metal `simd_shuffle*` intrinsics to AIR
+  (`llvm.air.simd_shuffle[_up/_down/_xor]`) instructions, achieving feature
+  parity with NVIDIA and AMD backends.
+
+-
+  [`gpu.intrinsics.store_release()`](/mojo/stdlib/gpu/intrinsics/store_release/)
+  and
+  [`gpu.intrinsics.load_acquire()`](/mojo/stdlib/gpu/intrinsics/load_acquire/)
+  now support Apple silicon GPUs, expanding support for proper memory
+  synchronization on these devices.
+
+- The [`gpu`](/mojo/stdlib/gpu/) package has been reorganized into logical
+  subdirectories for better code organization:
+  - `gpu/primitives/` - Low-level GPU execution primitives (warp, block,
+    cluster, id, grid_controls)
+  - `gpu/memory/` - Memory operations (async_copy, TMA, address spaces)
+  - `gpu/sync/` - Synchronization primitives (barriers, semaphores)
+  - `gpu/compute/` - Compute operations (mma, tensor cores, tcgen05)
+
+  **Backward compatibility**: All existing imports continue to work unchanged.
+  Deprecated import paths (`gpu.id`, `gpu.mma`, `gpu.cluster`,
+  `gpu.grid_controls`, `gpu.warp`, `gpu.semaphore`, `gpu.mma_sm100`,
+  `gpu.tcgen05`, `gpu.mma_util`, `gpu.mma_operand_descriptor`, and
+  `gpu.tensor_ops`) are preserved as re-export wrappers with deprecation
+  notices. Users can migrate to the new recommended import patterns at their
+  own pace:
+
+  ```mojo
+  # Old (deprecated but still works):
+  from gpu.id import block_idx, thread_idx
+  from gpu.mma import mma
+  from gpu.mma_sm100 import UMMAKind
+  from gpu.tcgen05 import tcgen05_alloc
+  from gpu.semaphore import Semaphore
+  from gpu.cluster import cluster_sync
+
+  # New (recommended):
+  from gpu import block_idx, thread_idx, cluster_sync
+  from gpu.compute.mma import mma
+  from gpu.compute.mma_sm100 import UMMAKind
+  from gpu.compute.tcgen05 import tcgen05_alloc
+  from gpu.sync.semaphore import Semaphore
+  ```
+
+- The `_GPUAddressSpace` type has been removed and consolidated into
+  [`AddressSpace`](/mojo/stdlib/memory/pointer/AddressSpace/). GPU-specific
+  address space constants (`GLOBAL`, `SHARED`, `CONSTANT`, `LOCAL`,
+  `SHARED_CLUSTER`) are now available as aliases on the unified `AddressSpace`
+  type. The `GPUAddressSpace` alias has also been removed in favor of using
+  `AddressSpace` directly. Since `AddressSpace` is part of the prelude, it no
+  longer needs to be explicitly imported in most code.
+
+- TMA (Tensor Memory Accelerator) types have been moved to a dedicated module.
+  The types `TMADescriptor`, `TensorMapSwizzle`, `TensorMapDataType`,
+  `TensorMapInterleave`, `TensorMapL2Promotion`, `TensorMapFloatOOBFill`, and
+  the functions `create_tma_descriptor()` and `prefetch_tma_descriptor()` are
+  now available from [`gpu.host.nvidia.tma`](/mojo/stdlib/gpu/host/nvidia/tma/)
+  instead of `gpu.host._nvidia_cuda`.
+
+#### Testing {#25-7-testing}
+
+- [`assert_equal()`](/mojo/stdlib/testing/testing/assert_equal) now displays
+  colored character-by-character diffs when string comparisons fail, making it
+  easier to spot differences. Differing characters are highlighted in red for
+  the left string and green for the right string.
+
+- The `mojo test` command has been removed. The recommended testing strategy is
+  to define test functions, call them explicitly from `main()` (or use the new
+  `TestSuite` framework), and run with `mojo run`.
+
+- [`TestSuite`](/mojo/stdlib/testing/suite/TestSuite/) now can generate test
+  reports with `.generate_report()`. Also, `TestReport` and `TestSuiteReport`
+  structs were added.
+
+- `TestSuite` now allows explicitly skipping registered tests using the
+  `TestSuite.skip()` method.
+
+- `TestSuite` now allows basic control from CLI arguments. Tests can be skipped
+  from the CLI by passing test function names after a `--skip` flag, e.g.
+
+  ```console
+  mojo run test_my_stuff.mojo --skip test_currently_failing test_also_failing
+  ```
+
+  Similarly, the `--only` flag enables the specification of an allowlist, e.g.
+  the following will skip any other registered test cases:
+
+  ```console
+  mojo run test_my_stuff.mojo --only test_only_this test_this_as_well
+  ```
+
+  The `--skip-all` flag will skip all registered test cases in the suite. Note
+  that `--only` respects skipped tests, i.e. it does not run tests that are
+  skipped using `TestSuite.skip()`.
+
+#### System and OS
+
+- Added [`os.isatty()`](/mojo/stdlib/os/os/isatty/) function to check whether a
+  file descriptor refers to a terminal. This function accepts an `Int` file
+  descriptor. If you have a
+  [`FileDescriptor`](/mojo/stdlib/io/file_descriptor/FileDescriptor/) object,
+  use its `isatty()` method instead.
+
+- Added
+  [`sys.compile.SanitizeAddress`](/mojo/stdlib/sys/compile/#sanitizeaddress)
+  providing a way for Mojo code to detect `--sanitize address` at compile time.
+
+- `DLHandle` is no longer part of the public API. To access a dynamically-linked
+  library from Mojo, use [`OwnedDLHandle`](/mojo/stdlib/sys/ffi/OwnedDLHandle/)
+  instead. The new type provides RAII-based automatic resource management for
+  dynamically-linked libraries. `DLHandle` has been renamed to `_DLHandle` and
+  remains available internally for use by the standard library.
+
+#### Performance optimizations
+
+- Optimized float-to-string formatting performance by eliminating unnecessary
+  stack allocations. Internal lookup tables used for float formatting
+  (`cache_f32` and `cache_f64`) are now stored as global constants instead of
+  being materialized on the stack for each conversion. This reduces stack
+  overhead by ~10KB for `Float64` and ~600 bytes for `Float32` operations,
+  improving performance for all float formatting operations including `print()`,
+  string interpolation, and `str()` conversions.
+
+- Optimized number parsing performance by eliminating stack allocations for
+  large lookup tables. Internal lookup tables used for number parsing
+  (`powers_of_5_table` and `POWERS_OF_10`) are now stored as global constants
+  using the [`global_constant`](/mojo/stdlib/builtin/globals/global_constant/)
+  function instead of being materialized on the stack for each parsing
+  operation. This reduces stack overhead by ~10.6KB for number parsing
+  operations, improving performance for string-to-number conversions including
+  `atof()` and related float parsing operations.
+
+#### Other library changes
+
+- The [`Hasher`](/mojo/stdlib/hashlib/hasher/Hasher/) trait's
+  `_update_with_bytes()` method now takes `Span[Byte]` instead of
+  `UnsafePointer[UInt8]` and a separate length parameter. This change applies to
+  all hasher implementations including `AHasher` and `Fnv1a`.
+
+- The Philox random number generator (`Random` and `NormalRandom`) has been
+  moved from `gpu.random` to [`random.philox`](/mojo/stdlib/random/philox/).
+  These types now work on both CPU and GPU. Import them using
+  `from random import Random, NormalRandom` or
+  `from random.philox import Random, NormalRandom`.
+
+### Tooling changes {#25-7-tooling-changes}
+
+- Error and warning messages now preserve `comptime`/alias names in many cases, to
+  prevent extremely long type names for complex types.  The compiler will expand
+  these when necessary to understand the type based on a simple heuristic, for
+  example:
+
+  ```mojo
+  struct Dep[T: AnyType, v: T]: pass
+  alias MyDep[T: AnyType, v: T] = Dep[T, v]
+  alias MyDepGetAlias0 = MyDep.hello
+  ```
+
+  produces:
+
+  ```console
+  $ mojo t.mojo
+  t.mojo:10:29: error: 'MyDep' needs more parameters bound before accessing attributes
+  alias MyDepGetAlias0 = MyDep.hello
+                            ^
+  t.mojo:10:29: note: 'MyDep' is aka 'alias[T: AnyType, v: T] Dep[T, v]'
+  ```
+
+  Please file issues in cases where more information needs to be exposed.
+
+- Error messages now preserve symbolic calls to `always_inline("builtin")`
+  functions rather than inlining them into the error message.
+
+- This release includes a number of improvements to elaboration errors.
+  The *elaborator* is the compiler pass where final parameter values are determined
+  and code is transformed from parametric to concrete. Common errors from
+  elaboration include "function instantiation failed" and "call expansion
+  failed" messages, when it's determined that the actual parameter values don't
+  match any viable function overload.
+
+  The elaborator also checks constraints (defined using the
+  [`constrained()`](/mojo/stdlib/builtin/constrained/constrained/) function), so
+  constraint failures are generated during this pass.
+
+  - Elaboration errors now report the full call instantiation failure path.
+    For this Mojo file:
+
+    ```mojo
+    fn fn1[T: ImplicitlyCopyable, //] (a: T):
+        constrained[False]()
+    fn fn2[T: ImplicitlyCopyable, //] (a: T):
+        return fn1(a)
+    fn main():
+        fn2(1)
+    ```
+
+    Now the error prints the path of `main -> fn2 -> fn1 -> constrained[False]`
+    instead of just `constrained[False]`.
+
+  - Elaboration errors now print out trivial parameter values with call expansion
+    failures. For this simple Mojo program:
+
+    ```mojo
+    fn fn1[a: Int, b: Int]():
+        constrained[a < b]()
+
+    fn fn2[a: Int, b: Int]():
+        fn1[a, b]()
+
+    fn main():
+        fn2[4, 2]()
+    ```
+
+    Now the error message shows `parameter value(s): ("a": 4, "b": 2)`:
+
+    ```mojo
+    test.mojo:6:14: note: call expansion failed with parameter value(s): ("a": 4, "b": 2)
+        fn1[a, b]()
+    ```
+
+    Only string and numerical values are printed out by default now, other
+    values are shown as `...`. Use `--elaboration-error-verbose` to show all
+    parameter values.
+
+  - Elaboration error messages related to the prelude are omitted by default. The
+    prelude is the set of APIs exported from `stdlib/builtin/_startup.mojo`. These
+    APIs persist in all call expansion paths but are rarely the source of reported
+    errors. These APIs are now omitted by default to de-clutter elaboration
+    errors.
+
+    Use `--elaboration-error-include-prelude` to include prelude.
+
+    - By default (without prelude):
+
+      ```mojo
+      test.mojo:43:4: error: function instantiation failed
+        fn main():
+          ^
+      test.mojo:45:12: note: call expansion failed
+            my_func()
+      ...
+      ```
+
+    - With prelude:
+
+      ```mojo
+      open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:119:4: error: function instantiation failed
+      fn __mojo_main_prototype(
+        ^
+      open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:119:4: note: call expansion failed with parameter value(s): (...)
+      open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:42:4: note: function instantiation failed
+      fn __wrap_and_execute_main[
+        ^
+      open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:68:14: note: call expansion failed
+          main_func()
+                  ^
+      test.mojo:43:4: note: function instantiation failed
+      fn main():
+        ^
+      test:45:12: note: call expansion failed
+          my_func()
+      ...
+      ```
+
+  - An `--elaboration-error-limit` option has been added to the `mojo run` and
+    `mojo build` commands. This option sets a limit to the number of elaboration
+    errors that get printed. The default value is 20. To change the limit, use
+    <code>--elaboration-error-limit=</code><var>limit</var>, where a *limit* of
+    `0` means unlimited.
+
+- `--help-hidden` option has been added to all Mojo CLI commands to show hidden
+  options.
+
+- `mojo debug` now rejects unknown options between `debug` and the target.
+
+- The Mojo language server will now report more coherent code actions.
+
+- The `mojo` CLI now has an `--experimental-fixit` flag that automatically
+  applies FixIt hints emitted by the parser. This feature is highly
+  experimental, and users should ensure they back up their files (or check them
+  into source control) before using it.
+
+### ❌ Removed {#25-7-removed}
+
+- `mojo test` has been deprecated and removed as described in the
+  [deprecation proposal](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371).
+  For more information, see the [Testing](#25-7-testing) section.
+
+- `LayoutTensorBuild` type has been removed.  Use `LayoutTensor` with parameters
+  directly instead.
+
+- The following traits have been removed: `LessThanComparable`,
+  `GreaterThanComparable`, `LessThanOrEqualComparable`,
+  `GreaterThanOrEqualComparable`. It is extremely rare that a type would only
+  implement one of these, so one can just use `Comparable` instead.
+
+- All telemetry-related code has been removed from the Mojo compiler. This
+  should eliminate the source of some hangs and misbehavior on poor internet
+  connections.
+
+### 🛠️ Fixed {#25-7-fixed}
+
+- [Issue #5111](https://github.com/modular/modular/issues/5111): The
+  `math.cos()` and `math.sin()` function can now be evaluated at compile time.
+
+- Fixed `IntTuple.value(i)` method returning incorrect values when elements are
+  stored as nested single-element tuples. Previously, calling
+  `Layout.row_major(M, N).stride.value(i)` would return negative offset values
+  (e.g., -65536, -65537) instead of the actual stride values. This affected any
+  code that accessed layout stride or shape values using the `value()` method.
+
+- Fixed `LayoutTensor.shape[idx]()` method returning incorrect values for nested
+  layouts. The bug occurred when accessing shape dimensions of tensors with
+  nested layouts like `((32, 2), (32, 4))`, where the method would return
+  garbage values instead of the correct product (e.g., 64).
+
+- Fixed `LayoutTensor` element-wise arithmetic operations (`+`, `-`, `*`, `/`)
+  between tensors with different memory layouts. Previously, operations like
+  `a.transpose() - b` would produce incorrect results when the operands had
+  different layouts, because the same layout index was incorrectly used for both
+  operands. This now correctly computes separate indices for each tensor based
+  on its layout.
+
+- Fixed `LayoutTensor.shape[idx]()` method returning incorrect values for nested
+  layouts. The bug occurred when accessing shape dimensions of tensors with
+  nested layouts like `((32, 2), (32, 4))`, where the method would return
+  garbage values instead of the correct product (e.g., 64).
+
+- Fixed `arange()` function in `layout._fillers` to properly handle nested
+  layout structures. Previously, the function would fail when filling
+  tensors with nested layouts like
+  `Layout(IntTuple(IntTuple(16, 8), IntTuple(32, 2)), ...)` because it
+  attempted to extract shape values from nested tuples incorrectly.
+
+- [Issue #5479](https://github.com/modular/modular/issues/5479): Mojo crashes
+  when compiling standalone `__del__` function without struct context.
+
+- [Issue #5500](https://github.com/modular/modular/issues/5500): Added
+  comprehensive documentation to `gpu/host/info.mojo` explaining GPU target
+  configuration and LLVM data layout strings. The documentation now includes
+  detailed explanations of all MLIR target components, vendor-specific patterns
+  for NVIDIA/AMD/Apple GPUs, step-by-step guides for adding new GPU
+  architectures, and practical methods for obtaining data layout strings.
+
+- [Issue #5492](https://github.com/modular/modular/issues/5492): Fixed
+  `FileHandle` "rw" mode unexpectedly truncating file contents. Opening a file
+  with `open(path, "rw")` now correctly preserves existing file content and
+  allows both reading and writing, similar to Python's "r+" mode. Previously,
+  "rw" mode would immediately truncate the file, making it impossible to read
+  existing content and causing potential data loss.
+
+- [Issue #3849](https://github.com/modular/mojo/issues/3849): Added support
+  for append mode ("a") when opening files. The `open()` function now accepts
+  "a" as a valid mode, which opens a file for appending. Content written to a
+  file opened in append mode is added to the end of the file without truncating
+  existing content. If the file doesn't exist, it will be created.
+
+- [Issue #3208](https://github.com/modular/mojo/issues/3208): Fixed
+  `FileHandle` raising "unable to remove existing file" error when opening a
+  FIFO (named pipe) in write mode. Opening special files like FIFOs, devices,
+  and sockets with `open(path, "w")` now works correctly. Previously, write
+  mode would attempt to remove the existing file before opening it, which
+  failed for special files that should not be removed.
+
+- [Issue #5142](https://github.com/modular/modular/issues/5142): The
+  `sys.intrinsics.compressed_store` function now includes a `debug_assert` to
+  catch null pointer usage, providing a clear error message instead of crashing
+  with a segmentation fault.
+
+- The `sys.intrinsics.strided_load()`, `sys.intrinsics.strided_store()`,
+  `sys.intrinsics.masked_load()`, and `sys.intrinsics.masked_store()` functions
+  now include a `debug_assert()` to catch null pointer usage, providing a clear
+  error message instead of crashing with a segmentation fault.
+
+- The `logger` package now prints its levels in color.
+
+- Throwing `deinit` methods now understand that `self` is deinitialized in error
+  paths, avoiding redundant calls to implicit destructors and improving linear
+  type support.
+
+### Special thanks {#25-7-special-thanks}
+
+Special thanks to our community contributors:
+Brian Grenier ([@bgreni](https://github.com/bgreni)),
+c-pozzi ([@c-pozzi](https://github.com/c-pozzi)),
+Christoph Schlumpf ([@christoph-schlumpf](https://github.com/christoph-schlumpf)),
+cudawarped ([@cudawarped](https://github.com/cudawarped)),
+David Faden (revfad.com) ([@fadend](https://github.com/fadend)),
+Ethan Wu ([@YichengDWu](https://github.com/YichengDWu)),
+Hardik Gupta ([@hardikkgupta](https://github.com/hardikkgupta)),
+j_rutzmoser ([@Rutzmoser](https://github.com/Rutzmoser)),
+Johnny Lin ([@johnny19436](https://github.com/johnny19436)),
+Jose ([@josetorrs](https://github.com/josetorrs)),
+josiahls ([@josiahls](https://github.com/josiahls)),
+Luis Chamberlain ([@mcgrof](https://github.com/mcgrof)),
+Manuel Saelices ([@msaelices](https://github.com/msaelices)),
+Marius S ([@winding-lines](https://github.com/winding-lines)),
+martinvuyk ([@martinvuyk](https://github.com/martinvuyk)),
+MaxMeyberg ([@MaxMeyberg](https://github.com/MaxMeyberg)),
+Monal ([@Monal-Patel](https://github.com/Monal-Patel)),
+skrript ([@skrript](https://github.com/skrript)),
+soraros ([@soraros](https://github.com/soraros)), and
+Thomas Mader ([@ThomasMader](https://github.com/ThomasMader)).
+
+## v0.25.6 (2025-09-22)
+
+:::caution Version scheme change!
+
+This release is technically a version *downgrade* because we've added a `0.` at
+the beginning: `0.25.6`. This is necessary because we started publishing `mojo`
+packages on pypi.org and it's important that we don't publish a package greater
+than 1.0 yet.
+
+Shortly after the 0.25.6 release, we "yanked" all Conda packages that are
+greater than 1.0 so they won't be installed unless you explicitly specify the
+version. So you'll still get the latest version like this:
+
+```sh
+pixi add mojo
+```
+
+And if you want an older version, just specify the version like this:
+
+```sh
+pixi add "mojo==25.5"
+```
+
+However, if you're installing `mojo` as a Python package with `pip` or
+`uv`, the oldest version available is `0.25.6`.
+
+:::
+
+### ✨ Highlights {#25-6-highlights}
+
+- You can now **`pip install mojo`**!
+
+  Although we still love the environment reliability of [Pixi](/pixi),
+  installing Mojo with `pip` or `uv` further enhances our interoperability
+  with the Python ecosystem, making it easier to [extend your Python code with
+  Mojo](/mojo/manual/python/mojo-from-python). For more information, see the
+  [Mojo install guide](/mojo/manual/install).
+
+- We've released a new version of the Mojo extension for Visual Studio Code that
+  now works with **both** the stable and nightly Mojo releases. You can install
+  the Mojo extension from either the
+  [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
+  or the [Open VSX Registry](https://open-vsx.org/extension/modular-mojotools/vscode-mojo).
+
+  The new extension replaces the old stable version, so if you have the stable
+  version installed, you can simply update it to receive the new version. If you
+  have the nightly version of the extension installed, you should uninstall it
+  and install the regular (non-nightly) version. See
+  [Add the VS Code extension](/mojo/manual/install#add-the-vs-code-extension)
+  for more information.
+
+- New [Mojo vision](/mojo/vision) doc explains our motivations and design
+  decisions for the Mojo language.
+
+- New [Mojo roadmap](/mojo/roadmap) provides a high-level roadmap for the
+  language across multiple phases.
+
+- Mojo now has support for default trait methods, allowing traits to provide
+  reusable behavior without requiring every conforming struct to re-implement
+  it. Default methods are automatically inherited by conforming structs unless
+  explicitly overridden. See
+  [Default method implementations](/mojo/manual/traits#default-method-implementations)
+  in the Mojo Manual for more information.
+
+- Added support for many consumer GPUs, including initial support for Apple
+  silicon GPUs. See [GPU support](#25-6-gpu-support) for details.
+
+- The way copying is modeled in Mojo has been overhauled. The `Copyable` trait
+  has been updated to represent a type that can be *explicitly* copied (using a
+  `copy()` method), and a new `ImplicitlyCopyable` "marker" trait can be used to
+  *opt-in* to making a type implicitly copyable as well. **This swaps the
+  default behavior from being implicitly copyable to being only explicitly
+  copyable.** Several standard library traits, types, and functions now require
+  now require explicit `Copyable` instead of `ImplicitlyCopyable`. See
+  [Standard library changes](#25-6-standard-library-changes) for more
+  information.
+
+- Uncaught exceptions or segmentation faults in Mojo programs can now
+  generate stack traces. This is currently only for CPU-based code. To generate
+  a fully symbolicated stack trace, set the `MOJO_ENABLE_STACK_TRACE_ON_ERROR`
+  environment variable, use `mojo build` with debug info enabled, e.g.
+  `-debug-level=line-tables`, and then run the resulting binary.
+
+- Major standard library improvements include:
+
+  - Making the `SIMD` type conform to `Comparable` and `EqualityComparable`,
+    which means that you can use `SIMD` values as `Dict` keys, among other
+    things. For details, see
+    [SIMD and related types](#25-6-simd-and-related-types).
+
+  - A new `Some[Trait]` utility to make it easier to
+    declare an argument that conforms to a trait. For details, see
+    [Other standard library changes](#25-6-other-standard-library-changes).
+
+  - Several enhancements to how iterators work in Mojo, including a new
+    `Iterable` trait. For more information, see
+    [Collections and iterators changes](#25-6-collections-and-iterators-changes).
+
+### Language enhancements {#25-6-language-enhancements}
+
+- Mojo now allows the use of keywords in function names (after `def` and `fn`)
+  and in attribute references after a `.`. This notably allows the use of the
+  `match()` method in regex libraries even though Mojo takes this as a hard
+  keyword.  Uses in other locations can still use backticks:
+
+  ```mojo
+  struct MatchExample:
+      fn match(self): # This is ok now.
+          pass
+
+  fn test_match(a: MatchExample):
+      a.match() # This is ok now.
+      a.`match`() # This is still valid.
+  ```
+
+- When generating error messages for complex types involving parameter calls,
+  the Mojo compiler now prints functions parameter values correctly, eliminating
+  a large class of `T != T` errors that happen with GPU layouts.
+
+### Language changes {#25-6-language-changes}
+
+- Methods on structs may now declare their `self` argument with a `deinit`
+  argument convention. This argument convention is used for methods like
+  `__del__()` and `__moveinit__()` to indicate that they tear down the
+  corresponding value without needing its destructor to be run again. Beyond
+  these two methods, this convention can be used to declare "named" destructors,
+  which are methods that consume and destroy the value without themselves
+  running the values destructor. For example, the standard
+  [`VariadicPack`](/mojo/stdlib/builtin/variadics/VariadicPack/) type has these
+  methods:
+
+  ```mojo
+  struct VariadicPack[...]:
+      # implicit destructor
+      fn __del__(deinit self): ...
+      # move constructor
+      fn __moveinit__(out self, deinit existing: Self): ...
+      # custom explicit destructor that destroys "self" by transferring all of
+      # the stored elements.
+      fn consume_elements[
+        elt_handler: fn (idx: Int, var elt: element_type) capturing
+    ](deinit self): ...
+  ```
+
+  This argument convention is a fairly narrow power-user feature that is
+  important to clarify the destruction model and make linear types fit into the
+  model better. (A linear type is just a type that has no `__del__()` method,
+  but provides a destructor that the user must call explicitly. Linear types are
+  a proposed feature that hasn't been fully implemented yet.)
+
+  - The `__del__()` and `__moveinit__()` methods should now take their `self`
+    and `existing` arguments as `deinit` instead of either `owned` or `var`.
+
+  - The `__disable_del` keyword and statement has been removed, use `deinit`
+    methods instead.
+
+- The Mojo compiler now warns about use of the deprecated `owned` keyword,
+  please move to `var` or `deinit` as the warning indicates.
+
+- The previously deprecated `@value` decorator has been removed.
+
+- Accesses to associated aliases and methods within a trait now require
+  qualified references (prepended with `Self.`), making it consistent with how
+  accesses to member aliases and methods in a struct require `self.`.
+
+- The Mojo compiler now raises error on implicit materialization of a
+  non-`ImplicitlyCopyable` object, please either mark the type to be
+  `ImplicitlyCopyable` or using `materialize[value: T]()` to explicitly
+  materialize the parameter into a dynamic value.
+
+  This usually happens when you generate a compile-time value using the `alias`
+  keyword, then assign it to a runtime variable:
+
+  ```mojo
+  alias lst = [1, 2, 3, 4]  # Create a compile-time list value
+  var dyn_list = lst  # Implicitly materializes the compile-time value to a
+                      #  dynamically-allocated runtime value
+  ```
+
+  The alias is a compile-time temporary value; to assign it to a runtime
+  variable, Mojo must allocate memory and copy the value. Since this can result
+  in unexpected memory allocations when materializing a memory value like a
+  list, Mojo only allows implicit materializations of memory values if the type
+  is `ImplicitlyCopyable`, which is a signal that the type should be inexpensive
+  to copy.
+
+  You can use the `materialize()` function to explicitly materialize a value:
+
+  ```mojo
+   var dyn_list = materialize[lst]()
+  ```
+
+### Standard library changes {#25-6-standard-library-changes}
+
+#### Copyability changes
+
+- The way copying is modeled in Mojo has been overhauled.
+
+  Previously, Mojo had two traits for modeling copyability:
+
+  - `Copyable` denoted a type that could be copied implicitly
+  - `ExplicitlyCopyable` denoted a type that could only be copied with an
+    explicit call to a `.copy()` method.
+
+  The vast majority of types defaulted to implementing `Copyable` (and therefore
+  were implicitly copyable), and `ExplicitlyCopyable` was partially phased in
+  but had significant usage limitations.
+
+  Now, the new `Copyable` trait instead represents a type that can be
+  *explicitly* copied (using `.copy()`), and a new `ImplicitlyCopyable` "marker"
+  trait can be used to *opt-in* to making a type implicitly copyable as well.
+  This swaps the default behavior from being implicitly copyable to being only
+  explicitly copyable.
+
+  The new `ImplicitlyCopyable` trait inherits from `Copyable`, and requires
+  no additional methods. `ImplicitlyCopyable` is known specially to the
+  compiler. (`ImplicitlyCopyable` types may also be copied explicitly using
+  `.copy()`.)
+
+  This makes it possible for non-implicitly-copyable types to be used with all
+  standard library functionality, resolving a long-standing issue with Mojo
+  effectively forcing implicit copyability upon all types.
+  This will enable Mojo programs to be more efficient and readable, with fewer
+  performance and correctness issues caused by accidental implicit copies.
+
+  With this change, types that conform to `Copyable` are no longer implicitly
+  copyable:
+
+  ```mojo
+  @fieldwise_init
+  struct Person(Copyable):
+      var name: String
+
+  fn main():
+      var p = Person("Connor")
+      var p2 = p           # ERROR: not implicitly copyable
+      var p3 = p.copy()    # OK: may be copied explicitly
+  ```
+
+  To enable a type to be implicitly copyable, declare a conformance to the
+  `ImplicitlyCopyable` marker trait:
+
+  ```mojo
+  @fieldwise_init
+  struct Point(ImplicitlyCopyable):
+      var x: Float32
+      var y: Float32
+
+  fn main():
+      var p = Point(5, 10)
+      var p2 = p           # OK: may be implicitly copied
+      var p3 = p.copy()    # OK: may be explicitly copied
+  ```
+
+  An additional nuance is that `ImplicitlyCopyable` may only be synthesized for
+  types whose fields are all themselves `ImplicitlyCopyable` (and not merely
+  `Copyable`). If you need to make a type with any non-`ImplicitlyCopyable`
+  fields support implicit copying, you can declare the conformance to
+  `ImplicitlyCopyable`, but write the `__copyinit__()` definition manually:
+
+  ```mojo
+  struct Container(ImplicitlyCopyable):
+      var x: SomeCopyableType
+      var y: SomeImplicitlyCopyableType
+
+      fn __copyinit__(out self, existing: Self):
+          self.x = existing.x.copy()   # Copy field explicitly
+          self.y = existing.y
+  ```
+
+  For more information on copyability, see the section on
+  [copy constructors](/mojo/manual/lifecycle/life#copy-constructor) in the Mojo
+  manual.
+
+- The following standard library types and functions now require only explicit
+  `Copyable` for their element and argument types, enabling their use with
+  types that are not implicitly copyable:
+  [`List`](/mojo/stdlib/collections/list/List),
+  [`Span`](/mojo/stdlib/memory/span/Span/),
+  [`InlineArray`](/mojo/stdlib/collections/inline_array/InlineArray)
+  [`Optional`](/mojo/stdlib/collections/optional/Optional),
+  [`Variant`](/mojo/stdlib/utils/variant/Variant),
+  [`Tuple`](/mojo/stdlib/builtin/tuple/Tuple),
+  [`Dict`](/mojo/stdlib/collections/dict/Dict),
+  [`Set`](/mojo/stdlib/collections/set/Set),
+  [`Counter`](/mojo/stdlib/collections/counter/Counter),
+  [`LinkedList`](/mojo/stdlib/collections/linked_list/LinkedList),
+  [`Deque`](/mojo/stdlib/collections/deque/Deque), and
+  [`reversed()`](/mojo/stdlib/builtin/reversed/reversed).
+
+  Additionally, the following traits now require explicit `Copyable` instead
+  of `ImplicitlyCopyable`:
+  `KeyElement`, `IntervalElement`, `ConvertibleFromPython`
+
+- The following Mojo standard library types are no longer implicitly copyable:
+  [`List`](/mojo/stdlib/collections/list/List),
+  [`Dict`](/mojo/stdlib/collections/dict/Dict),
+  [`DictEntry`](/mojo/stdlib/collections/dict/DictEntry),
+  [`OwnedKwargsDict`](/mojo/stdlib/collections/dict/OwnedKwargsDict),
+  [`Set`](/mojo/stdlib/collections/set/Set),
+  [`LinkedList`](/mojo/stdlib/collections/linked_list/LinkedList),
+  [`Node`](/mojo/stdlib/collections/linked_list/Node)
+  [`Counter`](/mojo/stdlib/collections/counter/Counter/),
+  [`CountTuple`](/mojo/stdlib/collections/counter/CountTuple/),
+  [`BitSet`](/mojo/stdlib/collections/bitset/BitSet/),
+  [`UnsafeMaybeUninitialized`](/mojo/stdlib/memory/maybe_uninitialized/UnsafeMaybeUninitialized/),
+  [`DLHandle`](/mojo/stdlib/sys/ffi/DLHandle/),
+  [`BenchConfig`](/mojo/stdlib/benchmark/bencher/BenchConfig),
+  [`BenchmarkInfo`](/mojo/stdlib/benchmark/bencher/BenchmarkInfo),
+  [`Report`](/mojo/stdlib/benchmark/benchmark/Report),
+  [`PythonTypeBuilder`](/mojo/stdlib/python/bindings/PythonTypeBuilder/).
+
+  To create a copy of one of these types, call the `.copy()` method
+  explicitly:
+
+  ```mojo
+  var l = List[Int](1, 2, 3)
+
+  # ERROR: Implicit copying of `List` is no longer supported:
+  # var l2 = l
+
+  # Instead, perform an explicit copy:
+  var l2 = l.copy()
+  ```
+
+  Alternatively, to transfer ownership,
+  [use the `^` transfer sigil](/mojo/manual/values/ownership#transfer-arguments-var-and-):
+
+  ```mojo
+  var l = List[Int](1, 2, 3)
+  var l2 = l^
+  # `l` is no longer accessible.
+  ```
+
+- Because `List` and `Dict` are so widely used, this release stages this in by
+  making implicit copies of these types a warning instead of an error.  This
+  will become a hard error in the next release of Mojo.
+
+- User types that define a custom `.copy()` method must be updated to move
+  that logic to `__copyinit__()`. The `.copy()` method is now provided by a
+  default trait implementation on `Copyable` that should not be overridden:
+
+  ```mojo
+  trait Copyable:
+      fn __copyinit__(out self, existing: Self, /):
+          ...
+
+      fn copy(self) -> Self:
+          return Self.__copyinit__(self)
+  ```
+
+#### SIMD and related types {#25-6-simd-and-related-types}
+
+- The comparison operators (e.g. `__eq__()` and `__le__()`) of the `SIMD` type
+  now return a single `Bool` instead of a boolean `SIMD` mask. Moreover, `SIMD`
+  now has explicit element-wise comparisons that return boolean masks (for
+  example, `eq()` and `le()`).
+  - This allows `SIMD` to conform to the `EqualityComparable` trait, enabling
+    the use of `SIMD` vectors in sets, as keys to dictionaries, generic search
+    algorithms, etc. Moreover, `Scalar` now conforms to the `Comparable` trait,
+    i.e. `SIMD` conforms to `Comparable` when the size is 1.
+  - As a consequence, `SIMD.__bool__()` no longer needs to be restricted to
+    scalars, and instead performs an `any` reduction on the elements of vectors.
+
+- Non-scalar `SIMD` constructors no longer allow implicit splatting of `Bool`
+  values. This could lead to subtle bugs that cannot be caught at compile time,
+  for example:
+
+  ```mojo
+  fn foo[w: Int](v: SIMD[_, w]) -> SIMD[DType.bool, w]:
+    return v == 42  # this silently reduced to a single bool, and then splat
+  ```
+
+  Similarly to `InlineArray`, an explicit constructor with the `fill`
+  keyword-only argument can be used to express the same logic more safely:
+
+  ```mojo
+  fn foo[w: Int](v: SIMD[_, w]) -> SIMD[DType.bool, w]:
+    return SIMD[DType.bool, w](fill=(v == 42))  # highlights the splat logic
+
+  fn bar(Scalar[_]) -> Scalar[DType.bool]:
+    # still works, since implicit splatting to a scalar is never ambiguous
+    return v == 42
+  ```
+
+- Several types that wrap MLIR types have been changed to further
+  encapsulate their behavior, hiding this low-level behavior from non-advanced
+  users.
+
+  - Types that can be constructed from raw MLIR values now require the use
+    of an `mlir_value` keyword-only argument initializer.
+    Affected types include `SIMD` and `UInt`.
+
+  - Types with raw MLIR type fields have had their `value` fields renamed to
+    `_mlir_value`.
+    Affected types include: `Bool` and `DType`.
+
+- The `SIMD.from_bits()` factory method is now a constructor, use
+  `SIMD(from_bits=...)` instead.
+
+- `DType.index` is deprecated in favor of the new `DType.int`. Moreover, a new
+  `DType.uint` is added, modeling unsigned integers with widths that match the
+  machine word length.
+
+- The `index()` free function now returns an `Int`, instead of a raw MLIR
+  `__mlir_type.index` value.
+
+#### Path and file system changes
+
+- Added the [`parts()`](/mojo/stdlib/pathlib/path/Path/#parts) method to the
+  `Path` type, for example instead of writing:
+
+  ```mojo
+  var path = Path("path/to/file")
+  var parts = path.path.split(DIR_SEPARATOR)
+  ```
+
+  you can now write:
+
+  ```mojo
+  var path = Path("path/to/file")
+  var parts = path.parts()
+  ```
+
+- Added the [`name()`](/mojo/stdlib/pathlib/path/Path/#name) method to the
+  `Path` type, which returns the name of the file or directory.
+
+- Added `os.path.realpath()` to resolve symbolic links to an absolute path and
+  remove relative path components (`.`, `..`, etc.). Behaves the same as the
+  Python equivalent function.
+
+#### Collections and iterators changes {#25-6-collections-and-iterators-changes}
+
+- Added an [`iter`](/mojo/stdlib/iter) module which includes the new `Iterable`
+  trait (and the existing `Iterator` trait). The module also provides the
+  [`enumerate()`](/mojo/stdlib/iter/enumerate),
+  [`iter()`](/mojo/stdlib/iter/iter), [`map()`](/mojo/stdlib/iter/map),
+  [`next()`](/mojo/stdlib/iter/next), and [`zip()`](/mojo/stdlib/iter/zip)
+  functions. The new generic `zip()` function replaces the `IntTuple`-specific
+  `zip()` function provided in previous releases.
+
+  - `Iterable`'s `origin` parameter is now named `iterable_origin`
+    and its `mut` param is now named `iterator_mut` to avoid naming collisions.
+
+- [`Iterator`](/mojo/stdlib/iter/Iterator) now has a defaulted `bounds()` trait
+  method. This returns the lower and upper bounds of the remaining length of the
+  iterator. This can be used for preallocation when building or extending
+  collections from iterators.
+
+- Added [`take_items()`](/mojo/stdlib/collections/dict/Dict/#take_items)
+  draining iterator to `Dict`.
+
+- [`Span`](/mojo/stdlib/memory/span/Span/) is now `Representable` if its
+  elements implement the `Representable` trait.
+
+- Add `repr()` support for [`List`](/mojo/stdlib/collections/list/List),
+  [`Deque`](/mojo/stdlib/collections/deque/Deque),
+  [`Dict`](/mojo/stdlib/collections/dict/Dict),
+  [`LinkedList`](/mojo/stdlib/collections/linked_list/LinkedList),
+  [`Optional`](/mojo/stdlib/collections/optional/Optional), and
+  [`Set`](/mojo/stdlib/collections/set/Set).
+
+- [`InlineArray`](/mojo/stdlib/collections/inline_array/InlineArray) now
+  automatically detects whether its element types are trivially destructible to
+  not invoke the destructors in its `__del__()` function. This improves
+  performance for trivially destructible types (such as `Int` and friends).
+
+- Similar to above, `List` now automatically does optimizations based on
+  whether the element types are trivial (copyable, destructible, etc). There
+  is no longer a `hint_trivial_type` parameter as this is done automatically
+  now.
+
+- `String.splitlines()` now returns a `List[StringSlice]` instead of a
+  `List[String]`. This avoids unnecessary intermediate allocations.
+
+- `StringSlice.from_utf8()` factory method is now a constructor, use
+  `StringSlice(from_utf8=...)` instead.
+
+- `Span` now implements a generic `.count()` method which can be passed a
+  function that returns a boolean `SIMD` vector. The function counts how many
+  times it returns `True` evaluating it in a vectorized manner. This works for
+  any `Span[Scalar[D]]` e.g. `Span[Byte]`.
+
+- [`Optional`](/mojo/stdlib/collections/optional/Optional) and
+  [`OptionalReg`](/mojo/stdlib/collections/optional/OptionalReg) can now be
+  composed with `Bool` in expressions, both at comptime and runtime:
+
+  ```mojo
+  alias value = Optional[Int](42)
+
+  @parameter
+  if CompilationTarget.is_macos() and value:
+      print("is macos and value is:", value.value())
+  ```
+
+- [`sort()`](/mojo/stdlib/builtin/sort/sort),
+  [`LinkedList.pop()`](/mojo/stdlib/collections/linked_list/LinkedList/#pop),
+  [`LinkedList.maybe_pop()`](/mojo/stdlib/collections/linked_list/LinkedList/#maybe_pop)
+  and [`Dict.popitem()`](/mojo/stdlib/collections/dict/Dict#popitem) no longer
+  copy elements, improving performance.
+
+- The `IndexList` and `DimList` types may no longer be implicitly constructed
+  from tuple values. Most existing call sites already used explicit initializer
+  calls (`IndexList(...)`), so implicit conversions have been removed to ensure
+  uniformity and consistency.
+
+#### Pointer changes
+
+- Removed the `alignment` parameter and `static_alignment_cast()` method from
+  [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer). This
+  `alignment` parameter that was only used by the `alloc()` static method.
+
+- Added an `alignment` keyword argument to `UnsafePointer.alloc()`. Use this
+  in place of the `alignment` parameter on the struct.
+
+- Removed the `alignment` parameter from `Span`, similar to `UnsafePointer`
+  above.
+
+- The `UnsafePointer.init_pointee_explicit_copy()` method has been removed.
+  Please use
+  [`UnsafePointer.init_pointee_copy()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#init_pointee_copy)
+  instead.
+
+- `UnsafePointer.move_pointee_into()` has been deprecated. Please use
+  [`UnsafePointer.init_pointee_move_from()`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#init_pointee_move_from).
+
+  `src.move_pointee_into(dst)` used a reversed argument order from intuitive
+  `LHS = RHS` semantics for assignment, effectively `RHS -> LHS`. The new
+  function fixes this readability issue (`dst.init_pointee_move_from(src)`),
+  and additionally follows the `init_pointee_*()` naming convention of the
+  other existing methods for initializer a pointer memory location.
+
+#### Atomic operations
+
+- Added [`os.atomic.fence()`](/mojo/stdlib/os/atomic/fence) for creating atomic
+  memory fences.
+
+  ```mojo
+    from os.atomic import Atomic, Consistency, fence
+
+    fn decrease_ref_count(ref_count: Atomic[DType.uint64]):
+      if atomic.fetch_sub[ordering = Consistency.MONOTONIC](1) == 1:
+        fence[Consistency.ACQUIRE]()
+        # ...
+  ```
+
+- Add a memory ordering parameter to
+  [`Atomic.load()`](/mojo/stdlib/os/atomic/Atomic).
+
+#### System changes
+
+- Added `sys.info.platform_map()` for specifying types that can have different
+  values depending on the platform:
+
+  ```mojo
+  from sys.info import platform_map
+
+  alias EDEADLK = platform_map["EDEADLK", linux = 35, macos = 11]()
+  ```
+
+- Renamed a number of functions following functions in `sys.info` from
+  `flatcase` to `snake_case` names:
+
+  | Old name  | New name    |
+  | --- | --- |
+  | `alignof()` | `align_of()` |
+  | `bitwidthof()` | `bit_width_of()` |
+  | `simdbitwidth()` | `simd_bit_width()` |
+  | `simdbytewidth()` | `simd_byte_width()` |
+  |  `simdwidthof()` | `simd_width_of()` |
+  | `sizeof()` | `size_of()` |
+
+  The old names are deprecated, and will be removed in the next release.
+
+#### GPU Support {#25-6-gpu-support}
+
+- Added initial support for programming Apple Silicon GPUs in Mojo. However,
+  MAX graphs are not yet enabled on Apple Silicon GPUs, and many hardware
+  features remain to be enabled.
+
+- Added support for AMD RX 6900 XT consumer-grade GPU.
+
+- Added support for AMD RDNA3.5 consumer-grade GPUs in the `gfx1150`, `gfx1151`,
+  and `gfx1152` architectures. Representative configurations have been added for
+  AMD Radeon 860M, 880M, and 8060S GPUs.
+
+- Added support for NVIDIA GTX 1080 Ti consumer-grade GPUs.
+
+- Added support for NVIDIA Tesla P100 datacenter GPUs.
+
+- Updated `layout_tensor()` copy related functions to support 2D and 3D
+  threadblock dimensions.
+
+#### Other standard library changes {#25-6-other-standard-library-changes}
+
+- A new `Some` utility is introduced to reduce the syntactic load of declaring
+  function arguments of a type that implements a given trait or trait
+  composition. For example, instead of writing
+
+  ```mojo
+  fn foo[T: Intable, //](x: T) -> Int:
+      return x.__int__()
+  ```
+
+  one can now write:
+
+  ```mojo
+  fn foo(x: Some[Intable]) -> Int:
+      return x.__int__()
+  ```
+
+- The
+  [`compile.reflection.get_type_name()`](/mojo/stdlib/compile/reflection/get_type_name)
+  utility now has limited capability to print parametric types, e.g.
+  `SIMD[DType.float32, 4]` instead of just `SIMD`. If the parameter is not
+  printable, an `<unprintable>` placeholder is printed instead. A new
+  `qualified_builtins` flag also allows users to control the verbosity for the
+  most common (but not all) builtin types.
+
+### Kernels changes {#25-6-kernels-changes}
+
+- A fast matmul for SM100 is available in Mojo. Please check it out in
+  [`matmul_sm100.mojo`](https://github.com/modular/modular/commits/main/max/kernels/src/linalg/matmul_sm100.mojo).
+
+- Moved the
+  [`comm`](https://github.com/modular/modular/tree/main/max/kernels/src/comm)
+  module from the standard library (`gpu.comm`) to the MAX AI kernels library.
+  Any imports that used `gpu.comm` should be updated to `comm`, instead.
+
+### Tooling changes {#25-6-tooling-changes}
+
+- `mojo test` now ignores folders with a leading `.` in the name. This will
+  exclude hidden folders on Unix systems.
+
+- `mojo doc --validate-doc-strings` now emits a warning when an `fn` function is
+  declared to raise an error (`raises`) and it has no [`Raises`
+  docstring](https://github.com/modular/modular/blob/main/mojo/stdlib/docs/docstring-style-guide.md#errors).
+  However, because Mojo automatically treats all `def` functions as [raising
+  functions](/mojo/manual/functions#raising-and-non-raising-functions), we do
+  not enforce `Raises` docs for `def` functions (to avoid noisy false
+  positives).
+
+- Nightly `mojo` Python wheels are now available. To install everything needed
+  for Mojo development in a Python virtual environment, you can use:
+
+  ```sh
+  pip install --pre mojo \
+   --index-url https://dl.modular.com/public/nightly/python/simple/
+  ```
+
+  For more information, see the [Mojo install guide](/mojo/manual/install).
+
+- In preparation for a future Mojo 1.0, the `mojo` and `mojo-compiler` packages
+  have a `0.` prefixed to the version.
+
+### ❌ Removed {#25-6-removed}
+
+- The Mojo MLIR C bindings has been removed. This was a private package that was
+  used for early experimentation.
+
+### 🛠️ Fixed {#25-6-fixed}
+
+- [#4695](https://github.com/modular/modular/issues/4695) - `Dict.__getitem__()`
+  always returns immutable references.
+- [#4705](https://github.com/modular/modular/issues/4705) - Wrong mutability
+  inferred for `__getitem__()` if `[]` operator is used and `__setitem__()` is
+  present.
+- [#5190](https://github.com/modular/modular/issues/5190) - Mojo compiler
+  crashes for a struct with two constructors taking different keyword-only
+  arguments.
+- [#5139](https://github.com/modular/modular/issues/5139) - Crash on malformed
+  initializer.
+- [#5183](https://github.com/modular/modular/issues/5183) - `Log1p()` not working
+  on GPUs.
+- [#5105](https://github.com/modular/modular/issues/5105) - Outdated `CLAUDE.md`
+  docs.
+- [#5239](https://github.com/modular/modular/issues/5239) - Contextual type not
+  detected inside an inline if-else.
+- [#5305](https://github.com/modular/modular/issues/5305) - Parser Segfaults on
+  `LayoutTensor[layout]` with no `layout` in scope.
+- [#5260](https://github.com/modular/modular/issues/5260) - Undefined reference
+  to `clock_gettime_nsec_np' when building with -O0.
+- [#5307](https://github.com/modular/modular/issues/5307) - Bad error message
+  when getting GPU info for unsupported GPU.
+- Error messages involving types using implicit parameters from
+  auto-parameterized types now include context information to solve a class of
+  incorrect "T != T" error messages common in kernel code.
+- Parameter inference failures now refer to parameters by their user-provided
+  name, rather than complaining about a mysterious "parameter #4".
+
+### Special thanks {#25-6-special-thanks}
+
+Special thanks to our community contributors:
+[@AceMouse](https://github.com/AceMouse),
+[@Alex-Mann](https://github.com/Alex-Mann),
+[@christoph-schlumpf](https://github.com/christoph-schlumpf),
+[@cudawarped](https://github.com/cudawarped),
+[@cyrillzadra](https://github.com/cyrillzadra),
+[@dl-alexandre](https://github.com/dl-alexandre),
+[@farnoy](https://github.com/farnoy),
+[@gabrieldemarmiesse](https://github.com/gabrieldemarmiesse),
+[@gryznar](https://github.com/gryznar),
+[@josiahls](https://github.com/josiahls),
+[@kyoto7250](https://github.com/kyoto7250)
+[@martinvuyk](https://github.com/martinvuyk),
+[@mmicu](https://github.com/mmicu),
+[@msaelices](https://github.com/msaelices),
+[@mzaks](https://github.com/mzaks),
+[@rd4com](https://github.com/rd4com),
+[@Rtosshy](https://github.com/Rtosshy),
+[@SasankYadati](https://github.com/SasankYadati),
+[@simonyjung](https://github.com/simonyjung),
+[@soraros](https://github.com/soraros), and
+[@ThomasMader](https://github.com/ThomasMader).
 
 ## v25.5 (2025-08-05)
 
@@ -616,7 +2119,10 @@ Special thanks to our community contributors:
     new [`variadics`](/mojo/stdlib/builtin/variadics/) module.
 
   - The `CollectionElement` trait has been removed. You can replace any use of
-    it with `Copyable & Movable`.
+    it with the [`Copyable`](/mojo/stdlib/builtin/value/Copyable) and
+    [`Movable`](/mojo/stdlib/builtin/value/Movable) traits, or the
+    `Copyable & Movable`
+    [trait composition](/mojo/manual/traits#trait-compositions).
 
 Python-Mojo interoperability enhancements and changes:
 
@@ -925,7 +2431,7 @@ Special thanks to our community contributors:
   for example `var x = one_pointer if cond else other_pointer`.
 
 - Auto-parameterization now extends to struct metatypes. For example, this
-  declaration `fn foo[M: __type_of(StringLiteral[_])]` will auto-parameterize
+  declaration `fn foo[M: type_of(StringLiteral[_])]` will auto-parameterize
   on the unbound parameter of `StringLiteral`.
 
 - The Mojo compiler now warns about stores to values that are never used, e.g.:
@@ -4908,9 +6414,10 @@ Big themes for this release:
   - `math.limit.min_finite()`: use `utils.numerics.min_finite()`
 
 - The `tensor.random` module has been removed. The same functionality is now
-  accessible via the [`Tensor.rand()`](/max/api/mojo/tensor/tensor/Tensor/#rand)
-  and [`Tensor.randn()`](/max/api/mojo/tensor/tensor/Tensor/#randn) static
-  methods.
+accessible via the
+[`Tensor.rand()`](/mojo/kernels/extensibility/tensor/tensor/Tensor/#rand) and
+[`Tensor.randn()`](/mojo/kernels/extensibility/tensor/tensor/Tensor/#randn)
+static methods.
 
 - The builtin `SIMD` struct no longer conforms to `Indexer`; users must
   explicitly cast `Scalar` values using `int`.
@@ -5298,10 +6805,10 @@ Special thanks to our community contributors:
   exit(0)
   ```
 
-- The constructors for [`Tensor`](/max/api/mojo/tensor/tensor/Tensor) have been
-  changed to be more consistent. As a result, constructors take the shape as the
-  first argument (instead of the second) when constructing a tensor with pointer
-  data.
+- The constructors for
+[`Tensor`](/mojo/kernels/extensibility/tensor/tensor/Tensor) have been changed
+to be more consistent. As a result, constructors take the shape as the first
+argument (instead of the second) when constructing a tensor with pointer data.
 
   If you pass a single scalar value to the `Tensor` constructor, it now
   broadcasts the value to all elements in the tensor. For example,
@@ -5827,8 +7334,9 @@ This release doesn't include any changes to Mojo.
     from buffer import parallel_memcpy
     ```
 
-  - The [`rand()`](/max/api/mojo/tensor/tensor/Tensor/#rand) and
-    [`randn()`](/max/api/mojo/tensor/tensor/Tensor/#randn) functions from the
+  - The [`rand()`](/mojo/kernels/extensibility/tensor/tensor/Tensor/#rand) and
+    [`randn()`](/mojo/kernels/extensibility/tensor/tensor/Tensor/#randn)
+    functions from the
     `random` package that return a `Tensor` have moved to the `tensor` package.
     Note that the overloads that write to a `DTypePointer` remain in the
     `random` package.
@@ -6037,8 +7545,7 @@ installation issues. Otherwise it is functionally identical to Mojo 24.1.
 
 - The Mojo SDK can now be installed on AWS Graviton instances.
 
-- A new version of the [Mojo
-  Playground](https://developer.modular.com/playground) is available. The new
+- A new version of the Mojo Playground is available. The new
   playground is a simple interactive editor for Mojo code, similar to the Rust
   Playground or Go Playground. The old JupyterLab based playground will remain
   online until March 20th.
@@ -6501,7 +8008,7 @@ experience without dedicated sugar.
       fn __eq__(self, other: Self) -> Bool:
           return self.s == other.s
 
-  fn main() raises:
+  def main():
       var d = Dict[StringKey, Int]()
       d["cats"] = 1
       d["dogs"] = 2
@@ -6908,9 +8415,9 @@ experience without dedicated sugar.
   trait.  These types include [`Bool`](/mojo/stdlib/builtin/bool/Bool),
   [`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral),
   [`DynamicVector`](/mojo/stdlib/collections/list/List),
-  [`Tensor`](/max/api/mojo/tensor/tensor/Tensor),
-  [`TensorShape`](/max/api/mojo/tensor/tensor_shape/TensorShape),
-  and [`TensorSpec`](/max/api/mojo/tensor/tensor_spec/TensorSpec).
+  [`Tensor`](/mojo/kernels/extensibility/tensor/tensor/Tensor),
+  [`TensorShape`](/mojo/kernels/extensibility/tensor/tensor_shape/TensorShape),
+  and [`TensorSpec`](/mojo/kernels/extensibility/tensor/tensor_spec/TensorSpec).
 
 ### 🦋 Changed
 
@@ -7530,13 +9037,13 @@ the previous "read to EOF" behavior when size is negative.
   from a file.
 
 - The built-in `print()` function now works on the
-  [`Tensor`](/max/api/mojo/tensor/tensor/Tensor) type.
+  [`Tensor`](/mojo/kernels/extensibility/tensor/tensor/Tensor) type.
 
-- [`TensorShape`](/max/api/mojo/tensor/tensor_shape/TensorShape) and
-  [`TensorSpec`](/max/api/mojo/tensor/tensor_spec/TensorSpec) now have
-  constructors that take
-  [`DynamicVector[Int]`](/mojo/stdlib/collections/list/List) and
-  [`IndexList`](/mojo/stdlib/utils/index_/IndexList) to initialize shapes.
+- [`TensorShape`](/mojo/kernels/extensibility/tensor/tensor_shape/TensorShape)
+and [`TensorSpec`](/mojo/kernels/extensibility/tensor/tensor_spec/TensorSpec)
+now have constructors that take
+[`DynamicVector[Int]`](/mojo/stdlib/collections/list/List) and
+[`IndexList`](/mojo/stdlib/utils/index_/IndexList) to initialize shapes.
 
 - The [`String`](/mojo/stdlib/collections/string/string/String) type now has the
  `count()` and `find()` methods to enable counting the number of occurrences or
@@ -8174,11 +9681,11 @@ All earlier releases were considered version 0.1.
 
 #### ⭐️ New
 
-- A new [`Tensor`](/max/api/mojo/tensor/tensor/Tensor) type has been introduced.
-  This tensor type manages its own data (unlike `NDBuffer` and `Buffer` which
-  are just views). Therefore, the tensor type performs its own allocation and
-  free. Here is a simple example of using the tensor type to represent an RGB
-  image and convert it to grayscale:
+- A new [`Tensor`](/mojo/kernels/extensibility/tensor/tensor/Tensor) type has
+been introduced. This tensor type manages its own data (unlike `NDBuffer` and
+`Buffer` which are just views). Therefore, the tensor type performs its own
+allocation and free. Here is a simple example of using the tensor type to
+represent an RGB image and convert it to grayscale:
 
   ```mojo
   from tensor import Tensor, TensorShape

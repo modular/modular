@@ -12,15 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceil, floor
+from memory import LegacyUnsafePointer as UnsafePointer
 
 from algorithm.functional import elementwise
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from layout import (
-    LayoutTensor,
+    UNKNOWN_VALUE,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from memory import memcpy
@@ -30,10 +31,10 @@ from utils import IndexList, StaticTuple
 
 struct CoordinateTransformationMode(ImplicitlyCopyable, Movable):
     var value: Int
-    alias HalfPixel = CoordinateTransformationMode(0)
-    alias AlignCorners = CoordinateTransformationMode(1)
-    alias Asymmetric = CoordinateTransformationMode(2)
-    alias HalfPixel1D = CoordinateTransformationMode(3)
+    comptime HalfPixel = CoordinateTransformationMode(0)
+    comptime AlignCorners = CoordinateTransformationMode(1)
+    comptime Asymmetric = CoordinateTransformationMode(2)
+    comptime HalfPixel1D = CoordinateTransformationMode(3)
 
     @always_inline
     fn __init__(out self, value: Int):
@@ -77,10 +78,10 @@ fn coord_transform[
 
 struct RoundMode(ImplicitlyCopyable, Movable):
     var value: Int
-    alias HalfDown = RoundMode(0)
-    alias HalfUp = RoundMode(1)
-    alias Floor = RoundMode(2)
-    alias Ceil = RoundMode(3)
+    comptime HalfDown = RoundMode(0)
+    comptime HalfUp = RoundMode(1)
+    comptime Floor = RoundMode(2)
+    comptime Ceil = RoundMode(3)
 
     @always_inline
     fn __init__(out self, value: Int):
@@ -94,7 +95,7 @@ struct RoundMode(ImplicitlyCopyable, Movable):
 @fieldwise_init
 struct InterpolationMode(ImplicitlyCopyable, Movable):
     var value: Int
-    alias Linear = InterpolationMode(0)
+    comptime Linear = InterpolationMode(0)
 
     @always_inline
     fn __eq__(self, other: InterpolationMode) -> Bool:
@@ -119,7 +120,7 @@ struct Interpolator[mode: InterpolationMode](
     @always_inline
     fn filter_length() -> Int:
         @parameter
-        if mode == InterpolationMode.Linear:
+        if Self.mode == InterpolationMode.Linear:
             return 1
         else:
             constrained[False, "InterpolationMode not supported"]()
@@ -128,7 +129,7 @@ struct Interpolator[mode: InterpolationMode](
     @always_inline
     fn filter(self, x: Float32) -> Float32:
         @parameter
-        if mode == InterpolationMode.Linear:
+        if Self.mode == InterpolationMode.Linear:
             return linear_filter(x)
         else:
             constrained[False, "InterpolationMode not supported"]()
@@ -330,9 +331,9 @@ fn _resize[
     ) == rebind[IndexList[input.rank]](
         output.runtime_layout.shape.value.canonicalize()
     ):
-        return memcpy(output.ptr, input.ptr, input.size())
+        return memcpy(dest=output.ptr, src=input.ptr, count=input.size())
     var scales = StaticTuple[Float32, input.rank]()
-    var resize_dims = List[Int, hint_trivial_type=True](capacity=input.rank)
+    var resize_dims = List[Int](capacity=input.rank)
     var tmp_dims = IndexList[input.rank](0)
     for i in range(input.rank):
         # need to consider output dims when upsampling and input dims when downsampling
@@ -374,7 +375,7 @@ fn _resize[
         var resize_dim = resize_dims[dim_idx]
         out_shape[resize_dim] = output.dim(resize_dim)
 
-        alias dyn_layout = Layout.row_major[input.rank]()
+        comptime dyn_layout = Layout.row_major[input.rank]()
         var in_buf = LayoutTensor[dtype, dyn_layout](
             in_ptr, RuntimeLayout[dyn_layout].row_major(in_shape)
         )

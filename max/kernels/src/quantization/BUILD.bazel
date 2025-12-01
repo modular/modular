@@ -6,8 +6,9 @@ mojo_library(
     name = "quantization",
     srcs = glob(["**/*.mojo"]),
     docs_base_path = "kernels",
+    validate_missing_docs = False,
     deps = [
-        "@mojo//:linalg",
+        "//max:linalg",
         "@mojo//:stdlib",
     ],
 )

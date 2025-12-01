@@ -14,17 +14,16 @@
 from math import ceildiv
 from sys import argv
 
+import linalg.matmul.vendor.blas as vendor_blas
 from gpu import block_dim
 from gpu.host import DeviceContext
-from gpu.id import block_idx, thread_idx
+from gpu import block_idx, thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
-from linalg import vendor_blas
+from testing import assert_almost_equal
 
 from utils.index import IndexList
-
-from testing import assert_almost_equal
 
 
 fn is_benchmark() -> Bool:
@@ -41,9 +40,9 @@ fn kernel_1[
     transpose_b: Bool = True,
     BLOCKSIZE: Int = 32,
 ](
-    c: LayoutTensor[mut=True, DType.bfloat16, Layout.row_major(M, N)],
-    a: LayoutTensor[mut=False, DType.bfloat16, Layout.row_major(M, K)],
-    b: LayoutTensor[mut=False, DType.bfloat16, Layout.row_major(K, N)],
+    c: LayoutTensor[DType.bfloat16, Layout.row_major(M, N), MutAnyOrigin],
+    a: LayoutTensor[DType.bfloat16, Layout.row_major(M, K), MutAnyOrigin],
+    b: LayoutTensor[DType.bfloat16, Layout.row_major(K, N), MutAnyOrigin],
 ):
     var row = block_dim.y * block_idx.y + (thread_idx.y)
     var col = block_dim.x * block_idx.x + (thread_idx.x)
@@ -68,21 +67,21 @@ def test_kernel_1[
     benchmark: Bool = False,
     prob_shape: IndexList[3] = IndexList[3](1, 1, 1),
 ](ctx: DeviceContext):
-    alias M = prob_shape[0]
-    alias N = prob_shape[1]
-    alias K = prob_shape[2]
+    comptime M = prob_shape[0]
+    comptime N = prob_shape[1]
+    comptime K = prob_shape[2]
 
     print(M, "x", N, "x", K)
 
     var a = ManagedLayoutTensor[a_type, Layout.row_major(M, K)](ctx)
     random(a.tensor[update=False]())
-    alias b_layout = Layout.row_major(K, N)
+    comptime b_layout = Layout.row_major(K, N)
     var b = ManagedLayoutTensor[b_type, b_layout](ctx)
     random(b.tensor[update=False]())
     var c = ManagedLayoutTensor[c_type, Layout.row_major(M, N)](ctx)
     var c_ref = ManagedLayoutTensor[c_type, Layout.row_major(M, N)](ctx)
 
-    alias b_vendor_layout = Layout.row_major(
+    comptime b_vendor_layout = Layout.row_major(
         N, K
     ) if transpose_b else Layout.row_major(K, N)
     var b_vendor = ManagedLayoutTensor[b_type, b_vendor_layout](ctx)
@@ -101,13 +100,13 @@ def test_kernel_1[
             for n in range(N):
                 b_vendor_tensor[k, n] = b_tensor[k, n]
 
-    alias kernel = kernel_1[
+    comptime kernel = kernel_1[
         M, N, K, transpose_b=transpose_b, BLOCKSIZE=BLOCKSIZE
     ]
     # Use 1D thread block for memory coalescing
-    alias BLOCKSIZE = 32
+    comptime BLOCKSIZE = 32
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         c.device_tensor(),
         a.device_tensor(),
         b.device_tensor(),
@@ -118,16 +117,16 @@ def test_kernel_1[
     ctx.synchronize()
 
     if benchmark:
-        alias num_runs = 50
-        alias num_warmup = 20
+        comptime num_runs = 50
+        comptime num_warmup = 20
 
         @always_inline
         @parameter
         fn run_kernel(ctx: DeviceContext) raises:
-            ctx.enqueue_function[kernel](
-                c.device_tensor(),
-                a.device_tensor(),
-                b.device_tensor(),
+            ctx.enqueue_function_checked[kernel, kernel](
+                c.device_tensor[update=False](),
+                a.device_tensor[update=False](),
+                b.device_tensor[update=False](),
                 grid_dim=(ceildiv(N, BLOCKSIZE), ceildiv(M, BLOCKSIZE)),
                 block_dim=(BLOCKSIZE, BLOCKSIZE),
             )
@@ -147,9 +146,9 @@ def test_kernel_1[
     else:
         vendor_blas.matmul(
             ctx,
-            c_ref.device_buffer(),  # returns an NDBuffer[dtype, 2, MutableAnyOrigin]
-            a.device_buffer(),
-            b_vendor.device_buffer(),
+            c_ref.device_tensor[update=False](),
+            a.device_tensor[update=False](),
+            b_vendor.device_tensor(),
             c_row_major=True,
             transpose_b=transpose_b,
         )

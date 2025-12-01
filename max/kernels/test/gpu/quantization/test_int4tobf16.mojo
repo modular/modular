@@ -16,29 +16,29 @@
 # logic and shift instruction: lop3
 # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#logic-and-shift-instructions-lop3
 
-from sys.info import CompilationTarget, is_amd_gpu
+from sys.info import CompilationTarget, is_amd_gpu, is_apple_gpu
 
 from buffer import NDBuffer
 from gpu.host import DeviceContext
 from gpu.intrinsics import lop
-from gpu.memory import AddressSpace
+from memory import LegacyUnsafePointer as UnsafePointer
 from memory.unsafe import bitcast
 from testing import assert_equal
 
 
 # 8xint4 -> 8xbfloat16 interleaved conversion
 fn int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
-    alias MASK: Int32 = 0x000F000F
-    alias I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
+    comptime MASK: Int32 = 0x000F000F
+    comptime I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
 
     # 0xc308 = -136.0, 0xc300 = -128.0
-    alias BF16_BIAS = SIMD[DType.bfloat16, 2](-128, -128)
+    comptime BF16_BIAS = SIMD[DType.bfloat16, 2](-128, -128)
     # 0x3f80 = 1.0
-    alias BF16_ONE = SIMD[DType.bfloat16, 2](1, 1)
+    comptime BF16_ONE = SIMD[DType.bfloat16, 2](1, 1)
 
     var i4s: Int32 = i4
     var v: SIMD[DType.int32, 4] = 0
-    alias lut: Int32 = (0xF0 & 0xCC) | 0xAA
+    comptime lut: Int32 = (0xF0 & 0xCC) | 0xAA
     # This lut is operation: (A & B) | C
 
     @parameter
@@ -51,7 +51,7 @@ fn int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
         var t: Int32
 
         @parameter
-        if is_amd_gpu() or no_lop:
+        if is_apple_gpu() or is_amd_gpu() or no_lop:
             t = (i4s & MASK) | I4s_TO_BF16s_MAGIC_NUM
         else:
             t = lop[lut](i4s, MASK, I4s_TO_BF16s_MAGIC_NUM)
@@ -65,22 +65,20 @@ fn int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
 
 fn call_int4tobf16[
     no_lop: Bool
-](
-    i4: Int32,
-    out_ptr: UnsafePointer[BFloat16, address_space = AddressSpace.GLOBAL],
-):
+](i4: Int32, out_ptr: UnsafePointer[BFloat16],):
     var v = int4tobf16[no_lop](i4)
     out_ptr.bitcast[Int32]().store[alignment=16](0, bitcast[DType.int32, 4](v))
 
 
 def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext):
     var out_host = NDBuffer[
-        DType.bfloat16, 1, MutableAnyOrigin, 8
+        DType.bfloat16, 1, MutAnyOrigin, 8
     ].stack_allocation()
     var out_device = ctx.enqueue_create_buffer[DType.bfloat16](8)
 
-    ctx.enqueue_function[call_int4tobf16[no_lop]](
-        UInt32(0x76543210), out_device, grid_dim=1, block_dim=1
+    comptime kernel = call_int4tobf16[no_lop]
+    ctx.enqueue_function_checked[kernel, kernel](
+        Int32(0x76543210), out_device, grid_dim=1, block_dim=1
     )
 
     ctx.enqueue_copy(out_host.data, out_device)
@@ -90,9 +88,6 @@ def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext):
 
 
 def main():
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        with DeviceContext() as ctx:
-            test_int4tobfloat16[no_lop=False](ctx)
-            test_int4tobfloat16[no_lop=True](ctx)
+    with DeviceContext() as ctx:
+        test_int4tobfloat16[no_lop=False](ctx)
+        test_int4tobfloat16[no_lop=True](ctx)

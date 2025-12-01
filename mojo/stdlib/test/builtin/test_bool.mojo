@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from python import PythonObject
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 def test_default():
@@ -42,9 +42,6 @@ def test_bool_none():
 struct MyTrue(ImplicitlyBoolable):
     fn __bool__(self) -> Bool:
         return True
-
-    fn __as_bool__(self) -> Bool:
-        return self.__bool__()
 
 
 fn takes_bool(cond: Bool) -> Bool:
@@ -149,14 +146,36 @@ def test_float_conversion():
     assert_equal((False).__float__(), 0.0)
 
 
+def test_all():
+    assert_true(all([True, True, True]))
+    assert_false(all({True, False, True}))
+    # empty
+    assert_true(all(List[Int]()))
+
+    fn gt0(x: Int) -> Bool:
+        return x > 0
+
+    var l = [1, 2, 3]
+    assert_true(all(map[gt0](l)))
+    var l2 = [-1, 2, 3]
+    assert_false(all(map[gt0](l2)))
+
+
+def test_any():
+    assert_true(any([True, True, True]))
+    assert_false(any([False, False, False]))
+    assert_false(any({False}))
+    # empty
+    assert_false(any(List[Int]()))
+
+    fn gt0(x: Int) -> Bool:
+        return x > 0
+
+    var l = [1, 2, 3]
+    assert_true(any(map[gt0](l)))
+    var l2 = [-1, -2, -3]
+    assert_false(any(map[gt0](l2)))
+
+
 def main():
-    test_default()
-    test_min_max()
-    test_bool_cast_to_int()
-    test_bool_none()
-    test_convert_from_implicitly_boolable()
-    test_bool_representation()
-    test_bitwise()
-    test_indexer()
-    test_comparisons()
-    test_float_conversion()
+    TestSuite.discover_tests[__functions_in_module()]().run()

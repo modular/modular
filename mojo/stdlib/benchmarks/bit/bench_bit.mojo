@@ -46,11 +46,11 @@ fn next_power_of_two_int_v2(val: Int) -> Int:
 
 
 fn next_power_of_two_int_v3(val: Int) -> Int:
-    var v = Scalar[DType.index](val)
+    var v = Scalar[DType.int](val)
     return Int(
         mlir_value=v.le(1)
         .select(1, 1 << (bit_width_of[Int]() - count_leading_zeros(v - 1)))
-        .__index__()
+        .__mlir_index__()
     )
 
 
@@ -69,11 +69,11 @@ fn next_power_of_two_uint_v1(val: UInt) -> UInt:
 
 
 fn next_power_of_two_uint_v2(val: UInt) -> UInt:
-    var v = Scalar[DType.index](val)
+    var v = Scalar[DType.int](val)
     return UInt(
         mlir_value=v.eq(0)
         .select(1, 1 << (bit_width_of[UInt]() - count_leading_zeros(v - 1)))
-        .__index__()
+        .__mlir_index__()
     )
 
 
@@ -104,7 +104,7 @@ fn _build_list[start: Int, stop: Int]() -> List[Int]:
     return values^
 
 
-alias width = bit_width_of[Int]()
+comptime width = bit_width_of[Int]()
 
 
 @parameter
@@ -168,7 +168,7 @@ def main():
         BenchId("bench_next_power_of_two_uint_v4")
     )
 
-    results = Dict[String, (Float64, Int)]()
+    results = Dict[String, Tuple[Float64, Int]]()
     for info in m.info_vec:
         n = info.name
         time = info.result.mean("ms")

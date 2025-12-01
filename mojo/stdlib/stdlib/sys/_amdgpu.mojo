@@ -16,14 +16,13 @@ from os import Atomic
 from sys.intrinsics import (
     ballot,
     implicitarg_ptr,
-    lane_id,
     readfirstlane,
     sendmsg,
 )
 from time import sleep
 
+from gpu.primitives.id import lane_id
 from memory import Span
-from memory.pointer import _GPUAddressSpace
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM
 # AMD'S `device-libs`.
@@ -36,7 +35,7 @@ from memory.pointer import _GPUAddressSpace
 
 # Matches the ABI of:
 # https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/inc/amd_hsa_signal.h#L50
-alias amd_signal_kind64_t = Int64
+comptime amd_signal_kind64_t = Int64
 
 
 # Must match the ABI of:
@@ -55,9 +54,11 @@ struct amd_signal_t(Copyable, Movable):
 
 
 @always_inline
-fn update_mbox(sig: UnsafePointer[amd_signal_t, **_]):
+fn update_mbox(sig: UnsafePointer[mut=False, amd_signal_t, **_]):
     var mb = UnsafePointer(to=sig[].event_mailbox_ptr).bitcast[
-        UnsafePointer[UInt64, address_space = _GPUAddressSpace.GLOBAL]
+        UnsafePointer[
+            UInt64, MutOrigin.external, address_space = AddressSpace.GLOBAL
+        ]
     ]()[]
     if mb:
         var id = sig[].event_id.cast[DType.uint64]()
@@ -68,7 +69,11 @@ fn update_mbox(sig: UnsafePointer[amd_signal_t, **_]):
 @always_inline
 fn hsa_signal_add(sig: UInt64, value: UInt64):
     var s = UnsafePointer(to=sig).bitcast[
-        UnsafePointer[amd_signal_t, address_space = _GPUAddressSpace.GLOBAL]
+        UnsafePointer[
+            amd_signal_t,
+            MutOrigin.external,
+            address_space = AddressSpace.GLOBAL,
+        ]
     ]()[]
     _ = Atomic.fetch_add(UnsafePointer(to=s[].value), value)
     update_mbox(s)
@@ -82,32 +87,32 @@ fn hsa_signal_add(sig: UInt64, value: UInt64):
 # Matches the values described in:
 # https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/src/services.cl#L21
 struct ServiceId:
-    alias reserved = 0
-    alias function_call = 1
-    alias printf = 2
-    alias fprintf = Self.printf
-    alias devmem = 3
-    alias sanitizer = 4
+    comptime reserved = 0
+    comptime function_call = 1
+    comptime printf = 2
+    comptime fprintf = Self.printf
+    comptime devmem = 3
+    comptime sanitizer = 4
 
 
 # Matches the values described in:
 # https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/src/services.cl#L87
 struct DescriptorOffset:
-    alias flag_begin = 0
-    alias flag_end = 1
-    alias reserved0 = 2
-    alias len = 5
-    alias id = 8
+    comptime flag_begin = 0
+    comptime flag_end = 1
+    comptime reserved0 = 2
+    comptime len = 5
+    comptime id = 8
 
 
 # Matches the values described in:
 # https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/src/services.cl#L95
 struct DescriptorWidth:
-    alias flag_begin = 1
-    alias flag_end = 1
-    alias reserved0 = 3
-    alias len = 3
-    alias id = 56
+    comptime flag_begin = 1
+    comptime flag_end = 1
+    comptime reserved0 = 3
+    comptime len = 3
+    comptime id = 56
 
 
 @always_inline
@@ -149,7 +154,7 @@ fn append_bytes(
     service_id: UInt32,
     msg_desc: UInt64,
     mut data: Span[UInt8],
-) -> (UInt64, UInt64):
+) -> Tuple[UInt64, UInt64]:
     var msg_desc_ = msg_set_len(msg_desc, (len(data) + 7) // 8)
 
     @parameter
@@ -190,7 +195,7 @@ fn append_bytes(
 @no_inline
 fn message_append_bytes(
     service_id: UInt32, msg_desc: UInt64, data: Span[UInt8]
-) -> (UInt64, UInt64):
+) -> Tuple[UInt64, UInt64]:
     """
     Append an array of bytes to a message.
 
@@ -249,7 +254,7 @@ fn message_append_args(
     arg4: UInt64,
     arg5: UInt64,
     arg6: UInt64,
-) -> (UInt64, UInt64):
+) -> Tuple[UInt64, UInt64]:
     """
     Append up to seven ulong values to a message.
 
@@ -300,8 +305,8 @@ fn message_append_args(
 # Matches the values described in:
 # https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/src/services.cl#L243
 struct FprintfCtrl:
-    alias stdout = 0
-    alias stderr = 1
+    comptime stdout = 0
+    comptime stderr = 1
 
 
 @always_inline
@@ -518,7 +523,7 @@ fn printf_append_string_n(
 @register_passable("trivial")
 struct Header(ImplicitlyCopyable, Movable):
     var _handle: UnsafePointer[
-        header_t, address_space = _GPUAddressSpace.GLOBAL
+        header_t, MutOrigin.external, address_space = AddressSpace.GLOBAL
     ]
 
     fn fill_packet(
@@ -554,7 +559,7 @@ struct Header(ImplicitlyCopyable, Movable):
 
     fn get_return_value(
         mut self, payload: Payload, me: UInt32, low: UInt32
-    ) -> (UInt64, UInt64):
+    ) -> Tuple[UInt64, UInt64]:
         """
         Wait for the host response and return the first two ulong
         entries per workitem.
@@ -615,7 +620,7 @@ struct header_t(ImplicitlyCopyable, Movable):
 @fieldwise_init
 @register_passable("trivial")
 struct Payload(ImplicitlyCopyable, Movable):
-    var _handle: UnsafePointer[payload_t]
+    var _handle: UnsafePointer[payload_t, MutOrigin.external]
 
     @always_inline
     fn __setitem__(mut self, idx0: Int, idx1: Int, value: UInt64):
@@ -635,7 +640,7 @@ struct payload_t(Copyable, Movable):
 @register_passable("trivial")
 struct Buffer(ImplicitlyCopyable, Movable):
     var _handle: UnsafePointer[
-        buffer_t, address_space = _GPUAddressSpace.GLOBAL
+        buffer_t, MutOrigin.external, address_space = AddressSpace.GLOBAL
     ]
 
     @always_inline
@@ -650,7 +655,7 @@ struct Buffer(ImplicitlyCopyable, Movable):
             self._handle[].payloads.offset(ptr & self._handle[].index_mask)
         )
 
-    fn pop(mut self, top: UnsafePointer[UInt64, **_]) -> UInt64:
+    fn pop(mut self, top: UnsafePointer[mut=True, UInt64, **_]) -> UInt64:
         var f = Atomic.fetch_add(top, 0)
         # F is guaranteed to be non-zero, since there are at least as
         # many packets as there are waves, and each wave can hold at most
@@ -689,7 +694,7 @@ struct Buffer(ImplicitlyCopyable, Movable):
             | ptr_lo_32.cast[DType.uint64]()
         )
 
-    fn push(mut self, top: UnsafePointer[UInt64, **_], ptr: UInt64):
+    fn push(mut self, top: UnsafePointer[mut=True, UInt64, **_], ptr: UInt64):
         var f = Atomic.fetch_add(top, 0)
         var p = self.get_header(ptr)
         while True:
@@ -728,9 +733,9 @@ struct Buffer(ImplicitlyCopyable, Movable):
 @register_passable("trivial")
 struct buffer_t(Copyable, Movable):
     var headers: UnsafePointer[
-        header_t, address_space = _GPUAddressSpace.GLOBAL
+        header_t, MutOrigin.external, address_space = AddressSpace.GLOBAL
     ]
-    var payloads: UnsafePointer[payload_t]
+    var payloads: UnsafePointer[payload_t, MutOrigin.external]
     var doorbell: UInt64
     var free_stack: UInt64
     var ready_stack: UInt64
@@ -741,8 +746,8 @@ struct buffer_t(Copyable, Movable):
 @register_passable("trivial")
 struct ControlOffset(ImplicitlyCopyable, Movable):
     var value: UInt32
-    alias ready_flag = Self(0)
-    alias reserved0 = Self(1)
+    comptime ready_flag = Self(0)
+    comptime reserved0 = Self(1)
 
     @always_inline
     fn __ne__(self, rhs: Self) -> Bool:
@@ -757,8 +762,8 @@ struct ControlOffset(ImplicitlyCopyable, Movable):
 @register_passable("trivial")
 struct ControlWidth(ImplicitlyCopyable, Movable):
     var value: UInt32
-    alias ready_flag = Self(1)
-    alias reserved0 = Self(31)
+    comptime ready_flag = Self(1)
+    comptime reserved0 = Self(31)
 
     @always_inline
     fn __ne__(self, rhs: Self) -> Bool:
@@ -834,7 +839,7 @@ fn hostcall(
     arg5: UInt64,
     arg6: UInt64,
     arg7: UInt64,
-) -> (UInt64, UInt64):
+) -> Tuple[UInt64, UInt64]:
     """
     Submit a wave-wide hostcall packet.
 
@@ -870,7 +875,11 @@ fn hostcall(
     var buffer = Buffer(
         implicitarg_ptr()
         .bitcast[
-            UnsafePointer[buffer_t, address_space = _GPUAddressSpace.GLOBAL]
+            UnsafePointer[
+                buffer_t,
+                MutOrigin.external,
+                address_space = AddressSpace.GLOBAL,
+            ]
         ]()
         .offset(10)[]
     )

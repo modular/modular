@@ -17,13 +17,13 @@ from sys import simd_width_of
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId
 from bit import count_trailing_zeros
-from memory import memcmp, pack_bits
+from memory import LegacyUnsafePointer as UnsafePointer, memcmp, pack_bits
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data
 # ===-----------------------------------------------------------------------===#
 
-alias haystack = """Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer sed dictum est, et finibus ipsum. Orci varius natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Nam tincidunt vel lacus vitae pulvinar. Donec ac ligula elementum, mollis purus a, lacinia quam. Maecenas vulputate mauris quis sem euismod sollicitudin. Proin accumsan nulla vel nisl congue varius. Morbi a erat dui. Aliquam maximus interdum orci, vitae pretium lorem bibendum non. Vestibulum eu lacus ullamcorper, egestas dui vel, pharetra ipsum. Pellentesque sagittis, urna a tincidunt sodales, leo sem placerat eros, vitae molestie felis diam at dolor.
+comptime haystack = """Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer sed dictum est, et finibus ipsum. Orci varius natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Nam tincidunt vel lacus vitae pulvinar. Donec ac ligula elementum, mollis purus a, lacinia quam. Maecenas vulputate mauris quis sem euismod sollicitudin. Proin accumsan nulla vel nisl congue varius. Morbi a erat dui. Aliquam maximus interdum orci, vitae pretium lorem bibendum non. Vestibulum eu lacus ullamcorper, egestas dui vel, pharetra ipsum. Pellentesque sagittis, urna a tincidunt sodales, leo sem placerat eros, vitae molestie felis diam at dolor.
 
 Donec viverra sem sit amet facilisis laoreet. Morbi semper convallis nisi, vitae congue velit tincidunt vel. Fusce ultrices, libero vel venenatis placerat, justo tellus porttitor massa, at volutpat tortor nunc id dui. Morbi eu ex quis odio porttitor ultricies vel eget massa. Aenean quis luctus nulla. Fusce sit amet leo at quam hendrerit mattis. Morbi sed quam nisl. Quisque purus enim, iaculis sed laoreet vel, pellentesque ut orci. Vivamus risus orci, varius eu pharetra quis, tincidunt non enim. Suspendisse bibendum lacus ex, quis blandit lectus malesuada a. Maecenas iaculis porta lacus, sit amet tristique ante scelerisque non. Proin auctor elit in lacus dictum egestas. Pellentesque tincidunt justo sed vehicula blandit. Pellentesque vehicula facilisis tellus in viverra.
 
@@ -137,7 +137,7 @@ Fusce sit amet suscipit justo. Nam placerat eu orci nec lacinia. Etiam sollicitu
 
 Curabitur auctor volutpat diam vitae vehicula. Vivamus est arcu, efficitur nec interdum et, sagittis quis sem. Nam sodales vitae velit id pharetra. Mauris malesuada est quis nisi mattis, in facilisis lacus tempor. Integer cursus, risus sed molestie sollicitudin, nisi purus mattis justo, eget egestas tellus nisi mollis elit. Aenean sollicitudin justo luctus."""
 
-alias needle = "school"  # a word intentionally not in the test data
+comptime needle = "school"  # a word intentionally not in the test data
 
 
 # ===-----------------------------------------------------------------------===#
@@ -158,13 +158,13 @@ fn _memmem_baseline[
         return UnsafePointer[Scalar[dtype]]()
     if needle_len == 1:
         return _memchr(
-            Span[Scalar[dtype], ImmutableAnyOrigin](
-                ptr=haystack.origin_cast[mut=False](), length=UInt(haystack_len)
+            Span[Scalar[dtype], ImmutAnyOrigin](
+                ptr=haystack.as_immutable(), length=haystack_len
             ),
             needle[0],
         )
 
-    alias bool_mask_width = simd_width_of[DType.bool]()
+    comptime bool_mask_width = simd_width_of[DType.bool]()
     var first_needle = SIMD[dtype, bool_mask_width](needle[0])
     var vectorized_end = align_down(
         haystack_len - needle_len + 1, bool_mask_width

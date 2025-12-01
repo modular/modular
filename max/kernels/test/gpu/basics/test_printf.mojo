@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from io.io import _printf
+
 from gpu.host import DeviceContext
 
 
@@ -32,7 +33,7 @@ fn test_gpu_printf() raises:
         ](0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
 
     with DeviceContext() as ctx:
-        alias kernel = do_print
+        comptime kernel = do_print
         ctx.enqueue_function_checked[kernel, kernel](
             Int(98), Float64(123.456), grid_dim=1, block_dim=1
         )
@@ -40,5 +41,5 @@ fn test_gpu_printf() raises:
         ctx.synchronize()
 
 
-fn main() raises:
+def main():
     test_gpu_printf()

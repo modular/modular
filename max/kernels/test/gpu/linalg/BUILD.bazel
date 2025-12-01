@@ -7,6 +7,7 @@ _EXTRA_CONSTRAINTS = {
     "test_gemm_kernel.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_gemv2.mojo": select({
         "//:h100_gpu": ["@platforms//:incompatible"],
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: PRDT-506
         "//conditions:default": [],
     }),
     "test_gemv_bf16.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
@@ -21,22 +22,17 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_matmul_amd.mojo": ["//:amd_gpu"],  # TODO: Disabled FIXME: KERN-1377
+    "test_structured_kernel_components.mojo": ["//:amd_gpu"],
     "test_matmul_selection_heuristic.mojo": ["//:a100_gpu"],
     "test_matmul_sm90_epilogue.mojo": ["//:h100_gpu"],
     "test_stream_k.mojo": ["//:nvidia_gpu"],
-    "test_tma_mma_sm100.mojo": ["//:b200_gpu"],
-    "test_tma_pair_mma_sm100.mojo": ["//:b200_gpu"],
-    "test_matmul_sm100_fallback.mojo": ["//:b200_gpu"],
-    "test_matmul_sm100_composable.mojo": ["//:b200_gpu"],
-    "test_matmul_sm100_blockwise_fp8.mojo": ["//:b200_gpu"],
-    "test_matmul_sm100_warp_specialized_blockwise_fp8.mojo": ["//:b200_gpu"],
-    "test_grouped_matmul_sm100_blockwise_fp8.mojo": ["//:b200_gpu"],
-    "test_batched_matmul_sm100_scaled.mojo": ["//:b200_gpu"],
-    "test_matmul_sm100_epilogue.mojo": ["//:b200_gpu"],
-    "test_matmul_sm100.mojo": ["//:b200_gpu"],
     "test_matmul_tile_scheduler_sm100.mojo": ["//:b200_gpu"],
+    "_test_tma.mojo": [
+        "//:b200_gpu",
+        "//:h100_gpu",
+    ],
     "test_tma_wgmma.mojo": ["//:h100_gpu"],
-    "test_tma_wgmma_with_multicast.mojo": ["//:h100_gpu"],
+    "test_tma_wgmma_with_multicast.mojo": ["@platforms//:incompatible"],  # FIXME: KERN-2060
     "test_vendor_blas.mojo": [
         "//:nvidia_gpu",
         "//:has_multi_gpu",
@@ -47,13 +43,91 @@ _EXTRA_CONSTRAINTS = {
     "test_matmul_sm90_bf16.mojo": ["//:h100_gpu"],
     "test_matmul_sm90_deepseek_scheduler.mojo": ["//:h100_gpu"],
     "test_sm90_splitk.mojo": ["//:h100_gpu"],
+    "test_multistage_gemm_kernel.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: long running on MacOS
+    "test_linalg_matmul_gpu.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2366
+    "test_gemv.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2397
+    "test_grouped_matmul_vendor.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: PRDT-506
+    "test_overlap_matmul_allreduce.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: PRDT-506
+    "test_batched_matmul.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: PRDT-506
+    "test_matmul_custom.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: PRDT-506
+    "test_matmul.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: PRDT-506
+    "test_matmul_tile_scheduler.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2405
+    "test_grouped_matmul_tile_scheduler.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "test_naive_blockwise_fp8_matmul.mojo": select({
+        "//:h100_gpu": ["//:h100_gpu"],
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_cublaslt_scaled_mxfp8_matmul.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_cublaslt_scaled_nvfp4_matmul.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 }
 
 _FILECHECK_TESTS = [
     "test_block_swizzle.mojo",
     "test_matmul_selection_heuristic.mojo",
     "test_matmul_tile_scheduler.mojo",
-    "test_gemv.mojo",  # TODO: Remove filecheck usage
+    "test_matmul_tile_scheduler_sm100.mojo",
+    "test_grouped_matmul_tile_scheduler.mojo",
+]
+
+_ASM_CHECK_TESTS = [
+    "test_matmul_sm100_ptx.mojo",
+]
+
+_B200_TESTS = [
+    "test_tma_mma_sm100.mojo",
+    "test_tma_pair_mma_sm100.mojo",
+    "test_matmul_sm100_fallback.mojo",
+    "test_matmul_sm100_composable.mojo",
+    "test_matmul_sm100_blockwise_fp8.mojo",
+    "test_grouped_matmul_dynamic_scaled_fp8.mojo",
+    "test_matmul_sm100_1sm_blockwise_fp8.mojo",
+    "test_matmul_sm100_2sm_blockwise_fp8.mojo",
+    "test_grouped_matmul_sm100_blockwise_fp8.mojo",
+    "test_batched_matmul_sm100_scaled.mojo",
+    "test_matmul_sm100_epilogue.mojo",
+    "test_matmul_sm100_swapAB_epilogue.mojo",
+    "test_matmul_sm100_2sm_bf16.mojo",
+    "test_matmul_sm100_1sm_bf16.mojo",
+    "test_matmul_sm100_2sm_fp8.mojo",
+    "test_matmul_sm100_1sm_fp8.mojo",
+    "test_matmul_sm100_splitk_2sm_bf16.mojo",
 ]
 
 _GPU_MEMORY = {
@@ -70,8 +144,10 @@ _GPU_MEMORY = {
     "test_sm90_splitk.mojo": "1.5",
     "test_vendor_blas.mojo": "3",
     "test_warp_specialization_gemm_with_cluster.mojo": "2",
-    "test_matmul_sm100.mojo": "3",
+    "test_matmul_sm100_bf16.mojo": "3",
+    "test_matmul_sm100_fp8.mojo": "3",
     "test_matmul_sm100_epilogue.mojo": "3",
+    "test_overlap_matmul_allreduce.mojo": "1.5",
 }
 
 [
@@ -85,12 +161,55 @@ _GPU_MEMORY = {
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:internal_utils",
-            "@mojo//:linalg",
+            "//max:internal_utils",
+            "//max:linalg",
             "@mojo//:stdlib",
         ],
     )
     for src in _FILECHECK_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [src],
+        data = ["//max/kernels/test/testdata:ptx_files"],
+        enable_assertions = False,  # PTX comparison assertions disabled
+        deps = [
+            "//max:linalg",
+            "//max:testdata",
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _ASM_CHECK_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [src],
+        exec_properties = {
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
+        },
+        tags = [
+            "b200",
+            "gpu",
+        ],
+        target_compatible_with = [
+            "//:has_gpu",
+            "//:b200_gpu",
+        ],
+        deps = [
+            "//max:internal_utils",
+            "//max:linalg",
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _B200_TESTS
 ]
 
 [
@@ -110,15 +229,15 @@ _GPU_MEMORY = {
         ),
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:internal_utils",
-            "@mojo//:linalg",
+            "//max:internal_utils",
+            "//max:linalg",
             "@mojo//:stdlib",
             "@mojo//:test_utils",
         ],
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _FILECHECK_TESTS,
+        exclude = _FILECHECK_TESTS + _ASM_CHECK_TESTS + _B200_TESTS,
     )
 ]
 

@@ -26,14 +26,30 @@ underlying GPU architecture.
 """
 
 from collections.string.string_slice import get_static_string
+from memory import LegacyUnsafePointer as UnsafePointer
 from os.atomic import Consistency
-from sys import is_amd_gpu, is_gpu, is_nvidia_gpu, size_of
+from sys import (
+    is_amd_gpu,
+    is_gpu,
+    is_nvidia_gpu,
+    is_apple_gpu,
+    size_of,
+    _RegisterPackType,
+    external_call,
+)
 from sys._assembly import inlined_assembly
-from sys.info import _is_sm_9x, align_of, bit_width_of, CompilationTarget
+from sys.info import (
+    CompilationTarget,
+    _is_sm_9x_or_newer,
+    align_of,
+    bit_width_of,
+    _cdna_4_or_newer,
+)
 from sys.intrinsics import llvm_intrinsic, readfirstlane
+
 from memory.unsafe import bitcast
 
-from .memory import AddressSpace, CacheOperation, _int_to_str
+from .memory.memory import CacheOperation, _int_to_str
 
 # ===-----------------------------------------------------------------------===#
 # ldg
@@ -110,7 +126,7 @@ fn warpgroup_reg_alloc[count: Int]():
     ]()
 
     @parameter
-    if _is_sm_9x():
+    if _is_sm_9x_or_newer():
         inlined_assembly[
             "setmaxnreg.inc.sync.aligned.u32 $0;",
             NoneType,
@@ -147,7 +163,7 @@ fn warpgroup_reg_dealloc[count: Int]():
     ]()
 
     @parameter
-    if _is_sm_9x():
+    if _is_sm_9x_or_newer():
         inlined_assembly[
             "setmaxnreg.dec.sync.aligned.u32 $0;",
             NoneType,
@@ -227,7 +243,7 @@ fn byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
         - On NVIDIA: Maps to PRMT instruction
         - On AMD: Maps to PERM instruction.
     """
-    alias asm = _byte_permute_inst()
+    comptime asm = _byte_permute_inst()
 
     return llvm_intrinsic[asm, UInt32, has_side_effect=False](a, b, c)
 
@@ -470,9 +486,7 @@ fn get_ib_sts() -> Int32:
 
 
 @fieldwise_init
-struct Scope(
-    EqualityComparable, Identifiable, ImplicitlyCopyable, Movable, Writable
-):
+struct Scope(Equatable, Identifiable, ImplicitlyCopyable, Movable, Writable):
     """Represents memory synchronization scope levels for GPU memory operations.
 
     Defines different scopes of memory visibility and synchronization, from
@@ -485,25 +499,25 @@ struct Scope(
 
     var _value: Int
 
-    alias NONE = Self(0)
+    comptime NONE = Self(0)
     """No memory ordering guarantees. Operations may be reordered freely."""
 
-    alias THREAD = Self(1)
+    comptime THREAD = Self(1)
     """Thread-level scope. Memory operations are ordered within a single thread."""
 
-    alias WARP = Self(2)
+    comptime WARP = Self(2)
     """Warp-level scope. Memory operations are ordered within a warp of threads."""
 
-    alias BLOCK = Self(3)
+    comptime BLOCK = Self(3)
     """Block-level scope. Memory operations ordered within a thread block/CTA."""
 
-    alias CLUSTER = Self(4)
+    comptime CLUSTER = Self(4)
     """Cluster-level scope. Memory operations ordered within a thread block cluster."""
 
-    alias GPU = Self(5)
+    comptime GPU = Self(5)
     """GPU-level scope. Memory operations are ordered across all threads on the GPU."""
 
-    alias SYSTEM = Self(6)
+    comptime SYSTEM = Self(6)
     """System-wide scope. Memory operations ordered across the entire system."""
 
     fn __eq__(self, other: Self) -> Bool:
@@ -621,7 +635,11 @@ fn threadfence[scope: Scope = Scope.GPU]():
         scope in (Scope.GPU, Scope.BLOCK, Scope.SYSTEM),
         "invalid threadfence scope",
     ]()
-    alias suffix = "gl" if scope is Scope.GPU else scope.mnemonic()
+    constrained[
+        is_nvidia_gpu(), "threadfence is only implemented on NVIDIA GPUs"
+    ]()
+
+    comptime suffix = "gl" if scope is Scope.GPU else scope.mnemonic()
     llvm_intrinsic["llvm.nvvm.membar." + suffix, NoneType]()
 
 
@@ -631,17 +649,37 @@ fn threadfence[scope: Scope = Scope.GPU]():
 
 
 fn _get_type_suffix[dtype: DType]() -> StaticString:
-    alias str = get_static_string["u", _int_to_str[bit_width_of[dtype]()]()]()
+    comptime str = get_static_string[
+        "u", _int_to_str[bit_width_of[dtype]()]()
+    ]()
     return str
 
 
-fn _get_register_constraint[dtype: DType]() -> StaticString:
+fn _get_air_atomic_suffix[dtype: DType]() -> StaticString:
+    @parameter
+    if dtype is DType.float32:
+        return "f32"
+    elif dtype in (DType.int32, DType.uint32):
+        return "i32"
+    else:
+        constrained[False, "unsupported dtype for air atomic intrinsics"]()
+        return ""
+
+
+fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
+    constrained[
+        is_nvidia_gpu(),
+        (
+            "the _get_nvtx_register_constraint function is currently restricted"
+            " to only be defined on NVIDIA GPUs"
+        ),
+    ]()
     if dtype is DType.bool:
         return "b"
     if dtype.is_half_float():
         return "h"
     if dtype.is_integral():
-        alias width = bit_width_of[dtype]()
+        comptime width = bit_width_of[dtype]()
         if width == 16:
             return "c"
         if width == 32:
@@ -656,13 +694,50 @@ fn _get_register_constraint[dtype: DType]() -> StaticString:
     return "<<unknown_register_constraint>>"
 
 
-fn _get_pointer_constraint() -> StaticString:
-    return _get_register_constraint[DType.index]()
+fn _get_nvtx_pointer_constraint() -> StaticString:
+    constrained[
+        is_nvidia_gpu(),
+        (
+            "the _get_nvtx_pointer_constraint function is currently restricted"
+            " to only be defined on NVIDIA GPUs"
+        ),
+    ]()
+    return _get_nvtx_register_constraint[DType.int]()
+
+
+struct _AirMemFlags:
+    """AIR memory domain flags used by Apple/Metal intrinsics.
+    These values select **which address space's visibility** a fence operates on.
+    """
+
+    comptime Device = Int32(1)
+    comptime ThreadGroup = Int32(2)
+
+
+struct _AirScope:
+    """AIR synchronization scope for ordering and visibility.
+    The scope determines **which set of threads** participates in the ordering
+    established by a fence or an atomic op with scope.
+    """
+
+    comptime Workgroup = Int32(1)
+    comptime Device = Int32(2)
+    comptime SIMDGroup = Int32(4)
+
+
+struct _AirMemOrder:
+    """AIR memory ordering semantics for atomic operations and fences."""
+
+    comptime Relaxed = Int32(0)
+    comptime SeqCst = Int32(5)
 
 
 @always_inline
 fn store_release[
-    dtype: DType, //, scope: Scope = Scope.SYSTEM, memory: Bool = True
+    dtype: DType, //,
+    scope: Scope = Scope.SYSTEM,
+    memory: Bool = True,
+    alignment: Int = align_of[Scalar[dtype]](),
 ](ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]):
     """Performs an atomic store with release memory ordering semantics.
 
@@ -673,6 +748,7 @@ fn store_release[
         dtype: The data type to store.
         scope: Memory scope for the operation (default: Scope.SYSTEM).
         memory: Whether to include memory side effects in constraints (default: True).
+        alignment: The alignment of the data.
 
     Args:
         ptr: Pointer to the memory location to store to.
@@ -689,11 +765,11 @@ fn store_release[
 
     @parameter
     if is_nvidia_gpu():
-        alias mem_constraint = StaticString(",~{memory}") if memory else ""
-        alias constraints = _get_register_constraint[
+        comptime mem_constraint = StaticString(",~{memory}") if memory else ""
+        comptime constraints = _get_nvtx_register_constraint[
             dtype
-        ]() + "," + _get_pointer_constraint() + mem_constraint
-        alias scope_str = scope.mnemonic()
+        ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
+        comptime scope_str = scope.mnemonic()
         inlined_assembly[
             "st.release."
             + ((scope_str + ".") if scope_str else "")
@@ -705,9 +781,29 @@ fn store_release[
         ](value, ptr)
     elif is_amd_gpu():
         __mlir_op.`pop.store`[
-            alignment = ptr.alignment._mlir_value,
+            alignment = alignment._mlir_value,
             ordering = Consistency.RELEASE.__mlir_attr(),
         ](value, ptr.address)
+    elif is_apple_gpu():
+        comptime mem_flags = _AirMemFlags.ThreadGroup if ptr.address_space == AddressSpace.SHARED else _AirMemFlags.Device
+        comptime air_scope = _AirScope.Workgroup if scope is Scope.BLOCK else _AirScope.Device
+        external_call["air.atomic.fence", NoneType](
+            mem_flags,
+            _AirMemOrder.SeqCst,
+            air_scope,
+        )
+        comptime addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GENERIC else ptr.address_space
+        comptime store_intrin_base = "air.atomic.local.store" if addr_space == AddressSpace.SHARED else "air.atomic.global.store"
+        comptime store_intrin = store_intrin_base + "." + _get_air_atomic_suffix[
+            dtype
+        ]()
+        external_call[store_intrin, NoneType,](
+            ptr.address_space_cast[addr_space](),
+            value,
+            _AirMemOrder.Relaxed,
+            air_scope,
+            True,
+        )
     else:
         return CompilationTarget.unsupported_target_error[
             operation="store_release"
@@ -715,8 +811,63 @@ fn store_release[
 
 
 @always_inline
+fn store_relaxed[
+    dtype: DType, //,
+    *,
+    scope: Scope = Scope.SYSTEM,
+    memory: Bool = True,
+    alignment: Int = align_of[Scalar[dtype]](),
+](ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]):
+    """Performs an atomic store with relaxed memory ordering semantics.
+
+    On NVIDIA, maps to PTX st.relaxed; on AMD, maps to POP atomic store with MONOTONIC ordering.
+
+    Parameters:
+        dtype: Data type of the value to store.
+        scope: Memory scope for the atomic operation.
+        memory: Whether to add memory clobber constraint.
+        alignment: Alignment requirement for the pointer.
+
+    Args:
+        ptr: Pointer to the memory location.
+        value: Value to store.
+    """
+    constrained[is_gpu(), "atomic store only supported on GPU"]()
+
+    @parameter
+    if is_nvidia_gpu():
+        comptime mem_constraint = StaticString(",~{memory}") if memory else ""
+        comptime constraints = _get_nvtx_register_constraint[
+            dtype
+        ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
+        comptime scope_str = scope.mnemonic()
+        inlined_assembly[
+            "st.relaxed."
+            + ((scope_str + ".") if scope_str else "")
+            + "global."
+            + _get_type_suffix[dtype]()
+            + " [$1], $0;",
+            NoneType,
+            constraints=constraints,
+        ](value, ptr)
+    elif is_amd_gpu():
+        __mlir_op.`pop.store`[
+            alignment = alignment._mlir_value,
+            ordering = Consistency.MONOTONIC.__mlir_attr(),
+        ](value, ptr.address)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            operation="store_relaxed"
+        ]()
+
+
+@always_inline
 fn load_acquire[
-    dtype: DType, //, *, scope: Scope = Scope.SYSTEM, memory: Bool = True
+    dtype: DType, //,
+    *,
+    scope: Scope = Scope.SYSTEM,
+    memory: Bool = True,
+    alignment: Int = align_of[Scalar[dtype]](),
 ](ptr: UnsafePointer[Scalar[dtype], **_]) -> Scalar[dtype]:
     """Performs an atomic load operation with acquire memory ordering semantics.
 
@@ -727,6 +878,7 @@ fn load_acquire[
         dtype: The data type to load.
         scope: Memory scope for the operation (default: Scope.SYSTEM).
         memory: Whether to include memory side effects in constraints (default: True).
+        alignment: The alignment of the pointer.
 
     Args:
         ptr: Pointer to the memory location to load from.
@@ -745,11 +897,11 @@ fn load_acquire[
 
     @parameter
     if is_nvidia_gpu():
-        alias mem_constraint = StaticString(",~{memory}") if memory else ""
-        alias constraints = "=" + _get_register_constraint[
+        comptime mem_constraint = StaticString(",~{memory}") if memory else ""
+        comptime constraints = "=" + _get_nvtx_register_constraint[
             dtype
-        ]() + "," + _get_pointer_constraint() + mem_constraint
-        alias scope_str = scope.mnemonic()
+        ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
+        comptime scope_str = scope.mnemonic()
         return inlined_assembly[
             "ld.acquire."
             + ((scope_str + ".") if scope_str else "")
@@ -761,13 +913,87 @@ fn load_acquire[
         ](ptr.address_space_cast[AddressSpace.GENERIC]())
     elif is_amd_gpu():
         return __mlir_op.`pop.load`[
-            alignment = ptr.alignment._mlir_value,
+            alignment = alignment._mlir_value,
             ordering = Consistency.ACQUIRE.__mlir_attr(),
         ](ptr.address)
+    elif is_apple_gpu():
+        comptime addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GENERIC else ptr.address_space
+        comptime mem_flags = _AirMemFlags.ThreadGroup if addr_space == AddressSpace.SHARED else _AirMemFlags.Device
+        comptime air_scope = _AirScope.Workgroup if scope is Scope.BLOCK else _AirScope.Device
+        comptime load_intrin_base = "air.atomic.local.load" if addr_space == AddressSpace.SHARED else "air.atomic.global.load"
+        comptime load_intrin = load_intrin_base + "." + _get_air_atomic_suffix[
+            dtype
+        ]()
+        var value = external_call[load_intrin, Scalar[dtype],](
+            ptr.address_space_cast[addr_space](),
+            _AirMemOrder.Relaxed,
+            air_scope,
+            True,
+        )
+        external_call["air.atomic.fence", NoneType](
+            mem_flags,
+            _AirMemOrder.SeqCst,
+            air_scope,
+        )
+        return value
     else:
         return CompilationTarget.unsupported_target_error[
             Scalar[dtype],
             operation="load_acquire",
+        ]()
+
+
+@always_inline
+fn load_relaxed[
+    dtype: DType, //,
+    *,
+    scope: Scope = Scope.SYSTEM,
+    memory: Bool = True,
+    alignment: Int = align_of[Scalar[dtype]](),
+](ptr: UnsafePointer[Scalar[dtype], **_]) -> Scalar[dtype]:
+    """Performs an atomic load with relaxed memory ordering semantics.
+
+    On NVIDIA, maps to PTX ld.relaxed; on AMD, maps to POP atomic load with MONOTONIC ordering.
+
+    Parameters:
+        dtype: Data type of the value to load.
+        scope: Memory scope for the atomic operation.
+        memory: Whether to add memory clobber constraint.
+        alignment: Alignment requirement for the pointer.
+
+    Args:
+        ptr: Pointer to the memory location.
+
+    Returns:
+        The loaded value.
+    """
+    constrained[is_gpu(), "atomic load only supported on GPU"]()
+
+    @parameter
+    if is_nvidia_gpu():
+        comptime mem_constraint = StaticString(",~{memory}") if memory else ""
+        comptime constraints = "=" + _get_nvtx_register_constraint[
+            dtype
+        ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
+        comptime scope_str = scope.mnemonic()
+        return inlined_assembly[
+            "ld.relaxed."
+            + ((scope_str + ".") if scope_str else "")
+            + "global."
+            + _get_type_suffix[dtype]()
+            + " $0, [$1];",
+            Scalar[dtype],
+            constraints=constraints,
+        ](ptr.address_space_cast[AddressSpace.GENERIC]())
+    elif is_amd_gpu():
+        return __mlir_op.`pop.load`[
+            alignment = alignment._mlir_value,
+            ordering = Consistency.MONOTONIC.__mlir_attr(),
+        ](ptr.address)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            Scalar[dtype],
+            operation="load_relaxed",
         ]()
 
 
@@ -798,10 +1024,10 @@ fn store_volatile[
     constrained[
         is_nvidia_gpu(), "store_volatile is not currently supported on AMD GPUs"
     ]()
-    alias mem_constraint = StaticString(",~{memory}") if memory else ""
-    alias constraints = _get_register_constraint[
+    comptime mem_constraint = StaticString(",~{memory}") if memory else ""
+    comptime constraints = _get_nvtx_register_constraint[
         dtype
-    ]() + "," + _get_pointer_constraint() + mem_constraint
+    ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
     inlined_assembly[
         "st.volatile.global." + _get_type_suffix[dtype]() + " [$1], $0;",
         NoneType,
@@ -838,10 +1064,10 @@ fn load_volatile[
     constrained[
         is_nvidia_gpu(), "load_volatile is not currently supported on AMD GPUs"
     ]()
-    alias mem_constraint = StaticString(",~{memory}") if memory else ""
-    alias constraints = "=" + _get_register_constraint[
+    comptime mem_constraint = StaticString(",~{memory}") if memory else ""
+    comptime constraints = "=" + _get_nvtx_register_constraint[
         dtype
-    ]() + "," + _get_pointer_constraint() + mem_constraint
+    ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
     return inlined_assembly[
         "ld.volatile.global." + _get_type_suffix[dtype]() + " $0, [$1];",
         Scalar[dtype],
@@ -849,81 +1075,241 @@ fn load_volatile[
     ](ptr.address_space_cast[AddressSpace.GENERIC]())
 
 
-alias _buffer_resource = SIMD[DType.uint32, 4]
-"""128-bit descriptor for a buffer resource on AMD GPUs. Used for
-buffer_load/buffer_store instructions."""
+@register_passable("trivial")
+struct AMDBufferResource:
+    """128-bit descriptor for a buffer resource on AMD GPUs.
 
-
-@always_inline
-fn make_buffer_resource[
-    dtype: DType
-](
-    gds_ptr: UnsafePointer[Scalar[dtype], **_],
-    num_records: Int = Int(UInt32.MAX),
-) -> _buffer_resource:
-    """Creates a 128-bit buffer resource descriptor for AMD GPU buffer operations.
-
-    This function constructs a 128-bit buffer resource descriptor used by AMD GPUs
-    for buffer load/store operations. The descriptor contains information about
-    the memory location, size, and access properties needed by the hardware to
-    perform memory operations.
-
-    Parameters:
-        dtype: The data type of elements in the buffer.
-
-    Args:
-        gds_ptr: Global memory base address pointer to the start of the buffer.
-        num_records: Maximum number of records that can be accessed through this
-            resource descriptor. Reads with offsets beyond this value return 0.
-            Defaults to UInt32.MAX for maximum possible range.
-
-    Returns:
-        A 128-bit buffer resource descriptor as a SIMD[DType.uint32, 4].
-
-    Notes:
-
-        - Only supported on AMD GPUs.
-        - The descriptor follows AMD's hardware-specific format:
-          - Bits 0-63: Base address
-          - Bits 64-95: Number of records (size)
-          - Bits 96-127: Flags controlling access properties
-        - Used with buffer_load and buffer_store operations.
-        - Performance-critical for optimized memory access patterns on AMD GPUs.
-
-    Example:
-
-        ```mojo
-        from gpu.intrinsics import make_buffer_resource
-
-        var ptr = UnsafePointer[Scalar[DType.float32]].alloc(1024)
-        var resource = make_buffer_resource[DType.float32](ptr, 1024)
-        # Use resource with buffer_load/buffer_store operations
-        ```
+    Used for buffer_load/buffer_store instructions.
     """
 
-    constrained[
-        is_amd_gpu(),
-        (
-            "The make_buffer_resource function is only applicable on AMDGPU"
-            " hardware."
-        ),
-    ]()
+    var desc: SIMD[DType.uint32, 4]
+    """The 128-bit buffer descriptor encoded as four 32-bit values."""
 
-    # https://discourse.llvm.org/t/representing-buffer-descriptors-in-the-amdgpu-target-call-for-suggestions/68798/1
-    # llvm.amdgcn.make.buffer.rsrc intrinsic, which takes the pointer, which becomes the base of the resource,
-    # the 16-bit stride (and swzizzle control) field stored in bits 63:48 of a V#,
-    # the 32-bit NumRecords/extent field (bits 95:64),
-    # and the 32-bit flags field (bits 127:96).
+    @always_inline("nodebug")
+    fn __init__[
+        dtype: DType
+    ](
+        out self,
+        gds_ptr: UnsafePointer[Scalar[dtype], **_],
+        num_records: Int = Int(UInt32.MAX),
+    ):
+        """Constructs an AMD buffer resource descriptor.
 
-    var resource_constant = SIMD[DType.uint32, 4](0)
-    var address = bitcast[DType.uint32, 2](SIMD[DType.uint64, 1](Int(gds_ptr)))
-    resource_constant[0] = address[0]
-    # assuming 0 stride currently
-    resource_constant[1] = address[1]
-    resource_constant[2] = size_of[dtype]() * num_records
-    # https://github.com/ROCm/composable_kernel/blob/3b2302081eab4975370e29752343058392578bcb/include/ck/ck.hpp#L84
-    resource_constant[3] = 0x00020000
-    return resource_constant
+        Parameters:
+            dtype: Data type of the buffer elements.
+
+        Args:
+            gds_ptr: Pointer to the buffer in global memory.
+            num_records: Number of records in the buffer.
+        """
+        constrained[
+            is_amd_gpu(),
+            (
+                "The AMDBufferResource struct is only applicable on AMDGPU"
+                " hardware."
+            ),
+        ]()
+
+        self.desc = SIMD[DType.uint32, 4](0)
+        var address = bitcast[DType.uint32, 2](UInt64(Int(gds_ptr)))
+        self.desc[0] = address[0]
+        # assuming 0 stride currently
+        self.desc[1] = address[1]
+        self.desc[2] = size_of[dtype]() * num_records
+        # https://github.com/ROCm/composable_kernel/blob/3b2302081eab4975370e29752343058392578bcb/include/ck/ck.hpp#L84
+        self.desc[3] = 0x00020000
+
+    @always_inline("nodebug")
+    fn __init__(out self):
+        """Constructs a zeroed AMD buffer resource descriptor."""
+        constrained[
+            is_amd_gpu(),
+            (
+                "The AMDBufferResource struct is only applicable on AMDGPU"
+                " hardware."
+            ),
+        ]()
+        self.desc = 0
+
+    @always_inline("nodebug")
+    fn get_base_ptr(self) -> Int:
+        """Gets the base pointer address from the buffer resource descriptor.
+
+        Returns:
+            The base pointer address as an integer.
+        """
+        return Int(
+            bitcast[DType.int64, 1](
+                SIMD[DType.uint32, 2](self.desc[0], self.desc[1])
+            )
+        )
+
+    @always_inline("nodebug")
+    fn load[
+        dtype: DType,
+        width: Int,
+        *,
+        cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    ](
+        self,
+        vector_offset: Int32,
+        *,
+        scalar_offset: Int32 = 0,
+    ) -> SIMD[
+        dtype, width
+    ]:
+        """Loads data from the buffer using AMD buffer load intrinsic.
+
+        Parameters:
+            dtype: Data type to load.
+            width: Number of elements to load.
+            cache_policy: Cache operation policy.
+
+        Args:
+            vector_offset: Offset in elements from the base pointer.
+            scalar_offset: Additional scalar offset in elements.
+
+        Returns:
+            SIMD vector containing the loaded data.
+        """
+        constrained[
+            is_amd_gpu(),
+            "The buffer_load function is only applicable on AMDGPU hardware.",
+        ]()
+
+        comptime bytes = size_of[dtype]() * width
+        comptime aux = _cache_operation_to_amd_aux[cache_policy]()
+
+        var vector_offset_bytes = vector_offset * size_of[dtype]()
+        var scalar_offset_bytes = scalar_offset * size_of[dtype]()
+
+        var load_val = llvm_intrinsic[
+            "llvm.amdgcn.raw.buffer.load",
+            SIMD[
+                _get_buffer_intrinsic_simd_dtype[bytes](),
+                _get_buffer_intrinsic_simd_width[bytes](),
+            ],
+            has_side_effect=False,
+        ](self.desc, vector_offset_bytes, scalar_offset_bytes, aux)
+
+        return bitcast[dtype, width](load_val)
+
+    @always_inline("nodebug")
+    fn load_to_lds[
+        dtype: DType,
+        *,
+        width: Int = 1,
+        cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    ](
+        self,
+        vector_offset: Int32,
+        shared_ptr: UnsafePointer[
+            Scalar[dtype], address_space = AddressSpace.SHARED
+        ],
+        *,
+        scalar_offset: Int32 = 0,
+    ):
+        """Loads data from global memory and stores to shared memory.
+
+        Copies from global memory to shared memory (aka LDS) bypassing storing to
+        register.
+
+        Parameters:
+            dtype: The dtype of the data to be loaded.
+            width: The SIMD vector width.
+            cache_policy: Cache operation policy controlling cache behavior at all levels.
+
+        Args:
+            vector_offset: Vector memory offset in elements (per thread).
+            shared_ptr: Shared memory address.
+            scalar_offset: Scalar memory offset in elements (shared across wave).
+        """
+        constrained[
+            is_amd_gpu(),
+            (
+                "The buffer_load_lds function is only applicable on AMDGPU"
+                " hardware."
+            ),
+        ]()
+
+        comptime bytes = size_of[dtype]() * width
+        comptime aux = _cache_operation_to_amd_aux[cache_policy]()
+
+        var vector_offset_bytes = vector_offset * size_of[dtype]()
+        var scalar_offset_bytes = scalar_offset * size_of[dtype]()
+
+        llvm_intrinsic[
+            "llvm.amdgcn.raw.buffer.load.lds", NoneType, has_side_effect=True
+        ](
+            self.desc,
+            shared_ptr,
+            Int32(bytes),
+            vector_offset_bytes,
+            scalar_offset_bytes,
+            Int32(0),
+            aux,
+        )
+
+    @always_inline("nodebug")
+    fn store[
+        dtype: DType,
+        width: Int,
+        *,
+        cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    ](
+        self,
+        vector_offset: Int32,
+        val: SIMD[dtype, width],
+        *,
+        scalar_offset: Int32 = 0,
+    ):
+        """Stores a register variable to global memory with cache operation control.
+
+        Writes to global memory from a register with high-level cache control.
+
+        Parameters:
+            dtype: The data type.
+            width: The SIMD vector width.
+            cache_policy: Cache operation policy controlling cache behavior at all levels.
+
+        Args:
+            vector_offset: Vector memory offset in elements (per thread).
+            val: Value to write.
+            scalar_offset: Scalar memory offset in elements (shared across wave).
+
+        Note:
+            - Only supported on AMD GPUs.
+            - Provides high-level cache control via CacheOperation enum values.
+            - Maps directly to llvm.amdgcn.raw.buffer.store intrinsics.
+            - Cache control bits:
+            - SC[1:0] controls coherency scope: 0=wave, 1=group, 2=device, 3=system.
+            - nt=True: Use streaming-optimized cache policies (recommended for streaming data).
+        """
+        constrained[
+            is_amd_gpu(),
+            "The buffer_store function is only applicable on AMDGPU hardware.",
+        ]()
+
+        comptime bytes = width * size_of[dtype]()
+        comptime aux: Int32 = _cache_operation_to_amd_aux[cache_policy]()
+
+        var vector_offset_bytes = vector_offset * size_of[dtype]()
+        var scalar_offset_bytes = scalar_offset * size_of[dtype]()
+
+        var store_val = bitcast[
+            _get_buffer_intrinsic_simd_dtype[bytes](),
+            _get_buffer_intrinsic_simd_width[bytes](),
+        ](val)
+
+        llvm_intrinsic[
+            "llvm.amdgcn.raw.buffer.store", NoneType, has_side_effect=True
+        ](
+            store_val,
+            self.desc,
+            vector_offset_bytes,
+            scalar_offset_bytes,
+            aux,
+        )
 
 
 @parameter
@@ -947,6 +1333,10 @@ fn _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
         return 0x10  # SC=10, NT=0
     elif cache_policy is CacheOperation.VOLATILE:
         return 0x11  # SC=11, NT=0
+    elif cache_policy is CacheOperation.WORKGROUP | CacheOperation.STREAMING:
+        return 0x03  # SC=01, NT=1
+    elif cache_policy is CacheOperation.GLOBAL | CacheOperation.STREAMING:
+        return 0x12  # SC=10, NT=1
     else:
         # Default to ALWAYS for unknown/unsupported operations
         return 0x00
@@ -973,181 +1363,6 @@ fn _get_buffer_intrinsic_simd_width[bytes: Int]() -> Int:
     return bytes // size_of[DType.uint32]() if bytes >= 4 else 1
 
 
-@always_inline
-fn buffer_load[
-    dtype: DType,
-    width: Int,
-    *,
-    cache_policy: CacheOperation = CacheOperation.ALWAYS,
-](
-    src_resource: _buffer_resource,
-    vector_offset: Int32,
-    *,
-    scalar_offset: Int32 = 0,
-) -> SIMD[dtype, width]:
-    """Loads data from global memory into a SIMD register with cache operation control.
-
-    This function provides a hardware-accelerated global memory load operation
-    that maps directly to the AMDGPU buffer_load instruction. It efficiently
-    transfers data from global memory to registers with high-level cache control.
-
-    Parameters:
-        dtype: The data type to load.
-        width: The SIMD vector width for vectorized loads.
-        cache_policy: Cache operation policy controlling cache behavior at all levels.
-
-    Args:
-        src_resource: Buffer resource descriptor created by make_buffer_resource().
-        vector_offset: Vector memory offset in elements (per thread).
-        scalar_offset: Scalar memory offset in elements (shared across wave).
-
-    Returns:
-        SIMD vector containing the loaded data.
-
-    Note:
-        - Only supported on AMD GPUs.
-        - Provides high-level cache control via CacheOperation enum values.
-        - Supports widths that map to 1, 2, 4, 8, or 16 byte loads.
-        - Maps directly to llvm.amdgcn.raw.buffer.load intrinsics.
-        - Cache control bits:
-          - SC[1:0] controls coherency scope: 0=wave, 1=group, 2=device, 3=system.
-          - nt=True: Use streaming-optimized cache policies (recommended for streaming data).
-    """
-    constrained[
-        is_amd_gpu(),
-        "The buffer_load function is only applicable on AMDGPU hardware.",
-    ]()
-
-    alias bytes = size_of[dtype]() * width
-    alias aux = _cache_operation_to_amd_aux[cache_policy]()
-
-    var vector_offset_bytes = vector_offset * size_of[dtype]()
-    var scalar_offset_bytes = scalar_offset * size_of[dtype]()
-
-    var load_val = llvm_intrinsic[
-        "llvm.amdgcn.raw.buffer.load",
-        SIMD[
-            _get_buffer_intrinsic_simd_dtype[bytes](),
-            _get_buffer_intrinsic_simd_width[bytes](),
-        ],
-        has_side_effect=False,
-    ](src_resource, vector_offset_bytes, scalar_offset_bytes, aux)
-
-    return bitcast[dtype, width](load_val)
-
-
-@always_inline
-fn buffer_load_lds[
-    dtype: DType,
-    *,
-    width: Int = 1,
-    cache_policy: CacheOperation = CacheOperation.ALWAYS,
-](
-    src_resource: _buffer_resource,
-    vector_offset: Int32,
-    shared_ptr: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.SHARED
-    ],
-    *,
-    scalar_offset: Int32 = 0,
-):
-    """Loads data from global memory and stores to shared memory.
-
-    Copies from global memory to shared memory (aka LDS) bypassing storing to
-    register.
-
-    Parameters:
-        dtype: The dtype of the data to be loaded.
-        width: The SIMD vector width.
-        cache_policy: Cache operation policy controlling cache behavior at all levels.
-
-    Args:
-        src_resource: Buffer resource descriptor from make_buffer_resource.
-        vector_offset: Vector memory offset in elements (per thread).
-        shared_ptr: Shared memory address.
-        scalar_offset: Scalar memory offset in elements (shared across wave).
-    """
-    constrained[
-        is_amd_gpu(),
-        "The buffer_load_lds function is only applicable on AMDGPU hardware.",
-    ]()
-
-    alias bytes = size_of[dtype]() * width
-    alias aux = _cache_operation_to_amd_aux[cache_policy]()
-
-    var vector_offset_bytes = vector_offset * size_of[dtype]()
-    var scalar_offset_bytes = scalar_offset * size_of[dtype]()
-
-    llvm_intrinsic[
-        "llvm.amdgcn.raw.buffer.load.lds", NoneType, has_side_effect=True
-    ](
-        src_resource,
-        shared_ptr,
-        Int32(bytes),
-        vector_offset_bytes,
-        scalar_offset_bytes,
-        Int32(0),
-        aux,
-    )
-
-
-@always_inline
-fn buffer_store[
-    dtype: DType,
-    width: Int,
-    *,
-    cache_policy: CacheOperation = CacheOperation.ALWAYS,
-](
-    dst_resource: _buffer_resource,
-    vector_offset: Int32,
-    val: SIMD[dtype, width],
-    *,
-    scalar_offset: Int32 = 0,
-):
-    """Stores a register variable to global memory with cache operation control.
-
-    Writes to global memory from a register with high-level cache control.
-
-    Parameters:
-        dtype: The data type.
-        width: The SIMD vector width.
-        cache_policy: Cache operation policy controlling cache behavior at all levels.
-
-    Args:
-        dst_resource: Buffer resource descriptor.
-        vector_offset: Vector memory offset in elements (per thread).
-        val: Value to write.
-        scalar_offset: Scalar memory offset in elements (shared across wave).
-
-    Note:
-        - Only supported on AMD GPUs.
-        - Provides high-level cache control via CacheOperation enum values.
-        - Maps directly to llvm.amdgcn.raw.buffer.store intrinsics.
-        - Cache control bits:
-          - SC[1:0] controls coherency scope: 0=wave, 1=group, 2=device, 3=system.
-          - nt=True: Use streaming-optimized cache policies (recommended for streaming data).
-    """
-    constrained[
-        is_amd_gpu(),
-        "The buffer_store function is only applicable on AMDGPU hardware.",
-    ]()
-
-    alias bytes = width * size_of[dtype]()
-    alias aux: Int32 = _cache_operation_to_amd_aux[cache_policy]()
-
-    var vector_offset_bytes = vector_offset * size_of[dtype]()
-    var scalar_offset_bytes = scalar_offset * size_of[dtype]()
-
-    var store_val = bitcast[
-        _get_buffer_intrinsic_simd_dtype[bytes](),
-        _get_buffer_intrinsic_simd_width[bytes](),
-    ](val)
-
-    llvm_intrinsic[
-        "llvm.amdgcn.raw.buffer.store", NoneType, has_side_effect=True
-    ](store_val, dst_resource, vector_offset_bytes, scalar_offset_bytes, aux)
-
-
 # ===-----------------------------------------------------------------------===#
 # AMD LDS transpose reads (ds.read.tr*)
 # ===-----------------------------------------------------------------------===#
@@ -1162,6 +1377,9 @@ fn ds_read_tr16_b64[
     ]
 ) -> SIMD[dtype, 4]:
     """Reads a 64-bit LDS transpose block using TR16 layout and returns SIMD[dtype, 4] of 16-bit types.
+
+    Parameters:
+        dtype: Data type of the elements (must be 16-bit type).
 
     Args:
         shared_ptr: Pointer to the LDS transpose block.
@@ -1179,11 +1397,95 @@ fn ds_read_tr16_b64[
         is_amd_gpu(),
         "The ds_read_tr16_b64 function is only applicable on AMDGPU hardware.",
     ]()
+
     constrained[
         size_of[dtype]() == 2,
         "ds_read_tr16_b64 supports 16-bit dtypes.",
     ]()
 
+    constrained[
+        _cdna_4_or_newer(), "ds_read_tr16_b64 is only supported on CDNA4+"
+    ]()
+
     return llvm_intrinsic[
         "llvm.amdgcn.ds.read.tr16.b64", SIMD[dtype, 4], has_side_effect=False
     ](shared_ptr)
+
+
+# ===-----------------------------------------------------------------------===#
+# AMD permlane shuffle
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn permlane_swap[
+    dtype: DType, //, stride: Int
+](val1: Scalar[dtype], val2: Scalar[dtype]) -> SIMD[dtype, 2]:
+    """Swaps values between lanes using AMD permlane swap instruction.
+
+    Parameters:
+        dtype: Data type of the values (must be 32-bit type).
+        stride: Swap stride (must be 16 or 32).
+
+    Args:
+        val1: First value to swap.
+        val2: Second value to swap.
+
+    Returns:
+        SIMD vector containing the swapped values.
+    """
+    constrained[
+        is_amd_gpu(),
+        (
+            "The _amd_permlane_swap function is only applicable on AMDGPU"
+            " hardware."
+        ),
+    ]()
+    constrained[
+        _cdna_4_or_newer(), "permlane swap is only supported on CDNA4+"
+    ]()
+    constrained[bit_width_of[dtype]() == 32, "Unsupported dtype"]()
+    constrained[stride in (16, 32), "Unsupported stride"]()
+
+    comptime asm = "llvm.amdgcn.permlane" + String(stride) + ".swap"
+    var result = llvm_intrinsic[
+        asm,
+        _RegisterPackType[Int32, Int32],
+        has_side_effect=False,
+    ](
+        bitcast[DType.int32, 1](val1),
+        bitcast[DType.int32, 1](val2),
+        False,
+        False,
+    )
+    return SIMD[dtype, 2](
+        bitcast[dtype, 1](result[0]), bitcast[dtype, 1](result[1])
+    )
+
+
+fn permlane_shuffle[
+    dtype: DType, simd_width: Int, //, stride: Int
+](val: SIMD[dtype, simd_width], out res: type_of(val)):
+    """Shuffles SIMD values across lanes using AMD permlane operations.
+
+    Parameters:
+        dtype: Data type of the values.
+        simd_width: Width of the SIMD vector.
+        stride: Shuffle stride.
+
+    Args:
+        val: Input SIMD vector to shuffle.
+
+    Returns:
+        Shuffled SIMD vector in the `res` output parameter.
+    """
+    var lane_group = lane_id() // UInt(stride)
+
+    var out = type_of(res)()
+
+    @parameter
+    for i in range(simd_width):
+        out[i] = permlane_swap[stride](val[i], val[i])[
+            Int((lane_group + 1) % 2)
+        ]
+    return out

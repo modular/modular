@@ -10,25 +10,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: NVIDIA-GPU
-
-# RUN: %mojo-no-debug %s
-
-# RUN: NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 # RUN: %mojo-build %s -o %t
-# RUN: %mpirun -n $NUM_GPUS %t
+# RUN: %t
 
-from testing import assert_equal
-from shmem import *
-from pathlib import cwd, Path
+from os import getenv, listdir, setenv
 from os.path import dirname
-from os import listdir, getenv, setenv
+from pathlib import Path, cwd
 from subprocess import run
-from sys.param_env import env_get_string
-from python import Python
-from gpu.host.dim import Dim
-from gpu.host.device_attribute import DeviceAttribute
 from sys.ffi import c_int
+from sys.param_env import env_get_string
+
+from gpu.host.device_attribute import DeviceAttribute
+from gpu.host.dim import Dim
+from gpu.host import DeviceBuffer
+from memory import LegacyUnsafePointer as UnsafePointer
+from python import Python
+from shmem import *
+from testing import assert_equal
 
 
 fn ring_bcast(
@@ -56,49 +54,51 @@ fn ring_bcast(
     psync[0] = 0
 
 
-def main():
-    alias data_len = 32
+def test_ring_bcast(ctx: SHMEMContext):
+    comptime data_len = 32
+    var destination = ctx.enqueue_create_buffer[DType.int32](1)
 
-    with SHMEMContext() as ctx:
-        var destination = ctx.enqueue_create_buffer[DType.int32](1)
+    var data = ctx.enqueue_create_buffer[DType.int32](data_len)
+    var data_h = UnsafePointer[Int32].alloc(data_len)
+    var psync = shmem_calloc[DType.uint64](1)
 
-        var data = ctx.enqueue_create_buffer[DType.int32](data_len)
-        var data_h = UnsafePointer[Int32].alloc(data_len)
-        var psync = shmem_calloc[DType.uint64](1)
+    for i in range(data_len):
+        data_h[i] = shmem_my_pe() + i
 
-        for i in range(data_len):
-            data_h[i] = shmem_my_pe() + i
+    data.enqueue_copy_from(data_h)
 
-        data.enqueue_copy_from(data_h)
+    var root: Int32 = 0
+    ctx.barrier_all()
+    ctx.enqueue_function_collective_checked[ring_bcast, ring_bcast](
+        data,
+        data_len,
+        root,
+        DeviceBuffer[DType.uint64](ctx._ctx, psync, 1, owning=False),
+        grid_dim=1,
+        block_dim=1,
+    )
+    ctx.barrier_all()
 
-        var root = 0
-        ctx.barrier_all()
-        ctx.enqueue_function_collective[ring_bcast](
-            data.unsafe_ptr(),
-            data_len,
-            root,
-            psync,
-            grid_dim=1,
-            block_dim=1,
-        )
-        ctx.barrier_all()
+    data.enqueue_copy_to(data_h)
+    ctx.synchronize()
 
-        data.enqueue_copy_to(data_h)
-        ctx.synchronize()
-
-        var mype = shmem_my_pe()
-        for i in range(data_len):
-            assert_equal(
+    var mype = shmem_my_pe()
+    for i in range(data_len):
+        assert_equal(
+            data_h[i],
+            Int32(i),
+            String(
+                "PE",
+                mype,
+                "error, data[",
+                i,
+                "] = ",
                 data_h[i],
-                Int32(i),
-                String(
-                    "PE",
-                    mype,
-                    "error, data[",
-                    i,
-                    "] = ",
-                    data_h[i],
-                    " expected ",
-                    i,
-                ),
-            )
+                " expected ",
+                i,
+            ),
+        )
+
+
+def main():
+    shmem_launch[test_ring_bcast]()

@@ -11,15 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from collections import OptionalReg
-from random import rand, seed
+from math import exp
+from random import rand, random_float64, seed
 from sys import argv, has_amd_gpu_accelerator
 
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
 from gpu.host.info import A100, B200, H100, GPUInfo, Vendor
+from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import (
     _naive_attention_with_transpose,
     flash_attention,
@@ -71,10 +72,14 @@ fn test[
         batch_size,
         "num_partitions:",
         num_partitions.value() if num_partitions else -1,
+        "num_heads:",
+        num_heads,
         "seq_len:",
         seq_len,
         "num_keys:",
         num_keys,
+        "group:",
+        group,
         "qkv_type:",
         qkv_type,
         "mask_type:",
@@ -92,8 +97,8 @@ fn test[
     ]()
 
     # Query, key, value dimensions.
-    alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
-    alias kv_num_heads = num_heads // group
+    comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
+    comptime kv_num_heads = num_heads // group
 
     # Q, K, V shapes.
     var q_size = batch_size * num_heads * seq_len * depth
@@ -152,22 +157,43 @@ fn test[
         rand[mask_type](mask_ptr, mask_size)
 
     # Construct buffers.
-    var q = NDBuffer[qkv_type, 4](
-        q_ptr, Index(batch_size, seq_len, num_heads, depth)
+    comptime layout_4d = Layout.row_major[4]()
+    var q = LayoutTensor[qkv_type, layout_4d](
+        q_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
-    var k = NDBuffer[qkv_type, 4](
-        k_ptr, Index(batch_size, num_keys, kv_num_heads, depth)
+    var k = LayoutTensor[qkv_type, layout_4d](
+        k_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, num_keys, kv_num_heads, depth)
+        ),
     )
-    var v = NDBuffer[qkv_type, 4](
-        v_ptr, Index(batch_size, num_keys, kv_num_heads, depth)
+    var v = LayoutTensor[qkv_type, layout_4d](
+        v_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, num_keys, kv_num_heads, depth)
+        ),
     )
-    var mask = NDBuffer[mask_type, 2](mask_ptr, Index(seq_len, num_keys))
-    var output = NDBuffer[qkv_type, 4](
-        output_ptr, Index(batch_size, seq_len, num_heads, depth)
+    var mask = LayoutTensor[mask_type, Layout.row_major[2]()](
+        mask_ptr,
+        RuntimeLayout[Layout.row_major[2]()].row_major(
+            Index(seq_len, num_keys)
+        ),
+    )
+    var output = LayoutTensor[qkv_type, layout_4d](
+        output_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
 
-    var flash_output = NDBuffer[qkv_type, 4](
-        flash_output_ptr, Index(batch_size, seq_len, num_heads, depth)
+    var flash_output = LayoutTensor[qkv_type, layout_4d](
+        flash_output_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
 
     @parameter
@@ -176,12 +202,7 @@ fn test[
             qkv_type == mask_type, "expect qkv and mask have same type for CPU."
         ]()
         _naive_attention_with_transpose[qkv_type](
-            rebind[NDBuffer[qkv_type, 4, output.origin]](output),
-            rebind[NDBuffer[qkv_type, 4, q.origin]](q),
-            rebind[NDBuffer[qkv_type, 4, k.origin]](k),
-            rebind[NDBuffer[qkv_type, 4, v.origin]](v),
-            rebind[NDBuffer[qkv_type, 2, mask.origin]](mask),
-            scale,
+            output, q, k, v, mask.bitcast[qkv_type](), scale
         )
 
     # Device pointers
@@ -198,40 +219,57 @@ fn test[
     ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
     # Construct device buffers.
-    var q_device = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
-    ](
+    comptime q_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
+    )
+    var q_device = LayoutTensor[qkv_type, q_layout](
         q_device_ptr.unsafe_ptr(),
-        Index(batch_size, seq_len, num_heads, depth),
+        RuntimeLayout[q_layout].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
-    var k_device = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), kv_num_heads, depth)
-    ](
+    comptime k_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
+    )
+    var k_device = LayoutTensor[qkv_type, k_layout](
         k_device_ptr.unsafe_ptr(),
-        Index(batch_size, num_keys, kv_num_heads, depth),
+        RuntimeLayout[k_layout].row_major(
+            Index(batch_size, num_keys, kv_num_heads, depth)
+        ),
     )
-    var v_device = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), kv_num_heads, depth)
-    ](
+    comptime v_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
+    )
+    var v_device = LayoutTensor[qkv_type, v_layout](
         v_device_ptr.unsafe_ptr(),
-        Index(batch_size, num_keys, kv_num_heads, depth),
+        RuntimeLayout[v_layout].row_major(
+            Index(batch_size, num_keys, kv_num_heads, depth)
+        ),
     )
-    var mask3d = NDBuffer[mask_type, 3, _, DimList.create_unknown[3]()](
-        mask_device_ptr.unsafe_ptr(), Index(batch_size, seq_len, num_keys)
-    )
-    var mask4d = NDBuffer[mask_type, 4, _, DimList.create_unknown[4]()](
+    var mask3d = LayoutTensor[mask_type, Layout.row_major[3]()](
         mask_device_ptr.unsafe_ptr(),
-        Index(batch_size, num_heads, seq_len, num_keys),
+        RuntimeLayout[Layout.row_major[3]()].row_major(
+            Index(batch_size, seq_len, num_keys)
+        ),
     )
-    var output_device = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
-    ](
+    var mask4d = LayoutTensor[mask_type, Layout.row_major[4]()](
+        mask_device_ptr.unsafe_ptr(),
+        RuntimeLayout[Layout.row_major[4]()].row_major(
+            Index(batch_size, num_heads, seq_len, num_keys)
+        ),
+    )
+    comptime output_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
+    )
+    var output_device = LayoutTensor[qkv_type, output_layout](
         output_device_ptr.unsafe_ptr(),
-        Index(batch_size, seq_len, num_heads, depth),
+        RuntimeLayout[output_layout].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
 
-    alias q_tile_num_rows = 32
-    alias k_tile_num_rows = 128
+    comptime q_tile_num_rows = 32
+    comptime k_tile_num_rows = 128
 
     @parameter
     @always_inline
@@ -264,7 +302,7 @@ fn test[
             )
 
     if is_benchmark:
-        alias nrun = 50
+        comptime nrun = 50
 
         # Warmup
         kernel_launch(ctx)
@@ -283,11 +321,14 @@ fn test[
     @parameter
     if against_gpu_naive:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
-        var output_ref_device = NDBuffer[
-            qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
-        ](
+        comptime output_ref_layout = Layout.row_major(
+            UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
+        )
+        var output_ref_device = LayoutTensor[qkv_type, output_ref_layout](
             output_ref_device_ptr.unsafe_ptr(),
-            Index(batch_size, seq_len, num_heads, depth),
+            RuntimeLayout[output_ref_layout].row_major(
+                Index(batch_size, seq_len, num_heads, depth)
+            ),
         )
         ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
@@ -368,7 +409,8 @@ fn test[
 
 fn test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
     var depths = [64, 128]
-    if info is H100 or info is B200:
+
+    if info is materialize[H100]() or info is materialize[B200]():
         depths.append(80)
     return depths^
 
@@ -377,11 +419,11 @@ fn test_context_encoding(ctx: DeviceContext) raises:
     # fp32 arbitrary depth and num_heads, baseline impl.
     test[3, DType.float32, DType.float32, 127, 2](111, 121, ctx)
 
-    alias depths = test_depth_supported_by_gpu(ctx.default_device_info)
+    comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
     @parameter
     for d in range(len(depths)):
-        alias depth = depths[d]
+        comptime depth = depths[d]
         # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
         test[
             4,
@@ -485,6 +527,91 @@ fn test_context_encoding(ctx: DeviceContext) raises:
             against_gpu_naive=True,
         ](528, 528, ctx)
 
+        test[
+            4,
+            DType.bfloat16,
+            DType.bfloat16,
+            depth=128,
+            num_heads=1,
+            against_gpu_naive=True,
+        ](128, 64, ctx, use_index_input=True)
+
+        test[
+            4,
+            DType.bfloat16,
+            DType.float32,
+            128,
+            3,
+            against_gpu_naive=True,
+        ](256, 128, ctx)
+
+        test[
+            3,
+            DType.bfloat16,
+            DType.float32,
+            128,
+            24,
+            group=3,
+            against_gpu_naive=True,
+        ](1024, 100, ctx)
+
+        test[
+            4,
+            DType.float32,
+            DType.float32,
+            128,
+            24,
+            group=3,
+            against_gpu_naive=True,
+        ](214, 300, ctx)
+
+        test[
+            3,
+            DType.bfloat16,
+            DType.float32,
+            128,
+            24,
+            group=1,
+            against_gpu_naive=True,
+        ](512, 1024, ctx)
+
+        test[
+            3,
+            DType.float32,
+            DType.float32,
+            128,
+            32,
+            group=3,
+            against_gpu_naive=True,
+        ](12, 8, ctx)
+
+        test[
+            4,
+            DType.bfloat16,
+            DType.float32,
+            128,
+            3,
+            against_gpu_naive=True,
+        ](14, 18, ctx)
+
+        # odd seq_len
+        test[
+            4,
+            DType.bfloat16,
+            DType.float32,
+            128,
+            3,
+            against_gpu_naive=True,
+        ](15, 18, ctx)
+        test[
+            3,
+            DType.bfloat16,
+            DType.float32,
+            128,
+            3,
+            against_gpu_naive=True,
+        ](119, 200, ctx)
+
 
 fn test_decoding[
     batch_size: Int,
@@ -492,11 +619,11 @@ fn test_decoding[
     split_k: Bool,
     qkv_type: DType = DType.bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
-    alias depths = test_depth_supported_by_gpu(ctx.default_device_info)
+    comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
     @parameter
     for d in range(len(depths)):
-        alias depth = depths[d]
+        comptime depth = depths[d]
         test[
             3,
             qkv_type,
@@ -508,6 +635,8 @@ fn test_decoding[
             num_partitions=num_partitions,
             decoding_warp_split_k=split_k,
         ](1, 11, ctx, use_index_input=use_index_input)
+
+        @parameter
         if (
             not is_sm8(ctx.default_device_info)
             or num_partitions
@@ -570,11 +699,11 @@ fn test_decoding_large_group[
     split_k: Bool = False,
     qkv_type: DType = DType.bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool = False) raises:
-    alias depths = test_depth_supported_by_gpu(ctx.default_device_info)
+    comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
     @parameter
     for d in range(len(depths)):
-        alias depth = depths[d]
+        comptime depth = depths[d]
         test[
             4,
             qkv_type,
@@ -589,97 +718,201 @@ fn test_decoding_large_group[
         ](1, 2000, ctx, use_index_input=use_index_input)
 
 
-fn test_cross_attention[batch_size: Int](ctx: DeviceContext) raises:
-    test[
-        4,
-        DType.bfloat16,
-        DType.bfloat16,
-        depth=128,
-        num_heads=1,
-        against_gpu_naive=True,
-    ](128, 64, ctx, use_index_input=True)
+fn test_flash_attention_sink_kernel(ctx: DeviceContext) raises:
+    print("test_flash_attention_sink_kernel")
+    comptime batch_size = 1
+    comptime num_heads = 2
+    comptime kv_heads = num_heads
+    comptime seq_len = 8
+    comptime num_keys = 64
+    comptime depth = 128
+    comptime qkv_type = DType.bfloat16  # fast path on A100/H100
+    comptime mask_type = DType.float32
+    comptime scale = Float32(0.0)  # force QK logits to exactly 0
 
-    test[
-        4,
-        DType.bfloat16,
-        DType.float32,
-        128,
-        3,
-        against_gpu_naive=True,
-    ](256, 128, ctx)
+    var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+        batch_size * seq_len * num_heads * depth
+    )
+    var k_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+        batch_size * num_keys * kv_heads * depth
+    )
+    var v_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+        batch_size * num_keys * kv_heads * depth
+    )
+    var mask_ptr = UnsafePointer[Scalar[mask_type]].alloc(
+        batch_size * seq_len * num_keys
+    )
+    var out_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+        batch_size * seq_len * num_heads * depth
+    )
+    var sinks_ptr = UnsafePointer[Scalar[qkv_type]].alloc(num_heads)
 
-    test[
-        3,
-        DType.bfloat16,
-        DType.float32,
-        128,
-        24,
-        group=3,
-        against_gpu_naive=True,
-    ](1024, 100, ctx)
+    # Q,K don't matter when scale=0, but set deterministically
+    for i in range(batch_size * seq_len * num_heads * depth):
+        q_ptr[i] = Float32(0.123).cast[qkv_type]()
+    for i in range(batch_size * num_keys * kv_heads * depth):
+        k_ptr[i] = Float32(-0.456).cast[qkv_type]()
 
-    test[
-        4,
-        DType.float32,
-        DType.float32,
-        128,
-        24,
-        group=3,
-        against_gpu_naive=True,
-    ](214, 300, ctx)
+    # V = 1 so the attention output equals total probability mass assigned to
+    # the real keys
+    for i in range(batch_size * num_keys * kv_heads * depth):
+        v_ptr[i] = Float32(1.0).cast[qkv_type]()
 
-    test[
-        3,
-        DType.bfloat16,
-        DType.float32,
-        128,
-        24,
-        group=1,
-        against_gpu_naive=True,
-    ](512, 1024, ctx)
+    # No masking
+    for i in range(batch_size * seq_len * num_keys):
+        mask_ptr[i] = 0.0
 
-    test[
-        3,
-        DType.float32,
-        DType.float32,
-        128,
-        32,
-        group=3,
-        against_gpu_naive=True,
-    ](12, 8, ctx)
+    # Two different sinks for the two heads
+    var sink_h0 = Float32(5.0)  # large positive
+    var sink_h1 = Float32(3.0)  # moderately positive
+    sinks_ptr[0] = sink_h0.cast[qkv_type]()
+    sinks_ptr[1] = sink_h1.cast[qkv_type]()
 
-    test[
-        4,
-        DType.bfloat16,
-        DType.float32,
-        128,
-        3,
-        against_gpu_naive=True,
-    ](14, 18, ctx)
+    var q_host = LayoutTensor[qkv_type, Layout.row_major[4]()](
+        q_ptr,
+        RuntimeLayout[Layout.row_major[4]()].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
+    )
+    var k_host = LayoutTensor[qkv_type, Layout.row_major[4]()](
+        k_ptr,
+        RuntimeLayout[Layout.row_major[4]()].row_major(
+            Index(batch_size, num_keys, kv_heads, depth)
+        ),
+    )
+    var v_host = LayoutTensor[qkv_type, Layout.row_major[4]()](
+        v_ptr,
+        RuntimeLayout[Layout.row_major[4]()].row_major(
+            Index(batch_size, num_keys, kv_heads, depth)
+        ),
+    )
+    var m3_host = LayoutTensor[mask_type, Layout.row_major[3]()](
+        mask_ptr,
+        RuntimeLayout[Layout.row_major[3]()].row_major(
+            Index(batch_size, seq_len, num_keys)
+        ),
+    )
+    var out_host = LayoutTensor[qkv_type, Layout.row_major[4]()](
+        out_ptr,
+        RuntimeLayout[Layout.row_major[4]()].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
+    )
+    var sinks_host = LayoutTensor[qkv_type, Layout.row_major(UNKNOWN_VALUE)](
+        sinks_ptr,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            Index(num_heads)
+        ),
+    )
 
-    # odd seq_len
-    test[
-        4,
-        DType.bfloat16,
-        DType.float32,
-        128,
-        3,
-        against_gpu_naive=True,
-    ](15, 18, ctx)
-    test[
-        3,
-        DType.bfloat16,
-        DType.float32,
-        128,
-        3,
-        against_gpu_naive=True,
-    ](119, 200, ctx)
+    var q_dev = ctx.enqueue_create_buffer[qkv_type](q_host.size())
+    var k_dev = ctx.enqueue_create_buffer[qkv_type](k_host.size())
+    var v_dev = ctx.enqueue_create_buffer[qkv_type](v_host.size())
+    var m_dev = ctx.enqueue_create_buffer[mask_type](m3_host.size())
+    var out_dev = ctx.enqueue_create_buffer[qkv_type](out_host.size())
+    var sinks_dev = ctx.enqueue_create_buffer[qkv_type](sinks_host.size())
+
+    ctx.enqueue_copy(q_dev, q_ptr)
+    ctx.enqueue_copy(k_dev, k_ptr)
+    ctx.enqueue_copy(v_dev, v_ptr)
+    ctx.enqueue_copy(m_dev, mask_ptr)
+    ctx.enqueue_copy(sinks_dev, sinks_ptr)
+
+    comptime q_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
+    )
+    var q_device = LayoutTensor[qkv_type, q_layout](
+        q_dev.unsafe_ptr(),
+        RuntimeLayout[q_layout].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
+    )
+    comptime k_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, kv_heads, depth
+    )
+    var k_device = LayoutTensor[qkv_type, k_layout](
+        k_dev.unsafe_ptr(),
+        RuntimeLayout[k_layout].row_major(
+            Index(batch_size, num_keys, kv_heads, depth)
+        ),
+    )
+    comptime v_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, kv_heads, depth
+    )
+    var v_device = LayoutTensor[qkv_type, v_layout](
+        v_dev.unsafe_ptr(),
+        RuntimeLayout[v_layout].row_major(
+            Index(batch_size, num_keys, kv_heads, depth)
+        ),
+    )
+    var mask3d = LayoutTensor[mask_type, Layout.row_major[3]()](
+        m_dev.unsafe_ptr(),
+        RuntimeLayout[Layout.row_major[3]()].row_major(
+            Index(batch_size, seq_len, num_keys)
+        ),
+    )
+    comptime output_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
+    )
+    var out_device = LayoutTensor[qkv_type, output_layout](
+        out_dev.unsafe_ptr(),
+        RuntimeLayout[output_layout].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
+    )
+    comptime sinks_layout = Layout.row_major(UNKNOWN_VALUE)
+    var sinks_device = LayoutTensor[qkv_type, sinks_layout](
+        sinks_dev.unsafe_ptr(),
+        RuntimeLayout[sinks_layout].row_major(Index(num_heads)),
+    )
+
+    @always_inline
+    fn launch(ctx: DeviceContext) raises:
+        flash_attention[sink=True](
+            out_device,
+            q_device,
+            k_device,
+            v_device,
+            MaterializedMask(mask3d),
+            IdentityScoreMod(),
+            scale,  # 0.0 -> all QK logits are exactly zero
+            ctx,
+            None,
+            sink_weights=sinks_device,
+        )
+
+    launch(ctx)
+    ctx.synchronize()
+    ctx.enqueue_copy(out_ptr, out_dev)
+
+    fn expected_mass(sink: Float32) -> Float32:
+        return Float32(num_keys) / (Float32(num_keys) + exp(sink))
+
+    var want0 = expected_mass(sink_h0)
+    var want1 = expected_mass(sink_h1)
+
+    # Every element of the output vector for a given head should equal that mass
+    # (since V=1)
+    for s in range(seq_len):
+        for d in range(depth):
+            var got0 = out_host[0, s, 0, d].cast[DType.float32]()
+            var got1 = out_host[0, s, 1, d].cast[DType.float32]()
+            assert_almost_equal(got0, want0, atol=2e-2, rtol=2e-2)
+            assert_almost_equal(got1, want1, atol=2e-2, rtol=2e-2)
+
+    q_ptr.free()
+    k_ptr.free()
+    v_ptr.free()
+    mask_ptr.free()
+    out_ptr.free()
+    sinks_ptr.free()
 
 
 def main():
     with DeviceContext() as ctx:
         test_context_encoding(ctx)
-        test_cross_attention[1](ctx)
+        # TODO(KERN-1726): Enable this test after implementing the sink kernel
+        test_flash_attention_sink_kernel(ctx)
 
         # KERN-1726: Disable warp split-k because it fails with mha_decoding_single_batch
         # specifically for num_keys = 523.

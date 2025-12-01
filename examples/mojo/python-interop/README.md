@@ -1,9 +1,5 @@
 # Calling Mojo functions from Python
 
-> [!NOTE]
-> This is a preview of the capability to access Mojo from Python code, and
-> we plan to rapidly iterate on the interfaces and ergonomics used here.
-
 Mojo now has the ability to be called from Python, with Mojo functions
 representing themselves as if they were native Python functions. When a Python
 script is run that references a Mojo module, that module is transparently

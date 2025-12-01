@@ -11,30 +11,32 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
-from bit._mask import is_negative, splat
 from sys.info import bit_width_of
+
+from bit._mask import is_negative, splat
+from testing import assert_equal
+from testing import TestSuite
 
 
 def test_is_negative():
-    alias dtypes = (
+    comptime dtypes = (
         DType.int8,
         DType.int16,
         DType.int32,
         DType.int64,
-        DType.index,
+        DType.int,
     )
-    alias widths = (1, 2, 4, 8)
+    comptime widths = (1, 2, 4, 8)
 
     @parameter
     for i in range(len(dtypes)):
-        alias D = dtypes[i]
+        comptime D = dtypes[i]
         var last_value = 2 ** (bit_width_of[D]() - 1) - 1
         var values = [1, 2, last_value - 1, last_value]
 
         @parameter
         for j in range(len(widths)):
-            alias S = SIMD[D, widths[j]]
+            comptime S = SIMD[D, widths[j]]
 
             for k in values:
                 assert_equal(S(-1), is_negative(S(-k)))
@@ -42,50 +44,50 @@ def test_is_negative():
 
 
 def test_splat():
-    alias dtypes = (
+    comptime dtypes = (
         DType.int8,
         DType.int16,
         DType.int32,
         DType.int64,
-        DType.index,
+        DType.int,
         DType.uint8,
         DType.uint16,
         DType.uint32,
         DType.uint64,
     )
-    alias widths = (1, 2, 4, 8)
+    comptime widths = (1, 2, 4, 8)
 
     @parameter
     for i in range(len(dtypes)):
-        alias D = dtypes[i]
+        comptime D = dtypes[i]
 
         @parameter
         for j in range(len(widths)):
-            alias w = widths[j]
-            alias B = SIMD[DType.bool, w]
+            comptime w = widths[j]
+            comptime B = SIMD[DType.bool, w]
             assert_equal(SIMD[D, w](-1), splat[D](B(fill=True)))
             assert_equal(SIMD[D, w](0), splat[D](B(fill=False)))
 
 
 def test_compare():
-    alias dtypes = (
+    comptime dtypes = (
         DType.int8,
         DType.int16,
         DType.int32,
         DType.int64,
-        DType.index,
+        DType.int,
     )
-    alias widths = (1, 2, 4, 8)
+    comptime widths = (1, 2, 4, 8)
 
     @parameter
     for i in range(len(dtypes)):
-        alias D = dtypes[i]
+        comptime D = dtypes[i]
         var last_value = 2 ** (bit_width_of[D]() - 1) - 1
         var values = [1, 2, last_value - 1, last_value]
 
         @parameter
         for j in range(len(widths)):
-            alias S = SIMD[D, widths[j]]
+            comptime S = SIMD[D, widths[j]]
 
             for k in values:
                 var s_k = S(k)
@@ -102,6 +104,4 @@ def test_compare():
 
 
 def main():
-    test_is_negative()
-    test_splat()
-    test_compare()
+    TestSuite.discover_tests[__functions_in_module()]().run()

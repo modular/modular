@@ -11,69 +11,61 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv
+from sys.info import (
+    has_amd_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
+    simd_width_of,
+)
+
 from compiler_internal import register
 from gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
     block_dim,
     block_idx,
+    lane_id,
     thread_idx,
     warp_id,
-    lane_id,
-    MAX_THREADS_PER_BLOCK_METADATA,
 )
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.memory import async_copy_wait_all, AddressSpace
+from gpu.memory import AddressSpace, async_copy_wait_all
 from gpu.sync import AMDScheduleBarrierMask
 from gpu.sync import schedule_barrier as amd_schedule_barrier
 from gpu.sync import schedule_group_barrier
+
+# Import AMD helper functions and structs from the kernels subdirectory
+
+from kernels.amd_helpers import (
+    AMD_MMA,
+    MMATileBuffers,
+    amd_scheduling_hints,
+    compare_equal,
+    copy_local_to_dram_32_32_8,
+    mma,
+)
 from layout import IntTuple
+from layout.layout import blocked_product
 from layout.layout_tensor import (
+    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     ThreadScope,
-    UNKNOWN_VALUE,
+    copy_dram_to_local,
     copy_dram_to_sram,
     copy_dram_to_sram_async,
-    copy_dram_to_local,
-    copy_local_to_shared,
     copy_local_to_dram,
+    copy_local_to_shared,
 )
 from layout.math import outer_product_acc
-
-from layout.tensor_builder import LayoutTensorBuild as tb
-from layout.tensor_core import TensorCore
-from layout.layout import blocked_product
-
-
 from layout.swizzle import Swizzle
-from layout._utils import TensorCoreKGroup
-
-from math import ceildiv
-from memory import UnsafePointer
+from layout.tensor_core import TensorCore
 from runtime.asyncrt import DeviceContextPtr
-from sys.info import (
-    has_nvidia_gpu_accelerator,
-    has_amd_gpu_accelerator,
-    simd_width_of,
-)
-from tensor_internal import (
-    InputTensor,
-    ManagedTensorSlice,
-    OutputTensor,
-)
+from tensor import InputTensor, ManagedTensorSlice, OutputTensor
+
 from utils import StaticTuple
 from utils.index import Index, IndexList
-
-# Import AMD helper functions and structs from the kernels subdirectory
-from kernels.amd_helpers import (
-    compare_equal,
-    amd_scheduling_hints,
-    AMD_MMA,
-    MMATileBuffers,
-    mma,
-    copy_local_to_dram_32_32_8,
-)
 
 
 @compiler.register("tensor_core_mma")
@@ -108,21 +100,21 @@ struct TensorCoreMMA[algorithm: StaticString]:
 
             gpu_ctx = ctx.get_device_context()
 
-            var b_ptr_to_use: UnsafePointer[Scalar[DType.float16]]
+            var b_ptr_to_use: UnsafePointer[Float16, MutAnyOrigin]
 
             # Only transpose the B matrix if we are validating the results,
             # otherwise we can pretend the matrix is already transposed
-            if algorithm == "mma_tile_buffers" and perform_validation:
-                # Create transposed layout tensor using the transposed dimensions N×K
+            if Self.algorithm == "mma_tile_buffers" and perform_validation:
+                # Create transposed layout tensor using the transposed dimensions NxK
                 # Allocate device memory for transposed matrix
                 var b_transposed_buffer = gpu_ctx.enqueue_create_buffer[
                     DType.float16
                 ](N * K)
                 var b_transposed_ptr = b_transposed_buffer.unsafe_ptr()
 
-                # Copy with transpose: element at (i,j) in original K×N goes to (j,i) in transposed N×K
-                for i in range(K):  # rows of original K×N matrix
-                    for j in range(N):  # cols of original K×N matrix
+                # Copy with transpose: element at (i,j) in original KxN goes to (j,i) in transposed NxK
+                for i in range(K):  # rows of original KxN matrix
+                    for j in range(N):  # cols of original KxN matrix
                         b_transposed_ptr[j * K + i] = b_layout.ptr[i * N + j]
 
                 b_ptr_to_use = b_transposed_ptr
@@ -130,7 +122,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                 b_ptr_to_use = b.unsafe_ptr()
 
             var b_layout_transposed = LayoutTensor[
-                b.dtype, Layout.row_major(N, K), MutableAnyOrigin
+                b.dtype, Layout.row_major(N, K), MutAnyOrigin
             ](b_ptr_to_use)
 
             out_layout = output.to_layout_tensor()
@@ -141,7 +133,9 @@ struct TensorCoreMMA[algorithm: StaticString]:
             gpu_ctx.enqueue_memset(
                 DeviceBuffer[output.dtype](
                     gpu_ctx,
-                    rebind[UnsafePointer[Scalar[output.dtype]]](out_layout.ptr),
+                    rebind[LegacyUnsafePointer[Scalar[output.dtype]]](
+                        out_layout.ptr
+                    ),
                     M * N,
                     owning=False,
                 ),
@@ -158,7 +152,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
             # - "mma_tile_buffers": A matrix multiplication using tile buffers and AMD Tensor Core instructions.
 
             @parameter
-            if algorithm == "naive_tensor":
+            if Self.algorithm == "naive_tensor":
 
                 @parameter
                 if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
@@ -171,21 +165,22 @@ struct TensorCoreMMA[algorithm: StaticString]:
                     alias MMA_K = 8
                     alias NUM_WARPS = (BM // MMA_M) * (BN // MMA_N)
                     alias NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    alias native_kernel = naive_tensor[
+                        a.dtype,
+                        output.dtype,
+                        a_layout.layout,
+                        b_layout.layout,
+                        out_layout.layout,
+                        BM,
+                        BN,
+                        BK,
+                        MMA_M,
+                        MMA_N,
+                        MMA_K,
+                    ]
 
-                    gpu_ctx.enqueue_function[
-                        naive_tensor[
-                            a.dtype,
-                            output.dtype,
-                            a_layout.layout,
-                            b_layout.layout,
-                            out_layout.layout,
-                            BM,
-                            BN,
-                            BK,
-                            MMA_M,
-                            MMA_N,
-                            MMA_K,
-                        ]
+                    gpu_ctx.enqueue_function_checked[
+                        native_kernel, native_kernel
                     ](
                         a_layout,
                         b_layout,
@@ -193,7 +188,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                         block_dim=(NUM_THREADS, 1),
                     )
-            elif algorithm == "basic_shared_mem":
+            elif Self.algorithm == "basic_shared_mem":
 
                 @parameter
                 if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
@@ -206,21 +201,22 @@ struct TensorCoreMMA[algorithm: StaticString]:
                     alias MMA_K = 8
                     alias NUM_WARPS = (BM // MMA_M) * (BN // MMA_N)
                     alias NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    alias basic_shared_mem_kernel = basic_shared_mem[
+                        a.dtype,
+                        output.dtype,
+                        a_layout.layout,
+                        b_layout.layout,
+                        out_layout.layout,
+                        BM,
+                        BN,
+                        BK,
+                        MMA_M,
+                        MMA_N,
+                        MMA_K,
+                    ]
 
-                    gpu_ctx.enqueue_function[
-                        basic_shared_mem[
-                            a.dtype,
-                            output.dtype,
-                            a_layout.layout,
-                            b_layout.layout,
-                            out_layout.layout,
-                            BM,
-                            BN,
-                            BK,
-                            MMA_M,
-                            MMA_N,
-                            MMA_K,
-                        ]
+                    gpu_ctx.enqueue_function_checked[
+                        basic_shared_mem_kernel, basic_shared_mem_kernel
                     ](
                         a_layout,
                         b_layout,
@@ -228,7 +224,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                         block_dim=(NUM_THREADS, 1),
                     )
-            elif algorithm == "multi_block_tiled":
+            elif Self.algorithm == "multi_block_tiled":
 
                 @parameter
                 if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
@@ -243,23 +239,24 @@ struct TensorCoreMMA[algorithm: StaticString]:
                     alias MMA_K = 8
                     alias NUM_WARPS = (BM // WM) * (BN // WN)
                     alias NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    alias multi_block_tiled_kernel = multi_block_tiled[
+                        a.dtype,
+                        output.dtype,
+                        a_layout.layout,
+                        b_layout.layout,
+                        out_layout.layout,
+                        BM,
+                        BN,
+                        BK,
+                        WM,
+                        WN,
+                        MMA_M,
+                        MMA_N,
+                        MMA_K,
+                    ]
 
-                    gpu_ctx.enqueue_function[
-                        multi_block_tiled[
-                            a.dtype,
-                            output.dtype,
-                            a_layout.layout,
-                            b_layout.layout,
-                            out_layout.layout,
-                            BM,
-                            BN,
-                            BK,
-                            WM,
-                            WN,
-                            MMA_M,
-                            MMA_N,
-                            MMA_K,
-                        ]
+                    gpu_ctx.enqueue_function_checked[
+                        multi_block_tiled_kernel, multi_block_tiled_kernel
                     ](
                         a_layout,
                         b_layout,
@@ -267,7 +264,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                         block_dim=(NUM_THREADS, 1),
                     )
-            elif algorithm == "scheduler_hints":
+            elif Self.algorithm == "scheduler_hints":
 
                 @parameter
                 if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
@@ -282,23 +279,24 @@ struct TensorCoreMMA[algorithm: StaticString]:
                     alias MMA_K = 8
                     alias NUM_WARPS = (BM // WM) * (BN // WN)
                     alias NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    alias scheduler_hints_kernel = scheduler_hints[
+                        a.dtype,
+                        output.dtype,
+                        a_layout.layout,
+                        b_layout.layout,
+                        out_layout.layout,
+                        BM,
+                        BN,
+                        BK,
+                        WM,
+                        WN,
+                        MMA_M,
+                        MMA_N,
+                        MMA_K,
+                    ]
 
-                    gpu_ctx.enqueue_function[
-                        scheduler_hints[
-                            a.dtype,
-                            output.dtype,
-                            a_layout.layout,
-                            b_layout.layout,
-                            out_layout.layout,
-                            BM,
-                            BN,
-                            BK,
-                            WM,
-                            WN,
-                            MMA_M,
-                            MMA_N,
-                            MMA_K,
-                        ]
+                    gpu_ctx.enqueue_function_checked[
+                        scheduler_hints_kernel, scheduler_hints_kernel
                     ](
                         a_layout,
                         b_layout,
@@ -306,7 +304,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                         block_dim=(NUM_THREADS, 1),
                     )
-            elif algorithm == "double_buffer":
+            elif Self.algorithm == "double_buffer":
 
                 @parameter
                 if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
@@ -321,23 +319,24 @@ struct TensorCoreMMA[algorithm: StaticString]:
                     alias MMA_K = 8
                     alias NUM_WARPS = (BM // WM) * (BN // WN)
                     alias NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    alias double_buffer_kernel = double_buffer[
+                        a.dtype,
+                        output.dtype,
+                        a_layout.layout,
+                        b_layout.layout,
+                        out_layout.layout,
+                        BM,
+                        BN,
+                        BK,
+                        WM,
+                        WN,
+                        MMA_M,
+                        MMA_N,
+                        MMA_K,
+                    ]
 
-                    gpu_ctx.enqueue_function[
-                        double_buffer[
-                            a.dtype,
-                            output.dtype,
-                            a_layout.layout,
-                            b_layout.layout,
-                            out_layout.layout,
-                            BM,
-                            BN,
-                            BK,
-                            WM,
-                            WN,
-                            MMA_M,
-                            MMA_N,
-                            MMA_K,
-                        ]
+                    gpu_ctx.enqueue_function_checked[
+                        double_buffer_kernel, double_buffer_kernel
                     ](
                         a_layout,
                         b_layout,
@@ -345,7 +344,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                         block_dim=(NUM_THREADS, 1),
                     )
-            elif algorithm == "mma_tile_buffers":
+            elif Self.algorithm == "mma_tile_buffers":
 
                 @parameter
                 if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
@@ -362,24 +361,25 @@ struct TensorCoreMMA[algorithm: StaticString]:
 
                     alias NUM_WARPS = (BM // WM) * (BN // WN)
                     alias NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    alias mma_tile_buffers_kernel = mma_tile_buffers[
+                        a.dtype,
+                        output.dtype,
+                        a_layout.layout,
+                        b_layout_transposed.layout,
+                        out_layout.layout,
+                        BM,
+                        BN,
+                        BK,
+                        WM,
+                        WN,
+                        WK,
+                        MMA_M,
+                        MMA_N,
+                        MMA_K,
+                    ]
 
-                    gpu_ctx.enqueue_function[
-                        mma_tile_buffers[
-                            a.dtype,
-                            output.dtype,
-                            a_layout.layout,
-                            b_layout_transposed.layout,
-                            out_layout.layout,
-                            BM,
-                            BN,
-                            BK,
-                            WM,
-                            WN,
-                            WK,
-                            MMA_M,
-                            MMA_N,
-                            MMA_K,
-                        ]
+                    gpu_ctx.enqueue_function_checked[
+                        mma_tile_buffers_kernel, mma_tile_buffers_kernel
                     ](
                         a_layout,
                         b_layout_transposed,
@@ -388,14 +388,14 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         block_dim=(NUM_THREADS, 1),
                     )
             else:
-                raise Error("No known matmul algorithm:", algorithm)
+                raise Error("No known matmul algorithm:", Self.algorithm)
 
             if perform_validation:
                 var reference_buf = gpu_ctx.enqueue_create_buffer[output.dtype](
                     M * N
                 )
                 var reference = LayoutTensor[
-                    output.dtype, out_layout.layout, MutableAnyOrigin
+                    output.dtype, out_layout.layout, MutAnyOrigin
                 ](reference_buf.unsafe_ptr())
 
                 gpu_ctx.synchronize()
@@ -410,21 +410,22 @@ struct TensorCoreMMA[algorithm: StaticString]:
                 alias MMA_K = 16
                 alias NUM_WARPS = (BM // WM) * (BN // WN)
                 alias NUM_THREADS = NUM_WARPS * WARP_SIZE
+                alias naive_tensor_kernel = naive_tensor[
+                    a.dtype,
+                    output.dtype,
+                    a_layout.layout,
+                    b_layout.layout,
+                    out_layout.layout,
+                    BM,
+                    BN,
+                    BK,
+                    MMA_M,
+                    MMA_N,
+                    MMA_K,
+                ]
 
-                gpu_ctx.enqueue_function[
-                    naive_tensor[
-                        a.dtype,
-                        output.dtype,
-                        a_layout.layout,
-                        b_layout.layout,
-                        out_layout.layout,
-                        BM,
-                        BN,
-                        BK,
-                        MMA_M,
-                        MMA_N,
-                        MMA_K,
-                    ]
+                gpu_ctx.enqueue_function_checked[
+                    naive_tensor_kernel, naive_tensor_kernel
                 ](
                     a_layout,
                     b_layout,
@@ -457,9 +458,9 @@ fn naive_tensor[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: LayoutTensor[input_type, layout_a, MutableAnyOrigin],
-    B: LayoutTensor[input_type, layout_b, MutableAnyOrigin],
-    C: LayoutTensor[output_type, layout_c, MutableAnyOrigin],
+    A: LayoutTensor[input_type, layout_a, MutAnyOrigin],
+    B: LayoutTensor[input_type, layout_b, MutAnyOrigin],
+    C: LayoutTensor[output_type, layout_c, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -504,9 +505,9 @@ fn naive_tensor[
     warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[MMA_M, MMA_N](
-        warp_y, warp_x
-    )
+    C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
+        MMA_M, MMA_N
+    ](warp_y, warp_x)
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
     mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
@@ -516,14 +517,23 @@ fn naive_tensor[
     alias frag_size = MMA_M * MMA_N // WARP_SIZE
 
     # Allocate only small register tile for accumulating partial results
-    c_reg = tb[output_type]().row_major[1, frag_size]().local().alloc().fill(0)
+    c_reg = (
+        LayoutTensor[
+            output_type,
+            Layout.row_major(1, frag_size),
+            MutAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
 
     # Naive approach: Load directly from global memory for each tensor core operation
     # No intermediate tile caching - simpler but less efficient
     for k_i in range(ceildiv(K, BK)):
         # Get the tiles of A and B for the current iteration
-        A_block_tile = A.tile[BM, BK](block_idx.y, k_i)
-        B_block_tile = B.tile[BK, BN](k_i, block_idx.x)
+        A_block_tile = A.tile[BM, BK](Int(block_idx.y), k_i)
+        B_block_tile = B.tile[BK, BN](k_i, Int(block_idx.x))
 
         # Get the warp tiles directly from global memory (naive approach)
         A_warp_tile = A_block_tile.tile[MMA_M, MMA_K](warp_y, 0)
@@ -562,9 +572,9 @@ fn basic_shared_mem[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: LayoutTensor[input_type, layout_a, MutableAnyOrigin],
-    B: LayoutTensor[input_type, layout_b, MutableAnyOrigin],
-    C: LayoutTensor[output_type, layout_c, MutableAnyOrigin],
+    A: LayoutTensor[input_type, layout_a, MutAnyOrigin],
+    B: LayoutTensor[input_type, layout_b, MutAnyOrigin],
+    C: LayoutTensor[output_type, layout_c, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -611,35 +621,54 @@ fn basic_shared_mem[
     warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[MMA_M, MMA_N](
-        warp_y, warp_x
-    )
+    C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
+        MMA_M, MMA_N
+    ](warp_y, warp_x)
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
     mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
 
     # Allocate shared memory for tiles of A and B
-    A_sram_tile = tb[input_type]().row_major[BM, BK]().shared().alloc()
-    B_sram_tile = tb[input_type]().row_major[BK, BN]().shared().alloc()
+    A_sram_tile = LayoutTensor[
+        input_type,
+        Layout.row_major(BM, BK),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    B_sram_tile = LayoutTensor[
+        input_type,
+        Layout.row_major(BK, BN),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
     # Calculate correct accumulator fragment size based on MMA configuration
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
     alias frag_size = MMA_M * MMA_N // WARP_SIZE
 
     # Allocate register tile for accumulating partial results
-    c_reg = tb[output_type]().row_major[1, frag_size]().local().alloc().fill(0)
+    c_reg = (
+        LayoutTensor[
+            output_type,
+            Layout.row_major(1, frag_size),
+            MutAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
 
     # Iterate over tiles of A and B in the K dimension
     for k_i in range(ceildiv(K, BK)):
         # Use separate optimized thread layouts for A and B tiles
-        # A_sram_tile: 64×8, so use 32×8 thread layout (256 threads total)
-        # B_sram_tile: 8×64, so use 8×32 thread layout (256 threads total)
-        alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)  # 32×8
-        alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)  # 8×32
+        # A_sram_tile: 64x8, so use 32x8 thread layout (256 threads total)
+        # B_sram_tile: 8x64, so use 8x32 thread layout (256 threads total)
+        alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)  # 32x8
+        alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)  # 8x32
 
         # Get the tiles of A and B for the current iteration
-        A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
-        B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
+        A_dram_tile = A.tile[BM, BK](Int(block_idx.y), k_i)
+        B_dram_tile = B.tile[BK, BN](k_i, Int(block_idx.x))
 
         # Load tiles using properly sized thread layouts to avoid out-of-bounds access
         copy_dram_to_sram[thread_layout=load_a_layout](A_sram_tile, A_dram_tile)
@@ -685,9 +714,9 @@ fn multi_block_tiled[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: LayoutTensor[input_type, layout_a, MutableAnyOrigin],
-    B: LayoutTensor[input_type, layout_b, MutableAnyOrigin],
-    C: LayoutTensor[output_type, layout_c, MutableAnyOrigin],
+    A: LayoutTensor[input_type, layout_a, MutAnyOrigin],
+    B: LayoutTensor[input_type, layout_b, MutAnyOrigin],
+    C: LayoutTensor[output_type, layout_c, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -736,9 +765,9 @@ fn multi_block_tiled[
     warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
-        warp_y, warp_x
-    )
+    C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
+        WM, WN
+    ](warp_y, warp_x)
 
     # Ensure warp tile dimensions are multiples of instruction shape
     constrained[
@@ -750,8 +779,18 @@ fn multi_block_tiled[
     mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
 
     # Allocate shared memory for tiles of A and B
-    A_sram_tile = tb[input_type]().row_major[BM, BK]().shared().alloc()
-    B_sram_tile = tb[input_type]().row_major[BK, BN]().shared().alloc()
+    A_sram_tile = LayoutTensor[
+        input_type,
+        Layout.row_major(BM, BK),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    B_sram_tile = LayoutTensor[
+        input_type,
+        Layout.row_major(BK, BN),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
     # Calculate correct accumulator fragment size based on MMA configuration
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
@@ -759,10 +798,13 @@ fn multi_block_tiled[
 
     # Allocate register tile for accumulating partial results
     c_reg = (
-        tb[output_type]()
-        .row_major[WM // MMA_M, (WN * frag_size) // MMA_N]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            output_type,
+            Layout.row_major(WM // MMA_M, (WN * frag_size) // MMA_N),
+            MutAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .fill(0)
     )
 
@@ -774,8 +816,8 @@ fn multi_block_tiled[
     # Iterate over tiles of A and B in the K dimension
     for k_i in range(ceildiv(K, BK)):
         # Get the tiles of A and B for the current iteration
-        A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
-        B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
+        A_dram_tile = A.tile[BM, BK](Int(block_idx.y), k_i)
+        B_dram_tile = B.tile[BK, BN](k_i, Int(block_idx.x))
 
         # Load tiles using non-vectorized synchronous copy (working version)
         copy_dram_to_sram[thread_layout=load_layout](A_sram_tile, A_dram_tile)
@@ -783,8 +825,8 @@ fn multi_block_tiled[
         barrier()  # Synchronize after loading tiles
 
         # Get the warp tiles of A and B from shared memory
-        A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
-        B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
+        A_warp_tile = A_sram_tile.tile[WM, BK](Int(warp_y), 0)
+        B_warp_tile = B_sram_tile.tile[BK, WN](0, Int(warp_x))
 
         # Iterate over the elements in the K dimension within the tiles
         @parameter
@@ -847,9 +889,9 @@ fn scheduler_hints[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: LayoutTensor[input_type, layout_a, MutableAnyOrigin],
-    B: LayoutTensor[input_type, layout_b, MutableAnyOrigin],
-    C: LayoutTensor[output_type, layout_c, MutableAnyOrigin],
+    A: LayoutTensor[input_type, layout_a, MutAnyOrigin],
+    B: LayoutTensor[input_type, layout_b, MutAnyOrigin],
+    C: LayoutTensor[output_type, layout_c, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -898,9 +940,9 @@ fn scheduler_hints[
     warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
-        warp_y, warp_x
-    )
+    C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
+        WM, WN
+    ](warp_y, warp_x)
 
     # Ensure warp tile dimensions are multiples of instruction shape
     constrained[
@@ -912,8 +954,18 @@ fn scheduler_hints[
     mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
 
     # Allocate single set of shared memory buffers (single buffering to fit memory limit)
-    A_sram_tile = tb[input_type]().row_major[BM, BK]().shared().alloc()
-    B_sram_tile = tb[input_type]().row_major[BK, BN]().shared().alloc()
+    A_sram_tile = LayoutTensor[
+        input_type,
+        Layout.row_major(BM, BK),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    B_sram_tile = LayoutTensor[
+        input_type,
+        Layout.row_major(BK, BN),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
     # Calculate correct accumulator fragment size based on MMA configuration
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
@@ -922,10 +974,13 @@ fn scheduler_hints[
     # Allocate register tile for accumulating partial results
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
     c_reg = (
-        tb[output_type]()
-        .row_major[WM // MMA_M, (WN * frag_size) // MMA_N]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            output_type,
+            Layout.row_major(WM // MMA_M, (WN * frag_size) // MMA_N),
+            MutAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .fill(0)
     )
 
@@ -937,8 +992,8 @@ fn scheduler_hints[
     # Simplified single-buffer pipeline (similar to basic_shared_mem but with AMD scheduling)
     for k_i in range(ceildiv(K, BK)):
         # Get the tiles of A and B for the current iteration
-        A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
-        B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
+        A_dram_tile = A.tile[BM, BK](Int(block_idx.y), k_i)
+        B_dram_tile = B.tile[BK, BN](k_i, Int(block_idx.x))
 
         # Load tiles using synchronous copy (single buffering)
         copy_dram_to_sram[thread_layout=load_layout](A_sram_tile, A_dram_tile)
@@ -951,8 +1006,8 @@ fn scheduler_hints[
             amd_schedule_barrier()
 
         # Get the warp tiles from shared memory
-        A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
-        B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
+        A_warp_tile = A_sram_tile.tile[WM, BK](Int(warp_y), 0)
+        B_warp_tile = B_sram_tile.tile[BK, WN](0, Int(warp_x))
 
         # Perform MMA operations on current tile with AMD scheduling hints
         @parameter
@@ -1033,9 +1088,9 @@ fn double_buffer[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: LayoutTensor[input_type, layout_a, MutableAnyOrigin],
-    B: LayoutTensor[input_type, layout_b, MutableAnyOrigin],
-    C: LayoutTensor[output_type, layout_c, MutableAnyOrigin],
+    A: LayoutTensor[input_type, layout_a, MutAnyOrigin],
+    B: LayoutTensor[input_type, layout_b, MutAnyOrigin],
+    C: LayoutTensor[output_type, layout_c, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -1084,9 +1139,9 @@ fn double_buffer[
     warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
-        warp_y, warp_x
-    )
+    C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
+        WM, WN
+    ](warp_y, warp_x)
 
     # Ensure warp tile dimensions are multiples of instruction shape
     constrained[
@@ -1098,10 +1153,30 @@ fn double_buffer[
     mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
 
     # Allocate two sets of shared memory buffers for double buffering
-    A_sram_buffer_0 = tb[input_type]().row_major[BM, BK]().shared().alloc()
-    A_sram_buffer_1 = tb[input_type]().row_major[BM, BK]().shared().alloc()
-    B_sram_buffer_0 = tb[input_type]().row_major[BK, BN]().shared().alloc()
-    B_sram_buffer_1 = tb[input_type]().row_major[BK, BN]().shared().alloc()
+    A_sram_buffer_0 = LayoutTensor[
+        input_type,
+        Layout.row_major(BM, BK),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    A_sram_buffer_1 = LayoutTensor[
+        input_type,
+        Layout.row_major(BM, BK),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    B_sram_buffer_0 = LayoutTensor[
+        input_type,
+        Layout.row_major(BK, BN),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    B_sram_buffer_1 = LayoutTensor[
+        input_type,
+        Layout.row_major(BK, BN),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
     # Calculate correct accumulator fragment size based on MMA configuration
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
@@ -1110,10 +1185,13 @@ fn double_buffer[
     # Allocate register tile for accumulating partial results
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
     c_reg = (
-        tb[output_type]()
-        .row_major[WM // MMA_M, (WN * frag_size) // MMA_N]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            output_type,
+            Layout.row_major(WM // MMA_M, (WN * frag_size) // MMA_N),
+            MutAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .fill(0)
     )
     # Thread layout for memory transfers
@@ -1130,8 +1208,8 @@ fn double_buffer[
     # === PIPELINE STAGE 1: Initial Load ===
     # Load the first tile into buffer 0
     if k_iterations > 0:
-        var A_dram_tile_0 = A.tile[BM, BK](block_idx.y, 0)
-        var B_dram_tile_0 = B.tile[BK, BN](0, block_idx.x)
+        var A_dram_tile_0 = A.tile[BM, BK](Int(block_idx.y), 0)
+        var B_dram_tile_0 = B.tile[BK, BN](0, Int(block_idx.x))
 
         copy_dram_to_sram[thread_layout=load_layout](
             A_sram_buffer_0, A_dram_tile_0
@@ -1160,12 +1238,12 @@ fn double_buffer[
         # === ASYNC LOAD: Start loading NEXT iteration while computing current ===
         var next_k = k_i + 1
         if next_k < k_iterations:
-            var A_dram_tile_next = A.tile[BM, BK](block_idx.y, next_k)
-            var B_dram_tile_next = B.tile[BK, BN](next_k, block_idx.x)
+            var A_dram_tile_next = A.tile[BM, BK](Int(block_idx.y), next_k)
+            var B_dram_tile_next = B.tile[BK, BN](next_k, Int(block_idx.x))
 
             # Start loading next iteration's data into alternate buffers
             # This happens in parallel with computation below
-            # Vectorize to create 4-byte elements (2 × f16 = 4 bytes)
+            # Vectorize to create 4-byte elements (2 x f16 = 4 bytes)
             var A_dram_vectorized = A_dram_tile_next.vectorize[
                 1, 2
             ]()  # 2 f16s per element
@@ -1254,9 +1332,9 @@ fn mma_tile_buffers[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: LayoutTensor[input_type, layout_a, MutableAnyOrigin],
-    B: LayoutTensor[input_type, layout_b, MutableAnyOrigin],
-    C: LayoutTensor[output_type, layout_c, MutableAnyOrigin],
+    A: LayoutTensor[input_type, layout_a, MutAnyOrigin],
+    B: LayoutTensor[input_type, layout_b, MutAnyOrigin],
+    C: LayoutTensor[output_type, layout_c, MutAnyOrigin],
 ):
     """
     AMD-style tiled GEMM kernel with sophisticated scheduling hints.
@@ -1364,20 +1442,20 @@ fn mma_tile_buffers[
     fn get_smem_layout[block_rows: Int]() -> Layout:
         # Shared memory layout
         #
-        # - base_layout: Layout.row_major(block_rows, k_tile_size) -> block_rows×k_tile_size tiles
+        # - base_layout: Layout.row_major(block_rows, k_tile_size) -> block_rowsxk_tile_size tiles
         # - tiler_layout: Layout.row_major(1, num_repeats) -> repeat tiles num_repeats times horizontally
         # - smem_layout: blocked_product(base_layout, tiler_layout) -> tiled blocked layout
         #
-        # Resulting shape: block_rows×(k_tile_size × num_repeats) = block_rows×BK tensor
-        # Where BK = k_tile_size × num_repeats, k_tile_size = MMA_K × k_group_size
+        # Resulting shape: block_rowsx(k_tile_size x num_repeats) = block_rowsxBK tensor
+        # Where BK = k_tile_size x num_repeats, k_tile_size = MMA_K x k_group_size
         #
-        # This creates num_repeats blocks of block_rows×k_tile_size arranged horizontally:
+        # This creates num_repeats blocks of block_rowsxk_tile_size arranged horizontally:
         # Within each k_tile_size-column block, elements are consecutive (stride 1)
-        # Between blocks: stride = block_rows × k_tile_size
+        # Between blocks: stride = block_rows x k_tile_size
         #
         # ASCII diagram for block_rows=64, k_tile_size=32, BK=64 (showing first 2 of 2 blocks):
         # ┌─────────────────────────────────────────────────────────────────────────┐
-        # │         Block 0 (64×32)             │         Block 1 (64×32)           │
+        # │         Block 0 (64x32)             │         Block 1 (64x32)           │
         # ├─────────────────────────────────────┼───────────────────────────────────┤
         # │   0    1    2  ...   30   31        │ 2048 2049 2050 ... 2078 2079      │
         # │  32   33   34  ...   62   63        │ 2080 2081 2082 ... 2110 2111      │
@@ -1386,7 +1464,7 @@ fn mma_tile_buffers[
         # │ ...                                 │  ...                              │
         # │2016 2017 2018  ... 2046 2047        │ 4064 4065 4066 ... 4094 4095      │
         # └─────────────────────────────────────────────────────────────────────────┘
-        # stride between blocks = block_rows × k_tile_size = 64 × 32 = 2048
+        # stride between blocks = block_rows x k_tile_size = 64 x 32 = 2048
 
         alias base_layout = Layout.row_major(block_rows, k_tile_size)
         alias num_repeats = BK // k_tile_size
@@ -1414,7 +1492,7 @@ fn mma_tile_buffers[
 
     var a_tiles = MMATileBuffers[
         get_smem_layout[BM](),
-        tensor_type = __type_of(A),
+        tensor_type = type_of(A),
         thread_layout = get_thread_layout(),
         block_rows=BM,
         warp_rows=WM,
@@ -1426,7 +1504,7 @@ fn mma_tile_buffers[
     # B (weights matrix) memory
     var b_tiles = MMATileBuffers[
         get_smem_layout[BN](),
-        tensor_type = __type_of(B),
+        tensor_type = type_of(B),
         thread_layout = get_thread_layout(),
         block_rows=BN,
         warp_rows=WN,
@@ -1442,7 +1520,7 @@ fn mma_tile_buffers[
     alias c_reg_tile_type = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, frag_size),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ]
     var c_reg_tile = c_reg_tile_type.stack_allocation().fill(0)
@@ -1555,9 +1633,9 @@ fn mma_tile_buffers[
 
     # --- Write results to output tensor ---
     # Output stage: Transfer results from registers to global memory
-    var c_block_tile = C.tile[BM, BN](block_idx.y, block_idx.x)
+    var c_block_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
     var c_warp_tile = c_block_tile.tile[WM, WN](
-        warp_m, warp_n
+        Int(warp_m), Int(warp_n)
     )  # 128 x 128 -> 128 x (8 x 16)
 
     @parameter

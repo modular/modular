@@ -11,31 +11,33 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv
+from random import rand
+from sys import argv
+from sys.info import simd_width_of, size_of
+
+import gpu.warp as warp
 from buffer import NDBuffer
 from gpu import WARP_SIZE, lane_id
 from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from gpu.host._nvidia_cuda import TMADescriptor, create_tma_descriptor
-from gpu.id import block_idx, thread_idx, block_dim
+from gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
+from gpu import block_dim, block_idx, thread_idx
 from gpu.memory import (
-    _GPUAddressSpace,
+    AddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
 )
 from gpu.sync import (
+    barrier,
     mbarrier_arrive_expect_tx_shared,
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
-    barrier,
 )
-import gpu.warp as warp
-from math import ceildiv
-from memory import stack_allocation
-from random import rand
-from sys.info import size_of, simd_width_of
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 from testing import assert_almost_equal
+
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
-from sys import argv
 
 
 @always_inline
@@ -43,10 +45,10 @@ fn block_reduce[
     dtype: DType, max_warps_per_block: Int = 32
 ](val: Scalar[dtype]) -> Scalar[dtype]:
     var m2_shared = stack_allocation[
-        max_warps_per_block, dtype, address_space = _GPUAddressSpace.SHARED
+        max_warps_per_block, dtype, address_space = AddressSpace.SHARED
     ]()
     var m2_broadcast = stack_allocation[
-        1, dtype, address_space = _GPUAddressSpace.SHARED
+        1, dtype, address_space = AddressSpace.SHARED
     ]()
 
     var tid = thread_idx.x
@@ -60,7 +62,7 @@ fn block_reduce[
 
     var warp_m2 = warp.sum(val)
 
-    var warp_id = warp.broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
     var lane_idx = lane_id()
 
     if lane_idx == 0:
@@ -88,13 +90,13 @@ fn global_reduction_kernel[
 ](d_out: UnsafePointer[Scalar[accum_type]], num_cols: Int):
     var tid = thread_idx.x
     var row = block_idx.x
-    var idx = tid * simd_width
+    var idx = tid * UInt(simd_width)
     var vec_data = SIMD[accum_type, simd_width](0)
 
-    if idx < num_cols:
-        vec_data = input_fn[simd_width, 2](IndexList[2](row, idx)).cast[
-            accum_type
-        ]()
+    if idx < UInt(num_cols):
+        vec_data = input_fn[simd_width, 2](
+            IndexList[2](Int(row), Int(idx))
+        ).cast[accum_type]()
 
     var thread_sum = vec_data.reduce_add()
 
@@ -119,15 +121,13 @@ fn tma_reduction_kernel[
     d_out: UnsafePointer[Scalar[accum_type]],
 ):
     var shmem = external_memory[
-        Scalar[dtype], address_space = _GPUAddressSpace.SHARED, alignment=128
+        Scalar[dtype], address_space = AddressSpace.SHARED, alignment=128
     ]()
     # Calculate elements offset for this block (row).
     var block_offset = block_idx.x
 
     # Create barrier for TMA transfer from GMEM to SMEM.
-    var mbar = stack_allocation[
-        1, Int64, address_space = _GPUAddressSpace.SHARED
-    ]()
+    var mbar = stack_allocation[1, Int64, address_space = AddressSpace.SHARED]()
 
     var descriptor_ptr = UnsafePointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
@@ -148,8 +148,8 @@ fn tma_reduction_kernel[
 
     # Local thread reduction of loaded data.
     var vec_data = SIMD[accum_type, simd_width](0)
-    var idx = thread_idx.x * simd_width
-    if idx < cols:
+    var idx = thread_idx.x * UInt(simd_width)
+    if idx < UInt(cols):
         vec_data = shmem.load[width=simd_width](idx).cast[accum_type]()
     var local_sum = vec_data.reduce_add()
 
@@ -165,9 +165,9 @@ def test_tma_block_reduce[
     dtype: DType, use_tma: Bool
 ](ctx: DeviceContext, rows: Int, cols: Int, benchmark: Bool = False,):
     var n = rows * cols
-    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
-    alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
-    alias accum_type = get_accum_type[dtype]()
+    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    comptime accum_type = get_accum_type[dtype]()
 
     var h_data = UnsafePointer[Scalar[dtype]].alloc(n)
     var expected_sum = Scalar[accum_type](0)
@@ -202,9 +202,10 @@ def test_tma_block_reduce[
             )
             # Calculate shared memory size needed per row.
             var shared_mem_bytes = cols * size_of[dtype]()
-            ctx.enqueue_function[
-                tma_reduction_kernel[dtype, accum_type, simd_width]
-            ](
+            comptime kernel = tma_reduction_kernel[
+                dtype, accum_type, simd_width
+            ]
+            ctx.enqueue_function_checked[kernel, kernel,](
                 tma_desc,
                 rows,
                 cols,
@@ -227,15 +228,15 @@ def test_tma_block_reduce[
             ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
                 return data_buf.load[width=width](rebind[IndexList[2]](idx))
 
-            ctx.enqueue_function[
-                global_reduction_kernel[
-                    dtype,
-                    accum_type,
-                    simd_width,
-                    max_warps_per_block,
-                    input_fn_2d,
-                ]
-            ](
+            comptime kernel = global_reduction_kernel[
+                dtype,
+                accum_type,
+                simd_width,
+                max_warps_per_block,
+                input_fn_2d,
+            ]
+
+            ctx.enqueue_function_checked[kernel, kernel](
                 d_out,
                 cols,  # num_cols
                 grid_dim=grid_dim,
@@ -244,8 +245,8 @@ def test_tma_block_reduce[
 
     if benchmark:
         # Run kernel multiple times for benchmarking.
-        alias num_warmup = 5
-        alias num_iters = 100
+        comptime num_warmup = 5
+        comptime num_iters = 100
 
         # Warmup runs.
         for _ in range(num_warmup):
@@ -290,7 +291,7 @@ def test_tma_block_reduce[
 def main():
     var test_sizes = [128, 256, 512, 1024]
     var depths = [64, 128, 256]
-    alias dtype = DType.bfloat16
+    comptime dtype = DType.bfloat16
 
     # Parse command line arguments.
     var benchmark = False
@@ -299,7 +300,7 @@ def main():
         if args[i] == "--benchmark" or args[i] == "--benchmark=yes":
             benchmark = True
 
-    alias use_tma = True
+    comptime use_tma = True
 
     with DeviceContext() as ctx:
         for test_size in test_sizes:

@@ -12,7 +12,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/tutorials/custom-kernels-pytorch.mdx
+# DOC: max/develop/custom-kernels-pytorch.mdx
 
 from pathlib import Path
 
@@ -22,18 +22,18 @@ from max.torch import CustomOpLibrary
 from PIL import Image
 
 # Load the Mojo custom operations from the `operations` directory.
-mojo_kernels = Path(__file__).parent / "operations.mojopkg"
+mojo_kernels = Path(__file__).parent / "operations"
 ops = CustomOpLibrary(mojo_kernels)
 
 
 @torch.compile
-def grayscale(pic: torch.Tensor):
+def grayscale(pic: torch.Tensor):  # noqa: ANN201
     output = pic.new_empty(pic.shape[:-1])  # Remove color channel dimension
     ops.grayscale(output, pic)  # Call our custom Mojo operation
     return output
 
 
-def create_test_image():
+def create_test_image():  # noqa: ANN201
     # Create a synthetic RGB test image (64x64 pixels)
     # Create a simple gradient pattern
     test_array = np.zeros((64, 64, 3), dtype=np.uint8)

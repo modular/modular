@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: mojo/docs/manual/get-started.mdx
+
 import time
 
 from gridv1 import Grid
@@ -32,7 +34,7 @@ def run_display(
     pygame.init()
 
     # Create a window and set its title
-    window = pygame.display.set_mode(Python.tuple(window_height, window_width))
+    window = pygame.display.set_mode(Python.tuple(window_width, window_height))
     pygame.display.set_caption("Conway's Game of Life")
 
     cell_height = window_height / grid.rows
@@ -85,4 +87,4 @@ def run_display(
 
 def main():
     start = Grid.random(128, 128)
-    run_display(start)
+    run_display(start^)

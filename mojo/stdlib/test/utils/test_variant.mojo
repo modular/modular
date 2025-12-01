@@ -11,15 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
+from os import abort
 from sys.ffi import _Global
 
 from test_utils import MoveCopyCounter, ObservableDel
-from testing import assert_equal, assert_false, assert_true
+from testing import TestSuite, assert_equal, assert_false, assert_true
 
 from utils import Variant
-from os import abort
 
-alias TEST_VARIANT_POISON = _Global["TEST_VARIANT_POISON", _initialize_poison]
+comptime TEST_VARIANT_POISON = _Global[
+    "TEST_VARIANT_POISON", _initialize_poison
+]
 
 
 fn _initialize_poison() -> Bool:
@@ -53,11 +56,11 @@ struct Poison(ImplicitlyCopyable, Movable):
         _poison_ptr().init_pointee_move(True)
 
 
-alias TestVariant = Variant[MoveCopyCounter, Poison]
+comptime TestVariant = Variant[MoveCopyCounter, Poison]
 
 
 def test_basic():
-    alias IntOrString = Variant[Int, String]
+    comptime IntOrString = Variant[Int, String]
     var i = IntOrString(4)
     var s = IntOrString("4")
 
@@ -115,7 +118,7 @@ def test_move():
 
 
 def test_del():
-    alias TestDeleterVariant = Variant[ObservableDel, Poison]
+    comptime TestDeleterVariant = Variant[ObservableDel, Poison]
     var deleted: Bool = False
     var v1 = TestDeleterVariant(ObservableDel(UnsafePointer(to=deleted)))
     _ = v1^  # call __del__
@@ -125,7 +128,7 @@ def test_del():
 
 
 def test_set_calls_deleter():
-    alias TestDeleterVariant = Variant[ObservableDel, Poison]
+    comptime TestDeleterVariant = Variant[ObservableDel, Poison]
     var deleted: Bool = False
     var deleted2: Bool = False
     var v1 = TestDeleterVariant(ObservableDel(UnsafePointer(to=deleted)))
@@ -146,7 +149,7 @@ def test_replace():
 
 
 def test_take_doesnt_call_deleter():
-    alias TestDeleterVariant = Variant[ObservableDel, Poison]
+    comptime TestDeleterVariant = Variant[ObservableDel, Poison]
     var deleted: Bool = False
     var v1 = TestDeleterVariant(ObservableDel(UnsafePointer(to=deleted)))
     assert_false(deleted)
@@ -185,13 +188,4 @@ def test_is_type_supported():
 
 
 def main():
-    test_basic()
-    test_get_returns_mutable_reference()
-    test_copy()
-    test_explicit_copy()
-    test_move()
-    test_del()
-    test_take_doesnt_call_deleter()
-    test_set_calls_deleter()
-    test_replace()
-    test_is_type_supported()
+    TestSuite.discover_tests[__functions_in_module()]().run()

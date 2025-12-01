@@ -360,8 +360,8 @@ fn test_simd_e5m2_to_f32():
 
     e5m2_casted_f32 = e5m2_simd.cast[DType.float32]()
 
-    alias M = 32
-    alias N = 8
+    comptime M = 32
+    comptime N = 8
     for i in range(M):
         for j in range(N):
             print(e5m2_casted_f32[i * N + j], end=", ")
@@ -410,8 +410,8 @@ fn test_simd_e5m2_to_f16():
 
     e5m2_casted_f16 = e5m2_simd.cast[DType.float16]()
 
-    alias M = 32
-    alias N = 8
+    comptime M = 32
+    comptime N = 8
     for i in range(M):
         for j in range(N):
             print(e5m2_casted_f16[i * N + j], end=", ")
@@ -460,8 +460,8 @@ fn test_simd_e5m2_to_bf16():
 
     e5m2_casted_bf16 = e5m2_simd.cast[DType.bfloat16]()
 
-    alias M = 32
-    alias N = 8
+    comptime M = 32
+    comptime N = 8
     for i in range(M):
         for j in range(N):
             print(e5m2_casted_bf16[i * N + j], end=", ")
@@ -536,7 +536,7 @@ fn test_simd_e5m2_to_bf16():
 fn test_simd_f32_to_e5m2():
     print("== test_simd_f32_to_e5m2")
 
-    alias M = 512
+    comptime M = 512
     var f32_simd = SIMD[DType.float32, M](0.0)
 
     for i in range(M):
@@ -557,8 +557,8 @@ fn test_simd_float8[
 ](x: SIMD[dtype, size]):
     var x_casted = x.cast[target]()
 
-    alias M = 32
-    alias N = size // M
+    comptime M = 32
+    comptime N = size // M
     for i in range(M):
         for j in range(N):
             print(x_casted[i * N + j], end=", ")
@@ -601,12 +601,13 @@ fn test_simd_float8[
 fn test_simd_e5m2_to_f16_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_e5m2_to_f16_ptx_path")
 
-    alias M = 256
+    comptime M = 256
     var e5m2_simd = SIMD[DType.float8_e5m2, M](0.0)
     for i in range(M):
         e5m2_simd[i] = bitcast[DType.float8_e5m2](UInt8(i))
 
-    ctx.enqueue_function[test_simd_float8[DType.float8_e5m2, M, DType.float16]](
+    comptime kernel = test_simd_float8[DType.float8_e5m2, M, DType.float16]
+    ctx.enqueue_function_experimental[kernel](
         e5m2_simd, grid_dim=1, block_dim=1
     )
     ctx.synchronize()
@@ -648,12 +649,13 @@ fn test_simd_e5m2_to_f16_ptx_path(ctx: DeviceContext) raises:
 fn test_simd_e5m2_to_f32_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_e5m2_to_f32_ptx_path")
 
-    alias M = 256
+    comptime M = 256
     var e5m2_simd = SIMD[DType.float8_e5m2, M](0.0)
     for i in range(M):
         e5m2_simd[i] = bitcast[DType.float8_e5m2](UInt8(i))
 
-    ctx.enqueue_function[test_simd_float8[DType.float8_e5m2, M, DType.float32]](
+    comptime kernel = test_simd_float8[DType.float8_e5m2, M, DType.float32]
+    ctx.enqueue_function_experimental[kernel](
         e5m2_simd, grid_dim=1, block_dim=1
     )
     ctx.synchronize()
@@ -665,8 +667,8 @@ fn test_simd_float32[
 ](x: SIMD[DType.float32, size]):
     var x_casted = x.cast[target]()
 
-    alias M = 64
-    alias N = size // M
+    comptime M = 64
+    comptime N = size // M
     for i in range(M):
         for j in range(N):
             print(x_casted[i * N + j], end=", ")
@@ -741,18 +743,17 @@ fn test_simd_float32[
 fn test_simd_f32_to_e5m2_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_f32_to_e5m2_ptx_path")
 
-    alias M = 512
+    comptime M = 512
     var f32_simd = SIMD[DType.float32, M](0.0)
     for i in range(M):
         f32_simd[i] = i - 256
 
-    ctx.enqueue_function[test_simd_float32[M, DType.float8_e5m2]](
-        f32_simd, grid_dim=1, block_dim=1
-    )
+    comptime kernel = test_simd_float32[M, DType.float8_e5m2]
+    ctx.enqueue_function_experimental[kernel](f32_simd, grid_dim=1, block_dim=1)
     ctx.synchronize()
 
 
-fn main() raises:
+def main():
     test_e5m2_initialization()
     test_simd_e5m2_to_f32()
     test_simd_e5m2_to_f16()

@@ -16,7 +16,7 @@ from math import ceildiv
 from sys import has_accelerator
 
 from gpu.host import DeviceContext
-from gpu.id import global_idx
+from gpu import global_idx
 from layout import Layout, LayoutTensor
 
 alias WIDTH = 5
@@ -62,7 +62,7 @@ def main():
     # Launch the compiled function on the GPU. The target device is specified
     # first, followed by all function arguments. The last two named parameters
     # are the dimensions of the grid in blocks, and the block dimensions.
-    ctx.enqueue_function[color_to_grayscale](
+    ctx.enqueue_function_checked[color_to_grayscale, color_to_grayscale](
         rgb_tensor,
         gray_tensor,
         grid_dim=(num_col_blocks, num_row_blocks),
@@ -76,8 +76,8 @@ def main():
 
 
 fn color_to_grayscale(
-    rgb_tensor: LayoutTensor[int_dtype, rgb_layout, MutableAnyOrigin],
-    gray_tensor: LayoutTensor[int_dtype, gray_layout, MutableAnyOrigin],
+    rgb_tensor: LayoutTensor[int_dtype, rgb_layout, MutAnyOrigin],
+    gray_tensor: LayoutTensor[int_dtype, gray_layout, MutAnyOrigin],
 ):
     """Converting each RGB pixel to grayscale, parallelized across the output tensor on the GPU.
     """

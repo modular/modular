@@ -11,9 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.interval import Interval, IntervalTree, IntervalElement
+from collections.interval import Interval, IntervalElement, IntervalTree
 
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
+from testing import TestSuite
 
 
 def test_interval():
@@ -128,29 +129,11 @@ struct MyType(
     fn __init__(out self, value: Float64, /):
         self.value = value
 
-    fn __copyinit__(out self, existing: Self, /):
-        self.value = existing.value
-
-    fn __moveinit__(out self, deinit existing: Self, /):
-        self.value = existing.value
-
-    fn __gt__(self, other: Self) -> Bool:
-        return self.value > other.value
-
     fn __lt__(self, other: Self) -> Bool:
         return self.value < other.value
 
-    fn __ge__(self, other: Self) -> Bool:
-        return self.value >= other.value
-
-    fn __le__(self, other: Self) -> Bool:
-        return self.value <= other.value
-
     fn __eq__(self, other: Self) -> Bool:
         return self.value == other.value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return self.value != other.value
 
     fn __sub__(self, other: Self) -> Self:
         return Self(self.value - other.value)
@@ -204,6 +187,4 @@ def test_interval_tree():
 
 
 def main():
-    test_interval()
-    test_interval_floating()
-    test_interval_tree()
+    TestSuite.discover_tests[__functions_in_module()]().run()

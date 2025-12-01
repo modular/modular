@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from python import Python, PythonObject
 from python._cpython import Py_ssize_t, PyObjectPtr
 from python.bindings import PythonModuleBuilder
@@ -20,10 +21,11 @@ from testing import (
     assert_false,
     assert_raises,
     assert_true,
+    TestSuite,
 )
 
 
-def test_dunder_methods(mut python: Python):
+def _test_dunder_methods(mut python: Python):
     var a = PythonObject(34)
     var b = PythonObject(10)
     var d = PythonObject(2)
@@ -138,7 +140,7 @@ def test_dunder_methods(mut python: Python):
     assert_equal_pyobj(c, -35)
 
 
-def test_inplace_dunder_methods(mut python: Python):
+def _test_inplace_dunder_methods(mut python: Python):
     # test dunder methods that don't fall back to their non-inplace counterparts
     var list_obj: PythonObject = [1, 2]
 
@@ -155,8 +157,8 @@ def test_inplace_dunder_methods(mut python: Python):
 
 
 def test_num_conversion():
-    alias n = UInt64(0xFEDC_BA09_8765_4321)
-    alias n_str = String(n)
+    comptime n = UInt64(0xFEDC_BA09_8765_4321)
+    comptime n_str = String(n)
     assert_equal(n_str, String(PythonObject(n)))
 
 
@@ -182,7 +184,7 @@ def test_boolean_operations():
     assert_false(Python.none().__bool__())
 
 
-fn test_string_conversions(mut python: Python) raises -> None:
+fn _test_string_conversions(mut python: Python) raises -> None:
     # static string
     var static_str: StaticString = "mojo"
     var py_str = PythonObject(static_str)
@@ -283,6 +285,19 @@ fn test_iter() raises:
                 ),
             )
 
+    # test Iterator APIs
+    var it = enumerate(list_obj.__iter__())
+    var val = next(it)
+    assert_equal_pyobj(val[0], 0)
+    assert_equal_pyobj(val[1], "apple")
+    val = next(it)
+    assert_equal_pyobj(val[0], 1)
+    assert_equal_pyobj(val[1], "orange")
+    val = next(it)
+    assert_equal_pyobj(val[0], 2)
+    assert_equal_pyobj(val[1], "banana")
+    assert_equal(it.__has_next__(), False)
+
 
 fn test_setitem() raises:
     var ll: PythonObject = [1, 2, 3, "food"]
@@ -352,7 +367,7 @@ fn test_set() raises:
 fn test_none() raises:
     var n = Python.none()
     assert_equal(String(n), "None")
-    assert_true(n is None)
+    assert_true(n is PythonObject(None))
 
 
 fn test_getitem_raises() raises:
@@ -637,7 +652,7 @@ def test_attribute_access():
 
     # Test getting attributes that exist
     var attr_value = test_dict.__getattr__("get")
-    assert_true(attr_value is not None)
+    assert_true(attr_value is not PythonObject(None))
 
     # Test setting attributes on objects that support it
     var custom_obj = Python.evaluate("type('TestClass', (), {})()")
@@ -667,7 +682,7 @@ def test_copy():
     assert_true(list_original is list_copied)
 
 
-def test_python_eval_and_evaluate(mut python: Python):
+def _test_python_eval_and_evaluate(mut python: Python):
     # Test Python.eval() method
     var success = python.eval("x = 42")
     assert_true(success)
@@ -742,36 +757,36 @@ def test_error_handling():
         _ = none_obj + one
 
 
-def main():
-    # initializing Python instance calls init_python
+def test_with_python_dunder_methods():
     var python = Python()
+    _test_dunder_methods(python)
 
-    test_dunder_methods(python)
-    test_inplace_dunder_methods(python)
-    test_num_conversion()
-    test_boolean_operations()
-    test_string_conversions(python)
-    test_len()
-    test_is()
-    test_iter()
-    test_setitem()
-    test_dict()
-    test_set()
-    test_none()
-    test_nested_object()
-    test_getitem_raises()
-    test_setitem_raises()
-    test_py_slice()
-    test_contains_dunder()
-    test_python_mojo_object_operations()
-    test_conversion_to_simd()
 
-    test_hash()
-    test_call_with_kwargs()
-    test_attribute_access()
-    test_copy()
-    test_python_eval_and_evaluate(python)
-    test_python_module_operations()
-    test_python_type_functions()
-    test_advanced_slicing()
-    test_error_handling()
+def test_with_python_inplace_dunder_methods():
+    var python = Python()
+    _test_inplace_dunder_methods(python)
+
+
+def test_with_python_string_conversions():
+    var python = Python()
+    _test_string_conversions(python)
+
+
+def test_with_python_eval_and_evaluate():
+    var python = Python()
+    _test_python_eval_and_evaluate(python)
+
+
+def test_python_object_string():
+    var s = String(PythonObject("hello"))
+    assert_equal(s, "hello")
+
+    var p = Python()
+    _ = p.eval("class A:\n  def __str__(self): pass")
+    var a = p.evaluate("A()")
+    with assert_raises(contains="__str__ returned non-string"):
+        _ = String(a)
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

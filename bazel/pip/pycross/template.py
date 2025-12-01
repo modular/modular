@@ -60,21 +60,21 @@ def targets():
     native.alias(
         name = "torch@multiple",
         actual = select({{
-            "@@//:amd_gpu": ":torch@2.7.0+rocm6.3",
-            "@@//:nvidia_gpu": ":torch@2.7.0+cu128",
-            "@platforms//os:macos": ":torch@2.7.0",
-            "//conditions:default": ":torch@2.7.0+cpu",
+            "@@//:amd_gpu": ":torch@2.8.0+rocm7.0.0.git64359f59",
+            "@@//:nvidia_gpu": ":torch@2.8.0+cu128",
+            "@platforms//os:macos": ":torch@2.8.0",
+            "//conditions:default": ":torch@2.8.0+cpu",
         }}),
     )
 
     native.alias(
         name = "torchaudio@multiple",
         actual = select({{
-            "@@//:amd_gpu": ":torchaudio@2.7.0+rocm6.3",
-            "@@//:nvidia_gpu": ":torchaudio@2.7.0+cu128",
-            "@platforms//os:macos": ":torchaudio@2.7.0",
-            "@@//:linux_aarch64": ":torchaudio@2.7.0",
-            "//conditions:default": ":torchaudio@2.7.0+cpu",
+            "@@//:amd_gpu": ":torchaudio@2.8.0+rocm7.0.0.git6e1c7fe9",
+            "@@//:nvidia_gpu": ":torchaudio@2.8.0+cu128",
+            "@platforms//os:macos": ":torchaudio@2.8.0",
+            "@@//:linux_aarch64": ":torchaudio@2.8.0",
+            "//conditions:default": ":torchaudio@2.8.0+cpu",
         }}),
     )
 
@@ -82,16 +82,16 @@ def targets():
         name = "torchvision@multiple",
         testonly = True,
         actual = select({{
-            "@@//:amd_gpu": ":torchvision@0.22.0+rocm6.3",
-            "@@//:nvidia_gpu": ":torchvision@0.22.0+cu128",
-            "@platforms//os:macos": ":torchvision@0.22.0",
-            "@@//:linux_aarch64": ":torchvision@0.22.0",
-            "//conditions:default": ":torchvision@0.22.0+cpu",
+            "@@//:amd_gpu": ":torchvision@0.23.0+rocm7.0.0.git824e8c87",
+            "@@//:nvidia_gpu": ":torchvision@0.23.0+cu128",
+            "@platforms//os:macos": ":torchvision@0.23.0",
+            "@@//:linux_aarch64": ":torchvision@0.23.0",
+            "//conditions:default": ":torchvision@0.23.0+cpu",
         }}),
     )
 
     extra_build_args = {{
-        "copts": ["-fvisibility=default"],
+        "copts": ["-fvisibility=default", "-w"],
         "linkopts": select({{
             "@platforms//os:linux": ["-Wl,-z,undefs"],
             "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],

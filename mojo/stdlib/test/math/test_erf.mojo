@@ -12,10 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import erf
+from memory import LegacyUnsafePointer as UnsafePointer
 from random import randn, seed
 
 from test_utils import compare, libm_call
-from testing import assert_almost_equal, assert_equal
+from testing import assert_almost_equal, assert_equal, TestSuite
 
 
 def test_erf_float32():
@@ -39,7 +40,7 @@ def test_erf_float64():
 def test_erf_libm():
     seed(0)
     var N = 8192
-    alias test_dtype = DType.float32
+    comptime test_dtype = DType.float32
 
     # generate input values and write them to file
     var x32 = UnsafePointer[Scalar[test_dtype]].alloc(N)
@@ -83,6 +84,4 @@ def test_erf_libm():
 
 
 def main():
-    test_erf_float32()
-    test_erf_float64()
-    test_erf_libm()
+    TestSuite.discover_tests[__functions_in_module()]().run()

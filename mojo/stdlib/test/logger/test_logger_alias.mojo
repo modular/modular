@@ -12,13 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 from logger import Level, Logger
+from testing import TestSuite
 
-alias log = Logger[Level.INFO]()
+comptime log = Logger[Level.INFO]()
 
 
-def main():
-    # CHECK-NOT: DEBUG::: hello world
+def test_log_alias():
+    # CHECK-NOT: DEBUG
+    # CHECK-NOT: :::     hello world
     log.debug("hello", "world")
 
-    # CHECK: INFO::: hello
+    # CHECK: INFO
+    # CHECK: ::: hello
     log.info("hello")
+
+
+fn main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

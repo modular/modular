@@ -13,14 +13,12 @@
 
 from collections import OptionalReg
 from hashlib import default_comp_time_hasher
+from sys import align_of, size_of
+
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer.dimlist import DimList
-from linalg.matmul_sm100 import matmul_sm100_fallback
-from sys import size_of
 from gpu.host import DeviceContext
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg import vendor_blas
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from utils.index import Index, IndexList
+from gpu.host.nvidia.tma import TensorMapSwizzle
 
 # Additional imports for testing
 from internal_utils import (
@@ -31,8 +29,11 @@ from internal_utils import (
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.matmul.gpu.sm100.matmul import matmul_sm100_fallback
 from linalg.utils import elementwise_epilogue_type
-from sys import align_of
+
+from utils.index import Index, IndexList
 
 
 def test_matmul_sm100_fallback[
@@ -49,11 +50,11 @@ def test_matmul_sm100_fallback[
     var N = n.value
     var K = k.value
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_c_shape = DimList(m.dim, n.dim)
     var dynamic_a_shape = DimList(m.value, k.value)
     var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
         k.value, n.value
@@ -137,7 +138,7 @@ def test_matmul_sm100_fallback[
     var b = from_ndbuffer_row_major(b_device.tensor)
     var c = from_ndbuffer_row_major(c_device.tensor)
 
-    alias block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
+    comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
 
     matmul_sm100_fallback[
         transpose_b=transpose_b,
@@ -174,7 +175,7 @@ def test_matmul_sm100_fallback[
     ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
     ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
     ctx.synchronize()
-    alias rtol = 1e-2
+    comptime rtol = 1e-2
     assert_almost_equal(
         c_host.tensor,
         c_host_ref.tensor,
@@ -204,8 +205,8 @@ def main():
 
             @parameter
             for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
-                alias MMA_K = 32 if dtype == DType.float8_e4m3fn else 16
-                alias BK = (swizzle.bytes() // size_of[dtype]())
+                comptime MMA_K = 32 if dtype == DType.float8_e4m3fn else 16
+                comptime BK = (swizzle.bytes() // size_of[dtype]())
 
                 test_matmul_sm100_fallback[
                     dtype,
@@ -267,7 +268,7 @@ def main():
                     static[2048](),
                 )
 
-                alias BK_list = List[Int](BK, BK * 2)
+                comptime BK_list: List[Int] = [BK, BK * 2]
 
                 @parameter
                 for _BK in BK_list:

@@ -20,12 +20,12 @@ from os.path import isdir
 ```
 """
 
+from collections.string.string_slice import _unsafe_strlen
 from pwd import getpwuid
 from stat import S_ISDIR, S_ISLNK, S_ISREG
 from sys import CompilationTarget, external_call
-from sys.ffi import c_char, get_errno, MAX_PATH
 from sys._libc import realpath as libc_realpath
-from collections.string.string_slice import _unsafe_strlen
+from sys.ffi import MAX_PATH, c_char, get_errno
 
 from .. import PathLike
 from .._linux_aarch64 import _lstat as _lstat_linux_arm
@@ -42,11 +42,6 @@ from ..os import sep
 # ===----------------------------------------------------------------------=== #
 # Utilities
 # ===----------------------------------------------------------------------=== #
-fn _constrain_unix():
-    constrained[
-        not CompilationTarget.is_windows(),
-        "operating system must be Linux or macOS",
-    ]()
 
 
 @always_inline
@@ -77,28 +72,24 @@ fn _get_lstat_st_mode(var path: String) raises -> Int:
 
 
 fn _user_home_path(path: String) -> String:
-    @parameter
-    if CompilationTarget.is_windows():
-        return getenv("USERPROFILE")
+    var user_end = path.find(sep, 1)
+    if user_end < 0:
+        user_end = len(path)
+    # Special POSIX syntax for ~[user-name]/path
+    if len(path) > 1 and user_end > 1:
+        try:
+            return pwd.getpwnam(String(path[1:user_end])).pw_dir
+        except:
+            return ""
     else:
-        var user_end = path.find(sep, 1)
-        if user_end < 0:
-            user_end = len(path)
-        # Special POSIX syntax for ~[user-name]/path
-        if len(path) > 1 and user_end > 1:
+        var user_home = getenv("HOME")
+        # Fallback to password database if `HOME` not set
+        if not user_home:
             try:
-                return pwd.getpwnam(path[1:user_end]).pw_dir
+                user_home = pwd.getpwuid(getuid()).pw_dir
             except:
                 return ""
-        else:
-            var user_home = getenv("HOME")
-            # Fallback to password database if `HOME` not set
-            if not user_home:
-                try:
-                    user_home = pwd.getpwuid(getuid()).pw_dir
-                except:
-                    return ""
-            return user_home
+        return user_home
 
 
 fn expanduser[PathLike: os.PathLike, //](path: PathLike) raises -> String:
@@ -119,6 +110,9 @@ fn expanduser[PathLike: os.PathLike, //](path: PathLike) raises -> String:
 
     Returns:
         The expanded path.
+
+    Raises:
+        If the operation fails.
     """
     var fspath = path.__fspath__()
     if not fspath.startswith("~"):
@@ -151,7 +145,6 @@ fn isdir[PathLike: os.PathLike, //](path: PathLike) -> Bool:
         True if the path is a directory or a link to a directory and
         False otherwise.
     """
-    _constrain_unix()
     var fspath = path.__fspath__()
     try:
         var st_mode = _get_stat_st_mode(fspath)
@@ -179,7 +172,6 @@ fn isfile[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     Returns:
         Returns True if the path is a regular file.
     """
-    _constrain_unix()
     var fspath = path.__fspath__()
     try:
         var st_mode = _get_stat_st_mode(fspath)
@@ -206,7 +198,6 @@ fn islink[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     Returns:
         True if the path is a link to a directory and False otherwise.
     """
-    _constrain_unix()
     try:
         return S_ISLNK(_get_lstat_st_mode(path.__fspath__()))
     except:
@@ -232,7 +223,7 @@ fn dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
     """
     var fspath = path.__fspath__()
     var i = fspath.rfind(os.sep) + 1
-    var head = fspath[:i]
+    var head = String(fspath[:i])
     if head and head != os.sep * len(head):
         return String(head.rstrip(os.sep))
     return head
@@ -277,34 +268,21 @@ fn realpath[PathLike: os.PathLike, //](path: PathLike) raises -> String:
     Returns:
         A String of the resolved path.
     """
-    # Leave room for initializing the refcount into the header.
-    alias capacity = MAX_PATH + String.REF_COUNT_SIZE
-    var ptr = UnsafePointer[c_char].alloc(capacity)
+    var string = String(capacity=MAX_PATH)
 
-    # Initialize the Atomic refcount into the header.
-    __get_address_as_uninit_lvalue(
-        ptr.bitcast[Atomic[DType.index]]().address
-    ) = Atomic[DType.index](1)
-
-    # Offset the pointer to after the refcount.
     var returned_path_ptr = libc_realpath(
         path.__fspath__().unsafe_ptr().bitcast[c_char](),
-        ptr + String.REF_COUNT_SIZE,
+        string._ptr_or_data.bitcast[Int8](),
     )
     if not returned_path_ptr:
         raise Error("realpath failed to resolve: ", get_errno())
 
-    # Caller is responsible for freeing the pointer, safe to store in String.
-    var string = String()
-    # Store the already offset pointer, pointing the the first char.
-    var byte_ptr = returned_path_ptr.bitcast[Byte]()
-    string._ptr_or_data = byte_ptr
-    string._len_or_data = _unsafe_strlen(byte_ptr)
-    # capacity >> 3 can only be lower, so will realloc safely if required
-    string._capacity_or_data = UInt(capacity >> 3)
-    string._set_ref_counted()
+    # We wrote the data directly into the String buffer
+    # now we need to figure out the length
+    string.set_byte_length(Int(_unsafe_strlen(string._ptr_or_data)))
+    string._set_nul_terminated()
 
-    return string
+    return string^
 
 
 # ===----------------------------------------------------------------------=== #
@@ -324,7 +302,6 @@ fn exists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     Returns:
         Returns True if the path exists and is not a broken symbolic link.
     """
-    _constrain_unix()
     try:
         _ = _get_stat_st_mode(path.__fspath__())
         return True
@@ -349,7 +326,6 @@ fn lexists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     Returns:
         Returns True if the path exists or is a broken symbolic link.
     """
-    _constrain_unix()
     try:
         _ = _get_lstat_st_mode(path.__fspath__())
         return True
@@ -373,6 +349,9 @@ fn getsize[PathLike: os.PathLike, //](path: PathLike) raises -> Int:
 
     Returns:
         The size of the path in bytes.
+
+    Raises:
+        If the operation fails.
     """
     return stat(path.__fspath__()).st_size
 
@@ -395,7 +374,6 @@ fn is_absolute[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     Returns:
         Return `True` if path is an absolute path name.
     """
-    _constrain_unix()
     return path.__fspath__().startswith(sep)
 
 
@@ -438,7 +416,7 @@ fn join(var path: String, *paths: String) -> String:
 # ===----------------------------------------------------------------------=== #
 
 
-def split[PathLike: os.PathLike, //](path: PathLike) -> (String, String):
+fn split[PathLike: os.PathLike, //](path: PathLike) -> Tuple[String, String]:
     """
     Split a given pathname into two components: head and tail. This is useful
     for separating the directory path from the filename. If the input path ends
@@ -460,8 +438,8 @@ def split[PathLike: os.PathLike, //](path: PathLike) -> (String, String):
     var i = fspath.rfind(os.sep) + 1
     var head, tail = fspath[:i], fspath[i:]
     if head and head != String(os.sep) * len(head):
-        head = String(head.rstrip(sep))
-    return head, tail
+        head = head.rstrip(sep)
+    return String(head), String(tail)
 
 
 fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
@@ -487,7 +465,7 @@ fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
     var head = fspath[i:]
     if head and head != os.sep * len(head):
         return String(head.rstrip(os.sep))
-    return head
+    return String(head)
 
 
 # TODO uncomment this when unpacking is supported
@@ -568,11 +546,10 @@ fn split_extension[
 
     Returns:
         A tuple containing two strings: (root, extension).
-    """
 
-    @parameter
-    if CompilationTarget.is_windows():
-        return _split_extension(path.__fspath__(), "\\", "/", ".")
+    Raises:
+        If the operation fails.
+    """
     return _split_extension(path.__fspath__(), sep, "", ".")
 
 
@@ -596,20 +573,20 @@ fn splitroot[
         A tuple containing three strings: (drive, root, tail).
     """
     var p = path.__fspath__()
-    alias empty = ""
+    comptime empty = ""
 
     # Relative path, e.g.: 'foo'
-    if p[:1] != sep:
+    if p[:1] != StringSlice(sep):
         return empty, empty, p
 
     # Absolute path, e.g.: '/foo', '///foo', '////foo', etc.
-    elif p[1:2] != sep or p[2:3] == sep:
-        return empty, String(sep), p[1:]
+    elif p[1:2] != StringSlice(sep) or p[2:3] == StringSlice(sep):
+        return empty, String(sep), String(p[1:])
 
     # Precisely two leading slashes, e.g.: '//foo'. Implementation defined per POSIX, see
     # https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13
     else:
-        return empty, p[:2], p[2:]
+        return empty, String(p[:2]), String(p[2:])
 
 
 # ===----------------------------------------------------------------------=== #
@@ -626,7 +603,7 @@ fn _is_shell_special_variable(byte: Byte) -> Bool:
     Returns:
         True if the byte is a special shell variable and False otherwise.
     """
-    alias shell_variables = InlineArray[Int, 17](
+    comptime shell_variables = InlineArray[Int, 17](
         ord("*"),
         ord("#"),
         ord("$"),
@@ -670,7 +647,7 @@ fn _is_alphanumeric(byte: Byte) -> Bool:
 
 
 fn _parse_variable_name[
-    immutable: ImmutableOrigin
+    immutable: ImmutOrigin
 ](bytes: Span[Byte, immutable]) -> Tuple[StringSlice[immutable], Int]:
     """Returns the environment variable name and the byte count required to extract it.
     For `${}` expansions, two additional bytes are added to the byte count to account for the braces.
@@ -730,7 +707,7 @@ fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
     while j < len(bytes):
         if bytes[j] == ord("$") and j + 1 < len(bytes):
             if not buf:
-                buf.reserve(new_capacity=UInt(2 * len(bytes)))
+                buf.reserve(new_capacity=2 * len(bytes))
             buf.write_bytes(bytes[i:j])
 
             var name, length = _parse_variable_name(bytes[j + 1 :])

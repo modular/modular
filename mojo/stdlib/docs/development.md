@@ -10,11 +10,8 @@ If this is your first time contributing, first read everything in
 To get started, you need to do the following:
 
 1. [Fork the repo and create a branch](../../CONTRIBUTING.md#how-to-create-a-pull-request).
-2. If you're using VS Code, [Install the nightly Mojo VS Code
-  extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo-nightly)
-
-    NOTE: You can only have one Mojo extension enabled at a time, remember to
-    switch when using the stable release!
+2. If you're using VS Code, [Install the Mojo VS Code
+  extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
 
 3. Install the nightly Mojo compiler:
 
@@ -86,11 +83,17 @@ To run the tests for the standard library, you can run:
 
 ## Testing only a subset of the standard library
 
-You can run all of the tests within a specific subdirectory by simply
+You can run all the tests within a specific subdirectory by simply
 specifying the subdirectory and using `/...`. For example:
 
 ```bash
 ./bazelw test //mojo/stdlib/test/math/...
+```
+
+To find all the test targets, you can run:
+
+```bash
+./bazelw query 'tests(//mojo/stdlib/...)'
 ```
 
 A convenience script exists for executing standard library tests within the mojo

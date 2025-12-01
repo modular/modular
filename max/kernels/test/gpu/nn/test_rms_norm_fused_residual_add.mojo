@@ -13,18 +13,18 @@
 
 from math import sqrt
 
+from algorithm.functional import elementwise
 from gpu.host import DeviceContext
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from layout import (
-    LayoutTensor,
+    UNKNOWN_VALUE,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from nn.normalization import *
 from testing import assert_almost_equal
-from internal_utils import HostNDBuffer, DeviceNDBuffer, random
-from algorithm.functional import elementwise
 
 from utils.index import Index, IndexList
 
@@ -61,33 +61,33 @@ fn run_rms_norm_fused_residual_add_gpu[
 
     var param_shape = Index(cols)
 
-    alias layout = Layout.row_major[rank]()
-    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    comptime layout = Layout.row_major[rank]()
+    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var data_buf = LayoutTensor[dtype, layout](
-        data_d.buffer.unsafe_ptr(), RuntimeLayout[layout].row_major(shape)
+        data_d.buffer, RuntimeLayout[layout].row_major(shape)
     )
     var gamma1 = LayoutTensor[dtype, layout_1d](
-        gamma1_d.buffer.unsafe_ptr(),
+        gamma1_d.buffer,
         RuntimeLayout[layout_1d].row_major(param_shape),
     )
     var gamma2 = LayoutTensor[dtype, layout_1d](
-        gamma2_d.buffer.unsafe_ptr(),
+        gamma2_d.buffer,
         RuntimeLayout[layout_1d].row_major(param_shape),
     )
     var result_fused_buf = LayoutTensor[dtype, layout](
-        result_fused_d.buffer.unsafe_ptr(),
+        result_fused_d.buffer,
         RuntimeLayout[layout].row_major(shape),
     )
     var result_unfused_buf = LayoutTensor[dtype, layout](
-        result_unfused_d.buffer.unsafe_ptr(),
+        result_unfused_d.buffer,
         RuntimeLayout[layout].row_major(shape),
     )
     var unfused_intermediate_buf = LayoutTensor[dtype, layout](
-        unfused_intermediate_d.buffer.unsafe_ptr(),
+        unfused_intermediate_d.buffer,
         RuntimeLayout[layout].row_major(shape),
     )
     var residual_fused_output_buf = LayoutTensor[dtype, layout](
-        residual_fused_output_d.buffer.unsafe_ptr(),
+        residual_fused_output_d.buffer,
         RuntimeLayout[layout].row_major(shape),
     )
     var epsilon1 = Scalar[dtype](0.001)

@@ -12,17 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
+from sys import env_get_int, env_get_string
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, arg_parse
-from internal_utils._utils import static, ValOrDim, dynamic
-from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
-from sys import env_get_int, env_get_string
+from internal_utils._utils import ValOrDim, dynamic, static
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive
 
 from utils import IndexList
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 
 
 fn _get_run_name[
@@ -88,10 +88,12 @@ fn bench_matmul[
                 False, in_dtype, out_dtype, shape_c, shape_a, shape_b
             ]("gemv_gevm", shape_c_dim, shape_a_dim, shape_b_dim)
         ),
-        ThroughputMeasure(
-            BenchMetric.flops,
-            2 * shape_c_dim[0] * shape_c_dim[1] * shape_b_dim[0],
-        ),
+        [
+            ThroughputMeasure(
+                BenchMetric.flops,
+                2 * shape_c_dim[0] * shape_c_dim[1] * shape_b_dim[0],
+            )
+        ],
     )
 
     # Retain our buffers till the end.
@@ -135,10 +137,12 @@ fn bench_matmul_transpose[
                 "gemv_transpose", shape_c_dim, shape_a_dim, shape_b_dim
             )
         ),
-        ThroughputMeasure(
-            BenchMetric.flops,
-            2 * shape_c_dim[0] * shape_c_dim[1] * shape_b_dim[1],
-        ),
+        [
+            ThroughputMeasure(
+                BenchMetric.flops,
+                2 * shape_c_dim[0] * shape_c_dim[1] * shape_b_dim[1],
+            )
+        ],
     )
 
     # Retain our buffers till the end.
@@ -172,8 +176,8 @@ fn bench_matmul_naive[
     var N = shape_c_dim[1]
     var K = shape_a_dim[1]
 
-    alias BLOCK_DIM = 16
-    alias WARPS_PER_BLOCK = 32
+    comptime BLOCK_DIM = 16
+    comptime WARPS_PER_BLOCK = 32
 
     @always_inline
     @__copy_capture(M, N, K)
@@ -182,23 +186,22 @@ fn bench_matmul_naive[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            ctx.enqueue_function[
-                matmul_kernel_naive[
-                    out_type,
-                    in_type,
-                    in_type,
-                    c_tensor.layout,
-                    a_tensor.layout,
-                    b_tensor.layout,
-                    BLOCK_DIM,
-                ]
-            ](
+            comptime kernel = matmul_kernel_naive[
+                out_type,
+                in_type,
+                in_type,
+                c_tensor.layout,
+                a_tensor.layout,
+                b_tensor.layout,
+                BLOCK_DIM,
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 c_tensor,
                 a_tensor,
                 b_tensor,
-                UInt(M),
-                UInt(N),
-                UInt(K),
+                M,
+                N,
+                K,
                 grid_dim=(ceildiv(M, WARPS_PER_BLOCK), ceildiv(N, BLOCK_DIM)),
                 block_dim=(BLOCK_DIM, BLOCK_DIM),
             )
@@ -211,10 +214,12 @@ fn bench_matmul_naive[
                 "gemv_naive", shape_c_dim, shape_a_dim, shape_b_dim
             )
         ),
-        ThroughputMeasure(
-            BenchMetric.flops,
-            2 * shape_c_dim[0] * shape_c_dim[1] * shape_b_dim[1],
-        ),
+        [
+            ThroughputMeasure(
+                BenchMetric.flops,
+                2 * shape_c_dim[0] * shape_c_dim[1] * shape_b_dim[1],
+            )
+        ],
     )
 
     ctx.synchronize()
@@ -273,16 +278,18 @@ fn get_dtype[output_type: String]() -> DType:
     return DType.bfloat16
 
 
-fn main() raises:
+def main():
     var h = Bench()
 
-    alias input_type = DType.bfloat16
+    comptime input_type = DType.bfloat16
 
     var M = Int(arg_parse("M", 1))
-    alias N = env_get_int["N", 1]()
-    alias K = env_get_int["K", 1]()
+    comptime N = env_get_int["N", 1]()
+    comptime K = env_get_int["K", 1]()
 
-    alias output_type = get_dtype[env_get_string["output_type", "bfloat16"]()]()
+    comptime output_type = get_dtype[
+        env_get_string["output_type", "bfloat16"]()
+    ]()
 
     var mode = arg_parse("mode", "default")  # [default, naive, transpose]
     var shape = IndexList[3](M, N, K)

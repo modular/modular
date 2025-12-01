@@ -13,16 +13,12 @@
 
 from collections import OptionalReg
 from hashlib import default_comp_time_hasher
-from buffer.dimlist import DimList
+from sys import align_of, size_of
+
 from buffer import NDBuffer
-from linalg.bmm import bmm_sm100_blockwise_scaled_fp8
-from sys import size_of
+from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from utils.index import Index, IndexList
-from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from internal_utils._measure import relative_difference
+from gpu.host.nvidia.tma import TensorMapSwizzle
 
 # Additional imports for testing
 from internal_utils import (
@@ -33,9 +29,17 @@ from internal_utils import (
     random,
     zero,
 )
+from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
-from linalg.bmm import elementwise_epilogue_type
-from sys import align_of
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.bmm import (
+    bmm_sm100_blockwise_scaled_fp8,
+    batched_matmul_dynamic_scaled_fp8_naive,
+    elementwise_epilogue_type,
+)
+from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
+
+from utils.index import Index, IndexList
 
 
 def test_batched_matmul_sm100_blockwise_scaled_fp8[
@@ -53,8 +57,8 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     k: ValOrDim,
     batch_size: ValOrDim,
 ):
-    alias BLOCK_SCALE_K = 128
-    alias block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
+    comptime BLOCK_SCALE_K = 128
+    comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
 
     constrained[transpose_b, "transpose_b must be true"]()
 
@@ -96,16 +100,16 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         "K must be divisible by BLOCK_SCALE_K",
     )
 
-    alias static_a_shape = DimList(batch_size.dim, m.dim, k.dim)
-    alias static_b_shape = DimList(
+    comptime static_a_shape = DimList(batch_size.dim, m.dim, k.dim)
+    comptime static_b_shape = DimList(
         batch_size.dim, n.dim, k.dim
     ) if transpose_b else DimList(batch_size.dim, k.dim, n.dim)
-    alias static_c_shape = DimList(batch_size.dim, m.dim, n.dim)
+    comptime static_c_shape = DimList(batch_size.dim, m.dim, n.dim)
 
-    alias static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList(
         batch_size.dim, k.dim // BLOCK_SCALE_K, m.dim
     )
-    alias static_b_scales_shape = DimList(
+    comptime static_b_scales_shape = DimList(
         batch_size.dim, n.dim // BLOCK_SCALE_K, k.dim // BLOCK_SCALE_K
     )
 
@@ -119,14 +123,14 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         bs, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
 
-    alias static_a_shape_2D = DimList(m.dim, k.dim)
-    alias static_b_shape_2D = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
-    )
-    alias static_c_shape_2D = DimList(m.dim, n.dim)
+    comptime static_a_shape_2D = DimList(m.dim, k.dim)
+    comptime static_b_shape_2D = DimList(
+        n.dim, k.dim
+    ) if transpose_b else DimList(k.dim, n.dim)
+    comptime static_c_shape_2D = DimList(m.dim, n.dim)
 
-    alias static_a_scales_shape_2D = DimList(k.dim // BLOCK_SCALE_K, m.dim)
-    alias static_b_scales_shape_2D = DimList(
+    comptime static_a_scales_shape_2D = DimList(k.dim // BLOCK_SCALE_K, m.dim)
+    comptime static_b_scales_shape_2D = DimList(
         n.dim // BLOCK_SCALE_K, k.dim // BLOCK_SCALE_K
     )
 
@@ -200,7 +204,6 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
 
     ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
-    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
 
     ctx.enqueue_copy(a_scales_device.buffer, a_scales_host.tensor.data)
     ctx.enqueue_copy(b_scales_device.buffer, b_scales_host.tensor.data)
@@ -224,44 +227,17 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
 
     ctx.synchronize()
 
-    for batch in range(bs):
-        var c_ptr = c_device_ref.tensor.data + batch * M * N
-        var a_ptr = a_device.tensor.data + batch * M * K
-        var b_ptr = b_device.tensor.data + batch * N * K
-        var a_scales_ptr = (
-            a_scales_device.tensor.data + batch * (K // BLOCK_SCALE_K) * M
-        )
-        var b_scales_ptr = b_scales_device.tensor.data + batch * (
-            N // BLOCK_SCALE_K
-        ) * (K // BLOCK_SCALE_K)
-
-        var c_buffer = NDBuffer[c_type, 2, _, static_c_shape_2D](
-            c_ptr, dynamic_c_shape_2D
-        )
-        var a_buffer = NDBuffer[a_type, 2, _, static_a_shape_2D](
-            a_ptr, dynamic_a_shape_2D
-        )
-        var b_buffer = NDBuffer[b_type, 2, _, static_b_shape_2D](
-            b_ptr, dynamic_b_shape_2D
-        )
-        var a_scales_buffer = NDBuffer[
-            DType.float32, 2, _, static_a_scales_shape_2D
-        ](a_scales_ptr, dynamic_a_scales_shape_2D)
-        var b_scales_buffer = NDBuffer[
-            DType.float32, 2, _, static_b_scales_shape_2D
-        ](b_scales_ptr, dynamic_b_scales_shape_2D)
-
-        naive_blockwise_scaled_fp8_matmul[
-            BLOCK_DIM=16,
-            transpose_b=transpose_b,
-        ](
-            c_buffer,
-            a_buffer,
-            b_buffer,
-            a_scales_buffer,
-            b_scales_buffer,
-            ctx,
-        )
+    batched_matmul_dynamic_scaled_fp8_naive[
+        scales_granularity_mnk = Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        transpose_b=transpose_b,
+    ](
+        c_device_ref.tensor,
+        a_device.tensor,
+        b_device.tensor,
+        a_scales_device.tensor,
+        b_scales_device.tensor,
+        ctx,
+    )
 
     ctx.synchronize()
 
@@ -332,7 +308,7 @@ def main():
         test_batched_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
-            DType.bfloat16,
+            DType.float32,
             umma_shape = Index(64, 128, 32),
             swizzle = TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
@@ -347,7 +323,7 @@ def main():
         test_batched_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
-            DType.bfloat16,
+            DType.float32,
             umma_shape = Index(64, 64, 32),
             swizzle = TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
@@ -408,28 +384,28 @@ def main():
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.bfloat16,
-            umma_shape = Index(64, 256, 32),
+            umma_shape = Index(64, 64, 32),
             swizzle = TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
             ctx,
             dynamic(120),
-            static[1280](),
             static[512](),
-            dynamic(6),
+            static[128](),
+            dynamic(128),
         )
         test_batched_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.bfloat16,
-            umma_shape = Index(64, 128, 32),
+            umma_shape = Index(64, 64, 32),
             swizzle = TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
             use_epilogue=True,
         ](
             ctx,
+            dynamic(120),
+            static[128](),
+            static[512](),
             dynamic(128),
-            static[128](),
-            static[128](),
-            dynamic(4),
         )

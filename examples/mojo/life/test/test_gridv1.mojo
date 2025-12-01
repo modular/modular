@@ -23,18 +23,18 @@ alias data4x4 = [
 
 
 def test_gridv1_init():
-    grid = Grid(4, 4, data4x4)
+    grid = Grid(4, 4, materialize[data4x4]())
     assert_equal(4, grid.rows)
     assert_equal(4, grid.cols)
     for row in range(4):
-        assert_equal(data4x4[row], grid.data[row])
+        assert_equal(materialize[data4x4]()[row], grid.data[row])
 
 
 def test_gridv1_index():
-    grid = Grid(4, 4, data4x4)
+    grid = Grid(4, 4, materialize[data4x4]())
     for row in range(4):
         for col in range(4):
-            assert_equal(data4x4[row][col], grid[row, col])
+            assert_equal(materialize[data4x4]()[row][col], grid[row, col])
             grid[row, col] = 1
             assert_equal(1, grid[row, col])
             grid[row, col] = 0
@@ -42,7 +42,7 @@ def test_gridv1_index():
 
 
 def test_gridv1_str():
-    grid = Grid(4, 4, data4x4)
+    grid = Grid(4, 4, materialize[data4x4]())
     grid_str = String(grid)
     var str4x4 = " ** \n**  \n  **\n*  *"
     assert_equal(str4x4, grid_str)
@@ -62,7 +62,7 @@ def test_gridv1_evolve():
         [0, 1, 0, 1],
     ]
 
-    grid_gen1 = Grid(4, 4, data4x4)
+    grid_gen1 = Grid(4, 4, materialize[data4x4]())
 
     grid_gen2 = grid_gen1.evolve()
     for row in range(4):

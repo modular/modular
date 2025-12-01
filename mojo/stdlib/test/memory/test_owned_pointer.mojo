@@ -18,7 +18,13 @@ from test_utils import (
     MoveOnly,
     ObservableDel,
 )
-from testing import assert_equal, assert_false, assert_not_equal, assert_true
+from testing import (
+    assert_equal,
+    assert_false,
+    assert_not_equal,
+    assert_true,
+    TestSuite,
+)
 
 
 def test_basic_ref():
@@ -28,9 +34,9 @@ def test_basic_ref():
 
 def test_from_unsafe_pointer_constructor():
     var deleted = False
-    var unsafe_ptr = UnsafePointer[ObservableDel].alloc(1)
+    var unsafe_ptr = alloc[ObservableDel](1)
     unsafe_ptr.init_pointee_move(
-        ObservableDel(UnsafePointer(to=deleted).origin_cast[mut=False]())
+        ObservableDel(UnsafePointer(to=deleted).as_any_origin())
     )
 
     var ptr = OwnedPointer(unsafe_from_raw_pointer=unsafe_ptr)
@@ -46,7 +52,7 @@ def test_owned_pointer_copy_constructor():
     assert_equal(1, b[])
     assert_equal(1, b2[])
 
-    assert_not_equal(b.unsafe_ptr(), b2.unsafe_ptr())
+    assert_false(b.unsafe_ptr() == b2.unsafe_ptr())
 
 
 def test_copying_constructor():
@@ -109,16 +115,16 @@ def test_take():
 
 def test_moveinit():
     var deleted = False
-    var b = OwnedPointer(
-        ObservableDel(UnsafePointer(to=deleted).origin_cast[mut=False]())
-    )
-    var p1 = b.unsafe_ptr()
+    var b = OwnedPointer(ObservableDel(UnsafePointer(to=deleted)))
+    var p1 = Int(b.unsafe_ptr())
 
     var b2 = b^
-    var p2 = b2.unsafe_ptr()
+    var p2 = Int(b2.unsafe_ptr())
 
     assert_false(deleted)
-    assert_equal(p1, p2)  # move should reuse the allocation
+
+    # move should reuse the allocation, having the same address
+    assert_equal(p1, p2)
 
     _ = b2^
 
@@ -137,13 +143,4 @@ def test_steal_data():
 
 
 def main():
-    test_basic_ref()
-    test_owned_pointer_copy_constructor()
-    test_moving_constructor()
-    test_copying_constructor()
-    test_explicitly_copying_constructor()
-    test_basic_ref_mutate()
-    test_basic_del()
-    test_take()
-    test_moveinit()
-    test_steal_data()
+    TestSuite.discover_tests[__functions_in_module()]().run()

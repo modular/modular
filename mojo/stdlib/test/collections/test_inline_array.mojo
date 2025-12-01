@@ -15,7 +15,7 @@ from sys.info import size_of
 
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from test_utils import CopyCounter, DelRecorder, MoveCounter
-from testing import assert_equal, assert_true
+from testing import assert_equal, assert_true, TestSuite
 
 
 def test_array_unsafe_get():
@@ -220,27 +220,27 @@ def test_array_contains():
 
 def test_inline_array_runs_destructors():
     """Ensure we delete the right number of elements."""
-    var destructor_counter = List[Int]()
-    var pointer_to_destructor_counter = UnsafePointer(to=destructor_counter)
-    alias capacity = 32
-    var inline_list = InlineArray[DelRecorder, 4](
-        DelRecorder(0, pointer_to_destructor_counter),
-        DelRecorder(10, pointer_to_destructor_counter),
-        DelRecorder(20, pointer_to_destructor_counter),
-        DelRecorder(30, pointer_to_destructor_counter),
+    var destructor_recorder = List[Int]()
+    var ptr = UnsafePointer(to=destructor_recorder).as_immutable()
+    comptime capacity = 32
+    var inline_list = InlineArray[DelRecorder[ptr.origin], 4](
+        DelRecorder(0, ptr),
+        DelRecorder(10, ptr),
+        DelRecorder(20, ptr),
+        DelRecorder(30, ptr),
     )
     _ = inline_list
     # This is the last use of the inline list, so it should be destroyed here,
     # along with each element.
-    assert_equal(len(destructor_counter), 4)
-    assert_equal(destructor_counter[0], 0)
-    assert_equal(destructor_counter[1], 10)
-    assert_equal(destructor_counter[2], 20)
-    assert_equal(destructor_counter[3], 30)
+    assert_equal(len(destructor_recorder), 4)
+    assert_equal(destructor_recorder[0], 0)
+    assert_equal(destructor_recorder[1], 10)
+    assert_equal(destructor_recorder[2], 20)
+    assert_equal(destructor_recorder[3], 30)
 
 
-fn test_unsafe_ptr() raises:
-    alias N = 10
+def test_unsafe_ptr():
+    comptime N = 10
     var arr = InlineArray[Int, 10](fill=0)
     for i in range(N):
         arr[i] = i
@@ -250,18 +250,22 @@ fn test_unsafe_ptr() raises:
         assert_equal(arr[i], ptr[i])
 
 
-def test_size_of_array[current_type: Copyable & Movable, capacity: Int]():
+def _test_size_of_array[current_type: Copyable & Movable, capacity: Int]():
     """Testing if `size_of` the array equals capacity * `size_of` current_type.
 
     Parameters:
         current_type: The type of the elements of the `InlineList`.
         capacity: The capacity of the `InlineList`.
     """
-    alias size_of_current_type = size_of[current_type]()
+    comptime size_of_current_type = size_of[current_type]()
     assert_equal(
         size_of[InlineArray[current_type, capacity]](),
         capacity * size_of_current_type,
     )
+
+
+def test_size_of_array():
+    _test_size_of_array[Int, 32]()
 
 
 def test_move():
@@ -299,32 +303,24 @@ def test_move():
 
     # === 3. Check that the destructor is not called when moving. ===
 
-    var destructor_counter = List[Int]()
-    var pointer_to_destructor_counter = UnsafePointer(to=destructor_counter)
-    var del_recorder = DelRecorder(0, pointer_to_destructor_counter)
-    var arr3 = InlineArray[DelRecorder, 1](del_recorder)
+    var del_counter = List[Int]()
+    var del_counter_ptr = UnsafePointer(to=del_counter).as_immutable()
+    var del_recorder = DelRecorder[del_counter_ptr.origin](0, del_counter_ptr)
+    var arr3 = InlineArray[DelRecorder[del_counter_ptr.origin], 1](del_recorder)
 
-    assert_equal(len(pointer_to_destructor_counter[]), 0)
+    assert_equal(len(del_counter_ptr[]), 0)
 
     var moved_arr3 = arr3^
 
-    assert_equal(len(pointer_to_destructor_counter[]), 0)
+    assert_equal(len(del_counter_ptr[]), 0)
 
     _ = moved_arr3
 
     # Double check that the destructor is called when the array is destroyed
-    assert_equal(len(pointer_to_destructor_counter[]), 1)
+    assert_equal(len(del_counter_ptr[]), 1)
     _ = del_recorder
+    _ = del_counter
 
 
 def main():
-    test_array_unsafe_get()
-    test_array_int()
-    test_array_str()
-    test_array_int_pointer()
-    test_array_unsafe_assume_initialized_constructor_string()
-    test_array_contains()
-    test_inline_array_runs_destructors()
-    test_unsafe_ptr()
-    test_size_of_array[Int, capacity=32]()
-    test_move()
+    TestSuite.discover_tests[__functions_in_module()]().run()

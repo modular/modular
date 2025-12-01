@@ -11,12 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host.info import H100
-import linalg.vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from gpu.host import DeviceContext
+from gpu.host.info import H100
 from internal_utils._utils import dynamic, static
-from linalg.matmul_sm90_testbed import test_matmul_sm90
-from linalg.matmul_tile_scheduler import MatmulSchedule
+from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
+from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
+
 from utils.index import Index
 
 # NOTE: This test originally tested hilbert_swizzle=True functionality,
@@ -25,17 +26,17 @@ from utils.index import Index
 # to include this parameter and pass it to warp_specialize_gemm_with_multicasting.
 
 # Helper to calculate block_tile_shape - fixed for bfloat16
-alias block_tile_shape[wgmma_n: Int] = Index(128, wgmma_n, 64)
+comptime block_tile_shape[wgmma_n: Int] = Index(128, wgmma_n, 64)
 
 # Helper to calculate wgmma_shape - fixed for bfloat16
-alias wgmma_shape[wgmma_n: Int] = Index(64, wgmma_n, 16)
+comptime wgmma_shape[wgmma_n: Int] = Index(64, wgmma_n, 16)
 
 
 def main():
     with DeviceContext() as ctx:
-        alias M = 8192
-        alias N = 6144
-        alias K = 4096
+        comptime M = 8192
+        comptime N = 6144
+        comptime K = 4096
 
         print(
             "Running warp specialize gemm test (Note: hilbert swizzle"

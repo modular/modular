@@ -13,8 +13,5 @@
 """Implements the python package."""
 
 from .python import Python
-from .python_object import (
-    ConvertibleFromPython,
-    ConvertibleToPython,
-    PythonObject,
-)
+from .conversions import ConvertibleFromPython, ConvertibleToPython
+from .python_object import PythonObject

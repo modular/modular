@@ -13,10 +13,10 @@
 
 
 from math import iota
+from memory import LegacyUnsafePointer as UnsafePointer
 from random import random_float64
 
-from buffer import NDBuffer, DimList
-from layout import LayoutTensor, Layout, RuntimeLayout, RuntimeTuple
+from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from nn.softmax import softmax
 
 from utils import IndexList
@@ -166,9 +166,7 @@ fn _topp_minp_sampling[
 
     softmax[simd_width=1, input_fn=apply_temperature](
         shape,
-        NDBuffer[dtype, input_logits.rank](
-            sorted_probs_ptr, DimList(batch_size, vocab_size)
-        ),
+        sorted_probs,
         axis=input_logits.rank - 1,
     )
 

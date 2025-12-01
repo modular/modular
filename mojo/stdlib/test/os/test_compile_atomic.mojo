@@ -14,7 +14,7 @@
 from os.atomic import Atomic, fence
 
 from compile import compile_info
-from testing import assert_true, assert_false
+from testing import TestSuite, assert_false, assert_true
 
 
 def test_compile_atomic():
@@ -45,9 +45,9 @@ def test_compile_fence():
 
 
 def test_compile_compare_exchange():
-    fn my_cmpxchg_function(atom: Atomic[DType.int32, scope="agent"]) -> Bool:
+    fn my_cmpxchg_function(mut atm: Atomic[DType.int32, scope="agent"]) -> Bool:
         var expected = Int32(0)
-        return atom.compare_exchange(expected, 42)
+        return atm.compare_exchange(expected, 42)
 
     var asm = compile_info[my_cmpxchg_function, emission_kind="llvm"]()
 
@@ -59,6 +59,4 @@ def test_compile_compare_exchange():
 
 
 def main():
-    test_compile_atomic()
-    test_compile_fence()
-    test_compile_compare_exchange()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -10,22 +10,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from buffer import NDBuffer
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from kv_cache.types import KVCacheT
 from layout import Layout, LayoutTensor
-from layout.layout import DimList, UNKNOWN_VALUE
+from layout.layout import UNKNOWN_VALUE, DimList
 from layout.runtime_layout import RuntimeLayout
 from layout.tma_async import TMANestedTensorTile, create_nested_tma_tile
-from utils import IndexList
+
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
+from utils import Index, IndexList
+
+from builtin.device_passable import DevicePassable
 
 
 @register_passable("trivial")
-trait MHAOperand:
+trait MHAOperand(DevicePassable):
     """This serves as the trait to support arguments to our MHA kernel."""
 
-    alias dtype: DType
+    comptime dtype: DType
+    comptime page_size: Int
 
     # TODO: change this to return a LayoutTensor once MOCO-1471 is fixed
     @always_inline
@@ -75,17 +82,33 @@ trait MHAOperand:
 
 
 @register_passable("trivial")
-struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
+struct KVCacheMHAOperand[
+    cache_t: KVCacheT,
+](MHAOperand):
     """An implementation for `mo.opaque` KVCacheT arguments to MHA kernels.
 
     We can eventually remove this trait and just add it as a sub-trait in the
     KVCacheT type, but we need to solve some cyclic dependencies first.
     """
 
-    alias dtype = cache_t.dtype
-    var cache: cache_t
+    comptime dtype = Self.cache_t.dtype
+    comptime page_size = Self.cache_t.page_size_
+    var cache: Self.cache_t
 
-    fn __init__(out self, cache: cache_t):
+    comptime device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "KVCacheMHAOperand"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
+
+    fn __init__(out self, cache: Self.cache_t):
         self.cache = cache
 
     @always_inline
@@ -142,17 +165,29 @@ struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
 
 
 @register_passable("trivial")
-struct NDBufferMHAOperand[
-    dtype_: DType, rank: Int, shape: DimList, stride: DimList
-](MHAOperand):
+struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
     """An implementation for NDBuffer arguments to MHA kernels."""
 
-    alias dtype = dtype_
-    var buffer: NDBuffer[Self.dtype, rank, MutableAnyOrigin, shape, stride]
+    comptime dtype = Self.dtype_
+    comptime page_size = 0
+    var buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin]
+
+    comptime device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "LayoutTensorMHAOperand"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     fn __init__(
         out self,
-        buffer: NDBuffer[Self.dtype, rank, MutableAnyOrigin, shape, stride],
+        buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin],
     ):
         self.buffer = buffer
 
@@ -166,8 +201,8 @@ struct NDBufferMHAOperand[
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
     ) -> UnsafePointer[Scalar[Self.dtype]]:
-        var ret_ptr = self.buffer._offset(
-            IndexList[rank](
+        var ret_ptr = self.buffer.ptr + self.buffer._offset(
+            IndexList[self.layout.rank()](
                 Int(batch_idx),
                 Int(start_tok_idx),
                 Int(head_idx),
@@ -194,7 +229,7 @@ struct NDBufferMHAOperand[
     @always_inline
     fn col_idx(self, head_idx: UInt32) -> UInt32:
         """Returns the col idx when viewing the memory as a matrix."""
-        return head_idx * self.buffer.dim[rank - 1]()
+        return head_idx * self.buffer.dim[self.layout.rank() - 1]()
 
     @always_inline
     fn create_tma_tile[
@@ -214,12 +249,12 @@ struct NDBufferMHAOperand[
         # View the 4D buffer as a 2D matrix [batch*seq, heads*head_dim]
         var rows = self.buffer.dim[0]() * self.buffer.dim[1]()
         var cols = self.buffer.dim[2]() * self.buffer.dim[3]()
-        alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+        comptime layout_ = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-        rt_layout = RuntimeLayout[layout].row_major(IndexList[2](rows, cols))
+        rt_layout = RuntimeLayout[layout_].row_major(IndexList[2](rows, cols))
 
-        var tensor = LayoutTensor[Self.dtype, layout, MutableAnyOrigin](
-            self.buffer.data, rt_layout
+        var tensor = LayoutTensor[Self.dtype, layout_, MutAnyOrigin](
+            self.buffer.ptr, rt_layout
         )
 
         return create_nested_tma_tile[
@@ -228,20 +263,45 @@ struct NDBufferMHAOperand[
 
 
 @register_passable("trivial")
-struct RaggedMHAOperand[dtype_: DType, shape: DimList, stride: DimList](
+struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
     MHAOperand
 ):
     """An implementation for ragged NDBuffer arguments to MHA kernels."""
 
-    alias dtype = dtype_
-    var buffer: NDBuffer[Self.dtype, 3, MutableAnyOrigin, shape, stride]
-    var cache_row_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin, *_]
+    comptime dtype = Self.dtype_
+    comptime page_size = 0
+    var buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin]
+    var cache_row_offsets: LayoutTensor[
+        DType.uint32, Self.cache_layout, MutAnyOrigin
+    ]
+
+    comptime device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "RaggedMHAOperand"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     fn __init__(
         out self,
-        buffer: NDBuffer[Self.dtype, 3, MutableAnyOrigin, shape, stride],
-        cache_row_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin, *_],
+        buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin],
+        cache_row_offsets: LayoutTensor[
+            DType.uint32, Self.cache_layout, MutAnyOrigin
+        ],
     ):
+        constrained[
+            buffer.rank == 3, "only support rank 3 inputs for ragged inputs."
+        ]()
+        constrained[
+            cache_row_offsets.rank == 1,
+            "only support rank 1 inputs for cache offsets.",
+        ]()
         self.buffer = buffer
         self.cache_row_offsets = cache_row_offsets
 
@@ -258,8 +318,8 @@ struct RaggedMHAOperand[dtype_: DType, shape: DimList, stride: DimList](
         global_token_idx = Int(
             self.cache_row_offsets[Int(batch_idx)] + start_tok_idx
         )
-        var ret_ptr = self.buffer._offset(
-            IndexList[3](
+        var ret_ptr = self.buffer.ptr + self.buffer._offset(
+            IndexList[self.layout.rank()](
                 Int(global_token_idx),
                 Int(head_idx),
                 Int(head_dim_idx),
@@ -282,7 +342,7 @@ struct RaggedMHAOperand[dtype_: DType, shape: DimList, stride: DimList](
     @always_inline
     fn row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
         """Returns the row idx when viewing the memory as a matrix."""
-        return self.cache_row_offsets[Int(batch_idx)] + start_tok_idx
+        return self.cache_row_offsets[Int(batch_idx)][0] + start_tok_idx
 
     @always_inline
     fn col_idx(self, head_idx: UInt32) -> UInt32:
@@ -308,11 +368,11 @@ struct RaggedMHAOperand[dtype_: DType, shape: DimList, stride: DimList](
         var rows = self.buffer.dim[0]()  # total tokens
         var cols = self.buffer.dim[1]() * self.buffer.dim[2]()
 
-        alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+        comptime layout_ = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-        rt_layout = RuntimeLayout[layout].row_major(IndexList[2](rows, cols))
-        var tensor = LayoutTensor[Self.dtype, layout, MutableAnyOrigin](
-            self.buffer.data, rt_layout
+        rt_layout = RuntimeLayout[layout_].row_major(IndexList[2](rows, cols))
+        var tensor = LayoutTensor[Self.dtype, layout_, MutAnyOrigin](
+            self.buffer.ptr, rt_layout
         )
 
         return create_nested_tma_tile[

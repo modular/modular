@@ -11,15 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
+from io.write import Writable, Writer, _hex_digits_to_hex_chars, _write_hex
 
 from memory.memory import memset_zero
-from io.write import (
-    Writable,
-    Writer,
-    _write_hex,
-    _hex_digits_to_hex_chars,
-)
+from testing import assert_equal
+
+from testing import TestSuite
 
 
 @fieldwise_init
@@ -90,8 +87,8 @@ def test_write_int_padded():
 
 
 def test_hex_digits_to_hex_chars():
-    items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0)
-    alias S = StringSlice[__origin_of(items)]
+    items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    comptime S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
     _hex_digits_to_hex_chars(ptr, UInt32(ord("🔥")))
     assert_equal("0001f525", String(S(ptr=ptr, length=8)))
@@ -116,8 +113,8 @@ def test_hex_digits_to_hex_chars():
 
 
 def test_write_hex():
-    items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0)
-    alias S = StringSlice[__origin_of(items)]
+    items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    comptime S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
     _write_hex[8](ptr, ord("🔥"))
     assert_equal(r"\U0001f525", String(S(ptr=ptr, length=10)))
@@ -142,7 +139,7 @@ def test_closure_non_capturing():
     write_non_capturing[write_closure]()
 
 
-def test_closure_capturing(mut writer: Some[Writer & Writable]):
+def _test_closure_capturing(mut writer: Some[Writer & Writable]):
     fn write_closure() capturing:
         writer.write("Hello Mojo!")
 
@@ -157,17 +154,10 @@ def test_closure_capturing(mut writer: Some[Writer & Writable]):
     assert_equal(result, "Hello Mojo!")
 
 
-def main():
-    test_writer_of_string()
-    test_string_write_seq()
-    test_stringable_based_on_format()
-
-    test_write_int_padded()
-
-    test_hex_digits_to_hex_chars()
-    test_write_hex()
-
-    test_closure_non_capturing()
-
+def test_closure_capturing():
     var writer = String()
-    test_closure_capturing(writer)
+    _test_closure_capturing(writer)
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

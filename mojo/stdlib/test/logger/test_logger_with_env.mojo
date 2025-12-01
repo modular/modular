@@ -12,13 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 from logger import Logger
+from testing import TestSuite
 
 
-def main():
+def test_log_with_env():
     var log = Logger()
 
-    # CHECK: DEBUG::: hello world
+    # CHECK: {{.*}}DEBUG{{.*}}::: hello world
     log.debug("hello", "world")
 
-    # CHECK: INFO::: hello
+    # CHECK: {{.*}}INFO{{.*}}::: hello
     log.info("hello")
+
+
+fn main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

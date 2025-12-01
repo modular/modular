@@ -19,13 +19,14 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from gpu.host import DeviceContext
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils import IndexList
 
 
 fn bench_add[
     unroll_by: Int, rank: Int
 ](mut b: Bench, shape: IndexList[rank], ctx: DeviceContext) raises:
-    alias type = DType.float32
+    comptime type = DType.float32
     var size = shape.flattened_length()
     var input0_ptr = ctx.enqueue_create_buffer[type](size)
     var input1_ptr = ctx.enqueue_create_buffer[type](size)
@@ -66,16 +67,16 @@ fn bench_add[
 
         b.iter_custom[kernel_launch](ctx)
 
-    b.bench_with_input[__type_of(shape), bench_func](
+    b.bench_with_input[type_of(shape), bench_func](
         BenchId("add", String(shape)),
         shape,
         # TODO: Pick relevant benchmetric.
-        ThroughputMeasure(BenchMetric.elements, size * size_of[type]() * 3),
+        [ThroughputMeasure(BenchMetric.elements, size * size_of[type]() * 3)],
     )
 
     ctx.enqueue_copy(output_ptr_host, output_ptr)
 
-    alias nelts = simd_width_of[type]()
+    comptime nelts = simd_width_of[type]()
     for i in range(0, size, nelts):
         if not (
             output_ptr_host.load[width=nelts](i).eq(
@@ -90,7 +91,7 @@ fn bench_add[
     _ = output_ptr
 
 
-fn main() raises:
+def main():
     var b = Bench()
     with DeviceContext() as ctx:
         bench_add[unroll_by=4](b, IndexList[4](2, 4, 1024, 1024), ctx)

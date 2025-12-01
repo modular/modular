@@ -47,7 +47,6 @@ def _sdk_default_env() -> dict[str, str]:
         "MODULAR_MAX_PACKAGE_ROOT": str(root),
         "MODULAR_MAX_CACHE_DIR": str(root / "share" / "max" / ".max_cache"),
         "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "true",
-        "MODULAR_MAX_GRAPH_LIB": str(lib / "libmax") + ext,
         "MODULAR_MAX_PATH": str(root),
         "MODULAR_MAX_NAME": "MAX Platform",
         # MODULAR_MAX_VERSION intentionally omitted
@@ -84,7 +83,6 @@ def _sdk_default_env() -> dict[str, str]:
             if sys.platform == "darwin"
             else "-lrt,-ldl,-lpthread,-lm"
         ),
-        "MODULAR_MOJO_MAX_TEST_EXECUTOR_PATH": str(lib / "mojo-test-executor"),
 
         "MODULAR_CRASH_REPORTING_HANDLER_PATH": str(
             bin / "modular-crashpad-handler"
@@ -100,7 +98,7 @@ def _mojo_env() -> dict[str, str]:
     return _sdk_default_env() | dict(os.environ)
 
 
-def subprocess_run_mojo(
+def subprocess_run_mojo(  # noqa: ANN201
     mojo_args: list[str],
     **kwargs: Any,
 ):

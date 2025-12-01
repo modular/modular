@@ -23,8 +23,9 @@ from utils import IndexList
 from hashlib.hasher import Hasher
 from sys import bit_width_of
 
-from builtin.dtype import _int_type_of_width, _uint_type_of_width
 from builtin.device_passable import DevicePassable
+from builtin.dtype import _int_type_of_width, _uint_type_of_width
+from memory import LegacyOpaquePointer
 
 from .static_tuple import StaticTuple
 
@@ -56,7 +57,7 @@ fn _reduce_and_fn(a: Bool, b: Bool) -> Bool:
 @always_inline
 fn _int_tuple_binary_apply[
     binary_fn: fn[dtype: DType] (Scalar[dtype], Scalar[dtype]) -> Scalar[dtype],
-](a: IndexList, b: __type_of(a)) -> __type_of(a):
+](a: IndexList, b: type_of(a), out c: type_of(a)):
     """Applies a given element binary function to each pair of corresponding
     elements in two tuples.
 
@@ -73,7 +74,7 @@ fn _int_tuple_binary_apply[
         Tuple containing the result.
     """
 
-    var c = __type_of(a)()
+    c = {}
 
     @parameter
     for i in range(a.size):
@@ -81,13 +82,11 @@ fn _int_tuple_binary_apply[
         var b_elem = b.__getitem__[i]()
         c.__setitem__[i](binary_fn[a.element_type](a_elem, b_elem))
 
-    return c
-
 
 @always_inline
 fn _int_tuple_compare[
     comp_fn: fn[dtype: DType] (Scalar[dtype], Scalar[dtype]) -> Bool,
-](a: IndexList, b: __type_of(a)) -> StaticTuple[Bool, a.size]:
+](a: IndexList, b: type_of(a)) -> StaticTuple[Bool, a.size]:
     """Applies a given element compare function to each pair of corresponding
     elements in two tuples and produces a tuple of Bools containing result.
 
@@ -178,13 +177,13 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         element_type: The underlying dtype of the integer element value.
     """
 
-    alias device_type = Self
+    comptime device_type = Self
     """Indicate the type being used on accelerator devices."""
 
-    alias _int_type = Scalar[element_type]
+    comptime _int_type = Scalar[Self.element_type]
     """The underlying storage of the integer element value."""
 
-    var data: StaticTuple[Self._int_type, size]
+    var data: StaticTuple[Self._int_type, Self.size]
     """The underlying storage of the tuple value."""
 
     @always_inline
@@ -194,46 +193,34 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
     @always_inline
     @implicit
-    fn __init__(out self, data: StaticTuple[Self._int_type, size]):
+    fn __init__(out self, data: StaticTuple[Self._int_type, Self.size]):
         """Constructs a static int tuple of the given size.
 
         Args:
             data: The StaticTuple to construct the IndexList from.
         """
         constrained[
-            element_type.is_integral(), "Element type must be of integral type."
+            Self.element_type.is_integral(),
+            "Element type must be of integral type.",
         ]()
         self.data = data
 
-    @doc_private
-    @always_inline
-    fn __init__(out self, value: __mlir_type.index):
-        """Constructs a sized 1 static int tuple of given the element value.
-
-        Args:
-            value: The initial value.
-        """
-        constrained[size == 1]()
-        constrained[
-            element_type.is_integral(), "Element type must be of integral type."
-        ]()
-        self = Int(mlir_value=value)
-
     @always_inline
     @implicit
-    fn __init__(out self, elems: (Int, Int)):
+    fn __init__(out self, elems: Tuple[Int, Int]):
         """Constructs a static int tuple given a tuple of integers.
 
         Args:
             elems: The tuple to copy from.
         """
         constrained[
-            element_type.is_integral(), "Element type must be of integral type."
+            Self.element_type.is_integral(),
+            "Element type must be of integral type.",
         ]()
         var num_elements = len(elems)
 
         debug_assert(
-            size == num_elements,
+            Self.size == num_elements,
             "[IndexList] mismatch in the number of elements",
         )
 
@@ -246,19 +233,20 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = tup
 
     @always_inline
-    fn __init__(out self, elems: (Int, Int, Int)):
+    fn __init__(out self, elems: Tuple[Int, Int, Int]):
         """Constructs a static int tuple given a tuple of integers.
 
         Args:
             elems: The tuple to copy from.
         """
         constrained[
-            element_type.is_integral(), "Element type must be of integral type."
+            Self.element_type.is_integral(),
+            "Element type must be of integral type.",
         ]()
         var num_elements = len(elems)
 
         debug_assert(
-            size == num_elements,
+            Self.size == num_elements,
             "[IndexList] mismatch in the number of elements",
         )
 
@@ -271,19 +259,20 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = tup
 
     @always_inline
-    fn __init__(out self, elems: (Int, Int, Int, Int)):
+    fn __init__(out self, elems: Tuple[Int, Int, Int, Int]):
         """Constructs a static int tuple given a tuple of integers.
 
         Args:
             elems: The tuple to copy from.
         """
         constrained[
-            element_type.is_integral(), "Element type must be of integral type."
+            Self.element_type.is_integral(),
+            "Element type must be of integral type.",
         ]()
         var num_elements = len(elems)
 
         debug_assert(
-            size == num_elements,
+            Self.size == num_elements,
             "[IndexList] mismatch in the number of elements",
         )
 
@@ -305,7 +294,8 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
                list literals.
         """
         constrained[
-            element_type.is_integral(), "Element type must be of integral type."
+            Self.element_type.is_integral(),
+            "Element type must be of integral type.",
         ]()
 
         self = Self(values=elems)
@@ -319,9 +309,10 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             fill: The elem to splat into the tuple.
         """
         constrained[
-            element_type.is_integral(), "Element type must be of integral type."
+            Self.element_type.is_integral(),
+            "Element type must be of integral type.",
         ]()
-        self.data = StaticTuple[_, size](fill=Self._int_type(fill))
+        self.data = StaticTuple[_, Self.size](fill=Self._int_type(fill))
 
     @always_inline
     fn __init__(out self, values: VariadicList[Int]):
@@ -331,19 +322,20 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             values: The list of values.
         """
         constrained[
-            element_type.is_integral(), "Element type must be of integral type."
+            Self.element_type.is_integral(),
+            "Element type must be of integral type.",
         ]()
         var num_elements = len(values)
 
         debug_assert(
-            size == num_elements,
+            Self.size == num_elements,
             "[IndexList] mismatch in the number of elements",
         )
 
         var tup = Self()
 
         @parameter
-        for idx in range(size):
+        for idx in range(Self.size):
             tup[idx] = values[idx]
 
         self = tup
@@ -355,7 +347,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Returns:
             The tuple size.
         """
-        return size
+        return Self.size
 
     @always_inline
     fn __getitem__[idx: Int](self) -> Int:
@@ -419,23 +411,23 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self.data[idx] = val
 
     @always_inline("nodebug")
-    fn as_tuple(self) -> StaticTuple[Int, size]:
+    fn as_tuple(self) -> StaticTuple[Int, Self.size]:
         """Converts this IndexList to StaticTuple.
 
         Returns:
             The corresponding StaticTuple object.
         """
-        var res = StaticTuple[Int, size]()
+        var res = StaticTuple[Int, Self.size]()
 
         @parameter
-        for i in range(size):
+        for i in range(Self.size):
             res[i] = Int(self.__getitem__[i]())
         return res
 
     @always_inline("nodebug")
     fn canonicalize(
         self,
-        out result: IndexList[size, element_type = DType.int64],
+        out result: IndexList[Self.size, element_type = DType.int64],
     ):
         """Canonicalizes the IndexList.
 
@@ -443,6 +435,20 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             Canonicalizes the object.
         """
         return self.cast[DType.int64]()
+
+    @always_inline
+    fn reverse(self) -> Self:
+        """Reverses the IndexList.
+
+        Returns:
+            A new IndexList with the elements in reverse order.
+        """
+        var result = Self(0)
+
+        @parameter
+        for i in range(Self.size):
+            result[i] = self[Self.size - i - 1]
+        return result
 
     @always_inline
     fn flattened_length(self) -> Int:
@@ -454,7 +460,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         var length: Int = 1
 
         @parameter
-        for i in range(size):
+        for i in range(Self.size):
             length *= self[i]
 
         return length
@@ -694,21 +700,21 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
         writer.write("(")
 
-        for i in range(size):
+        for i in range(Self.size):
             if i != 0:
                 writer.write(", ")
 
             var element = self[i]
 
             @parameter
-            if bit_width_of[element_type]() == 32:
+            if bit_width_of[Self.element_type]() == 32:
                 writer.write(Int32(element))
             else:
                 writer.write(Int64(element))
 
         # Single element tuples should be printed with a trailing comma.
         @parameter
-        if size == 1:
+        if Self.size == 1:
             writer.write(",")
 
         writer.write(")")
@@ -725,7 +731,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     @always_inline
     fn cast[
         dtype: DType
-    ](self, out result: IndexList[size, element_type=dtype]):
+    ](self, out result: IndexList[Self.size, element_type=dtype]):
         """Casts to the target DType.
 
         Parameters:
@@ -738,24 +744,26 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         result = {}
 
         @parameter
-        for i in range(size):
+        for i in range(Self.size):
             result.data[i] = self.data.__getitem__[i]().cast[
                 result.element_type
             ]()
 
     fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
+
         Parameters:
             H: The hasher type.
+
         Args:
             hasher: The hasher instance.
         """
 
         @parameter
-        for i in range(size):
+        for i in range(Self.size):
             hasher.update(self.data[i])
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: LegacyOpaquePointer):
         """
         Convert the host type object to a device_type and store it at the
         target address.
@@ -778,7 +786,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Returns:
             The host type's name.
         """
-        return String("IndexList[", size, ",", element_type, "]")
+        return String("IndexList[", Self.size, ",", Self.element_type, "]")
 
     @staticmethod
     fn get_device_type_name() -> String:
@@ -786,7 +794,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Gets device_type's name. For example, because DeviceBuffer's
         device_type is UnsafePointer, DeviceBuffer[DType.float32]'s
         get_device_type_name() should return something like
-        "UnsafePointer[Scalar[DType.float32]]". This is used for error messages
+        "UnsafePointer[Float32]". This is used for error messages
         when passing types to the device.
         TODO: This method will be retired soon when better kernel call error
         messages arrive.
@@ -816,7 +824,7 @@ fn Index[
     Returns:
         The constructed IndexList.
     """
-    return __type_of(result)(Int(x))
+    return {Int(x)}
 
 
 @always_inline
@@ -834,7 +842,7 @@ fn Index[
     Returns:
         The constructed IndexList.
     """
-    return __type_of(result)(Int(x))
+    return {Int(x)}
 
 
 @always_inline
@@ -855,7 +863,7 @@ fn Index[
     Returns:
         The constructed IndexList.
     """
-    return __type_of(result)(Int(x), Int(y))
+    return {Int(x), Int(y)}
 
 
 @always_inline
@@ -874,7 +882,7 @@ fn Index[
     Returns:
         The constructed IndexList.
     """
-    return __type_of(result)(Int(x), Int(y))
+    return {Int(x), Int(y)}
 
 
 @always_inline
@@ -901,7 +909,7 @@ fn Index[
     Returns:
         The constructed IndexList.
     """
-    return __type_of(result)(Int(x), Int(y), Int(z))
+    return {Int(x), Int(y), Int(z)}
 
 
 @always_inline
@@ -931,7 +939,7 @@ fn Index[
     Returns:
         The constructed IndexList.
     """
-    return __type_of(result)(Int(x), Int(y), Int(z), Int(w))
+    return {Int(x), Int(y), Int(z), Int(w)}
 
 
 @always_inline
@@ -971,7 +979,7 @@ fn Index[
     Returns:
         The constructed IndexList.
     """
-    return __type_of(result)(Int(x), Int(y), Int(z), Int(w), Int(v))
+    return {Int(x), Int(y), Int(z), Int(w), Int(v)}
 
 
 # ===-----------------------------------------------------------------------===#

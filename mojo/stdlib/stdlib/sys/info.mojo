@@ -22,10 +22,11 @@ print(CompilationTarget.is_x86())
 """
 
 from collections.string.string_slice import _get_kgen_string
+from memory import LegacyOpaquePointer as OpaquePointer
 
 from .ffi import _external_call_const, external_call
 
-alias _TargetType = __mlir_type.`!kgen.target`
+comptime _TargetType = __mlir_type.`!kgen.target`
 
 
 @always_inline("nodebug")
@@ -67,8 +68,8 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
             can be specified to satisfy Mojo type checking.
         """
 
-        alias note_text = String(" Note: ", note.value() if note else "")
-        alias msg = "Current compilation target does not support"
+        comptime note_text = String(" Note: ", note.value() if note else "")
+        comptime msg = "Current compilation target does not support"
 
         @parameter
         if operation:
@@ -111,6 +112,11 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
     @always_inline("nodebug")
     @staticmethod
     fn __arch() -> __mlir_type.`!kgen.string`:
+        """Get the target architecture string from the compilation target.
+
+        Returns:
+            The architecture string (e.g., "x86_64", "aarch64").
+        """
         return __mlir_attr[
             `#kgen.param.expr<target_get_field,`,
             Self.value,
@@ -362,15 +368,6 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
         """
         return Self._os() in ["darwin", "macosx"]
 
-    @staticmethod
-    fn is_windows() -> Bool:
-        """Returns True if the host operating system is Windows.
-
-        Returns:
-            True if the host operating system is Windows and False otherwise.
-        """
-        return Self._os() == "windows"
-
 
 fn platform_map[
     T: Copyable & Movable, //,
@@ -378,24 +375,25 @@ fn platform_map[
     *,
     linux: Optional[T] = None,
     macos: Optional[T] = None,
-    windows: Optional[T] = None,
 ]() -> T:
     """Helper for defining a compile time value depending
     on the current compilation target, raising a compilation
     error if trying to access the value on an unsupported target.
 
+    Parameters:
+        T: The type of the platform-specific value.
+        operation: Optional operation name for error messages.
+        linux: The value to use on Linux platforms.
+        macos: The value to use on macOS platforms.
+
+    Returns:
+        The platform-specific value for the current target.
+
     Example:
 
     ```mojo
-    alias EDEADLK = platform_alias["EDEADLK", linux=35, macos=11]()
+    comptime EDEADLK = platform_alias["EDEADLK", linux=35, macos=11]()
     ```
-
-    Parameters:
-        T: The type of the value.
-        operation: The operation to show in the compilation error.
-        linux: Optional support for linux targets.
-        macos: Optional support for macos targets.
-        windows: Optional support for windows targets.
     """
 
     @parameter
@@ -403,8 +401,6 @@ fn platform_map[
         return macos.value().copy()
     elif CompilationTarget.is_linux() and linux:
         return linux.value().copy()
-    elif CompilationTarget.is_windows() and windows:
-        return windows.value().copy()
     else:
         return CompilationTarget.unsupported_target_error[
             T, operation=operation
@@ -487,6 +483,11 @@ fn _is_sm_101x() -> Bool:
 
 
 @always_inline("nodebug")
+fn _is_sm_110x() -> Bool:
+    return is_nvidia_gpu["sm_110"]() or is_nvidia_gpu["sm_110a"]()
+
+
+@always_inline("nodebug")
 fn _is_sm_120x() -> Bool:
     return is_nvidia_gpu["sm_120"]() or is_nvidia_gpu["sm_120a"]()
 
@@ -508,7 +509,12 @@ fn _is_sm_9x_or_newer() -> Bool:
 
 @always_inline("nodebug")
 fn _is_sm_100x_or_newer() -> Bool:
-    return _is_sm_100x() or _is_sm_120x_or_newer()
+    return _is_sm_100x() or _is_sm_110x_or_newer()
+
+
+@always_inline("nodebug")
+fn _is_sm_110x_or_newer() -> Bool:
+    return _is_sm_110x() or _is_sm_120x_or_newer()
 
 
 @always_inline("nodebug")
@@ -519,6 +525,7 @@ fn _is_sm_120x_or_newer() -> Bool:
 @always_inline("nodebug")
 fn is_apple_gpu() -> Bool:
     """Returns True if the target triple is for Apple GPU (Metal) and False otherwise.
+
     Returns:
         True if the triple target is Apple GPU and False otherwise.
     """
@@ -565,37 +572,132 @@ fn is_nvidia_gpu[subarch: StaticString]() -> Bool:
 
 
 @always_inline("nodebug")
+fn _is_amd_gcn() -> Bool:
+    """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
+    and we are compiling for any of the GCN (Graphics Core Next) architectures.
+
+    Returns:
+        True if GCN and False otherwise.
+    """
+    return (
+        is_amd_gpu["gfx600"]()
+        or is_amd_gpu["gfx601"]()
+        or is_amd_gpu["gfx602"]()
+        or is_amd_gpu["gfx700"]()
+        or is_amd_gpu["gfx701"]()
+        or is_amd_gpu["gfx702"]()
+        or is_amd_gpu["gfx703"]()
+        or is_amd_gpu["gfx704"]()
+        or is_amd_gpu["gfx705"]()
+        or is_amd_gpu["gfx801"]()
+        or is_amd_gpu["gfx802"]()
+        or is_amd_gpu["gfx803"]()
+        or is_amd_gpu["gfx805"]()
+        or is_amd_gpu["gfx810"]()
+        or is_amd_gpu["gfx900"]()
+        or is_amd_gpu["gfx902"]()
+        or is_amd_gpu["gfx904"]()
+        or is_amd_gpu["gfx906"]()
+        or is_amd_gpu["gfx909"]()
+    )
+
+
+@always_inline("nodebug")
+fn _is_amd_rdna1() -> Bool:
+    """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
+    and we are compiling for the any of the Radeon RX 5000 series
+    sub-architectures:
+
+        amdgpu:gfx1010: Navi 10 (RX 5700 XT/5700)
+        amdgpu:gfx1011: Navi 12
+        amdgpu:gfx1012: Navi 14 (RX 5500 XT/5500)
+        amdgpu:gfx1013: Navi 14
+
+    Returns:
+        True if the RDNA1 and False otherwise.
+    """
+    return (
+        is_amd_gpu["amdgpu:gfx1010"]()
+        or is_amd_gpu["amdgpu:gfx1011"]()
+        or is_amd_gpu["amdgpu:gfx1012"]()
+        or is_amd_gpu["amdgpu:gfx1013"]()
+    )
+
+
+@always_inline("nodebug")
+fn _is_amd_rdna2() -> Bool:
+    """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
+    and we are compiling for the any of the Radeon RX 6000 series
+    sub-architectures:
+
+        amdgpu:gfx1030: Navi 21 (RX 6900/6800)
+        amdgpu:gfx1031: Navi 22 (RX 6700)
+        amdgpu:gfx1032: Navi 23 (RX 6600)
+        amdgpu:gfx1033: Navi 24
+        amdgpu:gfx1034: Navi 24
+        amdgpu:gfx1035: Rembrandt APU
+        amdgpu:gfx1036: Raphael APU
+
+    Returns:
+        True if the RDNA2 and False otherwise.
+    """
+    return (
+        is_amd_gpu["amdgpu:gfx1030"]()
+        or is_amd_gpu["amdgpu:gfx1031"]()
+        or is_amd_gpu["amdgpu:gfx1032"]()
+        or is_amd_gpu["amdgpu:gfx1033"]()
+        or is_amd_gpu["amdgpu:gfx1034"]()
+        or is_amd_gpu["amdgpu:gfx1035"]()
+        or is_amd_gpu["amdgpu:gfx1036"]()
+    )
+
+
+@always_inline("nodebug")
 fn _is_amd_rdna3() -> Bool:
     return (
-        is_amd_gpu["amdgpu:gfx1100"]()
-        or is_amd_gpu["amdgpu:gfx1101"]()
-        or is_amd_gpu["amdgpu:gfx1102"]()
-        or is_amd_gpu["amdgpu:gfx1103"]()
-        # These last two are technically RDNA3.5, but we'll treat them as RDNA3
+        is_amd_gpu["gfx1100"]()
+        or is_amd_gpu["gfx1101"]()
+        or is_amd_gpu["gfx1102"]()
+        or is_amd_gpu["gfx1103"]()
+        # These last four are technically RDNA3.5, but we'll treat them as RDNA3
         # for now.
-        or is_amd_gpu["amdgpu:gfx1150"]()
-        or is_amd_gpu["amdgpu:gfx1151"]()
+        or is_amd_gpu["gfx1150"]()
+        or is_amd_gpu["gfx1151"]()
+        or is_amd_gpu["gfx1152"]()
+        or is_amd_gpu["gfx1153"]()
     )
 
 
 @always_inline("nodebug")
 fn _is_amd_rdna4() -> Bool:
-    return is_amd_gpu["amdgpu:gfx1200"]() or is_amd_gpu["amdgpu:gfx1201"]()
+    return is_amd_gpu["gfx1200"]() or is_amd_gpu["gfx1201"]()
 
 
 @always_inline("nodebug")
 fn _is_amd_rdna() -> Bool:
-    return _is_amd_rdna3() or _is_amd_rdna4()
+    return (
+        _is_amd_rdna1() or _is_amd_rdna2() or _is_amd_rdna3() or _is_amd_rdna4()
+    )
+
+
+@always_inline("nodebug")
+fn _is_amd_rdna2_or_earlier() -> Bool:
+    """Returns True if the target is GCN, RDNA1, or RDNA2.
+
+    Returns:
+        True if the GPU is GCN, RDNA1, or RDNA2, False otherwise.
+    """
+    return _is_amd_gcn() or _is_amd_rdna1() or _is_amd_rdna2()
 
 
 @always_inline("nodebug")
 fn _is_amd_mi300x() -> Bool:
-    return is_amd_gpu["amdgpu:gfx942"]()
+    return is_amd_gpu["gfx942"]()
 
 
 @always_inline("nodebug")
 fn _is_amd_mi355x() -> Bool:
-    return is_amd_gpu["amdgpu:gfx950"]()
+    return is_amd_gpu["gfx950"]()
 
 
 @always_inline("nodebug")
@@ -615,7 +717,7 @@ fn _cdna_version() -> Int:
 @always_inline("nodebug")
 fn _cdna_3_or_newer() -> Bool:
     @parameter
-    if is_amd_gpu():
+    if _is_amd_cdna():
         return _cdna_version() >= 3
     return False
 
@@ -623,7 +725,7 @@ fn _cdna_3_or_newer() -> Bool:
 @always_inline("nodebug")
 fn _cdna_4_or_newer() -> Bool:
     @parameter
-    if is_amd_gpu():
+    if _is_amd_cdna():
         return _cdna_version() >= 4
     return False
 
@@ -649,10 +751,13 @@ fn is_amd_gpu[subarch: StaticString]() -> Bool:
     """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
     and we are compiling for the specified sub-architecture, False otherwise.
 
+    Parameters:
+        subarch: The AMD GPU sub-architecture to check for (e.g., "gfx90a").
+
     Returns:
         True if the triple target is amdgpu and False otherwise.
     """
-    return is_amd_gpu() and _accelerator_arch() == subarch
+    return is_amd_gpu() and CompilationTarget._is_arch[subarch]()
 
 
 @always_inline("nodebug")
@@ -662,7 +767,7 @@ fn is_gpu() -> Bool:
     Returns:
         True if the triple target is GPU and False otherwise.
     """
-    return is_nvidia_gpu() or is_amd_gpu()
+    return is_nvidia_gpu() or is_amd_gpu() or is_apple_gpu()
 
 
 @always_inline("nodebug")
@@ -723,7 +828,7 @@ fn is_32bit[target: _TargetType = _current_target()]() -> Bool:
     Returns:
         True if the maximum integral value is 32 bit, False otherwise.
     """
-    return size_of[DType.index, target]() == size_of[DType.int32, target]()
+    return size_of[DType.int, target]() == size_of[DType.int32, target]()
 
 
 @always_inline("nodebug")
@@ -736,7 +841,7 @@ fn is_64bit[target: _TargetType = _current_target()]() -> Bool:
     Returns:
         True if the maximum integral value is 64 bit, False otherwise.
     """
-    return size_of[DType.index, target]() == size_of[DType.int64, target]()
+    return size_of[DType.int, target]() == size_of[DType.int64, target]()
 
 
 @always_inline("nodebug")
@@ -759,12 +864,6 @@ fn simd_bit_width[target: _TargetType = _current_target()]() -> Int:
     )
 
 
-@deprecated("Use `sys.simd_bit_width()` instead.")
-@always_inline("nodebug")
-fn simdbitwidth[target: _TargetType = _current_target()]() -> Int:
-    return simd_bit_width[target]()
-
-
 @always_inline("nodebug")
 fn simd_byte_width[target: _TargetType = _current_target()]() -> Int:
     """Returns the vector size (in bytes) of the specified target.
@@ -775,14 +874,8 @@ fn simd_byte_width[target: _TargetType = _current_target()]() -> Int:
     Returns:
         The vector size (in bytes) of the host system.
     """
-    alias CHAR_BIT = 8
+    comptime CHAR_BIT = 8
     return simd_bit_width[target]() // CHAR_BIT
-
-
-@deprecated("Use `sys.simd_byte_width()` instead.")
-@always_inline("nodebug")
-fn simdbytewidth[target: _TargetType = _current_target()]() -> Int:
-    return simd_byte_width[target]()
 
 
 @always_inline("nodebug")
@@ -812,7 +905,7 @@ fn size_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     ```
     Note: `align_of` is in same module.
     """
-    alias mlir_type = __mlir_attr[
+    comptime mlir_type = __mlir_attr[
         `#kgen.param.expr<rebind, #kgen.type<!kgen.param<`,
         type,
         `>> : `,
@@ -828,12 +921,6 @@ fn size_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
             `> : index`,
         ]
     )
-
-
-@deprecated("Use `sys.size_of()` instead.")
-@always_inline("nodebug")
-fn sizeof[type: AnyType, target: _TargetType = _current_target()]() -> Int:
-    return size_of[type, target]()
 
 
 @always_inline("nodebug")
@@ -858,12 +945,6 @@ fn size_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     )
 
 
-@deprecated("Use `sys.size_of()` instead.")
-@always_inline("nodebug")
-fn sizeof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
-    return size_of[dtype, target]()
-
-
 @always_inline("nodebug")
 fn align_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     """Returns the align of (in bytes) of the type.
@@ -875,7 +956,7 @@ fn align_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     Returns:
         The alignment of the type in bytes.
     """
-    alias mlir_type = __mlir_attr[
+    comptime mlir_type = __mlir_attr[
         `#kgen.param.expr<rebind, #kgen.type<!kgen.param<`,
         type,
         `>> : `,
@@ -891,12 +972,6 @@ fn align_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
             `> : index`,
         ]
     )
-
-
-@deprecated("Use `sys.align_of()` instead.")
-@always_inline("nodebug")
-fn alignof[type: AnyType, target: _TargetType = _current_target()]() -> Int:
-    return align_of[type, target]()
 
 
 @always_inline("nodebug")
@@ -921,12 +996,6 @@ fn align_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     )
 
 
-@deprecated("Use `sys.align_of()` instead.")
-@always_inline("nodebug")
-fn alignof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
-    return align_of[dtype, target]()
-
-
 @always_inline("nodebug")
 fn bit_width_of[
     type: AnyTrivialRegType, target: _TargetType = _current_target()
@@ -940,16 +1009,8 @@ fn bit_width_of[
     Returns:
         The size of the type in bits.
     """
-    alias CHAR_BIT = 8
+    comptime CHAR_BIT = 8
     return CHAR_BIT * size_of[type, target=target]()
-
-
-@deprecated("Use `sys.bit_width_of()` instead.")
-@always_inline("nodebug")
-fn bitwidthof[
-    type: AnyTrivialRegType, target: _TargetType = _current_target()
-]() -> Int:
-    return bit_width_of[type, target]()
 
 
 @always_inline("nodebug")
@@ -966,12 +1027,6 @@ fn bit_width_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     return bit_width_of[Scalar[dtype]._mlir_type, target=target]()
 
 
-@deprecated("Use `sys.bit_width_of()` instead.")
-@always_inline("nodebug")
-fn bitwidthof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
-    return bit_width_of[dtype, target]()
-
-
 @always_inline("nodebug")
 fn simd_width_of[
     type: AnyTrivialRegType, target: _TargetType = _current_target()
@@ -986,14 +1041,6 @@ fn simd_width_of[
         The vector size of the type on the host system.
     """
     return simd_bit_width[target]() // bit_width_of[type, target]()
-
-
-@deprecated("Use `sys.simd_width_of()` instead.")
-@always_inline("nodebug")
-fn simdwidthof[
-    type: AnyTrivialRegType, target: _TargetType = _current_target()
-]() -> Int:
-    return simd_width_of[type, target]()
 
 
 @always_inline("nodebug")
@@ -1058,14 +1105,14 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
         "the operating system must be macOS",
     ]()
 
-    alias INITIAL_CAPACITY = 32
+    comptime INITIAL_CAPACITY = 32
 
     # Overallocate the string.
     var buf_len = Int(INITIAL_CAPACITY)
-    var osver = String(unsafe_uninit_length=UInt(buf_len))
+    var osver = String(unsafe_uninit_length=buf_len)
 
     var err = external_call["sysctlbyname", Int32](
-        "kern.osproductversion".unsafe_cstr_ptr(),
+        "kern.osproductversion".as_c_string_slice().unsafe_ptr(),
         osver.unsafe_ptr(),
         Pointer(to=buf_len),
         OpaquePointer(),
@@ -1075,7 +1122,7 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
         raise "Unable to query macOS version"
 
     # Truncate the string down to the actual length.
-    osver = osver[0:buf_len]
+    osver.resize(buf_len)
 
     var major = 0
     var minor = 0
@@ -1083,11 +1130,11 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
 
     if "." in osver:
         major = Int(osver[: osver.find(".")])
-        osver = osver[osver.find(".") + 1 :]
+        osver = String(osver[osver.find(".") + 1 :])
 
     if "." in osver:
         minor = Int(osver[: osver.find(".")])
-        osver = osver[osver.find(".") + 1 :]
+        osver = String(osver[osver.find(".") + 1 :])
 
     if "." in osver:
         patch = Int(osver[: osver.find(".")])
@@ -1133,6 +1180,7 @@ fn has_nvidia_gpu_accelerator() -> Bool:
 @always_inline("nodebug")
 fn has_apple_gpu_accelerator() -> Bool:
     """Returns True if the host system has a Metal GPU and False otherwise.
+
     Returns:
         True if the host system has a Metal GPU.
     """

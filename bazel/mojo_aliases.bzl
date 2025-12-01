@@ -1,105 +1,76 @@
 """Aliases for mojo packages."""
 
+_PACKAGES = {
+    "stdlib": "mojo/stdlib/stdlib",
+    "python": "mojo/python/mojo",
+    "test_utils": "mojo/stdlib/test/test_utils",
+}
+
+_MAX_PACKAGES = {
+    "kv_cache": "kernels/src/kv_cache",
+    "layout": "kernels/src/layout",
+    "linalg": "kernels/src/linalg",
+    "nn": "kernels/src/nn",
+    "nvml": "kernels/src/nvml",
+    "shmem": "kernels/src/shmem",
+    "quantization": "kernels/src/quantization",
+    "register": "kernels/src/register",
+    "MOGGPrimitives": "kernels/src/Mogg/MOGGPrimitives",
+    "MOGGKernelAPI": "kernels/src/Mogg/MOGGKernelAPI",
+    "tensor": "kernels/src/extensibility/tensor",
+    "compiler_internal": "kernels/src/extensibility/compiler_internal",
+    "weights_registry": "kernels/src/weights_registry",
+    "internal_utils": "kernels/src/internal_utils",
+    "comm": "kernels/src/comm",
+    "testdata": "kernels/test/testdata",
+    "compiler": "compiler/src:compiler",
+    "_cublas": "kernels/src/_cublas",
+    "_cufft": "kernels/src/_cufft",
+    "_curand": "kernels/src/_curand",
+    "_cudnn": "kernels/src/_cudnn",
+    "_rocblas": "kernels/src/_rocblas",
+}
+
 def _mojo_aliases_impl(rctx):
-    rctx.file("BUILD.bazel", content = """\
-package(default_visibility = ["//visibility:public"])
-
+    alias_rules = []
+    for name, target in _PACKAGES.items():
+        alias_rules.append("""
 alias(
-    name = "stdlib",
-    actual = "@//{prefix}mojo/stdlib/stdlib",
-)
+    name = "{name}",
+    actual = "@//{prefix}{target}",
+)""".format(name = name, target = target, prefix = "{prefix}"))
 
-alias(
-    name = "test_utils",
-    actual = "@//{prefix}mojo/stdlib/test/test_utils",
-)
+    build_content = """package(default_visibility = ["//visibility:public"])
+{aliases}
 
-alias(
-    name = "kv_cache",
-    actual = "@//{prefix}max/kernels/src/kv_cache",
-)
+""".format(aliases = "".join(alias_rules))
 
-alias(
-    name = "layout",
-    actual = "@//{prefix}max/kernels/src/layout",
-)
+    rctx.file("BUILD.bazel", content = build_content.format(prefix = rctx.attr.prefix))
+    rctx.file("mojo.bzl", content = """
+ALL_MOJOPKGS = [
+{packages}
+{max_packages}
+]
 
-alias(
-    name = "linalg",
-    actual = "@//{prefix}max/kernels/src/linalg",
-)
-
-alias(
-    name = "nn",
-    actual = "@//{prefix}max/kernels/src/nn",
-)
-
-alias(
-    name = "nvml",
-    actual = "@//{prefix}max/kernels/src/nvml",
-)
-
-alias(
-    name = "shmem",
-    actual = "@//{prefix}max/kernels/src/shmem",
-)
-
-alias(
-    name = "quantization",
-    actual = "@//{prefix}max/kernels/src/quantization",
-)
-
-alias(
-    name = "register",
-    actual = "@//{prefix}max/kernels/src/register",
-)
-
-alias(
-    name = "MOGGPrimitives",
-    actual = "@//{prefix}max/kernels/src/Mogg/MOGGPrimitives",
-)
-
-alias(
-    name = "MOGGKernelAPI",
-    actual = "@//{prefix}max/kernels/src/Mogg/MOGGKernelAPI",
-)
-
-alias(
-    name = "tensor_internal",
-    actual = "@//{prefix}max/kernels/src/extensibility/tensor_internal",
-)
-
-alias(
-    name = "compiler_internal",
-    actual = "@//{prefix}max/kernels/src/extensibility/compiler_internal",
-)
-
-alias(
-    name = "weights_registry",
-    actual = "@//{prefix}max/kernels/src/weights_registry",
-)
-
-alias(
-    name = "internal_utils",
-    actual = "@//{prefix}max/kernels/src/internal_utils",
-)
-
-alias(
-    name = "comm",
-    actual = "@//{prefix}max/kernels/src/comm",
-)
-
-alias(
-    name = "testdata",
-    actual = "@//{prefix}max/kernels/test/testdata",
-)
-
-alias(
-    name = "compiler",
-    actual = "@//{prefix}max/compiler/src:compiler",
-)
-
-""".format(prefix = rctx.attr.prefix))
+def max_aliases():
+    for name, target in {max_packages_dict}.items():
+        native.alias(
+            name = "{{name}}".format(name = name),
+            actual = "//max/{{target}}".format(target = target),
+            visibility = ["//visibility:public"],
+        )
+""".format(
+        packages = "\n".join([
+            '    "@mojo//:{}",'.format(name)
+            for name in _PACKAGES.keys()
+            if name != "python"
+        ]),
+        max_packages = "\n".join([
+            '    "//max:{}",'.format(name)
+            for name in _MAX_PACKAGES.keys()
+        ]),
+        max_packages_dict = _MAX_PACKAGES,
+    ))
 
 mojo_aliases = repository_rule(
     implementation = _mojo_aliases_impl,

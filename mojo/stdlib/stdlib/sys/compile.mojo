@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Implements functions that return compile-time information.
 """
-from .param_env import env_get_int, env_get_string
+from .param_env import env_get_int, env_get_string, is_defined
+from collections.string.string_slice import _get_kgen_string
 
 # ===----------------------------------------------------------------------=== #
 # is_compile_time
@@ -31,12 +32,35 @@ fn is_compile_time() -> Bool:
 
 
 # ===----------------------------------------------------------------------=== #
+# codegen_reachable
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline("nodebug")
+fn codegen_unreachable[cond: Bool, msg: StaticString, *extra: StaticString]():
+    """Compilation fails if cond is True and the caller of the function
+    is being generated as runtime code.
+
+    Parameters:
+        cond: The bool value for reachability.
+        msg: The message to display on failure.
+        extra: Additional messages to concatenate to msg.
+
+    """
+    __mlir_op.`kgen.codegen.reachable`[
+        cond = (not cond).__mlir_i1__(),
+        message = _get_kgen_string[msg, extra](),
+        _type=None,
+    ]()
+
+
+# ===----------------------------------------------------------------------=== #
 # OptimizationLevel
 # ===----------------------------------------------------------------------=== #
 
 
 @fieldwise_init
-struct _OptimizationLevel(Intable, Stringable, Writable):
+struct _OptimizationLevel(ImplicitlyCopyable, Intable, Stringable, Writable):
     """Represents the optimization level used during compilation.
 
     The optimization level is determined by the __OPTIMIZATION_LEVEL environment
@@ -46,7 +70,7 @@ struct _OptimizationLevel(Intable, Stringable, Writable):
         level: The integer value of the optimization level.
     """
 
-    alias level = env_get_int["__OPTIMIZATION_LEVEL", 4]()
+    comptime level = env_get_int["__OPTIMIZATION_LEVEL", 4]()
 
     fn __int__(self) -> Int:
         """Returns the integer value of the optimization level.
@@ -71,7 +95,7 @@ struct _OptimizationLevel(Intable, Stringable, Writable):
         return String.write(self)
 
 
-alias OptimizationLevel = _OptimizationLevel()
+comptime OptimizationLevel = _OptimizationLevel()
 """Represents the optimization level used during compilation."""
 
 # ===----------------------------------------------------------------------=== #
@@ -90,7 +114,7 @@ struct _DebugLevel(ImplicitlyCopyable, Movable, Stringable, Writable):
         level: The string value of the debug level.
     """
 
-    alias level = env_get_string["__DEBUG_LEVEL", "none"]()
+    comptime level = env_get_string["__DEBUG_LEVEL", "none"]()
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -107,5 +131,14 @@ struct _DebugLevel(ImplicitlyCopyable, Movable, Stringable, Writable):
         return String.write(self)
 
 
-alias DebugLevel = _DebugLevel()
+comptime DebugLevel = _DebugLevel()
 """Represents the debug level used during compilation."""
+
+# ===----------------------------------------------------------------------=== #
+# SanitizeAddress
+# ===----------------------------------------------------------------------=== #
+
+comptime SanitizeAddress = is_defined["__SANITIZE_ADDRESS"]() and env_get_int[
+    "__SANITIZE_ADDRESS"
+]() == 1
+"""True if address sanitizer is enabled at compile-time"""

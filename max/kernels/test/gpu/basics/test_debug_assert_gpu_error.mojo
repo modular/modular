@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
 from gpu import global_idx
+from gpu.host import DeviceContext
 
 
 # CHECK-LABEL: test_fail
@@ -34,7 +34,7 @@ def main():
             # CHECK-NOT: won't print this due to assert failure
             print("won't print this due to assert failure")
 
-        alias kernel = fail_assert
+        comptime kernel = fail_assert
 
         ctx.enqueue_function_checked[kernel, kernel](
             grid_dim=2,

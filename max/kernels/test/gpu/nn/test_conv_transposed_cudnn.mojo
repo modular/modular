@@ -10,27 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from buffer import DimList
 from gpu.host import DeviceContext
 from gpu.host.info import Vendor
-
-from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-)
-from buffer import DimList
-from nn.conv_transpose import conv_transpose_naive
-from nn.conv_transpose import conv_transposed_cudnn
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    random,
-)
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random
+from layout import Layout, LayoutTensor, RuntimeLayout
+from nn.conv_transpose import conv_transpose_naive, conv_transposed_cudnn
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
 
-alias dtype = DType.float32
+comptime dtype = DType.float32
 
 
 fn test_conv_transposed_cudnn[
@@ -65,23 +55,25 @@ fn test_conv_transposed_cudnn[
         ")",
     )
 
-    alias layout_unknown_5d = Layout.row_major[5]()
+    comptime layout_unknown_5d = Layout.row_major[5]()
 
     # Shapes.
-    alias input_shape4d = DimList(1, 1, input_len, in_channels)
-    alias filter_shape4d = DimList(1, kernel_len, out_channels, in_channels)
-    alias output_len = (
+    comptime input_shape4d = DimList(1, 1, input_len, in_channels)
+    comptime filter_shape4d = DimList(1, kernel_len, out_channels, in_channels)
+    comptime output_len = (
         stride_val * (input_len - 1)
         + dilation_val * (kernel_len - 1)
         - 2 * pad_val
         + 1
     )
-    alias output_shape4d = DimList(1, 1, output_len, out_channels)
-    alias input_layout5d = Layout.row_major(1, 1, 1, input_len, in_channels)
-    alias filter_layout5d = Layout.row_major(
+    comptime output_shape4d = DimList(1, 1, output_len, out_channels)
+    comptime input_layout5d = Layout.row_major(1, 1, 1, input_len, in_channels)
+    comptime filter_layout5d = Layout.row_major(
         1, 1, kernel_len, out_channels, in_channels
     )
-    alias output_layout5d = Layout.row_major(1, 1, 1, output_len, out_channels)
+    comptime output_layout5d = Layout.row_major(
+        1, 1, 1, output_len, out_channels
+    )
 
     # Create host buffers using HostNDBuffer
     var input_host = HostNDBuffer[dtype, 4, input_shape4d](input_shape4d)
@@ -132,9 +124,9 @@ fn test_conv_transposed_cudnn[
 
     # Convert input/output data from NHWC to NCHW layout for cuDNN
     # Convert filter data from QRSFC to CFHW layout for cuDNN
-    alias input_shape4d_nchw = DimList(1, in_channels, 1, input_len)
-    alias output_shape4d_nchw = DimList(1, out_channels, 1, output_len)
-    alias filter_shape4d_nchw = DimList(
+    comptime input_shape4d_nchw = DimList(1, in_channels, 1, input_len)
+    comptime output_shape4d_nchw = DimList(1, out_channels, 1, output_len)
+    comptime filter_shape4d_nchw = DimList(
         in_channels, out_channels, 1, kernel_len
     )
 
@@ -177,7 +169,7 @@ fn test_conv_transposed_cudnn[
     var dilation_hw = Index(1, dilation_val)
     var padding_hw = Index(0, pad_val)
 
-    alias layout_unknown_4d = Layout.row_major[4]()
+    comptime layout_unknown_4d = Layout.row_major[4]()
 
     # Invoke cuDNN helper.
     conv_transposed_cudnn[dtype, dtype, dtype](
@@ -234,7 +226,7 @@ fn test_conv_transposed_cudnn[
     _ = d_output^
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         # Check if we're running on an NVIDIA GPU
         if ctx.default_device_info.vendor != Vendor.NVIDIA_GPU:
@@ -324,3 +316,35 @@ fn main() raises:
             dilation_val=1,
             pad_val=3,
         ](ctx=ctx)
+
+    # Test with multiple device contexts consecutively
+    print("\n== Testing with multiple device contexts ==")
+
+    # First context - default device (GPU 0)
+    print("Creating first device context (default device)...")
+    with DeviceContext() as ctx1:
+        test_conv_transposed_cudnn[
+            input_len=9,
+            kernel_len=4,
+            in_channels=2,
+            out_channels=2,
+            stride_val=1,
+            dilation_val=1,
+            pad_val=0,
+        ](ctx=ctx1)
+
+    if DeviceContext.number_of_devices() >= 2:
+        # Second context - device 1
+        print("Creating second device context (device 1)...")
+        with DeviceContext(device_id=1) as ctx2:
+            test_conv_transposed_cudnn[
+                input_len=9,
+                kernel_len=4,
+                in_channels=2,
+                out_channels=2,
+                stride_val=1,
+                dilation_val=1,
+                pad_val=0,
+            ](ctx=ctx2)
+
+        print("Multiple device context test completed successfully!")

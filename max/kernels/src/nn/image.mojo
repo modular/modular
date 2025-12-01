@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Layout, LayoutTensor, RuntimeTuple, UNKNOWN_VALUE
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeTuple
 from layout.int_tuple import fill_like
 
 from utils.index import IndexList
@@ -22,8 +22,8 @@ from utils.index import IndexList
 @register_passable("trivial")
 struct PadHandling(ImplicitlyCopyable, Movable):
     var value: Int
-    alias EXCLUDE_PAD = PadHandling(0)  # Do not count padding.
-    alias INCLUDE_PAD = PadHandling(2)  # Count padding.
+    comptime EXCLUDE_PAD = PadHandling(0)  # Do not count padding.
+    comptime INCLUDE_PAD = PadHandling(2)  # Count padding.
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: PadHandling) -> Bool:
@@ -39,11 +39,13 @@ struct PadHandling(ImplicitlyCopyable, Movable):
 @register_passable("trivial")
 struct Image2DLayout(ImplicitlyCopyable, Movable):
     var value: Int
-    alias UNKNOWN = Image2DLayout(-1)  # statically unknown layout.
-    alias NHWC = Image2DLayout(0)  # channels last layout.
-    alias NCHW = Image2DLayout(1)  # channels first layout.
-    alias RSCF = Image2DLayout(2)  # TF filter layout for channels last input.
-    alias FRSCf = Image2DLayout(3)  # packed filter, adopted from oneDNN
+    comptime UNKNOWN = Image2DLayout(-1)  # statically unknown layout.
+    comptime NHWC = Image2DLayout(0)  # channels last layout.
+    comptime NCHW = Image2DLayout(1)  # channels first layout.
+    comptime RSCF = Image2DLayout(
+        2
+    )  # TF filter layout for channels last input.
+    comptime FRSCf = Image2DLayout(3)  # packed filter, adopted from oneDNN
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: Image2DLayout) -> Bool:
@@ -59,45 +61,51 @@ struct ImageData[
     layout: Layout,
     dtype: DType,
     static_image_layout: Image2DLayout,
-    origin: MutableOrigin,
+    origin: MutOrigin,
 ]:
     """Utility class that generalizes conv2d data and filter tensor with a given
     data layout."""
 
-    var data: LayoutTensor[dtype, layout, origin]
+    var data: LayoutTensor[Self.dtype, Self.layout, Self.origin]
     var dynamic_image_layout: Image2DLayout
 
     fn __init__(
         out self,
-        data: LayoutTensor[dtype, layout, origin],
-        layout: Image2DLayout,
+        data: LayoutTensor[Self.dtype, Self.layout, Self.origin],
+        _layout: Image2DLayout,
     ):
         """Construct of an image data instance with dynamic layout param.
 
         Args:
             data: A 4d buffer containing the actual data.
-            layout: Data layout tag.
+            _layout: Data layout tag.
         """
-        constrained[static_image_layout == Image2DLayout.UNKNOWN]()
+        constrained[Self.static_image_layout == Image2DLayout.UNKNOWN]()
         self.data = data
-        self.dynamic_image_layout = layout
+        self.dynamic_image_layout = _layout
 
-    fn __init__(out self, data: LayoutTensor[dtype, layout, origin]):
-        constrained[static_image_layout != Image2DLayout.UNKNOWN]()
+    fn __init__(
+        out self, data: LayoutTensor[Self.dtype, Self.layout, Self.origin]
+    ):
+        constrained[Self.static_image_layout != Image2DLayout.UNKNOWN]()
         self.data = data
-        self.dynamic_image_layout = static_image_layout
+        self.dynamic_image_layout = Self.static_image_layout
 
     fn to_static_layout[
         new_static_image_layout: Image2DLayout
-    ](self) -> ImageData[layout, dtype, new_static_image_layout, origin]:
+    ](self) -> ImageData[
+        Self.layout, Self.dtype, new_static_image_layout, Self.origin
+    ]:
         """Conversion utility from a fully dynamic data structure, e.g. from c
         shim to one with compile-time known data layout.
 
         Returns:
             The image data with static data layout.
         """
-        constrained[static_image_layout == Image2DLayout.UNKNOWN]()
-        return ImageData[layout, dtype, new_static_image_layout](self.data)
+        constrained[Self.static_image_layout == Image2DLayout.UNKNOWN]()
+        return ImageData[Self.layout, Self.dtype, new_static_image_layout](
+            self.data
+        )
 
     fn get_image_layout(self) -> Image2DLayout:
         """The getter function of the underlying data layout, resolving from
@@ -106,9 +114,9 @@ struct ImageData[
         Returns:
             The resolved data layout tag for this image instance.
         """
-        if static_image_layout == Image2DLayout.UNKNOWN:
+        if Self.static_image_layout == Image2DLayout.UNKNOWN:
             return self.dynamic_image_layout
-        return static_image_layout
+        return Self.static_image_layout
 
     fn _get_index(self, n: Int, c: Int, h: Int, w: Int) -> Int:
         """Converts the general index to the actual index into the underlying
@@ -188,9 +196,9 @@ struct ImageData[
             return idx
 
         @parameter
-        if static_image_layout == Image2DLayout.NCHW:
+        if Self.static_image_layout == Image2DLayout.NCHW:
             return _compute_index_nchw()
-        elif static_image_layout == Image2DLayout.NHWC:
+        elif Self.static_image_layout == Image2DLayout.NHWC:
             return _compute_index_nhwc()
 
         debug_assert(False, "Invalid layout")
@@ -240,15 +248,15 @@ struct ImageData[
             return IndexList[4](n_idx, c_idx, h_idx, w_idx)
 
         @parameter
-        if static_image_layout == Image2DLayout.NCHW:
+        if Self.static_image_layout == Image2DLayout.NCHW:
             return _compute_index_nchw()
-        elif static_image_layout == Image2DLayout.NHWC:
+        elif Self.static_image_layout == Image2DLayout.NHWC:
             return _compute_index_nhwc()
 
         debug_assert(False, "Invalid layout")
         return 0
 
-    fn __getitem__(self, n: Int, c: Int, h: Int, w: Int) -> Scalar[dtype]:
+    fn __getitem__(self, n: Int, c: Int, h: Int, w: Int) -> Scalar[Self.dtype]:
         """Reads the underlying data buffer based on the tensor index and under-
         lying data layout.
 
@@ -263,7 +271,9 @@ struct ImageData[
         """
         return self.data.ptr[self._get_index(n, c, h, w)]
 
-    fn __setitem__(self, n: Int, c: Int, h: Int, w: Int, value: Scalar[dtype]):
+    fn __setitem__(
+        self, n: Int, c: Int, h: Int, w: Int, value: Scalar[Self.dtype]
+    ):
         """Writes the underlying data buffer based on the tensor index and under-
         lying data layout.
 

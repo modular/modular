@@ -12,12 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from hashlib import default_comp_time_hasher
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys import size_of
 
 from python import Python, PythonObject
-from python.bindings import PythonModuleBuilder
 from python._cpython import PyObjectPtr
+from python.bindings import PythonModuleBuilder
 
 
 @export
@@ -46,7 +47,7 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable, Movable):
     See: https://numpy.org/doc/2.1/reference/c-api/types-and-structures.html#c.PyArrayObject
     """
 
-    var data: UnsafePointer[Scalar[dtype]]
+    var data: UnsafePointer[Scalar[Self.dtype]]
     var nd: Int
     var dimensions: UnsafePointer[Int]
     var strides: UnsafePointer[Int]
@@ -83,7 +84,7 @@ fn _mojo_block_hasher[
     var result_py_list = cpython.PyList_New(num_hashes)
 
     # Initial hash seed value
-    alias initial_hash = hash[HasherType=default_comp_time_hasher]("None")
+    comptime initial_hash = hash[HasherType=default_comp_time_hasher]("None")
 
     # Performing hashing
     var prev_hash = initial_hash

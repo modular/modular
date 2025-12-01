@@ -16,12 +16,11 @@ from math import gcd
 from sys.info import _current_target, simd_width_of
 
 from algorithm.functional import elementwise
-from buffer import NDBuffer
 from complex import ComplexSIMD
-from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
 from kv_cache.types import KVCacheT, KVCollectionT
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout import IntTuple
 from nn._ragged_utils import get_batch_from_row_offsets
 
@@ -44,7 +43,7 @@ fn _rope[
 # while in safetensors, the data is stored as real, …, real, imag, …, imag.
 # This function return the indices for the real and imaginary part.
 @always_inline
-fn get_safetensors_idx(head_dim_idx: Int, head_size: Int) -> (Int, Int):
+fn get_safetensors_idx(head_dim_idx: Int, head_size: Int) -> Tuple[Int, Int]:
     return (head_dim_idx // 2, head_dim_idx // 2 + head_size // 2)
 
 
@@ -66,18 +65,20 @@ fn rope_q_proj[
     *,
     interleaved: Bool,
 ](
-    q_proj: NDBuffer[dtype, rank, *_],
-    output: NDBuffer[mut=True, dtype, rank, *_],
+    q_proj: LayoutTensor[dtype, **_],
+    output: LayoutTensor[mut=True, dtype, **_],
     idx: IndexList[rank],
     freq_val: SIMD[freq_dtype, width],
     head_size: Int,
 ):
+    constrained[q_proj.rank == rank]()
+    constrained[output.rank == rank]()
     var indices = get_safetensors_idx(idx[rank - 1], head_size)
     var pos_re = idx
     var pos_im = idx
     pos_re[rank - 1] = indices[0]
     pos_im[rank - 1] = indices[1]
-    alias width_2 = width // 2
+    comptime width_2 = width // 2
 
     var val: SIMD[dtype, width]
 
@@ -115,8 +116,8 @@ fn rope_k_cache[
     head_size: Int,
 ):
     h_re, h_im = get_safetensors_idx(d_idx, head_size)
-    alias width_2 = width // 2
-    alias cache_type = cache_t.dtype
+    comptime width_2 = width // 2
+    comptime cache_type = cache_t.dtype
 
     var val: SIMD[cache_type, width]
 
@@ -150,20 +151,24 @@ fn fused_qk_rope[
     interleaved: Bool,
     target: StaticString,
 ](
-    q_proj: NDBuffer[dtype, 4, *_],
+    q_proj: LayoutTensor[dtype, **_],
     kv_collection: collection_t,
-    freqs_cis: NDBuffer[dtype, 2, *_],
+    freqs_cis: LayoutTensor[dtype, **_],
     layer_idx: UInt32,
-    output: NDBuffer[mut=True, dtype, 4, *_],
+    output: LayoutTensor[mut=True, dtype, **_],
     context: Optional[DeviceContext],
 ) raises:
-    alias kv_params = cache_t.kv_params
+    constrained[q_proj.rank == 4]()
+    constrained[freqs_cis.rank == 2]()
+    constrained[output.rank == 4]()
+
+    comptime kv_params = cache_t.kv_params
 
     var batch_size = q_proj.dim[0]()
     var new_seq_len = q_proj.dim[1]()
-    alias num_q_heads = q_proj.shape.get[2]()
-    alias num_k_heads = kv_params.num_heads
-    alias head_size = q_proj.shape.get[3]()
+    comptime num_q_heads = Int(q_proj.layout.shape[2])
+    comptime num_k_heads = kv_params.num_heads
+    comptime head_size = Int(q_proj.layout.shape[3])
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
 
@@ -212,14 +217,16 @@ fn fused_qk_rope[
     var launch_shape = IndexList[4](
         batch_size,
         new_seq_len,
-        num_q_heads + num_k_heads,  # concat q and k along head dim
+        num_q_heads + Int(num_k_heads),  # concat q and k along head dim
         head_size,
     )
-    alias compile_target = _current_target() if is_cpu[
+    comptime compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
-    alias target_simd_width = simd_width_of[dtype, target=compile_target]()
-    alias kernel_simd_width = gcd(target_simd_width, kv_params.head_size)
+    comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
+    comptime kernel_simd_width = gcd(
+        target_simd_width, Int(kv_params.head_size)
+    )
     constrained[kernel_simd_width >= 2, "invalid simd_width and head size"]()
 
     @parameter
@@ -244,13 +251,15 @@ fn fused_qk_rope_ragged[
     target: StaticString,
     mrope_section: Optional[IntTuple] = None,
 ](
-    q_proj: NDBuffer[dtype, 3, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    q_proj: LayoutTensor[dtype, **_],
+    input_row_offsets: LayoutTensor[DType.uint32, **_],
     kv_collection: collection_t,
-    freqs_cis: NDBuffer[freq_dtype, 2, *_],
-    position_ids: OptionalReg[NDBuffer[DType.uint32, 2, MutableAnyOrigin]],
+    freqs_cis: LayoutTensor[freq_dtype, **_],
+    position_ids: OptionalReg[
+        LayoutTensor[DType.uint32, Layout.row_major[2](), MutAnyOrigin]
+    ],
     layer_idx: UInt32,
-    output: NDBuffer[mut=True, dtype, 3, *_],
+    output: LayoutTensor[mut=True, dtype, **_],
     context: Optional[DeviceContext],
 ) raises:
     """Applies RoPE (Rotary Position Embedding) to query and key tensors.
@@ -260,33 +269,41 @@ fn fused_qk_rope_ragged[
     for DeepSeek models where only part of each head undergoes rotary
     transformation.
     """
-    alias kv_params = cache_t.kv_params
-    alias num_q_heads = q_proj.shape.get[1]()
-    alias num_k_heads = kv_params.num_heads
-    alias q_head_size = q_proj.shape.get[2]()
-    alias k_head_size = kv_params.head_size
+    constrained[q_proj.rank == 3, "q_proj must be rank 3"]()
+    constrained[freqs_cis.rank == 2, "freqs_cis must be rank 2"]()
+    constrained[output.rank == 3, "output must be rank 3"]()
+    constrained[
+        input_row_offsets.rank == 1, "input_row_offsets must be rank 1"
+    ]()
+    comptime kv_params = cache_t.kv_params
+    comptime num_q_heads = Int(q_proj.layout.shape[1])
+    comptime num_k_heads = kv_params.num_heads
+    comptime q_head_size = Int(q_proj.layout.shape[2])
+    comptime k_head_size = kv_params.head_size
     var batch_size = input_row_offsets.dim[0]() - 1
 
     # Add rope dimension parameters
-    alias rope_dim = freqs_cis.shape.get[1]()
+    comptime rope_dim = Int(freqs_cis.layout.shape[1])
 
     # Check if shape of freqs_cis matches head_size.
     # If not, we only rope the last `rope_dim` dimensions of each head.
-    alias unroped_dim = q_head_size - rope_dim
-    alias has_nope = unroped_dim > 0
+    comptime unroped_dim = q_head_size - rope_dim
+    comptime has_nope = unroped_dim > 0
 
     constrained[
-        freqs_cis.shape.has_value[1](), "Need static shape for freqs_cis"
+        freqs_cis.layout.shape[1] != UNKNOWN_VALUE,
+        "Need static shape for freqs_cis",
     ]()
     constrained[
-        rope_dim <= q_head_size and rope_dim <= k_head_size,
+        rope_dim <= q_head_size and rope_dim <= Int(k_head_size),
         "rope_dim must be smaller or equal to head size, but got rope_dim = "
         + String(rope_dim)
         + " and head_size = "
         + String(k_head_size),
     ]()
     constrained[
-        (rope_dim == q_head_size and rope_dim == k_head_size) or interleaved,
+        (rope_dim == q_head_size and rope_dim == Int(k_head_size))
+        or interleaved,
         "Partial RoPE operation only supported for interleaved pattern",
     ]()
     constrained[
@@ -334,7 +351,7 @@ fn fused_qk_rope_ragged[
 
                     @parameter
                     for i in range(len(mrope_section.value())):
-                        alias val = mrope_section.value().value(i)
+                        comptime val = mrope_section.value().value(i)
                         if head_dim_idx < val:
                             section_idx = i
                             break
@@ -379,7 +396,7 @@ fn fused_qk_rope_ragged[
 
                 head_idx -= num_q_heads
                 # in case k_head_size != q_head_size
-                head_dim_idx += k_head_size - q_head_size
+                head_dim_idx += Int(k_head_size - UInt(q_head_size))
                 rope_k_cache[interleaved=interleaved](
                     k_cache,
                     batch_idx,
@@ -387,19 +404,19 @@ fn fused_qk_rope_ragged[
                     post_seq_idx,
                     head_dim_idx,
                     f_c_temp,
-                    k_head_size,
+                    Int(k_head_size),
                 )
 
     var launch_shape = IndexList[3](
         q_proj.dim[0](),
-        num_q_heads + num_k_heads,  # concat q and k along head dim
+        num_q_heads + Int(num_k_heads),  # concat q and k along head dim
         q_head_size,
     )
-    alias compile_target = _current_target() if is_cpu[
+    comptime compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
-    alias target_simd_width = simd_width_of[dtype, target=compile_target]()
-    alias kernel_simd_width = gcd(target_simd_width, rope_dim)
+    comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
+    comptime kernel_simd_width = gcd(target_simd_width, rope_dim)
 
     @parameter
     if mrope_section:

@@ -1,14 +1,8 @@
-load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
-
-_FILECHECK_TESTS = [
-    "test_index_normalization.mojo",
-    "test_list_getitem_invalid_index_int.mojo",
-    "test_list_getitem_invalid_index_uint.mojo",
-]
+load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 
 _NO_ASAN = [
-    "string/test_string.mojo",
-    "string/test_string_slice.mojo",  # TODO(MOCO-2316): Takes too long to compile
+    "test_dict.mojo",  # TODO(MOCO-2852): Compilation timeout on ASAN
+    "test_list.mojo",  # TODO(MOCO-2316): Takes too long to compile
 ]
 
 _PLATFORM_CONSTRAINTS = {
@@ -18,6 +12,16 @@ _PLATFORM_CONSTRAINTS = {
     })
     for src in _NO_ASAN
 }
+
+_FILECHECK_TESTS = [
+    "test_index_normalization.mojo",
+    "test_list_getitem_invalid_index_int.mojo",
+    "test_list_getitem_invalid_index_uint.mojo",
+]
+
+_LIT_TESTS = [
+    "test_asan_annotations_list.mojo",
+]
 
 _MOJO_COMPILE_OPTS = {
     "test_index_normalization.mojo": [
@@ -79,6 +83,26 @@ _EXPECT_CRASH = [
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _FILECHECK_TESTS,
+        exclude = _FILECHECK_TESTS + _LIT_TESTS,
     )
+]
+
+[
+    lit_tests(
+        name = "lit_tests",
+        size = "large",
+        srcs = [src],
+        mojo_deps = [
+            "@mojo//:stdlib",
+        ],
+        # mojo build flags specified in RUN lines.
+        # Asan has different exit codes due to signal handling.
+        # Macos also has different exit codes due to signal handling.
+        target_compatible_with = select({
+            "//:asan": ["@platforms//:incompatible"],
+            "@platforms//os:macos": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+    )
+    for src in _LIT_TESTS
 ]

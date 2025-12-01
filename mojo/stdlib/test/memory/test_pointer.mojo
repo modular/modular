@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from testing import TestSuite
 from testing import assert_equal, assert_not_equal, assert_true
 
 
@@ -64,7 +65,7 @@ def test_merge():
 
 # We don't actually need to run this,
 # but Mojo's exclusivity check shouldn't complain
-def test_get_immutable() -> Int:
+def _test_get_immutable() -> Int:
     fn foo(x: Pointer[mut=False, Int], y: Pointer[mut=False, Int]) -> Int:
         return x[]
 
@@ -73,8 +74,4 @@ def test_get_immutable() -> Int:
 
 
 def main():
-    test_copy_reference_explicitly()
-    test_equality()
-    test_str()
-    test_pointer_to()
-    test_merge()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -13,15 +13,10 @@
 
 from sys import simd_width_of
 
-from layout import (
-    LayoutTensor,
-    Layout,
-    RuntimeLayout,
-    UNKNOWN_VALUE,
-)
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from layout._fillers import arange
 from nn.pool import PoolMethod, avg_pool, max_pool, pool_shape_impl
-from testing import assert_equal, assert_almost_equal
+from testing import assert_almost_equal, assert_equal
 
 from utils.index import IndexList
 
@@ -32,16 +27,16 @@ fn pool[
     pool_method: PoolMethod,
     output_tensor: LayoutTensor[mut=True, DType.float32, **_],
 ) raises:
-    alias in_layout = Layout.row_major(2, 5, 7, 2)
+    comptime in_layout = Layout.row_major(2, 5, 7, 2)
 
-    var in_heap = List[Float32](capacity=in_layout.size())
+    var in_heap = List[Float32](unsafe_uninit_length=in_layout.size())
     var input_tensor = LayoutTensor[DType.float32, in_layout](in_heap)
     arange(input_tensor)
 
-    var paddings = List[Int32](0, 0, 0, 0)
-    var filter = List[Int32](3, 2)
-    var stride = List[Int32](2, 3)
-    var dilation = List[Int32](1, 1)
+    var paddings: List[Int32] = [0, 0, 0, 0]
+    var filter: List[Int32] = [3, 2]
+    var stride: List[Int32] = [2, 3]
+    var dilation: List[Int32] = [1, 1]
 
     var paddings_tensor = LayoutTensor[
         DType.int32, Layout.row_major(UNKNOWN_VALUE)
@@ -76,7 +71,7 @@ fn pool[
         ),
     )
 
-    alias simd_width = simd_width_of[DType.float32]()
+    comptime simd_width = simd_width_of[DType.float32]()
 
     if pool_method == PoolMethod.MAX:
         max_pool[int_type = DType.int32](
@@ -112,8 +107,8 @@ fn test_max_pool_2d() raises:
     #   [[128., 129.],
     #    [134., 135.]]]])
 
-    alias out_layout = Layout.row_major(2, 2, 2, 2)
-    var out_heap = List[Float32](capacity=out_layout.size())
+    comptime out_layout = Layout.row_major(2, 2, 2, 2)
+    var out_heap = List[Float32](unsafe_uninit_length=out_layout.size())
     var output_tensor = LayoutTensor[DType.float32, out_layout](out_heap).fill(
         0
     )
@@ -151,8 +146,8 @@ fn test_avg_pool_2d() raises:
     #   [[113.0, 114.0],
     #    [119.0, 120.0]]]])
 
-    alias out_layout = Layout.row_major(2, 2, 2, 2)
-    var out_heap = List[Float32](capacity=out_layout.size())
+    comptime out_layout = Layout.row_major(2, 2, 2, 2)
+    var out_heap = List[Float32](unsafe_uninit_length=out_layout.size())
     var output_tensor = LayoutTensor[DType.float32, out_layout](out_heap).fill(
         0
     )
@@ -179,16 +174,16 @@ fn test_avg_pool_2d() raises:
 fn test_avg_pool_2d_with_padding[
     count_boundary: Bool = False
 ](output_tensor: LayoutTensor[mut=True, DType.float32, **_]) raises:
-    alias in_layout = Layout.row_major(1, 7, 7, 1)
+    comptime in_layout = Layout.row_major(1, 7, 7, 1)
 
-    var in_heap = List[Float32](capacity=in_layout.size())
+    var in_heap = List[Float32](unsafe_uninit_length=in_layout.size())
     var input_tensor = LayoutTensor[DType.float32, in_layout](in_heap)
     arange(input_tensor)
 
-    var paddings = List[Int32](1, 1, 1, 1)
-    var filter = List[Int32](3, 3)
-    var stride = List[Int32](1, 1)
-    var dilation = List[Int32](1, 1)
+    var paddings: List[Int32] = [1, 1, 1, 1]
+    var filter: List[Int32] = [3, 3]
+    var stride: List[Int32] = [1, 1]
+    var dilation: List[Int32] = [1, 1]
 
     var paddings_tensor = LayoutTensor[
         DType.int32, Layout.row_major(UNKNOWN_VALUE)
@@ -223,7 +218,7 @@ fn test_avg_pool_2d_with_padding[
         ),
     )
 
-    alias simd_width = simd_width_of[DType.float32]()
+    comptime simd_width = simd_width_of[DType.float32]()
 
     avg_pool[int_type = DType.int32, count_boundary=count_boundary](
         input_tensor,
@@ -238,8 +233,8 @@ fn test_avg_pool_2d_with_padding[
 # CHECK-LABEL: test_avg_pool_2d_count_boundary: True
 fn test_avg_pool_2d_with_padding_true() raises:
     print("== test_avg_pool_2d_count_boundary: True")
-    alias out_layout = Layout.row_major(1, 7, 7, 1)
-    var out_heap = List[Float32](capacity=out_layout.size())
+    comptime out_layout = Layout.row_major(1, 7, 7, 1)
+    var out_heap = List[Float32](unsafe_uninit_length=out_layout.size())
     var output_tensor = LayoutTensor[DType.float32, out_layout](out_heap).fill(
         0
     )
@@ -299,8 +294,8 @@ fn test_avg_pool_2d_with_padding_true() raises:
 # CHECK-LABEL: test_avg_pool_2d_count_boundary: False
 fn test_avg_pool_2d_with_padding_false() raises:
     print("== test_avg_pool_2d_count_boundary: False")
-    alias out_layout = Layout.row_major(1, 7, 7, 1)
-    var out_heap = List[Float32](capacity=out_layout.size())
+    comptime out_layout = Layout.row_major(1, 7, 7, 1)
+    var out_heap = List[Float32](unsafe_uninit_length=out_layout.size())
     var output_tensor = LayoutTensor[DType.float32, out_layout](out_heap).fill(
         0
     )
@@ -364,16 +359,16 @@ fn pool_ceil_test[
     pool_method: PoolMethod,
     output_tensor: LayoutTensor[mut=True, DType.float32, **_],
 ) raises:
-    alias in_layout = Layout.row_major(1, 4, 4, 1)
+    comptime in_layout = Layout.row_major(1, 4, 4, 1)
 
-    var in_heap = List[Float32](capacity=in_layout.size())
+    var in_heap = List[Float32](unsafe_uninit_length=in_layout.size())
     var input_tensor = LayoutTensor[DType.float32, in_layout](in_heap)
     arange(input_tensor)
 
-    var paddings = List[Int32](0, 0, 0, 0)
-    var filter = List[Int32](3, 3)
-    var stride = List[Int32](2, 2)
-    var dilation = List[Int32](1, 1)
+    var paddings: List[Int32] = [0, 0, 0, 0]
+    var filter: List[Int32] = [3, 3]
+    var stride: List[Int32] = [2, 2]
+    var dilation: List[Int32] = [1, 1]
 
     var paddings_tensor = LayoutTensor[
         DType.int32, Layout.row_major(UNKNOWN_VALUE)
@@ -408,7 +403,7 @@ fn pool_ceil_test[
         ),
     )
 
-    alias simd_width = simd_width_of[DType.float32]()
+    comptime simd_width = simd_width_of[DType.float32]()
 
     var output_shape = pool_shape_impl[
         DType.float32,
@@ -451,8 +446,8 @@ fn pool_ceil_test[
 # CHECK-LABEL: test_max_pool_2d_ceil
 fn test_maxpool_2d_ceil() raises:
     print("== test_max_pool_2d_ceil")
-    alias out_layout = Layout.row_major(1, 2, 2, 1)
-    var out_heap = List[Float32](capacity=out_layout.size())
+    comptime out_layout = Layout.row_major(1, 2, 2, 1)
+    var out_heap = List[Float32](unsafe_uninit_length=out_layout.size())
     var output_tensor = LayoutTensor[DType.float32, out_layout](out_heap).fill(
         0
     )
@@ -466,8 +461,8 @@ fn test_maxpool_2d_ceil() raises:
 # CHECK-LABEL: test_average_pool_2d_ceil_exclude_bound
 fn test_average_pool_2d_ceil_exclude_bound() raises:
     print("== test_average_pool_2d_ceil_exclude_bound")
-    alias out_layout = Layout.row_major(1, 2, 2, 1)
-    var out_heap = List[Float32](capacity=out_layout.size())
+    comptime out_layout = Layout.row_major(1, 2, 2, 1)
+    var out_heap = List[Float32](unsafe_uninit_length=out_layout.size())
     var output_tensor = LayoutTensor[DType.float32, out_layout](out_heap).fill(
         0
     )
@@ -481,8 +476,8 @@ fn test_average_pool_2d_ceil_exclude_bound() raises:
 # CHECK-LABEL: test_average_pool_2d_ceil_include_bound
 fn test_average_pool_2d_ceil_include_bound() raises:
     print("== test_average_pool_2d_ceil_include_bound")
-    alias out_layout = Layout.row_major(1, 2, 2, 1)
-    var out_heap = List[Float32](capacity=out_layout.size())
+    comptime out_layout = Layout.row_major(1, 2, 2, 1)
+    var out_heap = List[Float32](unsafe_uninit_length=out_layout.size())
     var output_tensor = LayoutTensor[DType.float32, out_layout](out_heap).fill(
         0
     )
@@ -497,22 +492,22 @@ fn test_average_pool_2d_ceil_include_bound() raises:
 fn test_max_pool_pad_dilation_2d() raises:
     print("== test_max_pool_pad_dilation_2d")
 
-    alias in_layout = Layout.row_major(1, 4, 4, 1)
-    alias out_layout = Layout.row_major(1, 1, 3, 1)
+    comptime in_layout = Layout.row_major(1, 4, 4, 1)
+    comptime out_layout = Layout.row_major(1, 1, 3, 1)
 
-    var in_heap = List[Float32](capacity=in_layout.size())
+    var in_heap = List[Float32](unsafe_uninit_length=in_layout.size())
     var input_tensor = LayoutTensor[DType.float32, in_layout](in_heap)
     arange(input_tensor)
 
-    var out_heap = List[Float32](capacity=out_layout.size())
+    var out_heap = List[Float32](unsafe_uninit_length=out_layout.size())
     var output_tensor = LayoutTensor[DType.float32, out_layout](out_heap).fill(
         0
     )
 
-    var paddings = List[Int32](0, 0, 2, 0)
-    var filter = List[Int32](2, 2)
-    var stride = List[Int32](1, 1)
-    var dilation = List[Int32](3, 3)
+    var paddings: List[Int32] = [0, 0, 2, 0]
+    var filter: List[Int32] = [2, 2]
+    var stride: List[Int32] = [1, 1]
+    var dilation: List[Int32] = [3, 3]
 
     var paddings_tensor = LayoutTensor[
         DType.int32, Layout.row_major(UNKNOWN_VALUE)
@@ -547,7 +542,7 @@ fn test_max_pool_pad_dilation_2d() raises:
         ),
     )
 
-    alias simd_width = simd_width_of[DType.float32]()
+    comptime simd_width = simd_width_of[DType.float32]()
 
     max_pool[int_type = DType.int32](
         input_tensor,
@@ -563,7 +558,7 @@ fn test_max_pool_pad_dilation_2d() raises:
     assert_almost_equal(output_tensor[0, 0, 2, 0], 15.0000, atol=1e-4)
 
 
-fn main() raises:
+def main():
     test_max_pool_2d()
     test_avg_pool_2d()
     test_avg_pool_2d_with_padding_true()

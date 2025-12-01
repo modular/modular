@@ -11,33 +11,31 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.memory import AddressSpace
 from gpu import WARP_SIZE
-from gpu.mma_sm100 import *
-from gpu.tcgen05 import *
-from memory import stack_allocation
-from gpu.sync import barrier
 from gpu.host import DeviceContext
-from layout._utils import ManagedLayoutTensor
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu import thread_idx, warp_id
+from gpu.mma_sm100 import *
+from gpu.sync import barrier
+from gpu.tcgen05 import *
 from layout import Layout, LayoutTensor
+from layout._utils import ManagedLayoutTensor
+from memory import stack_allocation
 from testing import assert_almost_equal
-from gpu.id import thread_idx
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.memory import AddressSpace
 
 
 fn tcgen05_st_ld_roundtrip_kernel[
     M: Int, N: Int
-](data: LayoutTensor[DType.float32, Layout.row_major(M, N), MutableAnyOrigin]):
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+](data: LayoutTensor[DType.float32, Layout.row_major(M, N), MutAnyOrigin]):
+    var elect_one_warp = warp_id() == 0
     var elect_one_thread = thread_idx.x == 0
 
     var ptr_tmem_addr = stack_allocation[
         1, UInt32, address_space = AddressSpace.SHARED, alignment=16
     ]()
 
-    alias width = N
-    alias num_cols = 512
+    comptime width = N
+    comptime num_cols = 512
 
     if elect_one_warp:
         tcgen05_alloc[1](ptr_tmem_addr, num_cols)
@@ -48,7 +46,7 @@ fn tcgen05_st_ld_roundtrip_kernel[
 
     var data_st = SIMD[DType.float32, width]()
     for n in range(N):
-        data_st[n] = thread_idx.x * N + n
+        data_st[n] = thread_idx.x * UInt(N) + UInt(n)
 
     tcgen05_st[
         datapaths=16,
@@ -80,13 +78,15 @@ fn tcgen05_st_ld_roundtrip_kernel[
 
 
 def test_tcgen05_st_ld_roundtrip(ctx: DeviceContext):
-    alias M = 128
-    alias N = 8
+    comptime M = 128
+    comptime N = 8
     var data = ManagedLayoutTensor[
         DType.float32,
         Layout.row_major(M, N),
     ](ctx)
-    ctx.enqueue_function[tcgen05_st_ld_roundtrip_kernel[M, N]](
+
+    comptime kernel = tcgen05_st_ld_roundtrip_kernel[M, N]
+    ctx.enqueue_function_checked[kernel, kernel](
         data.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(M),
@@ -105,17 +105,17 @@ def test_tcgen05_st_ld_roundtrip(ctx: DeviceContext):
 
 fn tcgen05_cp_ld_roundtrip_kernel[
     M: Int, N: Int
-](data: LayoutTensor[DType.float32, Layout.row_major(M, N), MutableAnyOrigin]):
-    alias M_smem = 128
-    alias N_smem = 8
-    alias SBO = 256
-    alias LBO = 128
+](data: LayoutTensor[DType.float32, Layout.row_major(M, N), MutAnyOrigin]):
+    comptime M_smem = 128
+    comptime N_smem = 8
+    comptime SBO = 256
+    comptime LBO = 128
 
-    alias smem_layout = Layout.row_major(M_smem, N_smem)
+    comptime smem_layout = Layout.row_major(M_smem, N_smem)
     var smem_tile = LayoutTensor[
         DType.float32,
         smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -189,15 +189,15 @@ fn tcgen05_cp_ld_roundtrip_kernel[
     smem_tile[n + 8, k + 0] = Float32(thread_idx.x * 4 + 2)
     smem_tile[n + 8, k + 1] = Float32(thread_idx.x * 4 + 3)
 
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var elect_one_warp = warp_id() == 0
 
     var ptr_tmem_addr = stack_allocation[
         1, UInt32, address_space = AddressSpace.SHARED, alignment=16
     ]()
 
-    alias width = N
-    alias num_cols = 32
-    alias bits = 256
+    comptime width = N
+    comptime num_cols = 32
+    comptime bits = 256
 
     if elect_one_warp:
         tcgen05_alloc[1](ptr_tmem_addr, num_cols)
@@ -227,18 +227,19 @@ fn tcgen05_cp_ld_roundtrip_kernel[
         tcgen05_dealloc[1](tmem_addr, num_cols)
 
     for n in range(N):
-        if data_ld[n] == thread_idx.x * N + n:
+        if data_ld[n] == thread_idx.x * UInt(N) + UInt(n):
             data[thread_idx.x, n] = data_ld[n]
 
 
 def test_tcgen05_cp_ld_roundtrip(ctx: DeviceContext):
-    alias M = 32
-    alias N = 4
+    comptime M = 32
+    comptime N = 4
     var data = ManagedLayoutTensor[
         DType.float32,
         Layout.row_major(M, N),
     ](ctx)
-    ctx.enqueue_function[tcgen05_cp_ld_roundtrip_kernel[M, N]](
+    comptime kernel = tcgen05_cp_ld_roundtrip_kernel[M, N]
+    ctx.enqueue_function_checked[kernel, kernel](
         data.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(M),

@@ -40,8 +40,8 @@ fn _argn[
         axis: The axis.
         output: The output tensor.
     """
-    alias rank = input.rank
-    alias simd_width = simd_width_of[input.dtype]()
+    comptime rank = input.rank
+    comptime simd_width = simd_width_of[input.dtype]()
 
     var canonical_axis = axis
     if canonical_axis < 0:

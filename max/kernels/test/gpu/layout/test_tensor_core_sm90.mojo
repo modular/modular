@@ -20,7 +20,7 @@ from layout.tensor_core import TensorCore
 from utils.index import IndexList
 
 
-fn arange(tensor: LayoutTensor):
+fn arange(tensor: LayoutTensor[mut=True, **_]):
     @parameter
     for i in range(tensor.shape[0]()):
 
@@ -36,9 +36,9 @@ fn load_and_mma_16x8x32[
     layout_a: Layout,
     layout_b: Layout,
 ](
-    mat_c: LayoutTensor[out_type, layout_c, MutableAnyOrigin],
-    mat_a: LayoutTensor[in_type, layout_a, MutableAnyOrigin],
-    mat_b: LayoutTensor[in_type, layout_b, MutableAnyOrigin],
+    mat_c: LayoutTensor[mut=True, out_type, layout_c, MutAnyOrigin],
+    mat_a: LayoutTensor[in_type, layout_a, MutAnyOrigin],
+    mat_b: LayoutTensor[in_type, layout_b, MutAnyOrigin],
 ):
     constrained[
         in_type is DType.float8_e4m3fn or in_type is DType.float8_e5m2,
@@ -72,11 +72,11 @@ fn load_and_mma_16x8x32[
 # CHECK: 17864.0 18831.0 19768.0 20657.0 21678.0 22643.0 23582.0 24673.0
 def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext):
     print("== test_load_and_mma_e4m3_e4m3_f32_16x8x32")
-    alias M = 16
-    alias N = 8
-    alias K = 32
-    alias in_type = DType.float8_e4m3fn
-    alias out_type = DType.float32
+    comptime M = 16
+    comptime N = 8
+    comptime K = 32
+    comptime in_type = DType.float8_e4m3fn
+    comptime out_type = DType.float32
     var mat_a = ManagedLayoutTensor[
         in_type,
         Layout.row_major(M, K),
@@ -94,7 +94,7 @@ def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext):
     ](ctx)
     _ = mat_c.tensor().fill(0)
 
-    alias load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn = load_and_mma_16x8x32[
+    comptime load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn = load_and_mma_16x8x32[
         out_type,
         in_type,
         mat_c.layout,
@@ -138,11 +138,11 @@ def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext):
 # 17964.0 18928.0 19836.0 20716.0 21560.0 22360.0 23496.0 24608.0
 def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext):
     print("== test_load_and_mma_e5m2_e5m2_f32_16x8x32")
-    alias M = 16
-    alias N = 8
-    alias K = 32
-    alias in_type = DType.float8_e5m2
-    alias out_type = DType.float32
+    comptime M = 16
+    comptime N = 8
+    comptime K = 32
+    comptime in_type = DType.float8_e5m2
+    comptime out_type = DType.float32
     var mat_a = ManagedLayoutTensor[
         in_type,
         Layout.row_major(M, K),
@@ -160,7 +160,7 @@ def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext):
     ](ctx)
     _ = mat_c.tensor().fill(0)
 
-    alias load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn = load_and_mma_16x8x32[
+    comptime load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn = load_and_mma_16x8x32[
         out_type,
         in_type,
         mat_c.layout,

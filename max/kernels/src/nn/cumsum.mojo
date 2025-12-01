@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import LayoutTensor, Layout, RuntimeLayout
-from utils.index import IndexList
+from layout import Layout, LayoutTensor, RuntimeLayout
 
+from utils.index import IndexList
 from utils.numerics import get_accum_type
 
 
@@ -48,7 +48,7 @@ fn cumsum[
         input.rank == output.rank, "input and output should have the same rank."
     ]()
 
-    alias accum_type = DType.float64 if dtype is DType.float32 else get_accum_type[
+    comptime accum_type = DType.float64 if dtype is DType.float32 else get_accum_type[
         dtype
     ]()
     debug_assert(

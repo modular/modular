@@ -6,7 +6,7 @@ search through documents semantically.
 1. Start the embeddings endpoint:
 
     ```bash
-    max serve --model-path=sentence-transformers/all-mpnet-base-v2
+    max serve --model sentence-transformers/all-mpnet-base-v2
     ```
 
 1. Run the system:

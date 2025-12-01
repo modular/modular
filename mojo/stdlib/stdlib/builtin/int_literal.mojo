@@ -22,7 +22,6 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     Defaultable,
     Floorable,
     ImplicitlyBoolable,
-    ImplicitlyIntable,
     Indexer,
     Intable,
     Stringable,
@@ -172,7 +171,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return self
 
     @always_inline("builtin")
-    fn __neg__(self) -> __type_of(0 - self):
+    fn __neg__(self) -> type_of(0 - self):
         """Return -self.
 
         Returns:
@@ -181,7 +180,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return 0 - self
 
     @always_inline("builtin")
-    fn __invert__(self) -> __type_of(self ^ -1):
+    fn __invert__(self) -> type_of(self ^ -1):
         """Return ~self.
 
         Returns:
@@ -441,16 +440,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         Returns:
             The value as an integer of platform-specific width.
         """
-        return Int(mlir_value=self.__index__())
-
-    @always_inline("builtin")
-    fn __as_int__(self) -> Int:
-        """Implicitly convert to an Int.
-
-        Returns:
-            An integral value that represents this object.
-        """
-        return self.__int__()
+        return Int(mlir_value=self.__mlir_index__())
 
     @always_inline("builtin")
     fn __uint__(self) -> UInt:
@@ -504,7 +494,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     @always_inline("builtin")
     fn __ceildiv__(
         self, denominator: IntLiteral
-    ) -> __type_of(-(self // -denominator)):
+    ) -> type_of(-(self // -denominator)):
         """Return the rounded-up result of dividing self by denominator.
 
 
@@ -521,7 +511,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     # ===-------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __index__(self) -> __mlir_type.index:
+    fn __mlir_index__(self) -> __mlir_type.index:
         """Convert from IntLiteral to index.
 
         Returns:

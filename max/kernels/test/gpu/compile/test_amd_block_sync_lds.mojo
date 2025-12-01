@@ -17,7 +17,7 @@ from gpu import barrier
 from gpu.host.compile import _compile_code
 from gpu.host.info import MI300X
 
-alias MI300X_TARGET = MI300X.target()
+comptime MI300X_TARGET = MI300X.target()
 
 
 # CHECK-LABEL: test_barrier

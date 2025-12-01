@@ -14,6 +14,7 @@
 
 from layout import LayoutTensor
 from memory import memcpy
+from memory import LegacyUnsafePointer as UnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # _get_rightmost_broadcast_axis
@@ -79,10 +80,10 @@ fn broadcast[
     if input_output_have_same_shape:
         var src_ptr = input.ptr
         var dst_ptr = output.ptr
-        memcpy(dst_ptr, src_ptr, input.size())
+        memcpy(dest=dst_ptr, src=src_ptr, count=input.size())
         return
 
-    alias init_axis = 0
+    comptime init_axis = 0
     # imaginary axis before 0
     var init_input_prev_axis_stride = input.size()
     var init_output_prev_axis_stride = output.size()
@@ -200,5 +201,5 @@ fn _tile_1d[
     """
     var dst_ptr = init_dst_ptr
     for _ in range(n):
-        memcpy(dst_ptr, src_ptr, tile_num_elems)
+        memcpy(dest=dst_ptr, src=src_ptr, count=tile_num_elems)
         dst_ptr = dst_ptr.offset(tile_num_elems)

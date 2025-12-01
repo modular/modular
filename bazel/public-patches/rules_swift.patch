@@ -1,0 +1,26 @@
+diff --git a/swift/internal/swift_autoconfiguration.bzl b/swift/internal/swift_autoconfiguration.bzl
+index 19a6600..2ab84a0 100644
+--- a/swift/internal/swift_autoconfiguration.bzl
++++ b/swift/internal/swift_autoconfiguration.bzl
+@@ -208,10 +208,6 @@ def _create_linux_toolchain(repository_ctx):
+     """
+     path_to_swiftc = repository_ctx.which("swiftc")
+     if not path_to_swiftc:
+-        print("""\
+-No 'swiftc' executable found in $PATH. Not auto-generating a Linux Swift \
+-toolchain.
+-""")  # buildifier: disable=print
+         repository_ctx.file(
+             "BUILD",
+             """\
+@@ -352,10 +348,6 @@ def _get_python_bin(repository_ctx):
+ def _create_windows_toolchain(repository_ctx):
+     path_to_swiftc = repository_ctx.which("swiftc.exe")
+     if not path_to_swiftc:
+-        print("""\
+-No 'swiftc.exe' executable found in $PATH. Not auto-generating a Windows Swift \
+-toolchain.
+-""")  # buildifier: disable=print
+         repository_ctx.file(
+             "BUILD",
+             """\

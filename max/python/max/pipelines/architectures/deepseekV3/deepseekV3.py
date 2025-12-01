@@ -1,0 +1,686 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Implements the DeepseekV3 model."""
+
+from __future__ import annotations
+
+import functools
+from typing import Any
+
+from max.dtype import DType
+from max.graph import (
+    BufferType,
+    BufferValue,
+    DeviceRef,
+    ShardingStrategy,
+    TensorType,
+    TensorValue,
+    Type,
+    Value,
+    ops,
+)
+from max.graph.ops.allreduce import matmul_allreduce
+from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
+from max.nn import (
+    MLP,
+    ColumnParallelLinear,
+    DistributedGemmConfig,
+    LayerList,
+    Module,
+    RMSNorm,
+    Signals,
+    VocabParallelEmbedding,
+)
+from max.nn.attention.multi_latent_attention import (
+    DataParallelLatentAttentionWithRope,
+)
+from max.nn.attention.multi_latent_attention_fp8 import (
+    DataParallelLatentAttentionWithRopeFp8,
+)
+from max.nn.comm.allreduce import Allreduce
+from max.nn.comm.ep import EPBatchManager
+from max.nn.data_parallelism import split_batch_replicated
+from max.nn.kv_cache import PagedCacheValues
+from max.nn.moe import MoE, MoEFp8
+from max.nn.rotary_embedding import (
+    DeepseekYarnRopeScalingParams,
+    DeepseekYarnRotaryEmbedding,
+)
+from max.nn.transformer import ReturnLogits
+from max.nn.transformer.distributed_transformer import (
+    distribute_value,
+    forward_sharded_layers,
+)
+
+from .layers.moe_gate import DeepseekV3TopKRouter
+from .model_config import DeepseekV3Config
+
+
+class DeepseekV3DecoderLayer(Module):
+    def __init__(
+        self,
+        rope: DeepseekYarnRotaryEmbedding,
+        config: DeepseekV3Config,
+        layer_idx: int,
+        ep_manager: EPBatchManager | None = None,
+        distributed_gemm_config: DistributedGemmConfig | None = None,
+    ) -> None:
+        super().__init__()
+        self.config = config
+        self.ep_manager = ep_manager
+        num_devices = len(config.devices)
+
+        # Create Multi-head Latent Attention layer.
+        mla_kwargs: dict[str, Any] = dict(
+            rope=rope,
+            num_attention_heads=config.num_attention_heads,
+            num_key_value_heads=config.num_key_value_heads,
+            hidden_size=config.hidden_size,
+            kv_params=config.kv_params,
+            q_lora_rank=config.q_lora_rank,
+            kv_lora_rank=config.kv_lora_rank,
+            qk_nope_head_dim=config.qk_nope_head_dim,
+            qk_rope_head_dim=config.qk_rope_head_dim,
+            v_head_dim=config.v_head_dim,
+            devices=config.devices,
+        )
+
+        mla_cls: (
+            type[DataParallelLatentAttentionWithRope]
+            | type[DataParallelLatentAttentionWithRopeFp8]
+        )
+        if config.float8_config is not None:
+            mla_kwargs["float8_config"] = config.float8_config
+            # Decode is not yet supported for FP8.
+            mla_kwargs["graph_mode"] = "prefill"
+            mla_cls = DataParallelLatentAttentionWithRopeFp8
+        else:
+            mla_kwargs["dtype"] = config.dtype
+            mla_kwargs["graph_mode"] = config.graph_mode
+            mla_cls = DataParallelLatentAttentionWithRope
+
+        self.self_attn = mla_cls(**mla_kwargs)
+
+        # Create MLP or MoE layer
+        self.mlp = self._get_mlp(config, layer_idx)
+        self.mlp_shards = self.mlp.shard(config.devices)
+
+        # Create normalization layers
+        create_norm = functools.partial(
+            RMSNorm,
+            dim=config.hidden_size,
+            dtype=config.norm_dtype,
+            eps=config.rms_norm_eps,
+            multiply_before_cast=False,
+        )
+        self.input_layernorm = create_norm()
+        self.input_layernorm.sharding_strategy = ShardingStrategy.replicate(
+            num_devices
+        )
+        self.input_layernorm_shards = self.input_layernorm.shard(config.devices)
+
+        self.post_attention_layernorm = create_norm()
+        self.post_attention_layernorm.sharding_strategy = (
+            ShardingStrategy.replicate(num_devices)
+        )
+        self.post_attention_layernorm_shards = (
+            self.post_attention_layernorm.shard(config.devices)
+        )
+
+        self.distributed_gemm_config = distributed_gemm_config
+        self.allreduce = Allreduce(num_accelerators=num_devices)
+
+    def _get_mlp(self, config: DeepseekV3Config, layer_idx: int) -> MLP | MoE:
+        """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
+        for the TransformerBlock's mlp depending on the layer idx.
+
+        Args:
+            config: Configuration object containing model parameters
+            layer_idx: Layer index
+
+        Returns:
+            List of MLP shards or MoE modules depending on the layer index and config
+        """
+        if (
+            config.n_routed_experts is not None
+            and layer_idx >= config.first_k_dense_replace
+            and layer_idx % config.moe_layer_freq == 0
+        ):
+            if config.ep_config is not None:
+                ep_size = (
+                    config.ep_config.n_gpus_per_node * config.ep_config.n_nodes
+                )
+            else:
+                ep_size = 1
+
+            moe_kwargs: dict[str, Any] = dict(
+                devices=config.devices,
+                hidden_dim=config.hidden_size,
+                num_experts=config.n_routed_experts,
+                num_experts_per_token=config.num_experts_per_tok,
+                moe_dim=config.moe_intermediate_size,
+                gate_cls=functools.partial(
+                    DeepseekV3TopKRouter,
+                    routed_scaling_factor=config.routed_scaling_factor,
+                    scoring_func=config.scoring_func,
+                    topk_method=config.topk_method,
+                    n_group=config.n_group,
+                    topk_group=config.topk_group,
+                    norm_topk_prob=config.norm_topk_prob,
+                    # Use the same dtype for the gate as the norm
+                    gate_dtype=config.norm_dtype,
+                    correction_bias_dtype=config.correction_bias_dtype,
+                ),
+                has_shared_experts=True,
+                shared_experts_dim=config.n_shared_experts
+                * config.moe_intermediate_size,
+                dtype=config.dtype,
+                ep_size=ep_size,
+                apply_router_weight_first=False,
+                ep_batch_manager=self.ep_manager,
+                float8_config=config.float8_config,
+            )
+
+            moe: MoE
+            if config.float8_config is not None:
+                moe = MoEFp8(**moe_kwargs)
+            else:
+                moe = MoE(**moe_kwargs)
+
+            if config.ep_config is not None:
+                moe.sharding_strategy = ShardingStrategy.expert_parallel(
+                    len(config.devices)
+                )
+            else:
+                moe.sharding_strategy = ShardingStrategy.tensor_parallel(
+                    len(config.devices)
+                )
+            return moe
+        else:
+            mlp = MLP(
+                dtype=config.dtype,
+                quantization_encoding=None,
+                hidden_dim=config.hidden_size,
+                feed_forward_length=config.intermediate_size,
+                devices=config.devices,
+                float8_config=config.float8_config,
+            )
+            if config.ep_config is not None:
+                mlp.sharding_strategy = ShardingStrategy.replicate(
+                    len(config.devices)
+                )
+            else:
+                mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
+                    len(config.devices)
+                )
+            return mlp
+
+    def __call__(
+        self,
+        layer_idx: TensorValue,
+        xs: list[TensorValue],
+        signal_buffers: list[BufferValue],
+        kv_blocks: list[BufferValue],
+        kv_cache_lengths: list[TensorValue],
+        kv_lookup_table: list[TensorValue],
+        kv_max_lengths: list[TensorValue],
+        freqs_cis: list[TensorValue],
+        mla_inputs: list[TensorValue],
+        input_row_offsets: list[TensorValue],
+        input_row_offsets_int64: TensorValue,
+        data_parallel_splits: TensorValue,
+        ep_inputs: list[Value[Any]] | None = None,
+    ) -> list[TensorValue]:
+        # We have to unpack our PagedCacheValues into constituent parts so
+        # subgraphs have only max.graph.Values as arguments.
+        # Re-pack those arguments into a nice structured type.
+        kv_collections = [
+            PagedCacheValues(
+                kv_blocks[i],
+                kv_cache_lengths[i],
+                kv_lookup_table[i],
+                kv_max_lengths[i],
+            )
+            for i in range(len(kv_blocks))
+        ]
+
+        # we split the inputs outside the layer when using EP
+        if self.config.ep_config is None:
+            original_shape = xs[0].shape
+            xs, input_row_offsets = split_batch_replicated(
+                self.config.devices,
+                xs,
+                input_row_offsets,
+                input_row_offsets_int64,
+                data_parallel_splits,
+            )
+            # Create MLA prefill inputs if not in decode mode
+            if self.config.graph_mode != "decode":
+                mla_inputs = self.self_attn.create_mla_inputs(
+                    input_row_offsets, kv_collections
+                )
+
+        # Apply input layer norm to each shard
+        norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
+
+        # Data-parallel attention (per-device)
+        attn_outs = self.self_attn(
+            layer_idx,
+            norm_xs,
+            signal_buffers,
+            kv_collections,
+            freqs_cis=freqs_cis,
+            input_row_offsets=input_row_offsets,
+            mla_inputs=mla_inputs,
+        )
+
+        if self.config.ep_config is not None:
+            assert ep_inputs is not None
+            if self.ep_manager is not None:
+                self.ep_manager.fetch_buffers(ep_inputs)
+
+            hs = [
+                x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)
+            ]
+            # Post-attention norm (per-device)
+            norm_outs = forward_sharded_layers(
+                self.post_attention_layernorm_shards, hs
+            )
+            mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
+
+        else:
+            hs = [
+                x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)
+            ]
+
+            hs = ops.allgather(hs, signal_buffers)
+
+            # Use rebind to assert that the gathered shape is the same as the
+            # original input shape
+            hs = [out.rebind(original_shape) for out in hs]
+
+            # Post-attention norm (per-device)
+            norm_outs = forward_sharded_layers(
+                self.post_attention_layernorm_shards, hs
+            )
+            mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
+
+            if (
+                self.distributed_gemm_config is None
+                or not self.distributed_gemm_config.enable_matmul_allreduce
+            ):
+                mlp_outs = self.allreduce(mlp_outs, signal_buffers)
+            else:
+                # Special matmul + allreduce split version
+                # extract the sharded weights from the last linear layers
+                weights = [layer.down_proj.weight for layer in self.mlp_shards]  # type: ignore[union-attr]
+                mlp_outs = matmul_allreduce(
+                    mlp_outs,
+                    weights,
+                    signal_buffers,
+                )
+
+        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
+
+        return hs
+
+
+class DeepseekV3(Module):
+    """Defines the DeepseekV3 transformer model.
+
+    This is a combination of the DeepseekV3Model and the DeepseekV3ForCausalLM
+    classes from the HuggingFace Transformers implementation.
+    """
+
+    def __init__(self, config: DeepseekV3Config) -> None:
+        super().__init__()
+        self.config = config
+        num_devices = len(config.devices)
+        devices = config.devices
+
+        embedding_output_dtype = config.dtype
+        if config.float8_config and config.float8_config.embedding_output_dtype:
+            embedding_output_dtype = config.float8_config.embedding_output_dtype
+        self.embed_tokens = VocabParallelEmbedding(
+            config.vocab_size,
+            config.hidden_size,
+            dtype=embedding_output_dtype,
+            devices=config.devices,
+            quantization_encoding=None,
+        )
+
+        assert config.rope_scaling is not None
+        scaling_params = DeepseekYarnRopeScalingParams(
+            scaling_factor=config.rope_scaling["factor"],
+            original_max_position_embeddings=config.rope_scaling[
+                "original_max_position_embeddings"
+            ],
+            beta_fast=config.rope_scaling["beta_fast"],
+            beta_slow=config.rope_scaling["beta_slow"],
+            mscale=config.rope_scaling["mscale"],
+            mscale_all_dim=config.rope_scaling["mscale_all_dim"],
+        )
+        self.rope = DeepseekYarnRotaryEmbedding(
+            config.qk_rope_head_dim,
+            n_heads=config.num_attention_heads,
+            theta=config.rope_theta,
+            max_seq_len=config.max_position_embeddings,
+            scaling_params=scaling_params,
+        )
+
+        self.ep_manager: EPBatchManager | None = None
+        if config.ep_config is not None:
+            self.ep_manager = EPBatchManager(config.ep_config)
+
+        self.layers = LayerList(
+            [
+                DeepseekV3DecoderLayer(
+                    self.rope,
+                    config,
+                    i,
+                    None
+                    if i < config.first_k_dense_replace
+                    else self.ep_manager,
+                )
+                for i in range(config.num_hidden_layers)
+            ]
+        )
+
+        self.norm = RMSNorm(
+            config.hidden_size,
+            config.norm_dtype,
+            config.rms_norm_eps,
+        )
+        self.norm.sharding_strategy = ShardingStrategy.replicate(num_devices)
+        self.norm_shards = self.norm.shard(devices)
+        self.lm_head = ColumnParallelLinear(
+            config.hidden_size,
+            config.vocab_size,
+            embedding_output_dtype,
+            devices=config.devices,
+            quantization_encoding=None,
+        )
+
+        if config.use_subgraphs:
+            self.subgraph_layer_groups = [
+                [
+                    i
+                    for i in range(
+                        config.first_k_dense_replace, config.num_hidden_layers
+                    )
+                ]
+            ]
+        else:
+            self.subgraph_layer_groups = []
+        self.return_logits = config.return_logits
+        self.logits_scaling = 1.0
+
+    def __call__(
+        self,
+        tokens: TensorValue,
+        signal_buffers: list[BufferValue],
+        kv_collections: list[PagedCacheValues],
+        return_n_logits: TensorValue,
+        input_row_offsets: TensorValue,
+        data_parallel_splits: TensorValue,
+        ep_inputs: list[Value[Any]] | None = None,
+    ) -> tuple[TensorValue, ...]:
+        if not input_row_offsets.device == DeviceRef.CPU():
+            raise ValueError("input_row_offsets must be located on CPU")
+        if not data_parallel_splits.device == DeviceRef.CPU():
+            raise ValueError("data_parallel_splits must be located on CPU")
+
+        devices = self.config.devices
+        h = self.embed_tokens(tokens, signal_buffers)
+
+        mla_inputs: list[TensorValue] = []
+        freqs_cis = distribute_value(self.rope.freqs_cis, devices)
+        input_row_offsets_ = distribute_value(input_row_offsets, devices)
+        input_row_offsets_int64 = input_row_offsets.cast(DType.int64)
+
+        if self.ep_manager is not None:
+            h, input_row_offsets_ = split_batch_replicated(
+                devices,
+                h,
+                input_row_offsets_,
+                input_row_offsets_int64,
+                data_parallel_splits,
+            )
+
+            # Create MLA prefill inputs if not in decode mode
+            if self.config.graph_mode != "decode":
+                mla_inputs = self.layers[0].self_attn.create_mla_inputs(  # type: ignore
+                    input_row_offsets_, kv_collections
+                )
+
+        subgraph_input_types: list[Type[Any] | list[Type[Any]]] = [
+            TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
+            [hidden.type for hidden in h],
+            [signal_buffer.type for signal_buffer in signal_buffers],
+            [kv_collection[0].type for kv_collection in kv_collections],
+            [kv_collection[1].type for kv_collection in kv_collections],
+            [kv_collection[2].type for kv_collection in kv_collections],
+            [kv_collection[3].type for kv_collection in kv_collections],
+            [freq.type for freq in freqs_cis],
+            [val.type for val in mla_inputs],
+            [offset.type for offset in input_row_offsets_],
+            input_row_offsets_int64.type,
+            data_parallel_splits.type,
+        ]
+
+        if self.ep_manager is not None:
+            subgraph_input_types.append(list(self.ep_manager.input_types()))
+
+        subgraphs = []
+        for group_idx, layer_group in enumerate(self.subgraph_layer_groups):
+            assert len(layer_group) > 0, (
+                "Subgraph layer groups must contain at least one layer"
+            )
+            subgraph_layer = self.layers[layer_group[0]]
+            assert isinstance(subgraph_layer, DeepseekV3DecoderLayer), (
+                "Subgraph layer must be a DeepseekV3DecoderLayer"
+            )
+            subgraphs.append(
+                subgraph_layer.build_subgraph(
+                    f"dist_transformer_block_{group_idx}",
+                    subgraph_input_types,
+                    f"layers.{layer_group[0]}.",
+                )
+            )
+
+        for idx, layer in enumerate(self.layers):
+            has_subgraph = False
+            for group_idx, layer_group in enumerate(self.subgraph_layer_groups):
+                if idx in layer_group:
+                    has_subgraph = True
+                    h = [
+                        x.tensor
+                        for x in ops.call(
+                            subgraphs[group_idx],
+                            ops.constant(
+                                idx, DType.uint32, device=DeviceRef.CPU()
+                            ),
+                            *h,
+                            *signal_buffers,
+                            *[
+                                kv_collection[0]
+                                for kv_collection in kv_collections
+                            ],
+                            *[
+                                kv_collection[1]
+                                for kv_collection in kv_collections
+                            ],
+                            *[
+                                kv_collection[2]
+                                for kv_collection in kv_collections
+                            ],
+                            *[
+                                kv_collection[3]
+                                for kv_collection in kv_collections
+                            ],
+                            *freqs_cis,
+                            *mla_inputs,
+                            *input_row_offsets_,
+                            input_row_offsets_int64,
+                            data_parallel_splits,
+                            *(ep_inputs if ep_inputs is not None else ()),
+                            prefix=f"layers.{idx}.",
+                        )
+                    ]
+                    break
+            if not has_subgraph:
+                h = layer(
+                    ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
+                    h,
+                    signal_buffers,
+                    [kv_collection[0] for kv_collection in kv_collections],
+                    [kv_collection[1] for kv_collection in kv_collections],
+                    [kv_collection[2] for kv_collection in kv_collections],
+                    [kv_collection[3] for kv_collection in kv_collections],
+                    freqs_cis=freqs_cis,
+                    mla_inputs=mla_inputs,
+                    input_row_offsets=input_row_offsets_,
+                    input_row_offsets_int64=input_row_offsets_int64,
+                    data_parallel_splits=data_parallel_splits,
+                    ep_inputs=ep_inputs,
+                )
+                assert isinstance(h, list)
+
+        if self.ep_manager is not None:
+            last_token_per_dev: list[TensorValue] = []
+            for dev_idx in range(len(devices)):
+                h0 = h[dev_idx]
+                last_token_indices = input_row_offsets_[dev_idx][1:] - 1
+                last_token_h = ops.gather(h0, last_token_indices, axis=0)
+                last_token_per_dev.append(last_token_h)
+            last_token_distributed = ops.allgather(
+                last_token_per_dev, signal_buffers
+            )
+        else:
+            h0 = h[0]
+            last_token_indices = input_row_offsets_[0][1:] - 1
+            last_token_h = ops.gather(h0, last_token_indices, axis=0)
+            last_token_distributed = distribute_value(last_token_h, devices)
+
+        # Apply norm to each shard
+        norm_last_token = forward_sharded_layers(
+            self.norm_shards, last_token_distributed
+        )
+        last_logits = ops.cast(
+            self.lm_head(norm_last_token, signal_buffers)[0],
+            DType.float32,
+        )
+
+        logits = None
+        offsets = None
+
+        if self.return_logits == ReturnLogits.VARIABLE:
+            return_n_logits_range = ops.range(
+                start=return_n_logits[0],
+                stop=0,
+                step=-1,
+                out_dim="return_n_logits_range",
+                dtype=DType.int64,
+                device=devices[0],
+            )
+            offsets = (
+                ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
+            )
+            last_indices = ops.reshape(offsets, shape=(-1,))
+            logits = ops.gather(
+                ops.cast(
+                    self.lm_head(
+                        forward_sharded_layers(self.norm_shards, h),
+                        signal_buffers,
+                    )[0],
+                    DType.float32,
+                ),
+                last_indices,
+                axis=0,
+            )
+            offsets = ops.range(
+                0,
+                TensorValue(last_indices.shape[0]) + return_n_logits[0],
+                return_n_logits[0],
+                out_dim="logit_offsets",
+                dtype=DType.int64,
+                device=devices[0],
+            )
+        elif self.return_logits == ReturnLogits.ALL:
+            logits = ops.cast(
+                self.lm_head(
+                    forward_sharded_layers(self.norm_shards, h),
+                    signal_buffers,
+                )[0],
+                DType.float32,
+            )
+            offsets = input_row_offsets_[0]
+
+        if self.logits_scaling != 1.0:
+            last_logits = last_logits / self.logits_scaling
+            if logits is not None:
+                logits = logits / self.logits_scaling
+
+        if logits is not None and offsets is not None:
+            return (last_logits, logits, offsets)
+        else:
+            return (last_logits,)
+
+    def input_types(
+        self, kv_manager: PagedKVCacheManager | NullKVCacheManager
+    ) -> tuple[TensorType | BufferType, ...]:
+        # TODO: Move input symbol computation from the manager classes.
+        # It should be possible to compute the input symbols from the model
+        # config.
+        device_ref = self.config.devices[0]
+
+        # Construct Graph Inputs
+        tokens_type = TensorType(
+            DType.int64, shape=["total_seq_len"], device=device_ref
+        )
+        input_row_offsets_type = TensorType(
+            DType.uint32,
+            shape=["input_row_offsets_len"],
+            device=DeviceRef.CPU(),
+        )
+        return_n_logits_type = TensorType(
+            DType.int64, shape=["return_n_logits"], device=device_ref
+        )
+        data_parallel_splits_type = TensorType(
+            DType.int64,
+            shape=[self.config.data_parallel_degree + 1],
+            device=DeviceRef.CPU(),
+        )
+
+        kv_inputs = kv_manager.get_symbolic_inputs()
+
+        # Flatten kv types for each device
+        flattened_kv_types: list[TensorType] = [
+            kv_type for sublist in kv_inputs for kv_type in sublist
+        ]
+
+        signals = Signals(devices=self.config.devices)
+        signal_buffer_types: list[BufferType] = signals.input_types()
+
+        all_input_types: list[TensorType | BufferType] = [
+            tokens_type,
+            input_row_offsets_type,
+            return_n_logits_type,
+            data_parallel_splits_type,
+        ]
+        all_input_types.extend(signal_buffer_types)
+        all_input_types.extend(flattened_kv_types)
+
+        if self.ep_manager is not None:
+            all_input_types.extend(self.ep_manager.input_types())
+        return tuple(all_input_types)

@@ -11,8 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv
+
 from buffer.dimlist import Dim, DimList
-from testing import *
+from internal_utils._utils import ValOrDim, dynamic, static
+from testing import TestSuite, assert_equal, assert_false, assert_true
 
 
 # CHECK-LABEL: test_dim_list
@@ -51,7 +54,7 @@ def test_dim_list():
 
 
 # CHECK-LABEL: test_dim
-fn test_dim():
+def test_dim():
     print("== test_dim")
 
     var dim0 = Dim(8)
@@ -110,9 +113,14 @@ def test_dimlist_eq():
     )
 
 
+fn test_dim_ceildiv() raises:
+    fn test_dim_ceildiv(m: ValOrDim) -> Dim:
+        comptime BLOCK_SCALE_M = 128
+        return ceildiv(m.dim, BLOCK_SCALE_M)
+
+    assert_equal(String(test_dim_ceildiv(dynamic(120))), "?")
+    assert_equal(String(test_dim_ceildiv(static[120]())), "1")
+
+
 def main():
-    test_dim_list()
-    test_dim()
-    test_dim_to_string()
-    test_dimlist_repr()
-    test_dimlist_eq()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -25,15 +25,13 @@ fn test_no_alloca_fill():
         output: LayoutTensor[
             DType.float32,
             Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
-            MutableAnyOrigin,
+            MutAnyOrigin,
         ],
         i: Int,
         j: Int,
     ):
         var reg_tile = (
-            LayoutTensor[
-                DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
-            ]
+            LayoutTensor[DType.float32, Layout.row_major(4, 4), MutAnyOrigin]
             .stack_allocation()
             .fill(0)
         )

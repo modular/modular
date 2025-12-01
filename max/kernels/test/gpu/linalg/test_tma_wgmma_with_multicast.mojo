@@ -14,13 +14,15 @@
 from math import ceildiv
 from sys import size_of
 
+import linalg.matmul.vendor.blas as vendor_blas
+from buffer import NDBuffer
 from gpu import barrier
 from gpu.cluster import block_rank_in_cluster, cluster_sync
 from gpu.host import DeviceContext, Dim
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, thread_idx
-from gpu.id import warp_id as get_warp_id
-from gpu.memory import AddressSpace, fence_mbarrier_init
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu import block_idx, thread_idx
+from gpu import warp_id as get_warp_id
+from gpu.memory import fence_mbarrier_init
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
@@ -32,9 +34,7 @@ from layout.tensor_core_async import (
     warpgroup_fence,
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-from linalg import vendor_blas
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
@@ -64,13 +64,13 @@ fn multicast_tma_wgmma_kernel[
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -78,12 +78,12 @@ fn multicast_tma_wgmma_kernel[
     var b_smem_tile = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
-    alias accum_type = get_accum_type[a_type]()
+    comptime accum_type = get_accum_type[a_type]()
     wgmma_op = TensorCoreAsync[
         accum_type,
         a_type,
@@ -94,35 +94,35 @@ fn multicast_tma_wgmma_kernel[
         transpose_b=transpose_b,
     ]()
 
-    alias CLUSTER_M = cluster_shape[0]
-    alias CLUSTER_N = cluster_shape[1]
+    comptime CLUSTER_M = cluster_shape[0]
+    comptime CLUSTER_N = cluster_shape[1]
 
-    alias a_tma_load_size = a_desc_layout.size()
-    alias b_tma_load_size = b_desc_layout.size()
-    alias a_tma_rows = a_desc_layout.shape[0].value()
-    alias b_tma_rows = b_desc_layout.shape[0].value()
+    comptime a_tma_load_size = a_desc_layout.size()
+    comptime b_tma_load_size = b_desc_layout.size()
+    comptime a_tma_rows = a_desc_layout.shape[0].value()
+    comptime b_tma_rows = b_desc_layout.shape[0].value()
 
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
-    alias num_m_mmas = BM // wgmma_shape[0]
-    alias num_n_mmas = BN // wgmma_shape[1]
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
+    comptime num_m_mmas = BM // wgmma_shape[0]
+    comptime num_n_mmas = BN // wgmma_shape[1]
 
-    alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
+    comptime c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
     var c_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
     _ = c_reg_tile.fill(0.0)
 
-    alias a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
-    alias b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
-    alias expected_bytes = a_expected_bytes + b_expected_bytes
+    comptime a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
+    comptime b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
+    comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
-    alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
+    comptime CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
 
     var block_rank = block_rank_in_cluster()
     var rank_m = block_rank / CLUSTER_N
@@ -131,7 +131,7 @@ fn multicast_tma_wgmma_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:
@@ -157,7 +157,7 @@ fn multicast_tma_wgmma_kernel[
                     var a_gmem_slice_coord = (
                         block_idx.y * BM + Int(rank_n) * a_tma_rows
                     )
-                    var a_smem_slice = __type_of(a_smem_tile)(
+                    var a_smem_slice = type_of(a_smem_tile)(
                         a_smem_tile.ptr + rank_n * a_tma_load_size
                     )
 
@@ -195,7 +195,7 @@ fn multicast_tma_wgmma_kernel[
                     var b_gmem_slice_coord = (
                         block_idx.x * BN + Int(rank_m) * b_tma_rows
                     )
-                    var b_smem_slice = __type_of(b_smem_tile)(
+                    var b_smem_slice = type_of(b_smem_tile)(
                         b_smem_tile.ptr + rank_m * b_tma_load_size
                     )
 
@@ -263,7 +263,7 @@ fn multicast_tma_wgmma_kernel[
 
         @parameter
         for n_mma in range(num_n_mmas):
-            alias mma_id = n_mma * num_m_mmas + m_mma
+            comptime mma_id = n_mma * num_m_mmas + m_mma
 
             # (m_mma, n_mma) is coordinates for a warp group's tile.
             # A warp group is 4x1 warps.
@@ -297,9 +297,9 @@ def test_multicast_tma_wgmma[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     partitioned_multicast: Bool = False,
 ](ctx: DeviceContext):
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
 
     constrained[
         transpose_b, "multicasting is only supported for K-Major transposed B"
@@ -322,9 +322,9 @@ def test_multicast_tma_wgmma[
         ),
     ]()
 
-    alias WGMMA_M = wgmma_shape[0]
-    alias WGMMA_N = wgmma_shape[1]
-    alias WGMMA_K = wgmma_shape[2]
+    comptime WGMMA_M = wgmma_shape[0]
+    comptime WGMMA_N = wgmma_shape[1]
+    comptime WGMMA_K = wgmma_shape[2]
 
     print(
         "wgmma_bf16_bf16_f32 cluster shape "
@@ -341,12 +341,12 @@ def test_multicast_tma_wgmma[
         + String(partitioned_multicast)
     )
 
-    alias M = prob_shape[0]
-    alias N = prob_shape[1]
-    alias K = prob_shape[2]
+    comptime M = prob_shape[0]
+    comptime N = prob_shape[1]
+    comptime K = prob_shape[2]
 
-    alias CLUSTER_M = cluster_shape[0]
-    alias CLUSTER_N = cluster_shape[1]
+    comptime CLUSTER_M = cluster_shape[0]
+    comptime CLUSTER_N = cluster_shape[1]
 
     var a = ManagedLayoutTensor[
         a_type,
@@ -354,7 +354,7 @@ def test_multicast_tma_wgmma[
     ](ctx)
     arange(a.tensor[update=False]())
 
-    alias b_layout = Layout.row_major(
+    comptime b_layout = Layout.row_major(
         N, K
     ) if transpose_b else Layout.row_major(K, N)
     var b = ManagedLayoutTensor[b_type, b_layout](ctx)
@@ -371,42 +371,38 @@ def test_multicast_tma_wgmma[
     ](ctx)
 
     # Shared memory tile layouts
-    alias a_smem_layout = tile_layout_k_major[
+    comptime a_smem_layout = tile_layout_k_major[
         a_type, BM, BK, swizzle_mode=a_swizzle
     ]()
-    alias b_smem_layout = tile_layout_k_major[
+    comptime b_smem_layout = tile_layout_k_major[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]() if transpose_b else tile_layout_mn_major[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
     a_tma_op = create_tma_tile[
-        a_type,
-        2,
         Index(BM // CLUSTER_N, BK) if partitioned_multicast else Index(BM, BK),
         swizzle_mode=a_swizzle,
     ](ctx, a.device_tensor())
 
-    alias b_tma_op_shape = Index(
+    comptime b_tma_op_shape = Index(
         BN // CLUSTER_M, BK
     ) if partitioned_multicast else Index(BN, BK)
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         b_tma_op_shape if transpose_b else Index(BK, BN),
         is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 
-    alias kernel = multicast_tma_wgmma_kernel[
+    comptime kernel = multicast_tma_wgmma_kernel[
         a_type,
         b_type,
         c_type,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
+        type_of(a_tma_op).layout,
+        type_of(b_tma_op).layout,
         Layout.row_major(M, N),
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
+        type_of(a_tma_op).desc_layout,
+        type_of(b_tma_op).desc_layout,
         block_tile_shape,
         wgmma_shape,
         a_smem_layout,
@@ -418,7 +414,7 @@ def test_multicast_tma_wgmma[
         partitioned_multicast=partitioned_multicast,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c.device_tensor(),
@@ -430,9 +426,13 @@ def test_multicast_tma_wgmma[
 
     vendor_blas.matmul(
         ctx,
-        c_ref.device_buffer(),
-        a.device_buffer[update=False](),
-        b.device_buffer[update=False](),
+        rebind[NDBuffer[c_type, 2, MutAnyOrigin]](c_ref.device_buffer()),
+        rebind[NDBuffer[a_type, 2, MutAnyOrigin]](
+            a.device_buffer[update=False]()
+        ),
+        rebind[NDBuffer[b_type, 2, MutAnyOrigin]](
+            b.device_buffer[update=False]()
+        ),
         c_row_major=True,
         transpose_b=transpose_b,
     )

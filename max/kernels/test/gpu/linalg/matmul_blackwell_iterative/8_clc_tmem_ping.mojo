@@ -11,83 +11,80 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv
-from sys import size_of, argv
 from hashlib import default_comp_time_hasher
+from math import align_up, ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer, bitcast
+from sys import argv, size_of
+
+import linalg.matmul.vendor.blas as vendor_blas
+from bit import prev_power_of_two
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from layout.layout_tensor import LayoutTensorIter
 from gpu import WARP_SIZE, barrier, block_idx
+from gpu.cluster import (
+    block_rank_in_cluster,
+    cluster_sync,
+    elect_one_sync,
+    elect_one_sync_with_mask,
+)
+from gpu.host import DeviceContext, FuncAttribute
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu.host.info import B200
+from gpu import block_id_in_cluster, lane_id, thread_idx
+from gpu import warp_id as get_warp_id
+from gpu.memory import (
+    AddressSpace,
+    external_memory,
+    fence_async_view_proxy,
+    fence_mbarrier_init,
+)
+from gpu.mma import st_matrix
+from gpu.mma_sm100 import *
 from gpu.sync import (
     named_barrier,
     named_barrier_arrive,
     syncwarp,
     umma_arrive_leader_cta,
 )
-
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.host.info import B200
-from gpu.id import lane_id, thread_idx, block_id_in_cluster
-from gpu.id import warp_id as get_warp_id
-from gpu.memory import (
-    AddressSpace,
-    fence_async_view_proxy,
-    fence_mbarrier_init,
-    external_memory,
-)
-from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
-from internal_utils import ndbuffer_to_str
-from bit import prev_power_of_two
-
-from gpu.mma import st_matrix
-from layout import (
-    Layout,
-    RuntimeLayout,
-    RuntimeTuple,
-    LayoutTensor,
-    IntTuple,
-    UNKNOWN_VALUE,
-)
-from layout.swizzle import make_swizzle, make_ldmatrix_swizzle, Swizzle
-
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-    st_matrix_n_layout,
-    tile_to_descriptor,
-)
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from gpu.cluster import (
-    elect_one_sync,
-    elect_one_sync_with_mask,
-    block_rank_in_cluster,
-    cluster_sync,
-)
-from layout.tma_async import (
-    SharedMemBarrier,
-    TMATensorTile,
-    create_tma_tile,
-    PipelineState,
-)
-
-from linalg import vendor_blas
-from linalg.mmaop_sm100 import MmaOpSM100_SS
-from linalg.matmul_tile_scheduler_sm100 import TileScheduler, WorkInfo
-
-
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
     assert_almost_equal,
+    ndbuffer_to_str,
     random,
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
+from layout import (
+    UNKNOWN_VALUE,
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+)
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout.layout_tensor import LayoutTensorIter
+from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
+from layout.tensor_core_async import (
+    st_matrix_n_layout,
+    tile_layout_k_major,
+    tile_layout_mn_major,
+    tile_to_descriptor,
+)
+from layout.tma_async import (
+    PipelineState,
+    SharedMemBarrier,
+    TMATensorTile,
+    create_tma_tile,
+)
+from linalg.arch.sm100 import MmaOpSM100_SS
+from linalg.matmul.gpu.sm100.tile_scheduler import TileScheduler, WorkInfo
+
+from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
+from utils.static_tuple import StaticTuple
 
 
 fn is_benchmark() -> Bool:
@@ -102,10 +99,10 @@ fn is_benchmark() -> Bool:
 struct WarpRole(ImplicitlyCopyable, Movable):
     var _role: Int32
 
-    alias Mma = Self(6)
-    alias MainLoad = Self(5)
-    alias Scheduler = Self(4)
-    alias Epilogue = Self(3)
+    comptime Mma = Self(6)
+    comptime MainLoad = Self(5)
+    comptime Scheduler = Self(4)
+    comptime Epilogue = Self(3)
 
     @always_inline
     fn __eq__(self, other: UInt) -> Bool:
@@ -166,24 +163,24 @@ fn load_AB[
     a_smem: LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
     b_smem: LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
-    producer_phase: PipelineState[num_pipeline_stages],
+    producer_phase: PipelineState[Int(num_pipeline_stages)],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
     work_tile_coord: Tuple[UInt, UInt],
     a_multicast_mask: UInt16,
@@ -191,44 +188,44 @@ fn load_AB[
     iter_idx: UInt,
     elect_one_cta: Bool,
 ):
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
-    alias MMA_M = mma_shape[0]
-    alias MMA_N = mma_shape[1]
-    alias MMA_K = mma_shape[2]
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
+    comptime MMA_M = mma_shape[0]
+    comptime MMA_N = mma_shape[1]
+    comptime MMA_K = mma_shape[2]
 
-    alias a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
-    alias b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
+    comptime a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
+    comptime b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
     # Leader CTAs expect SMEM from itself and their peers
-    alias expected_bytes = cta_group * (a_expected_bytes + b_expected_bytes)
+    comptime expected_bytes = cta_group * (a_expected_bytes + b_expected_bytes)
 
-    alias a_tma_load_size = a_desc_layout.size()
-    alias b_tma_load_size = b_desc_layout.size()
-    alias a_tma_rows = a_desc_layout.shape[0].value()
-    alias b_tma_rows = b_desc_layout.shape[0].value()
+    comptime a_tma_load_size = a_desc_layout.size()
+    comptime b_tma_load_size = b_desc_layout.size()
+    comptime a_tma_rows = a_desc_layout.shape[0].value()
+    comptime b_tma_rows = b_desc_layout.shape[0].value()
 
     var stage = producer_phase.index()
     var phase = producer_phase.phase()
     mma_mbar[stage].wait(phase)
 
-    var a_gmem_slice_coord = (
-        peer_cta_coord[2] * a_tma_rows + work_tile_coord[0] * BM
-    )
+    var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
+        a_tma_rows
+    ) + work_tile_coord[0] * UInt(BM)
     var b_gmem_slice_coord = (
-        peer_cta_coord[1] * b_tma_rows
-        + peer_cta_coord[0] * BN
-        + work_tile_coord[1] * MMA_N
+        peer_cta_coord[1] * UInt(b_tma_rows)
+        + peer_cta_coord[0] * UInt(BN)
+        + work_tile_coord[1] * UInt(MMA_N)
     )
 
     var a_smem_tile = a_smem.next(stage)[]
     var b_smem_tile = b_smem.next(stage)[]
 
-    var a_smem_slice = __type_of(a_smem_tile)(
-        a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
+    var a_smem_slice = type_of(a_smem_tile)(
+        a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
     )
-    var b_smem_slice = __type_of(b_smem_tile)(
-        b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
+    var b_smem_slice = type_of(b_smem_tile)(
+        b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
     )
 
     if elect_one_sync():
@@ -238,14 +235,14 @@ fn load_AB[
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
             tma_mbar[stage],
-            (UInt(iter_idx * BK), UInt(a_gmem_slice_coord)),
+            (iter_idx * UInt(BK), UInt(a_gmem_slice_coord)),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
             tma_mbar[stage],
-            (UInt(iter_idx * BK), UInt(b_gmem_slice_coord)),
+            (iter_idx * UInt(BK), UInt(b_gmem_slice_coord)),
             b_multicast_mask,
         )
 
@@ -273,22 +270,22 @@ fn consumer_main_loop[
     a_smem_iter: LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
     b_smem_iter: LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     consumer_phase: PipelineState[pipeline_stages],
     mma_op: MmaOpSM100_SS[
@@ -334,24 +331,24 @@ fn stsm_helper[
     dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_],
 ):
     # Number of elements in one row per stsmx4 tile, a row is 32B.
-    alias stsmx4_row_size = 32 // size_of[dst.dtype]()
+    comptime stsmx4_row_size = 32 // size_of[dst.dtype]()
     # Number of elements owned by each lane, each lane has 16B
-    alias stsmx4_lane_size = 16 // size_of[dst.dtype]()
+    comptime stsmx4_lane_size = 16 // size_of[dst.dtype]()
     # TODO: constrain the shared memory layout to be 2D row-major.
     # E.g. dst layout can be (16, 16) : (32, 1), which is tiled from
     # row-major(16, 32). The map should use tile's stride to calculate
     # the dst row offset.
-    alias stride0 = dst.layout.stride[0].value()
-    alias shape0 = dst.layout.shape[1].value()
+    comptime stride0 = dst.layout.stride[0].value()
+    comptime shape0 = dst.layout.shape[1].value()
 
     var lane = lane_id()
-    var stsm_lane_offset = (lane & 15) * stride0 + (lane >> 4) * 8
+    var stsm_lane_offset = (lane & 15) * UInt(stride0) + (lane >> 4) * 8
 
     # Assume the dst tile has 16 rows and only use stsm in N dim.
     @parameter
     for i in range(shape0 // stsmx4_row_size):
-        alias n_offset = i * stsmx4_row_size
-        var offset = swizzle(stsm_lane_offset + n_offset)
+        comptime n_offset = i * stsmx4_row_size
+        var offset = swizzle(Int(stsm_lane_offset + UInt(n_offset)))
         var v = vec.slice[
             stsmx4_lane_size, offset = i * stsmx4_lane_size
         ]().cast[dst.dtype]()
@@ -379,17 +376,19 @@ fn multi_stage_store_C[
     c_iter: LayoutTensorIter[
         c_type,
         c_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
-    accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
+    accum_pipeline_consumer_state: PipelineState[
+        Int(num_accum_pipeline_stages)
+    ],
     accum_full_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     accum_empty_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[UInt, UInt],
@@ -397,36 +396,36 @@ fn multi_stage_store_C[
 ):
     # WAIT FOR MMA TO FINISH AND STORE RESULT
     # scheduler fetch next work
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
-    alias MMA_M = mma_shape[0]
-    alias MMA_N = mma_shape[1]
-    alias MMA_K = mma_shape[2]
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
+    comptime MMA_M = mma_shape[0]
+    comptime MMA_N = mma_shape[1]
+    comptime MMA_K = mma_shape[2]
 
-    alias num_m_mmas = BM // (mma_shape[0] // cta_group)
-    alias num_n_mmas = BN // (mma_shape[1] // cta_group)
+    comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
+    comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
 
     constrained[num_m_mmas == 1 and num_n_mmas == 1]()
 
     # we break down the output tile BM x MMA_N to BM x stageN tiles
     # and output one tile per stage.
     # stage N is 32
-    alias stageN = c_smem_layout.shape[1].value()
+    comptime stageN = c_smem_layout.shape[1].value()
     # so num stages is usually 256 by 32 is 8
-    alias num_stages = MMA_N // stageN
-    alias tmem_cell_bytes = 4
-    alias data_paths = 16
-    alias bits = 256
+    comptime num_stages = MMA_N // stageN
+    comptime tmem_cell_bytes = 4
+    comptime data_paths = 16
+    comptime bits = 256
     # every element in tmem is 4 bytes, so bits being 256 means 8 elements stored across N
     # repeated 4 times is 8*4 = 32, enough to move elements into the width of our 128x32 tile
-    alias rep = stageN // (bits // 32)
+    comptime rep = stageN // (bits // 32)
 
     # stmatrix related
-    alias stsmx4N_bytes = 32
-    alias stsmx4N = stsmx4N_bytes // size_of[c_type]()  # 16
-    alias stsmx4_size_per_lane = (16 * stsmx4N) // WARP_SIZE  # 8
-    alias swizzle = make_swizzle[c_type, TensorMapSwizzle.SWIZZLE_64B]()
+    comptime stsmx4N_bytes = 32
+    comptime stsmx4N = stsmx4N_bytes // size_of[c_type]()  # 16
+    comptime stsmx4_size_per_lane = (16 * stsmx4N) // WARP_SIZE  # 8
+    comptime swizzle = make_swizzle[c_type, TensorMapSwizzle.SWIZZLE_64B]()
 
     var warp_id = get_warp_id()
 
@@ -468,7 +467,7 @@ fn multi_stage_store_C[
 
         # Assume double-buffer for shared memory packing
         var c_smem_tile = c_iter.next(stage % 2)[]
-        var c_smem_warp_tile = c_smem_tile.tile[32, stageN](warp_id, 0)
+        var c_smem_warp_tile = c_smem_tile.tile[32, stageN](Int(warp_id), 0)
 
         # Pack the upper frag to shared memory
         stsm_helper[swizzle](
@@ -479,15 +478,15 @@ fn multi_stage_store_C[
         )
 
         # Guard the write to shared memory is done.
-        named_barrier[num_output_warps * WARP_SIZE]()
+        named_barrier[num_output_warps * UInt(WARP_SIZE)]()
         var lane = lane_id()
         if elect_one_warp and lane == 0:
             fence_async_view_proxy()
             c_tma_op.async_store(
                 c_smem_tile,
                 (
-                    UInt(work_tile_coord[1] * MMA_N + stage * stageN),
-                    UInt(work_tile_coord[0] * BM),
+                    work_tile_coord[1] * UInt(MMA_N) + UInt(stage * stageN),
+                    work_tile_coord[0] * UInt(BM),
                 ),
             )
             c_tma_op.commit_group()
@@ -505,7 +504,7 @@ fn multi_stage_store_C[
         if stage > 0 and stage < num_stages - 1:
             # Guard the tma read from shared memory is done.
             # E.g. stage = 1, this guards the TMA store using buffer 0 is done.
-            named_barrier[num_output_warps * WARP_SIZE]()
+            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
@@ -540,56 +539,56 @@ fn kernel_8[
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     cluster_dim: StaticTuple[Int32, 3],
-    num_iters: UInt,
+    num_iters: Int,
 ):
-    alias num_output_warps = 4
+    comptime num_output_warps = 4
 
-    alias SCHEDULER_THREADS = WARP_SIZE
-    alias TMA_LOAD_THREADS = WARP_SIZE
-    alias MMA_THREADS = WARP_SIZE
-    alias EPILOGUE_THREADS = num_output_warps * WARP_SIZE
-    alias CLUSTER_SIZE = cluster_shape[0] * cluster_shape[1]
-    alias clc_producer_arv_count = 1
-    alias clc_consumer_arv_count = SCHEDULER_THREADS + CLUSTER_SIZE * (
+    comptime SCHEDULER_THREADS = WARP_SIZE
+    comptime TMA_LOAD_THREADS = WARP_SIZE
+    comptime MMA_THREADS = WARP_SIZE
+    comptime EPILOGUE_THREADS = num_output_warps * WARP_SIZE
+    comptime CLUSTER_SIZE = cluster_shape[0] * cluster_shape[1]
+    comptime clc_producer_arv_count = 1
+    comptime clc_consumer_arv_count = SCHEDULER_THREADS + CLUSTER_SIZE * (
         TMA_LOAD_THREADS + MMA_THREADS + EPILOGUE_THREADS
     )
 
     # For ld from TMEM, use same per-stage stride in column field.
-    alias TMEM_N = 512
-    alias stage_stride_cols = TMEM_N // num_accum_pipeline_stages
+    comptime TMEM_N = 512
+    comptime stage_stride_cols = TMEM_N // Int(num_accum_pipeline_stages)
 
-    alias clc_throttle_producer_arv_count = TMA_LOAD_THREADS
-    alias clc_throttle_consumer_arv_count = SCHEDULER_THREADS
+    comptime clc_throttle_producer_arv_count = TMA_LOAD_THREADS
+    comptime clc_throttle_consumer_arv_count = SCHEDULER_THREADS
 
-    alias accum_pipeline_producer_arv_count = 1
-    alias accum_pipeline_consumer_arv_count = cta_group * EPILOGUE_THREADS
+    comptime accum_pipeline_producer_arv_count = 1
+    comptime accum_pipeline_consumer_arv_count = cta_group * EPILOGUE_THREADS
 
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
-    alias MMA_M = mma_shape[0]
-    alias MMA_N = mma_shape[1]
-    alias MMA_K = mma_shape[2]
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
+    comptime MMA_M = mma_shape[0]
+    comptime MMA_N = mma_shape[1]
+    comptime MMA_K = mma_shape[2]
 
-    alias num_m_mmas = BM // (mma_shape[0] // cta_group)
-    alias num_n_mmas = BN // (mma_shape[1] // cta_group)
-    alias num_k_mmas = BK // mma_shape[2]
+    comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
+    comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
+    comptime num_k_mmas = BK // mma_shape[2]
 
-    alias CLUSTER_M = Int(cluster_shape[0])
-    alias CLUSTER_N = Int(cluster_shape[1])
+    comptime CLUSTER_M = Int(cluster_shape[0])
+    comptime CLUSTER_N = Int(cluster_shape[1])
 
-    alias a_tma_load_size = a_desc_layout.size()
-    alias b_tma_load_size = b_desc_layout.size()
-    alias a_tma_rows = a_desc_layout.shape[0].value()
-    alias b_tma_rows = b_desc_layout.shape[0].value()
-    alias c_smem_layout = Layout.row_major(BM, MMA_N)
+    comptime a_tma_load_size = a_desc_layout.size()
+    comptime b_tma_load_size = b_desc_layout.size()
+    comptime a_tma_rows = a_desc_layout.shape[0].value()
+    comptime b_tma_rows = b_desc_layout.shape[0].value()
+    comptime c_smem_layout = Layout.row_major(BM, MMA_N)
 
-    # keep the physical SMEM buffer BM × MMA_N
+    # keep the physical SMEM buffer BM x MMA_N
 
-    alias a_smem_layout = tile_layout_k_major[
+    comptime a_smem_layout = tile_layout_k_major[
         a_type, BM, BK, swizzle_mode=a_swizzle
     ]()
-    alias b_smem_layout = tile_layout_k_major[
+    comptime b_smem_layout = tile_layout_k_major[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]() if transpose_b else tile_layout_mn_major[
         b_type, BN, BK, swizzle_mode=b_swizzle
@@ -601,46 +600,42 @@ fn kernel_8[
         alignment=128,
     ]()
 
-    alias a_smem_size = a_smem_layout.size() * num_pipeline_stages
-    alias b_smem_size = b_smem_layout.size() * num_pipeline_stages
-    alias c_smem_size = output_tile_shape[0] * output_tile_shape[
-        1
-    ] * num_output_stages
+    comptime a_smem_size = a_smem_layout.size() * Int(num_pipeline_stages)
+    comptime b_smem_size = b_smem_layout.size() * Int(num_pipeline_stages)
+    comptime c_smem_size = output_tile_shape[0] * output_tile_shape[1] * Int(
+        num_output_stages
+    )
 
     var a_smem_base = base_ptr_smem
     var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()
-    var c_smem_base = (
-        (b_smem_base + b_smem_size)
-        .bitcast[Scalar[c_type]]()
-        .static_alignment_cast[128]()
-    )
+    var c_smem_base = (b_smem_base + b_smem_size).bitcast[Scalar[c_type]]()
 
     var a_smem = LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
-        a_smem_base.static_alignment_cast[128](),
+        a_smem_base,
         a_smem_size,
     )
 
     var b_smem = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
-        b_smem_base.static_alignment_cast[128](),
+        b_smem_base,
         b_smem_size,
     )
 
     var c_smem_iter = LayoutTensorIter[
         c_type,
         Layout.row_major(output_tile_shape[0], output_tile_shape[1]),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](c_smem_base, c_smem_size)
@@ -686,14 +681,14 @@ fn kernel_8[
         SharedMemBarrier
     ]()
 
-    alias accum_type = get_accum_type[a_type]()
+    comptime accum_type = get_accum_type[a_type]()
 
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var warp_id = get_warp_id()
+    var elect_one_warp = warp_id == 0
     var elect_one_thread = elect_one_sync_with_mask()
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     var is_first_cta_in_cluster = block_rank_in_cluster() == 0
-    var warp_id = get_warp_id()
-    alias max_tmem_cols = 512
+    comptime max_tmem_cols = 512
 
     if elect_one_warp and elect_one_thread:
         a_tma_op.prefetch_descriptor()
@@ -725,24 +720,26 @@ fn kernel_8[
     fence_mbarrier_init()
     cluster_sync()
 
-    var consumer_phase = PipelineState[num_pipeline_stages]()
-    var producer_phase = PipelineState[num_pipeline_stages](0, 1, 0)
+    var consumer_phase = PipelineState[Int(num_pipeline_stages)]()
+    var producer_phase = PipelineState[Int(num_pipeline_stages)](0, 1, 0)
 
-    var clc_pipe_producer_state = PipelineState[num_clc_pipeline_stages](
+    var clc_pipe_producer_state = PipelineState[Int(num_clc_pipeline_stages)](
         0, 1, 0
     )
-    var clc_pipe_consumer_state = PipelineState[num_clc_pipeline_stages]()
+    var clc_pipe_consumer_state = PipelineState[Int(num_clc_pipeline_stages)]()
 
-    var clc_throttle_producer_state = PipelineState[num_clc_pipeline_stages](
-        0, 1, 0
-    )
-    var clc_throttle_consumer_state = PipelineState[num_clc_pipeline_stages]()
+    var clc_throttle_producer_state = PipelineState[
+        Int(num_clc_pipeline_stages)
+    ](0, 1, 0)
+    var clc_throttle_consumer_state = PipelineState[
+        Int(num_clc_pipeline_stages)
+    ]()
 
     var accum_pipeline_producer_state = PipelineState[
-        num_accum_pipeline_stages
+        Int(num_accum_pipeline_stages)
     ](0, 1, 0)
     var accum_pipeline_consumer_state = PipelineState[
-        num_accum_pipeline_stages
+        Int(num_accum_pipeline_stages)
     ]()
 
     var mma_op = MmaOpSM100_SS[
@@ -762,7 +759,7 @@ fn kernel_8[
     ]()
 
     var scheduler = TileScheduler[
-        num_stages=num_clc_pipeline_stages,
+        num_stages = Int(num_clc_pipeline_stages),
         cluster_shape = Index[dtype = DType.uint32](
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
@@ -776,8 +773,8 @@ fn kernel_8[
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (
-        UInt(rank_m % cta_group),
-        UInt(rank_m // cta_group),
+        rank_m % UInt(cta_group),
+        rank_m // UInt(cta_group),
         UInt(rank_n),
     )  # v,m,n
 
@@ -796,7 +793,7 @@ fn kernel_8[
 
     a_multicast_mask <<= rank_m
     b_multicast_mask <<= peer_cta_coord[0]
-    b_multicast_mask <<= rank_n * CLUSTER_M
+    b_multicast_mask <<= rank_n * UInt(CLUSTER_M)
 
     var self_mask = 1 << Int(block_rank_in_cluster())
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
@@ -834,7 +831,7 @@ fn kernel_8[
                     (UInt(work_info.m), UInt(work_info.n)),
                     a_multicast_mask,
                     b_multicast_mask,
-                    i,
+                    UInt(i),
                     elect_one_cta,
                 )
                 producer_phase.step()
@@ -922,7 +919,7 @@ fn kernel_8[
                         consumer_phase,
                         mma_op,
                         elect_one_warp,
-                        i,
+                        UInt(i),
                     )
                     consumer_phase.step()
 
@@ -1014,21 +1011,19 @@ fn blackwell_kernel_8[
         "Only support transposed B",
     ]()
 
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
 
-    alias MMA_M = umma_shape[0]
-    alias MMA_N = umma_shape[1]
-    alias MMA_K = umma_shape[2]
+    comptime MMA_M = umma_shape[0]
+    comptime MMA_N = umma_shape[1]
+    comptime MMA_K = umma_shape[2]
 
     a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
+        Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
 
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(
             BN // (cluster_shape[0] // cta_group), BK
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
@@ -1036,79 +1031,82 @@ fn blackwell_kernel_8[
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
-    alias output_tile_shape = Index(BM, 32)
-    alias c_swizzle = TensorMapSwizzle.SWIZZLE_64B
-    var c_tma_op = create_tma_tile[
-        c_type,
-        2,
-        output_tile_shape,
-        swizzle_mode=c_swizzle,
-    ](ctx, c)
+    comptime output_tile_shape = Index(BM, 32)
+    comptime c_swizzle = TensorMapSwizzle.SWIZZLE_64B
+    var c_tma_op = create_tma_tile[output_tile_shape, swizzle_mode=c_swizzle](
+        ctx, c
+    )
 
     # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
-    alias b200_smem = B200.shared_memory_per_multiprocessor - 1024
-    alias a_smem_bytes_per_stage = BM * BK * size_of[a_type]()
-    alias b_smem_bytes_per_stage = BN * BK * size_of[b_type]()
+    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
+    comptime a_smem_bytes_per_stage = BM * BK * size_of[a_type]()
+    comptime b_smem_bytes_per_stage = BN * BK * size_of[b_type]()
     # A and B per pipeline stage
-    alias AB_smem_per_stage = a_smem_bytes_per_stage + b_smem_bytes_per_stage
+    comptime AB_smem_per_stage = a_smem_bytes_per_stage + b_smem_bytes_per_stage
     # Support double-buffer for output stages.
-    alias num_output_stages = 2
+    comptime num_output_stages = 2
 
-    alias c_smem_bytes = output_tile_shape[0] * output_tile_shape[
+    comptime c_smem_bytes = output_tile_shape[0] * output_tile_shape[
         1
     ] * num_output_stages * size_of[c_type]()
 
-    alias MBAR_BYTES = size_of[Int64]()  # 8 bytes per barrier
-    alias CLC_RESPONSE_BYTES = size_of[Int128]()  # 16 bytes per response
-    alias TMEM_ADDR_BYTES = size_of[
+    comptime MBAR_BYTES = size_of[Int64]()  # 8 bytes per barrier
+    comptime CLC_RESPONSE_BYTES = size_of[Int128]()  # 16 bytes per response
+    comptime TMEM_ADDR_BYTES = size_of[
         Int32
     ]()  # 4 bytes or 32 bits for tensor memory address
     # the 'N' dimension of tensor memory is 512
-    alias TMEM_N = 512
+    comptime TMEM_N = 512
     # the maximum different number of mma's that can be run in parallel is TMEM_N/MMA_N
-    alias max_accum_pipeline_stages = TMEM_N // MMA_N
+    comptime max_accum_pipeline_stages = TMEM_N // MMA_N
     # Mainloop barrier
-    alias accum_full_mbar_bytes = MBAR_BYTES * max_accum_pipeline_stages
-    alias accum_empty_mbar_bytes = MBAR_BYTES * max_accum_pipeline_stages
+    comptime accum_full_mbar_bytes = MBAR_BYTES * max_accum_pipeline_stages
+    comptime accum_empty_mbar_bytes = MBAR_BYTES * max_accum_pipeline_stages
 
-    alias clc_response_bytes = CLC_RESPONSE_BYTES * num_clc_pipeline_stages
-    alias clc_full_mbar_bytes = MBAR_BYTES * num_clc_pipeline_stages
-    alias clc_empty_mbar_bytes = MBAR_BYTES * num_clc_pipeline_stages
-    alias clc_throttle_full_mbar_bytes = MBAR_BYTES * num_clc_pipeline_stages
-    alias clc_throttle_empty_mbar_bytes = MBAR_BYTES * num_clc_pipeline_stages
+    comptime clc_response_bytes = CLC_RESPONSE_BYTES * Int(
+        num_clc_pipeline_stages
+    )
+    comptime clc_full_mbar_bytes = MBAR_BYTES * Int(num_clc_pipeline_stages)
+    comptime clc_empty_mbar_bytes = MBAR_BYTES * Int(num_clc_pipeline_stages)
+    comptime clc_throttle_full_mbar_bytes = MBAR_BYTES * Int(
+        num_clc_pipeline_stages
+    )
+    comptime clc_throttle_empty_mbar_bytes = MBAR_BYTES * Int(
+        num_clc_pipeline_stages
+    )
 
-    alias tmem_addr_bytes = TMEM_ADDR_BYTES
-    alias tmem_dealloc_mbar_bytes = MBAR_BYTES
+    comptime tmem_addr_bytes = TMEM_ADDR_BYTES
+    comptime tmem_dealloc_mbar_bytes = MBAR_BYTES
 
-    alias tmem_writeout_smem = c_smem_bytes + tmem_addr_bytes + tmem_dealloc_mbar_bytes
-    alias accum_smem = accum_full_mbar_bytes + accum_empty_mbar_bytes
-    alias clc_smem = (
+    comptime tmem_writeout_smem = c_smem_bytes + tmem_addr_bytes + tmem_dealloc_mbar_bytes
+    comptime accum_smem = accum_full_mbar_bytes + accum_empty_mbar_bytes
+    comptime clc_smem = (
         clc_response_bytes
         + clc_full_mbar_bytes
         + clc_empty_mbar_bytes
         + clc_throttle_full_mbar_bytes
         + clc_throttle_empty_mbar_bytes
     )
-    alias smem_leftover = (b200_smem) - (
+    comptime smem_leftover = (b200_smem) - (
         clc_smem + accum_smem + tmem_writeout_smem
     )
 
-    alias tma_mbar_bytes_per_stage = MBAR_BYTES
-    alias mma_mbar_bytes_per_stage = MBAR_BYTES
+    comptime tma_mbar_bytes_per_stage = MBAR_BYTES
+    comptime mma_mbar_bytes_per_stage = MBAR_BYTES
 
-    alias producer_consumer_smem_per_stage = (
+    comptime producer_consumer_smem_per_stage = (
         AB_smem_per_stage + tma_mbar_bytes_per_stage + mma_mbar_bytes_per_stage
     )
 
-    alias max_pipeline_stages = smem_leftover // producer_consumer_smem_per_stage
+    comptime max_pipeline_stages = smem_leftover // producer_consumer_smem_per_stage
 
-    alias producer_consumer_smem = producer_consumer_smem_per_stage * max_pipeline_stages
+    comptime producer_consumer_smem = producer_consumer_smem_per_stage * max_pipeline_stages
 
-    alias smem_size = (
+    comptime smem_size = (
         clc_smem + accum_smem + producer_consumer_smem + tmem_writeout_smem
     )
 
-    alias kernel = kernel_8[
+    comptime kernel = kernel_8[
         a_type,
         b_type,
         c_type,
@@ -1143,7 +1141,7 @@ fn blackwell_kernel_8[
         grid_dim[0] // cluster_shape[0], grid_dim[1] // cluster_shape[1], 1
     )
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -1197,11 +1195,11 @@ def test_blackwell_kernel_8[
             )
         )
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_c_shape = DimList(m.dim, n.dim)
     var dynamic_a_shape = DimList(m.value, k.value)
     var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
         k.value, n.value
@@ -1260,8 +1258,8 @@ def test_blackwell_kernel_8[
 
     @parameter
     if benchmark:
-        alias num_runs = 10000
-        alias num_warmup = 100
+        comptime num_runs = 10000
+        comptime num_warmup = 100
 
         @always_inline
         @parameter
@@ -1322,7 +1320,7 @@ def test_blackwell_kernel_8[
         ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
         ctx.synchronize()
 
-        alias rtol = 1e-2
+        comptime rtol = 1e-2
         assert_almost_equal(
             c_host.tensor,
             c_host_ref.tensor,
@@ -1365,19 +1363,19 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
         print("============================================")
         print("dtype, M, N, K, time(ms), TFLOPS")
 
-        alias BK = 64
-        alias block_tile_shape = Index(128, 64, BK)
-        alias MMA_K = 16
-        alias umma_shape = Index(
+        comptime BK = 64
+        comptime block_tile_shape = Index(128, 64, BK)
+        comptime MMA_K = 16
+        comptime umma_shape = Index(
             block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
         )
 
-        alias c_type = DType.bfloat16
-        alias dic_of_shapes = make_dic_of_shapes()
+        comptime c_type = DType.bfloat16
+        comptime dic_of_shapes = make_dic_of_shapes()
 
         @parameter
         for i in range(len(dic_of_shapes)):
-            alias shape = get_dic_of_shapes(i, dic_of_shapes)
+            comptime shape = get_dic_of_shapes(i, dic_of_shapes)
             try:
                 test_blackwell_kernel_8[
                     DType.bfloat16,
@@ -1405,8 +1403,8 @@ def main():
             benchmark_blackwell_matmul(ctx)
             return
 
-        alias block_tile_shape = Index(128, 64, 64)
-        alias umma_shape = Index(256, 128, 16)
+        comptime block_tile_shape = Index(128, 64, 64)
+        comptime umma_shape = Index(256, 128, 16)
 
         test_blackwell_kernel_8[
             DType.bfloat16,

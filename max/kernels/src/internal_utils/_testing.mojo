@@ -18,6 +18,7 @@ from math import exp2
 import testing
 from buffer import NDBuffer
 from builtin._location import __call_location, _SourceLocation
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing.testing import _assert_cmp_error
 
 from utils.numerics import FPUtils
@@ -34,7 +35,7 @@ fn assert_almost_equal[
     dtype: DType, //,
 ](
     x: UnsafePointer[Scalar[dtype]],
-    y: __type_of(x),
+    y: type_of(x),
     num_elements: Int,
     msg: String = "",
     *,
@@ -58,7 +59,7 @@ fn assert_almost_equal[
 @always_inline
 fn assert_almost_equal(
     x: NDBuffer,
-    y: __type_of(x),
+    y: type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
@@ -81,7 +82,7 @@ fn assert_almost_equal(
 @always_inline
 fn assert_almost_equal(
     x: HostNDBuffer,
-    y: __type_of(x),
+    y: type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
@@ -103,7 +104,7 @@ fn assert_almost_equal(
 @always_inline
 fn assert_almost_equal(
     x: TestTensor,
-    y: __type_of(x),
+    y: type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
@@ -130,7 +131,7 @@ fn assert_almost_equal(
 @always_inline
 fn assert_equal(
     x: NDBuffer,
-    y: __type_of(x),
+    y: type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
@@ -147,7 +148,7 @@ fn assert_equal(
 @always_inline
 fn assert_equal(
     x: HostNDBuffer,
-    y: __type_of(x),
+    y: type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
@@ -163,7 +164,7 @@ fn assert_equal(
 @always_inline
 fn assert_equal(
     x: TestTensor,
-    y: __type_of(x),
+    y: type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
@@ -185,18 +186,20 @@ fn assert_equal(
 fn _assert_with_measure_impl[
     dtype: DType, //,
     measure: fn[dtype: DType] (
-        UnsafePointer[Scalar[dtype]], UnsafePointer[Scalar[dtype]], Int
+        UnsafePointer[Scalar[dtype], mut=False],
+        UnsafePointer[Scalar[dtype], mut=False],
+        Int,
     ) -> Float64,
 ](
     x: UnsafePointer[Scalar[dtype], **_],
-    y: __type_of(x),
+    y: type_of(x),
     n: Int,
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
     threshold: OptionalReg[Float64] = None,
 ) raises:
-    alias sqrt_eps = exp2(-0.5 * FPUtils[dtype].mantissa_width()).cast[
+    comptime sqrt_eps = exp2(-0.5 * FPUtils[dtype].mantissa_width()).cast[
         DType.float64
     ]()
     var m = measure(
@@ -217,11 +220,13 @@ fn _assert_with_measure_impl[
 @always_inline
 fn assert_with_measure[
     measure: fn[dtype: DType] (
-        UnsafePointer[Scalar[dtype]], UnsafePointer[Scalar[dtype]], Int
+        UnsafePointer[Scalar[dtype], mut=False],
+        UnsafePointer[Scalar[dtype], mut=False],
+        Int,
     ) -> Float64,
 ](
     x: NDBuffer,
-    y: __type_of(x),
+    y: type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
@@ -240,11 +245,13 @@ fn assert_with_measure[
 @always_inline
 fn assert_with_measure[
     measure: fn[dtype: DType] (
-        UnsafePointer[Scalar[dtype]], UnsafePointer[Scalar[dtype]], Int
+        UnsafePointer[Scalar[dtype], mut=False],
+        UnsafePointer[Scalar[dtype], mut=False],
+        Int,
     ) -> Float64,
 ](
     x: HostNDBuffer,
-    y: __type_of(x),
+    y: type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
@@ -263,11 +270,13 @@ fn assert_with_measure[
 @always_inline
 fn assert_with_measure[
     measure: fn[dtype: DType] (
-        UnsafePointer[Scalar[dtype]], UnsafePointer[Scalar[dtype]], Int
+        UnsafePointer[Scalar[dtype], mut=False],
+        UnsafePointer[Scalar[dtype], mut=False],
+        Int,
     ) -> Float64,
 ](
     x: TestTensor,
-    y: __type_of(x),
+    y: type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,

@@ -15,7 +15,8 @@
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext
 from linalg.matmul import matmul
-from linalg.matmul_gpu import _matmul_gpu
+from linalg.matmul.gpu import _matmul_gpu
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -33,13 +34,13 @@ fn _size[rank: Int](dims: IndexList[rank, **_]) -> Int:
 fn _create_device_buffer[
     dtype: DType, rank: Int, shape: DimList
 ](ctx: DeviceContext, dynamic_shape: IndexList[rank]) raises -> Tuple[
-    DeviceBuffer[dtype], NDBuffer[dtype, rank, MutableAnyOrigin, shape]
+    DeviceBuffer[dtype], NDBuffer[dtype, rank, MutAnyOrigin, shape]
 ]:
     var storage = ctx.enqueue_create_buffer[dtype](_size(dynamic_shape))
     return (
         storage,
         NDBuffer[dtype, rank, _, shape](
-            storage._unsafe_ptr(), dynamic_shape=dynamic_shape
+            storage.unsafe_ptr(), dynamic_shape=dynamic_shape
         ),
     )
 
@@ -47,7 +48,7 @@ fn _create_device_buffer[
 fn _create_host_buffer[
     dtype: DType, rank: Int, shape: DimList
 ](dynamic_shape: IndexList[rank, **_]) raises -> NDBuffer[
-    dtype, rank, MutableAnyOrigin, shape
+    dtype, rank, MutAnyOrigin, shape
 ]:
     var storage_ptr = UnsafePointer[Scalar[dtype]].alloc(_size(dynamic_shape))
     return NDBuffer[dtype, rank, _, shape](
@@ -65,7 +66,7 @@ fn _linspace_fill[
 fn _create_host_buffer_like[
     dtype: DType, rank: Int, shape: DimList
 ](buff: NDBuffer[dtype, rank, _, shape]) raises -> NDBuffer[
-    dtype, rank, MutableAnyOrigin, shape
+    dtype, rank, MutAnyOrigin, shape
 ]:
     return _create_host_buffer[dtype, rank, shape](buff.dynamic_shape)
 
@@ -166,10 +167,10 @@ struct ValOrDim[dim: Dim = Dim()](Defaultable):
 
     fn __init__(out self):
         constrained[
-            not dim.is_dynamic(),
+            not Self.dim.is_dynamic(),
             "Can't construct a dynamic dim with no runtime value",
         ]()
-        self.value = dim.get()
+        self.value = Self.dim.get()
 
     fn __init__(out self, v: Int):
         self.value = v

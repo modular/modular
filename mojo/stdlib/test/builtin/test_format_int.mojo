@@ -12,18 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 from builtin.format_int import _format_int
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 
 fn test_format_int() raises:
-    assert_equal(_format_int[DType.index](123), "123")
-    assert_equal(_format_int[DType.index](4, 2), "100")
-    assert_equal(_format_int[DType.index](255, 2), "11111111")
-    assert_equal(_format_int[DType.index](254, 2), "11111110")
-    assert_equal(_format_int[DType.index](255, 36), "73")
+    assert_equal(_format_int[DType.int](123), "123")
+    assert_equal(_format_int[DType.int](4, 2), "100")
+    assert_equal(_format_int[DType.int](255, 2), "11111111")
+    assert_equal(_format_int[DType.int](254, 2), "11111110")
+    assert_equal(_format_int[DType.int](255, 36), "73")
 
-    assert_equal(_format_int[DType.index](-123, 10), "-123")
-    assert_equal(_format_int[DType.index](-999_999_999, 10), "-999999999")
+    assert_equal(_format_int[DType.int](-123, 10), "-123")
+    assert_equal(_format_int[DType.int](-999_999_999, 10), "-999999999")
 
     # i64
     assert_equal(_format_int(Int64.MAX_FINITE, 10), "9223372036854775807")
@@ -32,8 +32,8 @@ fn test_format_int() raises:
     assert_equal(_format_int(Int64.MIN_FINITE, 2), "-1" + "0" * 63)
 
     # i128
-    alias int128_max = Int128(UInt128(1) << 127) - 1
-    alias int128_min = Int128(UInt128(1) << 127)
+    comptime int128_max = Int128(UInt128(1) << 127) - 1
+    comptime int128_min = Int128(UInt128(1) << 127)
     assert_equal(
         _format_int(int128_max, 10),
         "170141183460469231731687303715884105727",
@@ -46,8 +46,8 @@ fn test_format_int() raises:
     assert_equal(_format_int(int128_min, 2), "-1" + "0" * 127)
 
     # i256
-    alias int256_max = Int256(UInt256(1) << 255) - 1
-    alias int256_min = Int256(UInt256(1) << 255)
+    comptime int256_max = Int256(UInt256(1) << 255) - 1
+    comptime int256_min = Int256(UInt256(1) << 255)
     assert_equal(
         _format_int(int256_max, 10),
         "57896044618658097711785492504343953926634992332820282019728792003956564819967",
@@ -164,12 +164,4 @@ def test_different_prefix():
 
 
 def main():
-    test_format_int()
-    test_hex()
-    test_bin_scalar()
-    test_bin_int()
-    test_bin_bool()
-    test_intable()
-    test_oct_scalar()
-    test_oct_bool()
-    test_oct_int()
+    TestSuite.discover_tests[__functions_in_module()]().run()

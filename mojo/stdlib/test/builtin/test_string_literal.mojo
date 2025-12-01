@@ -18,6 +18,7 @@ from testing import (
     assert_false,
     assert_raises,
     assert_true,
+    TestSuite,
 )
 
 
@@ -28,11 +29,11 @@ def test_add():
 
 
 def test_mul():
-    alias `3`: Int = 3
-    alias `u3`: UInt = 3
-    alias static_concat_0 = "mojo" * 3
-    alias static_concat_1 = "mojo" * `3`
-    alias static_concat_2 = "mojo" * `u3`
+    comptime `3`: Int = 3
+    comptime `u3`: UInt = 3
+    comptime static_concat_0 = "mojo" * 3
+    comptime static_concat_1 = "mojo" * `3`
+    comptime static_concat_2 = "mojo" * Int(`u3`)
     assert_equal(static_concat_0, static_concat_1)
     assert_equal(static_concat_1, static_concat_2)
     assert_equal("mojomojomojo", static_concat_0)
@@ -241,6 +242,7 @@ def test_iter():
             assert_equal(String(c), "n")
         elif i == 2:
             assert_equal(String(c), "e")
+        i += 1
 
 
 def test_layout():
@@ -252,7 +254,7 @@ def test_layout():
     # assert_equal(empty[0], 0)
 
     # Test non-empty StringLiteral C string
-    var ptr: UnsafePointer[c_char] = "hello".unsafe_cstr_ptr()
+    var ptr = "hello".as_c_string_slice().unsafe_ptr()
     assert_equal(ptr[0], ord("h"))
     assert_equal(ptr[1], ord("e"))
     assert_equal(ptr[2], ord("l"))
@@ -349,27 +351,4 @@ def test_float_conversion():
 
 
 def main():
-    test_add()
-    test_mul()
-    test_equality()
-    test_len()
-    test_bool()
-    test_find()
-    test_rfind()
-    test_comparison_operators()
-    test_count()
-    test_indexing()
-    test_intable()
-    test_isdigit()
-    test_islower()
-    test_isupper()
-    test_layout()
-    test_lower_upper()
-    test_repr()
-    test_rjust()
-    test_ljust()
-    test_center()
-    test_startswith()
-    test_endswith()
-    test_strip()
-    test_float_conversion()
+    TestSuite.discover_tests[__functions_in_module()]().run()

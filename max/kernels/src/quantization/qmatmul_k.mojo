@@ -12,25 +12,24 @@
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
 from math import ceildiv
-from sys import (
-    CompilationTarget,
-    align_of,
-    simd_width_of,
-    size_of,
-)
+from sys import CompilationTarget, align_of, simd_width_of, size_of
 from sys.intrinsics import llvm_intrinsic
 
 from algorithm import sync_parallelize, tile
-from buffer import NDBuffer
+from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from linalg.accumulate import _Accumulator
-from linalg.matmul import elementwise_epilogue_type
-from linalg.neon_intrinsics import _neon_dotprod_lane
-from linalg.utils import partition_work
-from linalg.vnni_intrinsics import (
+from linalg.arch.cpu.neon_intrinsics import _neon_dotprod_lane
+from linalg.arch.cpu.vnni_intrinsics import (
     dot_i8_to_i32_saturated_x86,
     dot_i16_to_i32_x86,
 )
-from memory import bitcast, stack_allocation
+from linalg.matmul import elementwise_epilogue_type
+from linalg.utils import partition_work
+from memory import (
+    LegacyUnsafePointer as UnsafePointer,
+    bitcast,
+    stack_allocation,
+)
 from runtime.asyncrt import parallelism_level
 
 from utils.index import Index
@@ -39,7 +38,7 @@ from ._utils import roundeven_to_int32
 
 
 struct _block_QK_K:
-    alias quantized_k = 256
+    comptime quantized_k = 256
 
     @staticmethod
     fn calc_group_count[group_size: Int]() -> Int:
@@ -47,8 +46,8 @@ struct _block_QK_K:
 
 
 struct _block_Q4_K:
-    alias group_size = 32
-    alias group_count = _block_QK_K.calc_group_count[Self.group_size]()
+    comptime group_size = 32
+    comptime group_count = _block_QK_K.calc_group_count[Self.group_size]()
 
     var base_scale: Float16
     var base_min: Float16
@@ -59,8 +58,8 @@ struct _block_Q4_K:
 
 
 struct _block_Q6_K:
-    alias group_size = 16
-    alias group_count = _block_QK_K.calc_group_count[Self.group_size]()
+    comptime group_size = 16
+    comptime group_count = _block_QK_K.calc_group_count[Self.group_size]()
 
     var q_bits_lo: InlineArray[UInt8, _block_QK_K.quantized_k // 2]
     var q_bits_hi: InlineArray[UInt8, _block_QK_K.quantized_k // 4]
@@ -79,13 +78,13 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     with this array's dimensions.
     """
 
-    alias _size = block_m * block_n
-    alias _simd_width = simd_width_of[DType.uint8]()
-    alias _tuple_width = 4
-    alias _packed_stride = block_n * Self._tuple_width
-    alias _tile_n = Self._packed_stride // Self._simd_width
+    comptime _size = Self.block_m * Self.block_n
+    comptime _simd_width = simd_width_of[DType.uint8]()
+    comptime _tuple_width = 4
+    comptime _packed_stride = Self.block_n * Self._tuple_width
+    comptime _tile_n = Self._packed_stride // Self._simd_width
 
-    var bits: InlineArray[UInt8, Self._size * bit_width // 8]
+    var bits: InlineArray[UInt8, Self._size * Self.bit_width // 8]
 
     """
     For the 4-bit encoding, the following encoding is used (one lane of the
@@ -95,12 +94,12 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
     @always_inline
     fn _pack_int4(mut self, var src_ptr: UnsafePointer[UInt8, **_]):
-        constrained[bit_width == 4]()
-        constrained[(block_m % (2 * Self._tuple_width)) == 0]()
+        constrained[Self.bit_width == 4]()
+        constrained[(Self.block_m % (2 * Self._tuple_width)) == 0]()
 
         var bits_ptr = self.bits.unsafe_ptr()
 
-        for _m in range(0, block_m, 2 * Self._tuple_width):
+        for _m in range(0, Self.block_m, 2 * Self._tuple_width):
 
             @parameter
             for col in range(Self._tile_n):
@@ -122,12 +121,12 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
     @always_inline
     fn _unpack_int4(mut self, var dst_ptr: UnsafePointer[UInt8, **_]):
-        constrained[bit_width == 4]()
-        constrained[(block_m % (2 * Self._tuple_width)) == 0]()
+        constrained[Self.bit_width == 4]()
+        constrained[(Self.block_m % (2 * Self._tuple_width)) == 0]()
 
         var bits_ptr = self.bits.unsafe_ptr()
 
-        for _ in range(0, block_m, 2 * Self._tuple_width):
+        for _ in range(0, Self.block_m, 2 * Self._tuple_width):
 
             @parameter
             for col in range(Self._tile_n):
@@ -151,12 +150,12 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
     @always_inline
     fn _pack_int6(mut self, var src_ptr: UnsafePointer[UInt8, **_]):
-        constrained[bit_width == 6]()
-        constrained[(block_m % (4 * Self._tuple_width)) == 0]()
+        constrained[Self.bit_width == 6]()
+        constrained[(Self.block_m % (4 * Self._tuple_width)) == 0]()
 
         var bits_ptr = self.bits.unsafe_ptr()
 
-        for _m in range(0, block_m, 4 * Self._tuple_width):
+        for _m in range(0, Self.block_m, 4 * Self._tuple_width):
             var src_col_ptr = src_ptr
 
             @parameter
@@ -183,12 +182,12 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     fn _unpack_int6[
         zero_point: UInt8
     ](mut self, var dst_ptr: UnsafePointer[UInt8, **_]):
-        constrained[bit_width == 6]()
-        constrained[(block_m % (4 * Self._tuple_width)) == 0]()
+        constrained[Self.bit_width == 6]()
+        constrained[(Self.block_m % (4 * Self._tuple_width)) == 0]()
 
         var bits_ptr = self.bits.unsafe_ptr()
 
-        for _m in range(0, block_m, 4 * Self._tuple_width):
+        for _m in range(0, Self.block_m, 4 * Self._tuple_width):
             var dst_col_ptr = dst_ptr
 
             @parameter
@@ -220,9 +219,9 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         constrained[(Self._packed_stride % Self._simd_width) == 0]()
 
         @parameter
-        if bit_width == 4:
+        if Self.bit_width == 4:
             return self._pack_int4(src_ptr)
-        elif bit_width == 6:
+        elif Self.bit_width == 6:
             return self._pack_int6(src_ptr)
         else:
             constrained[False, "unsupported bit width"]()
@@ -235,45 +234,46 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         constrained[(Self._packed_stride % Self._simd_width) == 0]()
 
         @parameter
-        if bit_width == 4:
+        if Self.bit_width == 4:
             constrained[zero_point == 0, "zero point not implemented"]()
             return self._unpack_int4(dst_ptr)
-        elif bit_width == 6:
+        elif Self.bit_width == 6:
             return self._unpack_int6[zero_point](dst_ptr)
         else:
             constrained[False, "unsupported bit width"]()
 
 
 struct _block_Q4_K_packed[block_n: Int = 1]:
-    var base_scales: InlineArray[Float16, block_n]
-    var base_mins: InlineArray[Float16, block_n]
+    var base_scales: InlineArray[Float16, Self.block_n]
+    var base_mins: InlineArray[Float16, Self.block_n]
     var q_scales_and_mins: _packed_bit_array[
-        6, 2 * _block_Q4_K.group_count, block_n
+        6, 2 * _block_Q4_K.group_count, Self.block_n
     ]
-    var q_bits: _packed_bit_array[4, _block_QK_K.quantized_k, block_n]
+    var q_bits: _packed_bit_array[4, _block_QK_K.quantized_k, Self.block_n]
 
 
 struct _block_Q6_K_packed[block_n: Int = 1]:
-    var base_scales: InlineArray[Float16, block_n]
-    var q_scales: InlineArray[Int8, _block_Q6_K.group_count * block_n]
-    var q_bits: _packed_bit_array[6, _block_QK_K.quantized_k, block_n]
+    var base_scales: InlineArray[Float16, Self.block_n]
+    var q_scales: InlineArray[Int8, _block_Q6_K.group_count * Self.block_n]
+    var q_bits: _packed_bit_array[6, _block_QK_K.quantized_k, Self.block_n]
 
 
 struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
-    alias group_count = _block_QK_K.calc_group_count[group_size]()
+    comptime group_count = _block_QK_K.calc_group_count[Self.group_size]()
 
-    var q_bits: InlineArray[Int8, _block_QK_K.quantized_k * tile_m]
-    var scales: InlineArray[Float32, tile_m]
-    var group_sums: InlineArray[Int16, Self.group_count * tile_m]
+    var q_bits: InlineArray[Int8, _block_QK_K.quantized_k * Self.tile_m]
+    var scales: InlineArray[Float32, Self.tile_m]
+    var group_sums: InlineArray[Int16, Self.group_count * Self.tile_m]
 
 
 fn _quantize_a_Q8_K[
     group_size: Int, dtype: DType, *, interleave_group_sums: Bool = False
-](a: NDBuffer[dtype, 2, **_]) -> UnsafePointer[
+](a: LayoutTensor[dtype, **_]) -> UnsafePointer[
     _block_Q8_K_packed[group_size], mut = a.mut, origin = a.origin
 ]:
-    alias quantized_k = _block_QK_K.quantized_k
-    alias group_count = quantized_k // group_size
+    constrained[a.rank == 2]()
+    comptime quantized_k = _block_QK_K.quantized_k
+    comptime group_count = quantized_k // group_size
 
     var M = a.dim[0]()
     var K = a.dim[1]()
@@ -284,7 +284,7 @@ fn _quantize_a_Q8_K[
     var packed_ptr = packed_base_ptr
 
     for ko in range(0, K, quantized_k):
-        var am_ptr = a.data + ko
+        var am_ptr = a.ptr + ko
 
         @parameter
         @always_inline
@@ -365,8 +365,8 @@ fn _expand_and_merge_q_bits_hi[
     var src_ptr: UnsafePointer[UInt8, **_],
     var dst_ptr: UnsafePointer[UInt8, **_],
 ):
-    alias values_per_byte = 8 // bit_count
-    alias bit_mask = (1 << bit_count) - 1
+    comptime values_per_byte = 8 // bit_count
+    comptime bit_mask = (1 << bit_count) - 1
 
     for _k in range(0, _block_QK_K.quantized_k // values_per_byte, width):
         var src_q_bits = src_ptr.load[width=width]()
@@ -398,20 +398,15 @@ fn _copy_column_q_bits_to_block[
 
 fn _pack_block_Q4_K[
     block_n: Int,
-    src_origin: MutableOrigin,
-    dst_origin: MutableOrigin,
-    alignment: Int,
+    src_origin: MutOrigin,
+    dst_origin: MutOrigin,
 ](
-    var src_ptr: UnsafePointer[
-        _block_Q4_K, origin=src_origin, alignment=alignment
-    ],
+    var src_ptr: UnsafePointer[_block_Q4_K, origin=src_origin],
     stride: Int,
-    mut dst_ptr: UnsafePointer[
-        _block_Q4_K_packed[block_n], origin=dst_origin, alignment=alignment
-    ],
+    mut dst_ptr: UnsafePointer[_block_Q4_K_packed[block_n], origin=dst_origin],
 ):
-    alias group_size = _block_Q4_K.group_size
-    alias group_count = _block_Q4_K.group_count
+    comptime group_size = _block_Q4_K.group_size
+    comptime group_count = _block_Q4_K.group_count
 
     constrained[
         size_of[_block_Q4_K]() * block_n
@@ -477,9 +472,9 @@ fn _pack_block_Q4_K[
 
     # Scales are not currently transformed.
     memcpy(
-        q_scales_reorder_buf,
-        q_scales_buf.unsafe_ptr(),
-        group_count * block_n,
+        dest=q_scales_reorder_buf,
+        src=q_scales_buf.unsafe_ptr(),
+        count=group_count * block_n,
     )
 
     # Minimums are row interleaved with a stride to enable use of int16->int32
@@ -507,7 +502,7 @@ fn _pack_block_Q4_K[
                 q_mins_reorder_buf[reorder_idx + 0] = q_mins_row_0_val
                 q_mins_reorder_buf[reorder_idx + 1] = q_mins_row_1_val
             elif CompilationTarget.has_neon():
-                alias split_width = simd_width_of[DType.int32]()
+                comptime split_width = simd_width_of[DType.int32]()
                 var n_idx_hi = n // split_width
                 var n_idx_lo = n % split_width
                 var reorder_idx = (
@@ -524,19 +519,14 @@ fn _pack_block_Q4_K[
 
 fn _pack_block_Q6_K[
     block_n: Int,
-    src_origin: MutableOrigin,
-    dst_origin: MutableOrigin,
-    alignment: Int,
+    src_origin: MutOrigin,
+    dst_origin: MutOrigin,
 ](
-    var src_ptr: UnsafePointer[
-        _block_Q6_K, origin=src_origin, alignment=alignment
-    ],
+    var src_ptr: UnsafePointer[_block_Q6_K, origin=src_origin],
     stride: Int,
-    mut dst_ptr: UnsafePointer[
-        _block_Q6_K_packed[block_n], origin=dst_origin, alignment=alignment
-    ],
+    mut dst_ptr: UnsafePointer[_block_Q6_K_packed[block_n], origin=dst_origin],
 ):
-    alias group_count = _block_Q6_K.group_count
+    comptime group_count = _block_Q6_K.group_count
 
     constrained[
         size_of[_block_Q6_K]() * block_n
@@ -573,29 +563,31 @@ fn _pack_block_Q6_K[
     dst_ptr[].q_bits.pack(q_bits_block_buf)
 
 
-def matmul_Q4_K_pack_b[
-    b_origin: MutableOrigin, b_packed_origin: MutableOrigin
-](
-    b: NDBuffer[DType.uint8, 2, b_origin],
-    b_packed: NDBuffer[DType.uint8, 2, b_packed_origin],
+fn matmul_Q4_K_pack_b(
+    b: LayoutTensor[
+        mut=True, DType.uint8, address_space = AddressSpace.GENERIC, **_
+    ],
+    b_packed: LayoutTensor[
+        mut=True, DType.uint8, address_space = AddressSpace.GENERIC, **_
+    ],
 ):
+    constrained[b.rank == 2]()
+    constrained[b_packed.rank == 2]()
     var N = b.dim[0]()
     var K = b.dim[1]()
     var k_blocks = K // size_of[_block_Q4_K]()
 
-    alias simd_width = simd_width_of[DType.float32]()
-    alias block_n = simd_width * 2
+    comptime simd_width = simd_width_of[DType.float32]()
+    comptime block_n = simd_width * 2
 
-    var src_ptr = b.data.bitcast[_block_Q4_K]()
-    var dst_ptr = b_packed.data.bitcast[_block_Q4_K_packed[block_n]]()
+    var src_ptr = b.ptr.bitcast[_block_Q4_K]()
+    var dst_ptr = b_packed.ptr.bitcast[_block_Q4_K_packed[block_n]]()
 
     for _kb in range(k_blocks):
         var src_n_ptr = src_ptr
 
         for _n in range(0, N, block_n):
-            _pack_block_Q4_K[block_n, b_origin, b_packed_origin](
-                src_n_ptr, k_blocks, dst_ptr
-            )
+            _pack_block_Q4_K[block_n](src_n_ptr, k_blocks, dst_ptr)
 
             src_n_ptr += k_blocks * block_n
             dst_ptr += 1
@@ -603,21 +595,25 @@ def matmul_Q4_K_pack_b[
         src_ptr += 1
 
 
-def matmul_Q6_K_pack_b[
-    b_origin: MutableOrigin, b_packed_origin: MutableOrigin
-](
-    b: NDBuffer[DType.uint8, 2, b_origin],
-    b_packed: NDBuffer[DType.uint8, 2, b_packed_origin],
+fn matmul_Q6_K_pack_b(
+    b: LayoutTensor[
+        mut=True, DType.uint8, address_space = AddressSpace.GENERIC, **_
+    ],
+    b_packed: LayoutTensor[
+        mut=True, DType.uint8, address_space = AddressSpace.GENERIC, **_
+    ],
 ):
+    constrained[b.rank == 2]()
+    constrained[b_packed.rank == 2]()
     var N = b.dim[0]()
     var K = b.dim[1]()
     var k_blocks = K // size_of[_block_Q6_K]()
 
-    alias simd_width = simd_width_of[DType.float32]()
-    alias block_n = simd_width * 2
+    comptime simd_width = simd_width_of[DType.float32]()
+    comptime block_n = simd_width * 2
 
-    var src_ptr = b.data.bitcast[_block_Q6_K]()
-    var dst_ptr = b_packed.data.bitcast[_block_Q6_K_packed[block_n]]()
+    var src_ptr = b.ptr.bitcast[_block_Q6_K]()
+    var dst_ptr = b_packed.ptr.bitcast[_block_Q6_K_packed[block_n]]()
 
     for _kb in range(k_blocks):
         var src_n_ptr = src_ptr
@@ -828,7 +824,7 @@ fn _apply_zero_point_correction[
     mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
 ):
     """Applies the zero point correction to the running float accumulator."""
-    alias block_n = tile_n * simd_width
+    comptime block_n = tile_n * simd_width
 
     var corrections = _Accumulator[DType.int32, tile_m, tile_n, simd_width]()
     corrections.init()
@@ -987,7 +983,7 @@ fn _accumulate_and_store[
 
     @parameter
     if elementwise_lambda_fn:
-        alias func = elementwise_lambda_fn.value()
+        comptime func = elementwise_lambda_fn.value()
 
         if is_last_k_iter:
 
@@ -1016,8 +1012,8 @@ fn _matmul_group_packed_Q4_K[
     mut b_q_bits_ptr: UnsafePointer[UInt8],
     mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
 ):
-    alias group_size = _block_Q4_K.group_size
-    alias tile_k = 2
+    comptime group_size = _block_Q4_K.group_size
+    comptime tile_k = 2
 
     @parameter
     fn stream_b_vals(
@@ -1066,10 +1062,10 @@ fn _matmul_Q4_K_tile[
     n: Int,
     is_last_k_iter: Bool,
 ):
-    alias group_size = _block_Q4_K.group_size
-    alias group_count = _block_Q4_K.group_count
+    comptime group_size = _block_Q4_K.group_size
+    comptime group_count = _block_Q4_K.group_count
 
-    alias block_n = tile_n * simd_width
+    comptime block_n = tile_n * simd_width
 
     var a_tile_ptr = a_ptr.bitcast[_block_Q8_K_packed[group_size, tile_m]]()
     var b_tile_ptr = b_ptr.bitcast[_block_Q4_K_packed[block_n]]()
@@ -1143,11 +1139,11 @@ fn _matmul_Q4_K_columns[
     n: Int,
     is_last_k_iter: Bool,
 ):
-    alias group_size = _block_Q4_K.group_size
-    alias group_count = _block_Q4_K.group_count
+    comptime group_size = _block_Q4_K.group_size
+    comptime group_count = _block_Q4_K.group_count
 
-    alias alignment = align_of[SIMD[DType.float32, simd_width]]()
-    alias block_n = tile_n * simd_width
+    comptime alignment = align_of[SIMD[DType.float32, simd_width]]()
+    comptime block_n = tile_n * simd_width
 
     var b_tile_ptr = b_ptr.bitcast[_block_Q4_K_packed[block_n]]()
 
@@ -1159,7 +1155,12 @@ fn _matmul_Q4_K_columns[
 
     # Fast path for M=1 that avoids materializing the unpacked weights.
     if M == 1:
-        var b_q_bits_ptr = b_tile_ptr[].q_bits.bits.unsafe_ptr()
+        var b_q_bits_ptr = (
+            b_tile_ptr[]
+            .q_bits.bits.unsafe_ptr()
+            .as_any_origin()
+            .as_legacy_pointer()
+        )
 
         @parameter
         fn matmul_group_packed(
@@ -1195,7 +1196,7 @@ fn _matmul_Q4_K_columns[
     @__copy_capture(b_tile_ptr, b_q_scales_and_mins_buf, b_q_bits)
     @always_inline
     fn process_rows[tile_m: Int](m: Int):
-        var b_q_bits_ptr = b_q_bits
+        var b_q_bits_ptr = b_q_bits.as_any_origin().as_legacy_pointer()
 
         @parameter
         fn matmul_group_unpacked(
@@ -1241,8 +1242,8 @@ fn _matmul_group_packed_Q6_K[
     mut b_q_bits_ptr: UnsafePointer[UInt8],
     mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
 ):
-    alias group_size = _block_Q6_K.group_size
-    alias tile_k = 4
+    comptime group_size = _block_Q6_K.group_size
+    comptime tile_k = 4
 
     @parameter
     fn stream_b_vals(
@@ -1298,10 +1299,10 @@ fn _matmul_Q6_K_tile[
     n: Int,
     is_last_k_iter: Bool,
 ):
-    alias group_size = _block_Q6_K.group_size
-    alias group_count = _block_Q6_K.group_count
+    comptime group_size = _block_Q6_K.group_size
+    comptime group_count = _block_Q6_K.group_count
 
-    alias block_n = tile_n * simd_width
+    comptime block_n = tile_n * simd_width
 
     var a_tile_ptr = a_ptr.bitcast[_block_Q8_K_packed[group_size, tile_m]]()
     var b_tile_ptr = b_ptr.bitcast[_block_Q6_K_packed[block_n]]()
@@ -1387,21 +1388,26 @@ fn _matmul_Q6_K_columns[
     n: Int,
     is_last_k_iter: Bool,
 ):
-    alias group_size = _block_Q6_K.group_size
-    alias group_count = _block_Q6_K.group_count
+    comptime group_size = _block_Q6_K.group_size
+    comptime group_count = _block_Q6_K.group_count
 
-    alias alignment = align_of[SIMD[DType.float32, simd_width]]()
-    alias block_n = tile_n * simd_width
+    comptime alignment = align_of[SIMD[DType.float32, simd_width]]()
+    comptime block_n = tile_n * simd_width
 
     var b_tile_ptr = b_ptr.bitcast[_block_Q6_K_packed[block_n]]()
 
     # NEON has support for s8s8 dot products, so shift the quantized bits down
     # to avoid performing any zero point corrections.
-    alias b_zero_point = 32 if CompilationTarget.has_neon() else 0
+    comptime b_zero_point = 32 if CompilationTarget.has_neon() else 0
 
     # Fast path for M=1 that avoids materializing the unpacked weights.
     if M == 1:
-        var b_q_bits_ptr = b_tile_ptr[].q_bits.bits.unsafe_ptr()
+        var b_q_bits_ptr = (
+            b_tile_ptr[]
+            .q_bits.bits.unsafe_ptr()
+            .as_any_origin()
+            .as_legacy_pointer()
+        )
 
         @parameter
         fn matmul_group_packed(
@@ -1429,7 +1435,7 @@ fn _matmul_Q6_K_columns[
     @__copy_capture(b_tile_ptr, b_q_bits)
     @always_inline
     fn process_rows[tile_m: Int](m: Int):
-        var b_q_bits_ptr = b_q_bits
+        var b_q_bits_ptr = b_q_bits.as_any_origin().as_legacy_pointer()
 
         @parameter
         fn matmul_group_unpacked(
@@ -1475,11 +1481,15 @@ fn _matmul_Qb_K[
     interleave_group_sums: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    a: NDBuffer[DType.float32, 2],
-    b: NDBuffer[DType.uint8, 2],
-    c: NDBuffer[DType.float32, 2],
+    a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
+    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, **_],
+    c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
 ):
-    alias simd_width = simd_width_of[DType.float32]()
+    constrained[a.rank == 2]()
+    constrained[b.rank == 2]()
+    constrained[c.rank == 2]()
+
+    comptime simd_width = simd_width_of[DType.float32]()
 
     var M = a.dim[0]()
     var N = b.dim[0]()
@@ -1490,7 +1500,7 @@ fn _matmul_Qb_K[
         group_size, interleave_group_sums=interleave_group_sums
     ](a)
 
-    alias grain_size = simd_width * 2
+    comptime grain_size = simd_width * 2
 
     var work_count = ceildiv(N, grain_size)
     var num_workers = min(work_count, parallelism_level())
@@ -1505,11 +1515,11 @@ fn _matmul_Qb_K[
         var task_n_count = block_range[1] * grain_size
 
         var a_packed_ptr = a_packed_base_ptr
-        var b_packed_ptr = b.data.bitcast[b_type]()
+        var b_packed_ptr = b.ptr.bitcast[b_type]()
 
         for k_block in range(k_blocks):
             var bn_packed_ptr = b_packed_ptr + task_n_start
-            var cn_ptr = c.data + task_n_start
+            var cn_ptr = c.ptr + task_n_start
             var accumulate = k_block > 0
 
             # only run epilogue for the last iter of K loop
@@ -1551,10 +1561,13 @@ fn _matmul_Qb_K[
 fn matmul_Q4_K[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None
 ](
-    a: NDBuffer[DType.float32, 2],
-    b: NDBuffer[DType.uint8, 2],
-    c: NDBuffer[DType.float32, 2],
+    a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
+    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, **_],
+    c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
 ):
+    constrained[a.rank == 2]()
+    constrained[b.rank == 2]()
+    constrained[c.rank == 2]()
     _matmul_Qb_K[
         group_size = _block_Q4_K.group_size,
         b_type=_block_Q4_K_packed,
@@ -1567,10 +1580,13 @@ fn matmul_Q4_K[
 fn matmul_Q6_K[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None
 ](
-    a: NDBuffer[DType.float32, 2],
-    b: NDBuffer[DType.uint8, 2],
-    c: NDBuffer[DType.float32, 2],
+    a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
+    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, **_],
+    c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, **_],
 ):
+    constrained[a.rank == 2]()
+    constrained[b.rank == 2]()
+    constrained[c.rank == 2]()
     _matmul_Qb_K[
         group_size = _block_Q6_K.group_size,
         b_type=_block_Q6_K_packed,

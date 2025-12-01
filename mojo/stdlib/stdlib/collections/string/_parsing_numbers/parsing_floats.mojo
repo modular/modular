@@ -27,6 +27,8 @@ from collections import InlineArray
 import bit
 import memory
 
+from builtin.globals import global_constant
+
 from .constants import (
     CONTAINER_SIZE,
     MANTISSA_EXPLICIT_BITS,
@@ -62,13 +64,13 @@ fn _get_w_and_q_from_float_string(
     "123.2481e-5" -> (1232481, -9)
     """
     # We read the number from right to left.
-    alias ord_0 = Byte(ord("0"))
-    alias ord_9 = Byte(ord("9"))
-    alias ord_dot = Byte(ord("."))
-    alias ord_minus = Byte(ord("-"))
-    alias ord_plus = Byte(ord("+"))
-    alias ord_e = Byte(ord("e"))
-    alias ord_E = Byte(ord("E"))
+    comptime ord_0 = Byte(ord("0"))
+    comptime ord_9 = Byte(ord("9"))
+    comptime ord_dot = Byte(ord("."))
+    comptime ord_minus = Byte(ord("-"))
+    comptime ord_plus = Byte(ord("+"))
+    comptime ord_e = Byte(ord("e"))
+    comptime ord_E = Byte(ord("E"))
 
     additional_exponent = 0
     exponent_multiplier = 1
@@ -77,7 +79,10 @@ fn _get_w_and_q_from_float_string(
     exponent = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
     significand = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
 
-    prt_to_array = UnsafePointer(to=exponent)
+    comptime array_ptr = Pointer[
+        type_of(exponent), origin_of(exponent, significand)
+    ]
+    prt_to_array = array_ptr(to=exponent)
     array_index = CONTAINER_SIZE
     buffer = input_string.unsafe_ptr()
 
@@ -110,11 +115,11 @@ fn _get_w_and_q_from_float_string(
             )
         if buffer[i] == ord_dot:
             dot_or_e_found = True
-            if prt_to_array == UnsafePointer(to=exponent):
+            if prt_to_array == array_ptr(to=exponent):
                 # We thought we were writing the exponent, but we were writing the significand.
                 significand = exponent
                 exponent = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
-                prt_to_array = UnsafePointer(to=significand)
+                prt_to_array = array_ptr(to=significand)
 
             additional_exponent = CONTAINER_SIZE - array_index - 1
             # We don't want to progress in the significand array.
@@ -128,7 +133,7 @@ fn _get_w_and_q_from_float_string(
         elif buffer[i] == ord_e or buffer[i] == ord_E:
             dot_or_e_found = True
             # We finished writing the exponent.
-            prt_to_array = UnsafePointer(to=significand)
+            prt_to_array = array_ptr(to=significand)
             array_index = CONTAINER_SIZE
         elif (ord_0 <= buffer[i]) and (buffer[i] <= ord_9):
             prt_to_array[][array_index] = buffer[i]
@@ -149,11 +154,11 @@ fn _get_w_and_q_from_float_string(
     return (significand_as_integer, Int64(exponent_as_integer))
 
 
-fn strip_unused_characters(x: StringSlice[mut=False]) -> __type_of(x):
+fn strip_unused_characters(x: StringSlice[mut=False]) -> type_of(x):
     return x.strip().removeprefix("+").removesuffix("f").removesuffix("F")
 
 
-fn get_sign(x: StringSlice[mut=False]) -> Tuple[Float64, __type_of(x)]:
+fn get_sign(x: StringSlice[mut=False]) -> Tuple[Float64, type_of(x)]:
     if x.startswith("-"):
         return (-1.0, x[1:])
     return (1.0, x)
@@ -167,9 +172,9 @@ fn can_use_clinger_fast_path(w: UInt64, q: Int64) -> Bool:
 
 fn clinger_fast_path(w: UInt64, q: Int64) -> Float64:
     if q >= 0:
-        return Float64(w) * POWERS_OF_10[q]
+        return Float64(w) * global_constant[POWERS_OF_10]()[q]
     else:
-        return Float64(w) / POWERS_OF_10[-q]
+        return Float64(w) / global_constant[POWERS_OF_10]()[-q]
 
 
 fn full_multiplication(x: UInt64, y: UInt64) -> UInt128Decomposed:
@@ -181,7 +186,7 @@ fn full_multiplication(x: UInt64, y: UInt64) -> UInt128Decomposed:
 
 
 fn get_128_bit_truncated_product(w: UInt64, q: Int64) -> UInt128Decomposed:
-    alias bit_precision = MANTISSA_EXPLICIT_BITS + 3
+    comptime bit_precision = MANTISSA_EXPLICIT_BITS + 3
     index = 2 * (q - SMALLEST_POWER_OF_5)
     first_product = full_multiplication(w, get_power_of_5(Int(index)))
 
@@ -281,6 +286,48 @@ fn lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
     return create_float64(m, p)
 
 
+comptime _ascii_lower: Byte = ord("A") ^ ord("a")
+
+
+@always_inline
+fn _is_nan(stripped: StringSlice) -> Bool:
+    comptime `n` = Byte(ord("n"))
+    comptime `a` = Byte(ord("a"))
+    var ptr = stripped.unsafe_ptr()
+    return stripped.byte_length() == 3 and (
+        (ptr[0] | _ascii_lower == `n`)
+        and (ptr[1] | _ascii_lower == `a`)
+        and (ptr[2] | _ascii_lower == `n`)
+    )
+
+
+@always_inline
+fn _is_inf(stripped: StringSlice) -> Bool:
+    comptime `i` = Byte(ord("i"))
+    comptime `n` = Byte(ord("n"))
+    comptime `f` = Byte(ord("f"))
+    comptime `t` = Byte(ord("t"))
+    comptime `y` = Byte(ord("y"))
+    var ptr = stripped.unsafe_ptr()
+    var in_start = (ptr[0] | _ascii_lower == `i`) and (
+        ptr[1] | _ascii_lower == `n`
+    )
+    # f was removed previously
+    var is_in = stripped.byte_length() == 2 and in_start
+    return in_start and (
+        is_in
+        or (
+            stripped.byte_length() == 8
+            and (ptr[2] | _ascii_lower == `f`)
+            and (ptr[3] | _ascii_lower == `i`)
+            and (ptr[4] | _ascii_lower == `n`)
+            and (ptr[5] | _ascii_lower == `i`)
+            and (ptr[6] | _ascii_lower == `t`)
+            and (ptr[7] | _ascii_lower == `y`)
+        )
+    )
+
+
 fn _atof(x: StringSlice) raises -> Float64:
     """Parses the given string as a floating point and returns that value.
 
@@ -302,10 +349,9 @@ fn _atof(x: StringSlice) raises -> Float64:
     sign_and_stripped = get_sign(stripped)
     sign = sign_and_stripped[0]
     stripped = sign_and_stripped[1]
-    lowercase = stripped.lower()
-    if lowercase == "nan":
+    if _is_nan(stripped):
         return FloatLiteral.nan
-    if lowercase == "infinity" or lowercase == "in":  # f was removed previously
+    elif _is_inf(stripped):
         return FloatLiteral.infinity * sign
     try:
         w_and_q = _get_w_and_q_from_float_string(stripped)

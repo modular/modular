@@ -11,12 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import linalg.vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer import DimList, NDBuffer
-from gpu import barrier
+from gpu import barrier, warp_id, lane_id
 from gpu.host import DeviceContext
-from gpu.id import thread_idx
-from gpu.memory import AddressSpace
+from gpu import thread_idx
 from gpu.mma import (
     wgmma_async,
     wgmma_commit_group_sync,
@@ -50,33 +49,33 @@ fn wgmma_kernel_ss[
     b_smem_layout: Layout,
     transpose_b: Bool = False,
 ](
-    a_gmem: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b_gmem: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    c_gmem: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a_gmem: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b_gmem: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c_gmem: LayoutTensor[c_type, c_layout, MutAnyOrigin],
 ):
     var a_smem_tile = LayoutTensor[
         DType.bfloat16,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
-    alias num_output_regs = WMMA_M * WMMA_N // 128
-    var c_reg = StaticTuple[Scalar[DType.float32], num_output_regs](0)
+    comptime num_output_regs = WMMA_M * WMMA_N // 128
+    var c_reg = StaticTuple[Float32, num_output_regs](0)
 
-    alias M = a_layout.shape[0].value()
-    alias K = a_layout.shape[1].value()
-    alias N = c_layout.shape[1].value()
+    comptime M = a_layout.shape[0].value()
+    comptime K = a_layout.shape[1].value()
+    comptime N = c_layout.shape[1].value()
 
-    alias b_tile_dim0 = N if transpose_b else WMMA_K
-    alias b_tile_dim1 = WMMA_K if transpose_b else N
+    comptime b_tile_dim0 = N if transpose_b else WMMA_K
+    comptime b_tile_dim1 = WMMA_K if transpose_b else N
 
     for k_i in range(K // WMMA_K):
         var a_gmem_tile = a_gmem.tile[M, WMMA_K](0, k_i)
@@ -108,13 +107,10 @@ fn wgmma_kernel_ss[
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
 
-    var warp_id = thread_idx.x // 32
-    var lane_id = thread_idx.x % 32
-
     var th_local_res = (
-        c_gmem.tile[16, WMMA_N](warp_id, 0)
+        c_gmem.tile[16, WMMA_N](Int(warp_id()), 0)
         .vectorize[1, 2]()
-        .distribute[Layout.row_major(8, 4)](lane_id)
+        .distribute[Layout.row_major(8, 4)](lane_id())
     )
 
     for i in range(num_output_regs):
@@ -142,11 +138,11 @@ fn wgmma_bf16_bf16_f32[
     var c = ManagedLayoutTensor[DType.bfloat16, Layout.row_major(M, N)](ctx)
     var c_ref = ManagedLayoutTensor[DType.bfloat16, Layout.row_major(M, N)](ctx)
 
-    alias a_smem_layout = tile_layout_k_major[DType.bfloat16, BM=M, BK=16]()
+    comptime a_smem_layout = tile_layout_k_major[DType.bfloat16, BM=M, BK=16]()
 
-    alias b_smem_layout = tile_layout_k_major[DType.bfloat16, BM=N, BK=16]()
+    comptime b_smem_layout = tile_layout_k_major[DType.bfloat16, BM=N, BK=16]()
 
-    alias kernel = wgmma_kernel_ss[
+    comptime kernel = wgmma_kernel_ss[
         DType.bfloat16,
         DType.bfloat16,
         DType.bfloat16,

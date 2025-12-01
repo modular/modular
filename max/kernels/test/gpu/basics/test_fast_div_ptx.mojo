@@ -11,13 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from utils.fast_div import FastDiv
 from gpu.host import get_gpu_target
-from layout.layout_tensor import LayoutTensor
-from layout.layout import Layout, IntTuple
 from gpu.host.compile import _compile_code
+from layout.layout import IntTuple, Layout
+from layout.layout_tensor import LayoutTensor
+from python import Python, PythonObject
 from testing import assert_true
-from python import Python
+
+from utils.fast_div import FastDiv
 
 
 def contains_fastdiv_div_sequence(asm: String) -> Bool:
@@ -33,7 +34,7 @@ def contains_fastdiv_div_sequence(asm: String) -> Bool:
         r"st\.global\.b32\s+[^;]+;"
     )
     var result = re.search(fastdiv_pattern, asm)
-    return result is not None
+    return result is not PythonObject(None)
 
 
 def contains_power_of_2_sequence(asm: String) -> Bool:
@@ -44,25 +45,25 @@ def contains_power_of_2_sequence(asm: String) -> Bool:
         r"st\.global\.b32\s+[^;]+;"
     )
     var shift_result = re.search(shift_pattern, asm)
-    return shift_result is not None
+    return shift_result is not PythonObject(None)
 
 
 fn fast_div_kernel[
     dtype: DType,
     layout: Layout,
     divisor: Int,
-](input: LayoutTensor[dtype, layout, MutableAnyOrigin],):
-    alias fast_div = FastDiv[dtype](divisor)
+](input: LayoutTensor[dtype, layout, MutAnyOrigin],):
+    comptime fast_div = FastDiv[dtype](divisor)
     var x = input[0]
     var result = rebind[Scalar[fast_div.uint_type]](x) / fast_div
     input[0] = result.cast[dtype]()
 
 
 def main():
-    alias dtype = DType.uint32
-    alias layout = Layout(IntTuple(1))
-    alias kernel_fast_div_4 = fast_div_kernel[dtype, layout, 4]
-    alias kernel_fast_div_3 = fast_div_kernel[dtype, layout, 3]
+    comptime dtype = DType.uint32
+    comptime layout = Layout(IntTuple(1))
+    comptime kernel_fast_div_4 = fast_div_kernel[dtype, layout, 4]
+    comptime kernel_fast_div_3 = fast_div_kernel[dtype, layout, 3]
 
     var asm = _compile_code[
         kernel_fast_div_4,

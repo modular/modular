@@ -16,6 +16,7 @@ from sys import env_get_int
 
 from gpu import block_dim, global_idx, grid_dim
 from gpu.host import DeviceBuffer, DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal, assert_true
 
 
@@ -35,13 +36,13 @@ fn launch_p2p_copy_kernel(
     src_buf: DeviceBuffer[DType.float32],
     num_elements: Int,
 ) raises:
-    alias BLOCK_SIZE = 256
+    comptime BLOCK_SIZE = 256
     var grid_size = ceildiv(num_elements, BLOCK_SIZE)
 
     # Launch the kernel on both devices
-    ctx1.enqueue_function[p2p_copy_kernel](
-        dst_buf.unsafe_ptr(),
-        src_buf.unsafe_ptr(),
+    ctx1.enqueue_function_checked[p2p_copy_kernel, p2p_copy_kernel](
+        dst_buf,
+        src_buf,
         num_elements,
         grid_dim=grid_size,
         block_dim=BLOCK_SIZE,
@@ -52,7 +53,7 @@ fn launch_p2p_copy_kernel(
 
 
 def main():
-    alias log2_length = env_get_int["log2_length", 20]()
+    comptime log2_length = env_get_int["log2_length", 20]()
     constrained[log2_length > 0]()
     var length = 1 << log2_length
 
@@ -72,9 +73,8 @@ def main():
     print("Checkpoint - successfully enabled peer access")
 
     # Create and initialize device buffers
-    var dst_buf = ctx1.create_buffer_sync[DType.float32](length).enqueue_fill(
-        1.0
-    )
+    var dst_buf = ctx1.create_buffer_sync[DType.float32](length)
+    dst_buf.enqueue_fill(1.0)
     var src_buf = ctx2.create_buffer_sync[DType.float32](length)
 
     # Initialize source data

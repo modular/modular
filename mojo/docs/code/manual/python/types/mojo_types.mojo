@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# start-mojo-to-python-conversions
 from python import Python
 
 
@@ -25,3 +26,4 @@ def type_printer(value):
     py_utils.type_printer(3.14)
     py_utils.type_printer(True)
     py_utils.type_printer("Mojo")
+    # end-mojo-to-python-conversions

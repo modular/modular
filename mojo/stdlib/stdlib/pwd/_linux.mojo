@@ -13,12 +13,11 @@
 
 from sys.ffi import c_char, external_call
 
-
 from .pwd import Passwd
 
-alias uid_t = Int32
-alias gid_t = Int32
-alias char = UnsafePointer[c_char]
+comptime uid_t = Int32
+comptime gid_t = Int32
+comptime char = UnsafePointer[c_char, MutOrigin.external]
 
 
 @register_passable("trivial")
@@ -32,7 +31,9 @@ struct _C_Passwd:
     var pw_shell: char
 
 
-fn _build_pw_struct(passwd_ptr: UnsafePointer[_C_Passwd]) raises -> Passwd:
+fn _build_pw_struct(
+    passwd_ptr: UnsafePointer[mut=False, _C_Passwd]
+) raises -> Passwd:
     var c_pwuid = passwd_ptr[]
     return Passwd(
         pw_name=String(unsafe_from_utf8_ptr=c_pwuid.pw_name),
@@ -46,16 +47,18 @@ fn _build_pw_struct(passwd_ptr: UnsafePointer[_C_Passwd]) raises -> Passwd:
 
 
 fn _getpw_linux(uid: UInt32) raises -> Passwd:
-    var passwd_ptr = external_call["getpwuid", UnsafePointer[_C_Passwd]](uid)
+    var passwd_ptr = external_call[
+        "getpwuid", UnsafePointer[_C_Passwd, MutOrigin.external]
+    ](uid)
     if not passwd_ptr:
         raise Error("user ID not found in the password database: ", uid)
     return _build_pw_struct(passwd_ptr)
 
 
 fn _getpw_linux(var name: String) raises -> Passwd:
-    var passwd_ptr = external_call["getpwnam", UnsafePointer[_C_Passwd]](
-        name.unsafe_cstr_ptr()
-    )
+    var passwd_ptr = external_call[
+        "getpwnam", UnsafePointer[_C_Passwd, MutOrigin.external]
+    ](name.as_c_string_slice().unsafe_ptr())
     if not passwd_ptr:
         raise Error("user name not found in the password database: ", name)
     return _build_pw_struct(passwd_ptr)

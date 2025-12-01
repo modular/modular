@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from math import isclose
 from random import rand
 
@@ -59,7 +60,7 @@ fn test[dtype: DType](C: Int):  # Input Len
 
     # TODO: make assert dynamic
     # constrained[C >= 4]()
-    alias S: Int = 3  # Filter len
+    comptime S: Int = 3  # Filter len
 
     var O: Int = C - S + 1  # Output len (method="same")
     var input_ptr = UnsafePointer[Scalar[dtype]].alloc(C)
@@ -72,13 +73,13 @@ fn test[dtype: DType](C: Int):  # Input Len
 
     var output_shape = Index(1, 1, 1, O, 1)
     var input_shape = Index(1, 1, 1, C, 1)
-    alias filter_shape = Index(1, 1, S, 1, 1)
-    alias pad_d = Index(0, 0)
-    alias pad_h = Index(0, 0)
-    alias pad_w = Index(0, 0)
-    alias stride = Index(1, 1, 1)
-    alias dilation = Index(1, 1, 1)
-    alias num_groups = 1
+    comptime filter_shape = Index(1, 1, S, 1, 1)
+    comptime pad_d = Index(0, 0)
+    comptime pad_h = Index(0, 0)
+    comptime pad_w = Index(0, 0)
+    comptime stride = Index(1, 1, 1)
+    comptime dilation = Index(1, 1, 1)
+    comptime num_groups = 1
 
     Naive2dConvolution[
         dtype,
@@ -127,7 +128,7 @@ fn test[dtype: DType](C: Int):  # Input Len
 
 
 def main():
-    alias dtype = DType.float32
+    comptime dtype = DType.float32
 
     # Make sure to test both even and odd
     test[dtype](7)

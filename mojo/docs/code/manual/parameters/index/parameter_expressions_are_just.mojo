@@ -34,3 +34,4 @@ def main():
     var x = concat(a, a)
 
     print("result type:", x.dtype, "length:", x.size)
+    _ = x

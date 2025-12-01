@@ -16,9 +16,9 @@ from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
-from utils.fast_div import FastDiv
 from testing import *
 
+from utils.fast_div import FastDiv
 from utils.index import Index, IndexList
 
 
@@ -49,23 +49,23 @@ log2_shift: 6
 
 
 def run_elementwise[type: DType](ctx: DeviceContext):
-    alias length = 256
+    comptime length = 256
 
     var divisors = NDBuffer[
-        type, 1, MutableAnyOrigin, DimList(length)
+        type, 1, MutAnyOrigin, DimList(length)
     ].stack_allocation()
     var remainders = NDBuffer[
-        type, 1, MutableAnyOrigin, DimList(length)
+        type, 1, MutAnyOrigin, DimList(length)
     ].stack_allocation()
 
     var out_divisors = ctx.enqueue_create_buffer[type](length)
     var out_remainders = ctx.enqueue_create_buffer[type](length)
 
     var out_divisors_buffer = NDBuffer[type, 1](
-        out_divisors._unsafe_ptr(), Index(length)
+        out_divisors.unsafe_ptr(), Index(length)
     )
     var out_remainders_buffer = NDBuffer[type, 1](
-        out_remainders._unsafe_ptr(), Index(length)
+        out_remainders.unsafe_ptr(), Index(length)
     )
 
     @always_inline
@@ -74,7 +74,7 @@ def run_elementwise[type: DType](ctx: DeviceContext):
     fn func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
-        alias fast_div = FastDiv[DType.uint32](4)
+        comptime fast_div = FastDiv[DType.uint32](4)
         var idx = idx0[0]
 
         out_divisors_buffer[idx] = (idx / fast_div).cast[type]()

@@ -13,8 +13,8 @@
 from math import ceil, ceildiv
 from sys.info import size_of
 
-from layout import LayoutTensor, Layout
-from memory import bitcast, memcpy
+from layout import Layout, LayoutTensor
+from memory import LegacyUnsafePointer as UnsafePointer, bitcast, memcpy
 
 from utils import IndexList, StaticTuple, product
 
@@ -49,10 +49,10 @@ fn _to_SIMD[
 @always_inline
 fn calculate_symmetric_vector[
     input_dtype: DType, simd_width: Int, output_bits: Int
-](data: SIMD[input_dtype, simd_width]) -> (
+](data: SIMD[input_dtype, simd_width]) -> Tuple[
     SIMD[DType.uint8, simd_width],
-    SIMD[input_dtype, 1],
-):
+    Scalar[input_dtype],
+]:
     """
     Symmetrically quantizes the given SIMD vector `data` with input type
     `input_dtype` and `simd_width` elements, assuming we want
@@ -133,7 +133,7 @@ struct Q4sym[
     var scale: StaticTuple[UInt8, 2]
     """The FP16 scale of the group, stored as individual bytes."""
 
-    var bits: StaticTuple[UInt8, group_size // 2]
+    var bits: StaticTuple[UInt8, Self.group_size // 2]
     """The bits of the encoded uint4 numbers."""
 
     @staticmethod
@@ -141,25 +141,28 @@ struct Q4sym[
     fn _check_constraints():
         # TODO
         constrained[
-            group_size.is_power_of_two(), "`group_size` must be a power of 2."
+            Self.group_size.is_power_of_two(),
+            "`group_size` must be a power of 2.",
         ]()
         constrained[
-            group_size == 8 or group_size == 16 or group_size == 32,
+            Self.group_size == 8
+            or Self.group_size == 16
+            or Self.group_size == 32,
             "Only support some `group_sizes`",
         ]()
         constrained[
-            float_dtype.is_floating_point(), "Must be floating point type"
+            Self.float_dtype.is_floating_point(), "Must be floating point type"
         ]()
 
     @always_inline
     fn __init__(out self):
         """Construct a default initialized Q4sym."""
         self.scale = StaticTuple[UInt8, 2]()
-        self.bits = StaticTuple[UInt8, group_size // 2]()
+        self.bits = StaticTuple[UInt8, Self.group_size // 2]()
         self._check_constraints()
 
     @always_inline
-    fn __init__(out self, data: SIMD[float_dtype, group_size]):
+    fn __init__(out self, data: SIMD[Self.float_dtype, Self.group_size]):
         """
         Construct an encoded Q4sym from data.
 
@@ -167,7 +170,7 @@ struct Q4sym[
             data: The floating point data to encode and store.
         """
         var quantization_tuple = calculate_symmetric_vector[
-            float_dtype, group_size, 4
+            Self.float_dtype, Self.group_size, 4
         ](data)
         var qdata = quantization_tuple[0]
         var f_scale = quantization_tuple[1]
@@ -181,18 +184,18 @@ struct Q4sym[
     @staticmethod
     @always_inline
     fn _encode_bits(
-        qdata: SIMD[DType.uint8, group_size]
-    ) -> SIMD[DType.uint8, group_size // 2]:
+        qdata: SIMD[DType.uint8, Self.group_size]
+    ) -> SIMD[DType.uint8, Self.group_size // 2]:
         var lo_hi = qdata.split()
         return lo_hi[0] | (lo_hi[1] << 4)
 
     @always_inline
-    fn _decode_bits(mut self) -> SIMD[DType.uint8, group_size]:
+    fn _decode_bits(mut self) -> SIMD[DType.uint8, Self.group_size]:
         # Extract the lower 4 bits of all bits in the `l_bits` format
-        var bits_simd = _to_SIMD[DType.uint8, group_size // 2](self.bits)
+        var bits_simd = _to_SIMD[DType.uint8, Self.group_size // 2](self.bits)
         var bits_upper = (bits_simd & 0xF0) >> 4
         var bits_lower = bits_simd & 0x0F
-        return rebind[SIMD[DType.uint8, group_size]](
+        return rebind[SIMD[DType.uint8, Self.group_size]](
             bits_lower.join(bits_upper)
         )
 
@@ -215,12 +218,12 @@ struct Q4sym[
             DType.uint16
         ]()
         upcast_bytes[1] = upcast_bytes[1] << 8
-        var final_result: SIMD[DType.uint16, 1] = upcast_bytes.reduce_add()
+        var final_result: UInt16 = upcast_bytes.reduce_add()
         var scale_decoded = bitcast[DType.float16, 1](final_result)
         return scale_decoded
 
     @always_inline
-    fn decode_unsigned(mut self) -> SIMD[DType.uint8, group_size]:
+    fn decode_unsigned(mut self) -> SIMD[DType.uint8, Self.group_size]:
         """
         Decode the stored uint4 numbers to uint8.
 
@@ -232,7 +235,7 @@ struct Q4sym[
         return self._decode_bits()
 
     @always_inline
-    fn decode_signed(mut self) -> SIMD[DType.int8, group_size]:
+    fn decode_signed(mut self) -> SIMD[DType.int8, Self.group_size]:
         """
         Decode the stored uint4 numbers to requantized int4 numbers.
 
@@ -247,7 +250,7 @@ struct Q4sym[
         return decoded_result.cast[DType.int8]() - 8
 
     @always_inline
-    fn decode_fully(mut self) -> SIMD[float_dtype, group_size]:
+    fn decode_fully(mut self) -> SIMD[Self.float_dtype, Self.group_size]:
         """
         Decode the stored numbers into floating point representation.
 
@@ -256,10 +259,10 @@ struct Q4sym[
         """
         # Obtain the fully dequantized values
         var signed_result = self.decode_signed()
-        var scale_decoded = self.decode_scale().cast[float_dtype]()
+        var scale_decoded = self.decode_scale().cast[Self.float_dtype]()
         var answer = (
-            scale_decoded.cast[float_dtype]()
-            * signed_result.cast[float_dtype]()
+            scale_decoded.cast[Self.float_dtype]()
+            * signed_result.cast[Self.float_dtype]()
         )
         return answer
 
@@ -268,7 +271,7 @@ struct Q4sym[
     @staticmethod
     fn quantize_and_write_to_tensor(
         input_tensor: LayoutTensor[
-            float_dtype, address_space = AddressSpace.GENERIC, **_
+            Self.float_dtype, address_space = AddressSpace.GENERIC, **_
         ],
         output_tensor: LayoutTensor[
             DType.uint8, address_space = AddressSpace.GENERIC, **_
@@ -296,15 +299,15 @@ struct Q4sym[
 
         # Read and quantize `input_tensor`` to blocked format, dump the raw
         # struct/block into `output_tensor`
-        var size_of_block = size_of[Q4sym[group_size, float_dtype]]()
+        var size_of_block = size_of[Q4sym[Self.group_size, Self.float_dtype]]()
         debug_assert(
-            input_shape[input_tensor.rank - 1] % group_size == 0,
+            input_shape[input_tensor.rank - 1] % Self.group_size == 0,
             "Only support fully divisible dimensions right now.",
         )
 
         var blob_output_ptr = output_tensor.ptr
         var base_block_ptr = UnsafePointer(blob_output_ptr).bitcast[
-            Q4sym[group_size, float_dtype]
+            Q4sym[Self.group_size, Self.float_dtype]
         ]()
 
         # as we support only inner-most dim, treat like rank-2 tensor
@@ -314,26 +317,30 @@ struct Q4sym[
         ]
         var output_inner_stride = ceildiv(
             Int(input_tensor.runtime_layout.shape[input_tensor.rank - 1]),
-            group_size,
+            Self.group_size,
         )
 
         # TODO: vectorize parallelize, blah blah blah
         for i in range(outer_stride):
             for j in range(output_inner_stride):
-                var flat_index_input = input_inner_stride * i + j * group_size
-                var loaded_group = input_tensor.ptr.load[width=group_size](
-                    flat_index_input
+                var flat_index_input = (
+                    input_inner_stride * i + j * Self.group_size
                 )
+                var loaded_group = input_tensor.ptr.load[
+                    width = Self.group_size
+                ](flat_index_input)
 
                 var flat_index_output = output_inner_stride * i + j
                 var output_ptr = base_block_ptr + flat_index_output
 
                 # TODO: use the memory more directly instead of memcpy
-                var encoded_data = Q4sym[group_size, float_dtype](loaded_group)
+                var encoded_data = Q4sym[Self.group_size, Self.float_dtype](
+                    loaded_group
+                )
                 var src_ptr = UnsafePointer(to=encoded_data).address_space_cast[
                     output_ptr.address_space
                 ]()
-                memcpy(output_ptr, src_ptr, 1)
+                memcpy(dest=output_ptr, src=src_ptr, count=1)
                 _ = encoded_data^
 
     @staticmethod
@@ -342,7 +349,7 @@ struct Q4sym[
             DType.uint8, address_space = AddressSpace.GENERIC, **_
         ],
         output_tensor: LayoutTensor[
-            float_dtype, address_space = AddressSpace.GENERIC, **_
+            Self.float_dtype, address_space = AddressSpace.GENERIC, **_
         ],
         output_shape: IndexList[output_tensor.rank],
     ):
@@ -363,7 +370,7 @@ struct Q4sym[
         # blocked format. Write the corresponding results to `output_tensor`
         debug_assert(
             output_tensor.runtime_layout.shape.value[output_tensor.rank - 1]
-            % group_size
+            % Self.group_size
             == 0,
             "Only support fully divisible dimensions right now.",
         )
@@ -372,7 +379,7 @@ struct Q4sym[
 
         var uint8_input_ptr = input_tensor.ptr
         var base_block_ptr = UnsafePointer(uint8_input_ptr).bitcast[
-            Q4sym[group_size, float_dtype]
+            Q4sym[Self.group_size, Self.float_dtype]
         ]()
 
         # as we support only inner-most dim, treat like rank-2 tensor
@@ -382,20 +389,22 @@ struct Q4sym[
         var outer_dim = product(output_tensor.runtime_layout.stride.value)
 
         # Note: this is calculated assuming a pointer of Q4Sym's
-        var input_inner_dim = ceildiv(output_inner_dim, group_size)
+        var input_inner_dim = ceildiv(output_inner_dim, Self.group_size)
 
         # TODO: vectorize parallelize, blah blah blah
         for i in range(outer_dim):
             for j in range(input_inner_dim):
                 var flat_index_input = input_inner_dim * i + j
-                var encoded = Q4sym[group_size, float_dtype]()
+                var encoded = Q4sym[Self.group_size, Self.float_dtype]()
                 memcpy(
-                    UnsafePointer(to=encoded),
-                    base_block_ptr + flat_index_input,
-                    1,
+                    dest=UnsafePointer(to=encoded),
+                    src=base_block_ptr + flat_index_input,
+                    count=1,
                 )
 
-                var flat_index_output = output_inner_dim * i + j * group_size
+                var flat_index_output = (
+                    output_inner_dim * i + j * Self.group_size
+                )
                 output_tensor.ptr.store(
                     flat_index_output,
                     encoded.decode_fully(),
@@ -408,12 +417,12 @@ struct Q4sym[
 
 
 struct block_QK_K:
-    alias quantized_k = 256
+    comptime quantized_k = 256
 
 
 struct block_Q4_K:
-    alias group_size = 32
-    alias group_count = block_QK_K.quantized_k // Self.group_size
+    comptime group_size = 32
+    comptime group_count = block_QK_K.quantized_k // Self.group_size
 
     var base_scale: Float16
     var base_min: Float16
@@ -429,7 +438,7 @@ fn scale_min_k4(
         block_Q4_K, address_space = AddressSpace.GENERIC, **_
     ],
     g: Int,
-) -> (Float32, Float32):
+) -> Tuple[Float32, Float32]:
     if g < 4:
         var q_scale = src_ptr[].q_scales_and_mins[g] & 63
         var q_min = src_ptr[].q_scales_and_mins[g + 4] & 63
@@ -454,11 +463,11 @@ fn q4_k_dequantize_impl(
         mut=True, DType.float32, address_space = AddressSpace.GENERIC, **_
     ],
 ):
-    alias group_nelems = block_Q4_K.group_size
+    comptime group_nelems = block_Q4_K.group_size
     # 2 elements per byte.
-    alias group_nbytes = group_nelems // 2
-    alias block_nelems = block_QK_K.quantized_k
-    alias block_nbytes = size_of[block_Q4_K]()
+    comptime group_nbytes = group_nelems // 2
+    comptime block_nelems = block_QK_K.quantized_k
+    comptime block_nbytes = size_of[block_Q4_K]()
 
     var num_blocks = input_tensor.size() // block_nbytes
     var input_q4_k_ptr = input_tensor.ptr.bitcast[block_Q4_K]()
@@ -520,8 +529,8 @@ fn q4_k_dequantize_impl(
 
 
 struct block_Q6_K:
-    alias group_size = 16
-    alias group_count = block_QK_K.quantized_k // Self.group_size
+    comptime group_size = 16
+    comptime group_count = block_QK_K.quantized_k // Self.group_size
 
     # Low 4 bits.
     var q_bits_lo: InlineArray[UInt8, block_QK_K.quantized_k // 2]
@@ -538,9 +547,9 @@ fn q6_k_dequantize_impl(
     output_tensor: LayoutTensor[mut=True, DType.float32, **_],
     output_shape: IndexList[output_tensor.rank],
 ):
-    alias group_nelems = block_Q6_K.group_size
-    alias block_nelems = block_QK_K.quantized_k
-    alias block_nbytes = size_of[block_Q6_K]()
+    comptime group_nelems = block_Q6_K.group_size
+    comptime block_nelems = block_QK_K.quantized_k
+    comptime block_nbytes = size_of[block_Q6_K]()
 
     var num_blocks = (output_shape[0] * output_shape[1]) // block_nelems
     var input_q6_k_ptr = input_tensor.ptr.bitcast[block_Q6_K]()

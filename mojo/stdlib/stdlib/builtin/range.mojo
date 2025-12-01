@@ -17,6 +17,8 @@ These are Mojo built-ins, so you don't need to import them.
 
 
 from math import ceildiv
+from sys.info import size_of
+from sys.intrinsics import unlikely
 
 from python import PythonObject
 
@@ -41,8 +43,11 @@ fn _sign(x: Int) -> Int:
 
 
 @register_passable("trivial")
-struct _ZeroStartingRange(Iterator, Movable, ReversibleRange, Sized):
-    alias Element = Int
+struct _ZeroStartingRange(Iterable, Iterator, Movable, ReversibleRange, Sized):
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+    comptime Element = Int
     var curr: Int
     var end: Int
 
@@ -52,7 +57,7 @@ struct _ZeroStartingRange(Iterator, Movable, ReversibleRange, Sized):
         self.end = self.curr
 
     @always_inline
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
@@ -79,16 +84,24 @@ struct _ZeroStartingRange(Iterator, Movable, ReversibleRange, Sized):
     fn __reversed__(self) -> _StridedRange:
         return range(self.end - 1, -1, -1)
 
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var len = len(self)
+        return (len, {len})
+
 
 @fieldwise_init
 @register_passable("trivial")
-struct _SequentialRange(Iterator, ReversibleRange, Sized):
-    alias Element = Int
+struct _SequentialRange(Iterable, Iterator, ReversibleRange, Sized):
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+    comptime Element = Int
     var start: Int
     var end: Int
 
     @always_inline
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
@@ -114,14 +127,26 @@ struct _SequentialRange(Iterator, ReversibleRange, Sized):
     fn __reversed__(self) -> _StridedRange:
         return range(self.end - 1, self.start - 1, -1)
 
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var len = len(self)
+        return (len, {len})
+
 
 @fieldwise_init
 @register_passable("trivial")
-struct _StridedRangeIterator(Iterator, Sized):
-    alias Element = Int
+struct _StridedRangeIterator(Iterable, Iterator, Sized):
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+    comptime Element = Int
     var start: Int
     var end: Int
     var step: Int
+
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self
 
     @always_inline
     fn __len__(self) -> Int:
@@ -142,11 +167,19 @@ struct _StridedRangeIterator(Iterator, Sized):
     fn __has_next__(self) -> Bool:
         return self.__len__() > 0
 
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var len = len(self)
+        return (len, {len})
+
 
 @fieldwise_init
 @register_passable("trivial")
-struct _StridedRange(Iterator, ReversibleRange, Sized):
-    alias Element = Int
+struct _StridedRange(Iterable, Iterator, ReversibleRange, Sized):
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _StridedRangeIterator
+    comptime Element = Int
     var start: Int
     var end: Int
     var step: Int
@@ -158,7 +191,7 @@ struct _StridedRange(Iterator, ReversibleRange, Sized):
         self.step = 1
 
     @always_inline
-    fn __iter__(self) -> _StridedRangeIterator:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return _StridedRangeIterator(self.start, self.end, self.step)
 
     @always_inline
@@ -200,6 +233,11 @@ struct _StridedRange(Iterator, ReversibleRange, Sized):
         var end = self.start - self.step
         var step = -self.step
         return range(start, end, step)
+
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var len = len(self)
+        return (len, {len})
 
 
 @always_inline
@@ -384,9 +422,20 @@ fn range(
 # ===----------------------------------------------------------------------=== #
 
 
+@always_inline
+fn _uint_range_bounds(len: UInt) -> Tuple[Int, Optional[Int]]:
+    if unlikely(len > UInt(Int.MAX)):
+        return (Int.MAX, None)
+    else:
+        return (Int(len), {Int(len)})
+
+
 @register_passable("trivial")
-struct _UIntZeroStartingRange(Iterator, UIntSized):
-    alias Element = UInt
+struct _UIntZeroStartingRange(Iterable, Iterator, UIntSized):
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+    comptime Element = UInt
     var curr: UInt
     var end: UInt
 
@@ -396,7 +445,7 @@ struct _UIntZeroStartingRange(Iterator, UIntSized):
         self.end = self.curr
 
     @always_inline
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
@@ -418,14 +467,25 @@ struct _UIntZeroStartingRange(Iterator, UIntSized):
         debug_assert(idx < self.__len__(), "index out of range")
         return idx
 
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return _uint_range_bounds(self.__len__())
+
 
 @fieldwise_init
 @register_passable("trivial")
-struct _UIntStridedRangeIterator(Iterator, UIntSized):
-    alias Element = UInt
+struct _UIntStridedRangeIterator(Iterable, Iterator, UIntSized):
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+    comptime Element = UInt
     var start: UInt
     var end: UInt
     var step: UInt
+
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self
 
     @always_inline
     fn __len__(self) -> UInt:
@@ -441,10 +501,17 @@ struct _UIntStridedRangeIterator(Iterator, UIntSized):
     fn __has_next__(self) -> Bool:
         return self.__len__() > 0
 
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return _uint_range_bounds(self.__len__())
+
 
 @register_passable("trivial")
-struct _UIntStridedRange(Iterator, UIntSized):
-    alias Element = UInt
+struct _UIntStridedRange(Iterable, Iterator, UIntSized):
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _UIntStridedRangeIterator
+    comptime Element = UInt
     var start: UInt
     var end: UInt
     var step: UInt
@@ -466,7 +533,7 @@ struct _UIntStridedRange(Iterator, UIntSized):
         self.step = step
 
     @always_inline
-    fn __iter__(self) -> _UIntStridedRangeIterator:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return _UIntStridedRangeIterator(self.start, self.end, self.step)
 
     @always_inline
@@ -491,6 +558,10 @@ struct _UIntStridedRange(Iterator, UIntSized):
     fn __getitem__(self, idx: UInt) -> UInt:
         debug_assert(idx < self.__len__(), "index out of range")
         return self.start + idx * self.step
+
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return _uint_range_bounds(self.__len__())
 
 
 @always_inline
@@ -526,23 +597,39 @@ fn range(start: UInt, end: UInt, step: UInt = 1) -> _UIntStridedRange:
 # ===----------------------------------------------------------------------=== #
 
 
+fn _scalar_range_bounds[
+    dtype: DType
+](len: Scalar[dtype]) -> Tuple[Int, Optional[Int]]:
+    @parameter
+    if size_of[Scalar[dtype]]() >= size_of[Int]():
+        if unlikely(UInt(len) > UInt(Int.MAX)):
+            return (Int.MAX, None)
+
+    return (Int(len), {Int(len)})
+
+
 @register_passable("trivial")
-struct _ZeroStartingScalarRange[dtype: DType](Iterator & ImplicitlyCopyable):
-    alias Element = Scalar[dtype]
-    var curr: Scalar[dtype]
-    var end: Scalar[dtype]
+struct _ZeroStartingScalarRange[dtype: DType](
+    Iterable, Iterator & ImplicitlyCopyable
+):
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+    comptime Element = Scalar[Self.dtype]
+    var curr: Scalar[Self.dtype]
+    var end: Scalar[Self.dtype]
 
     @always_inline
-    fn __init__(out self, end: Scalar[dtype]):
+    fn __init__(out self, end: Scalar[Self.dtype]):
         self.curr = max(0, end)
         self.end = self.curr
 
     @always_inline
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
-    fn __next__(mut self) -> Scalar[dtype]:
+    fn __next__(mut self) -> Scalar[Self.dtype]:
         var curr = self.curr
         self.curr -= 1
         return self.end - curr
@@ -552,35 +639,46 @@ struct _ZeroStartingScalarRange[dtype: DType](Iterator & ImplicitlyCopyable):
         return self.__len__() > 0
 
     @always_inline
-    fn __len__(self) -> Scalar[dtype]:
+    fn __len__(self) -> Scalar[Self.dtype]:
         return self.curr
 
     @always_inline
-    fn __getitem__(self, idx: Scalar[dtype]) -> Scalar[dtype]:
+    fn __getitem__(self, idx: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
         debug_assert(idx < self.__len__(), "index out of range")
         return idx
 
     @always_inline
-    fn __reversed__(self) -> _StridedScalarRange[dtype]:
+    fn __reversed__(self) -> _StridedScalarRange[Self.dtype]:
         constrained[
-            not dtype.is_unsigned(), "cannot reverse an unsigned range"
+            not Self.dtype.is_unsigned(), "cannot reverse an unsigned range"
         ]()
-        return range(self.end - 1, Scalar[dtype](-1), Scalar[dtype](-1))
+        return range(
+            self.end - 1, Scalar[Self.dtype](-1), Scalar[Self.dtype](-1)
+        )
+
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return _scalar_range_bounds(self.__len__())
 
 
 @fieldwise_init
 @register_passable("trivial")
-struct _SequentialScalarRange[dtype: DType](Iterator & ImplicitlyCopyable):
-    alias Element = Scalar[dtype]
-    var start: Scalar[dtype]
-    var end: Scalar[dtype]
+struct _SequentialScalarRange[dtype: DType](
+    Iterable, Iterator & ImplicitlyCopyable
+):
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+    comptime Element = Scalar[Self.dtype]
+    var start: Scalar[Self.dtype]
+    var end: Scalar[Self.dtype]
 
     @always_inline
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
-    fn __next__(mut self) -> Scalar[dtype]:
+    fn __next__(mut self) -> Scalar[Self.dtype]:
         var start = self.start
         self.start += 1
         return start
@@ -590,35 +688,48 @@ struct _SequentialScalarRange[dtype: DType](Iterator & ImplicitlyCopyable):
         return self.__len__() > 0
 
     @always_inline
-    fn __len__(self) -> Scalar[dtype]:
+    fn __len__(self) -> Scalar[Self.dtype]:
         return max(0, self.end - self.start)
 
     @always_inline
-    fn __getitem__(self, idx: Scalar[dtype]) -> Scalar[dtype]:
+    fn __getitem__(self, idx: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
         debug_assert(idx < self.__len__(), "index out of range")
         return self.start + idx
 
     @always_inline
-    fn __reversed__(self) -> _StridedScalarRange[dtype]:
+    fn __reversed__(self) -> _StridedScalarRange[Self.dtype]:
         constrained[
-            not dtype.is_unsigned(), "cannot reverse an unsigned range"
+            not Self.dtype.is_unsigned(), "cannot reverse an unsigned range"
         ]()
-        return range(self.end - 1, self.start - 1, Scalar[dtype](-1))
+        return range(self.end - 1, self.start - 1, Scalar[Self.dtype](-1))
+
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return _scalar_range_bounds(self.__len__())
 
 
 @fieldwise_init
 @register_passable("trivial")
-struct _StridedScalarRangeIterator[dtype: DType](Iterator & ImplicitlyCopyable):
-    alias Element = Scalar[dtype]
-    var start: Scalar[dtype]
-    var end: Scalar[dtype]
-    var step: Scalar[dtype]
+struct _StridedScalarRange[dtype: DType](
+    Iterable, Iterator & ImplicitlyCopyable
+):
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+    comptime Element = Scalar[Self.dtype]
+    var start: Scalar[Self.dtype]
+    var end: Scalar[Self.dtype]
+    var step: Scalar[Self.dtype]
+
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self
 
     @always_inline
     fn __has_next__(self) -> Bool:
         # If the type is unsigned, then 'step' cannot be negative.
         @parameter
-        if dtype.is_unsigned():
+        if Self.dtype.is_unsigned():
             return self.start < self.end
         else:
             if self.step > 0:
@@ -626,23 +737,30 @@ struct _StridedScalarRangeIterator[dtype: DType](Iterator & ImplicitlyCopyable):
             return self.end < self.start
 
     @always_inline
-    fn __next__(mut self) -> Scalar[dtype]:
+    fn __next__(mut self) -> Scalar[Self.dtype]:
         var result = self.start
         self.start += self.step
         return result
 
+    @always_inline
+    fn __len__(self) -> Scalar[Self.dtype]:
+        constrained[Self.dtype.is_integral(), "dtype must be integral"]()
 
-@fieldwise_init
-@register_passable("trivial")
-struct _StridedScalarRange[dtype: DType]:
-    alias Element = Scalar[dtype]
-    var start: Scalar[dtype]
-    var end: Scalar[dtype]
-    var step: Scalar[dtype]
+        @parameter
+        if Self.dtype.is_unsigned():
+            return Scalar[Self.dtype](
+                range(
+                    UInt(self.start), UInt(self.end), UInt(self.step)
+                ).__len__()
+            )
+        else:  # is_signed
+            return Scalar[Self.dtype](
+                range(Int(self.start), Int(self.end), Int(self.step)).__len__()
+            )
 
     @always_inline
-    fn __iter__(self) -> _StridedScalarRangeIterator[dtype]:
-        return _StridedScalarRangeIterator(self.start, self.end, self.step)
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return _scalar_range_bounds(self.__len__())
 
 
 @always_inline

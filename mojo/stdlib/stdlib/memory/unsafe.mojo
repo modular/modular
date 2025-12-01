@@ -19,11 +19,7 @@ from memory import bitcast
 ```
 """
 
-from sys import bit_width_of
-from sys import (
-    is_amd_gpu,
-    is_nvidia_gpu,
-)
+from sys import bit_width_of, is_amd_gpu, is_nvidia_gpu
 
 # ===-----------------------------------------------------------------------===#
 # bitcast
@@ -51,7 +47,7 @@ fn bitcast[
     ```mojo
     from memory import bitcast
 
-    u32 = SIMD[DType.uint32, 1](4631)
+    u32 = UInt32(4631)
     u8x4 = bitcast[DType.uint8, 4](u32)
     print(u32, u8x4) # 4631 [23, 18, 0, 0]
     ```
@@ -73,7 +69,7 @@ fn bitcast[
         source SIMD value.
     """
     constrained[
-        bit_width_of[SIMD[dtype, width]]() == bit_width_of[__type_of(val)](),
+        bit_width_of[SIMD[dtype, width]]() == bit_width_of[type_of(val)](),
         "the source and destination types must have the same bitwidth",
     ]()
 

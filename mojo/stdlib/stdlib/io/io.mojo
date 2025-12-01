@@ -16,6 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections.string.string_slice import get_static_string
+from io.write import _WriteBufferHeap, _WriteBufferStack
 from sys import _libc as libc
 from sys import (
     external_call,
@@ -27,14 +28,14 @@ from sys import (
     stdout,
 )
 from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
-from sys._libc import dup, fclose, fdopen, fflush
+from sys._libc import dup, fclose, fdopen, fflush, FILE_ptr
 from sys.ffi import c_char
-from sys.intrinsics import _type_is_eq
 from sys.info import CompilationTarget
+from sys.intrinsics import _type_is_eq
+
+from memory import bitcast
 
 from .file_descriptor import FileDescriptor
-from memory import bitcast
-from io.write import _WriteBufferHeap, _WriteBufferStack
 
 # ===----------------------------------------------------------------------=== #
 #  _file_handle
@@ -44,7 +45,7 @@ from io.write import _WriteBufferHeap, _WriteBufferStack
 @fieldwise_init
 @register_passable("trivial")
 struct _fdopen[mode: StaticString = "a"]:
-    var handle: OpaquePointer
+    var handle: FILE_ptr
 
     fn __init__(out self, stream_id: FileDescriptor):
         """Creates a file handle to the stdout/stderr stream.
@@ -56,7 +57,7 @@ struct _fdopen[mode: StaticString = "a"]:
         self.handle = fdopen(
             dup(stream_id.value),
             # Guarantee this is nul terminated.
-            get_static_string[mode]().unsafe_ptr().bitcast[c_char](),
+            get_static_string[Self.mode]().unsafe_ptr().bitcast[c_char](),
         )
 
     fn __enter__(self) -> Self:
@@ -124,19 +125,13 @@ struct _fdopen[mode: StaticString = "a"]:
         ```
         """
         # getdelim will allocate the buffer using malloc().
-        var buffer = UnsafePointer[UInt8]()
+        var buffer = UnsafePointer[UInt8, MutOrigin.external]()
+        var n = UInt64(0)
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);
-        var bytes_read = external_call[
-            "getdelim",
-            Int,
-            UnsafePointer[UnsafePointer[UInt8]],
-            UnsafePointer[UInt64],
-            Int,
-            OpaquePointer,
-        ](
+        var bytes_read = external_call["getdelim", Int,](
             UnsafePointer(to=buffer),
-            UnsafePointer(to=UInt64(0)),
+            UnsafePointer(to=n),
             ord(delimiter),
             self.handle,
         )
@@ -151,7 +146,7 @@ struct _fdopen[mode: StaticString = "a"]:
             raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
         var s = String(
-            StringSlice[buffer.origin](ptr=buffer, length=UInt(bytes_read - 1))
+            StringSlice[buffer.origin](ptr=buffer, length=bytes_read - 1)
         )
         # Explicitly free the buffer using free() instead of the Mojo allocator.
         libc.free(buffer.bitcast[NoneType]())
@@ -256,26 +251,20 @@ fn _printf[
                     return UInt64(rebind[Int](value))
                 elif _type_is_eq[T, UInt]():
                     return UInt64(rebind[UInt](value))
-                elif _type_is_eq[UnsafePointer[UInt8], UInt]():
-                    return UInt64(Int(rebind[UnsafePointer[UInt8]](value)))
-                elif _type_is_eq[UnsafePointer[Int8], UInt]():
-                    return UInt64(Int(rebind[UnsafePointer[Int8]](value)))
-                elif _type_is_eq[OpaquePointer, UInt]():
-                    return UInt64(Int(rebind[OpaquePointer](value)))
                 return 0
 
-            alias args_len = len(VariadicList(types))
+            comptime args_len = len(VariadicList(types))
 
             var message = printf_begin()
             message = printf_append_string_n(
                 message, fmt.as_bytes(), args_len == 0
             )
-            alias k_args_per_group = 7
+            comptime k_args_per_group = 7
 
             @parameter
             for group in range(0, args_len, k_args_per_group):
-                alias bound = min(group + k_args_per_group, args_len)
-                alias num_args = bound - group
+                comptime bound = min(group + k_args_per_group, args_len)
+                comptime num_args = bound - group
 
                 var arguments = InlineArray[UInt64, k_args_per_group](fill=0)
 
@@ -313,7 +302,7 @@ fn _printf[
 @no_inline
 fn _snprintf[
     fmt: StaticString, *types: AnyType
-](str: UnsafePointer[UInt8], size: Int, *args: *types) -> Int:
+](str: UnsafePointer[mut=True, UInt8], size: Int, *args: *types) -> Int:
     """Writes a format string into an output pointer.
 
     Parameters:
@@ -387,7 +376,7 @@ fn print[
 
     if is_compile_time():
         var buffer = _WriteBufferStack(file)
-        alias length = values.__len__()
+        comptime length = values.__len__()
 
         @parameter
         for i in range(length):
@@ -404,7 +393,7 @@ fn print[
         @parameter
         if is_gpu():
             var buffer = _WriteBufferHeap()
-            alias length = values.__len__()
+            comptime length = values.__len__()
 
             @parameter
             for i in range(length):
@@ -415,23 +404,21 @@ fn print[
             end.write_to(buffer)
             buffer.nul_terminate()
 
+            var span = buffer.as_span()
+
             @parameter
             if is_nvidia_gpu():
-                _printf["%s"](buffer.data)
+                _printf["%s"](span.unsafe_ptr())
             elif is_amd_gpu():
                 var msg = printf_begin()
-                _ = printf_append_string_n(
-                    msg,
-                    Span(ptr=buffer.data, length=UInt(buffer.pos)),
-                    is_last=True,
-                )
+                _ = printf_append_string_n(msg, span, is_last=True)
             else:
                 return CompilationTarget.unsupported_target_error[
                     operation="print"
                 ]()
         else:
             var buffer = _WriteBufferStack(file)
-            alias length = values.__len__()
+            comptime length = values.__len__()
 
             @parameter
             for i in range(length):
@@ -471,13 +458,16 @@ fn input(prompt: String = "") raises -> String:
     ```
 
     If the user enters "Mojo" it prints "Hello Mojo".
+
+    Raises:
+        If the operation fails.
     """
     if prompt != "":
         print(prompt, end="")
     return _fdopen["r"](stdin).readline()
 
 
-fn _get_stdout_stream() -> OpaquePointer:
-    return external_call[
-        "KGEN_CompilerRT_IO_get_stdout_stream", OpaquePointer
+fn _get_stdout_stream(out result: OpaquePointer[MutOrigin.external]):
+    result = external_call[
+        "KGEN_CompilerRT_IO_get_stdout_stream", type_of(result)
     ]()

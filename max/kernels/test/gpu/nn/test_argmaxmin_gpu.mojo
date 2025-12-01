@@ -16,16 +16,17 @@ from random import random_float64
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from layout import (
-    LayoutTensor,
+    UNKNOWN_VALUE,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from testing import assert_equal
+
 from utils.index import IndexList
 
 
@@ -148,8 +149,8 @@ def main():
     fn fill_random[
         rank: Int, dtype: DType
     ](buffer: LayoutTensor[mut=True, dtype, **_]):
-        alias min_val = -1e9
-        alias max_val = 1e9
+        comptime min_val = -1e9
+        comptime max_val = 1e9
         var total_elements = buffer.size()
         for i in range(total_elements):
             var random_value = random_float64(min_val, max_val)
@@ -157,7 +158,7 @@ def main():
 
     with DeviceContext() as ctx:  # argmax tests
         # index
-        test_argmaxmin_gpu_helper[DType.index, fill_random](ctx)
+        test_argmaxmin_gpu_helper[DType.int, fill_random](ctx)
 
         # int64
         test_argmaxmin_gpu_helper[DType.int64, fill_random](ctx)

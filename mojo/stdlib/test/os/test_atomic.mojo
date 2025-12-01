@@ -13,7 +13,13 @@
 
 from os.atomic import Atomic, Consistency, fence
 
-from testing import assert_equal, assert_not_equal, assert_false, assert_true
+from testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_not_equal,
+    assert_true,
+)
 
 
 def test_consistency_equality_comparable():
@@ -53,8 +59,8 @@ def test_consistency_stringable():
     assert_equal(String(Consistency.SEQUENTIAL), "SEQUENTIAL")
 
 
-def test_atomic[dtype: DType]():
-    alias scalar = Scalar[dtype]
+def _test_atomic[dtype: DType]():
+    comptime scalar = Scalar[dtype]
     var atom = Atomic[dtype](3)
 
     assert_equal(atom.load(), scalar(3))
@@ -80,8 +86,13 @@ def test_atomic[dtype: DType]():
     assert_equal(atom.value, scalar(0))
 
 
-def test_compare_exchange[dtype: DType]():
-    alias scalar = Scalar[dtype]
+def test_atomic():
+    _test_atomic[DType.int32]()
+    _test_atomic[DType.float64]()
+
+
+def _test_compare_exchange[dtype: DType]():
+    comptime scalar = Scalar[dtype]
     var atom = Atomic[dtype](3)
 
     # Successful cmpxchg
@@ -101,14 +112,19 @@ def test_compare_exchange[dtype: DType]():
     assert_equal(atom.load(), scalar(42))
 
 
+def test_compare_exchange():
+    _test_compare_exchange[DType.int32]()
+    _test_compare_exchange[DType.float64]()
+
+
 def test_comptime_atomic():
     fn comptime_fn() -> Int:
-        var atom = Atomic[DType.index](3)
+        var atom = Atomic[DType.int](3)
         atom += 4
         atom -= 4
         return Int(atom.load())
 
-    alias value = comptime_fn()
+    comptime value = comptime_fn()
     assert_equal(value, 3)
 
 
@@ -117,7 +133,7 @@ def test_comptime_fence():
         fence()
         return 1
 
-    alias value = comptime_fn()
+    comptime value = comptime_fn()
     assert_equal(value, 1)
 
 
@@ -128,25 +144,16 @@ def test_comptime_compare_exchange():
         var success = atom.compare_exchange(expected, 42)
         return (success, expected, atom.load())
 
-    alias result_success = comptime_fn(0)
+    comptime result_success = comptime_fn(0)
     assert_true(result_success[0])
     assert_equal(result_success[1], 0)
     assert_equal(result_success[2], 42)
 
-    alias result_failure = comptime_fn(1)
+    comptime result_failure = comptime_fn(1)
     assert_false(result_failure[0])
     assert_equal(result_failure[1], 0)
     assert_equal(result_failure[2], 0)
 
 
 def main():
-    test_consistency_equality_comparable()
-    test_consistency_representable()
-    test_consistency_stringable()
-    test_atomic[DType.int32]()
-    test_atomic[DType.float64]()
-    test_compare_exchange[DType.int32]()
-    test_compare_exchange[DType.float64]()
-    test_comptime_atomic()
-    test_comptime_fence()
-    test_comptime_compare_exchange()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -32,7 +32,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         ElementType: The type of the element to store.
     """
 
-    alias _mlir_type = __mlir_type[`!pop.array<1, `, Self.ElementType, `>`]
+    comptime _mlir_type = __mlir_type[`!pop.array<1, `, Self.ElementType, `>`]
 
     var _array: Self._mlir_type
 
@@ -98,7 +98,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         Args:
             other: The object to copy.
         """
-        self.unsafe_ptr().init_pointee_explicit_copy(other.assume_initialized())
+        self.unsafe_ptr().init_pointee_copy(other.assume_initialized())
 
     @always_inline
     fn copy_from[
@@ -114,7 +114,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         Args:
             other: The object to copy.
         """
-        self.unsafe_ptr().init_pointee_explicit_copy(other)
+        self.unsafe_ptr().init_pointee_copy(other)
 
     @always_inline
     fn __moveinit__(out self, deinit other: Self):
@@ -161,7 +161,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         MovableType: Movable
     ](
         mut self: UnsafeMaybeUninitialized[MovableType],
-        other: UnsafePointer[MovableType],
+        other: UnsafePointer[mut=True, MovableType],
     ):
         """Move another object.
 
@@ -176,12 +176,12 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         Args:
             other: The pointer to the object to move.
         """
-        other.move_pointee_into(self.unsafe_ptr())
+        self.unsafe_ptr().init_pointee_move_from(other)
 
     @always_inline
     fn write[
         MovableType: Movable
-    ](mut self: UnsafeMaybeUninitialized[MovableType], var value: MovableType,):
+    ](mut self: UnsafeMaybeUninitialized[MovableType], var value: MovableType):
         """Write a value into an uninitialized memory location.
 
         Calling this method assumes that the memory is uninitialized.
@@ -195,7 +195,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         self.unsafe_ptr().init_pointee_move(value^)
 
     @always_inline
-    fn assume_initialized(ref self) -> ref [self] Self.ElementType:
+    fn assume_initialized(ref self) -> ref [self._array] Self.ElementType:
         """Returns a reference to the internal value.
 
         Calling this method assumes that the memory is initialized.
@@ -206,7 +206,9 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         return self.unsafe_ptr()[]
 
     @always_inline
-    fn unsafe_ptr(self) -> UnsafePointer[Self.ElementType]:
+    fn unsafe_ptr(
+        ref self,
+    ) -> UnsafePointer[Self.ElementType, origin_of(self._array)]:
         """Get a pointer to the underlying element.
 
         Note that this method does not assumes that the memory is initialized

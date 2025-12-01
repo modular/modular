@@ -225,7 +225,7 @@ Attention](https://www.notion.so/Multi-Head-Attention-bbc2d300937a495da40c18b6a2
 
 ```mojo
 # Per matmul, Q, K have shape [S, D]
-batch_matmul(P, Q, K, tranpose=True)
+batch_matmul(P, Q, K, transpose=True)
 P = P * scale + mask
 P = softmax(P)
 # Per matmul, P: [S, S], V: [S, D]

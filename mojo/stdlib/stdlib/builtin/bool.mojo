@@ -19,12 +19,13 @@ from collections import List, Set
 from hashlib.hasher import Hasher
 
 from python import (
-    Python,
-    PythonObject,
     ConvertibleFromPython,
     ConvertibleToPython,
+    Python,
+    PythonObject,
 )
 
+from builtin.rebind import trait_downcast
 from utils._select import _select_register_value as select
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -87,13 +88,14 @@ trait ImplicitlyBoolable(Boolable):
     ```
     """
 
+    @always_inline
     fn __as_bool__(self) -> Bool:
         """Get the boolean representation of the value.
 
         Returns:
             The boolean representation of the value.
         """
-        ...
+        return self.__bool__()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -112,7 +114,6 @@ struct Bool(
     Hashable,
     ImplicitlyBoolable,
     ImplicitlyCopyable,
-    ImplicitlyIntable,
     Indexer,
     Intable,
     Movable,
@@ -133,11 +134,19 @@ struct Bool(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias MIN = Bool(False)
+    comptime MIN = Bool(False)
     """The minimum value of a Bool."""
 
-    alias MAX = Bool(True)
+    comptime MAX = Bool(True)
     """The maximum value of a Bool."""
+
+    # ===-------------------------------------------------------------------===#
+    # Trivial bits for special functions.
+    # ===-------------------------------------------------------------------===#
+
+    comptime __del__is_trivial: Bool = True
+    comptime __moveinit__is_trivial: Bool = True
+    comptime __copyinit__is_trivial: Bool = True
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -160,7 +169,7 @@ struct Bool(
         self._mlir_value = value
 
     @doc_private
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __init__(out self, *, mlir_value: __mlir_type.`!pop.scalar<bool>`):
         """Construct a Bool value given a `!pop.scalar<bool>` value.
 
@@ -207,7 +216,7 @@ struct Bool(
 
     @always_inline("nodebug")
     @implicit
-    fn __init__(out self, value: SIMD[DType.bool, 1]):
+    fn __init__(out self, value: Scalar[DType.bool]):
         """Convert a scalar SIMD value to a Bool.
 
         Args:
@@ -299,7 +308,7 @@ struct Bool(
         return self.__int__()
 
     @always_inline("builtin")
-    fn __index__(self) -> __mlir_type.index:
+    fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:
@@ -536,6 +545,9 @@ struct Bool(
 
         Returns:
             A PythonObject representing the value.
+
+        Raises:
+            If the Python runtime is not initialized or conversion fails.
         """
         return PythonObject(self)
 
@@ -558,41 +570,25 @@ struct Bool(
 # ===----------------------------------------------------------------------=== #
 
 
-# TODO: Combine these into Iterators over Boolable elements
-
-
-fn any[T: Boolable & Copyable & Movable, //](list: List[T, *_]) -> Bool:
-    """Checks if **any** element in the list is truthy.
+fn any[
+    IterableType: Iterable
+](iterable: IterableType) -> Bool where conforms_to(
+    IterableType.IteratorType[origin_of(iterable)].Element, Boolable
+):
+    """Checks if **all** elements in the list are truthy.
 
     Parameters:
-        T: The type of elements to check.
+        IterableType: The type of the iterable containing `Boolable` items.
 
     Args:
-        list: The list to check.
+        iterable: The iterable to check.
 
     Returns:
         `True` if **any** element in the list is truthy, `False` otherwise.
     """
-    for item in list:
-        if item:
-            return True
-    return False
 
-
-fn any[T: Boolable & KeyElement, //](set: Set[T]) -> Bool:
-    """Checks if **any** element in the set is truthy.
-
-    Parameters:
-        T: The type of elements to check.
-
-    Args:
-        set: The set to check.
-
-    Returns:
-        `True` if **any** element in the set is truthy, `False` otherwise.
-    """
-    for item in set:
-        if item:
+    for item in iterable:
+        if trait_downcast[Boolable](item):
             return True
     return False
 
@@ -615,41 +611,24 @@ fn any(value: SIMD) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-# TODO: Combine these into Iterators over Boolable elements
-
-
-fn all[T: Boolable & Copyable & Movable, //](list: List[T, *_]) -> Bool:
+fn all[
+    IterableType: Iterable
+](iterable: IterableType) -> Bool where conforms_to(
+    IterableType.IteratorType[origin_of(iterable)].Element, Boolable
+):
     """Checks if **all** elements in the list are truthy.
 
     Parameters:
-        T: The type of elements to check.
+        IterableType: The type of the iterable containing `Boolable` items.
 
     Args:
-        list: The list to check.
+        iterable: The iterable to check.
 
     Returns:
-        `True` if **all** elements in the list are truthy, `False` otherwise.
+        `True` if **all** elements in the iterable are truthy, `False` otherwise.
     """
-    for item in list:
-        if not item:
-            return False
-    return True
-
-
-fn all[T: Boolable & KeyElement, //](set: Set[T]) -> Bool:
-    """Checks if **all** elements in the set are truthy.
-
-    Parameters:
-        T: The type of elements to check.
-
-    Args:
-        set: The set to check.
-
-    Returns:
-        `True` if **all** elements in the set are truthy, `False` otherwise.
-    """
-    for item in set:
-        if not item:
+    for item in iterable:
+        if not trait_downcast[Boolable](item):
             return False
     return True
 

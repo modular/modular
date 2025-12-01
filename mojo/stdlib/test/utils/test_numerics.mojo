@@ -13,7 +13,13 @@
 
 from sys.info import CompilationTarget, is_64bit
 
-from testing import assert_almost_equal, assert_equal, assert_false, assert_true
+from testing import (
+    TestSuite,
+    assert_almost_equal,
+    assert_equal,
+    assert_false,
+    assert_true,
+)
 
 from utils.numerics import (
     FPUtils,
@@ -37,7 +43,7 @@ def test_FPUtils():
     assert_equal(FPUtils[DType.float32].mantissa_width(), 23)
     assert_equal(FPUtils[DType.float32].exponent_bias(), 127)
 
-    alias FPU64 = FPUtils[DType.float64]
+    comptime FPU64 = FPUtils[DType.float64]
 
     assert_equal(FPU64.mantissa_width(), 52)
     assert_equal(FPU64.exponent_bias(), 1023)
@@ -77,12 +83,9 @@ def test_get_accum_type():
 def test_isfinite():
     assert_true(isfinite(Float32(33)))
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        assert_false(isfinite(inf[DType.bfloat16]()))
-        assert_false(isfinite(neg_inf[DType.bfloat16]()))
-        assert_false(isfinite(nan[DType.bfloat16]()))
+    assert_false(isfinite(inf[DType.bfloat16]()))
+    assert_false(isfinite(neg_inf[DType.bfloat16]()))
+    assert_false(isfinite(nan[DType.bfloat16]()))
 
     assert_false(isfinite(inf[DType.float16]()))
     assert_false(isfinite(inf[DType.float32]()))
@@ -98,12 +101,9 @@ def test_isfinite():
 def test_isinf():
     assert_false(isinf(Float32(33)))
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        assert_true(isinf(inf[DType.bfloat16]()))
-        assert_true(isinf(neg_inf[DType.bfloat16]()))
-        assert_false(isinf(nan[DType.bfloat16]()))
+    assert_true(isinf(inf[DType.bfloat16]()))
+    assert_true(isinf(neg_inf[DType.bfloat16]()))
+    assert_false(isinf(nan[DType.bfloat16]()))
 
     assert_true(isinf(inf[DType.float16]()))
     assert_true(isinf(inf[DType.float32]()))
@@ -119,12 +119,9 @@ def test_isinf():
 def test_isnan():
     assert_false(isnan(Float32(33)))
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        assert_false(isnan(inf[DType.bfloat16]()))
-        assert_false(isnan(neg_inf[DType.bfloat16]()))
-        assert_true(isnan(nan[DType.bfloat16]()))
+    assert_false(isnan(inf[DType.bfloat16]()))
+    assert_false(isnan(neg_inf[DType.bfloat16]()))
+    assert_true(isnan(nan[DType.bfloat16]()))
 
     assert_false(isnan(inf[DType.float16]()))
     assert_false(isnan(inf[DType.float32]()))
@@ -166,7 +163,8 @@ def test_max_finite():
     assert_true(overflow_int[DType.uint32]())
     assert_true(overflow_int[DType.int64]())
     assert_true(overflow_int[DType.uint64]())
-    assert_true(overflow_int[DType.index]())
+    assert_true(overflow_int[DType.int]())
+    assert_true(overflow_int[DType.uint]())
 
     assert_true(overflow_fp[DType.float32]())
     assert_true(overflow_fp[DType.float64]())
@@ -197,9 +195,11 @@ def test_max_finite():
 
     @parameter
     if is_64bit():
-        assert_equal(max_finite[DType.index](), 9223372036854775807)
+        assert_equal(max_finite[DType.int](), 9223372036854775807)
+        assert_equal(max_finite[DType.uint](), 18446744073709551615)
     else:
-        assert_equal(max_finite[DType.index](), 2147483647)
+        assert_equal(max_finite[DType.int](), 2147483647)
+        assert_equal(max_finite[DType.uint](), 4294967295)
 
 
 fn underflow_int[dtype: DType]() -> Bool:
@@ -231,7 +231,8 @@ def test_min_finite():
     assert_true(underflow_int[DType.uint32]())
     assert_true(underflow_int[DType.int64]())
     assert_true(underflow_int[DType.uint64]())
-    assert_true(underflow_int[DType.index]())
+    assert_true(underflow_int[DType.int]())
+    assert_true(underflow_int[DType.uint]())
 
     assert_true(underflow_fp[DType.float32]())
     assert_true(underflow_fp[DType.float64]())
@@ -251,9 +252,11 @@ def test_min_finite():
 
     @parameter
     if is_64bit():
-        assert_equal(min_finite[DType.index](), -9223372036854775808)
+        assert_equal(min_finite[DType.int](), -9223372036854775808)
+        assert_equal(min_finite[DType.uint](), 0)
     else:
-        assert_equal(min_finite[DType.index](), -2147483648)
+        assert_equal(min_finite[DType.int](), -2147483648)
+        assert_equal(min_finite[DType.uint](), 0)
 
 
 def test_max_or_inf():
@@ -317,14 +320,4 @@ def test_nextafter():
 
 
 def main():
-    test_FPUtils()
-    test_get_accum_type()
-    test_isfinite()
-    test_isinf()
-    test_isnan()
-    test_max_finite()
-    test_max_or_inf()
-    test_min_finite()
-    test_min_or_neg_inf()
-    test_neg_inf()
-    test_nextafter()
+    TestSuite.discover_tests[__functions_in_module()]().run()

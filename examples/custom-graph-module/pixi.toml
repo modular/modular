@@ -1,4 +1,4 @@
-[project]
+[workspace]
 authors = ["Modular <hello@modular.com>"]
 channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
 name = "custom-graph-module"

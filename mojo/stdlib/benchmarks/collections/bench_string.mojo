@@ -109,7 +109,7 @@ fn bench_string_split[
     @always_inline
     @parameter
     fn call_fn() raises:
-        var res: List[__type_of(items)]
+        var res: List[type_of(items)]
 
         @parameter
         if sequence:
@@ -362,21 +362,21 @@ fn bench_string_write[short: Bool](mut b: Bencher) raises:
 def main():
     seed()
     var m = Bench(BenchConfig(num_repetitions=1))
-    alias filenames = (
+    comptime filenames = (
         StaticString("UN_charter_EN"),
         StaticString("UN_charter_ES"),
         StaticString("UN_charter_AR"),
         StaticString("UN_charter_RU"),
         StaticString("UN_charter_zh-CN"),
     )
-    alias old_chars = (
+    comptime old_chars = (
         StaticString("a"),
         StaticString("ó"),
         StaticString("ل"),
         StaticString("и"),
         StaticString("一"),
     )
-    alias new_chars = (
+    comptime new_chars = (
         StaticString("A"),
         StaticString("Ó"),
         StaticString("ل"),
@@ -384,7 +384,7 @@ def main():
         StaticString("一"),
     )
 
-    alias lengths = (10, 30, 50, 100, 1000, 10_000, 100_000, 1_000_000)
+    comptime lengths = (10, 30, 50, 100, 1000, 10_000, 100_000, 1_000_000)
     """At an average 5 letters per word and 300 words per page
     (in the English language):
 
@@ -408,14 +408,14 @@ def main():
 
     @parameter
     for i in range(len(lengths)):
-        alias length = lengths[i]
+        comptime length = lengths[i]
 
         @parameter
         for j in range(len(filenames)):
-            alias fname = filenames[j]
-            alias old = StaticString(old_chars[j])
-            alias new = new_chars[j]
-            alias suffix = String("[", length, "]")  # "(" + fname + ")"
+            comptime fname = filenames[j]
+            comptime old = StaticString(old_chars[j])
+            comptime new = new_chars[j]
+            comptime suffix = String("[", length, "]")  # "(" + fname + ")"
             m.bench_function[bench_string_count[length, fname, old]](
                 BenchId(String("bench_string_count", suffix))
             )

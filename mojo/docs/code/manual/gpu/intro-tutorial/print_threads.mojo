@@ -11,9 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from sys import has_accelerator, has_apple_gpu_accelerator
+
 from gpu.host import DeviceContext
-from gpu.id import block_idx, thread_idx
-from sys import has_accelerator
+from gpu import block_idx, thread_idx
 
 
 fn print_threads():
@@ -36,9 +37,14 @@ def main():
     @parameter
     if not has_accelerator():
         print("No compatible GPU found")
+    elif has_apple_gpu_accelerator():
+        print(
+            "Printing from a kernel is not currently supported on Apple silicon"
+            " GPUs"
+        )
     else:
         ctx = DeviceContext()
-        ctx.enqueue_function[print_threads](
+        ctx.enqueue_function_checked[print_threads, print_threads](
             grid_dim=(2, 2, 1), block_dim=(16, 4, 2)
         )
         ctx.synchronize()

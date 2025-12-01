@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
-from gpu.id import block_idx
-from linalg.matmul_tile_scheduler import TileScheduler
+from gpu import block_idx
+from linalg.matmul.gpu.tile_scheduler import TileScheduler
 
 from utils.index import Index
 
@@ -52,7 +52,7 @@ fn test_kernel():
 # CHECK-DAG: 2 (12, 8, 0, 5, False)
 # CHECK-DAG: 3 (12, 12, 0, 5, False)
 def test(ctx: DeviceContext):
-    alias kernel = test_kernel
+    comptime kernel = test_kernel
 
     ctx.enqueue_function_checked[kernel, kernel](
         grid_dim=(4),

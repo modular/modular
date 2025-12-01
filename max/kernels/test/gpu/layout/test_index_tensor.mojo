@@ -16,6 +16,7 @@ from random import random_ui64
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
+from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.index_tensor import _index_tensor_impl
 from testing import assert_equal, assert_true
 
@@ -59,10 +60,28 @@ def execute_index_tensor_test[
     ctx.enqueue_copy(indices_device.buffer, indices_host.tensor.data)
 
     # execute the kernel
+    comptime data_dyn_layout = Layout.row_major[data_device.rank]()
+    comptime indices_dyn_layout = Layout.row_major[indices_device.rank]()
+    comptime output_dyn_layout = Layout.row_major[actual_output_device.rank]()
     _index_tensor_impl[batch_dims, target="gpu"](
-        data_device.tensor.make_dims_unknown(),
-        indices_device.tensor.make_dims_unknown(),
-        actual_output_device.tensor.make_dims_unknown(),
+        LayoutTensor[data_device.dtype, data_dyn_layout](
+            data_device.to_layout_tensor().ptr,
+            RuntimeLayout[data_dyn_layout].row_major(
+                data_device.to_layout_tensor().runtime_layout.shape.value.canonicalize()
+            ),
+        ),
+        LayoutTensor[indices_device.dtype, indices_dyn_layout](
+            indices_device.to_layout_tensor().ptr,
+            RuntimeLayout[indices_dyn_layout].row_major(
+                indices_device.to_layout_tensor().runtime_layout.shape.value.canonicalize()
+            ),
+        ),
+        LayoutTensor[actual_output_device.dtype, output_dyn_layout](
+            actual_output_device.to_layout_tensor().ptr,
+            RuntimeLayout[output_dyn_layout].row_major(
+                actual_output_device.to_layout_tensor().runtime_layout.shape.value.canonicalize()
+            ),
+        ),
         ctx,
     )
 
@@ -91,17 +110,17 @@ def execute_index_tensor_test[
 fn test_index_tensor_DLRM(ctx: DeviceContext) raises:
     print("== test_index_tensor_DLRM")
 
-    alias input_type = DType.int32
-    alias dim_0 = 4096
-    alias dim_1 = 9
-    alias dim_2 = 9
+    comptime input_type = DType.int32
+    comptime dim_0 = 4096
+    comptime dim_1 = 9
+    comptime dim_2 = 9
 
-    alias batch_dims = 1
-    alias index_len = 45
+    comptime batch_dims = 1
+    comptime index_len = 45
 
-    alias input_rank = 3
-    alias indices_rank = 2
-    alias output_rank = 2
+    comptime input_rank = 3
+    comptime indices_rank = 2
+    comptime output_rank = 2
 
     # dim_0 x dim_1 x dim_2 input tensor.
     var input = HostNDBuffer[
@@ -148,19 +167,19 @@ fn test_index_tensor_DLRM(ctx: DeviceContext) raises:
 fn test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
     print("== test_index_tensor_DLRM_batch")
 
-    alias input_type = DType.int32
+    comptime input_type = DType.int32
 
-    alias dim_0 = 2
-    alias dim_1 = 2
-    alias dim_2 = 3
-    alias dim_3 = 4
+    comptime dim_0 = 2
+    comptime dim_1 = 2
+    comptime dim_2 = 3
+    comptime dim_3 = 4
 
-    alias batch_dims = 2
-    alias index_len = 5
+    comptime batch_dims = 2
+    comptime index_len = 5
 
-    alias input_rank = 4
-    alias indices_rank = 2
-    alias output_rank = 3
+    comptime input_rank = 4
+    comptime indices_rank = 2
+    comptime output_rank = 3
 
     # dim_0 x dim_1 x dim_2 x dim_3 input tensor.
     var input = HostNDBuffer[

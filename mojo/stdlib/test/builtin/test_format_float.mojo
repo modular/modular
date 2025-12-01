@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from builtin._format_float import _write_float
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 
 def test_float64():
@@ -189,5 +189,4 @@ def test_float32():
 
 
 def main():
-    test_float64()
-    test_float32()
+    TestSuite.discover_tests[__functions_in_module()]().run()

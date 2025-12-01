@@ -29,8 +29,9 @@ from runtime.asyncrt import parallelism_level
 fn parallel_memcpy[
     dtype: DType
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    src: UnsafePointer[Scalar[dtype]],
+    *,
+    dest: UnsafePointer[mut=True, Scalar[dtype]],
+    src: UnsafePointer[mut=False, Scalar[dtype]],
     count: Int,
     count_per_task: Int,
     num_tasks: Int,
@@ -63,7 +64,7 @@ fn parallel_memcpy[
         if to_copy <= 0:
             return
 
-        memcpy(dest.offset(begin), src.offset(begin), to_copy)
+        memcpy(dest=dest.offset(begin), src=src.offset(begin), count=to_copy)
 
     sync_parallelize[_parallel_copy](num_tasks)
 
@@ -71,8 +72,9 @@ fn parallel_memcpy[
 fn parallel_memcpy[
     dtype: DType,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    src: UnsafePointer[Scalar[dtype]],
+    *,
+    dest: UnsafePointer[mut=True, Scalar[dtype]],
+    src: UnsafePointer[mut=False, Scalar[dtype]],
     count: Int,
 ):
     """Copies `count` elements from a memory buffer `src` to `dest` in parallel.
@@ -87,22 +89,22 @@ fn parallel_memcpy[
     """
 
     # TODO: Find a heuristic to replace the magic number.
-    alias min_work_per_task = 1024
-    alias min_work_for_parallel = 4 * min_work_per_task
+    comptime min_work_per_task = 1024
+    comptime min_work_for_parallel = 4 * min_work_per_task
 
     # If number of elements to be copied is less than minimum preset (4048),
     # then use default memcpy.
     if count < min_work_for_parallel:
-        memcpy(dest, src, count)
+        memcpy(dest=dest, src=src, count=count)
     else:
         var work_units = ceildiv(count, min_work_per_task)
         var num_tasks = min(work_units, parallelism_level())
         var work_block_size = ceildiv(work_units, num_tasks)
 
         parallel_memcpy(
-            dest,
-            src,
-            count,
-            work_block_size * min_work_per_task,
-            num_tasks,
+            dest=dest,
+            src=src,
+            count=count,
+            count_per_task=work_block_size * min_work_per_task,
+            num_tasks=num_tasks,
         )

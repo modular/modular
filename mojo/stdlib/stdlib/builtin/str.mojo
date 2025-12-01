@@ -101,7 +101,7 @@ trait StringableRaising:
     `String`:
 
     ```mojo
-    fn main() raises:
+    def main():
         var foo = Foo("test")
         print(String(foo) == "test")
     ```

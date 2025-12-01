@@ -14,6 +14,13 @@
     new data types through the stack and developing math approximations
     optimized for the reduced precision format.
 
+- [Element-wise Operations on GPUs](elementwise-ops.md)
+
+    This document analyzes element-wise GPU operations performance across
+    different NVIDIA accelerators (A100, A10, L4), examining memory bandwidth
+    limitations, cache effects, vectorization strategies, and implementation
+    optimizations for operations like memcpy in CUDA and Mojo.
+
 - [GenAI and Paged Attention](genai-paged-attention.md)
 
     This document explains PagedAttention, a memory management
@@ -21,6 +28,27 @@
     pages and enables prefix sharing between sequences with common
     prompts, resulting in improved memory efficiency and faster
     time-to-first-token performance.
+
+- [Matrix Multiplication on Blackwell Part
+  1—Introduction](matmul-on-blackwell-part-1.md)
+
+    This document introduces matrix multiplication fundamentals for LLMs,
+    explains GPU architecture evolution from Ampere through Blackwell, and
+    implements a basic 4-line matmul kernel achieving 5 TFLOPs performance.
+
+- [Matrix Multiplication on Blackwell: Part 2—Using Hardware Features to
+  Optimize Matmul](matmul-on-blackwell-part-2.md)
+    This document demonstrates optimization techniques including TMA async
+    loading, tensor cores, shared memory tiling, and swizzling to achieve 58x
+    performance improvement over the naive implementation, reaching 293 TFLOPs.
+
+- [Matrix Multiplication on Blackwell: Part 3-The Optimizations Behind 85% of
+  SOTA Performance](matmul-on-blackwell-part-3.md)
+
+    This document implements advanced optimizations using 2SM MMA instructions,
+    CTA memory multicasting, warp specialization, and pipelined
+    double-buffering to achieve 85% of state-of-the-art performance at 1,493
+    TFLOPs.
 
 - [Matrix Multiplication to Flash Attention](matmul-to-flash-attention.md)
 
@@ -66,3 +94,10 @@
     greedy sampling, top-k, top-p, and min-p sampling that control the
     randomness and diversity of text generation by determining how the
     next token is selected from probability distributions.
+
+- [WGMMA Programming](wgmma-programming.md)
+
+    This document explains the WGMMA (Warp Group MMA) tensor core instruction
+    introduced in Hopper H100 GPUs, covering its advantages over regular MMA
+    instructions, memory layout requirements for matrices in shared memory, and
+    providing a complete CUDA implementation example.

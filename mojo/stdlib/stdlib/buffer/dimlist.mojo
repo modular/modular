@@ -19,8 +19,11 @@ You can import these APIs from the `buffer` package. For example:
 from buffer import Dim
 ```
 """
-from utils import IndexList, StaticTuple
+from math import CeilDivable, ceildiv
+
 from builtin.variadics import Variadic
+
+from utils import IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # Dim
@@ -29,8 +32,9 @@ from builtin.variadics import Variadic
 
 @register_passable("trivial")
 struct Dim(
+    CeilDivable,
     Defaultable,
-    EqualityComparable,
+    Equatable,
     ImplicitlyBoolable,
     Indexer,
     Intable,
@@ -44,26 +48,13 @@ struct Dim(
     present, the dimension is dynamic.
     """
 
-    alias _sentinel = -31337
+    comptime _sentinel = -31337
     """The sentinel value to use if the dimension is dynamic.  This value was
     chosen to be a visible-in-the-debugger sentinel.  We can't use Int.MIN
     because that value is target-dependent and won't fold in parameters."""
 
     var _value_or_missing: Int
     """The dimension value to use or `_sentinel` if the dimension is dynamic."""
-
-    @always_inline("nodebug")
-    @implicit
-    fn __init__[I: Intable](out self, value: I):
-        """Creates a statically-known dimension.
-
-        Parameters:
-            I: The Intable type.
-
-        Args:
-            value: The static dimension value.
-        """
-        self._value_or_missing = Int(value)
 
     @always_inline("nodebug")
     @implicit
@@ -77,15 +68,6 @@ struct Dim(
             value: The static dimension value.
         """
         self = Dim(index(value))
-
-    @always_inline("builtin")
-    fn __init__(out self, value: __mlir_type.index):
-        """Creates a statically-known dimension.
-
-        Args:
-            value: The static dimension value.
-        """
-        self._value_or_missing = Int(mlir_value=value)
 
     @always_inline("builtin")
     @implicit
@@ -163,7 +145,7 @@ struct Dim(
         return self.get() % alignment == 0
 
     @always_inline("nodebug")
-    fn __index__(self) -> __mlir_type.index:
+    fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:
@@ -186,6 +168,22 @@ struct Dim(
         if not self or not rhs:
             return Dim()
         return Dim(self.get() * rhs.get())
+
+    @always_inline("nodebug")
+    fn __ceildiv__(self, rhs: Dim) -> Dim:
+        """Return the rounded-up result of dividing self by denominator dimension.
+
+        If either are unknown, the result is unknown as well.
+
+        Args:
+            rhs: The denominator dimension.
+
+        Returns:
+            The rounded-up result of dividing self by denominator dimension.
+        """
+        if self and rhs:
+            return Dim(ceildiv(self.get(), rhs.get()))
+        return Dim()
 
     @always_inline("nodebug")
     fn __imul__(mut self, rhs: Dim):
@@ -306,19 +304,19 @@ struct DimList(Representable, Sized, Stringable, Writable):
 
     @always_inline("nodebug")
     @implicit
-    fn __init__[Intable: Intable](out self, value: Intable):
+    fn __init__[T: Indexer](out self, value: T):
         """Creates a dimension list from the given list of values.
 
         Parameters:
-            Intable: A type able to be converted to an `Int`.
+            T: A type able to be converted to an index integer.
 
         Args:
             value: The initial dim values list.
         """
-        self.value = VariadicList[Dim](Int(value))
+        self.value = VariadicList[Dim](Int(index(value)))
 
     @always_inline("nodebug")
-    fn __init__[I: Indexer & Copyable & Movable](out self, values: (I,)):
+    fn __init__[I: Indexer & Copyable & Movable](out self, values: Tuple[I]):
         """Creates a dimension list from the given list of values.
 
         Parameters:
@@ -333,7 +331,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
     fn __init__[
         I0: Indexer & Copyable & Movable,
         I1: Indexer & Copyable & Movable,
-    ](out self, values: (I0, I1)):
+    ](out self, values: Tuple[I0, I1]):
         """Creates a dimension list from the given list of values.
 
         Parameters:
@@ -350,7 +348,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
         I0: Indexer & Copyable & Movable,
         I1: Indexer & Copyable & Movable,
         I2: Indexer & Copyable & Movable,
-    ](out self, values: (I0, I1, I2)):
+    ](out self, values: Tuple[I0, I1, I2]):
         """Creates a dimension list from the given list of values.
 
         Parameters:
@@ -725,7 +723,7 @@ fn _make_tuple[
     for idx in range(size):
         tup = tup._replace[idx](result._int_type(values.at[idx]().get()))
 
-    return __type_of(result)(tup)
+    return {tup}
 
 
 @always_inline
@@ -756,4 +754,4 @@ fn _make_partially_static_index_list[
                 result._int_type(static_list.at[idx]().get())
             )
 
-    return __type_of(result)(tup)
+    return {tup}

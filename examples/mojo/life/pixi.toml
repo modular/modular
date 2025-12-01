@@ -1,4 +1,4 @@
-[project]
+[workspace]
 authors = ["Modular <hello@modular.com>"]
 channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
 description = "Introduction to Mojo Tutorial: Conway's Game of Life"
@@ -17,4 +17,7 @@ lifev2 = "mojo run lifev2.mojo"
 lifev3 = "mojo run lifev3.mojo"
 main = "mojo run benchmark.mojo"
 benchmark = "mojo run benchmark.mojo"
-test = "mojo test -I . test"
+test_gridv1 = "mojo run -I . test/test_gridv1.mojo"
+test_gridv2 = "mojo run -I . test/test_gridv2.mojo"
+test_gridv3 = "mojo run -I . test/test_gridv3.mojo"
+test = { depends-on = ["test_gridv1", "test_gridv2", "test_gridv3"] }

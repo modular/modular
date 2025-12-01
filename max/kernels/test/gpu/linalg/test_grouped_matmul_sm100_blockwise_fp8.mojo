@@ -13,35 +13,32 @@
 
 from collections import OptionalReg
 from hashlib import default_comp_time_hasher
-from buffer.dimlist import DimList, Dim
+from sys import align_of, size_of
+
+from linalg.matmul.gpu.sm100.config import MatmulConfig
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
-from linalg.grouped_matmul_sm100_blockwise_fp8 import (
-    grouped_matmul_sm100_blockwise_scaled_fp8,
-)
-from linalg.matmul_sm100_blockwise_fp8 import matmul_sm100_blockwise_scaled_fp8
-from sys import size_of
+from buffer.dimlist import Dim, DimList
 from gpu.host import DeviceContext
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg import vendor_blas
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from utils.index import Index, IndexList
-from linalg.fp8_quantization import (
-    naive_blockwise_scaled_fp8_matmul,
-    naive_blockwise_scaled_fp8_grouped_matmul,
-)
-from internal_utils._measure import relative_difference
+from gpu.host.nvidia.tma import TensorMapSwizzle
 
 # Additional imports for testing
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    random,
-    zero,
-)
-from testing import assert_almost_equal
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random, zero
+from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
+from linalg.grouped_matmul_sm100_blockwise_fp8 import (
+    grouped_matmul_sm100_blockwise_scaled_fp8,
+    grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
+)
+from linalg.matmul.gpu.sm100.blockwise_fp8 import (
+    matmul_sm100_blockwise_scaled_fp8,
+)
 from linalg.utils import elementwise_epilogue_type
-from sys import align_of
+from testing import assert_almost_equal
+
+from utils.index import Index, IndexList
 
 
 def test_grouped_matmul_sm100_blockwise_scaled_fp8[
@@ -57,17 +54,17 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     expert_ids_list: List[Int],
     ctx: DeviceContext,
 ):
-    alias BLOCK_SCALE_K = 128
-    alias block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
-    alias transpose_b = True
+    comptime BLOCK_SCALE_K = 128
+    comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
+    comptime transpose_b = True
 
-    alias a_type = in_type
-    alias b_type = in_type
-    alias c_type = out_type
+    comptime a_type = in_type
+    comptime b_type = in_type
+    comptime c_type = out_type
 
-    alias N = expert_shape[0]
-    alias K = expert_shape[1]
-    alias swizzle = TensorMapSwizzle.SWIZZLE_128B
+    comptime N = expert_shape[0]
+    comptime K = expert_shape[1]
+    comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
 
     total_num_tokens = 0
     max_num_tokens_by_expert = 0
@@ -82,10 +79,10 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     )
 
     # Create host A C buffers
-    alias static_a_shape = DimList(Dim(), K)
+    comptime static_a_shape = DimList(Dim(), K)
     var dynamic_a_shape = DimList(total_num_tokens, K)
     var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    alias static_c_shape = DimList(Dim(), N)
+    comptime static_c_shape = DimList(Dim(), N)
     var dynamic_c_shape = DimList(total_num_tokens, N)
     var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
     var c_host_ref = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
@@ -94,7 +91,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     )
 
     # Create host B buffers
-    alias static_b_shape = DimList(num_experts, N, K)
+    comptime static_b_shape = DimList(num_experts, N, K)
     var b_host = HostNDBuffer[b_type, 3, static_b_shape](static_b_shape)
     var expert_ids_host = HostNDBuffer[DType.int32, 1](num_active_experts)
 
@@ -132,9 +129,9 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         "K must be divisible by BLOCK_SCALE_K",
     )
 
-    alias static_a_scales_shape = DimList(K // BLOCK_SCALE_K, Dim())
+    comptime static_a_scales_shape = DimList(K // BLOCK_SCALE_K, Dim())
     var dynamic_a_scales_shape = DimList(K // BLOCK_SCALE_K, total_num_tokens)
-    alias static_b_scales_shape = DimList(
+    comptime static_b_scales_shape = DimList(
         num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
 
@@ -221,14 +218,15 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         BLOCK_DIM_M=16,
         BLOCK_DIM_N=16,
         transpose_b=transpose_b,
+        scales_granularity_mnk = Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
     ](
         c_ref,
         a,
         b,
-        a_offsets,
-        expert_ids,
         a_scales,
         b_scales,
+        a_offsets,
+        expert_ids,
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,
@@ -236,12 +234,17 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
 
     ctx.synchronize()
 
-    grouped_matmul_sm100_blockwise_scaled_fp8[
-        transpose_b=transpose_b,
-        umma_shape=umma_shape,
-        block_tile_shape=block_tile_shape,
-        a_swizzle=swizzle,
-        b_swizzle=swizzle,
+    comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        cluster_shape=Index(1, 1, 1),
+        mma_shape=umma_shape,
+        cta_group=1,
+        AB_swapped=False,
+        k_group_size=1,
+    )
+
+    # grouped_matmul_sm100_blockwise_scaled_fp8[
+    grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
+        config=config,
         elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
             epilogue_fn
         ) if use_epilogue else None,
@@ -249,10 +252,10 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         c,
         a,
         b,
-        a_offsets,
-        expert_ids,
         a_scales,
         b_scales,
+        a_offsets,
+        expert_ids,
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,
@@ -312,28 +315,44 @@ def main():
             num_experts=1,
             expert_shape = Index(256, 256),
             use_epilogue=True,
-        ](1, List[Int](128), List[Int](0), ctx)
+        ](1, [128], [0], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=1,
             expert_shape = Index(512, 1024),
-        ](1, List[Int](256), List[Int](0), ctx)
+        ](1, [256], [0], ctx)
+
+        # Simple expert routing
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            num_experts=4,
+            expert_shape = Index(512, 1024),
+        ](1, List[Int](256), List[Int](2), ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(768, 1024),
-        ](2, List[Int](128, 256), List[Int](0, 2), ctx)
+            expert_shape = Index(4096, 7168),
+        ](2, [128, 256], [0, 2], ctx)
+
+        # Unaligned grouped matmul
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            num_experts=4,
+            expert_shape = Index(512, 1024),
+        ](2, List[Int](20, 40), List[Int](0, 2), ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=6,
-            expert_shape = Index(1280, 1024),
-        ](4, List[Int](20, 1500, 300, 28), List[Int](0, 3, 2, 4), ctx)
+            expert_shape = Index(7168, 2048),
+        ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
@@ -341,4 +360,47 @@ def main():
             num_experts=6,
             expert_shape = Index(1280, 1024),
             use_epilogue=True,
-        ](4, List[Int](20, 1500, 300, 28), List[Int](0, 3, 2, 4), ctx)
+        ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
+
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float32,
+            num_experts=4,
+            expert_shape = Index(512, 1024),
+        ](2, List[Int](20, 40), List[Int](0, 2), ctx)
+
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float32,
+            num_experts=1,
+            expert_shape = Index(512, 1024),
+        ](1, List[Int](512), List[Int](0), ctx)
+
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float32,
+            num_experts=6,
+            expert_shape = Index(7168, 2048),
+        ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
+
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float32,
+            num_experts=6,
+            expert_shape = Index(1280, 1024),
+            use_epilogue=True,
+        ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
+
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            num_experts=4,
+            expert_shape = Index(4096, 7168),
+        ](2, [8, 64], [0, 2], ctx)
+
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            num_experts=6,
+            expert_shape = Index(7168, 2048),
+        ](4, [20, 4, 4, 40], [0, 3, 2, 4], ctx)

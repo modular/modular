@@ -107,11 +107,23 @@ trait Quackable:
 
 A trait looks a lot like a struct, except it's introduced by the `trait`
 keyword. Note that the `quack()` method signature is followed three dots
-(`...`), which indicates it isn't implemented. This is a *required method*
-that must be implemented by any conforming struct.
+(`...`). This indicates it isn't implemented within the trait. In this
+example, `quack` is a *required method* and must be implemented by
+any conforming struct.
 
-A trait can also supply a default implementations for a required method, so
-that conforming structs don't need to implement it. For more information, see
+A trait can supply a default implementation so conforming structs
+don’t need to implement the method themselves. You can provide a full
+implementation or use the `pass` keyword. Using `pass` creates a
+no-op method that does nothing. In your conforming struct, you
+can chose to override this default implementation:
+
+```mojo
+trait Quackable:
+    fn quack(self):
+        pass
+```
+
+For more information, see
 [Default method implementations](#default-method-implementations).
 
 A trait can also include associated aliases—compile-time constant values that
@@ -244,11 +256,11 @@ default implementations listed as *provided methods*.
 
 
 The
-[`EqualityComparable`](/mojo/stdlib/builtin/equality_comparable/EqualityComparable/)
+[`Equatable`](/mojo/stdlib/builtin/equality_comparable/Equatable/)
 trait is a good example of the use case for default implementations. The trait
 includes two methods: `__eq__()` (corresponding to the `==` operator) and
 `__ne__()` (corresponding to the `!=` operator). Every type that conforms to
-`EqualityComparable` needs to define the `__eq__()` method for itself, but the
+`Equatable` needs to define the `__eq__()` method for itself, but the
 trait supplies a default implementation for `__ne__()`. Given an `__eq__()`
 method, the definition of `__ne__()` is trivial for most types:
 
@@ -597,38 +609,6 @@ String: Dog(Rex, 5)
 Representation: Dog(name='Rex', age=5)
 ```
 
-### Special lifecycle traits: `Copyable`, `Movable`, and `ExplicitlyCopyable`
-
-The three traits [`Copyable`](/mojo/stdlib/builtin/value/Copyable/),
-[`Movable`](/mojo/stdlib/builtin/value/Movable/), and
-[`ExplicitlyCopyable`](/mojo/stdlib/builtin/value/ExplicitlyCopyable/) are
-special traits in that the Mojo compiler can supply default implementations for
-the required methods if the struct doesn't define them itself.
-
-The `Copyable` trait describes a type that can be implicitly copied, using a
-[copy constructor](/mojo/manual/lifecycle/life#copy-constructor).
-
-The `Movable` trait defines a type that can be moved using a
-[move constructor](/mojo/manual/lifecycle/life#copy-constructor).
-
-The `ExplicitlyCopyable` trait defines a type that can be explicitly copied by
-calling its `copy()` method. If the type is already `Copyable`, this trait
-provides a default implementation for `copy()`. If the type is **not**
-`Copyable`, you need to implement the `copy()` method yourself. For more
-information, see
-[Explicitly copyable types](/mojo/manual/lifecycle/life#explicitly-copyable-types).
-
-:::note
-
-If your type contains any fields that aren't copyable, Mojo will not generate
-the copy constructor because it cannot copy those fields. In this case, you
-need to define a custom copy constructor if you want the type to be copyable.
-
-Further, if any of the fields are neither copyable nor movable, Mojo won't
-generate a move constructor for that type.
-
-:::
-
 ### The `AnyType` trait
 
 When building a generic container type, one challenge is knowing how to dispose
@@ -670,10 +650,10 @@ needs to copy a value, the compiler needs to verify that the type can be copied.
 
 The [`List`](/mojo/stdlib/collections/list) type is an example of a
 generic container. A single `List` can only hold a single type of data.
-The list elments must conform to the `Copyable` and `Movable` traits:
+The list elements must conform to the `Copyable` and `Movable` traits:
 
 ```mojo
-struct List[T: Copyable & Movable, hint_trivial_type: Bool = False]:
+struct List[T: Copyable & Movable]:
 ```
 
 For example, you can create a list of integer values like this:
@@ -720,7 +700,7 @@ struct Doublespeak(Repeater):
     alias count: Int = 2
 
 struct Multispeak[verbosity: Int](Repeater):
-    alias count: Int = verbosity*2+1
+    alias count: Int = Self.verbosity * 2 + 1
 ```
 
 The `Doublespeak` struct has a constant value for the alias, but the `Multispeak`
@@ -759,7 +739,7 @@ underlying storage:
 ```mojo
 struct MyStack[type: Copyable & Movable](Stacklike):
     """A simple Stack built using a List."""
-    alias EltType = type
+    alias EltType = Self.type
     alias list_type = List[Self.EltType]
 
     var list: Self.list_type

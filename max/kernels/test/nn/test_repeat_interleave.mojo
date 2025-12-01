@@ -45,8 +45,8 @@ fn test_repeat_interleave_1d() raises:
     # CHECK-LABEL: test_repeat_interleave_1d
     print("test_repeat_interleave_1d")
 
-    alias rank = 1
-    alias type = DType.float32
+    comptime rank = 1
+    comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
     var input = LayoutTensor[
@@ -60,9 +60,9 @@ fn test_repeat_interleave_1d() raises:
     input[3] = 3
 
     # rank_repeats is always 1
-    alias rank_repeats = 1
+    comptime rank_repeats = 1
     # type_repeats is always DType.int64
-    alias type_repeats = DType.int64
+    comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 4](uninitialized=True)
     var repeats = LayoutTensor[
@@ -95,8 +95,8 @@ fn test_repeat_interleave_1d_broadcast_repeats() raises:
     # CHECK-LABEL: test_repeat_interleave_1d_broadcast_repeats
     print("test_repeat_interleave_1d_broadcast_repeats")
 
-    alias rank = 1
-    alias type = DType.float32
+    comptime rank = 1
+    comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
     var input = LayoutTensor[
@@ -110,9 +110,9 @@ fn test_repeat_interleave_1d_broadcast_repeats() raises:
     input[3] = 3
 
     # rank_repeats is always 1
-    alias rank_repeats = 1
+    comptime rank_repeats = 1
     # type_repeats is always DType.int64
-    alias type_repeats = DType.int64
+    comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 1](uninitialized=True)
     var repeats = LayoutTensor[
@@ -141,8 +141,8 @@ fn test_repeat_interleave_2d_axis_0() raises:
     # CHECK-LABEL: test_repeat_interleave_2d_axis_0
     print("test_repeat_interleave_2d_axis_0")
 
-    alias rank = 2
-    alias type = DType.float32
+    comptime rank = 2
+    comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
     var input = LayoutTensor[
@@ -156,9 +156,9 @@ fn test_repeat_interleave_2d_axis_0() raises:
     input[1, 1] = 3
 
     # rank_repeats is always 1
-    alias rank_repeats = 1
+    comptime rank_repeats = 1
     # type_repeats is always DType.int64
-    alias type_repeats = DType.int64
+    comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 4](uninitialized=True)
     var repeats = LayoutTensor[
@@ -195,8 +195,8 @@ fn test_repeat_interleave_2d_axis_1() raises:
     # CHECK-LABEL: test_repeat_interleave_2d_axis_1
     print("test_repeat_interleave_2d_axis_1")
 
-    alias rank = 2
-    alias type = DType.float32
+    comptime rank = 2
+    comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
     var input = LayoutTensor[
@@ -210,9 +210,9 @@ fn test_repeat_interleave_2d_axis_1() raises:
     input[1, 1] = 3
 
     # rank_repeats is always 1
-    alias rank_repeats = 1
+    comptime rank_repeats = 1
     # type_repeats is always DType.int64
-    alias type_repeats = DType.int64
+    comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
     var repeats = LayoutTensor[
@@ -246,8 +246,8 @@ fn test_repeat_interleave_3d() raises:
     # CHECK-LABEL: test_repeat_interleave_3d
     print("test_repeat_interleave_3d")
 
-    alias rank = 3
-    alias type = DType.float32
+    comptime rank = 3
+    comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 8](uninitialized=True)
     var input = LayoutTensor[
@@ -266,9 +266,9 @@ fn test_repeat_interleave_3d() raises:
     input[1, 1, 1] = 7
 
     # rank_repeats is always 1
-    alias rank_repeats = 1
+    comptime rank_repeats = 1
     # type_repeats is always DType.int64
-    alias type_repeats = DType.int64
+    comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
     var repeats = LayoutTensor[
@@ -311,7 +311,7 @@ fn test_repeat_interleave_3d() raises:
     print()
 
 
-fn main() raises:
+def main():
     test_collapse_dims_around_axis()
     test_repeat_interleave_1d()
     test_repeat_interleave_1d_broadcast_repeats()

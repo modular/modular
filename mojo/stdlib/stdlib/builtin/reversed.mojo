@@ -19,7 +19,6 @@ from collections import Deque
 from collections.deque import _DequeIter
 from collections.dict import _DictEntryIter, _DictKeyIter, _DictValueIter
 from collections.list import _ListIter
-
 from hashlib import Hasher
 
 from memory.span import Span, _SpanIter
@@ -83,9 +82,7 @@ fn reversed[T: ReversibleRange](value: T) -> _StridedRange:
 
 fn reversed[
     T: Copyable & Movable
-](ref value: List[T, *_]) -> _ListIter[
-    T, __type_of(value).hint_trivial_type, __origin_of(value), False
-]:
+](ref value: List[T, *_]) -> _ListIter[T, origin_of(value), False]:
     """Get a reversed iterator of the input list.
 
     **Note**: iterators are currently non-raising.
@@ -104,7 +101,7 @@ fn reversed[
 
 fn reversed[
     T: Copyable & Movable
-](ref value: Deque[T]) -> _DequeIter[T, __origin_of(value), False]:
+](ref value: Deque[T]) -> _DequeIter[T, origin_of(value), False]:
     """Get a reversed iterator of the deque.
 
     **Note**: iterators are currently non-raising.
@@ -125,11 +122,7 @@ fn reversed[
     K: KeyElement,
     V: Copyable & Movable,
     H: Hasher,
-](
-    ref value: Dict[K, V, H],
-) -> _DictKeyIter[
-    K, V, H, __origin_of(value), False
-]:
+](ref value: Dict[K, V, H],) -> _DictKeyIter[K, V, H, origin_of(value), False]:
     """Get a reversed iterator of the input dict.
 
     **Note**: iterators are currently non-raising.

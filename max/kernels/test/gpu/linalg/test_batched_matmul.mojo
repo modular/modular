@@ -12,28 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from buffer import DimList, NDBuffer
-from gpu.host import DeviceContext
-from linalg.bmm import _batched_matmul_gpu
-from linalg import vendor_blas
-from utils import Index, IndexList
-from internal_utils._utils import ValOrDim, dynamic, static
+from sys import has_nvidia_gpu_accelerator, simd_width_of
+
+import linalg.matmul.vendor.blas as vendor_blas
 from algorithm.functional import elementwise
-from sys import simd_width_of
+from buffer import DimList, NDBuffer
+from gpu.host import DeviceContext, get_gpu_target
+from internal_utils import HostNDBuffer, random, zero
+from internal_utils._utils import ValOrDim, dynamic, static
+from linalg.bmm import _batched_matmul_gpu
 from testing import assert_almost_equal
-from gpu.host import get_gpu_target
-from sys import has_nvidia_gpu_accelerator
 
+from utils import Index, IndexList
 
-from internal_utils import (
-    HostNDBuffer,
-    random,
-    zero,
-)
-
-alias epilogue_func_type = fn[dtype: DType, width: Int, *, alignment: Int = 1] (
-    SIMD[dtype, width]
-) capturing -> SIMD[dtype, width]
+comptime epilogue_func_type = fn[
+    dtype: DType, width: Int, *, alignment: Int = 1
+] (SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
 @always_inline
@@ -67,17 +61,17 @@ fn test[
     var B = b.value
     print(B, "x", M, "x", N, "x", K, "transpose_b", transpose_b)
 
-    alias batch_static_a_shape = DimList(b.dim, m.dim, k.dim)
-    alias batch_static_b_shape = DimList(
+    comptime batch_static_a_shape = DimList(b.dim, m.dim, k.dim)
+    comptime batch_static_b_shape = DimList(
         b.dim, n.dim, k.dim
     ) if transpose_b else DimList(b.dim, k.dim, n.dim)
-    alias batch_static_c_shape = DimList(b.dim, m.dim, n.dim)
+    comptime batch_static_c_shape = DimList(b.dim, m.dim, n.dim)
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+    comptime static_a_shape = DimList(m.dim, k.dim)
+    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    alias static_c_shape = DimList(m.dim, n.dim)
+    comptime static_c_shape = DimList(m.dim, n.dim)
 
     var batch_dynamic_a_shape = IndexList[3](b.value, m.value, k.value)
     var batch_dynamic_b_shape = IndexList[3](
@@ -119,18 +113,18 @@ fn test[
         c_host_ref.tensor.num_elements()
     )
 
-    var a_device = NDBuffer[
-        dtype, 3, MutableAnyOrigin, batch_static_a_shape, _
-    ](a_device_buffer._unsafe_ptr(), batch_dynamic_a_shape)
-    var b_device = NDBuffer[
-        dtype, 3, MutableAnyOrigin, batch_static_b_shape, _
-    ](b_device_buffer._unsafe_ptr(), batch_dynamic_b_shape)
-    var c_device = NDBuffer[
-        dtype, 3, MutableAnyOrigin, batch_static_c_shape, _
-    ](c_device_buffer._unsafe_ptr(), batch_dynamic_c_shape)
+    var a_device = NDBuffer[dtype, 3, MutAnyOrigin, batch_static_a_shape, _](
+        a_device_buffer.unsafe_ptr(), batch_dynamic_a_shape
+    )
+    var b_device = NDBuffer[dtype, 3, MutAnyOrigin, batch_static_b_shape, _](
+        b_device_buffer.unsafe_ptr(), batch_dynamic_b_shape
+    )
+    var c_device = NDBuffer[dtype, 3, MutAnyOrigin, batch_static_c_shape, _](
+        c_device_buffer.unsafe_ptr(), batch_dynamic_c_shape
+    )
     var c_device_ref = NDBuffer[
-        dtype, 3, MutableAnyOrigin, batch_static_c_shape, _
-    ](c_device_ref_buffer._unsafe_ptr(), batch_dynamic_c_shape)
+        dtype, 3, MutAnyOrigin, batch_static_c_shape, _
+    ](c_device_ref_buffer.unsafe_ptr(), batch_dynamic_c_shape)
 
     random(a_host.tensor)
     random(b_host.tensor)
@@ -154,7 +148,7 @@ fn test[
         *,
         alignment: Int = 1,
     ](idx: IndexList[rank], val: SIMD[dtype, width],) capturing -> None:
-        alias func = lambda_fn.value()
+        comptime func = lambda_fn.value()
         var update_val = func(val)
         c_device.store(
             Index(idx[0], idx[1], idx[2]), update_val.cast[c_device.type]()
@@ -172,6 +166,13 @@ fn test[
         )
 
     ctx.synchronize()
+
+    # Skip equality check if N or K are 0 (causes error in vendor_blas).
+    if N == 0 or K == 0:
+        return
+    if not has_nvidia_gpu_accelerator() and M == 0:
+        # AMD doesn't support matmul with M=0
+        return
 
     for i in range(B):
         var c_ptr = c_device_ref.data + (i * M * N)
@@ -199,7 +200,7 @@ fn test[
 
     ctx.synchronize()
 
-    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
     @always_inline
     @__copy_capture(c_device_ref, B, M, N)
@@ -209,7 +210,7 @@ fn test[
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[3]](idx0)
         var val = c_device_ref.load[width=simd_width](idx)
-        alias element_lambda = lambda_fn.value()
+        comptime element_lambda = lambda_fn.value()
         var update_val = element_lambda(val)
 
         c_device_ref.store(
@@ -251,6 +252,27 @@ fn test[
 
 def main():
     with DeviceContext() as ctx:
+        # Test zero-dimension edge cases
+        test[
+            DType.bfloat16,
+            transpose_b=False,
+        ](ctx, dynamic(0), dynamic(2), dynamic(2), dynamic(2))
+
+        test[
+            DType.bfloat16,
+            transpose_b=False,
+        ](ctx, dynamic(2), dynamic(0), dynamic(2), dynamic(2))
+
+        test[
+            DType.bfloat16,
+            transpose_b=False,
+        ](ctx, dynamic(2), dynamic(2), dynamic(0), dynamic(2))
+
+        test[
+            DType.bfloat16,
+            transpose_b=False,
+        ](ctx, dynamic(2), dynamic(2), dynamic(2), dynamic(0))
+
         # tests naive kernels
         test[
             DType.bfloat16,

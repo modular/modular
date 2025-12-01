@@ -13,10 +13,12 @@
 
 from sys import align_of
 
+import linalg.matmul.vendor.blas as vendor_blas
+from buffer import NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, thread_idx
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu import block_idx, thread_idx
 from gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
@@ -25,18 +27,14 @@ from gpu.memory import (
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
-from layout.layout_tensor import (
-    cp_async_k_major,
-    cp_async_mn_major,
-)
+from layout.layout_tensor import cp_async_k_major, cp_async_mn_major
 from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core_async import (
     TensorCoreAsync,
     tile_layout_mn_major,
-    wgmma_c_layout,
     warpgroup_fence,
+    wgmma_c_layout,
 )
-from linalg import vendor_blas
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
@@ -56,38 +54,38 @@ fn cpasync_wgmma_kernel[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    num_iters: UInt,
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    num_iters: Int,
 ):
     """Test k_major @ mn_major with cp.async to simulate the 2nd matmul in mha.
     """
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
 
-    alias a_smem_layout = Layout.row_major(BM, BK)
+    comptime a_smem_layout = Layout.row_major(BM, BK)
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
-    alias b_smem_layout = Layout.row_major(
+    comptime b_smem_layout = Layout.row_major(
         BN, BK
     ) if transpose_b else tile_layout_mn_major[b_type, BN, BK, b_swizzle]()
     var b_smem_tile = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
-    alias accum_type = get_accum_type[a_type]()
+    comptime accum_type = get_accum_type[a_type]()
     wgmma_op = TensorCoreAsync[
         accum_type,
         a_type,
@@ -98,27 +96,27 @@ fn cpasync_wgmma_kernel[
         transpose_b=transpose_b,
     ]()
 
-    alias num_m_mmas = BM // wgmma_shape[0]
-    alias num_n_mmas = BN // wgmma_shape[1]
+    comptime num_m_mmas = BM // wgmma_shape[0]
+    comptime num_n_mmas = BN // wgmma_shape[1]
 
-    a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](block_idx.y, 0)
+    a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](Int(block_idx.y), 0)
 
-    alias b_dim0 = BN if transpose_b else BK
-    alias b_dim1 = BK if transpose_b else BN
-    alias b_tile_axis = 1 if transpose_b else 0
+    comptime b_dim0 = BN if transpose_b else BK
+    comptime b_dim1 = BK if transpose_b else BN
+    comptime b_tile_axis = 1 if transpose_b else 0
     var b_tile_coords = (block_idx.x, UInt(0)) if transpose_b else (
         UInt(0),
         block_idx.y,
     )
     var b_gmem_iter = b.tiled_iterator[b_dim0, b_dim1, axis=b_tile_axis](
-        b_tile_coords[0], b_tile_coords[1]
+        Int(b_tile_coords[0]), Int(b_tile_coords[1])
     )
 
-    alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
+    comptime c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
     var c_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
@@ -149,31 +147,31 @@ fn cpasync_wgmma_kernel[
         a_gmem_iter._incr()
         b_gmem_iter._incr()
 
-    c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
-    alias c_layouts = wgmma_c_layout[
+    c_gmem_tile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    comptime c_layouts = wgmma_c_layout[
         wgmma_shape[0], wgmma_shape[1], c_gmem_tile.layout
     ]()
-    alias tv_tile_to_idx_const = c_layouts[2]
-    alias tv_to_idx = tv_tile_to_idx_const[0]
-    alias tile_to_idx = tv_tile_to_idx_const[1]
-    alias t_to_idx_const = tv_to_idx[0]
-    alias v_to_idx = tv_to_idx[1]
+    comptime tv_tile_to_idx_const = c_layouts[2]
+    comptime tv_to_idx = tv_tile_to_idx_const[0]
+    comptime tile_to_idx = tv_tile_to_idx_const[1]
+    comptime t_to_idx_const = tv_to_idx[0]
+    comptime v_to_idx = tv_to_idx[1]
     t_to_idx = RuntimeLayout[t_to_idx_const]()
-    t_idx = t_to_idx(thread_idx.x)
+    t_idx = t_to_idx(Int(thread_idx.x))
 
     c_reg_tile_vec2 = c_reg_tile.vectorize[1, 2]()
-    alias T = c_reg_tile_vec2.element_type
+    comptime T = c_reg_tile_vec2.element_type
     c_gmem_ptr = c_gmem_tile.ptr.offset(t_idx)
 
     @parameter
     for mma_id in range(tile_to_idx.size()):
-        alias mma_idx = tile_to_idx(mma_id)
+        comptime mma_idx = tile_to_idx(mma_id)
 
         @parameter
         for local_idx_v2 in range(c_reg_tile_vec2.layout[1].size()):
-            alias local_idx = local_idx_v2 * 2
-            alias v_idx = v_to_idx(local_idx)
-            alias c_idx = v_idx + mma_idx
+            comptime local_idx = local_idx_v2 * 2
+            comptime v_idx = v_to_idx(local_idx)
+            comptime c_idx = v_idx + mma_idx
             casted_vec = c_reg_tile_vec2[mma_id, local_idx_v2].cast[c_type]()
             c_gmem_ptr.offset(c_idx).store[alignment = align_of[T]()](
                 casted_vec
@@ -191,13 +189,13 @@ def test_cpasync_wgmma[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](ctx: DeviceContext):
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
 
-    alias WGMMA_M = wgmma_shape[0]
-    alias WGMMA_N = wgmma_shape[1]
-    alias WGMMA_K = wgmma_shape[2]
+    comptime WGMMA_M = wgmma_shape[0]
+    comptime WGMMA_N = wgmma_shape[1]
+    comptime WGMMA_K = wgmma_shape[2]
 
     print(
         "wgmma_ss_bf16_bf16_f32 block tile "
@@ -212,9 +210,9 @@ def test_cpasync_wgmma[
         + String(b_swizzle)
     )
 
-    alias M = prob_shape[0]
-    alias N = prob_shape[1]
-    alias K = prob_shape[2]
+    comptime M = prob_shape[0]
+    comptime N = prob_shape[1]
+    comptime K = prob_shape[2]
 
     var a = ManagedLayoutTensor[
         a_type,
@@ -222,7 +220,7 @@ def test_cpasync_wgmma[
     ](ctx)
     arange(a.tensor[update=False]())
 
-    alias b_layout = Layout.row_major(
+    comptime b_layout = Layout.row_major(
         N, K
     ) if transpose_b else Layout.row_major(K, N)
     var b = ManagedLayoutTensor[b_type, b_layout](ctx)
@@ -238,12 +236,12 @@ def test_cpasync_wgmma[
         Layout.row_major(M, N),
     ](ctx)
 
-    alias kernel = cpasync_wgmma_kernel[
+    comptime kernel = cpasync_wgmma_kernel[
         a_type,
         b_type,
         c_type,
-        __type_of(a).layout,
-        __type_of(b).layout,
+        type_of(a).layout,
+        type_of(b).layout,
         Layout.row_major(M, N),
         block_tile_shape,
         wgmma_shape,
@@ -252,7 +250,7 @@ def test_cpasync_wgmma[
         b_swizzle=b_swizzle,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a.device_tensor(),
         b.device_tensor(),
         c.device_tensor(),
@@ -263,9 +261,13 @@ def test_cpasync_wgmma[
 
     vendor_blas.matmul(
         ctx,
-        c_ref.device_buffer(),
-        a.device_buffer[update=False](),
-        b.device_buffer[update=False](),
+        rebind[NDBuffer[c_type, 2, MutAnyOrigin]](c_ref.device_buffer()),
+        rebind[NDBuffer[a_type, 2, MutAnyOrigin]](
+            a.device_buffer[update=False]()
+        ),
+        rebind[NDBuffer[b_type, 2, MutAnyOrigin]](
+            b.device_buffer[update=False]()
+        ),
         c_row_major=True,
         transpose_b=transpose_b,
     )

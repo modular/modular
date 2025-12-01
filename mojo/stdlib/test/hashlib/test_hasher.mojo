@@ -11,11 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib.hasher import Hasher
 from hashlib._ahash import AHasher
+from hashlib.hasher import Hasher
+from memory import Span
 from pathlib import Path
 
 from testing import assert_equal
+from testing import TestSuite
 
 
 struct DummyHasher(Hasher):
@@ -24,14 +26,8 @@ struct DummyHasher(Hasher):
     fn __init__(out self):
         self._dummy_value = 0
 
-    fn _update_with_bytes(
-        mut self,
-        data: UnsafePointer[
-            UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
-        ],
-        length: Int,
-    ):
-        for i in range(length):
+    fn _update_with_bytes(mut self, data: Span[Byte, _]):
+        for i in range(len(data)):
             self._dummy_value += data[i].cast[DType.uint64]()
 
     fn _update_with_simd(mut self, value: SIMD[_, _]):
@@ -102,8 +98,7 @@ struct ComplexHashableStructWithList(Hashable):
         # This is okay because self is passed as read-only so the pointer will
         # be valid until at least the end of the function
         hasher._update_with_bytes(
-            data=self._value3.unsafe_ptr(),
-            length=len(self._value3),
+            Span(ptr=self._value3.unsafe_ptr(), length=len(self._value3))
         )
 
 
@@ -120,8 +115,7 @@ struct ComplexHashableStructWithListAndWideSIMD(Hashable):
         # This is okay because self is passed as read-only so the pointer will
         # be valid until at least the end of the function
         hasher._update_with_bytes(
-            data=self._value3.unsafe_ptr(),
-            length=len(self._value3),
+            Span(ptr=self._value3.unsafe_ptr(), length=len(self._value3))
         )
         hasher.update(self._value4)
 
@@ -129,27 +123,27 @@ struct ComplexHashableStructWithListAndWideSIMD(Hashable):
 def test_update_with_bytes():
     var hasher = DummyHasher()
     var hashable = ComplexHashableStructWithList(
-        SomeHashableStruct(42), SomeHashableStruct(10), List[UInt8](1, 2, 3)
+        SomeHashableStruct(42), SomeHashableStruct(10), [UInt8(1), 2, 3]
     )
     hasher.update(hashable)
     assert_equal(hasher^.finish(), 58)
 
 
-alias _hash_with_hasher = hash[
-    HasherType = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
+comptime _hash_with_hasher = hash[
+    _, HasherType = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
 ]
 
 
 def test_with_ahasher():
     var hashable1 = ComplexHashableStructWithList(
-        SomeHashableStruct(42), SomeHashableStruct(10), List[UInt8](1, 2, 3)
+        SomeHashableStruct(42), SomeHashableStruct(10), [UInt8(1), 2, 3]
     )
     var hash_value = _hash_with_hasher(hashable1)
     assert_equal(hash_value, 7948090191592501094)
     var hashable2 = ComplexHashableStructWithListAndWideSIMD(
         SomeHashableStruct(42),
         SomeHashableStruct(10),
-        List[UInt8](1, 2, 3),
+        [UInt8(1), 2, 3],
         SIMD[DType.uint32, 4](1, 2, 3, 4),
     )
     hash_value = _hash_with_hasher(hashable2)
@@ -171,10 +165,4 @@ def test_hash_hashable_with_hasher_types():
 
 
 def main():
-    test_hasher()
-    test_hash_with_hasher()
-    test_complex_hasher()
-    test_complex_hash_with_hasher()
-    test_update_with_bytes()
-    test_with_ahasher()
-    test_hash_hashable_with_hasher_types()
+    TestSuite.discover_tests[__functions_in_module()]().run()

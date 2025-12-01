@@ -14,11 +14,11 @@
 
 from algorithm import elementwise
 from layout import (
-    LayoutTensor,
+    UNKNOWN_VALUE,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from nn.slice import slice_dim_as_view
@@ -52,7 +52,7 @@ def test_slice_dim[
 ](dims: IndexList[outer_rank], start: Int, stop: Int, step: Int):
     var memory1 = InlineArray[Scalar[dtype], numelems](uninitialized=True)
     var in_tensor = LayoutTensor[dtype, Layout.row_major[outer_rank]()](
-        memory1.unsafe_ptr(),
+        memory1,
         RuntimeLayout[Layout.row_major[outer_rank]()].row_major(dims),
     )
 

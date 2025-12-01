@@ -15,9 +15,10 @@ from collections import Set
 
 from testing import assert_equal as AE
 from testing import assert_false, assert_raises, assert_true
+from testing import TestSuite
 
 
-fn assert_equal[T: EqualityComparable](lhs: T, rhs: T) raises:
+fn assert_equal[T: Equatable](lhs: T, rhs: T) raises:
     if not lhs == rhs:
         raise Error("AssertionError: values not equal, can't stringify :(")
 
@@ -217,8 +218,20 @@ def test_iter():
     sum = 0
     for e in {1, 2, 3}:
         sum += e
-
     assert_equal(sum, 6)
+
+    var my_set = {4, 5, 6}
+    var it = enumerate(my_set)
+    var elem = next(it)
+    assert_equal(elem[0], 0)
+    assert_equal(elem[1], 4)
+    elem = next(it)
+    assert_equal(elem[0], 1)
+    assert_equal(elem[1], 5)
+    elem = next(it)
+    assert_equal(elem[0], 2)
+    assert_equal(elem[1], 6)
+    assert_equal(it.__has_next__(), False)
 
 
 def test_add():
@@ -502,16 +515,6 @@ def test_set_str():
     AE(Set[Int]().__str__(), "{}")
 
 
-fn test[name: String, test_fn: fn () raises]() raises:
-    print("Test", name, "...", end="")
-    try:
-        _ = test_fn()
-    except e:
-        print("FAIL")
-        raise e
-    print("PASS")
-
-
 def test_set_comprehension():
     var s1 = {x * x for x in range(10) if x & 1}
     assert_equal(s1, {1, 9, 25, 49, 81})
@@ -532,30 +535,4 @@ def test_set_repr_wrap():
 
 
 def main():
-    test["test_set_construction", test_set_construction]()
-    test["test_set_move", test_set_move]()
-    test_set_move()
-    test["test_len", test_len]()
-    test["test_in", test_in]()
-    test["test_equal", test_equal]()
-    test["test_bool", test_bool]()
-    test["test_intersection", test_intersection]()
-    test["test_union", test_union]()
-    test["test_subtract", test_subtract]()
-    test["test_difference_update", test_difference_update]()
-    test["test_iter", test_iter]()
-    test["test_add", test_add]()
-    test["test_remove", test_remove]()
-    test["test_pop_insertion_order", test_pop_insertion_order]()
-    test["test_issubset", test_issubset]()
-    test["test_disjoint", test_disjoint]()
-    test["test_issuperset", test_issuperset]()
-    test["test_greaterthan", test_greaterthan]()
-    test["test_lessthan", test_lessthan]()
-    test["test_symmetric_difference", test_symmetric_difference]()
-    test["test_symmetric_difference_update", test_symmetric_difference_update]()
-    test["test_discard", test_discard]()
-    test["test_clear", test_clear]()
-    test["test_set_str", test_set_str]()
-    test["test_set_comprehension", test_set_comprehension]()
-    test["test_set_repr_wrapper", test_set_repr_wrap]()
+    TestSuite.discover_tests[__functions_in_module()]().run()

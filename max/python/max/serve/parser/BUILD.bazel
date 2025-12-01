@@ -1,0 +1,12 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "parser",
+    srcs = glob(["*.py"]),
+    imports = ["../../.."],
+    deps = [
+        "//max/python/max/serve/schemas",
+        "//max/python/max/support",
+        requirement("regex"),
+    ],
+)

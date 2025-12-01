@@ -55,7 +55,7 @@ trait Movable:
         """
         ...
 
-    alias __moveinit__is_trivial: Bool
+    comptime __moveinit__is_trivial: Bool
     """A flag (often compiler generated) to indicate whether the implementation
     of `__moveinit__` is trivial.
 
@@ -118,7 +118,7 @@ trait Copyable:
         """
         return Self.__copyinit__(self)
 
-    alias __copyinit__is_trivial: Bool
+    comptime __copyinit__is_trivial: Bool
     """A flag (often compiler generated) to indicate whether the implementation
     of `__copyinit__` is trivial.
 
@@ -134,6 +134,46 @@ trait Copyable:
 trait ImplicitlyCopyable(Copyable):
     """A marker trait to permit compiler to insert implicit calls to `__copyinit__`
     in order to make a copy of the object when needed.
+
+    Conforming a type to `ImplicitlyCopyable` gives the Mojo language permission
+    to implicitly insert a call to that types copy constructor whenever a borrowed
+    instance of the type is passed or assigned where an owned value is required.
+
+    Types that are expensive to copy, or where implicit copying could mask a
+    logic error, typically should not be `ImplicitlyCopyable`.
+
+    The `ImplicitlyCopyable` trait is a marker trait, meaning that it does not
+    require a type to provide any additional methods or associated aliases to
+    conform to this trait. However, all `ImplicitlyCopyable` types are required
+    to conform to `Copyable`, which ensures there is only one definition for the
+    logic of how a type is copied.
+
+    **Note:** `ImplicitlyCopyable` should only be used to mark structs that may
+    be copied implicitly. It should not be used as a trait bound
+    (`T: ImplicitlyCopyable`) on functions or types, except in special
+    circumstances. Generic code that may perform copies should always use the
+    more general `T: Copyable` bound. This ensures that generic code is usable
+    with all types that are copyable, regardless of whether they opt-in to
+    implicit copying.
+
+    ### Examples
+
+    A type can opt-in to implicit copying by conforming to `ImplicitlyCopyable`
+    (in the example below, the compiler also synthesizes a default field-wise
+    `__copyinit__()` implementation, as the user didn't provide a definition):
+
+    ```
+    @fieldwise_init
+    struct Point(ImplicitlyCopyable)
+        var x: Int
+        var y: Int
+
+    fn main():
+        var p = Point(5, 10)
+
+        # Perform an implicit copy of `p
+        var p2 = p
+    ```
     """
 
     pass
@@ -143,7 +183,22 @@ trait ImplicitlyCopyable(Copyable):
     "Use `Copyable` or `ImplicitlyCopyable` instead. `Copyable` on its own no"
     " longer implies implicit copyability."
 )
-alias ExplicitlyCopyable = Copyable
+comptime ExplicitlyCopyable = Copyable
+
+
+fn materialize[T: AnyType, //, value: T](out result: T):
+    """Explicitly materialize a compile-time parameter into a run-time value.
+
+    Parameters:
+        T: The type of the value to materialize.
+        value: The compile-time parameter value to materialize.
+
+    Returns:
+        The materialized run-time value.
+    """
+    __mlir_op.`lit.materialize_into`[value=value](
+        __get_mvalue_as_litref(result)
+    )
 
 
 trait Defaultable:

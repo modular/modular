@@ -13,30 +13,26 @@
 # RUN: env MODULAR_PROFILE_FILENAME="-" %mojo-no-debug %s | FileCheck %s
 
 
+from os import abort
+
 from runtime.asyncrt import create_task
 from runtime.tracing import Trace, TraceLevel
-
-from os import abort
 
 
 def test_tracing[level: TraceLevel, enabled: Bool]():
     @parameter
     async fn test_tracing_add[enabled: Bool, lhs: Int](rhs: Int) -> Int:
-        alias s1 = "ENABLED: trace event 2" if enabled else StaticString(
+        comptime s1 = "ENABLED: trace event 2" if enabled else StaticString(
             "DISABLED: trace event 2"
         )
-        alias s2 = "ENABLED: detail event 2" if enabled else String(
+        comptime s2 = "ENABLED: detail event 2" if enabled else String(
             "DISABLED: detail event 2"
         )
-        # TODO(MOCO-2403): Remove the use of an intermediate temporary.
-        var result = -1
         try:
             with Trace[level](s1, s2):
-                result = lhs + rhs
+                return lhs + rhs
         except e:
             return abort[Int](String(e))
-
-        return result
 
     @parameter
     async fn test_tracing_add_two_of_them[enabled: Bool](a: Int, b: Int) -> Int:
@@ -44,10 +40,10 @@ def test_tracing[level: TraceLevel, enabled: Bool]():
         var t1 = create_task(test_tracing_add[enabled, 2](b))
         return await t0 + await t1
 
-    alias s1 = "ENABLED: trace event 1" if enabled else StaticString(
+    comptime s1 = "ENABLED: trace event 1" if enabled else StaticString(
         "DISABLED: trace event 1"
     )
-    alias s2 = "ENABLED: detail event 1" if enabled else String(
+    comptime s2 = "ENABLED: detail event 1" if enabled else String(
         "DISABLED: detail event 1"
     )
     with Trace[level](s1, s2):

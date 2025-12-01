@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.param_env import env_get_string, is_defined
 from sys.info import _accelerator_arch
+from sys.param_env import env_get_string, is_defined
+
 from gpu.host import DeviceContext
 from gpu.host.info import GPUInfo
 
@@ -34,7 +35,7 @@ fn expect_eq[*Ts: Writable](val: Bool, expected: Bool, *messages: *Ts) raises:
 fn api() -> String:
     @parameter
     if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
-        alias api = env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
+        comptime api = env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
 
         @parameter
         if api == "gpu":

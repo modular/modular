@@ -6,7 +6,15 @@ mojo_library(
     name = "testdata",
     testonly = True,
     srcs = glob(["**/*.mojo"]),
+    validate_missing_docs = False,
     deps = [
         "@mojo//:stdlib",
     ],
+)
+
+# Export PTX files as filegroup
+filegroup(
+    name = "ptx_files",
+    srcs = glob(["*.ptx"]),
+    visibility = ["//visibility:public"],
 )

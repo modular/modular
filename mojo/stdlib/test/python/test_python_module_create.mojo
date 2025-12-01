@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from python import Python
+from testing import TestSuite
 
 
 def test_create_module():
@@ -25,4 +26,4 @@ def test_create_module():
 
 
 def main():
-    test_create_module()
+    TestSuite.discover_tests[__functions_in_module()]().run()

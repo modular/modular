@@ -36,6 +36,7 @@ from math import isclose
 from builtin._location import __call_location, _SourceLocation
 from memory import memcmp
 from python import PythonObject
+from utils._ansi import Color, Text
 
 # ===----------------------------------------------------------------------=== #
 # Assertions
@@ -43,8 +44,8 @@ from python import PythonObject
 
 
 @always_inline
-fn _assert_error[T: Writable](msg: T, loc: _SourceLocation) -> String:
-    return loc.prefix(String("AssertionError: ", msg))
+fn _assert_error[T: Writable](msg: T, loc: _SourceLocation) -> Error:
+    return Error(loc.prefix(String("AssertionError: ", msg)))
 
 
 @always_inline
@@ -101,7 +102,7 @@ fn assert_false[
 
 @always_inline
 fn assert_equal[
-    T: EqualityComparable & Stringable, //
+    T: Equatable & Stringable, //
 ](
     lhs: T,
     rhs: T,
@@ -135,35 +136,11 @@ fn assert_equal[
 
 # TODO: Remove the PythonObject, String and List overloads once we have
 # more powerful traits.
-@always_inline
-fn assert_equal(
-    lhs: String,
-    rhs: String,
-    msg: String = "",
-    *,
-    location: Optional[_SourceLocation] = None,
-) raises:
-    """Asserts that the input values are equal. If it is not then an Error
-    is raised.
-
-    Args:
-        lhs: The lhs of the equality.
-        rhs: The rhs of the equality.
-        msg: The message to be printed if the assertion fails.
-        location: The location of the error (defaults to `__call_location`).
-
-    Raises:
-        An Error with the provided message if assert fails and `None` otherwise.
-    """
-    if lhs != rhs:
-        raise _assert_cmp_error["`left == right` comparison"](
-            lhs, rhs, msg=msg, loc=location.or_else(__call_location())
-        )
 
 
 @always_inline
 fn assert_equal[
-    T: Copyable & Movable & EqualityComparable & Representable, //
+    T: Copyable & Movable & Equatable & Representable, //
 ](
     lhs: List[T],
     rhs: List[T],
@@ -195,7 +172,7 @@ fn assert_equal[
 
 
 # TODO(MSTDL-1071):
-#   Once Mojo supports parametric traits, implement EqualityComparable for
+#   Once Mojo supports parametric traits, implement Equatable for
 #   StringSlice such that string slices with different origin types can be
 #   compared, then drop this overload.
 @always_inline
@@ -238,39 +215,27 @@ fn assert_equal[
 
 
 @always_inline
-fn assert_equal[
-    O: ImmutableOrigin,
-](
-    lhs: StringSlice[O],
-    rhs: String,
+fn assert_equal(
+    lhs: StringSlice[mut=False],
+    rhs: StringSlice[mut=False],
     msg: String = "",
     *,
     location: Optional[_SourceLocation] = None,
 ) raises:
-    """Asserts that a `StringSlice` is equal to a `String`."""
+    """Asserts that a `StringSlice` is equal to a `String`.
+
+    Args:
+        lhs: The left-hand side value.
+        rhs: The right-hand side value.
+        msg: An optional custom error message.
+        location: The source location of the assertion (defaults to caller location).
+
+    Raises:
+        If the values are not equal.
+    """
     if lhs != rhs:
         raise _assert_cmp_error["`left == right` comparison"](
             lhs.__str__(),
-            rhs,
-            msg=msg,
-            loc=location.or_else(__call_location()),
-        )
-
-
-@always_inline
-fn assert_equal[
-    O: ImmutableOrigin,
-](
-    lhs: String,
-    rhs: StringSlice[O],
-    msg: String = "",
-    *,
-    location: Optional[_SourceLocation] = None,
-) raises:
-    """Asserts that a `String` is equal to a `StringSlice`."""
-    if lhs != rhs:
-        raise _assert_cmp_error["`left == right` comparison"](
-            lhs,
             rhs.__str__(),
             msg=msg,
             loc=location.or_else(__call_location()),
@@ -308,7 +273,7 @@ fn assert_equal_pyobj(
 
 @always_inline
 fn assert_not_equal[
-    T: EqualityComparable & Stringable, //
+    T: Equatable & Stringable, //
 ](
     lhs: T,
     rhs: T,
@@ -368,7 +333,7 @@ fn assert_not_equal(
 
 @always_inline
 fn assert_not_equal[
-    T: Copyable & Movable & EqualityComparable & Representable, //
+    T: Copyable & Movable & Equatable & Representable, //
 ](
     lhs: List[T],
     rhs: List[T],
@@ -529,10 +494,59 @@ fn assert_is_not[
         )
 
 
+fn _colorize_diff_string[color: Color](s: String, other: String) -> String:
+    """Colorizes a string by highlighting characters that differ from another string.
+
+    Parameters:
+        color: The color to use for highlighting differences.
+
+    Args:
+        s: The string to colorize.
+        other: The string to compare against.
+
+    Returns:
+        A string with differences highlighted in the specified color.
+    """
+    var result = String()
+    for i in range(len(s)):
+        var char = s[i]
+        if i < len(other) and char == other[i]:
+            # Characters match - no color
+            result += char
+        else:
+            # Character differs - apply color
+            result += String(Text[color](char))
+    return result
+
+
+fn _create_colored_diff(lhs: String, rhs: String) -> String:
+    """Creates a colored character-by-character diff of two strings.
+
+    Highlights differences in red for the left string and green for the right string.
+
+    Args:
+        lhs: The left-hand side string.
+        rhs: The right-hand side string.
+
+    Returns:
+        A string containing the colored diff output.
+    """
+    return String(
+        "\n   left: ",
+        _colorize_diff_string[Color.RED](lhs, rhs),
+        "\n  right: ",
+        _colorize_diff_string[Color.GREEN](rhs, lhs),
+    )
+
+
 fn _assert_cmp_error[
     cmp: String
-](lhs: String, rhs: String, *, msg: String, loc: _SourceLocation) -> String:
-    var err = cmp + " failed:\n   left: " + lhs + "\n  right: " + rhs
+](lhs: String, rhs: String, *, msg: String, loc: _SourceLocation) -> Error:
+    var err = cmp + " failed:"
+
+    # For string comparisons, show colored diff
+    err += _create_colored_diff(lhs, rhs)
+
     if msg:
         err += "\n  reason: " + msg
     return _assert_error(err, loc)

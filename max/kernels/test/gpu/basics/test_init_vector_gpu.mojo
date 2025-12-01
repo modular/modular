@@ -12,19 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from random import seed
+
+from buffer import DimList
 from gpu import *
 from gpu.host import DeviceContext
-from buffer import DimList
 from internal_utils import (
-    Timer,
-    initialize,
-    InitializationType,
     HostNDBuffer,
+    InitializationType,
+    Timer,
     init_vector_launch,
+    initialize,
 )
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
-
-from random import seed
 
 
 @no_inline
@@ -60,8 +61,8 @@ fn test_vec_init[
 
 
 def main():
-    alias block_dim = 256
-    alias dtype = DType.float32
+    comptime block_dim = 256
+    comptime dtype = DType.float32
     var length = 32 * 1024
     with DeviceContext() as ctx:
         test_vec_init[dtype, block_dim](

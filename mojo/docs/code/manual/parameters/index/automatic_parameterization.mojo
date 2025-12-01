@@ -29,9 +29,10 @@ fn on_type():
 fn on_instance():
     var x = SIMD[DType.int32, 2](4, 8)
     print(x.dtype)  # prints int32
+    _ = x
 
 
-fn interleave(v1: SIMD, v2: __type_of(v1)) -> SIMD[v1.dtype, v1.size * 2]:
+fn interleave(v1: SIMD, v2: type_of(v1)) -> SIMD[v1.dtype, v1.size * 2]:
     var result = SIMD[v1.dtype, v1.size * 2]()
 
     @parameter

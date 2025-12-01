@@ -143,90 +143,6 @@ fn relu_n1[
 
 
 # ===----------------------------------------------------------------------=== #
-# gelu
-# ===----------------------------------------------------------------------=== #
-
-
-@always_inline
-fn gelu[
-    dtype: DType, simd_width: Int
-](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    """Compute the GELU Op using the equation
-    $0.5 * x * (1 + erf(x / sqrt(2)))$.
-
-    Parameters:
-        dtype: DType used for the computation.
-        simd_width: SIMD width used for the computation.
-
-    Args:
-        x: The value to compute the GELU operation on.
-
-    Returns:
-        The result of the GELU operation.
-
-    Constraints:
-        Type must be a floating point dtype.
-    """
-    # Perform the intermediate computation in `accum_type` to match
-    # torch.nn.functional.gelu:
-    # https://github.com/pytorch/pytorch/blob/3054aae493a5347cf8187b5ce611b9a38aace202/aten/src/ATen/native/cuda/ActivationGeluKernel.cu#L21-L42
-    alias accum_type = get_accum_type[dtype]()
-    alias inv_SQRT_2 = 0.70710678118654752440
-    constrained[
-        dtype.is_floating_point(),
-        "dtype must be a floating point dtype",
-    ]()
-
-    var val = x.cast[accum_type]()
-    var val_half = 0.5 * val
-    var erf_res = math.erf(val * inv_SQRT_2)
-    return val_half.fma(erf_res, val_half).cast[dtype]()
-
-
-# ===----------------------------------------------------------------------=== #
-# gelu_approximate
-# ===----------------------------------------------------------------------=== #
-
-
-@always_inline
-fn gelu_approximate[
-    dtype: DType, simd_width: Int
-](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    """Compute the approximate GELU Op using the equation
-    $0.5 * x * (1 + tanh(sqrt(2 / pi) * (x + 0.044715 * x^3)))$.
-
-    Parameters:
-        dtype: The `DType` used for the computation.
-        simd_width: SIMD width used for the computation.
-
-    Args:
-        x: The value to compute the GELU operation on.
-
-    Constraints:
-        Type must be a floating point dtype.
-
-    Returns:
-        The result of the approximate GELU operation.
-    """
-    # Perform the intermediate computation in `accum_type` to match
-    # torch.nn.functional.gelu:
-    # https://github.com/pytorch/pytorch/blob/3054aae493a5347cf8187b5ce611b9a38aace202/aten/src/ATen/native/cuda/ActivationGeluKernel.cu#L21-L42
-    alias accum_type = get_accum_type[dtype]()
-    alias SQRT_TWO_OVER_PI = 0.797884560802865
-    constrained[
-        dtype.is_floating_point(),
-        "dtype must be a floating point dtype",
-    ]()
-
-    var val = x.cast[accum_type]()
-
-    var val3 = val * val * val
-    return (
-        0.5 * val * (1 + math.tanh(SQRT_TWO_OVER_PI * (val + 0.044715 * val3)))
-    ).cast[dtype]()
-
-
-# ===----------------------------------------------------------------------=== #
 # leaky_relu
 # ===----------------------------------------------------------------------=== #
 
@@ -234,7 +150,7 @@ fn gelu_approximate[
 @always_inline
 fn leaky_relu[
     dtype: DType, simd_width: Int
-](x: SIMD[dtype, simd_width], negative_slope: SIMD[dtype, 1]) -> SIMD[
+](x: SIMD[dtype, simd_width], negative_slope: Scalar[dtype]) -> SIMD[
     dtype, simd_width
 ]:
     """Compute the Leaky ReLU using the equation

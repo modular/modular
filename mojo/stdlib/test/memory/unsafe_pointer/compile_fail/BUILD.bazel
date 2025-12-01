@@ -1,0 +1,15 @@
+load("//bazel:api.bzl", "lit_tests")
+
+lit_tests(
+    name = "lit_tests",
+    size = "large",
+    srcs = glob(["*.mojo"]),
+    mojo_deps = [
+        "@mojo//:stdlib",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)

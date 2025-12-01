@@ -15,15 +15,17 @@ from math import exp2, iota
 
 from bit import prev_power_of_two
 
+from memory import LegacyOpaquePointer as OpaquePointer
 from utils.index import IndexList
+from builtin.device_passable import DevicePassable
 
 
 @register_passable("trivial")
-trait ScoreModTrait(Copyable):
+trait ScoreModTrait(Copyable, DevicePassable):
     """The ScoreMod trait desctribes score_mod for mha kernel like alibi bias.
     """
 
-    alias name_str: String
+    comptime name_str: String
 
     fn score_mod[
         dtype: DType, width: Int, //, *, element_type: DType = DType.int32
@@ -52,7 +54,19 @@ struct AlibiScoreMod[
     """AlibiScoreMod adds the appropriate ALiBi constant bias to attention score.
     """
 
-    alias name_str: String = "alibi"
+    comptime name_str: String = "alibi"
+    comptime device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "AlibiScoreMod"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn _generate_alibi_bias[
@@ -68,10 +82,10 @@ struct AlibiScoreMod[
         var scale: SIMD[dtype, width]
 
         @parameter
-        if num_heads.is_power_of_two():
-            scale = exp2(-((head_idx + 1).cast[dtype]() * 8.0 / num_heads))
+        if Self.num_heads.is_power_of_two():
+            scale = exp2(-((head_idx + 1).cast[dtype]() * 8.0 / Self.num_heads))
         else:
-            alias floor_power_of_2 = prev_power_of_two(num_heads)
+            comptime floor_power_of_2 = prev_power_of_two(Self.num_heads)
             if head_idx[0] < floor_power_of_2:
                 scale = exp2(
                     -((head_idx + 1).cast[dtype]() * 8.0 / floor_power_of_2)
@@ -102,7 +116,7 @@ struct AlibiScoreMod[
         # coord[1] is the head index.
         # coord[2] and coord[3] are the token index in query and key respectively.
 
-        alias coords_dtype = coord.element_type
+        comptime coords_dtype = coord.element_type
         var head_idx = SIMD[coords_dtype, width](coord[1])
         var q_idx = SIMD[coords_dtype, width](coord[2])
         var k_idx = SIMD[coords_dtype, width](coord[3])
@@ -127,7 +141,20 @@ struct AlibiScoreMod[
 struct IdentityScoreMod(ImplicitlyCopyable, Movable, ScoreModTrait):
     """IdentityScoreMod simply returns attention score."""
 
-    alias name_str: String = "no_pos"
+    comptime name_str: String = "no_pos"
+
+    comptime device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "IdentityScoreMod"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn score_mod[

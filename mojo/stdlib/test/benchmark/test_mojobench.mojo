@@ -23,6 +23,7 @@ from benchmark import (
     Format,
     ThroughputMeasure,
 )
+from testing import TestSuite
 
 
 @parameter
@@ -43,50 +44,62 @@ fn bench2(mut b: Bencher, mystr: String) raises:
     b.iter[to_bench]()
 
 
-def main():
+def test_mojobench():
     var m = Bench(BenchConfig(max_iters=10_000))
     m.bench_function[bench1](
         BenchId("bench1"),
-        ThroughputMeasure(BenchMetric.elements, 0),
-        ThroughputMeasure(BenchMetric.flops, 0),
+        [
+            ThroughputMeasure(BenchMetric.elements, 0),
+            ThroughputMeasure(BenchMetric.flops, 0),
+        ],
     )
 
     var inputs = List[String]()
     inputs.append("input1")
     inputs.append("input2")
-    for i in range(len(inputs)):
+    for i, input_val in enumerate(inputs):
         m.bench_with_input[String, bench2](
             BenchId("bench2", String(i)),
-            inputs[i],
-            ThroughputMeasure(BenchMetric.elements, len(inputs[i])),
-            ThroughputMeasure(BenchMetric.flops, len(inputs[i])),
+            input_val,
+            [
+                ThroughputMeasure(BenchMetric.elements, len(input_val)),
+                ThroughputMeasure(BenchMetric.flops, len(input_val)),
+            ],
         )
 
     m.config.verbose_timing = True
 
     # Check default print format
-    # CHECK: | name     | met (ms)
-    # CHECK: | -------- | -
-    # CHECK: | bench1   |
-    # CHECK: | bench2/0 |
-    # CHECK: | bench2/1 |
+    # CHECK: | name              | met (ms)
+    # CHECK: | ----------------- | -
+    # CHECK: | bench1            |
+    # CHECK: | bench2/input_id:0 |
+    # CHECK: | bench2/input_id:1 |
     print(m)
 
     # CHECK: name,met (ms),iters,throughput (GElems/s),Arithmetic (GFLOPS/s),min (ms),mean (ms),max (ms),duration (ms)
     # CHECK: "bench1",
-    # CHECK: "bench2/0",
-    # CHECK: "bench2/1",
+    # CHECK: "bench2/input_id:0",
+    # CHECK: "bench2/input_id:1",
     m.config.format = Format.csv
     print(m)
 
     # CHECK: bench1
     # CHECK-NEXT: bench1
-    # CHECK-NEXT: bench2/0
-    # CHECK-NEXT: bench2/0
-    # CHECK-NEXT: bench2/1
-    # CHECK-NEXT: bench2/1
+    # CHECK-NEXT: bench2/input_id:0
+    # CHECK-NEXT: bench2/input_id:0
+    # CHECK-NEXT: bench2/input_id:1
+    # CHECK-NEXT: bench2/input_id:1
     # CHECK-OUT: bench1
     m.config.format = Format.tabular
     m.dump_report()
 
     # CHECK-TEST-COUNT-1: hello
+
+
+def main():
+    # NOTE: we pass an empty list since the benchmark infra also tries to parse
+    # the arguments for its own purposes.
+    TestSuite.discover_tests[__functions_in_module()](
+        cli_args=List[StaticString]()
+    ).run()

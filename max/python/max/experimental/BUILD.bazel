@@ -1,0 +1,21 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "experimental",
+    srcs = [
+        "__init__.py",
+        "functional.py",
+        "random.py",
+        "tensor.py",
+    ],
+    imports = ["../.."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+        requirement("rich"),
+        requirement("typing-extensions"),
+    ],
+)

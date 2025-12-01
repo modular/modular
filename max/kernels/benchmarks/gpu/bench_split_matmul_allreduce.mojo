@@ -11,28 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import random
 from sys import env_get_bool, env_get_dtype, env_get_int, size_of
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import DimList, NDBuffer
+from comm.allreduce import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse
-import random
-from internal_utils._utils import (
-    ValOrDim,
-    dynamic,
-    initialize,
-    static,
-)
-from utils import IndexList, StaticTuple
-from comm.allreduce import (
-    MAX_GPUS,
-    Signal,
-)
-
+from internal_utils._utils import ValOrDim, dynamic, initialize, static
 from linalg.distributed_matmul import matmul_allreduce
 
-from utils import IndexList
+from memory import LegacyUnsafePointer as UnsafePointer
+from utils import IndexList, StaticTuple
 
 
 fn _get_run_name[
@@ -144,42 +135,42 @@ fn bench_matmul_all_reduce[
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
     # Create the list of NDBuffers.
-    alias A_static_shape = DimList(m.dim, k.dim)
-    alias B_static_shape = DimList(n.dim, k.dim)
-    alias C_static_shape = DimList(m.dim, n.dim)
+    comptime A_static_shape = DimList(m.dim, k.dim)
+    comptime B_static_shape = DimList(n.dim, k.dim)
+    comptime C_static_shape = DimList(m.dim, n.dim)
     var As = InlineArray[
-        NDBuffer[dtype, 2, MutableAnyOrigin, A_static_shape], ngpus
+        NDBuffer[dtype, 2, MutAnyOrigin, A_static_shape], ngpus
     ](fill={})
     var Bs = InlineArray[
-        NDBuffer[dtype, 2, MutableAnyOrigin, B_static_shape], ngpus
+        NDBuffer[dtype, 2, MutAnyOrigin, B_static_shape], ngpus
     ](fill={})
     var Cs = InlineArray[
-        NDBuffer[dtype, 2, MutableAnyOrigin, C_static_shape], ngpus
+        NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape], ngpus
     ](fill={})
     var out_bufs = InlineArray[
-        NDBuffer[dtype, 2, MutableAnyOrigin, C_static_shape], ngpus
+        NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape], ngpus
     ](fill={})
 
     # Setup the kernel NDBuffers
     @parameter
     for i in range(ngpus):
-        As[i] = NDBuffer[dtype, 2, MutableAnyOrigin, A_static_shape](
+        As[i] = NDBuffer[dtype, 2, MutAnyOrigin, A_static_shape](
             A_list[i].unsafe_ptr(), DimList(m.value, k.value)
         )
-        Bs[i] = NDBuffer[dtype, 2, MutableAnyOrigin, B_static_shape](
+        Bs[i] = NDBuffer[dtype, 2, MutAnyOrigin, B_static_shape](
             B_list[i].unsafe_ptr(), DimList(n.value, k.value)
         )
-        Cs[i] = NDBuffer[dtype, 2, MutableAnyOrigin, C_static_shape](
+        Cs[i] = NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape](
             C_list[i].unsafe_ptr(), DimList(m.value, n.value)
         )
-        out_bufs[i] = NDBuffer[dtype, 2, MutableAnyOrigin, C_static_shape](
+        out_bufs[i] = NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape](
             C_reduced_list[i].unsafe_ptr(), DimList(m.value, n.value)
         )
 
     # Copy-capture in registers since the lambda will be used on GPU.
-    var out_bufs_capture = StaticTuple[
-        NDBuffer[dtype, 2, MutableAnyOrigin], ngpus
-    ](NDBuffer[dtype, 2, MutableAnyOrigin]())
+    var out_bufs_capture = StaticTuple[NDBuffer[dtype, 2, MutAnyOrigin], ngpus](
+        NDBuffer[dtype, 2, MutAnyOrigin]()
+    )
 
     @parameter
     for i in range(ngpus):
@@ -230,6 +221,11 @@ fn bench_matmul_all_reduce[
 
         b.iter_custom_multicontext[kernel_launch](list_of_ctx)
 
+    var flops = ThroughputMeasure(
+        BenchMetric.flops,
+        (2 * m.value * m.value * k.value + m.value * m.value) * ngpus,
+    )
+
     b.bench_function[bench_func](
         BenchId(
             _get_run_name[
@@ -240,10 +236,7 @@ fn bench_matmul_all_reduce[
                 overlap_with_dpl,
             ](m, n, k)
         ),
-        ThroughputMeasure(
-            BenchMetric.flops,
-            (2 * m.value * m.value * k.value + m.value * m.value) * ngpus,
-        ),
+        [flops],
     )
 
     _ = signal_buffers^
@@ -253,16 +246,16 @@ fn bench_matmul_all_reduce[
     _ = C_reduced_list^
 
 
-fn main() raises:
-    alias dtype = env_get_dtype["dtype", DType.bfloat16]()
+def main():
+    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     var M = Int(arg_parse("M", 8192))
-    alias N = env_get_int["N", 8192]()
-    alias K = env_get_int["K", 2048]()
-    alias num_gpus = env_get_int["NUM_GPUS", 4]()
-    alias partition_dim = env_get_int["DIM", 1]()
-    alias num_partitions = env_get_int["PARTITIONS", 1]()
-    alias overlap_with_dpl = env_get_bool["OVERLAP", False]()
+    comptime N = env_get_int["N", 8192]()
+    comptime K = env_get_int["K", 2048]()
+    comptime num_gpus = env_get_int["NUM_GPUS", 4]()
+    comptime partition_dim = env_get_int["DIM", 1]()
+    comptime num_partitions = env_get_int["PARTITIONS", 1]()
+    comptime overlap_with_dpl = env_get_bool["OVERLAP", False]()
 
     var m = Bench()
 

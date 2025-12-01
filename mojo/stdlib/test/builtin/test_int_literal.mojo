@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 def test_add():
@@ -125,15 +125,4 @@ def test_shift():
 
 
 def main():
-    test_add()
-    test_sub()
-    test_ceil()
-    test_floor()
-    test_trunc()
-    test_floordiv()
-    test_mod()
-    test_abs()
-    test_indexer()
-    test_bool()
-    test_comparison()
-    test_shift()
+    TestSuite.discover_tests[__functions_in_module()]().run()
