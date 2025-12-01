@@ -36,7 +36,11 @@ from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
     fetch_image,
     process_vision_info,
 )
-from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
+from max.pipelines.lib import (
+    TextAndVisionTokenizer,
+    float32_to_bfloat16_as_uint16,
+    max_tokens_to_generate,
+)
 from max.pipelines.lib.config import PipelineConfig
 from max.support.image import find_contiguous_ranges
 from PIL import Image
@@ -46,46 +50,6 @@ from .context import Qwen2_5VLTextAndVisionContext, VisionEncodingData
 from .nn.data_processing import get_rope_index, mrope_pos_ids_3d
 
 logger = logging.getLogger("max.pipelines")
-
-
-# TODO: Make this a utility for vision models
-# Borrowed from internval/tokenizer.py
-def float32_to_bfloat16_as_uint16(
-    arr: npt.NDArray[np.float32],
-) -> npt.NDArray[np.uint16]:
-    """Convert float32 array to bfloat16 representation stored as uint16.
-
-    BFloat16 is the upper 16 bits of float32 with proper rounding.
-    This allows us to halve memory usage while maintaining the exponent range.
-
-    Args:
-        arr: Float32 numpy array
-
-    Returns:
-        Uint16 array containing bfloat16 bit representation with same shape
-    """
-    assert arr.dtype == np.float32, f"Expected float32, got {arr.dtype}"
-
-    # Flatten for processing.
-    original_shape = arr.shape
-    flat = arr.ravel()
-
-    # View as uint32 for bit manipulation.
-    uint32_view = flat.view(np.uint32)
-
-    # Round to nearest even.
-    round_bit = (uint32_view >> 16) & 1
-    lower_half = uint32_view & 0xFFFF
-    round_up = (lower_half > 0x8000) | (
-        (lower_half == 0x8000) & (round_bit == 1)
-    )
-    uint32_rounded = uint32_view + (round_up.astype(np.uint32) * 0x8000)
-
-    # Extract upper 16 bits as bfloat16.
-    bfloat16_bits = (uint32_rounded >> 16).astype(np.uint16)
-
-    # Restore original shape.
-    return bfloat16_bits.reshape(original_shape)
 
 
 def qwen2_5vl_image_preprocessing(

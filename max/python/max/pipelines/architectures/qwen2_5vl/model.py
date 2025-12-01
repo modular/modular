@@ -972,8 +972,6 @@ class Qwen2_5VLModel(
         # From here on, assume that all inputs are available in vision_data
         # due to context validators
         with Tracer("preparing_pixel_values"):
-            # pixel_values is a tuple of tensors, that is always length 1 with
-            # Qwen, so we can just take the first element.
             pixel_values_list = [
                 vision_data.concatenated_pixel_values
                 for vision_data in vision_datas
