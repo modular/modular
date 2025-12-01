@@ -917,7 +917,7 @@ parameters and returns a compile-time constant value:
 ```mojo
 alias AddOne[a: Int] : Int = a + 1
 
-alias nine = AddOne(8)
+alias nine = AddOne[8]
 ```
 
 As you can see in the previous example, a parametric alias is a little like a
