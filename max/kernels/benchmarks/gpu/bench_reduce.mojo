@@ -11,11 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import align_of, env_get_int, env_get_string, simd_width_of
+from math import align_up
+from sys import align_of, env_get_int, env_get_string, simd_width_of, size_of
 from sys.info import _TargetType
 
 from algorithm._gpu.reduction import reduce_launch
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from buffer import NDBuffer  # TODO(jtodd): use LayoutTensor
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext, get_gpu_target
 from internal_utils import (
@@ -45,37 +47,56 @@ fn run_reduce[
     dtype: DType,
     rank: Int,
     num_reductions: Int = 1,
+    cache_busting: Bool = True,
 ](mut m: Bench, shape: IndexList[rank], axis: Int, ctx: DeviceContext,) raises:
     print("run_reduce", shape)
 
     var out_shape = shape
     out_shape[axis] = 1
     comptime init: Scalar[dtype] = Scalar[dtype](0.0)
+    comptime align = align_of_simd[dtype, simd_target = get_gpu_target()]()
 
     var in_size = shape.flattened_length()
     var out_size = in_size // shape[axis]
 
-    comptime align = align_of_simd[dtype, simd_target = get_gpu_target()]()
+    # For cache busting: allocate buffers larger than 2x L2 cache.
+    # H100 has 50MB L2, MI300x has 256MB infinity cache.
+    # Use 128 MiB to exceed 2x H100 L2, and 512 MiB option for MI300x.
+    comptime MB_512 = 512 * 1024 * 1024
+    constrained[
+        MB_512 % align == 0,
+        (
+            "Cache busting allocation size must be a multiple of dtype SIMD"
+            " alignment."
+        ),
+    ]()
+
+    # Calculate total cache buffer sizes (in elements, not bytes)
+    var in_stride = align_up(in_size, align)
+    var in_cache_elems = (
+        align_up(MB_512, in_stride * size_of[dtype]()) // size_of[dtype]()
+    ) if cache_busting else in_size
+
+    # Allocate & initialize host data
     var expected_vals = UnsafePointer[Scalar[dtype]].alloc(
         out_size, alignment=align
     )
 
-    var in_host = UnsafePointer[Scalar[dtype]].alloc(in_size)
+    var in_host = UnsafePointer[Scalar[dtype]].alloc(in_cache_elems)
     var res_host = UnsafePointer[Scalar[dtype]].alloc(out_size)
 
-    for i in range(in_size):
+    for i in range(in_cache_elems):
         in_host[i] = 1
 
     # TODO: use reduce_fn to make this generic.
     for i in range(out_size):
         expected_vals[i] = shape[axis] * Scalar[dtype](1)
 
-    var vec_device = DeviceNDBuffer[dtype, rank](shape, ctx=ctx)
+    var multi_vec_device = ctx.enqueue_create_buffer[dtype](in_cache_elems)
     var res_device = DeviceNDBuffer[dtype, rank](out_shape, ctx=ctx)
-    var input_buf_device = vec_device.tensor
     var output_buf_device = res_device.tensor
 
-    ctx.enqueue_copy(vec_device.buffer, in_host)
+    ctx.enqueue_copy(multi_vec_device, in_host)
 
     @always_inline
     @parameter
@@ -85,17 +106,6 @@ fn run_reduce[
         constrained[reduction_idx < num_reductions, "invalid reduction idx"]()
 
         return reduce_fn[dtype, width](lhs, rhs)
-
-    @__copy_capture(input_buf_device)
-    @parameter
-    fn input_fn[
-        dtype: DType,
-        width: Int,
-        _rank: Int,
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        return rebind[SIMD[dtype, width]](
-            input_buf_device.load[width=width](rebind[IndexList[rank]](coords))
-        )
 
     @__copy_capture(output_buf_device)
     @parameter
@@ -115,7 +125,25 @@ fn run_reduce[
     fn bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            var offset = iteration * in_stride % in_cache_elems
+            var input_buf_device = NDBuffer[dtype, rank, MutAnyOrigin](
+                multi_vec_device.unsafe_ptr() + offset, shape
+            )
+
+            @__copy_capture(input_buf_device)
+            @parameter
+            fn input_fn[
+                dtype: DType,
+                width: Int,
+                _rank: Int,
+            ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+                return rebind[SIMD[dtype, width]](
+                    input_buf_device.load[width=width](
+                        rebind[IndexList[rank]](coords)
+                    )
+                )
+
             reduce_launch[
                 num_reductions, input_fn, output_fn, reduce_wrapper, rank, dtype
             ](shape, axis, StaticTuple[_, num_reductions](init), ctx)
@@ -124,7 +152,16 @@ fn run_reduce[
 
     m.bench_function[bench_func](
         BenchId(
-            "reduce", input_id=String(dtype, "/shape=", shape, "/axis=", axis)
+            "reduce",
+            input_id=String(
+                dtype,
+                "/shape=",
+                shape,
+                "/axis=",
+                axis,
+                "/cache_busting=",
+                cache_busting,
+            ),
         ),
         [ThroughputMeasure(BenchMetric.elements, in_size)],
     )
@@ -135,11 +172,12 @@ fn run_reduce[
     for i in range(out_size):
         assert_equal(res_host[i], expected_vals[i])
 
-    _ = vec_device
+    _ = multi_vec_device
     _ = res_device
 
     in_host.free()
     res_host.free()
+    expected_vals.free()
 
 
 @parameter
@@ -156,11 +194,12 @@ def main():
     comptime shape_in_list = env_get_shape["shape", "1x1x4096"]()
     comptime shape = int_list_to_tuple[shape_in_list]()
     comptime axis = env_get_int["axis", 1]()
+    comptime cache_busting = True
 
     var m = Bench()
     with DeviceContext() as ctx:
         comptime dims = shape
-        run_reduce[reduce_add, dtype](
+        run_reduce[reduce_add, dtype, cache_busting=cache_busting](
             m,
             dims,
             axis,
