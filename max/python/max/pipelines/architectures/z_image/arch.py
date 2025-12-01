@@ -13,11 +13,15 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.pipelines.lib import RopeType, SupportedArchitecture, SupportedEncoding
+from max.pipelines.lib import (
+    RopeType,
+    SupportedArchitecture,
+    SupportedEncoding,
+    TextTokenizer,
+)
 
 from .model import ZImageModel
-from ..qwen3 import qwen3_arch
-from ..qwen3.tokenizer import Qwen3Tokenizer
+from max.pipelines.architectures.qwen3 import qwen3_arch
 from .nn.transformer_z_image import ZImageTransformer2DModel
 from .nn.autoencoderkl import AutoencoderKL
 from .scheduling_flow_match_euler_discrete import FlowMatchEulerDiscreteScheduler
@@ -44,7 +48,7 @@ z_image_arch = SupportedArchitecture(
     scheduler=FlowMatchEulerDiscreteScheduler,
     vae=AutoencoderKL,
     text_encoder=qwen3_arch,
-    tokenizer=Qwen3Tokenizer,
+    tokenizer=TextTokenizer,
     transformer=ZImageTransformer2DModel,
     rope_type=RopeType.normal,
     required_arguments={
