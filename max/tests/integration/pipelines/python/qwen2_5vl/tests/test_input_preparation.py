@@ -443,7 +443,7 @@ async def test_qwen_input_preparation__position_ids_after_reset(
 
     # Get position IDs from reset context (should trigger recomputation)
     reset_qwen_inputs = model.prepare_initial_token_inputs(
-        context_batch=[context],
+        context_batch=[[context]],
         kv_cache_inputs=mock_kv_cache,
         return_n_logits=1,
     )
@@ -464,7 +464,7 @@ async def test_qwen_input_preparation__position_ids_after_reset(
 
     # Get position IDs from fresh context
     fresh_qwen_inputs = model.prepare_initial_token_inputs(
-        context_batch=[context2],
+        context_batch=[[context2]],
         kv_cache_inputs=mock_kv_cache,
         return_n_logits=1,
     )
@@ -637,7 +637,7 @@ async def test_qwen_input_preparation__position_ids_after_reset_with_image(
 
     # Get position IDs from reset context (should trigger recomputation)
     reset_qwen_inputs = model.prepare_initial_token_inputs(
-        context_batch=[context],
+        context_batch=[[context]],
         kv_cache_inputs=mock_kv_cache,
         return_n_logits=1,
     )
@@ -671,7 +671,7 @@ async def test_qwen_input_preparation__position_ids_after_reset_with_image(
 
     # Get position IDs from fresh context
     fresh_qwen_inputs = model.prepare_initial_token_inputs(
-        context_batch=[context2],
+        context_batch=[[context2]],
         kv_cache_inputs=mock_kv_cache,
         return_n_logits=1,
     )
@@ -784,7 +784,7 @@ def test_qwen_text_only_decoder_posids_increment_on_first_decode(
     dummy_kv_inputs = Mock(spec=KVCacheInputs)
 
     prefill_inputs = model.prepare_initial_token_inputs(
-        context_batch=[ctx],
+        context_batch=[[ctx]],
         kv_cache_inputs=dummy_kv_inputs,
         return_n_logits=1,
     )
@@ -803,7 +803,7 @@ def test_qwen_text_only_decoder_posids_increment_on_first_decode(
     ctx.set_token_indices(start_idx=L, active_idx=L + 1, end_idx=L + 1)
 
     step1_inputs = model.prepare_initial_token_inputs(
-        context_batch=[ctx],
+        context_batch=[[ctx]],
         kv_cache_inputs=dummy_kv_inputs,
         return_n_logits=1,
     )

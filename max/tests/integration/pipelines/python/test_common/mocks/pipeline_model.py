@@ -167,12 +167,13 @@ class MockPipelineModel(PipelineModel):
 
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[TextContext],
+        replica_batches: Sequence[Sequence[TextContext]],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
+        actual_batch_size = sum(len(batch) for batch in replica_batches)
         return MockModelInputs(
-            active_batch_size=len(context_batch),
+            active_batch_size=actual_batch_size,
             eos_prob=self.eos_prob,
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=return_n_logits,

@@ -79,7 +79,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
 
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[TextGenerationContext],
+        replica_batches: Sequence[Sequence[TextGenerationContext]],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> DummyModelInputs:

@@ -161,10 +161,14 @@ class MockPipelineModel(PipelineModel[ContextT]):
 
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[ContextT],
+        replica_batches: Sequence[Sequence[ContextT]],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
+        if len(replica_batches) > 1:
+            raise ValueError("Model does not support DP>1")
+
+        context_batch = replica_batches[0]
         del return_n_logits
         kv_seq = None
         if isinstance(kv_cache_inputs, KVCacheInputsSequence):
