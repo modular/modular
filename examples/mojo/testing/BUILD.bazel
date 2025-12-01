@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_binary", "mojo_library", "mojo_test")
 
+package(default_visibility = ["//visibility:private"])
+
 mojo_library(
     name = "my_math",
     srcs = glob(["src/my_math/*.mojo"]),

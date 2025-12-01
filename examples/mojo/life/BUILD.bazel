@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_binary", "mojo_test", "requirement")
 
+package(default_visibility = ["//visibility:private"])
+
 mojo_binary(
     name = "lifev1",
     testonly = True,

@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "mojo_kgen_lib", "mojo_library")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//max:consumers"])
 
 mogg_lib_deps = [
     "//max:kv_cache",

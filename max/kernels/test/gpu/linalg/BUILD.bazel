@@ -1,6 +1,8 @@
 load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 load("//bazel:config.bzl", "DEFAULT_GPU_MEMORY")
 
+package(default_visibility = ["//max:consumers"])
+
 _EXTRA_CONSTRAINTS = {
     "test_async_copy_wgmma.mojo": ["//:h100_gpu"],
     "test_dual_gemm.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377

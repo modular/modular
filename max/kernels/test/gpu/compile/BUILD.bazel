@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 _LIT_TESTS = [
     "test_amd_asan_oob.mojo",
     "test_amd_block_sync_lds.mojo",

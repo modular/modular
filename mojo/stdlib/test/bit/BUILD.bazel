@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_test")
 
+package(default_visibility = ["//visibility:private"])
+
 _DISABLED_ASSERTIONS = [
     "test_bit.mojo",
 ]

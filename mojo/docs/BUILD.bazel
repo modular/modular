@@ -1,5 +1,9 @@
 load("//bazel:api.bzl", "pkg_files", "strip_prefix")
 
+# gazelle:default_visibility //visibility:private
+
+package(default_visibility = ["//visibility:private"])
+
 pkg_files(
     name = "docs",
     srcs = glob(

@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_test")
 
+package(default_visibility = ["//visibility:private"])
+
 _NO_ASAN = [
     "test_run.mojo",  # TODO: Enable once https://github.com/modularml/modular/issues/37376 is resolved
 ]

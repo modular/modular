@@ -6,6 +6,8 @@ load("@rules_multirun//:defs.bzl", "command", "multirun")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("//bazel:api.bzl", "modular_py_binary", "mojo_binary")
 
+package(default_visibility = ["//visibility:public"])
+
 _BUILDIFIER_IGNORES = [
     "./.derived/*",
     "./.git/*",

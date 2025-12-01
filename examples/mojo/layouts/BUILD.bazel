@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "modular_run_binary_test", "mojo_binary")
 
+package(default_visibility = ["//visibility:private"])
+
 mojo_binary(
     name = "basic_layouts",
     srcs = ["basic_layouts.mojo"],

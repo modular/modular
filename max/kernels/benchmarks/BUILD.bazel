@@ -8,6 +8,8 @@ load(
     "strip_prefix",
 )
 
+package(default_visibility = ["//max:consumers"])
+
 _RUN_BENCHMARKS = [
     "algorithm/parallelize_overhead.mojo",
     "nn/bench_gather_reduce.mojo",

@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_library")
 
+package(default_visibility = ["//visibility:private"])
+
 mojo_library(
     name = "test_utils",
     testonly = True,

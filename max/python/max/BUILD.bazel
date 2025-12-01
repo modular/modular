@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "modular_generate_stubfiles", "modular_nanobind_extension", "modular_py_library", "requirement")
 
+package(default_visibility = ["//max:consumers"])
+
 modular_nanobind_extension(
     name = "_core.bindings",
     srcs = ["//max/python/max/_core/internal:_core.cpp"],

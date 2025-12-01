@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "lit_tests")
 
+package(default_visibility = ["//max:consumers"])
+
 # NVIDIA tests
 lit_tests(
     name = "test",
