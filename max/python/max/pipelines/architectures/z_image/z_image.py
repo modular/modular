@@ -20,7 +20,7 @@ from .model_config import ZImageConfig
 from .scheduling_flow_match_euler_discrete import FlowMatchEulerDiscreteScheduler
 from .nn.autoencoderkl import AutoencoderKL
 from .nn.transformer_z_image import ZImageTransformer2DModel
-from max.pipelines.architectures.qwen2_5vl.model import Qwen2_5VLModel
+from max.pipelines.architectures.qwen3.model import Qwen3Model
 
 
 class ZImage(Module):
@@ -41,9 +41,9 @@ class ZImage(Module):
         """Build the VAE component."""
         return AutoencoderKL(self.config.vae_config)
 
-    def build_text_encoder(self) -> Qwen2_5VLModel:
+    def build_text_encoder(self) -> Qwen3Model:
         """Build the text encoder component."""
-        return Qwen2_5VLModel(**self.config.text_encoder_config)
+        return Qwen3Model(**self.config.text_encoder_config)
 
     def build_transformer(self) -> ZImageTransformer2DModel:
         """Build the transformer component."""
