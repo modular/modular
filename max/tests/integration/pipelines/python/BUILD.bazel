@@ -10,6 +10,11 @@ modular_py_library(
     srcs = ["hf_repo_lock.py"],
     data = ["hf-repo-lock.tsv"],
     imports = ["."],
+    visibility = [
+        "//SDK:__subpackages__",
+        "//max/tests:__subpackages__",
+        "//utils:__subpackages__",
+    ],
     deps = [
         "//max/python/max/pipelines",
         requirement("huggingface-hub"),

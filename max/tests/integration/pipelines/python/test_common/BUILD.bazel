@@ -16,6 +16,10 @@ modular_py_library(
     testonly = True,
     srcs = ["__init__.py"],
     imports = [".."],
+    visibility = [
+        "//SDK:__subpackages__",
+        "//max/tests:__subpackages__",
+    ],
     deps = [
         requirement("pytest"),
         requirement("numpy"),
