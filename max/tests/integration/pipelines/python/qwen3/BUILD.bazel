@@ -6,6 +6,8 @@ load(
     "requirement",
 )
 
+package(default_visibility = ["//max/tests:__subpackages__"])
+
 modular_py_test(
     name = "qwen3",
     size = "large",

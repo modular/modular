@@ -7,6 +7,8 @@ load(
     "requirement",
 )
 
+package(default_visibility = ["//max/tests:__subpackages__"])
+
 modular_py_test(
     name = "test_image_processor",
     srcs = ["test_image_processor.py"],

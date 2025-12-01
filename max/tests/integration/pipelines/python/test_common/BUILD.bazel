@@ -6,6 +6,8 @@ load(
     "requirement",
 )
 
+package(default_visibility = ["//max/tests:__subpackages__"])
+
 modular_py_library(
     name = "test_common",
     testonly = True,

@@ -5,6 +5,8 @@ load(
     "requirement",
 )
 
+package(default_visibility = ["//max/tests:__subpackages__"])
+
 modular_py_test(
     name = "test_vision_attention",
     srcs = ["test_vision_attention.py"],

@@ -4,6 +4,8 @@ load(
     "requirement",
 )
 
+package(default_visibility = ["//max/tests:__subpackages__"])
+
 modular_py_test(
     name = "yarn-rotary-embeddings",
     srcs = glob(["**/test_yarn_rotary_embeddings.py"]) + ["conftest.py"],

@@ -6,6 +6,8 @@ load(
     "requirement",
 )
 
+package(default_visibility = ["//max/tests:__subpackages__"])
+
 modular_py_test(
     name = "whisper",
     size = "large",
