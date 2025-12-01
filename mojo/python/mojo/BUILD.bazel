@@ -11,5 +11,4 @@ modular_py_library(
         "@mojo//:stdlib",
     ],
     imports = [".."],
-    visibility = ["//visibility:public"],
 )

@@ -8,6 +8,8 @@ load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 load("//bazel/internal/cc-toolchain/features:features.bzl", "MARKER_FEATURES")  # buildifier: disable=bzl-visibility
 load("//bazel/internal/cc-toolchain/tools:tools.bzl", "PLATFORMS")  # buildifier: disable=bzl-visibility
 
+package(default_visibility = ["//visibility:public"])
+
 cc_sysroot(
     name = "linux_sysroot_aarch64",
     actions = [

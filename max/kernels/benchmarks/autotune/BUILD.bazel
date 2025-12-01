@@ -147,5 +147,4 @@ pkg_files(
         "utils.py",
     ],
     prefix = "kernel-benchmark/autotune",
-    visibility = ["//visibility:public"],
 )

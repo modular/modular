@@ -6,7 +6,6 @@ modular_py_library(
     name = "dtype",
     srcs = glob(["**/*.py"]),
     imports = ["../.."],
-    visibility = ["//visibility:public"],
     deps = [
         "//max/python/max:_core",
         requirement("numpy"),

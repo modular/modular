@@ -9,7 +9,6 @@ modular_py_binary(
         exclude = ["test_*.py"],
     ),
     imports = ["."],
-    visibility = ["//visibility:public"],
     deps = [
         requirement("packaging"),
     ],

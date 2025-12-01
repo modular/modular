@@ -6,7 +6,6 @@ modular_py_library(
     name = "engine",
     srcs = glob(["**/*.py"]),
     imports = ["../.."],
-    visibility = ["//visibility:public"],
     deps = [
         "//max/python/max:_core",
         "//max/python/max/driver",

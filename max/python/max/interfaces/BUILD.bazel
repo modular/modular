@@ -6,7 +6,6 @@ modular_py_library(
     name = "interfaces",
     srcs = glob(["**/*.py"]),
     imports = ["../.."],
-    visibility = ["//visibility:public"],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/profiler",

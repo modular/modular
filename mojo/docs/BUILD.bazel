@@ -1,8 +1,8 @@
 load("//bazel:api.bzl", "pkg_files", "strip_prefix")
 
-# gazelle:default_visibility //visibility:private
+# gazelle:default_visibility //docs:__subpackages__
 
-package(default_visibility = ["//visibility:private"])
+package(default_visibility = ["//docs:__subpackages__"])
 
 pkg_files(
     name = "docs",
@@ -22,5 +22,4 @@ pkg_files(
         "changelog-released.md": "changelog.md",
     },
     strip_prefix = strip_prefix.from_pkg(""),
-    visibility = ["//visibility:public"],
 )

@@ -16,5 +16,4 @@ mojo_library(
 filegroup(
     name = "ptx_files",
     srcs = glob(["*.ptx"]),
-    visibility = ["//visibility:public"],
 )

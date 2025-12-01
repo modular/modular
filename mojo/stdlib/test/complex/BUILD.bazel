@@ -19,5 +19,5 @@ pkg_files(
     srcs = [
         "test_mandelbrot.mojo",
     ],
-    visibility = ["//visibility:public"],
+    visibility = ["//utils:__subpackages__"],
 )

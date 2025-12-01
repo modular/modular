@@ -13,7 +13,6 @@ mogg_primitives_lib_deps = [
 mojo_kgen_lib(
     name = "MOGGPrimitivesLib",
     srcs = glob(["**/*.mojo"]),
-    visibility = ["//visibility:public"],
     deps = mogg_primitives_lib_deps,
 )
 

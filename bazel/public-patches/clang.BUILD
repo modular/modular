@@ -28,7 +28,6 @@ directory(
 directory(
     name = "resource_directory",
     srcs = glob(["lib/clang/*/**"]),
-    visibility = ["//visibility:public"],
 )
 
 filegroup(

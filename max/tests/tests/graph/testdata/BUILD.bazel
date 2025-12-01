@@ -1,6 +1,9 @@
 load("//bazel:api.bzl", "modular_py_binary", "requirement")
 
-package(default_visibility = ["//max/tests:__subpackages__"])
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+])
 
 filegroup(
     name = "testdata",

@@ -12,7 +12,6 @@ mojo_library(
     ],
     data = ["@nvshmem_prebuilt//:host"],
     validate_missing_docs = False,
-    visibility = ["//visibility:public"],
     deps = [
         "//max:layout",
         "@mojo//:stdlib",

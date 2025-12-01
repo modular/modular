@@ -6,7 +6,6 @@ modular_py_library(
     name = "profiler",
     srcs = glob(["**/*.py"]),
     imports = ["../.."],
-    visibility = ["//visibility:public"],
     deps = [
         "//max/python/max:_core",
     ],

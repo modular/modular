@@ -6,7 +6,6 @@ modular_py_library(
     name = "config",
     srcs = glob(["**/*.py"]),
     imports = ["../.."],
-    visibility = ["//visibility:public"],
     deps = [
         requirement("pyyaml"),
     ],

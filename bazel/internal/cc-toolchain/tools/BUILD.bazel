@@ -3,6 +3,8 @@ load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 load(":builtin_module_map.bzl", "builtin_module_map")
 load(":tools.bzl", "declare_tools")
 
+package(default_visibility = ["//visibility:public"])
+
 cc_tool(
     name = "clang",
     src = ":multi-platform-clang.sh",
@@ -67,7 +69,6 @@ declare_tools()
             "manual",
             TOP_LEVEL_TAG,
         ],
-        visibility = ["//visibility:public"],
     )
     for tool in [
         "builtin_headers",
@@ -98,5 +99,4 @@ builtin_module_map(
         ],
     }),
     tags = ["manual"],
-    visibility = ["//visibility:public"],
 )

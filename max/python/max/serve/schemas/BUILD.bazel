@@ -19,5 +19,4 @@ pkg_files(
     ],
     prefix = "max/api",
     strip_prefix = strip_prefix.from_pkg(""),
-    visibility = ["//visibility:public"],
 )

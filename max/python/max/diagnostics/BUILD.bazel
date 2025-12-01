@@ -6,7 +6,6 @@ modular_py_library(
     name = "diagnostics",
     srcs = glob(["**/*.py"]),
     imports = ["../.."],
-    visibility = ["//visibility:public"],
     deps = [
         requirement("msgspec"),
         requirement("taskgroup"),
