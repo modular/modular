@@ -3515,7 +3515,7 @@ void DeclResolver::addParentDeclsToTrait(TraitDeclOp traitOp,
           addDecl(func, decl->getLoc(), name, &traitDecl, LexerCursor(),
                   LexerCursor(), -1);
         }
-      } else if (auto parentAliasDecl = dyn_cast<AliasDeclOp>(
+      } else if (auto parentAliasDecl = dyn_cast_if_present<AliasDeclOp>(
                      declsInParent.front()->getIfOperation())) {
         assert(declsInParent.size() == 1 &&
                "Can't have two aliases with same name.");
