@@ -15,7 +15,6 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys import size_of
 
 # ===----------------------------------------------------------------------=== #
@@ -95,7 +94,9 @@ struct Coroutine[type: AnyType, origins: OriginSet]:
     var _handle: AnyCoroutine
 
     @always_inline
-    fn _get_ctx[ctx_type: AnyType](self) -> UnsafePointer[ctx_type]:
+    fn _get_ctx[
+        ctx_type: AnyType
+    ](self) -> UnsafePointer[ctx_type, MutOrigin.external]:
         """Returns the pointer to the coroutine context.
 
         Parameters:
@@ -113,7 +114,7 @@ struct Coroutine[type: AnyType, origins: OriginSet]:
         ](self._handle)
 
     @always_inline
-    fn _set_result_slot(self, slot: UnsafePointer[Self.type, mut=True, **_]):
+    fn _set_result_slot(self, slot: UnsafePointer[mut=True, Self.type, **_]):
         __mlir_op.`co.set_byref_error_result`(self._handle, slot.address)
 
     @always_inline
@@ -179,7 +180,9 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet]:
     var _handle: AnyCoroutine
 
     @always_inline
-    fn _get_ctx[ctx_type: AnyType](self) -> UnsafePointer[ctx_type]:
+    fn _get_ctx[
+        ctx_type: AnyType
+    ](self) -> UnsafePointer[ctx_type, MutOrigin.external]:
         """Returns the pointer to the coroutine context.
 
         Parameters:
@@ -199,8 +202,8 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet]:
     @always_inline
     fn _set_result_slot(
         self,
-        slot: UnsafePointer[Self.type, mut=True, **_],
-        err: UnsafePointer[Error, mut=False, **_],
+        slot: UnsafePointer[mut=True, Self.type, **_],
+        err: UnsafePointer[mut=False, Error, **_],
     ):
         __mlir_op.`co.set_byref_error_result`(
             self._handle, slot.address, err.address
