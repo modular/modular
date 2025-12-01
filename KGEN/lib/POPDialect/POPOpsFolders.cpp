@@ -1761,7 +1761,7 @@ ErrorTreeOrSuccess OffsetOp::interpret(ArrayRef<Attribute> operands,
   auto offset = dyn_cast_or_null<IntegerAttr>(operands[1]);
   if (!ptr || !offset)
     return ErrorTree(getLoc(), "non-constant inputs");
-  std::optional<int64_t> elSize = DataLayoutInterface::getTypeAllocSize(
+  std::optional<int64_t> elSize = DataLayoutInterface::getTypeStoreSize(
       state.getTarget(), cast<PointerType>(ptr.getType()).getElementType());
   if (!elSize)
     return ErrorTree(getLoc(), "could not query pointer element size");
