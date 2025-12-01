@@ -1674,27 +1674,35 @@ fn tmp_reshape_contiguous_buffer[
 # ===-----------------------------------------------------------------------===#
 
 
-fn mgp_get_buffer_handle_from_tensor_buffer_ref(
-    buffer: TensorBufferRefPtr, memStorageHandle: OpaquePointer
-):
-    external_call["MGP_RT_GetMemBufferHandleFromTensorBufferRef", NoneType](
-        buffer, memStorageHandle
-    )
-
-
 @register_internal("tmp.mgp.buffer.get_cached")
 @no_inline
 fn tmp_mgp_buffer_get_cached(
     ctx: StateContextRef,
     buffer_slot: Int,
-) -> TensorBufferRefPtr:
+) -> Tuple[NDBuffer[DType.int8, 1, MutAnyOrigin], TensorBufferRefPtr]:
     """
-    Get a reference to the cached TensorBufferRef.
+    Get a reference to the cached tensor.
     """
-    return external_call["TMP_MGP_RT_GetCachedBuffer", TensorBufferRefPtr](
+    var buffer_size: UInt64 = 0
+    var buffer_data = OpaquePointer()
+
+    var buffer_ref = external_call[
+        "TMP_MGP_RT_GetCachedBuffer", TensorBufferRefPtr
+    ](
         buffer_slot,
         ctx,
+        UnsafePointer(to=buffer_size),
+        UnsafePointer(to=buffer_data),
     )
+
+    var buffer = NDBuffer[DType.int8, 1](
+        buffer_data.bitcast[Int8](), Index(buffer_size)
+    )
+    var res = Tuple[NDBuffer[DType.int8, 1, MutAnyOrigin], TensorBufferRefPtr](
+        buffer, buffer_ref
+    )
+
+    return res
 
 
 @register_internal("tmp.mgp.buffer.remove_cached")
