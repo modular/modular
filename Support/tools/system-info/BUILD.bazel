@@ -5,7 +5,6 @@ package(default_visibility = ["//visibility:public"])
 modular_cc_binary(
     name = "system-info",
     srcs = glob(["*.cpp"]),
-    visibility = ["//visibility:public"],
     deps = [
         "//Support:Base",
         "//Support:Globals",

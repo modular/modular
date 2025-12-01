@@ -15,10 +15,13 @@ package(default_visibility = ["//KGEN:consumers"])
 package_group(
     name = "consumers",
     packages = [
+        "//",  # root BUILD.bazel
         "//GenericML/...",
+        "//KGEN/...",
         "//Kernels/...",
         "//bazel/...",
         "//docs/...",
+        "//max/python/max/_core/internal/...",
         "//utils/...",
     ],
 )
@@ -36,7 +39,6 @@ pkg_files(
         ":POPDialect.doc",
     ],
     prefix = "KGEN/docs",
-    visibility = ["//visibility:public"],
 )
 
 td_library(
@@ -203,7 +205,6 @@ td_library(
     name = "KGENDialectTdFiles",
     srcs = glob(["include/KGEN/KGENDialect/*.td"]),
     includes = ["include"],
-    visibility = ["//visibility:public"],
     deps = [
         ":HLCFDialectTdFiles",
         ":InterpreterTdFiles",
@@ -231,7 +232,6 @@ mlir_nanobind(
         "KGEN_BindParamsAttr",
     ],
     output_dir = "include/KGEN/KGENDialect/Nanobind",
-    visibility = ["//visibility:public"],
     deps = [
         ":KGENDialectTdFiles",
     ],
@@ -710,7 +710,6 @@ td_library(
     name = "POPDialectTdFiles",
     srcs = glob(["include/KGEN/POPDialect/*.td"]),
     includes = ["include"],
-    visibility = ["//visibility:public"],
     deps = [
         ":CODialectTdFiles",
         ":InterpreterTdFiles",
@@ -1258,20 +1257,17 @@ copy_files(
         "mlirDataFormatters.py",
     ],
     tags = [ALLOW_UNUSED_TAG],
-    visibility = ["//visibility:public"],
 )
 
 # NOTE: These binaries must live beside the lldb binary to be discovered at runtime without an env var
 alias(
     name = "gdb-server",
     actual = "@llvm-project//lldb:gdb-server",
-    visibility = ["//visibility:public"],
 )
 
 alias(
     name = "mojo-lldb",
     actual = "@llvm-project//lldb",
-    visibility = ["//visibility:public"],
 )
 
 modular_cc_library(

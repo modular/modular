@@ -71,7 +71,6 @@ pkg_files(
         ":REPL.man_files",
         ":Run.man_files",
     ],
-    visibility = ["//visibility:public"],
 )
 
 [

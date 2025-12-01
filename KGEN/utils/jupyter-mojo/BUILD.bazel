@@ -10,7 +10,6 @@ pkg_filegroup(
         ":jupyter-manage-kernel",
         ":jupyter-mojo-kernel",
     ],
-    visibility = ["//visibility:public"],
 )
 
 pkg_files(
@@ -18,7 +17,6 @@ pkg_files(
     srcs = [
         "manage_kernel.py",
     ],
-    visibility = ["//visibility:public"],
 )
 
 pkg_files(
@@ -27,5 +25,4 @@ pkg_files(
         "kernel/*",
     ]),
     prefix = "kernel",
-    visibility = ["//visibility:public"],
 )

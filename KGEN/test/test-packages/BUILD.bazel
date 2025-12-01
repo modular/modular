@@ -1,3 +1,7 @@
+# gazelle:default_visibility //KGEN:__subpackages__
+
+package(default_visibility = ["//KGEN:__subpackages__"])
+
 exports_files([
     "stdlib/__init__.mojo",
     "stdlib/prelude/__init__.mojo",
@@ -7,5 +11,4 @@ filegroup(
     name = "test-packages",
     testonly = True,
     srcs = glob(["**/*.mojo"]),
-    visibility = ["//visibility:public"],
 )
