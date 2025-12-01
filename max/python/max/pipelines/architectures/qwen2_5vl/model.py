@@ -810,11 +810,16 @@ class Qwen2_5VLModel(
     @traced
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[Qwen2_5VLTextAndVisionContext],  # type: ignore[override]
+        replica_batches: Sequence[Sequence[Qwen2_5VLTextAndVisionContext]],  # type: ignore[override]
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> Qwen2_5VLInputs:
         """Prepares the initial inputs for the first execution pass of the Qwen2.5VL model."""
+
+        if len(replica_batches) > 1:
+            raise ValueError("Model does not support DP>1")
+
+        context_batch = replica_batches[0]
 
         if kv_cache_inputs is None:
             raise ValueError("KV Cache Inputs must be provided")

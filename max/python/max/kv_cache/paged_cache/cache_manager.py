@@ -18,7 +18,6 @@ from collections.abc import Sequence
 from statistics import mean
 from typing import Any
 
-import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -156,29 +155,6 @@ class PagedKVCacheManager:
             key=self._request_count_per_replica.__getitem__,
         )
         return replica_idx
-
-    def get_data_parallel_splits(
-        self, context_batch: Sequence[TextGenerationContext]
-    ) -> Tensor:
-        """Constructs splits for the data parallel execution.
-
-        Args:
-            context_batch: Sequence of requests. This must already be ordered
-                by replica index (so contexts that are on the same replica
-                are adjacent in the batch, and the replica must be in order).
-
-        Returns:
-            Tensor: An int64 tensor with shape (self.num_replicas + 1) that
-            contains the number of requests on each device:
-            [0, num_requests_on_replica_0, num_requests_on_replica_1, ...]
-        """
-        splits = np.zeros(self.num_replicas + 1, dtype=np.int64)
-        for ctx in context_batch:
-            replica_index = self._request_to_replica_idx[ctx.request_id]
-            splits[replica_index + 1] += 1
-        splits = np.cumsum(splits)  # type: ignore
-
-        return Tensor.from_numpy(splits)
 
     def get_pct_used_blocks_after_allocation(
         self, ctx: TextGenerationContext, num_steps: int = 1

@@ -48,8 +48,10 @@ from max.pipelines.lib.log_probabilities import (
     log_probabilities_ragged_graph,
 )
 from max.profiler import traced
+from max.support.algorithm import flatten2d
 from transformers import AutoConfig
 
+from .data_parallel_llama import compute_data_parallel_splits
 from .data_parallel_llama import create_graph as create_data_parallel_graph
 from .distributed_llama import DistributedLlama3
 from .llama3 import Llama3
@@ -254,11 +256,19 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
 
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[TextContext],
+        replica_batches: Sequence[Sequence[TextContext]],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> Llama3Inputs:
         """Prepare the inputs for the first pass in multistep execution."""
+        dp = self.pipeline_config.model_config.data_parallel_degree
+        if len(replica_batches) != dp:
+            raise ValueError(
+                "Number of replica batches must match data parallel degree"
+            )
+
+        context_batch = flatten2d(replica_batches)
+
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
         input_row_offsets = np.cumsum(
@@ -271,11 +281,13 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
             np.concatenate([ctx.next_tokens for ctx in context_batch])
         ).to(self.devices[0])
 
-        data_parallel_splits: Tensor | Sequence[Sequence[int]] | None = None
-        if self.pipeline_config.model_config.data_parallel_degree > 1:
-            data_parallel_splits = self.kv_manager.get_data_parallel_splits(
-                context_batch
+        # Constructs splits for the data parallel execution.
+        if dp > 1:
+            data_parallel_splits = Tensor.from_numpy(
+                compute_data_parallel_splits(replica_batches)
             )
+        else:
+            data_parallel_splits = None
 
         inputs = Llama3Inputs(
             tokens=tokens,

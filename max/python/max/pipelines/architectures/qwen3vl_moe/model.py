@@ -715,11 +715,16 @@ class Qwen3VLModel(
 
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[Qwen3VLTextAndVisionContext],
+        replica_batches: Sequence[Sequence[Qwen3VLTextAndVisionContext]],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> Qwen3VLInputs:
         """Prepares the initial inputs for the first execution pass of the Qwen3VL model."""
+        if len(replica_batches) > 1:
+            raise ValueError("Model does not support DP>1")
+
+        context_batch = replica_batches[0]
+
         if kv_cache_inputs is None:
             raise ValueError("KV Cache Inputs must be provided")
 

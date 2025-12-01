@@ -71,7 +71,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         if is_draft:
             return (
                 model.prepare_initial_token_inputs(
-                    context_batch=batch,
+                    replica_batches=[batch],
                     kv_cache_inputs=KVCacheInputsSequence(
                         kv_cache_inputs=kv_cache_inputs
                     ),
@@ -256,6 +256,10 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         3. Apply rejection sampling to accept/reject tokens
         """
         # Flatten our batch for consistent indexing.
+        if len(inputs.batches) > 1:
+            raise ValueError(
+                "Standalone speculative decoding does not support data parallelism"
+            )
         context_batch = list(inputs.batch.values())
 
         draft_inputs, draft_num_steps = self.prepare_batch(

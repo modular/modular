@@ -23,14 +23,8 @@ from typing import TYPE_CHECKING, Any, Generic
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph.weights import (
-    Weights,
-    WeightsAdapter,
-)
-from max.interfaces import (
-    BaseContextType,
-    LogProbabilities,
-)
+from max.graph.weights import Weights, WeightsAdapter
+from max.interfaces import BaseContextType, LogProbabilities
 from max.kv_cache import infer_optimal_batch_size
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnLogits
@@ -385,7 +379,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
     @abstractmethod
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[BaseContextType],
+        replica_batches: Sequence[Sequence[BaseContextType]],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
