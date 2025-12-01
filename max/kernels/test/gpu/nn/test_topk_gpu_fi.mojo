@@ -11,24 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import ceildiv, iota, exp, log
-from random import random_float64, seed
-from nn.topk_fi import topk_mask_logits, topk_sampling_from_prob
-from utils.numerics import max_or_inf, min_or_neg_inf
 
 from algorithm.reduction import max as reduce_max
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from collections import OptionalReg
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from math import ceildiv, iota, exp, log
 from nn.topk import _top_k_cpu, _topk_gpu
+from nn.topk_fi import (
+    topk_mask_logits,
+    topk_sampling_from_prob,
+    topk_softmax_sample,
+)
+from random import random_float64, seed
 from testing import assert_almost_equal, assert_equal
-
 from utils import IndexList
+from utils.numerics import max_or_inf, min_or_neg_inf
 
 comptime DEBUG_BENCH = False
 comptime PRINT_OUTPUT = False
@@ -36,71 +39,83 @@ comptime NUM_VALIDATION_TRIALS = 50
 
 
 @parameter
-fn fill_random_normalized[
-    rank: Int, dtype: DType
+fn fill_random_for_test[
+    rank: Int, dtype: DType, normalized: Bool
 ](mut buffer: NDBuffer[mut=True, dtype, rank]):
-    """Fill buffer with random values and normalize to valid probabilities.
+    """Fill buffer with random values, optionally normalizing to probabilities.
 
-    Each row will sum to 1.0, creating valid probability distributions.
+    Parameters:
+        rank: Rank of the buffer.
+        dtype: Data type of the buffer.
+        normalized: If True, normalize each row to sum to 1.0 (probabilities).
+                   If False, use raw random values (logits).
     """
     var shape = buffer.get_shape()
     var batch_size = shape[0]
     var vocab_size = shape[1]
 
     for b in range(batch_size):
-        var row_sum = Scalar[dtype](0.0)
 
-        for i in range(vocab_size):
-            var random_value = random_float64(0.01, 10.0)
-            buffer.data[b * vocab_size + i] = random_value.cast[dtype]()
-            row_sum += buffer.data[b * vocab_size + i]
+        @parameter
+        if normalized:
+            var row_sum = Scalar[dtype](0.0)
 
-        # Normalize to sum to 1.0.
-        for i in range(vocab_size):
-            buffer.data[b * vocab_size + i] = (
-                buffer.data[b * vocab_size + i] / row_sum
-            )
+            for i in range(vocab_size):
+                var random_value = random_float64(0.01, 10.0)
+                buffer.data[b * vocab_size + i] = random_value.cast[dtype]()
+                row_sum += buffer.data[b * vocab_size + i]
+
+            # Normalize to sum to 1.0.
+            for i in range(vocab_size):
+                buffer.data[b * vocab_size + i] = (
+                    buffer.data[b * vocab_size + i] / row_sum
+                )
+        else:
+            # Raw logits (unnormalized) in given range [-5.0, 5.0].
+            for i in range(vocab_size):
+                var random_value = random_float64(-5.0, 5.0)
+                buffer.data[b * vocab_size + i] = random_value.cast[dtype]()
 
 
-fn compute_topk_mask_from_probs[
+fn compute_topk_mask[
     dtype: DType,
     rank: Int,
 ](
-    probs: HostNDBuffer[dtype, rank],
+    values: HostNDBuffer[dtype, rank],
     K: Int,
     batch_size: Int,
     N: Int,
 ) raises -> HostNDBuffer[DType.bool, rank]:
     """
     Compute a boolean mask indicating which tokens are in the top-K.
-    Marks all tokens whose probability is >= K-th largest value.
+    Marks all tokens whose value is >= K-th largest value.
     """
     var mask = HostNDBuffer[DType.bool, rank](DimList(batch_size, N))
 
     for b in range(batch_size):
-        var values = List[Scalar[dtype]]()
+        var values_list = List[Scalar[dtype]]()
         for i in range(N):
-            values.append(probs.tensor.data[b * N + i])
+            values_list.append(values.tensor.data[b * N + i])
 
         @parameter
         fn _greater_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
             return lhs > rhs
 
-        sort[_greater_than](values)
+        sort[_greater_than](values_list)
 
         # K-th largest value.
-        var kth_value = values[K - 1]
+        var kth_value = values_list[K - 1]
 
         # Mark all tokens >= kth_value.
         for i in range(N):
             mask.tensor.data[b * N + i] = (
-                probs.tensor.data[b * N + i] >= kth_value
+                values.tensor.data[b * N + i] >= kth_value
             )
 
     return mask
 
 
-fn validate_sampling_results_from_probs[
+fn validate_sampling_results[
     out_idx_type: DType,
     rank: Int,
 ](
@@ -152,20 +167,29 @@ fn validate_sampling_results_from_probs[
             )
 
 
-fn test_topk_sampling_from_prob[
+fn test_topk_sampling[
     dtype: DType,
     out_idx_type: DType = DType.int32,
     rank: Int = 2,
     block_size: Int = 1024,
+    sampling_from_prob: Bool = True,
 ](ctx: DeviceContext, test_case: TestCase) raises:
     """
-    Test topk_sampling_from_prob kernel with property-based validation.
+    Test top-K sampling kernels with property-based validation.
+
+    Parameters:
+        dtype: Data type of the input.
+        out_idx_type: Data type of the output indices.
+        rank: Rank of the input and output.
+        block_size: Block size for the kernel.
+        sampling_from_prob: If True, test topk_sampling_from_prob with probabilities.
+                           If False, test topk_softmax_sample with logits.
 
     This test validates that the sampling kernel correctly samples from the
-    top-K probability distribution by:
-    1. Computing the ground truth top-K set
-    2. Running sampling multiple times
-    3. Verifying each sample is from the valid top-K set
+    top-K distribution by:
+    1. Computing the ground truth top-K set.
+    2. Running sampling multiple times.
+    3. Verifying each sample is from the valid top-K set.
     """
 
     var m = Bench()
@@ -175,39 +199,56 @@ fn test_topk_sampling_from_prob[
     comptime largest = test_case.largest
     comptime sampling = test_case.sampling
 
-    constrained[sampling, "topk_sampling_from_prob requires sampling=True"]()
+    constrained[sampling, "This test requires sampling=True"]()
 
-    # Create probability distributions (normalized).
-    var probs_host = HostNDBuffer[dtype, rank](DimList(batch_size, N))
-    fill_random_normalized[rank, dtype](probs_host.tensor)
+    # Create input data (probabilities or logits depending on flag).
+    var input_host = HostNDBuffer[dtype, rank](DimList(batch_size, N))
+
+    @parameter
+    if sampling_from_prob:
+        fill_random_for_test[rank, dtype, normalized=True](input_host.tensor)
+    else:
+        fill_random_for_test[rank, dtype, normalized=False](input_host.tensor)
 
     @parameter
     if PRINT_OUTPUT:
-        print("Sample probabilities (first batch):")
-        for i in range(min(10, N)):
-            print("  Token", i, ":", probs_host.tensor.data[i])
 
-    var device_probs = DeviceNDBuffer[dtype, rank](
+        @parameter
+        if sampling_from_prob:
+            print("Sample probabilities (first batch, first 10):")
+        else:
+            print("Sample logits (first batch, first 10):")
+        for i in range(min(10, N)):
+            print("  Token", i, ":", input_host.tensor.data[i])
+
+    var device_input = DeviceNDBuffer[dtype, rank](
         DimList(batch_size, N), ctx=ctx
     )
     var device_output = DeviceNDBuffer[out_idx_type, 1](
         DimList(batch_size), ctx=ctx
     )
 
-    ctx.enqueue_copy(device_probs.buffer, probs_host.tensor.data)
+    ctx.enqueue_copy(device_input.buffer, input_host.tensor.data)
     ctx.synchronize()
 
     # STEP 1: Compute ground truth mask.
-    var mask = compute_topk_mask_from_probs[dtype, rank](
-        probs_host, K, batch_size, N
-    )
+    var mask = compute_topk_mask[dtype, rank](input_host, K, batch_size, N)
 
     @parameter
     if PRINT_OUTPUT:
         print("  Valid top-K indices for first batch:")
         for i in range(N):
             if mask.tensor.data[i]:
-                print("    Token", i, "with prob", probs_host.tensor.data[i])
+
+                @parameter
+                if sampling_from_prob:
+                    print(
+                        "    Token", i, "with prob", input_host.tensor.data[i]
+                    )
+                else:
+                    print(
+                        "    Token", i, "with logit", input_host.tensor.data[i]
+                    )
 
     # STEP 2: Run sampling validation.
     @parameter
@@ -220,32 +261,38 @@ fn test_topk_sampling_from_prob[
 
     var sampled_idxs = HostNDBuffer[out_idx_type, 1](DimList(batch_size))
     var num_passed = 0
-    var num_failed = 0
 
     for trial in range(NUM_VALIDATION_TRIALS):
         var trial_seed = UInt64(42 + trial)
 
-        topk_sampling_from_prob[dtype, out_idx_type, block_size](
-            ctx,
-            device_probs.to_layout_tensor(),
-            device_output.to_layout_tensor(),
-            K,
-            deterministic=False,
-            rng_seed=trial_seed,
-            rng_offset=0,
-        )
+        @parameter
+        if sampling_from_prob:
+            topk_sampling_from_prob[dtype, out_idx_type, block_size](
+                ctx,
+                device_input.to_layout_tensor(),
+                device_output.to_layout_tensor(),
+                K,
+                deterministic=False,
+                rng_seed=trial_seed,
+                rng_offset=0,
+            )
+        else:
+            topk_softmax_sample[dtype, out_idx_type, block_size](
+                ctx,
+                device_input.to_layout_tensor(),
+                device_output.to_layout_tensor(),
+                K,
+                temperature_val=1.0,
+                seed_val=trial_seed,
+            )
 
         ctx.enqueue_copy(sampled_idxs.tensor.data, device_output.buffer)
         ctx.synchronize()
 
-        try:
-            validate_sampling_results_from_probs[out_idx_type, rank](
-                sampled_idxs, mask, batch_size, N, trial
-            )
-            num_passed += 1
-        except e:
-            print("  [ERROR] Trial", trial, "failed:", e)
-            raise Error("Sampling validation failed. Kernel is incorrect.")
+        validate_sampling_results[out_idx_type, rank](
+            sampled_idxs, mask, batch_size, N, trial
+        )
+        num_passed += 1
 
     @parameter
     if PRINT_OUTPUT:
@@ -257,30 +304,45 @@ fn test_topk_sampling_from_prob[
             "trials passed!",
         )
 
-    # STEP 3: Benchmark the kernel (separate from validation)
+    # STEP 3: Benchmark the kernel (separate from validation).
     @parameter
     if DEBUG_BENCH:
 
         @always_inline
         @parameter
         fn run_func(ctx: DeviceContext) raises:
-            topk_sampling_from_prob[dtype, out_idx_type, block_size](
-                ctx,
-                device_probs.to_layout_tensor(),
-                device_output.to_layout_tensor(),
-                K,
-                deterministic=False,
-                rng_seed=UInt64(42),
-                rng_offset=0,
-            )
+            @parameter
+            if sampling_from_prob:
+                topk_sampling_from_prob[dtype, out_idx_type, block_size](
+                    ctx,
+                    device_input.to_layout_tensor(),
+                    device_output.to_layout_tensor(),
+                    K,
+                    deterministic=False,
+                    rng_seed=UInt64(42),
+                    rng_offset=0,
+                )
+            else:
+                topk_softmax_sample[dtype, out_idx_type, block_size](
+                    ctx,
+                    device_input.to_layout_tensor(),
+                    device_output.to_layout_tensor(),
+                    K,
+                    temperature_val=1.0,
+                    seed_val=UInt64(42),
+                )
             ctx.enqueue_copy(sampled_idxs.tensor.data, device_output.buffer)
             ctx.synchronize()
 
-        time_kernel[run_func](m, ctx, "topk-sampling-from-prob")
+        @parameter
+        if sampling_from_prob:
+            time_kernel[run_func](m, ctx, "topk-sampling-from-prob")
+        else:
+            time_kernel[run_func](m, ctx, "topk-softmax-sample")
         m.dump_report()
 
-    _ = probs_host
-    _ = device_probs
+    _ = input_host
+    _ = device_input
     _ = device_output
     _ = sampled_idxs
     _ = mask
@@ -325,11 +387,11 @@ fn extract_topk_from_masked[
         for i in range(len(values)):
             for j in range(i + 1, len(values)):
                 if values[j] > values[i]:
-                    # Swap values
+                    # Swap values.
                     var temp_val = values[i]
                     values[i] = values[j]
                     values[j] = temp_val
-                    # Swap indices
+                    # Swap indices.
                     var temp_idx = indices[i]
                     indices[i] = indices[j]
                     indices[j] = temp_idx
@@ -768,8 +830,12 @@ def main():
             batch_size=1,
         )
         print_test_case(sampling_test_case1)
-        test_topk_sampling_from_prob[
-            float32_dtype, DType.int32, 2, default_block_size
+        test_topk_sampling[
+            float32_dtype,
+            DType.int32,
+            2,
+            default_block_size,
+            sampling_from_prob=True,
         ](ctx, sampling_test_case1)
 
         comptime sampling_test_case2 = TestCase[
@@ -780,8 +846,12 @@ def main():
             batch_size=16,
         )
         print_test_case(sampling_test_case2)
-        test_topk_sampling_from_prob[
-            float32_dtype, DType.int32, 2, default_block_size
+        test_topk_sampling[
+            float32_dtype,
+            DType.int32,
+            2,
+            default_block_size,
+            sampling_from_prob=True,
         ](ctx, sampling_test_case2)
 
         comptime sampling_test_case3 = TestCase[
@@ -792,8 +862,12 @@ def main():
             batch_size=8,
         )
         print_test_case(sampling_test_case3)
-        test_topk_sampling_from_prob[
-            float32_dtype, DType.int32, 2, default_block_size
+        test_topk_sampling[
+            float32_dtype,
+            DType.int32,
+            2,
+            default_block_size,
+            sampling_from_prob=True,
         ](ctx, sampling_test_case3)
 
         comptime sampling_test_case4 = TestCase[
@@ -804,8 +878,12 @@ def main():
             batch_size=32,
         )
         print_test_case(sampling_test_case4)
-        test_topk_sampling_from_prob[
-            float32_dtype, DType.int32, 2, default_block_size
+        test_topk_sampling[
+            float32_dtype,
+            DType.int32,
+            2,
+            default_block_size,
+            sampling_from_prob=True,
         ](ctx, sampling_test_case4)
 
         comptime sampling_test_case5 = TestCase[
@@ -816,8 +894,12 @@ def main():
             batch_size=256,
         )
         print_test_case(sampling_test_case5)
-        test_topk_sampling_from_prob[
-            float32_dtype, DType.int32, 2, default_block_size
+        test_topk_sampling[
+            float32_dtype,
+            DType.int32,
+            2,
+            default_block_size,
+            sampling_from_prob=True,
         ](ctx, sampling_test_case5)
 
         comptime sampling_test_case6 = TestCase[
@@ -828,14 +910,77 @@ def main():
             batch_size=4,
         )
         print_test_case(sampling_test_case6)
-        test_topk_sampling_from_prob[
-            bf16_type, DType.int32, 2, default_block_size
+        test_topk_sampling[
+            bf16_type,
+            DType.int32,
+            2,
+            default_block_size,
+            sampling_from_prob=True,
         ](ctx, sampling_test_case6)
 
         print("\n" + "=" * 80)
         print("All topk_sampling_from_prob tests passed! ✓")
         print("=" * 80 + "\n")
 
+        # Tests topk_softmax_sample with logits
         print("\n" + "=" * 80)
-        print("🎉 ALL TESTS PASSED! 🎉")
+        print("Testing topk_softmax_sample kernel")
+        print("=" * 80 + "\n")
+
+        print_test_case(sampling_test_case1)
+        test_topk_sampling[
+            float32_dtype,
+            DType.int32,
+            2,
+            default_block_size,
+            sampling_from_prob=False,
+        ](ctx, sampling_test_case1)
+
+        print_test_case(sampling_test_case2)
+        test_topk_sampling[
+            float32_dtype,
+            DType.int32,
+            2,
+            default_block_size,
+            sampling_from_prob=False,
+        ](ctx, sampling_test_case2)
+
+        print_test_case(sampling_test_case3)
+        test_topk_sampling[
+            float32_dtype,
+            DType.int32,
+            2,
+            default_block_size,
+            sampling_from_prob=False,
+        ](ctx, sampling_test_case3)
+
+        print_test_case(sampling_test_case4)
+        test_topk_sampling[
+            float32_dtype,
+            DType.int32,
+            2,
+            default_block_size,
+            sampling_from_prob=False,
+        ](ctx, sampling_test_case4)
+
+        print_test_case(sampling_test_case5)
+        test_topk_sampling[
+            float32_dtype,
+            DType.int32,
+            2,
+            default_block_size,
+            sampling_from_prob=False,
+        ](ctx, sampling_test_case5)
+
+        print_test_case(sampling_test_case6)
+        test_topk_sampling[
+            bf16_type,
+            DType.int32,
+            2,
+            512,  # Note: 1024 is too large (out of resources)
+            sampling_from_prob=False,
+        ](ctx, sampling_test_case6)
+
+        print("\n" + "=" * 80)
+        print("All topk_softmax_sample tests passed! ✓")
         print("=" * 80 + "\n")
