@@ -21,9 +21,8 @@ from max.driver import Tensor, Device
 import max
 
 import numpy as np
-import torch
 
-from ..configuration_utils import ConfigMixin, register_to_config
+from ..configuration_utils import ConfigMixin
 from ..utils import BaseOutput, is_scipy_available, logging
 from .scheduling_utils import SchedulerMixin
 
@@ -91,7 +90,6 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
     _compatibles = []
     order = 1
 
-    @register_to_config
     def __init__(
         self,
         num_train_timesteps: int = 1000,

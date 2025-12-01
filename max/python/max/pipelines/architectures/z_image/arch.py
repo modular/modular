@@ -27,6 +27,7 @@ z_image_arch = SupportedArchitecture(
     name="ZImagePipeline",
     task=PipelineTask.IMAGE_GENERATION,
     example_repo_ids=[
+        "Tongyi-MAI/Z-Image-Base",
         "Tongyi-MAI/Z-Image-Turbo",
     ],
     default_weights_format=WeightsFormat.safetensors,
