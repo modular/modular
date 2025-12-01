@@ -735,3 +735,30 @@ kgen.generator @del(%arg0: !kgen.pointer<struct<(index, pointer<index>)>> owned_
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
+
+// -----
+
+// COM: Ensure declared captured not uses are used.
+// If the captured type is used in a parameter expression we need to detect that.
+
+#type_value = #kgen.type<typevalue<#kgen.genref<@"foo::fn"<:!kgen.param_closure<@"foo" "fn"> #kgen.closure<@"foo" "fn">>>>, !kgen.closure<@"foo", "fn" nonescaping>> : !kgen.type
+
+kgen.struct.generator @"foo::fn"<CAPTURES: !kgen.param_closure<@"foo" "fn">> = !kgen.closure<@"foo", "fn" nonescaping> {
+  kgen.conformance @"AnyType" {
+    kgen.witness "__del__" : (!kgen.pointer<!kgen.closure<@"foo", "fn" nonescaping>> owned_in_mem) -> !kgen.none = #kgen.closure.symbol<@"foo", "fn", #kgen.closure_method<del>, <:!kgen.param_closure<@"foo" "fn"> CAPTURES>>
+  }
+  kgen.conformance @"Movable" {
+    kgen.witness "__moveinit__" : (!kgen.pointer<!kgen.closure<@"foo", "fn" nonescaping>> owned_in_mem, !kgen.pointer<!kgen.closure<@"foo", "fn" nonescaping>> byref_result) -> !kgen.none = #kgen.closure.symbol<@"foo", "fn", #kgen.closure_method<move>, <:!kgen.param_closure<@"foo" "fn"> CAPTURES>>
+  }
+  kgen.conformance @"closure_trait" {
+    kgen.witness "__call__" : (!kgen.pointer<!kgen.closure<@"foo", "fn" nonescaping>> read_mem) -> () = #kgen.closure.symbol<@"foo", "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@"foo" "fn"> CAPTURES>>
+  }
+}
+
+// CHECK: kgen.generator @foo_fn<E: type, D: type>
+kgen.generator @foo<D: type, E: type>(%arg0 : !kgen.pointer<struct<(E, D)>>) {
+%3 = kgen.closure.init(%arg0)() {
+  kgen.return
+} : (!kgen.pointer<struct<(E, D)>>), !kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>
+kgen.return
+}
