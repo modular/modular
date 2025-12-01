@@ -1151,6 +1151,7 @@ struct LayoutTensor[
 
             @parameter
             for axis in range(Self.rank):
+                __comptime_assert axis != UNKNOWN_VALUE
                 constrained[
                     other.shape[axis]() == self.shape[axis](),
                     (
@@ -2535,7 +2536,38 @@ struct LayoutTensor[
 
     @always_inline
     @staticmethod
-    fn shape[idx: Int]() -> Int:
+    fn is_static_shape[idx: Int]() -> Bool where idx != UNKNOWN_VALUE:
+        """Returns the whether the specified dimension is statically known.
+
+        Parameters:
+            idx: The dimension index to query (0-based).
+                    For example, in a 3D tensor with shape [10, UNKNOWN_VALUE, 30]:
+                    - `shape[0]()` returns True (first dimension).
+                    - `shape[1]()` returns False (second dimension).
+                    - `shape[2]()` returns True (third dimension).
+
+        Returns:
+            The True if the dimension is statically known, False otherwise.
+
+        Performance:
+
+        - This is a compile-time operation with no runtime cost when used
+            with static dimensions.
+
+        Notes:
+
+        - This is a static method that operates on the tensor's type information,
+            not on a specific tensor instance.
+        """
+
+        comptime shape = Self._to_static[
+            Self.layout.shape, Self.layout_int_type
+        ]()
+        return shape[idx] != UNKNOWN_VALUE
+
+    @always_inline
+    @staticmethod
+    fn shape[idx: Int]() -> Int where idx != UNKNOWN_VALUE:
         """Returns the size of the tensor along the specified dimension.
 
         Provides static access to the tensor's shape information. This method
@@ -2564,7 +2596,6 @@ struct LayoutTensor[
             not on a specific tensor instance.
         """
 
-        # FIXME: having to specify the origin is kind of weird
         comptime shape = Self._to_static[
             Self.layout.shape, Self.layout_int_type
         ]()
@@ -2572,7 +2603,7 @@ struct LayoutTensor[
 
     @always_inline
     @staticmethod
-    fn stride[idx: Int]() -> Int:
+    fn stride[idx: Int where idx != UNKNOWN_VALUE]() -> Int:
         """Returns the memory stride of the tensor along the specified
         dimension.
 
@@ -2610,7 +2641,6 @@ struct LayoutTensor[
             follow a simple pattern.
         """
 
-        # FIXME: having to specify the origin is kind of weird
         comptime stride = Self._to_static[
             Self.layout.stride, Self.linear_idx_type
         ]()
@@ -3254,6 +3284,7 @@ struct LayoutTensor[
             comptime bound = Self.layout.shape[axis].value() * Self.layout.stride[axis].value() \
                 if is_axis_val \
                 else Self.layout.shape[axis][-1].value() * Self.layout.stride[axis][-1].value()
+            __comptime_assert axis != UNKNOWN_VALUE
             comptime dim_bound = Self.shape[axis]() \
                 if is_axis_val \
                 else product(Self.layout.shape[axis])
@@ -4553,7 +4584,7 @@ struct LayoutTensor[
         dimension 0, with dimensions 1 and 2 fixed at indices 1 and 2:
 
         ```mojo
-        t.slice_1d[Slice(1, 3), IndexList[1](0)](1, 2)`
+        t.slice_1d[Slice(1, 3), IndexList[1](0)](1, 2)
         ```
 
         Performance:
