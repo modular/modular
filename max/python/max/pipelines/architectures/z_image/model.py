@@ -9,7 +9,24 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# ===----------------------------------------------------------------------=== #
+
+import inspect
+from typing import Any, Callable, Dict, List, Optional, Union
+
+from transformers import AutoTokenizer, PreTrainedModel
+
+from ...image_processor import VaeImageProcessor
+from ...loaders import FromSingleFileMixin
+from ...models.autoencoders import AutoencoderKL
+from ...models.transformers import ZImageTransformer2DModel
+from ...pipelines.pipeline_utils import DiffusionPipeline
+from ...schedulers import FlowMatchEulerDiscreteScheduler
+from ...utils import logging, replace_example_docstring
+from ...utils.torch_utils import randn_tensor
+from .pipeline_output import ZImagePipelineOutput
+
+
+from __future__ import annotations
 
 import logging
 import time
@@ -55,1156 +72,532 @@ from max.pipelines.lib import (
 from max.profiler import Tracer, traced
 from transformers import AutoConfig
 
-from .context import ZImageTextAndVisionContext, VisionEncodingData
-from .model_config import ZImageConfig
+from .context import Qwen2_5VLTextAndVisionContext, VisionEncodingData
+from .model_config import Qwen2_5VLConfig
 from .nn.data_processing import get_rope_index
-from .z_image import ZImage
+from .qwen2_5vl import Qwen2_5VL
 from .util import compute_scatter_gather_indices
 
 logger = logging.getLogger("max.pipelines")
 
 
-@dataclass(eq=False)
-class ZImageInputs(ModelInputs):
-    """A class representing inputs for the ZImage model.
-
-    This class encapsulates the input tensors required for the ZImage model execution,
-    including both text and vision inputs. Vision inputs are optional and can be None
-    for text-only processing."""
-
-    input_ids: Tensor
-    """Tensor containing the input token IDs."""
-
-    input_row_offsets: list[Tensor]
-    """Per-device tensors containing the offsets for each row in the ragged input sequence."""
-
-    signal_buffers: list[Tensor]
-    """Device buffers used for synchronization in communication collectives."""
-
-    position_ids: Tensor
-    """3D RoPE position IDs for the decoder."""
-
-    return_n_logits: Tensor
-    """Number of logits to return, used by speculative decoding for example."""
-
-    kv_cache_inputs: KVCacheInputs
-    """KV cache inputs for the model."""
-
-    scatter_indices: list[Tensor] | None = None
-    """Per-device pre-computed scatter indices for the image embeddings.
-
-    These are the locations of the image_token_id in the inputs fed to the model."""
-
-    gather_indices: list[Tensor] | None = None
-    """Per-device pre-computed gather indices for the image embeddings.
-
-    These are the indices within the image embeddings that will participate in
-    the subsequent scatter operation."""
-
-    # Vision inputs.
-    pixel_values: list[Tensor] | None = None
-    """Pixel values for vision inputs."""
-
-    window_index: list[Tensor] | None = None
-    """Window indices for vision attention mechanism."""
-
-    vision_position_ids: list[Tensor] | None = None
-    """1D RoPE position IDs for the visual inputs."""
-
-    max_grid_size: list[Tensor] | None = None
-    """Maximum grid size for vision inputs."""
-
-    cu_seqlens: list[Tensor] | None = None
-    """Cumulative sequence lengths for full attention."""
-
-    cu_window_seqlens: list[Tensor] | None = None
-    """Cumulative window sequence lengths for window attention."""
-
-    max_seqlen: list[Tensor] | None = None
-    """Maximum sequence length for full attention for vision inputs."""
-
-    max_window_seqlen: list[Tensor] | None = None
-    """Maximum sequence length for window attention for vision inputs."""
-
-    @property
-    def has_vision_inputs(self) -> bool:
-        """Check if this input contains vision data."""
-        return self.pixel_values is not None
+def calculate_shift(
+    image_seq_len: int,
+    base_seq_len: int = 256,
+    max_seq_len: int = 4096,
+    base_shift: float = 0.5,
+    max_shift: float = 1.15,
+) -> float:
+    m = (max_shift - base_shift) / (max_seq_len - base_seq_len)
+    b = base_shift - m * base_seq_len
+    mu = image_seq_len * m + b
+    return mu
 
 
-class ZImageModel(
-    AlwaysSignalBuffersMixin, PipelineModel[TextAndVisionContext], KVCacheMixin
+def retrieve_timesteps(
+    scheduler: SchedulerMixin,
+    num_inference_steps: Optional[int] = None,
+    device: Optional[Union[str, DeviceRef]] = None,
+    timesteps: Optional[List[int]] = None,
+    sigmas: Optional[List[float]] = None,
+    **kwargs,
 ):
-    """A ZImage pipeline model for multimodal text generation."""
+    r"""
+    Calls the scheduler's `set_timesteps` method and retrieves timesteps from the scheduler after the call. Handles
+    custom timesteps. Any kwargs will be supplied to `scheduler.set_timesteps`.
 
-    vision_model: Model
-    """The compiled vision model for processing images."""
+    Args:
+        scheduler (`SchedulerMixin`):
+            The scheduler to get timesteps from.
+        num_inference_steps (`int`):
+            The number of diffusion steps used when generating samples with a pre-trained model. If used, `timesteps`
+            must be `None`.
+        device (`str` or `DeviceRef`, *optional*):
+            The device to which the timesteps should be moved to. If `None`, the timesteps are not moved.
+        timesteps (`List[int]`, *optional*):
+            Custom timesteps used to override the timestep spacing strategy of the scheduler. If `timesteps` is passed,
+            `num_inference_steps` and `sigmas` must be `None`.
+        sigmas (`List[float]`, *optional*):
+            Custom sigmas used to override the timestep spacing strategy of the scheduler. If `sigmas` is passed,
+            `num_inference_steps` and `timesteps` must be `None`.
 
-    language_model: Model
-    """The compiled language model for text generation."""
+    Returns:
+        `Tuple[TensorValue, int]`: A tuple where the first element is the timestep schedule from the scheduler and the
+        second element is the number of inference steps.
+    """
+    if timesteps is not None and sigmas is not None:
+        raise ValueError("Only one of `timesteps` or `sigmas` can be passed. Please choose one to set custom values")
+    if timesteps is not None:
+        accepts_timesteps = "timesteps" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
+        if not accepts_timesteps:
+            raise ValueError(
+                f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
+                f" timestep schedules. Please check whether you are using the correct scheduler."
+            )
+        scheduler.set_timesteps(timesteps=timesteps, device=device, **kwargs)
+        timesteps = scheduler.timesteps
+        num_inference_steps = len(timesteps)
+    elif sigmas is not None:
+        accept_sigmas = "sigmas" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
+        if not accept_sigmas:
+            raise ValueError(
+                f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
+                f" sigmas schedules. Please check whether you are using the correct scheduler."
+            )
+        scheduler.set_timesteps(sigmas=sigmas, device=device, **kwargs)
+        timesteps = scheduler.timesteps
+        num_inference_steps = len(timesteps)
+    else:
+        scheduler.set_timesteps(num_inference_steps, device=device, **kwargs)
+        timesteps = scheduler.timesteps
+    return timesteps, num_inference_steps
 
-    model_config: ZImageConfig | None
-    """The ZImage model configuration."""
 
-    _input_row_offsets_prealloc: list[Tensor]
-    """Pre-allocated per-device tensors for input row offsets in multi-step execution."""
+class ZImagePipeline(DiffusionPipeline, FromSingleFileMixin):
+    model_cpu_offload_seq = "text_encoder->transformer->vae"
+    _callback_tensor_inputs = ["latents", "prompt_embeds"]
 
     def __init__(
         self,
-        pipeline_config: PipelineConfig,
-        session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
-        devices: list[Device],
-        kv_cache_config: KVCacheConfig,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
-    ) -> None:
-        super().__init__(
-            pipeline_config,
-            session,
-            huggingface_config,
-            encoding,
-            devices,
-            kv_cache_config,
-            weights,
-            adapter,
-            return_logits,
+        scheduler: FlowMatchEulerDiscreteScheduler,
+        vae: AutoencoderKL,
+        text_encoder: PreTrainedModel,
+        tokenizer: AutoTokenizer,
+        transformer: ZImageTransformer2DModel,
+    ):
+        super().__init__()
+
+        self.register_modules(
+            vae=vae,
+            text_encoder=text_encoder,
+            tokenizer=tokenizer,
+            scheduler=scheduler,
+            transformer=transformer,
+        )
+        self.vae_scale_factor = (
+            2 ** (len(self.vae.config.block_out_channels) - 1) if hasattr(self, "vae") and self.vae is not None else 8
+        )
+        self.image_processor = VaeImageProcessor(vae_scale_factor=self.vae_scale_factor * 2)
+
+    def encode_prompt(
+        self,
+        prompt: Union[str, List[str]],
+        device: Optional[DeviceRef] = None,
+        do_classifier_free_guidance: bool = True,
+        negative_prompt: Optional[Union[str, List[str]]] = None,
+        prompt_embeds: Optional[List[TensorValue]] = None,
+        negative_prompt_embeds: Optional[TensorValue] = None,
+        max_sequence_length: int = 512,
+    ):
+        prompt = [prompt] if isinstance(prompt, str) else prompt
+        prompt_embeds = self._encode_prompt(
+            prompt=prompt,
+            device=device,
+            prompt_embeds=prompt_embeds,
+            max_sequence_length=max_sequence_length,
         )
 
-        self.model_config = None
-        self._session = session  # reuse for on-device casts
-
-        self.vision_model, self.language_model = self.load_model(session)
-
-        self._parallel_ops = ParallelArrayOps(max_workers=24)
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the ZImage model."""
-        return ZImageConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        n_devices: int,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        """Gets the parameters required to configure the KV cache for ZImage."""
-        return ZImageConfig.get_kv_params(
-            huggingface_config, n_devices, kv_cache_config, cache_dtype
-        )
-
-    @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        """Gets the number of hidden layers from the HuggingFace configuration."""
-        return ZImageConfig.get_num_layers(huggingface_config)
-
-    @classmethod
-    def estimate_kv_cache_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        devices: list[Device],
-        huggingface_config: AutoConfig,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        """Estimates the size of the KV cache required for the ZImage model in bytes."""
-        return estimate_kv_cache_size(
-            params=ZImageConfig.get_kv_params(
-                huggingface_config=huggingface_config,
-                n_devices=len(devices),
-                kv_cache_config=kv_cache_config,
-                cache_dtype=cache_dtype,
-            ),
-            max_batch_size=pipeline_config.max_batch_size,
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            ),
-            available_cache_memory=available_cache_memory,
-        )
-
-    def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[Value[Any]]
-    ) -> list[PagedCacheValues]:
-        """Unflatten KV cache inputs from flat list to per-device structure."""
-        fetch_types = self.kv_manager.get_symbolic_inputs()[0]
-        len_of_kv_tuple_per_dev = len(list(fetch_types))
-        n_devices = len(self.devices)
-
-        kv_caches_per_dev: list[PagedCacheValues] = []
-        for i in range(n_devices):
-            start_idx = i * len_of_kv_tuple_per_dev
-            kv_caches_per_dev.append(
-                PagedCacheValues(
-                    kv_blocks=kv_inputs_flat[start_idx].buffer,
-                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
-                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
-                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
-                )
-            )
-        return kv_caches_per_dev
-
-    def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
-        """Loads the compiled ZImage models into the MAX Engine session.
-
-        Returns:
-            A tuple of (vision_model, language_model).
-        """
-        # Pre-allocation for multi-step execution
-        if not self.pipeline_config.max_batch_size:
-            raise ValueError("Expected max_batch_size to be set")
-        self._input_row_offsets_prealloc = Tensor.from_numpy(
-            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
-        ).to(self.devices)
-
-        # Get LLM weights dictionary. Needed before model config generation
-        # because we need to know if word embeddings are tied or not.
-        if not isinstance(self.weights, SafetensorWeights):
-            raise ValueError(
-                "ZImage currently only supports safetensors weights"
-            )
-        if self.adapter:
-            model_state_dict = self.adapter(
-                dict(self.weights.items()),
+        if do_classifier_free_guidance:
+            if negative_prompt is None:
+                negative_prompt = ["" for _ in prompt]
+            else:
+                negative_prompt = [negative_prompt] if isinstance(negative_prompt, str) else negative_prompt
+            assert len(prompt) == len(negative_prompt)
+            negative_prompt_embeds = self._encode_prompt(
+                prompt=negative_prompt,
+                device=device,
+                prompt_embeds=negative_prompt_embeds,
+                max_sequence_length=max_sequence_length,
             )
         else:
-            model_state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
-        # Get state dict for the vision encoder
-        vision_state_dict: dict[str, WeightData] = {}
-        llm_state_dict: dict[str, WeightData] = {}
-        for key, value in model_state_dict.items():
-            if key.startswith("vision_encoder."):
-                vision_state_dict[key] = value
-            elif key.startswith("language_model."):
-                llm_state_dict[key] = value
-            else:
-                raise ValueError(
-                    f"Key: {key} is not part of the vision or language model"
-                )
+            negative_prompt_embeds = []
+        return prompt_embeds, negative_prompt_embeds
 
-        # Generate ZImage config from HuggingFace config
-        ZImage_config = ZImageConfig.generate(
-            pipeline_config=self.pipeline_config,
-            huggingface_config=self.huggingface_config,
-            vae_state_dict=vae_state_dict,
-            text_encoder_state_dict=text_encoder_state_dict,
-            denoiser_state_dict=denoiser_state_dict,
-            dtype=self.dtype,
-            n_devices=len(self.devices),
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
-            return_logits=self.return_logits,
-        )
-        self.model_config = ZImage_config
+    def _encode_prompt(
+        self,
+        prompt: Union[str, List[str]],
+        device: Optional[DeviceRef] = None,
+        prompt_embeds: Optional[List[TensorValue]] = None,
+        max_sequence_length: int = 512,
+    ) -> List[TensorValue]:
+        device = device or self._execution_device
 
-        if self.model_config is None:
-            raise RuntimeError("Model config must be initialized")
-        self.model: Module = ZImage(self.model_config)
-        self.model.load_state_dict(model_state_dict, strict=True)
+        if prompt_embeds is not None:
+            return prompt_embeds
 
-        logger.info("Building and compiling vision model...")
-        before = time.perf_counter()
-        vision_graph = self._build_vision_graph()
-        vision_model = session.load(
-            vision_graph, weights_registry=vision_state_dict
-        )
-        after = time.perf_counter()
-        logger.info(
-            f"Building and compiling vision model took {after - before:.6f} seconds"
+        if isinstance(prompt, str):
+            prompt = [prompt]
+
+        for i, prompt_item in enumerate(prompt):
+            messages = [
+                {"role": "user", "content": prompt_item},
+            ]
+            prompt_item = self.tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=True,
+            )
+            prompt[i] = prompt_item
+
+        text_inputs = self.tokenizer(
+            prompt,
+            padding="max_length",
+            max_length=max_sequence_length,
+            truncation=True,
+            return_tensors="pt",
         )
 
-        logger.info("Building and compiling language model...")
-        before = time.perf_counter()
-        language_graph = self._build_language_graph()
-        language_model = session.load(
-            language_graph, weights_registry=llm_state_dict
-        )
-        after = time.perf_counter()
-        logger.info(
-            f"Building and compiling language model took {after - before:.6f} seconds"
-        )
+        text_input_ids = text_inputs.input_ids.to(device)
+        prompt_masks = text_inputs.attention_mask.to(device).bool()
 
-        return vision_model, language_model
+        prompt_embeds = self.text_encoder(
+            input_ids=text_input_ids,
+            attention_mask=prompt_masks,
+            output_hidden_states=True,
+        ).hidden_states[-2]
 
-    def _build_vision_graph(self) -> Graph:
-        """Build the vision model graph for processing images.
+        embeddings_list = []
 
-        Now supports multi-GPU processing for the vision encoder.
-        """
+        for i in range(len(prompt_embeds)):
+            embeddings_list.append(prompt_embeds[i][prompt_masks[i]])
 
-        # Create ZImage model and vision encoder
-        if not isinstance(self.model, ZImage):
-            raise TypeError(f"Expected ZImage model, got {type(self.model).__name__}")
-        vision_encoder = self.model.vision_encoder
-        # Define vision graph input types - one per device
-        # vision_seq_len is the number of patches in all images and videos in the request
-        pixel_values_types = [
-            TensorType(
-                DType.float32,
-                shape=["vision_seq_len", vision_encoder.patch_embed.patch_dim],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
+        return embeddings_list
 
-        rot_pos_ids_types = [
-            TensorType(
-                DType.int64,
-                shape=["vision_seq_len", 2],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
+    def prepare_latents(
+        self,
+        batch_size: int,
+        num_channels_latents: int,
+        height: int,
+        width: int,
+        dtype: DType,
+        device: DeviceRef,
+        generator,
+        latents: Optional[TensorValue] = None,
+    ) -> TensorValue:
+        height = 2 * (int(height) // (self.vae_scale_factor * 2))
+        width = 2 * (int(width) // (self.vae_scale_factor * 2))
 
-        window_index_types = [
-            TensorType(
-                DType.int64,
-                shape=["window_seq_len"],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
+        shape = (batch_size, num_channels_latents, height, width)
 
-        max_grid_size_types = [
-            TensorType(
-                DType.int32,
-                shape=[],
-                device=DeviceRef.CPU(),
-            )
-            for device in self.devices
-        ]
+        if latents is None:
+            latents = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
+        else:
+            if latents.shape != shape:
+                raise ValueError(f"Unexpected latents shape, got {latents.shape}, expected {shape}")
+            latents = latents.to(device)
+        return latents
 
-        # Create signal types for distributed communication
-        signals = Signals(
-            devices=(DeviceRef(d.label, d.id) for d in self.devices)
-        )
+    @property
+    def guidance_scale(self) -> float:
+        return self._guidance_scale
 
-        cu_seqlens_types = [
-            TensorType(
-                DType.uint32,
-                shape=["n_seqlens"],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
+    @property
+    def do_classifier_free_guidance(self) -> bool:
+        return self._guidance_scale > 1
 
-        cu_window_seqlens_types = [
-            TensorType(
-                DType.uint32,
-                shape=["n_window_seqlens"],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
+    @property
+    def joint_attention_kwargs(self) -> Optional[Dict[str, Any]]:
+        return self._joint_attention_kwargs
 
-        max_seqlen_types = [
-            TensorType(
-                DType.uint32,
-                shape=[1],
-                device=DeviceRef.CPU(),
-            )
-            for _ in self.devices
-        ]
+    @property
+    def num_timesteps(self) -> int:
+        return self._num_timesteps
 
-        max_window_seqlen_types = [
-            TensorType(
-                DType.uint32,
-                shape=[1],
-                device=DeviceRef.CPU(),
-            )
-            for _ in self.devices
-        ]
+    @property
+    def interrupt(self) -> Optional[Callable[[TensorValue], bool]]:
+        return self._interrupt
 
-        # Build the vision graph
-        with Graph(
-            "ZImage_vision",
-            input_types=tuple(
-                [
-                    *pixel_values_types,
-                    *rot_pos_ids_types,
-                    *window_index_types,
-                    *cu_seqlens_types,
-                    *cu_window_seqlens_types,
-                    *max_seqlen_types,
-                    *max_window_seqlen_types,
-                    *max_grid_size_types,
-                    *signals.input_types(),
-                ]
-            ),
-        ) as graph:
-            # Extract inputs
-            all_inputs = graph.inputs
-            n_devices = len(self.devices)
-
-            pixel_values_list = [inp.tensor for inp in all_inputs[:n_devices]]
-            rot_pos_ids_list = [
-                inp.tensor for inp in all_inputs[n_devices : 2 * n_devices]
-            ]
-            window_index_list = [
-                inp.tensor for inp in all_inputs[2 * n_devices : 3 * n_devices]
-            ]
-            cu_seqlens_list = [
-                inp.tensor for inp in all_inputs[3 * n_devices : 4 * n_devices]
-            ]
-            cu_window_seqlens_list = [
-                inp.tensor for inp in all_inputs[4 * n_devices : 5 * n_devices]
-            ]
-            max_seqlen_list = [
-                inp.tensor for inp in all_inputs[5 * n_devices : 6 * n_devices]
-            ]
-            max_window_seqlen_list = [
-                inp.tensor for inp in all_inputs[6 * n_devices : 7 * n_devices]
-            ]
-            max_grid_size_list = [
-                inp.tensor for inp in all_inputs[7 * n_devices : 8 * n_devices]
-            ]
-            signal_buffers = [inp.buffer for inp in all_inputs[8 * n_devices :]]
-
-            vision_outputs = vision_encoder(
-                pixel_values=pixel_values_list,
-                rot_pos_ids=rot_pos_ids_list,
-                window_index=window_index_list,
-                cu_seqlens=cu_seqlens_list,
-                cu_window_seqlens=cu_window_seqlens_list,
-                max_seqlen=max_seqlen_list,
-                max_window_seqlen=max_window_seqlen_list,
-                max_grid_size=max_grid_size_list,
-                signal_buffers=signal_buffers,
-            )
-
-            # Ensure we have a valid output
-            if vision_outputs is None:
-                raise RuntimeError("Vision encoder must return a valid output")
-
-            graph.output(*vision_outputs)
-
-        return graph
-
-    def _build_language_graph(self) -> Graph:
-        """Build the language model graph for text generation with image embeddings."""
-
-        if not isinstance(self.model, ZImage):
-            raise TypeError(f"Expected ZImage model, got {type(self.model).__name__}")
-        language_model = self.model.language_model
-
-        # Generate DeviceRef
-        device_ref = DeviceRef.from_device(self.devices[0])
-
-        input_ids_type = TensorType(
-            DType.int64,
-            shape=["total_seq_len"],
-            device=device_ref,
-        )
-        return_n_logits_type = TensorType(
-            DType.int64,
-            shape=["return_n_logits"],
-            device=DeviceRef.CPU(),
-        )
-        # Create input_row_offsets_type for each device
-        input_row_offsets_types = [
-            TensorType(
-                DType.uint32,
-                shape=["input_row_offsets_len"],
-                device=DeviceRef.from_device(dev),
-            )
-            for dev in self.devices
-        ]
-
-        signals = Signals(
-            devices=(DeviceRef(d.label, d.id) for d in self.devices)
-        )
-        if self.model_config is None:
-            raise RuntimeError("Model config must be initialized")
-
-        # Add image embeddings type - one per device, can be empty for text-only inputs
-        image_embeddings_types = [
-            TensorType(
-                self.dtype,
-                shape=[
-                    "vision_seq_len",
-                    self.model_config.llm_config.hidden_size,
-                ],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-
-        # Add image token indices type - one per device
-        scatter_indices_types = [
-            TensorType(
-                DType.int32,
-                shape=["total_image_tokens"],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-
-        # Add gather indices type - one per device
-        gather_indices_types = [
-            TensorType(
-                DType.int64,  # gather requires int64 indices
-                shape=["total_image_tokens"],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-
-        position_ids_type = TensorType(
-            DType.uint32,
-            shape=[len(self.model_config.mrope_section), "total_seq_len"],
-            device=device_ref,
-        )
-
-        kv_inputs = self.kv_manager.get_symbolic_inputs()
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
-
-        with Graph(
-            "ZImage_language",
-            input_types=(
-                input_ids_type,
-                return_n_logits_type,
-                *input_row_offsets_types,
-                *image_embeddings_types,
-                *scatter_indices_types,
-                *gather_indices_types,
-                position_ids_type,
-                *signals.input_types(),
-                *flattened_kv_types,
-            ),
-        ) as graph:
-            (
-                input_ids,
-                return_n_logits,
-                *variadic_args,
-            ) = graph.inputs
-
-            # Extract input_row_offsets (one per device)
-            input_row_offsets = [
-                v.tensor for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
-
-            # Extract image embeddings (one per device)
-            image_embeddings = [
-                v.tensor for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
-
-            # Extract image token indices (one per device)
-            scatter_indices = [
-                v.tensor for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
-
-            # Extract gather indices (one per device)
-            gather_indices = [
-                v.tensor for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
-
-            # Extract position_ids
-            position_ids = variadic_args[0].tensor
-            variadic_args = variadic_args[1:]
-
-            # Extract signal buffers (one per device)
-            signal_buffers = [
-                v.buffer for v in variadic_args[: len(self.devices)]
-            ]
-
-            # Unmarshal the remaining arguments, which are for KV cache.
-            variadic_args = variadic_args[len(self.devices) :]
-            kv_collections = self._unflatten_kv_inputs(variadic_args)
-
-            # Execute language model: text + image embeddings -> logits
-            outputs = language_model(
-                tokens=input_ids.tensor,
-                return_n_logits=return_n_logits.tensor,
-                image_embeddings=image_embeddings,
-                scatter_indices=scatter_indices,
-                gather_indices=gather_indices,
-                position_ids=position_ids,
-                signal_buffers=signal_buffers,
-                kv_collections=kv_collections,
-                input_row_offsets=input_row_offsets,
-                mrope_section=self.model_config.mrope_section,
-            )
-
-            graph.output(*outputs)
-
-        return graph
-
-    @cached_property
-    def _empty_image_embeddings(self) -> list[Tensor]:
-        """Create empty image embeddings for text-only inputs on multi-device."""
-        return Tensor.zeros(
-            shape=[0, self.huggingface_config.text_config.hidden_size],
-            dtype=self.dtype,
-        ).to(self.devices)
-
-    @cached_property
-    def _empty_image_scatter_indices(self) -> list[Tensor]:
-        """Create empty image scatter indices for text-only inputs on multi-device."""
-        return Tensor.zeros(
-            shape=[0],
-            dtype=DType.int32,
-        ).to(self.devices)
-
-    @cached_property
-    def _empty_image_gather_indices(self) -> list[Tensor]:
-        """Create empty image gather indices for text-only inputs on multi-device."""
-        return Tensor.zeros(
-            shape=[0],
-            dtype=DType.int64,
-        ).to(self.devices)
-
-    def _batch_image_token_indices(
-        self, context_batch: Sequence[ZImageTextAndVisionContext]
-    ) -> tuple[list[Tensor], list[Tensor]]:
-        """Batch image token indices from multiple contexts, adjusting for
-        position in batch.
-
-        This method efficiently combines image token indices from multiple
-        contexts using vectorized operations.
+    def __call__(
+        self,
+        prompt: Union[str, List[str]] = None,
+        height: Optional[int] = None,
+        width: Optional[int] = None,
+        num_inference_steps: int = 50,
+        sigmas: Optional[List[float]] = None,
+        guidance_scale: float = 5.0,
+        cfg_normalization: bool = False,
+        cfg_truncation: float = 1.0,
+        negative_prompt: Optional[Union[str, List[str]]] = None,
+        num_images_per_prompt: Optional[int] = 1,
+        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
+        latents: Optional[TensorValue] = None,
+        prompt_embeds: Optional[List[TensorValue]] = None,
+        negative_prompt_embeds: Optional[List[TensorValue]] = None,
+        output_type: Optional[str] = "pil",
+        joint_attention_kwargs: Optional[Dict[str, Any]] = None,
+        callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
+        callback_on_step_end_tensor_inputs: List[str] = ["latents"],
+        max_sequence_length: int = 512,
+    ) -> PipelineResult:
+        r"""
+        Function invoked when calling the pipeline for generation.
 
         Args:
-            context_batch: Sequence of contexts that may contain image token
-                indices
+            prompt (`str` or `List[str]`, *optional*):
+                The prompt or prompts to guide the image generation. If not defined, one has to pass `prompt_embeds`.
+                instead.
+            height (`int`, *optional*, defaults to 1024):
+                The height in pixels of the generated image.
+            width (`int`, *optional*, defaults to 1024):
+                The width in pixels of the generated image.
+            num_inference_steps (`int`, *optional*, defaults to 50):
+                The number of denoising steps. More denoising steps usually lead to a higher quality image at the
+                expense of slower inference.
+            sigmas (`List[float]`, *optional*):
+                Custom sigmas to use for the denoising process with schedulers which support a `sigmas` argument in
+                their `set_timesteps` method. If not defined, the default behavior when `num_inference_steps` is passed
+                will be used.
+            guidance_scale (`float`, *optional*, defaults to 5.0):
+                Guidance scale as defined in [Classifier-Free Diffusion Guidance](https://arxiv.org/abs/2207.12598).
+                `guidance_scale` is defined as `w` of equation 2. of [Imagen
+                Paper](https://arxiv.org/pdf/2205.11487.pdf). Guidance scale is enabled by setting `guidance_scale >
+                1`. Higher guidance scale encourages to generate images that are closely linked to the text `prompt`,
+                usually at the expense of lower image quality.
+            cfg_normalization (`bool`, *optional*, defaults to False):
+                Whether to apply configuration normalization.
+            cfg_truncation (`float`, *optional*, defaults to 1.0):
+                The truncation value for configuration.
+            negative_prompt (`str` or `List[str]`, *optional*):
+                The prompt or prompts not to guide the image generation. If not defined, one has to pass
+                `negative_prompt_embeds` instead. Ignored when not using guidance (i.e., ignored if `guidance_scale` is
+                less than `1`).
+            num_images_per_prompt (`int`, *optional*, defaults to 1):
+                The number of images to generate per prompt.
+            generator (`torch.Generator` or `List[torch.Generator]`, *optional*):
+                One or a list of [torch generator(s)](https://pytorch.org/docs/stable/generated/torch.Generator.html)
+                to make generation deterministic.
+            latents (`TensorValue`, *optional*):
+                Pre-generated noisy latents, sampled from a Gaussian distribution, to be used as inputs for image
+                generation. Can be used to tweak the same generation with different prompts. If not provided, a latents
+                tensor will be generated by sampling using the supplied random `generator`.
+            prompt_embeds (`List[TensorValue]`, *optional*):
+                Pre-generated text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt weighting. If not
+                provided, text embeddings will be generated from `prompt` input argument.
+            negative_prompt_embeds (`List[TensorValue]`, *optional*):
+                Pre-generated negative text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt
+                weighting. If not provided, negative_prompt_embeds will be generated from `negative_prompt` input
+                argument.
+            output_type (`str`, *optional*, defaults to `"pil"`):
+                The output format of the generate image. Choose between
+                [PIL](https://pillow.readthedocs.io/en/stable/): `PIL.Image.Image` or `np.array`.
+            joint_attention_kwargs (`dict`, *optional*):
+                A kwargs dictionary that if specified is passed along to the `AttentionProcessor` as defined under
+                `self.processor` in
+                [diffusers.models.attention_processor](https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/attention_processor.py).
+            callback_on_step_end (`Callable`, *optional*):
+                A function that calls at the end of each denoising steps during the inference. The function is called
+                with the following arguments: `callback_on_step_end(self: DiffusionPipeline, step: int, timestep: int,
+                callback_kwargs: Dict)`. `callback_kwargs` will include a list of all tensors as specified by
+                `callback_on_step_end_tensor_inputs`.
+            callback_on_step_end_tensor_inputs (`List`, *optional*):
+                The list of tensor inputs for the `callback_on_step_end` function. The tensors specified in the list
+                will be passed as `callback_kwargs` argument. You will only be able to include variables listed in the
+                `._callback_tensor_inputs` attribute of your pipeline class.
+            max_sequence_length (`int`, *optional*, defaults to 512):
+                Maximum sequence length to use with the `prompt`.
+
+        Examples:
 
         Returns:
-            List of tensors containing all scatter indices distributed across devices
-            List of tensors containing all gather indices distributed across devices
+            `TensorValue`: A tensor with the generated images.
         """
-        if self.model_config is None:
-            raise RuntimeError("Model config must be initialized")
+        height = height or 1024
+        width = width or 1024
 
-        np_scatter_indices, np_gather_indices = compute_scatter_gather_indices(
-            context_batch
-        )
-
-        # Create tensor and distribute to devices
-        return (
-            Tensor.from_numpy(np_scatter_indices).to(self.devices),
-            Tensor.from_numpy(np_gather_indices).to(self.devices),
-        )
-
-    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        """Executes the ZImage model with the prepared inputs."""
-        if not isinstance(model_inputs, ZImageInputs):
-            raise ValueError("Invalid model inputs")
-
-        # Process vision inputs if present
-        image_embeddings: list[Tensor]
-
-        if model_inputs.has_vision_inputs:
-            if model_inputs.scatter_indices is None:
-                raise ValueError("scatter_indices must not be None for vision inputs")
-            if model_inputs.gather_indices is None:
-                raise ValueError("gather_indices must not be None for vision inputs")
-            if model_inputs.pixel_values is None:
-                raise ValueError("pixel_values must not be None for vision inputs")
-            if model_inputs.vision_position_ids is None:
-                raise ValueError("vision_position_ids must not be None for vision inputs")
-            if model_inputs.window_index is None:
-                raise ValueError("window_index must not be None for vision inputs")
-            if model_inputs.cu_seqlens is None:
-                raise ValueError("cu_seqlens must not be None for vision inputs")
-            if model_inputs.cu_window_seqlens is None:
-                raise ValueError("cu_window_seqlens must not be None for vision inputs")
-            if model_inputs.max_seqlen is None:
-                raise ValueError("max_seqlen must not be None for vision inputs")
-            if model_inputs.max_window_seqlen is None:
-                raise ValueError("max_window_seqlen must not be None for vision inputs")
-            if model_inputs.max_grid_size is None:
-                raise ValueError("max_grid_size must not be None for vision inputs")
-
-            # Execute vision model: pixel_values -> image_embeddings (multi-GPU)
-
-            vision_outputs = self.vision_model.execute(
-                *model_inputs.pixel_values,
-                *model_inputs.vision_position_ids,
-                *model_inputs.window_index,
-                *model_inputs.cu_seqlens,
-                *model_inputs.cu_window_seqlens,
-                *model_inputs.max_seqlen,
-                *model_inputs.max_window_seqlen,
-                *model_inputs.max_grid_size,
-                *model_inputs.signal_buffers,
+        vae_scale = self.vae_scale_factor * 2
+        if height % vae_scale != 0:
+            raise ValueError(
+                f"Height must be divisible by {vae_scale} (got {height}). "
+                f"Please adjust the height to a multiple of {vae_scale}."
+            )
+        if width % vae_scale != 0:
+            raise ValueError(
+                f"Width must be divisible by {vae_scale} (got {width}). "
+                f"Please adjust the width to a multiple of {vae_scale}."
             )
 
-            # Extract image embeddings from vision outputs (one per device)
-            if len(vision_outputs) != len(self.devices):
-                raise ValueError(f"Expected {len(self.devices)} vision outputs, got {len(vision_outputs)}")
-            image_embeddings = [
-                output
-                for output in vision_outputs
-                if isinstance(output, Tensor)
-            ]
-            image_embeddings = cast_tensors_to(
-                image_embeddings, self.dtype, self._session
-            )
+        device = self._execution_device
 
-            scatter_indices = model_inputs.scatter_indices
-            gather_indices = model_inputs.gather_indices
-
-            # The size of scatter and gather indices must match, equalling the
-            # number of image placeholder tokens in the input ids.
-            if scatter_indices[0].shape[0] != gather_indices[0].shape[0]:
-                raise ValueError(
-                    f"Scatter and gather indices must have the same size, "
-                    f"got {scatter_indices[0].shape[0]} and {gather_indices[0].shape[0]}"
-                )
-
-            # Since we gather a subset of the image embeddings, the number of
-            # gathered indices cannot exceed the number of image embeddings.
-            if gather_indices[0].shape[0] > image_embeddings[0].shape[0]:
-                raise ValueError(
-                    f"Gather indices size ({gather_indices[0].shape[0]}) cannot exceed "
-                    f"image embeddings size ({image_embeddings[0].shape[0]})"
-                )
-
-            # Since we scatter these image embeddings to some rows of the text
-            # embeddings, the number of scattered indices cannot exceed the
-            # number of input ids.
-            if scatter_indices[0].shape[0] > model_inputs.input_ids.shape[0]:
-                raise ValueError(
-                    f"Scatter indices size ({scatter_indices[0].shape[0]}) cannot exceed "
-                    f"input_ids size ({model_inputs.input_ids.shape[0]})"
-                )
-
-            # Normalize index dtypes to match the language graph contract.
-            scatter_indices = cast_tensors_to(
-                scatter_indices, DType.int32, self._session
-            )
-            gather_indices = cast_tensors_to(
-                gather_indices, DType.int64, self._session
-            )
-
+        self._guidance_scale = guidance_scale
+        self._joint_attention_kwargs = joint_attention_kwargs
+        self._interrupt = False
+        self._cfg_normalization = cfg_normalization
+        self._cfg_truncation = cfg_truncation
+        # 2. Define call parameters
+        if prompt is not None and isinstance(prompt, str):
+            batch_size = 1
+        elif prompt is not None and isinstance(prompt, list):
+            batch_size = len(prompt)
         else:
-            # Initialize empty tensors for text-only mode
-            image_embeddings = self._empty_image_embeddings
-            gather_indices = self._empty_image_gather_indices
-            scatter_indices = self._empty_image_scatter_indices
+            batch_size = len(prompt_embeds)
 
-        # Execute language model with text and image embeddings
-        language_outputs = self.language_model.execute(
-            model_inputs.input_ids,
-            model_inputs.return_n_logits,
-            *model_inputs.input_row_offsets,
-            *image_embeddings,
-            *scatter_indices,
-            *gather_indices,
-            model_inputs.position_ids,
-            *model_inputs.signal_buffers,
-            *model_inputs.kv_cache_inputs,
+        # If prompt_embeds is provided and prompt is None, skip encoding
+        if prompt_embeds is not None and prompt is None:
+            if self.do_classifier_free_guidance and negative_prompt_embeds is None:
+                raise ValueError(
+                    "When `prompt_embeds` is provided without `prompt`, "
+                    "`negative_prompt_embeds` must also be provided for classifier-free guidance."
+                )
+        else:
+            (
+                prompt_embeds,
+                negative_prompt_embeds,
+            ) = self.encode_prompt(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                do_classifier_free_guidance=self.do_classifier_free_guidance,
+                prompt_embeds=prompt_embeds,
+                negative_prompt_embeds=negative_prompt_embeds,
+                device=device,
+                max_sequence_length=max_sequence_length,
+            )
+
+        # 4. Prepare latent variables
+        num_channels_latents = self.transformer.in_channels
+
+        latents = self.prepare_latents(
+            batch_size * num_images_per_prompt,
+            num_channels_latents,
+            height,
+            width,
+            DType.float32,
+            device,
+            generator,
+            latents,
         )
 
-        # Return model outputs based on what the language model returns
-        if len(language_outputs) == 3:
-            if not isinstance(language_outputs[0], Tensor):
-                raise TypeError(f"Expected Tensor at index 0, got {type(language_outputs[0]).__name__}")
-            if not isinstance(language_outputs[1], Tensor):
-                raise TypeError(f"Expected Tensor at index 1, got {type(language_outputs[1]).__name__}")
-            if not isinstance(language_outputs[2], Tensor):
-                raise TypeError(f"Expected Tensor at index 2, got {type(language_outputs[2]).__name__}")
-            return ModelOutputs(
-                next_token_logits=language_outputs[0],
-                logits=language_outputs[1],
-                logit_offsets=language_outputs[2],
-            )
-        else:
-            if not isinstance(language_outputs[0], Tensor):
-                raise TypeError(f"Expected Tensor at index 0, got {type(language_outputs[0]).__name__}")
-            return ModelOutputs(
-                next_token_logits=language_outputs[0],
-                logits=language_outputs[0],
-            )
+        # Repeat prompt_embeds for num_images_per_prompt
+        if num_images_per_prompt > 1:
+            prompt_embeds = [pe for pe in prompt_embeds for _ in range(num_images_per_prompt)]
+            if self.do_classifier_free_guidance and negative_prompt_embeds:
+                negative_prompt_embeds = [npe for npe in negative_prompt_embeds for _ in range(num_images_per_prompt)]
 
-    @traced
-    def prepare_initial_token_inputs(
-        self,
-        context_batch: Sequence[ZImageTextAndVisionContext],  # type: ignore[override]
-        kv_cache_inputs: KVCacheInputs | None = None,
-        return_n_logits: int = 1,
-    ) -> ZImageInputs:
-        """Prepares the initial inputs for the first execution pass of the ZImage model."""
+        actual_batch_size = batch_size * num_images_per_prompt
+        image_seq_len = (latents.shape[2] // 2) * (latents.shape[3] // 2)
 
-        if kv_cache_inputs is None:
-            raise ValueError("KV Cache Inputs must be provided")
+        # 5. Prepare timesteps
+        mu = calculate_shift(
+            image_seq_len,
+            self.scheduler.config.get("base_image_seq_len", 256),
+            self.scheduler.config.get("max_image_seq_len", 4096),
+            self.scheduler.config.get("base_shift", 0.5),
+            self.scheduler.config.get("max_shift", 1.15),
+        )
+        self.scheduler.sigma_min = 0.0
+        scheduler_kwargs = {"mu": mu}
+        timesteps, num_inference_steps = retrieve_timesteps(
+            self.scheduler,
+            num_inference_steps,
+            device,
+            sigmas=sigmas,
+            **scheduler_kwargs,
+        )
+        num_warmup_steps = max(len(timesteps) - num_inference_steps * self.scheduler.order, 0)
+        self._num_timesteps = len(timesteps)
 
-        # Gather all vision data from contexts that need vision encoding
-        vision_datas: list[VisionEncodingData] = []
-        for ctx in context_batch:
-            # Validate all contexts are the correct type
-            if not isinstance(ctx, ZImageTextAndVisionContext):
-                raise TypeError(
-                    f"Expected ZImageTextAndVisionContext, got {type(ctx).__name__}"
-                )
-            if ctx.needs_vision_encoding:
-                if ctx.vision_data is None:
-                    raise ValueError(
-                        "vision_data must be present when needs_vision_encoding is True"
-                    )
-                vision_datas.append(ctx.vision_data)
-        any_needs_vision_encoding = len(vision_datas) > 0
+        # 6. Denoising loop
+        with self.progress_bar(total=num_inference_steps) as progress_bar:
+            for i, t in enumerate(timesteps):
+                if self.interrupt:
+                    continue
 
-        # Prepare Inputs Needed Regardless of Images
-        with Tracer("prepare_input_ids"):
-            input_ids = Tensor.from_numpy(
-                np.concatenate([ctx.next_tokens for ctx in context_batch])
-            ).to(self.devices[0])
+                # broadcast to batch dimension in a way that's compatible with ONNX/Core ML
+                timestep = t.expand(latents.shape[0])
+                timestep = (1000 - timestep) / 1000
+                # Normalized time for time-aware config (0 at start, 1 at end)
+                t_norm = timestep[0].item()
 
-        with Tracer("prepare_input_row_offsets"):
-            input_row_offsets = np.cumsum(
-                [0] + [ctx.active_length for ctx in context_batch],
-                dtype=np.uint32,
-            )
-            input_row_offsets_tensors = Tensor.from_numpy(input_row_offsets).to(
-                self.devices
-            )
-
-        with Tracer("prepare_decoder_position_ids"):
-            position_ids_list = []
-
-            for ctx in context_batch:
-                ctx_decoder_position_ids = ctx.decoder_position_ids
-
-                # - For each text token, the position id increases by one each time.
-                # - Each image token of same image has the same position id as they
-                #   occupy the same "position" in the sequence.
-                # - The entire image takes up some number of positions so there may
-                #   by a jump > 1 at the image end boundary.
-                #
-                # eg:
-                #               token_ids = [10, 11, 12, 13, IMG, IMG, IMG, IMG, IMG, 14, 15]
-                # temp_position_ids[0, :] = [0, 1, 2, 3, 4, 4, 4, 4, 4, 7, 8]
-                #                                                 jump ^
+                # Handle cfg truncation
+                current_guidance_scale = self.guidance_scale
                 if (
-                    ctx.needs_vision_encoding
-                    and ctx_decoder_position_ids.shape[1] == ctx.current_length
+                    self.do_classifier_free_guidance
+                    and self._cfg_truncation is not None
+                    and float(self._cfg_truncation) <= 1
                 ):
-                    position_ids_list.append(
-                        ctx_decoder_position_ids[
-                            :, ctx.start_idx : ctx.active_idx
-                        ]
-                    )
-                elif ctx.needs_vision_encoding:
-                    # Recompute decoder_position_ids using get_rope_index
-                    # This handles the case after preemption where we need to recompute the prompt
+                    if t_norm > self._cfg_truncation:
+                        current_guidance_scale = 0.0
 
-                    # Extract required parameters from context
-                    spatial_merge_size = ctx.spatial_merge_size
-                    image_token_id = ctx.image_token_id
-                    video_token_id = ctx.video_token_id
-                    vision_start_token_id = ctx.vision_start_token_id
-                    tokens_per_second = ctx.tokens_per_second
-                    image_grid_thw = (
-                        ctx.vision_data.image_grid_thw
-                        if ctx.vision_data is not None
-                        else None
-                    )
+                # Run CFG only if configured AND scale is non-zero
+                apply_cfg = self.do_classifier_free_guidance and current_guidance_scale > 0
 
-                    # Always create a fresh attention mask based on current context length
-                    # The stored attention_mask in extra_model_args may be outdated if tokens
-                    # were added after context creation (e.g., during generation before reset)
-                    attention_mask = np.ones(
-                        (1, ctx.current_length), dtype=np.float32
-                    )
-
-                    # Recompute position_ids using get_rope_index (same logic as tokenizer)
-                    temp_position_ids, rope_delta_array = get_rope_index(
-                        spatial_merge_size=spatial_merge_size,
-                        image_token_id=image_token_id,
-                        video_token_id=video_token_id,
-                        vision_start_token_id=vision_start_token_id,
-                        tokens_per_second=tokens_per_second,
-                        input_ids=ctx.tokens[: ctx.current_length].reshape(
-                            1, -1
-                        ),
-                        image_grid_thw=image_grid_thw,
-                        video_grid_thw=None,
-                        second_per_grid_ts=None,
-                        attention_mask=attention_mask,
-                    )
-                    temp_position_ids = temp_position_ids.squeeze(1)
-
-                    # Update rope_delta in context if needed
-                    ctx.rope_delta = int(rope_delta_array.item())
-
-                    # Slice to get only the active portion
-                    position_ids_list.append(
-                        temp_position_ids[:, ctx.start_idx : ctx.active_idx]
-                    )
+                if apply_cfg:
+                    latents_typed = latents.to(self.transformer.dtype)
+                    latent_model_input = latents_typed.repeat(2, 1, 1, 1)
+                    prompt_embeds_model_input = prompt_embeds + negative_prompt_embeds
+                    timestep_model_input = timestep.repeat(2)
                 else:
-                    # This case should only happen during Token Generation
+                    latent_model_input = latents.to(self.transformer.dtype)
+                    prompt_embeds_model_input = prompt_embeds
+                    timestep_model_input = timestep
 
-                    # Recompute this value on the fly.
-                    # This assumes that there are no image placeholder tokens in
-                    # next_tokens so it is a simple arange operation.
-                    context_seq_length = ctx.active_length
-                    temp_position_ids = np.arange(context_seq_length)
-                    temp_position_ids = temp_position_ids.reshape(1, 1, -1)
-                    temp_position_ids = np.tile(temp_position_ids, (3, 1, 1))
-                    # Offset by the number of previous tokens (start_idx).
-                    delta = ctx.start_idx + ctx.rope_delta
-                    temp_position_ids = temp_position_ids + delta
-                    temp_position_ids = temp_position_ids.squeeze(1)
-                    position_ids_list.append(temp_position_ids)
+                latent_model_input = latent_model_input.unsqueeze(2)
+                latent_model_input_list = list(latent_model_input.unbind(dim=0))
 
-            decoder_position_ids = Tensor.from_numpy(
-                self._parallel_ops.concatenate(
-                    position_ids_list, axis=1
-                ).astype(np.uint32)
-            ).to(self.devices[0])
+                model_out_list = self.transformer(
+                    latent_model_input_list,
+                    timestep_model_input,
+                    prompt_embeds_model_input,
+                )[0]
 
-        with Tracer("prepare_image_token_indices"):
-            scatter_indices, gather_indices = self._batch_image_token_indices(
-                context_batch
-            )
+                if apply_cfg:
+                    # Perform CFG
+                    pos_out = model_out_list[:actual_batch_size]
+                    neg_out = model_out_list[actual_batch_size:]
 
-        if not any_needs_vision_encoding:
-            return ZImageInputs(
-                input_ids=input_ids,
-                input_row_offsets=input_row_offsets_tensors,
-                position_ids=decoder_position_ids,
-                signal_buffers=self.signal_buffers,
-                return_n_logits=Tensor.from_numpy(
-                    np.array([return_n_logits], dtype=np.int64)
-                ),
-                kv_cache_inputs=kv_cache_inputs,
-                scatter_indices=scatter_indices,
-                gather_indices=gather_indices,
-                pixel_values=None,
-                window_index=None,
-                vision_position_ids=None,
-                max_grid_size=None,
-                cu_seqlens=None,
-                cu_window_seqlens=None,
-                max_seqlen=None,
-                max_window_seqlen=None,
-            )
+                    noise_pred = []
+                    for j in range(actual_batch_size):
+                        pos = pos_out[j].float()
+                        neg = neg_out[j].float()
 
-        # From here on, assume that all inputs are available in vision_data
-        # due to context validators
-        with Tracer("preparing_pixel_values"):
-            # pixel_values is a tuple of tensors, that is always length 1 with
-            # Qwen, so we can just take the first element.
-            pixel_values_list = [
-                vision_data.concatenated_pixel_values
-                for vision_data in vision_datas
-            ]
-            pixel_values_tensor = Tensor.from_numpy(
-                self._parallel_ops.concatenate(pixel_values_list)
-            )
-            pixel_values = pixel_values_tensor.to(self.devices)
+                        pred = pos + current_guidance_scale * (pos - neg)
 
-        with Tracer("preparing_window_index"):
-            # Concatenate per-context window_index with cross-context offsets so indices are unique
-            window_index_parts: list[npt.NDArray[np.int64]] = []
-            index_offset = 0
-            for ctx in context_batch:
-                if ctx.needs_vision_encoding:
-                    if ctx.vision_data is None:
-                        raise ValueError(
-                            "vision_data must be present when needs_vision_encoding is True"
-                        )
-                    per_ctx_index = ctx.vision_data.window_index.astype(
-                        np.int64
-                    )
-                    window_index_parts.append(per_ctx_index + index_offset)
-                    index_offset += int(per_ctx_index.shape[0])
-            window_index_np = np.concatenate(window_index_parts, axis=0)
-            window_index_tensor = Tensor.from_numpy(window_index_np)
-            window_index = window_index_tensor.to(self.devices)
+                        # Renormalization
+                        if self._cfg_normalization and float(self._cfg_normalization) > 0.0:
+                            ori_pos_norm = torch.linalg.vector_norm(pos)
+                            new_pos_norm = torch.linalg.vector_norm(pred)
+                            max_new_norm = ori_pos_norm * float(self._cfg_normalization)
+                            if new_pos_norm > max_new_norm:
+                                pred = pred * (max_new_norm / new_pos_norm)
 
-        with Tracer("preparing_vision_position_ids"):
-            vision_position_ids_list = [
-                vision_data.vision_position_ids for vision_data in vision_datas
-            ]
-            vision_position_ids_tensor = Tensor.from_numpy(
-                self._parallel_ops.concatenate(vision_position_ids_list).astype(
-                    np.int64
-                )
-            )
-            vision_position_ids = vision_position_ids_tensor.to(self.devices)
+                        noise_pred.append(pred)
 
-        with Tracer("preparing_max_grid_size"):
-            max_grid_size_value = max(
-                vision_data.max_grid_size.item() for vision_data in vision_datas
-            )
-            max_grid_size_tensor = Tensor.from_numpy(
-                np.array(max_grid_size_value, dtype=np.int32)
-            )
-            max_grid_size = [max_grid_size_tensor for _ in self.devices]
+                    noise_pred = ops.stack(noise_pred, dim=0)
+                else:
+                    noise_pred = ops.stack([t.float() for t in model_out_list], dim=0)
 
-        with Tracer("preparing_cu_seqlens"):
-            # Handle cumulative offsets properly when batching
-            cu_seqlens_list = []
-            offset = 0
-            for vision_data in vision_datas:
-                seqlens = vision_data.cu_seqlens
-                adjusted = seqlens.copy()
-                adjusted[1:] += offset
-                cu_seqlens_list.append(adjusted[1:])
-                offset = adjusted[-1]
+                noise_pred = noise_pred.squeeze(2)
+                noise_pred = -noise_pred
 
-            cu_seqlens_tensor = Tensor.from_numpy(
-                np.concatenate(
-                    [np.array([0], dtype=np.uint32), *cu_seqlens_list]
-                ).astype(np.uint32)
-            )
-            cu_seqlens = cu_seqlens_tensor.to(self.devices)
+                # compute the previous noisy sample x_t -> x_t-1
+                latents = self.scheduler.step(noise_pred.cast(DType.float32), t, latents)
+                assert latents.dtype == DType.float32
 
-        with Tracer("preparing_cu_window_seqlens"):
-            # cu_window_seqlens_unique is already scaled by spatial_merge_unit per-context.
-            # We only need to add cross-context offsets and concatenate.
-            cu_window_seqlens_parts: list[npt.NDArray[np.uint32]] = []
-            offset = 0
-            for vision_data in vision_datas:
-                seqlens_unique = vision_data.cu_window_seqlens_unique.astype(
-                    np.uint32
-                )
-                cu_window_seqlens_parts.append(
-                    (seqlens_unique[1:] + offset).astype(np.uint32)
-                )
-                offset = offset + seqlens_unique[-1]
+                if callback_on_step_end is not None:
+                    callback_kwargs = {}
+                    for k in callback_on_step_end_tensor_inputs:
+                        callback_kwargs[k] = locals()[k]
+                    callback_outputs = callback_on_step_end(self, i, t, callback_kwargs)
 
-            cu_window_seqlens_np = np.concatenate(
-                [np.array([0], dtype=np.uint32), *cu_window_seqlens_parts]
-            ).astype(np.uint32)
-            cu_window_seqlens_unique_tensor = Tensor.from_numpy(
-                cu_window_seqlens_np
-            )
-            cu_window_seqlens = cu_window_seqlens_unique_tensor.to(self.devices)
+                    latents = callback_outputs.pop("latents", latents)
+                    prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
+                    negative_prompt_embeds = callback_outputs.pop("negative_prompt_embeds", negative_prompt_embeds)
 
-        with Tracer("preparing_max_seqlen"):
-            max_seqlen_value = max(
-                vision_data.max_seqlen.item() for vision_data in vision_datas
-            )
-            max_seqlen_tensor = Tensor.from_numpy(
-                np.array([max_seqlen_value], dtype=np.uint32)
-            )
-            max_seqlen = [max_seqlen_tensor for _ in self.devices]
+                # call the callback, if provided
+                if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
+                    progress_bar.update()
 
-        with Tracer("preparing_max_window_seqlen"):
-            window_max_seqlen_value = max(
-                vision_data.window_max_seqlen.item()
-                for vision_data in vision_datas
-            )
-            window_max_seqlen_tensor = Tensor.from_numpy(
-                np.array([window_max_seqlen_value], dtype=np.uint32)
-            )
-            max_window_seqlen = [window_max_seqlen_tensor for _ in self.devices]
+        if output_type == "latent":
+            image = latents
 
-        return ZImageInputs(
-            input_ids=input_ids,
-            input_row_offsets=input_row_offsets_tensors,
-            signal_buffers=self.signal_buffers,
-            position_ids=decoder_position_ids,
-            return_n_logits=Tensor.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
-            kv_cache_inputs=kv_cache_inputs,
-            scatter_indices=scatter_indices,
-            gather_indices=gather_indices,
-            pixel_values=pixel_values,
-            window_index=window_index,
-            vision_position_ids=vision_position_ids,
-            max_grid_size=max_grid_size,
-            cu_seqlens=cu_seqlens,
-            cu_window_seqlens=cu_window_seqlens,
-            max_seqlen=max_seqlen,
-            max_window_seqlen=max_window_seqlen,
-        )
+        else:
+            latents = latents.to(self.vae.dtype)
+            latents = (latents / self.vae.config.scaling_factor) + self.vae.config.shift_factor
 
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Tensor,
-        prev_model_inputs: ModelInputs,
-    ) -> ZImageInputs:
-        """Prepares the inputs for subsequent execution steps in a multi-step generation."""
-        # TODO: This is still buggy. Use max_num_steps=1 until this is fixed.
-        if not isinstance(prev_model_inputs, ZImageInputs):
-            raise TypeError(
-                f"Expected ZImageInputs, got {type(prev_model_inputs).__name__}"
-            )
+            image = self.vae.decode(latents)
+            image = self.image_processor.postprocess(image, output_type=output_type)
 
-        # input_ids, old_row_offsets, Optional: [pixel_values, attention_mask]
-        old_row_offsets = prev_model_inputs.input_row_offsets
+        # Offload all models
+        self.maybe_free_model_hooks()
 
-        row_offsets_size = old_row_offsets[0].shape[0]
-        next_row_offsets = [
-            offsets_prealloc[:row_offsets_size]
-            for offsets_prealloc in self._input_row_offsets_prealloc
-        ]
-
-        old_row_offsets_np = old_row_offsets[0].to_numpy()
-        old_position_ids_np = prev_model_inputs.position_ids.to_numpy()
-
-        # Compute new position ids by adding 1 to the previous final position id
-        # for each element in the batch.
-        # TODO: check this is correct for multi-gpu
-        position_ids_np = (
-            old_position_ids_np[..., old_row_offsets_np[1:] - 1] + 1
-        )
-        position_ids = Tensor.from_numpy(position_ids_np).to(self.devices[0])
-
-        return ZImageInputs(
-            signal_buffers=self.signal_buffers,
-            input_ids=next_tokens,
-            input_row_offsets=next_row_offsets,
-            position_ids=position_ids,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            scatter_indices=None,
-            gather_indices=None,
-            # Leave vision inputs empty since they are only processed on the
-            # first step.
-            pixel_values=None,
-            window_index=None,
-            vision_position_ids=None,
-            cu_seqlens=None,
-            cu_window_seqlens=None,
-            max_seqlen=None,
-            max_window_seqlen=None,
-            max_grid_size=None,
-        )
-
-    def load_kv_manager(
-        self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager | NullKVCacheManager:
-        """Loads and initializes the PagedKVCacheManager for the ZImage model."""
-        return load_kv_manager(
-            params=ZImageConfig.get_kv_params(
-                huggingface_config=self.huggingface_config,
-                n_devices=len(self.devices),
-                kv_cache_config=self.kv_cache_config,
-                cache_dtype=self.encoding.cache_dtype,
-            ),
-            max_batch_size=self.pipeline_config.max_batch_size,
-            max_seq_len=self.calculate_max_seq_len(
-                self.pipeline_config, huggingface_config=self.huggingface_config
-            ),
-            devices=self.devices,
-            available_cache_memory=available_cache_memory,
-            session=session,
-        )
-
-    @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        # TODO: Make this more robust
-        return 5 * 1024 * 1024 * 1024  # 5 GiB
+        return image
