@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from os import abort
 from math import align_up
 from sys import (
     env_get_bool,
@@ -37,8 +38,12 @@ from internal_utils._utils import (
     static,
 )
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
+from linalg.matmul.gpu.sm100.config import MatmulConfig
+from linalg.grouped_matmul_sm100_blockwise_fp8 import (
+    grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
+)
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.utils import elementwise_epilogue_type
-from linalg.utils_gpu import MatmulConfig
 
 from utils import Index, IndexList
 from collections import OptionalReg
@@ -115,7 +120,7 @@ fn bench_grouped_matmul[
     mut bench: Bench,
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
-    expert_ids: List[Int],
+    expert_ids_input: List[Int],
     init_type: InitializationType,
 ) raises:
     comptime N = expert_shape[0]
@@ -151,12 +156,24 @@ fn bench_grouped_matmul[
     # Setup offsets and expert ids
     a_offsets_host.tensor[0] = 0
     for i in range(num_active_experts):
-        a_offsets_host.tensor[i + 1] = (
-            a_offsets_host.tensor[i] + num_tokens_by_expert[i]
-        )
-        expert_ids_host.tensor[i] = expert_ids[i]
+        var num_tokens = num_tokens_by_expert[i]
 
-    # Create device buffers
+        @parameter
+        if in_type == DType.float8_e4m3fn:
+            alias a_scale_alignment = 16 // size_of[DType.float32]()
+            if num_tokens % a_scale_alignment != 0:
+                abort(
+                    "num_tokens=num_tokens_by_expert["
+                    + String(i)
+                    + "]="
+                    + String(num_tokens)
+                    + " must be divisible by a_scale_alignment="
+                    + String(a_scale_alignment)
+                )
+        a_offsets_host.tensor[i + 1] = a_offsets_host.tensor[i] + num_tokens
+        expert_ids_host.tensor[i] = expert_ids_input[i]
+
+    # Create dev buffers
     var a_dev = DeviceNDBuffer[a_type, 2, static_a_shape](
         dynamic_a_shape, ctx=ctx
     )
@@ -173,7 +190,7 @@ fn bench_grouped_matmul[
         num_active_experts, ctx=ctx
     )
 
-    # Initialize data on the device
+    # Initialize data on the dev
     init_vector_launch[a_type](
         a_dev.buffer, a_host.tensor.num_elements(), init_type, ctx
     )
@@ -181,9 +198,45 @@ fn bench_grouped_matmul[
         b_dev.buffer, b_host.tensor.num_elements(), init_type, ctx
     )
 
-    # Move host-initialized data to device
+    # Move host-initialized data to dev
     ctx.enqueue_copy(a_offsets_dev.buffer, a_offsets_host.tensor.data)
     ctx.enqueue_copy(expert_ids_dev.buffer, expert_ids_host.tensor.data)
+
+    comptime BLOCK_SCALE_K = 128
+    comptime static_a_scales_shape = DimList(K // BLOCK_SCALE_K, Dim())
+    var dynamic_a_scales_shape = DimList(K // BLOCK_SCALE_K, total_num_tokens)
+    comptime static_b_scales_shape = DimList(
+        num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
+    )
+
+    var a_scales_dev = DeviceNDBuffer[DType.float32, 2, static_a_scales_shape](
+        dynamic_a_scales_shape, ctx=ctx
+    )
+    var b_scales_dev = DeviceNDBuffer[DType.float32, 3, static_b_scales_shape](
+        static_b_scales_shape, ctx=ctx
+    )
+
+    var a_scales_host = HostNDBuffer[DType.float32, 2, static_a_scales_shape](
+        dynamic_a_scales_shape
+    )
+    var b_scales_host = HostNDBuffer[DType.float32, 3, static_b_scales_shape](
+        static_b_scales_shape
+    )
+
+    @parameter
+    if in_type == DType.float8_e4m3fn:
+        init_vector_launch[DType.float32](
+            a_scales_dev.buffer,
+            a_scales_host.tensor.num_elements(),
+            init_type,
+            ctx,
+        )
+        init_vector_launch[DType.float32](
+            b_scales_dev.buffer,
+            b_scales_host.tensor.num_elements(),
+            init_type,
+            ctx,
+        )
 
     var c_dev_ndbuffer = c_dev.tensor
 
@@ -203,8 +256,29 @@ fn bench_grouped_matmul[
             idx, new_val.cast[out_type]()
         )
 
+    var a = from_ndbuffer_row_major(a_dev.tensor)
+    var b = from_ndbuffer_row_major(b_dev.tensor)
+    var c = from_ndbuffer_row_major(c_dev.tensor)
+    var a_scales = from_ndbuffer_row_major(a_scales_dev.tensor)
+    var b_scales = from_ndbuffer_row_major(b_scales_dev.tensor)
+    var a_offsets = from_ndbuffer_row_major(a_offsets_dev.tensor)
+    var expert_ids = from_ndbuffer_row_major(expert_ids_dev.tensor)
+
     @parameter
-    @__copy_capture(a_dev, b_dev, c_dev, a_offsets_dev, expert_ids_dev)
+    @__copy_capture(
+        a_dev,
+        b_dev,
+        c_dev,
+        a_offsets_dev,
+        expert_ids_dev,
+        a,
+        b,
+        c,
+        a_scales,
+        b_scales,
+        a_offsets,
+        expert_ids,
+    )
     @always_inline
     fn bench_func(mut bench: Bencher):
         @parameter
@@ -216,20 +290,52 @@ fn bench_grouped_matmul[
                 pass
 
             else:
-                grouped_matmul[
-                    elementwise_lambda_fn = OptionalReg[
-                        elementwise_epilogue_type
-                    ](epilogue_fn) if has_epilogue else None,
-                ](
-                    c_dev.tensor,
-                    a_dev.tensor,
-                    b_dev.tensor,
-                    a_offsets_dev.tensor,
-                    expert_ids_dev.tensor,
-                    max_num_tokens_by_expert,
-                    num_active_experts,
-                    ctx,
-                )
+
+                @parameter
+                if in_type == DType.float8_e4m3fn:
+                    comptime umma_shape = Index(64, 64, 32)
+                    comptime transpose_b = True
+                    comptime config = MatmulConfig[
+                        a_type, b_type, c_type, transpose_b
+                    ](
+                        cluster_shape=Index(1, 1, 1),
+                        mma_shape=umma_shape,
+                        cta_group=1,
+                        AB_swapped=False,
+                        k_group_size=1,
+                    )
+                    grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
+                        config=config,
+                        elementwise_lambda_fn = OptionalReg[
+                            elementwise_epilogue_type
+                        ](epilogue_fn) if has_epilogue else None,
+                    ](
+                        c,
+                        a,
+                        b,
+                        a_scales,
+                        b_scales,
+                        a_offsets,
+                        expert_ids,
+                        max_num_tokens_by_expert,
+                        num_active_experts,
+                        ctx,
+                    )
+                else:
+                    grouped_matmul[
+                        elementwise_lambda_fn = OptionalReg[
+                            elementwise_epilogue_type
+                        ](epilogue_fn) if has_epilogue else None,
+                    ](
+                        c_dev.tensor,
+                        a_dev.tensor,
+                        b_dev.tensor,
+                        a_offsets_dev.tensor,
+                        expert_ids_dev.tensor,
+                        max_num_tokens_by_expert,
+                        num_active_experts,
+                        ctx,
+                    )
 
         bench.iter_custom[kernel_launch](ctx)
 
