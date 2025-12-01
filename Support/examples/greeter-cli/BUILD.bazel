@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "driver_option_tablegen", "modular_cc_binary")
 
+package(default_visibility = ["//visibility:public"])
+
 driver_option_tablegen(
     name = "Hi",
     srcs = glob(["Hi/*.td"]),

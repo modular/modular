@@ -2,6 +2,10 @@ load("//bazel:api.bzl", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modu
 load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES")
 load("//max/python/max/_core/internal/mlir_nanobind:tblgen.bzl", "mlir_nanobind")  # buildifier: disable=bzl-visibility
 
+# gazelle:default_visibility //visibility:public
+
+package(default_visibility = ["//visibility:public"])
+
 exports_files(["include/Support/Driver/DriverCommand.td"])
 
 pkg_files(
@@ -13,7 +17,6 @@ pkg_files(
         ":MDialect.doc",
     ],
     prefix = "Support/docs",
-    visibility = ["//visibility:public"],
 )
 
 modular_cc_library(
@@ -516,7 +519,6 @@ td_library(
         "include/Support/Compiler/*.td",
     ]),
     includes = ["include"],
-    visibility = ["//visibility:public"],
     deps = [
         "@llvm-project//mlir:BuiltinDialectTdFiles",
     ],
@@ -647,7 +649,6 @@ filegroup(
         "include/Support/DebugInfoDialect/**/*.td",
         "include/Support/Compiler/*.td",
     ]),
-    visibility = ["//visibility:public"],
 )
 
 gentbl_modular_passes(
@@ -862,7 +863,6 @@ td_library(
     name = "DriverCommandTdFiles",
     srcs = glob(["include/Support/Driver/*.td"]),
     includes = ["include"],
-    visibility = ["//visibility:public"],
     deps = [
         "@llvm-project//llvm:OptParserTdFiles",
     ],
@@ -872,7 +872,6 @@ td_library(
     name = "OptTableTdFiles",
     srcs = ["include/Support/Driver/OptTable.inc"],
     includes = ["include"],
-    visibility = ["//visibility:public"],
 )
 
 modular_shared_library(
@@ -928,7 +927,6 @@ mlir_nanobind(
     name = "MDialectNanobindInc",
     srcs = glob(["include/Support/MDialect/*.td"]),
     output_dir = "include/Support/MDialect/Nanobind",
-    visibility = ["//visibility:public"],
     deps = [
         ":MTdFiles",
     ],

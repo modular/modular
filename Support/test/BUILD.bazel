@@ -1,6 +1,10 @@
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//bazel:api.bzl", "lit_tests", "modular_cc_binary", "modular_shared_library")
 
+# gazelle:default_visibility //visibility:private
+
+package(default_visibility = ["//visibility:private"])
+
 modular_shared_library(
     name = "binary_id_shared_library",
     srcs = ["binary_id_shared_library.cpp"],

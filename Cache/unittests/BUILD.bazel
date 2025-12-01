@@ -1,5 +1,9 @@
 load("//bazel:api.bzl", "modular_cc_test")
 
+# gazelle:default_visibility //visibility:private
+
+package(default_visibility = ["//visibility:private"])
+
 modular_cc_test(
     name = "unittests",
     srcs = glob(["*.cpp"]),

@@ -1,5 +1,17 @@
 load("//bazel:api.bzl", "modular_cc_library")
 
+# gazelle:default_visibility //Cache:consumers
+
+package(default_visibility = ["//Cache:consumers"])
+
+package_group(
+    name = "consumers",
+    packages = [
+        "//GenericML/...",
+        "//KGEN/...",
+    ],
+)
+
 modular_cc_library(
     name = "Cache",
     srcs = glob(["lib/**/*.cpp"]),

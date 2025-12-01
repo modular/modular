@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "modular_cc_binary")
 
+package(default_visibility = ["//visibility:public"])
+
 modular_cc_binary(
     name = "build-info",
     srcs = glob(["*.cpp"]),

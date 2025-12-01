@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "modular_cc_binary")
 
+package(default_visibility = ["//KGEN:consumers"])
+
 modular_cc_binary(
     name = "kgen-reduce",
     srcs = glob([

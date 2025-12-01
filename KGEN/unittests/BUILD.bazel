@@ -1,5 +1,9 @@
 load("//bazel:api.bzl", "kgen_kernel", "modular_cc_test")
 
+# gazelle:default_visibility //visibility:private
+
+package(default_visibility = ["//visibility:private"])
+
 kgen_kernel(
     name = "test_kernels",
     testonly = True,

@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "driver_option_tablegen", "modular_cc_binary", "pkg_files", "td_library")
 
+package(default_visibility = ["//KGEN:consumers"])
+
 [
     driver_option_tablegen(
         name = command,
