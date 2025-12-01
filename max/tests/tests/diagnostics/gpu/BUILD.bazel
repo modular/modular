@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "modular_py_test")
 
+package(default_visibility = ["//max/tests:__subpackages__"])
+
 modular_py_test(
     name = "gpu",
     size = "small",
