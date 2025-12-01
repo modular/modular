@@ -16,7 +16,7 @@ on:
   issue_comment:
     types: [created]
   pull_request_target:
-    types: [opened]
+    types: [opened, synchronize]
 
 # explicitly configure permissions, in case your GITHUB_TOKEN workflow permissions are set to read-only in repository settings
 permissions:
