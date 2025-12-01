@@ -13,7 +13,6 @@ modular_cc_binary(
         "MODULAR_CRASH_REPORTING_HANDLER_PATH": "$(rootpath @crashpad//:modular-crashpad-handler)",
         "MODULAR_CRASH_REPORTING_URL": "https://crash-reporting.dev.modular.com",
     },
-    visibility = ["//visibility:public"],
     deps = [
         "//AsyncRT:RuntimeGlobals",
         "//Init",

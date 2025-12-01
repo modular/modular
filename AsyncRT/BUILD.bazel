@@ -255,7 +255,6 @@ modular_shared_library(
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
-    visibility = ["//visibility:public"],
     deps = [
         ":DeviceContextImpl",
         ":NIXLLibOnly",
@@ -304,7 +303,6 @@ modular_shared_library(
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
-    visibility = ["//visibility:public"],
     deps = [
         ":DeviceContextImpl",
         ":NIXLLibOnly",
@@ -353,7 +351,6 @@ modular_shared_library(
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
-    visibility = ["//visibility:public"],
     deps = [
         ":DeviceContextImpl",
         ":NIXLLibOnly",
@@ -401,7 +398,6 @@ modular_shared_library(
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
-    visibility = ["//visibility:public"],
     deps = [
         ":DeviceContextImpl",
         ":NIXLLibOnly",
@@ -447,7 +443,6 @@ modular_shared_library(
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
-    visibility = ["//visibility:public"],
     deps = [
         ":DeviceContext",
         ":DeviceContextImpl",

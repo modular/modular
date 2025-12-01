@@ -11,7 +11,6 @@ modular_cc_library(
     ],
     hdrs = glob(["include/**/*.h"]),
     copts = ["-I$(GENDIR)/Config"],
-    visibility = ["//visibility:public"],
 )
 
 modular_versioned_expand_template(

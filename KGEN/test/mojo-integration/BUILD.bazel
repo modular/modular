@@ -73,5 +73,5 @@ pkg_files(
     srcs = [
         "mojo_build_python.mojo",
     ],
-    visibility = ["//visibility:public"],
+    visibility = ["//utils:__subpackages__"],
 )

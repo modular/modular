@@ -5,7 +5,6 @@ package(default_visibility = ["//AsyncRT:__subpackages__"])
 modular_cc_binary(
     name = "crash-report-path-info",
     srcs = glob(["*.cpp"]),
-    visibility = ["//visibility:public"],
     deps = [
         "//AsyncRT:RuntimeGlobals",
         "//Init",
