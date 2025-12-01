@@ -18,6 +18,7 @@ modular_py_test(
         "test_load_weights.py",
         "test_logits_processor.py",
         "test_lora.py",
+        "test_lora_model.py",
         "test_memory_estimation.py",
         "test_registry.py",
         "test_speculative_config.py",
@@ -55,6 +56,7 @@ modular_py_test(
         "//max/python/max/entrypoints",
         "//max/tests/integration/pipelines/python/test_common",
         requirement("hypothesis"),
+        requirement("safetensors"),
     ],
 )
 

@@ -263,6 +263,9 @@ def create_lora_manager(
             config=config,
             base_model_path=base_model_path,
             base_dtype=DType.float32,
+            n_heads=32,
+            n_kv_heads=8,
+            head_dim=128,
             zmq_endpoint_base="fake",
         )
 

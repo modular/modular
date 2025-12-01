@@ -439,6 +439,14 @@ def linear_lora_max_output(
                 DType.uint32, ["lora_grouped_offsets"], device=DeviceRef.CPU()
             ),
             TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
+            TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
+            TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
+            TensorType(DType.int32, ["lora_ids_kv"], device=DeviceRef.CPU()),
+            TensorType(
+                DType.uint32,
+                ["lora_grouped_offsets_kv"],
+                device=DeviceRef.CPU(),
+            ),
         ],
     ) as graph:
         (
@@ -446,15 +454,23 @@ def linear_lora_max_output(
             lora_ids_input,
             lora_ranks_input,
             lora_grouped_offsets_input,
-            lora_input_slice_idx_input,
+            num_active_loras_input,
+            lora_end_idx_input,
+            batch_seq_len_input,
+            lora_ids_kv_input,
+            lora_grouped_offsets_kv_input,
         ) = graph.inputs
         max_lora.set_lora_batch_info(
             lora_ids_input.tensor,
             lora_ranks_input.tensor,
             lora_grouped_offsets_input.tensor,
-            lora_input_slice_idx_input.tensor,
+            num_active_loras_input.tensor,
+            lora_end_idx_input.tensor,
+            batch_seq_len_input.tensor,
+            lora_ids_kv_input.tensor,
+            lora_grouped_offsets_kv_input.tensor,
         )
-        output = max_lora.apply_lora(x_input.tensor).cast(DType.float32)
+        output = max_lora.apply_lora(x_input.tensor).cast(DType.float32)  # type: ignore[attr-defined]
         graph.output(output)
 
     compiled = session.load(graph, weights_registry=max_lora.state_dict())
@@ -463,7 +479,13 @@ def linear_lora_max_output(
     lora_ids = np.zeros(batch_size, dtype=np.int32)
     lora_ranks = np.full(batch_size, rank, dtype=np.uint32)
     lora_grouped_offsets = np.arange(batch_size + 1, dtype=np.uint32)
-    lora_input_slice_idx = np.array([batch_size], dtype=np.int64)
+    num_active_loras = np.array([batch_size], dtype=np.int64)
+    lora_end_idx = np.array([batch_size], dtype=np.int64)
+    batch_seq_len = np.array([batch_size], dtype=np.int64)
+    # For LinearLoRA tests, lora_ids_kv and lora_grouped_offsets_kv are not used
+    # but must be provided as graph inputs
+    lora_ids_kv = np.zeros(1, dtype=np.int32)
+    lora_grouped_offsets_kv = np.array([0], dtype=np.uint32)
 
     x_tensor = (
         cast_tensor_to(
@@ -479,7 +501,11 @@ def linear_lora_max_output(
         Tensor.from_numpy(lora_ids),
         Tensor.from_numpy(lora_ranks).to(device),
         Tensor.from_numpy(lora_grouped_offsets),
-        Tensor.from_numpy(lora_input_slice_idx),
+        Tensor.from_numpy(num_active_loras),
+        Tensor.from_numpy(lora_end_idx),
+        Tensor.from_numpy(batch_seq_len),
+        Tensor.from_numpy(lora_ids_kv),
+        Tensor.from_numpy(lora_grouped_offsets_kv),
     )
 
 
@@ -615,9 +641,11 @@ def attention_lora_max_output(
         num_key_value_heads=config.n_kv_heads,
         hidden_size=hidden_size,
         kv_params=kv_params,
+        max_lora_rank=config.rank,
+        max_num_loras=max_adapters,
         devices=[device_ref],
         dtype=DTYPE,
-        linear_cls=linear_lora_cls,
+        linear_cls=linear_lora_cls,  # type: ignore[arg-type]
         has_bias=False,
     )
     max_attention.load_state_dict(state_dict)
@@ -650,6 +678,14 @@ def attention_lora_max_output(
                 DType.uint32, ["lora_grouped_offsets"], device=DeviceRef.CPU()
             ),
             TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
+            TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
+            TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
+            TensorType(DType.int32, ["lora_ids_kv"], device=DeviceRef.CPU()),
+            TensorType(
+                DType.uint32,
+                ["lora_grouped_offsets_kv"],
+                device=DeviceRef.CPU(),
+            ),
             blocks_type,
             cache_lengths_type,
             lookup_table_type,
@@ -662,7 +698,11 @@ def attention_lora_max_output(
             lora_ids_input,
             lora_ranks_input,
             lora_grouped_offsets_input,
-            lora_input_slice_idx_input,
+            num_active_loras_input,
+            lora_end_idx_input,
+            batch_seq_len_input,
+            lora_ids_kv_input,
+            lora_grouped_offsets_kv_input,
             blocks,
             cache_lengths,
             lookup_table,
@@ -680,7 +720,11 @@ def attention_lora_max_output(
                     lora_ids_input.tensor,
                     lora_ranks_input.tensor,
                     lora_grouped_offsets_input.tensor,
-                    lora_input_slice_idx_input.tensor,
+                    num_active_loras_input.tensor,
+                    lora_end_idx_input.tensor,
+                    batch_seq_len_input.tensor,
+                    lora_ids_kv_input.tensor,
+                    lora_grouped_offsets_kv_input.tensor,
                 )
 
         kv_collection = PagedCacheValues(
@@ -713,7 +757,13 @@ def attention_lora_max_output(
     lora_ids = np.zeros(batch_size, dtype=np.int32)
     lora_ranks = np.full(batch_size, config.rank, dtype=np.uint32)
     lora_grouped_offsets = np.array([0, seq_len, seq_len * 2], dtype=np.uint32)
-    lora_input_slice_idx = np.array([seq_len * 2], dtype=np.int64)
+    num_active_loras = np.array([batch_size], dtype=np.int64)
+    lora_end_idx = np.array([seq_len * 2], dtype=np.int64)
+    batch_seq_len = np.array([seq_len * 2], dtype=np.int64)
+    # For attention tests, lora_ids_kv and lora_grouped_offsets_kv are not used
+    # but must be provided as graph inputs
+    lora_ids_kv = np.zeros(1, dtype=np.int32)
+    lora_grouped_offsets_kv = np.array([0], dtype=np.uint32)
 
     batch = [create_text_context(np.empty(seq_len)) for _ in range(batch_size)]
 
@@ -740,7 +790,11 @@ def attention_lora_max_output(
         Tensor.from_numpy(lora_ids),
         Tensor.from_numpy(lora_ranks).to(device),
         Tensor.from_numpy(lora_grouped_offsets),
-        Tensor.from_numpy(lora_input_slice_idx),
+        Tensor.from_numpy(num_active_loras),
+        Tensor.from_numpy(lora_end_idx),
+        Tensor.from_numpy(batch_seq_len),
+        Tensor.from_numpy(lora_ids_kv),
+        Tensor.from_numpy(lora_grouped_offsets_kv),
         blocks,
         cache_lengths,
         lookup_table_tensor,
