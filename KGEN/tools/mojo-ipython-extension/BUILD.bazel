@@ -1,6 +1,8 @@
 load("//bazel:api.bzl", "modular_py_library", "modular_shared_library")
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 
+package(default_visibility = ["//KGEN:consumers"])
+
 modular_shared_library(
     name = "IPythonExtension",
     srcs = glob(["IPythonExtension/lib/*.cpp"]),

@@ -1,5 +1,9 @@
 load("//bazel:api.bzl", "modular_cc_test", "modular_python_binding_library_test")
 
+# gazelle:default_visibility //visibility:private
+
+package(default_visibility = ["//visibility:private"])
+
 modular_cc_test(
     name = "ADTTest",
     srcs = glob(["ADT/*.cpp"]),

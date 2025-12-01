@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "modular_cc_binary")
 
+package(default_visibility = ["//AsyncRT:__subpackages__"])
+
 modular_cc_binary(
     name = "crash-test-dummy",
     srcs = glob(["*.cpp"]),

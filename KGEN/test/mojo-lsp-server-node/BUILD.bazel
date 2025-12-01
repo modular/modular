@@ -2,6 +2,8 @@ load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 load("@mojo-lsp-server-node-tests//:defs.bzl", "npm_link_all_packages")
 load(":mocha.bzl", "mocha_test")
 
+package(default_visibility = ["//visibility:private"])
+
 npm_link_all_packages(name = "node_modules")
 
 mocha_test(

@@ -8,6 +8,21 @@ load(
 )
 load("//max/python/max/_core/internal/mlir_nanobind:tblgen.bzl", "mlir_nanobind")  # buildifier: disable=bzl-visibility
 
+# gazelle:default_visibility //KGEN:consumers
+
+package(default_visibility = ["//KGEN:consumers"])
+
+package_group(
+    name = "consumers",
+    packages = [
+        "//GenericML/...",
+        "//Kernels/...",
+        "//bazel/...",
+        "//docs/...",
+        "//utils/...",
+    ],
+)
+
 pkg_files(
     name = "docs",
     srcs = [

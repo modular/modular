@@ -1,0 +1,3 @@
+# gazelle:default_visibility //AsyncRT:__subpackages__
+
+package(default_visibility = ["//AsyncRT:__subpackages__"])

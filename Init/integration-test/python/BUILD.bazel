@@ -1,5 +1,9 @@
 load("//bazel:api.bzl", "modular_nanobind_extension", "modular_py_test")
 
+# gazelle:default_visibility //visibility:private
+
+package(default_visibility = ["//visibility:private"])
+
 modular_nanobind_extension(
     name = "init_bindings",
     testonly = True,

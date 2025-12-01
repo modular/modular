@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "modular_cc_binary")
 
+package(default_visibility = ["//visibility:private"])
+
 modular_cc_binary(
     name = "cache-mgr",
     srcs = glob(["*.cpp"]),
