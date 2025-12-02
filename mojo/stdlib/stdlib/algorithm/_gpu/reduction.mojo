@@ -504,8 +504,6 @@ fn saturated_reduce_kernel[
             val[i] = init[i].cast[accum_type]()
 
         # Load data & reduce
-        # TODO(jtodd): can we unroll this loop by specializing the kernel
-        # & using runtime->compiletime dispatch?
         for val_idx in range(row_size):
             row_coords[axis] = val_idx
             var t = input_fn[dtype, simd_width, rank](row_coords).cast[
