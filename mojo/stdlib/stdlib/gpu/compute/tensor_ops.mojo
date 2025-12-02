@@ -263,7 +263,7 @@ fn _tc_reduce_scalar[
         Uses matrix multiply-accumulate (MMA) operations for reduction.
     """
 
-    constrained[out_type is DType.float32]()
+    __comptime_assert out_type is DType.float32
 
     @parameter
     if out_type is DType.float32 and in_type is DType.float16:

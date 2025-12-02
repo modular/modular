@@ -125,9 +125,9 @@ struct BitSet[size: Int](
         Args:
             init: A SIMD vector of booleans to initialize the bitset with.
         """
-        constrained[
+        __comptime_assert (
             max(init.size, _WORD_BITS) // _WORD_BITS == Self._words_size
-        ]()
+        )
         self._words = type_of(self._words)(uninitialized=True)
         comptime step = min(init.size, _WORD_BITS)
 

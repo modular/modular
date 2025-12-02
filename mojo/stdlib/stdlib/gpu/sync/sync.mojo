@@ -75,9 +75,9 @@ fn named_barrier[
     """
 
     debug_assert(id < MaxHardwareBarriers, "barrier id should not exceed 16")
-    constrained[
-        is_nvidia_gpu(), "named barrier is only supported by NVIDIA GPUs"
-    ]()
+    __comptime_assert (
+        is_nvidia_gpu()
+    ), "named barrier is only supported by NVIDIA GPUs"
     _ = __mlir_op.`nvvm.barrier`[
         _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1, 1, 0>}`,
         _type = __mlir_type.i32,
@@ -107,9 +107,9 @@ fn named_barrier_arrive[
         - All threads participating in the barrier must specify the same num_threads value.
     """
     debug_assert(id < MaxHardwareBarriers, "barrier id should not exceed 16")
-    constrained[
-        is_nvidia_gpu(), "named barrier is only supported by NVIDIA GPUs"
-    ]()
+    __comptime_assert (
+        is_nvidia_gpu()
+    ), "named barrier is only supported by NVIDIA GPUs"
     __mlir_op.`nvvm.barrier.arrive`(to_i32(id), to_i32(num_threads))
 
 
@@ -126,7 +126,7 @@ fn barrier():
     if is_nvidia_gpu():
         __mlir_op.`nvvm.barrier0`()
     elif _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM:
-        constrained[is_amd_gpu()]()
+        __comptime_assert is_amd_gpu()
         llvm_intrinsic["llvm.amdgcn.s.waitcnt", NoneType](Int32(0xC07F))
         llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
     elif is_amd_gpu():
@@ -335,9 +335,9 @@ struct _WaitCountArg:
 
     @staticmethod
     fn from_vmcnt(cnt: UInt32) -> UInt32:
-        constrained[
-            _is_amd_cdna(), "from_vmcnt is only supported on AMD CDNA GPUs"
-        ]()
+        __comptime_assert (
+            _is_amd_cdna()
+        ), "from_vmcnt is only supported on AMD CDNA GPUs"
         debug_assert(
             cnt <= Self.MAX_VM_CNT,
             "cnt should be less than or equal to MAX_VM_CNT = 63",
@@ -346,9 +346,9 @@ struct _WaitCountArg:
 
     @staticmethod
     fn from_expcnt(cnt: UInt32) -> UInt32:
-        constrained[
-            _is_amd_cdna(), "from_expcnt is only supported on AMD CDNA GPUs"
-        ]()
+        __comptime_assert (
+            _is_amd_cdna()
+        ), "from_expcnt is only supported on AMD CDNA GPUs"
         debug_assert(
             cnt <= Self.MAX_EXP_CNT,
             "cnt should be less than or equal to MAX_EXP_CNT = 7",
@@ -357,9 +357,9 @@ struct _WaitCountArg:
 
     @staticmethod
     fn from_lgkmcnt(cnt: UInt32) -> UInt32:
-        constrained[
-            _is_amd_cdna(), "from_lgkmcnt is only supported on AMD CDNA GPUs"
-        ]()
+        __comptime_assert (
+            _is_amd_cdna()
+        ), "from_lgkmcnt is only supported on AMD CDNA GPUs"
         debug_assert(
             cnt <= Self.MAX_LGKM_CNT,
             "cnt should be less than or equal to MAX_LGKM_CNT = 15",
@@ -393,9 +393,9 @@ fn s_waitcnt[
         - The counters should be set carefully to avoid deadlocks or missed synchronization.
         - For example, s_waitcnt(vmcnt=0, expcnt=0, lgkmcnt=0) waits until all memory operations are complete.
     """
-    constrained[
-        _is_amd_cdna(), "s_waitcnt is only supported on AMD CDNA GPUs"
-    ]()
+    __comptime_assert (
+        _is_amd_cdna()
+    ), "s_waitcnt is only supported on AMD CDNA GPUs"
     comptime waitcnt_val = (
         _WaitCountArg.from_vmcnt(vmcnt)
         | _WaitCountArg.from_expcnt(expcnt)
@@ -427,9 +427,9 @@ fn s_waitcnt_barrier[
         - Use this to guarantee memory visibility and thread ordering for precise synchronization.
         - For example, s_waitcnt_barrier(0,0,0) ensures all outstanding memory instructions are completed and then all threads are synchronized.
     """
-    constrained[
-        _is_amd_cdna(), "s_waitcnt_barrier is only supported on AMD CDNA GPUs"
-    ]()
+    __comptime_assert (
+        _is_amd_cdna()
+    ), "s_waitcnt_barrier is only supported on AMD CDNA GPUs"
     s_waitcnt[vmcnt=vmcnt, expcnt=expcnt, lgkmcnt=lgkmcnt]()
     llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
 

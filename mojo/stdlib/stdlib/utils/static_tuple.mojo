@@ -171,7 +171,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         Returns:
             The value at the specified position.
         """
-        constrained[index < Self.size]()
+        __comptime_assert index < Self.size
         var val = __mlir_op.`pop.array.get`[
             _type = Self.element_type,
             index = index._mlir_value,
@@ -218,7 +218,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         Args:
             val: The value to store.
         """
-        constrained[idx < Self.size]()
+        __comptime_assert idx < Self.size
 
         self._unsafe_ref(idx) = val
 
@@ -242,7 +242,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         Returns:
             A new tuple with the specified element value replaced.
         """
-        constrained[idx < Self.size]()
+        __comptime_assert idx < Self.size
 
         var array = __mlir_op.`pop.array.replace`[
             _type = __mlir_type[

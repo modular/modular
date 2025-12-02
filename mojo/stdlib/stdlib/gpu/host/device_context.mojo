@@ -4574,9 +4574,9 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             block_dim, location=__call_location()
         )
 
-        constrained[
-            Bool(f.declared_arg_types), "Calling a non-checked function."
-        ]()
+        __comptime_assert Bool(
+            f.declared_arg_types
+        ), "Calling a non-checked function."
         self._enqueue_function_checked(
             f,
             args,
@@ -5206,9 +5206,9 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             block_dim, location=__call_location()
         )
 
-        constrained[
-            Bool(f.declared_arg_types), "Calling a non-checked function."
-        ]()
+        __comptime_assert Bool(
+            f.declared_arg_types
+        ), "Calling a non-checked function."
         self._enqueue_function_checked(
             f,
             args,

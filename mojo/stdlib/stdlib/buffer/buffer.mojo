@@ -201,7 +201,7 @@ fn _compute_ndbuffer_stride[
     Returns:
         The default strides of the NDBuffer.
     """
-    constrained[rank > 0]()
+    __comptime_assert rank > 0
 
     @parameter
     if rank == 1:
@@ -728,7 +728,7 @@ struct NDBuffer[
         Returns:
             The offset into the NDBuffer given the indices.
         """
-        constrained[Self.rank <= _MAX_RANK]()
+        __comptime_assert Self.rank <= _MAX_RANK
         return self.data.offset(_compute_ndbuffer_offset(self, idx))
 
     @always_inline
@@ -740,7 +740,7 @@ struct NDBuffer[
         mut = Self.mut,
         origin = Self.origin, **_,
     ]:
-        constrained[Self.rank <= _MAX_RANK]()
+        __comptime_assert Self.rank <= _MAX_RANK
         return self.data.offset(_compute_ndbuffer_offset(self, idx))
 
     @always_inline
@@ -760,7 +760,7 @@ struct NDBuffer[
         Returns:
             The offset into the NDBuffer given the indices.
         """
-        constrained[Self.rank <= _MAX_RANK]()
+        __comptime_assert Self.rank <= _MAX_RANK
         return self.data.offset(_compute_ndbuffer_offset(self, idx))
 
     @always_inline

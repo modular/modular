@@ -54,7 +54,13 @@ fn _base64_simd_mask[
 # |--- ascii(d) ---|--- ascii(c) ---|--- ascii(b) ---|--- ascii(a) ---|
 # |. . d₅d₄d₃d₂d₁d₀|. . c₅c₄c₃c₂c₁c₀|. . b₅b₄b₃b₂b₁b₀|. . a₅a₄a₃a₂a₁a₀|
 fn _6bit_to_byte[width: Int](input: Bytes[width]) -> Bytes[width]:
-    constrained[width in [4, 8, 16, 32, 64], "width must be between 4 and 64"]()
+    __comptime_assert width in [
+        4,
+        8,
+        16,
+        32,
+        64,
+    ], "width must be between 4 and 64"
 
     fn indices() -> IndexList[width]:
         var perm = [1, 0, 2, 1]

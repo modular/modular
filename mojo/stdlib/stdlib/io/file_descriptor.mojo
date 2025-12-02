@@ -92,9 +92,9 @@ struct FileDescriptor(Writer):
             If the operation fails.
         """
 
-        constrained[
-            not is_gpu(), "`read_bytes()` is not yet implemented for GPUs."
-        ]()
+        __comptime_assert (
+            not is_gpu()
+        ), "`read_bytes()` is not yet implemented for GPUs."
 
         @parameter
         if CompilationTarget.is_macos() or CompilationTarget.is_linux():

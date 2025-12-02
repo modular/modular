@@ -105,7 +105,7 @@ fn _write_float[
         writer: The Writer to write the float to.
         value: The float to write into the Writer.
     """
-    constrained[dtype.is_floating_point()]()
+    __comptime_assert dtype.is_floating_point()
 
     @parameter
     if dtype is DType.float8_e5m2:

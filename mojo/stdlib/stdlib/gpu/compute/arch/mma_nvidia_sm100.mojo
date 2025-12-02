@@ -1072,9 +1072,9 @@ fn mma[
         c_tmem: The address of the C matrix in the tensor memory.
         inst_desc: The descriptor for the MMA instruction.
     """
-    constrained[
-        _has_blackwell_tcgen05(), "tcgen05.mma not supported on this GPU"
-    ]()
+    __comptime_assert (
+        _has_blackwell_tcgen05()
+    ), "tcgen05.mma not supported on this GPU"
 
     constrained[
         c_scale == 0 or c_scale == 1, String("Invalid c_scale: ", c_scale)
@@ -1163,9 +1163,9 @@ fn mma[
         inst_desc: The descriptor for the MMA instruction.
         c_scale: Scale factor for the C matrix. Any non-zero value is translated to `1`.
     """
-    constrained[
-        _has_blackwell_tcgen05(), "tcgen05.mma not supported on this GPU"
-    ]()
+    __comptime_assert (
+        _has_blackwell_tcgen05()
+    ), "tcgen05.mma not supported on this GPU"
 
     @parameter
     if cta_group == 1:
@@ -1249,9 +1249,9 @@ fn mma[
         inst_desc: The descriptor for the MMA instruction.
         c_scale: Scale factor for the C matrix. Any non-zero value is interpreted as `1`.
     """
-    constrained[
-        _has_blackwell_tcgen05(), "tcgen05.mma not supported on this GPU"
-    ]()
+    __comptime_assert (
+        _has_blackwell_tcgen05()
+    ), "tcgen05.mma not supported on this GPU"
 
     @parameter
     if cta_group == 1:
@@ -1336,9 +1336,9 @@ fn mma[
         c_tmem: The address of the C matrix in the tensor memory.
         inst_desc: The descriptor for the MMA instruction.
     """
-    constrained[
-        _has_blackwell_tcgen05(), "tcgen05.mma not supported on this GPU"
-    ]()
+    __comptime_assert (
+        _has_blackwell_tcgen05()
+    ), "tcgen05.mma not supported on this GPU"
 
     constrained[
         c_scale == 0 or c_scale == 1, String("Invalid c_scale: ", c_scale)
@@ -1424,7 +1424,7 @@ fn mma_arrive[
     )
 
     comptime type = mbar_ptr.type
-    constrained[size_of[type]() == 8, "mbar_ptr must be 8 bytes"]()
+    __comptime_assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
 
     inlined_assembly[
         "tcgen05.commit.cta_group::"
@@ -1457,7 +1457,7 @@ fn mma_arrive_multicast[
     )
 
     comptime type = mbar_ptr.type
-    constrained[size_of[type]() == 8, "mbar_ptr must be 8 bytes"]()
+    __comptime_assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
 
     inlined_assembly[
         "tcgen05.commit.cta_group::"

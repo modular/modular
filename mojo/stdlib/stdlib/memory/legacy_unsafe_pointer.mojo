@@ -255,7 +255,7 @@ struct LegacyUnsafePointer[
             Pointer to the newly allocated uninitialized array.
         """
         comptime size_of_t = size_of[Self.type]()
-        constrained[size_of_t > 0, "size must be greater than zero"]()
+        __comptime_assert size_of_t > 0, "size must be greater than zero"
         return _malloc[Self.type](size_of_t * count, alignment=alignment)
 
     # ===-------------------------------------------------------------------===#
@@ -646,9 +646,9 @@ struct LegacyUnsafePointer[
             The loaded SIMD vector.
         """
         _simd_construction_checks[dtype, width]()
-        constrained[
-            alignment > 0, "alignment must be a positive integer value"
-        ]()
+        __comptime_assert (
+            alignment > 0
+        ), "alignment must be a positive integer value"
         constrained[
             not volatile or volatile ^ invariant,
             "both volatile and invariant cannot be set at the same time",
@@ -710,7 +710,7 @@ struct LegacyUnsafePointer[
         Returns:
             The loaded value.
         """
-        constrained[offset.dtype.is_integral(), "offset must be integer"]()
+        __comptime_assert offset.dtype.is_integral(), "offset must be integer"
         return self.offset(Int(offset)).load[
             width=width,
             alignment=alignment,
@@ -817,7 +817,7 @@ struct LegacyUnsafePointer[
             offset: The offset to store to.
             val: The value to store.
         """
-        constrained[offset_type.is_integral(), "offset must be integer"]()
+        __comptime_assert offset_type.is_integral(), "offset must be integer"
         self.offset(Int(offset))._store[alignment=alignment, volatile=volatile](
             val
         )
@@ -875,10 +875,10 @@ struct LegacyUnsafePointer[
         self: LegacyUnsafePointer[Scalar[dtype], mut=True, **_],
         val: SIMD[dtype, width],
     ):
-        constrained[width > 0, "width must be a positive integer value"]()
-        constrained[
-            alignment > 0, "alignment must be a positive integer value"
-        ]()
+        __comptime_assert width > 0, "width must be a positive integer value"
+        __comptime_assert (
+            alignment > 0
+        ), "alignment must be a positive integer value"
 
         __mlir_op.`pop.store`[
             alignment = alignment._mlir_value,

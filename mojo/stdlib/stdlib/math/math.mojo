@@ -203,9 +203,10 @@ fn sqrt(x: Int) -> Int:
 
 @always_inline
 fn _sqrt_nvvm(x: SIMD, out res: type_of(x)):
-    constrained[
-        x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
-    ]()
+    __comptime_assert x.dtype in (
+        DType.float32,
+        DType.float64,
+    ), "must be f32 or f64 type"
     comptime instruction = "llvm.nvvm.sqrt.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.sqrt.approx.d"
     res = {}
 
@@ -264,9 +265,10 @@ fn sqrt[
 
 @always_inline
 fn _rsqrt_nvvm(x: SIMD, out res: type_of(x)):
-    constrained[
-        x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
-    ]()
+    __comptime_assert x.dtype in (
+        DType.float32,
+        DType.float64,
+    ), "must be f32 or f64 type"
 
     comptime instruction = "llvm.nvvm.rsqrt.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.rsqrt.approx.d"
     res = {}
@@ -322,9 +324,10 @@ fn rsqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 
 @always_inline
 fn _recip_nvvm(x: SIMD, out res: type_of(x)):
-    constrained[
-        x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
-    ]()
+    __comptime_assert x.dtype in (
+        DType.float32,
+        DType.float64,
+    ), "must be f32 or f64 type"
 
     comptime instruction = "llvm.nvvm.rcp.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.rcp.approx.ftz.d"
     res = {}
@@ -1134,9 +1137,9 @@ fn tanh[
         The result of the elementwise tanh operation.
     """
 
-    constrained[
-        dtype.is_floating_point(), "the input type must be floating point"
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "the input type must be floating point"
 
     @parameter
     if is_nvidia_gpu():
@@ -1533,9 +1536,9 @@ fn acos[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
         The `acos` of the input.
     """
 
-    constrained[
-        dtype.is_floating_point(), "input type must be floating point"
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
 
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
@@ -1613,9 +1616,9 @@ fn asin[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
         The `asin` of the input.
     """
 
-    constrained[
-        dtype.is_floating_point(), "input type must be floating point"
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
 
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
@@ -1728,9 +1731,9 @@ fn atan2[
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["atan2", Scalar[result_type]](arg0, arg1)
 
-    constrained[
-        dtype.is_floating_point(), "input type must be floating point"
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
 
     @parameter
     if dtype is DType.float64:
@@ -1960,9 +1963,9 @@ fn atanh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `atanh` of the input.
     """
-    constrained[
-        dtype.is_floating_point(), "input type must be floating point"
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
 
     @parameter
     if bit_width_of[dtype]() <= 16:
@@ -2162,9 +2165,9 @@ fn log1p[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
         The `log1p` of the input.
     """
 
-    constrained[
-        dtype.is_floating_point(), "input type must be floating point"
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
 
     return _log1p_f64(x.cast[DType.float64]()).cast[dtype]()
 
@@ -2377,9 +2380,9 @@ fn cbrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
         The `cbrt` of the input.
     """
 
-    constrained[
-        dtype.is_floating_point(), "input type must be floating point"
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
 
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
@@ -2435,9 +2438,9 @@ fn hypot[
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["hypot", Scalar[result_type]](arg0, arg1)
 
-    constrained[
-        dtype.is_floating_point(), "input type must be floating point"
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
 
     @parameter
     if dtype is DType.float64:
@@ -2590,9 +2593,9 @@ fn erfc[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `erfc` of the input.
     """
-    constrained[
-        dtype.is_floating_point(), "input type must be floating point"
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
 
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
@@ -2701,9 +2704,9 @@ fn remainder[
             arg0, arg1
         )
 
-    constrained[
-        dtype.is_floating_point(), "input type must be floating point"
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
 
     @parameter
     if dtype is DType.float64:
@@ -2850,9 +2853,9 @@ fn scalb[
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["scalb", Scalar[result_type]](arg0, arg1)
 
-    constrained[
-        dtype.is_floating_point(), "input type must be floating point"
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
 
     @parameter
     if dtype is DType.float64:
@@ -3218,12 +3221,12 @@ fn _call_libm[
     width: Int, //,
     func_name: StaticString,
 ](arg: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    constrained[
-        dtype.is_floating_point(), "argument type must be floating point"
-    ]()
-    constrained[
-        not is_gpu(), "libm operations are only available on CPU targets"
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "argument type must be floating point"
+    __comptime_assert (
+        not is_gpu()
+    ), "libm operations are only available on CPU targets"
 
     @parameter
     if dtype not in [DType.float32, DType.float64]:

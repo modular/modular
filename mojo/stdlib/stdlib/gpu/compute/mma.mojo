@@ -392,7 +392,7 @@ fn st_matrix[
         must execute this instruction to avoid deadlock.
     """
 
-    constrained[dtype in (DType.bfloat16, DType.float32), ""]()
+    __comptime_assert dtype in (DType.bfloat16, DType.float32), ""
 
     comptime num_matrices = simd_width
 
@@ -953,16 +953,16 @@ fn wgmma_async[
         String(Index(m, n, k)),
     ]()
     # for now, limited support
-    constrained[m == 64]()
-    constrained[k == 16]()
-    constrained[a_type is DType.bfloat16]()
-    constrained[b_type is DType.bfloat16]()
-    constrained[accum_type is DType.float32]()
-    constrained[c_dtype is DType.float32]()
-    constrained[layout_a == "row"]()
-    constrained[
-        layout_b == "col" or (layout_b == "row" and b_type is DType.bfloat16)
-    ]()
+    __comptime_assert m == 64
+    __comptime_assert k == 16
+    __comptime_assert a_type is DType.bfloat16
+    __comptime_assert b_type is DType.bfloat16
+    __comptime_assert accum_type is DType.float32
+    __comptime_assert c_dtype is DType.float32
+    __comptime_assert layout_a == "row"
+    __comptime_assert layout_b == "col" or (
+        layout_b == "row" and b_type is DType.bfloat16
+    )
 
     var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
         mat_b_desc.desc._mlir_value

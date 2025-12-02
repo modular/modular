@@ -33,9 +33,9 @@ from memory import bitcast
 
 
 fn _constrain_fp_type[dtype: DType]():
-    constrained[
-        dtype.is_floating_point(), "dtype must be a floating point type"
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "dtype must be a floating point type"
 
 
 struct FPUtils[
@@ -996,9 +996,9 @@ fn nextafter[
             arg0, arg1
         )
 
-    constrained[
-        dtype.is_floating_point(), "input dtype must be floating point"
-    ]()
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "input dtype must be floating point"
 
     @parameter
     if dtype is DType.float64:

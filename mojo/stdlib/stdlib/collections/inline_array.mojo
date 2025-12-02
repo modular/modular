@@ -453,9 +453,9 @@ struct InlineArray[
             supports both positive indices starting from 0 and negative indices
             counting backwards from the end of the array.
         """
-        constrained[
-            -Self.size <= index(idx) < Self.size, "Index must be within bounds."
-        ]()
+        __comptime_assert (
+            -Self.size <= index(idx) < Self.size
+        ), "Index must be within bounds."
         comptime normalized_index = normalize_index["InlineArray"](
             idx, Self.size
         )

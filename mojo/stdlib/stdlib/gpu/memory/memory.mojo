@@ -647,7 +647,7 @@ fn async_copy[
     __comptime_assert (
         not fill or size_of[dtype]() <= size_of[Int32]()
     ), "if the fill value is specified, then the dtype must be 32bit or less"
-    constrained[size in (4, 8, 16)]()
+    __comptime_assert size in (4, 8, 16)
     __comptime_assert not (
         l2_prefetch.__bool__() == bypass_L1_16B == True
     ), "both enable l2 prefetching and l1 bypass cannot be True"
@@ -714,9 +714,9 @@ fn async_copy[
                 Int32(Int(dst)), src, Int32(size), Int32(src_size), cache_policy
             )
     elif fill:
-        constrained[
-            size == 16, "Non zero filling is supported only for 16B access."
-        ]()
+        __comptime_assert (
+            size == 16
+        ), "Non zero filling is supported only for 16B access."
 
         # Pack filling values into 4B registers.
         @always_inline
@@ -1064,7 +1064,7 @@ fn cp_async_bulk_tensor_shared_cluster_global[
         rank <= 5, "Expecting rank-1, rank-2, rank-3, rank-4, or rank-5 tensors"
     ]()
 
-    constrained[cta_group in (1, 2), "cta_group must be 1 or 2"]()
+    __comptime_assert cta_group in (1, 2), "cta_group must be 1 or 2"
     comptime tma_asm = String(
         "cp.async.bulk.tensor.",
         rank,
@@ -1288,7 +1288,7 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
         rank == 1 or rank == 2
     ), "Expecting rank-1 or rank-2 tensors"
 
-    constrained[cta_group in (1, 2), "cta_group must be 1 or 2"]()
+    __comptime_assert cta_group in (1, 2), "cta_group must be 1 or 2"
     comptime tma_asm = String(
         "cp.async.bulk.tensor.",
         rank,
@@ -1576,12 +1576,12 @@ fn _load_impl[
     @parameter
     if is_amd_gpu():
         # TODO: KERN-1230
-        constrained[read_only == False]()
+        __comptime_assert read_only == False
         return ptr.load[width=width]()
 
     @parameter
     if prefetch_size:
-        constrained[prefetch_size.value() in (64, 128, 256)]()
+        __comptime_assert prefetch_size.value() in (64, 128, 256)
 
     comptime bytes_to_load = size_of[dtype]() * width
     comptime dtype_bitwidth = bit_width_of[dtype]()
@@ -1814,9 +1814,9 @@ fn _get_multimem_ld_reduce_asm[
         - Total bit width (count * output_width * size_of[dtype] * 8) must be 32, 64, or 128 bits.
     """
 
-    constrained[
-        _is_sm_9x_or_newer(), "multimem is only supported on SM90+ GPUs"
-    ]()
+    __comptime_assert (
+        _is_sm_9x_or_newer()
+    ), "multimem is only supported on SM90+ GPUs"
     __comptime_assert dtype.is_floating_point(), "type must be floating point"
     __comptime_assert consistency in (
         Consistency.WEAK,
@@ -2056,9 +2056,9 @@ fn _get_multimem_st_asm[
     consistency: Consistency,
     width: Int = 1,
 ]() -> String:
-    constrained[
-        _is_sm_9x_or_newer(), "multimem is only supported on SM90+ GPUs"
-    ]()
+    __comptime_assert (
+        _is_sm_9x_or_newer()
+    ), "multimem is only supported on SM90+ GPUs"
     __comptime_assert dtype.is_floating_point(), "type must be floating point"
     __comptime_assert consistency in (
         Consistency.WEAK,

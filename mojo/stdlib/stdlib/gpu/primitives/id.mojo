@@ -333,7 +333,7 @@ struct _BlockDim(Defaultable):
                 elif dim == "y":
                     return 7
                 else:
-                    constrained[dim == "z"]()
+                    __comptime_assert dim == "z"
                     return 8
 
             return _get_gcn_idx[_get_offset(), DType.uint16]()
@@ -393,7 +393,7 @@ struct _GridDim(Defaultable):
                 elif dim == "y":
                     return 1
                 else:
-                    constrained[dim == "z"]()
+                    __comptime_assert dim == "z"
                     return 2
 
             return _get_gcn_idx[_get_offset(), DType.uint32]()

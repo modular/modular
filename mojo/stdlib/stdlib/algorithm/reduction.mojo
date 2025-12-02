@@ -537,7 +537,7 @@ fn _reduce_generator[
         reduce_dim: The dimension we are reducing.
         context: The pointer to DeviceContext.
     """
-    constrained[is_valid_target[target](), "unsupported target"]()
+    __comptime_assert is_valid_target[target](), "unsupported target"
 
     for i in range(len(shape)):
         if shape[i] == 0:

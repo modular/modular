@@ -649,9 +649,9 @@ struct _ZeroStartingScalarRange[dtype: DType](
 
     @always_inline
     fn __reversed__(self) -> _StridedScalarRange[Self.dtype]:
-        constrained[
-            not Self.dtype.is_unsigned(), "cannot reverse an unsigned range"
-        ]()
+        __comptime_assert (
+            not Self.dtype.is_unsigned()
+        ), "cannot reverse an unsigned range"
         return range(
             self.end - 1, Scalar[Self.dtype](-1), Scalar[Self.dtype](-1)
         )
@@ -698,9 +698,9 @@ struct _SequentialScalarRange[dtype: DType](
 
     @always_inline
     fn __reversed__(self) -> _StridedScalarRange[Self.dtype]:
-        constrained[
-            not Self.dtype.is_unsigned(), "cannot reverse an unsigned range"
-        ]()
+        __comptime_assert (
+            not Self.dtype.is_unsigned()
+        ), "cannot reverse an unsigned range"
         return range(self.end - 1, self.start - 1, Scalar[Self.dtype](-1))
 
     @always_inline

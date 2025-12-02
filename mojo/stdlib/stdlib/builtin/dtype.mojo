@@ -698,7 +698,9 @@ struct DType(
         Returns:
             The mantissa width.
         """
-        constrained[dtype.is_floating_point(), "dtype must be floating point"]()
+        __comptime_assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
         return bit_width_of[dtype]() - DType.exponent_width[dtype]() - 1
 
     @staticmethod
@@ -714,7 +716,9 @@ struct DType(
         Returns:
             The max exponent.
         """
-        constrained[dtype.is_floating_point(), "dtype must be floating point"]()
+        __comptime_assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
 
         @parameter
         if dtype is DType.float4_e2m1fn:
@@ -742,7 +746,9 @@ struct DType(
         Returns:
             The exponent width.
         """
-        constrained[dtype.is_floating_point(), "dtype must be floating point"]()
+        __comptime_assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
 
         @parameter
         if dtype is DType.float4_e2m1fn:

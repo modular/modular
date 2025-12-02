@@ -637,9 +637,9 @@ fn threadfence[scope: Scope = Scope.GPU]():
         Scope.BLOCK,
         Scope.SYSTEM,
     ), "invalid threadfence scope"
-    constrained[
-        is_nvidia_gpu(), "threadfence is only implemented on NVIDIA GPUs"
-    ]()
+    __comptime_assert (
+        is_nvidia_gpu()
+    ), "threadfence is only implemented on NVIDIA GPUs"
 
     comptime suffix = "gl" if scope is Scope.GPU else scope.mnemonic()
     llvm_intrinsic["llvm.nvvm.membar." + suffix, NoneType]()
@@ -1017,9 +1017,9 @@ fn store_volatile[
         - Useful for memory-mapped I/O or synchronization primitives.
         - May have performance implications compared to regular stores.
     """
-    constrained[
-        is_nvidia_gpu(), "store_volatile is not currently supported on AMD GPUs"
-    ]()
+    __comptime_assert (
+        is_nvidia_gpu()
+    ), "store_volatile is not currently supported on AMD GPUs"
     comptime mem_constraint = StaticString(",~{memory}") if memory else ""
     comptime constraints = _get_nvtx_register_constraint[
         dtype
@@ -1057,9 +1057,9 @@ fn load_volatile[
         - Useful for memory-mapped I/O or synchronization primitives.
         - May have performance implications compared to regular loads.
     """
-    constrained[
-        is_nvidia_gpu(), "load_volatile is not currently supported on AMD GPUs"
-    ]()
+    __comptime_assert (
+        is_nvidia_gpu()
+    ), "load_volatile is not currently supported on AMD GPUs"
     comptime mem_constraint = StaticString(",~{memory}") if memory else ""
     comptime constraints = "=" + _get_nvtx_register_constraint[
         dtype
@@ -1354,7 +1354,7 @@ fn _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
     elif bytes == 2:
         return DType.uint16
     else:
-        constrained[bytes in (4, 8, 16), "Width not supported"]()
+        __comptime_assert bytes in (4, 8, 16), "Width not supported"
         return DType.uint32
 
 
@@ -1401,9 +1401,9 @@ fn ds_read_tr16_b64[
         size_of[dtype]() == 2
     ), "ds_read_tr16_b64 supports 16-bit dtypes."
 
-    constrained[
-        _cdna_4_or_newer(), "ds_read_tr16_b64 is only supported on CDNA4+"
-    ]()
+    __comptime_assert (
+        _cdna_4_or_newer()
+    ), "ds_read_tr16_b64 is only supported on CDNA4+"
 
     return llvm_intrinsic[
         "llvm.amdgcn.ds.read.tr16.b64", SIMD[dtype, 4], has_side_effect=False
@@ -1435,11 +1435,11 @@ fn permlane_swap[
     __comptime_assert (
         is_amd_gpu()
     ), "The _amd_permlane_swap function is only applicable on AMDGPU hardware."
-    constrained[
-        _cdna_4_or_newer(), "permlane swap is only supported on CDNA4+"
-    ]()
-    constrained[bit_width_of[dtype]() == 32, "Unsupported dtype"]()
-    constrained[stride in (16, 32), "Unsupported stride"]()
+    __comptime_assert (
+        _cdna_4_or_newer()
+    ), "permlane swap is only supported on CDNA4+"
+    __comptime_assert bit_width_of[dtype]() == 32, "Unsupported dtype"
+    __comptime_assert stride in (16, 32), "Unsupported stride"
 
     comptime asm = "llvm.amdgcn.permlane" + String(stride) + ".swap"
     var result = llvm_intrinsic[

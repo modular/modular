@@ -337,11 +337,11 @@ struct _Mark:
             self._fn = _roctxMarkA.load()
 
     fn __call__(self, val: UnsafePointer[_C_EventAttributes, mut=False]):
-        constrained[has_nvidia_gpu_accelerator()]()
+        __comptime_assert has_nvidia_gpu_accelerator()
         self._fn[_nvtxMarkEx.fn_type](val)
 
     fn __call__(self, val: UnsafePointer[UInt8, mut=False]):
-        constrained[has_amd_gpu_accelerator()]()
+        __comptime_assert has_amd_gpu_accelerator()
         self._fn[_roctxMarkA.fn_type](val)
 
 
@@ -358,13 +358,13 @@ struct _RangeStart:
     fn __call__(
         self, val: UnsafePointer[_C_EventAttributes, mut=False, origin=_]
     ) -> RangeID:
-        constrained[has_nvidia_gpu_accelerator()]()
+        __comptime_assert has_nvidia_gpu_accelerator()
         return self._fn[_nvtxRangeStartEx.fn_type](val)
 
     fn __call__(
         self, val: UnsafePointer[UInt8, mut=False, origin=_]
     ) -> RangeID:
-        constrained[has_amd_gpu_accelerator()]()
+        __comptime_assert has_amd_gpu_accelerator()
         return self._fn[_roctxRangeStartA.fn_type](val)
 
 
@@ -395,11 +395,11 @@ struct _RangePush:
     fn __call__(
         self, val: UnsafePointer[_C_EventAttributes, mut=False, origin=_]
     ) -> Int32:
-        constrained[has_nvidia_gpu_accelerator()]()
+        __comptime_assert has_nvidia_gpu_accelerator()
         return self._fn[_nvtxRangePushEx.fn_type](val.as_any_origin())
 
     fn __call__(self, val: UnsafePointer[UInt8, mut=False, origin=_]) -> Int32:
-        constrained[has_amd_gpu_accelerator()]()
+        __comptime_assert has_amd_gpu_accelerator()
         return self._fn[_roctxRangePushA.fn_type](val.as_any_origin())
 
 
