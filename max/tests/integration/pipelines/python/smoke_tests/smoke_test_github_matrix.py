@@ -41,9 +41,9 @@ MULTI_GPUS = {"2xH100"}
 #    3b) For reasoning models, add it to the is_reasoning_model check in smoke_test.py
 MODELS = {
     "allenai/olmOCR-2-7B-1025-FP8": [
-        "max",  # Wait for 25.7
         "sglang",
         "multi",
+        "max",  # Wait for 26.1
         "max-ci@MI355",  # TODO(GEX-2814)
     ],
     # E2EOPT-571: DeepSeek v2 lite chat not working on MAX
