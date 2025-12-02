@@ -2709,9 +2709,15 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     }
   }
 
-  if (auto andOp = dyn_cast<POP::SIMDAndOp>(op))
+  if (isa<POP::AddOp>(op))
+    return foldSIMDBinOp<POP::SIMDAddAttr>(op, *this);
+  if (isa<POP::SubOp>(op))
+    return foldSIMDBinOp<POP::SIMDSubAttr>(op, *this);
+  if (isa<POP::MulOp>(op))
+    return foldSIMDBinOp<POP::SIMDMulAttr>(op, *this);
+  if (isa<POP::SIMDAndOp>(op))
     return foldSIMDBinOp<POP::SIMDAndAttr>(op, *this);
-  if (auto xorOp = dyn_cast<POP::SIMDXOrOp>(op))
+  if (isa<POP::SIMDXOrOp>(op))
     return foldSIMDBinOp<POP::SIMDXorAttr>(op, *this);
 
   if (auto reduceOrOp = dyn_cast<POP::SIMDReduceOrOp>(op)) {

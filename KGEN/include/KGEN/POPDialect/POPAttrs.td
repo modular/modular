@@ -771,6 +771,10 @@ class POP_SIMDBinaryAttr<string name>
 def POP_SIMDAndAttr : POP_SIMDBinaryAttr<"And">;
 def POP_SIMDXorAttr : POP_SIMDBinaryAttr<"Xor">;
 
+def POP_SIMDAddAttr : POP_SIMDBinaryAttr<"Add">;
+def POP_SIMDSubAttr : POP_SIMDBinaryAttr<"Sub">;
+def POP_SIMDMulAttr : POP_SIMDBinaryAttr<"Mul">;
+
 //===----------------------------------------------------------------------===//
 // SIMDCmp
 //===----------------------------------------------------------------------===//

@@ -1954,6 +1954,105 @@ LogicalResult SIMDXorAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
+// SIMDAddAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr SIMDAddAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
+  // Fold if possible
+  if (auto fold = foldSIMDOp(
+          {lhs, rhs}, [](APSInt lhs, APSInt rhs) { return lhs + rhs; },
+          [](APFloat lhs, APFloat rhs) { return lhs + rhs; },
+          [](bool lhs, bool rhs) { return (bool)(lhs ^ rhs); })) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+  }
+  return Base::get(ctx, lhs, rhs);
+}
+
+TypedAttr SIMDAddAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                  MLIRContext *context, TypedAttr lhs,
+                                  TypedAttr rhs) {
+  if (failed(verify(emitError, lhs, rhs)))
+    return {};
+  return SIMDAddAttr::get(context, lhs, rhs);
+}
+
+bool SIMDAddAttr::isConstant() const { return false; }
+
+Type SIMDAddAttr::getType() const { return getLhs().getType(); }
+
+LogicalResult SIMDAddAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                  TypedAttr lhs, TypedAttr rhs) {
+  return verifySIMDBinaryOp(emitError, lhs, rhs);
+}
+
+//===----------------------------------------------------------------------===//
+// SIMDSubAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr SIMDSubAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
+  // Fold if possible
+  if (auto fold = foldSIMDOp(
+          {lhs, rhs}, [](APSInt lhs, APSInt rhs) { return lhs - rhs; },
+          [](APFloat lhs, APFloat rhs) { return lhs - rhs; },
+          [](bool lhs, bool rhs) { return (bool)(lhs ^ rhs); })) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+  }
+  return Base::get(ctx, lhs, rhs);
+}
+
+TypedAttr SIMDSubAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                  MLIRContext *context, TypedAttr lhs,
+                                  TypedAttr rhs) {
+  if (failed(verify(emitError, lhs, rhs)))
+    return {};
+  return SIMDSubAttr::get(context, lhs, rhs);
+}
+
+bool SIMDSubAttr::isConstant() const { return false; }
+
+Type SIMDSubAttr::getType() const { return getLhs().getType(); }
+
+LogicalResult SIMDSubAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                  TypedAttr lhs, TypedAttr rhs) {
+  return verifySIMDBinaryOp(emitError, lhs, rhs);
+}
+
+//===----------------------------------------------------------------------===//
+// SIMDMulAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr SIMDMulAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
+  // Fold if possible
+  if (auto fold = foldSIMDOp(
+          {lhs, rhs}, [](APSInt lhs, APSInt rhs) { return lhs * rhs; },
+          [](APFloat lhs, APFloat rhs) { return lhs * rhs; },
+          [](bool lhs, bool rhs) { return (bool)(lhs & rhs); })) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+  }
+  return Base::get(ctx, lhs, rhs);
+}
+
+TypedAttr SIMDMulAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                  MLIRContext *context, TypedAttr lhs,
+                                  TypedAttr rhs) {
+  if (failed(verify(emitError, lhs, rhs)))
+    return {};
+  return SIMDMulAttr::get(context, lhs, rhs);
+}
+
+bool SIMDMulAttr::isConstant() const { return false; }
+
+Type SIMDMulAttr::getType() const { return getLhs().getType(); }
+
+LogicalResult SIMDMulAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                  TypedAttr lhs, TypedAttr rhs) {
+  return verifySIMDBinaryOp(emitError, lhs, rhs);
+}
+
+//===----------------------------------------------------------------------===//
 // SIMDCmpAttr
 //===----------------------------------------------------------------------===//
 
