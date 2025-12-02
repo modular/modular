@@ -396,6 +396,10 @@ getUnboundSpecializedSignature(FnTypeGeneratorType type,
                                ParameterExprArrayAttr bindings,
                                ParameterEvaluationContext *evalContext);
 
+/// If this specified operation is a call-like operation, return the
+/// FnTypeGeneratorType for the callee, otherwise return null.
+LIT::FnTypeGeneratorType getFnTypeFromCall(Operation &op);
+
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_LITDIALECT_LITTYPES_H

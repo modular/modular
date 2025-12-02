@@ -13,6 +13,7 @@ comptime MutOrigin = Origin[True]
 comptime ImmutAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
 comptime MutAnyOrigin = __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`
 comptime OriginSet = __mlir_type.`!lit.origin.set`
+comptime Never = __mlir_type.`!kgen.never`
 
 
 @register_passable("trivial")
@@ -1392,3 +1393,10 @@ struct SIMD[dtype: DType, size: Int]:
     @always_inline("nodebug")
     fn join(self, other: Self) -> SIMD[Self.dtype, 2 * Self.size]:
         return SIMD[Self.dtype, 2 * Self.size]()
+
+
+@no_inline
+fn abort() -> Never:
+    __mlir_op.`llvm.intr.trap`()
+    while True:
+        pass

@@ -823,6 +823,23 @@ def KGEN_DeferredType : KGENType<"Deferred", "deferred",
   let assemblyFormat = "";
 }
 
+
+//===----------------------------------------------------------------------===//
+// NeverType
+//===----------------------------------------------------------------------===//
+
+def KGEN_NeverType : KGENType<"Never", "never"> {
+  let summary = "Represents a type that cannot be constructed";
+  let description = [{
+    A `!kgen.never` type represents a type that cannot be
+    constructed. This is used to represent functions that never return or
+    generic thrown types that resolve to a concrete type of "not actually
+    thrown".
+    ```
+  }];
+  let assemblyFormat = "";
+}
+
 //===----------------------------------------------------------------------===//
 // VariadicSplatType
 //===----------------------------------------------------------------------===//

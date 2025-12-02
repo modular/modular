@@ -325,7 +325,9 @@ static SmallVector<StringAttr> getFunctionParameterNames(FnOp funcOp) {
 
 /// Return if the given function is expecting results.
 static bool doesFunctionHaveResults(FnOp funcOp) {
-  return !ASTType(funcOp.getUserResultType()).isNoneType();
+  auto resultType = funcOp.getUserResultType();
+  return !ASTType(resultType).isNoneType() &&
+         !sugarIsa<KGEN::NeverType>(resultType);
 }
 
 namespace {

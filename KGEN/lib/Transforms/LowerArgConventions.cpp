@@ -458,8 +458,14 @@ static TransformResult lowerSignature(FuncType oldSig,
   unsigned argConventionIndex = 0;
 
   TransformResult result;
+  // For a throwing function, this retains the i1 result by default unless
+  // we're able to lower the normal result or the error result.  If we are
+  // able to lower one of them, we end up with "i1, othertype" as two results
+  // from the KGEN function, if both can be lowered to registers then we replace
+  // the i1 with "variant<normal, error>".
   if (oldSig.isThrows())
     llvm::append_range(result.newResultTypes, oldSig.getResults());
+
   llvm::append_range(result.newArgConventions, oldSig.getArgConventions());
   SmallVector<ArgConvention> &argConventions = result.newArgConventions;
   while (argConventionIndex < argConventions.size()) {

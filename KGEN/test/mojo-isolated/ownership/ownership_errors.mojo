@@ -238,6 +238,20 @@ fn uninitialized_result(c: Bool, out out: MemExample):
     out = MemExample()
 
 
+fn test_unreachable_after_abort():
+    abort()
+    # expected-warning @+1 {{unreachable code after function that never returns}}
+    var x = 4+5
+
+@no_inline
+fn throwonly() raises -> Never:
+    abort()
+
+fn test_unreachable_after_throwonly() raises:
+    throwonly()
+    # expected-warning @+1 {{unreachable code after function that never returns}}
+    var x = 4+5
+
 ##===----------------------------------------------------------------------===##
 # Complex aggregates
 ##===----------------------------------------------------------------------===##

@@ -3055,8 +3055,14 @@ void DestructorInsertion::scanBlock(Block &block) {
 /// This is returned when the op is a return or unreachable op.
 void DestructorInsertion::checkTerminatorOp(Operation &op) {
   consumedValues.reset();
-  if (isa<UnreachableOp>(op))
+  if (auto unreachable = dyn_cast<KGEN::UnreachableOp>(op)) {
+    // If this is a marker after a no-return call, then mark it as reachable
+    // because we want to propagate reachability across the call and potentially
+    // the "throwing" logic right after it.
+    if (unreachable.getIsAfterUnreachableCall())
+      consumedValues.set(0);
     return;
+  }
 
   assert((isa<KGEN::ReturnOp, ErrorReturnOp>(op)) && "unknown terminator");
   consumedValues.set(0); // Slot 0 indicates that this block is reachable.

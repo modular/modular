@@ -458,7 +458,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   //  Should have a better way to say that it is safe to
   //  implicitly ignore a value of a type (e.g. a type decorator)
   auto isImplicitlyIgnorableType = [&](ASTType type) -> bool {
-    if (type.isNoneType() || type.isEqualCanon(shared.getTypeCheckErrorType()))
+    if (type.isNoneType() || sugarIsa<NeverType, TypeCheckErrorType>(type))
       return true;
 
     // Allow object/PythonObject to be ignored.  This should really be
@@ -470,7 +470,6 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
     // object is implicitly returned by 'def's, PythonObject is pervasive in
     // interop.
     StringRef name = declRef.getName().getValue();
-
     return name == "object" || name == "PythonObject" || name == "NoneType";
   };
 

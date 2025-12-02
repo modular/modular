@@ -10,6 +10,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITDialect.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -1727,4 +1728,14 @@ LIT::getUnboundSpecializedSignature(FnTypeGeneratorType type,
   assert(type && "bad bindings specified");
   return {type,
           ParameterExprArrayAttr::get(type.getContext(), unboundBindings)};
+}
+
+/// If this specified operation is a call-like operation, return the
+/// FnTypeGeneratorType for the callee, otherwise return null.
+LIT::FnTypeGeneratorType LIT::getFnTypeFromCall(Operation &op) {
+  if (auto directCall = dyn_cast<KGENCallOpInterface>(op))
+    return directCall.getCalleeType();
+  if (auto indirectCall = dyn_cast<LIT::CallIndirectOp>(op))
+    return indirectCall.getCalleeType();
+  return {};
 }
