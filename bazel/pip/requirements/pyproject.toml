@@ -106,12 +106,6 @@ dependencies = [
   # benchmarks
   "schema==0.7.5",
 
-  # Blackwell external baseline benchmarks (flashinfer runtime deps)
-  "apache-tvm-ffi>=0.1,<0.2",
-  "ninja",  # JIT compilation at runtime
-  "nvidia-cudnn-frontend>=1.13.0",
-  "nvidia-cutlass-dsl>=4.3.0",
-
   # nsight-sql-tool
   "sqlalchemy>=2.0.29",
 
