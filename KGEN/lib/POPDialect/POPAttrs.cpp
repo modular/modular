@@ -191,14 +191,23 @@ parseDTypeValue(AsmParser &p, KGENDType dtype) {
   assert(dtype.isIndex() || dtype.isUIndex() || dtype.isAddress());
   int64_t indexVal;
   if constexpr (optionalParse) {
-    OptionalParseResult result = p.parseOptionalInteger(indexVal);
+    OptionalParseResult result;
+    if (dtype.isIndex())
+      result = p.parseOptionalInteger(indexVal);
+    else
+      result = p.parseOptionalInteger(reinterpret_cast<uint64_t &>(indexVal));
     if (!result.has_value())
       return std::nullopt;
     if (failed(*result))
       return failure();
   } else {
-    if (p.parseInteger(indexVal))
-      return failure();
+    if (dtype.isIndex()) {
+      if (p.parseInteger(indexVal))
+        return failure();
+    } else {
+      if (p.parseInteger(reinterpret_cast<uint64_t &>(indexVal)))
+        return failure();
+    }
   }
   return DTypeValue(indexVal, dtype);
 }
@@ -329,7 +338,10 @@ static void printDTypeValue(AsmPrinter &p, const DTypeValue &value,
     p << (value.getBoolVal() ? "true" : "false");
   } else {
     assert(dtype.isIndex() || dtype.isUIndex() || dtype.isAddress());
-    p << value.getIndexVal();
+    if (dtype.isIndex())
+      p << value.getIndexVal();
+    else
+      p << uint64_t(value.getIndexVal());
   }
 }
 

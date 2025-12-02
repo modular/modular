@@ -216,6 +216,15 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   kgen.return
 }
 
+// CHECK-LABEL: @uindex_print_parse
+kgen.generator @uindex_print_parse() -> (!pop.scalar<uindex>, !pop.scalar<uindex>) {
+  // CHECK-DAG: scalar<uindex> = <18446744073709551615>
+  %0 = kgen.param.constant: scalar<uindex> = <18446744073709551615>
+  // CHECK-DAG: scalar<uindex> = <18446744073709551614>
+  %1 = kgen.param.constant: scalar<uindex> = <-2>
+  kgen.return %0, %1 : !pop.scalar<uindex>, !pop.scalar<uindex>
+}
+
 lit.struct.decl @StructType0<a: index, b: index> {}
 lit.struct.decl @StructType1<a: index, b: index> {}
 

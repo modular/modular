@@ -428,7 +428,7 @@ kgen.generator export @do_it() {
   // CHECK-NEXT: constant: pointer<i8, 2> = <#interp.memref<{[([[GLOBAL_ALLOC]], persistent, [], [], 2)], []}, 0, 0>>
   kgen.param.constant: pointer<i8, 2> = <apply(:() -> !kgen.pointer<i8, 2> @global_alloc)>
 
-  // CHECK-NEXT: constant: scalar<uindex> = <-1>
+  // CHECK-NEXT: constant: scalar<uindex> = <18446744073709551615>
   kgen.param.constant: scalar<uindex> = <apply(:() -> !pop.scalar<uindex> @simd_xor_fold_0)>
 
   // CHECK-NEXT: constant: scalar<bool> = <true>
