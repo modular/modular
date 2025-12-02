@@ -116,22 +116,18 @@ struct DataFrame(Defaultable, Movable, Representable):
 
     @staticmethod
     fn rich_compare(
-        self_ptr: PyObjectPtr, other: PyObjectPtr, op: Int
+        self_ptr: PythonObject, other: PythonObject, op: Int
     ) raises -> Bool:
         """Implement the rich compare functionality.
 
         We use the bounding box area to order the DataFrame objects.
         """
-        var self_df = Self._get_self_ptr(PythonObject(from_borrowed=self_ptr))
-        var other_df = Self._get_self_ptr(PythonObject(from_borrowed=other))
+        var self_df = Self._get_self_ptr(self_ptr)
+        var other_df = Self._get_self_ptr(other)
         if op == Py_LT:
-            return (
-                self_df[]._bounding_box_area < other_df[]._bounding_box_area
-            )
+            return self_df[]._bounding_box_area < other_df[]._bounding_box_area
         elif op == Py_GT:
-            return (
-                self_df[]._bounding_box_area > other_df[]._bounding_box_area
-            )
+            return self_df[]._bounding_box_area > other_df[]._bounding_box_area
         # For other comparisons, return False
         return False
 

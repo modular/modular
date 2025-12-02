@@ -275,7 +275,7 @@ fn _mp_subscript_wrapper[
 
 
 fn _richcompare_wrapper[
-    method: fn (PyObjectPtr, PyObjectPtr, Int) raises -> Bool
+    method: fn (PythonObject, PythonObject, Int) raises -> Bool
 ](py_self: PyObjectPtr, py_other: PyObjectPtr, op: c_int) -> PyObjectPtr:
     """Python-compatible wrapper for rich comparison protocol.
 
@@ -297,7 +297,11 @@ fn _richcompare_wrapper[
     ref cpython = Python().cpython()
 
     try:
-        var result = method(py_self, py_other, Int(op))
+        var result = method(
+            PythonObject(from_borrowed=py_self),
+            PythonObject(from_borrowed=py_other),
+            Int(op),
+        )
         return cpython.PyBool_FromLong(c_long(Int(result)))
     except e:
         var error_type = cpython.get_error_global("PyExc_Exception")
@@ -1030,7 +1034,7 @@ struct PythonTypeBuilder(Copyable, Movable):
         return self
 
     fn def_rich_compare[
-        method: fn (PyObjectPtr, PyObjectPtr, Int) raises -> Bool
+        method: fn (PythonObject, PythonObject, Int) raises -> Bool
     ](mut self: Self) -> ref [self] Self:
         """Sets the rich compare method, see https://peps.python.org/pep-0207.
 
