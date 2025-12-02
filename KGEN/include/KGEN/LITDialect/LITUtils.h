@@ -357,6 +357,12 @@ LogicalResult verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
 // ParameterEvaluationContext
 //===----------------------------------------------------------------------===//
 
+/// Simplify a conforms_to attr based on the provided TraitType, we can not have
+/// a TypeConformsToTraitAttr::simplify(TraitType) due to build dependency.
+FailureOr<TypedAttr>
+simplifyConformsToAgainstTypeValue(TypeConformsToTraitAttr conformsTo,
+                                   TraitType traitToCheck);
+
 class LITSymTabEvaluationContext : public SymTabEvaluationContext {
 public:
   using SymTabEvaluationContext::SymTabEvaluationContext;

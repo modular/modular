@@ -4216,7 +4216,6 @@ AnyValue MagicFunctionNode::emitConformsTo(ValueDest &dest,
 
   auto traitType = cast<TraitType>(traitToCheck.getIfTypeValue());
   SmallVector<mlir::SymbolRefAttr> symbols(traitType.getSymbols());
-  canonicalizeTraitCompositionSymbols(emitter.shared, symbols);
 
   // Fold trait symbol into a list of string, as trait type will be discarded
   // after lowering lit.

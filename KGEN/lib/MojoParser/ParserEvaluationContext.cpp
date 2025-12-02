@@ -8,6 +8,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/SharedState.h"
@@ -44,6 +45,10 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateExpression(
       auto structDeclOp = cast<StructDeclOp>(decl->getIfOperation());
       return conformsTo.simplify(SymbolTable(structDeclOp));
     }
+    // Try fold tighter trait types.
+    ASTType typeToCheck = conformsTo.getTypeValue();
+    auto traitToCheck = dyn_cast<TraitType>(typeToCheck.getMetaType());
+    return simplifyConformsToAgainstTypeValue(conformsTo, traitToCheck);
   }
 
   if (auto downcast = sugarDynCastIfPresent<DowncastAttr>(typedAttr)) {
