@@ -914,7 +914,7 @@ struct NonEquatable(Copyable, Movable):
 
 
 def test_list_conditional_conformance_Equatable():
-    var l1: List[Int] = [1, 2, 3]
+    var _l1: List[Int] = [1, 2, 3]
 
     assert_true(conforms_to(List[Int], Equatable))
 
