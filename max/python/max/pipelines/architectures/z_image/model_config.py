@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Tuple
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -24,7 +24,7 @@ from max.nn import ReturnLogits
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
 
-from max.pipelines.architectures.qwen2_5vl.model_config import Qwen2_5VLConfig
+from max.pipelines.architectures.qwen3.model_config import Qwen3Config
 from max.nn.float8_config import Float8Config, parse_float8_config
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig 
@@ -130,32 +130,70 @@ class VAEConfig:
     devices: list[DeviceRef]
     """Devices that the VAE model is parallelized over."""
 
-    attn_scales: list[float]
-    """Attention scales."""
+    act_fn: str
+    """Activation function."""
+  
+    block_out_channels: Tuple[int]
+    """Tuple of block output channels."""
 
-    base_dim: int
-    """Base dimension."""
+    down_block_types: Tuple[str]
+    """Tuple of downsample block types."""
 
-    dim_mult: list[int]
-    """Dimension multiplier."""
+    force_upcast: bool
+    """If enabled it will force the VAE to run in float32 for high image resolution pipelines, such as SD-XL. VAE
+    can be fine-tuned / trained to a lower range without losing too much precision in which case `force_upcast`
+    can be set to `False` - see: https://huggingface.co/madebyollin/sdxl-vae-fp16-fix"""
 
-    dropout: float
-    """Dropout rate."""
+    in_channels: int
+    """Number of channels in the input image."""
 
-    latents_mean: list[float]
-    """Latents mean."""
+    latent_channels: int
+    """Number of channels in the latent space."""
+    
+    latents_mean: Tuple[float]
+    """"""
+    
+    latents_std: Tuple[float]
+    """"""
+    
+    layers_per_block: int
+    """"""
+    
+    mid_block_add_attention: bool
+    """If enabled, the mid_block of the Encoder and Decoder will have attention blocks. If set to false, the
+    mid_block will only have resnet blocks"""
+    
+    norm_num_groups: int
+    """"""
+    
+    out_channels: int
+    """"""
+    
+    sample_size: int
+    """"""
+    
+    scaling_factor: float
+    """"""
+    
+    shift_factor: float
+    """"""
+    
+    up_block_types: Tuple[str]
+    """"""
+    
+    use_post_quant_conv: bool
+    """"""
+    
+    use_quant_conv: bool
+    """"""
 
-    latents_std: list[float]
-    """Latents standard deviation."""
-
-    num_res_blocks: int
-    """Number of residual blocks."""
-
-    temperal_downsample: list[bool]
-    """Temperal downsample."""
-
-    z_dim: int
-    """Latent dimension."""
+    scaling_factor: float
+    """The component-wise standard deviation of the trained latent space computed using the first batch of the
+    training set. This is used to scale the latent space to have unit variance when training the diffusion
+    model. The latents are scaled with the formula `z = z * scaling_factor` before being passed to the
+    diffusion model. When decoding, the latents are scaled back to the original scale with the formula: `z = 1
+    / scaling_factor * z`. For more details, refer to sections 4.3.2 and D.1 of the [High-Resolution Image
+    Synthesis with Latent Diffusion Models](https://huggingface.co/papers/2112.10752) paper."""
 
     float8_config: Float8Config | None = None
     """Float8 quantization configuration for the VAE model."""
@@ -206,7 +244,7 @@ class VAEConfig:
 
 
 @dataclass
-class DenoiserConfig:
+class TransformerConfig:
     """Base configuration for transformer model with required fields."""
 
     _class_name: str
@@ -258,14 +296,14 @@ class DenoiserConfig:
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         state_dict: dict[str, WeightData],
-    ) -> DenoiserConfig:
-        """Generate DenoiserConfig from HuggingFace transformer config.
+    ) -> TransformerConfig:
+        """Generate TransformerConfig from HuggingFace transformer config.
 
         Args:
             transformer_config: HuggingFace transformer configuration object.
 
         Returns:
-            Configured DenoiserConfig instance.
+            Configured TransformerConfig instance.
         """
         # Parse (if present) a float8 configuration for the transformer path.
         t_float8 = parse_float8_config(
@@ -275,7 +313,7 @@ class DenoiserConfig:
             state_dict_name_prefix="transformer.",
             ignored_modules_prefix="transformer.",
         )
-        return DenoiserConfig(
+        return TransformerConfig(
             _class_name=transformer_config._class_name,
             _diffusers_version=transformer_config._diffusers_version,
             dtype=dtype,
@@ -310,21 +348,17 @@ class ZImageConfigBase:
     mrope_section: list[int]
     """List of indices for the mrope section."""
 
-    # Scheduler configuration.
     scheduler_config: SchedulerConfig
     """Scheduler configuration."""
 
-    # VAE configuration.
     vae_config: VAEConfig
     """VAE configuration."""
     
-    # Text encoder configuration.
-    text_encoder_config: Qwen2_5VLConfig
+    text_encoder_config: Qwen3Config
     """Text encoder configuration."""
     
-    # Denoising transformer configuration.
-    denoiser_config: DenoiserConfig
-    """Denoising transformer configuration."""
+    transformer_config: TransformerConfig
+    """Transformer configuration."""
 
 
 @dataclass
@@ -431,8 +465,8 @@ class ZImageConfig(MAXModelConfig, ZImageConfigBase):
             pipeline_config,
         )
 
-        # Create Qwen2_5VLConfig for the text encoder
-        text_encoder_config = Qwen2_5VLConfig.generate(
+        # Create Qwen3Config for the text encoder
+        text_encoder_config = Qwen3Config.generate(
             pipeline_config,
             huggingface_config,
             text_encoder_state_dict["llm_state_dict"],
@@ -446,7 +480,7 @@ class ZImageConfig(MAXModelConfig, ZImageConfigBase):
         )
         
         # Create DonoiserConfig for the denoiser model
-        denoiser_config = DenoiserConfig.generate(
+        denoiser_config = TransformerConfig.generate(
             huggingface_config.transformer_config,
             dtype,
             pipeline_config,
