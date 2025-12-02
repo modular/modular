@@ -4,7 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from max.driver import CPU, Accelerator, Tensor
+import numpy as np
+import pytest
+from max.driver import CPU, Accelerator, Tensor, accelerator_architecture_name
 from max.dtype import DType
 
 
@@ -46,3 +48,92 @@ def test_from_device() -> None:
     assert tensors[0].device == cpu
     assert tensors[1].device == acc0
     assert tensors[2].device == acc1
+
+
+def _test_pinned_device_copy(
+    pinned_gpu_id: int,
+    target_gpu_id: int,
+    pattern_before: int,
+    pattern_after: int,
+    tensor_size: int = 1024,
+) -> bool:
+    """
+    Helper to test if copying from pinned host memory to device memory works.
+
+    Creates pinned host memory on pinned_gpu_id, fills it with pattern_before,
+    copies to target_gpu_id, then modifies the pinned memory to pattern_after.
+    Returns True if the GPU tensor still contains pattern_before (correct copy).
+    """
+    gpus = [Accelerator(id=i) for i in range(2)]
+    cpu_device = CPU()
+
+    # Create pinned memory on specified GPU
+    pinned_cpu_tensor = Tensor(
+        dtype=DType.int8,
+        shape=(tensor_size,),
+        device=gpus[pinned_gpu_id],
+        pinned=True,
+    )
+
+    # Fill with pattern_before
+    pattern_before_data = np.full(tensor_size, pattern_before, dtype=np.int8)
+    pattern_before_tensor = Tensor.from_numpy(pattern_before_data)
+    pinned_cpu_tensor.inplace_copy_from(pattern_before_tensor)
+
+    # Copy to target GPU
+    gpu_tensor = pinned_cpu_tensor.to(gpus[target_gpu_id])
+    assert not gpu_tensor.pinned
+
+    # Modify pinned memory to pattern_after
+    pattern_after_data = np.full(tensor_size, pattern_after, dtype=np.int8)
+    pattern_after_tensor = Tensor.from_numpy(pattern_after_data)
+    pinned_cpu_tensor.inplace_copy_from(pattern_after_tensor)
+
+    # Copy GPU tensor back to CPU and check contents
+    gpus[target_gpu_id].synchronize()
+    gpu_on_cpu = gpu_tensor.copy(device=cpu_device)
+    gpu_values = gpu_on_cpu.to_numpy()
+
+    # Should contain pattern_before (the value before modification)
+    return bool(np.all(gpu_values == pattern_before))
+
+
+def test_pinned_to_same_device_copy() -> None:
+    """Test copying from pinned host memory to same device memory.
+
+    Regression test for GEX-2864: Copying from GPU 0 pinned host memory to
+    GPU 0 device memory should allocate device memory and perform a copy,
+    not return a reference to the pinned memory.
+    """
+    result = _test_pinned_device_copy(
+        pinned_gpu_id=0,
+        target_gpu_id=0,
+        pattern_before=42,
+        pattern_after=99,
+    )
+    assert result, (
+        "Copy from pinned host memory to same GPU device memory failed. "
+        "Expected GPU tensor to contain original data (42), not modified data (99). "
+    )
+
+
+# TODO(GEX-2879): Enable this test on AMD GPUs once cross-device are working.
+@pytest.mark.skipif(
+    accelerator_architecture_name().startswith("gfx"),
+    reason="Test not supported on AMD GPUs (MI355)",
+)
+def test_pinned_to_different_device_copy() -> None:
+    """Test copying from pinned host memory to different device memory.
+
+    This should work correctly - validates the test infrastructure.
+    """
+    result = _test_pinned_device_copy(
+        pinned_gpu_id=0,
+        target_gpu_id=1,
+        pattern_before=77,
+        pattern_after=55,
+    )
+    assert result, (
+        "Copy from pinned host memory to different GPU device memory failed."
+        "Expected GPU tensor to contain original data (77), not modified data (55). "
+    )
