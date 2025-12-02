@@ -134,13 +134,6 @@ void MojoConfig::appendSystemLibraryLinkArgs(SmallVectorImpl<StringRef> &libs) {
           getConfig().maybeGetValue(STRINGIFY_MOJO_CONFIG(".system_libs"))) {
     maybeSystemLibsArg.value().split(libs, ',', /*MaxSplit=*/-1,
                                      /*KeepEmpty=*/false);
-  } else {
-#ifdef __linux__
-    libs.push_back("-lrt");
-    libs.push_back("-ldl");
-    libs.push_back("-lpthread");
-#endif
-    libs.push_back("-lm");
   }
 }
 
@@ -154,10 +147,6 @@ void MojoConfig::appendSharedLibraryLinkArgs(SmallVectorImpl<StringRef> &args) {
     // string and then parse it back out.
     args.push_back(getPath(STRINGIFY_MOJO_CONFIG(".shared_libs_artmb"),
                            "lib/libAsyncRTMojoBindings" EXT));
-    args.push_back(getPath(STRINGIFY_MOJO_CONFIG(".shared_libs_artrg"),
-                           "lib/libAsyncRTRuntimeGlobals" EXT));
-    args.push_back(getPath(STRINGIFY_MOJO_CONFIG(".shared_libs_msg"),
-                           "lib/libMSupportGlobals" EXT));
     args.push_back("-Xlinker");
     args.push_back("-rpath");
     args.push_back("-Xlinker");
