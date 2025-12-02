@@ -309,10 +309,9 @@ struct NDBuffer[
         Args:
             ptr: Pointer to the data.
         """
-        constrained[
-            Self.shape.all_known[Self.rank](),
-            "dimensions must all be known",
-        ]()
+        __comptime_assert Self.shape.all_known[
+            Self.rank
+        ](), "dimensions must all be known"
 
         self.data = ptr
         self.dynamic_shape = _make_tuple[
@@ -342,17 +341,15 @@ struct NDBuffer[
             other: The other NDBuffer type.
         """
         # It is probably unsafe to convert between address spaces
-        constrained[
-            other.address_space == Self.address_space,
-            "cannot convert between buffer types with different address spaces",
-        ]()
+        __comptime_assert (
+            other.address_space == Self.address_space
+        ), "cannot convert between buffer types with different address spaces"
 
         # We can only downgrade our alignment
-        constrained[
+        __comptime_assert (
             other.alignment2 >= Self.alignment2
-            and other.alignment2 % Self.alignment2 == 0,
-            "cannot convert between buffers with incompatible alignments",
-        ]()
+            and other.alignment2 % Self.alignment2 == 0
+        ), "cannot convert between buffers with incompatible alignments"
 
         # Exclusivity can only be lost
         constrained[
@@ -368,14 +365,12 @@ struct NDBuffer[
 
         # We can lose information about shape/stride, but not gain information
         comptime unknown_dim_list = DimList.create_unknown[Self.rank]()
-        constrained[
-            other.shape == Self.shape or Self.shape == unknown_dim_list,
-            "cannot convert between buffers with incompatible shapes",
-        ]()
-        constrained[
-            other.strides == Self.strides or Self.strides == unknown_dim_list,
-            "cannot convert between buffers with incompatible strides",
-        ]()
+        __comptime_assert (
+            other.shape == Self.shape or Self.shape == unknown_dim_list
+        ), "cannot convert between buffers with incompatible shapes"
+        __comptime_assert (
+            other.strides == Self.strides or Self.strides == unknown_dim_list
+        ), "cannot convert between buffers with incompatible strides"
 
         self.data = rebind[type_of(self.data)](other.data)
         self.dynamic_shape = other.dynamic_shape
@@ -818,15 +813,13 @@ struct NDBuffer[
 
         comptime num_tile_sizes = stdlib.builtin.variadic_size(tile_sizes)
 
-        constrained[
-            num_tile_sizes == Self.rank,
-            "The tile should have the same rank as the buffer",
-        ]()
+        __comptime_assert (
+            num_tile_sizes == Self.rank
+        ), "The tile should have the same rank as the buffer"
 
-        constrained[
-            DimList(tile_sizes).all_known[Self.rank](),
-            "Static tile sizes are only supported",
-        ]()
+        __comptime_assert DimList(tile_sizes).all_known[
+            Self.rank
+        ](), "Static tile sizes are only supported"
 
         var offset = 0
         var dyn_shape = IndexList[Self.rank]()

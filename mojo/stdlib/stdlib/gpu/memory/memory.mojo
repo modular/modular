@@ -591,10 +591,9 @@ fn _mark_eviction[
             constraints="=l",
         ]()
     else:
-        constrained[
-            eviction_policy is CacheEviction.EVICT_FIRST,
-            "invalid eviction policy, only support normal, first, and last",
-        ]()
+        __comptime_assert (
+            eviction_policy is CacheEviction.EVICT_FIRST
+        ), "invalid eviction policy, only support normal, first, and last"
         return inlined_assembly[
             "createpolicy.fractional.L2::evict_first.b64 $0;",
             UInt64,
@@ -645,19 +644,18 @@ fn async_copy[
         - Cannot enable both L2 prefetch and L1 bypass.
         - L2 prefetch size must be 64, 128, or 256 bytes.
     """
-    constrained[
-        not fill or size_of[dtype]() <= size_of[Int32](),
-        "if the fill value is specified, then the dtype must be 32bit or less",
-    ]()
+    __comptime_assert (
+        not fill or size_of[dtype]() <= size_of[Int32]()
+    ), "if the fill value is specified, then the dtype must be 32bit or less"
     constrained[size in (4, 8, 16)]()
-    constrained[
-        not (l2_prefetch.__bool__() == bypass_L1_16B == True),
-        "both enable l2 prefetching and l1 bypass cannot be True",
-    ]()
-    constrained[
-        not l2_prefetch or l2_prefetch.value() in (64, 128, 256),
-        "the l2 prefetch size must be in bounds",
-    ]()
+    __comptime_assert not (
+        l2_prefetch.__bool__() == bypass_L1_16B == True
+    ), "both enable l2 prefetching and l1 bypass cannot be True"
+    __comptime_assert not l2_prefetch or l2_prefetch.value() in (
+        64,
+        128,
+        256,
+    ), "the l2 prefetch size must be in bounds"
 
     @parameter
     if is_amd_gpu():
@@ -1820,20 +1818,20 @@ fn _get_multimem_ld_reduce_asm[
         _is_sm_9x_or_newer(), "multimem is only supported on SM90+ GPUs"
     ]()
     __comptime_assert dtype.is_floating_point(), "type must be floating point"
-    constrained[
-        consistency
-        in (Consistency.WEAK, Consistency.RELAXED, Consistency.ACQUIRE),
-        "multimem.ld_reduce consistency must be in {weak, relaxed, acquire}",
-    ]()
+    __comptime_assert consistency in (
+        Consistency.WEAK,
+        Consistency.RELAXED,
+        Consistency.ACQUIRE,
+    ), "multimem.ld_reduce consistency must be in {weak, relaxed, acquire}"
     comptime total_bits = count * output_width * size_of[dtype]() * 8
-    constrained[
-        total_bits in (32, 64, 128),
-        "total bit width must be 32, 64, or 128 bits",
-    ]()
-    constrained[
-        dtype != DType.float64 or count == 1,
-        "float64 requires count=1 (no .vec qualifier allowed)",
-    ]()
+    __comptime_assert total_bits in (
+        32,
+        64,
+        128,
+    ), "total bit width must be 32, 64, or 128 bits"
+    __comptime_assert (
+        dtype != DType.float64 or count == 1
+    ), "float64 requires count=1 (no .vec qualifier allowed)"
 
     comptime ss = ".global"
     comptime vec = ".v" + _int_to_str[count]() if count > 1 else ""
@@ -1893,14 +1891,14 @@ fn multimem_ld_reduce[
         - float64 requires count=1 (no .vec qualifier allowed).
     """
     comptime total_bits = count * output_width * size_of[dtype]() * 8
-    constrained[
-        total_bits in (32, 64, 128),
-        "total bit width must be 32, 64, or 128 bits",
-    ]()
-    constrained[
-        dtype != DType.float64 or count == 1,
-        "float64 requires count=1 (no .vec qualifier allowed)",
-    ]()
+    __comptime_assert total_bits in (
+        32,
+        64,
+        128,
+    ), "total bit width must be 32, 64, or 128 bits"
+    __comptime_assert (
+        dtype != DType.float64 or count == 1
+    ), "float64 requires count=1 (no .vec qualifier allowed)"
 
     comptime asm = _get_multimem_ld_reduce_asm[
         dtype,
@@ -2018,14 +2016,14 @@ fn multimem_ld_reduce[
         simd_width in (1, 2, 4, 8), "simd_width must be 1, 2, 4, or 8"
     ]()
     comptime total_bits = count * output_width * size_of[dtype]() * 8
-    constrained[
-        total_bits in (32, 64, 128),
-        "total bit width must be 32, 64, or 128 bits",
-    ]()
-    constrained[
-        dtype != DType.float64 or count == 1,
-        "float64 requires count=1 (no .vec qualifier allowed)",
-    ]()
+    __comptime_assert total_bits in (
+        32,
+        64,
+        128,
+    ), "total bit width must be 32, 64, or 128 bits"
+    __comptime_assert (
+        dtype != DType.float64 or count == 1
+    ), "float64 requires count=1 (no .vec qualifier allowed)"
 
     var results = multimem_ld_reduce[
         dtype,
@@ -2062,20 +2060,20 @@ fn _get_multimem_st_asm[
         _is_sm_9x_or_newer(), "multimem is only supported on SM90+ GPUs"
     ]()
     __comptime_assert dtype.is_floating_point(), "type must be floating point"
-    constrained[
-        consistency
-        in (Consistency.WEAK, Consistency.RELAXED, Consistency.RELEASE),
-        "multimem.st consistency must be in {weak, relaxed, release}",
-    ]()
+    __comptime_assert consistency in (
+        Consistency.WEAK,
+        Consistency.RELAXED,
+        Consistency.RELEASE,
+    ), "multimem.st consistency must be in {weak, relaxed, release}"
     comptime total_bits = count * width * size_of[dtype]() * 8
-    constrained[
-        total_bits in (32, 64, 128),
-        "total bit width must be 32, 64, or 128 bits",
-    ]()
-    constrained[
-        dtype != DType.float64 or count == 1,
-        "float64 requires count=1 (no .vec qualifier allowed)",
-    ]()
+    __comptime_assert total_bits in (
+        32,
+        64,
+        128,
+    ), "total bit width must be 32, 64, or 128 bits"
+    __comptime_assert (
+        dtype != DType.float64 or count == 1
+    ), "float64 requires count=1 (no .vec qualifier allowed)"
 
     comptime ss = ".global"
     comptime vec = ".v" + _int_to_str[count]() if count > 1 else ""
@@ -2148,14 +2146,14 @@ fn multimem_st[
         [PTX ISA Documentation](https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-multimem-ld-reduce-multimem-st-multimem-red).
     """
     comptime total_bits = count * width * size_of[dtype]() * 8
-    constrained[
-        total_bits in (32, 64, 128),
-        "total bit width must be 32, 64, or 128 bits",
-    ]()
-    constrained[
-        dtype != DType.float64 or count == 1,
-        "float64 requires count=1 (no .vec qualifier allowed)",
-    ]()
+    __comptime_assert total_bits in (
+        32,
+        64,
+        128,
+    ), "total bit width must be 32, 64, or 128 bits"
+    __comptime_assert (
+        dtype != DType.float64 or count == 1
+    ), "float64 requires count=1 (no .vec qualifier allowed)"
 
     comptime asm = _get_multimem_st_asm[
         dtype,

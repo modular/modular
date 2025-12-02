@@ -87,10 +87,9 @@ fn block_reduce[
     val: StaticTuple[SIMD[dtype, simd_width], num_reductions],
     init: StaticTuple[Scalar[dtype], num_reductions],
 ) -> StaticTuple[Scalar[dtype], num_reductions]:
-    constrained[
-        BLOCK_SIZE % WARP_SIZE == 0,
-        "block size must be a multiple of the warp size",
-    ]()
+    __comptime_assert (
+        BLOCK_SIZE % WARP_SIZE == 0
+    ), "block size must be a multiple of the warp size"
 
     @always_inline
     @parameter
@@ -471,10 +470,9 @@ fn saturated_reduce_kernel[
     simd_width: Int,
     accum_type: DType = get_accum_type[dtype](),
 ](shape: IndexList[rank], init: StaticTuple[Scalar[dtype], num_reductions],):
-    constrained[
-        simd_width == 1,
-        "saturated_reduce_kernel doesn't currently support SIMD load/store",
-    ]()
+    __comptime_assert (
+        simd_width == 1
+    ), "saturated_reduce_kernel doesn't currently support SIMD load/store"
 
     var row_size = shape[axis]
     var num_rows = shape.flattened_length() // row_size

@@ -702,10 +702,9 @@ fn _is_amd_mi355x() -> Bool:
 
 @always_inline("nodebug")
 fn _cdna_version() -> Int:
-    constrained[
-        _is_amd_mi300x() or _is_amd_mi355x(),
-        "querying the cdna version is only supported on AMD hardware",
-    ]()
+    __comptime_assert (
+        _is_amd_mi300x() or _is_amd_mi355x()
+    ), "querying the cdna version is only supported on AMD hardware"
 
     @parameter
     if _is_amd_mi300x():
@@ -1100,10 +1099,9 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
         The version triple of macOS.
     """
 
-    constrained[
-        CompilationTarget.is_macos(),
-        "the operating system must be macOS",
-    ]()
+    __comptime_assert (
+        CompilationTarget.is_macos()
+    ), "the operating system must be macOS"
 
     comptime INITIAL_CAPACITY = 32
 

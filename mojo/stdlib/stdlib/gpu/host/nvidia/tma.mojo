@@ -91,10 +91,11 @@ struct TensorMapDataType:
         Returns:
             The corresponding `TensorMapDataType` value.
         """
-        constrained[
-            dtype in (DType.float32, DType.bfloat16, DType.float8_e4m3fn),
-            "Unsupported dtype",
-        ]()
+        __comptime_assert dtype in (
+            DType.float32,
+            DType.bfloat16,
+            DType.float8_e4m3fn,
+        ), "Unsupported dtype"
 
         @parameter
         if dtype is DType.float32:

@@ -105,10 +105,9 @@ struct Coroutine[type: AnyType, origins: OriginSet]:
         Returns:
             The coroutine context.
         """
-        constrained[
-            size_of[_CoroutineContext]() == size_of[ctx_type](),
-            "context size must be 16 bytes",
-        ]()
+        __comptime_assert (
+            size_of[_CoroutineContext]() == size_of[ctx_type]()
+        ), "context size must be 16 bytes"
         return __mlir_op.`co.get_callback_ptr`[
             _type = __mlir_type[`!kgen.pointer<`, ctx_type, `>`]
         ](self._handle)
@@ -191,10 +190,9 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet]:
         Returns:
             The coroutine context.
         """
-        constrained[
-            size_of[_CoroutineContext]() == size_of[ctx_type](),
-            "context size must be 16 bytes",
-        ]()
+        __comptime_assert (
+            size_of[_CoroutineContext]() == size_of[ctx_type]()
+        ), "context size must be 16 bytes"
         return __mlir_op.`co.get_callback_ptr`[
             _type = __mlir_type[`!kgen.pointer<`, ctx_type, `>`]
         ](self._handle)

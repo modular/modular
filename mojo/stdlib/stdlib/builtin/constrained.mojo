@@ -34,10 +34,7 @@ fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
 
     ```mojo
     fn half[dtype: DType](a: Scalar[dtype]) -> Scalar[dtype]:
-        constrained[
-            dtype.is_numeric(),
-            "dtype must be numeric."
-        ]()
+        __comptime_assert dtype.is_numeric(), "dtype must be numeric."
         return a / 2
 
     def main():

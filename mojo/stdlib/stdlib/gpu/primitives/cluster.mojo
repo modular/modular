@@ -47,10 +47,9 @@ fn block_rank_in_cluster() -> UInt32:
         - Maps directly to the `%cluster_ctarank` special register in CUDA PTX.
     """
 
-    constrained[
-        _is_sm_9x_or_newer(),
-        "block rank identifier is only supported by NVIDIA SM90+ GPUs",
-    ]()
+    __comptime_assert (
+        _is_sm_9x_or_newer()
+    ), "block rank identifier is only supported by NVIDIA SM90+ GPUs"
 
     return llvm_intrinsic[
         "llvm.nvvm.read.ptx.sreg.cluster.ctarank",
@@ -72,10 +71,9 @@ fn elect_one_sync() -> Bool:
         - Useful for having a single thread perform an operation while
           maintaining warp synchronization.
     """
-    constrained[
-        _is_sm_9x_or_newer(),
-        "elect one sync is only implemented for NVIDIA SM90+ GPUs",
-    ]()
+    __comptime_assert (
+        _is_sm_9x_or_newer()
+    ), "elect one sync is only implemented for NVIDIA SM90+ GPUs"
     return Bool(__mlir_op.`nvvm.elect.sync`[_type = __mlir_type.`i1`]())
 
 
@@ -95,10 +93,9 @@ fn elect_one_sync_with_mask(mask: UInt32 = 0xFFFFFFFF) -> Bool:
         - Useful for having a single thread perform an operation while
           maintaining warp synchronization.
     """
-    constrained[
-        _is_sm_9x_or_newer(),
-        "elect one sync is only implemented for NVIDIA SM90+ GPUs",
-    ]()
+    __comptime_assert (
+        _is_sm_9x_or_newer()
+    ), "elect one sync is only implemented for NVIDIA SM90+ GPUs"
 
     comptime asm = """{
         .reg .pred P1;
@@ -119,10 +116,9 @@ fn cluster_arrive_relaxed():
     guarantees. It should be used when memory ordering is not required between thread blocks
     in the cluster. Only supported on NVIDIA SM90+ GPUs.
     """
-    constrained[
-        _is_sm_9x_or_newer(),
-        "cluster arrive relaxed is only supported by NVIDIA SM90+ GPUs",
-    ]()
+    __comptime_assert (
+        _is_sm_9x_or_newer()
+    ), "cluster arrive relaxed is only supported by NVIDIA SM90+ GPUs"
     __mlir_op.`nvvm.cluster.arrive.relaxed`[
         _type=None,
         aligned = __mlir_attr.unit,
@@ -136,10 +132,9 @@ fn cluster_arrive():
     This function ensures all prior memory operations from this thread block are visible to
     other thread blocks in the cluster before proceeding. Only supported on NVIDIA SM90+ GPUs.
     """
-    constrained[
-        _is_sm_9x_or_newer(),
-        "cluster arrive is only supported by NVIDIA SM90+ GPUs",
-    ]()
+    __comptime_assert (
+        _is_sm_9x_or_newer()
+    ), "cluster arrive is only supported by NVIDIA SM90+ GPUs"
     __mlir_op.`nvvm.cluster.arrive`[
         _type=None,
         aligned = __mlir_attr.unit,
@@ -153,10 +148,9 @@ fn cluster_wait():
     This function blocks until all thread blocks in the cluster have called cluster_arrive()
     or cluster_arrive_relaxed(). Only supported on NVIDIA SM90+ GPUs.
     """
-    constrained[
-        _is_sm_9x_or_newer(),
-        "cluster wait is only supported by NVIDIA SM90+ GPUs",
-    ]()
+    __comptime_assert (
+        _is_sm_9x_or_newer()
+    ), "cluster wait is only supported by NVIDIA SM90+ GPUs"
     __mlir_op.`nvvm.cluster.wait`[
         _type=None,
         aligned = __mlir_attr.unit,
@@ -193,10 +187,9 @@ fn cluster_sync_acquire():
 
     Only supported on NVIDIA SM90+ GPUs.
     """
-    constrained[
-        _is_sm_9x_or_newer(),
-        "cluster sync acquire is only supported by NVIDIA SM90+ GPUs",
-    ]()
+    __comptime_assert (
+        _is_sm_9x_or_newer()
+    ), "cluster sync acquire is only supported by NVIDIA SM90+ GPUs"
     inlined_assembly[
         "fence.proxy.async::generic.acquire.sync_restrict::shared::cluster.cluster;",
         NoneType,
@@ -210,10 +203,9 @@ fn cluster_sync_release():
     """Release the cluster sync proxy.
 
     Only supported on NVIDIA SM90+ GPUs."""
-    constrained[
-        _is_sm_9x_or_newer(),
-        "cluster sync release is only supported by NVIDIA SM90+ GPUs",
-    ]()
+    __comptime_assert (
+        _is_sm_9x_or_newer()
+    ), "cluster sync release is only supported by NVIDIA SM90+ GPUs"
     inlined_assembly[
         "fence.proxy.async::generic.release.sync_restrict::shared::cta.cluster;",
         NoneType,
@@ -417,15 +409,11 @@ fn cluster_mask_base[
         The base mask for the cluster.
 
     """
-    constrained[
-        axis in (0, 1),
-        "axis must be one of 0, 1",
-    ]()
+    __comptime_assert axis in (0, 1), "axis must be one of 0, 1"
 
-    constrained[
-        product(cluster_shape) <= 16,
-        "cluster size must be less than or equal to 16",
-    ]()
+    __comptime_assert (
+        product(cluster_shape) <= 16
+    ), "cluster size must be less than or equal to 16"
 
     @parameter
     if axis == 0:

@@ -283,10 +283,9 @@ fn ld_matrix[
         ```
     """
 
-    constrained[
-        (transpose and dtype.is_half_float()) or (not transpose),
-        "Transposed ld_matrix is only for half precision.",
-    ]()
+    __comptime_assert (transpose and dtype.is_half_float()) or (
+        not transpose
+    ), "Transposed ld_matrix is only for half precision."
 
     # The register width is fixed at 4 Bytes (32 bits)
     comptime register_btypes = 4
@@ -325,10 +324,9 @@ fn ld_matrix[
         d = rebind[SIMD[dtype, simd_width]](r0.join(r1))
 
     else:
-        constrained[
-            num_registers == 4,
-            "no valid implementation of ldmatrix instruction",
-        ]()
+        __comptime_assert (
+            num_registers == 4
+        ), "no valid implementation of ldmatrix instruction"
         comptime ins = base + ".x4" + get_suffix()
         var r = llvm_intrinsic[
             ins, _RegisterPackType[UInt32, UInt32, UInt32, UInt32]
@@ -421,10 +419,9 @@ fn st_matrix[
         )
 
     else:
-        constrained[
-            num_matrices == 4,
-            "no valid implementation of stmatrix instruction",
-        ]()
+        __comptime_assert (
+            num_matrices == 4
+        ), "no valid implementation of stmatrix instruction"
 
         comptime ins = base + get_suffix() + ".x4.shared.b16 [$0], {$1, $2, $3, $4};\n"
         inlined_assembly[ins, NoneType, constraints="r,r,r,r,r"](

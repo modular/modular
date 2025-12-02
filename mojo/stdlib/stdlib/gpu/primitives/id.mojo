@@ -478,10 +478,9 @@ struct _ClusterDim(Defaultable):
         Returns:
             The `x`, `y`, or `z` dimension of the cluster.
         """
-        constrained[
-            _is_sm_9x_or_newer(),
-            "cluster_id is only supported on NVIDIA SM90+ GPUs",
-        ]()
+        __comptime_assert (
+            _is_sm_9x_or_newer()
+        ), "cluster_id is only supported on NVIDIA SM90+ GPUs"
         _verify_xyz[dim]()
 
         comptime intrinsic_name = "llvm.nvvm.read.ptx.sreg.cluster.nctaid." + dim
@@ -520,10 +519,9 @@ struct _ClusterIdx(Defaultable):
         Returns:
             The `x`, `y`, or `z` coordinates of a cluster within a grid.
         """
-        constrained[
-            _is_sm_9x_or_newer(),
-            "cluster_id is only supported on NVIDIA SM90+ GPUs",
-        ]()
+        __comptime_assert (
+            _is_sm_9x_or_newer()
+        ), "cluster_id is only supported on NVIDIA SM90+ GPUs"
         _verify_xyz[dim]()
         comptime intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
@@ -561,10 +559,9 @@ struct _ClusterBlockIdx(Defaultable):
         Returns:
             The `x`, `y`, or `z` coordinates of a threadblock within a cluster.
         """
-        constrained[
-            _is_sm_9x_or_newer(),
-            "cluster_id is only supported on NVIDIA SM90+ GPUs",
-        ]()
+        __comptime_assert (
+            _is_sm_9x_or_newer()
+        ), "cluster_id is only supported on NVIDIA SM90+ GPUs"
         _verify_xyz[dim]()
         comptime intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(

@@ -120,15 +120,13 @@ fn warpgroup_reg_alloc[count: Int]():
           longer needed
     """
 
-    constrained[
-        count % 8 == 0,
-        "count argument to warpgroup_reg_alloc must be in multiples of 8",
-    ]()
+    __comptime_assert (
+        count % 8 == 0
+    ), "count argument to warpgroup_reg_alloc must be in multiples of 8"
 
-    constrained[
-        24 <= count <= 256,
-        "count argument must be within 24 and 256",
-    ]()
+    __comptime_assert (
+        24 <= count <= 256
+    ), "count argument must be within 24 and 256"
 
     @parameter
     if _is_sm_9x_or_newer():
@@ -157,15 +155,13 @@ fn warpgroup_reg_dealloc[count: Int]():
         - Pair with `warpgroup_reg_alloc()` when extra registers are needed.
     """
 
-    constrained[
-        count % 8 == 0,
-        "count argument to warpgroup_reg_dealloc must be in multiples of 8",
-    ]()
+    __comptime_assert (
+        count % 8 == 0
+    ), "count argument to warpgroup_reg_dealloc must be in multiples of 8"
 
-    constrained[
-        24 <= count <= 256,
-        "count argument must be within 24 and 256",
-    ]()
+    __comptime_assert (
+        24 <= count <= 256
+    ), "count argument must be within 24 and 256"
 
     @parameter
     if _is_sm_9x_or_newer():
@@ -636,10 +632,11 @@ fn threadfence[scope: Scope = Scope.GPU]():
         - Critical for synchronizing memory access in parallel algorithms.
         - Performance impact increases with broader scopes.
     """
-    constrained[
-        scope in (Scope.GPU, Scope.BLOCK, Scope.SYSTEM),
-        "invalid threadfence scope",
-    ]()
+    __comptime_assert scope in (
+        Scope.GPU,
+        Scope.BLOCK,
+        Scope.SYSTEM,
+    ), "invalid threadfence scope"
     constrained[
         is_nvidia_gpu(), "threadfence is only implemented on NVIDIA GPUs"
     ]()
@@ -1195,10 +1192,9 @@ struct AMDBufferResource:
         Returns:
             SIMD vector containing the loaded data.
         """
-        constrained[
-            is_amd_gpu(),
-            "The buffer_load function is only applicable on AMDGPU hardware.",
-        ]()
+        __comptime_assert (
+            is_amd_gpu()
+        ), "The buffer_load function is only applicable on AMDGPU hardware."
 
         comptime bytes = size_of[dtype]() * width
         comptime aux = _cache_operation_to_amd_aux[cache_policy]()
@@ -1308,10 +1304,9 @@ struct AMDBufferResource:
             - SC[1:0] controls coherency scope: 0=wave, 1=group, 2=device, 3=system.
             - nt=True: Use streaming-optimized cache policies (recommended for streaming data).
         """
-        constrained[
-            is_amd_gpu(),
-            "The buffer_store function is only applicable on AMDGPU hardware.",
-        ]()
+        __comptime_assert (
+            is_amd_gpu()
+        ), "The buffer_store function is only applicable on AMDGPU hardware."
 
         comptime bytes = width * size_of[dtype]()
         comptime aux: Int32 = _cache_operation_to_amd_aux[cache_policy]()
@@ -1416,15 +1411,13 @@ fn ds_read_tr16_b64[
         - Result width is fixed to 4 elements of dtype.
     """
 
-    constrained[
-        is_amd_gpu(),
-        "The ds_read_tr16_b64 function is only applicable on AMDGPU hardware.",
-    ]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "The ds_read_tr16_b64 function is only applicable on AMDGPU hardware."
 
-    constrained[
-        size_of[dtype]() == 2,
-        "ds_read_tr16_b64 supports 16-bit dtypes.",
-    ]()
+    __comptime_assert (
+        size_of[dtype]() == 2
+    ), "ds_read_tr16_b64 supports 16-bit dtypes."
 
     constrained[
         _cdna_4_or_newer(), "ds_read_tr16_b64 is only supported on CDNA4+"

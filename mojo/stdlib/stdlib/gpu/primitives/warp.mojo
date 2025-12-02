@@ -77,10 +77,9 @@ fn _shuffle[
 ](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
     dtype, simd_width
 ]:
-    constrained[
-        dtype.is_half_float() or simd_width == 1,
-        "Unsupported simd_width",
-    ]()
+    __comptime_assert (
+        dtype.is_half_float() or simd_width == 1
+    ), "Unsupported simd_width"
 
     @parameter
     if dtype is DType.float32:
@@ -182,10 +181,9 @@ fn _shuffle_apple_helper[
       simd_shuffle_xor              → llvm.air.simd_shuffle_xor
     """
 
-    constrained[
-        dtype.is_half_float() or simd_width == 1,
-        "Unsupported simd_width",
-    ]()
+    __comptime_assert (
+        dtype.is_half_float() or simd_width == 1
+    ), "Unsupported simd_width"
 
     var arg = UInt16(offset)  # AIR intrinsics use 16-bit offsets
 
@@ -1211,10 +1209,10 @@ fn _vote_nvidia_helper(vote: Bool) -> UInt32:
 
 @always_inline
 fn _vote_amd_helper[ret_type: DType](vote: Bool) -> Scalar[ret_type]:
-    constrained[
-        ret_type in (DType.uint32, DType.uint64),
-        "Unsupported return type",
-    ]()
+    __comptime_assert ret_type in (
+        DType.uint32,
+        DType.uint64,
+    ), "Unsupported return type"
 
     comptime instruction = String(
         "llvm.amdgcn.ballot.i", bit_width_of[ret_type]()

@@ -164,15 +164,27 @@ fn tcgen05_ld[
         + "b.",
     ]()
 
-    constrained[
-        repeat in [1, 2, 4, 8, 16, 32, 64, 128],
-        "`repeat` must be a power of 2 in the range [1, 128].",
-    ]()
+    __comptime_assert repeat in [
+        1,
+        2,
+        4,
+        8,
+        16,
+        32,
+        64,
+        128,
+    ], "`repeat` must be a power of 2 in the range [1, 128]."
 
-    constrained[
-        width in [1, 2, 4, 8, 16, 32, 64, 128],
-        "`width` must be a power of 2 in the range [1, 128].",
-    ]()
+    __comptime_assert width in [
+        1,
+        2,
+        4,
+        8,
+        16,
+        32,
+        64,
+        128,
+    ], "`width` must be a power of 2 in the range [1, 128]."
 
     constrained[
         width == (repeat * bits * datapaths) // (32 * 32)
@@ -310,23 +322,34 @@ fn tcgen05_st[
     """
     check_blackwell_constraint()
 
-    constrained[
+    __comptime_assert (
         (datapaths == 16 and bits == 64)
         or (datapaths == 16 and bits == 128)
         or (datapaths == 16 and bits == 256)
-        or (datapaths == 32 and bits == 32),
-        "`datapaths`x`bits`b must be 16x64b, 16x128b, 16x256b or 32x32b.",
-    ]()
+        or (datapaths == 32 and bits == 32)
+    ), "`datapaths`x`bits`b must be 16x64b, 16x128b, 16x256b or 32x32b."
 
-    constrained[
-        repeat in [1, 2, 4, 8, 16, 32, 64, 128],
-        "`repeat` must be a power of 2 in the range [1, 128].",
-    ]()
+    __comptime_assert repeat in [
+        1,
+        2,
+        4,
+        8,
+        16,
+        32,
+        64,
+        128,
+    ], "`repeat` must be a power of 2 in the range [1, 128]."
 
-    constrained[
-        width in [1, 2, 4, 8, 16, 32, 64, 128],
-        "`width` must be a power of 2 in the range [1, 128].",
-    ]()
+    __comptime_assert width in [
+        1,
+        2,
+        4,
+        8,
+        16,
+        32,
+        64,
+        128,
+    ], "`width` must be a power of 2 in the range [1, 128]."
 
     constrained[
         width == (repeat * bits * datapaths) // (32 * 32)
@@ -570,10 +593,9 @@ fn tcgen05_cp[
         "dst_fmt must be empty or 'b8x16'.",
     ]()
 
-    constrained[
-        not ((len(dst_fmt) == 0) ^ (len(src_fmt) == 0)),
-        "Both or none of dst_fmt and src_fmt must be provided.",
-    ]()
+    __comptime_assert not (
+        (len(dst_fmt) == 0) ^ (len(src_fmt) == 0)
+    ), "Both or none of dst_fmt and src_fmt must be provided."
 
     constrained[
         multicast == ""

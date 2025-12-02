@@ -404,10 +404,9 @@ fn assert_almost_equal[
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
     """
-    constrained[
-        dtype is DType.bool or dtype.is_integral() or dtype.is_floating_point(),
-        "type must be boolean, integral, or floating-point",
-    ]()
+    __comptime_assert (
+        dtype is DType.bool or dtype.is_integral() or dtype.is_floating_point()
+    ), "type must be boolean, integral, or floating-point"
 
     var almost_equal = isclose(
         lhs, rhs, atol=atol, rtol=rtol, equal_nan=equal_nan

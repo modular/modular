@@ -1098,10 +1098,9 @@ fn _get_start_indices_of_nth_subvolume[
         Constructed ND-index.
     """
 
-    constrained[
-        subvolume_rank <= rank,
-        "subvolume rank cannot be greater than indices rank",
-    ]()
+    __comptime_assert (
+        subvolume_rank <= rank
+    ), "subvolume rank cannot be greater than indices rank"
     __comptime_assert subvolume_rank >= 0, "subvolume rank must be non-negative"
 
     # fast impls for common cases
@@ -1625,10 +1624,9 @@ fn _elementwise_impl_gpu[
         hw_info.threads_per_multiprocessor
     )
 
-    constrained[
-        sm_count > 0 and threads_per_multiprocessor > 0,
-        "the sm_count and thread_count must be known",
-    ]()
+    __comptime_assert (
+        sm_count > 0 and threads_per_multiprocessor > 0
+    ), "the sm_count and thread_count must be known"
 
     # split between packed and tail regions of input
     var length = UInt(shape.flattened_length())
@@ -1837,10 +1835,9 @@ fn _stencil_impl_cpu[
         input_shape: The shape of the input buffer.
     """
     __comptime_assert rank == 4, "Only stencil of rank-4 supported"
-    constrained[
-        stencil_axis[0] == 1 and stencil_axis[1] == 2,
-        "Only stencil spatial axes [1, 2] are supported",
-    ]()
+    __comptime_assert (
+        stencil_axis[0] == 1 and stencil_axis[1] == 2
+    ), "Only stencil spatial axes [1, 2] are supported"
 
     var total_size = shape.flattened_length()
 
@@ -2002,10 +1999,9 @@ fn _stencil_impl_gpu[
         input_shape: The shape of the input buffer.
     """
     __comptime_assert rank == 4, "Only stencil of rank-4 supported"
-    constrained[
-        stencil_axis[0] == 1 and stencil_axis[1] == 2,
-        "Only stencil spatial axes [1, 2] are supported",
-    ]()
+    __comptime_assert (
+        stencil_axis[0] == 1 and stencil_axis[1] == 2
+    ), "Only stencil spatial axes [1, 2] are supported"
 
     # GPU kernel implementation
     @always_inline
