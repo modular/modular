@@ -381,6 +381,20 @@ fn test_no_unused_warning() -> Int:
     # This is syntactically a use, but n is a parameter, so the warning does show up.
     return s.n
 
+@register_passable("trivial")
+struct TestUnused[T: RPTTrait]:
+    var thing: Self.T
+
+    fn __init__(out self, xyz: Self):
+        var other = xyz  # should not warn about dead store.
+        self.thing = other.thing
+        _ = self.thing
+
+@register_passable("trivial")
+trait RPTTrait:
+    pass
+
+
 
 ##===----------------------------------------------------------------------===##
 # incorrect warnings

@@ -219,6 +219,18 @@ struct TypeDeclInfo {
     assert(it != structMap.end() && "reference to struct that wasn't declared");
     return it->second;
   }
+  /// Return the trait decls for the specified TraitType (which may be a
+  /// composition).
+  SmallVector<LIT::TraitDeclOp, 2>
+  getTraitDeclsForType(LIT::TraitType type) const {
+    SmallVector<LIT::TraitDeclOp, 2> result;
+    for (auto symbol : type.getSymbols()) {
+      auto it = traitMap.find(symbol);
+      assert(it != traitMap.end() && "reference to trait that wasn't declared");
+      result.push_back(it->second);
+    }
+    return result;
+  }
 
   /// Return true if the specified type is RegisterPassableTrivial - no copy,
   /// move, or destructor members.
@@ -273,8 +285,12 @@ bool TypeDeclInfo::isRegisterPassableTrivial(Type type) const {
 
   // This is not trivial if it is a reference to a trait value.
   if (auto paramRef = sugarDynCast<ParamType>(type)) {
-    if (isa<TraitType>(paramRef.getParam().getType()))
+    if (auto trait = sugarDynCast<TraitType>(paramRef.getParam().getType())) {
+      for (auto traitDecl : getTraitDeclsForType(trait))
+        if (traitDecl.isRegisterPassableTrivial())
+          return true;
       return false;
+    }
   }
 
   // Other values of raw MLIR type are always trivial.
@@ -311,14 +327,14 @@ static SymbolConstantAttr getSpecialMemberForType(
 TypedAttr TypeDeclInfo::getDestructorForType(Type type, Location loc) const {
   if (auto generic = sugarDynCast<ParamType>(type)) {
     if (auto trait = sugarDynCast<TraitType>(generic.getParam().getType())) {
-      for (SymbolRefAttr symbol : trait.getSymbols()) {
-        TraitDeclOp traitDecl = traitMap.at(symbol);
+      auto traitDecls = getTraitDeclsForType(trait);
+      for (TraitDeclOp traitDecl : traitDecls) {
         if (auto dtorWitness = traitDecl.getDtorWitness()) {
           TypedAttr selfParam = generic.getParam();
-          if (trait.getSymbols().size() > 1) {
+          if (traitDecls.size() > 1) {
             // For trait compositions, upcast the self parameter to the dtor
             // expected type.
-            auto expectedSelfType = TraitType::get(symbol);
+            auto expectedSelfType = traitDecl.bindReference();
             selfParam = UpcastAttr::get(expectedSelfType, selfParam);
           }
           // Bind the *(0,0) parameter to a concrete type we're using in this
