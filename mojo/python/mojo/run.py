@@ -59,12 +59,6 @@ def _sdk_default_env() -> dict[str, str]:
         "MODULAR_MOJO_MAX_SHARED_LIBS": (
             str(lib / "libAsyncRTMojoBindings")
             + ext
-            + ","
-            + str(lib / "libAsyncRTRuntimeGlobals")
-            + ext
-            + ","
-            + str(lib / "libMSupportGlobals")
-            + ext
             + ",-Xlinker,-rpath,-Xlinker,"
             + str(lib)
         ),
@@ -78,11 +72,6 @@ def _sdk_default_env() -> dict[str, str]:
         "MODULAR_MOJO_MAX_LSP_SERVER_PATH": str(bin / "mojo-lsp-server"),
         "MODULAR_MOJO_MAX_REPL_ENTRY_POINT": str(lib / "mojo-repl-entry-point"),
         "MODULAR_MOJO_MAX_LLD_PATH": str(bin / "lld"),
-        "MODULAR_MOJO_MAX_SYSTEM_LIBS": (
-            "-lm"
-            if sys.platform == "darwin"
-            else "-lrt,-ldl,-lpthread,-lm"
-        ),
 
         "MODULAR_CRASH_REPORTING_HANDLER_PATH": str(
             bin / "modular-crashpad-handler"
