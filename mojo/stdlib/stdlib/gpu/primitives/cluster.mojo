@@ -227,13 +227,10 @@ fn clusterlaunchcontrol_query_cancel_is_canceled(
         True if the cancellation request is canceled, False otherwise.
 
     Only supported on NVIDIA SM100+ GPUs."""
-    constrained[
-        _is_sm_100x_or_newer(),
-        (
-            "clusterlaunchcontrol_query_cancel_is_canceled is only supported by"
-            "  NVIDIA SM100+ GPUs"
-        ),
-    ]()
+    __comptime_assert _is_sm_100x_or_newer(), (
+        "clusterlaunchcontrol_query_cancel_is_canceled is only supported by"
+        " NVIDIA SM100+ GPUs"
+    )
 
     var ret_val = inlined_assembly[
         """
@@ -270,13 +267,10 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid[
         The coordinate of the first CTAID in the canceled cluster.
 
     Only supported on NVIDIA SM100+ GPUs."""
-    constrained[
-        _is_sm_100x_or_newer(),
-        (
-            "clusterlaunchcontrol_query_cancel_get_first_ctaid is only"
-            " supported by NVIDIA SM100+ GPUs"
-        ),
-    ]()
+    __comptime_assert _is_sm_100x_or_newer(), (
+        "clusterlaunchcontrol_query_cancel_get_first_ctaid is only"
+        " supported by NVIDIA SM100+ GPUs"
+    )
     constrained[
         id == "x" or id == "y" or id == "z",
         "id must be one of `x`, `y`, `z`",
@@ -316,13 +310,10 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
         A tuple of three `UInt32` values representing the first CTA ID coordinates (x, y, z).
 
     Only supported on NVIDIA SM100+ GPUs."""
-    constrained[
-        _is_sm_100x_or_newer(),
-        (
-            "clusterlaunchcontrol_query_cancel_get_first_ctaid_v4 is only"
-            " supported by NVIDIA SM100+ GPUs"
-        ),
-    ]()
+    __comptime_assert _is_sm_100x_or_newer(), (
+        "clusterlaunchcontrol_query_cancel_get_first_ctaid_v4 is only"
+        " supported by NVIDIA SM100+ GPUs"
+    )
 
     comptime asm = """{
         .reg .b128 result;
@@ -361,13 +352,10 @@ fn clusterlaunchcontrol_try_cancel[
         mbar: A pointer to an `Int64` (8B aligned) memory barrier state.
 
     Only supported on NVIDIA SM100+ GPUs."""
-    constrained[
-        _is_sm_100x_or_newer(),
-        (
-            "clusterlaunchcontrol_query_cancel_get_first_ctaid_v4 is only"
-            " supported by NVIDIA SM100+ GPUs"
-        ),
-    ]()
+    __comptime_assert _is_sm_100x_or_newer(), (
+        "clusterlaunchcontrol_query_cancel_get_first_ctaid_v4 is only"
+        " supported by NVIDIA SM100+ GPUs"
+    )
 
     comptime asm = (
         """

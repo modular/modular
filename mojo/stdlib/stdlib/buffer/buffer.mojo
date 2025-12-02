@@ -352,16 +352,15 @@ struct NDBuffer[
         ), "cannot convert between buffers with incompatible alignments"
 
         # Exclusivity can only be lost
-        constrained[
-            other.exclusive == Self.exclusive or not Self.exclusive,
-            (
-                "Cannot convert a non-exclusive buffer to an exclusive buffer."
-                " This is caused by passing a non-exclusive NDBuffer to a"
-                " function which requires an exclusive NDBuffer. Consider"
-                " unbinding the exclusive parameter for the function if it does"
-                " not require an exclusive buffer for correctness."
-            ),
-        ]()
+        __comptime_assert (
+            other.exclusive == Self.exclusive or not Self.exclusive
+        ), (
+            "Cannot convert a non-exclusive buffer to an exclusive buffer."
+            " This is caused by passing a non-exclusive NDBuffer to a"
+            " function which requires an exclusive NDBuffer. Consider"
+            " unbinding the exclusive parameter for the function if it does"
+            " not require an exclusive buffer for correctness."
+        )
 
         # We can lose information about shape/stride, but not gain information
         comptime unknown_dim_list = DimList.create_unknown[Self.rank]()

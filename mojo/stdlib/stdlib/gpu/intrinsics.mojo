@@ -669,13 +669,10 @@ fn _get_air_atomic_suffix[dtype: DType]() -> StaticString:
 
 
 fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
-    constrained[
-        is_nvidia_gpu(),
-        (
-            "the _get_nvtx_register_constraint function is currently restricted"
-            " to only be defined on NVIDIA GPUs"
-        ),
-    ]()
+    __comptime_assert is_nvidia_gpu(), (
+        "the _get_nvtx_register_constraint function is currently restricted"
+        " to only be defined on NVIDIA GPUs"
+    )
     if dtype is DType.bool:
         return "b"
     if dtype.is_half_float():
@@ -697,13 +694,10 @@ fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
 
 
 fn _get_nvtx_pointer_constraint() -> StaticString:
-    constrained[
-        is_nvidia_gpu(),
-        (
-            "the _get_nvtx_pointer_constraint function is currently restricted"
-            " to only be defined on NVIDIA GPUs"
-        ),
-    ]()
+    __comptime_assert is_nvidia_gpu(), (
+        "the _get_nvtx_pointer_constraint function is currently restricted"
+        " to only be defined on NVIDIA GPUs"
+    )
     return _get_nvtx_register_constraint[DType.int]()
 
 
@@ -1104,13 +1098,9 @@ struct AMDBufferResource:
             gds_ptr: Pointer to the buffer in global memory.
             num_records: Number of records in the buffer.
         """
-        constrained[
-            is_amd_gpu(),
-            (
-                "The AMDBufferResource struct is only applicable on AMDGPU"
-                " hardware."
-            ),
-        ]()
+        __comptime_assert (
+            is_amd_gpu()
+        ), "The AMDBufferResource struct is only applicable on AMDGPU hardware."
 
         self.desc = SIMD[DType.uint32, 4](0)
         var address = bitcast[DType.uint32, 2](UInt64(Int(gds_ptr)))
@@ -1142,13 +1132,9 @@ struct AMDBufferResource:
     @always_inline("nodebug")
     fn __init__(out self):
         """Constructs a zeroed AMD buffer resource descriptor."""
-        constrained[
-            is_amd_gpu(),
-            (
-                "The AMDBufferResource struct is only applicable on AMDGPU"
-                " hardware."
-            ),
-        ]()
+        __comptime_assert (
+            is_amd_gpu()
+        ), "The AMDBufferResource struct is only applicable on AMDGPU hardware."
         self.desc = 0
 
     @always_inline("nodebug")
@@ -1243,13 +1229,9 @@ struct AMDBufferResource:
             shared_ptr: Shared memory address.
             scalar_offset: Scalar memory offset in elements (shared across wave).
         """
-        constrained[
-            is_amd_gpu(),
-            (
-                "The buffer_load_lds function is only applicable on AMDGPU"
-                " hardware."
-            ),
-        ]()
+        __comptime_assert (
+            is_amd_gpu()
+        ), "The buffer_load_lds function is only applicable on AMDGPU hardware."
 
         comptime bytes = size_of[dtype]() * width
         comptime aux = _cache_operation_to_amd_aux[cache_policy]()
@@ -1450,13 +1432,9 @@ fn permlane_swap[
     Returns:
         SIMD vector containing the swapped values.
     """
-    constrained[
-        is_amd_gpu(),
-        (
-            "The _amd_permlane_swap function is only applicable on AMDGPU"
-            " hardware."
-        ),
-    ]()
+    __comptime_assert (
+        is_amd_gpu()
+    ), "The _amd_permlane_swap function is only applicable on AMDGPU hardware."
     constrained[
         _cdna_4_or_newer(), "permlane swap is only supported on CDNA4+"
     ]()

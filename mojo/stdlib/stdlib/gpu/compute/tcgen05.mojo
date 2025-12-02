@@ -588,10 +588,9 @@ fn tcgen05_cp[
         "src_fmt must be empty, 'b6x16_p32' or 'b4x16_p64'.",
     ]()
 
-    constrained[
-        dst_fmt == "" or dst_fmt == "b8x16",
-        "dst_fmt must be empty or 'b8x16'.",
-    ]()
+    __comptime_assert (
+        dst_fmt == "" or dst_fmt == "b8x16"
+    ), "dst_fmt must be empty or 'b8x16'."
 
     __comptime_assert not (
         (len(dst_fmt) == 0) ^ (len(src_fmt) == 0)

@@ -1585,13 +1585,10 @@ struct DeviceStream(ImplicitlyCopyable, Movable):
             block_dim, location=__call_location()
         )
 
-        constrained[
-            not f.declared_arg_types,
-            (
-                "A checked DeviceFunction should be called with"
-                " `enqueue_function_checked`."
-            ),
-        ]()
+        __comptime_assert not f.declared_arg_types, (
+            "A checked DeviceFunction should be called with"
+            " `enqueue_function_checked`."
+        )
         self._enqueue_function_unchecked(
             f,
             args,
@@ -4413,13 +4410,10 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             block_dim, location=__call_location()
         )
 
-        constrained[
-            not f.declared_arg_types,
-            (
-                "A checked DeviceFunction should be called with"
-                " `enqueue_function_checked`."
-            ),
-        ]()
+        __comptime_assert not f.declared_arg_types, (
+            "A checked DeviceFunction should be called with"
+            " `enqueue_function_checked`."
+        )
         self._enqueue_function_unchecked(
             f,
             args,
@@ -4504,13 +4498,10 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             block_dim, location=__call_location()
         )
 
-        constrained[
-            not f.declared_arg_types,
-            (
-                "A checked DeviceFunction should be called with"
-                " `enqueue_function_checked`."
-            ),
-        ]()
+        __comptime_assert not f.declared_arg_types, (
+            "A checked DeviceFunction should be called with"
+            " `enqueue_function_checked`."
+        )
         self._enqueue_function_unchecked(
             f,
             args,

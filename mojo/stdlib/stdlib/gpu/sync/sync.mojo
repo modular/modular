@@ -707,31 +707,22 @@ fn mbarrier_arrive_expect_tx_relaxed[
         The state.
     """
 
-    constrained[
-        scope == Scope.BLOCK or scope == Scope.CLUSTER,
-        (
-            "mbarrier_arrive_expect_tx_relaxed scope is only supported for"
-            " cluster or block/CTA scope."
-        ),
-    ]()
+    __comptime_assert scope == Scope.BLOCK or scope == Scope.CLUSTER, (
+        "mbarrier_arrive_expect_tx_relaxed scope is only supported for"
+        " cluster or block/CTA scope."
+    )
 
-    constrained[
-        space == Scope.BLOCK or space == Scope.CLUSTER,
-        (
-            "mbarrier_arrive_expect_tx_relaxed space is only supported for"
-            " cluster or block/CTA scope."
-        ),
-    ]()
+    __comptime_assert space == Scope.BLOCK or space == Scope.CLUSTER, (
+        "mbarrier_arrive_expect_tx_relaxed space is only supported for"
+        " cluster or block/CTA scope."
+    )
 
     @parameter
     if space == Scope.CLUSTER:
-        constrained[
-            scope == Scope.CLUSTER,
-            (
-                "mbarrier_arrive_expect_tx_relaxed scope and space must be the"
-                " same if space is cluster."
-            ),
-        ]()
+        __comptime_assert scope == Scope.CLUSTER, (
+            "mbarrier_arrive_expect_tx_relaxed scope and space must be the"
+            " same if space is cluster."
+        )
 
     @parameter
     if is_nvidia_gpu():
