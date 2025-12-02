@@ -5,8 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import numpy as np
-import pytest
-from max.driver import CPU, Accelerator, Tensor, accelerator_architecture_name
+from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 
 
@@ -84,13 +83,16 @@ def _test_pinned_device_copy(
     gpu_tensor = pinned_cpu_tensor.to(gpus[target_gpu_id])
     assert not gpu_tensor.pinned
 
+    # Synchronize to ensure the copy from pinned memory has completed
+    # before we modify the source buffer
+    gpus[target_gpu_id].synchronize()
+
     # Modify pinned memory to pattern_after
     pattern_after_data = np.full(tensor_size, pattern_after, dtype=np.int8)
     pattern_after_tensor = Tensor.from_numpy(pattern_after_data)
     pinned_cpu_tensor.inplace_copy_from(pattern_after_tensor)
 
     # Copy GPU tensor back to CPU and check contents
-    gpus[target_gpu_id].synchronize()
     gpu_on_cpu = gpu_tensor.copy(device=cpu_device)
     gpu_values = gpu_on_cpu.to_numpy()
 
@@ -117,11 +119,6 @@ def test_pinned_to_same_device_copy() -> None:
     )
 
 
-# TODO(GEX-2879): Enable this test on AMD GPUs once cross-device are working.
-@pytest.mark.skipif(
-    accelerator_architecture_name().startswith("gfx"),
-    reason="Test not supported on AMD GPUs (MI355)",
-)
 def test_pinned_to_different_device_copy() -> None:
     """Test copying from pinned host memory to different device memory.
 
