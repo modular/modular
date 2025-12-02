@@ -30,12 +30,13 @@ from max.pipelines.lib import LoRAManager
 from max.profiler import traced
 from max.serve.telemetry.metrics import METRICS
 
-from .config import TokenGenerationSchedulerConfig
-from .lora_scheduler_utils import (
+from ..config import TokenGenerationSchedulerConfig
+from ..lora_scheduler_utils import (
     can_allocate_lora_request,
     is_active_lora,
     is_lora,
 )
+from .token_budget import ActiveTokenBudget, BudgetStatus, TokenBudgetCollection
 
 logger = logging.getLogger("max.serve")
 
@@ -95,6 +96,15 @@ class TextBatchConstructor:
         self.replicas: list[ReplicaRequests] = [
             ReplicaRequests() for _ in range(self.num_replicas)
         ]
+
+        self.token_budget = TokenBudgetCollection(
+            token_budgets=[
+                ActiveTokenBudget(
+                    capacity=self.scheduler_config.target_tokens_per_batch_ce,
+                    allow_chunking=self.scheduler_config.enable_chunked_prefill,
+                )
+            ]
+        )
 
         # Round-robin counter to determine which replica to enqueue the new request to.
         # This is only used when not using paged attention.
@@ -240,24 +250,6 @@ class TextBatchConstructor:
             for replica in self.replicas
             for req_id, ctx in replica.tg_reqs.items()
         }
-
-    @traced
-    def _maybe_chunk_prefill_request(
-        self,
-        ctx: TextContext,
-        tot_input_tokens: int,
-    ) -> None:
-        """Chunks a prefill request if it exceeds the target tokens per batch."""
-        if not self.scheduler_config.enable_chunked_prefill:
-            return
-
-        # Calculate the space in the active chunk
-        remaining_budget = (
-            self.scheduler_config.target_tokens_per_batch_ce - tot_input_tokens
-        )
-
-        if remaining_budget > 0:
-            _ = ctx.maybe_chunk(remaining_budget)
 
     @traced
     def _return_to_request_queue(
@@ -460,6 +452,9 @@ class TextBatchConstructor:
         max_batch_size_ce = self.scheduler_config.max_batch_size_ce
         ce_batch: dict[RequestID, TextContext] = {}
 
+        # Reset the token budget for each CE batch construction.
+        self.token_budget.reset()
+
         # Cannot schedule CE if there are no requests awaiting CE and or if the
         # TG batch is full.
         if (
@@ -468,15 +463,13 @@ class TextBatchConstructor:
         ):
             return ReplicaBatch(batch=ce_batch, num_steps=1)
 
-        input_tokens = 0
-
         if self.scheduler_config.enable_in_flight_batching and replica.tg_reqs:
             tg_batch = self._create_tg_batch(replica_idx)
             ce_batch = tg_batch.batch
             for ctx in ce_batch.values():
                 # active length should be 1 for TG requests
                 assert ctx.active_length == 1
-                input_tokens += ctx.active_length
+                self.token_budget.add_to_budget(ctx)
 
         if self._lora_manager:
             # Track which LoRAs are currently active from running (TG) requests
@@ -507,7 +500,6 @@ class TextBatchConstructor:
             replica.ce_reqs
             and len(ce_batch) < max_batch_size_ce
             and len(ce_batch) + len(replica.tg_reqs) < max_batch_size_tg
-            and input_tokens < self.scheduler_config.target_tokens_per_batch_ce
             and batch_context_length < max_batch_context_length
         ):
             req_id, ctx = replica.ce_reqs.popitem(last=False)
@@ -580,13 +572,18 @@ class TextBatchConstructor:
                 self._lora_manager.activate_adapter(ctx.model_name)
                 active_loras.add(ctx.model_name)
 
-            # Chunk the request if it exceeds the token budget
-            self._maybe_chunk_prefill_request(ctx, input_tokens)
+            budget_status = self.token_budget.status_after_context(ctx)
 
-            # Schedule the requests as it fits in KVCache and token limit
-            input_tokens += ctx.active_length
+            if budget_status == BudgetStatus.BUDGET_EXHAUSTED:
+                self._return_to_request_queue(ctx, replica_idx)
+                break
+
             batch_context_length += ctx.current_length
             ce_batch[req_id] = ctx
+            self.token_budget.add_to_budget(ctx)
+
+            if budget_status == BudgetStatus.BUDGET_REACHED:
+                break
 
         if self._lora_manager:
             # Return requests back to the queue

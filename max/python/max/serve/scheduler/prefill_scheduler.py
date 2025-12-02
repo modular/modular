@@ -43,9 +43,9 @@ from max.serve.scheduler.base import (
 )
 
 from .base import SchedulerProgress
+from .batch_constructor import TextBatchConstructor
 from .config import TokenGenerationSchedulerConfig
 from .di_dispatchers import PrefillDispatcherServerV2
-from .text_batch_constructor import TextBatchConstructor
 from .utils import SchedulerLogger
 
 logger = logging.getLogger("max.serve")
