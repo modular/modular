@@ -253,7 +253,7 @@ def test_context__needs_ce() -> None:
     assert context.needs_ce is False
 
 
-def test_context__bump_token_indices() -> None:
+def test_context__skip_processing() -> None:
     context = TextContext(
         request_id=RequestID(),
         max_length=10,

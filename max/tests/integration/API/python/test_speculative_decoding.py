@@ -428,10 +428,6 @@ def test_speculative_decoding_context_update(
         [[reject_token1_idx], [reject_token2_idx]], dtype=np.int32
     )
 
-    # The index bump hack from generate_draft_tokens()
-    for context in context_batch:
-        context.bump_token_indices(active_idx=num_steps, end_idx=num_steps)
-
     pipeline.update_contexts(
         context_batch,
         first_rejected_tokens,
