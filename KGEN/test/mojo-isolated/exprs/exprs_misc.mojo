@@ -211,14 +211,12 @@ fn testUnmovable(a: Unmovable):
 comptime _index = __mlir_type.index
 
 
-# CHECK-LABEL: lit.fn @"simple_typeof_return(
-# CHECK: __mlir_type.index)"(%x: index) -> index
+# CHECK-LABEL: lit.fn @"simple_typeof_return(index)"(%x: index) -> index
 fn simple_typeof_return(x: _index) -> type_of(x):
     return x
 
 
-# CHECK-LABEL: lit.fn @"typeof_arg(
-# CHECK: __mlir_type.index,__mlir_type.index)"(%x: index, %y: index) -> index
+# CHECK-LABEL: lit.fn @"typeof_arg(index,index)"(%x: index, %y: index) -> index
 fn typeof_arg(x: __mlir_type.index, y: type_of(x)) -> _index:
     var z: type_of(x) = y
     return z

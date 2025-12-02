@@ -22,6 +22,6 @@ struct Bar:
 var z = Bar()
 
 # CHECK: (DType) dtype =
-# CHECK: (dtype) dtype_value =
+# CHECK: (__mlir_type.`!kgen.dtype`) dtype_value =
 var dtype = DType.bool
 var dtype_value = dtype.get_value()

@@ -138,13 +138,14 @@ TEST(PrimitiveTypesTest, testTupleAndSIMD) {
   CommandResult result = ctx.runCommand("v");
 
   EXPECT_TRUE(
-      StringRef(result.output).contains(R"((array<4, scalar<si16>>) tuple = {
+      StringRef(result.output)
+          .contains(R"((__mlir_type.`!pop.array<4, scalar<si16>>`) tuple = {
   [0] = ([0] = 1)
   [1] = ([0] = 2)
   [2] = ([0] = 3)
   [3] = ([0] = 4)
 }
-(simd<4, si16>) simd = ([0] = 1, [1] = 2, [2] = 3, [3] = 4))"));
+(__mlir_type.`!pop.simd<4, si16>`) simd = ([0] = 1, [1] = 2, [2] = 3, [3] = 4))"));
 }
 
 TEST(PrimitiveTypesTest, testPointerToClosure) {
@@ -160,7 +161,7 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
   StopContext ctx = buildAndLaunch("builtin_types.mojo");
   EXPECT_EQ(ctx.runCommand("v none").output, "(None) none = None\n");
   EXPECT_EQ(ctx.runCommand("v a_var_index").output,
-            "(index) a_var_index = 48\n");
+            "(__mlir_type.index) a_var_index = 48\n");
   EXPECT_EQ(ctx.runCommand("v a_register_passable_struct").output,
             R"((ARegisterPassableStruct) a_register_passable_struct = {
   int = -101
@@ -190,13 +191,15 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
             "(ParamStruct) p_struct_int = (t = 8)\n");
   EXPECT_TRUE(RE::PartialMatch(ctx.runCommand("v p_struct_string_slice").output,
                                "len = 5"));
-  EXPECT_EQ(ctx.runCommand("v an_int").output, "(index) an_int = 123\n");
-  EXPECT_EQ(ctx.runCommand("v a_literal_float").output,
-            "(scalar<f64>) a_literal_float = ([0] = 3.125)\n");
+  EXPECT_EQ(ctx.runCommand("v an_int").output,
+            "(__mlir_type.index) an_int = 123\n");
+  EXPECT_EQ(
+      ctx.runCommand("v a_literal_float").output,
+      "(__mlir_type.`!pop.scalar<f64>`) a_literal_float = ([0] = 3.125)\n");
   EXPECT_EQ(ctx.runCommand("v a_float").output,
-            "(scalar<f32>) a_float = ([0] = 3.125)\n");
+            "(__mlir_type.`!pop.scalar<f32>`) a_float = ([0] = 3.125)\n");
   EXPECT_EQ(ctx.runCommand("v another_float").output,
-            "(scalar<f32>) another_float = ([0] = 4.125)\n");
+            "(__mlir_type.`!pop.scalar<f32>`) another_float = ([0] = 4.125)\n");
   EXPECT_STREQ(ctx.frame.FindVariable("^ uncommon name").GetValue(), "1123123");
   EXPECT_EQ(ctx.runCommand("v a_string").output,
             "(String) a_string = \"fofofo\"\n");
@@ -207,10 +210,11 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
   //   [2] = 3
   // }
   EXPECT_EQ(ctx.runCommand("v a_simd").output,
-            "(simd<4, f16>) a_simd = ([0] = 1.125, [1] = 2.5, [2] = 0, [3] = "
+            "(__mlir_type.`!pop.simd<4, f16>`) a_simd = ([0] = 1.125, [1] = "
+            "2.5, [2] = 0, [3] = "
             "-3.7246)\n");
   EXPECT_EQ(ctx.runCommand("v b_simd --show-all-children").output,
-            R"((simd<32, si64>) b_simd = {
+            R"((__mlir_type.`!pop.simd<32, si64>`) b_simd = {
   [0] = 1
   [1] = 2
   [2] = 3
@@ -245,11 +249,12 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
   [31] = -16
 }
 )");
-  EXPECT_EQ(ctx.runCommand("v c_simd").output,
-            "(simd<2, index>) c_simd = ([0] = 5, [1] = 6)\n");
+  EXPECT_EQ(
+      ctx.runCommand("v c_simd").output,
+      "(__mlir_type.`!pop.simd<2, index>`) c_simd = ([0] = 5, [1] = 6)\n");
   EXPECT_EQ(
       ctx.runCommand("v a_float_or_bool_or_simd").output,
-      R"((struct<(union<scalar<f64>, i1, simd<2, index>>, scalar<ui8>)>) a_float_or_bool_or_simd = {
+      R"((__mlir_type.`!kgen.struct<(union<scalar<f64>, i1, simd<2, index>>, scalar<ui8>)>`) a_float_or_bool_or_simd = {
   [0] =
   [1] = ([0] = 2)
 }

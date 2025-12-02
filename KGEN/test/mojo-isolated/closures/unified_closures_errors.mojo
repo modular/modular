@@ -73,7 +73,7 @@ def foo(bar: Bar):
         return bar.x
 
     # TODO: Rename Wrappers (MOCO-2541)
-    # expected-error @below {{cannot bind type 'fn(number: Int) -> Int_wrapper_copyable[!kgen.closure<@"unified_closures_errors::foo(unified_closures_errors::Bar)", "closure" register_passable>, {}]' to trait 'DevicePassable'}}
+    # expected-error @below {{cannot bind type 'fn(number: Int) -> Int_wrapper_copyable[__mlir_type.`!kgen.closure<@"unified_closures_errors::foo(unified_closures_errors::Bar)", "closure" register_passable>`, {}]' to trait 'DevicePassable'}}
     takeDevicePassable[type_of(closure)](closure)
 
 
