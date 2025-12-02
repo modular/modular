@@ -11,6 +11,7 @@
 # Standard Library
 /mojo/stdlib/         @modular/stdlib
 /mojo/stdlib/stdlib/gpu/host @modular/stdlib
+/mojo/stdlib/stdlib/gpu/host/device_context.mojo @modular/driver @modular/stdlib
 /mojo/stdlib/stdlib/gpu/runtime @modular/stdlib @modular/mojo-lang
 /mojo/stdlib/test/asyncrt @modular/stdlib @ehein6
 
