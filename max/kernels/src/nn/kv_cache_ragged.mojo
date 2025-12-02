@@ -54,7 +54,6 @@ from quantization.qmatmul_gpu import matmul_gpu_qint4_impl
 from quantization.qmatmul_k import matmul_Q4_K, matmul_Q6_K
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
-from tensor import ManagedTensorSlice, trace_slice_arg
 
 from utils.index import IndexList
 
@@ -2314,7 +2313,9 @@ fn generic_flash_attention_kv_cache_ragged[
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    input_row_offsets: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
@@ -2377,7 +2378,9 @@ fn _flash_attention_dispatch[
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    input_row_offsets: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
     kv_cache: collection_t,
     layer_idx: UInt32,
     scale: Float32,
@@ -2408,8 +2411,8 @@ fn _flash_attention_dispatch[
             if is_cpu[target]():
                 return flash_attention_kv_cache_cpu(
                     q,
-                    input_row_offsets.to_layout_tensor(),
-                    input_row_offsets.to_layout_tensor(),
+                    input_row_offsets,
+                    input_row_offsets,
                     k,
                     v,
                     mask,
@@ -2458,7 +2461,9 @@ fn generic_flash_attention_kv_cache_ragged_sink[
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    input_row_offsets: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
@@ -2998,7 +3003,9 @@ fn _cross_attention_dispatch[
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    q_input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    q_input_row_offsets: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
     q_max_seq_len: UInt32,
     kv_input_row_offsets: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, **_
@@ -3028,7 +3035,7 @@ fn _cross_attention_dispatch[
         if is_cpu[target]():
             return flash_attention_kv_cache_cpu(
                 q,
-                q_input_row_offsets.to_layout_tensor(),
+                q_input_row_offsets,
                 # Use KV offsets for cross attention.
                 kv_input_row_offsets,
                 k,
@@ -3087,7 +3094,9 @@ fn generic_cross_attention_kv_cache[
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[mut=True, dtype, address_space = AddressSpace.GENERIC, **_],
-    q_input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    q_input_row_offsets: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
     q_max_seq_len: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, **_
     ],
@@ -3111,7 +3120,10 @@ fn generic_cross_attention_kv_cache[
         return String(";").join(
             trace_arg("output", output.runtime_layout.shape.value),
             trace_arg("q", q.runtime_layout.shape.value),
-            trace_slice_arg("q_input_row_offsets", q_input_row_offsets),
+            trace_arg(
+                "q_input_row_offsets",
+                q_input_row_offsets.runtime_layout.shape.value,
+            ),
             trace_arg(
                 "kv_input_row_offsets",
                 kv_input_row_offsets.runtime_layout.shape.value,

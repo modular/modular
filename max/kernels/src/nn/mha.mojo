@@ -98,8 +98,6 @@ from nn.mha_utils import (
 )
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
-from tensor import IOUnknown, ManagedTensorSlice
-from tensor.managed_tensor_slice import StaticTensorSpec
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type, min_or_neg_inf
@@ -266,7 +264,9 @@ fn flash_attention[
     v: cache_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
-    valid_length: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    valid_length: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
@@ -382,12 +382,16 @@ fn flash_attention[
             v_operand,
             mask_functor,
             score_mod_functor,
-            valid_length,
             max_prompt_len,
             num_keys,
             scale,
             is_token_generation,
             ctx,
+            rebind[
+                LayoutTensor[
+                    DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+                ]
+            ](valid_length),
             kv_input_row_offsets,
             num_partitions,
             sink_weights,
@@ -443,12 +447,16 @@ fn flash_attention_dispatch[
     v: v_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
-    valid_length: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     max_prompt_len: Int,
     max_cache_valid_length: Int,
     scale: Float32,
     is_token_generation: Bool,
     ctx: DeviceContext,
+    valid_length: OptionalReg[
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        ]
+    ] = None,
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
@@ -472,7 +480,7 @@ fn flash_attention_dispatch[
 
     @parameter
     if ragged:
-        batch_size = valid_length.shape()[0] - 1
+        batch_size = valid_length.value().dim[0]() - 1
     # This branch holds for both KVCache and NDBuffer inputs.
     # Q is BSHD, S is either homogeneous or padded to same length.
     else:
@@ -521,7 +529,7 @@ fn flash_attention_dispatch[
                         num_rows_q,
                         mask_functor,
                         score_mod_functor,
-                        valid_length.to_layout_tensor().to_device_buffer(ctx),
+                        valid_length.value().to_device_buffer(ctx),
                         DynamicInt(max_prompt_len),
                         max_cache_valid_length,
                         scale,
@@ -551,9 +559,7 @@ fn flash_attention_dispatch[
                             num_rows_q,
                             mask_functor,
                             score_mod_functor,
-                            valid_length.to_layout_tensor().to_device_buffer(
-                                ctx
-                            ),
+                            valid_length.value().to_device_buffer(ctx),
                             DynamicInt(max_prompt_len),
                             max_cache_valid_length,
                             scale,
@@ -579,7 +585,7 @@ fn flash_attention_dispatch[
                             num_rows_q,
                             mask_functor,
                             score_mod_functor,
-                            valid_length.to_layout_tensor()
+                            valid_length.value()
                             .to_device_buffer(ctx)
                             .unsafe_ptr(),
                             DynamicInt(max_prompt_len),
@@ -602,7 +608,7 @@ fn flash_attention_dispatch[
                     output.dtype,
                     mask_t,
                     score_mod_t,
-                    type_of(valid_length.to_layout_tensor()).layout,
+                    type_of(valid_length.value()).layout,
                     config,
                     group = Int(group),
                     use_score_mod=use_score_mod,
@@ -623,7 +629,7 @@ fn flash_attention_dispatch[
                     batch_size,
                     max_prompt_len,
                     max_cache_valid_length,
-                    valid_length.to_layout_tensor(),
+                    valid_length.value(),
                     kv_input_row_offsets,
                     sink_weights,
                     mask_functor,
@@ -706,7 +712,7 @@ fn flash_attention_dispatch[
                     v,
                     mask_functor,
                     output,
-                    valid_length,
+                    valid_length.value(),
                     scale,
                     batch_size,
                     max_prompt_len,
@@ -725,7 +731,7 @@ fn flash_attention_dispatch[
                     output.dtype,
                     mask_t,
                     score_mod_t,
-                    type_of(valid_length.to_layout_tensor()).layout,
+                    type_of(valid_length.value()).layout,
                     BM=BM,
                     BN=BN,
                     BK = UInt(BK),
@@ -770,9 +776,7 @@ fn flash_attention_dispatch[
                                 num_rows_q,
                                 mask_functor,
                                 score_mod_functor,
-                                valid_length.to_layout_tensor().to_device_buffer(
-                                    ctx
-                                ),
+                                valid_length.value().to_device_buffer(ctx),
                                 StaticInt[1](),
                                 max_cache_valid_length,
                                 scale,
@@ -798,9 +802,7 @@ fn flash_attention_dispatch[
                                 num_rows_q,
                                 mask_functor,
                                 score_mod_functor,
-                                valid_length.to_layout_tensor().to_device_buffer(
-                                    ctx
-                                ),
+                                valid_length.value().to_device_buffer(ctx),
                                 StaticInt[1](),
                                 max_cache_valid_length,
                                 scale,
@@ -827,7 +829,7 @@ fn flash_attention_dispatch[
                             batch_size,
                             num_partitions_value,
                             max_cache_valid_length,
-                            valid_length.to_layout_tensor(),
+                            valid_length.value(),
                             sink_weights,
                             mask_functor,
                             score_mod_functor,
@@ -938,9 +940,7 @@ fn flash_attention_dispatch[
                                 num_rows_q,
                                 mask_functor,
                                 score_mod_functor,
-                                valid_length.to_layout_tensor().to_device_buffer(
-                                    ctx
-                                ),
+                                valid_length.value().to_device_buffer(ctx),
                                 StaticInt[1](),
                                 max_cache_valid_length,
                                 scale,
@@ -969,9 +969,7 @@ fn flash_attention_dispatch[
                                 num_rows_q,
                                 mask_functor,
                                 score_mod_functor,
-                                valid_length.to_layout_tensor().to_device_buffer(
-                                    ctx
-                                ),
+                                valid_length.value().to_device_buffer(ctx),
                                 StaticInt[1](),
                                 max_cache_valid_length,
                                 scale,
@@ -996,7 +994,7 @@ fn flash_attention_dispatch[
                             batch_size,
                             num_partitions_value,
                             max_cache_valid_length,
-                            valid_length.to_layout_tensor(),
+                            valid_length.value(),
                             sink_weights,
                             mask_functor,
                             score_mod_functor,
@@ -1052,7 +1050,7 @@ fn flash_attention_dispatch[
                 v,
                 mask_functor,
                 output,
-                valid_length,
+                valid_length.value(),
                 scale,
                 batch_size,
                 max_prompt_len,
@@ -1078,7 +1076,7 @@ fn flash_attention_dispatch[
             v,
             mask_functor,
             output,
-            valid_length,
+            valid_length.value(),
             scale,
             batch_size,
             max_prompt_len,
@@ -1118,9 +1116,8 @@ fn flash_attention[
     # if not set, we select num_partitions based on heuristics
     num_partitions: OptionalReg[Int] = None,
     valid_length: OptionalReg[
-        ManagedTensorSlice[
-            IOUnknown,
-            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
     sink_weights: OptionalReg[
@@ -1186,12 +1183,12 @@ fn flash_attention[
         v_operand,
         mask_functor,
         score_mod_functor,
-        valid_length.or_else(valid_length.T(UnsafePointer[UInt32](), [1], [1])),
         q.dim[1](),
         num_keys,
         scale,
         is_token_generation,
         ctx,
+        valid_length,
         None,
         num_partitions,
         sink_weights,
@@ -1215,9 +1212,8 @@ fn flash_attention_ragged[
     q: LayoutTensor[type, q_layout, address_space = AddressSpace.GENERIC, **_],
     k: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
     v: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
-    input_row_offsets: ManagedTensorSlice[
-        IOUnknown,
-        static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
+    input_row_offsets: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ],
     max_prompt_len: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, **_
@@ -1255,7 +1251,7 @@ fn flash_attention_ragged[
 
     var is_token_generation = False
 
-    var cache_row_offsets = input_row_offsets.to_layout_tensor().as_any_origin()
+    var cache_row_offsets = input_row_offsets.as_any_origin()
 
     var k_operand = RaggedMHAOperand(
         LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), MutAnyOrigin](
@@ -1290,12 +1286,16 @@ fn flash_attention_ragged[
         v_operand,
         mask_functor,
         score_mod_functor,
-        input_row_offsets,
         Int(max_prompt_len[0]),
         Int(max_prompt_len[0]),
         scale,
         is_token_generation,
         ctx,
+        OptionalReg[
+            LayoutTensor[
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            ]
+        ](input_row_offsets),
         None,
         num_partitions,
     )
@@ -4615,7 +4615,9 @@ fn mha_gpu_naive[
     output: LayoutTensor[
         output_type, address_space = AddressSpace.GENERIC, **_
     ],
-    valid_length: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    valid_length: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
     scale: Float32,
     batch_size: Int,
     max_prompt_len: Int,
@@ -4657,7 +4659,7 @@ fn mha_gpu_naive[
         k_t,
         mask_t,
         p_type,
-        type_of(valid_length.to_layout_tensor()).layout,
+        type_of(valid_length).layout,
         ragged=ragged,
         _use_valid_length=_use_valid_length,
         _is_cache_length_accurate=_is_cache_length_accurate,
@@ -4667,7 +4669,7 @@ fn mha_gpu_naive[
         p_device,
         q_device,
         k,
-        valid_length.to_layout_tensor(),
+        valid_length,
         scale,
         batch_size,
         max_prompt_len,
@@ -4702,7 +4704,7 @@ fn mha_gpu_naive[
         output_type,
         p_type,
         v_t,
-        type_of(valid_length.to_layout_tensor()).layout,
+        type_of(valid_length).layout,
         ragged=ragged,
         _use_valid_length=_use_valid_length,
         _is_cache_length_accurate=_is_cache_length_accurate,
@@ -4711,7 +4713,7 @@ fn mha_gpu_naive[
         output_device,
         p_device,
         v,
-        valid_length.to_layout_tensor(),
+        valid_length,
         max_prompt_len,
         max_cache_size,
         num_heads,
@@ -5005,10 +5007,12 @@ fn mha_gpu_naive[
             ),
         )
     )
-    var null_valid_length = ManagedTensorSlice[
-        IOUnknown,
-        static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-    ](UnsafePointer[UInt32](), IndexList[1](0), IndexList[1](0))
+    var null_valid_length = LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ](
+        UnsafePointer[UInt32](),
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
+    )
 
     mha_gpu_naive[_is_cache_length_accurate=True, sink=sink](
         q,
@@ -5055,7 +5059,9 @@ fn mha_gpu_naive[
     output: LayoutTensor[
         mut=True, output_type, address_space = AddressSpace.GENERIC, **_
     ],
-    valid_length: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    valid_length: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
     scale: Float32,
     batch_size: Int,
     max_prompt_len: Int,

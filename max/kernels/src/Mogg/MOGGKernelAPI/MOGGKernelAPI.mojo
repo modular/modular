@@ -5264,11 +5264,10 @@ struct PaddedFlashAttentionGPU:
         var k_buffer = k.to_layout_tensor()
         var v_buffer = v.to_layout_tensor()
 
-        comptime valid_length_t = ManagedTensorSlice[
-            IOUnknown,
-            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
+        comptime valid_length_t = LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
-        _valid_length = rebind[valid_length_t](valid_length)
+        _valid_length = rebind[valid_length_t](valid_length.to_layout_tensor())
 
         comptime num_kv_heads = Int(
             k_buffer.layout.shape[2]
@@ -5339,11 +5338,12 @@ struct RaggedFlashAttentionGPU:
         var k_buffer = k.to_layout_tensor()
         var v_buffer = v.to_layout_tensor()
 
-        comptime input_row_offsets_t = ManagedTensorSlice[
-            IOUnknown,
-            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
+        comptime input_row_offsets_t = LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
-        _input_row_offsets = rebind[input_row_offsets_t](input_row_offsets)
+        _input_row_offsets = rebind[input_row_offsets_t](
+            input_row_offsets.to_layout_tensor()
+        )
 
         comptime num_kv_heads = Int(
             k_buffer.layout.shape[1]
@@ -6558,7 +6558,11 @@ struct Struct_mha_ragged_paged:
             local_window_size=local_window_size,
         ](
             q.to_layout_tensor(),
-            input_row_offsets,
+            rebind[
+                LayoutTensor[
+                    DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+                ]
+            ](input_row_offsets.to_layout_tensor()),
             kv_collection,
             layer_idx,
             scale,
@@ -6604,7 +6608,11 @@ struct Struct_mha_ragged_paged_sink_weights:
             local_window_size=local_window_size,
         ](
             q.to_layout_tensor(),
-            input_row_offsets,
+            rebind[
+                LayoutTensor[
+                    DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+                ]
+            ](input_row_offsets.to_layout_tensor()),
             kv_collection,
             layer_idx,
             scale,
@@ -6996,7 +7004,7 @@ struct Struct_cross_attention_ragged_paged:
             target=target,
         ](
             q.to_layout_tensor(),
-            q_input_row_offsets,
+            q_input_row_offsets.to_layout_tensor(),
             q_max_seq_len.to_layout_tensor(),
             kv_input_row_offsets.to_layout_tensor(),
             kv_collection,

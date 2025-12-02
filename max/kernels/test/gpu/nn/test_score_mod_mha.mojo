@@ -316,13 +316,7 @@ def execute_flash_attention[
         v_cache_device,
         CausalMask(),
         AlibiScoreMod[num_q_heads](),
-        ManagedTensorSlice[
-            io_spec=IOUnknown,
-            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](
-            valid_length_device.tensor.data,
-            valid_length_device.tensor.get_shape(),
-        ),
+        valid_length_device.to_layout_tensor(),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -349,13 +343,7 @@ def execute_flash_attention[
             start_pos=cache_lengths_lt,
         ),
         IdentityScoreMod(),
-        ManagedTensorSlice[
-            io_spec=IOUnknown,
-            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](
-            valid_length_device.tensor.data,
-            valid_length_device.tensor.get_shape(),
-        ),
+        valid_length_device.to_layout_tensor(),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )

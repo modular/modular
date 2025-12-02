@@ -27,8 +27,6 @@ from memory import memcpy
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
-from tensor import IOUnknown, ManagedTensorSlice
-from tensor.managed_tensor_slice import StaticTensorSpec
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -249,13 +247,7 @@ def execute_ragged_flash_attention[
         v_cache_device,
         CausalMask(),
         IdentityScoreMod(),
-        ManagedTensorSlice[
-            io_spec=IOUnknown,
-            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](
-            input_row_offsets_device.tensor.data,
-            input_row_offsets_device.tensor.get_shape(),
-        ),
+        input_row_offsets_device.to_layout_tensor(),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
         sink_weights=sink_weights_device_tensor,
@@ -270,13 +262,7 @@ def execute_ragged_flash_attention[
         v_cache_device,
         CausalMask(),
         IdentityScoreMod(),
-        ManagedTensorSlice[
-            io_spec=IOUnknown,
-            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](
-            valid_lengths_device.tensor.data,
-            valid_lengths_device.tensor.get_shape(),
-        ),
+        valid_lengths_device.to_layout_tensor(),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
         sink_weights=sink_weights_device_tensor,

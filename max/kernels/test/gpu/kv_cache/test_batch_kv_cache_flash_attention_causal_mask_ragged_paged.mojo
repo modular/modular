@@ -28,8 +28,6 @@ from memory import memcpy, memset_zero
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
-from tensor import IOUnknown, ManagedTensorSlice
-from tensor.managed_tensor_slice import StaticTensorSpec
 from testing import assert_almost_equal, assert_equal
 
 from utils import IndexList
@@ -275,13 +273,7 @@ def execute_ragged_flash_attention[
         kv_collection_continuous_device.get_value_cache(layer_idx),
         CausalMask(),
         IdentityScoreMod(),
-        ManagedTensorSlice[
-            io_spec=IOUnknown,
-            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](
-            input_row_offsets_device.tensor.data,
-            input_row_offsets_device.tensor.get_shape(),
-        ),
+        input_row_offsets_device.to_layout_tensor(),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -294,13 +286,7 @@ def execute_ragged_flash_attention[
         kv_collection_paged_device.get_value_cache(layer_idx),
         CausalMask(),
         IdentityScoreMod(),
-        ManagedTensorSlice[
-            io_spec=IOUnknown,
-            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](
-            input_row_offsets_device.tensor.data,
-            input_row_offsets_device.tensor.get_shape(),
-        ),
+        input_row_offsets_device.to_layout_tensor(),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -344,15 +330,7 @@ def execute_ragged_flash_attention[
             kv_collection_paged_device.get_value_cache(layer_idx),
             CausalMask(),
             IdentityScoreMod(),
-            ManagedTensorSlice[
-                io_spec=IOUnknown,
-                static_spec = StaticTensorSpec[
-                    DType.uint32, 1
-                ].create_unknown(),
-            ](
-                input_row_offsets_device.tensor.data,
-                input_row_offsets_device.tensor.get_shape(),
-            ),
+            input_row_offsets_device.to_layout_tensor(),
             rsqrt(Float32(kv_params.head_size)),
             ctx,
         )

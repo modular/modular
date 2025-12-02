@@ -269,13 +269,7 @@ def execute_ragged_flash_attention(
         true_ce_kv_collection_device.get_value_cache(layer_idx),
         CausalMask(),
         IdentityScoreMod(),
-        ManagedTensorSlice[
-            io_spec=IOUnknown,
-            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](
-            true_ce_row_offsets_device.tensor.data,
-            true_ce_row_offsets_device.tensor.get_shape(),
-        ),
+        true_ce_row_offsets_device.to_layout_tensor(),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -290,13 +284,7 @@ def execute_ragged_flash_attention(
         mixed_ce_kv_collection_device.get_value_cache(layer_idx),
         CausalMask(),
         IdentityScoreMod(),
-        ManagedTensorSlice[
-            io_spec=IOUnknown,
-            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-        ](
-            mixed_ce_row_offsets_device.tensor.data,
-            mixed_ce_row_offsets_device.tensor.get_shape(),
-        ),
+        mixed_ce_row_offsets_device.to_layout_tensor(),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )

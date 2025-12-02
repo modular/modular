@@ -43,7 +43,6 @@ from nn.mha_utils import (
 from nn.normalization import _rms_norm_impl
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
-from tensor import ManagedTensorSlice, trace_slice_arg
 
 from utils import Index, IndexList
 from tensor import InputTensor
@@ -405,7 +404,9 @@ fn generic_flash_attention_kv_cache_padded[
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    valid_lengths: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    valid_lengths: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ],
     scale: Float32,
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, **_
@@ -420,7 +421,9 @@ fn generic_flash_attention_kv_cache_padded[
     fn description_fn() -> String:
         return String(";").join(
             trace_arg("q", q.runtime_layout.shape.value),
-            trace_slice_arg("valid_lengths", valid_lengths),
+            trace_arg(
+                "valid_lengths", valid_lengths.runtime_layout.shape.value
+            ),
             "scale=" + String(scale),
             "layer_idx=" + String(layer_idx),
             "num_heads=" + String(collection_t.kv_params.num_heads),
@@ -472,7 +475,9 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
     kv_collection: collection_t,
     layer_idx: UInt32,
     mask: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    valid_lengths: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    valid_lengths: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ],
     scale: Float32,
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, **_
@@ -488,7 +493,9 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
         return String(";").join(
             trace_arg("q", q.runtime_layout.shape.value),
             trace_arg("mask", mask.runtime_layout.shape.value),
-            trace_slice_arg("valid_lengths", valid_lengths),
+            trace_arg(
+                "valid_lengths", valid_lengths.runtime_layout.shape.value
+            ),
             "scale=" + String(scale),
             "layer_idx=" + String(layer_idx),
             "num_heads=" + String(collection_t.kv_params.num_heads),
@@ -533,7 +540,9 @@ fn _flash_attention_dispatch[
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
     kv_cache: collection_t,
     layer_idx: UInt32,
-    valid_lengths: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    valid_lengths: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ],
     scale: Float32,
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, **_
@@ -589,7 +598,9 @@ fn _flash_attention_dispatch_materialized_mask[
     kv_cache: collection_t,
     layer_idx: UInt32,
     mask_nd: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    valid_lengths: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    valid_lengths: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+    ],
     scale: Float32,
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, **_

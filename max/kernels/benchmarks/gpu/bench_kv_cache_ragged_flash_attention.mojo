@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
+from collections import Set, OptionalReg
 from math import rsqrt
 from random import random_ui64, seed
 from sys import env_get_dtype, env_get_int
@@ -26,7 +26,8 @@ from kv_cache.types import (
 )
 from memory import LegacyUnsafePointer as UnsafePointer
 from layout import UNKNOWN_VALUE, LayoutTensor, Layout, RuntimeLayout
-from nn.mha import flash_attention
+from layout.layout import *
+from nn.mha import flash_attention, flash_attention_ragged
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
 from tensor import IOUnknown, ManagedTensorSlice
@@ -254,15 +255,7 @@ def execute_kv_cache_ragged_flash_attention[
                 v_cache_device,
                 CausalMask(),
                 IdentityScoreMod(),
-                ManagedTensorSlice[
-                    io_spec=IOUnknown,
-                    static_spec = StaticTensorSpec[
-                        DType.uint32, 1
-                    ].create_unknown(),
-                ](
-                    input_row_offsets_device.tensor.data,
-                    input_row_offsets_device.tensor.get_shape(),
-                ),
+                input_row_offsets_device.to_layout_tensor(),
                 rsqrt(Float32(head_dim)),
                 ctx,
             )
