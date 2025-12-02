@@ -87,11 +87,11 @@ fn fused_reduce_inner_test[
         coords: IndexList[_rank],
         val: StaticTuple[SIMD[_dtype, width], num_reductions],
     ):
-        output_buf_device0.__setitem__(
-            rebind[IndexList[rank]](coords), rebind[Scalar[dtype]](val[0])
+        output_buf_device0.store[width=width](
+            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, width]](val[0])
         )
-        output_buf_device1.__setitem__(
-            rebind[IndexList[rank]](coords), rebind[Scalar[dtype]](val[1])
+        output_buf_device1.store[width=width](
+            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, width]](val[1])
         )
 
     reduce_launch[num_reductions, input_fn, output_fn, reduce_fn, rank, dtype](
@@ -183,8 +183,8 @@ fn reduce_inner_test[
         coords: IndexList[_rank],
         val: StaticTuple[SIMD[_dtype, width], num_reductions],
     ):
-        output_buf_device.__setitem__(
-            rebind[IndexList[rank]](coords), rebind[Scalar[dtype]](val[0])
+        output_buf_device.store[width=width](
+            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, width]](val[0])
         )
 
     reduce_launch[

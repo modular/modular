@@ -115,9 +115,9 @@ fn run_reduce[
         coords: IndexList[_rank],
         val: StaticTuple[SIMD[_dtype, width], num_reductions],
     ):
-        output_buf_device[rebind[IndexList[rank]](coords)] = rebind[
-            Scalar[dtype]
-        ](val[0])
+        output_buf_device.store[width=width](
+            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, width]](val[0])
+        )
 
     @__copy_capture(axis)
     @parameter

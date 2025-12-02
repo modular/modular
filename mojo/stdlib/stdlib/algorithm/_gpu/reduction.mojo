@@ -30,7 +30,7 @@ from gpu import (
     wait_on_dependent_grids,
     AddressSpace,
 )
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, get_gpu_target
 from gpu.primitives import warp
 from gpu.primitives.grid_controls import pdl_launch_attributes  # @doc_private
 from memory import stack_allocation
@@ -39,6 +39,7 @@ from utils import IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 from sys import env_get_int
+from sys.info import simd_width_of
 
 
 @always_inline
@@ -470,10 +471,6 @@ fn saturated_reduce_kernel[
     simd_width: Int,
     accum_type: DType = get_accum_type[dtype](),
 ](shape: IndexList[rank], init: StaticTuple[Scalar[dtype], num_reductions],):
-    __comptime_assert (
-        simd_width == 1
-    ), "saturated_reduce_kernel doesn't currently support SIMD load/store"
-
     var row_size = shape[axis]
     var num_rows = shape.flattened_length() // row_size
 
@@ -487,7 +484,11 @@ fn saturated_reduce_kernel[
 
     var global_dim_x = grid_dim.x * block_dim.x
     # Loop over rows
-    for row_idx in range(global_idx.x, UInt(num_rows), global_dim_x):
+    for row_idx in range(
+        global_idx.x * UInt(simd_width),
+        UInt(num_rows),
+        global_dim_x * UInt(simd_width),
+    ):
         # Reduce the whole row
         var row_coords = _get_nd_indices_from_flat_index(
             Int(row_idx), shape, axis
@@ -516,15 +517,19 @@ fn saturated_reduce_kernel[
                 val[i] = reduce_fn[reduction_idx=i](val[i], t)
 
         # Cast to output type
-        var row_accum_cast = StaticTuple[Scalar[dtype], num_reductions]()
+        var row_accum_cast = StaticTuple[
+            SIMD[dtype, simd_width], num_reductions
+        ]()
 
         @parameter
         for i in range(num_reductions):
-            row_accum_cast[i] = rebind[Scalar[dtype]](val[i].cast[dtype]())
+            row_accum_cast[i] = rebind[SIMD[dtype, simd_width]](
+                val[i].cast[dtype]()
+            )
 
         # Write output
         row_coords[axis] = 0
-        output_fn[dtype, 1, rank](row_coords, row_accum_cast)
+        output_fn[dtype, simd_width, rank](row_coords, row_accum_cast)
 
     @parameter
     if PDLLevel() == PDLLevel.OVERLAP_AT_END:
@@ -567,6 +572,7 @@ fn reduce_launch[
     # selection is likely to confound autotuning.
     comptime num_persistent_threads = 256 * sm_count
     var saturated: Bool = num_rows >= num_persistent_threads
+
     # This assumes row-major layout:
     var reduce_contig_dim: Bool = axis == rank - 1
 
@@ -574,7 +580,13 @@ fn reduce_launch[
     # separate output value (i.e. a whole row), unless we are reducing the
     # contiguous (stride 1) dimension, in which case original approach coalesces
     # memory better.
-    if saturated and not reduce_contig_dim and packing_factor == 1:
+    if saturated and not reduce_contig_dim:
+        # If we are sufficiently above the saturation threshold, use SIMD to give
+        # each thread multiple values per iter
+
+        # TODO: a shape which *only just* saturates the device might be
+        # more performant without SIMD, but the dispatch is more complicated
+        comptime simd_packing_factor = simd_width_of[dtype, get_gpu_target()]()
         comptime BLOCK_SIZE = env_get_int["MOJO_REDUCTION_BLOCK_SIZE", 32]()
 
         @parameter
@@ -589,7 +601,7 @@ fn reduce_launch[
                     output_fn,
                     reduce_fn,
                     dtype,
-                    packing_factor,
+                    simd_packing_factor,
                 ]
                 ctx.enqueue_function_checked[kernel, kernel](
                     shape,
