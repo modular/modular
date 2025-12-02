@@ -1818,11 +1818,12 @@ fn _get_multimem_ld_reduce_asm[
         - Type must be a floating point type.
         - Total bit width (count * output_width * size_of[dtype] * 8) must be 32, 64, or 128 bits.
     """
-
     __comptime_assert (
         _is_sm_9x_or_newer()
     ), "multimem is only supported on SM90+ GPUs"
-    __comptime_assert dtype.is_floating_point(), "type must be floating point"
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "multimem requires floating point type"
     __comptime_assert consistency in (
         Consistency.WEAK,
         Consistency.RELAXED,
@@ -2067,7 +2068,9 @@ fn _get_multimem_st_asm[
     __comptime_assert (
         _is_sm_9x_or_newer()
     ), "multimem is only supported on SM90+ GPUs"
-    __comptime_assert dtype.is_floating_point(), "type must be floating point"
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "multimem requires floating point type"
     __comptime_assert consistency in (
         Consistency.WEAK,
         Consistency.RELAXED,

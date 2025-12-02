@@ -291,7 +291,9 @@ fn rsqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The elementwise reciprocal square root of x.
     """
-    __comptime_assert dtype.is_floating_point(), "type must be floating point"
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "rsqrt requires floating point type"
 
     @parameter
     if is_nvidia_gpu():
@@ -350,7 +352,9 @@ fn recip[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The elementwise reciprocal of x.
     """
-    __comptime_assert dtype.is_floating_point(), "type must be floating point"
+    __comptime_assert (
+        dtype.is_floating_point()
+    ), "recip requires floating point type"
 
     @parameter
     if is_nvidia_gpu():

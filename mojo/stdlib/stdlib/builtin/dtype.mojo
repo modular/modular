@@ -1005,11 +1005,12 @@ fn _unsigned_integral_type_of[dtype: DType]() -> DType:
 # ===-------------------------------------------------------------------===#
 
 
-fn _scientific_notation_digits[dtype: DType]() -> StaticString:
+fn _scientific_notation_digits[
+    dtype: DType
+]() -> StaticString where dtype.is_floating_point():
     """Get the number of digits as a StaticString for the scientific notation
     representation of a float.
     """
-    __comptime_assert dtype.is_floating_point(), "expected floating point type"
 
     @parameter
     if dtype.is_float8():
