@@ -23,11 +23,11 @@ what we publish.
 
 - Mojo now supports raising "typed errors", where a function can specify a
   what type it raises instead of defaulting to the `Error` type. This is done by
-  specifying it after the `raises` keyword in parentheses, e.g.
-  `fn foo() raises (CustomError) -> Int`.
+  specifying it after the `raises` keyword, e.g.
+  `fn foo() raises CustomError -> Int`.
 
   Raised errors in Mojo are very efficient - they work as an alternate return
-  value: for example, a function like `fn () raises (Int) -> Float32:` compiles
+  value: for example, a function like `fn () raises Int -> Float32:` compiles
   into code that returns either an `Int` or a `Float32` and uses an implicit
   boolean result to determine which one is valid - there is no expensive stack
   unwinding or slow dynamic logic that is implied.  This means that thrown
@@ -47,7 +47,7 @@ what we publish.
   order functions like:
 
   ```mojo
-  fn parametric_raise_example[ErrorType: AnyType](fp: fn () raises (ErrorType)) raises (ErrorType):
+  fn parametric_raise_example[ErrorType: AnyType](fp: fn () raises ErrorType) raises ErrorType:
       # ... presumably some iteration or other exciting stuff happening here.
       fp()
   ```
@@ -56,14 +56,14 @@ what we publish.
   e.g.:
 
   ```mojo
-  fn call_parametric_raise_example[GenTy: AnyType](func_ptr: fn () raises (GenTy)):
-    fn raise_int() raises (Int): pass
+  fn call_parametric_raise_example[GenTy: AnyType](func_ptr: fn () raises GenTy):
+    fn raise_int() raises Int: pass
     try:
         parametric_raise_example(raise_int)
     except err_int:   # Typed as Int
         ref x: Int = err_int
 
-    fn raise_string() raises (String): pass
+    fn raise_string() raises String: pass
     try:
       parametric_raise_example(raise_string)
     except err_string: # Typed as String
@@ -77,9 +77,8 @@ what we publish.
 
   This support should be reliable, but there are a few limitations: 1) `with`
   blocks are still hard coded to `Error`.  2) Thrown errors must exactly match
-  the contextual thrown type, no implicit conversions are allowed. 3)
-  Parentheses are required around the thrown type for now. 4) Raised errors
-  don't integrate with the `Never` type yet.
+  the contextual thrown type, no implicit conversions are allowed. 3) Raised
+  errors don't integrate with the `Never` type yet.
 
 - Mojo now allows implicit conversions between function types from a non-raising
   function to a raising function.  It also allows implicit conversions between
