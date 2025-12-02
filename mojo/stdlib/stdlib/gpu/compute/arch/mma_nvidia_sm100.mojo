@@ -20,7 +20,6 @@ from sys.info import _has_blackwell_tcgen05
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from utils.index import IndexList
 
 # ===----------------------------------------------------------------------=== #
@@ -780,11 +779,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
         stride_byte_offset: Int,
         leading_byte_offset: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    ](
-        smem_ptr: UnsafePointer[
-            _, address_space = AddressSpace.SHARED, *_, **_
-        ],
-    ) -> Self:
+    ](smem_ptr: UnsafePointer[_, address_space = AddressSpace.SHARED]) -> Self:
         """Create a descriptor for shared memory operand.
 
         Parameters:
@@ -943,11 +938,7 @@ struct MMASmemDescriptorPair(ImplicitlyCopyable, Movable):
         stride_byte_offset: Int,
         leading_byte_offset: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    ](
-        smem_ptr: UnsafePointer[
-            _, address_space = AddressSpace.SHARED, *_, **_
-        ],
-    ) -> Self:
+    ](smem_ptr: UnsafePointer[_, address_space = AddressSpace.SHARED],) -> Self:
         """Create a descriptor for shared memory operand.
 
         Parameters:
@@ -1399,7 +1390,7 @@ fn mma[
 @always_inline
 fn mma_arrive[
     cta_group: Int = 1,
-](mbar_ptr: UnsafePointer[address_space = AddressSpace.SHARED, *_, **_],):
+](mbar_ptr: UnsafePointer[address_space = AddressSpace.SHARED]):
     """Arrive at the mbar pointer for the MMA instruction.
 
     Parameters:
@@ -1429,7 +1420,7 @@ fn mma_arrive[
 fn mma_arrive_multicast[
     cta_group: Int = 1,
 ](
-    mbar_ptr: UnsafePointer[address_space = AddressSpace.SHARED, *_, **_],
+    mbar_ptr: UnsafePointer[address_space = AddressSpace.SHARED],
     cta_mask: UInt16,
 ):
     """Arrive at the mbar pointer for the MMA instruction for multiple ctas.

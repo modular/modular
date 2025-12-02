@@ -29,7 +29,6 @@ achieve optimal memory access patterns and cache utilization.
 from collections.optional import OptionalReg
 from collections.string import StaticString
 from collections.string.string_slice import _get_kgen_string, get_static_string
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys import (
     align_of,
     bit_width_of,
@@ -611,9 +610,9 @@ fn async_copy[
     l2_prefetch: OptionalReg[Int] = None,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL, **_],
+    src: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
     dst: UnsafePointer[
-        Scalar[dtype], mut=True, address_space = AddressSpace.SHARED, **_
+        mut=True, Scalar[dtype], address_space = AddressSpace.SHARED
     ],
     src_size: Int32 = Int32(size),
     predicate: Bool = False,
@@ -883,7 +882,7 @@ fn external_memory[
     address_space: AddressSpace,
     alignment: Int,
     name: StaticString = "extern_ptr_syml",
-]() -> UnsafePointer[dtype, address_space=address_space]:
+]() -> UnsafePointer[dtype, MutAnyOrigin, address_space=address_space]:
     """Gets a pointer to dynamically allocated external memory.
 
     This function returns a pointer to external memory that can be used for dynamic
@@ -909,11 +908,12 @@ fn external_memory[
     - Care must be taken to respect alignment requirements when accessing the memory.
     """
     var extern_ptr_symbol = UnsafePointer[
-        StaticTuple[dtype, 0], address_space=address_space
+        StaticTuple[dtype, 0], MutOrigin.external, address_space=address_space
     ](
         __mlir_op.`pop.extern_ptr_symbol`[
             _type = UnsafePointer[
                 StaticTuple[dtype, 0],
+                MutOrigin.external,
                 address_space=address_space,
             ]._mlir_type,
             name = _get_kgen_string[name](),
@@ -932,7 +932,7 @@ fn external_memory[
 fn fence_proxy_tensormap_generic_sys_acquire[
     dtype: AnyType,
 ](
-    ptr: UnsafePointer[dtype, address_space = AddressSpace.GENERIC, **_],
+    ptr: UnsafePointer[mut=True, dtype, address_space = AddressSpace.GENERIC],
     size: Int32,
 ):
     """Acquires a system-wide memory fence for tensor map operations.
@@ -1021,11 +1021,11 @@ fn cp_async_bulk_tensor_shared_cluster_global[
     cta_group: Int = 1,
 ](
     dst_mem: UnsafePointer[
-        dst_type, mut=True, origin=_, address_space = AddressSpace.SHARED
+        mut=True, dst_type, address_space = AddressSpace.SHARED
     ],
-    tma_descriptor: UnsafePointer[NoneType, mut=False],
+    tma_descriptor: OpaquePointer[mut=False],
     mem_bar: UnsafePointer[
-        mbr_type, mut=False, address_space = AddressSpace.SHARED
+        mut=False, mbr_type, address_space = AddressSpace.SHARED
     ],
     coords: IndexList[rank],
 ):
@@ -1240,11 +1240,11 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
     cta_group: Int = 1,
 ](
     dst_mem: UnsafePointer[
-        dst_type, mut=True, origin=_, address_space = AddressSpace.SHARED
+        mut=True, dst_type, address_space = AddressSpace.SHARED
     ],
-    tma_descriptor: UnsafePointer[NoneType, mut=False],
+    tma_descriptor: OpaquePointer[mut=False],
     mem_bar: UnsafePointer[
-        mbr_type, mut=False, address_space = AddressSpace.SHARED
+        mut=False, mbr_type, address_space = AddressSpace.SHARED
     ],
     coords: IndexList[rank],
     multicast_mask: UInt16,
@@ -1366,8 +1366,8 @@ fn cp_async_bulk_tensor_global_shared_cta[
     /,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src_mem: UnsafePointer[src_type, address_space = AddressSpace.SHARED, **_],
-    tma_descriptor: UnsafePointer[NoneType, mut=False],
+    src_mem: UnsafePointer[src_type, address_space = AddressSpace.SHARED],
+    tma_descriptor: OpaquePointer[mut=False],
     coords: IndexList[rank],
 ):
     """Initiates an asynchronous copy operation to transfer tensor data from shared CTA
@@ -1460,8 +1460,8 @@ fn cp_async_bulk_tensor_reduce[
     reduction_kind: ReduceOp,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src_mem: UnsafePointer[src_type, address_space = AddressSpace.SHARED, **_],
-    tma_descriptor: UnsafePointer[NoneType, mut=False],
+    src_mem: UnsafePointer[src_type, address_space = AddressSpace.SHARED],
+    tma_descriptor: OpaquePointer[mut=False],
     coords: IndexList[rank],
 ):
     """Initiates an asynchronous reduction operation between shared CTA memory and global memory
@@ -1548,7 +1548,7 @@ fn _load_impl[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = align_of[Scalar[dtype]](),
 ](
-    ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC, **_]
+    ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC]
 ) -> SIMD[dtype, width]:
     """Internal implementation of vectorized memory loads from global memory.
 
@@ -1698,7 +1698,7 @@ fn load[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = align_of[Scalar[dtype]]() if is_nvidia_gpu() else 1,
 ](
-    ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC, **_]
+    ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC]
 ) -> SIMD[dtype, width]:
     """Loads data from global memory into a SIMD vector.
 
@@ -1742,9 +1742,7 @@ fn load[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = align_of[Scalar[dtype]]() if is_nvidia_gpu() else 1,
 ](
-    ptr: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.GENERIC, **_
-    ],
+    ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC],
     offset: OffsetType,
 ) -> SIMD[dtype, width]:
     """Loads data from global memory with an offset into a SIMD vector.
@@ -1864,7 +1862,7 @@ fn multimem_ld_reduce[
     output_width: Int = 1,
 ](
     addr: UnsafePointer[
-        Scalar[dtype], mut=False, address_space = AddressSpace.GLOBAL, **_
+        mut=False, Scalar[dtype], address_space = AddressSpace.GLOBAL
     ],
 ) -> StaticTuple[SIMD[dtype, output_width], count]:
     """Performs a vectorized load-reduce operation using NVIDIA's multimem feature.
@@ -1986,7 +1984,7 @@ fn multimem_ld_reduce[
     accum_type: DType = get_accum_type[dtype](),
 ](
     addr: UnsafePointer[
-        Scalar[dtype], mut=False, address_space = AddressSpace.GLOBAL, **_
+        mut=False, Scalar[dtype], address_space = AddressSpace.GLOBAL
     ],
 ) -> SIMD[dtype, simd_width]:
     """Simplified multimem_ld_reduce that automatically calculates optimal packing.
@@ -2105,7 +2103,7 @@ fn multimem_st[
     width: Int = 1,
 ](
     addr: UnsafePointer[
-        Scalar[dtype], mut=True, origin=_, address_space = AddressSpace.GLOBAL
+        mut=True, Scalar[dtype], address_space = AddressSpace.GLOBAL
     ],
     values: StaticTuple[SIMD[dtype, width], count],
 ) -> None:
