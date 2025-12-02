@@ -944,6 +944,9 @@ def KGEN_UnreachableOp : KGENOp<"unreachable", [Terminator,
     ```
   }];
 
+  let arguments =
+   (ins DefaultValuedOptionalAttr<BoolAttr, "false">:$isAfterUnreachableCall);
+
   let assemblyFormat = "attr-dict";
 }
 

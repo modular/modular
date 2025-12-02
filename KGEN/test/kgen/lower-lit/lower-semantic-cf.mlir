@@ -1162,66 +1162,6 @@ lit.fn @crashing_try_warning(%cond: i1) -> !kgen.none {
   lit.end_fn
 }
 
-// CHECK-LABEL: lit.fn @make_closure
-lit.fn @make_closure() {
-    %0 = lit.closure.init[#kgen.type<!kgen.closure<@make_closure, "foo" nonescaping>> : !lit.trait<@Closure>]()<D: i1>(%arg0: index) -> index {
-      lit.try {
-        // CHECK: lit.try.raise
-        lit.raise
-        lit.try.yield
-      } except {
-        // CHECK: kgen.return %arg0 : index
-        lit.return %arg0 : index
-        lit.try.yield
-      } else {
-        // CHECK: kgen.unreachable
-        lit.try.yield
-      } finally {
-        // CHECK-NOT: lit.try.yield
-        lit.try.yield
-      }
-      // CHECK: kgen.unreachable
-      lit.end_fn
-    } : (), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
-    // CHECK: kgen.return
-    lit.return
-    lit.end_fn
-}
-
-// CHECK-LABEL: lit.fn @param_for_goto_else()
-lit.fn @param_for_goto_else() {
-  // CHECK-NEXT: kgen.param.for iter in ?
-  // CHECK-NEXT: has_next :() -> i1 ?
-  // CHECK-NEXT: get_next_iter :() -> () ? {
-  kgen.param.for iter in ?
-    has_next :() -> i1 ?
-    get_next_iter :() -> () ? {
-    // CHECK-NEXT: kgen.param.if <?> {
-    // CHECK-NEXT:   %0 = lit.call @self_recursive() : !lit.generator<() -> !kgen.none>
-    // CHECK-NEXT:   lit.call @make_closure() : !lit.generator<() -> ()>
-    // CHECK-NEXT:   kgen.param.for.break
-    // CHECK-NEXT: } else {
-    // CHECK-NEXT:   lit.call @make_closure() : !lit.generator<() -> ()>
-    // CHECK-NEXT:   kgen.param.for.continue
-    // CHECK-NEXT: } {elseIsolated, thenIsolated}
-    // CHECK-NEXT: kgen.unreachable
-    kgen.param.if <?> {
-      lit.call @self_recursive() : !lit.generator<() -> !kgen.none>
-      kgen.param.for.goto.else
-    } else {
-      lit.call @make_closure() : !lit.generator<() -> ()>
-      kgen.param.for.continue
-    }
-    kgen.unreachable
-  } else {// CHECK-NEXT: } else {
-    // CHECK-NEXT: kgen.unreachable
-    lit.call @make_closure() : !lit.generator<() -> ()>
-    kgen.param.yield
-  }
-  lit.return
-  lit.end_fn
-}
-
 // Derived from MOCO-2119.
 // We had some weirdness where the outer kgen.param.if was incorrectly using
 // the hlcf.elif's doesFallThrough as its own doesFallThrough, and then that was

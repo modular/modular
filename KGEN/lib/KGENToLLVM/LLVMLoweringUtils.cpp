@@ -210,6 +210,10 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     return LLVM::LLVMStructType::getLiteral(&getContext(), {});
   });
 
+  addConversion([this](KGEN::NeverType) {
+    return LLVM::LLVMStructType::getLiteral(&getContext(), {});
+  });
+
   // Convert string types to LLVM literal structs: struct{ptr, size} of type
   // !llvm.struct<(ptr<i8>, index).
   addConversion([this](KGEN::StringType stringType) -> std::optional<Type> {

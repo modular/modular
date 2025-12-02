@@ -455,8 +455,11 @@ static void emitRaise(ImplicitLocOpBuilder &b) {
 /// This function adds the error branch regions to a call operation to a
 /// throwing function. These are required by CheckLifetimes to understand
 /// conditional initialization of the 'mut' results.
-static void addErrorRegions(Operation &op, LIT::FnType sig,
-                            ValueRange operands) {
+///
+/// This returns the operation if nothing was added or returns the 'if' that is
+/// left after the call if something was.
+static Operation *addErrorRegions(Operation &op, LIT::FnType sig,
+                                  ValueRange operands) {
   // Clone the op and add the error regions.
   ImplicitLocOpBuilder b(op.getLoc(), OpBuilder(&op));
   b.setInsertionPointAfter(&op);
@@ -473,6 +476,7 @@ static void addErrorRegions(Operation &op, LIT::FnType sig,
   LIT::OwnershipMarkConsumedOp::create(
       b, *std::prev(operands.end(), sig.getErrorSlotOffset()));
   HLCF::YieldOp::create(b);
+  return ifOp;
 }
 
 /// This recursive function transforms the specified block:
@@ -559,10 +563,24 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
 
     // Add error branches to calls to throwing functions.
     if (isa<LIT::CallOp, LIT::CallIndirectOp>(op)) {
-      if (auto sig = LIT::getCalleeType(&op).getBody(); sig.isThrows()) {
-        doesRaise = true;
-        addErrorRegions(op, sig, LIT::getCalleeArguments(&op));
+      LIT::FnTypeGeneratorType calleeType = LIT::getFnTypeFromCall(op);
+      assert(calleeType);
+      Operation *opAfterCall = &op;
+      if (calleeType.isThrows()) {
+        opAfterCall = addErrorRegions(op, calleeType.getBody(),
+                                      LIT::getCalleeArguments(&op));
+        doesRaise |= (opAfterCall != &op);
       }
+
+      // If the function returns NeverType, then it can never return.
+      // treat it like a semantic terminator.
+      if (sugarIsa<NeverType>(calleeType.getUserResultType())) {
+        auto b = handleSemanticTerminatorOp(*opAfterCall,
+                                            "function that never returns");
+        UnreachableOp::create(b, op.getLoc(), /*isAfterUnreachableCall=*/true);
+        return;
+      }
+
       continue;
     }
 

@@ -255,7 +255,6 @@ static void getCallOpEffects(
 
   if (auto directCall = dyn_cast<KGENCallOpInterface>(op)) {
     // These all have the callee as a parameter, not operand.
-    assert(isa<FnTypeGeneratorType>(directCall.getCalleeType()));
     pogs = cast<FnTypeGeneratorType>(directCall.getCalleeType())
                .getBody()
                .getMetadata()
