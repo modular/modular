@@ -377,7 +377,7 @@ static int generateDSYM(const State &state, StringRef binaryOutputPath) {
 static int linkOutput(OutputType outputType, const State &state,
                       const llvm::opt::InputArgList &args,
                       const CompilationOptions &options, BufferRef &archive) {
-  // For now we just use the system C++ compiler as the linker on non-windows,
+  // For now we just use the system C compiler as the linker on non-windows,
   // which makes it a tad bit easier to link in the necessary system and runtime
   // dependencies of KGENCompilerRT.
 #ifdef _WIN32
@@ -385,7 +385,7 @@ static int linkOutput(OutputType outputType, const State &state,
   StringRef binaryExt = ".exe";
   StringRef libExt = ".lib";
 #else
-  StringRef linkerFilename = "c++";
+  StringRef linkerFilename = "cc";
   StringRef binaryExt = "";
   StringRef libExt = ".a";
 #endif
@@ -457,7 +457,7 @@ static int linkOutput(OutputType outputType, const State &state,
     linker = llvm::sys::findProgramByName(linkerFilename);
     if (!linker) {
       return state.reportError(
-          "unable to find suitable c++ compiler for linking");
+          "unable to find suitable c compiler for linking");
     }
   }
 
