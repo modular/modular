@@ -270,7 +270,9 @@ fn _mp_subscript_wrapper[
         return result.steal_data()
     except e:
         var error_type = cpython.get_error_global("PyExc_Exception")
-        cpython.PyErr_SetString(error_type, e.unsafe_cstr_ptr())
+        cpython.PyErr_SetString(
+            error_type, e.data.as_c_string_slice().unsafe_ptr()
+        )
         return PyObjectPtr()
 
 
@@ -305,7 +307,9 @@ fn _richcompare_wrapper[
         return cpython.PyBool_FromLong(c_long(Int(result)))
     except e:
         var error_type = cpython.get_error_global("PyExc_Exception")
-        cpython.PyErr_SetString(error_type, e.unsafe_cstr_ptr())
+        cpython.PyErr_SetString(
+            error_type, e.data.as_c_string_slice().unsafe_ptr()
+        )
         return PyObjectPtr()
 
 
