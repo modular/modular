@@ -565,11 +565,6 @@ class SpeculativeDecodingPipelineBase(
             context = context_batch[idx]
             rejected_token_idx = rejected_token_idx.item()
 
-            context.bump_token_indices(
-                active_idx=-num_draft_tokens_generated,
-                end_idx=-num_draft_tokens_generated,
-            )
-
             for token_idx in range(rejected_token_idx):
                 token = int(draft_tokens[idx, token_idx])
                 context.update(token)

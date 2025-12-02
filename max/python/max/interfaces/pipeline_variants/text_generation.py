@@ -369,24 +369,6 @@ class TextGenerationContext(BaseContext, Protocol):
         """
         ...
 
-    def bump_token_indices(
-        self,
-        start_idx: int = 0,
-        active_idx: int = 0,
-        end_idx: int = 0,
-    ) -> None:
-        """Increment token indices by the specified amounts.
-
-        This method provides fine-grained control over token index management,
-        allowing incremental updates to track token processing progress.
-
-        Args:
-            start_idx: Amount to increment the ``start_idx`` by.
-            active_idx: Amount to increment the ``active_idx`` by.
-            end_idx: Amount to increment the ``end_idx`` by.
-        """
-        ...
-
     def set_token_indices(
         self,
         start_idx: int | None = None,
