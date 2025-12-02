@@ -31,7 +31,13 @@ from sys import (
     is_gpu,
     is_nvidia_gpu,
 )
-from sys.ffi import c_ssize_t, c_int, external_call, _external_call_const
+from sys.ffi import (
+    c_ssize_t,
+    c_int,
+    external_call,
+    _external_call_const,
+    get_errno,
+)
 
 from memory import Span
 

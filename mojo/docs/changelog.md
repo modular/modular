@@ -180,6 +180,9 @@ what we publish.
 - Added a `CStringSlice` as a type-safe way to interact with nul-terminated
   c-style strings (`const char*`).
 
+- Various OS wraper functions now include the value of `errno` in the raised error
+  message.
+
 - Using a new 'unconditional conformances' technique leveraging `conforms_to()`
   and `trait_downcast()` to perform "late" element type conformance checking,
   some standard library types are now able to conform to traits that they could

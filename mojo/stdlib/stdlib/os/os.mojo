@@ -100,7 +100,14 @@ struct _DirHandle:
         )
 
         if not self._handle:
-            raise Error("unable to open the directory '", path, "'")
+            var err = get_errno()
+            raise Error(
+                "unable to open the directory '",
+                path,
+                "'",
+                " Err: ",
+                String(err),
+            )
 
     fn __del__(deinit self):
         """Closes the handle opened via popen."""
@@ -276,11 +283,8 @@ fn remove[PathLike: os.PathLike](path: PathLike) raises:
     )
 
     if error != 0:
-        # TODO get error message, the following code prints it
-        # var error_str = String("Something went wrong")
-        # _ = external_call["perror", OpaquePointer](error_str.unsafe_ptr())
-        # _ = error_str
-        raise Error("Can not remove file: ", fspath)
+        var err = get_errno()
+        raise Error("Can not remove file: ", fspath, " Err: ", String(err))
 
 
 fn unlink[PathLike: os.PathLike](path: PathLike) raises:
@@ -366,7 +370,8 @@ fn mkdir[PathLike: os.PathLike](path: PathLike, mode: Int = 0o777) raises:
         fspath.as_c_string_slice().unsafe_ptr(), mode
     )
     if error != 0:
-        raise Error("Can not create directory: ", fspath)
+        var err = get_errno()
+        raise Error("Can not create directory: ", fspath, " Err: ", String(err))
 
 
 fn makedirs[
@@ -430,7 +435,8 @@ fn rmdir[PathLike: os.PathLike](path: PathLike) raises:
         fspath.as_c_string_slice().unsafe_ptr()
     )
     if error != 0:
-        raise Error("Can not remove directory: ", fspath)
+        var err = get_errno()
+        raise Error("Can not remove directory: ", fspath, " Err: ", String(err))
 
 
 fn removedirs[PathLike: os.PathLike](path: PathLike) raises -> None:
