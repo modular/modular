@@ -1819,3 +1819,20 @@ fn get_buffer_mem_storage_handle(
     external_call["MGP_RT_GetBufferMemStorageHandle", NoneType](
         buffer, type, memStorageHandle
     )
+
+
+@register_internal("pop.select")
+@always_inline
+fn select[T: AnyTrivialRegType](cond: Bool, true_case: T, false_case: T) -> T:
+    if cond:
+        return true_case
+
+    return false_case
+
+
+@register_internal("pop.simd.select")
+@always_inline
+fn simd_select[
+    T: AnyTrivialRegType
+](cond: Bool, true_case: T, false_case: T) -> T:
+    return select(cond, true_case, false_case)
