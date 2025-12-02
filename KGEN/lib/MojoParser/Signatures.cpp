@@ -1195,7 +1195,8 @@ ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p, ArgListKind kind,
       // means we have to be a bit careful about parsing the thing after
       // 'raises' as a thrown type when it isn't.
       if (!isEffectKeywordOrWhere(p.getTokenSpelling()) &&
-          !p.getToken().isStartOfLine() && p.getToken().isIdentifier()) {
+          !p.getToken().isStartOfLine() &&
+          (p.getToken().isIdentifier() || p.getToken().is(Token::l_paren))) {
         (void)p.parseExpression(thrownTypeExpr, /*stmtIndent=*/std::nullopt,
                                 ParserBase::Precedence::kPrimary);
       }
