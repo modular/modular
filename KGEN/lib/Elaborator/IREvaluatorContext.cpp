@@ -410,6 +410,8 @@ IREvaluatorContext::stringifyTypeInstanceRef(TypeInstanceRefAttr instanceRef,
       name = "Bool";
     else if (name == "stdlib::collections::string::string::String")
       name = "String";
+    else if (name == "stdlib::collections::list::List")
+      name = "List";
   }
   replaceAll(name, "::", ".");
 
