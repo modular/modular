@@ -1574,35 +1574,21 @@ struct CPython(Defaultable, Movable):
         else:
             # PyObject *Py_None
             self._Py_None = PyObjectPtr(
-                upcast_from=self.lib.get_symbol[PyObject](
-                    "_Py_NoneStruct"
-                ).unsafe_mut_cast[True]()
+                upcast_from=self.lib.get_symbol[PyObject]("_Py_NoneStruct")
             )
         # Integer Objects
-        self._PyLong_Type = (
-            # PyTypeObject PyLong_Type
-            self.lib.get_symbol[PyTypeObject]("PyLong_Type").unsafe_mut_cast[
-                True
-            ]()
-        )
+        # PyTypeObject PyLong_Type
+        self._PyLong_Type = self.lib.get_symbol[PyTypeObject]("PyLong_Type")
         self._PyLong_FromSsize_t = PyLong_FromSsize_t.load(self.lib.borrow())
         self._PyLong_FromSize_t = PyLong_FromSize_t.load(self.lib.borrow())
         self._PyLong_AsSsize_t = PyLong_AsSsize_t.load(self.lib.borrow())
         # Boolean Objects
-        self._PyBool_Type = (
-            # PyTypeObject PyBool_Type
-            self.lib.get_symbol[PyTypeObject]("PyBool_Type").unsafe_mut_cast[
-                True
-            ]()
-        )
+        # PyTypeObject PyBool_Type
+        self._PyBool_Type = self.lib.get_symbol[PyTypeObject]("PyBool_Type")
         self._PyBool_FromLong = PyBool_FromLong.load(self.lib.borrow())
         # Floating-Point Objects
-        self._PyFloat_Type = (
-            # PyTypeObject PyFloat_Type
-            self.lib.get_symbol[PyTypeObject]("PyFloat_Type").unsafe_mut_cast[
-                True
-            ]()
-        )
+        # PyTypeObject PyFloat_Type
+        self._PyFloat_Type = self.lib.get_symbol[PyTypeObject]("PyFloat_Type")
         self._PyFloat_FromDouble = PyFloat_FromDouble.load(self.lib.borrow())
         self._PyFloat_AsDouble = PyFloat_AsDouble.load(self.lib.borrow())
         # Unicode Objects and Codecs
@@ -1621,12 +1607,8 @@ struct CPython(Defaultable, Movable):
         self._PyList_GetItem = PyList_GetItem.load(self.lib.borrow())
         self._PyList_SetItem = PyList_SetItem.load(self.lib.borrow())
         # Dictionary Objects
-        self._PyDict_Type = (
-            # PyTypeObject PyDict_Type
-            self.lib.get_symbol[PyTypeObject]("PyDict_Type").unsafe_mut_cast[
-                True
-            ]()
-        )
+        # PyTypeObject PyDict_Type
+        self._PyDict_Type = self.lib.get_symbol[PyTypeObject]("PyDict_Type")
         self._PyDict_New = PyDict_New.load(self.lib.borrow())
         self._PyDict_SetItem = PyDict_SetItem.load(self.lib.borrow())
         self._PyDict_GetItemWithError = PyDict_GetItemWithError.load(

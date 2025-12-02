@@ -312,7 +312,7 @@ struct OwnedDLHandle(Movable):
 
     fn get_symbol[
         result_type: AnyType,
-    ](self, name: StringSlice) -> UnsafePointer[result_type, ImmutAnyOrigin]:
+    ](self, name: StringSlice) -> UnsafePointer[result_type, MutAnyOrigin]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library.
 
@@ -330,7 +330,7 @@ struct OwnedDLHandle(Movable):
     fn get_symbol[
         result_type: AnyType
     ](self, *, cstr_name: UnsafePointer[mut=False, Int8]) -> UnsafePointer[
-        result_type, ImmutAnyOrigin
+        result_type, MutAnyOrigin
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library.
@@ -555,7 +555,7 @@ struct _DLHandle(Boolable, Copyable, Movable):
 
     fn get_symbol[
         result_type: AnyType,
-    ](self, name: StringSlice) -> UnsafePointer[result_type, ImmutAnyOrigin]:
+    ](self, name: StringSlice) -> UnsafePointer[result_type, MutAnyOrigin]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library.
 
@@ -576,7 +576,7 @@ struct _DLHandle(Boolable, Copyable, Movable):
     fn get_symbol[
         result_type: AnyType
     ](self, *, cstr_name: UnsafePointer[mut=False, Int8]) -> UnsafePointer[
-        result_type, ImmutAnyOrigin
+        result_type, MutAnyOrigin
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library.

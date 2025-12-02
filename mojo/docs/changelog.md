@@ -174,6 +174,13 @@ what we publish.
 - The `EqualityComparable` trait has been deprecated in favor of `Equatable`,
   which has identical functionality.
 
+- `DLHandle.get_symbol()` and `OwnedDLHandle.get_symbol()` now return
+  `UnsafePointer[T, MutAnyOrigin]` instead of `UnsafePointer[T, ImmutAnyOrigin]`.
+  The vast majority of symbols loaded from shared libraries are meant to be used
+  mutably, and it's safer to go from mutable → immutable (via `.as_immutable()`)
+  than from immutable → mutable (via `.unsafe_mut_cast[True]()`). Users who need
+  immutable pointers can now simply call `.as_immutable()` on the result.
+
 - The `os` module now exposes a `link` function, wrapping the unix
   `link(2)` system call
   
