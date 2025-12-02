@@ -312,22 +312,26 @@ kgen.func @fma() -> (!pop.scalar<si8>, !pop.scalar<f32>) {
   kgen.return %2, %3 : !pop.scalar<si8>, !pop.scalar<f32>
 }
 
+// -----
 
-// CHECK-LABEL: @index_folds
-kgen.func @index_folds() -> (!pop.scalar<index>, !pop.scalar<index>) {
-  // COM: Index folds go through the same path as integer folds. We just need to
-  // check that ops can fold for index dtypes and do not fold when the results
-  // differ between 64-bit and 32-bit arithmetic.
-  %0 = kgen.param.constant: scalar<index> = <8589934594>
-  %1 = kgen.param.constant: scalar<index> = <4294967298>
-  %2 = kgen.param.constant: scalar<index> = <2>
-  // CHECK: %[[RES:.*]] = kgen.param.constant: scalar<index> = <4294967297>
-  %3 = pop.div %0, %2 : !pop.scalar<index>
-  // CHECK: %[[RES1:.*]] = kgen.param.constant: scalar<index> = <2147483649>
-  %4 = pop.div %1, %2 : !pop.scalar<index>
-  // CHECK: kgen.return %[[RES]], %[[RES1]] : !pop.scalar<index>, !pop.scalar<index>
-  kgen.return %3, %4 : !pop.scalar<index>, !pop.scalar<index>
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="p:64:64">} {
+  // CHECK-LABEL: @index_folds
+  kgen.func @index_folds() -> (!pop.scalar<index>, !pop.scalar<index>) {
+    // COM: Index folds go through the same path as integer folds. We just need to
+    // check that ops can fold for index dtypes and do not fold when the results
+    // differ between 64-bit and 32-bit arithmetic.
+    %0 = kgen.param.constant: scalar<index> = <8589934594>
+    %1 = kgen.param.constant: scalar<index> = <4294967298>
+    %2 = kgen.param.constant: scalar<index> = <2>
+    // CHECK: %[[RES:.*]] = kgen.param.constant: scalar<index> = <4294967297>
+    %3 = pop.div %0, %2 : !pop.scalar<index>
+    // CHECK: %[[RES1:.*]] = kgen.param.constant: scalar<index> = <2147483649>
+    %4 = pop.div %1, %2 : !pop.scalar<index>
+    // CHECK: kgen.return %[[RES]], %[[RES1]] : !pop.scalar<index>, !pop.scalar<index>
+    kgen.return %3, %4 : !pop.scalar<index>, !pop.scalar<index>
+  }
 }
+// -----
 
 // CHECK-LABEL: @cmp_eq
 kgen.func @cmp_eq() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {

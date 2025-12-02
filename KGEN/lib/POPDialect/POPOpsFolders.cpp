@@ -300,11 +300,12 @@ OpFoldResult MinOp::fold(FoldAdaptor adaptor) {
 template <typename FoldFn = llvm::function_ref<APSInt(APSInt, APSInt)>>
 static OpFoldResult foldIndexShiftOp(ArrayRef<Attribute> operands,
                                      Operation *op, FoldFn fn) {
-  // For index type get its size from the target. If target is not specified,
-  // assume index has a size of 64 bits, which may be wrong if we're compiling
-  // for 32-bit target.
+  // For index type get its size from the target. If target is not specified, we
+  // fail to fold.
   TargetInfoAttr target = lookupTargetInfo(op);
-  ssize_t intWidth = target ? target.resolveIndexBitWidth() : 64;
+  if (!target)
+    return {};
+  ssize_t intWidth = target.resolveIndexBitWidth();
   if (intWidth == 64)
     return POP::Detail::foldSIMDOpIndex<POP::k64BitResult>(
         operands, KGENDType::index, [&fn](APSInt lhs, APSInt rhs) -> APSInt {
