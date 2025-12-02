@@ -187,19 +187,18 @@ fn tcgen05_ld[
         128,
     ], "`width` must be a power of 2 in the range [1, 128]."
 
-    constrained[
+    __comptime_assert (
         width == (repeat * bits * datapaths) // (32 * 32)
-        and size_of[dtype]() == 4,
-        String(
-            (
-                "Only support 4B data type and width must be equal to (num * n"
-                " * m) // (32 * 32). width is "
-            ),
-            width,
-            " but need ",
-            (repeat * bits * datapaths) // (32 * 32),
+        and size_of[dtype]() == 4
+    ), String(
+        (
+            "Only support 4B data type and width must be equal to (num * n"
+            " * m) // (32 * 32). width is "
         ),
-    ]()
+        width,
+        " but need ",
+        (repeat * bits * datapaths) // (32 * 32),
+    )
 
     comptime shape_str = String(datapaths) + "x" + String(bits)
     comptime num_str = String(repeat)
@@ -352,14 +351,13 @@ fn tcgen05_st[
         128,
     ], "`width` must be a power of 2 in the range [1, 128]."
 
-    constrained[
+    __comptime_assert (
         width == (repeat * bits * datapaths) // (32 * 32)
-        and size_of[dtype]() == 4,
-        (
-            "Only support 4B data type and width must be equal to (num * n"
-            " * m) // (32 * 32)."
-        ),
-    ]()
+        and size_of[dtype]() == 4
+    ), (
+        "Only support 4B data type and width must be equal to (num * n"
+        " * m) // (32 * 32)."
+    )
 
     comptime shape_str = String(datapaths) + "x" + String(bits)
     comptime num_str = String(repeat)

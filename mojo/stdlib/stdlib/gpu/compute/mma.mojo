@@ -681,13 +681,14 @@ fn wgmma_async[
         - Data type combinations must be compatible with hardware WGMMA instructions.
     """
 
-    constrained[
-        (m * n // 128) * size_of[accum_type]() == width * size_of[c_dtype](),
+    __comptime_assert (m * n // 128) * size_of[accum_type]() == width * size_of[
+        c_dtype
+    ](), String(
         "Number of output registers ",
         String(width),
         " don't match the instruction shape ",
         String(Index(m, n, k)),
-    ]()
+    )
 
     __comptime_assert scale_d == 1 or scale_d == 0, (
         "Invalid scale in value of scaled_d '"
@@ -808,13 +809,14 @@ fn wgmma_async[
         - Data type combinations must be compatible with hardware WGMMA instructions.
     """
 
-    constrained[
-        (m * n // 128) * size_of[accum_type]() == width * size_of[c_dtype](),
+    __comptime_assert (m * n // 128) * size_of[accum_type]() == width * size_of[
+        c_dtype
+    ](), String(
         "Number of output registers ",
         String(width),
         " don't match the instruction shape ",
         String(Index(m, n, k)),
-    ]()
+    )
 
     __comptime_assert scale_d == 1 or scale_d == 0, (
         "Invalid scale in value of scaled_d '"
@@ -936,22 +938,23 @@ fn wgmma_async[
     - Row major matrix A.
     - Column major matrix B (or row major for BF16).
     """
-    constrained[
-        (m * n // 128) * size_of[accum_type]()
-        == frag_c_width * size_of[c_dtype](),
+    __comptime_assert (m * n // 128) * size_of[
+        accum_type
+    ]() == frag_c_width * size_of[c_dtype](), String(
         "Number of output registers ",
         String(frag_c_width),
         " don't match the instruction shape ",
         String(Index(m, n, k)),
-    ]()
+    )
 
-    constrained[
-        (m * k // 128) * size_of[a_type]() == frag_a_width * size_of[a_dtype](),
+    __comptime_assert (m * k // 128) * size_of[
+        a_type
+    ]() == frag_a_width * size_of[a_dtype](), String(
         "Number of input a registers ",
         String(frag_a_width),
         " don't match the instruction shape ",
         String(Index(m, n, k)),
-    ]()
+    )
     # for now, limited support
     __comptime_assert m == 64
     __comptime_assert k == 16

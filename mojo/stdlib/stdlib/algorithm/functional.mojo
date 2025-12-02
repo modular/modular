@@ -1243,13 +1243,10 @@ fn elementwise[
         If the operation fails.
     """
 
-    constrained[
-        is_cpu[target](),
-        (
-            "the target must be CPU use the elementwise which takes the"
-            " DeviceContext to be able to use the GPU version"
-        ),
-    ]()
+    __comptime_assert is_cpu[target](), (
+        "the target must be CPU use the elementwise which takes the"
+        " DeviceContext to be able to use the GPU version"
+    )
 
     _elementwise_impl_cpu[
         func, simd_width, use_blocking_impl=use_blocking_impl

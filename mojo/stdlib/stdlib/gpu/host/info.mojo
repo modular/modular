@@ -434,19 +434,16 @@ Add your architecture to the constraint list in the `_get_info_from_target`
 function:
 
 ```mojo
-constrained[
-    StaticString(target_arch)
+__comptime_assert StaticString(target_arch)
     in (
         # NVIDIA
         StaticString("cuda"),
         StaticString("52"),
         StaticString("90a"),  # Add your architecture here
         # ... rest of architectures ...
-    ),
-    "the target architecture '",
+    ), String("the target architecture '",
     target_arch0,
-    "' is invalid or not currently supported",
-]()
+    "' is invalid or not currently supported")
 ```
 
 Then add the mapping in the `@parameter` block:
@@ -2215,55 +2212,53 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         "nvidia:", ""
     ).replace("amdgpu:", "").replace("metal:", "apple-m")
 
-    constrained[
-        StaticString(target_arch)
-        in (
-            # NVIDIA
-            StaticString("cuda"),
-            StaticString("52"),
-            StaticString("60"),
-            StaticString("61"),
-            StaticString("75"),
-            StaticString("80"),
-            StaticString("86"),
-            StaticString("87"),
-            StaticString("89"),
-            StaticString("90"),
-            StaticString("90a"),
-            StaticString("100"),
-            StaticString("100a"),
-            StaticString("110"),
-            StaticString("110a"),
-            StaticString("120"),
-            StaticString("120a"),
-            StaticString("121"),
-            StaticString("121a"),
-            # AMD
-            StaticString("mi300x"),
-            StaticString("mi355x"),
-            StaticString("gfx942"),
-            StaticString("gfx950"),
-            StaticString("gfx1030"),
-            StaticString("gfx1100"),
-            StaticString("gfx1101"),
-            StaticString("gfx1102"),
-            StaticString("gfx1103"),
-            StaticString("gfx1150"),
-            StaticString("gfx1151"),
-            StaticString("gfx1152"),
-            StaticString("gfx1200"),
-            StaticString("gfx1201"),
-            # Apple
-            StaticString("apple-m1"),
-            StaticString("apple-m2"),
-            StaticString("apple-m3"),
-            StaticString("apple-m4"),
-        ),
+    __comptime_assert StaticString(target_arch) in (
+        # NVIDIA
+        StaticString("cuda"),
+        StaticString("52"),
+        StaticString("60"),
+        StaticString("61"),
+        StaticString("75"),
+        StaticString("80"),
+        StaticString("86"),
+        StaticString("87"),
+        StaticString("89"),
+        StaticString("90"),
+        StaticString("90a"),
+        StaticString("100"),
+        StaticString("100a"),
+        StaticString("110"),
+        StaticString("110a"),
+        StaticString("120"),
+        StaticString("120a"),
+        StaticString("121"),
+        StaticString("121a"),
+        # AMD
+        StaticString("mi300x"),
+        StaticString("mi355x"),
+        StaticString("gfx942"),
+        StaticString("gfx950"),
+        StaticString("gfx1030"),
+        StaticString("gfx1100"),
+        StaticString("gfx1101"),
+        StaticString("gfx1102"),
+        StaticString("gfx1103"),
+        StaticString("gfx1150"),
+        StaticString("gfx1151"),
+        StaticString("gfx1152"),
+        StaticString("gfx1200"),
+        StaticString("gfx1201"),
+        # Apple
+        StaticString("apple-m1"),
+        StaticString("apple-m2"),
+        StaticString("apple-m3"),
+        StaticString("apple-m4"),
+    ), String(
         "the target architecture '",
         # Note: Print the full architecture name, not the trimmed string name.
         target_arch0,
         "' is invalid or not currently supported",
-    ]()
+    )
 
     @parameter
     if target_arch == "52":

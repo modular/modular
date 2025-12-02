@@ -2583,17 +2583,16 @@ struct DeviceFunction[
             @parameter
             if _type_is_eq[actual_arg_type, actual_arg_type.device_type]():
                 # Now check if they handed in the *correct* device dtype.
-                constrained[
-                    _type_is_eq[
-                        declared_arg_type, actual_arg_type.device_type
-                    ](),
+                __comptime_assert _type_is_eq[
+                    declared_arg_type, actual_arg_type.device_type
+                ](), String(
                     "Handed in wrong argument dtype for argument #",
                     String(i),
                     ", received a ",
                     actual_arg_type.get_type_name(),
                     ", but actual type name is: ",
                     get_type_name[declared_arg_type](),
-                ]()
+                )
             elif _is_pointer_convertible[
                 declared_arg_type, actual_arg_type.device_type
             ]():
@@ -2606,10 +2605,9 @@ struct DeviceFunction[
                 # They handed in a host dtype, in other words, a dtype that
                 # needs to be mapped before handing it to the device. In
                 # this case, we use a more informative error message.
-                constrained[
-                    _type_is_eq[
-                        declared_arg_type, actual_arg_type.device_type
-                    ](),
+                __comptime_assert _type_is_eq[
+                    declared_arg_type, actual_arg_type.device_type
+                ](), String(
                     "Handed in wrong argument dtype for argument #",
                     String(i),
                     ", received a ",
@@ -2617,7 +2615,7 @@ struct DeviceFunction[
                     " (which became device dtype ",
                     actual_arg_type.get_device_type_name(),
                     ")",
-                ]()
+                )
             var aligned_type_size = align_up(
                 size_of[actual_arg_type.device_type](), 8
             )

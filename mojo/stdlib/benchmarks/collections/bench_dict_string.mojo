@@ -88,13 +88,12 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
     var capacity: Int
 
     fn __init__(out self, capacity: Int):
-        constrained[
+        __comptime_assert (
             Self.KeyEndType == DType.uint8
             or Self.KeyEndType == DType.uint16
             or Self.KeyEndType == DType.uint32
-            or Self.KeyEndType == DType.uint64,
-            "KeyEndType needs to be an unsigned integer",
-        ]()
+            or Self.KeyEndType == DType.uint64
+        ), "KeyEndType needs to be an unsigned integer"
         self.allocated_bytes = capacity << 3
         self.keys = UnsafePointer[UInt8].alloc(self.allocated_bytes)
         self.keys_end = UnsafePointer[Scalar[Self.KeyEndType]].alloc(capacity)
@@ -204,13 +203,12 @@ struct StringDict[
     var capacity: Int
 
     fn __init__(out self, capacity: Int = 16):
-        constrained[
+        __comptime_assert (
             Self.KeyCountType == DType.uint8
             or Self.KeyCountType == DType.uint16
             or Self.KeyCountType == DType.uint32
-            or Self.KeyCountType == DType.uint64,
-            "KeyCountType needs to be an unsigned integer",
-        ]()
+            or Self.KeyCountType == DType.uint64
+        ), "KeyCountType needs to be an unsigned integer"
         self.count = 0
         if capacity <= 8:
             self.capacity = 8

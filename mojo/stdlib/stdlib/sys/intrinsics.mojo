@@ -488,10 +488,9 @@ fn prefetch[
       addr: The data pointer to prefetch.
     """
 
-    constrained[
-        params.rw == PrefetchRW.READ or type_of(addr).mut == True,
-        "prefetch pointer mutability must match the prefetch read-write option",
-    ]()
+    __comptime_assert (
+        params.rw == PrefetchRW.READ or type_of(addr).mut == True
+    ), "prefetch pointer mutability must match the prefetch read-write option"
 
     @parameter
     if is_nvidia_gpu():
@@ -1050,8 +1049,7 @@ fn ballot[dtype: DType](value: Bool) -> Scalar[dtype]:
     __comptime_assert (
         is_amd_gpu()
     ), "This intrinsic is only defined for AMD GPUs"
-    constrained[
-        dtype == DType.int32 or dtype == DType.int64,
-        "This intrinsic is only defined for i32 or i64",
-    ]()
+    __comptime_assert (
+        dtype == DType.int32 or dtype == DType.int64
+    ), "This intrinsic is only defined for i32 or i64"
     return llvm_intrinsic["llvm.amdgcn.ballot", Scalar[dtype]](value)

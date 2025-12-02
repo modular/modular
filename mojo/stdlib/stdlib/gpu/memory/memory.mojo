@@ -1060,9 +1060,9 @@ fn cp_async_bulk_tensor_shared_cluster_global[
     - Requires NVIDIA GPU with TMA support.
     - The memory barrier should be properly initialized before use.
     """
-    constrained[
-        rank <= 5, "Expecting rank-1, rank-2, rank-3, rank-4, or rank-5 tensors"
-    ]()
+    __comptime_assert (
+        rank <= 5
+    ), "Expecting rank-1, rank-2, rank-3, rank-4, or rank-5 tensors"
 
     __comptime_assert cta_group in (1, 2), "cta_group must be 1 or 2"
     comptime tma_asm = String(
@@ -1400,7 +1400,12 @@ fn cp_async_bulk_tensor_global_shared_cta[
     - The source memory must be properly aligned for TMA operations.
     - The TMA descriptor must be properly initialized before use.
     """
-    constrained[rank in (1, 2, 3, 4), "Expecting rank-1, 2, 3, or 4 tensors"]()
+    __comptime_assert rank in (
+        1,
+        2,
+        3,
+        4,
+    ), "Expecting rank-1, 2, 3, or 4 tensors"
 
     comptime cache_hint: Bool = eviction_policy is not CacheEviction.EVICT_NORMAL
 
@@ -2012,9 +2017,12 @@ fn multimem_ld_reduce[
     """
     comptime output_width = 4 // size_of[dtype]()
     comptime count = simd_width // output_width
-    constrained[
-        simd_width in (1, 2, 4, 8), "simd_width must be 1, 2, 4, or 8"
-    ]()
+    __comptime_assert simd_width in (
+        1,
+        2,
+        4,
+        8,
+    ), "simd_width must be 1, 2, 4, or 8"
     comptime total_bits = count * output_width * size_of[dtype]() * 8
     __comptime_assert total_bits in (
         32,

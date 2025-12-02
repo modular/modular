@@ -231,10 +231,9 @@ fn sqrt[
     Returns:
         The elementwise square root of x.
     """
-    constrained[
-        dtype.is_numeric() or dtype is DType.bool,
-        "type must be arithmetic or boolean",
-    ]()
+    __comptime_assert (
+        dtype.is_numeric() or dtype is DType.bool
+    ), "type must be arithmetic or boolean"
 
     @parameter
     if dtype is DType.bool:
@@ -1251,10 +1250,9 @@ fn isclose[
     Returns:
         A boolean vector where `a` and `b` are equal within the given tolerance.
     """
-    constrained[
-        a.dtype.is_floating_point(),
-        "isclose only supports floating-point types",
-    ]()
+    __comptime_assert (
+        a.dtype.is_floating_point()
+    ), "isclose only supports floating-point types"
     comptime T = type_of(a)
 
     var check_nan = isnan(a) & isnan(b)

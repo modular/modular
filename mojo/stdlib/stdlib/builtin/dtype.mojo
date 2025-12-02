@@ -1029,10 +1029,14 @@ fn _scientific_notation_digits[dtype: DType]() -> StaticString:
 
 @always_inline
 fn _int_type_of_width[width: Int]() -> DType:
-    constrained[
-        width in (8, 16, 32, 64, 128, 256),
-        "width must be either 8, 16, 32, 64, 128, or 256",
-    ]()
+    __comptime_assert width in (
+        8,
+        16,
+        32,
+        64,
+        128,
+        256,
+    ), "width must be either 8, 16, 32, 64, 128, or 256"
 
     @parameter
     if width == 8:
@@ -1056,10 +1060,14 @@ fn _int_type_of_width[width: Int]() -> DType:
 
 @always_inline
 fn _uint_type_of_width[width: Int]() -> DType:
-    constrained[
-        width in (8, 16, 32, 64, 128, 256),
-        "width must be either 8, 16, 32, 64, 128, or 256",
-    ]()
+    __comptime_assert width in (
+        8,
+        16,
+        32,
+        64,
+        128,
+        256,
+    ), "width must be either 8, 16, 32, 64, 128, or 256"
 
     @parameter
     if width == 8:

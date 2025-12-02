@@ -164,10 +164,9 @@ struct NamedBarrierSemaphore[
                       should perform atomic operations.
         """
         __comptime_assert is_nvidia_gpu(), "target must be cuda"
-        constrained[
-            Self.id_offset + Self.max_num_barriers < MaxHardwareBarriers,
-            "max number of barriers is " + String(MaxHardwareBarriers),
-        ]()
+        __comptime_assert (
+            Self.id_offset + Self.max_num_barriers < MaxHardwareBarriers
+        ), "max number of barriers is " + String(MaxHardwareBarriers)
         self._lock = lock
         self._wait_thread = thread_id <= 0
         self._state = -1

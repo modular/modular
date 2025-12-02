@@ -160,7 +160,9 @@ fn reduce_inner_test[
     fn reduce_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        constrained[reduction_idx < num_reductions, "invalid reduction idx"]()
+        __comptime_assert (
+            reduction_idx < num_reductions
+        ), "invalid reduction idx"
 
         return reduce_fn[dtype, width](lhs, rhs)
 
@@ -220,7 +222,7 @@ def test_reduce():
         width: Int,
         reduction_idx: Int,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        constrained[reduction_idx < 2, "reduction idx OOB"]()
+        __comptime_assert reduction_idx < 2, "reduction idx OOB"
 
         comptime func = reduce_max if reduction_idx == 0 else reduce_add
         return func(x, y)

@@ -314,10 +314,9 @@ struct UnsafePointer[
             must also ensure the pointer's origin and mutability is valid for
             the address, failure to to do may result in undefined behavior.
         """
-        constrained[
-            size_of[type_of(self)]() == size_of[Int](),
-            "Pointer/Int size mismatch",
-        ]()
+        __comptime_assert (
+            size_of[type_of(self)]() == size_of[Int]()
+        ), "Pointer/Int size mismatch"
         self = UnsafePointer(to=unsafe_from_address).bitcast[type_of(self)]()[]
 
     @always_inline("nodebug")

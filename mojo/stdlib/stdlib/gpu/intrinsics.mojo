@@ -1119,13 +1119,10 @@ struct AMDBufferResource:
             # GFX10.x (RDNA1/RDNA2)
             self.desc[3] = 0x31014000
         else:
-            constrained[
-                _cdna_3_or_newer(),
-                (
-                    "The AMDBufferResource struct is only defined for CDNA 3+"
-                    " and RDNA 1-4 GPUs."
-                ),
-            ]()
+            __comptime_assert _cdna_3_or_newer(), (
+                "The AMDBufferResource struct is only defined for CDNA 3+"
+                " and RDNA 1-4 GPUs."
+            )
             # GFX9 (CDNA/GCN)
             self.desc[3] = 0x00020000
 

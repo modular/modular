@@ -1066,9 +1066,9 @@ fn mma[
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
-    constrained[
-        c_scale == 0 or c_scale == 1, String("Invalid c_scale: ", c_scale)
-    ]()
+    __comptime_assert c_scale == 0 or c_scale == 1, String(
+        "Invalid c_scale: ", c_scale
+    )
 
     @parameter
     if cta_group == 1:
@@ -1330,9 +1330,9 @@ fn mma[
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
-    constrained[
-        c_scale == 0 or c_scale == 1, String("Invalid c_scale: ", c_scale)
-    ]()
+    __comptime_assert c_scale == 0 or c_scale == 1, String(
+        "Invalid c_scale: ", c_scale
+    )
 
     @parameter
     if cta_group == 1:

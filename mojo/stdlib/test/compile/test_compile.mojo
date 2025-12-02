@@ -108,9 +108,9 @@ def test_cross_compile():
     comptime MI355X_TARGET = get_gpu_target["mi355x"]()
 
     fn test_kernel():
-        constrained[
-            _cdna_4_or_newer(), "test_kernel is only supported on CDNA4+"
-        ]()
+        __comptime_assert (
+            _cdna_4_or_newer()
+        ), "test_kernel is only supported on CDNA4+"
 
     var asm = compile_info[test_kernel, target=MI355X_TARGET]()
     assert_true("amdgcn-amd-amdhsa--gfx950" in asm)

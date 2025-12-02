@@ -99,10 +99,9 @@ def test_fused_reductions_inner():
         indices: IndexList[rank],
         val: StaticTuple[SIMD[dtype, width], num_reductions],
     ):
-        constrained[
-            width == 1,
-            "Cannot write output if width is not equal to 1",
-        ]()
+        __comptime_assert (
+            width == 1
+        ), "Cannot write output if width is not equal to 1"
 
         out = rebind[StaticTuple[Scalar[test_type], num_reductions]](val)
 
@@ -113,7 +112,7 @@ def test_fused_reductions_inner():
         width: Int,
         reduction_idx: Int,
     ](left: SIMD[ty, width], right: SIMD[ty, width],) -> SIMD[ty, width]:
-        constrained[reduction_idx < num_reductions, "reduction_idx OOB"]()
+        __comptime_assert reduction_idx < num_reductions, "reduction_idx OOB"
 
         @parameter
         if reduction_idx == 0:
@@ -181,7 +180,7 @@ def test_fused_reductions_outer():
         width: Int,
         reduction_idx: Int,
     ](left: SIMD[ty, width], right: SIMD[ty, width],) -> SIMD[ty, width]:
-        constrained[reduction_idx < num_reductions, "reduction_idx OOB"]()
+        __comptime_assert reduction_idx < num_reductions, "reduction_idx OOB"
 
         @parameter
         if reduction_idx == 0:

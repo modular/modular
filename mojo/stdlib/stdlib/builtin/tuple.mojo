@@ -263,10 +263,9 @@ struct Tuple[*element_types: Copyable & Movable](
         for i in range(type_of(self).__len__()):
             comptime self_type = type_of(self[i])
             comptime other_type = type_of(other[i])
-            constrained[
-                _type_is_eq[self_type, other_type](),
-                "Tuple elements must be of the same type to compare.",
-            ]()
+            __comptime_assert _type_is_eq[
+                self_type, other_type
+            ](), "Tuple elements must be of the same type to compare."
             if self[i] != rebind[self_type](other[i]):
                 return False
         return True
@@ -309,14 +308,11 @@ struct Tuple[*element_types: Copyable & Movable](
         for i in range(min_length):
             comptime self_type = type_of(self[i])
             comptime other_type = type_of(other[i])
-            constrained[
-                _type_is_eq[self_type, other_type](),
-                String(
-                    "Mismatch between tuple elements at index ",
-                    i,
-                    " must be of the same type to compare.",
-                ),
-            ]()
+            __comptime_assert _type_is_eq[self_type, other_type](), String(
+                "Mismatch between tuple elements at index ",
+                i,
+                " must be of the same type to compare.",
+            )
             if self[i] < rebind[self_type](other[i]):
                 return -1
             if rebind[self_type](other[i]) < self[i]:

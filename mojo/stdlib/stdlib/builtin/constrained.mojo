@@ -95,8 +95,7 @@ fn _constrained_conforms_to[
     # Construct a message like:
     #     List(Equatable) conformance requires Foo(Equatable) conformance, which
     #     is not satisfied.
-    constrained[
-        cond,
+    __comptime_assert cond, String(
         parent_type_name,
         "(",
         trait_name,
@@ -105,4 +104,4 @@ fn _constrained_conforms_to[
         "(",
         trait_name,
         ") conformance, which is not satisfied.",
-    ]()
+    )

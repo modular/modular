@@ -714,13 +714,10 @@ struct SIMD[dtype: DType, size: Int](
         # this check instead of constraining the signature, because otherwise
         # the error would point to a type mismatch. All this should be fixed by
         # using a requires clause when it becomes available.
-        constrained[
-            Self.size == 1,
-            (
-                "must be a scalar; use the `fill` keyword instead for explicit"
-                " splatting"
-            ),
-        ]()
+        __comptime_assert Self.size == 1, (
+            "must be a scalar; use the `fill` keyword instead for explicit"
+            " splatting"
+        )
 
         _simd_construction_checks[Self.dtype, Self.size]()
         var s = __mlir_op.`pop.cast_from_builtin`[
@@ -820,10 +817,9 @@ struct SIMD[dtype: DType, size: Int](
             value: The input value.
         """
         _simd_construction_checks[Self.dtype, Self.size]()
-        constrained[
-            Self.dtype.is_floating_point(),
-            "the SIMD type must be floating point",
-        ]()
+        __comptime_assert (
+            Self.dtype.is_floating_point()
+        ), "the SIMD type must be floating point"
         var res = __mlir_attr[
             `#pop<float_literal_convert<`, value.value, `>> : `, Self._mlir_type
         ]
@@ -1146,10 +1142,9 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             `self & rhs`.
         """
-        constrained[
-            Self.dtype.is_integral() or Self.dtype is DType.bool,
-            "must be an integral or bool type",
-        ]()
+        __comptime_assert (
+            Self.dtype.is_integral() or Self.dtype is DType.bool
+        ), "must be an integral or bool type"
         return Self(
             mlir_value=__mlir_op.`pop.simd.and`(
                 self._mlir_value, rhs._mlir_value
@@ -1169,10 +1164,9 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             `self ^ rhs`.
         """
-        constrained[
-            Self.dtype.is_integral() or Self.dtype is DType.bool,
-            "must be an integral or bool type",
-        ]()
+        __comptime_assert (
+            Self.dtype.is_integral() or Self.dtype is DType.bool
+        ), "must be an integral or bool type"
         return Self(
             mlir_value=__mlir_op.`pop.simd.xor`(
                 self._mlir_value, rhs._mlir_value
@@ -1192,10 +1186,9 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             `self | rhs`.
         """
-        constrained[
-            Self.dtype.is_integral() or Self.dtype is DType.bool,
-            "must be an integral or bool type",
-        ]()
+        __comptime_assert (
+            Self.dtype.is_integral() or Self.dtype is DType.bool
+        ), "must be an integral or bool type"
         return Self(
             mlir_value=__mlir_op.`pop.simd.or`(
                 self._mlir_value, rhs._mlir_value
@@ -1258,10 +1251,9 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             The `~self` value.
         """
-        constrained[
-            Self.dtype.is_integral() or Self.dtype is DType.bool,
-            "must be an integral or bool type",
-        ]()
+        __comptime_assert (
+            Self.dtype.is_integral() or Self.dtype is DType.bool
+        ), "must be an integral or bool type"
 
         @parameter
         if Self.dtype is DType.bool:
@@ -1590,10 +1582,9 @@ struct SIMD[dtype: DType, size: Int](
         Args:
             rhs: The RHS value.
         """
-        constrained[
-            Self.dtype.is_integral() or Self.dtype is DType.bool,
-            "must be an integral or bool type",
-        ]()
+        __comptime_assert (
+            Self.dtype.is_integral() or Self.dtype is DType.bool
+        ), "must be an integral or bool type"
         self = self & rhs
 
     @always_inline("nodebug")
@@ -1606,10 +1597,9 @@ struct SIMD[dtype: DType, size: Int](
         Args:
             rhs: The RHS value.
         """
-        constrained[
-            Self.dtype.is_integral() or Self.dtype is DType.bool,
-            "must be an integral or bool type",
-        ]()
+        __comptime_assert (
+            Self.dtype.is_integral() or Self.dtype is DType.bool
+        ), "must be an integral or bool type"
         self = self ^ rhs
 
     @always_inline("nodebug")
@@ -1622,10 +1612,9 @@ struct SIMD[dtype: DType, size: Int](
         Args:
             rhs: The RHS value.
         """
-        constrained[
-            Self.dtype.is_integral() or Self.dtype is DType.bool,
-            "must be an integral or bool type",
-        ]()
+        __comptime_assert (
+            Self.dtype.is_integral() or Self.dtype is DType.bool
+        ), "must be an integral or bool type"
         self = self | rhs
 
     @always_inline("nodebug")
@@ -1774,10 +1763,9 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             `value & self`.
         """
-        constrained[
-            Self.dtype.is_integral() or Self.dtype is DType.bool,
-            "must be an integral or bool type",
-        ]()
+        __comptime_assert (
+            Self.dtype.is_integral() or Self.dtype is DType.bool
+        ), "must be an integral or bool type"
         return value & self
 
     @always_inline("nodebug")
@@ -1793,10 +1781,9 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             `value ^ self`.
         """
-        constrained[
-            Self.dtype.is_integral() or Self.dtype is DType.bool,
-            "must be an integral or bool type",
-        ]()
+        __comptime_assert (
+            Self.dtype.is_integral() or Self.dtype is DType.bool
+        ), "must be an integral or bool type"
         return value ^ self
 
     @always_inline("nodebug")
@@ -1812,10 +1799,9 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             `value | self`.
         """
-        constrained[
-            Self.dtype.is_integral() or Self.dtype is DType.bool,
-            "must be an integral or bool type",
-        ]()
+        __comptime_assert (
+            Self.dtype.is_integral() or Self.dtype is DType.bool
+        ), "must be an integral or bool type"
         return value | self
 
     @always_inline("nodebug")
@@ -2173,26 +2159,20 @@ struct SIMD[dtype: DType, size: Int](
             DType.float8_e5m2,
             DType.float8_e5m2fnuz,
         ):
-            constrained[
-                target
-                in (
-                    DType.bfloat16,
-                    DType.float16,
-                    DType.float32,
-                    DType.float64,
-                ),
+            __comptime_assert target in (
+                DType.bfloat16,
+                DType.float16,
+                DType.float32,
+                DType.float64,
+            ), String(
                 (
-                    String(
-                        (
-                            "Only FP8->F64, FP8->F32, FP8->F16, and FP8->BF16"
-                            " castings are implemented. "
-                        ),
-                        Self.dtype,
-                        "->",
-                        target,
-                    )
+                    "Only FP8->F64, FP8->F32, FP8->F16, and FP8->BF16"
+                    " castings are implemented. "
                 ),
-            ]()
+                Self.dtype,
+                "->",
+                target,
+            )
 
             @parameter
             if target is DType.float16:
@@ -2289,14 +2269,12 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             An integer representation of the floating-point value.
         """
-        constrained[
-            _dtype.is_unsigned(),
-            "the target type must be unsigned integral",
-        ]()
-        constrained[
-            bit_width_of[_dtype]() >= bit_width_of[Self.dtype](),
-            "the target type must be at least as wide as the source type",
-        ]()
+        __comptime_assert (
+            _dtype.is_unsigned()
+        ), "the target type must be unsigned integral"
+        __comptime_assert (
+            bit_width_of[_dtype]() >= bit_width_of[Self.dtype]()
+        ), "the target type must be at least as wide as the source type"
 
         @parameter
         if Self.dtype is DType.bool:
@@ -2364,12 +2342,11 @@ struct SIMD[dtype: DType, size: Int](
         return array^
 
     fn _floor_ceil_trunc_impl[intrinsic: StaticString](self) -> Self:
-        constrained[
+        __comptime_assert (
             intrinsic == "llvm.floor"
             or intrinsic == "llvm.ceil"
-            or intrinsic == "llvm.trunc",
-            "unsupported intrinsic",
-        ]()
+            or intrinsic == "llvm.trunc"
+        ), "unsupported intrinsic"
 
         @parameter
         if Self.dtype.is_integral() or Self.dtype is DType.bool:
@@ -2445,10 +2422,9 @@ struct SIMD[dtype: DType, size: Int](
             position `i` is `(self + other)[permutation[i]]`.
         """
 
-        constrained[
-            output_size == stdlib.builtin.variadic_size(mask),
-            "size of the mask must match the output SIMD size",
-        ]()
+        __comptime_assert output_size == stdlib.builtin.variadic_size(
+            mask
+        ), "size of the mask must match the output SIMD size"
 
         comptime tup = StaticTuple[Int, output_size](values=mask)
 
@@ -2476,10 +2452,9 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         for i in range(output_size):
-            constrained[
-                0 <= mask[i] < 2 * Self.size,
-                "invalid index in the shuffle operation",
-            ]()
+            __comptime_assert (
+                0 <= mask[i] < 2 * Self.size
+            ), "invalid index in the shuffle operation"
 
         var res = __mlir_op.`pop.simd.shuffle`[
             mask = mask._mlir_value,
@@ -2649,10 +2624,9 @@ struct SIMD[dtype: DType, size: Int](
             A new vector whose elements map to
             `self[offset:offset+output_width]`.
         """
-        constrained[
-            0 <= offset < output_width + offset <= Self.size,
-            "output width must be a positive integer less than simd size",
-        ]()
+        __comptime_assert (
+            0 <= offset < output_width + offset <= Self.size
+        ), "output width must be a positive integer less than simd size"
 
         @always_inline
         @parameter
@@ -2699,16 +2673,14 @@ struct SIMD[dtype: DType, size: Int](
             A new vector whose elements at `self[offset:offset+input_width]`
             contain the values of `value`.
         """
-        constrained[
-            offset % value.size == 0,
-            "offset must be a multiple of the subvector's size",
-        ]()
+        __comptime_assert (
+            offset % value.size == 0
+        ), "offset must be a multiple of the subvector's size"
 
         comptime input_width = value.size
-        constrained[
-            0 <= offset < input_width + offset <= Self.size,
-            "insertion position must not exceed the size of the vector",
-        ]()
+        __comptime_assert (
+            0 <= offset < input_width + offset <= Self.size
+        ), "insertion position must not exceed the size of the vector"
 
         @parameter
         if Self.size == 1:
@@ -3007,14 +2979,12 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             The reduced vector.
         """
-        constrained[
-            size_out <= Self.size,
-            "`size_out` must not exceed width of the vector.",
-        ]()
-        constrained[
-            Self.dtype.is_integral() or Self.dtype is DType.bool,
-            "The element type of the vector must be integer or boolean.",
-        ]()
+        __comptime_assert (
+            size_out <= Self.size
+        ), "`size_out` must not exceed width of the vector."
+        __comptime_assert (
+            Self.dtype.is_integral() or Self.dtype is DType.bool
+        ), "The element type of the vector must be integer or boolean."
 
         @parameter
         if size_out > 1:
@@ -3044,14 +3014,12 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             The reduced vector.
         """
-        constrained[
-            size_out <= Self.size,
-            "`size_out` must not exceed width of the vector.",
-        ]()
-        constrained[
-            Self.dtype.is_integral() or Self.dtype is DType.bool,
-            "The element type of the vector must be integer or boolean.",
-        ]()
+        __comptime_assert (
+            size_out <= Self.size
+        ), "`size_out` must not exceed width of the vector."
+        __comptime_assert (
+            Self.dtype.is_integral() or Self.dtype is DType.bool
+        ), "The element type of the vector must be integer or boolean."
 
         @parameter
         if size_out > 1:
@@ -3077,10 +3045,9 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             Count of set bits across all elements of the vector.
         """
-        constrained[
-            Self.dtype.is_integral() or Self.dtype is DType.bool,
-            "Expected either integral or bool type",
-        ]()
+        __comptime_assert (
+            Self.dtype.is_integral() or Self.dtype is DType.bool
+        ), "Expected either integral or bool type"
 
         @parameter
         if Self.dtype is DType.bool:
@@ -3147,10 +3114,9 @@ struct SIMD[dtype: DType, size: Int](
             (with wrap-around).
         """
 
-        constrained[
-            shift >= -Self.size and shift < Self.size,
-            "Constraint: -size <= shift < size",
-        ]()
+        __comptime_assert (
+            shift >= -Self.size and shift < Self.size
+        ), "Constraint: -size <= shift < size"
 
         @parameter
         if Self.size == 1:
@@ -3177,10 +3143,9 @@ struct SIMD[dtype: DType, size: Int](
             (with wrap-around).
         """
 
-        constrained[
-            shift > -Self.size and shift <= Self.size,
-            "Constraint: -size < shift <= size",
-        ]()
+        __comptime_assert (
+            shift > -Self.size and shift <= Self.size
+        ), "Constraint: -size < shift <= size"
 
         @parameter
         if Self.size == 1:
@@ -3209,13 +3174,10 @@ struct SIMD[dtype: DType, size: Int](
             wrap-around, fill with zero).
         """
 
-        constrained[
-            0 <= shift <= Self.size,
-            (
-                "shift must be greater than or equal to 0 and less than equal"
-                " to the size"
-            ),
-        ]()
+        __comptime_assert 0 <= shift <= Self.size, (
+            "shift must be greater than or equal to 0 and less than equal"
+            " to the size"
+        )
 
         @parameter
         if shift == 0:
@@ -3247,13 +3209,10 @@ struct SIMD[dtype: DType, size: Int](
         # Note the order of the llvm_intrinsic arguments below differ from
         # shift_left(), so we cannot directly reuse it here.
 
-        constrained[
-            0 <= shift <= Self.size,
-            (
-                "shift must be greater than or equal to 0 and less than equal"
-                " to the size"
-            ),
-        ]()
+        __comptime_assert 0 <= shift <= Self.size, (
+            "shift must be greater than or equal to 0 and less than equal"
+            " to the size"
+        )
 
         @parameter
         if shift == 0:
@@ -3710,20 +3669,14 @@ fn _convert_f32_to_float8_ue8m0_scalar[
     satfinite: Bool = False,
     rounding_mode: String = "rp",
 ](x: Scalar[dtype]) -> Scalar[target]:
-    constrained[
-        not satfinite,
-        (
-            "satfinite is not implemented for CPU path. Extend this function to"
-            " support it."
-        ),
-    ]()
-    constrained[
-        rounding_mode == "rp",
-        (
-            "Only rounding mode 'rp' is supported for CPU path. Extend this"
-            " function to support other rounding modes."
-        ),
-    ]()
+    __comptime_assert not satfinite, (
+        "satfinite is not implemented for CPU path. Extend this function to"
+        " support it."
+    )
+    __comptime_assert rounding_mode == "rp", (
+        "Only rounding mode 'rp' is supported for CPU path. Extend this"
+        " function to support other rounding modes."
+    )
 
     if _isnan(x) or _isinf(x):
         return bitcast[target, 1](UInt8(0xFF))
@@ -3749,13 +3702,12 @@ fn _convert_f32_to_float8_ue8m0[
     satfinite: Bool = False,
     rounding_mode: String = "rp",
 ](val: SIMD[dtype, size],) -> SIMD[target, size]:
-    constrained[
-        dtype is DType.float32 and target is DType.float8_e8m0fnu,
-        (
-            "this conversion is only supported for float32 -> float8_e8m0fnu."
-            " Exnted it if you need bfloat16 -> float8_e8m0fnu."
-        ),
-    ]()
+    __comptime_assert (
+        dtype is DType.float32 and target is DType.float8_e8m0fnu
+    ), (
+        "this conversion is only supported for float32 -> float8_e8m0fnu."
+        " Exnted it if you need bfloat16 -> float8_e8m0fnu."
+    )
 
     @parameter
     if is_nvidia_gpu() and _is_sm_100x_or_newer():

@@ -332,10 +332,9 @@ struct VariadicListMem[
                          list.
         """
 
-        constrained[
-            Self.is_owned,
-            "consume_elements may only be called on owned variadic lists",
-        ]()
+        __comptime_assert (
+            Self.is_owned
+        ), "consume_elements may only be called on owned variadic lists"
 
         for i in range(len(self)):
             var ptr = UnsafePointer(to=self[i])
@@ -521,10 +520,9 @@ struct VariadicPack[
                          pack.
         """
 
-        constrained[
-            Self.is_owned,
-            "consume_elements may only be called on owned variadic packs",
-        ]()
+        __comptime_assert (
+            Self.is_owned
+        ), "consume_elements may only be called on owned variadic packs"
 
         @parameter
         for i in range(Self.__len__()):

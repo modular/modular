@@ -1315,13 +1315,10 @@ struct NDBuffer[
         Returns:
             Constructed NDBuffer with the allocated space.
         """
-        constrained[
-            Self.shape.all_known[Self.rank](),
-            (
-                "the shape of the NDBuffer must be known to allow for stack"
-                " allocation"
-            ),
-        ]()
+        __comptime_assert Self.shape.all_known[Self.rank](), (
+            "the shape of the NDBuffer must be known to allow for stack"
+            " allocation"
+        )
         var data_pointer = (
             stack_allocation[
                 Self.shape.product[Self.rank]().get(),
