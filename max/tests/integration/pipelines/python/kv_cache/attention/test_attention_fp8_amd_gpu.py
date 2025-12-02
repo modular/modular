@@ -187,23 +187,23 @@ def _build_and_execute_attention_graph(
 
     if batch_size == 1:
         input_row_offsets_data = np.array([0, seq_len], dtype=np.uint32)
-        row_offsets_shape = (2,)
     else:
         input_row_offsets_data = np.array(
             [0, seq_len, seq_len * 2], dtype=np.uint32
         )
-        row_offsets_shape = (batch_size + 1,)
 
     with Graph(
         graph_name,
         input_types=[
             TensorType(
                 DType.bfloat16,
-                shape=(batch_size * seq_len, hidden_size),
+                shape=("seq_len", hidden_size),
                 device=DeviceRef.GPU(),
             ),
             TensorType(
-                DType.uint32, shape=row_offsets_shape, device=DeviceRef.GPU()
+                DType.uint32,
+                shape=["row_offsets_length"],
+                device=DeviceRef.GPU(),
             ),
             blocks_type,
             cache_lengths_type,

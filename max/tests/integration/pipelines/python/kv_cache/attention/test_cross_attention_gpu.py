@@ -178,7 +178,7 @@ def test_cross_attention_gpu(
     )
 
     input_row_offsets_type = TensorType(
-        DType.uint32, shape=[batch_size + 1], device=DeviceRef.GPU()
+        DType.uint32, shape=["input_row_offsets_len"], device=DeviceRef.GPU()
     )
     hidden_max_seq_len_type = TensorType(
         DType.uint32, shape=[1], device=DeviceRef.CPU()
