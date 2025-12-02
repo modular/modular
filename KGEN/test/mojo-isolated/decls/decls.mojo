@@ -622,6 +622,10 @@ fn test_raising_computed_getter() raises:
 fn test_typed_raises_fn() raises Int -> String:
     pass
 
+fn test_typed_raises_fn2() raises (Int) -> String:
+    pass
+
+
 # CHECK-LABEL: lit.fn @"call_test_typed_raises_fn
 fn call_test_typed_raises_fn() raises Int:
     # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
