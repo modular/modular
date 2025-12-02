@@ -137,3 +137,27 @@ def test_pinned_to_different_device_copy() -> None:
         "Copy from pinned host memory to different GPU device memory failed."
         "Expected GPU tensor to contain original data (77), not modified data (55). "
     )
+
+
+def test_non_pinned_cross_device_copy() -> None:
+    """Test copying non-pinned memory from one GPU to another."""
+    gpu0 = Accelerator(id=0)
+    gpu1 = Accelerator(id=1)
+    cpu = CPU()
+    tensor_size = 1024
+
+    # Create tensor on GPU 0
+    data = np.full(tensor_size, 42, dtype=np.int8)
+    gpu0_tensor = Tensor.from_numpy(data).to(gpu0)
+
+    # Copy to GPU 1
+    gpu1_tensor = gpu0_tensor.to(gpu1)
+    assert gpu1_tensor.device == gpu1
+
+    # Verify the data was copied correctly
+    gpu1.synchronize()
+    result = gpu1_tensor.copy(device=cpu).to_numpy()
+    assert np.all(result == 42), (
+        "Cross-device copy of non-pinned memory failed. "
+        "Expected tensor to contain 42."
+    )
