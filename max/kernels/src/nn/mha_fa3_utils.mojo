@@ -69,6 +69,7 @@ from nn.mha_utils import (
 
 from utils.index import Index, IndexList
 from builtin.device_passable import DevicePassable
+from utils import StaticTuple
 
 
 @register_passable("trivial")
@@ -210,6 +211,9 @@ struct MHAPosition[
     comptime split_gmem_layout = Layout(
         IntTuple(Self.BM // 2, Self.depth), IntTuple(Self.q_stride, 1)
     )
+    alias num_q_heads_per_thread: Int = min(
+        2, ceildiv(group, 8)
+    ) if decoding else 1
 
     @always_inline
     fn __init__(
@@ -730,6 +734,37 @@ fn q_out_tma[
         swizzle_mode,
         is_k_major=True,
     ](ctx, tensor)
+
+
+@always_inline
+fn get_q_head_idx[
+    BM: Int,
+    BN: Int,
+    depth: Int,
+    padded_depth: Int,
+    num_heads: Int,
+    group: Int,
+    decoding: Bool, //,
+](
+    position: MHAPosition[
+        BM, BN, depth, padded_depth, num_heads, group, decoding
+    ],
+    lane: UInt32,
+    out indices: StaticTuple[UInt32, type_of(position).num_q_heads_per_thread],
+):
+    var fragment_row: UInt32 = lane // 4
+
+    indices = {}
+
+    @parameter
+    for i in range(position.num_q_heads_per_thread):
+        var q_head_idx: UInt32 = position.head_idx
+
+        @parameter
+        if decoding:
+            group_idx = i * 8 + fragment_row
+            q_head_idx = group * q_head_idx + group_idx
+        indices[i] = q_head_idx
 
 
 @always_inline

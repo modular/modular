@@ -67,6 +67,7 @@ from nn.mha_fa3_utils import (
     output_reg_to_smem,
     produce,
     q_out_tma,
+    get_q_head_idx,
 )
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
@@ -1691,19 +1692,32 @@ fn _mha_sm90[
 
         apply_mask(position, mask_status, kv_tile_start_row)
 
-        var sink_weight: Scalar[accum_type]
+        var sink_weight: Scalar[accum_type] = 0.0
 
         # Include sink_weights in rowmax computation if present
         @parameter
         if not SinkType.is_null:
-            var head_idx = position.head_idx
-            sink_weight = sink_weights_ptr[head_idx].cast[accum_type]() * log2e
+            var q_head_indices = get_q_head_idx(position, lane)
 
             @parameter
-            for i in range(num_rows_per_warp):
-                rowmax[i] = sink_weight
-        else:
-            sink_weight = 0.0  # should b e
+            if decoding:
+
+                @parameter
+                for i in range(q_head_indices.size):
+                    var head_idx = q_head_indices[i]
+                    sink_weight = (
+                        sink_weights_ptr[head_idx].cast[accum_type]() * log2e
+                    )
+                    rowmax[i] = sink_weight
+            else:
+                sink_weight = (
+                    sink_weights_ptr[q_head_indices[0]].cast[accum_type]()
+                    * log2e
+                )
+
+                @parameter
+                for i in range(num_rows_per_warp):
+                    rowmax[i] = sink_weight
 
         # Compute initial rowmax
         var attention_rowmax = _rowmax_online_softmax[
@@ -1723,12 +1737,23 @@ fn _mha_sm90[
         # Add sink weight contribution to rowsum
         @parameter
         if not SinkType.is_null:
+            var q_head_indices = get_q_head_idx(position, lane)
 
             @parameter
-            for i in range(num_rows_per_warp):
-                # Compute exp2((sink_weight - rowmax[i]) * log2e)
-                var sink_contribution = exp2(sink_weight - rowmax[i])
-                attention_rowsum[i] = attention_rowsum[i] + sink_contribution[0]
+            if decoding:
+
+                @parameter
+                for i in range(q_head_indices.size):
+                    var sink_contribution = exp2(sink_weight - rowmax[i])
+                    attention_rowsum[i] += sink_contribution[0]
+
+            else:
+
+                @parameter
+                for i in range(num_rows_per_warp):
+                    # Compute exp2((sink_weight - rowmax[j]) * log2e)
+                    var sink_contribution = exp2(sink_weight - rowmax[i])
+                    attention_rowsum[i] += sink_contribution[0]
 
         rowsum.copy_from(attention_rowsum)
 
@@ -1796,20 +1821,6 @@ fn _mha_sm90[
                     mma_thread_layout,
                     use_exp2=True,
                 ](vectorize_p_reg_tile(), rowmax, new_q)
-
-                # Include sink_weights in rowmax if present
-                @parameter
-                if not SinkType.is_null:
-                    var head_idx = position.head_idx
-                    var sink_weight_log2 = (
-                        sink_weights_ptr[head_idx].cast[accum_type]() * log2e
-                    )
-
-                    @parameter
-                    for i in range(num_rows_per_warp):
-                        current_rowmax[i] = max(
-                            current_rowmax[i], sink_weight_log2
-                        )
 
                 score_frag_rowmax = current_rowmax
                 if new_q:
@@ -1880,25 +1891,6 @@ fn _mha_sm90[
                     score_frag_rowsum = rebind[type_of(rowsum)](
                         _rowsum[mma_thread_layout](vectorize_p_reg_tile())
                     )
-
-                    # Add sink weight contribution to score_frag_rowsum
-                    @parameter
-                    if not SinkType.is_null:
-                        var head_idx = position.head_idx
-                        var sink_weight_log2 = (
-                            sink_weights_ptr[head_idx].cast[accum_type]()
-                            * log2e
-                        )
-
-                        @parameter
-                        for i in range(num_rows_per_warp):
-                            # Compute exp2(sink_weight_log2 - rowmax[i])
-                            var sink_contribution = exp2(
-                                sink_weight_log2 - rowmax[i]
-                            )
-                            score_frag_rowsum[i] = (
-                                score_frag_rowsum[i] + sink_contribution
-                            )
 
                     _online_softmax_correction[use_exp2=True](
                         rowmax, score_frag_rowmax
