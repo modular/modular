@@ -24,7 +24,7 @@ from collections import InlineArray, List
 from collections.string.string_slice import _unsafe_strlen
 from io import FileDescriptor
 from sys import CompilationTarget, external_call, is_gpu
-from sys.ffi import c_char, c_int
+from sys.ffi import c_char, c_int, get_errno
 
 from .path import isdir, split
 from .pathlike import PathLike
@@ -300,6 +300,43 @@ fn unlink[PathLike: os.PathLike](path: PathLike) raises:
         If the operation fails.
     """
     remove(path.__fspath__())
+
+
+# ===----------------------------------------------------------------------=== #
+# link
+# ===----------------------------------------------------------------------=== #
+
+
+fn link[
+    OldType: os.PathLike, NewType: os.PathLike
+](oldpath: OldType, newpath: NewType) raises:
+    """Creates a new hard-link to an existing file.
+
+    Parameters:
+        OldType: The path type of the existing file.
+        NewType: The path type of the file to create.
+
+    Args:
+        oldpath: The exsting file.
+        newpath: The new file.
+    """
+    var oldpath_fspath = oldpath.__fspath__()
+    var newpath_fspath = newpath.__fspath__()
+
+    var error = external_call["link", Int32](
+        oldpath_fspath.as_c_string_slice().unsafe_ptr(),
+        newpath_fspath.as_c_string_slice().unsafe_ptr(),
+    )
+    if error != 0:
+        var err = get_errno()
+        raise Error(
+            "Can not create link from ",
+            newpath_fspath,
+            " to ",
+            oldpath_fspath,
+            " Err: ",
+            String(err),
+        )
 
 
 # ===----------------------------------------------------------------------=== #

@@ -174,6 +174,9 @@ what we publish.
 - The `EqualityComparable` trait has been deprecated in favor of `Equatable`,
   which has identical functionality.
 
+- The `os` module now exposes a `link` function, wrapping the unix
+  `link(2)` system call
+  
 - Added a `CStringSlice` as a type-safe way to interact with nul-terminated
   c-style strings (`const char*`).
 
