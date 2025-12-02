@@ -12,6 +12,7 @@ dependencies = [
   "boto3",
   "click>=8.1",
   "codeowners",
+  "cyclopts",
   "datasets",
   "device-smi",
   "docutils",

@@ -430,6 +430,7 @@ dependencies = [
     { name = "boto3", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "click", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "codeowners", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
+    { name = "cyclopts", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "datasets", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "device-smi", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "docutils", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
@@ -600,6 +601,7 @@ requires-dist = [
     { name = "boto3" },
     { name = "click", specifier = ">=8.1" },
     { name = "codeowners" },
+    { name = "cyclopts" },
     { name = "datasets" },
     { name = "device-smi" },
     { name = "docutils" },
@@ -1225,6 +1227,23 @@ wheels = [
 ]
 
 [[package]]
+name = "cyclopts"
+version = "4.2.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "attrs", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
+    { name = "docstring-parser", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
+    { name = "rich", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
+    { name = "rich-rst", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
+    { name = "tomli", marker = "(python_full_version < '3.11' and sys_platform == 'darwin') or (python_full_version < '3.11' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
+    { name = "typing-extensions", marker = "(python_full_version < '3.11' and sys_platform == 'darwin') or (python_full_version < '3.11' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/94/f0/5a83ac365800969552a7eb261b03860dea38647fb6cc31574bdbcdc9f0f5/cyclopts-4.2.5.tar.gz", hash = "sha256:91aff5da5b8b841ccb32b5142c2d12fd93678fbc9eba7ef7319452323e24d6d4", size = 149497, upload-time = "2025-11-22T02:33:37.526Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b6/00/a9b81bdba88e2904602e970e46ffd18b6a833d902f18d91bdce6fc271c49/cyclopts-4.2.5-py3-none-any.whl", hash = "sha256:361be316ce7f6ce674cad8d34bf6c5e39c34daaeceae40632a55b599472975c7", size = 185196, upload-time = "2025-11-22T02:33:36.103Z" },
+]
+
+[[package]]
 name = "dataproperty"
 version = "1.0.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1332,6 +1351,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/fc/f8/98eea607f65de6527f8a2e8885fc8015d3e6f5775df186e443e0964a11c3/distro-1.9.0.tar.gz", hash = "sha256:2fa77c6fd8940f116ee1d6b94a2f90b13b5ea8d019b98bc8bafdcabcdd9bdbed", size = 60722, upload-time = "2023-12-24T09:54:32.31Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/12/b3/231ffd4ab1fc9d679809f356cebee130ac7daa00d6d6f3206dd4fd137e9e/distro-1.9.0-py3-none-any.whl", hash = "sha256:7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2", size = 20277, upload-time = "2023-12-24T09:54:30.421Z" },
+]
+
+[[package]]
+name = "docstring-parser"
+version = "0.17.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b2/9d/c3b43da9515bd270df0f80548d9944e389870713cc1fe2b8fb35fe2bcefd/docstring_parser-0.17.0.tar.gz", hash = "sha256:583de4a309722b3315439bb31d64ba3eebada841f2e2cee23b99df001434c912", size = 27442, upload-time = "2025-07-21T07:35:01.868Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/55/e2/2537ebcff11c1ee1ff17d8d0b6f4db75873e3b0fb32c2d4a2ee31ecb310a/docstring_parser-0.17.0-py3-none-any.whl", hash = "sha256:cf2569abd23dce8099b300f9b4fa8191e9582dda731fd533daf54c4551658708", size = 36896, upload-time = "2025-07-21T07:35:00.684Z" },
 ]
 
 [[package]]
@@ -5940,6 +5968,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b3/01/c954e134dc440ab5f96952fe52b4fdc64225530320a910473c1fe270d9aa/rich-13.7.1.tar.gz", hash = "sha256:9be308cb1fe2f1f57d67ce99e95af38a1e2bc71ad9813b0e247cf7ffbcc3a432", size = 221248, upload-time = "2024-02-28T14:51:19.472Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/87/67/a37f6214d0e9fe57f6ae54b2956d550ca8365857f42a1ce0392bb21d9410/rich-13.7.1-py3-none-any.whl", hash = "sha256:4edbae314f59eb482f54e9e30bf00d33350aaa94f4bfcd4e9e3110e64d0d7222", size = 240681, upload-time = "2024-02-28T14:51:14.353Z" },
+]
+
+[[package]]
+name = "rich-rst"
+version = "1.3.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "docutils", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
+    { name = "rich", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/bc/6d/a506aaa4a9eaa945ed8ab2b7347859f53593864289853c5d6d62b77246e0/rich_rst-1.3.2.tar.gz", hash = "sha256:a1196fdddf1e364b02ec68a05e8ff8f6914fee10fbca2e6b6735f166bb0da8d4", size = 14936, upload-time = "2025-10-14T16:49:45.332Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/13/2f/b4530fbf948867702d0a3f27de4a6aab1d156f406d72852ab902c4d04de9/rich_rst-1.3.2-py3-none-any.whl", hash = "sha256:a99b4907cbe118cf9d18b0b44de272efa61f15117c61e39ebdc431baf5df722a", size = 12567, upload-time = "2025-10-14T16:49:42.953Z" },
 ]
 
 [[package]]

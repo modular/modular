@@ -38,6 +38,7 @@ PINS = {
     "boto3": "boto3@1.34.128",
     "click": "click@8.1.7",
     "codeowners": "codeowners@0.8.0",
+    "cyclopts": "cyclopts@4.2.5",
     "datasets": "datasets@2.21.0",
     "device-smi": "device-smi@0.4.1",
     "docutils": "docutils@0.20.1",
@@ -1118,6 +1119,39 @@ def targets():
         testonly = "cycler" in _TESTONLY_DEPS,
     )
 
+    _cyclopts_4_2_5_deps = [
+        ":attrs@24.2.0",
+        ":docstring-parser@0.17.0",
+        ":rich-rst@1.3.2",
+        ":rich@13.7.1",
+    ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":tomli@2.0.1",
+            ":typing-extensions@4.12.2",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":tomli@2.0.1",
+            ":typing-extensions@4.12.2",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":tomli@2.0.1",
+            ":typing-extensions@4.12.2",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_cyclopts@4.2.5",
+        actual = "@pycross_lock_file_wheel_cyclopts_4.2.5_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "cyclopts@4.2.5",
+        deps = _cyclopts_4_2_5_deps,
+        wheel = ":_wheel_cyclopts@4.2.5",
+        testonly = "cyclopts" in _TESTONLY_DEPS,
+    )
+
     _dataproperty_1_0_1_deps = [
         ":mbstrdecoder@1.1.3",
         ":typepy@1.3.2",
@@ -1274,6 +1308,17 @@ def targets():
         name = "distro@1.9.0",
         wheel = ":_wheel_distro@1.9.0",
         testonly = "distro" in _TESTONLY_DEPS,
+    )
+
+    native.alias(
+        name = "_wheel_docstring-parser@0.17.0",
+        actual = "@pycross_lock_file_wheel_docstring_parser_0.17.0_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "docstring-parser@0.17.0",
+        wheel = ":_wheel_docstring-parser@0.17.0",
+        testonly = "docstring-parser" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5714,6 +5759,23 @@ def targets():
         testonly = "rich" in _TESTONLY_DEPS,
     )
 
+    _rich_rst_1_3_2_deps = [
+        ":docutils@0.20.1",
+        ":rich@13.7.1",
+    ]
+
+    native.alias(
+        name = "_wheel_rich-rst@1.3.2",
+        actual = "@pycross_lock_file_wheel_rich_rst_1.3.2_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "rich-rst@1.3.2",
+        deps = _rich_rst_1_3_2_deps,
+        wheel = ":_wheel_rich-rst@1.3.2",
+        testonly = "rich-rst" in _TESTONLY_DEPS,
+    )
+
     _rouge_score_0_1_2_deps = [
         ":absl-py@2.1.0",
         ":nltk@3.9.1",
@@ -9674,6 +9736,16 @@ def repositories():
 
     maybe(
         http_file,
+        name = "pycross_lock_file_wheel_cyclopts_4.2.5_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/b6/00/a9b81bdba88e2904602e970e46ffd18b6a833d902f18d91bdce6fc271c49/cyclopts-4.2.5-py3-none-any.whl",
+        ],
+        sha256 = "361be316ce7f6ce674cad8d34bf6c5e39c34daaeceae40632a55b599472975c7",
+        downloaded_file_path = "cyclopts-4.2.5-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
         name = "pycross_lock_file_wheel_dataproperty_1.0.1_py3_none_any",
         urls = [
             "https://files.pythonhosted.org/packages/b1/3b/90ebd66ad57c588d6087e86e327436343e9cc60776a9445b79c6e80a022d/DataProperty-1.0.1-py3-none-any.whl",
@@ -9800,6 +9872,16 @@ def repositories():
         ],
         sha256 = "7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2",
         downloaded_file_path = "distro-1.9.0-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_docstring_parser_0.17.0_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/55/e2/2537ebcff11c1ee1ff17d8d0b6f4db75873e3b0fb32c2d4a2ee31ecb310a/docstring_parser-0.17.0-py3-none-any.whl",
+        ],
+        sha256 = "cf2569abd23dce8099b300f9b4fa8191e9582dda731fd533daf54c4551658708",
+        downloaded_file_path = "docstring_parser-0.17.0-py3-none-any.whl",
     )
 
     maybe(
@@ -16430,6 +16512,16 @@ def repositories():
         ],
         sha256 = "4edbae314f59eb482f54e9e30bf00d33350aaa94f4bfcd4e9e3110e64d0d7222",
         downloaded_file_path = "rich-13.7.1-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_rich_rst_1.3.2_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/13/2f/b4530fbf948867702d0a3f27de4a6aab1d156f406d72852ab902c4d04de9/rich_rst-1.3.2-py3-none-any.whl",
+        ],
+        sha256 = "a99b4907cbe118cf9d18b0b44de272efa61f15117c61e39ebdc431baf5df722a",
+        downloaded_file_path = "rich_rst-1.3.2-py3-none-any.whl",
     )
 
     maybe(
