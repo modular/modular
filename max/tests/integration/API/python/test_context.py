@@ -229,8 +229,9 @@ def test_context__needs_ce() -> None:
     assert context.needs_ce is True
 
     # Encode 2/4 prompt tokens
-    context.bump_token_indices(active_idx=-2)
+    context.maybe_chunk(2)
     assert context.active_length == 2
+    assert context.needs_ce
     context.update(98)  # token 98 is discarded
     assert context.all_tokens.tolist() == [0, 1, 2, 3]
 
@@ -244,7 +245,7 @@ def test_context__needs_ce() -> None:
     context.update(101)
     context.update(102)
     assert context.all_tokens.tolist() == [0, 1, 2, 3, 99, 100, 101, 102]
-    context.bump_token_indices(start_idx=-2)
+    context.rewind_processing(2)
 
     # Even though the active length is 3, we are not in CE mode!
     assert context.next_tokens.tolist() == [100, 101, 102]
