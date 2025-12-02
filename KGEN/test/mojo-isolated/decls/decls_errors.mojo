@@ -1121,11 +1121,7 @@ struct MyStruct[p: Int, m1: MyParam[_], m2: MyParam[_]]:
 fn __del__(): # expected-error {{'__del__' must be a method, not a global function}}
   pass
 
-# expected-error @below {{thrown type specifier should be surrounded by parentheses}}
-fn bad_raises_fn1() raises Error:
-  pass
-
-fn raises_int() raises (Int):
+fn raises_int() raises Int:
   raise 1
 
   # expected-error @+1 {{cannot implicitly convert 'FloatLiteral[4]' value to 'Int'}}

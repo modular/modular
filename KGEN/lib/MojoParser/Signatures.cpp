@@ -1190,20 +1190,16 @@ ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p, ArgListKind kind,
       handleEffect(&FnEffects::isThrows, &FnEffects::setThrows);
       p.consumeIdentifier();
 
-      // Parse a thrown type if specified.
-      if (p.consumeIf(Token::l_paren)) {
-        if (p.parseExpression(thrownTypeExpr) ||
-            p.parseToken(Token::r_paren, "expected ')' in thrown type"))
-          continue;
-      } else if (p.getToken().isIdentifier() &&
-                 !isEffectKeywordOrWhere(p.getTokenSpelling()) &&
-                 !p.getToken().isStartOfLine()) {
-        p.emitError(
-            p.getToken().getLoc(),
-            "thrown type specifier should be surrounded by parentheses");
-        return failure();
+      // Parse a thrown type if specified.  Signatures can exist in function
+      // declarations but also in function types "fn () raises X" etc, which
+      // means we have to be a bit careful about parsing the thing after
+      // 'raises' as a thrown type when it isn't.
+      if (!isEffectKeywordOrWhere(p.getTokenSpelling()) &&
+          !p.getToken().isStartOfLine() && p.getToken().isIdentifier()) {
+        (void)p.parseExpression(thrownTypeExpr, /*stmtIndent=*/std::nullopt,
+                                ParserBase::Precedence::kPrimary);
       }
-      continue;
+      continue; // Don't consume the identifier again.
 
     } else if (spelling == "capturing") {
       handleEffect(&FnEffects::isCapturing, &FnEffects::setCapturing);
