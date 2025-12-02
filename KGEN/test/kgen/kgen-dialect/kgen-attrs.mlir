@@ -313,6 +313,81 @@ kgen.generator @closureSymbol(){
 } : () -> ()
 
 "some.op"() {
+  // CHECK: a = #pop<simd 3> : !pop.scalar<si32>
+  a = #pop.simd_add< #pop<simd 1> : !pop.scalar<si32>, #pop<simd 2> : !pop.scalar<si32>> : !pop.scalar<si32>,
+  // CHECK: b = #pop.simd<9, 41, 1023, -1>
+  b = #pop.simd_add< #pop.simd<7, 42, -1, 0> : !pop.simd<4, si32>,
+                     #pop.simd<2, -1, 1024, -1> : !pop.simd<4, si32>> : !pop.simd<4, si32>,
+  // CHECK: c = #pop.simd_add<#kgen.unknown : !pop.simd<4, si32>, #kgen.unknown : !pop.simd<4, si32>> : !pop.simd<4, si32>
+  c = #pop.simd_add< #kgen.unknown : !pop.simd<4, si32>, #kgen.unknown : !pop.simd<4, si32>>,
+
+  // CHECK: d = #pop<simd false> : !pop.scalar<bool>
+  d = #pop.simd_add< #pop<simd true> : !pop.scalar<bool>, #pop<simd true> : !pop.scalar<bool>> : !pop.scalar<bool>,
+  // CHECK: e = #pop<simd true> : !pop.scalar<bool>
+  e = #pop.simd_add< #pop<simd false> : !pop.scalar<bool>, #pop<simd true> : !pop.scalar<bool>> : !pop.scalar<bool>,
+  // CHECK: f = #pop<simd false> : !pop.scalar<bool>
+  f = #pop.simd_add< #pop<simd false> : !pop.scalar<bool>, #pop<simd false> : !pop.scalar<bool>> : !pop.scalar<bool>,
+
+  // CHECK: g = #pop<simd "3.5"> : !pop.scalar<f32>
+  g = #pop.simd_add< #pop<simd "1.0"> : !pop.scalar<f32>, #pop<simd "2.5"> : !pop.scalar<f32>> : !pop.scalar<f32>,
+  // CHECK: h = #pop<simd "NaN"> : !pop.scalar<f32>
+  h = #pop.simd_add< #pop<simd "1.0"> : !pop.scalar<f32>, #pop<simd "NaN"> : !pop.scalar<f32>> : !pop.scalar<f32>,
+
+  // CHECK: i = #pop<simd 6> : !pop.scalar<index>
+  i = #pop.simd_add< #pop<simd 2> : !pop.scalar<index>, #pop<simd 4> : !pop.scalar<index>> : !pop.scalar<index>
+} : () -> ()
+
+"some.op"() {
+  // CHECK: a = #pop<simd -1> : !pop.scalar<si32>
+  a = #pop.simd_sub< #pop<simd 1> : !pop.scalar<si32>, #pop<simd 2> : !pop.scalar<si32>> : !pop.scalar<si32>,
+  // CHECK: b = #pop.simd<5, 43, -1025, 1>
+  b = #pop.simd_sub< #pop.simd<7, 42, -1, 0> : !pop.simd<4, si32>,
+                     #pop.simd<2, -1, 1024, -1> : !pop.simd<4, si32>> : !pop.simd<4, si32>,
+  // CHECK: c = #pop.simd_sub<#kgen.unknown : !pop.simd<4, si32>, #kgen.unknown : !pop.simd<4, si32>> : !pop.simd<4, si32>
+  c = #pop.simd_sub< #kgen.unknown : !pop.simd<4, si32>, #kgen.unknown : !pop.simd<4, si32>>,
+
+  // CHECK: d = #pop<simd false> : !pop.scalar<bool>
+  d = #pop.simd_sub< #pop<simd true> : !pop.scalar<bool>, #pop<simd true> : !pop.scalar<bool>> : !pop.scalar<bool>,
+  // CHECK: e = #pop<simd true> : !pop.scalar<bool>
+  e = #pop.simd_sub< #pop<simd false> : !pop.scalar<bool>, #pop<simd true> : !pop.scalar<bool>> : !pop.scalar<bool>,
+  // CHECK: f = #pop<simd false> : !pop.scalar<bool>
+  f = #pop.simd_sub< #pop<simd false> : !pop.scalar<bool>, #pop<simd false> : !pop.scalar<bool>> : !pop.scalar<bool>,
+
+  // CHECK: g = #pop<simd "-1.5"> : !pop.scalar<f32>
+  g = #pop.simd_sub< #pop<simd "1.0"> : !pop.scalar<f32>, #pop<simd "2.5"> : !pop.scalar<f32>> : !pop.scalar<f32>,
+  // CHECK: h = #pop<simd "NaN"> : !pop.scalar<f32>
+  h = #pop.simd_sub< #pop<simd "1.0"> : !pop.scalar<f32>, #pop<simd "NaN"> : !pop.scalar<f32>> : !pop.scalar<f32>,
+
+  // CHECK: i = #pop<simd -2> : !pop.scalar<index>
+  i = #pop.simd_sub< #pop<simd 2> : !pop.scalar<index>, #pop<simd 4> : !pop.scalar<index>> : !pop.scalar<index>
+} : () -> ()
+
+"some.op"() {
+  // CHECK: a = #pop<simd 2> : !pop.scalar<si32>
+  a = #pop.simd_mul< #pop<simd 1> : !pop.scalar<si32>, #pop<simd 2> : !pop.scalar<si32>> : !pop.scalar<si32>,
+  // CHECK: b = #pop.simd<14, -42, -1024, 0>
+  b = #pop.simd_mul< #pop.simd<7, 42, -1, 0> : !pop.simd<4, si32>,
+                     #pop.simd<2, -1, 1024, -1> : !pop.simd<4, si32>> : !pop.simd<4, si32>,
+  // CHECK: c = #pop.simd_mul<#kgen.unknown : !pop.simd<4, si32>, #kgen.unknown : !pop.simd<4, si32>> : !pop.simd<4, si32>
+  c = #pop.simd_mul< #kgen.unknown : !pop.simd<4, si32>, #kgen.unknown : !pop.simd<4, si32>>,
+
+  // CHECK: d = #pop<simd true> : !pop.scalar<bool>
+  d = #pop.simd_mul< #pop<simd true> : !pop.scalar<bool>, #pop<simd true> : !pop.scalar<bool>> : !pop.scalar<bool>,
+  // CHECK: e = #pop<simd false> : !pop.scalar<bool>
+  e = #pop.simd_mul< #pop<simd false> : !pop.scalar<bool>, #pop<simd true> : !pop.scalar<bool>> : !pop.scalar<bool>,
+  // CHECK: f = #pop<simd false> : !pop.scalar<bool>
+  f = #pop.simd_mul< #pop<simd false> : !pop.scalar<bool>, #pop<simd false> : !pop.scalar<bool>> : !pop.scalar<bool>,
+
+  // CHECK: g = #pop<simd "5"> : !pop.scalar<f32>
+  g = #pop.simd_mul< #pop<simd "2.0"> : !pop.scalar<f32>, #pop<simd "2.5"> : !pop.scalar<f32>> : !pop.scalar<f32>,
+  // CHECK: h = #pop<simd "NaN"> : !pop.scalar<f32>
+  h = #pop.simd_mul< #pop<simd "1.0"> : !pop.scalar<f32>, #pop<simd "NaN"> : !pop.scalar<f32>> : !pop.scalar<f32>,
+
+  // CHECK: i = #pop<simd 8> : !pop.scalar<index>
+  i = #pop.simd_mul< #pop<simd 2> : !pop.scalar<index>, #pop<simd 4> : !pop.scalar<index>> : !pop.scalar<index>
+} : () -> ()
+
+"some.op"() {
   // CHECK: a = #pop.simd_cmp<eq, #kgen.unknown : !pop.scalar<si32>, #pop<simd 2> : !pop.scalar<si32>> : !pop.scalar<bool>
   a = #pop.simd_cmp<eq, #kgen.unknown : !pop.scalar<si32>, #pop<simd 2> : !pop.scalar<si32>> : !pop.scalar<bool>,
   // CHECK: b = #pop<simd false> : !pop.scalar<bool>

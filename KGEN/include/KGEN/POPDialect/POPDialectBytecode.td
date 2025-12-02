@@ -129,6 +129,9 @@ def FloatLiteralCmpPredAttr : DialectAttribute<(attr
 
 def SIMDAndAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
 def SIMDXorAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
+def SIMDAddAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
+def SIMDSubAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
+def SIMDMulAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
 
 def SIMDCmpAttr : DialectAttribute<(attr
   EnumAttr<"NormalizedCmpPredicate">:$cc, TypedAttr:$lhs, TypedAttr:$rhs, Type:$type)>;
@@ -179,6 +182,9 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
 
     SIMDAndAttr,
     SIMDXorAttr,
+    SIMDAddAttr,
+    SIMDSubAttr,
+    SIMDMulAttr,
 
     CastAttr,
     DTypeToUI8Attr,
