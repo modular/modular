@@ -16,6 +16,7 @@ These APIs are imported automatically, just like builtins.
 """
 
 
+from builtin.constrained import _constrained_conforms_to
 from compile.reflection import get_type_name
 from collections._index_normalization import normalize_index
 from collections._asan_annotations import (
@@ -451,13 +452,11 @@ struct List[T: Copyable & Movable](
         print("x and y are equal" if x == y else "x and y are not equal")
         ```
         """
-        constrained[
+        _constrained_conforms_to[
             conforms_to(Self.T, Equatable),
-            (
-                "List(Equatable) conformance requires T: Equatable, which is"
-                " not satisfied by T = "
-            ),
-            get_type_name[Self.T](),
+            Parent=Self,
+            Element = Self.T,
+            Trait="Equatable",
         ]()
 
         if len(self) != len(other):

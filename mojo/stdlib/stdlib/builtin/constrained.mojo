@@ -15,6 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 from collections.string.string_slice import _get_kgen_string
+from compile.reflection import get_type_name
 
 
 @always_inline("nodebug")
@@ -75,3 +76,33 @@ fn constrained[cond: Bool]():
         cond: The bool value to assert.
     """
     __comptime_assert cond, "param assertion failed"
+
+
+@always_inline("nodebug")
+fn _constrained_conforms_to[
+    cond: Bool,
+    *,
+    Parent: AnyType,
+    Element: AnyType,
+    Trait: String,
+]():
+    comptime parent_type_name = get_type_name[Parent]()
+    comptime elem_type_name = get_type_name[Element]()
+    # TODO(MOCO-2901): Support traits in get_type_name
+    #   comptime trait_name = get_type_name[Trait]()
+    comptime trait_name = Trait
+
+    # Construct a message like:
+    #     List(Equatable) conformance requires Foo(Equatable) conformance, which
+    #     is not satisfied.
+    constrained[
+        cond,
+        parent_type_name,
+        "(",
+        trait_name,
+        ") conformance requires ",
+        elem_type_name,
+        "(",
+        trait_name,
+        ") conformance, which is not satisfied.",
+    ]()
