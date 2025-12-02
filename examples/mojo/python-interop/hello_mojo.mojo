@@ -28,9 +28,7 @@ fn PyInit_hello_mojo() -> PythonObject:
         module.def_function[passthrough]("passthrough")
         return module.finalize()
     except e:
-        return abort[PythonObject](
-            String("failed to create Python module: ", e)
-        )
+        abort(String("failed to create Python module: ", e))
 
 
 fn passthrough(value: PythonObject) raises -> PythonObject:

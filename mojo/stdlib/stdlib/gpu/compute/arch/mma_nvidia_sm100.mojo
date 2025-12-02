@@ -229,9 +229,7 @@ fn _get_f16_mma_shape[
         else:
             constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
 
-            return abort[IndexList[3, element_type = DType.uint32]](
-                "MMA shape not supported."
-            )
+            abort("MMA shape not supported.")
 
     else:
         _constrained_mma_m[
@@ -265,9 +263,7 @@ fn _get_f16_mma_shape[
         else:
             constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
 
-            return abort[IndexList[3, element_type = DType.uint32]](
-                "MMA shape not supported."
-            )
+            abort("MMA shape not supported.")
 
 
 @always_inline
@@ -318,9 +314,7 @@ fn _get_tf32_mma_shape[
         else:
             constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
 
-            return abort[IndexList[3, element_type = DType.uint32]](
-                "MMA shape not supported."
-            )
+            abort("MMA shape not supported.")
     else:
         _constrained_mma_m[
             mma_m,
@@ -353,9 +347,7 @@ fn _get_tf32_mma_shape[
         else:
             constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
 
-            return abort[IndexList[3, element_type = DType.uint32]](
-                "MMA shape not supported."
-            )
+            abort("MMA shape not supported.")
 
 
 @always_inline
@@ -407,9 +399,7 @@ fn _get_f8f6f4_mma_shape[
         else:
             constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
 
-            return abort[IndexList[3, element_type = DType.uint32]](
-                "MMA shape not supported."
-            )
+            abort("MMA shape not supported.")
 
     else:
         _constrained_mma_m[

@@ -298,7 +298,7 @@ struct TaskGroupContext(ImplicitlyCopyable, Movable):
 
 
 @register_passable
-struct _TaskGroupBox(ImplicitlyCopyable, Movable):
+struct _TaskGroupBox(Copyable, Movable):
     """This struct is a type-erased owning box for an opaque coroutine."""
 
     var handle: AnyCoroutine
@@ -312,7 +312,7 @@ struct _TaskGroupBox(ImplicitlyCopyable, Movable):
     # FIXME(MSTDL-573): `List` requires copyability. Just crash here because it
     # should never get called.
     fn __copyinit__(out self, existing: Self):
-        self = abort[Self]("_TaskGroupBox.__copyinit__ should never get called")
+        abort("_TaskGroupBox.__copyinit__ should never get called")
 
 
 struct TaskGroup(Defaultable):

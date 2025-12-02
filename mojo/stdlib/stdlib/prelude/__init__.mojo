@@ -111,6 +111,7 @@ from builtin.type_aliases import (
     MutableAnyOrigin,
     MutableOrigin,
     MutOrigin,
+    Never,
     Origin,
     OriginSet,
     StaticConstantOrigin,

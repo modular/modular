@@ -269,9 +269,7 @@ fn _get_global_random_state(
     try:
         result = _global_random_state.get_or_create_ptr()
     except:
-        return abort[type_of(result)](
-            "Failed to initialize global random state"
-        )
+        abort("Failed to initialize global random state")
 
 
 # Global random state (using _Global for proper global storage)

@@ -393,15 +393,12 @@ struct UnsafePointer[
     @doc_private
     @implicit
     fn __init__(
-        other: UnsafePointer[mut=False, Self.type, **_],
-        out self: UnsafePointer[
-            other.type, MutOrigin.cast_from[MutAnyOrigin], **_
-        ],
-    ):
+        other: UnsafePointer[mut=False, Self.type, **_]
+    ) -> UnsafePointer[other.type, MutOrigin.cast_from[MutAnyOrigin], **_]:
         constrained[
             False, "Invalid UnsafePointer conversion from immutable to mutable"
         ]()
-        self = abort[type_of(self)]()
+        abort()
 
     fn __init__(
         out self: UnsafePointer[Self.type, Self.origin],

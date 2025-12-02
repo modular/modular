@@ -71,7 +71,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         Args:
             other: The object to copy.
         """
-        self = abort[Self](
+        abort(
             "You should never call __copyinit__ on UnsafeMaybeUninitialized"
             " UnsafeMaybeUninitialized because it's ambiguous to copy"
             " possibly uninitialized memory. Use"
@@ -132,7 +132,6 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
             other: The object to move.
         """
         abort("You should never call __moveinit__ on MaybeUninitialized")
-        self = Self()
 
     @always_inline
     fn move_from[

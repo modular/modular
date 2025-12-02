@@ -112,7 +112,7 @@ fn _c_long_dtype[unsigned: Bool = False]() -> DType:
         return DType.uint64 if unsigned else DType.int64
     else:
         constrained[False, "size of C `long` is unknown on this target"]()
-        return abort[DType]()
+        abort()
 
 
 fn _c_long_long_dtype[unsigned: Bool = False]() -> DType:
@@ -127,7 +127,7 @@ fn _c_long_long_dtype[unsigned: Bool = False]() -> DType:
         return DType.uint64 if unsigned else DType.int64
     else:
         constrained[False, "size of C `long long` is unknown on this target"]()
-        return abort[DType]()
+        abort()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -782,7 +782,7 @@ fn _find_dylib[
 
         @parameter
         if abort_on_failure:
-            return abort[OwnedDLHandle](String(e))
+            abort(String(e))
         else:
             return OwnedDLHandle(unsafe_uninitialized=True)
 
@@ -814,7 +814,7 @@ fn _find_dylib[
 
         @parameter
         if abort_on_failure:
-            return abort[OwnedDLHandle, prefix="ERROR:"](msg())
+            abort[prefix="ERROR:"](msg())
         else:
             return OwnedDLHandle(unsafe_uninitialized=True)
 

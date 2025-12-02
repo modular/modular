@@ -221,14 +221,9 @@ fn listdir[PathLike: os.PathLike](path: PathLike) raises -> List[String]:
 
 
 @no_inline
-fn abort[result: AnyType = NoneType._mlir_type]() -> result:
-    """Calls a target dependent trap instruction if available.
-
-    Parameters:
-        result: The result type.
-
-    Returns:
-        A null result type.
+fn abort() -> Never:
+    """Terminates execution, using a target dependent trap instruction if
+    available.
     """
 
     __mlir_op.`llvm.intr.trap`()
@@ -239,27 +234,21 @@ fn abort[result: AnyType = NoneType._mlir_type]() -> result:
 
 
 @no_inline
-fn abort[
-    result: AnyType = NoneType._mlir_type, *, prefix: StaticString = "ABORT:"
-](message: String) -> result:
+fn abort[*, prefix: StaticString = "ABORT:"](message: String) -> Never:
     """Calls a target dependent trap instruction if available.
 
     Parameters:
-        result: The result type.
         prefix: A static string prefix to include before the message.
 
     Args:
         message: The message to include when aborting.
-
-    Returns:
-        A null result type.
     """
 
     @parameter
     if not is_gpu():
         print(prefix, message, flush=True)
 
-    return abort[result]()
+    abort()
 
 
 # ===----------------------------------------------------------------------=== #

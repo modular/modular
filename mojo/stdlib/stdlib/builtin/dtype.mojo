@@ -853,7 +853,7 @@ struct DType(
         if self is DType.float64:
             return __mlir_attr.f64
 
-        return abort[__mlir_type.`!kgen.deferred`]("invalid dtype")
+        abort("invalid dtype")
 
     # ===----------------------------------------------------------------------===#
     # utils

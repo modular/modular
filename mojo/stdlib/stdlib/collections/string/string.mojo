@@ -1992,9 +1992,7 @@ fn chr(c: Int) -> String:
     var char_opt = Codepoint.from_u32(c)
     if not char_opt:
         # TODO: Raise ValueError instead.
-        return abort[String](
-            String("chr(", c, ") is not a valid Unicode codepoint")
-        )
+        abort(String("chr(", c, ") is not a valid Unicode codepoint"))
 
     # SAFETY: We just checked that `char` is present.
     return String(char_opt.unsafe_value())

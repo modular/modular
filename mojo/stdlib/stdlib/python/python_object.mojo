@@ -461,7 +461,7 @@ struct PythonObject(
             return Python().is_true(self)
         except Error:
             # TODO: make this function raise when we can raise parametrically.
-            return abort[Bool]("object cannot be converted to bool")
+            abort("object cannot be converted to bool")
 
     fn __is__(self, other: PythonObject) -> Bool:
         """Test if the PythonObject is the `other` PythonObject, the same as `x is y` in
@@ -1350,7 +1350,7 @@ struct PythonObject(
             writer.write(String(self))
         except:
             # TODO: make this method raising when we can raise parametrically.
-            return abort("failed to write PythonObject to writer")
+            abort("failed to write PythonObject to writer")
 
     # ===-------------------------------------------------------------------===#
     # Methods

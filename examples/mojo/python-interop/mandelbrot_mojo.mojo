@@ -46,9 +46,7 @@ fn PyInit_mandelbrot_mojo() -> PythonObject:
         module.def_function[run_mandelbrot]("run_mandelbrot")
         return module.finalize()
     except e:
-        return abort[PythonObject](
-            String("failed to create Python module: ", e)
-        )
+        abort(String("failed to create Python module: ", e))
 
 
 fn run_mandelbrot(iterations: PythonObject) raises -> PythonObject:

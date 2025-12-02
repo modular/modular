@@ -77,7 +77,7 @@ fn PyInit_mojo_module() -> PythonObject:
         m.def_function[factorial]("factorial", docstring="Compute n!")
         return m.finalize()
     except e:
-        return abort[PythonObject](String("error creating Python Mojo module:", e))
+        abort(String("error creating Python Mojo module:", e))
 
 fn factorial(py_obj: PythonObject) raises -> PythonObject:
     # Raises an exception if `py_obj` is not convertible to a Mojo `Int`.
@@ -173,7 +173,7 @@ fn PyInit_person_module() -> PythonObject:
         var mb = PythonModuleBuilder("person_module")
         var person_type = mb.add_type[Person]("Person")
     except e:
-        return abort[PythonObject]("error creating Mojo module")
+        abort("error creating Mojo module")
 ```
 
 When you call
@@ -219,9 +219,7 @@ fn PyInit_person_module() -> PythonObject:
         # highlight-end
         return mb.finalize()
     except e:
-        return abort[PythonObject](
-            String("error creating Python Mojo module:", e)
-        )
+        abort(String("error creating Python Mojo module:", e))
 
 @fieldwise_init
 struct Person(Movable, Representable):
@@ -420,7 +418,7 @@ fn PyInit_mojo_module() -> PythonObject:
         # highlight-end
         return mb.finalize()
     except e:
-        return abort[PythonObject]("error creating Mojo module")
+        abort("error creating Mojo module")
 
 struct Person(Representable):
     var name: String
@@ -467,7 +465,7 @@ fn PyInit_mojo_module() -> PythonObject:
         # highlight-end
         return mb.finalize()
     except e:
-        return abort[PythonObject]("error creating Mojo module")
+        abort("error creating Mojo module")
 
 struct Person(Representable):
     var name: String

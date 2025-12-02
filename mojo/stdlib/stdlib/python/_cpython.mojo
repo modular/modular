@@ -1214,15 +1214,11 @@ comptime Py_Is = ExternalFunction[
 
 
 fn _PyErr_GetRaisedException_dummy() -> PyObjectPtr:
-    return abort[PyObjectPtr](
-        "PyErr_GetRaisedException is not available in this Python version"
-    )
+    abort("PyErr_GetRaisedException is not available in this Python version")
 
 
 fn _PyType_GetName_dummy(type: PyTypeObjectPtr) -> PyObjectPtr:
-    return abort[PyObjectPtr](
-        "PyType_GetName is not available in this Python version"
-    )
+    abort("PyType_GetName is not available in this Python version")
 
 
 # ===-------------------------------------------------------------------===#
@@ -1483,9 +1479,7 @@ struct CPython(Defaultable, Movable):
                 # If the library is not present in the current process, try to load it from the environment variable.
                 self.lib = OwnedDLHandle(python_lib)
         except e:
-            self.lib = abort[OwnedDLHandle](
-                String("Failed to load libpython from", python_lib, ":\n", e)
-            )
+            abort(String("Failed to load libpython from", python_lib, ":\n", e))
 
         if not self.init_error:
             if not self.lib.check_symbol("Py_Initialize"):
@@ -1730,7 +1724,7 @@ struct CPython(Defaultable, Movable):
         try:
             error = String(PythonObject(from_owned=err_ptr))
         except e:
-            return abort[Error](
+            abort(
                 "internal error: Python exception occurred but cannot be"
                 " converted to String"
             )

@@ -33,9 +33,7 @@ fn _poison_ptr() -> UnsafePointer[Bool]:
     try:
         return TEST_VARIANT_POISON.get_or_create_ptr()
     except:
-        return abort[UnsafePointer[Bool]](
-            "Failed to get or create TEST_VARIANT_POISON"
-        )
+        abort("Failed to get or create TEST_VARIANT_POISON")
 
 
 fn assert_no_poison() raises:

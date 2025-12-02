@@ -36,9 +36,7 @@ fn PyInit_mojo_module() -> PythonObject:
 
         return b.finalize()
     except e:
-        return abort[PythonObject](
-            String("failed to create Python module: ", e)
-        )
+        abort(String("failed to create Python module: ", e))
 
 
 @fieldwise_init
@@ -157,7 +155,7 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Movable, Representable):
             return py_self.downcast_value_ptr[Self]()
         except e:
             comptime m = "Python method receiver object did not have the"
-            return abort[UnsafePointer[Self]](String(m, " expected type: ", e))
+            abort(String(m, " expected type: ", e))
 
     @staticmethod
     fn get_first(py_self: PythonObject) -> PythonObject:

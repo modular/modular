@@ -21,8 +21,8 @@ what we publish.
 
 ### Language enhancements
 
-- Mojo now supports "typed throws", where a function can specify a specific
-  error type that it raises instead of defaulting to the `Error` type by
+- Mojo now supports raising "typed errors", where a function can specify a
+  what type it raises instead of defaulting to the `Error` type. This is done by
   specifying it after the `raises` keyword in parentheses, e.g.
   `fn foo() raises (CustomError) -> Int`.
 
@@ -34,7 +34,7 @@ what we publish.
   errors work fine on GPUs and other embedded targets.
 
   The 'caught' type in a `try` block is automatically inferred to be the first
-  thrown type inside of the try body, e.g.:
+  thrown type inside of the `try` body, e.g.:
 
   ```mojo
   try:
@@ -78,10 +78,8 @@ what we publish.
   This support should be reliable, but there are a few limitations: 1) `with`
   blocks are still hard coded to `Error`.  2) Thrown errors must exactly match
   the contextual thrown type, no implicit conversions are allowed. 3)
-  Parentheses are required around the thrown type for now. 4) Mojo has no
-  equivalent of the Swift `Never` type for making parametricly-raising functions
-  be treated as non-throwing when working with non-throwing higher order
-  functions.
+  Parentheses are required around the thrown type for now. 4) Raised errors
+  don't integrate with the `Never` type yet.
 
 - Mojo now allows implicit conversions between function types from a non-raising
   function to a raising function.  It also allows implicit conversions between
@@ -121,6 +119,11 @@ what we publish.
       fn foo(self) -> Int: pass
          ^
   ```
+
+- Mojo now supports a `Never` type, which can never be instantiated.
+  This type can be used for functions (like `abort()`) which do not have a
+  normal return value, and for functions that are guaranteed to raise without
+  returning a normal value.
 
 - The `deinit` argument convention can now be applied to any argument of a
   struct method, but the argument type still must be of the enclosing struct

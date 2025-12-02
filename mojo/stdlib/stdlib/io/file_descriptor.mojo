@@ -109,7 +109,7 @@ struct FileDescriptor(Writer):
                 False,
                 "`read_bytes()` is not yet implemented for unknown platform.",
             ]()
-            return abort[UInt]()
+            abort()
 
     @always_inline
     fn write[*Ts: Writable](mut self, *args: *Ts):

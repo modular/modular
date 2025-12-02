@@ -222,7 +222,7 @@ fn _try_format_int(
         # This should not be reachable as _format_int only throws if we pass
         # incompatible radix and custom digit chars, which we aren't doing
         # above.
-        return abort[String](
+        abort(
             String("unexpected exception formatting value as hexadecimal: ", e)
         )
 

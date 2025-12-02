@@ -61,6 +61,10 @@ comptime StaticConstantOrigin = __mlir_attr[
 comptime OriginSet = __mlir_type.`!lit.origin.set`
 """A set of origin parameters."""
 
+comptime Never = __mlir_type.`!kgen.never`
+"""A type that can never have an instance constructed, used as a function result
+by functions that never return."""
+
 
 @register_passable("trivial")
 struct Origin[mut: Bool]:

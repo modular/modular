@@ -80,9 +80,6 @@ struct Python(Defaultable, ImplicitlyCopyable):
             self._impl = _get_python_interface()
         except e:
             abort[prefix="ERROR:"](String(e))
-            __mlir_op.`lit.ownership.mark_initialized`(
-                __get_mvalue_as_litref(self)
-            )
 
     fn __init__(out self, ref [StaticConstantOrigin]cpython: CPython):
         """Construct a `Python` instance from an existing reference

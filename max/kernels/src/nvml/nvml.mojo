@@ -63,9 +63,7 @@ fn _init_dylib() -> OwnedDLHandle:
         )
         return dylib^
     except e:
-        return abort[OwnedDLHandle](
-            String("CUDA NVML library initialization failed: ", e)
-        )
+        abort(String("CUDA NVML library initialization failed: ", e))
 
 
 @always_inline

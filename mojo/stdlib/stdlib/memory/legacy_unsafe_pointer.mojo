@@ -1185,9 +1185,8 @@ struct LegacyUnsafePointer[
 
     @doc_private
     fn as_any_origin(
-        self: LegacyUnsafePointer[Self.type, **_],
-        out result: Self._OriginCastType[False, ImmutAnyOrigin],
-    ):
+        self: LegacyUnsafePointer[Self.type, **_]
+    ) -> Self._OriginCastType[False, ImmutAnyOrigin]:
         constrained[
             False,
             (
@@ -1197,7 +1196,7 @@ struct LegacyUnsafePointer[
                 " function."
             ),
         ]()
-        result = abort[type_of(result)]()
+        abort()
 
     @always_inline("builtin")
     fn as_any_origin(

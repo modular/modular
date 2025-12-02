@@ -345,7 +345,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
     @always_inline("nodebug")
     fn value(self) -> Int:
         constrained[False, "MixedTuple is not a value type"]()
-        return abort[Int]()
+        abort()
 
     @always_inline("nodebug")
     fn inner_product(self, t: IntTuple) -> Int:
@@ -619,7 +619,7 @@ fn crd2idx[
         @parameter
         if crd_len > 1:
             constrained[False, "crd is a tuple but shape and stride are not"]()
-            return abort[Scalar[out_type]]()
+            abort()
         else:
             return crd.value() * stride.value()
 
@@ -728,7 +728,7 @@ fn _get_flattened_helper[
     @parameter
     if i >= MixedTuple[*element_types].__len__():
         constrained[False, "flat_idx out of bounds"]()
-        return abort[Int]()
+        abort()
 
     comptime T = element_types[i]
 

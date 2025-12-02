@@ -91,7 +91,7 @@ comptime GPU_TRACING_LIBRARY = _Global[
 fn _init_dylib() -> OwnedDLHandle:
     @parameter
     if _is_disabled():
-        return abort[OwnedDLHandle]("cannot load dylib when disabled")
+        abort("cannot load dylib when disabled")
 
     try:
         var dylib = _try_find_dylib["GPU tracing library"](

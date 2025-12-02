@@ -294,7 +294,7 @@ fn tcgen05_ld[
         ]()
     else:
         constrained[False, "width must be a power of 2 in the range [1, 128]."]()
-        return abort[SIMD[dtype, width]]()
+        abort()
     # fmt: on
 
 

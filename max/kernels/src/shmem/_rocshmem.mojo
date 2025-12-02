@@ -77,7 +77,6 @@ fn _init_rocshmem_dylib() -> OwnedDLHandle:
         )
     except e:
         abort(String("failed to load ROCSHMEM library: ", e))
-        return OwnedDLHandle(unsafe_uninitialized=True)
 
 
 @always_inline
@@ -91,7 +90,7 @@ fn _get_rocshmem_function[
             result_type,
         ]()
     except e:
-        return abort[result_type](String(e))
+        abort(String(e))
 
 
 # ===-----------------------------------------------------------------------===#

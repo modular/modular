@@ -244,7 +244,7 @@ struct AMDScheduleBarrierMask(Equatable, Intable):
         elif self == Self.TRANS:
             return "TRANS"
         else:
-            return abort[String]("invalid AMDScheduleBarrierMask value")
+            abort("invalid AMDScheduleBarrierMask value")
 
     fn __int__(self) -> Int:
         """Converts the `AMDScheduleBarrierMask` to an integer.

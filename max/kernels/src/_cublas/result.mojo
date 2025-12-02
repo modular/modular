@@ -61,7 +61,7 @@ struct Result(Equatable, Writable):
         if self == Self.LICENSE_ERROR:
             return writer.write("LICENSE_ERROR")
 
-        return abort("unreachable: invalid Result entry")
+        abort("unreachable: invalid Result entry")
 
     fn __int__(self) -> Int:
         return Int(self._value)

@@ -1299,14 +1299,12 @@ struct PyObjectFunction[
         if _type_is_eq[Self.self_type, NoneType]():
             constrained[False, "Cannot get self arg for NoneType"]()
             # This line should never be reached due to the constraint
-            return abort[UnsafePointer[Self.self_type, MutAnyOrigin]](
-                "Unreachable code"
-            )
+            abort("Unreachable code")
         else:
             try:
                 return py_self.downcast_value_ptr[Self.self_type]()
             except e:
-                return abort[UnsafePointer[Self.self_type, MutAnyOrigin]](
+                abort(
                     String(
                         (
                             "Python method receiver object did not have the"

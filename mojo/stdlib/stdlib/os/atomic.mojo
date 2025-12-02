@@ -184,7 +184,7 @@ struct Consistency(
         if self is Self.SEQUENTIAL:
             return __mlir_attr.`#pop<atomic_ordering seq_cst>`
 
-        return abort[__mlir_type.`!kgen.deferred`]()
+        abort()
 
 
 # ===-----------------------------------------------------------------------===#

@@ -36,7 +36,7 @@ struct LibraryProperty(Equatable):
             return "MINOR_VERSION"
         if self == Self.PATCH_LEVEL:
             return "PATCH_LEVEL"
-        return abort[String]("invalid LibraryProperty entry")
+        abort("invalid LibraryProperty entry")
 
     fn __int__(self) -> Int:
         return Int(self._value)

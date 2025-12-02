@@ -286,7 +286,7 @@ fn time_function[func: fn () capturing [_] -> None]() -> UInt:
     try:
         return time_function[raising_func]()
     except err:
-        return abort[UInt](String(err))
+        abort(String(err))
 
 
 # ===-----------------------------------------------------------------------===#

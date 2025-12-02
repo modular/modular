@@ -66,7 +66,6 @@ fn _init_nvshmem_dylib() -> OwnedDLHandle:
         return OwnedDLHandle(path=lib)
     except e:
         abort(String("failed to load NVSHMEM library: ", e))
-        return OwnedDLHandle(unsafe_uninitialized=True)
 
 
 @always_inline
@@ -80,7 +79,7 @@ fn _get_nvshmem_function[
             result_type,
         ]()
     except e:
-        return abort[result_type](String(e))
+        abort(String(e))
 
 
 # ===-----------------------------------------------------------------------===#

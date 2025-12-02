@@ -83,7 +83,7 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
                 String(msg, " this operation.", note_text),
             ]()
 
-        return os.abort[result]()
+        os.abort()
 
     @always_inline("nodebug")
     @staticmethod

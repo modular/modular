@@ -949,9 +949,8 @@ struct LayoutTensor[
 
     @doc_private
     fn as_any_origin(
-        self: LayoutTensor[*_, **_],
-        out result: type_of(self).OriginCastType[False, ImmutAnyOrigin],
-    ):
+        self: LayoutTensor[*_, **_]
+    ) -> type_of(self).OriginCastType[False, ImmutAnyOrigin]:
         constrained[
             False,
             (
@@ -960,7 +959,7 @@ struct LayoutTensor[
                 " mutability explicitly before calling this function."
             ),
         ]()
-        result = abort[type_of(result)]()
+        abort()
 
     comptime AddressSpaceCastType[
         address_space: AddressSpace = Self.address_space,
@@ -5687,7 +5686,7 @@ struct ThreadScope(ImplicitlyCopyable, Movable):
             return "BLOCK"
         if self == Self.WARP:
             return "WARP"
-        return abort[String]("invalid ThreadScope entry")
+        abort("invalid ThreadScope entry")
 
     fn __int__(self) -> Int:
         """Convert the `ThreadScope` to an integer value.

@@ -48,7 +48,7 @@ fn make_small_keys(filename: String = "UN_charter_EN.txt") -> List[String]:
         return _to_string_list(content.split())
     except e:
         print(e, file=stderr)
-    return abort[List[String]]()
+    abort()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -68,7 +68,7 @@ fn make_long_keys(filename: String = "UN_charter_EN.txt") -> List[String]:
         return _to_string_list(content.split("\n"))
     except e:
         print(e, file=stderr)
-    return abort[List[String]]()
+    abort()
 
 
 # ===-----------------------------------------------------------------------===#

@@ -264,7 +264,7 @@ struct Status(Equatable, Writable):
         if self == Self.ARCH_MISMATCH:
             return writer.write("ARCH_MISMATCH")
 
-        return abort("unreachable: invalid Status entry")
+        abort("unreachable: invalid Status entry")
 
 
 @fieldwise_init

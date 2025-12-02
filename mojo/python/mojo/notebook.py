@@ -57,7 +57,7 @@ def mojo(line, cell) -> None:  # noqa: ANN001
                     m.def_function[hello]("hello", docstring="Hello!")
                     return m.finalize()
                 except e:
-                    return abort[PythonObject](String("error creating Python Mojo module:", e))
+                    abort(String("error creating Python Mojo module:", e))
 
             def hello() -> PythonObject:
                 return "Hello from Mojo!"

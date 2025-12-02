@@ -201,7 +201,7 @@ struct Order:
             return "COL4_4R2_8C"
         if self == Self.COL32_2R_4R4:
             return "COL32_2R_4R4"
-        return abort[String]("invalid Order entry")
+        abort("invalid Order entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -516,7 +516,7 @@ struct ClusterShape:
             return "SHAPE_1x15x1"
         if self == Self.SHAPE_END:
             return "SHAPE_END"
-        return abort[String]("invalid ClusterShape entry")
+        abort("invalid ClusterShape entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -709,7 +709,7 @@ struct MatmulAlgorithmCapability:
             return "POINTER_ARRAY_BATCH_SUPPORT"
         if self == Self.FLOATING_POINT_EMULATION_SUPPORT:
             return "FLOATING_POINT_EMULATION_SUPPORT"
-        return abort[String]("invalid MatmulAlgorithmCapability entry")
+        abort("invalid MatmulAlgorithmCapability entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -765,7 +765,7 @@ struct PointerMode:
             return "ALPHA_DEVICE_VECTOR_BETA_ZERO"
         if self == Self.ALPHA_DEVICE_VECTOR_BETA_HOST:
             return "ALPHA_DEVICE_VECTOR_BETA_HOST"
-        return abort[String]("invalid PointerMode entry")
+        abort("invalid PointerMode entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -933,7 +933,7 @@ struct Search:
             return "RESERVED_08"
         if self == Self.RESERVED_09:
             return "RESERVED_09"
-        return abort[String]("invalid Search entry")
+        abort("invalid Search entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -984,7 +984,7 @@ struct ReductionScheme:
             return "OUTPUT_TYPE"
         if self == Self.MASK:
             return "MASK"
-        return abort[String]("invalid ReductionScheme entry")
+        abort("invalid ReductionScheme entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -1472,7 +1472,7 @@ struct cublasLtMatmulDescAttributes_t:
             return "CUBLASLT_MATMUL_DESC_D_OUT_SCALE_POINTER"
         if self == Self.CUBLASLT_MATMUL_DESC_D_OUT_SCALE_MODE:
             return "CUBLASLT_MATMUL_DESC_D_OUT_SCALE_MODE"
-        return abort[String]("invalid cublasLtMatmulDescAttributes_t entry")
+        abort("invalid cublasLtMatmulDescAttributes_t entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -1823,7 +1823,7 @@ struct Preference:
             return "MAX_WAVES_COUNT"
         if self == Self.IMPL_MASK:
             return "IMPL_MASK"
-        return abort[String]("invalid Preference entry")
+        abort("invalid Preference entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -1934,7 +1934,7 @@ struct AlgorithmConfig:
             return "INNER_SHAPE_ID"
         if self == Self.CLUSTER_SHAPE_ID:
             return "CLUSTER_SHAPE_ID"
-        return abort[String]("invalid AlgorithmConfig entry")
+        abort("invalid AlgorithmConfig entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -2054,7 +2054,7 @@ struct InnerShape:
             return "MMA16816"
         if self == Self.END:
             return "END"
-        return abort[String]("invalid InnerShape entry")
+        abort("invalid InnerShape entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -2123,7 +2123,7 @@ struct cublasLtMatmulMatrixScale_t:
             return "MATRIX_SCALE_BLK128x128_32F"
         if self == Self.MATRIX_SCALE_END:
             return "MATRIX_SCALE_END"
-        return abort[String]("invalid MatmulMatrixScale entry")
+        abort("invalid MatmulMatrixScale entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -2160,7 +2160,7 @@ struct cublasLtBatchMode_t:
             return "BATCH_MODE_STRIDED"
         if self == Self.POINTER_ARRAY:
             return "BATCH_MODE_POINTER_ARRAY"
-        return abort[String]("invalid cublasLtBatchMode_t entry")
+        abort("invalid cublasLtBatchMode_t entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -2270,7 +2270,7 @@ struct LayoutAttribute:
             return "PLANE_OFFSET"
         if self == Self.BATCH_MODE:
             return "BATCH_MODE"
-        return abort[String]("invalid LayoutAttribute entry")
+        abort("invalid LayoutAttribute entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -2506,7 +2506,7 @@ struct Stages:
             return "STAGES_256xAUTO"
         if self == Self.STAGES_END:
             return "STAGES_END"
-        return abort[String]("invalid Stages entry")
+        abort("invalid Stages entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -2766,7 +2766,7 @@ struct Epilogue:
             return "BGRADA"
         if self == Self.BGRADB:
             return "BGRADB"
-        return abort[String]("invalid Epilogue entry")
+        abort("invalid Epilogue entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -2841,7 +2841,7 @@ struct PointerModeMask:
             return "ALPHA_DEVICE_VECTOR_BETA_ZERO"
         if self == Self.ALPHA_DEVICE_VECTOR_BETA_HOST:
             return "ALPHA_DEVICE_VECTOR_BETA_HOST"
-        return abort[String]("invalid PointerModeMask entry")
+        abort("invalid PointerModeMask entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -3607,7 +3607,7 @@ struct Tile:
             return "TILE_256x32"
         if self == Self.TILE_END:
             return "TILE_END"
-        return abort[String]("invalid Tile entry")
+        abort("invalid Tile entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
@@ -3890,7 +3890,7 @@ struct TransformDescriptor:
             return "TRANSA"
         if self == Self.TRANSB:
             return "TRANSB"
-        return abort[String]("invalid TransformDescriptor entry")
+        abort("invalid TransformDescriptor entry")
 
     fn __int__(self) raises -> Int:
         return Int(self._value)
