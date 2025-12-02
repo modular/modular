@@ -16,6 +16,7 @@ These APIs are imported automatically, just like builtins.
 """
 
 
+from compile.reflection import get_type_name
 from collections._index_normalization import normalize_index
 from collections._asan_annotations import (
     __sanitizer_annotate_contiguous_container,
@@ -97,7 +98,13 @@ struct _ListIter[
 
 
 struct List[T: Copyable & Movable](
-    Boolable, Copyable, Defaultable, Iterable, Movable, Sized
+    Boolable,
+    Copyable,
+    Defaultable,
+    Equatable,
+    Iterable,
+    Movable,
+    Sized,
 ):
     """A dynamically-allocated and resizable list.
 
@@ -424,14 +431,11 @@ struct List[T: Copyable & Movable](
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __eq__[
-        U: Equatable & Copyable & Movable, //
-    ](self: List[U, *_], other: List[U, *_]) -> Bool:
+    fn __eq__(self, other: Self) -> Bool:
         """Checks if two lists are equal.
 
-        Parameters:
-            U: The type of the elements in the list. Must implement the
-               trait `Equatable`.
+        Constraints:
+            `T` must conform to `Equatable`.
 
         Args:
             other: The list to compare with.
@@ -447,11 +451,23 @@ struct List[T: Copyable & Movable](
         print("x and y are equal" if x == y else "x and y are not equal")
         ```
         """
+        constrained[
+            conforms_to(Self.T, Equatable),
+            (
+                "List(Equatable) conformance requires T: Equatable, which is"
+                " not satisfied by T = "
+            ),
+            get_type_name[Self.T](),
+        ]()
+
         if len(self) != len(other):
             return False
+
         var index = 0
         for element in self:
-            if element != other[index]:
+            ref lhs = trait_downcast[Equatable](element)
+            ref rhs = trait_downcast[Equatable](other[index])
+            if lhs != rhs:
                 return False
             index += 1
         return True

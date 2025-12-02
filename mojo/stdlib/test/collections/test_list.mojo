@@ -909,6 +909,20 @@ def test_list_eq_ne():
     assert_false(l6 == l8)
 
 
+struct NonEquatable(Copyable, Movable):
+    pass
+
+
+def test_list_conditional_conformance_Equatable():
+    var l1: List[Int] = [1, 2, 3]
+
+    assert_true(conforms_to(List[Int], Equatable))
+
+    # TODO(MSTDL-2077):
+    #   This should pass, but does not due to Unconditional Conformances
+    # assert_false(conforms_to(List[NonEquatable], Equatable))
+
+
 def test_list_init_span():
     var l = [String("a"), "bb", "cc", "def"]
     var sp = Span(l)
