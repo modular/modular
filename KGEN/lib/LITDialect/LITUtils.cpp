@@ -16,9 +16,11 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/IR/SymbolTable.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
@@ -1151,6 +1153,28 @@ LIT::verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
 // ParameterEvaluationContext
 //===----------------------------------------------------------------------===//
 
+FailureOr<TypedAttr>
+LIT::simplifyConformsToAgainstTypeValue(TypeConformsToTraitAttr conformsTo,
+                                        TraitType traitToCheck) {
+  if (!traitToCheck)
+    return failure();
+
+  SmallVector<mlir::SymbolRefAttr> symbols(traitToCheck.getSymbols());
+  llvm::StringSet<> traitSymbolNames;
+  for (auto sym : symbols)
+    traitSymbolNames.insert(getFlattenedSymbolName(sym));
+
+  // We can not prove falseness at parsing time for a looser-bound
+  // type value, but we can prove correctness if the type variable has
+  // a tighter trait bound.
+  for (auto toCheck : conformsTo.getTraitNames().getValues()) {
+    if (!traitSymbolNames.contains(cast<StringAttr>(toCheck).getValue()))
+      return failure();
+  }
+
+  return {BoolAttr::get(conformsTo.getContext(), true)};
+}
+
 static LIT::StructType getStructTypeForTypeValue(TypedAttr typeValue) {
   auto typeParam = sugarDynCast<TypeParamAttr>(typeValue);
   if (!typeParam)
@@ -1176,6 +1200,15 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateExpression(
       if (!structDecl)
         return failure();
       return conformsTo.simplify(SymbolTable(structDecl));
+    }
+    // Try fold tighter trait types.
+    auto typeValue = dyn_cast<TypeParamAttr>(conformsTo.getTypeValue());
+    if (!typeValue)
+      return failure();
+
+    if (auto paramType = dyn_cast<ParamType>(typeValue.getTypeValue())) {
+      return simplifyConformsToAgainstTypeValue(
+          conformsTo, dyn_cast<TraitType>(paramType.getParam().getType()));
     }
   }
 

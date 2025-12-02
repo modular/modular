@@ -45,6 +45,16 @@ fn bar[T: AnyType]() where conforms_to(T, C):
     return
 
 
+fn indirect_target[T: AnyType]() where conforms_to(T, C):
+    print("selected indirectly")
+    return
+
+
+fn indirect[T: C]():
+    indirect_target[T]()
+    return
+
+
 fn main():
     # CHECK: S conforms to 'A & B'
     @parameter
@@ -67,3 +77,6 @@ fn main():
 
     # CHECK: overload B
     bar[S1]()
+
+    # CHECK: selected indirectly
+    indirect[S1]()
