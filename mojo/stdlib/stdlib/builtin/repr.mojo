@@ -132,22 +132,6 @@ fn repr[U: KeyElement & Representable](value: Set[U]) -> String:
     return value.__repr__()
 
 
-fn repr[U: Representable & Copyable & Movable](value: Optional[U]) -> String:
-    """Returns the string representation of an `Optional[U]`.
-
-    Args:
-        value: A `Optional` of element type `U`.
-
-    Parameters:
-        U: A type that implements `Movable`, `Copyable` and `Representable`.
-
-    Returns:
-        The string representation of `Optional[U]`.
-    """
-    # TODO: remove when `Optional` can conform conditionally to `Representable`.
-    return value.__repr__()
-
-
 fn repr[U: Copyable & Movable & Writable](value: LinkedList[U]) -> String:
     """Returns the string representation of an `LinkedList[U]`.
 

@@ -36,6 +36,7 @@ from os import abort
 
 from utils import Variant
 
+from builtin.constrained import _constrained_conforms_to
 from builtin.device_passable import DevicePassable
 from compile import get_type_name
 from memory import LegacyOpaquePointer as OpaquePointer
@@ -53,7 +54,15 @@ struct _NoneType(ImplicitlyCopyable, Movable):
 
 
 struct Optional[T: Copyable & Movable](
-    Boolable, Defaultable, ImplicitlyCopyable, Iterable, Iterator, Movable
+    Boolable,
+    Defaultable,
+    ImplicitlyCopyable,
+    Iterable,
+    Iterator,
+    Movable,
+    Representable,
+    Stringable,
+    Writable,
 ):
     """A type modeling a value which may or may not be present.
 
@@ -305,40 +314,40 @@ struct Optional[T: Copyable & Movable](
             raise Error(".value() on empty Optional")
         return self.unsafe_value()
 
-    fn __str__[
-        U: Copyable & Movable & Representable, //
-    ](self: Optional[U]) -> String:
+    fn __str__(self: Self) -> String:
         """Return the string representation of the value of the `Optional`.
-
-        Parameters:
-            U: The type of the elements in the list. Must implement the
-                traits `Representable`, `Copyable` and `Movable`.
 
         Returns:
             A string representation of the `Optional`.
         """
-        var output = String()
-        self.write_to(output)
-        return output
+        _constrained_conforms_to[
+            conforms_to(Self.T, Stringable),
+            Parent=Self,
+            Element = Self.T,
+            Trait="Stringable",
+        ]()
 
-    # TODO: Include the Parameter type in the string as well.
-    fn __repr__[
-        U: Representable & Copyable & Movable, //
-    ](self: Optional[U]) -> String:
+        if self:
+            return trait_downcast[Stringable](self.value()).__str__()
+        else:
+            return "None"
+
+    fn __repr__(self: Self) -> String:
         """Returns the verbose string representation of the `Optional`.
-
-        Parameters:
-            U: The type of the elements in the list. Must implement the
-                traits `Representable`, `Copyable` and `Movable`.
 
         Returns:
             A verbose string representation of the `Optional`.
         """
+        _constrained_conforms_to[
+            conforms_to(Self.T, Representable),
+            Parent=Self,
+            Element = Self.T,
+            Trait="Representable",
+        ]()
+
         var output = String()
-        output.write("Optional(")
-        self.write_to(output)
-        output.write(")")
-        return output
+        output.write("Optional(", self, ")")
+        return output^
 
     @always_inline("nodebug")
     fn __merge_with__[
@@ -354,20 +363,21 @@ struct Optional[T: Copyable & Movable](
         """
         return self.__bool__()
 
-    fn write_to[
-        U: Representable & Copyable & Movable, //
-    ](self: Optional[U], mut writer: Some[Writer]):
+    fn write_to(self: Self, mut writer: Some[Writer]):
         """Write `Optional` string representation to a `Writer`.
-
-        Parameters:
-            U: The type of the elements in the list. Must implement the
-                traits `Representable`, `Copyable` and `Movable`.
 
         Args:
             writer: The object to write to.
         """
+        _constrained_conforms_to[
+            conforms_to(Self.T, Representable),
+            Parent=Self,
+            Element = Self.T,
+            Trait="Representable",
+        ]()
+
         if self:
-            writer.write(repr(self.value()))
+            writer.write(trait_downcast[Representable](self.value()).__repr__())
         else:
             writer.write("None")
 
