@@ -143,5 +143,5 @@ fn stripping_raises():
   # expected-error @+1 {{cannot implicitly convert 'fn() raises -> None' value to 'fn() -> None'}}
   var fp : fn () = fn_raises
 
-  # expected-error @+1 {{cannot implicitly convert 'fn() raises -> None' value to 'fn() raises (Int) -> None'}}
-  var fp2 : fn () raises (Int) = fn_raises
+  # expected-error @+1 {{cannot implicitly convert 'fn() raises -> None' value to 'fn() raises Int -> None'}}
+  var fp2 : fn () raises Int = fn_raises

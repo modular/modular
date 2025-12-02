@@ -51,4 +51,4 @@ fn test_more_conversions():
   var test_result_convert : fn () raises -> Float32 = fn_doesnt_raise
 
 
-  #var test_error_convert : fn () raises (Float32) -> Float32 = fn_doesnt_raise
+  #var test_error_convert : fn () raises Float32 -> Float32 = fn_doesnt_raise

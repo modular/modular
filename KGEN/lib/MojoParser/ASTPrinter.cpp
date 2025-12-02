@@ -1322,9 +1322,8 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
       if (auto structType = sugarDynCast<StructType>(errorType))
         typeName = structType.getSymbol().getLeafReference().strref();
       if (typeName != "Error") {
-        os << " (";
+        os << ' ';
         ASTType(errorType).print(os, diagShared);
-        os << ")";
       }
     }
 

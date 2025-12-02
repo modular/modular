@@ -30,7 +30,6 @@ class ParserBase : public SharedStateUser {
 public:
   ParserBase(SharedState &shared, Lexer &lexer)
       : SharedStateUser(shared), lexer(lexer) {}
-
   Lexer &getLexer() { return lexer; }
 
   /// Return the current token the parser is inspecting.
