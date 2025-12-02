@@ -31,7 +31,7 @@ from sys.info import (
     is_gpu,
     is_nvidia_gpu,
 )
-from memory import AddressSpace, LegacyUnsafePointer as UnsafePointer
+from memory import AddressSpace
 
 from ..globals import WARP_SIZE
 from .warp import broadcast
@@ -56,7 +56,11 @@ fn _verify_xyz[dim: StaticString]():
 fn _get_gcn_idx[offset: Int, dtype: DType]() -> UInt:
     var ptr = llvm_intrinsic[
         "llvm.amdgcn.implicitarg.ptr",
-        UnsafePointer[Scalar[dtype], address_space = AddressSpace.CONSTANT],
+        UnsafePointer[
+            Scalar[dtype],
+            MutOrigin.external,
+            address_space = AddressSpace.CONSTANT,
+        ],
         has_side_effect=False,
     ]()
     return UInt(ptr.load[alignment=4](offset))

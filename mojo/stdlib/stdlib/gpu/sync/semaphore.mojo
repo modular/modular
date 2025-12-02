@@ -37,7 +37,6 @@ from sys import is_nvidia_gpu, llvm_intrinsic
 
 from ..intrinsics import Scope, load_acquire, store_release
 from .sync import MaxHardwareBarriers, barrier, named_barrier
-from memory import LegacyUnsafePointer as UnsafePointer
 
 
 @always_inline
@@ -54,7 +53,7 @@ struct Semaphore:
     It uses a single thread per CTA to perform atomic operations on a shared lock variable.
     """
 
-    var _lock: UnsafePointer[Int32]
+    var _lock: UnsafePointer[Int32, MutAnyOrigin]
     """Pointer to the shared lock variable in global memory that all CTAs synchronize on"""
 
     var _wait_thread: Bool
@@ -64,7 +63,9 @@ struct Semaphore:
     """Current state of the semaphore, used to track synchronization status"""
 
     @always_inline
-    fn __init__(out self, lock: UnsafePointer[Int32], thread_id: Int):
+    fn __init__(
+        out self, lock: UnsafePointer[Int32, MutAnyOrigin], thread_id: Int
+    ):
         """Initialize a new Semaphore instance.
 
         Args:
@@ -142,7 +143,7 @@ struct NamedBarrierSemaphore[
         max_num_barriers: Maximum number of named barriers to use.
     """
 
-    var _lock: UnsafePointer[Int32]
+    var _lock: UnsafePointer[Int32, MutAnyOrigin]
     """Pointer to the shared lock variable in global memory that all CTAs synchronize on"""
 
     var _wait_thread: Bool
@@ -152,7 +153,9 @@ struct NamedBarrierSemaphore[
     """Current state of the semaphore, used to track synchronization status"""
 
     @always_inline
-    fn __init__(out self, lock: UnsafePointer[Int32], thread_id: Int):
+    fn __init__(
+        out self, lock: UnsafePointer[Int32, MutAnyOrigin], thread_id: Int
+    ):
         """Initialize a new Semaphore instance.
 
         Args:

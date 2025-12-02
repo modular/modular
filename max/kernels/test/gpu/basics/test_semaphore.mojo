@@ -14,7 +14,6 @@
 from gpu import NamedBarrierSemaphore
 from gpu.host import DeviceContext
 from gpu import block_idx, grid_dim, thread_idx
-from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
 comptime NUM_BLOCKS = 32
@@ -22,8 +21,8 @@ comptime NUM_THREADS = 64
 
 
 fn test_named_barrier_semaphore_equal_kernel(
-    locks_ptr: UnsafePointer[Int32],
-    shared_ptr: UnsafePointer[Int32],
+    locks_ptr: UnsafePointer[Int32, MutAnyOrigin],
+    shared_ptr: UnsafePointer[Int32, MutAnyOrigin],
 ):
     var sema = NamedBarrierSemaphore[Int32(NUM_THREADS), 4, 1](
         locks_ptr, Int(thread_idx.x)
@@ -40,7 +39,7 @@ fn test_named_barrier_semaphore_equal_kernel(
 fn test_named_barrier_semaphore_equal(ctx: DeviceContext) raises:
     print("== test_named_barrier_semaphore_equal")
 
-    var a_host = UnsafePointer[Int32].alloc(NUM_BLOCKS)
+    var a_host = alloc[Int32](NUM_BLOCKS)
 
     var locks_data = ctx.enqueue_create_buffer[DType.int32](1)
     var shared_data = ctx.enqueue_create_buffer[DType.int32](NUM_BLOCKS)
@@ -66,8 +65,8 @@ fn test_named_barrier_semaphore_equal(ctx: DeviceContext) raises:
 
 
 fn test_named_barrier_semaphore_less_than_kernel(
-    locks_ptr: UnsafePointer[Int32],
-    shared_ptr: UnsafePointer[Int32],
+    locks_ptr: UnsafePointer[Int32, MutAnyOrigin],
+    shared_ptr: UnsafePointer[Int32, MutAnyOrigin],
 ):
     var sema = NamedBarrierSemaphore[Int32(NUM_THREADS), 4, 1](
         locks_ptr, Int(thread_idx.x)
@@ -84,7 +83,7 @@ fn test_named_barrier_semaphore_less_than_kernel(
 fn test_named_barrier_semaphore_less_than(ctx: DeviceContext) raises:
     print("== test_named_barrier_semaphore_less_than")
 
-    var a_host = UnsafePointer[Int32].alloc(NUM_BLOCKS)
+    var a_host = alloc[Int32](NUM_BLOCKS)
 
     var locks_data = ctx.enqueue_create_buffer[DType.int32](1)
     var shared_data = ctx.enqueue_create_buffer[DType.int32](NUM_BLOCKS)
