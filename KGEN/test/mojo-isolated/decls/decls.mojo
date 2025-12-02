@@ -244,7 +244,7 @@ fn returnParameter[a: __mlir_type.index]() -> __mlir_type.index:
 
 # CHECK-LABEL: lit.fn @"callReturnParam
 fn callReturnParam() -> __mlir_type.index:
-    # CHECK-NEXT: %0 = lit.call @decls::@"returnParameter[__mlir_type.index]()"<3>()
+    # CHECK-NEXT: %0 = lit.call @decls::@"returnParameter[index]()"<3>()
     # CHECK-NEXT: return %0
     return returnParameter[Int(3)._mlir_value]()
 
@@ -1057,7 +1057,7 @@ struct SomeStruct:
         return nestedFunction()
 
 
-# CHECK-LABEL: lit.fn @"closureParameter[fn() capturing -> __mlir_type.index]()"
+# CHECK-LABEL: lit.fn @"closureParameter[fn() capturing -> index]()"
 # CHECK-SAME: capturing ->
 fn closureParameter[func: fn () capturing -> __mlir_type.index]():
     pass
@@ -1192,15 +1192,15 @@ fn testParameterCapture(mut x: Int, mut y: Int):
         capture()
 
 
-# CHECK-LABEL: lit.fn @"topLevelParamFn[__mlir_type.index]()"<a_param>
+# CHECK-LABEL: lit.fn @"topLevelParamFn[index]()"<a_param>
 fn topLevelParamFn[a_param: __mlir_type.index]():
-    # CHECK: lit.fn *"nestedFunction[__mlir_type.index]()"<b_param>
+    # CHECK: lit.fn *"nestedFunction[index]()"<b_param>
     fn nestedFunction[b_param: __mlir_type.index]():
         return
 
-    # CHECK: lit.alias.decl *"thinref{{.*}}": !lit.generator<<"b_param": index>() -> !kgen.none> = <*"nestedFunction[__mlir_type.index]()">
+    # CHECK: lit.alias.decl *"thinref{{.*}}": !lit.generator<<"b_param": index>() -> !kgen.none> = <*"nestedFunction[index]()">
     comptime thinref = nestedFunction
-    # CHECK: call[{{.*}}: bind_params(:!lit.generator<<"b_param": index>() -> !kgen.none> *"nestedFunction[__mlir_type.index]()", 2)]()
+    # CHECK: call[{{.*}}: bind_params(:!lit.generator<<"b_param": index>() -> !kgen.none> *"nestedFunction[index]()", 2)]()
     nestedFunction[Int(2)._mlir_value]()
 
     var value = 0

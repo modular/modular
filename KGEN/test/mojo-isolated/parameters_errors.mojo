@@ -133,7 +133,7 @@ fn badReboundType[type: DType, val: __mlir_type[`!pop.scalar<`, type, `>`]]():
 
 
 fn badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
-    # expected-error @+1 {{cannot pass 'scalar<f32>' value, expected 'scalar<f64>' in call parameter}}
+    # expected-error @+1 {{cannot pass '__mlir_type.`!pop.scalar<f32>`' value, expected '__mlir_type.`!pop.scalar<f64>`' in call parameter}}
     badReboundType[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`, val]()
 
 

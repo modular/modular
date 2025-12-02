@@ -21,10 +21,10 @@ fn badCall():
 
 
 fn missing_ret_val() -> __mlir_type.index:
-  return # expected-error {{cannot implicitly convert 'None' value to 'index' in return value}}
+  return # expected-error {{cannot implicitly convert 'None' value to '__mlir_type.index' in return value}}
 
 fn ret_type_mismatch() -> __mlir_type.index:
-  return 4.0 # expected-error {{cannot implicitly convert 'FloatLiteral[4]' value to 'index' in return value}}
+  return 4.0 # expected-error {{cannot implicitly convert 'FloatLiteral[4]' value to '__mlir_type.index' in return value}}
 
 async fn testAsyncVoid(): pass
 async fn testAsyncInt() -> Int: return 42
@@ -267,7 +267,7 @@ fn badPackCalls(value: Int):
   examplePack[Int](1, 2)
   # expected-error @+1 {{invalid call to 'examplePack': callee with non-empty variadic pack argument expects 2 positional operands, but 1 was specified}}
   examplePack[Int, FloatDyn](1)
-  # expected-error-re @below {{invalid call to 'examplePack': argument #1 cannot be converted from 'index' to 'FloatDyn'}}
+  # expected-error-re @below {{invalid call to 'examplePack': argument #1 cannot be converted from '__mlir_type.index' to 'FloatDyn'}}
   examplePack[Int, FloatDyn](1, Int(2)._mlir_value)
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
   # expected-error @below {{invalid call to 'examplePack': failed to infer parameter 'Ts', it isn't used in any argument}}
@@ -519,8 +519,8 @@ struct InitOverloaded:
   # expected-note @below {{argument #0 cannot be converted from 'StringLiteral["foo"]' to 'Int'}}
   # expected-note @below {{argument #0 cannot be converted from 'Parametric[1]' to 'Int'}}
   fn __init__(out self, a: Int): pass
-  # expected-note @below {{argument #0 cannot be converted from 'StringLiteral["foo"]' to 'index'}}
-  # expected-note @below {{argument #0 cannot be converted from 'Parametric[1]' to 'index'}}
+  # expected-note @below {{argument #0 cannot be converted from 'StringLiteral["foo"]' to '__mlir_type.index'}}
+  # expected-note @below {{argument #0 cannot be converted from 'Parametric[1]' to '__mlir_type.index'}}
   fn __init__(out self, a: __mlir_type.index): pass
 
 fn testOverloadInitError(a: InitOverloaded, b: Parametric[1], c: Int):
@@ -669,7 +669,7 @@ struct BadInit[size: __mlir_type.index]:
   @implicit
   fn __init__(out self, elem: BadInit[Int(1)._mlir_value]):
     var x : __mlir_type[`!pop.simd<`, Self.size, `, FloatDyn>`]
-    # expected-error @+1 {{cannot implicitly convert 'simd<size, FloatDyn>' value to 'BadInit[size]'}}
+    # expected-error @+1 {{cannot implicitly convert '__mlir_type.`!pop.simd<size, FloatDyn>`' value to 'BadInit[size]'}}
     self = x
 
 struct MLIRAttrWithinStruct:

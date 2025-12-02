@@ -10,12 +10,12 @@ comptime index42 = __mlir_attr.`42 : index`
 
 fn test_mlir():
   var x: __mlir_type.index
-  x += x # expected-error {{'index' does not implement the '__iadd__' method}}
+  x += x # expected-error {{'__mlir_type.index' does not implement the '__iadd__' method}}
 
   # expected-error @+1 {{'index.add' op expected 2 operands, but found 0}}
   __mlir_op.`index.add`()
 
-  # expected-error @+1 {{MLIR type 'index' has no attributes}}
+  # expected-error @+1 {{'__mlir_type.index' has no attributes}}
   __mlir_op.`index.add`(x, x).x
 
   # expected-error @+1 {{operation already has attributes}}
@@ -50,7 +50,7 @@ fn test_mlir2():
   # expected-note @below {{attempting to parse: '#index<cmp_predicate xeq>'}}
   __mlir_attr.`#index<cmp_predicate xeq>`
 
-  # expected-warning @below {{'!kgen.deferred' value is unused}}
+  # expected-warning @below {{'__mlir_type.`!kgen.deferred`' value is unused}}
   __mlir_attr.`#index<cmp_predicate eq>`
 
   # expected-error @below {{invalid MLIR attribute: expected attribute value}}
@@ -60,7 +60,7 @@ fn test_mlir2():
   # expected-error @below {{expected name in attribute reference}}
   _ = __mlir_op.`test.op`[__mlir_attr.]
 
-  # expected-error @+1 {{cannot use initializer syntax on MLIR type 'index'}}
+  # expected-error @+1 {{cannot construct type '__mlir_type.index'}}
   _ = __mlir_type.index(index42)
 
   # expected-error @below {{invalid MLIR type: !kgen.pointer<!b>}}

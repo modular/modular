@@ -29,10 +29,10 @@ struct Point(Copyable, Movable):
 # CHECK: }
 # CHECK: (List[Float32]) vec2 = (size 2) {
 # CHECK:   (Float32) [0] = {
-# CHECK:     (f32) [0] = 4.3{{[0-9]*}}
+# CHECK:     (__mlir_type.f32) [0] = 4.3{{[0-9]*}}
 # CHECK:   }
 # CHECK:   (Float32) [1] = {
-# CHECK:     (f32) [0] = 8.8{{[0-9]*}}
+# CHECK:     (__mlir_type.f32) [0] = 8.8{{[0-9]*}}
 # CHECK:   }
 # CHECK: }
 # CHECK: (List[Point]) vec3 = (size 3) {

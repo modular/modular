@@ -66,7 +66,7 @@ static void removeImplicitCtorCall(TypedAttr &value, SharedState *shared) {
       valueWithoutSugar = sugar.getSugared();
 
   // Implicit constructors are always calls.
-  auto op = dyn_cast<ParamOperatorAttr>(valueWithoutSugar);
+  auto op = sugarDynCast<ParamOperatorAttr>(valueWithoutSugar);
   if (!op ||
       (op.getOpcode() != POC::Apply &&
        op.getOpcode() != POC::ApplyResultSlot) ||
@@ -567,9 +567,9 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
         }
 
         // Fallback: Check if the symbol name contains type suffixes
-        if (name.contains("[__mlir_type.!kgen.string]") ||
-            name.contains("[__mlir_type.!pop.int_literal]") ||
-            name.contains("[__mlir_type.!pop.float_literal]")) {
+        if (name.contains("[!kgen.string]") ||
+            name.contains("[!pop.int_literal]") ||
+            name.contains("[!pop.float_literal]")) {
           if (tryPrintLiteralValue(operandsToPrint))
             return;
         }
@@ -1373,11 +1373,22 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
   } else if (isa<NeverType>(type)) {
     os << "Never";
   } else {
-    // Use KGEN pretty printing when printing bare MLIR types for diagnostics.
-    if (diagShared)
-      printKGENType(os, type);
-    else
-      os << "__mlir_type." << type;
+    // Fall back to printing the raw MLIR type.
+    if (!diagShared) {
+      os << type;
+      return;
+    }
+
+    std::string result;
+    llvm::raw_string_ostream strstream(result);
+    strstream << type;
+
+    // See if we need quote.
+    const char *quote = "`";
+    if (!result.empty() && std::isalpha(result[0]) &&
+        llvm::all_of(result, [](char c) { return std::isalnum(c); }))
+      quote = "";
+    os << "__mlir_type." << quote << result << quote;
   }
 }
 

@@ -11,27 +11,27 @@
 var x = 12
 
 # CHECK: (Float64) x = {
-# CHECK:   (f64) [0] = 4.2{{.*}}
+# CHECK:   (__mlir_type.f64) [0] = 4.2{{.*}}
 # CHECK: }
 var x = 4.2
 
 # CHECK:  (SIMD[DType.int32, 8]) x = {
-# CHECK:    (si32) [0] = 5
-# CHECK:    (si32) [1] = 6
-# CHECK:    (si32) [2] = 7
-# CHECK:    (si32) [3] = 8
-# CHECK:    (si32) [4] = 9
-# CHECK:    (si32) [5] = 10
-# CHECK:    (si32) [6] = 11
-# CHECK:    (si32) [7] = 12
+# CHECK:    (__mlir_type.si32) [0] = 5
+# CHECK:    (__mlir_type.si32) [1] = 6
+# CHECK:    (__mlir_type.si32) [2] = 7
+# CHECK:    (__mlir_type.si32) [3] = 8
+# CHECK:    (__mlir_type.si32) [4] = 9
+# CHECK:    (__mlir_type.si32) [5] = 10
+# CHECK:    (__mlir_type.si32) [6] = 11
+# CHECK:    (__mlir_type.si32) [7] = 12
 # CHECK:  }
 var x = SIMD[DType.int32, 8](5, 6, 7, 8, 9, 10, 11, 12)
 
 # CHECK:  (SIMD[DType.int64, 4]) x = {
-# CHECK:    (si64) [0] = 1
-# CHECK:    (si64) [1] = 2
-# CHECK:    (si64) [2] = 3
-# CHECK:    (si64) [3] = 4
+# CHECK:    (__mlir_type.si64) [0] = 1
+# CHECK:    (__mlir_type.si64) [1] = 2
+# CHECK:    (__mlir_type.si64) [2] = 3
+# CHECK:    (__mlir_type.si64) [3] = 4
 # CHECK:  }
 var x = SIMD[DType.int64, 4](1, 2, 3, 4)
 
@@ -39,25 +39,25 @@ var x = SIMD[DType.int64, 4](1, 2, 3, 4)
 var v = -101
 
 # CHECK: (SIMD[DType.int8, 2]) w = {
-# CHECK:   (si8) [0] = -50
-# CHECK:   (si8) [1] = 31
+# CHECK:   (__mlir_type.si8) [0] = -50
+# CHECK:   (__mlir_type.si8) [1] = 31
 # CHECK: }
 var w = SIMD[DType.int8, 2](-50, 31)
 
 
-# CHECK: (Foo) f = {
+# CHECK-LABEL: (Foo) f = {
 # CHECK:   (Int) v = -101
 # CHECK:   (SIMD[DType.int8, 2]) w = {
-# CHECK:     (si8) [0] = -50
-# CHECK:     (si8) [1] = 31
+# CHECK:     (__mlir_type.si8) [0] = -50
+# CHECK:     (__mlir_type.si8) [1] = 31
 # CHECK:   }
 # CHECK:   (Bool) x = True
 # CHECK:   (StaticString) y =
 # CHECK:   (SIMD[DType.float32, 4]) z = {
-# CHECK:     (f32) [0] = 1
-# CHECK:     (f32) [1] = 2
-# CHECK:     (f32) [2] = 3
-# CHECK:     (f32) [3] = 4
+# CHECK:     (__mlir_type.f32) [0] = 1
+# CHECK:     (__mlir_type.f32) [1] = 2
+# CHECK:     (__mlir_type.f32) [2] = 3
+# CHECK:     (__mlir_type.f32) [3] = 4
 # CHECK:   }
 # CHECK: }
 @fieldwise_init
@@ -106,10 +106,10 @@ z.append(3)
 # CHECK: (Tuple[Int, SIMD[DType.int8, 4]]) a = {
 # CHECK:   (Int) [0] = 1
 # CHECK:   (SIMD[DType.int8, 4]) [1] = {
-# CHECK:     (si8) [0] = 1
-# CHECK:     (si8) [1] = 2
-# CHECK:     (si8) [2] = 3
-# CHECK:     (si8) [3] = 0
+# CHECK:     (__mlir_type.si8) [0] = 1
+# CHECK:     (__mlir_type.si8) [1] = 2
+# CHECK:     (__mlir_type.si8) [2] = 3
+# CHECK:     (__mlir_type.si8) [3] = 0
 # CHECK:   }
 # CHECK: }
 a = (1, SIMD[DType.int8, 4](1, 2, 3, 0))

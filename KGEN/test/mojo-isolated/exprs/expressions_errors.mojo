@@ -146,17 +146,20 @@ def test_member_access():
 ##===----------------------------------------------------------------------===##
 
 def invalid_conversion(a: Int):
-  var b: __mlir_type.index = a # expected-error {{implicitly convert 'Int' value to 'index' in 'var' initializer}}
+  var b: __mlir_type.index = a # expected-error {{implicitly convert 'Int' value to '__mlir_type.index' in 'var' initializer}}
 
-  # expected-error @+1 {{cannot use initializer syntax on MLIR type 'index'}}
+  # expected-error @+1 {{cannot construct type '__mlir_type.index'}}
   _ = __mlir_type.index(4)
+
+  # expected-error @+1 {{cannot construct type 'Never'}}
+  _ = Never()
 
 struct NotBoolConvertible:
   pass
 
 # Issue #6600
 fn negBuiltinType(x: __mlir_type.f64) :
-    # expected-error @+1 {{'f64' does not implement the '__neg__' method}}
+    # expected-error @+1 {{'__mlir_type.f64' does not implement the '__neg__' method}}
     _ = -x
 
 # expected-note @+1 {{function declared here}}
@@ -761,7 +764,7 @@ fn field_sensitive_origins(a: ThingWithFields)
 
   # expected-error @+1 {{'ThingWithFields' value has no attribute 'field_abc'}}
   _ = origin_of(a.field_abc)
-  # expected-error @+1 {{MLIR type 'index' has no attributes}}
+  # expected-error @+1 {{'__mlir_type.index' has no attributes}}
   _ = origin_of(__mlir_type.index.field_abc)
 
   # expected-error @+1 {{cannot implicitly convert 'ThingWithFields' value to 'Pointer[ThingWithFields, origin_of(a.field)]'}}

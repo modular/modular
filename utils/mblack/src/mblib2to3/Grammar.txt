@@ -34,10 +34,10 @@ async_funcdef: ASYNC funcdef
 where_clause: WHERE top_test
 funcdef: ('def' | FN | MLIR_REGION) NAME [metaparams] parameters [NAME*] [global_effects] [unified_capture] ['->' result_type] (where_clause)* ':' suite
 global_effects: global_effect_keyword*
-global_effect_keyword: 'raises' ['(' test ')'] | 'escaping' | 'capturing'
+global_effect_keyword: 'raises' [typeconvexpr] | 'escaping' | 'capturing'
 unified_capture: UNIFIED [effect_list] [captures]
 effect_list: effect_keyword*
-effect_keyword: NAME | 'raises' ['(' test ')']
+effect_keyword: NAME | 'raises' [typeconvexpr]
 captures: '{' [capture_list] '}'
 capture_list: capture_item (',' capture_item)* [',']
 # Support both specific captures (e.g., "var x", "mut y") and global capture

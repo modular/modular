@@ -426,7 +426,7 @@ struct InitFieldsDestroyedInThrowingConstructor:
     fn __init__(out self):
         self.x = MemExample()
 
-    # CHECK-LABEL: lit.fn @"__init__(__mlir_type.i1)"
+    # CHECK-LABEL: lit.fn @"__init__(i1)"
     fn __init__(out self, cond: __mlir_type.`i1`) raises:
         self = InitFieldsDestroyedInThrowingConstructor()
         # CHECK:      hlcf.elif {

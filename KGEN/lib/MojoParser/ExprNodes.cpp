@@ -1878,7 +1878,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
       }
     }
 
-    emitter.emitError(getLoc(), "MLIR type ")
+    emitter.emitError(getLoc())
         << baseRVType << " has no attributes" << base->getRange();
     return {};
   }
@@ -2607,7 +2607,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   if (ASTType calledType = calleeVal.getIfTypeValue()) {
     auto *calleeDecl = calledType.getDecl(emitter.shared);
     if (!calleeDecl) {
-      emitter.emitError(getLoc(), "cannot use initializer syntax on MLIR type ")
+      emitter.emitError(getLoc(), "cannot construct type ")
           << calledType << callee->getRange();
       return {};
     }

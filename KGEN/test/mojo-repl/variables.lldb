@@ -12,10 +12,10 @@
 var bigValue = SIMD[DType.float32, 64]()
 
 # CHECK: (SIMD[DType.float32, 64]) bigValue = {
-# CHECK:   (f32) [0] = 0
-# CHECK:   (f32) [1] = 0
-# CHECK:   (f32) [62] = 0
-# CHECK:   (f32) [63] = 0
+# CHECK:   (__mlir_type.f32) [0] = 0
+# CHECK:   (__mlir_type.f32) [1] = 0
+# CHECK:   (__mlir_type.f32) [62] = 0
+# CHECK:   (__mlir_type.f32) [63] = 0
 # CHECK: }
 
 # Check that we can define variables with weird names.

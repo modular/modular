@@ -23,7 +23,7 @@ class bar:
 # CHECK: (PythonObject) b = {
 # CHECK:   (PyObjectPtr) _obj_ptr = {
 # CHECK:     (UnsafePointer[PyObject, MutAnyOrigin]) _unsized_obj_ptr = {
-# CHECK:         (pointer<{{.*}}>) address = 0x
+# CHECK:         (__mlir_type.`!kgen.pointer<{{.*}}>`) address = 0x
 # CHECK:     }
 # CHECK:   }
 # CHECK: }
