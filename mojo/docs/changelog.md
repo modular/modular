@@ -179,6 +179,9 @@ what we publish.
   
 - Added a `CStringSlice` as a type-safe way to interact with nul-terminated
   c-style strings (`const char*`).
+  
+- The `os` module now exposes a `symlink` function, wrapping the unix
+  `symlink(2)` syscall.
 
 - Various OS wraper functions now include the value of `errno` in the raised error
   message.

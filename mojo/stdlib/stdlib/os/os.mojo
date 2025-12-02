@@ -307,6 +307,50 @@ fn unlink[PathLike: os.PathLike](path: PathLike) raises:
 
 
 # ===----------------------------------------------------------------------=== #
+# symlink
+# ===----------------------------------------------------------------------=== #
+
+
+fn symlink[
+    TargetType: os.PathLike, LinkType: os.PathLike
+](target: TargetType, linkpath: LinkType) raises:
+    """Creates a symlink.
+
+    If linkpath already exists it will not be overwritten.
+    See `symlink(2)`
+
+    Parameters:
+        TargetType: The path type of the link target.
+        LinkType: The path type of the link.
+
+    Args:
+        target: The target of the symbolic link.
+        linkpath: The path of the symbolic link to create.
+
+    Raises:
+        If the operation fails.
+    """
+    var target_fspath = target.__fspath__()
+    var linkpath_fspath = linkpath.__fspath__()
+
+    var error = external_call["symlink", c_int](
+        target_fspath.as_c_string_slice().unsafe_ptr(),
+        linkpath_fspath.as_c_string_slice().unsafe_ptr(),
+    )
+
+    if error != 0:
+        var err = get_errno()
+        raise Error(
+            "Can not create symlink from ",
+            linkpath_fspath,
+            " to ",
+            target_fspath,
+            " Err: ",
+            String(err),
+        )
+
+
+# ===----------------------------------------------------------------------=== #
 # link
 # ===----------------------------------------------------------------------=== #
 
@@ -331,6 +375,7 @@ fn link[
         oldpath_fspath.as_c_string_slice().unsafe_ptr(),
         newpath_fspath.as_c_string_slice().unsafe_ptr(),
     )
+
     if error != 0:
         var err = get_errno()
         raise Error(
