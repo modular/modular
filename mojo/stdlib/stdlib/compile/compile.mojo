@@ -189,17 +189,18 @@ comptime _EMISSION_KIND_LLVM_OPT_BITCODE = 5
 
 
 fn _get_emission_kind_id[emission_kind: StaticString]() -> Int:
-    constrained[
-        emission_kind == "asm"
-        or emission_kind == "llvm"
-        or emission_kind == "llvm-bitcode"
-        or emission_kind == "llvm-opt"
-        or emission_kind == "llvm-opt-bitcode"
-        or emission_kind == "object",
-        "invalid emission kind '",
-        emission_kind,
-        "', must be one of 'asm', 'llvm', 'llvm-opt', or 'object'",
-    ]()
+    __comptime_assert emission_kind in [
+        "asm",
+        "llvm",
+        "llvm-bitcode",
+        "llvm-opt",
+        "llvm-opt-bitcode",
+        "object",
+    ], (
+        "invalid emission kind '"
+        + emission_kind
+        + "', must be one of 'asm', 'llvm', 'llvm-opt', or 'object'"
+    )
 
     @parameter
     if emission_kind == "llvm":

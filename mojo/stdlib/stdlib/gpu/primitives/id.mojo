@@ -47,10 +47,9 @@ from .warp import broadcast
 #       enforce this at the type system level.
 # https://github.com/modular/modular/issues/1278
 fn _verify_xyz[dim: StaticString]():
-    constrained[
-        dim == "x" or dim == "y" or dim == "z",
-        "the dimension must be x, y, or z",
-    ]()
+    __comptime_assert (
+        dim == "x" or dim == "y" or dim == "z"
+    ), "the dimension must be x, y, or z"
 
 
 @always_inline

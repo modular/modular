@@ -152,17 +152,18 @@ fn tcgen05_ld[
     """
     check_blackwell_constraint()
 
-    constrained[
+    __comptime_assert (
         (datapaths == 16 and bits == 64)
         or (datapaths == 16 and bits == 128)
         or (datapaths == 16 and bits == 256)
-        or (datapaths == 32 and bits == 32),
+        or (datapaths == 32 and bits == 32)
+    ), (
         "`datapaths`x`bits`b must be 16x64b, 16x128b, 16x256b or 32x32b, got "
         + String(datapaths)
         + "x"
         + String(bits)
-        + "b.",
-    ]()
+        + "b."
+    )
 
     __comptime_assert repeat in [
         1,
@@ -571,22 +572,20 @@ fn tcgen05_cp[
         cta_group == 1 or cta_group == 2
     ), "cta_group must be 1 or 2"
 
-    constrained[
+    __comptime_assert (
         (datapaths == 128 and bits == 256)
         or (datapaths == 4 and bits == 256)
         or (datapaths == 128 and bits == 128)
         or (datapaths == 64 and bits == 128)
-        or (datapaths == 32 and bits == 128),
-        (
-            "`datapaths`x`bits`b must be 128x256b, 4x256b, 128x128b, 64x128b or"
-            " 32x128b."
-        ),
-    ]()
+        or (datapaths == 32 and bits == 128)
+    ), (
+        "`datapaths`x`bits`b must be 128x256b, 4x256b, 128x128b, 64x128b or"
+        " 32x128b."
+    )
 
-    constrained[
-        src_fmt == "" or src_fmt == "b6x16_p32" or src_fmt == "b4x16_p64",
-        "src_fmt must be empty, 'b6x16_p32' or 'b4x16_p64'.",
-    ]()
+    __comptime_assert (
+        src_fmt == "" or src_fmt == "b6x16_p32" or src_fmt == "b4x16_p64"
+    ), "src_fmt must be empty, 'b6x16_p32' or 'b4x16_p64'."
 
     __comptime_assert (
         dst_fmt == "" or dst_fmt == "b8x16"
@@ -596,16 +595,12 @@ fn tcgen05_cp[
         (len(dst_fmt) == 0) ^ (len(src_fmt) == 0)
     ), "Both or none of dst_fmt and src_fmt must be provided."
 
-    constrained[
+    __comptime_assert (
         multicast == ""
         or multicast == "warpx2::02_13"
         or multicast == "warpx2::01_23"
-        or multicast == "warpx4",
-        (
-            "multicast must be empty, 'warpx2::02_13', 'warpx2::01_23' or"
-            " 'warpx4'."
-        ),
-    ]()
+        or multicast == "warpx4"
+    ), "multicast must be empty, 'warpx2::02_13', 'warpx2::01_23' or 'warpx4'."
 
     comptime asm_str = (
         "tcgen05.cp.cta_group::"

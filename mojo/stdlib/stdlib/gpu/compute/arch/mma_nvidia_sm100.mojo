@@ -129,20 +129,17 @@ fn _constrained_mma_m[
         " when using pair cta." if use_cta_pair else " when not using pair cta."
     )
 
-    constrained[
-        mma_m in mma_m_valid,
-        String(
-            "Invalid MMA M: ",
-            mma_m,
-            " ,MMA M has to be ",
-            mma_m_valid[0],
-            " or ",
-            mma_m_valid[1],
-            " for ",
-            mma_kind,
-            using_pair_string,
-        ),
-    ]()
+    __comptime_assert mma_m in mma_m_valid, String(
+        "Invalid MMA M: ",
+        mma_m,
+        " , MMA M has to be ",
+        mma_m_valid[0],
+        " or ",
+        mma_m_valid[1],
+        " for ",
+        mma_kind,
+        using_pair_string,
+    )
 
 
 @always_inline
@@ -167,24 +164,23 @@ fn _constrained_mma_n[
     comptime lower_bound = mma_n_range[0]
     comptime upper_bound = mma_n_range[1]
 
-    constrained[
+    __comptime_assert (
         mma_n >= lower_bound
         and mma_n <= upper_bound
-        and mma_n % multiple_of == 0,
-        String(
-            "Invalid MMA N: ",
-            mma_n,
-            " ,MMA N has to be between ",
-            lower_bound,
-            " and ",
-            upper_bound,
-            " and a multiple of ",
-            lower_bound % 8,
-            " for ",
-            mma_kind,
-            using_pair_string,
-        ),
-    ]()
+        and mma_n % multiple_of == 0
+    ), String(
+        "Invalid MMA N: ",
+        mma_n,
+        " ,MMA N has to be between ",
+        lower_bound,
+        " and ",
+        upper_bound,
+        " and a multiple of ",
+        lower_bound % 8,
+        " for ",
+        mma_kind,
+        using_pair_string,
+    )
 
 
 @always_inline
@@ -544,19 +540,18 @@ struct UMMAInsDescriptor[
             A 32-bit integer containing the descriptor bit layout.
         """
 
-        constrained[
+        __comptime_assert (
             d_type == DType.float32
             and a_type == DType.float32
-            and b_type == DType.float32,
-            String(
-                "Invalid operand data type for UMMA instruction: ",
-                d_type,
-                " and ",
-                a_type,
-                " and ",
-                b_type,
-            ),
-        ]()
+            and b_type == DType.float32
+        ), String(
+            "Invalid operand data type for UMMA instruction: ",
+            d_type,
+            " and ",
+            a_type,
+            " and ",
+            b_type,
+        )
 
         comptime d_type_bit = Self._insert_bit[4](0x0, 0x1)
         comptime a_type_bit = Self._insert_bit[7](d_type_bit, 0x2)
@@ -584,21 +579,19 @@ struct UMMAInsDescriptor[
         comptime available_d_types = (DType.float32, DType.float16)
         comptime available_operand_types = (DType.bfloat16, DType.float16)
 
-        constrained[
-            d_type in available_d_types,
-            String("Invalid d data type for UMMA instruction: ", d_type),
-        ]()
+        __comptime_assert d_type in available_d_types, String(
+            "Invalid d data type for UMMA instruction: ", d_type
+        )
 
-        constrained[
+        __comptime_assert (
             a_type in available_operand_types
-            and b_type in available_operand_types,
-            String(
-                "Invalid operand data type for UMMA instruction: ",
-                a_type,
-                " and ",
-                b_type,
-            ),
-        ]()
+            and b_type in available_operand_types
+        ), String(
+            "Invalid operand data type for UMMA instruction: ",
+            a_type,
+            " and ",
+            b_type,
+        )
 
         comptime d_type_bit = Self._insert_bit[4](
             0x0, 1 if d_type == DType.float32 else 0
@@ -635,19 +628,17 @@ struct UMMAInsDescriptor[
             DType.float8_e5m2,
         )
 
-        constrained[
-            d_type in available_d_types,
-            String("Invalid d data type for UMMA instruction: ", d_type),
-        ]()
+        __comptime_assert d_type in available_d_types, String(
+            "Invalid d data type for UMMA instruction: ", d_type
+        )
 
-        constrained[
+        __comptime_assert (
             a_type in available_operand_types
-            and b_type in available_operand_types,
-            String(
-                "Currently only support E4M3 and E5M2 for UMMA kind: ",
-                Self.mma_kind,
-            ),
-        ]()
+            and b_type in available_operand_types
+        ), String(
+            "Currently only support E4M3 and E5M2 for UMMA kind: ",
+            Self.mma_kind,
+        )
 
         comptime d_type_bit = Self._insert_bit[4](
             0x0, 1 if d_type == DType.float32 else 0
@@ -1428,10 +1419,9 @@ fn mma_arrive[
         mbar_ptr: Pointer to the mbar.
     """
 
-    constrained[
-        cta_group in (1, 2),
-        String("Unsupported cta group: ", cta_group),
-    ]()
+    __comptime_assert cta_group in (1, 2), String(
+        "Unsupported cta group: ", cta_group
+    )
 
     comptime type = mbar_ptr.type
     constrained[size_of[type]() == 8, "mbar_ptr must be 8 bytes"]()
@@ -1462,10 +1452,9 @@ fn mma_arrive_multicast[
         cta_mask: Mask of ctas to signal.
     """
 
-    constrained[
-        cta_group in (1, 2),
-        String("Unsupported cta group: ", cta_group),
-    ]()
+    __comptime_assert cta_group in (1, 2), String(
+        "Unsupported cta group: ", cta_group
+    )
 
     comptime type = mbar_ptr.type
     constrained[size_of[type]() == 8, "mbar_ptr must be 8 bytes"]()

@@ -271,10 +271,9 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid[
         "clusterlaunchcontrol_query_cancel_get_first_ctaid is only"
         " supported by NVIDIA SM100+ GPUs"
     )
-    constrained[
-        id == "x" or id == "y" or id == "z",
-        "id must be one of `x`, `y`, `z`",
-    ]()
+    __comptime_assert (
+        id == "x" or id == "y" or id == "z"
+    ), "id must be one of `x`, `y`, `z`"
 
     comptime asm = (
         """

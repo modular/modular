@@ -689,35 +689,26 @@ fn wgmma_async[
         String(Index(m, n, k)),
     ]()
 
-    constrained[
-        scale_d == 1 or scale_d == 0,
-        "Invalid scale in value of scaled_d '",
-        String(scale_d),
-        (
-            "' which is not supported. Only 1 or 0 is supported as the"
-            " scale in values."
-        ),
-    ]()
+    __comptime_assert scale_d == 1 or scale_d == 0, (
+        "Invalid scale in value of scaled_d '"
+        + String(scale_d)
+        + "' which is not supported. Only 1 or 0 is supported as the"
+        " scale in values."
+    )
 
-    constrained[
-        scale_a == 1 or scale_a == -1,
-        "Invalid scale in value of scaled_a '",
-        String(scale_a),
-        (
-            "' which is not supported. Only 1 or -1 is supported as the"
-            " scale in values."
-        ),
-    ]()
+    __comptime_assert scale_a == 1 or scale_a == -1, (
+        "Invalid scale in value of scaled_a '"
+        + String(scale_a)
+        + "' which is not supported. Only 1 or -1 is supported as the"
+        " scale in values."
+    )
 
-    constrained[
-        scale_b == 1 or scale_b == -1,
-        "Invalid scale in value of scaled_b '",
-        String(scale_b),
-        (
-            "' which is not supported. Only 1 or -1 is supported as the"
-            " scale in values."
-        ),
-    ]()
+    __comptime_assert scale_b == 1 or scale_b == -1, (
+        "Invalid scale in value of scaled_b '"
+        + String(scale_b)
+        + "' which is not supported. Only 1 or -1 is supported as the"
+        " scale in values."
+    )
 
     var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
         mat_a_desc.desc._mlir_value
@@ -825,35 +816,26 @@ fn wgmma_async[
         String(Index(m, n, k)),
     ]()
 
-    constrained[
-        scale_d == 1 or scale_d == 0,
-        "Invalid scale in value of scaled_d '",
-        String(scale_d),
-        (
-            "' which is not supported. Only 1 or 0 is supported as the"
-            " scale in values."
-        ),
-    ]()
+    __comptime_assert scale_d == 1 or scale_d == 0, (
+        "Invalid scale in value of scaled_d '"
+        + String(scale_d)
+        + "' which is not supported. Only 1 or 0 is supported as the"
+        " scale in values."
+    )
 
-    constrained[
-        scale_a == 1 or scale_a == -1,
-        "Invalid scale in value of scaled_a '",
-        String(scale_a),
-        (
-            "' which is not supported. Only 1 or -1 is supported as the"
-            " scale in values."
-        ),
-    ]()
+    __comptime_assert scale_a == 1 or scale_a == -1, (
+        "Invalid scale in value of scaled_a '"
+        + String(scale_a)
+        + "' which is not supported. Only 1 or -1 is supported as the"
+        " scale in values."
+    )
 
-    constrained[
-        scale_b == 1 or scale_b == -1,
-        "Invalid scale in value of scaled_b '",
-        String(scale_b),
-        (
-            "' which is not supported. Only 1 or -1 is supported as the"
-            " scale in values."
-        ),
-    ]()
+    __comptime_assert scale_b == 1 or scale_b == -1, (
+        "Invalid scale in value of scaled_b '"
+        + String(scale_b)
+        + "' which is not supported. Only 1 or -1 is supported as the"
+        " scale in values."
+    )
 
     var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
         mat_a_desc.desc._mlir_value
