@@ -14,25 +14,31 @@
 from os import abort
 
 from buffer import NDBuffer
+from memory import UnsafePointer, alloc
+from utils import IndexList
 from python import Python, PythonObject
 from python._cpython import PyObjectPtr, Py_LT, Py_GT
 from python.bindings import PythonModuleBuilder, TypeObjectSlot
 
 
-fn _extent(pos: List[Float64]) -> Tuple[Float64, Float64]:
-    """Return the min and max value in the list."""
+fn _extent(
+    pos: NDBuffer[DType.float64, 1, MutAnyOrigin]
+) -> Tuple[Float64, Float64]:
+    """Return the min and max value in the buffer."""
     v_min = Float64.MAX
     v_max = Float64.MIN
-    for v in pos:
+    for i in range(pos.size()):
+        var v = pos[i]
         v_min = min(v_min, v)
-        v_max = max(v_min, v)
+        v_max = max(v_max, v)
     return (v_min, v_max)
 
 
 fn _compute_bounding_box_area(
-    pos_x: List[Float64], pos_y: List[Float64]
+    pos_x: NDBuffer[DType.float64, 1, MutAnyOrigin],
+    pos_y: NDBuffer[DType.float64, 1, MutAnyOrigin],
 ) -> Float64:
-    if len(pos_x) == 0:
+    if pos_x.size() == 0:
         return 0.0
     ext_x = _extent(pos_x)
     ext_y = _extent(pos_y)
@@ -46,22 +52,33 @@ struct DataFrame(Defaultable, Movable, Representable):
     are a lot more efficient in this representation.
     """
 
-    var pos_x: List[Float64]
-    var pos_y: List[Float64]
+    var pos_x: NDBuffer[DType.float64, 1, MutAnyOrigin]
+    var pos_y: NDBuffer[DType.float64, 1, MutAnyOrigin]
 
     # The bounding box area that contains all points.
     var _bounding_box_area: Float64
 
     fn __init__(out self):
         """Default initializer."""
-        self.pos_x = {}
-        self.pos_y = {}
+        self.pos_x = NDBuffer[DType.float64, 1, MutAnyOrigin]()
+        self.pos_y = NDBuffer[DType.float64, 1, MutAnyOrigin]()
         self._bounding_box_area = 0
 
-    fn __init__(out self, var x: List[Float64], var y: List[Float64]):
+    fn __init__(
+        out self,
+        x: NDBuffer[DType.float64, 1, MutAnyOrigin],
+        y: NDBuffer[DType.float64, 1, MutAnyOrigin],
+    ):
         self._bounding_box_area = _compute_bounding_box_area(x, y)
-        self.pos_x = x^
-        self.pos_y = y^
+        self.pos_x = x
+        self.pos_y = y
+
+    fn __del__(deinit self):
+        """Free the allocated memory for the buffers."""
+        if self.pos_x.data:
+            self.pos_x.data.free()
+        if self.pos_y.data:
+            self.pos_y.data.free()
 
     @staticmethod
     fn _get_self_ptr(
@@ -89,16 +106,29 @@ struct DataFrame(Defaultable, Movable, Representable):
         if len_x != len_y:
             raise Error("The length of the two columns does not match.")
 
-        m_x = List[Float64](capacity=len_x)
-        for value in pos_x:
-            var f = Float64(value)
-            m_x.append(f)
-        m_y = List[Float64](capacity=len_x)
-        for value in pos_y:
-            var f = Float64(value)
-            m_y.append(f)
+        # Allocate memory for the buffers
+        var ptr_x = alloc[Float64](len_x)
+        var ptr_y = alloc[Float64](len_x)
 
-        return PythonObject(alloc=DataFrame(m_x^, m_y^))
+        # Copy values from Python objects
+        var i = 0
+        for value in pos_x:
+            ptr_x[i] = Float64(value)
+            i += 1
+        i = 0
+        for value in pos_y:
+            ptr_y[i] = Float64(value)
+            i += 1
+
+        # Create NDBuffers with dynamic shape
+        var m_x = NDBuffer[DType.float64, 1, MutAnyOrigin](
+            ptr_x, IndexList[1](len_x)
+        )
+        var m_y = NDBuffer[DType.float64, 1, MutAnyOrigin](
+            ptr_y, IndexList[1](len_x)
+        )
+
+        return PythonObject(alloc=DataFrame(m_x, m_y))
 
     @staticmethod
     fn py__getitem__(
@@ -112,7 +142,7 @@ struct DataFrame(Defaultable, Movable, Representable):
         )
 
     fn __repr__(self) -> String:
-        return String("DataFrame( length=", len(self.pos_x), ")")
+        return String("DataFrame( length=", self.pos_x.size(), ")")
 
     @staticmethod
     fn rich_compare(
