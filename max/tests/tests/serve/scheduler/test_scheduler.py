@@ -19,6 +19,10 @@ from max.interfaces import (
     TextGenerationOutput,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
+from max.serve.scheduler.batch_constructor.token_budget import (
+    ActiveTokenBudget,
+    TokenBudgetCollection,
+)
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
@@ -120,6 +124,27 @@ def create_mock_request(
     return context
 
 
+def _refresh_token_budget(
+    scheduler: TokenGenerationScheduler,
+) -> None:
+    """Rebuild the CE token budget after mutating the scheduler config.
+
+    The scheduler configuration is intentionally mutable in tests (for example
+    to toggle chunked prefill or adjust the CE token target) but the underlying
+    TokenBudget instances are constructed when the batch constructor is
+    initialized. This helper realigns `token_budget` with the latest config.
+    """
+    cfg = scheduler.scheduler_config
+    scheduler.batch_constructor.token_budget = TokenBudgetCollection(
+        token_budgets=[
+            ActiveTokenBudget(
+                capacity=cfg.target_tokens_per_batch_ce,
+                allow_chunking=cfg.enable_chunked_prefill,
+            )
+        ]
+    )
+
+
 def test_try_create_ce_batch() -> None:
     scheduler, request_push_socket, _, _ = create_scheduler()
 
@@ -139,6 +164,7 @@ def test_try_create_chunked_ce_batch() -> None:
     # Configure scheduler for chunked prefill
     scheduler.scheduler_config.enable_chunked_prefill = True
     scheduler.scheduler_config.target_tokens_per_batch_ce = 20
+    _refresh_token_budget(scheduler)
 
     mock_data = create_mock_request(seq_len=30)
     request_push_socket.put_nowait(mock_data)
@@ -253,6 +279,7 @@ def test_schedule_ce_with_chunked_prefill() -> None:
     # Setup scheduler with chunked prefill enabled
     scheduler.scheduler_config.enable_chunked_prefill = True
     scheduler.scheduler_config.target_tokens_per_batch_ce = 20
+    _refresh_token_budget(scheduler)
 
     mock_request = create_mock_request(seq_len=30)
 
@@ -311,6 +338,7 @@ def test_schedule_mixed_ce_tg() -> None:
     scheduler.scheduler_config.enable_chunked_prefill = True
     scheduler.scheduler_config.enable_in_flight_batching = True
     scheduler.scheduler_config.target_tokens_per_batch_ce = 20
+    _refresh_token_budget(scheduler)
 
     mock_request_tg = create_mock_request(seq_len=10)
     assert mock_request_tg.active_idx == 10

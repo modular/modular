@@ -19,8 +19,8 @@ from max.interfaces import (
 )
 from max.kv_cache import InsufficientBlocksError, PagedKVCacheManager
 from max.pipelines.core import TextContext
+from max.serve.scheduler.batch_constructor import TextBatchConstructor
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
-from max.serve.scheduler.text_batch_constructor import TextBatchConstructor
 
 ARBITRARY_TOKEN_ID = 999
 
