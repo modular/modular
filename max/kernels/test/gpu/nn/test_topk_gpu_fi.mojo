@@ -14,13 +14,11 @@
 
 from algorithm.reduction import max as reduce_max
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from collections import OptionalReg
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from layout._fillers import random
 from math import ceildiv, iota, exp, log
 from nn.topk import _top_k_cpu, _topk_gpu
 from nn.topk_fi import (
@@ -40,8 +38,8 @@ comptime NUM_VALIDATION_TRIALS = 50
 
 @parameter
 fn fill_random_for_test[
-    rank: Int, dtype: DType, normalized: Bool
-](mut buffer: NDBuffer[mut=True, dtype, rank]):
+    dtype: DType, normalized: Bool
+](buffer: LayoutTensor[mut=True, dtype, **_]):
     """Fill buffer with random values, optionally normalizing to probabilities.
 
     Parameters:
@@ -50,7 +48,7 @@ fn fill_random_for_test[
         normalized: If True, normalize each row to sum to 1.0 (probabilities).
                    If False, use raw random values (logits).
     """
-    var shape = buffer.get_shape()
+    var shape = buffer.runtime_layout.shape.value
     var batch_size = shape[0]
     var vocab_size = shape[1]
 
@@ -62,40 +60,38 @@ fn fill_random_for_test[
 
             for i in range(vocab_size):
                 var random_value = random_float64(0.01, 10.0)
-                buffer.data[b * vocab_size + i] = random_value.cast[dtype]()
-                row_sum += buffer.data[b * vocab_size + i]
+                buffer.ptr[b * vocab_size + i] = random_value.cast[dtype]()
+                row_sum += buffer.ptr[b * vocab_size + i]
 
             # Normalize to sum to 1.0.
             for i in range(vocab_size):
-                buffer.data[b * vocab_size + i] = (
-                    buffer.data[b * vocab_size + i] / row_sum
+                buffer.ptr[b * vocab_size + i] = (
+                    buffer.ptr[b * vocab_size + i] / row_sum
                 )
         else:
             # Raw logits (unnormalized) in given range [-5.0, 5.0].
             for i in range(vocab_size):
                 var random_value = random_float64(-5.0, 5.0)
-                buffer.data[b * vocab_size + i] = random_value.cast[dtype]()
+                buffer.ptr[b * vocab_size + i] = random_value.cast[dtype]()
 
 
 fn compute_topk_mask[
     dtype: DType,
-    rank: Int,
 ](
-    values: HostNDBuffer[dtype, rank],
+    values: LayoutTensor[dtype, **_],
+    mask: LayoutTensor[mut=True, DType.bool, **_],
     K: Int,
     batch_size: Int,
     N: Int,
-) raises -> HostNDBuffer[DType.bool, rank]:
+) raises:
     """
     Compute a boolean mask indicating which tokens are in the top-K.
     Marks all tokens whose value is >= K-th largest value.
     """
-    var mask = HostNDBuffer[DType.bool, rank](DimList(batch_size, N))
-
     for b in range(batch_size):
         var values_list = List[Scalar[dtype]]()
         for i in range(N):
-            values_list.append(values.tensor.data[b * N + i])
+            values_list.append(values.ptr[b * N + i])
 
         @parameter
         fn _greater_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
@@ -108,19 +104,14 @@ fn compute_topk_mask[
 
         # Mark all tokens >= kth_value.
         for i in range(N):
-            mask.tensor.data[b * N + i] = (
-                values.tensor.data[b * N + i] >= kth_value
-            )
-
-    return mask
+            mask.ptr[b * N + i] = values.ptr[b * N + i] >= kth_value
 
 
 fn validate_sampling_results[
     out_idx_type: DType,
-    rank: Int,
 ](
-    sampled_idxs: HostNDBuffer[out_idx_type, 1],
-    mask: HostNDBuffer[DType.bool, rank],
+    sampled_idxs: LayoutTensor[out_idx_type, **_],
+    mask: LayoutTensor[DType.bool, **_],
     batch_size: Int,
     N: Int,
     trial_num: Int,
@@ -136,7 +127,7 @@ fn validate_sampling_results[
         trial_num: Current trial number (for error messages).
     """
     for b in range(batch_size):
-        var idx = Int(sampled_idxs.tensor.data[b])
+        var idx = Int(sampled_idxs.ptr[b])
 
         # Check 1: Index is within valid range.
         if idx < 0 or idx >= N:
@@ -153,7 +144,7 @@ fn validate_sampling_results[
             )
 
         # Check 2: Index is in the top-K set.
-        var is_valid = mask.tensor.data[b * N + idx]
+        var is_valid = mask.ptr[b * N + idx]
         if not is_valid:
             raise Error(
                 "Trial "
@@ -170,7 +161,6 @@ fn validate_sampling_results[
 fn test_topk_sampling[
     dtype: DType,
     out_idx_type: DType = DType.int32,
-    rank: Int = 2,
     block_size: Int = 1024,
     sampling_from_prob: Bool = True,
 ](ctx: DeviceContext, test_case: TestCase) raises:
@@ -180,7 +170,6 @@ fn test_topk_sampling[
     Parameters:
         dtype: Data type of the input.
         out_idx_type: Data type of the output indices.
-        rank: Rank of the input and output.
         block_size: Block size for the kernel.
         sampling_from_prob: If True, test topk_sampling_from_prob with probabilities.
                            If False, test topk_softmax_sample with logits.
@@ -201,54 +190,100 @@ fn test_topk_sampling[
 
     constrained[sampling, "This test requires sampling=True"]()
 
-    # Create input data (probabilities or logits depending on flag).
-    var input_host = HostNDBuffer[dtype, rank](DimList(batch_size, N))
+    # Create layouts for input tensor [batch_size, N].
+    comptime input_static_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE
+    )
+    var input_shape = IndexList[2](batch_size, N)
+    var input_runtime_layout = RuntimeLayout[input_static_layout].row_major(
+        input_shape
+    )
 
-    @parameter
-    if sampling_from_prob:
-        fill_random_for_test[rank, dtype, normalized=True](input_host.tensor)
-    else:
-        fill_random_for_test[rank, dtype, normalized=False](input_host.tensor)
+    # Create layouts for output tensor [batch_size].
+    comptime output_static_layout = Layout.row_major(UNKNOWN_VALUE)
+    var output_shape = IndexList[1](batch_size)
+    var output_runtime_layout = RuntimeLayout[output_static_layout].row_major(
+        output_shape
+    )
 
-    @parameter
-    if PRINT_OUTPUT:
+    # Create layouts for mask tensor [batch_size, N].
+    comptime mask_static_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    var mask_runtime_layout = RuntimeLayout[mask_static_layout].row_major(
+        input_shape
+    )
+
+    # Create device buffers.
+    var device_input = ctx.enqueue_create_buffer[dtype](
+        input_shape.flattened_length()
+    )
+    var device_output = ctx.enqueue_create_buffer[out_idx_type](
+        output_shape.flattened_length()
+    )
+    var mask_buffer = ctx.enqueue_create_buffer[DType.bool](
+        input_shape.flattened_length()
+    )
+
+    # Create layout tensors for GPU operations.
+    var input_tensor = LayoutTensor[dtype, input_static_layout](
+        device_input, input_runtime_layout
+    )
+    var output_tensor = LayoutTensor[out_idx_type, output_static_layout](
+        device_output, output_runtime_layout
+    )
+
+    # Initialize input data on host.
+    with device_input.map_to_host() as input_host:
+        var input_host_tensor = LayoutTensor[dtype, input_static_layout](
+            input_host, input_runtime_layout
+        )
 
         @parameter
         if sampling_from_prob:
-            print("Sample probabilities (first batch, first 10):")
+            fill_random_for_test[dtype, normalized=True](input_host_tensor)
         else:
-            print("Sample logits (first batch, first 10):")
-        for i in range(min(10, N)):
-            print("  Token", i, ":", input_host.tensor.data[i])
+            fill_random_for_test[dtype, normalized=False](input_host_tensor)
 
-    var device_input = DeviceNDBuffer[dtype, rank](
-        DimList(batch_size, N), ctx=ctx
-    )
-    var device_output = DeviceNDBuffer[out_idx_type, 1](
-        DimList(batch_size), ctx=ctx
-    )
+        @parameter
+        if PRINT_OUTPUT:
 
-    ctx.enqueue_copy(device_input.buffer, input_host.tensor.data)
-    ctx.synchronize()
+            @parameter
+            if sampling_from_prob:
+                print("Sample probabilities (first batch, first 10):")
+            else:
+                print("Sample logits (first batch, first 10):")
+            for i in range(min(10, N)):
+                print("  Token", i, ":", input_host_tensor.ptr[i])
 
-    # STEP 1: Compute ground truth mask.
-    var mask = compute_topk_mask[dtype, rank](input_host, K, batch_size, N)
+        # STEP 1: Compute ground truth mask (while we have input on host).
+        with mask_buffer.map_to_host() as mask_host:
+            var mask_host_tensor = LayoutTensor[DType.bool, mask_static_layout](
+                mask_host, mask_runtime_layout
+            )
+            compute_topk_mask[dtype](
+                input_host_tensor, mask_host_tensor, K, batch_size, N
+            )
 
-    @parameter
-    if PRINT_OUTPUT:
-        print("  Valid top-K indices for first batch:")
-        for i in range(N):
-            if mask.tensor.data[i]:
+            @parameter
+            if PRINT_OUTPUT:
+                print("  Valid top-K indices for first batch:")
+                for i in range(N):
+                    if mask_host_tensor.ptr[i]:
 
-                @parameter
-                if sampling_from_prob:
-                    print(
-                        "    Token", i, "with prob", input_host.tensor.data[i]
-                    )
-                else:
-                    print(
-                        "    Token", i, "with logit", input_host.tensor.data[i]
-                    )
+                        @parameter
+                        if sampling_from_prob:
+                            print(
+                                "    Token",
+                                i,
+                                "with prob",
+                                input_host_tensor.ptr[i],
+                            )
+                        else:
+                            print(
+                                "    Token",
+                                i,
+                                "with logit",
+                                input_host_tensor.ptr[i],
+                            )
 
     # STEP 2: Run sampling validation.
     @parameter
@@ -259,7 +294,6 @@ fn test_topk_sampling[
             "sampling trials...",
         )
 
-    var sampled_idxs = HostNDBuffer[out_idx_type, 1](DimList(batch_size))
     var num_passed = 0
 
     for trial in range(NUM_VALIDATION_TRIALS):
@@ -269,8 +303,8 @@ fn test_topk_sampling[
         if sampling_from_prob:
             topk_sampling_from_prob[dtype, out_idx_type, block_size](
                 ctx,
-                device_input.to_layout_tensor(),
-                device_output.to_layout_tensor(),
+                input_tensor,
+                output_tensor,
                 K,
                 deterministic=False,
                 rng_seed=trial_seed,
@@ -279,19 +313,26 @@ fn test_topk_sampling[
         else:
             topk_softmax_sample[dtype, out_idx_type, block_size](
                 ctx,
-                device_input.to_layout_tensor(),
-                device_output.to_layout_tensor(),
+                input_tensor,
+                output_tensor,
                 K,
                 temperature_val=1.0,
                 seed_val=trial_seed,
             )
 
-        ctx.enqueue_copy(sampled_idxs.tensor.data, device_output.buffer)
-        ctx.synchronize()
+        # Read back results and validate.
+        with device_output.map_to_host() as output_host:
+            with mask_buffer.map_to_host() as mask_host:
+                var output_host_tensor = LayoutTensor[
+                    out_idx_type, output_static_layout
+                ](output_host, output_runtime_layout)
+                var mask_host_tensor = LayoutTensor[
+                    DType.bool, mask_static_layout
+                ](mask_host, mask_runtime_layout)
 
-        validate_sampling_results[out_idx_type, rank](
-            sampled_idxs, mask, batch_size, N, trial
-        )
+                validate_sampling_results[out_idx_type](
+                    output_host_tensor, mask_host_tensor, batch_size, N, trial
+                )
         num_passed += 1
 
     @parameter
@@ -315,8 +356,8 @@ fn test_topk_sampling[
             if sampling_from_prob:
                 topk_sampling_from_prob[dtype, out_idx_type, block_size](
                     ctx,
-                    device_input.to_layout_tensor(),
-                    device_output.to_layout_tensor(),
+                    input_tensor,
+                    output_tensor,
                     K,
                     deterministic=False,
                     rng_seed=UInt64(42),
@@ -325,13 +366,12 @@ fn test_topk_sampling[
             else:
                 topk_softmax_sample[dtype, out_idx_type, block_size](
                     ctx,
-                    device_input.to_layout_tensor(),
-                    device_output.to_layout_tensor(),
+                    input_tensor,
+                    output_tensor,
                     K,
                     temperature_val=1.0,
                     seed_val=UInt64(42),
                 )
-            ctx.enqueue_copy(sampled_idxs.tensor.data, device_output.buffer)
             ctx.synchronize()
 
         @parameter
@@ -341,22 +381,15 @@ fn test_topk_sampling[
             time_kernel[run_func](m, ctx, "topk-softmax-sample")
         m.dump_report()
 
-    _ = input_host
-    _ = device_input
-    _ = device_output
-    _ = sampled_idxs
-    _ = mask
-
 
 fn extract_topk_from_masked[
     dtype: DType,
     out_idx_type: DType,
-    rank: Int = 2,
 ](
-    masked_logits: NDBuffer[dtype, rank],
+    masked_logits: LayoutTensor[dtype, **_],
     K: Int,
-    mut topk_vals_out: NDBuffer[mut=True, dtype, rank],
-    mut topk_idxs_out: NDBuffer[mut=True, out_idx_type, rank],
+    topk_vals_out: LayoutTensor[mut=True, dtype, **_],
+    topk_idxs_out: LayoutTensor[mut=True, out_idx_type, **_],
 ) raises:
     """Extract top-K values and indices from masked logits tensor.
 
@@ -370,15 +403,15 @@ fn extract_topk_from_masked[
         topk_vals_out: Output buffer for top-K values (batch_size, K).
         topk_idxs_out: Output buffer for top-K indices (batch_size, K).
     """
-    var batch_size = masked_logits.get_shape()[0]
-    var N = masked_logits.get_shape()[1]
+    var batch_size = masked_logits.runtime_layout.shape.value[0]
+    var N = masked_logits.runtime_layout.shape.value[1]
 
     for b in range(batch_size):
         var values = List[Scalar[dtype]]()
         var indices = List[Int]()
 
         for i in range(N):
-            var val = masked_logits.data[b * N + i]
+            var val = masked_logits.ptr[b * N + i]
             if val != min_or_neg_inf[dtype]():
                 values.append(val)
                 indices.append(i)
@@ -399,21 +432,20 @@ fn extract_topk_from_masked[
         # Copy top-K values and indices to output.
         for k in range(K):
             if k < len(values):
-                topk_vals_out.data[b * K + k] = values[k]
-                topk_idxs_out.data[b * K + k] = Scalar[out_idx_type](indices[k])
+                topk_vals_out.ptr[b * K + k] = values[k]
+                topk_idxs_out.ptr[b * K + k] = Scalar[out_idx_type](indices[k])
             else:
                 # If we have fewer than K non-inf values, fill with -inf and -1.
-                topk_vals_out.data[b * K + k] = min_or_neg_inf[dtype]()
-                topk_idxs_out.data[b * K + k] = Scalar[out_idx_type](-1)
+                topk_vals_out.ptr[b * K + k] = min_or_neg_inf[dtype]()
+                topk_idxs_out.ptr[b * K + k] = Scalar[out_idx_type](-1)
 
 
 fn test_case_batched[
     dtype: DType,
     fill_fn: fn[rank: Int, dtype: DType] (
-        mut NDBuffer[mut=True, dtype, rank]
+        LayoutTensor[mut=True, dtype, **_]
     ) capturing [_] -> None,
     out_idx_type: DType = DType.int,
-    rank: Int = 2,
 ](ctx: DeviceContext, test_case: TestCase) raises:
     """Test topk_mask_logits kernel by comparing with CPU reference."""
 
@@ -428,18 +460,56 @@ fn test_case_batched[
     # sampling must be False for mask_logits kernel
     constrained[not sampling, "topk_mask_logits only supports sampling=False"]()
 
-    var in_buffer = HostNDBuffer[dtype, rank](DimList(batch_size, N))
-    var masked_logits_host = HostNDBuffer[dtype, rank](DimList(batch_size, N))
-
-    fill_fn(in_buffer.tensor)
-
-    var device_in = DeviceNDBuffer[dtype, rank](DimList(batch_size, N), ctx=ctx)
-    var device_masked_logits = DeviceNDBuffer[dtype, rank](
-        DimList(batch_size, N), ctx=ctx
+    # Create layouts for input/masked_logits tensors [batch_size, N].
+    comptime input_static_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE
+    )
+    var input_shape = IndexList[2](batch_size, N)
+    var input_runtime_layout = RuntimeLayout[input_static_layout].row_major(
+        input_shape
     )
 
-    ctx.enqueue_copy(device_in.buffer, in_buffer.tensor.data)
-    ctx.synchronize()
+    # Create layouts for topk output tensors [batch_size, K].
+    comptime topk_static_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    var topk_shape = IndexList[2](batch_size, K)
+    var topk_runtime_layout = RuntimeLayout[topk_static_layout].row_major(
+        topk_shape
+    )
+
+    # Create device buffers.
+    var device_in = ctx.enqueue_create_buffer[dtype](
+        input_shape.flattened_length()
+    )
+    var device_masked_logits = ctx.enqueue_create_buffer[dtype](
+        input_shape.flattened_length()
+    )
+    var topk_vals_extracted_buf = ctx.enqueue_create_buffer[dtype](
+        topk_shape.flattened_length()
+    )
+    var topk_idxs_extracted_buf = ctx.enqueue_create_buffer[out_idx_type](
+        topk_shape.flattened_length()
+    )
+    var topk_vals_cpu_buf = ctx.enqueue_create_buffer[dtype](
+        topk_shape.flattened_length()
+    )
+    var topk_idxs_cpu_buf = ctx.enqueue_create_buffer[DType.int64](
+        topk_shape.flattened_length()
+    )
+
+    # Create layout tensors for GPU operations.
+    var in_tensor = LayoutTensor[dtype, input_static_layout](
+        device_in, input_runtime_layout
+    )
+    var masked_logits_tensor = LayoutTensor[dtype, input_static_layout](
+        device_masked_logits, input_runtime_layout
+    )
+
+    # Initialize input data on host.
+    with device_in.map_to_host() as in_host:
+        var in_host_tensor = LayoutTensor[dtype, input_static_layout](
+            in_host, input_runtime_layout
+        )
+        fill_fn[2, dtype](in_host_tensor)
 
     @parameter
     if DEBUG_BENCH:
@@ -449,12 +519,9 @@ fn test_case_batched[
         fn run_func(ctx: DeviceContext) raises:
             topk_mask_logits[dtype, out_idx_type, block_size](
                 ctx,
-                device_in.to_layout_tensor(),
-                device_masked_logits.to_layout_tensor(),
+                in_tensor,
+                masked_logits_tensor,
                 K,
-            )
-            ctx.enqueue_copy(
-                masked_logits_host.tensor.data, device_masked_logits.buffer
             )
             ctx.synchronize()
 
@@ -462,96 +529,127 @@ fn test_case_batched[
 
     topk_mask_logits[dtype, out_idx_type, block_size](
         ctx,
-        device_in.to_layout_tensor(),
-        device_masked_logits.to_layout_tensor(),
+        in_tensor,
+        masked_logits_tensor,
         K,
-    )
-
-    ctx.enqueue_copy(
-        masked_logits_host.tensor.data, device_masked_logits.buffer
     )
     ctx.synchronize()
 
-    @parameter
-    if PRINT_OUTPUT:
-        print("Masked logits:", masked_logits_host.tensor)
+    # Read back masked logits and extract top-K.
+    with device_masked_logits.map_to_host() as masked_logits_host:
+        var masked_logits_host_tensor = LayoutTensor[
+            dtype, input_static_layout
+        ](masked_logits_host, input_runtime_layout)
 
-    var topk_vals_extracted = HostNDBuffer[dtype, rank](DimList(batch_size, K))
-    var topk_idxs_extracted = HostNDBuffer[out_idx_type, rank](
-        DimList(batch_size, K)
-    )
-
-    extract_topk_from_masked[dtype, out_idx_type, rank](
-        masked_logits_host.tensor,
-        K,
-        topk_vals_extracted.tensor,
-        topk_idxs_extracted.tensor,
-    )
-
-    @parameter
-    if PRINT_OUTPUT:
-        print("Extracted top-K values:", topk_vals_extracted.tensor)
-        print("Extracted top-K indices:", topk_idxs_extracted.tensor)
-
-    var topk_vals_cpu = HostNDBuffer[dtype, rank](DimList(batch_size, K))
-    var topk_idxs_cpu = HostNDBuffer[DType.int64, rank](DimList(batch_size, K))
-
-    @parameter
-    if DEBUG_BENCH:
-
-        @always_inline
         @parameter
-        fn run_func_cpu(ctx: DeviceContext) raises:
-            _top_k_cpu[
-                dtype=dtype,
-                out_idx_type = DType.int64,
-                largest=largest,
-            ](
-                in_buffer.to_layout_tensor(),
-                K,
-                rank - 1,
-                topk_vals_cpu.to_layout_tensor(),
-                topk_idxs_cpu.to_layout_tensor(),
-                1,
-                True,
+        if PRINT_OUTPUT:
+            print("Masked logits (first 10):")
+            for i in range(min(10, input_shape.flattened_length())):
+                print("  ", i, ":", masked_logits_host_tensor.ptr[i])
+
+        with topk_vals_extracted_buf.map_to_host() as topk_vals_host:
+            with topk_idxs_extracted_buf.map_to_host() as topk_idxs_host:
+                var topk_vals_tensor = LayoutTensor[dtype, topk_static_layout](
+                    topk_vals_host, topk_runtime_layout
+                )
+                var topk_idxs_tensor = LayoutTensor[
+                    out_idx_type, topk_static_layout
+                ](topk_idxs_host, topk_runtime_layout)
+
+                extract_topk_from_masked[dtype, out_idx_type](
+                    masked_logits_host_tensor,
+                    K,
+                    topk_vals_tensor,
+                    topk_idxs_tensor,
+                )
+
+                @parameter
+                if PRINT_OUTPUT:
+                    print("Extracted top-K values (first 10):")
+                    for i in range(min(10, topk_shape.flattened_length())):
+                        print("  ", i, ":", topk_vals_tensor.ptr[i])
+                    print("Extracted top-K indices (first 10):")
+                    for i in range(min(10, topk_shape.flattened_length())):
+                        print("  ", i, ":", topk_idxs_tensor.ptr[i])
+
+    # Run CPU reference.
+    with device_in.map_to_host() as in_host:
+        with topk_vals_cpu_buf.map_to_host() as topk_vals_cpu_host:
+            with topk_idxs_cpu_buf.map_to_host() as topk_idxs_cpu_host:
+                var in_host_tensor = LayoutTensor[dtype, input_static_layout](
+                    in_host, input_runtime_layout
+                )
+                var topk_vals_cpu_tensor = LayoutTensor[
+                    dtype, topk_static_layout
+                ](topk_vals_cpu_host, topk_runtime_layout)
+                var topk_idxs_cpu_tensor = LayoutTensor[
+                    DType.int64, topk_static_layout
+                ](topk_idxs_cpu_host, topk_runtime_layout)
+
+                @parameter
+                if DEBUG_BENCH:
+
+                    @always_inline
+                    @parameter
+                    fn run_func_cpu(ctx: DeviceContext) raises:
+                        _top_k_cpu[
+                            dtype=dtype,
+                            out_idx_type = DType.int64,
+                            largest=largest,
+                        ](
+                            in_host_tensor,
+                            K,
+                            1,  # rank - 1
+                            topk_vals_cpu_tensor,
+                            topk_idxs_cpu_tensor,
+                            1,
+                            True,
+                        )
+
+                    time_kernel[run_func_cpu](m, ctx, "topk-cpu")
+
+                _top_k_cpu[
+                    dtype=dtype, out_idx_type = DType.int64, largest=largest
+                ](
+                    in_host_tensor,
+                    K,
+                    1,  # rank - 1
+                    topk_vals_cpu_tensor,
+                    topk_idxs_cpu_tensor,
+                    1,
+                    True,
+                )
+
+                @parameter
+                if PRINT_OUTPUT:
+                    print("CPU top-K values (first 10):")
+                    for i in range(min(10, topk_shape.flattened_length())):
+                        print("  ", i, ":", topk_vals_cpu_tensor.ptr[i])
+                    print("CPU top-K indices (first 10):")
+                    for i in range(min(10, topk_shape.flattened_length())):
+                        print("  ", i, ":", topk_idxs_cpu_tensor.ptr[i])
+
+    # Compare extracted values with CPU reference.
+    with topk_vals_extracted_buf.map_to_host() as topk_vals_ext_host:
+        with topk_vals_cpu_buf.map_to_host() as topk_vals_cpu_host:
+            var topk_vals_ext_tensor = LayoutTensor[dtype, topk_static_layout](
+                topk_vals_ext_host, topk_runtime_layout
+            )
+            var topk_vals_cpu_tensor = LayoutTensor[dtype, topk_static_layout](
+                topk_vals_cpu_host, topk_runtime_layout
             )
 
-        time_kernel[run_func_cpu](m, ctx, "topk-cpu")
+            for i in range(topk_shape.flattened_length()):
+                assert_almost_equal(
+                    topk_vals_ext_tensor.ptr[i],
+                    topk_vals_cpu_tensor.ptr[i],
+                    msg="Top-K values mismatch at index " + String(i),
+                )
 
-    _top_k_cpu[dtype=dtype, out_idx_type = DType.int64, largest=largest](
-        in_buffer.to_layout_tensor(),
-        K,
-        rank - 1,
-        topk_vals_cpu.to_layout_tensor(),
-        topk_idxs_cpu.to_layout_tensor(),
-        1,
-        True,
-    )
-
-    @parameter
-    if PRINT_OUTPUT:
-        print("CPU top-K values:", topk_vals_cpu.tensor)
-        print("CPU top-K indices:", topk_idxs_cpu.tensor)
-
-    for i in range(topk_vals_extracted.tensor.num_elements()):
-        assert_almost_equal(
-            topk_vals_extracted.tensor.data[i],
-            topk_vals_cpu.tensor.data[i],
-            msg="Top-K values mismatch at index " + String(i),
-        )
-
-        # Note: We don't check exact index equality because different implementations
-        # may break ties differently when values are equal or very close. As long as
-        # the top-K values match, the indices can differ for tied values.
-
-    _ = in_buffer
-    _ = masked_logits_host
-    _ = topk_vals_extracted
-    _ = topk_idxs_extracted
-    _ = topk_vals_cpu
-    _ = topk_idxs_cpu
-    _ = device_in
-    _ = device_masked_logits
+                # Note: We don't check exact index equality because different
+                # implementations may break ties differently when values are
+                # equal or very close. As long as the top-K values match, the
+                # indices can differ for tied values.
 
     @parameter
     if DEBUG_BENCH:
@@ -581,13 +679,13 @@ fn time_kernel[
 @parameter
 fn fill_random[
     rank: Int, dtype: DType
-](mut buffer: NDBuffer[mut=True, dtype, rank]):
+](buffer: LayoutTensor[mut=True, dtype, **_]):
     comptime min_val = -1e9
     comptime max_val = 1e9
-    var total_elements = buffer.num_elements()
+    var total_elements = buffer.size()
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
-        buffer.data[i] = random_value.cast[dtype]()
+        buffer.ptr[i] = random_value.cast[dtype]()
 
 
 struct TestCase[_sampling: Bool, _largest: Bool = True, _block_size: Int = 256](
@@ -833,7 +931,6 @@ def main():
         test_topk_sampling[
             float32_dtype,
             DType.int32,
-            2,
             default_block_size,
             sampling_from_prob=True,
         ](ctx, sampling_test_case1)
@@ -849,7 +946,6 @@ def main():
         test_topk_sampling[
             float32_dtype,
             DType.int32,
-            2,
             default_block_size,
             sampling_from_prob=True,
         ](ctx, sampling_test_case2)
@@ -865,7 +961,6 @@ def main():
         test_topk_sampling[
             float32_dtype,
             DType.int32,
-            2,
             default_block_size,
             sampling_from_prob=True,
         ](ctx, sampling_test_case3)
@@ -881,7 +976,6 @@ def main():
         test_topk_sampling[
             float32_dtype,
             DType.int32,
-            2,
             default_block_size,
             sampling_from_prob=True,
         ](ctx, sampling_test_case4)
@@ -897,7 +991,6 @@ def main():
         test_topk_sampling[
             float32_dtype,
             DType.int32,
-            2,
             default_block_size,
             sampling_from_prob=True,
         ](ctx, sampling_test_case5)
@@ -913,7 +1006,6 @@ def main():
         test_topk_sampling[
             bf16_type,
             DType.int32,
-            2,
             default_block_size,
             sampling_from_prob=True,
         ](ctx, sampling_test_case6)
@@ -931,7 +1023,6 @@ def main():
         test_topk_sampling[
             float32_dtype,
             DType.int32,
-            2,
             default_block_size,
             sampling_from_prob=False,
         ](ctx, sampling_test_case1)
@@ -940,7 +1031,6 @@ def main():
         test_topk_sampling[
             float32_dtype,
             DType.int32,
-            2,
             default_block_size,
             sampling_from_prob=False,
         ](ctx, sampling_test_case2)
@@ -949,7 +1039,6 @@ def main():
         test_topk_sampling[
             float32_dtype,
             DType.int32,
-            2,
             default_block_size,
             sampling_from_prob=False,
         ](ctx, sampling_test_case3)
@@ -958,7 +1047,6 @@ def main():
         test_topk_sampling[
             float32_dtype,
             DType.int32,
-            2,
             default_block_size,
             sampling_from_prob=False,
         ](ctx, sampling_test_case4)
@@ -967,7 +1055,6 @@ def main():
         test_topk_sampling[
             float32_dtype,
             DType.int32,
-            2,
             default_block_size,
             sampling_from_prob=False,
         ](ctx, sampling_test_case5)
@@ -976,7 +1063,6 @@ def main():
         test_topk_sampling[
             bf16_type,
             DType.int32,
-            2,
             512,  # Note: 1024 is too large (out of resources)
             sampling_from_prob=False,
         ](ctx, sampling_test_case6)
