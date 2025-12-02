@@ -19,13 +19,12 @@ import logging
 import queue
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
+from max.graph import BufferType, DeviceRef, TensorType
 from max.interfaces import RequestID, TextGenerationContext, get_blocking
 from max.nn.kv_cache.cache_params import KVCacheParams
 from max.nn.kv_cache.manager import RaggedKVCacheInputs
@@ -135,13 +134,6 @@ class _TPPagedKVCacheManager:
 
         # Track the set of requests that are currently claimed.
         self._claimed_requests: set[RequestID] = set()
-
-        increment_cache_lengths_graph = (
-            self._create_increment_cache_lengths_graph()
-        )
-        self.increment_cache_lengths_model = session.load(
-            increment_cache_lengths_graph
-        )
 
         # Whether prefix caching is enabled.
         self.enable_prefix_caching = self.params.enable_prefix_caching
@@ -490,109 +482,6 @@ class _TPPagedKVCacheManager:
     def get_req_blocks(self, request_id: RequestID) -> Sequence[int]:
         """Get the block ids for a request."""
         return self.block_manager.get_req_blocks(request_id)
-
-    def _create_increment_cache_lengths_graph(self) -> Graph:
-        input_symbols = self.get_symbolic_inputs()
-        cache_lengths_types = [
-            input_symbols[i][1] for i in range(len(self.devices))
-        ]
-
-        input_row_offsets_type = TensorType(
-            DType.uint32,
-            shape=["input_row_offsets_len"],
-            device=DeviceRef(self.devices[0].label, self.devices[0].id),
-        )
-
-        with Graph(
-            "update_cache_lengths",
-            input_types=[input_row_offsets_type, *cache_lengths_types],
-        ) as graph:
-            inp_row_offset, *cache_lengths = (
-                inp.tensor for inp in graph.inputs
-            )
-            # broadcast the inp_row_offset to all devices (naive)
-            # get rid of this if statement after #51465 merges
-            if len(self.devices) > 1:
-                input_row_offsets = [
-                    inp_row_offset.to(DeviceRef(d.label, d.id))
-                    for d in self.devices
-                ]
-            else:
-                input_row_offsets = [inp_row_offset]
-            outputs = []
-            for i in range(len(self.devices)):
-                cache_length = cache_lengths[i]
-                assert isinstance(cache_length, TensorValue)
-                right_slice = input_row_offsets[i][1:].rebind(
-                    cache_length.shape
-                )
-                left_slice = input_row_offsets[i][
-                    : input_row_offsets[i].shape[0] - 1
-                ].rebind(cache_length.shape)
-                increment_amount = right_slice - left_slice
-                outputs.append(cache_length + increment_amount)
-            graph.output(*outputs)
-
-        return graph
-
-    def increment_cache_lengths(
-        self,
-        kv_cache_inputs: Sequence[RaggedKVCacheInputs],
-        prev_model_inputs: Any,
-    ) -> Sequence[RaggedKVCacheInputs]:
-        """Prepares cache inputs for the next token in multistep execution.
-
-        Updates the cache lengths for the next inference step without requiring device
-        synchronization or memory copies. This is crucial for maintaining performance
-        during multi-token generation.
-
-        Args:
-            kv_cache_inputs: Current cache state tuples (blocks, lengths, lookup, max_lengths)
-            prev_model_inputs: Previous model inputs including row offsets
-
-        Returns:
-            Updated cache input tuples with incremented lengths.
-        """
-        blocks = [kv_cache_inputs[i].blocks for i in range(len(self.devices))]
-        cache_lengths = [
-            kv_cache_inputs[i].cache_lengths for i in range(len(self.devices))
-        ]
-        lookup_table = [
-            kv_cache_inputs[i].lookup_table for i in range(len(self.devices))
-        ]
-
-        # max_lengths is host allocated and the same across all devices.
-        max_lengths = kv_cache_inputs[0].max_lengths
-
-        # Update the cache_lengths of our batch by the previous sequence length.
-        # Handle both single tensor and list of tensors for compatibility
-        if isinstance(prev_model_inputs.input_row_offsets, list):
-            # InternVL case: use the first tensor (row offsets are identical across devices)
-            row_offsets = prev_model_inputs.input_row_offsets[0]
-        else:
-            # Standard case: single tensor
-            row_offsets = prev_model_inputs.input_row_offsets
-        row_offsets = row_offsets.to(self.devices[0])
-
-        updated_cache_lengths = self.increment_cache_lengths_model.execute(
-            row_offsets, *cache_lengths
-        )
-
-        # Advance to the next step of the max_lengths tensor.
-        updated_max_lengths = max_lengths[1:, :]
-
-        # Return our updated batch.
-        assert isinstance(kv_cache_inputs, list)
-        for i in range(len(self.devices)):
-            updated_cache_length = updated_cache_lengths[i]
-            assert isinstance(updated_cache_length, Tensor)
-            kv_cache_inputs[i] = RaggedKVCacheInputs(
-                blocks=blocks[i],
-                cache_lengths=updated_cache_length,
-                lookup_table=lookup_table[i],
-                max_lengths=updated_max_lengths,
-            )
-        return kv_cache_inputs
 
     def claim(self, request_id: RequestID) -> None:
         """Reserve a sequence ID for the given request ID."""
