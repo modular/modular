@@ -19,10 +19,9 @@ from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,
     SupportedEncoding,
-    TextTokenizer,
+    TextAndVisionTokenizer,
 )
 
-from . import weight_adapters
 from .model import Gemma3_MultiModalModel
 
 gemma3_multimodal_arch = SupportedArchitecture(
@@ -46,11 +45,12 @@ gemma3_multimodal_arch = SupportedArchitecture(
     },
     pipeline_model=Gemma3_MultiModalModel,
     task=PipelineTask.TEXT_GENERATION,
-    tokenizer=TextTokenizer,
+    tokenizer=TextAndVisionTokenizer,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     rope_type=RopeType.normal,
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+    required_arguments={
+        "enable_prefix_caching": False,
+        "enable_chunked_prefill": False,
     },
 )
