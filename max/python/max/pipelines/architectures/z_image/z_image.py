@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the ZImage multimodal model architecture."""
 
-from max.nn import (
-    Module,
-)
+from __future__ import annotations
+
+from max.nn import Module
 
 from .model_config import ZImageConfig
 from .scheduling_flow_match_euler_discrete import FlowMatchEulerDiscreteScheduler
-from .nn.autoencoderkl import AutoencoderKL
+from .nn.autoencoder_kl import AutoencoderKL
 from .nn.transformer_z_image import ZImageTransformer2DModel
 from max.pipelines.architectures.qwen3.model import Qwen3Model
 
