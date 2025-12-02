@@ -612,6 +612,15 @@ class TextGenerationContext(BaseContext, Protocol):
         """
         ...
 
+    def rewind_processing(self, n: int) -> None:
+        """Rewind the processing window start by n.
+
+        Use after rejecting a draft so future steps reprocess those tokens.
+        Args:
+            n (int): The number of tokens to rewind.
+        """
+        ...
+
     def skip_processing(self, n: int) -> None:
         """Advance the processing window start by n.
 

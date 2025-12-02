@@ -590,7 +590,7 @@ class SpeculativeDecodingPipelineBase(
             # If all draft tokens are accepted, then the draft model has not
             # processed the bonus token. In this case only the draft needs to
             # go one step back. At the moment we do this for all cases.
-            context.bump_token_indices(start_idx=-1)
+            context.rewind_processing(1)
 
         # Update metrics
         self._metrics.update(

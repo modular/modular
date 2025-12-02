@@ -196,6 +196,15 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         """
         self.bump_token_indices(start_idx=n)
 
+    def rewind_processing(self, n: int) -> None:
+        """Rewind the processing window start by n.
+
+        Use after rejecting a draft so future steps reprocess those tokens.
+        Args:
+            n (int): The number of tokens to rewind.
+        """
+        self.bump_token_indices(start_idx=-n)
+
     def maybe_chunk(self, chunk_size: int) -> int:
         """Optionally chunk the active token window to enforce a maximum size.
 
