@@ -17,11 +17,10 @@ from sys.info import _TargetType
 
 from algorithm._gpu.reduction import reduce_launch
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import NDBuffer  # TODO(jtodd): use LayoutTensor
+from layout import LayoutTensor, Layout, RuntimeLayout
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext, get_gpu_target
 from internal_utils import (
-    DeviceNDBuffer,
     arg_parse,
     env_get_shape,
     int_list_to_tuple,
@@ -92,11 +91,15 @@ fn run_reduce[
     for i in range(out_size):
         expected_vals[i] = shape[axis] * Scalar[dtype](1)
 
-    var multi_vec_device = ctx.enqueue_create_buffer[dtype](in_cache_elems)
-    var res_device = DeviceNDBuffer[dtype, rank](out_shape, ctx=ctx)
-    var output_buf_device = res_device.tensor
+    var multi_in_buffer = ctx.enqueue_create_buffer[dtype](in_cache_elems)
+    var res_buffer = ctx.enqueue_create_buffer[dtype](in_size)
 
-    ctx.enqueue_copy(multi_vec_device, in_host)
+    alias res_layout = Layout.row_major[rank]()
+    var res_device = LayoutTensor[dtype, res_layout](
+        res_buffer, RuntimeLayout[res_layout].row_major(out_shape)
+    )
+
+    ctx.enqueue_copy(multi_in_buffer, in_host)
 
     @always_inline
     @parameter
@@ -107,7 +110,7 @@ fn run_reduce[
 
         return reduce_fn[dtype, width](lhs, rhs)
 
-    @__copy_capture(output_buf_device)
+    @__copy_capture(res_device)
     @parameter
     fn output_fn[
         _dtype: DType, width: Int, _rank: Int
@@ -115,7 +118,7 @@ fn run_reduce[
         coords: IndexList[_rank],
         val: StaticTuple[SIMD[_dtype, width], num_reductions],
     ):
-        output_buf_device.store[width=width](
+        res_device.store[width=width](
             rebind[IndexList[rank]](coords), rebind[SIMD[dtype, width]](val[0])
         )
 
@@ -127,11 +130,14 @@ fn run_reduce[
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             var offset = iteration * in_stride % in_cache_elems
-            var input_buf_device = NDBuffer[dtype, rank, MutAnyOrigin](
-                multi_vec_device.unsafe_ptr() + offset, shape
+            var input_lt = LayoutTensor[
+                dtype, Layout.row_major[rank](), MutAnyOrigin
+            ](
+                multi_in_buffer.unsafe_ptr() + offset,
+                RuntimeLayout[Layout.row_major[rank]()].row_major(shape),
             )
 
-            @__copy_capture(input_buf_device)
+            @__copy_capture(input_lt)
             @parameter
             fn input_fn[
                 dtype: DType,
@@ -139,9 +145,7 @@ fn run_reduce[
                 _rank: Int,
             ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
                 return rebind[SIMD[dtype, width]](
-                    input_buf_device.load[width=width](
-                        rebind[IndexList[rank]](coords)
-                    )
+                    input_lt.load[width=width](rebind[IndexList[rank]](coords))
                 )
 
             reduce_launch[
@@ -167,12 +171,12 @@ fn run_reduce[
     )
 
     ctx.synchronize()
-    ctx.enqueue_copy(res_host, res_device.buffer)
+    ctx.enqueue_copy(res_host, res_buffer)
 
     for i in range(out_size):
         assert_equal(res_host[i], expected_vals[i])
 
-    _ = multi_vec_device
+    _ = multi_in_buffer
     _ = res_device
 
     in_host.free()
