@@ -469,8 +469,8 @@ own types. These standard library traits include:
 * [`Stringable`](/mojo/stdlib/builtin/str/Stringable)
 * [`StringableRaising`](/mojo/stdlib/builtin/str/StringableRaising)
 * [`Roundable`](/mojo/stdlib/builtin/math/Roundable)
-* [`Writable`](/mojo/stdlib/utils/write/Writable)
-* [`Writer`](/mojo/stdlib/utils/write/Writer)
+* [`Writable`](/mojo/stdlib/io/write/Writable)
+* [`Writer`](/mojo/stdlib/io/write/Writer)
 
 The API reference docs linked above include usage examples for each trait. The
 following sections discuss a few of these traits.
@@ -551,7 +551,7 @@ method, which should compute the "official" string representation of a type. If
 at all possible, this should look like a valid Mojo expression that could be
 used to recreate a struct instance with the same value.
 
-The [`Writable`](/mojo/stdlib/utils/write/Writable) trait describes a
+The [`Writable`](/mojo/stdlib/io/write/Writable) trait describes a
 type that can be converted to a stream of UTF-8 encoded data by writing to a
 `Writer` object. The [`print()`](/mojo/stdlib/builtin/io/print) function
 requires that its arguments conform to the `Writable` trait. This enables
@@ -559,11 +559,11 @@ efficient stream-based writing by default, avoiding unnecessary intermediate
 String heap allocations.
 
 The `Writable` trait requires a type to implement a
-[`write_to()`](/mojo/stdlib/utils/write/Writable#write_to) method, which
+[`write_to()`](/mojo/stdlib/io/write/Writable#write_to) method, which
 is provided with an object that conforms to the
-[`Writer`](/mojo/stdlib/utils/write/Writer) as an argument. You then
+[`Writer`](/mojo/stdlib/io/write/Writer) as an argument. You then
 invoke the `Writer` instance's
-[`write()`](/mojo/stdlib/utils/write/Writer#write) method to write a
+[`write()`](/mojo/stdlib/io/write/Writer#write) method to write a
 sequence of `Writable` arguments constituting the `String` representation of
 your type.
 
@@ -767,7 +767,7 @@ Because a struct that conforms to `Copyable` and `Movable` is not necessarily
 printable, `MyStack` uses
 [conditional conformance](/mojo/manual/parameters/#conditional-conformance) to
 define a `dump()` method that works as long as the element type is
-[writable](/mojo/stdlib/utils/write/Writable/).
+[writable](/mojo/stdlib/io/write/Writable/).
 
 The following code exercises this new trait by defining a generic method,
 `add_to_stack()` that adds an item to any `Stacklike` type.
