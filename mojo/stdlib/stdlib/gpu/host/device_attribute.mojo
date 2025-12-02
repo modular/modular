@@ -20,6 +20,11 @@ driver's attribute enumeration.
 These attributes allow applications to query specific hardware capabilities and limitations
 of GPU devices, such as maximum thread counts, memory sizes, compute capabilities, and
 supported features.
+
+:::note
+See the [`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext/) page
+for examples that retrieve `DeviceAttribute` values.
+:::
 """
 
 
