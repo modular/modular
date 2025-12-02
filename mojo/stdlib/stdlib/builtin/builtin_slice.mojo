@@ -30,11 +30,11 @@ struct Slice(
     brackets, e.g.:
 
     ```mojo
-    var msg: String = "Hello Mojo"
+    var lst: List[Int] = [0,1,2,3,4,5,6,7]
 
-    # Both are equivalent and print "Mojo".
-    print(msg[6:])
-    print(msg.__getitem__(Slice(6, len(msg))))
+    # Both are equivalent and result in a list: [].
+    var l1 = List(lst[6:])
+    var l2 = lst.__getitem__(Slice(6, len(lst)))
     ```
     """
 
@@ -212,6 +212,15 @@ struct StridedSlice(ImplicitlyCopyable, Movable):
     """
 
     var _inner: Slice
+
+    @implicit
+    fn __init__(out self, other: Slice):
+        """Implicitly convert from a general slice.
+
+        Args:
+            other: The other slice.
+        """
+        self._inner = other
 
     fn __init__(
         out self, start: Optional[Int], end: Optional[Int], stride: Int

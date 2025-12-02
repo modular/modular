@@ -19,7 +19,7 @@ You can import these APIs from the `memory` module. For example:
 from memory import Span
 ```
 """
-
+from builtin.builtin_slice import ContiguousSlice
 from builtin._location import __call_location
 from bit._mask import splat
 from collections._index_normalization import normalize_index
@@ -240,7 +240,7 @@ struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
         return self._data[normalized_idx]
 
     @always_inline
-    fn __getitem__(self, slc: Slice) -> Self:
+    fn __getitem__(self, slc: ContiguousSlice) -> Self:
         """Get a new span from a slice of the current span.
 
         Args:
@@ -253,16 +253,9 @@ struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
             This function allocates when the step is negative, to avoid a memory
             leak, take ownership of the value.
         """
-        var start, end, step = slc.indices(len(self))
+        var start, end = slc.indices(len(self))
 
-        # TODO: Introduce a new slice type that just has a start+end but no
-        # step.  Mojo supports slice type inference that can express this in the
-        # static type system instead of debug_assert.
-        debug_assert(step == 1, "Slice step must be 1")
-
-        return Self(
-            ptr=(self._data + start), length=len(range(start, end, step))
-        )
+        return Self(ptr=(self._data + start), length=end - start)
 
     @always_inline
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:

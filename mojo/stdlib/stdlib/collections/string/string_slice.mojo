@@ -47,7 +47,7 @@ var format_string = StaticString("{}: {}")
 print(format_string.format("bats", 6)) # bats: 6
 ```
 """
-
+from builtin.builtin_slice import ContiguousSlice
 from collections.string._unicode import (
     is_lowercase,
     is_uppercase,
@@ -840,7 +840,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         return self.__str__()
 
     @always_inline
-    fn __getitem__(self, span: Slice) -> Self:
+    fn __getitem__(self, span: ContiguousSlice) -> Self:
         """Gets the sequence of characters at the specified positions.
 
         Args:
@@ -849,10 +849,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             A new StringSlice containing the substring at the specified positions.
         """
-        # TODO: Introduce a new slice type that just has a start+end but no
-        # step.  Mojo supports slice type inference that can express this in the
-        # static type system instead of debug_assert.
-        debug_assert(span.step.or_else(1) == 1, "Slice step must be 1")
         return Self(unsafe_from_utf8=self._slice[span])
 
     fn to_python_object(var self) raises -> PythonObject:

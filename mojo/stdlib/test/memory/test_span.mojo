@@ -130,7 +130,7 @@ def test_span_slice():
     var s = Span(l)
     var res = s[1:2]
     assert_equal(res[0], 2)
-    res = s[1:-1:1]
+    res = s[1:-1]
     assert_equal(res[0], 2)
     assert_equal(res[1], 3)
     assert_equal(res[2], 4)
