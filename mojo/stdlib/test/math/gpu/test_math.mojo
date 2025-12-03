@@ -14,7 +14,6 @@
 from math import *
 
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
 from testing import TestSuite
 
 
@@ -25,7 +24,9 @@ fn run_func[
     ],
 ](ctx: DeviceContext, val: Scalar[dtype] = 0) raises:
     @parameter
-    fn kernel(output: UnsafePointer[Scalar[dtype]], input: Scalar[dtype]):
+    fn kernel(
+        output: UnsafePointer[Scalar[dtype], MutAnyOrigin], input: Scalar[dtype]
+    ):
         output[0] = kernel_fn(input)
 
     var out = ctx.enqueue_create_buffer[dtype](1)

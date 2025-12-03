@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys.ffi import _Global
 
@@ -29,7 +28,7 @@ fn _initialize_poison() -> Bool:
     return False
 
 
-fn _poison_ptr() -> UnsafePointer[Bool]:
+fn _poison_ptr() -> UnsafePointer[Bool, MutOrigin.external]:
     try:
         return TEST_VARIANT_POISON.get_or_create_ptr()
     except:

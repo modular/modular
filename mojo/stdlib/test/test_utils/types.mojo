@@ -28,7 +28,6 @@
 * `AbortOnCopy`
 """
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 
 # ===----------------------------------------------------------------------=== #
@@ -68,9 +67,7 @@ struct ObservableMoveOnly[actions_origin: ImmutOrigin](Movable):
         actions_origin: Origin of the actions list for tracking operations.
     """
 
-    comptime _U = UnsafePointer[
-        List[String], mut=False, origin = Self.actions_origin
-    ]
+    comptime _U = UnsafePointer[List[String], Self.actions_origin]
     var actions: Self._U
     """Pointer to list tracking lifecycle operations."""
     var value: Int
@@ -338,9 +335,7 @@ struct DelRecorder[recorder_origin: ImmutOrigin](ImplicitlyCopyable, Movable):
 
     var value: Int
     """Value to record when destroyed."""
-    var destructor_recorder: UnsafePointer[
-        List[Int], mut=False, origin = Self.recorder_origin
-    ]
+    var destructor_recorder: UnsafePointer[List[Int], Self.recorder_origin]
     """Pointer to list for recording destructor calls."""
 
     fn __del__(deinit self):
@@ -371,7 +366,7 @@ struct ObservableDel[origin: MutOrigin = MutAnyOrigin](
         origin: Origin of the target pointer.
     """
 
-    var target: UnsafePointer[Bool, origin = Self.origin]
+    var target: UnsafePointer[Bool, Self.origin]
     """Pointer to boolean flag set on destruction."""
 
     fn __del__(deinit self):
@@ -397,7 +392,7 @@ struct DelCounter[counter_origin: ImmutOrigin, *, trivial_del: Bool = False](
 
     comptime __del__is_trivial = Self.trivial_del
 
-    var counter: UnsafePointer[Int, mut=False, origin = Self.counter_origin]
+    var counter: UnsafePointer[Int, Self.counter_origin]
     """Pointer to counter incremented on destruction."""
 
     fn __del__(deinit self):

@@ -14,7 +14,6 @@
 from time import sleep, time_function
 
 from benchmark import Report, clobber_memory, keep, run
-from memory import LegacyUnsafePointer as UnsafePointer
 from testing import TestSuite
 
 

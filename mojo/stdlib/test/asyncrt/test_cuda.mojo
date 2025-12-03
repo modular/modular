@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
-from memory import LegacyUnsafePointer as UnsafePointer
 from gpu.host import DeviceContext, Dim
 from gpu.host._nvidia_cuda import (
     CUDA,
@@ -90,9 +89,9 @@ fn _run_cuda_external_function(ctx: DeviceContext) raises:
 
     # Signature of externally compiled kernel function
     fn vec_add_sig(
-        in0: UnsafePointer[Float32],
-        in1: UnsafePointer[Float32],
-        output: UnsafePointer[Float32],
+        in0: UnsafePointer[Float32, MutAnyOrigin],
+        in1: UnsafePointer[Float32, MutAnyOrigin],
+        output: UnsafePointer[Float32, MutAnyOrigin],
         len: Int,
     ):
         pass

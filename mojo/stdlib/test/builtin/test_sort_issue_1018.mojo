@@ -11,14 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from random import rand
 
 from testing import TestSuite
 
 
 fn _sort_test[dtype: DType, name: StaticString](size: Int, max: Int) raises:
-    var p = UnsafePointer[Scalar[dtype]].alloc(size)
+    var p = alloc[Scalar[dtype]](size)
     rand[dtype](p, size)
     sort(Span[Scalar[dtype], MutAnyOrigin](ptr=p, length=size))
     for i in range(1, size - 1):

@@ -16,7 +16,6 @@ from sys.info import simd_width_of
 
 from algorithm import elementwise
 from buffer import NDBuffer
-from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal
 from testing import TestSuite
 
@@ -25,7 +24,7 @@ from utils.index import IndexList
 
 def test_elementwise_1d():
     comptime num_elements = 64
-    var ptr = UnsafePointer[Float32].alloc(num_elements)
+    var ptr = alloc[Float32](num_elements)
 
     var vector = NDBuffer[DType.float32, 1, _, num_elements](ptr)
 

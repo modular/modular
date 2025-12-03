@@ -15,10 +15,6 @@ from asyncrt_test_utils import create_test_device_context, expect_eq
 from builtin.device_passable import DevicePassable
 from gpu import *
 from gpu.host import DeviceContext
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
 from testing import TestSuite
 
 comptime T = DType.float64
@@ -38,7 +34,7 @@ struct TwoS:
 struct OneS(DevicePassable):
     comptime device_type: AnyType = TwoS
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: LegacyOpaquePointer):
         target.bitcast[Self.device_type]()[] = TwoS(self.s)
 
     @staticmethod
@@ -56,9 +52,9 @@ struct OneS(DevicePassable):
 
 
 fn vec_func(
-    in0: UnsafePointer[S],
-    in1: UnsafePointer[S],
-    output: UnsafePointer[S],
+    in0: UnsafePointer[S, MutAnyOrigin],
+    in1: UnsafePointer[S, MutAnyOrigin],
+    output: UnsafePointer[S, MutAnyOrigin],
     s: TwoS,
     len: Int,
 ):

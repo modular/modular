@@ -13,7 +13,6 @@
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
 from testing import TestSuite
 
 
@@ -117,7 +116,7 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
     in_host.enqueue_copy_to(in_dev)
     in_dev.enqueue_copy_to(out_dev)
 
-    var out_ptr: UnsafePointer[Int64]
+    var out_ptr: UnsafePointer[Int64, MutAnyOrigin]
     if use_take_ptr:
         out_ptr = out_dev.take_ptr()
     else:
@@ -126,7 +125,7 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
     var first_out_dev = DeviceBuffer[DType.int64](
         ctx, out_ptr, half_length, owning=use_take_ptr
     )
-    var interior_out_ptr: UnsafePointer[Int64] = out_ptr.offset(half_length)
+    var interior_out_ptr = out_ptr.offset(half_length)
     var second_out_dev = DeviceBuffer[DType.int64](
         ctx, interior_out_ptr, half_length, owning=False
     )
