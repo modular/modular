@@ -1123,7 +1123,7 @@ struct SIMD[dtype: DType, size: Int](
         ), "the SIMD type must be numeric"
         return Self(mlir_value=__mlir_op.`pop.neg`(self._mlir_value))
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __and__(self, rhs: Self) -> Self:
         """Returns `self & rhs`.
 
@@ -1145,7 +1145,7 @@ struct SIMD[dtype: DType, size: Int](
             )
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __xor__(self, rhs: Self) -> Self:
         """Returns `self ^ rhs`.
 
@@ -1167,7 +1167,7 @@ struct SIMD[dtype: DType, size: Int](
             )
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __or__(self, rhs: Self) -> Self:
         """Returns `self | rhs`.
 
@@ -1744,7 +1744,7 @@ struct SIMD[dtype: DType, size: Int](
         __comptime_assert Self.dtype.is_numeric(), "the type must be numeric"
         return base**self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rand__(self, value: Self) -> Self:
         """Returns `value & self`.
 
@@ -1762,7 +1762,7 @@ struct SIMD[dtype: DType, size: Int](
         ), "must be an integral or bool type"
         return value & self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rxor__(self, value: Self) -> Self:
         """Returns `value ^ self`.
 
@@ -1780,7 +1780,7 @@ struct SIMD[dtype: DType, size: Int](
         ), "must be an integral or bool type"
         return value ^ self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ror__(self, value: Self) -> Self:
         """Returns `value | self`.
 
