@@ -293,7 +293,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
                 VariadicPack[
                     type_of(storage).is_owned,
                     type_of(storage).origin,
-                    Copyable & Movable,
+                    Movable,
                     *Self.element_types,
                 ]
             ](storage^)
@@ -801,9 +801,9 @@ comptime _AllStatic[
 ].STATIC_VALUE == 1
 
 comptime _AllEqualMapper[
-    T: Copyable & Movable,
+    T: AnyType,
     Prev: VariadicOf[MixedTupleLike],
-    From: VariadicOf[Copyable & Movable],
+    From: VariadicOf[AnyType],
     idx: Int,
 ] = (
     MakeVariadic[T=MixedTupleLike, ComptimeInt[1]] if (
@@ -814,7 +814,7 @@ comptime _AllEqualMapper[
 
 
 comptime _AllEqual[
-    T: Copyable & Movable, *element_types: Copyable & Movable
+    T: AnyType, *element_types: AnyType
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal = MakeVariadic[T=MixedTupleLike, ComptimeInt[0]],
     Variadic=element_types,

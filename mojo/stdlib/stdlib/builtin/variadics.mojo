@@ -762,7 +762,7 @@ Parameters:
 """
 
 comptime _ReversedVariadic[
-    T: type_of(Copyable & Movable),
+    T: type_of(AnyType),
     element_types: VariadicOf[T],
     idx: Int,
 ] = element_types[variadic_size(element_types) - 1 - idx]
@@ -774,7 +774,7 @@ Parameters:
 """
 
 comptime Reversed[
-    T: type_of(Copyable & Movable), //, *element_types: T
+    T: type_of(AnyType), //, *element_types: T
 ] = _MapVariadicAndIdxToType[
     To=T, Variadic=element_types, Mapper = _ReversedVariadic[T]
 ]

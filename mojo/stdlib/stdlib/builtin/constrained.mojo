@@ -84,7 +84,7 @@ fn _constrained_conforms_to[
     *,
     Parent: AnyType,
     Element: AnyType,
-    Trait: String,
+    Trait: StaticString,
 ]():
     comptime parent_type_name = get_type_name[Parent]()
     comptime elem_type_name = get_type_name[Element]()
@@ -95,13 +95,15 @@ fn _constrained_conforms_to[
     # Construct a message like:
     #     List(Equatable) conformance requires Foo(Equatable) conformance, which
     #     is not satisfied.
-    __comptime_assert cond, String(
-        parent_type_name,
-        "(",
-        trait_name,
-        ") conformance requires ",
-        elem_type_name,
-        "(",
-        trait_name,
-        ") conformance, which is not satisfied.",
+    __comptime_assert cond, StaticString(
+        _get_kgen_string[
+            parent_type_name,
+            "(",
+            trait_name,
+            ") conformance requires ",
+            elem_type_name,
+            "(",
+            trait_name,
+            ") conformance, which is not satisfied.",
+        ]()
     )
