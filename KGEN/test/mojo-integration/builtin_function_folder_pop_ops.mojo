@@ -273,6 +273,30 @@ fn pop_unresolved_simd_xor[
 
 
 ##===----------------------------------------------------------------------===##
+# Fold pop.simd_or
+##===----------------------------------------------------------------------===##
+
+
+@always_inline("builtin")
+fn pop_simd_or(
+    x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
+) -> __mlir_type.`!pop.simd<4, ui8>`:
+    return __mlir_op.`pop.simd.or`(x, y)
+
+
+# CHECK-LABEL: lit.fn @"fold_pop_simd_or
+fn fold_pop_simd_or() -> POPUInt8x4T[POP_UI8x4_Fold]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPUInt8x4T <:simd<4, ui8> {{.*}} <8, 15, 1, 0>, <34, 240, 1, 0>), <42, 255, 1, 0>)>>
+    var a = POPUInt8x4T[
+        pop_simd_or(
+            __mlir_attr.`#pop.simd<8, 15, 1, 0> : !pop.simd<4, ui8>`,
+            __mlir_attr.`#pop.simd<34, 240, 1, 0> : !pop.simd<4, ui8>`,
+        )
+    ]()
+    return a
+
+
+##===----------------------------------------------------------------------===##
 # Fold pop.simd_cmp
 ##===----------------------------------------------------------------------===##
 
