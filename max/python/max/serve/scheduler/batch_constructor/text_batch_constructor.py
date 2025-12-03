@@ -97,7 +97,15 @@ class TextBatchConstructor:
             ReplicaRequests() for _ in range(self.num_replicas)
         ]
 
-        self.token_budget = TokenBudgetCollection(
+        # Round-robin counter to determine which replica to enqueue the new request to.
+        # This is only used when not using paged attention.
+        self._round_robin_counter = 0
+
+        self.total_preemption_count = 0
+        self.last_preemption_logging_time: float = 0.0
+
+    def _create_new_token_budget(self) -> TokenBudgetCollection:
+        return TokenBudgetCollection(
             token_budgets=[
                 ActiveTokenBudget(
                     capacity=self.scheduler_config.target_tokens_per_batch_ce,
@@ -105,13 +113,6 @@ class TextBatchConstructor:
                 )
             ]
         )
-
-        # Round-robin counter to determine which replica to enqueue the new request to.
-        # This is only used when not using paged attention.
-        self._round_robin_counter = 0
-
-        self.total_preemption_count = 0
-        self.last_preemption_logging_time: float = 0.0
 
     def get_next_replica_idx(self) -> int:
         """Returns the next replica index to assign the request to."""
@@ -453,7 +454,7 @@ class TextBatchConstructor:
         ce_batch: dict[RequestID, TextContext] = {}
 
         # Reset the token budget for each CE batch construction.
-        self.token_budget.reset()
+        token_budget = self._create_new_token_budget()
 
         # Cannot schedule CE if there are no requests awaiting CE and or if the
         # TG batch is full.
@@ -469,7 +470,7 @@ class TextBatchConstructor:
             for ctx in ce_batch.values():
                 # active length should be 1 for TG requests
                 assert ctx.active_length == 1
-                self.token_budget.add_to_budget(ctx)
+                token_budget.add_to_budget(ctx)
 
         if self._lora_manager:
             # Track which LoRAs are currently active from running (TG) requests
@@ -572,7 +573,7 @@ class TextBatchConstructor:
                 self._lora_manager.activate_adapter(ctx.model_name)
                 active_loras.add(ctx.model_name)
 
-            budget_status = self.token_budget.status_after_context(ctx)
+            budget_status = token_budget.status_after_context(ctx)
 
             if budget_status == BudgetStatus.BUDGET_EXHAUSTED:
                 self._return_to_request_queue(ctx, replica_idx)
@@ -580,7 +581,7 @@ class TextBatchConstructor:
 
             batch_context_length += ctx.current_length
             ce_batch[req_id] = ctx
-            self.token_budget.add_to_budget(ctx)
+            token_budget.add_to_budget(ctx)
 
             if budget_status == BudgetStatus.BUDGET_REACHED:
                 break

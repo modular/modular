@@ -40,30 +40,36 @@ class BudgetStatus(str, Enum):
 class TokenBudget(ABC):
     """Abstract base class for token budgets used during batch construction.
 
-    A ``TokenBudget`` tracks how many tokens have been "spent" in a particular
+    A ``TokenBudget`` tracks how many tokens have been consumed from a particular
     dimension (for example, active prompt tokens or total context length) and
     exposes a common protocol for:
 
     * Checking whether a :class:`TextGenerationContext` can be admitted to the
       batch via :meth:`status_after_context`.
-    * Updating the internal accounting once a context has been accepted via
+    * Recording the token cost once a context has been accepted via
       :meth:`add_to_budget`.
 
     Implementations are free to interpret the token dimension they track, but
     they must respect the following contract:
 
     * If ``allow_chunking`` is True, implementations **may** call
-      ``context.chunk`` to reduce the effective token count they charge
-      to the budget.
-    * ``add_to_budget`` is only called after a non-``BUDGET_EXHAUSTED`` status
-      and is responsible for incrementing :attr:`used`.
+      ``context.chunk`` to reduce the effective token cost against
+      the budget.
+    * :meth:`status_after_context` takes an optional ``num_steps`` argument
+      describing how many generation steps the scheduler intends to run for the
+      context. Budgets that care about future growth (for example, total-context
+      limits) should incorporate this into their effective cost; others may
+      ignore it and remain per-step.
+    * :meth:`add_to_budget` is only called after a non-``BUDGET_EXHAUSTED``
+      status and is responsible for incrementing :attr:`used` by the same
+      effective token cost that was evaluated in :meth:`status_after_context`.
 
     Attributes:
         capacity: Maximum number of tokens allowed for this budget.
         allow_chunking: Whether this budget may shrink the context via
             ``context.chunk`` in order to fit within the remaining
             capacity.
-        used: Number of tokens currently charged against this budget.
+        used: Number of tokens currently consumed from this budget.
     """
 
     def __init__(self, capacity: int, allow_chunking: bool) -> None:
@@ -76,17 +82,18 @@ class TokenBudget(ABC):
     def remaining(self) -> int:
         return self.capacity - self.used
 
-    def reset(self) -> None:
-        self.used = 0
-
     @abstractmethod
     def status_after_context(
-        self, context: TextGenerationContext
+        self,
+        context: TextGenerationContext,
+        num_steps: int = 1,
     ) -> BudgetStatus:
         pass
 
     @abstractmethod
-    def add_to_budget(self, context: TextGenerationContext) -> None:
+    def add_to_budget(
+        self, context: TextGenerationContext, num_steps: int = 1
+    ) -> None:
         pass
 
 
@@ -111,13 +118,10 @@ class TokenBudgetCollection:
         """
         self.token_budgets = token_budgets
 
-    def reset(self) -> None:
-        """Reset all underlying budgets to their initial state."""
-        for token_budget in self.token_budgets:
-            token_budget.reset()
-
     def status_after_context(
-        self, context: TextGenerationContext
+        self,
+        context: TextGenerationContext,
+        num_steps: int = 1,
     ) -> BudgetStatus:
         """Evaluate all budgets against a context and return the first violation.
 
@@ -129,6 +133,8 @@ class TokenBudgetCollection:
 
         Args:
             context: The context being considered for inclusion in the batch.
+            num_steps: Planned number of generation steps for this context. This
+                is forwarded to each underlying :class:`TokenBudget`.
 
         Returns:
             The first non-available :class:`BudgetStatus` reported by any
@@ -136,23 +142,31 @@ class TokenBudgetCollection:
             all budgets accept the context.
         """
         for token_budget in self.token_budgets:
-            status = token_budget.status_after_context(context)
+            status = token_budget.status_after_context(context, num_steps)
             if status != BudgetStatus.BUDGET_AVAILABLE:
                 return status
         return BudgetStatus.BUDGET_AVAILABLE
 
-    def add_to_budget(self, context: TextGenerationContext) -> None:
-        """Charge all underlying budgets for an accepted context."""
+    def add_to_budget(
+        self, context: TextGenerationContext, num_steps: int = 1
+    ) -> None:
+        """Apply the token cost to all underlying budgets for an accepted context.
+
+        Args:
+            context: The context that was just admitted into the batch.
+            num_steps: Planned number of generation steps that were considered
+                when :meth:`status_after_context` was called.
+        """
         for token_budget in self.token_budgets:
-            token_budget.add_to_budget(context)
+            token_budget.add_to_budget(context, num_steps)
 
 
 class ActiveTokenBudget(TokenBudget):
-    """Token budget that accounts for the active window of each context.
+    """Token budget that tracks the active window of each context.
 
     This budget is intended for limiting the number of tokens processed during
-    a single context-encoding (CE) step. For each accepted context it charges
-    :attr:`TextGenerationContext.active_length` tokens to the budget, and it
+    a single context-encoding (CE) step. For each accepted context, the token
+    cost is :attr:`TextGenerationContext.active_length`, and the budget
     may optionally shrink the active window via ``context.chunk`` when
     ``allow_chunking`` is enabled.
 
@@ -164,15 +178,19 @@ class ActiveTokenBudget(TokenBudget):
         super().__init__(capacity=capacity, allow_chunking=allow_chunking)
 
     def status_after_context(
-        self, context: TextGenerationContext
+        self,
+        context: TextGenerationContext,
+        num_steps: int = 1,
     ) -> BudgetStatus:
         """Evaluate whether the context's active tokens fit within the budget.
 
         This method examines ``context.active_length`` relative to the number of
-        tokens remaining in the budget. If the active window would exceed the
-        remaining capacity and ``allow_chunking`` is enabled, it may call
-        ``context.chunk(tokens_remaining)`` to shrink the active window
-        so that it fits.
+        tokens remaining in the budget. It is intentionally **per-step**: the
+        ``num_steps`` parameter is accepted for interface compatibility but is
+        not used when computing the effective cost of a context. If the active window would
+        exceed the remaining capacity and ``allow_chunking`` is enabled, it may
+        call ``context.chunk(tokens_remaining)`` to shrink the active
+        window so that it fits.
 
         **Important side effects**:
 
@@ -180,10 +198,12 @@ class ActiveTokenBudget(TokenBudget):
           is enabled.
         * Does **not** update :attr:`used`. The caller must invoke
           :meth:`add_to_budget` after a non-``BUDGET_EXHAUSTED`` status in
-          order to commit the charge.
+          order to record the cost.
 
         Args:
             context: The :class:`TextGenerationContext` being considered.
+            num_steps: Planned number of generation steps. Currently ignored for
+                active-token budgets, which operate strictly on a per-step basis.
 
         Returns:
             A :class:`BudgetStatus` indicating if and how the context fits:
@@ -223,8 +243,10 @@ class ActiveTokenBudget(TokenBudget):
         except ValueError:
             return BudgetStatus.BUDGET_EXHAUSTED
 
-    def add_to_budget(self, context: TextGenerationContext) -> None:
-        """Update the budget for an accepted context's active tokens.
+    def add_to_budget(
+        self, context: TextGenerationContext, num_steps: int = 1
+    ) -> None:
+        """Record the token cost for an accepted context's active tokens.
 
         This should be called only after :meth:`status_after_context` has
         returned a non-:data:`BudgetStatus.BUDGET_EXHAUSTED` result for the
@@ -233,6 +255,8 @@ class ActiveTokenBudget(TokenBudget):
         Args:
             context: The context that was just admitted into the batch (possibly
                 after being chunked).
+            num_steps: Planned number of generation steps. Currently ignored for
+                active-token budgets, which consume only the per-step active window.
         """
         self.used += context.active_length
 
@@ -240,30 +264,41 @@ class ActiveTokenBudget(TokenBudget):
 class TotalContextTokenBudget(TokenBudget):
     """Token budget that tracks the full context length for each request.
 
-    Unlike :class:`ActiveTokenBudget`, which charges only the active window per
-    step, this budget charges :attr:`TextGenerationContext.current_length` for
-    each accepted context. It is intended for enforcing limits such as
+    Unlike :class:`ActiveTokenBudget`, which only costs the active window per
+    step, this budget has an effective cost derived from
+    :attr:`TextGenerationContext.current_length` and the planned number of
+    generation steps. It is intended for enforcing limits such as
     ``max_batch_context_length`` that bound the total number of tokens resident
-    in a batch.
+    in a batch across multiple steps.
     """
 
     def __init__(self, capacity: int, allow_chunking: bool) -> None:
         super().__init__(capacity=capacity, allow_chunking=allow_chunking)
 
     def status_after_context(
-        self, context: TextGenerationContext
+        self,
+        context: TextGenerationContext,
+        num_steps: int = 1,
     ) -> BudgetStatus:
         """Evaluate whether the context's total length fits within the budget.
 
-        This method considers :attr:`TextGenerationContext.current_length`
-        against the remaining capacity. If the context would exceed the budget
-        and ``allow_chunking`` is enabled, it may call
+        This method considers an effective cost based on
+        :attr:`TextGenerationContext.current_length` and ``num_steps`` against
+        the remaining capacity. Concretely, it assumes that over ``num_steps``
+        generation steps the context will grow by ``num_steps - 1`` tokens,
+        yielding an effective cost of
+
+        ``context.current_length + (num_steps - 1)``.
+
+        If the context would exceed the budget and ``allow_chunking`` is
+        enabled, it may call
         ``context.chunk(tokens_remaining)`` to reduce the effective
-        charge, though in practice chunking is typically more relevant for
+        cost, though in practice chunking is typically more relevant for
         active-token budgets.
 
         Args:
             context: The :class:`TextGenerationContext` being considered.
+            num_steps: Planned number of generation steps for this context.
 
         Returns:
             A :class:`BudgetStatus` indicating if and how the context fits:
@@ -277,7 +312,7 @@ class TotalContextTokenBudget(TokenBudget):
 
         Raises:
             ValueError: If chunking is enabled but ``context.chunk`` does
-                not succeed in reducing the effective charge to the remaining
+                not succeed in reducing the effective cost to the remaining
                 capacity.
         """
         tokens_remaining = self.remaining
@@ -286,31 +321,37 @@ class TotalContextTokenBudget(TokenBudget):
         if tokens_remaining <= 0:
             return BudgetStatus.BUDGET_EXHAUSTED
 
-        total_length = context.current_length
+        total_length = context.current_length + (num_steps - 1)
 
-        if total_length <= tokens_remaining:
-            if total_length == tokens_remaining:
-                return BudgetStatus.BUDGET_REACHED
+        if total_length < tokens_remaining:
             return BudgetStatus.BUDGET_AVAILABLE
+        elif total_length == tokens_remaining:
+            return BudgetStatus.BUDGET_REACHED
 
-        if not self.allow_chunking:
+        if not self.allow_chunking or context.active_length == 1:
             return BudgetStatus.BUDGET_EXHAUSTED
 
-        # This should just fail, and raise an error if we fail to chunk.
+        # Practically, there is no runtime reason to fail chunking.
+        # If it does, it is a bug in this token budget class, and should be fixed.
         context.chunk(tokens_remaining)
         return BudgetStatus.BUDGET_REACHED
 
-    def add_to_budget(self, context: TextGenerationContext) -> None:
-        """Charge the budget for an accepted context's total length.
+    def add_to_budget(
+        self, context: TextGenerationContext, num_steps: int = 1
+    ) -> None:
+        """Record the token cost for an accepted context's total length.
 
         This should be called only after :meth:`status_after_context` has
         returned a non-:data:`BudgetStatus.BUDGET_EXHAUSTED` result for the
         same ``context``.
 
         **Side effect**:
-            Increments :attr:`used` by ``context.current_length``.
+            Increments :attr:`used` by the same effective cost that was
+            evaluated in :meth:`status_after_context`, namely
+            ``context.current_length + (num_steps - 1)``.
 
         Args:
             context: The context that was just admitted into the batch.
+            num_steps: Planned number of generation steps for this context.
         """
-        self.used += context.current_length
+        self.used += context.active_length + (num_steps - 1)
