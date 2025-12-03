@@ -160,7 +160,8 @@ We host regular meetups, hackathons, and community calls. Join us!
 | 💬 Discord | [discord.gg/modular](https://discord.gg/modular) |
 | 💬 Forum | [forum.modular.com](https://forum.modular.com/) |
 | 📅 Meetup Group | [meetup.com/modular-meetup-group](https://www.meetup.com/modular-meetup-group/) |
-| 🎥 Community Meetings | Recordings on [YouTube](https://www.youtube.com/@modularinc) |
+| 🎥 Community Meetings | Recordings on
+[YouTube](https://www.youtube.com/@modularinc) |
 
 **Upcoming events** will be posted on our [Meetup page](https://www.meetup.com/modular-meetup-group/) and [Discord](https://discord.gg/modular).
 
