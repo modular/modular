@@ -890,7 +890,7 @@ struct SIMD[dtype: DType, size: Int](
         """
         return self.eq(value).reduce_or()
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __add__(self, rhs: Self) -> Self:
         """Computes `self + rhs`.
 
@@ -908,7 +908,7 @@ struct SIMD[dtype: DType, size: Int](
             mlir_value=__mlir_op.`pop.add`(self._mlir_value, rhs._mlir_value)
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __sub__(self, rhs: Self) -> Self:
         """Computes `self - rhs`.
 
@@ -926,7 +926,7 @@ struct SIMD[dtype: DType, size: Int](
             mlir_value=__mlir_op.`pop.sub`(self._mlir_value, rhs._mlir_value)
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __mul__(self, rhs: Self) -> Self:
         """Computes `self * rhs`.
 
@@ -937,12 +937,6 @@ struct SIMD[dtype: DType, size: Int](
             A new vector whose element at position `i` is computed as
             `self[i] * rhs[i]`.
         """
-
-        @parameter
-        if Self.dtype is DType.bool:
-            return (
-                self._refine[DType.bool]() & rhs._refine[DType.bool]()
-            )._refine[Self.dtype]()
 
         return Self(
             mlir_value=__mlir_op.`pop.mul`(self._mlir_value, rhs._mlir_value)
@@ -1647,7 +1641,7 @@ struct SIMD[dtype: DType, size: Int](
     # Reversed operations
     # ===------------------------------------------------------------------=== #
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __radd__(self, value: Self) -> Self:
         """Returns `value + self`.
 
@@ -1662,7 +1656,7 @@ struct SIMD[dtype: DType, size: Int](
         ), "the SIMD type must be numeric"
         return value + self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rsub__(self, value: Self) -> Self:
         """Returns `value - self`.
 
@@ -1677,7 +1671,7 @@ struct SIMD[dtype: DType, size: Int](
         ), "the SIMD type must be numeric"
         return value - self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rmul__(self, value: Self) -> Self:
         """Returns `value * self`.
 
