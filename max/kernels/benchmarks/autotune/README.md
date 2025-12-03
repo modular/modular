@@ -21,6 +21,8 @@
   - [Enable object cache](#enable-object-cache)
   - [Clear object cache](#clear-object-cache)
 
+- [Running Python benchmarks (experimental)](#running-python-benchmarks)
+
 ## Why is `kbench` written in Python?
 
 In other words, why the driver cannot be in the same process as the entity that
@@ -390,3 +392,33 @@ Note `--run-only` implies `-c`
 kbench --clear-cache
 kbench -cc
 ```
+
+## Running Python Benchmarks
+
+- Set up a kbench config yaml that has `.py` in its `file` path.
+- Follow the example in `max/kernels/benchmarks/autotune/sample.py`, importing
+  the relevant functions:
+  
+  ```python
+  from bencher_utils import Bench, ThroughputMeasure, arg_parse
+  ```
+
+- Run with `kbench`:
+  
+  ```python
+  kbench -f $KERNEL_BENCHMARKS_ROOT/autotune/test_python.yaml
+  ```
+
+- Output:
+  Result is saved to `ouput.pkl/csv/txt`:
+  
+  ```plaintext
+  ----------------------------------------------------------------------
+  Number of valid executed specs: 5 (out of 5)
+  mesh_idx                                                 name   iters   met (ms)   Arithmetic (GFLOPS/s)                                                        spec
+          0 gemm/dtype=DType.float16/m=1024/n=512/k=256/stages=4       1        0.1              2684.35456 sample/dtype=DType.float16/shape=1024x512x256/stages=4/$x=0
+          1 gemm/dtype=DType.float16/m=1024/n=512/k=256/stages=4       1        0.1              2684.35456 sample/dtype=DType.float16/shape=1024x512x256/stages=4/$x=1
+          2     gemm/dtype=DType.float16/m=32/n=32/k=32/stages=4       1        0.1                 0.65536     sample/dtype=DType.float16/shape=32x32x32/stages=4/$x=0
+          3     gemm/dtype=DType.float16/m=32/n=32/k=32/stages=4       1        0.1                 0.65536     sample/dtype=DType.float16/shape=32x32x32/stages=4/$x=1
+          4     gemm/dtype=DType.float32/m=64/n=64/k=64/stages=2       1        0.1                 5.24288          sample/dtype=DType.float32/shape=64x64x64/stages=2
+  ```

@@ -29,6 +29,7 @@ from kbench_model import (
     Param,
     ProcessOutput,
     Scheduler,
+    SupportedLangs,
 )
 from kplot import cli as kplot_cli
 from kprofile import cli as kprofile_cli
@@ -301,23 +302,23 @@ def test_process_output_log() -> None:
 def test_param_define_regular() -> None:
     """Test Param.define() for regular compile-time parameters"""
     param = Param(name="BLOCK_SIZE", value=128)
-    assert param.define() == ["-D", "BLOCK_SIZE=128"]
+    assert param.define(lang=SupportedLangs.MOJO) == ["-D", "BLOCK_SIZE=128"]
 
     param_str = Param(name="TYPE", value="float32")
-    assert param_str.define() == ["-D", "TYPE=float32"]
+    assert param_str.define(lang=SupportedLangs.MOJO) == ["-D", "TYPE=float32"]
 
 
 def test_param_define_variable() -> None:
-    """Test Param.define() for runtime variable parameters (prefixed with $)"""
+    """Test Param.define(lang=SupportedLangs.MOJO) for runtime variable parameters (prefixed with $)"""
     param = Param(name="$M", value=1024)
-    result = param.define()
+    result = param.define(lang=SupportedLangs.MOJO)
     # Variable params get converted to --<name>=<value> format
     assert result == ["--M=1024"]
 
     param = Param(name="$a$b", value="test")
-    result = param.define()
+    result = param.define(lang=SupportedLangs.MOJO)
     assert result == ["--a$b=test"]
 
     param = Param(name="$$a", value="test")
-    result = param.define()
+    result = param.define(lang=SupportedLangs.MOJO)
     assert result == ["--$a=test"]
