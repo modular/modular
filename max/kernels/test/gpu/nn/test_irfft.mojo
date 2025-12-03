@@ -14,7 +14,6 @@ from buffer import DimList
 from complex import ComplexFloat32
 from gpu.host import DeviceContext
 from gpu.host.info import Vendor
-from internal_utils import DeviceNDBuffer, HostNDBuffer
 from layout import Layout, LayoutTensor, RuntimeLayout
 from math import sqrt
 from nn.irfft import irfft
@@ -52,83 +51,85 @@ fn test_irfft_basic[
     # as interleaved float32 (real, imag, real, imag, ...)
     comptime input_shape = DimList(batch_size, input_size * 2)
     comptime output_shape = DimList(batch_size, output_size)
-
-    # Create host buffers
-    var input_host = HostNDBuffer[dtype, 2, input_shape](input_shape)
-    var output_host = HostNDBuffer[dtype, 2, output_shape](output_shape)
-
-    # Initialize input with a simple test pattern
-    # Set DC component (first complex value) to a known value
-    # All other frequencies to zero
-    for b in range(batch_size):
-        # DC component: real=1.0, imag=0.0
-        input_host.tensor[b, 0] = 1.0  # real part
-        input_host.tensor[b, 1] = 0.0  # imaginary part
-
-        # Set all other frequencies to zero
-        for i in range(1, input_size):
-            input_host.tensor[b, 2 * i] = 0.0  # real part
-            input_host.tensor[b, 2 * i + 1] = 0.0  # imaginary part
-
-    # Create device buffers
-    var input_dev = DeviceNDBuffer[dtype, 2, input_shape](input_shape, ctx=ctx)
-    var output_dev = DeviceNDBuffer[dtype, 2, output_shape](
-        output_shape, ctx=ctx
-    )
-
-    # Copy input to device
-    ctx.enqueue_copy(input_dev.buffer, input_host.tensor.data)
-
-    # Create LayoutTensors for the irfft call
     comptime layout_2d = Layout.row_major[2]()
     comptime alignment = 1
+
+    var input_runtime_layout = RuntimeLayout[layout_2d].row_major(
+        IndexList[2](batch_size, input_size * 2)
+    )
+    var output_runtime_layout = RuntimeLayout[layout_2d].row_major(
+        IndexList[2](batch_size, output_size)
+    )
+
+    # Create device buffers
+    var input_device = ctx.enqueue_create_buffer[dtype](
+        batch_size * input_size * 2
+    )
+    var output_device = ctx.enqueue_create_buffer[dtype](
+        batch_size * output_size
+    )
+
+    # Initialize input with a simple test pattern on host
+    # Set DC component (first complex value) to a known value
+    # All other frequencies to zero
+    with input_device.map_to_host() as input_host:
+        var input_tensor = LayoutTensor[dtype, layout_2d](
+            input_host, input_runtime_layout
+        )
+        for b in range(batch_size):
+            # DC component: real=1.0, imag=0.0
+            input_tensor[b, 0] = 1.0  # real part
+            input_tensor[b, 1] = 0.0  # imaginary part
+
+            # Set all other frequencies to zero
+            for i in range(1, input_size):
+                input_tensor[b, 2 * i] = 0.0  # real part
+                input_tensor[b, 2 * i + 1] = 0.0  # imaginary part
+
+    # Initialize output with zeros
+    with output_device.map_to_host() as output_host:
+        for i in range(len(output_host)):
+            output_host[i] = 0
 
     # Execute IRFFT
     irfft[dtype, dtype, alignment](
         LayoutTensor[dtype, layout_2d, alignment=alignment](
-            input_dev.buffer,
-            RuntimeLayout[layout_2d].row_major(
-                IndexList[2](batch_size, input_size * 2)
-            ),
+            input_device,
+            input_runtime_layout,
         ),
         LayoutTensor[mut=True, dtype, layout_2d, alignment=alignment](
-            output_dev.buffer,
-            RuntimeLayout[layout_2d].row_major(
-                IndexList[2](batch_size, output_size)
-            ),
+            output_device,
+            output_runtime_layout,
         ),
         output_size,
         128,  # buffer_size_mb
         ctx,
     )
 
-    # Copy result back to host
-    ctx.enqueue_copy(output_host.tensor.data, output_dev.buffer)
+    ctx.synchronize()
 
     # Verify results
     # For a DC-only signal (frequency = 0), the IRFFT should produce
     # a constant value in all output samples.
     # The expected value depends on normalization, but all samples should be equal
-    var first_value = output_host.tensor[0, 0]
-    print("First output value:", first_value)
+    with output_device.map_to_host() as output_host:
+        var output_tensor = LayoutTensor[dtype, layout_2d](
+            output_host, output_runtime_layout
+        )
+        var first_value = output_tensor[0, 0]
+        print("First output value:", first_value)
 
-    for b in range(batch_size):
-        for i in range(output_size):
-            # All output values should be approximately equal for DC-only input
-            assert_almost_equal(
-                output_host.tensor[b, i],
-                first_value,
-                rtol=0.01,
-                msg="Output values should be constant for DC-only input",
-            )
+        for b in range(batch_size):
+            for i in range(output_size):
+                # All output values should be approximately equal for DC-only input
+                assert_almost_equal(
+                    output_tensor[b, i],
+                    first_value,
+                    rtol=0.01,
+                    msg="Output values should be constant for DC-only input",
+                )
 
     print("Succeed")
-
-    # Clean up
-    _ = input_host
-    _ = output_host
-    _ = input_dev^
-    _ = output_dev^
 
 
 def main():
