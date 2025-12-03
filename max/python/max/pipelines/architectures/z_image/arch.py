@@ -23,7 +23,7 @@ from max.pipelines.lib import (
 from .model import ZImageModel
 from max.pipelines.architectures.qwen3 import qwen3_arch
 from .nn.transformer_z_image import ZImageTransformer2DModel
-from .nn.autoencoderkl import AutoencoderKL
+from .nn.autoencoder_kl import AutoencoderKL
 from .scheduling_flow_match_euler_discrete import FlowMatchEulerDiscreteScheduler
 from .weight_adapters import convert_z_image_model_state_dict
 
