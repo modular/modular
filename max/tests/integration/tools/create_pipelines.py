@@ -1120,6 +1120,10 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "Qwen/Qwen2.5-VL-32B-Instruct": Qwen2_5VLPipelineOracle(
         "Qwen/Qwen2.5-VL-32B-Instruct"
     ),
+    # Qwen2.VL-FP8
+    "allenai/olmOCR-7B-0825-FP8": Qwen2_5VLPipelineOracle(
+        "allenai/olmOCR-7B-0825-FP8"
+    ),
     "Qwen/Qwen3-8B": GenericOracle(
         model_path="Qwen/Qwen3-8B",
         config_params={"max_length": 512},
