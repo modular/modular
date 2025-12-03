@@ -1,0 +1,82 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+"""Pre-built wheel library targets for Blackwell benchmark external baselines.
+
+These wheels are SM100-specific builds for DeepGEMM, FlashInfer, and flash-attention
+used to benchmark MAX kernels against external implementations on B200 GPUs.
+"""
+
+load("@rules_pycross//pycross:defs.bzl", "pycross_wheel_library")
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//visibility:public"])
+
+# Wrapper to expose cutlass module from nvidia-cutlass-dsl.
+# The nvidia_cutlass_dsl.pth file adds python_packages/ to sys.path,
+# but Bazel doesn't process .pth files. We use imports to achieve the same.
+modular_py_library(
+    name = "cutlass-imports",
+    imports = ["../../../external/rules_pycross++lock_file+modular_pip_lock_file_repo/deps/nvidia-cutlass-dsl@4.3.0/site-packages/nvidia_cutlass_dsl/python_packages"],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        requirement("nvidia-cutlass-dsl"),
+    ],
+)
+
+pycross_wheel_library(
+    name = "deep-gemm",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    wheel = "@deepgemm_sm100_wheel//file",
+    deps = [
+        requirement("torch"),
+    ],
+)
+
+pycross_wheel_library(
+    name = "flashinfer",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    wheel = "@flashinfer_sm100_wheel//file",
+    deps = [
+        requirement("apache-tvm-ffi"),
+        requirement("click"),
+        requirement("einops"),
+        requirement("ninja"),  # JIT compilation at runtime
+        requirement("numpy"),
+        requirement("nvidia-cudnn-frontend"),
+        requirement("nvidia-cutlass-dsl"),
+        requirement("nvitop"),  # provides pynvml via nvidia-ml-py
+        requirement("packaging"),
+        requirement("requests"),
+        requirement("tabulate"),
+        requirement("torch"),
+        requirement("tqdm"),
+    ],
+)
+
+pycross_wheel_library(
+    name = "flash-attn",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    wheel = "@flash_attn_sm100_wheel//file",
+    deps = [
+        ":cutlass-imports",  # adds nvidia_cutlass_dsl/python_packages to sys.path
+        requirement("einops"),
+        requirement("nvidia-cutlass-dsl"),
+        requirement("torch"),
+    ],
+)
