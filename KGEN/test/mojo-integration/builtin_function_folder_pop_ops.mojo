@@ -567,3 +567,20 @@ fn fold_pop_simd_reduce_and() -> POPUInt8T[POP_UI8_77]:
         )
     ]()
     return a
+
+
+##===----------------------------------------------------------------------===##
+# Fold kgen.param.assert
+##===----------------------------------------------------------------------===##
+
+
+@always_inline("builtin")
+fn kgen_assert() -> Bool:
+    __comptime_assert False, "Ignore this"
+    return True
+
+
+# CHECK-LABEL: lit.fn @"fold_kgen_assert
+fn fold_kgen_assert() -> BoolT[True]:
+    var a = BoolT[kgen_assert()]()
+    return a
