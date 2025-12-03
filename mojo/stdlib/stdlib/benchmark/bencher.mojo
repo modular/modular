@@ -799,6 +799,37 @@ struct Bench(Stringable, Writable):
         self.bench_function[bench_iter](bench_id, measures=measures)
 
     fn bench_function[
+        bench_fn: fn (mut Bencher) capturing [_] -> None
+    ](
+        mut self,
+        bench_id: BenchId,
+        measures: List[ThroughputMeasure] = {},
+        fixed_iterations: Optional[Int] = None,
+    ) raises:
+        """Benchmarks or Tests an input function.
+
+        Parameters:
+            bench_fn: The function to be benchmarked.
+
+        Args:
+            bench_id: The benchmark Id object used for identification.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
+            fixed_iterations: Just run a fixed number of iterations.
+
+        Raises:
+            If the operation fails.
+        """
+
+        if self.mode == Mode.Benchmark:
+            for _ in range(self.config.num_repetitions):
+                self._bench[bench_fn](
+                    bench_id, measures.copy(), fixed_iterations
+                )
+        elif self.mode == Mode.Test:
+            self._test[bench_fn]()
+
+    # TODO (#31795): overload should not be needed
+    fn bench_function[
         bench_fn: fn (mut Bencher) raises capturing [_] -> None
     ](
         mut self,
@@ -821,27 +852,21 @@ struct Bench(Stringable, Writable):
         """
 
         @parameter
-        fn bench_with_abort_on_err(mut b: Bencher):
+        fn abort_on_err(mut b: Bencher):
             """Aborts benchmark in case of an error.
 
             Args:
                 b: The bencher object to facilitate benchmark execution.
             """
 
-            # TODO: if we don't catch the exception here we have to overload
+            # TODO (#31795): if we don't catch the exception here we have to overload
             # almost every function in stdlib benchmark and stdlib time
             try:
                 bench_fn(b)
             except e:
                 abort(String(e))
 
-        if self.mode == Mode.Benchmark:
-            for _ in range(self.config.num_repetitions):
-                self._bench[bench_with_abort_on_err](
-                    bench_id, measures.copy(), fixed_iterations
-                )
-        elif self.mode == Mode.Test:
-            self._test[bench_with_abort_on_err]()
+        self.bench_function[abort_on_err](bench_id, measures)
 
     fn _test[bench_fn: fn (mut Bencher) capturing [_] -> None](mut self) raises:
         """Tests an input function by executing it only once.
@@ -1254,17 +1279,14 @@ struct Bencher:
             var stop = time.perf_counter_ns()
             self.elapsed += Int(stop - start)
 
-    fn iter_custom[iter_fn: fn (Int) raises capturing [_] -> Int](mut self):
+    fn iter_custom[iter_fn: fn (Int) capturing [_] -> Int](mut self):
         """Times a target function with custom number of iterations.
 
         Parameters:
             iter_fn: The target function to benchmark.
         """
 
-        try:
-            self.elapsed = iter_fn(self.num_iters)
-        except e:
-            abort(String(e))
+        self.elapsed = iter_fn(self.num_iters)
 
     fn iter_custom[
         kernel_launch_fn: fn (DeviceContext) raises capturing [_] -> None
@@ -1338,3 +1360,16 @@ struct Bencher:
             iter_fn()
         var stop = time.perf_counter_ns()
         self.elapsed = Int(stop - start)
+
+    # TODO (#31795):  overload should not be needed
+    fn iter_custom[iter_fn: fn (Int) capturing raises -> Int](mut self):
+        """Times a target function with custom number of iterations.
+
+        Parameters:
+            iter_fn: The target function to benchmark.
+        """
+
+        try:
+            self.elapsed = iter_fn(self.num_iters)
+        except e:
+            abort(String(e))

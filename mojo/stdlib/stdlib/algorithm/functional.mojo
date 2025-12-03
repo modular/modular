@@ -301,6 +301,30 @@ fn vectorize[
 
 @always_inline
 fn sync_parallelize[
+    origins: OriginSet, //, func: fn (Int) capturing [origins] -> None
+](num_work_items: Int):
+    """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
+    and returns when all are complete.
+
+    Parameters:
+        origins: The capture origins.
+        func: The function to invoke.
+
+    Args:
+        num_work_items: Number of parallel tasks.
+    """
+
+    @always_inline
+    @parameter
+    fn func_wrapper(i: Int) raises:
+        func(i)
+
+    # Defer to the raising overload.
+    sync_parallelize[func_wrapper](num_work_items)
+
+
+@always_inline
+fn sync_parallelize[
     origins: OriginSet, //,
     func: fn (Int) raises capturing [origins] -> None,
 ](num_work_items: Int):

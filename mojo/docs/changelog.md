@@ -73,14 +73,6 @@ what we publish.
       parametric_raise_example(func_ptr)
     except err_gen: # Typed as GenTy
         ref s: GenTy = err_gen
-
-    # Non-raising functions infer an error type of `Never`, allowing these
-    # functions to propagate non-raisability across generic higher-order
-    # functions conveniently.
-    fn doesnt_raise(): pass
-    # Note this isn't in a try block. Mojo knows 'parametric_raise_example'
-    # doesn't raise because the 'doesnt_raise' function doesn't.
-    parametric_raise_example(doesnt_raise)
   ```
 
   This support should be reliable, but there are a few limitations: 1) `with`
@@ -89,7 +81,7 @@ what we publish.
 
 - Mojo now allows implicit conversions between function types from a non-raising
   function to a raising function.  It also allows implicit conversions between
-  function types whose result types are implicitly convertible.
+  function types whose result types are implicitly convertible:
 
   ```mojo
   fn takes_raising_float(a: fn () raises -> Float32): ...
