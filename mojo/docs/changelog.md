@@ -215,6 +215,10 @@ what we publish.
   providing better performance and transparency. Error handling now includes
   errno-based messages for improved diagnostics.
 
+- Removed `String.join(*Writable)` overload that takes a variadic sequence
+  of arguments, as it could be ambiguous with the remaining
+  `String.join(Span[Writable])` overload.
+
 ### Tooling changes
 
 - The Mojo compiler now "diffs" very long types in error messages to explain
