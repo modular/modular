@@ -32,7 +32,7 @@ def ParameterAttrInterface : AttrInterface<"ParameterAttr"> {
       returning true if this parameter should be considered "less" than the
       other attribute.
     }], "bool", "isLessThan", (ins "Attribute":$rhs), [{}], [{
-      return false;
+      return ParameterAttr::compareSubElements($_attr, rhs);
     }]>,
 
     InterfaceMethod<[{
@@ -54,6 +54,11 @@ def ParameterAttrInterface : AttrInterface<"ParameterAttr"> {
     /// Compare two parameter constants, returning true if the `lhs` parameter
     /// should be considered "less" than the `rhs` parameter.
     static bool compare(Attribute lhs, Attribute rhs);
+
+    // Compare sub-elements of a type or attribute lexicographically (first all
+    // the nested attributes, then all the nested types).
+    static bool compareSubElements(Attribute lhs, Attribute rhs);
+    static bool compareSubElements(Type lhs, Type rhs);
   }];
 }
 
