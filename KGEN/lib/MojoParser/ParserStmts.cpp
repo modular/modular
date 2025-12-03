@@ -1957,7 +1957,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
             emitError(contextExp->getLoc(), "context manager of type ")
             << contextRVType
             << " defines a consuming __enter__ method as well as an __exit__ "
-               "method; either remove 'owned' from its '__enter__' method or "
+               "method; either remove 'var' from its '__enter__' method or "
                "remove the '__exit__' method"
             << contextExp->getRange();
         if (ASTDecl *contextDecl = contextRVType.getDecl(shared))
