@@ -101,7 +101,7 @@ build](https://docs.modular.com/max/packages).
 
 ## News & Announcements
 
-**[2025/11]** [Modular Platform 25.7](https://www.modular.com/blog/modular-25-7-faster-inference-safer-gpu-programming-and-a-more-unified-developer-experience) provides a fully open MAX Python API, expanded harware support for NVIDIA Grace superchips, improved Mojo GPU programming experience, and much more.
+**[2025/11]** [Modular Platform 25.7](https://www.modular.com/blog/modular-25-7-faster-inference-safer-gpu-programming-and-a-more-unified-developer-experience) provides a fully open MAX Python API, expanded hardware support for NVIDIA Grace superchips, improved Mojo GPU programming experience, and much more.
 
 **[2025/11]** We met with the community at [PyTorch 2025 + the LLVM Developers's Meeting](https://www.modular.com/blog/pytorch-and-llvm-in-2025-keeping-up-with-ai-innovation) to solicit community input into how the Modular platform can reduce fragmentation and provide a unified AI stack.
 
