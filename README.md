@@ -155,10 +155,6 @@ Anthropic engineers.
 
 We host regular meetups, hackathons, and community calls. Join us!
 
-## Community & Events
-
-We host regular meetups, hackathons, and community calls. Join us!
-
 | Channel               | Link                                |
 |-----------------------|-------------------------------------|
 | 💬 Discord            | [discord.gg/modular][discord]       |
