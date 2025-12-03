@@ -1111,7 +1111,7 @@ explicitly unbound parameters in the future.
 Mojo supports "automatic" parameterization of functions and parametric aliases.
 If a function argument type or parameter type is
 [partially-bound or unbound](#fully-bound-partially-bound-and-unbound-types),
-the unbound parameters are automatically added as input parameters on the
+the unbound parameters are automatically added as parameters on the
 function. This is easier to understand with an example:
 
 ```mojo
@@ -1147,14 +1147,14 @@ When you call `print_params()` you must pass it a concrete instance of the
 `SIMD[DType.float64, 4]`. The Mojo compiler *infers* the parameter
 values from the input argument.
 
-With a manually parameterized function, you can access the input parameters by
+With a manually parameterized function, you can access the parameters by
 name (for example, `t` and `s` in the previous example). For an
 automatically parameterized function, you can access the parameters as
 attributes on the argument (for example, `vec.type`).
 
-This ability to access a type's input parameters is not specific to
+This ability to access a type's parameters is not specific to
 automatically parameterized functions, you can use it anywhere. You can access
-the input parameters of a parameterized type as attributes on the type itself:
+the parameters of a parameterized type as attributes on the type itself:
 
 ```mojo
 fn on_type():
@@ -1248,7 +1248,7 @@ The `eat()` function takes a `Fudge` struct with the first parameter (`sugar`)
 bound to the value 5. The second and third parameters, `cream` and `chocolate`
 are unbound.
 
-The unbound `cream` and `chocolate` parameters become implicit input parameters
+The unbound `cream` and `chocolate` parameters become implicit parameters
 on the `eat` function. In practice, this is roughly equivalent to writing:
 
 ```mojo
@@ -1290,7 +1290,7 @@ fn devour(f: Fudge[_, 6, _]):
 ```
 
 Again, the unbound parameters (`sugar` and `chocolate`) are added as implicit
-input parameters on the function. This version is roughly equivalent to the
+parameters on the function. This version is roughly equivalent to the
 following code, where these two values are explicitly bound to the input
 parameters, `su` and `ch`:
 
