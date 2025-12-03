@@ -27,7 +27,7 @@ from transformers.models.auto.configuration_auto import AutoConfig
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
 from max.nn.float8_config import Float8Config, parse_float8_config
 from max.nn.kv_cache import KVCacheParams
-from max.pipelines.lib import KVCacheConfig 
+from max.pipelines.lib import KVCacheConfig
 
 
 @dataclass
@@ -54,7 +54,7 @@ class SchedulerConfig:
 
     max_shift: float
     """Max shift value."""
-    
+
     num_train_timesteps: int
     """Number of training timesteps."""
 
@@ -132,7 +132,7 @@ class VAEConfig:
 
     act_fn: str
     """Activation function."""
-  
+
     block_out_channels: Tuple[int]
     """Tuple of block output channels."""
 
@@ -149,43 +149,40 @@ class VAEConfig:
 
     latent_channels: int
     """Number of channels in the latent space."""
-    
+
     latents_mean: Tuple[float]
-    """"""
-    
+    """Latents mean."""
+
     latents_std: Tuple[float]
-    """"""
-    
+    """Latents standard deviation."""
+
     layers_per_block: int
-    """"""
-    
+    """Number of layers per block."""
+
     mid_block_add_attention: bool
     """If enabled, the mid_block of the Encoder and Decoder will have attention blocks. If set to false, the
     mid_block will only have resnet blocks"""
-    
+
     norm_num_groups: int
-    """"""
-    
+    """Number of normalization groups."""
+
     out_channels: int
-    """"""
-    
+    """Number of output channels."""
+
     sample_size: int
-    """"""
-    
-    scaling_factor: float
-    """"""
-    
+    """Sample size."""
+
     shift_factor: float
-    """"""
-    
+    """Shift factor."""
+
     up_block_types: Tuple[str]
-    """"""
-    
+    """Tuple of upsample block types."""
+
     use_post_quant_conv: bool
-    """"""
-    
+    """Use post quantization convolution flag."""
+
     use_quant_conv: bool
-    """"""
+    """Use quantization convolution flag."""
 
     scaling_factor: float
     """The component-wise standard deviation of the trained latent space computed using the first batch of the
@@ -230,15 +227,24 @@ class VAEConfig:
                 DeviceRef(spec.device_type, spec.id)
                 for spec in pipeline_config.model_config.device_specs
             ],
-            attn_scales=vae_config.attn_scales,
-            base_dim=vae_config.base_dim,
-            dim_mult=vae_config.dim_mult,
-            dropout=vae_config.dropout,
-            latents_mean=vae_config.latents_mean,
-            latents_std=vae_config.latents_std,
-            num_res_blocks=vae_config.num_res_blocks,
-            temperal_downsample=vae_config.temperal_downsample,
-            z_dim=vae_config.z_dim,
+            act_fn=vae_config.act_fn,
+            block_out_channels=tuple(vae_config.block_out_channels),
+            down_block_types=tuple(vae_config.down_block_types),
+            force_upcast=vae_config.force_upcast,
+            in_channels=vae_config.in_channels,
+            latent_channels=vae_config.latent_channels,
+            latents_mean=tuple(vae_config.latents_mean),
+            latents_std=tuple(vae_config.latents_std),
+            layers_per_block=vae_config.layers_per_block,
+            mid_block_add_attention=vae_config.mid_block_add_attention,
+            norm_num_groups=vae_config.norm_num_groups,
+            out_channels=vae_config.out_channels,
+            sample_size=vae_config.sample_size,
+            scaling_factor=vae_config.scaling_factor,
+            shift_factor=vae_config.shift_factor,
+            up_block_types=tuple(vae_config.up_block_types),
+            use_post_quant_conv=vae_config.use_post_quant_conv,
+            use_quant_conv=vae_config.use_quant_conv,
             float8_config=v_float8,
         )
 
@@ -259,32 +265,50 @@ class TransformerConfig:
     devices: list[DeviceRef]
     """Devices that the transformer model is parallelized over."""
 
-    attention_head_dim: int
-    """Attention head dimension."""
+    all_f_patch_size: list[int]
+    """All f patch size."""
 
-    axes_dims_rope: list[int]
-    """Axes dimensions for rope."""
+    all_patch_size: list[int]
+    """All patch size."""
 
-    guidance_embeds: bool
-    """Whether to use guidance embeds."""
+    axes_dims: list[int]
+    """Axes dimensions."""
+
+    axes_lens: list[int]
+    """Axes lengths."""
+
+    cap_feat_dim: int
+    """Capacity feature dimension."""
+
+    dim: int
+    """Dimension."""
 
     in_channels: int
     """Number of input channels."""
 
-    joint_attention_dim: int
-    """Joint attention dimension."""
+    n_heads: int
+    """Number of heads."""
 
-    num_attention_heads: int
-    """Number of attention heads."""
+    n_kv_heads: int
+    """Number of KV heads."""
 
-    num_layers: int
+    n_layers: int
     """Number of layers."""
 
-    out_channels: int
-    """Number of output channels."""
+    n_refiner_layers: int
+    """Number of refiner layers."""
 
-    patch_size: int
-    """Patch size."""
+    norm_eps: float
+    """Normalization epsilon."""
+
+    qk_norm: bool
+    """Query-Key normalization flag."""
+
+    rope_theta: float
+    """RoPE theta."""
+
+    t_scale: float
+    """Time scale."""
 
     float8_config: Float8Config | None = None
     """Float8 quantization configuration for the transformer model."""
@@ -321,6 +345,21 @@ class TransformerConfig:
                 DeviceRef(spec.device_type, spec.id)
                 for spec in pipeline_config.model_config.device_specs
             ],
+            all_f_patch_size=transformer_config.all_f_patch_size,
+            all_patch_size=transformer_config.all_patch_size,
+            axes_dims=transformer_config.axes_dims,
+            axes_lens=transformer_config.axes_lens,
+            cap_feat_dim=transformer_config.cap_feat_dim,
+            dim=transformer_config.dim,
+            in_channels=transformer_config.in_channels,
+            n_heads=transformer_config.n_heads,
+            n_kv_heads=transformer_config.n_kv_heads,
+            n_layers=transformer_config.n_layers,
+            n_refiner_layers=transformer_config.n_refiner_layers,
+            norm_eps=transformer_config.norm_eps,
+            qk_norm=transformer_config.qk_norm,
+            rope_theta=transformer_config.rope_theta,
+            t_scale=transformer_config.t_scale,
             float8_config=t_float8,
         )
 
@@ -353,10 +392,10 @@ class ZImageConfigBase:
 
     vae_config: VAEConfig
     """VAE configuration."""
-    
+
     text_encoder_config: Qwen3Config
     """Text encoder configuration."""
-    
+
     transformer_config: TransformerConfig
     """Transformer configuration."""
 
@@ -378,11 +417,11 @@ class ZImageConfig(MAXModelConfig, ZImageConfigBase):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        # Delegate to Llama3Config for language model parameters.
+        # Delegate to Qwen3Config for language model parameters.
         llm_config = getattr(
             huggingface_config, "text_config", huggingface_config
         )
-        return Llama3Config.get_kv_params(
+        return Qwen3Config.get_kv_params(
             huggingface_config=llm_config,
             n_devices=n_devices,
             kv_cache_config=kv_cache_config,
@@ -391,22 +430,22 @@ class ZImageConfig(MAXModelConfig, ZImageConfigBase):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
-        # Delegate to Llama3Config for language model parameters.
+        # Delegate to Qwen3Config for language model parameters.
         llm_config = getattr(
             huggingface_config, "text_config", huggingface_config
         )
-        return Llama3Config.get_num_layers(llm_config)
+        return Qwen3Config.get_num_layers(llm_config)
 
     @staticmethod
     def calculate_max_seq_len(
         pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
         """Calculate maximum sequence length for ZImage."""
-        # Delegate to Llama3Config for language model parameters.
+        # Delegate to Qwen3Config for language model parameters.
         llm_config = getattr(
             huggingface_config, "text_config", huggingface_config
         )
-        return Llama3Config.calculate_max_seq_len(
+        return Qwen3Config.calculate_max_seq_len(
             pipeline_config=pipeline_config,
             huggingface_config=llm_config,
         )
@@ -453,7 +492,7 @@ class ZImageConfig(MAXModelConfig, ZImageConfigBase):
             text_encoder_state_dict["language_model.embed_tokens.weight"].dtype,
             pipeline_config,
         )
-        
+
         # Create VAEConfig from the VAE config
         hf_vae_config = getattr(huggingface_config, "vae_config", None)
         if hf_vae_config is None:
@@ -478,9 +517,9 @@ class ZImageConfig(MAXModelConfig, ZImageConfigBase):
             return_logits,
             norm_method,
         )
-        
-        # Create DonoiserConfig for the denoiser model
-        denoiser_config = TransformerConfig.generate(
+
+        # Create TransformerConfig for the backbone of the pipeline
+        transformer_config = TransformerConfig.generate(
             huggingface_config.transformer_config,
             dtype,
             pipeline_config,
@@ -508,5 +547,5 @@ class ZImageConfig(MAXModelConfig, ZImageConfigBase):
             # Text encoder configuration
             text_encoder_config=text_encoder_config,
             # Denoising transformer configuration
-            denoiser_config=denoiser_config,
+            transformer_config=transformer_config,
         )
