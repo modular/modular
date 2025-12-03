@@ -229,7 +229,7 @@ def test_context__needs_ce() -> None:
     assert context.needs_ce is True
 
     # Encode 2/4 prompt tokens
-    context.maybe_chunk(2)
+    context.chunk(2)
     assert context.active_length == 2
     assert context.needs_ce
     context.update(98)  # token 98 is discarded
