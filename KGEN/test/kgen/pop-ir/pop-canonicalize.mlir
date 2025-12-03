@@ -1730,17 +1730,29 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
   // CHECK-LABEL: @index_div
   kgen.func @index_div() -> (!pop.scalar<index>, !pop.scalar<index>) {
-    %0 = kgen.param.constant: scalar<index> = <8589934594>
-    %1 = kgen.param.constant: scalar<index> = <4294967298>
+    %0 = kgen.param.constant: scalar<index> = <1073741826>
+    %1 = kgen.param.constant: scalar<index> = <268435457>
     %2 = kgen.param.constant: scalar<index> = <2>
 
-    // CHECK: %[[RES:.*]] = kgen.param.constant: scalar<index> = <4294967297>
+    // CHECK: %[[RES:.*]] = kgen.param.constant: scalar<index> = <536870913>
     %r0 = pop.div %0, %2 : !pop.scalar<index>
-    // CHECK: %[[RES1:.*]] = kgen.param.constant: scalar<index> = <1>
+    // CHECK: %[[RES1:.*]] = kgen.param.constant: scalar<index> = <134217728>
     %r1 = pop.div %1, %2 : !pop.scalar<index>
 
     // CHECK: kgen.return %[[RES]], %[[RES1]] : !pop.scalar<index>, !pop.scalar<index>
     kgen.return %r0, %r1 : !pop.scalar<index>, !pop.scalar<index>
+  }
+
+  // CHECK-LABEL: @uindex_shr
+  kgen.func @uindex_shr() -> (!pop.scalar<uindex>) {
+    %0 = kgen.param.constant: scalar<uindex> = <2147483648>
+    %1 = kgen.param.constant: scalar<uindex> = <2>
+
+    // CHECK: %[[RES:.*]] = kgen.param.constant: scalar<uindex> = <536870912>
+    %r0 = pop.shr %0, %1 : !pop.scalar<uindex>
+
+    // CHECK: kgen.return %[[RES]] : !pop.scalar<uindex>
+    kgen.return %r0 : !pop.scalar<uindex>
   }
 }
 
@@ -1836,5 +1848,17 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
     // CHECK: kgen.return %[[RES]], %[[RES1]] : !pop.scalar<index>, !pop.scalar<index>
     kgen.return %r0, %r1 : !pop.scalar<index>, !pop.scalar<index>
+  }
+
+  // CHECK-LABEL: @uindex_shr
+  kgen.func @uindex_shr() -> (!pop.scalar<uindex>) {
+    %0 = kgen.param.constant: scalar<uindex> = <9223372036854775808>
+    %1 = kgen.param.constant: scalar<uindex> = <2>
+
+    // CHECK: %[[RES:.*]] = kgen.param.constant: scalar<uindex> = <2305843009213693952>
+    %r0 = pop.shr %0, %1 : !pop.scalar<uindex>
+
+    // CHECK: kgen.return %[[RES]] : !pop.scalar<uindex>
+    kgen.return %r0 : !pop.scalar<uindex>
   }
 }
