@@ -2911,6 +2911,13 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     }
   }
 
+  // FIXME(MOCO-2839): We silently ignore 'kgen.param.assert' ops when folding
+  // @always_inline("builtin") functions. We should either support these or
+  // remove them from the key locations in the stdlib which we wish to support
+  // (SIMD).
+  if (isa<KGEN::ParamAssertOp>(op))
+    return TypedAttr();
+
   // Otherwise we don't know what this is, bail out.
   emitError(op.getLoc()) << "does not support MLIR operation "
                          << op.getName().getStringRef();
