@@ -119,9 +119,6 @@ ParameterInferenceState::ParameterInferenceState(
 LogicalResult
 ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
                                             FnTypeGeneratorType expected) {
-  // TODO: Enable non-raising to raising conversions.
-  if (actual.getFnEffects() != expected.getFnEffects())
-    return failure();
 
   // Functions with different parameterization cannot be converted between each
   // other. If the types are equal but the passing conventions are different,
@@ -135,20 +132,36 @@ ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
   // types are equal.
   bool actualMemResult = actual.hasMemoryOnlyResult();
   bool expectedMemResult = expected.hasMemoryOnlyResult();
-  // TODO: We could allow implicit conversions here.
+  // TODO: We allow implicit conversions here.
   if (failed(
           matchTypes(actual.getUserResultType(), expected.getUserResultType())))
+    return failure();
+
+  ArrayRef<Type> actualArgTypes =
+      actual.getArguments().drop_back(actualMemResult);
+  ArrayRef<Type> expectedArgTypes =
+      expected.getArguments().drop_back(expectedMemResult);
+
+  auto actualEffects = actual.getFnEffects();
+  auto expectedEffects = expected.getFnEffects();
+  // If the actual function is not throwing, and the expected function is,
+  // then we can infer the Error type to be Never.
+  if (!actualEffects.isThrows() && expectedEffects.isThrows()) {
+    // Match the expected error type to Never, but allow this to fail: it may
+    // already be some concrete type like Error and that is ok.
+    (void)matchTypes(NeverType::get(expected.getContext()),
+                     expected.getUserThrownType());
+    expectedArgTypes = expectedArgTypes.drop_back();
+    actualEffects.setThrows(true);
+  }
+
+  if (actualEffects != expectedEffects)
     return failure();
 
   if (failed(matchParams(actual.getCaptureOrigins(),
                          expected.getCaptureOrigins()))) {
     return failure();
   }
-
-  ArrayRef<Type> actualArgTypes =
-      actual.getArguments().drop_back(actualMemResult);
-  ArrayRef<Type> expectedArgTypes =
-      expected.getArguments().drop_back(expectedMemResult);
 
   // Functions with an incompatible number of arguments cannot be converted
   // between each other. The number of arguments should be equal, unless the
