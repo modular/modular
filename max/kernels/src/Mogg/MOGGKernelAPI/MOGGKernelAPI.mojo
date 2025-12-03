@@ -873,8 +873,8 @@ struct ConvertE4M3FNToE4M3FNUZ:
         ctx: DeviceContextPtr,
     ) raises:
         convert_e4m3fn_to_e4m3fnuz(
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(output),
+            input.to_layout_tensor(),
+            output.to_layout_tensor(),
             ctx.get_device_context(),
         )
 

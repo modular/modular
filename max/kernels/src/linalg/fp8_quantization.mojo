@@ -1167,8 +1167,8 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
 
 @always_inline
 fn convert_e4m3fn_to_e4m3fnuz(
-    input_buffer: NDBuffer[DType.float8_e4m3fn, 2, *_],
-    output_buffer: NDBuffer[mut=True, DType.float8_e4m3fnuz, 2, *_],
+    input_buffer: LayoutTensor[DType.float8_e4m3fn, **_],
+    output_buffer: LayoutTensor[mut=True, DType.float8_e4m3fnuz, **_],
     context: DeviceContext,
 ) raises:
     """Convert E4M3FN weights to E4M3FNUZ format for AMD GPU compatibility.
@@ -1182,7 +1182,7 @@ fn convert_e4m3fn_to_e4m3fnuz(
         context: Device context for kernel execution.
     """
     constrained[
-        input_buffer.shape == output_buffer.shape,
+        input_buffer.layout.shape == output_buffer.layout.shape,
         "Input and output shapes must match",
     ]()
 
