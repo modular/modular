@@ -89,6 +89,8 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "ConformsTo";
   case ExprNode::kFunctionsInModule:
     return "FunctionsInModule";
+  case ExprNode::kGetCurrentFunctionName:
+    return "GetCurrentFunctionName";
   case ExprNode::kNeg:
     return "Neg";
   case ExprNode::kPos:

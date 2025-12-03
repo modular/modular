@@ -85,8 +85,9 @@ public:
     kTypeOf,                   // type_of(x)
     kConformsTo,               // conforms_to(T, Trait)
     kFunctionsInModule,        // __functions_in_module()
+    kGetCurrentFunctionName,   // __get_current_function_name()
     kFirstMagicFunction = kGetMValueAsLitRef,
-    kLastMagicFunction = kFunctionsInModule,
+    kLastMagicFunction = kGetCurrentFunctionName,
 
     // Prefix and Postfix unary expressions.
     kNeg,      // -x

@@ -405,6 +405,7 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw_origin_of:
   case Token::kw_type_of:
   case Token::kw___functions_in_module:
+  case Token::kw___get_current_function_name:
     return true;
   default:
     return false;
@@ -567,6 +568,7 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   case Token::kw_type_of:
   case Token::kw_conforms_to:
   case Token::kw___functions_in_module:
+  case Token::kw___get_current_function_name:
     if (failed(parseMagicFunction(result)))
       return failure();
     break;
@@ -1203,6 +1205,9 @@ ParseResult ExprParser::parseMagicFunction(ExprNode *&result) {
     break;
   case Token::kw___functions_in_module:
     nodeKind = ExprNode::kFunctionsInModule;
+    break;
+  case Token::kw___get_current_function_name:
+    nodeKind = ExprNode::kGetCurrentFunctionName;
     break;
   }
 
