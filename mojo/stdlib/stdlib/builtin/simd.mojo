@@ -1099,7 +1099,7 @@ struct SIMD[dtype: DType, size: Int](
         ), "the SIMD type must be numeric"
         return _pow(self, exp)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __pos__(self) -> Self:
         """Defines the unary `+` operation.
 
@@ -1111,7 +1111,7 @@ struct SIMD[dtype: DType, size: Int](
         ), "the SIMD type must be numeric"
         return self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __neg__(self) -> Self:
         """Defines the unary `-` operation.
 
@@ -1235,7 +1235,7 @@ struct SIMD[dtype: DType, size: Int](
             mlir_value=__mlir_op.`pop.shr`(self._mlir_value, rhs._mlir_value)
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __invert__(self) -> Self:
         """Returns `~self`.
 
@@ -1249,13 +1249,7 @@ struct SIMD[dtype: DType, size: Int](
             Self.dtype.is_integral() or Self.dtype is DType.bool
         ), "must be an integral or bool type"
 
-        @parameter
-        if Self.dtype is DType.bool:
-            return self.select(
-                self._Mask(fill=False), self._Mask(fill=True)
-            )._refine[Self.dtype]()
-        else:
-            return self ^ -1
+        return self ^ -1
 
     # ===------------------------------------------------------------------=== #
     # Boolean comparison operations.
