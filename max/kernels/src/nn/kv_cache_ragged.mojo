@@ -31,7 +31,7 @@ from layout import LayoutTensor, Layout, RuntimeLayout, IntTuple, UNKNOWN_VALUE
 from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import elementwise_epilogue_type, matmul
 from linalg.fp8_quantization import (
-    naive_blockwise_scaled_fp8_matmul,
+    blockwise_scaled_fp8_with_epilogue,
     quantize_dynamic_scaled_fp8,
 )
 from nn._ragged_utils import get_batch_from_row_offsets
@@ -1161,7 +1161,7 @@ fn _matmul_blockwise_scaled_fp8_common[
         RuntimeLayout[c_nd.layout].row_major(IndexList[2](TOTAL_SEQ_LEN, N)),
     }
 
-    naive_blockwise_scaled_fp8_matmul[
+    blockwise_scaled_fp8_with_epilogue[
         transpose_b=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
         scales_granularity_mnk=scales_granularity_mnk,
