@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray
-from math import floor
-from sys import env_get_bool, env_get_dtype, env_get_int, size_of
+from math import floor, align_up
+from sys import env_get_bool, env_get_dtype, env_get_int, size_of, simd_width_of
 from utils.numerics import get_accum_type
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
@@ -21,7 +21,12 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm.allreduce import MAX_GPUS, Signal, allreduce, can_enable_p2p
 import comm.vendor.ccl as vendor_ccl
-from gpu.host import DeviceBuffer, DeviceContext, DeviceMulticastBuffer
+from gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    DeviceMulticastBuffer,
+    get_gpu_target,
+)
 from internal_utils import InitializationType, arg_parse
 from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal, assert_true
@@ -89,6 +94,7 @@ fn bench_reduce[
     *,
     use_multimem: Bool,
     use_quickreduce: Bool,
+    cache_busting: Bool,
     use_vendor_ccl: Bool = False,
 ](
     mut m: Bench,
@@ -114,6 +120,13 @@ fn bench_reduce[
     var temp_buffer_num_bytes = ngpus * num_bytes
     var length = num_bytes // size_of[dtype]()
 
+    alias simd_size = simd_width_of[dtype, target = get_gpu_target()]()
+    var stride = align_up(length, simd_size)
+    alias m512 = 512 * 1024 * 1024
+    var cache_elems = (
+        align_up(m512, stride * size_of[dtype]()) // size_of[dtype]()
+    )
+
     # Initialize buffers for each GPU
     @parameter
     for gpu_idx in range(ngpus):
@@ -123,17 +136,18 @@ fn bench_reduce[
         )
 
         # Create and initialize host buffers
-        var host_buffer = UnsafePointer[Scalar[dtype]].alloc(length)
+        var host_buffer = UnsafePointer[Scalar[dtype]].alloc(cache_elems)
         host_buffers.append(host_buffer)
 
-        for j in range(length):
-            host_buffer[j] = _per_gpu_value[dtype](gpu_idx, j)
+        for i in range(cache_elems // stride):
+            for j in range(length):
+                host_buffer[i * stride + j] = _per_gpu_value[dtype](gpu_idx, j)
 
         @parameter
         if not use_multimem:
             # Create per-GPU input buffers on device and copy from host
             in_bufs_list.append(
-                list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](length)
+                list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](cache_elems)
             )
             list_of_ctx[gpu_idx].enqueue_copy(
                 in_bufs_list[gpu_idx], host_buffer
@@ -160,9 +174,12 @@ fn bench_reduce[
         fill={}
     )
 
+    var multi_ptr = UnsafePointer[Scalar[dtype]]()
+
+    @parameter
     if use_multimem:
-        var multicast_buf = DeviceMulticastBuffer[dtype](
-            list_of_ctx.copy(), length
+        multicast_buf = DeviceMulticastBuffer[dtype](
+            list_of_ctx.copy(), cache_elems
         )
 
         @parameter
@@ -175,6 +192,9 @@ fn bench_reduce[
             multicast_buf.multicast_buffer_for(list_of_ctx[0]).unsafe_ptr(),
             DimList(length),
         )
+        multi_ptr = multicast_buf.multicast_buffer_for(
+            list_of_ctx[0]
+        ).unsafe_ptr()
     else:
 
         @parameter
@@ -219,7 +239,26 @@ fn bench_reduce[
         fn bench_iter(mut b: Bencher) raises:
             @parameter
             @always_inline
-            fn call_fn(ctx: DeviceContext) raises:
+            fn call_fn(ctx: DeviceContext, iteration: Int) raises:
+                var offset = 0
+
+                @parameter
+                if cache_busting:
+                    offset = (iteration * stride) % cache_elems
+
+                @parameter
+                if not use_multimem:
+
+                    @parameter
+                    for i in range(ngpus):
+                        in_bufs[i] = NDBuffer[dtype, rank](
+                            in_bufs_list[i].unsafe_ptr() + offset,
+                            DimList(length),
+                        )
+                else:
+                    in_bufs[0] = NDBuffer[dtype, rank](
+                        multi_ptr + offset, DimList(length)
+                    )
                 allreduce[
                     ngpus=ngpus,
                     use_multimem=use_multimem,
@@ -341,6 +380,7 @@ def main():
     comptime use_multimem = env_get_bool["multimem", False]()
     comptime use_quickreduce = env_get_bool["quickreduce", False]()
     comptime use_vendor_ccl = env_get_bool["use_vendor_ccl", False]()
+    comptime cache_busting = True
 
     var num_gpus_found = DeviceContext.number_of_devices()
     assert_true(
@@ -369,6 +409,7 @@ def main():
             dtype=dtype,
             rank=rank,
             ngpus=num_gpus,
+            cache_busting=cache_busting,
             use_vendor_ccl=use_vendor_ccl,
         ](m, ctx, num_bytes, max_num_blocks)
     else:
@@ -377,6 +418,7 @@ def main():
             rank=rank,
             ngpus=num_gpus,
             use_multimem=use_multimem,
+            cache_busting=cache_busting,
             use_vendor_ccl=use_vendor_ccl,
         ](m, ctx, num_bytes, max_num_blocks)
 
@@ -388,6 +430,7 @@ fn bench_allreduce_pull[
     ngpus: Int,
     *,
     use_multimem: Bool = False,
+    cache_busting: Bool = True,
     use_vendor_ccl: Bool = False,
 ](
     mut m: Bench,
@@ -402,6 +445,7 @@ fn bench_allreduce_pull[
         ngpus=ngpus,
         use_multimem=use_multimem,
         use_quickreduce=False,
+        cache_busting=cache_busting,
         use_vendor_ccl=use_vendor_ccl,
     ](m, list_of_ctx, num_bytes, max_num_blocks)
 
@@ -411,6 +455,7 @@ fn bench_allreduce_push[
     rank: Int,
     ngpus: Int,
     *,
+    cache_busting: Bool = True,
     use_vendor_ccl: Bool = False,
 ](
     mut m: Bench,
@@ -425,5 +470,6 @@ fn bench_allreduce_push[
         ngpus=ngpus,
         use_multimem=False,
         use_quickreduce=True,
+        cache_busting=cache_busting,
         use_vendor_ccl=use_vendor_ccl,
     ](m, list_of_ctx, num_bytes, max_num_blocks)
