@@ -53,7 +53,7 @@ interpretBinaryOp(Location loc, MLIRContext *ctx, ArrayRef<Attribute> operands,
     unsigned bitWidth = value.getBitWidth();
     if (bitWidth <= targetBitwidth)
       return success();
-    bool isSignedValue = isSigned || value.isSignedIntN(bitWidth);
+    bool isSignedValue = isSigned || value.isNegative();
     APInt maxValue;
     APInt minValue;
     if (isSignedValue) {
