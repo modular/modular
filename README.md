@@ -14,7 +14,6 @@
 [Join us next Thursday, December 11th][dec-meetup] at Modular's Los Altos
 offices for a [Modular Meetup][meetup-group] going inside the MAX platform!
 
-
 # Modular Platform
 
 > A unified platform for AI development and deployment, including **MAX**🧑‍🚀 and
@@ -139,7 +138,6 @@ Anthropic engineers.
 
 [25.7]: https://www.modular.com/blog/modular-25-7-faster-inference-safer-gpu-programming-and-a-more-unified-developer-experience
 [pytorch-llvm]: https://www.modular.com/blog/pytorch-and-llvm-in-2025-keeping-up-with-ai-innovation
-[funding]: https://www.modular.com/blog/modular-raises-250m-to-scale-ais-unified-compute-layer
 [25.6]: https://www.modular.com/blog/modular-25-6-unifying-the-latest-gpus-from-nvidia-amd-and-apple
 [25.5]: https://www.modular.com/blog/modular-platform-25-5
 [la-meetup]: https://lu.ma/modular-aug-meetup
@@ -150,10 +148,6 @@ Anthropic engineers.
 [meetup-group]: https://www.meetup.com/modular-meetup-group/
 
 ---
-
-## Community & Events
-
-We host regular meetups, hackathons, and community calls. Join us!
 
 ## Community & Events
 
