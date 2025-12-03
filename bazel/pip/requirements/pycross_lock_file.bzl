@@ -39,6 +39,7 @@ PINS = {
     "boto3": "boto3@1.34.128",
     "click": "click@8.1.7",
     "codeowners": "codeowners@0.8.0",
+    "compressed-tensors": "compressed-tensors@0.12.2",
     "cyclopts": "cyclopts@4.2.5",
     "datasets": "datasets@2.21.0",
     "device-smi": "device-smi@0.4.1",
@@ -1038,6 +1039,25 @@ def targets():
         deps = _comm_0_2_2_deps,
         wheel = ":_wheel_comm@0.2.2",
         testonly = "comm" in _TESTONLY_DEPS,
+    )
+
+    _compressed_tensors_0_12_2_deps = [
+        ":loguru@0.7.3",
+        ":pydantic@2.10.4",
+        ":torch@multiple",
+        ":transformers@4.57.1",
+    ]
+
+    native.alias(
+        name = "_wheel_compressed-tensors@0.12.2",
+        actual = "@pycross_lock_file_wheel_compressed_tensors_0.12.2_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "compressed-tensors@0.12.2",
+        deps = _compressed_tensors_0_12_2_deps,
+        wheel = ":_wheel_compressed-tensors@0.12.2",
+        testonly = "compressed-tensors" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3311,6 +3331,17 @@ def targets():
         name = "logbar@0.0.3",
         wheel = ":_wheel_logbar@0.0.3",
         testonly = "logbar" in _TESTONLY_DEPS,
+    )
+
+    native.alias(
+        name = "_wheel_loguru@0.7.3",
+        actual = "@pycross_lock_file_wheel_loguru_0.7.3_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "loguru@0.7.3",
+        wheel = ":_wheel_loguru@0.7.3",
+        testonly = "loguru" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -9781,6 +9812,16 @@ def repositories():
 
     maybe(
         http_file,
+        name = "pycross_lock_file_wheel_compressed_tensors_0.12.2_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/f0/c0/1695b87d369e6652ec0d650912e02eca2151c5e9c29244f94d2afccfe970/compressed_tensors-0.12.2-py3-none-any.whl",
+        ],
+        sha256 = "e554ea761710ca2b0c0ea49276a4ef8e08658624f1591e6a7368817106b48fbe",
+        downloaded_file_path = "compressed_tensors-0.12.2-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
         name = "pycross_lock_file_wheel_configargparse_1.7.1_py3_none_any",
         urls = [
             "https://files.pythonhosted.org/packages/31/28/d28211d29bcc3620b1fece85a65ce5bb22f18670a03cd28ea4b75ede270c/configargparse-1.7.1-py3-none-any.whl",
@@ -12647,6 +12688,16 @@ def repositories():
         ],
         sha256 = "a6a49b0dcf60d886dcbb3dda98d3dcc6914388ed828048fd79ddc24d9f11d6bf",
         downloaded_file_path = "locust-2.18.4-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_loguru_0.7.3_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/0c/29/0348de65b8cc732daa3e33e67806420b2ae89bdce2b04af740289c5c6c8c/loguru-0.7.3-py3-none-any.whl",
+        ],
+        sha256 = "31a33c10c8e1e10422bfd431aeb5d351c7cf7fa671e3c4df004162264b28220c",
+        downloaded_file_path = "loguru-0.7.3-py3-none-any.whl",
     )
 
     maybe(
