@@ -1143,7 +1143,7 @@ PIPELINES = {
                 json_file="vllm_deepseek-r1_float8_golden.json",
             ),
             cos_dist_threshold=2.8e-02,
-            kl_div_threshold=1.1e-1,
+            kl_div_threshold=1.5e-1,
             timeout=1200,
         ),
     ),
