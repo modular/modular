@@ -661,6 +661,10 @@ fn call_parametric_raise_example[GenTy: AnyType](func_ptr: fn () raises GenTy):
     except err_gen:
         ref s: GenTy = err_gen # Test no error.
 
+    fn raise_never() raises Never: pass
+    # not in a try block.
+    parametric_raise_example(raise_never)
+
 
 
 ##===----------------------------------------------------------------------===##

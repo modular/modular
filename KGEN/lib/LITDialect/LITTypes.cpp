@@ -1388,11 +1388,6 @@ std::optional<size_t> FnType::findPackVarArgIndex() {
 
 bool FnType::hasKwVarArgs() { return getMetadata().hasKwVarArgs(); }
 
-unsigned FnType::getErrorSlotOffset() {
-  assert(isThrows() && "signature does not refer to a throwing function");
-  return 1 + hasMemoryOnlyResult();
-}
-
 bool FnType::classof(FuncType type) {
   return ::isa_and_nonnull<FnMetadataAttr>(type.getMetadata());
 }
@@ -1541,12 +1536,6 @@ std::optional<size_t> FnTypeGeneratorType::findPackVarArgIndex() {
 }
 
 bool FnTypeGeneratorType::hasKwVarArgs() { return getBody().hasKwVarArgs(); }
-
-unsigned FnTypeGeneratorType::getErrorSlotOffset() {
-  assert(getBody().isThrows() &&
-         "signature does not refer to a throwing function");
-  return 1 + getBody().hasMemoryOnlyResult();
-}
 
 /// This method replaces direct uses of NAMED implicit origin declarations
 /// with index-based references.  originDecls specifies the names of the

@@ -879,6 +879,16 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     return argValAndExpr.ir.getMValueReference();
 
   case ArgConvention::ByRefError: {
+    // If the error type is Never, just emit a temporary and use it
+    // unconditionally.
+    auto errorType = ASTType(cast<RefType>(declaredArgType).getElementType());
+    if (sugarIsa<NeverType>(errorType)) {
+      auto loc = argValAndExpr.expr->getLocation(emitter);
+      auto tmp = emitter.emitVarDecl("__never_error__", errorType, loc,
+                                     VarDeclKind::Synthesized);
+      return MLValue(tmp);
+    }
+
     // If the callee throws and is not async, we pass the contextual error
     // slot.
     MLValue errSlot = emitter.findNearestErrorSlot();
@@ -902,7 +912,6 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // TODO: we can add support for implicit conversions in the future.  We can
     // make many types implicitly convert to Error by stringizing.  Until then,
     // people can do this manually by catching and rethrowing.
-    auto errorType = ASTType(cast<RefType>(declaredArgType).getElementType());
     if (isa<UnresolvedType>(errSlot.getRValueType())) {
       // If the contextual caught type is unresolved, then we're the first call
       // in a try block.  Resolve the error type to whatever type we raise.

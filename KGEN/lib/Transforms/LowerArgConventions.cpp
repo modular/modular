@@ -35,6 +35,14 @@ namespace M::KGEN {
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
+/// If the specified value has uses, replace them with a dummy value.
+static void replaceAnyUses(Value v, ImplicitLocOpBuilder &b) {
+  if (v.use_empty())
+    return;
+  auto dummy = ParamConstantOp::create(b, b.getAttr<UnknownAttr>(v.getType()));
+  v.replaceAllUsesWith(dummy);
+}
+
 namespace {
 struct LowerArgConventionsPass
     : KGEN::impl::LowerArgConventionsBase<LowerArgConventionsPass> {
@@ -81,11 +89,20 @@ static Type lowerTypeForGPU(Type type) {
 
 namespace {
 
-enum ABI { Neither, ErrorOnly, ValueOnly, Both };
+// Whether to convert the error slot or the result slot to a register, and/or
+// whether to remove the error slot entirely.
+enum ABI {
+  DontPromote = 0b000,
+  PromoteResult = 0b001,
+  PromoteError = 0b010,
+  PromoteBoth = 0b011,
+  RemoveError = 0b100,
+  PromoteResultRemoveError = 0b101,
+};
 struct TransformResult {
   SmallVector<Type> newResultTypes;
   SmallVector<ArgConvention> newArgConventions;
-  int abiLowering = ABI::Neither;
+  unsigned abiLowering = ABI::DontPromote;
 };
 class Transform {
 public:
@@ -93,9 +110,10 @@ public:
       : target(target), spAttr(spAttr) {}
   virtual ~Transform() = default;
   virtual Type typeOfValueAt(unsigned operandIndex) = 0;
-  virtual void performResultTransform(TransformResult const &result,
-                                      unsigned operandIndex,
-                                      Type loweredType) = 0;
+  virtual void performResultTransform(unsigned operandIndex, Type loweredType,
+                                      ArgConvention convention) = 0;
+  virtual void performThrowNeverElimination(unsigned operandIndex) = 0;
+
   /// respond to a transform from PTR<X> to X
   virtual void applyPointerTransform(unsigned operandIndex, Type elType) = 0;
   /// respond to a transform from PACK<X,Y> to X,Y
@@ -113,8 +131,10 @@ public:
                     TargetInfoAttr target, DebugInfo::DISubprogramAttr spAttr)
       : Transform(target, spAttr), b(b), callOp(callOp) {}
   Type typeOfValueAt(unsigned operandIndex) override;
-  void performResultTransform(TransformResult const &result,
-                              unsigned operandIndex, Type loweredType) override;
+  void performResultTransform(unsigned operandIndex, Type loweredType,
+                              ArgConvention convention) override;
+  void performThrowNeverElimination(unsigned operandIndex) override;
+
   void applyPointerTransform(unsigned operandIndex, Type elType) override;
   void applyPackTransform(unsigned operandIndex, ArrayRef<Type> types,
                           PackType type) override;
@@ -133,8 +153,9 @@ public:
     llvm::append_range(newInputs, oldSig.getValues().getInputs());
   }
   Type typeOfValueAt(unsigned operandIndex) override;
-  void performResultTransform(TransformResult const &result,
-                              unsigned operandIndex, Type loweredType) override;
+  void performResultTransform(unsigned operandIndex, Type loweredType,
+                              ArgConvention convention) override;
+  void performThrowNeverElimination(unsigned operandIndex) override;
   void applyPointerTransform(unsigned operandIndex, Type elType) override;
   void applyPackTransform(unsigned operandIndex, ArrayRef<Type> types,
                           PackType type) override;
@@ -146,8 +167,9 @@ public:
 class FuncTransform : public Transform {
 public:
   FuncTransform(ImplicitLocOpBuilder &b, FuncOp funcOp, TargetInfoAttr target);
-  void performResultTransform(TransformResult const &result,
-                              unsigned operandIndex, Type loweredType) override;
+  void performResultTransform(unsigned operandIndex, Type loweredType,
+                              ArgConvention convention) override;
+  void performThrowNeverElimination(unsigned operandIndex) override;
   Type typeOfValueAt(unsigned operandIndex) override;
   void applyPointerTransform(unsigned operandIndex, Type elType) override;
   void applyPackTransform(unsigned operandIndex, ArrayRef<Type> types,
@@ -271,18 +293,23 @@ Type FuncTransform::typeOfValueAt(unsigned operandIndex) {
   return block.getArgument(operandIndex).getType();
 }
 
-void FuncTransform::performResultTransform(TransformResult const &result,
-                                           unsigned operandIndex,
-                                           Type loweredType) {
+void FuncTransform::performResultTransform(unsigned operandIndex,
+                                           Type loweredType,
+                                           ArgConvention convention) {
   Value argVal = block.getArgument(operandIndex);
   auto alloc = POP::StackAllocationOp::create(b, addDI(argVal.getLoc()),
                                               argVal.getType());
   argVal.replaceAllUsesWith(alloc);
   block.eraseArgument(operandIndex);
-  if (result.abiLowering == ErrorOnly)
+  if (convention == ArgConvention::ByRefError)
     newErrPtr = alloc;
-  else if (result.abiLowering == Both || result.abiLowering == ValueOnly)
+  else if (convention == ArgConvention::ByRefResult)
     newResPtr = alloc;
+}
+
+void FuncTransform::performThrowNeverElimination(unsigned operandIndex) {
+  replaceAnyUses(block.getArgument(operandIndex), b);
+  block.eraseArgument(operandIndex);
 }
 
 void FuncTransform::applyOneToOneTransform(
@@ -361,13 +388,17 @@ void FuncTransform::applyPackTransform(unsigned operandIndex,
   }
 }
 
-void CallsiteTransform::performResultTransform(TransformResult const &result,
-                                               unsigned operandIndex,
-                                               Type loweredType) {
-  if (result.abiLowering == ErrorOnly)
+void CallsiteTransform::performResultTransform(unsigned operandIndex,
+                                               Type loweredType,
+                                               ArgConvention convention) {
+  if (convention == ArgConvention::ByRefError)
     errorOperand = callOp->getOperand(operandIndex);
-  else if (result.abiLowering == Both || result.abiLowering == ValueOnly)
+  else if (convention == ArgConvention::ByRefResult)
     resultOperand = callOp->getOperand(operandIndex);
+  callOp->eraseOperand(operandIndex);
+}
+
+void CallsiteTransform::performThrowNeverElimination(unsigned operandIndex) {
   callOp->eraseOperand(operandIndex);
 }
 
@@ -417,9 +448,13 @@ Type CallsiteTransform::typeOfValueAt(unsigned operandIndex) {
   return callOp->getOperandTypes()[operandIndex];
 }
 
-void SignatureTransform::performResultTransform(TransformResult const &result,
-                                                unsigned operandIndex,
-                                                Type loweredType) {
+void SignatureTransform::performResultTransform(unsigned operandIndex,
+                                                Type loweredType,
+                                                ArgConvention convention) {
+  newInputs.erase(newInputs.begin() + operandIndex);
+}
+
+void SignatureTransform::performThrowNeverElimination(unsigned operandIndex) {
   newInputs.erase(newInputs.begin() + operandIndex);
 }
 
@@ -451,59 +486,82 @@ Type SignatureTransform::typeOfValueAt(unsigned operandIndex) {
   return newInputs[operandIndex];
 }
 
-static TransformResult lowerSignature(FuncType oldSig,
-                                      unsigned operandIndexInitial,
+static TransformResult lowerSignature(FuncType oldSig, size_t operandOffset,
                                       Transform *transform) {
-  unsigned operandIndex = operandIndexInitial;
-  unsigned argConventionIndex = 0;
-
   TransformResult result;
-  // For a throwing function, this retains the i1 result by default unless
-  // we're able to lower the normal result or the error result.  If we are
-  // able to lower one of them, we end up with "i1, othertype" as two results
-  // from the KGEN function, if both can be lowered to registers then we replace
-  // the i1 with "variant<normal, error>".
-  if (oldSig.isThrows())
-    llvm::append_range(result.newResultTypes, oldSig.getResults());
+  Type loweredErrorType, loweredResultType;
 
   llvm::append_range(result.newArgConventions, oldSig.getArgConventions());
   SmallVector<ArgConvention> &argConventions = result.newArgConventions;
-  while (argConventionIndex < argConventions.size()) {
-    ArgConvention convention = argConventions[argConventionIndex];
-    bool isResult = isResultSlot(convention);
-    if (!isResult) {
-      transformNonResultValue(transform, operandIndex, argConventions,
-                              argConventionIndex);
-    } else if (!oldSig.isAsync()) {
-      if (Type loweredType =
-              lowerPointerType(transform->typeOfValueAt(operandIndex))) {
-        argConventions.erase(argConventions.begin() + argConventionIndex);
-        result.abiLowering |= convention == ArgConvention::ByRefError
-                                  ? ABI::ErrorOnly
-                                  : ABI::ValueOnly;
-        transform->performResultTransform(result, operandIndex, loweredType);
-        switch (result.abiLowering) {
-        case ABI::ErrorOnly:
-          result.newResultTypes.push_back(loweredType);
-          break;
-        case ABI::Both: {
-          Type errorType = result.newResultTypes.back();
-          result.newResultTypes.clear();
-          result.newResultTypes.push_back(
-              VariantType::get({errorType, loweredType}));
-        } break;
-        case ABI::ValueOnly:
-          result.newResultTypes.push_back(loweredType);
-          break;
-        default:
-          break;
-        }
-        continue;
-      }
+  for (size_t idx = 0; idx < argConventions.size(); ++idx) {
+    auto convention = argConventions[idx];
+    if (!isResultSlot(convention)) {
+      transformNonResultValue(transform, idx + operandOffset, argConventions,
+                              idx);
+      continue;
     }
-    argConventionIndex++;
-    operandIndex++;
+    if (oldSig.isAsync()) // Async is broken.
+      continue;
+
+    // This is either a byref_result or byref_error argument. See if it can be
+    // lowered to being returned directly in a register.
+    Type loweredType =
+        lowerPointerType(transform->typeOfValueAt(idx + operandOffset));
+    if (!loweredType)
+      continue;
+
+    argConventions.erase(argConventions.begin() + idx);
+
+    // If this is a raise of Never, just remove the error slot entirely.
+    if (convention == ArgConvention::ByRefError &&
+        sugarIsa<NeverType>(loweredType)) {
+      result.abiLowering |= ABI::RemoveError;
+      transform->performThrowNeverElimination(idx + operandOffset);
+      --idx;
+      continue;
+    }
+
+    // Otherwise note that we're returning an error slot or a result slot.
+    if (convention == ArgConvention::ByRefError) {
+      loweredErrorType = loweredType;
+      result.abiLowering |= ABI::PromoteError;
+    } else if (convention == ArgConvention::ByRefResult) {
+      loweredResultType = loweredType;
+      result.abiLowering |= ABI::PromoteResult;
+    }
+    transform->performResultTransform(idx + operandOffset, loweredType,
+                                      convention);
+    --idx;
   }
+
+  switch (result.abiLowering) {
+  case ABI::DontPromote:
+    llvm::append_range(result.newResultTypes, oldSig.getResults());
+    break;
+  case ABI::PromoteError:
+    // For a throwing function, this retains the i1 result by default unless
+    // we're able to lower the normal result or the error result.  If we are
+    // able to lower one of them, we end up with "i1, othertype" as two results
+    // from the KGEN function, if both can be lowered to registers then we
+    // replace the i1 with "variant<normal, error>".
+    result.newResultTypes.push_back(IntegerType::get(oldSig.getContext(), 1));
+    result.newResultTypes.push_back(loweredErrorType);
+    break;
+  case ABI::PromoteBoth:
+    result.newResultTypes.push_back(
+        VariantType::get({loweredErrorType, loweredResultType}));
+    break;
+  case ABI::PromoteResult:
+    if (oldSig.isThrows())
+      result.newResultTypes.push_back(IntegerType::get(oldSig.getContext(), 1));
+    [[fallthrough]];
+  case ABI::PromoteResultRemoveError:
+    result.newResultTypes.push_back(loweredResultType);
+    break;
+  case ABI::RemoveError: // No result.
+    break;
+  }
+
   return result;
 }
 
@@ -515,8 +573,7 @@ static FuncType lowerSignature(FuncType sig, TargetInfoAttr target,
   FuncType newSig = FuncType::get(
       sig.getContext(),
       FunctionType::get(sig.getContext(), transform.newInputs,
-                        result.newResultTypes.empty() ? sig.getResults()
-                                                      : result.newResultTypes),
+                        result.newResultTypes),
       result.newArgConventions, sig.getFnEffects(), sig.getMetadata());
   return newSig;
 }
@@ -530,68 +587,83 @@ static void lowerCallOpImpl(Operation *op, FuncType oldSig,
   unsigned operandIndex = isa<CallIndirectOp>(op) ? 1 : 0;
   CallsiteTransform transform(b, op, lookupTargetInfo(op), spAttr);
   TransformResult result = lowerSignature(oldSig, operandIndex, &transform);
-  int abiLowering = result.abiLowering;
+  unsigned abiLowering = result.abiLowering;
+
+  b.setInsertionPointAfter(op);
+  OpResult res;
+  if (op->getNumResults())
+    res = op->getResult(0);
 
   // Now update the result, if needed.
-  if (abiLowering != Neither) {
-    b.setInsertionPointAfter(op);
-    OpResult res = op->getResult(0);
-    if (oldSig.isThrows()) {
-      // If the callee throws and both error and result were rewritten into a
-      // variant, then we have to extract the relevant values from the variant.
-      if (abiLowering == ABI::Both) {
-        // Replace the i1 with a variant check.
-        res.setType(result.newResultTypes[0]);
-        auto isError = VariantIsOp::create(b, res, 0);
-        res.replaceAllUsesExcept(isError, isError);
+  switch (abiLowering) {
+  case DontPromote:
+    break;
+  case RemoveError:
+    replaceAnyUses(res, b);
+    break;
+  case PromoteBoth: {
+    // If the callee throws and both error and result were rewritten into a
+    // variant, then we have to extract the relevant values from the variant.
 
-        auto ifOp = HLCF::IfOp::create(b, isError);
-        b.createBlock(&ifOp.getThenRegion());
-        POP::StoreOp::create(b, VariantGetOp::create(b, res, 0),
-                             transform.errorOperand);
-        HLCF::YieldOp::create(b);
+    // Replace the i1 with a variant check.
+    res.setType(result.newResultTypes[0]);
+    auto isError = VariantIsOp::create(b, res, 0);
+    res.replaceAllUsesExcept(isError, isError);
 
-        b.createBlock(&ifOp.getElseRegion());
-        POP::StoreOp::create(b, VariantGetOp::create(b, res, 1),
-                             transform.resultOperand);
-        HLCF::YieldOp::create(b);
-      } else {
-        // In this case, we need to reallocate the operation with a different
-        OperationState state(op->getLoc(), op->getName(), op->getOperands(),
-                             result.newResultTypes);
-        state.attributes = op->getAttrDictionary();
-        Operation *newOp = b.create(state);
-        res.replaceAllUsesWith(newOp->getResult(0));
+    auto ifOp = HLCF::IfOp::create(b, isError);
+    b.createBlock(&ifOp.getThenRegion());
+    POP::StoreOp::create(b, VariantGetOp::create(b, res, 0),
+                         transform.errorOperand);
+    HLCF::YieldOp::create(b);
 
-        // Store the relevant result in the branch in which it is known to have
-        // a valid value.
-        auto ifOp = HLCF::IfOp::create(b, newOp->getResult(0));
-        Block *thenBlock = b.createBlock(&ifOp.getThenRegion());
-        HLCF::YieldOp::create(b);
-        Block *elseBlock = b.createBlock(&ifOp.getElseRegion());
-        HLCF::YieldOp::create(b);
-        bool errorOnly = abiLowering == ErrorOnly;
-        b.setInsertionPointToStart(errorOnly ? thenBlock : elseBlock);
-        POP::StoreOp::create(b, newOp->getResult(1),
-                             errorOnly ? transform.errorOperand
-                                       : transform.resultOperand);
-        op->erase();
-        op = newOp;
-      }
-    } else {
-      // If the callee doesn't throw, we simply make every use take a new none.
-      if (!res.use_empty()) {
-        auto none = ParamConstantOp::create(b, b.getAttr<NoneAttr>());
-        res.replaceAllUsesWith(none);
-      }
+    b.createBlock(&ifOp.getElseRegion());
+    POP::StoreOp::create(b, VariantGetOp::create(b, res, 1),
+                         transform.resultOperand);
+    HLCF::YieldOp::create(b);
+    break;
+  }
+  case PromoteResult:
+  case PromoteResultRemoveError:
+    // If we are ending up with a single function result, do it.
+    if (!oldSig.isThrows() || abiLowering == PromoteResultRemoveError) {
+      // If the callee doesn't throw, then we can directly return the result.
+      replaceAnyUses(res, b);
 
       // Then just store the new callee result into the old memory result.
       res.setType(result.newResultTypes[0]);
       POP::StoreOp::create(b, res, transform.resultOperand);
+      break;
     }
-  } else {
-    result.newResultTypes.clear();
-    llvm::append_range(result.newResultTypes, oldSig.getResults());
+    [[fallthrough]];
+
+  case PromoteError:
+    // We are either promoting the normal result without promoting the error, or
+    // we are promoting the error without the normal result.  This means we need
+    // an i1 discriminator.
+    //
+    // As such, we need to reallocate the operation with a different call
+    // operation because we're returning the error result and an i1.  This is
+    // generic to handle CallOp and CallIndirectOp.
+    OperationState state(op->getLoc(), op->getName(), op->getOperands(),
+                         result.newResultTypes);
+    state.attributes = op->getAttrDictionary();
+    Operation *newOp = b.create(state);
+    res.replaceAllUsesWith(newOp->getResult(0));
+
+    // Store the relevant result in the branch where it was valid.
+    auto ifOp = HLCF::IfOp::create(b, newOp->getResult(0));
+    Block *thenBlock = b.createBlock(&ifOp.getThenRegion());
+    HLCF::YieldOp::create(b);
+    bool errorOnly = abiLowering == PromoteError;
+    Block *elseBlock = b.createBlock(&ifOp.getElseRegion());
+    HLCF::YieldOp::create(b);
+    b.setInsertionPointToStart(errorOnly ? thenBlock : elseBlock);
+    POP::StoreOp::create(b, newOp->getResult(1),
+                         errorOnly ? transform.errorOperand
+                                   : transform.resultOperand);
+    op->erase();
+    op = newOp;
+    break;
   }
 
   if (auto callOp = dyn_cast<CallOp>(op)) {
@@ -661,22 +733,21 @@ static LogicalResult lowerFuncOp(FuncOp funcOp) {
       funcOp.getContext(),
       FunctionType::get(funcOp->getContext(),
                         funcOp.getBodyRegion().front().getArgumentTypes(),
-                        result.newResultTypes.empty() ? sig.getResults()
-                                                      : result.newResultTypes),
+                        result.newResultTypes),
       result.newArgConventions, sig.getFnEffects(), sig.getMetadata());
   funcOp.setFuncTypeGenerator(
       GeneratorType::get(/*inputParamTypes=*/{}, newSig));
   funcOp.setLLVMArgMetadataAttr(
       ArrayAttr::get(funcOp.getContext(), transform.LLVMArgMetadata));
-  if (result.abiLowering != Neither) {
+  if (result.abiLowering != DontPromote) {
     Block &body = funcOp.getBodyRegion().front();
     // Find all return sites in the function and rewrite them.
     body.walk([&](ReturnOp returnOp) {
       b.setInsertionPoint(returnOp);
 
-      // If the function doesn't throw, we just load and return the new
-      // result.
-      if (!newSig.isThrows()) {
+      // If the function doesn't throw, we must have promoted a byref_result.
+      if (!newSig.isThrows() ||
+          result.abiLowering == PromoteResultRemoveError) {
         auto newRes =
             POP::LoadOp::create(b, returnOp.getLoc(), transform.newResPtr);
         returnOp.setOperand(0, newRes);
@@ -686,7 +757,7 @@ static LogicalResult lowerFuncOp(FuncOp funcOp) {
       // If the function throws and we rewrote both the error and the
       // byref_result, we need to potentially unpack and repack the
       // result/error variant.
-      if (result.abiLowering == Both) {
+      if (result.abiLowering == PromoteBoth) {
         auto newVariantTy = cast<VariantType>(newSig.getResults()[0]);
         Value newRetVal = repackFuncVariantResult(
             returnOp, newVariantTy, transform.newResPtr, transform.newErrPtr);

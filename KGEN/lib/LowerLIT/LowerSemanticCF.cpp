@@ -460,6 +460,10 @@ static void emitRaise(ImplicitLocOpBuilder &b) {
 /// left after the call if something was.
 static Operation *addErrorRegions(Operation &op, LIT::FnType sig,
                                   ValueRange operands) {
+  // If the function throws Never, ignore the throwability entirely.
+  if (sugarIsa<NeverType>(sig.getUserThrownType()))
+    return &op;
+
   // Clone the op and add the error regions.
   ImplicitLocOpBuilder b(op.getLoc(), OpBuilder(&op));
   b.setInsertionPointAfter(&op);
@@ -467,14 +471,12 @@ static Operation *addErrorRegions(Operation &op, LIT::FnType sig,
 
   // In the error region, mark the result has known consumed, then raise.
   b.createBlock(&ifOp.getThenRegion());
-  LIT::OwnershipMarkConsumedOp::create(
-      b, sig.hasMemoryOnlyResult() ? operands.back() : operands.front());
+  LIT::OwnershipMarkConsumedOp::create(b, operands.back());
   emitRaise(b);
 
   // In the result region, mark the error as known consumed.
   b.createBlock(&ifOp.getElseRegion());
-  LIT::OwnershipMarkConsumedOp::create(
-      b, *std::prev(operands.end(), sig.getErrorSlotOffset()));
+  LIT::OwnershipMarkConsumedOp::create(b, operands[operands.size() - 2]);
   HLCF::YieldOp::create(b);
   return ifOp;
 }

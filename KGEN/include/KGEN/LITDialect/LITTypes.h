@@ -125,10 +125,6 @@ public:
   /// Returns true if the signature has keyword variadic arguments.
   bool hasKwVarArgs();
 
-  /// Return the offset of the error slot argument from the back of the argument
-  /// list, if the signature is raising.
-  unsigned getErrorSlotOffset();
-
   /// Substitute the specified implicit origin references into the specified
   /// type, replacing them with `values` if they are at depth 0, or decrementing
   /// their depth if not.  This returns the resultant FunctionType on success,
@@ -273,10 +269,6 @@ public:
 
   /// Returns true if the signature has keyword variadic arguments.
   bool hasKwVarArgs();
-
-  /// Return the offset of the error slot argument from the back of the argument
-  /// list, if the signature is raising.
-  unsigned getErrorSlotOffset();
 
   /// Substitute the specified implicit origin references into the specified
   /// type, replacing them with `values` if they are at depth 0, or decrementing
