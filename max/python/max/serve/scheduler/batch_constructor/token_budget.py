@@ -53,7 +53,7 @@ class TokenBudget(ABC):
     they must respect the following contract:
 
     * If ``allow_chunking`` is True, implementations **may** call
-      ``context.maybe_chunk`` to reduce the effective token count they charge
+      ``context.chunk`` to reduce the effective token count they charge
       to the budget.
     * ``add_to_budget`` is only called after a non-``BUDGET_EXHAUSTED`` status
       and is responsible for incrementing :attr:`used`.
@@ -61,7 +61,7 @@ class TokenBudget(ABC):
     Attributes:
         capacity: Maximum number of tokens allowed for this budget.
         allow_chunking: Whether this budget may shrink the context via
-            ``context.maybe_chunk`` in order to fit within the remaining
+            ``context.chunk`` in order to fit within the remaining
             capacity.
         used: Number of tokens currently charged against this budget.
     """
@@ -153,7 +153,7 @@ class ActiveTokenBudget(TokenBudget):
     This budget is intended for limiting the number of tokens processed during
     a single context-encoding (CE) step. For each accepted context it charges
     :attr:`TextGenerationContext.active_length` tokens to the budget, and it
-    may optionally shrink the active window via ``context.maybe_chunk`` when
+    may optionally shrink the active window via ``context.chunk`` when
     ``allow_chunking`` is enabled.
 
     The capacity and current usage are tracked via :attr:`capacity`,
@@ -171,7 +171,7 @@ class ActiveTokenBudget(TokenBudget):
         This method examines ``context.active_length`` relative to the number of
         tokens remaining in the budget. If the active window would exceed the
         remaining capacity and ``allow_chunking`` is enabled, it may call
-        ``context.maybe_chunk(tokens_remaining)`` to shrink the active window
+        ``context.chunk(tokens_remaining)`` to shrink the active window
         so that it fits.
 
         **Important side effects**:
@@ -196,7 +196,7 @@ class ActiveTokenBudget(TokenBudget):
               accommodated, even after any attempted chunking.
 
         Raises:
-            ValueError: If chunking is enabled but ``context.maybe_chunk`` is
+            ValueError: If chunking is enabled but ``context.chunk`` is
                 unable to reduce the active window to within the remaining
                 capacity.
         """
@@ -217,21 +217,11 @@ class ActiveTokenBudget(TokenBudget):
             return BudgetStatus.BUDGET_REACHED
 
         # Try to shrink the active window so that it fits.
-        new_length = context.maybe_chunk(tokens_remaining)
-        if new_length > tokens_remaining:
-            raise ValueError(
-                "Chunked active length exceeds remaining budget: "
-                f"{new_length} > {tokens_remaining}"
-            )
-
-        if new_length == tokens_remaining:
+        try:
+            context.chunk(tokens_remaining)
             return BudgetStatus.BUDGET_REACHED
-
-        if new_length == 0:
-            # Nothing left to charge, but budget is effectively at capacity.
-            return BudgetStatus.BUDGET_REACHED
-
-        return BudgetStatus.BUDGET_AVAILABLE
+        except ValueError:
+            return BudgetStatus.BUDGET_EXHAUSTED
 
     def add_to_budget(self, context: TextGenerationContext) -> None:
         """Update the budget for an accepted context's active tokens.
@@ -268,7 +258,7 @@ class TotalContextTokenBudget(TokenBudget):
         This method considers :attr:`TextGenerationContext.current_length`
         against the remaining capacity. If the context would exceed the budget
         and ``allow_chunking`` is enabled, it may call
-        ``context.maybe_chunk(tokens_remaining)`` to reduce the effective
+        ``context.chunk(tokens_remaining)`` to reduce the effective
         charge, though in practice chunking is typically more relevant for
         active-token budgets.
 
@@ -286,7 +276,7 @@ class TotalContextTokenBudget(TokenBudget):
               accommodated within the remaining capacity.
 
         Raises:
-            ValueError: If chunking is enabled but ``context.maybe_chunk`` does
+            ValueError: If chunking is enabled but ``context.chunk`` does
                 not succeed in reducing the effective charge to the remaining
                 capacity.
         """
@@ -306,20 +296,9 @@ class TotalContextTokenBudget(TokenBudget):
         if not self.allow_chunking:
             return BudgetStatus.BUDGET_EXHAUSTED
 
-        new_total = context.maybe_chunk(tokens_remaining)
-        if new_total > tokens_remaining:
-            raise ValueError(
-                "Chunked total context length exceeds remaining budget: "
-                f"{new_total} > {tokens_remaining}"
-            )
-
-        if new_total == tokens_remaining:
-            return BudgetStatus.BUDGET_REACHED
-
-        if new_total == 0:
-            return BudgetStatus.BUDGET_REACHED
-
-        return BudgetStatus.BUDGET_AVAILABLE
+        # This should just fail, and raise an error if we fail to chunk.
+        context.chunk(tokens_remaining)
+        return BudgetStatus.BUDGET_REACHED
 
     def add_to_budget(self, context: TextGenerationContext) -> None:
         """Charge the budget for an accepted context's total length.

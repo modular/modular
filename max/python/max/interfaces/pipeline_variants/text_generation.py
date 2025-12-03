@@ -614,17 +614,23 @@ class TextGenerationContext(BaseContext, Protocol):
         """
         ...
 
-    def maybe_chunk(self, chunk_size: int) -> int:
-        """Optionally chunks the next `chunk_size` tokens for processing.
+    def chunk(self, chunk_size: int) -> None:
+        """Optionally chunk the active token window to enforce a maximum size.
 
-        This method determines the appropriate chunk size (up to `chunk_size`) based on
-        available tokens and context, returning the number of tokens that can be processed.
+        This method is typically used by the scheduler when performing chunked
+        prefill. If the number of active prompt tokens exceeds the per-batch
+        target, the context may be "chunked" by advancing indices so that only
+        a bounded number of active tokens remain.
 
         Args:
-            chunk_size (int): The maximum number of tokens to chunk.
+            chunk_size (int): The desired maximum number of active tokens to keep
+                in this context.
 
-        Returns:
-            int: The number of tokens that will actually be processed in this chunk.
+        Raises:
+            ValueError: If ``chunk_size`` is negative or larger than the current
+                number of active tokens, indicating that the context cannot be
+                chunked appropriately.
+
         """
         ...
 
