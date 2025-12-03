@@ -233,7 +233,9 @@ fn mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     elif is_amd_gpu():
         _mma_amd[block_size](d, a, b, c)
     else:
-        return CompilationTarget.unsupported_target_error[operation="mma"]()
+        return CompilationTarget.unsupported_target_error[
+            operation = __get_current_function_name()
+        ]()
 
 
 # ===------------------------------------------------------------------===#

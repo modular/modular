@@ -124,7 +124,7 @@ fn lane_id() -> UInt:
     else:
         return CompilationTarget.unsupported_target_error[
             UInt,
-            operation="lane_id",
+            operation = __get_current_function_name(),
         ]()
 
 
@@ -183,7 +183,7 @@ fn sm_id() -> UInt:
     else:
         return CompilationTarget.unsupported_target_error[
             UInt,
-            operation="sm_id",
+            operation = __get_current_function_name(),
             note="sm_id() is only supported when targeting NVIDIA GPUs.",
         ]()
 
@@ -215,7 +215,7 @@ struct _ThreadIdx(Defaultable):
         else:
             return CompilationTarget.unsupported_target_error[
                 StaticString,
-                operation="thread_idx field access",
+                operation = __get_current_function_name(),
             ]()
 
     @always_inline("nodebug")
@@ -263,7 +263,7 @@ struct _BlockIdx(Defaultable):
         else:
             return CompilationTarget.unsupported_target_error[
                 StaticString,
-                operation="block_idx field access",
+                operation = __get_current_function_name(),
             ]()
 
     @always_inline("nodebug")
@@ -345,7 +345,7 @@ struct _BlockDim(Defaultable):
         else:
             return CompilationTarget.unsupported_target_error[
                 UInt,
-                operation="block_dim field access",
+                operation = __get_current_function_name(),
             ]()
 
 
@@ -417,7 +417,7 @@ struct _GridDim(Defaultable):
         else:
             return CompilationTarget.unsupported_target_error[
                 UInt,
-                operation="grid_dim field access",
+                operation = __get_current_function_name(),
             ]()
 
 

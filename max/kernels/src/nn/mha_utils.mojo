@@ -597,7 +597,7 @@ fn _copy_frag_to_smem[
         ](p_smem_iter, p_reg_tile, warp_x, warp_y)
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="_copy_frag_to_smem",
+            operation = __get_current_function_name()
         ]()
 
 

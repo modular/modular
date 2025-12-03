@@ -813,7 +813,7 @@ fn async_copy_commit_group():
         pass
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="async_copy_commit_group"
+            operation = __get_current_function_name()
         ]()
 
 
@@ -843,7 +843,7 @@ fn async_copy_wait_group(n: Int32):
         pass
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="async_copy_wait_group"
+            operation = __get_current_function_name()
         ]()
 
 
@@ -871,7 +871,7 @@ fn async_copy_wait_all():
         pass
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="async_copy_wait_all"
+            operation = __get_current_function_name()
         ]()
 
 

@@ -1515,7 +1515,9 @@ fn mha[
         else:
             attention.mha_prefill()
     else:
-        return CompilationTarget.unsupported_target_error[operation="mha"]()
+        return CompilationTarget.unsupported_target_error[
+            operation = __get_current_function_name()
+        ]()
 
 
 @__llvm_metadata(
@@ -3174,7 +3176,7 @@ fn mha_decoding[
         )
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="mha_decoding"
+            operation = __get_current_function_name()
         ]()
 
 

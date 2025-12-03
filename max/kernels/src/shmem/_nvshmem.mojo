@@ -291,7 +291,7 @@ fn _dtype_to_nvshmem_type[
         return get_static_string[prefix, "size", suffix, scope]()
     else:
         return CompilationTarget.unsupported_target_error[
-            StaticString, operation="_dtype_to_nvshmem_type"
+            StaticString, operation = __get_current_function_name()
         ]()
 
 

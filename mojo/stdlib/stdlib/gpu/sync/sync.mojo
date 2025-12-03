@@ -136,7 +136,9 @@ fn barrier():
         # threadgroup_barrier(mem_flags::mem_threadgroup)
         llvm_intrinsic["llvm.air.wg.barrier", NoneType](Int32(2), Int32(1))
     else:
-        return CompilationTarget.unsupported_target_error[operation="barrier"]()
+        return CompilationTarget.unsupported_target_error[
+            operation = __get_current_function_name()
+        ]()
 
 
 @fieldwise_init
@@ -479,7 +481,7 @@ fn syncwarp(mask: Int = -1):
         return
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="syncwarp"
+            operation = __get_current_function_name()
         ]()
 
 
@@ -540,7 +542,7 @@ fn async_copy_arrive[
         _mbarrier_impl(address)
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="async_copy_arrive",
+            operation = __get_current_function_name(),
             note="async_copy_arrive() is only supported when targeting NVIDIA GPUs",
         ]()
 
@@ -574,7 +576,7 @@ fn mbarrier_init[
         )
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="mbarrier_init",
+            operation = __get_current_function_name(),
             note="mbarrier_init() is only supported when targeting NVIDIA GPUs",
         ]()
 
@@ -610,7 +612,7 @@ fn mbarrier_arrive[
     else:
         return CompilationTarget.unsupported_target_error[
             Int,
-            operation="mbarrier_arrive",
+            operation = __get_current_function_name(),
             note="mbarrier_arrive() is only supported when targeting NVIDIA GPUs",
         ]()
 
@@ -648,7 +650,7 @@ fn mbarrier_test_wait[
     else:
         return CompilationTarget.unsupported_target_error[
             Bool,
-            operation="mbarrier_test_wait",
+            operation = __get_current_function_name(),
             note="mbarrier_test_wair() is only supported when targeting NVIDIA GPUs",
         ]()
 
@@ -680,7 +682,7 @@ fn mbarrier_arrive_expect_tx_shared[
         )
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="mbarrier_arrive_expect_tx_shared",
+            operation = __get_current_function_name(),
             note="mbarrier_arrive_expect_tx_shared() is only supported when targeting NVIDIA GPUs",
         ]()
 
@@ -747,7 +749,7 @@ fn mbarrier_arrive_expect_tx_relaxed[
     else:
         return CompilationTarget.unsupported_target_error[
             UInt64,
-            operation="mbarrier_arrive_expect_tx_relaxed",
+            operation = __get_current_function_name(),
             note="mbarrier_arrive_expect_tx_relaxed() is only supported when targeting NVIDIA GPUs",
         ]()
     return 0
@@ -782,7 +784,7 @@ fn mbarrier_try_wait_parity_shared[
         )
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="mbarrier_try_wait_parity_shared",
+            operation = __get_current_function_name(),
             note="mbarrier_try_wait_parity_shared() is only supported when targeting NVIDIA GPUs",
         ]()
 
@@ -832,7 +834,7 @@ fn cp_async_bulk_commit_group():
         __mlir_op.`nvvm.cp.async.bulk.commit.group`[_type=None]()
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="cp_async_bulk_commit_group",
+            operation = __get_current_function_name(),
             note="cp_async_bulk_commit_group() is only supported when targeting NVIDIA GPUs",
         ]()
 
@@ -883,6 +885,6 @@ fn cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
 
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="cp_async_bulk_wait_group",
+            operation = __get_current_function_name(),
             note="cp_async_bulk_wait_group() is only supported when targeting NVIDIA GPUs",
         ]()

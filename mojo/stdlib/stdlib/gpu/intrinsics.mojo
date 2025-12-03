@@ -212,7 +212,7 @@ fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
     else:
         return CompilationTarget.unsupported_target_error[
             Int32,
-            operation="lop",
+            operation = __get_current_function_name(),
             note="lop() is only supported when targeting NVIDIA GPUs.",
         ]()
 
@@ -258,7 +258,7 @@ fn _byte_permute_inst() -> StaticString:
     else:
         return CompilationTarget.unsupported_target_error[
             StaticString,
-            operation="byte_permute",
+            operation = __get_current_function_name(),
         ]()
 
 
@@ -802,7 +802,7 @@ fn store_release[
         )
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="store_release"
+            operation = __get_current_function_name()
         ]()
 
 
@@ -853,7 +853,7 @@ fn store_relaxed[
         ](value, ptr.address)
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="store_relaxed"
+            operation = __get_current_function_name()
         ]()
 
 
@@ -935,7 +935,7 @@ fn load_acquire[
     else:
         return CompilationTarget.unsupported_target_error[
             Scalar[dtype],
-            operation="load_acquire",
+            operation = __get_current_function_name(),
         ]()
 
 
@@ -989,7 +989,7 @@ fn load_relaxed[
     else:
         return CompilationTarget.unsupported_target_error[
             Scalar[dtype],
-            operation="load_relaxed",
+            operation = __get_current_function_name(),
         ]()
 
 

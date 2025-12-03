@@ -344,7 +344,7 @@ fn shuffle_idx[
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
-            operation="shuffle_idx",
+            operation = __get_current_function_name(),
         ]()
 
 
@@ -441,7 +441,7 @@ fn shuffle_up[
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
-            operation="shuffle_up",
+            operation = __get_current_function_name(),
         ]()
 
 
@@ -539,7 +539,7 @@ fn shuffle_down[
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
-            operation="shuffle_down",
+            operation = __get_current_function_name(),
         ]()
 
 
@@ -640,7 +640,7 @@ fn shuffle_xor[
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
-            operation="shuffle_xor",
+            operation = __get_current_function_name(),
         ]()
 
 
@@ -1251,5 +1251,5 @@ fn vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
         return _vote_amd_helper[ret_type](val)
     else:
         return CompilationTarget.unsupported_target_error[
-            Scalar[ret_type], operation="vote"
+            Scalar[ret_type], operation = __get_current_function_name()
         ]()

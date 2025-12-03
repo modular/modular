@@ -626,7 +626,7 @@ fn mla_decoding[
         )
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="mla_decoding"
+            operation = __get_current_function_name()
         ]()
 
 
@@ -1889,7 +1889,7 @@ fn mla_prefill[
         )
     else:
         return CompilationTarget.unsupported_target_error[
-            operation="mla_prefill_single_batch"
+            operation = __get_current_function_name()
         ]()
 
 
