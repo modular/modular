@@ -155,15 +155,23 @@ Anthropic engineers.
 
 We host regular meetups, hackathons, and community calls. Join us!
 
-| Channel | Link |
-|---------|------|
-| 💬 Discord | [discord.gg/modular](https://discord.gg/modular) |
-| 💬 Forum | [forum.modular.com](https://forum.modular.com/) |
-| 📅 Meetup Group | [meetup.com/modular-meetup-group](https://www.meetup.com/modular-meetup-group/) |
-| 🎥 Community Meetings | Recordings on
-[YouTube](https://www.youtube.com/@modularinc) |
+## Community & Events
 
-**Upcoming events** will be posted on our [Meetup page](https://www.meetup.com/modular-meetup-group/) and [Discord](https://discord.gg/modular).
+We host regular meetups, hackathons, and community calls. Join us!
+
+| Channel               | Link                                |
+|-----------------------|-------------------------------------|
+| 💬 Discord            | [discord.gg/modular][discord]       |
+| 💬 Forum              | [forum.modular.com][forum]          |
+| 📅 Meetup Group       | [meetup.com/modular-meetup-group][meetup-group] |
+| 🎥 Community Meetings | Recordings on [YouTube][youtube]    |
+
+**Upcoming events** will be posted on our [Meetup page][meetup-group] and
+[Discord][discord].
+
+[discord]: https://discord.gg/modular
+[forum]: https://forum.modular.com/
+[youtube]: https://www.youtube.com/@modularinc
 
 ## Contribute
 
