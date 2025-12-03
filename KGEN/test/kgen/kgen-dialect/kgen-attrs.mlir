@@ -449,3 +449,16 @@ kgen.generator @simd_cmp_folding<dt: dtype>() {
   }
   kgen.unreachable
 }
+
+"some.op"() {
+  // CHECK: a = #pop<simd -1> : !pop.scalar<si32>
+  a = #pop.simd_neg< #pop<simd 1> : !pop.scalar<si32>> : !pop.scalar<si32>,
+  // CHECK: b = #pop.simd<-7, -42, 1, 0>
+  b = #pop.simd_neg< #pop.simd<7, 42, -1, 0> : !pop.simd<4, si32>> : !pop.simd<4, si32>,
+  // CHECK: c = #pop.simd_neg<#kgen.unknown : !pop.simd<4, si32>> : !pop.simd<4, si32>
+  c = #pop.simd_neg< #kgen.unknown : !pop.simd<4, si32>>,
+  // CHECK: d = #pop.simd<false, true>
+  d = #pop.simd_neg< #pop.simd<true, false> : !pop.simd<2, bool>> : !pop.simd<2, bool>,
+  // CHECK: e = #pop.simd<"-1", "1.5", "-0", "0", "NaN", "NaN", "-Inf", "+Inf">
+  e = #pop.simd_neg< #pop.simd<"1.0", "-1.5", "0.0", "-0.0", "NaN", "-NaN", "inf", "-inf"> : !pop.simd<8, f32>> : !pop.simd<8, f32>
+} : () -> ()

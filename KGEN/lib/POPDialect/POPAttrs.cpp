@@ -1889,6 +1889,41 @@ SIMDSplatAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
+// SIMD Unary Operation Attrs
+//===----------------------------------------------------------------------===//
+
+TypedAttr SIMDNegAttr::get(MLIRContext *ctx, TypedAttr operand) {
+  // Fold if possible
+  if (auto fold = foldSIMDOp(
+          {operand}, [](APSInt operand) { return -operand; },
+          [](APFloat operand) { return -operand; },
+          [](bool operand) { return !operand; })) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+  }
+  return Base::get(ctx, operand);
+}
+
+TypedAttr SIMDNegAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                  MLIRContext *context, TypedAttr operand) {
+  if (failed(verify(emitError, operand)))
+    return {};
+  return SIMDNegAttr::get(context, operand);
+}
+
+bool SIMDNegAttr::isConstant() const { return false; }
+
+Type SIMDNegAttr::getType() const { return getOperand().getType(); }
+
+LogicalResult SIMDNegAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                  TypedAttr operand) {
+  if (!isa<SIMDType>(operand.getType()))
+    return emitError() << "requires a SIMD-typed operand";
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // SIMD Binary Operation Attrs
 //===----------------------------------------------------------------------===//
 
