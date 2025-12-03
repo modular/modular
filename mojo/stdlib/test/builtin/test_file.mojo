@@ -710,5 +710,41 @@ def test_file_multiple_close():
         assert_true(False, "Second close should not raise: " + String(e))
 
 
+def test_file_invalid_mode():
+    """Test that invalid file mode strings raise proper error."""
+    var temp_file = Path(gettempdir().value()) / "test_file_invalid_mode"
+
+    # Test various invalid mode strings
+    with assert_raises(contains="invalid mode:"):
+        _ = open(temp_file, "x")
+
+    with assert_raises(contains="invalid mode:"):
+        _ = open(temp_file, "rb")
+
+    with assert_raises(contains="invalid mode:"):
+        _ = open(temp_file, "w+")
+
+    with assert_raises(contains="invalid mode:"):
+        _ = open(temp_file, "")
+
+
+def test_file_read_nonexistent():
+    """Test that opening a non-existent file in read mode raises proper error.
+    """
+    var nonexistent_file = (
+        Path(gettempdir().value()) / "test_file_does_not_exist_12345"
+    )
+
+    # Make sure the file doesn't exist
+    try:
+        remove(nonexistent_file)
+    except:
+        pass
+
+    # Should raise error when file doesn't exist
+    with assert_raises(contains="No such file or directory"):
+        _ = open(nonexistent_file, "r")
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

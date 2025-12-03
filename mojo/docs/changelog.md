@@ -200,6 +200,12 @@ what we publish.
 
   - `List` now conforms to `Equatable`.
 
+- Basic file I/O operations in the `io` module are now implemented natively in
+  Mojo using direct `libc` system calls (`open`, `close`, `read`, `write`,
+  `lseek`). The `FileHandle` type no longer depends on CompilerRT functions,
+  providing better performance and transparency. Error handling now includes
+  errno-based messages for improved diagnostics.
+
 ### Tooling changes
 
 - The Mojo compiler now "diffs" very long types in error messages to explain
