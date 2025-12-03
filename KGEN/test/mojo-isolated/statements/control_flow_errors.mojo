@@ -197,7 +197,7 @@ struct BadCM: # expected-note {{'BadCM' declared here}}
 fn noop(a: Int): pass
 
 fn testBadCM():
-  # expected-error @+1 {{context manager of type 'BadCM' defines a consuming __enter__ method as well as an __exit__ method; either remove 'owned' from its '__enter__' method or remove the '__exit__' method}}
+  # expected-error @+1 {{context manager of type 'BadCM' defines a consuming __enter__ method as well as an __exit__ method; either remove 'var' from its '__enter__' method or remove the '__exit__' method}}
   with BadCM():
     pass
 
