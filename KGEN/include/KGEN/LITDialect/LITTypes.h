@@ -238,9 +238,6 @@ public:
   /// Get the user result type of the signature.
   Type getUserResultType();
 
-  /// Get the user thrown type for a raising function.
-  Type getUserThrownType();
-
   /// Returns true if the argument at this index is any vararg or a pack.
   bool isAnyVarArg(size_t index);
 
