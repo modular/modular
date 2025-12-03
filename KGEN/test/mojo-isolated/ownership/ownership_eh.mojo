@@ -441,3 +441,20 @@ struct InitFieldsDestroyedInThrowingConstructor:
         # CHECK-NEXT: }
         if cond:
             raise Error()
+
+# CHECK-LABEL: lit.fn @"doesnt_actually_raise{{.*}}%__error__: !lit.ref<#alias_Never
+fn doesnt_actually_raise() raises Never:
+    pass
+
+# CHECK-LABEL: lit.fn @"test_doesnt_actually_raise{{.*}}() -> !Int
+# CHECK-NEXT: %__never_error__ = lit.var.decl
+# CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
+# CHECK-NEXT: lit.var.lifetime.start %__never_error__
+# CHECK-NEXT: lit.var.lifetime.start %__call_result_tmp__
+# CHECK-NEXT: lit.call {{.*}}doesnt_actually_raise{{.*}}(%__never_error__, %__call_result_tmp__)
+# CHECK-NEXT: lit.var.lifetime.end %__never_error__
+# CHECK-NEXT: lit.var.lifetime.end %__call_result_tmp__
+# CHECK-NEXT: kgen.param.constant: !Int = <{42}>
+fn test_doesnt_actually_raise() -> Int:
+    doesnt_actually_raise()
+    return 42
