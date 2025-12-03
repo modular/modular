@@ -35,6 +35,7 @@ modular_py_library(
         requirement("torch"),
         requirement("transformers"),
         requirement("peft"),  # Required for LoRA support
+        requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
     ],
 )
 
@@ -72,6 +73,7 @@ modular_py_binary(
         requirement("torch"),
         requirement("transformers"),
         requirement("peft"),  # Required for LoRA support
+        requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
         ":create_pipelines",
     ] + select({
         "//:has_gpu": [
