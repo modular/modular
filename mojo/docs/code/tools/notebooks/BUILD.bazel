@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "modular_run_binary_test", "mojo_binary")
 
+package(default_visibility = ["//docs:__subpackages__"])
+
 # Non-GPU examples
 
 NON_GPU_SRCS = [
@@ -33,7 +35,10 @@ GPU_SRCS = [
     mojo_binary(
         name = src.split(".")[0],
         srcs = [src],
-        target_compatible_with = ["//:has_gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:apple_gpu": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
         deps = [
             "//max:layout",
             "@mojo//:stdlib",
@@ -64,5 +69,3 @@ GPU_SRCS = [
     )
     for src in GPU_SRCS
 ]
-
-package(default_visibility = ["//docs:__subpackages__"])
