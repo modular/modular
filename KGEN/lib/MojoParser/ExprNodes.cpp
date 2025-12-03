@@ -4206,8 +4206,8 @@ AnyValue MagicFunctionNode::emitConformsTo(ValueDest &dest,
   }
 
   auto metaType = ASTType(typeToCheck.getIfTypeValue()).getMetaType();
-  if (!isa_and_nonnull<LIT::TraitType>(metaType) &&
-      !isa_and_nonnull<LIT::StructMetaType>(metaType)) {
+  if (!sugarIsaAndNonNull<LIT::TraitType>(metaType) &&
+      !sugarIsaAndNonNull<LIT::StructMetaType>(metaType)) {
     // TODO: we should fold to constant when the metatype is `StructMetaType`,
     // that means we know the concrete type to check at parsing time:
     emitter.emitError(subExprs[0]->getLoc())
@@ -4218,7 +4218,7 @@ AnyValue MagicFunctionNode::emitConformsTo(ValueDest &dest,
   // The second operand must be a !lit.anytrait
   PValue traitToCheck = emitter.emitExprPValue(subExprs[1], EC_ConformsTo);
   if (!traitToCheck ||
-      !isa_and_nonnull<TraitType>(traitToCheck.getIfTypeValue())) {
+      !sugarIsaAndNonNull<TraitType>(traitToCheck.getIfTypeValue())) {
     emitter.emitError(subExprs[1]->getLoc(),
                       "expected a concrete trait for the second argument")
         << subExprs[1]->getRange();
