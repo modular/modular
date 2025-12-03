@@ -938,11 +938,8 @@ fn build_mma_ss(
 .reg .pred %pj;
 .reg .pred %ps;
 setp.eq.s32 %pj, $6, 0;
-@%pj bra skip;
 """
     tcgen05_mma = "tcgen05.mma.cta_group::1." + kind
-    # prev_offset_a = 0
-    # prev_offset_b = 0
     for k in range(num_k_mmas):
         if k == 0:  # set predicate based on c-scale
             mma += "mov.b64 %rda, {$7, $8};\n"
@@ -958,9 +955,10 @@ setp.eq.s32 %pj, $6, 0;
             mma += "mov.b64 %rdb, {%rb, $5};\n"
             if k == 1:  # set predicate to 1
                 mma += "setp.ne.b32 %ps, 1, 0;\n"
+        mma += String("@%pj bra skip", k, ";")
         mma += tcgen05_mma + " [$0], %rda, %rdb, $2, {$1, $1, $1, $1}, %ps;\n"
-    mma += "skip:\n}"
-    return mma
+        mma += String("skip", k, ":\n")
+    return mma + "}"
 
 
 fn build_mma_ts(
@@ -982,7 +980,6 @@ fn build_mma_ts(
 .reg .pred %pj;
 .reg .pred %ps;
 setp.eq.s32 %pj, $6, 0;
-@%pj bra skip;
 """
     tcgen05_mma = "tcgen05.mma.cta_group::1." + kind
     # prev_offset_a = 0
@@ -998,14 +995,15 @@ setp.eq.s32 %pj, $6, 0;
             mma += "mov.b64 %rdb, {%rb, $5};\n"
             if k == 1:  # set predicate to 1
                 mma += "setp.ne.b32 %ps, 1, 0;\n"
+        mma += String("@%pj bra skip", k, ";")
         mma += String(
             tcgen05_mma,
             " [$0], [$",
             7 + k,
             "], %rdb, $2, {$1, $1, $1, $1}, %ps;\n",
         )
-    mma += "skip:\n}"
-    return mma
+        mma += String("skip", k, ":\n")
+    return mma + "}"
 
 
 @always_inline
