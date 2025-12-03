@@ -143,9 +143,26 @@ kgen.generator @test(%arg0: index, %arg1: index) -> index {
 
 // CHECK-LABEL: kgen.func export @main
 kgen.generator export @main() -> index {
-  // COM: 0xffffffff80000000 & 0x1f000000
-  kgen.param.declare value : index = <apply(:(index, index) -> index @test, -2147483648, 520093696)>
+  kgen.param.declare value : index = <apply(:(index, index) -> index @test, -0x80000000, 0x1f000000)>
   // CHECK-NEXT: [[V0:%.*]] =  kgen.param.constant = <0>
+  %0 = kgen.param.constant: index = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : index
+  kgen.return %0 : index
+}
+}
+
+// -----
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
+kgen.generator @test(%arg0: index, %arg1: index) -> index {
+  %0 = index.and %arg0, %arg1
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func export @main
+kgen.generator export @main() -> index {
+  kgen.param.declare value : index = <apply(:(index, index) -> index @test, 0x80000000, 0x80000000)>
+  // CHECK-NEXT: [[V0:%.*]] =  kgen.param.constant = <2147483648>
   %0 = kgen.param.constant: index = <value>
   // CHECK-NEXT: kgen.return [[V0]] : index
   kgen.return %0 : index
