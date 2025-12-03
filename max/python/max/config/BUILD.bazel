@@ -7,6 +7,7 @@ modular_py_library(
     srcs = glob(["**/*.py"]),
     imports = ["../.."],
     deps = [
+        requirement("cyclopts"),
         requirement("pyyaml"),
     ],
 )
