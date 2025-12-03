@@ -88,12 +88,18 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("output", output.runtime_layout.shape.value),
-            trace_arg("hidden_state", hidden_state.runtime_layout.shape.value),
-            trace_arg("weight", weight.runtime_layout.shape.value),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(kv_collection.kv_params.num_heads),
-            "head_size=" + String(kv_collection.kv_params.head_size),
+            Span(
+                [
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg(
+                        "hidden_state", hidden_state.runtime_layout.shape.value
+                    ),
+                    trace_arg("weight", weight.runtime_layout.shape.value),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(kv_collection.kv_params.num_heads),
+                    "head_size=" + String(kv_collection.kv_params.head_size),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target=target](
@@ -352,13 +358,19 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("output", output.runtime_layout.shape.value),
-            trace_arg("q_proj", q_proj.runtime_layout.shape.value),
-            trace_arg("freqs_cis", freqs_cis.runtime_layout.shape.value),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(kv_collection.kv_params.num_heads),
-            "head_size=" + String(kv_collection.kv_params.head_size),
-            "interleaved=" + String(interleaved),
+            Span(
+                [
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg("q_proj", q_proj.runtime_layout.shape.value),
+                    trace_arg(
+                        "freqs_cis", freqs_cis.runtime_layout.shape.value
+                    ),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(kv_collection.kv_params.num_heads),
+                    "head_size=" + String(kv_collection.kv_params.head_size),
+                    "interleaved=" + String(interleaved),
+                ]
+            )
         )
 
     # Pass device context only on GPU.
@@ -420,14 +432,19 @@ fn generic_flash_attention_kv_cache_padded[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q.runtime_layout.shape.value),
-            trace_arg(
-                "valid_lengths", valid_lengths.runtime_layout.shape.value
-            ),
-            "scale=" + String(scale),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(collection_t.kv_params.num_heads),
-            "head_size=" + String(collection_t.kv_params.head_size),
+            Span(
+                [
+                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg(
+                        "valid_lengths",
+                        valid_lengths.runtime_layout.shape.value,
+                    ),
+                    "scale=" + String(scale),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(collection_t.kv_params.num_heads),
+                    "head_size=" + String(collection_t.kv_params.head_size),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target=target](
@@ -491,15 +508,20 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q.runtime_layout.shape.value),
-            trace_arg("mask", mask.runtime_layout.shape.value),
-            trace_arg(
-                "valid_lengths", valid_lengths.runtime_layout.shape.value
-            ),
-            "scale=" + String(scale),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(collection_t.kv_params.num_heads),
-            "head_size=" + String(collection_t.kv_params.head_size),
+            Span(
+                [
+                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg("mask", mask.runtime_layout.shape.value),
+                    trace_arg(
+                        "valid_lengths",
+                        valid_lengths.runtime_layout.shape.value,
+                    ),
+                    "scale=" + String(scale),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(collection_t.kv_params.num_heads),
+                    "head_size=" + String(collection_t.kv_params.head_size),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target=target](

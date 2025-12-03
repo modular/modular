@@ -729,22 +729,8 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return _FormatCurlyEntry.format(self, args)
 
-    fn join[*Ts: Writable](self, *elems: *Ts) -> String:
-        """Joins string elements using the current string as a delimiter.
-
-        Parameters:
-            Ts: The types of the elements.
-
-        Args:
-            elems: The input values.
-
-        Returns:
-            The joined string.
-        """
-        return String(elems, sep=self)
-
     fn join[
-        T: Copyable & Movable & Writable
+        T: Copyable & Movable & Writable, //
     ](self, elems: Span[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than

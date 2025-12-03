@@ -2451,23 +2451,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         buffer.flush()
         return result^
 
-    # TODO(MOCO-1791): The corresponding String.__init__ is limited to
-    # StaticString. This is because default arguments and param inference aren't
-    # powerful enough to declare sep/end as StringSlice.
-    fn join[*Ts: Writable](self: StaticString, *elems: *Ts) -> String:
-        """Joins string elements using the current string as a delimiter.
-
-        Parameters:
-            Ts: The types of the elements.
-
-        Args:
-            elems: The input values.
-
-        Returns:
-            The joined string.
-        """
-        return String(elems, sep=self)
-
 
 # ===-----------------------------------------------------------------------===#
 # Utils

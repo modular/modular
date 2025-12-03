@@ -3027,13 +3027,17 @@ fn conv_nhwc_direct[
     @parameter
     fn description_fn() -> String:
         return ";".join(
-            trace_arg("input", input.runtime_layout.shape.value),
-            trace_arg("filter", filter.runtime_layout.shape.value),
-            trace_arg("output", output.runtime_layout.shape.value),
-            "group=" + String(num_groups),
-            "stride=" + "x".join(stride),
-            "padding_h=" + "x".join(pad_h),
-            "padding_w=" + "x".join(pad_w),
+            Span(
+                [
+                    trace_arg("input", input.runtime_layout.shape.value),
+                    trace_arg("filter", filter.runtime_layout.shape.value),
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    "group=" + String(num_groups),
+                    "stride=" + "x".join(Span([stride])),
+                    "padding_h=" + "x".join(Span([pad_h])),
+                    "padding_w=" + "x".join(Span([pad_w])),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")](

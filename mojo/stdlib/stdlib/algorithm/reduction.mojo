@@ -1848,8 +1848,12 @@ fn mean[
     @parameter
     fn description_fn() -> String:
         return ";".join(
-            trace_arg("input", input_shape, dtype),
-            trace_arg("output", output_shape, dtype),
+            Span(
+                [
+                    trace_arg("input", input_shape, dtype),
+                    trace_arg("output", output_shape, dtype),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target=target](

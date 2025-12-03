@@ -169,8 +169,12 @@ fn flare_mla_decoding[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q.runtime_layout.shape.value),
-            trace_arg("output", output.runtime_layout.shape.value),
+            Span(
+                [
+                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg("output", output.runtime_layout.shape.value),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
@@ -1306,10 +1310,14 @@ fn flare_mla_prefill[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q.runtime_layout.shape.value),
-            trace_arg("k", k.runtime_layout.shape.value),
-            trace_arg("v", v.runtime_layout.shape.value),
-            trace_arg("output", output.runtime_layout.shape.value),
+            Span(
+                [
+                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg("k", k.runtime_layout.shape.value),
+                    trace_arg("v", v.runtime_layout.shape.value),
+                    trace_arg("output", output.runtime_layout.shape.value),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
@@ -1464,10 +1472,14 @@ fn flare_mla_prefill[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q.runtime_layout.shape.value),
-            trace_arg("k", k.runtime_layout.shape.value),
-            trace_arg("v", v.runtime_layout.shape.value),
-            trace_arg("output", output.runtime_layout.shape.value),
+            Span(
+                [
+                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg("k", k.runtime_layout.shape.value),
+                    trace_arg("v", v.runtime_layout.shape.value),
+                    trace_arg("output", output.runtime_layout.shape.value),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target = ctx.default_device_info.api](

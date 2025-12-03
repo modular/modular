@@ -660,7 +660,7 @@ def test_splitlines():
 
     for ref u in [next_line, unicode_line_sep, unicode_paragraph_sep]:
         item = StaticString("").join(
-            "hello", u, "world", u, "mojo", u, "language", u
+            Span(["hello", u, "world", u, "mojo", u, "language", u])
         )
         assert_equal(item.splitlines(), hello_mojo)
         assert_equal(
@@ -1004,17 +1004,21 @@ def test_replace():
 
 
 def test_join():
-    assert_equal(StaticString("").join(), "")
-    assert_equal(StaticString("").join("a", "b", "c"), "abc")
-    assert_equal(StaticString(" ").join("a", "b", "c"), "a b c")
-    assert_equal(StaticString(" ").join("a", "b", "c", ""), "a b c ")
-    assert_equal(StaticString(" ").join("a", "b", "c", " "), "a b c  ")
+    # TODO(MOCO-2908): This explicit origin should not be necessary; the
+    #   compiler ought to infer some default "bottom" origin.
+    assert_equal(StaticString("").join(Span[String, ImmutAnyOrigin]([])), "")
+    assert_equal(StaticString("").join(Span(["a", "b", "c"])), "abc")
+    assert_equal(StaticString(" ").join(Span(["a", "b", "c"])), "a b c")
+    assert_equal(StaticString(" ").join(Span(["a", "b", "c", ""])), "a b c ")
+    assert_equal(StaticString(" ").join(Span(["a", "b", "c", " "])), "a b c  ")
 
     var sep = StaticString(",")
     var s = "abc"
-    assert_equal(sep.join(s, s, s, s), "abc,abc,abc,abc")
-    assert_equal(sep.join(1, 2, 3), "1,2,3")
-    assert_equal(sep.join(1, "abc", 3), "1,abc,3")
+    assert_equal(sep.join(Span([s, s, s, s])), "abc,abc,abc,abc")
+    assert_equal(sep.join(Span([1, 2, 3])), "1,2,3")
+    # TODO(MSTDL-2078): Continue supporting heterogenous StringSlice.join
+    #   arguments, somehow?
+    # assert_equal(sep.join(Span([1, "abc", 3])), "1,abc,3")
 
     var s2 = StaticString(",").join(List[UInt8](1, 2, 3))
     assert_equal(s2, "1,2,3")

@@ -6473,13 +6473,19 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
         @parameter
         fn description_fn() -> String:
             return String(";").join(
-                trace_arg("output", output.shape()),
-                trace_arg("x", x.shape()),
-                trace_arg("input_row_offsets", input_row_offsets.shape()),
-                trace_arg("start_pos", start_pos.shape()),
-                trace_arg("freqs_cis", freqs_cis.shape()),
-                "interleaved=" + String(Self.interleaved),
-                "target=" + String(target),
+                Span(
+                    [
+                        trace_arg("output", output.shape()),
+                        trace_arg("x", x.shape()),
+                        trace_arg(
+                            "input_row_offsets", input_row_offsets.shape()
+                        ),
+                        trace_arg("start_pos", start_pos.shape()),
+                        trace_arg("freqs_cis", freqs_cis.shape()),
+                        "interleaved=" + String(Self.interleaved),
+                        "target=" + String(target),
+                    ]
+                )
             )
 
         @always_inline

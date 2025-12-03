@@ -168,10 +168,10 @@ def test_add():
     assert_equal("123abc", s3)
 
     var s4 = "x"
-    var s5 = s4.join(1, 2, 3)
+    var s5 = s4.join(Span([1, 2, 3]))
     assert_equal("1x2x3", s5)
 
-    var s6 = s4.join(s1, s2)
+    var s6 = s4.join(Span([s1, s2]))
     assert_equal("123xabc", s6)
 
     var s7 = String()
@@ -201,12 +201,14 @@ def test_add_string_slice():
 def test_string_join():
     var sep = ","
     var s0 = "abc"
-    var s1 = sep.join(s0, s0, s0, s0)
+    var s1 = sep.join(Span([s0, s0, s0, s0]))
     assert_equal("abc,abc,abc,abc", s1)
 
-    assert_equal(sep.join(1, 2, 3), "1,2,3")
+    assert_equal(sep.join(Span([1, 2, 3])), "1,2,3")
 
-    assert_equal(sep.join(1, "abc", 3), "1,abc,3")
+    # TODO(MSTDL-2078): Continue supporting heterogenous String.join
+    #   arguments, somehow?
+    # assert_equal(sep.join(1, "abc", 3), "1,abc,3")
 
     var s2 = ",".join(List[UInt8](1, 2, 3))
     assert_equal(s2, "1,2,3")
@@ -803,7 +805,7 @@ def test_splitlines():
 
     for u in [next_line^, unicode_line_sep^, unicode_paragraph_sep^]:
         item = StaticString("").join(
-            "hello", u, "world", u, "mojo", u, "language", u
+            Span(["hello", u, "world", u, "mojo", u, "language", u])
         )
         assert_equal(item.splitlines(), hello_mojo)
         assert_equal(

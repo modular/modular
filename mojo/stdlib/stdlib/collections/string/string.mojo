@@ -1018,23 +1018,6 @@ struct String(
             Span(ptr=self.unsafe_ptr(), length=self.byte_length())
         )
 
-    fn join[*Ts: Writable](self, *elems: *Ts) -> String:
-        """Joins string elements using the current string as a delimiter.
-
-        Parameters:
-            Ts: The types of the elements.
-
-        Args:
-            elems: The input values.
-
-        Returns:
-            The joined string.
-        """
-        var sep = rebind[StaticString](  # FIXME(#4414): this should not be so
-            StringSlice(ptr=self.unsafe_ptr(), length=self.byte_length())
-        )
-        return String(elems, sep=sep)
-
     fn join[
         T: Copyable & Movable & Writable
     ](self, elems: Span[T, *_]) -> String:

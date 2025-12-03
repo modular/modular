@@ -1116,12 +1116,16 @@ fn flash_attention_split_kv[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q.runtime_layout.shape.value),
-            trace_arg("k", k_shape),
-            trace_arg("v", v_shape),
-            trace_arg("k_cache", k_cache_shape),
-            trace_arg("v_cache", v_cache_shape),
-            trace_arg("output", output.runtime_layout.shape.value),
+            Span(
+                [
+                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg("k", k_shape),
+                    trace_arg("v", v_shape),
+                    trace_arg("k_cache", k_cache_shape),
+                    trace_arg("v_cache", v_cache_shape),
+                    trace_arg("output", output.runtime_layout.shape.value),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")](
