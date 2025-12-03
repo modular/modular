@@ -362,8 +362,11 @@ ParseResult KGEN::parseDTypeParamValue(AsmParser &p, TypedAttr &value) {
 }
 
 void KGEN::printTypeParamValue(AsmPrinter &p, TypedAttr value) {
-  if (!isa<TypeType>(value.getType()))
-    printColonTypeOrIndexPrefix(p, value.getType());
+  if (!isa<TypeType>(value.getType())) {
+    p << ':';
+    printKGENType(p, value.getType());
+    p << ' ';
+  }
   printParamValue(p, value);
 }
 

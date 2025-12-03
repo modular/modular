@@ -355,6 +355,24 @@ kgen.generator @eq_compare_anything() {
   kgen.return
 }
 
+// CHECK-LABEL: @eq_compare_sub_elements
+kgen.generator @eq_compare_sub_elements<a: !kgen.variadic<index>, b: !kgen.variadic<index>, x: index, y: index>() {
+  // CHECK-NEXT: <and(eq(#kgen.variadic.size<#kgen.param.decl.ref<"a"> : !kgen.variadic<index>>, 2), eq(#kgen.variadic.size<#kgen.param.decl.ref<"b"> : !kgen.variadic<index>>, 2))>
+  kgen.param.constant: i1 = <and(
+    eq(:index #kgen.variadic.size<#kgen.param.decl.ref<"b"> :!kgen.variadic<index>>, 2),
+    eq(:index #kgen.variadic.size<#kgen.param.decl.ref<"a"> :!kgen.variadic<index>>, 2),
+    eq(:index #kgen.variadic.size<#kgen.param.decl.ref<"b"> :!kgen.variadic<index>>, 2)
+  )>
+
+  // CHECK-NEXT: <eq(:variadic<index> #kgen.variadic.splat<:index 2, #kgen.param.decl.ref<"x"> : index>, #kgen.variadic.splat<:index 2, #kgen.param.decl.ref<"y"> : index>)>
+  kgen.param.constant: i1 = <eq(:!kgen.variadic<index>
+    #kgen.variadic.splat<:index 2, #kgen.param.decl.ref<"x"> : index>,
+    #kgen.variadic.splat<:index 2, #kgen.param.decl.ref<"y"> : index>
+  )>
+
+  kgen.return
+}
+
 // CHECK-LABEL: kgen.generator @int1_aliases
 kgen.generator @int1_aliases<p1, p2, int1: i1, type: dtype>()  {
 

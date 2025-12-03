@@ -105,6 +105,61 @@ bool ParameterAttr::isSimpleConstant(Attribute attr) {
   return false;
 }
 
+// Compare sub-elements of a type or attribute lexicographically (first all the
+// attributes, then all the types).
+template <typename T>
+static bool compareSubElementsImpl(T lhs, T rhs) {
+  SmallVector<Attribute> lhsSubAttrs;
+  SmallVector<Type> lhsSubTypes;
+  SmallVector<Attribute> rhsSubAttrs;
+  SmallVector<Type> rhsSubTypes;
+  lhs.walkImmediateSubElements(
+      [&](Attribute attr) { lhsSubAttrs.push_back(attr); },
+      [&](Type type) { lhsSubTypes.push_back(type); });
+  rhs.walkImmediateSubElements(
+      [&](Attribute attr) { rhsSubAttrs.push_back(attr); },
+      [&](Type type) { rhsSubTypes.push_back(type); });
+  // If the attr lists aren't equal, the shorter list is "less than" the longer
+  // list.
+  if (lhsSubAttrs.size() != rhsSubAttrs.size())
+    return lhsSubAttrs.size() < rhsSubAttrs.size();
+  // Similarly for the type lists.
+  if (lhsSubTypes.size() != rhsSubTypes.size())
+    return lhsSubTypes.size() < rhsSubTypes.size();
+
+  // If all equal, perform element-wise comparison.
+  // First compare the attributes pairwise using ParameterAttr::compare.
+  for (auto [lhsAttr, rhsAttr] : llvm::zip(lhsSubAttrs, rhsSubAttrs))
+    if (lhsAttr != rhsAttr)
+      return ParameterAttr::compare(lhsAttr, rhsAttr);
+
+  // Then compare the types by recursing until we see attributes.
+  for (auto [lhsType, rhsType] : llvm::zip(lhsSubTypes, rhsSubTypes)) {
+    if (lhsType == rhsType)
+      continue;
+
+    // If the types are not even the same kind, order by kind name first.
+    const mlir::AbstractType &lhsAbs = lhsType.getAbstractType();
+    const mlir::AbstractType &rhsAbs = rhsType.getAbstractType();
+    if (&lhsAbs != &rhsAbs)
+      return lhsAbs.getName() < rhsAbs.getName();
+
+    return compareSubElementsImpl(lhsType, rhsType);
+  }
+
+  // At this point, we bottomed out at leaf attributes that didn't implement
+  // `isLessThan`, or we bottomed out at atomic types (no sub-elements).
+  return false;
+}
+
+bool ParameterAttr::compareSubElements(Attribute lhs, Attribute rhs) {
+  return compareSubElementsImpl(lhs, rhs);
+}
+
+bool ParameterAttr::compareSubElements(Type lhs, Type rhs) {
+  return compareSubElementsImpl(lhs, rhs);
+}
+
 bool ParameterAttr::compare(Attribute lhs, Attribute rhs) {
   // Simplify the code below - we never have to care about exactly equal values.
   if (lhs == rhs)
@@ -142,8 +197,8 @@ bool ParameterAttr::compare(Attribute lhs, Attribute rhs) {
   if (auto itf = ::dyn_cast<ParameterAttr>(lhs))
     return itf.isLessThan(rhs);
 
-  // Otherwise, we don't know how to compare these attributes.
-  return false;
+  // Otherwise, compare sub-elements lexicographically.
+  return compareSubElementsImpl(lhs, rhs);
 }
 
 //===----------------------------------------------------------------------===//
