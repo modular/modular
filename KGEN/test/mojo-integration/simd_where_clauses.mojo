@@ -155,6 +155,36 @@ fn simd_where_clause_int_or[
     return 0
 
 
+@always_inline("builtin")
+fn simd_where_clause_int_pos[x: Int]() -> Int where +SIMDInt(x):
+    return 1
+
+
+@always_inline("builtin")
+fn simd_where_clause_int_pos[x: Int]() -> Int where not (+SIMDInt(x)):
+    return 0
+
+
+@always_inline("builtin")
+fn simd_where_clause_int_neg[x: Int]() -> Int where -SIMDInt(x):
+    return 1
+
+
+@always_inline("builtin")
+fn simd_where_clause_int_neg[x: Int]() -> Int where not (-SIMDInt(x)):
+    return 0
+
+
+@always_inline("builtin")
+fn simd_where_clause_int_invert[x: Int]() -> Int where ~SIMDInt(x):
+    return 1
+
+
+@always_inline("builtin")
+fn simd_where_clause_int_invert[x: Int]() -> Int where not (~SIMDInt(x)):
+    return 0
+
+
 # CHECK-LABEL: lit.fn @"use_them
 fn use_them():
     # CHECK: lit.alias.decl *"x`": !Int = <{0}>
@@ -214,3 +244,18 @@ fn use_them():
     comptime or0 = simd_where_clause_int_or[1, 3]()
     # CHECK: lit.alias.decl *"or1`22": !Int = <{0}>
     comptime or1 = simd_where_clause_int_or[0, 0]()
+
+    # CHECK: lit.alias.decl *"pos0`23": !Int = <{1}>
+    comptime pos0 = simd_where_clause_int_pos[1]()
+    # CHECK: lit.alias.decl *"pos1`24": !Int = <{0}>
+    comptime pos1 = simd_where_clause_int_pos[0]()
+
+    # CHECK: lit.alias.decl *"neg0`25": !Int = <{1}>
+    comptime neg0 = simd_where_clause_int_neg[-1]()
+    # CHECK: lit.alias.decl *"neg1`26": !Int = <{0}>
+    comptime neg1 = simd_where_clause_int_neg[0]()
+
+    # CHECK: lit.alias.decl *"inv0`27": !Int = <{1}>
+    comptime inv0 = simd_where_clause_int_invert[0]()
+    # CHECK: lit.alias.decl *"inv1`28": !Int = <{0}>
+    comptime inv1 = simd_where_clause_int_invert[-1]()
