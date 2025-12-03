@@ -1057,10 +1057,10 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
           auto paramDecl = ParamDeclAttr::get(declRef);
           for (auto param : structOp.getParams()) {
             if (param.getName() == paramDecl.getName()) {
-              auto diag = emitter.emitWarning(
-                              loc, "unqualified access to struct parameter '")
-                          << spelling << "'; use 'Self." << spelling
-                          << "' instead";
+              auto diag =
+                  emitter.emitError(loc,
+                                    "unqualified access to struct parameter '")
+                  << spelling << "'; use 'Self." << spelling << "' instead";
               diag << FixIt::replaceToken(loc, "Self." + spelling);
               for (auto [name, paramDecls] : parentDecl->getDeclsInScope()) {
                 if (name == spelling) {
