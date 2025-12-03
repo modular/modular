@@ -77,8 +77,7 @@ what we publish.
 
   This support should be reliable, but there are a few limitations: 1) `with`
   blocks are still hard coded to `Error`.  2) Thrown errors must exactly match
-  the contextual thrown type, no implicit conversions are allowed. 3) Raised
-  errors don't integrate with the `Never` type yet.
+  the contextual thrown type, no implicit conversions are allowed.
 
 - Mojo now allows implicit conversions between function types from a non-raising
   function to a raising function.  It also allows implicit conversions between
@@ -122,7 +121,9 @@ what we publish.
 - Mojo now supports a `Never` type, which can never be instantiated.
   This type can be used for functions (like `abort()`) which do not have a
   normal return value, and for functions that are guaranteed to raise without
-  returning a normal value.
+  returning a normal value.  Functions that are declared to raise `Never` (and
+  generic functions instantiated with `Never` as their error type) compile into
+  the same ABI as functions that don't `raise`.
 
 - The `deinit` argument convention can now be applied to any argument of a
   struct method, but the argument type still must be of the enclosing struct
@@ -183,10 +184,10 @@ what we publish.
 
 - The `os` module now exposes a `link` function, wrapping the unix
   `link(2)` system call
-  
+
 - Added a `CStringSlice` as a type-safe way to interact with nul-terminated
   c-style strings (`const char*`).
-  
+
 - The `os` module now exposes a `symlink` function, wrapping the unix
   `symlink(2)` syscall.
 
