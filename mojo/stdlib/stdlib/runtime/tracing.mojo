@@ -30,6 +30,7 @@ from gpu.host._tracing import _start_range as _start_gpu_range
 from runtime.asyncrt import DeviceContextPtr
 
 from utils import IndexList, Variant
+from os import abort
 
 comptime log = logger.Logger[logger.Level.INFO](fd=sys.stderr, prefix="[OP] ")
 
@@ -667,13 +668,10 @@ struct Trace[
         ](self.event_id)
 
     @always_inline
-    fn __exit__(self) raises:
+    fn __exit__(self):
         """Exits the trace context.
 
         This finishes recording of the trace event.
-
-        Raises:
-            If the operation fails.
         """
 
         @parameter
@@ -683,7 +681,10 @@ struct Trace[
 
         @parameter
         if _is_gpu_profiler_enabled[Self.category, Self.level]():
-            _end_gpu_range(gpu_tracing.RangeID(self.event_id))
+            try:
+                _end_gpu_range(gpu_tracing.RangeID(self.event_id))
+            except:
+                abort("GPU tracing failure")
             return
 
         @parameter
