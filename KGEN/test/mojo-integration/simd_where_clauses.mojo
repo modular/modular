@@ -113,6 +113,48 @@ fn simd_where_clause_int_mul[
     return 0
 
 
+@always_inline("builtin")
+fn simd_where_clause_int_and[
+    x: Int, y: Int
+]() -> Int where SIMDInt(x) & SIMDInt(y):
+    return 1
+
+
+@always_inline("builtin")
+fn simd_where_clause_int_and[
+    x: Int, y: Int
+]() -> Int where not (SIMDInt(x) & SIMDInt(y)):
+    return 0
+
+
+@always_inline("builtin")
+fn simd_where_clause_int_xor[
+    x: Int, y: Int
+]() -> Int where SIMDInt(x) ^ SIMDInt(y):
+    return 1
+
+
+@always_inline("builtin")
+fn simd_where_clause_int_xor[
+    x: Int, y: Int
+]() -> Int where not (SIMDInt(x) ^ SIMDInt(y)):
+    return 0
+
+
+@always_inline("builtin")
+fn simd_where_clause_int_or[
+    x: Int, y: Int
+]() -> Int where SIMDInt(x) | SIMDInt(y):
+    return 1
+
+
+@always_inline("builtin")
+fn simd_where_clause_int_or[
+    x: Int, y: Int
+]() -> Int where not (SIMDInt(x) | SIMDInt(y)):
+    return 0
+
+
 # CHECK-LABEL: lit.fn @"use_them
 fn use_them():
     # CHECK: lit.alias.decl *"x`": !Int = <{0}>
@@ -157,3 +199,18 @@ fn use_them():
     comptime mul0 = simd_where_clause_int_mul[1, -1]()
     # CHECK: lit.alias.decl *"mul1`16": !Int = <{0}>
     comptime mul1 = simd_where_clause_int_mul[1, 0]()
+
+    # CHECK: lit.alias.decl *"and0`17": !Int = <{1}>
+    comptime and0 = simd_where_clause_int_and[1, 3]()
+    # CHECK: lit.alias.decl *"and1`18": !Int = <{0}>
+    comptime and1 = simd_where_clause_int_and[1, 2]()
+
+    # CHECK: lit.alias.decl *"xor0`19": !Int = <{1}>
+    comptime xor0 = simd_where_clause_int_xor[1, 3]()
+    # CHECK: lit.alias.decl *"xor1`20": !Int = <{0}>
+    comptime xor1 = simd_where_clause_int_xor[1, 1]()
+
+    # CHECK: lit.alias.decl *"or0`21": !Int = <{1}>
+    comptime or0 = simd_where_clause_int_or[1, 3]()
+    # CHECK: lit.alias.decl *"or1`22": !Int = <{0}>
+    comptime or1 = simd_where_clause_int_or[0, 0]()
