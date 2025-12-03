@@ -39,7 +39,7 @@ from sys import (
     size_of,
 )
 from sys._assembly import inlined_assembly
-from sys.info import CompilationTarget, _is_sm_9x_or_newer
+from sys.info import CompilationTarget, _is_sm_9x_or_newer, _is_sm_100x_or_newer
 from sys.intrinsics import _RegisterPackType
 
 from builtin.dtype import _uint_type_of_width
@@ -1065,169 +1065,80 @@ fn cp_async_bulk_tensor_shared_cluster_global[
     ), "Expecting rank-1, rank-2, rank-3, rank-4, or rank-5 tensors"
 
     __comptime_assert cta_group in (1, 2), "cta_group must be 1 or 2"
+    __comptime_assert cta_group == 1 or _is_sm_100x_or_newer()
     comptime tma_asm = String(
         "cp.async.bulk.tensor.",
         rank,
-        "d",
-        ".cta_group::",
-        cta_group,
-        ".shared::cluster.global.mbarrier::complete_tx::bytes",
+        "d.cta_group::2" if cta_group == 2 else "d",
+        ".shared::cluster.global.tile.mbarrier::complete_tx::bytes",
     )
 
     @parameter
     if rank == 3:
-
-        @parameter
-        if cta_group == 1:
-            # We added the intrinsic before the SHARED_CLUSTER address space was
-            # introduced. Cast the address space here to avoid modifying all the
-            # callsites that use the old SHARED address space.
-            var dst_mem_cluster = dst_mem.address_space_cast[
-                AddressSpace.SHARED_CLUSTER
-            ]()
-            __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
-                _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,3,1,0,0,0,0>}`
-            ](
-                to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
-                to_llvm_ptr(tma_descriptor),
-                to_i32(coords[0]),
-                to_i32(coords[1]),
-                to_i32(coords[2]),
-                to_llvm_shared_mem_ptr(mem_bar),
-            )
-        else:
-            inlined_assembly[
-                tma_asm + " [$0], [$1, {$3, $4, $5}], [$2];",
-                NoneType,
-                constraints="r,l,r,r,r,r",
-            ](
-                Int32(Int(dst_mem)),
-                tma_descriptor,
-                Int32(Int(mem_bar)) & 0xFEFFFFFF,
-                Int32(coords[0]),
-                Int32(coords[1]),
-                Int32(coords[2]),
-            )
+        inlined_assembly[
+            tma_asm + " [$0], [$1, {$3, $4, $5}], [$2];",
+            NoneType,
+            constraints="r,l,r,r,r,r",
+        ](
+            Int32(Int(dst_mem)),
+            tma_descriptor,
+            Int32(Int(mem_bar)) & 0xFEFFFFFF,
+            Int32(coords[0]),
+            Int32(coords[1]),
+            Int32(coords[2]),
+        )
     elif rank == 2:
-
-        @parameter
-        if cta_group == 1:
-            var dst_mem_cluster = dst_mem.address_space_cast[
-                AddressSpace.SHARED_CLUSTER
-            ]()
-            __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
-                _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,0,0,0>}`
-            ](
-                to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
-                to_llvm_ptr(tma_descriptor),
-                to_i32(coords[0]),
-                to_i32(coords[1]),
-                to_llvm_shared_mem_ptr(mem_bar),
-            )
-        else:
-            inlined_assembly[
-                tma_asm + " [$0], [$1, {$3, $4}], [$2];",
-                NoneType,
-                constraints="r,l,r,r,r",
-            ](
-                Int32(Int(dst_mem)),
-                tma_descriptor,
-                Int32(Int(mem_bar)) & 0xFEFFFFFF,
-                Int32(coords[0]),
-                Int32(coords[1]),
-            )
+        inlined_assembly[
+            tma_asm + " [$0], [$1, {$3, $4}], [$2];",
+            NoneType,
+            constraints="r,l,r,r,r",
+        ](
+            Int32(Int(dst_mem)),
+            tma_descriptor,
+            Int32(Int(mem_bar)) & 0xFEFFFFFF,
+            Int32(coords[0]),
+            Int32(coords[1]),
+        )
     elif rank == 1:
-
-        @parameter
-        if cta_group == 1:
-            var dst_mem_cluster = dst_mem.address_space_cast[
-                AddressSpace.SHARED_CLUSTER
-            ]()
-            __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
-                _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,0,0,0>}`
-            ](
-                to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
-                to_llvm_ptr(tma_descriptor),
-                to_i32(coords[0]),
-                to_llvm_shared_mem_ptr(mem_bar),
-            )
-        else:
-            inlined_assembly[
-                tma_asm + " [$0], [$1, {$3}], [$2];",
-                NoneType,
-                constraints="r,l,r,r",
-            ](
-                Int32(Int(dst_mem)),
-                tma_descriptor,
-                Int32(Int(mem_bar)) & 0xFEFFFFFF,
-                Int32(coords[0]),
-            )
+        inlined_assembly[
+            tma_asm + " [$0], [$1, {$3}], [$2];",
+            NoneType,
+            constraints="r,l,r,r",
+        ](
+            Int32(Int(dst_mem)),
+            tma_descriptor,
+            Int32(Int(mem_bar)) & 0xFEFFFFFF,
+            Int32(coords[0]),
+        )
     elif rank == 4:
-
-        @parameter
-        if cta_group == 1:
-            var dst_mem_cluster = dst_mem.address_space_cast[
-                AddressSpace.SHARED_CLUSTER
-            ]()
-            __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
-                _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,4,1,0,0,0,0>}`
-            ](
-                to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
-                to_llvm_ptr(tma_descriptor),
-                to_i32(coords[0]),
-                to_i32(coords[1]),
-                to_i32(coords[2]),
-                to_i32(coords[3]),
-                to_llvm_shared_mem_ptr(mem_bar),
-            )
-        else:
-            inlined_assembly[
-                tma_asm + " [$0], [$1, {$3, $4, $5, $6}], [$2];",
-                NoneType,
-                constraints="r,l,r,r,r,r,r",
-            ](
-                Int32(Int(dst_mem)),
-                tma_descriptor,
-                Int32(Int(mem_bar)) & 0xFEFFFFFF,
-                Int32(coords[0]),
-                Int32(coords[1]),
-                Int32(coords[2]),
-                Int32(coords[3]),
-            )
+        inlined_assembly[
+            tma_asm + " [$0], [$1, {$3, $4, $5, $6}], [$2];",
+            NoneType,
+            constraints="r,l,r,r,r,r,r",
+        ](
+            Int32(Int(dst_mem)),
+            tma_descriptor,
+            Int32(Int(mem_bar)) & 0xFEFFFFFF,
+            Int32(coords[0]),
+            Int32(coords[1]),
+            Int32(coords[2]),
+            Int32(coords[3]),
+        )
     else:  # rank == 5
-
-        @parameter
-        if cta_group == 1:
-            var dst_mem_cluster = dst_mem.address_space_cast[
-                AddressSpace.SHARED_CLUSTER
-            ]()
-            __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
-                _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,5,1,0,0,0,0>}`
-            ](
-                to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
-                to_llvm_ptr(tma_descriptor),
-                to_i32(coords[0]),
-                to_i32(coords[1]),
-                to_i32(coords[2]),
-                to_i32(coords[3]),
-                to_i32(coords[4]),
-                to_llvm_shared_mem_ptr(mem_bar),
-            )
-        else:
-            inlined_assembly[
-                tma_asm + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2];",
-                NoneType,
-                constraints="r,l,r,r,r,r,r,r",
-            ](
-                Int32(Int(dst_mem)),
-                tma_descriptor,
-                Int32(Int(mem_bar)) & 0xFEFFFFFF,
-                Int32(coords[0]),
-                Int32(coords[1]),
-                Int32(coords[2]),
-                Int32(coords[3]),
-                Int32(coords[4]),
-            )
+        inlined_assembly[
+            tma_asm + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2];",
+            NoneType,
+            constraints="r,l,r,r,r,r,r,r",
+        ](
+            Int32(Int(dst_mem)),
+            tma_descriptor,
+            Int32(Int(mem_bar)) & 0xFEFFFFFF,
+            Int32(coords[0]),
+            Int32(coords[1]),
+            Int32(coords[2]),
+            Int32(coords[3]),
+            Int32(coords[4]),
+        )
 
 
 @always_inline
