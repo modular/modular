@@ -25,6 +25,7 @@ from gpu.host import DeviceBuffer, DeviceContext, DeviceMulticastBuffer
 from internal_utils import InitializationType, arg_parse
 from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal, assert_true
+from algorithm import sync_parallelize
 
 from utils.index import IndexList, StaticTuple
 
@@ -209,55 +210,67 @@ fn bench_reduce[
     # Monotonic iteration counter to color quickreduce flags across launches.
     var iter = 0
 
+    var results = InlineArray[Float64, ngpus](fill={})
+
     @parameter
-    @always_inline
-    fn bench_iter(mut b: Bencher) raises:
+    fn per_gpu(i: Int) raises:
         @parameter
         @always_inline
-        fn call_fn() raises:
+        fn bench_iter(mut b: Bencher) raises:
             @parameter
-            if use_vendor_ccl:
-                constrained[
-                    not use_multimem,
-                    "vendor CCL does not support multimem path",
-                ]()
-                if not vendor_ccl.is_allreduce_available():
-                    raise "Vendor CCL not available; skipping vendor path."
-                vendor_ccl.allreduce[dtype=dtype, rank=rank, ngpus=ngpus](
-                    rebind[
-                        InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus]
-                    ](in_bufs),
-                    out_bufs,
-                    list_of_ctx,
+            @always_inline
+            fn call_fn(ctx: DeviceContext) raises:
+                allreduce[
+                    ngpus=ngpus,
+                    use_multimem=use_multimem,
+                    use_quickreduce=use_quickreduce,
+                ](
+                    in_bufs,
+                    out_bufs[i],
+                    rank_sigs,
+                    list_of_ctx[i],
+                    max_num_blocks,
+                    iter,
                 )
-            else:
 
-                @parameter
-                for i in range(ngpus):
-                    allreduce[
-                        ngpus=ngpus,
-                        use_multimem=use_multimem,
-                        use_quickreduce=use_quickreduce,
-                    ](
-                        in_bufs,
-                        out_bufs[i],
-                        rank_sigs,
-                        list_of_ctx[i],
-                        max_num_blocks,
-                        iter,
-                    )
-                iter += 1
+            b.iter_custom[call_fn](list_of_ctx[i])
 
-        b.iter_custom_multicontext[call_fn](list_of_ctx)
+        var b = Bench()
+        b.config.show_progress = False
+        b.bench_function[bench_iter](
+            BenchId(String("")),
+            [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
+        )
+        results[i] = b.info_vec[0].result.mean(unit="ms")
 
-    var vendor_tag = "-vendor_ccl" if use_vendor_ccl else ""
+    sync_parallelize[per_gpu](ngpus)
+
+    var max_time = 0.0
+    for i in range(ngpus):
+        if results[i] > max_time:
+            max_time = results[i]
+
+    var gbps = num_bytes / (max_time * 1000 * 1000)
+    print("")
     var name = String(
-        _get_test_str[dtype, use_multimem](ngpus, num_bytes), vendor_tag
+        _get_test_str[dtype, use_multimem](ngpus, num_bytes),
+        "-vendor_ccl" if use_vendor_ccl else "",
     )
-    m.bench_function[bench_iter](
-        BenchId(name),
-        # add data movement to measures
-        [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
+    # algbw and busbw are explain in the following link:
+    # https://github.com/NVIDIA/nccl-tests/blob/master/doc/PERFORMANCE.md#allreduce
+    var busbw = 2 * gbps * (ngpus - 1) / ngpus
+    print(
+        "|",
+        name,
+        "| slowest mean time",
+        max_time,
+        "ms |",
+        "algbw:",
+        gbps,
+        "GB/s |",
+        "busbw:",
+        busbw,
+        "GB/s |",
     )
 
     # Copy results back and verify
@@ -366,8 +379,6 @@ def main():
             use_multimem=use_multimem,
             use_vendor_ccl=use_vendor_ccl,
         ](m, ctx, num_bytes, max_num_blocks)
-
-    m.dump_report()
 
 
 # Convenience wrappers matching reviewer terminology.
