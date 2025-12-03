@@ -83,39 +83,52 @@ fn matmul_dispatch_sm90[
         K_multiple_of_4B and (is_AB_bf16 or is_AB_fp32)
     )
 
-    # General constraints for H100 matmul
-    # fmt: off
+    @always_inline
     @parameter
-    if not (
-        input_type_supported and \
-        transpose_b and \
-        has_static_NK and \
-        K_align_supported
-    ):
+    @__copy_capture(c, a, b)
+    fn _dispatch() raises -> Int:
+        # General constraints for H100 matmul
+        # fmt: off
+        @parameter
+        if not (
+            input_type_supported and \
+            transpose_b and \
+            has_static_NK and \
+            K_align_supported
+        ):
+            return DISPATCH_MISS
+        # fmt: on
+
+        @parameter
+        if is_AB_fp8:
+            logger.info("------ Dispatching to sm90 FP8 ------")
+            return matmul_dispatch_sm90_fp8[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
+            ](c, a, b, ctx)
+
+        elif is_AB_bf16 or is_AB_fp32:
+            logger.info("------ Dispatching to sm90 BF16/FP32 ------")
+            return matmul_dispatch_sm90_bf16_fp32[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
+            ](c, a, b, ctx)
+
+        logger.info("SM90 dispatch miss - no matching path")
         return DISPATCH_MISS
-    # fmt: on
 
     @parameter
-    if is_AB_fp8:
-        logger.info("------ Dispatching to sm90 FP8 ------")
-        return matmul_dispatch_sm90_fp8[
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-        ](c, a, b, ctx)
+    if env_get_bool["MODULAR_DISABLE_VENDOR_FALLBACK", False]():
+        if _dispatch():
+            return DISPATCH_HIT
+        else:
+            raise Error("Mojo SM90 matmul dispatch failed.")
 
-    elif is_AB_bf16 or is_AB_fp32:
-        logger.info("------ Dispatching to sm90 BF16/FP32 ------")
-        return matmul_dispatch_sm90_bf16_fp32[
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-        ](c, a, b, ctx)
-
-    logger.info("SM90 dispatch miss - no matching path")
-    return DISPATCH_MISS
+    return _dispatch()
 
 
 # ===----------------------------------------------------------------------=== #
