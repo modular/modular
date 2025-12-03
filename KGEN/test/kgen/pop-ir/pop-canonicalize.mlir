@@ -314,25 +314,6 @@ kgen.func @fma() -> (!pop.scalar<si8>, !pop.scalar<f32>) {
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="p:64:64">} {
-  // CHECK-LABEL: @index_folds
-  kgen.func @index_folds() -> (!pop.scalar<index>, !pop.scalar<index>) {
-    // COM: Index folds go through the same path as integer folds. We just need to
-    // check that ops can fold for index dtypes and do not fold when the results
-    // differ between 64-bit and 32-bit arithmetic.
-    %0 = kgen.param.constant: scalar<index> = <8589934594>
-    %1 = kgen.param.constant: scalar<index> = <4294967298>
-    %2 = kgen.param.constant: scalar<index> = <2>
-    // CHECK: %[[RES:.*]] = kgen.param.constant: scalar<index> = <4294967297>
-    %3 = pop.div %0, %2 : !pop.scalar<index>
-    // CHECK: %[[RES1:.*]] = kgen.param.constant: scalar<index> = <2147483649>
-    %4 = pop.div %1, %2 : !pop.scalar<index>
-    // CHECK: kgen.return %[[RES]], %[[RES1]] : !pop.scalar<index>, !pop.scalar<index>
-    kgen.return %3, %4 : !pop.scalar<index>, !pop.scalar<index>
-  }
-}
-// -----
-
 // CHECK-LABEL: @cmp_eq
 kgen.func @cmp_eq() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
   // CHECK-DAG: <false, true>
@@ -1733,14 +1714,33 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   }
 
   // CHECK-LABEL: @shr_index
-  kgen.func @shr_index() -> (!pop.scalar<index>) {
-    %neg_one = kgen.param.constant: scalar<index> = <-1>
-    %_63 = kgen.param.constant: scalar<index> = <63>
-    // CHECK: %[[RES:.*]] = kgen.param.constant: scalar<index> = <0>
-    %res0 = pop.shr %neg_one, %_63 : !pop.scalar<index>
+  kgen.func @shr_index() -> (!pop.scalar<index>, !pop.scalar<index>) {
+    %neg1 = kgen.param.constant: scalar<index> = <-1>
+    %63 = kgen.param.constant: scalar<index> = <63>
+    %2 = kgen.param.constant: scalar<index> = <2>
+    %neg16 = kgen.param.constant: scalar<index> = <-16>
+    // CHECK: %[[RES:.*]] = kgen.param.constant: scalar<index> = <-1>
+    %res0 = pop.shr %neg1, %63 : !pop.scalar<index>
+    // CHECK: %[[RES1:.*]] = kgen.param.constant: scalar<index> = <-4>
+    %res1 = pop.shr %neg16, %2 : !pop.scalar<index>
 
-    // CHECK: kgen.return %[[RES]]
-    kgen.return %res0 : !pop.scalar<index>
+    // CHECK: kgen.return %[[RES]], %[[RES1]]
+    kgen.return %res0, %res1 : !pop.scalar<index>, !pop.scalar<index>
+  }
+
+  // CHECK-LABEL: @index_div
+  kgen.func @index_div() -> (!pop.scalar<index>, !pop.scalar<index>) {
+    %0 = kgen.param.constant: scalar<index> = <8589934594>
+    %1 = kgen.param.constant: scalar<index> = <4294967298>
+    %2 = kgen.param.constant: scalar<index> = <2>
+
+    // CHECK: %[[RES:.*]] = kgen.param.constant: scalar<index> = <4294967297>
+    %r0 = pop.div %0, %2 : !pop.scalar<index>
+    // CHECK: %[[RES1:.*]] = kgen.param.constant: scalar<index> = <1>
+    %r1 = pop.div %1, %2 : !pop.scalar<index>
+
+    // CHECK: kgen.return %[[RES]], %[[RES1]] : !pop.scalar<index>, !pop.scalar<index>
+    kgen.return %r0, %r1 : !pop.scalar<index>, !pop.scalar<index>
   }
 }
 
@@ -1809,13 +1809,32 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   }
 
   // CHECK-LABEL: @shr_index
-  kgen.func @shr_index() -> (!pop.scalar<index>) {
-    %neg_one = kgen.param.constant: scalar<index> = <-1>
-    %_63 = kgen.param.constant: scalar<index> = <63>
-    // CHECK: %[[RES:.*]] = kgen.param.constant: scalar<index> = <1>
-    %res0 = pop.shr %neg_one, %_63 : !pop.scalar<index>
+  kgen.func @shr_index() -> (!pop.scalar<index>, !pop.scalar<index>) {
+    %neg1 = kgen.param.constant: scalar<index> = <-1>
+    %63 = kgen.param.constant: scalar<index> = <63>
+    %2 = kgen.param.constant: scalar<index> = <2>
+    %neg16 = kgen.param.constant: scalar<index> = <-16>
+    // CHECK: %[[RES:.*]] = kgen.param.constant: scalar<index> = <-1>
+    %res0 = pop.shr %neg1, %63 : !pop.scalar<index>
+    // CHECK: %[[RES1:.*]] = kgen.param.constant: scalar<index> = <-4>
+    %res1 = pop.shr %neg16, %2 : !pop.scalar<index>
 
-    // CHECK: kgen.return %[[RES]]
-    kgen.return %res0 : !pop.scalar<index>
+    // CHECK: kgen.return %[[RES]], %[[RES1]]
+    kgen.return %res0, %res1 : !pop.scalar<index>, !pop.scalar<index>
+  }
+
+  // CHECK-LABEL: @index_div
+  kgen.func @index_div() -> (!pop.scalar<index>, !pop.scalar<index>) {
+    %0 = kgen.param.constant: scalar<index> = <8589934594>
+    %1 = kgen.param.constant: scalar<index> = <4294967298>
+    %2 = kgen.param.constant: scalar<index> = <2>
+
+    // CHECK: %[[RES:.*]] = kgen.param.constant: scalar<index> = <4294967297>
+    %r0 = pop.div %0, %2 : !pop.scalar<index>
+    // CHECK: %[[RES1:.*]] = kgen.param.constant: scalar<index> = <2147483649>
+    %r1 = pop.div %1, %2 : !pop.scalar<index>
+
+    // CHECK: kgen.return %[[RES]], %[[RES1]] : !pop.scalar<index>, !pop.scalar<index>
+    kgen.return %r0, %r1 : !pop.scalar<index>, !pop.scalar<index>
   }
 }
