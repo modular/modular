@@ -608,3 +608,37 @@ fn kgen_assert() -> Bool:
 fn fold_kgen_assert() -> BoolT[True]:
     var a = BoolT[kgen_assert()]()
     return a
+
+
+##===----------------------------------------------------------------------===##
+# Fold pop.simd_neg
+##===----------------------------------------------------------------------===##
+
+
+struct POPSInt8x4T[x: __mlir_type.`!pop.simd<4, si8>`](ImplicitlyCopyable):
+    fn __init__(out self):
+        pass
+
+    fn __copyinit__(out self, existing: Self):
+        pass
+
+
+comptime POP_SI8x4_Fold = __mlir_attr.`#pop.simd<42, -120, 1, 0> : !pop.simd<4, si8>`
+
+
+@always_inline("builtin")
+fn pop_simd_neg(
+    x: __mlir_type.`!pop.simd<4, si8>`,
+) -> __mlir_type.`!pop.simd<4, si8>`:
+    return __mlir_op.`pop.neg`(x)
+
+
+# CHECK-LABEL: lit.fn @"fold_pop_simd_neg
+fn fold_pop_simd_neg() -> POPSInt8x4T[POP_SI8x4_Fold]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPSInt8x4T <:simd<4, si8> {{.*}} <-42, 120, -1, 0>), <42, -120, 1, 0>)>>
+    var a = POPSInt8x4T[
+        pop_simd_neg(
+            __mlir_attr.`#pop.simd<-42, 120, -1, 0> : !pop.simd<4, si8>`
+        )
+    ]()
+    return a

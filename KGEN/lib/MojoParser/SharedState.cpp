@@ -2709,6 +2709,10 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     }
   }
 
+  if (isa<POP::NegOp>(op))
+    if (auto operand = findValue(op.getOperand(0)))
+      return POP::SIMDNegAttr::get(operand);
+
   if (isa<POP::AddOp>(op))
     return foldSIMDBinOp<POP::SIMDAddAttr>(op, *this);
   if (isa<POP::SubOp>(op))
