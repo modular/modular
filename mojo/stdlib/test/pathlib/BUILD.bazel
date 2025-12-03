@@ -9,6 +9,8 @@ _NO_ASAN = [
 _PLATFORM_CONSTRAINTS = {
     src: select({
         "//:asan": ["@platforms//:incompatible"],
+        # FIXME: MSTDL-2081
+        "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     })
     for src in _NO_ASAN
