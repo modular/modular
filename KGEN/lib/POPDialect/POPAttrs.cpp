@@ -1966,6 +1966,38 @@ LogicalResult SIMDXorAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
+// SIMDOrAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr SIMDOrAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
+  // Fold if possible
+  if (auto fold = foldSIMDOp(
+          {lhs, rhs}, [](APSInt lhs, APSInt rhs) { return lhs | rhs; },
+          [](bool lhs, bool rhs) { return (bool)(lhs || rhs); })) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+  }
+  return Base::get(ctx, lhs, rhs);
+}
+
+TypedAttr SIMDOrAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                 MLIRContext *context, TypedAttr lhs,
+                                 TypedAttr rhs) {
+  if (failed(verify(emitError, lhs, rhs)))
+    return {};
+  return SIMDOrAttr::get(context, lhs, rhs);
+}
+
+bool SIMDOrAttr::isConstant() const { return false; }
+
+Type SIMDOrAttr::getType() const { return getLhs().getType(); }
+
+LogicalResult SIMDOrAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                 TypedAttr lhs, TypedAttr rhs) {
+  return verifySIMDBinaryOp(emitError, lhs, rhs);
+}
+
+//===----------------------------------------------------------------------===//
 // SIMDAddAttr
 //===----------------------------------------------------------------------===//
 

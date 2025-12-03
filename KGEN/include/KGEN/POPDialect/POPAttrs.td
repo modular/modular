@@ -770,6 +770,7 @@ class POP_SIMDBinaryAttr<string name>
 
 def POP_SIMDAndAttr : POP_SIMDBinaryAttr<"And">;
 def POP_SIMDXorAttr : POP_SIMDBinaryAttr<"Xor">;
+def POP_SIMDOrAttr  : POP_SIMDBinaryAttr<"Or">;
 
 def POP_SIMDAddAttr : POP_SIMDBinaryAttr<"Add">;
 def POP_SIMDSubAttr : POP_SIMDBinaryAttr<"Sub">;
