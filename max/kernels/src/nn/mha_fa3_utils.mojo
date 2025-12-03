@@ -212,8 +212,8 @@ struct MHAPosition[
         IntTuple(Self.BM // 2, Self.depth), IntTuple(Self.q_stride, 1)
     )
     alias num_q_heads_per_thread: Int = min(
-        2, ceildiv(group, 8)
-    ) if decoding else 1
+        2, ceildiv(Self.group, 8)
+    ) if Self.decoding else 1
 
     @always_inline
     fn __init__(
