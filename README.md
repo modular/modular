@@ -11,7 +11,9 @@
 [Changelog]: https://docs.modular.com/max/changelog
 
 ---
-[Join us next Thursday, December 11th](https://www.meetup.com/modular-meetup-group/events/311998048/?eventOrigin=group_events_list/?utm_medium=referral&utm_campaign=event_card_savedevents_share_modal&utm_source=link&utm_version=v2) at Modular's Los Altos offices for a [Modular Meetup](https://www.meetup.com/modular-meetup-group/) going inside the MAX platform!
+[Join us next Thursday, December 11th][dec-meetup] at Modular's Los Altos
+offices for a [Modular Meetup][meetup-group] going inside the MAX platform!
+
 
 # Modular Platform
 
@@ -101,23 +103,51 @@ build](https://docs.modular.com/max/packages).
 
 ## News & Announcements
 
-**[2025/11]** [Modular Platform 25.7](https://www.modular.com/blog/modular-25-7-faster-inference-safer-gpu-programming-and-a-more-unified-developer-experience) provides a fully open MAX Python API, expanded hardware support for NVIDIA Grace superchips, improved Mojo GPU programming experience, and much more.
+**[2025/11]** [Modular Platform 25.7][25.7] provides a fully open MAX Python
+API, expanded hardware support for NVIDIA Grace superchips, improved Mojo GPU
+programming experience, and much more.
 
-**[2025/11]** We met with the community at [PyTorch 2025 + the LLVM Developers' Meeting](https://www.modular.com/blog/pytorch-and-llvm-in-2025-keeping-up-with-ai-innovation) to solicit community input into how the Modular platform can reduce fragmentation and provide a unified AI stack.
+**[2025/11]** We met with the community at
+[PyTorch 2025 + the LLVM Developers' Meeting][pytorch-llvm] to solicit
+community input into how the Modular platform can reduce fragmentation and
+provide a unified AI stack.
 
-**[2025/09]** [Modular raises $250M](https://www.modular.com/blog/modular-raises-250m-to-scale-ais-unified-compute-layer) to scale AI's unified compute layer, bringing total funding to $380M at a $1.6B valuation.
+**[2025/09]** [Modular raises $250M][funding] to scale AI's unified compute
+layer, bringing total funding to $380M at a $1.6B valuation.
 
-**[2025/09]** [Modular Platform 25.6](https://www.modular.com/blog/modular-25-6-unifying-the-latest-gpus-from-nvidia-amd-and-apple) delivers a unified compute layer spanning from laptops to datacenter GPUs, with industry-leading throughput on NVIDIA Blackwell (B200) and AMD MI355X.
+**[2025/09]** [Modular Platform 25.6][25.6] delivers a unified compute layer
+spanning from laptops to datacenter GPUs, with industry-leading throughput on
+NVIDIA Blackwell (B200) and AMD MI355X.
 
-**[2025/08]** [Modular Platform 25.5](https://www.modular.com/blog/modular-platform-25-5) introduces Large Scale Batch Inference through a partnership with SF Compute + open source launch of the MAX Graph API and more.
+**[2025/08]** [Modular Platform 25.5][25.5] introduces Large Scale Batch
+Inference through a partnership with SF Compute + open source launch of the
+MAX Graph API and more.
 
-**[2025/08]** We hosted our [Los Altos Meetup](https://lu.ma/modular-aug-meetup) featuring talks from Chris Lattner on democratizing AI compute and Inworld AI on production voice AI.
+**[2025/08]** We hosted our [Los Altos Meetup][la-meetup] featuring talks from
+Chris Lattner on democratizing AI compute and Inworld AI on production voice AI.
 
-**[2025/06]** [AMD partnership announced](https://www.modular.com/blog/modular-x-amd-unleashing-ai-performance-on-amd-gpus) — Modular Platform now generally available across AMD's MI300 and MI325 GPU portfolio.
+**[2025/06]** [AMD partnership announced][amd] — Modular Platform now generally
+available across AMD's MI300 and MI325 GPU portfolio.
 
-**[2025/06]** [Modular Hack Weekend](https://www.meetup.com/modular-meetup-group/events/308311461/) brought developers together to build custom kernels, model architectures, and PyTorch custom ops with Mojo and MAX.
+**[2025/06]** [Modular Hack Weekend][hack-weekend] brought developers together
+to build custom kernels, model architectures, and PyTorch custom ops with
+Mojo and MAX.
 
-**[2025/05]** Over 100 engineers gathered at AGI House for our first [GPU Kernel Hackathon](https://www.modular.com/blog/modverse-48), featuring talks from Modular and Anthropic engineers.
+**[2025/05]** Over 100 engineers gathered at AGI House for our first
+[GPU Kernel Hackathon][hackathon], featuring talks from Modular and
+Anthropic engineers.
+
+[25.7]: https://www.modular.com/blog/modular-25-7-faster-inference-safer-gpu-programming-and-a-more-unified-developer-experience
+[pytorch-llvm]: https://www.modular.com/blog/pytorch-and-llvm-in-2025-keeping-up-with-ai-innovation
+[funding]: https://www.modular.com/blog/modular-raises-250m-to-scale-ais-unified-compute-layer
+[25.6]: https://www.modular.com/blog/modular-25-6-unifying-the-latest-gpus-from-nvidia-amd-and-apple
+[25.5]: https://www.modular.com/blog/modular-platform-25-5
+[la-meetup]: https://lu.ma/modular-aug-meetup
+[amd]: https://www.modular.com/blog/modular-x-amd-unleashing-ai-performance-on-amd-gpus
+[hack-weekend]: https://www.meetup.com/modular-meetup-group/events/308311461/
+[hackathon]: https://www.modular.com/blog/modverse-48
+[dec-meetup]: https://www.meetup.com/modular-meetup-group/events/311998048/
+[meetup-group]: https://www.meetup.com/modular-meetup-group/
 
 ---
 
