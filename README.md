@@ -13,7 +13,7 @@
 ---
 [Join us next Thursday, December 11th](https://www.meetup.com/modular-meetup-group/events/311998048/?eventOrigin=group_events_list/?utm_medium=referral&utm_campaign=event_card_savedevents_share_modal&utm_source=link&utm_version=v2) at Modular's Los Altos offices for a [Modular Meetup](https://www.meetup.com/modular-meetup-group/) going inside the MAX platform!
 
----
+--
 
 # Modular Platform
 
