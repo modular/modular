@@ -86,12 +86,12 @@ struct UnqualifiedStructParameterAccess[
     other_param: Int,
     struct_param: StructWithParam[my_param],  # this should be okay
 ]:
-    # expected-warning @+1 {{unqualified access to struct parameter 'my_param'; use 'Self.my_param' instead}}
+    # expected-error @+1 {{unqualified access to struct parameter 'my_param'; use 'Self.my_param' instead}}
     comptime my_alias = my_param
 
     fn bar(self) -> Int:
         fn nested_fn():
-            # expected-warning @+1 {{unqualified access to struct parameter 'my_param'; use 'Self.my_param' instead}}
+            # expected-error @+1 {{unqualified access to struct parameter 'my_param'; use 'Self.my_param' instead}}
             comptime my_different_alias = my_param
 
         fn shadowing_nested_fn[my_param: Int]():
@@ -101,7 +101,7 @@ struct UnqualifiedStructParameterAccess[
         nested_fn()
         shadowing_nested_fn[4]()
 
-        # expected-warning @+1 {{unqualified access to struct parameter 'my_param'; use 'Self.my_param' instead}}
+        # expected-error @+1 {{unqualified access to struct parameter 'my_param'; use 'Self.my_param' instead}}
         comptime my_other_alias = my_param
-        # expected-warning @+1 {{unqualified access to struct parameter 'my_param'; use 'Self.my_param' instead}}
+        # expected-error @+1 {{unqualified access to struct parameter 'my_param'; use 'Self.my_param' instead}}
         return my_param
