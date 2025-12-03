@@ -4048,30 +4048,41 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
 }
 
 AnyValue MagicFunctionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
+  // Helper lambda to check argument count and emit an error if mismatched.
+  // Returns true if the argument count matches, false otherwise.
+  auto checkArgCount = [&](size_t expected) -> bool {
+    if (subExprs.size() == expected)
+      return true;
+    emitter.emitError(getLoc())
+        << "expected " << expected << " arguments, but this call has "
+        << subExprs.size() << " arguments" << getRange();
+    return false;
+  };
+
   if (kind == kOriginOf)
     return emitOriginOf(dest, emitter);
 
   if (kind == kFunctionsInModule) {
-    if (subExprs.size() != 0) {
-      emitter.emitError(getLoc(), "expected no arguments") << getRange();
+    if (!checkArgCount(0))
       return {};
-    }
     return emitFunctionsInModule(dest, emitter);
   }
 
-  if (kind == kConformsTo) {
-    if (subExprs.size() != 2) {
-      emitter.emitError(getLoc(), "expected two arguments") << getRange();
+  if (kind == kGetCurrentFunctionName) {
+    if (!checkArgCount(0))
       return {};
-    }
+    return emitGetCurrentFunctionName(dest, emitter);
+  }
+
+  if (kind == kConformsTo) {
+    if (!checkArgCount(2))
+      return {};
     return emitConformsTo(dest, emitter);
   }
 
   // All other magic function types take exactly one argument.
-  if (subExprs.size() != 1) {
-    emitter.emitError(getLoc(), "expected a single argument") << getRange();
+  if (!checkArgCount(1))
     return {};
-  }
 
   if (kind == kTypeOf)
     return emitTypeOf(dest, emitter);
@@ -4232,6 +4243,24 @@ AnyValue MagicFunctionNode::emitConformsTo(ValueDest &dest,
       TypeConformsToTraitAttr::get(typeToCheck, foldedTraitNames);
 
   return emitter.emitBool({conformToI1, this}, dest);
+}
+
+AnyValue
+MagicFunctionNode::emitGetCurrentFunctionName(ValueDest &dest,
+                                              IREmitter &emitter) const {
+  // Intentional choice: return an empty string
+  // if used outside of a function (e.g. in a comptime field initializer)
+  std::string funcName = "";
+  ASTDecl *fnDecl = emitter.declScope.getNearestDeclOfType<FnOp>();
+  if (fnDecl) {
+    FnOp fnOp = cast<FnOp>(fnDecl->getIfOperation());
+    // This implementation should be kept in sync with the
+    // evaluation of KGEN_GetSourceNameAttr in
+    // IREvaluatorContext::evaluateGetSourceNameAttr().
+    if (auto s = fnOp.getSourceName())
+      funcName = s->str();
+  }
+  return StringLiteralNode::emitCtorCall(funcName, this, dest, emitter);
 }
 
 AnyValue MagicFunctionNode::emitFunctionsInModule(ValueDest &dest,

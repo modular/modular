@@ -712,6 +712,8 @@ struct MagicFunctionNode final : public ExprNode {
   AnyValue emitTypeOf(ValueDest &dest, IREmitter &emitter) const;
   AnyValue emitFunctionsInModule(ValueDest &dest, IREmitter &emitter) const;
   AnyValue emitConformsTo(ValueDest &dest, IREmitter &emitter) const;
+  AnyValue emitGetCurrentFunctionName(ValueDest &dest,
+                                      IREmitter &emitter) const;
 };
 
 } // namespace M::KGEN::LIT
