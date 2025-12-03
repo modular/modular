@@ -146,7 +146,9 @@ from nn.kv_cache import (
     generic_flash_attention_kv_cache_padded,
     generic_flash_attention_kv_cache_padded_materialized_mask,
     generic_fused_qk_rope_bshd_continuous_batch,
+    generic_fused_qk_rope_bshd_paged,
     generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch,
+    generic_fused_qkv_matmul_kv_cache_bshd_paged,
     generic_get_continuous_cache,
     generic_get_paged_cache,
     print_kv_cache_cont_batch_generic_cpu,
@@ -6089,6 +6091,66 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     )
 
 
+@always_inline
+fn generic_fused_qkv_matmul_kv_cache_bshd_paged_kernel_api[
+    dtype: DType,
+    target: StaticString,
+](
+    hidden_state: ManagedTensorSlice[dtype=dtype, rank=3],
+    weight: ManagedTensorSlice[dtype=dtype, rank=2],
+    kv_collection: PagedKVCacheCollection[
+        dtype,
+        *_,
+    ],
+    layer_idx: UInt32,
+    output: ManagedTensorSlice[dtype=dtype, rank=3],
+    ctx: DeviceContextPtr,
+) raises:
+    generic_fused_qkv_matmul_kv_cache_bshd_paged[target=target,](
+        hidden_state.to_layout_tensor(),
+        weight.to_layout_tensor(),
+        kv_collection,
+        layer_idx,
+        output.to_layout_tensor(),
+        ctx,
+    )
+
+
+@compiler.register("mo.fused_qkv_matmul.padded.paged")
+struct Struct_fused_qkv_matmul_padded_paged:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType, //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3],
+        hidden_state: InputTensor[dtype=dtype, rank=3],
+        weight: InputTensor[dtype=dtype, rank=2],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        generic_fused_qkv_matmul_kv_cache_bshd_paged[target=target](
+            hidden_state.to_layout_tensor(),
+            weight.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            output.to_layout_tensor(),
+            ctx,
+        )
+
+
 @compiler.register("mo.fused_qkv_matmul.ragged.paged")
 struct Struct_fused_qkv_matmul_padded_ragged:
     @always_inline
@@ -6445,6 +6507,43 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         )
 
 
+@compiler.register("mo.fused_qk_rope.padded.paged")
+struct Struct_fused_qk_rope_padded_paged[interleaved: Bool]:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType, //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=4],
+        q_proj: InputTensor[dtype=dtype, rank=4],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+        freqs_cis: InputTensor[dtype=dtype, rank=2],
+        layer_idx: UInt32,
+        context: DeviceContextPtr = DeviceContextPtr(),
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        generic_fused_qk_rope_bshd_paged[
+            interleaved = Self.interleaved,
+            target=target,
+        ](
+            q_proj.to_layout_tensor(),
+            kv_collection,
+            freqs_cis.to_layout_tensor(),
+            layer_idx,
+            output.to_layout_tensor(),
+            context,
+        )
+
+
 # ===-----------------------------------------------------------------------===#
 # RoPE Ragged
 #
@@ -6527,6 +6626,59 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
 # Expected kernel name format:
 # mo.mha.<padded/ragged>.<continuous_batching/paged>
 # ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.mha.padded.paged")
+struct Struct_mha_padded_paged:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType, //,
+        target: StaticString,
+        mask_str: StaticString,
+        score_mod_str: StaticString,
+        local_window_size: Int = -1,
+    ](
+        output: OutputTensor[dtype=dtype, rank=4],
+        q: InputTensor[dtype=dtype, rank=4],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+        layer_idx: UInt32,
+        valid_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        scale: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        var valid_lengths_lt = valid_lengths.to_layout_tensor()
+        generic_flash_attention_kv_cache_padded[
+            target=target,
+            mask_str=mask_str,
+            score_mod_str=score_mod_str,
+            local_window_size=local_window_size,
+        ](
+            q.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            LayoutTensor[
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            ](
+                valid_lengths_lt.ptr,
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    valid_lengths_lt.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            scale,
+            output.to_layout_tensor(),
+            context,
+        )
 
 
 @compiler.register("mo.mha.ragged.paged")

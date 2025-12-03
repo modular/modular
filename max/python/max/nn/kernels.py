@@ -71,6 +71,72 @@ _MHA_MASK_CONFIG_DICT = {
 }
 
 
+def fused_qkv_padded_matmul(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    wqkv: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    n_heads: int,
+) -> TensorValue:
+    """Computes fused query, key, and value projections with padded input.
+
+    This is for non-ragged (padded batch) inputs where sequences may have
+    different actual lengths but are padded to a uniform shape.
+
+    Args:
+        kv_params: KV cache parameters
+        input: Input tensor with shape [batch_size, seq_len, hidden_dim]
+        wqkv: Weight tensor for Q, K, V projections
+        kv_collection: Paged KV cache collection
+        layer_idx: Layer index for cache lookup
+        n_heads: Number of attention heads
+
+    Returns:
+        Query projections tensor. K and V projections are written to cache.
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    """
+    if input.dtype != wqkv.dtype:
+        raise ValueError(
+            "expected input and wqkv to have the same dtype, but got"
+            f" {input.dtype} and {wqkv.dtype}, respectively."
+        )
+
+    input_rank_expected = 3
+    if input.rank != input_rank_expected:
+        raise ValueError(
+            f"expected input to have rank {input_rank_expected}, was {input.rank}"
+        )
+
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(
+            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        )
+
+    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
+        raise ValueError(
+            f"unsupported cache strategy for fused_qkv_padded_matmul: {kv_params.cache_strategy}"
+        )
+
+    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    op_name = f"mo.fused_qkv_matmul.padded.{cache_strategy_str}"
+
+    return ops.inplace_custom(
+        op_name,
+        device=input.device,
+        values=[input, wqkv, *kv_collection, layer_idx],
+        out_types=[
+            TensorType(
+                dtype=input.dtype,
+                shape=input.shape[:-1] + [n_heads * kv_params.head_dim],
+                device=input.device,
+            )
+        ],
+    )[0].tensor
+
+
 def fused_qkv_ragged_matmul(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -768,6 +834,155 @@ def fused_qk_ragged_rope(
                 dtype=input.dtype, shape=input.shape, device=input.device
             )
         ],
+        parameters=parameters,
+    )[0].tensor
+
+
+def fused_qk_padded_rope(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    kv_collection: PagedCacheValues,
+    freqs_cis: TensorValue,
+    layer_idx: TensorValue,
+    interleaved: bool = True,
+) -> TensorValue:
+    """Computes fused query-key RoPE with padded inputs and paged KV cache.
+
+    This function applies Rotary Positional Embeddings (RoPE) to both Q and K tensors,
+    where K is stored in the paged KV cache. This is the padded equivalent of
+    fused_qk_ragged_rope.
+
+    Args:
+        kv_params: KV cache parameters
+        input: Query tensor of shape [batch, seq_len, n_heads, head_dim]
+        kv_collection: Paged KV cache collection
+        freqs_cis: Frequency tensor of shape (max_seq_len * 2, head_dim)
+        layer_idx: Layer index for KV cache (must be uint32 on CPU)
+        interleaved: Whether to use interleaved RoPE pattern
+
+    Returns:
+        Query tensor with RoPE applied, same shape as input.
+
+    Note:
+        Unlike fused_qk_ragged_rope which requires ragged inputs, this function
+        works with padded batch inputs where sequences may have different actual
+        lengths but are padded to a uniform shape.
+    """
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(
+            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        )
+
+    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
+        raise ValueError(
+            f"unsupported cache strategy for fused_qk_padded_rope: {kv_params.cache_strategy}"
+        )
+
+    if input.rank != 4:
+        raise ValueError(
+            f"expected input to have rank 4 [batch, seq_len, n_heads, head_dim], was rank {input.rank}"
+        )
+
+    parameters: dict[str, bool | int | str | DType] = {
+        "interleaved": interleaved,
+    }
+
+    # Use custom op that calls the Mojo fused_qk_rope kernel with paged cache
+    op_name = "mo.fused_qk_rope.padded.paged"
+
+    return ops.inplace_custom(
+        op_name,
+        device=input.device,
+        values=[
+            input,
+            *kv_collection,
+            freqs_cis,
+            layer_idx,
+        ],
+        out_types=[
+            TensorType(
+                dtype=input.dtype, shape=input.shape, device=input.device
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
+def flash_attention_padded_kv_cache(
+    kv_params: KVCacheParams,
+    q: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    valid_lengths: TensorValue,
+    mask_variant: MHAMaskVariant,
+    scale: float,
+    local_window_size: int = -1,
+) -> TensorValue:
+    """Computes flash attention with padded inputs and paged KV cache.
+
+    Args:
+        kv_params: KV cache parameters
+        q: Query tensor of shape [batch, seq_len, num_heads, head_dim]
+        kv_collection: Paged KV cache collection
+        layer_idx: Layer index for cache lookup
+        valid_lengths: Tensor of shape [batch] with dtype uint32 indicating
+            actual (non-padded) sequence lengths for each batch element
+        mask_variant: The mask variant to use for attention
+        scale: Scaling factor for attention scores
+        local_window_size: Local window size for sliding window attention
+
+    Returns:
+        Output tensor of shape [batch, seq_len, num_heads, head_dim]
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    """
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(f"expected uint32 layer_idx but got {layer_idx.dtype}")
+
+    if valid_lengths.dtype != DType.uint32:
+        raise ValueError(
+            f"expected uint32 valid_lengths but got {valid_lengths.dtype}"
+        )
+
+    if valid_lengths.rank != 1:
+        raise ValueError(
+            f"expected valid_lengths to be rank 1, got {valid_lengths.rank}"
+        )
+
+    if valid_lengths.shape[0] != q.shape[0]:
+        raise ValueError(
+            f"valid_lengths batch size ({valid_lengths.shape[0]}) must match "
+            f"q batch size ({q.shape[0]})"
+        )
+
+    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
+        raise ValueError(
+            f"unsupported cache strategy for flash_attention_padded_kv_cache: "
+            f"{kv_params.cache_strategy}"
+        )
+
+    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
+    parameters: dict[str, int | str | DType] = {
+        "mask_str": mha_mask_config.attention_mask_variant.value,
+        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
+        "local_window_size": local_window_size,
+    }
+
+    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    op_name = f"mo.mha.padded.{cache_strategy_str}"
+
+    return ops.inplace_custom(
+        op_name,
+        device=q.device,
+        values=[
+            q,
+            *kv_collection,
+            layer_idx,
+            valid_lengths,
+            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[TensorType(dtype=q.dtype, shape=q.shape, device=q.device)],
         parameters=parameters,
     )[0].tensor
 

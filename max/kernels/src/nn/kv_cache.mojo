@@ -116,6 +116,66 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
 
 
 @always_inline
+fn generic_fused_qkv_matmul_kv_cache_bshd_paged[
+    dtype: DType,
+    target: StaticString = "cpu",
+](
+    hidden_state: LayoutTensor[
+        dtype, address_space = AddressSpace.GENERIC, **_
+    ],
+    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: UInt32,
+    output: LayoutTensor[mut=True, dtype, **_],
+    ctx: DeviceContextPtr,
+) raises:
+    """Performs a fused QKV matmul. Q outputs are written to the output argument
+    while K and V outputs are written in-place into k_cache and v_cache.
+
+    Args:
+        hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+        kv_collection: The historical KVCache for keys and values. The KVCache for
+            this layer is retrieved via layer_idx.
+        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+            for the given layer from kv_collection.
+        output: The pre-allocated output buffer for Q projections. K and V
+            projections are written in-place to k_cache and v_cache.
+        ctx: The call context pointer, passed by the graph compiler.
+    """
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg(
+                        "hidden_state", hidden_state.runtime_layout.shape.value
+                    ),
+                    trace_arg("weight", weight.runtime_layout.shape.value),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(kv_collection.kv_params.num_heads),
+                    "head_size=" + String(kv_collection.kv_params.head_size),
+                ]
+            )
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.fused_qkv_matmul.padded.paged.nhead_"
+        + String(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + String(kv_collection.kv_params.head_size),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(ctx),
+    ):
+        return _fused_qkv_matmul_kv_cache[
+            kv_collection.CacheType, target=target
+        ](hidden_state, weight, kv_collection, layer_idx, output, ctx)
+
+
+@always_inline
 fn _fused_qkv_matmul_kv_cache[
     dtype: DType,
     collection_t: KVCollectionT, //,
@@ -379,6 +439,70 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
     ]() else context.get_device_context()
     with Trace[TraceLevel.OP, target=target](
         "mo.fused_qk_rope.padded.continuous_batching.nhead_"
+        + String(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + String(kv_collection.kv_params.head_size),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(context),
+    ):
+        fused_qk_rope[
+            kv_collection.CacheType, interleaved=interleaved, target=target
+        ](
+            q_proj,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            output,
+            dev_ctx,
+        )
+
+
+@always_inline
+fn generic_fused_qk_rope_bshd_paged[
+    dtype: DType, //,
+    *,
+    interleaved: Bool,
+    target: StaticString,
+](
+    q_proj: LayoutTensor[dtype, **_],
+    kv_collection: PagedKVCacheCollection,
+    freqs_cis: LayoutTensor[dtype, **_],
+    layer_idx: UInt32,
+    output: LayoutTensor[mut=True, dtype, **_],
+    context: DeviceContextPtr = DeviceContextPtr(),
+) raises:
+    """Performs a fused RoPE projection for Q and K with paged KV cache.
+
+    This is the paged equivalent of generic_fused_qk_rope_bshd_continuous_batch.
+    It applies RoPE to both Q (returned) and K (in paged cache) to ensure
+    proper dependency ordering after fused_qkv_padded_matmul.
+    """
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg("q_proj", q_proj.runtime_layout.shape.value),
+                    trace_arg(
+                        "freqs_cis", freqs_cis.runtime_layout.shape.value
+                    ),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(kv_collection.kv_params.num_heads),
+                    "head_size=" + String(kv_collection.kv_params.head_size),
+                    "interleaved=" + String(interleaved),
+                ]
+            )
+        )
+
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[DeviceContext]() if is_cpu[
+        target
+    ]() else context.get_device_context()
+    with Trace[TraceLevel.OP, target=target](
+        "mo.fused_qk_rope.padded.paged.nhead_"
         + String(kv_collection.kv_params.num_heads)
         + ".hdim_"
         + String(kv_collection.kv_params.head_size),
