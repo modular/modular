@@ -105,7 +105,9 @@ struct List[T: Copyable & Movable](
     Equatable,
     Iterable,
     Movable,
+    Representable,
     Sized,
+    Stringable,
     Writable,
 ):
     """A dynamically-allocated and resizable list.
@@ -624,30 +626,11 @@ struct List[T: Copyable & Movable](
         return len(self) > 0
 
     @no_inline
-    fn __str__[
-        U: Representable & Copyable & Movable, //
-    ](self: List[U, *_]) -> String:
+    fn __str__(self) -> String:
         """Returns a string representation of a `List`.
-
-        Parameters:
-            U: The type of the elements in the list. Must implement the
-              trait `Representable`.
 
         Returns:
             A string representation of the list.
-
-        Notes:
-            Note that since we can't condition methods on a trait yet,
-            the way to call this method is a bit special. Here is an example
-            below:
-
-            ```mojo
-            var my_list = [1, 2, 3]
-            print(my_list.__str__())
-            ```
-
-            When the compiler supports conditional methods, then a simple
-            `String(my_list)` will be enough.
         """
         # at least 1 byte per item e.g.: [a, b, c, d] = 4 + 2 * 3 + [] + null
         var l = len(self)
@@ -682,29 +665,11 @@ struct List[T: Copyable & Movable](
         writer.write("]")
 
     @no_inline
-    fn __repr__[
-        U: Representable & Copyable & Movable, //
-    ](self: List[U, *_]) -> String:
+    fn __repr__(self) -> String:
         """Returns a string representation of a `List`.
-
-        Parameters:
-            U: The type of the elements in the list. Must implement the
-              trait `Representable`.
 
         Returns:
             A string representation of the list.
-
-        Notes:
-            Note that since we can't condition methods on a trait yet, the way
-            to call this method is a bit special. Here is an example below:
-
-            ```mojo
-            var my_list = [1, 2, 3]
-            print(my_list.__repr__())
-            ```
-
-            When the compiler supports conditional methods, then a simple
-            `repr(my_list)` will be enough.
         """
         return self.__str__()
 

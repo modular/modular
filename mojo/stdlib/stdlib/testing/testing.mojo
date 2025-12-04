@@ -138,39 +138,6 @@ fn assert_equal[
 # more powerful traits.
 
 
-@always_inline
-fn assert_equal[
-    T: Copyable & Movable & Equatable & Representable, //
-](
-    lhs: List[T],
-    rhs: List[T],
-    msg: String = "",
-    *,
-    location: Optional[_SourceLocation] = None,
-) raises:
-    """Asserts that two lists are equal.
-
-    Parameters:
-        T: The type of the elements in the lists.
-
-    Args:
-        lhs: The left-hand side list.
-        rhs: The right-hand side list.
-        msg: The message to be printed if the assertion fails.
-        location: The location of the error (defaults to `__call_location`).
-
-    Raises:
-        An Error with the provided message if assert fails and `None` otherwise.
-    """
-    if lhs != rhs:
-        raise _assert_cmp_error["`left == right` comparison"](
-            lhs.__str__(),
-            rhs.__str__(),
-            msg=msg,
-            loc=location.or_else(__call_location()),
-        )
-
-
 # TODO(MSTDL-1071):
 #   Once Mojo supports parametric traits, implement Equatable for
 #   StringSlice such that string slices with different origin types can be
@@ -328,39 +295,6 @@ fn assert_not_equal(
     if lhs == rhs:
         raise _assert_cmp_error["`left != right` comparison"](
             lhs, rhs, msg=msg, loc=location.or_else(__call_location())
-        )
-
-
-@always_inline
-fn assert_not_equal[
-    T: Copyable & Movable & Equatable & Representable, //
-](
-    lhs: List[T],
-    rhs: List[T],
-    msg: String = "",
-    *,
-    location: Optional[_SourceLocation] = None,
-) raises:
-    """Asserts that two lists are not equal.
-
-    Parameters:
-        T: The type of the elements in the lists.
-
-    Args:
-        lhs: The left-hand side list.
-        rhs: The right-hand side list.
-        msg: The message to be printed if the assertion fails.
-        location: The location of the error (defaults to `__call_location`).
-
-    Raises:
-        An Error with the provided message if assert fails and `None` otherwise.
-    """
-    if lhs == rhs:
-        raise _assert_cmp_error["`left != right` comparison"](
-            lhs.__str__(),
-            rhs.__str__(),
-            msg=msg,
-            loc=location.or_else(__call_location()),
         )
 
 

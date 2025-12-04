@@ -243,9 +243,9 @@ what we publish.
   some standard library types are now able to conform to traits that they could
   not previously. This includes:
 
-- `List` now conforms to `Equatable` and `Writable`.
-
-- `Tuple` no longer requires its elements to be `Copyable`.
+  - `List` now conforms to `Equatable`, `Writable`, `Stringable`,
+    and `Representable`.
+  - `Tuple` no longer requires its elements to be `Copyable`.
 
 - Basic file I/O operations in the `io` module are now implemented natively in
   Mojo using direct `libc` system calls (`open`, `close`, `read`, `write`,
