@@ -1,3 +1,4 @@
+load("@rules_mypy//mypy:mypy.bzl", "mypy_cli")
 load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_py_binary", "modular_py_library", "requirement")
 load(":gpu_toolchain_alias.bzl", "gpu_toolchain_alias")
 load(":lib_toolchain.bzl", "lib_toolchain")
@@ -8,6 +9,15 @@ exports_files([
     "load_bazel_tools.py",
     "lsan-suppressions.txt",
 ])
+
+mypy_cli(
+    name = "mypy_cli",
+    mypy_requirement = requirement("mypy"),
+    tags = ["no-mypy"],
+    deps = [
+        requirement("pydantic"),
+    ],
+)
 
 filegroup(
     name = "mojo-filecheck-test",

@@ -13,6 +13,11 @@ package_group(
     packages = ["public"],
 )
 
+exports_files([
+    "mypy.ini",
+    "pyproject.toml",
+])
+
 mojo_binary(
     name = "repro",
     testonly = True,

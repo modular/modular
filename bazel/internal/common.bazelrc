@@ -148,6 +148,14 @@ build --experimental_propagate_custom_flag=@llvm-project//llvm:pfm
 build --@llvm-project//mlir:enable_cuda=true
 build --experimental_propagate_custom_flag=@llvm-project//mlir:enable_cuda
 
+# Enable mypy running on python builds
+build --aspects=//bazel/pip:mypy.bzl%mypy_aspect
+build --output_groups=+mypy
+
+build:disable-mypy --output_groups=-mypy
+
+build:disable-lint --config=disable-mypy
+
 build --remote_download_outputs=toplevel
 build --remote_download_regex='.*\.(inc|h)$'
 # Required for debug info references from binaries
