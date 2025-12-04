@@ -17,11 +17,11 @@ from max.kv_cache import PagedKVCacheManager, load_kv_manager
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
 from max.nn.linear import Linear
 from max.pipelines import KVCacheConfig
-from max.pipelines.architectures.qwen3vl_moe.nn.decoder import (
-    Qwen3VLTextRotaryEmbedding,
-)
 from max.pipelines.architectures.qwen3vl_moe.nn.text_attention import (
     Qwen3VLMoEDecoderAttentionWithRope,
+)
+from max.pipelines.architectures.qwen3vl_moe.nn.text_rotary import (
+    Qwen3VLTextRotaryEmbedding,
 )
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack

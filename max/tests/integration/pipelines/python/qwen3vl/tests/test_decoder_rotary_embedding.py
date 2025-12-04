@@ -16,7 +16,7 @@ from max.graph import DeviceRef, Graph, TensorType
 from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
     get_rope_index,
 )
-from max.pipelines.architectures.qwen3vl_moe.nn.decoder import (
+from max.pipelines.architectures.qwen3vl_moe.nn.text_rotary import (
     Qwen3VLTextRotaryEmbedding,
 )
 from torch.utils.dlpack import from_dlpack
