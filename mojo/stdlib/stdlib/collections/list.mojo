@@ -336,7 +336,7 @@ struct List[T: Copyable & Movable](
         self.resize(length, fill)
 
     @always_inline
-    fn __init__(out self, var *values: Self.T, __list_literal__: () = ()):
+    fn __init__(out self, var *values: Self.T, __list_literal__: ()):
         """Constructs a list from the given values.
 
         Args:

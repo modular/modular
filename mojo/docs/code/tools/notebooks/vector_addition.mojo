@@ -53,9 +53,18 @@ def main():
     var output_tensor = Tensor(output_buffer)
 
     # Initialize input buffers with sample data
-    var message_bytes = List[UInt8](
-        71, 100, 107, 107, 110, 31, 76, 110, 105, 110
-    )
+    var message_bytes: List[UInt8] = [
+        71,
+        100,
+        107,
+        107,
+        110,
+        31,
+        76,
+        110,
+        105,
+        110,
+    ]
     with left_buffer.map_to_host() as mapped_buffer:
         var mapped_tensor = Tensor(mapped_buffer)
         for idx in range(VECTOR_WIDTH):

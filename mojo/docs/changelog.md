@@ -158,6 +158,44 @@ what we publish.
 - `List` slicing without a stride now returns a `Span`, instead of a `List` and
   no longer allocates memory.
 
+- Remove `List` variadic initializer.
+
+  - Statements like:
+
+    ```mojo
+    var x = List[Int32](1, 2, 3)
+    ```
+
+    can be updated to:
+
+    ```mojo
+    var x: List[Int32] = [1, 2, 3]
+    ```
+
+  - Expressions like:
+
+    ```mojo
+    var x = foo(List[Float32](1, 2, 3))
+    ```
+
+    can be updated to move the explicit type "hint" around the first elememnt:
+
+    ```mojo
+      var x = foo([Float32(1), 2, 3])
+    ```
+
+  - Expressions like:
+
+    ```mojo
+    var data = Span(List[Byte](1, 2, 3))
+    ```
+
+    can be updated to move the explicit element type to the `Span`:
+
+    ```mojo
+    var data = Span[Byte]([1, 2, 3])
+    ```
+
 - The `random` module now uses a pure Mojo implementation based on the Philox
   algorithm (via an internal wrapper), replacing the previous `CompilerRT` C++
   dependency. The Philox algorithm provides excellent statistical quality, works
