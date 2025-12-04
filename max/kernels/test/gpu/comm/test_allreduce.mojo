@@ -275,17 +275,18 @@ fn allreduce_test[
 
             # Warm-up RCCL.
             for _ in range(num_warmups):
-                vendor_ccl.group_start()
+                with vendor_ccl.group():
 
-                @parameter
-                for i in range(ngpus):
-                    vendor_ccl.allreduce[dtype=dtype, rank=rank, ngpus=ngpus](
-                        in_bufs[i],
-                        out_bufs_vendor[i],
-                        i,
-                        list_of_ctx[i],
-                    )
-                vendor_ccl.group_end()
+                    @parameter
+                    for i in range(ngpus):
+                        vendor_ccl.allreduce[
+                            dtype=dtype, rank=rank, ngpus=ngpus
+                        ](
+                            in_bufs[i],
+                            out_bufs_vendor[i],
+                            i,
+                            list_of_ctx[i],
+                        )
 
             for i in range(ngpus):
                 list_of_ctx[i].synchronize()
@@ -293,17 +294,18 @@ fn allreduce_test[
             # Benchmark RCCL.
             start_t_rccl = time.perf_counter_ns()
             for _ in range(num_iters):
-                vendor_ccl.group_start()
+                with vendor_ccl.group():
 
-                @parameter
-                for i in range(ngpus):
-                    vendor_ccl.allreduce[dtype=dtype, rank=rank, ngpus=ngpus](
-                        in_bufs[i],
-                        out_bufs_vendor[i],
-                        i,
-                        list_of_ctx[i],
-                    )
-                vendor_ccl.group_end()
+                    @parameter
+                    for i in range(ngpus):
+                        vendor_ccl.allreduce[
+                            dtype=dtype, rank=rank, ngpus=ngpus
+                        ](
+                            in_bufs[i],
+                            out_bufs_vendor[i],
+                            i,
+                            list_of_ctx[i],
+                        )
 
             for i in range(ngpus):
                 list_of_ctx[i].synchronize()

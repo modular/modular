@@ -127,12 +127,23 @@ comptime CCLAllGatherFn = fn (
 
 
 # Paired wrappers grouped RCCl/NCCL for comparison
-fn group_start() raises -> ncclResult_t:
-    return _get_ccl_function["ncclGroupStart", fn () -> ncclResult_t]()()
+struct _Group:
+    fn __init__(out self):
+        pass
+
+    fn __enter__(self) raises:
+        _check_ccl_ok(
+            _get_ccl_function["ncclGroupStart", fn () -> ncclResult_t]()()
+        )
+
+    fn __exit__(self) raises:
+        _check_ccl_ok(
+            _get_ccl_function["ncclGroupEnd", fn () -> ncclResult_t]()()
+        )
 
 
-fn group_end() raises -> ncclResult_t:
-    return _get_ccl_function["ncclGroupEnd", fn () -> ncclResult_t]()()
+fn group() -> _Group:
+    return _Group()
 
 
 fn ncclCommInitAll(
@@ -336,22 +347,19 @@ fn allgather[
             list_of_ctx[i].enqueue_create_buffer[dtype](ngpus * count)
         )
 
-    _check_ccl_ok(group_start())
-
-    for i in range(ngpus):
-        with list_of_ctx[i].push_context():
-            _check_ccl_ok(
-                _ccl_allgather(
-                    inputs[i].data.bitcast[NoneType](),
-                    recv_tmp[i].unsafe_ptr().bitcast[NoneType](),
-                    count,
-                    dtype_nccl,
-                    comms.comms[i],
-                    list_of_ctx[i],
+    with group():
+        for i in range(ngpus):
+            with list_of_ctx[i].push_context():
+                _check_ccl_ok(
+                    _ccl_allgather(
+                        inputs[i].data.bitcast[NoneType](),
+                        recv_tmp[i].unsafe_ptr().bitcast[NoneType](),
+                        count,
+                        dtype_nccl,
+                        comms.comms[i],
+                        list_of_ctx[i],
+                    )
                 )
-            )
-
-    _check_ccl_ok(group_end())
 
     for dev in range(ngpus):
         var ctx = list_of_ctx[dev]
