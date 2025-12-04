@@ -913,14 +913,13 @@ struct NonEquatable(Copyable, Movable):
     pass
 
 
-def test_list_conditional_conformance_Equatable():
-    var _l1: List[Int] = [1, 2, 3]
-
+def test_list_conditional_conformances():
     assert_true(conforms_to(List[Int], Equatable))
-
     # TODO(MSTDL-2077):
     #   This should pass, but does not due to Unconditional Conformances
     # assert_false(conforms_to(List[NonEquatable], Equatable))
+
+    assert_true(conforms_to(List[Int], Writable))
 
 
 def test_list_init_span():

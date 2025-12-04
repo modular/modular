@@ -106,6 +106,7 @@ struct List[T: Copyable & Movable](
     Iterable,
     Movable,
     Sized,
+    Writable,
 ):
     """A dynamically-allocated and resizable list.
 
@@ -456,7 +457,7 @@ struct List[T: Copyable & Movable](
             conforms_to(Self.T, Equatable),
             Parent=Self,
             Element = Self.T,
-            Trait="Equatable",
+            ParentConformsTo="Equatable",
         ]()
 
         if len(self) != len(other):
@@ -655,21 +656,27 @@ struct List[T: Copyable & Movable](
         return output^
 
     @no_inline
-    fn write_to[
-        U: Representable & Copyable & Movable, //
-    ](self: List[U, *_], mut writer: Some[Writer]):
+    fn write_to(self, mut writer: Some[Writer]):
         """Write `my_list.__str__()` to a `Writer`.
 
-        Parameters:
-            U: The type of the List elements. Must have the trait
-                `Representable`.
+        Constraints:
+            `T` must conform to `Representable`.
 
         Args:
             writer: The object to write to.
         """
+        _constrained_conforms_to[
+            conforms_to(Self.T, Representable),
+            Parent=Self,
+            Element = Self.T,
+            ParentConformsTo="Writable",
+            ElementConformsTo="Representable",
+        ]()
+
         writer.write("[")
         for i in range(len(self)):
-            writer.write(repr(self[i]))
+            ref elem = trait_downcast[Representable](self[i])
+            writer.write(repr(elem))
             if i < len(self) - 1:
                 writer.write(", ")
         writer.write("]")

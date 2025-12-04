@@ -121,7 +121,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Movable, Sized):
                 conforms_to(element_type, Copyable),
                 Parent=Self,
                 Element=element_type,
-                Trait="Copyable",
+                ParentConformsTo="Copyable",
             ]()
 
             # TODO: We should not use self[i] as this returns a reference to

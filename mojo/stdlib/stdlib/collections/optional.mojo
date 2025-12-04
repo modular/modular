@@ -324,7 +324,7 @@ struct Optional[T: Copyable & Movable](
             conforms_to(Self.T, Stringable),
             Parent=Self,
             Element = Self.T,
-            Trait="Stringable",
+            ParentConformsTo="Stringable",
         ]()
 
         if self:
@@ -342,7 +342,7 @@ struct Optional[T: Copyable & Movable](
             conforms_to(Self.T, Representable),
             Parent=Self,
             Element = Self.T,
-            Trait="Representable",
+            ParentConformsTo="Representable",
         ]()
 
         var output = String()
@@ -373,7 +373,7 @@ struct Optional[T: Copyable & Movable](
             conforms_to(Self.T, Representable),
             Parent=Self,
             Element = Self.T,
-            Trait="Representable",
+            ParentConformsTo="Representable",
         ]()
 
         if self:

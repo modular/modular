@@ -84,13 +84,15 @@ fn _constrained_conforms_to[
     *,
     Parent: AnyType,
     Element: AnyType,
-    Trait: StaticString,
+    ParentConformsTo: StaticString,
+    ElementConformsTo: StaticString = ParentConformsTo,
 ]():
     comptime parent_type_name = get_type_name[Parent]()
     comptime elem_type_name = get_type_name[Element]()
     # TODO(MOCO-2901): Support traits in get_type_name
-    #   comptime trait_name = get_type_name[Trait]()
-    comptime trait_name = Trait
+    #   comptime trait_name = get_type_name[ParentConformsTo]()
+    comptime parent_conforms_to_trait_name = ParentConformsTo
+    comptime elem_conforms_to_trait_name = ElementConformsTo
 
     # Construct a message like:
     #     List(Equatable) conformance requires Foo(Equatable) conformance, which
@@ -99,11 +101,11 @@ fn _constrained_conforms_to[
         _get_kgen_string[
             parent_type_name,
             "(",
-            trait_name,
+            parent_conforms_to_trait_name,
             ") conformance requires ",
             elem_type_name,
             "(",
-            trait_name,
+            elem_conforms_to_trait_name,
             ") conformance, which is not satisfied.",
         ]()
     )

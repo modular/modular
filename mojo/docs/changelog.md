@@ -199,7 +199,7 @@ what we publish.
   some standard library types are now able to conform to traits that they could
   not previously. This includes:
 
-- `List` now conforms to `Equatable`.
+- `List` now conforms to `Equatable` and `Writable`.
 
 - `Tuple` no longer requires its elements to be `Copyable`.
 
