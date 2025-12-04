@@ -77,7 +77,8 @@ FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
 
 ConstraintResult LIT::checkConstraints(
     ASTDecl &declScope, ArrayRef<ConstraintAttr> constraints,
-    llvm::function_ref<void(ArrayRef<ConstraintAttr>)> emitConstraintViolations,
+    llvm::function_ref<void(ArrayRef<std::pair<size_t, ConstraintAttr>>)>
+        emitConstraintViolations,
     SmallVectorImpl<ConstraintAttr> *unprovableConstraints,
     ParameterEvaluator *evaluator) {
   if (constraints.empty())
@@ -100,9 +101,9 @@ ConstraintResult LIT::checkConstraints(
   if (overallAssumption)
     overallAssumption = getCanonicalAttr(overallAssumption);
 
-  SmallVector<ConstraintAttr> failedConstraints;
+  SmallVector<std::pair<size_t, ConstraintAttr>> failedConstraints;
   SmallVector<ConstraintAttr> localUnprovableConstraints;
-  for (ConstraintAttr constraint : constraints) {
+  for (auto [idx, constraint] : llvm::enumerate(constraints)) {
     TypedAttr prop = constraint.getProposition();
     prop = getCanonicalAttr(prop);
     if (evaluator)
@@ -111,7 +112,7 @@ ConstraintResult LIT::checkConstraints(
     // If the constraint evaluated to a constant, check its value directly.
     if (auto intValue = dyn_cast<IntegerAttr>(prop)) {
       if (intValue.getValue().isZero())
-        failedConstraints.push_back(constraint);
+        failedConstraints.emplace_back(idx, constraint);
       continue;
     }
 
@@ -1008,11 +1009,15 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
           diag->attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitConstraintViolations=*/
-      [&](ArrayRef<ConstraintAttr> constraints) {
+      [&](ArrayRef<std::pair<size_t, ConstraintAttr>> constraints) {
         diag = shared.emitError(exprLoc);
         *diag << "violated constraint" << plural(constraints.size());
-        for (auto constraint : constraints)
-          diag->attachNote(constraint.getLoc()) << "constraint declared here";
+        IndexToDeclRefRemapper remapper(paramListAttr);
+        for (auto [_, constraint] : constraints) {
+          diag->attachNote(constraint.getLoc())
+              << "constraint declared here evaluated to False, expected "
+              << remapper.replace(constraint.getProposition());
+        }
       },
   };
 

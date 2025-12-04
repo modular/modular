@@ -1256,3 +1256,15 @@ LITSymTabEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
 
   return simplified.value();
 }
+
+//===----------------------------------------------------------------------===//
+// IndexToDeclRefRemapper
+//===----------------------------------------------------------------------===//
+
+Attribute IndexToDeclRefRemapper::tryReplace(Attribute attr, size_t depth) {
+  if (auto ref = dyn_cast<ParamIndexRefAttr>(attr))
+    return ParamDeclRefAttr::get(paramListAttr.getName(ref.getIndex()),
+                                 ref.getType());
+
+  return nullptr;
+}

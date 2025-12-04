@@ -135,7 +135,10 @@ public:
     /// Emit diagnostics for missing parameters (specified by their names).
     std::function<void(ArrayRef<StringAttr>, const Twine &)> emitMissing;
     /// Emit diagnostics for constraint violations.
-    std::function<void(ArrayRef<ConstraintAttr>)> emitConstraintViolations;
+    /// Each failing constraint is paired with its index in the constraints list
+    /// for lookup by the diagEmitter.
+    std::function<void(ArrayRef<std::pair<size_t, ConstraintAttr>>)>
+        emitConstraintViolations;
   };
 
   /// Verify the full parameter bindings for the given generator. If the
@@ -244,7 +247,8 @@ enum class ConstraintResult {
 /// provided to substitute parameters into the constraints.
 ConstraintResult checkConstraints(
     ASTDecl &declScope, ArrayRef<ConstraintAttr> constraints,
-    llvm::function_ref<void(ArrayRef<ConstraintAttr>)> emitConstraintViolations,
+    llvm::function_ref<void(ArrayRef<std::pair<size_t, ConstraintAttr>>)>
+        emitConstraintViolations,
     SmallVectorImpl<ConstraintAttr> *unprovableConstraints,
     ParameterEvaluator *evaluator);
 
