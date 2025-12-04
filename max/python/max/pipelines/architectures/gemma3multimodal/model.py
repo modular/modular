@@ -15,14 +15,12 @@ from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
-
-from max._core import Type
 from max.driver import Device, DLPackArray, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -30,6 +28,7 @@ from max.graph import (
     DeviceRef,
     Graph,
     TensorType,
+    Type,
     Value,
 )
 from max.graph.tensor_utils import cast_dlpack_to
@@ -519,7 +518,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
     def _vision_model_input_types(
         self, config: Gemma3ForConditionalGenerationConfig
-    ) -> Iterable[Type[Any]]:
+    ) -> list[Type[Any]]:
         """Build the vision model graph for processing images."""
         pixel_values_types = [
             TensorType(
@@ -598,13 +597,15 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 for output in vision_outputs
                 if isinstance(output, Tensor)
             ]
+            assert model_inputs.image_token_indices is not None
             image_token_indices = model_inputs.image_token_indices
         else:
             # Initialize empty tensors for text-only mode.
             image_embeddings = self._create_empty_image_embeddings()
             image_token_indices = self._create_empty_indices()
 
-        curr_kv_cache_inputs = list(model_inputs.kv_cache_inputs) or ()
+        assert model_inputs.kv_cache_inputs
+        curr_kv_cache_inputs = list(model_inputs.kv_cache_inputs)
 
         model_outputs = self.language_model.execute(
             model_inputs.tokens,
