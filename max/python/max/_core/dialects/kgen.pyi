@@ -20,7 +20,7 @@ from typing import Protocol, overload
 import max._core
 import max._core.dialects.builtin
 import max._core.dialects.m
-from max.mlir import Context, Location
+from max._mlir import Context, Location
 
 # Many of the generated overloads for constructors are more specialized in
 # C++ than they are in Python. For example, `int32_t` and `int64_t` and `size_t`

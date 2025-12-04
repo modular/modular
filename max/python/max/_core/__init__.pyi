@@ -18,8 +18,8 @@ from collections.abc import Iterator, Sequence
 from typing import Generic, TypeVar
 
 import max._mlir.ir
-from max.mlir import Context, Location
-from max.mlir import Value as MlirValue
+from max._mlir import Context, Location
+from max._mlir import Value as MlirValue
 
 from . import (
     dialects as dialects,

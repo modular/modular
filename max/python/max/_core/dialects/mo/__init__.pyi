@@ -22,7 +22,7 @@ import max._core.dialects.builtin
 import max._core.dialects.kgen
 import max._core.dialects.m
 import max._core.dtype
-from max.mlir import Context, Location
+from max._mlir import Context, Location
 
 from . import passes as passes
 
