@@ -11,28 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
-from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer, random, zero
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout._fillers import random
+from memory import LegacyUnsafePointer as UnsafePointer
 from nn.conv import conv_cudnn, conv_gpu
 from testing import assert_almost_equal
 
 from utils.index import IndexList
 
 
-fn print_data[type: DType](data: UnsafePointer[Scalar[type]], dim: DimList):
-    for i in range(dim.product().get()):
-        print(data[i], " ", end="")
-    print("")
-
-
 # input: NHWC
 # filer: RSCF
 fn test_conv_cudnn[
-    input_dim: DimList,
-    filter_dim: DimList,
-    output_dim: DimList,
+    input_dim: IndexList[4],
+    filter_dim: IndexList[4],
+    output_dim: IndexList[4],
     input_type: DType,
     filter_type: DType,
     output_type: DType,
@@ -52,72 +46,120 @@ fn test_conv_cudnn[
         num_groups,
     )
 
-    var input_dim_flattened = input_dim.product().get()
-    var filter_dim_flattened = filter_dim.product().get()
-    var output_dim_flattened = output_dim.product().get()
-    comptime filter_dim_nchw = DimList(
-        filter_dim.get[3](),
-        filter_dim.get[2](),
-        filter_dim.get[0](),
-        filter_dim.get[1](),
+    # Extract dimensions
+    comptime N = input_dim[0]
+    comptime H = input_dim[1]
+    comptime W = input_dim[2]
+    comptime C_in = input_dim[3]
+
+    comptime R = filter_dim[0]
+    comptime S = filter_dim[1]
+    comptime C = filter_dim[2]
+    comptime F = filter_dim[3]
+
+    comptime Nout = output_dim[0]
+    comptime Hout = output_dim[1]
+    comptime Wout = output_dim[2]
+    comptime Cout = output_dim[3]
+
+    # Define layouts
+    comptime input_layout = Layout.row_major(N, H, W, C_in)
+    comptime filter_layout = Layout.row_major(R, S, C, F)
+    comptime filter_nchw_layout = Layout.row_major(F, C, R, S)
+    comptime output_layout = Layout.row_major(Nout, Hout, Wout, Cout)
+
+    comptime input_dim_flattened = N * H * W * C_in
+    comptime filter_dim_flattened = R * S * C * F
+    comptime output_dim_flattened = Nout * Hout * Wout * Cout
+
+    # Allocate host memory
+    var input_host_ptr = UnsafePointer[Scalar[input_type]].alloc(
+        input_dim_flattened
+    )
+    var filter_host_ptr = UnsafePointer[Scalar[filter_type]].alloc(
+        filter_dim_flattened
+    )
+    var filter_nchw_host_ptr = UnsafePointer[Scalar[filter_type]].alloc(
+        filter_dim_flattened
+    )
+    var output_ref_host_ptr = UnsafePointer[Scalar[output_type]].alloc(
+        output_dim_flattened
+    )
+    var output_host_ptr = UnsafePointer[Scalar[output_type]].alloc(
+        output_dim_flattened
     )
 
-    var input_host = HostNDBuffer[input_type, 4, input_dim](input_dim)
-    var filter_host = HostNDBuffer[filter_type, 4, filter_dim](filter_dim)
-    var filter_nchw_host = HostNDBuffer[filter_type, 4, filter_dim_nchw](
-        filter_dim_nchw
+    # Create host LayoutTensors
+    var input_host = LayoutTensor[input_type, input_layout](input_host_ptr)
+    var filter_host = LayoutTensor[filter_type, filter_layout](filter_host_ptr)
+    var filter_nchw_host = LayoutTensor[filter_type, filter_nchw_layout](
+        filter_nchw_host_ptr
     )
-    var output_ref_host = HostNDBuffer[output_type, 4, output_dim](output_dim)
-    var output_host = HostNDBuffer[output_type, 4, output_dim](output_dim)
+    var output_ref_host = LayoutTensor[output_type, output_layout](
+        output_ref_host_ptr
+    )
+    var output_host = LayoutTensor[output_type, output_layout](output_host_ptr)
 
-    random(input_host.tensor)
-    random(filter_host.tensor)
+    random(input_host)
+    random(filter_host)
 
     # Transpose filter to NCHW
-    comptime R = filter_dim.get[0]()
-    comptime S = filter_dim.get[1]()
-    comptime C = filter_dim.get[2]()
-    comptime F = filter_dim.get[3]()
     for r in range(R):
         for s in range(S):
             for c in range(C):
                 for f in range(F):
-                    filter_nchw_host.tensor[f, c, r, s] = filter_host.tensor[
-                        r, s, c, f
-                    ]
+                    filter_nchw_host[f, c, r, s] = filter_host[r, s, c, f]
 
-    zero(output_host.tensor)
-    zero(output_ref_host.tensor)
+    _ = output_host.fill(0)
+    _ = output_ref_host.fill(0)
 
-    var input_dev = DeviceNDBuffer[input_type, 4, input_dim](input_dim, ctx=ctx)
-    var filter_dev = DeviceNDBuffer[filter_type, 4, filter_dim](
-        filter_dim, ctx=ctx
+    # Allocate device buffers
+    var input_dev = ctx.enqueue_create_buffer[input_type](input_dim_flattened)
+    var filter_dev = ctx.enqueue_create_buffer[filter_type](
+        filter_dim_flattened
     )
-    var filter_nchw_dev = DeviceNDBuffer[filter_type, 4, filter_dim_nchw](
-        filter_dim_nchw, ctx=ctx
+    var filter_nchw_dev = ctx.enqueue_create_buffer[filter_type](
+        filter_dim_flattened
     )
-    var output_dev = DeviceNDBuffer[output_type, 4, output_dim](
-        output_dim, ctx=ctx
+    var output_dev = ctx.enqueue_create_buffer[output_type](
+        output_dim_flattened
     )
-    var output_ref_dev = DeviceNDBuffer[output_type, 4, output_dim](
-        output_dim, ctx=ctx
+    var output_ref_dev = ctx.enqueue_create_buffer[output_type](
+        output_dim_flattened
     )
 
-    ctx.enqueue_copy(input_dev.buffer, input_host.tensor.data)
-    ctx.enqueue_copy(filter_dev.buffer, filter_host.tensor.data)
-    ctx.enqueue_copy(filter_nchw_dev.buffer, filter_nchw_host.tensor.data)
+    # Create device LayoutTensors
+    var input_dev_tensor = LayoutTensor[input_type, input_layout](
+        input_dev.unsafe_ptr()
+    )
+    var filter_dev_tensor = LayoutTensor[filter_type, filter_layout](
+        filter_dev.unsafe_ptr()
+    )
+    var filter_nchw_dev_tensor = LayoutTensor[filter_type, filter_nchw_layout](
+        filter_nchw_dev.unsafe_ptr()
+    )
+    var output_dev_tensor = LayoutTensor[output_type, output_layout](
+        output_dev.unsafe_ptr()
+    )
+    var output_ref_dev_tensor = LayoutTensor[output_type, output_layout](
+        output_ref_dev.unsafe_ptr()
+    )
+
+    ctx.enqueue_copy(input_dev, input_host_ptr)
+    ctx.enqueue_copy(filter_dev, filter_host_ptr)
+    ctx.enqueue_copy(filter_nchw_dev, filter_nchw_host_ptr)
 
     conv_gpu[
-        type_of(input_dev.to_layout_tensor()).layout,
-        type_of(filter_dev.to_layout_tensor()).layout,
-        type_of(output_ref_dev.to_layout_tensor()).layout,
+        input_layout,
+        filter_layout,
+        output_layout,
         input_type,
         filter_type,
         output_type,
     ](
-        input_dev.to_layout_tensor().as_any_origin(),
-        filter_dev.to_layout_tensor().as_any_origin(),
-        output_ref_dev.to_layout_tensor().as_any_origin(),
+        input_dev_tensor.as_any_origin(),
+        filter_dev_tensor.as_any_origin(),
+        output_ref_dev_tensor.as_any_origin(),
         stride_dim,
         dilation_dim,
         pad_dim,
@@ -126,9 +168,9 @@ fn test_conv_cudnn[
     )
 
     conv_cudnn[input_type, filter_type, output_type](
-        input_dev.to_layout_tensor(),
-        filter_nchw_dev.to_layout_tensor(),
-        output_dev.to_layout_tensor(),
+        input_dev_tensor,
+        filter_nchw_dev_tensor,
+        output_dev_tensor,
         stride_dim,
         dilation_dim,
         pad_dim,
@@ -136,32 +178,33 @@ fn test_conv_cudnn[
         ctx,
     )
 
-    ctx.enqueue_copy(output_ref_host.tensor.data, output_ref_dev.buffer)
-    ctx.enqueue_copy(output_host.tensor.data, output_dev.buffer)
+    ctx.enqueue_copy(output_ref_host_ptr, output_ref_dev)
+    ctx.enqueue_copy(output_host_ptr, output_dev)
+    ctx.synchronize()
 
-    # verifying results
-    output_host_buf = output_host.tensor
-    output_ref_host_buf = output_ref_host.tensor
-    comptime N = output_dim.get[0]()
-    comptime Hout = output_dim.get[1]()
-    comptime Wout = output_dim.get[2]()
-    for n in range(N):
+    # Verify results
+    for n in range(Nout):
         for h in range(Hout):
             for w in range(Wout):
-                for f in range(F):
+                for f in range(Cout):
                     assert_almost_equal(
-                        output_host_buf[n, h, w, f],
-                        output_ref_host_buf[n, h, w, f],
+                        output_host[n, h, w, f],
+                        output_ref_host[n, h, w, f],
                         rtol=0.01,
                     )
     print("Succeed")
 
-    _ = input_host
-    _ = filter_host
-    _ = output_host
-    _ = output_ref_host
+    # Cleanup host memory
+    input_host_ptr.free()
+    filter_host_ptr.free()
+    filter_nchw_host_ptr.free()
+    output_ref_host_ptr.free()
+    output_host_ptr.free()
+
+    # Cleanup device buffers
     _ = input_dev^
     _ = filter_dev^
+    _ = filter_nchw_dev^
     _ = output_dev^
     _ = output_ref_dev^
 
@@ -172,11 +215,11 @@ def main():
         comptime dtype_configs = (DType.float32, DType.float16, DType.bfloat16)
 
         test_conv_cudnn[
-            DimList(1, 1, 550, 1024),  # input  (NHWC)
-            DimList(
+            IndexList[4](1, 1, 550, 1024),  # input  (NHWC)
+            IndexList[4](
                 1, 7, 1024, 1024
             ),  # filter (RSCF) (height, width, in_channels, out_channels)
-            DimList(1, 1, 550, 1024),  # output (NHWC)
+            IndexList[4](1, 1, 550, 1024),  # output (NHWC)
             DType.float32,
             DType.float32,
             DType.float32,
@@ -191,9 +234,9 @@ def main():
             comptime dtype = dtype_configs[i]
 
             test_conv_cudnn[
-                DimList(1, 8, 8, 16),  # input  (NHWC)
-                DimList(3, 3, 16, 32),  # filter (RSCF)
-                DimList(1, 6, 6, 32),  # output (NHWC)
+                IndexList[4](1, 8, 8, 16),  # input  (NHWC)
+                IndexList[4](3, 3, 16, 32),  # filter (RSCF)
+                IndexList[4](1, 6, 6, 32),  # output (NHWC)
                 dtype,
                 dtype,
                 dtype,
@@ -223,9 +266,9 @@ def main():
     print("Creating first device context (default device)...")
     with DeviceContext() as ctx1:
         test_conv_cudnn[
-            DimList(1, 8, 8, 16),  # input  (NHWC)
-            DimList(3, 3, 16, 32),  # filter (RSCF)
-            DimList(1, 6, 6, 32),  # output (NHWC)
+            IndexList[4](1, 8, 8, 16),  # input  (NHWC)
+            IndexList[4](3, 3, 16, 32),  # filter (RSCF)
+            IndexList[4](1, 6, 6, 32),  # output (NHWC)
             DType.float32,
             DType.float32,
             DType.float32,
@@ -239,9 +282,9 @@ def main():
         print("Creating second device context (device 1)...")
         with DeviceContext(device_id=1) as ctx2:
             test_conv_cudnn[
-                DimList(1, 8, 8, 16),  # input  (NHWC)
-                DimList(3, 3, 16, 32),  # filter (RSCF)
-                DimList(1, 6, 6, 32),  # output (NHWC)
+                IndexList[4](1, 8, 8, 16),  # input  (NHWC)
+                IndexList[4](3, 3, 16, 32),  # filter (RSCF)
+                IndexList[4](1, 6, 6, 32),  # output (NHWC)
                 DType.float32,
                 DType.float32,
                 DType.float32,
