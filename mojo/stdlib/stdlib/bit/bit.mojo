@@ -617,7 +617,7 @@ fn rotate_bits_left[
     dtype: DType,
     width: Int, //,
     shift: Int,
-](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_unsigned():
     """Shifts bits to the left by `shift` positions (with wrap-around) for each element of a SIMD vector.
 
     Constraints:
@@ -634,7 +634,6 @@ fn rotate_bits_left[
     Returns:
         SIMD vector with each element rotated left by `shift` bits.
     """
-    __comptime_assert dtype.is_unsigned(), "Only unsigned types can be rotated."
 
     @parameter
     if shift == 0:
@@ -690,7 +689,7 @@ fn rotate_bits_right[
     dtype: DType,
     width: Int, //,
     shift: Int,
-](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_unsigned():
     """Shifts bits to the right by `shift` positions (with wrap-around) for each element of a SIMD vector.
 
     Constraints:
@@ -707,7 +706,6 @@ fn rotate_bits_right[
     Returns:
         SIMD vector with each element rotated right by `shift` bits.
     """
-    __comptime_assert dtype.is_unsigned(), "Only unsigned types can be rotated."
 
     @parameter
     if shift == 0:
