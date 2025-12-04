@@ -76,34 +76,6 @@ struct RunOptTable : public llvm::opt::PrecomputedOptTable {
 
 } // namespace
 
-/// Validate that the requested sanitizers are compatible with the running
-/// process. We currently rely on pulling sanitizer symbols from the running
-/// process, so we need to ensure that the requested sanitizers are compatible
-/// with the running process.
-static std::optional<int> validateSanitizers(const State &state,
-                                             const Sanitizers &sanitizers) {
-  if (!sanitizers)
-    return std::nullopt;
-  auto emitError = [&](StringRef sanitizer) {
-    return state.reportError(
-        "This build of `mojo` does not support `mojo run` with `--sanitize " +
-        sanitizer +
-        "`, consider generating a sanitized "
-        "executable using `mojo build` instead.");
-  };
-
-  // Check that the running process has the requested sanitizers.
-#if !LLVM_ADDRESS_SANITIZER_BUILD
-  if (sanitizers.has(Sanitizers::kAddress))
-    return emitError("address");
-#endif
-#if !LLVM_THREAD_SANITIZER_BUILD
-  if (sanitizers.has(Sanitizers::kThread))
-    return emitError("thread");
-#endif
-  return std::nullopt;
-}
-
 /// Parses the command line arguments from the given `state` object.
 /// Command line argument parsing is unique for this command:
 ///
@@ -224,11 +196,6 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
 
   if (result->exitCode)
     return *result->exitCode;
-
-  // Validate the requested sanitizers (specific to `mojo run`).
-  if (std::optional<int> exitCode =
-          validateSanitizers(state, result->compilationOptions.sanitizers))
-    return exitCode;
 
   // Extract results.
   args = std::move(result->args);

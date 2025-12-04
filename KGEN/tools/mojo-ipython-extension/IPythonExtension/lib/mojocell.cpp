@@ -275,42 +275,18 @@ static int linkOutput(OutputType outputType, const State &state,
   linkerArgs.emplace_back(outputName);
 
   // Add the necessary sanitizer flags.
-  // First we have to match the sanitizer flags used when building
-  // KGENCompilerRT, if any.
-#if LLVM_ADDRESS_SANITIZER_BUILD
-  linkerArgs.emplace_back("-fsanitize=address");
-#elif LLVM_MEMORY_SANITIZER_BUILD
-  linkerArgs.emplace_back("-fsanitize=memory");
-#elif LLVM_THREAD_SANITIZER_BUILD
-  linkerArgs.emplace_back("-fsanitize=thread");
-#else
-  // Otherwise, base this on the compilation options.
   if (options.sanitizers.has(Sanitizers::kAddress))
     linkerArgs.emplace_back("-fsanitize=address");
   if (options.sanitizers.has(Sanitizers::kThread))
     linkerArgs.emplace_back("-fsanitize=thread");
 #endif
-#endif
 
   // Apply options for stripping unused code.
-#if !defined(_WIN32) &&                                                        \
-    !(LLVM_ADDRESS_SANITIZER_BUILD || LLVM_MEMORY_SANITIZER_BUILD ||           \
-      LLVM_THREAD_SANITIZER_BUILD)
-  // Avoid stripping in sanitizer or debug builds, to avoid dropping symbols
-  // that are actually referenced externally.
-  if (options.optimizationLevel != 0 &&
-      options.debugLevel != M::KGEN::CompilationOptions::kFullDebugInfo &&
-      !options.sanitizers) {
-    linkerArgs.emplace_back("-ffunction-sections");
-    linkerArgs.emplace_back("-fdata-sections");
-
 #if defined(__APPLE__)
-    linkerArgs.emplace_back("-Wl,-dead_strip");
+  linkerArgs.emplace_back("-Wl,-dead_strip");
 #else
-    linkerArgs.emplace_back("-Wl,--gc-sections");
+  linkerArgs.emplace_back("-Wl,--gc-sections");
 #endif // defined(__APPLE__)
-  }
-#endif // !defined(_WIN32) && !SANITIZER_BUILD
 
   // Add any necessary system libraries.
   config.appendSystemLibraryLinkArgs(linkerArgs);
