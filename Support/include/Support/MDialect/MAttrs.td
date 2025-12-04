@@ -357,6 +357,11 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
     int64_t resolveIndexBitWidth() {
       return getIndexBitWidth().value_or(getDataLayout().getPointerBitWidth());
     }
+
+    /// Returns ptr byteSize for the interpreter which is always 8
+    int32_t getDefaultPointerSize() {
+      return 8;
+    }
   }];
 }
 

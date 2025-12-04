@@ -190,7 +190,10 @@ writeSymbolicAttribute(DataLayoutInterface type, TypedAttr value, int64_t addr,
                        InterpreterState &state,
                        RegionMark regionMark = RegionMark::None) {
   unsigned size = *type.getTypeSize(state.getTarget());
-  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  // Get the default pointer size which is always 8 bytes since we are going to
+  // write a uint64_t to the interpreter memory.
+  unsigned ptrSize = state.getTarget().getDefaultPointerSize();
+
   // The ptr to the symbol is written.
   if (size != ptrSize && regionMark == RegionMark::Symbol)
     size = ptrSize;
@@ -217,7 +220,11 @@ static ErrorOr<TypedAttr> readSymbolicAttribute(DataLayoutInterface type,
 
   // Without a concrete runtime representation, just make sure the value can be
   // roundtripped.
-  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  // Get the default pointer size which is always 8 bytes since we are going to
+  // get a uint64_t from the interpreter memory which was stored by
+  // writeSymbolicAttribute.
+  unsigned ptrSize = state.getTarget().getDefaultPointerSize();
+
   APInt opaque(ptrSize * 8, 0);
   llvm::LoadIntFromMemory(opaque, (const uint8_t *)*mem, ptrSize);
   return ::cast<TypedAttr>(
@@ -444,7 +451,7 @@ std::optional<int64_t> FuncType::getTypeAlign(TargetInfoAttr target) const {
 ErrorOrSuccess FuncType::writeTo(TypedAttr value, int64_t addr,
                                  InterpreterState &state) const {
   // The index is written to the slot.
-  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  unsigned ptrSize = state.getTarget().getDefaultPointerSize();
   ErrorOr<void *> mem =
       state.getWritableMemory(addr, ptrSize, RegionMark::Symbol);
   if (mem.isError())
@@ -461,7 +468,7 @@ ErrorOrSuccess FuncType::writeTo(TypedAttr value, int64_t addr,
 ErrorOr<TypedAttr> FuncType::readFrom(int64_t addr,
                                       InterpreterState &state) const {
   // The index is written to the slot.
-  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  unsigned ptrSize = state.getTarget().getDefaultPointerSize();
   ErrorOr<const void *> mem = state.getReadableMemory(addr, ptrSize);
   if (mem)
     return mem.takeError();
@@ -852,7 +859,7 @@ KGEN::StringType::getTypeAlign(TargetInfoAttr target) const {
 static ErrorOrSuccess writePointerAndSize(int64_t writeAddr, int64_t ptr,
                                           int64_t size,
                                           InterpreterState &state) {
-  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  unsigned ptrSize = state.getTarget().getDefaultPointerSize();
   ErrorOr<void *> mem = state.getWritableMemory(writeAddr, ptrSize * 2);
   if (mem.isError())
     return mem.takeError();
@@ -868,7 +875,7 @@ static ErrorOrSuccess writePointerAndSize(int64_t writeAddr, int64_t ptr,
 /// width, and the pointer comes first.
 static ErrorOr<std::pair<int64_t, int64_t>>
 readPointerAndSize(int64_t readAddr, InterpreterState &state) {
-  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  unsigned ptrSize = state.getTarget().getDefaultPointerSize();
   ErrorOr<const void *> mem = state.getReadableMemory(readAddr, ptrSize * 2);
   if (mem.isError())
     return mem.takeError();
