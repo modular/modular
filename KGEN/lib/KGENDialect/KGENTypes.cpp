@@ -149,7 +149,7 @@ mlir::OpAsmAliasResult ParamType::getAlias(raw_ostream &os) const {
 Type TypeValueType::get(TypedAttr typeValue) {
   // If the type-value is already resolved to a type constant, and it is
   // trivially a mlir Type, fold this to the indicated type.
-  if (auto constant = ::dyn_cast<TypeParamAttr>(typeValue))
+  if (auto constant = dyn_cast<TypeParamAttr>(typeValue))
     if (constant.hasIdenticalRepresentation())
       return constant.getMlirType();
 
@@ -257,7 +257,7 @@ void GeneratorType::print(AsmPrinter &p) const {
 
 OptionalParseResult GeneratorType::parseValue(AsmParser &p,
                                               TypedAttr &value) const {
-  if (auto sigGen = ::dyn_cast<FuncTypeGeneratorType>(*this)) {
+  if (auto sigGen = dyn_cast<FuncTypeGeneratorType>(*this)) {
     // Parse a keyword or string as an MLIR operation attribute.
     std::string opName;
     llvm::SMLoc loc = p.getCurrentLocation();
@@ -280,13 +280,13 @@ OptionalParseResult GeneratorType::parseValue(AsmParser &p,
       return failure();
 
     // Parse a symbol reference as a signature type attribute.
-    if (auto symbol = llvm::dyn_cast<SymbolRefAttr>(attr)) {
+    if (auto symbol = dyn_cast<SymbolRefAttr>(attr)) {
       // Parse any trailing parameter bindings.
       ParameterExprArrayAttr paramValues;
       if (parseParameterValues(p, paramValues))
         return failure();
       value = SymbolConstantAttr::get(symbol, sigGen, paramValues);
-    } else if (auto closureSymbol = llvm::dyn_cast<ClosureSymbolAttr>(attr)) {
+    } else if (auto closureSymbol = dyn_cast<ClosureSymbolAttr>(attr)) {
       value = ClosureSymbolAttr::get(
           closureSymbol.getContext(), closureSymbol.getParentSymbol(),
           closureSymbol.getNestedFuncName(), closureSymbol.getMethod(),
@@ -302,14 +302,14 @@ OptionalParseResult GeneratorType::parseValue(AsmParser &p,
 
 LogicalResult GeneratorType::printValue(AsmPrinter &p, TypedAttr value) const {
   if (::isa<FuncTypeGeneratorType>(*this)) {
-    if (auto mlirOp = ::dyn_cast<MLIROpAttr>(value)) {
+    if (auto mlirOp = dyn_cast<MLIROpAttr>(value)) {
       p << mlirOp.getName();
       if (!mlirOp.getAttrs().empty())
         p << mlirOp.getAttrs();
       return success();
     }
 
-    auto symbolCst = ::dyn_cast<SymbolConstantAttr>(value);
+    auto symbolCst = dyn_cast<SymbolConstantAttr>(value);
     if (!symbolCst)
       return failure();
     p << symbolCst.getSymbol();
@@ -322,7 +322,7 @@ LogicalResult GeneratorType::printValue(AsmPrinter &p, TypedAttr value) const {
 
 std::optional<int64_t> GeneratorType::getTypeSize(TargetInfoAttr target) const {
   // Temporary back-compat: delegate to FuncType.
-  if (auto sig = ::dyn_cast<FuncType>(getBody()))
+  if (auto sig = dyn_cast<FuncType>(getBody()))
     return sig.getTypeSize(target);
   return std::nullopt;
 }
@@ -330,7 +330,7 @@ std::optional<int64_t> GeneratorType::getTypeSize(TargetInfoAttr target) const {
 std::optional<int64_t>
 GeneratorType::getTypeAlign(TargetInfoAttr target) const {
   // Temporary back-compat: delegate to FuncType.
-  if (auto sig = ::dyn_cast<FuncType>(getBody()))
+  if (auto sig = dyn_cast<FuncType>(getBody()))
     return sig.getTypeAlign(target);
   return std::nullopt;
 }
@@ -338,15 +338,17 @@ GeneratorType::getTypeAlign(TargetInfoAttr target) const {
 ErrorOrSuccess GeneratorType::writeTo(TypedAttr value, int64_t addr,
                                       InterpreterState &state) const {
   // Temporary back-compat: delegate to FuncType.
-  if (auto sig = ::dyn_cast<FuncType>(getBody()))
+  if (auto sig = dyn_cast_if_present<FuncType>(getBody()))
     return sig.writeTo(value, addr, state);
-  return Error("Generator not a writeable type");
+
+  return Error("generator not a writeable type, got " +
+               mlir::debugString(value) + " instead");
 }
 
 ErrorOr<TypedAttr> GeneratorType::readFrom(int64_t addr,
                                            InterpreterState &state) const {
   // Temporary back-compat: delegate to FuncType.
-  if (auto sig = ::dyn_cast<FuncType>(getBody()))
+  if (auto sig = dyn_cast<FuncType>(getBody()))
     return sig.readFrom(addr, state);
   return Error("Generator not a readable type");
 }
@@ -535,7 +537,7 @@ LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
 
     Type type = argType;
     // Verify variadics.
-    if (auto variadic = ::dyn_cast<VariadicType>(type))
+    if (auto variadic = dyn_cast<VariadicType>(type))
       type = variadic.getElementType();
     // Verify argument conventions.  Before lit lowering, they need to be
     // !lit.ref type, after lowering, they should have !kgen.pointer type.
@@ -645,7 +647,7 @@ bool FuncTypeGeneratorType::classof(GeneratorType type) {
 }
 
 bool FuncTypeGeneratorType::classof(Type type) {
-  if (auto gen = ::dyn_cast<GeneratorType>(type))
+  if (auto gen = dyn_cast<GeneratorType>(type))
     return classof(gen);
   return false;
 }
@@ -702,10 +704,16 @@ ErrorOrSuccess PointerType::writeTo(TypedAttr value, int64_t addr,
       state.getWritableMemory(addr, size, RegionMark::Pointer);
   if (mem.isError())
     return mem.takeError();
+
   // The pointer size of the target is variable.
-  APInt intVal(size * CHAR_BIT, llvm::cast<PointerAttr>(value).getAddr());
-  llvm::StoreIntToMemory(intVal, reinterpret_cast<uint8_t *>(*mem), size);
-  return success();
+  if (auto pv = dyn_cast_if_present<PointerAttr>(value)) {
+    APInt intVal(size * CHAR_BIT, pv.getAddr());
+    llvm::StoreIntToMemory(intVal, reinterpret_cast<uint8_t *>(*mem), size);
+    return success();
+  }
+
+  return Error("pointer not a writeable type, got " + mlir::debugString(value) +
+               " instead");
 }
 
 ErrorOr<TypedAttr> PointerType::readFrom(int64_t addr,
@@ -746,13 +754,13 @@ OptionalParseResult PointerType::parseValue(AsmParser &p,
 
 LogicalResult PointerType::printValue(AsmPrinter &p, TypedAttr value) const {
   // Print a raw pointer attribute as an integer.
-  if (auto ptrAttr = ::dyn_cast<PointerAttr>(value)) {
+  if (auto ptrAttr = dyn_cast<PointerAttr>(value)) {
     p << ptrAttr.getAddr();
     return success();
   }
 
   // Print a `store_to_mem` directive.
-  if (auto memAttr = ::dyn_cast<StoreToMemAttr>(value)) {
+  if (auto memAttr = dyn_cast<StoreToMemAttr>(value)) {
     p << "store_to_mem(";
     printParamValue(p, memAttr.getValue());
     p << ')';
@@ -780,8 +788,13 @@ ErrorOrSuccess DTypeType::writeTo(TypedAttr value, int64_t addr,
   ErrorOr<void *> mem = state.getWritableMemory(addr, 1);
   if (mem.isError())
     return mem.takeError();
-  *(uint8_t *)*mem = ::cast<DTypeConstantAttr>(value).getDType().getValue();
-  return success();
+  if (auto dv = dyn_cast_if_present<DTypeConstantAttr>(value)) {
+    *(uint8_t *)*mem = dv.getDType().getValue();
+    return success();
+  }
+
+  return Error("dtype not a writeable type, got " + mlir::debugString(value) +
+               " instead");
 }
 
 ErrorOr<TypedAttr> DTypeType::readFrom(int64_t addr,
@@ -870,17 +883,21 @@ ErrorOrSuccess StringType::writeTo(TypedAttr value, int64_t addr,
                                    InterpreterState &state) const {
   // Ensure the string is null-terminated. This is safe because `StringAttr`
   // always stores a null terminator.
-  auto strAttr = ::cast<StringAttr>(value);
-  StringRef str(strAttr.data(), strAttr.size() + 1);
-  if (strAttr.getValue().empty())
-    str = "\0";
-  MemoryHandleAttr hdl = MemoryHandleAttr::get(getContext(), str);
-  ErrorOr<int64_t> strAddr = state.mapConstGlobalMemory(hdl);
-  if (strAddr.isError())
-    return strAddr.takeError();
+  if (auto strAttr = dyn_cast_if_present<StringAttr>(value)) {
+    StringRef str(strAttr.data(), strAttr.size() + 1);
+    if (strAttr.getValue().empty())
+      str = "\0";
+    MemoryHandleAttr hdl = MemoryHandleAttr::get(getContext(), str);
+    ErrorOr<int64_t> strAddr = state.mapConstGlobalMemory(hdl);
+    if (strAddr.isError())
+      return strAddr.takeError();
 
-  // Store a pointer and a size.
-  return writePointerAndSize(addr, *strAddr, strAttr.size(), state);
+    // Store a pointer and a size.
+    return writePointerAndSize(addr, *strAddr, strAttr.size(), state);
+  }
+
+  return Error("string not a writeable type, got " + mlir::debugString(value) +
+               " instead");
 }
 
 ErrorOr<TypedAttr> StringType::readFrom(int64_t addr,
@@ -922,7 +939,13 @@ ErrorOrSuccess VariadicType::writeTo(TypedAttr value, int64_t addr,
                                      InterpreterState &state) const {
   // A variadic is a pointer and a size, where the pointer refers to
   // stack-allocated memory.
-  ArrayRef<TypedAttr> values = ::cast<VariadicAttr>(value).getValues();
+  auto vv = dyn_cast_if_present<VariadicAttr>(value);
+  if (!vv) {
+    return Error("variadic not a writeable type, got " +
+                 mlir::debugString(value) + " instead");
+  }
+
+  ArrayRef<TypedAttr> values = vv.getValues();
   TargetInfoAttr target = state.getTarget();
 
   // Query the size and alignment of the element type.
@@ -990,7 +1013,7 @@ ErrorOr<TypedAttr> VariadicType::readFrom(int64_t addr,
 bool StructType::isNoneOrEmpty(Type type) {
   if (::isa<NoneType>(type))
     return true;
-  if (auto structTy = ::dyn_cast<StructType>(type)) {
+  if (auto structTy = dyn_cast<StructType>(type)) {
     if (structTy.getElementTypes().empty() && !structTy.getIsMemoryOnly())
       return true;
   }
@@ -1001,7 +1024,7 @@ bool StructType::isNoneOrEmpty(Type type) {
 static LogicalResult resolveTypes(ArrayRef<TypedAttr> types,
                                   SmallVectorImpl<Type> &resolvedTypes) {
   for (const TypedAttr &type : types) {
-    if (auto constant = llvm::dyn_cast<TypeParamAttr>(type))
+    if (auto constant = dyn_cast<TypeParamAttr>(type))
       resolvedTypes.push_back(constant.getMlirType());
     else
       return failure();
@@ -1050,7 +1073,7 @@ std::optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
 ErrorOrSuccess StructType::writeTo(TypedAttr value, int64_t addr,
                                    InterpreterState &state) const {
   int64_t offset = 0;
-  if (auto sv = dyn_cast<StructAttr>(value)) {
+  if (auto sv = dyn_cast_if_present<StructAttr>(value)) {
     for (TypedAttr value : sv.getValues()) {
       auto dl = ::cast<DataLayoutInterface>(value.getType());
       // Store each element spaced apart by padding according to its alignment.
@@ -1196,7 +1219,7 @@ std::optional<int64_t> PackType::getTypeAlign(TargetInfoAttr target) const {
 
   // A pack backed by an attribute has alignment equivalent to a struct
   // composed of the elements in the sequence.
-  if (auto attr = ::dyn_cast<VariadicAttr>(variadic)) {
+  if (auto attr = dyn_cast<VariadicAttr>(variadic)) {
     SmallVector<Type> types;
     if (failed(resolveTypes(attr.getValues(), types)))
       return {};
@@ -1205,7 +1228,7 @@ std::optional<int64_t> PackType::getTypeAlign(TargetInfoAttr target) const {
 
   // A pack backed by an expression has alignment equivalent to the variadic
   // type's element type.
-  auto variadicType = ::dyn_cast<VariadicType>(variadic.getType());
+  auto variadicType = dyn_cast<VariadicType>(variadic.getType());
   if (!variadicType)
     return {};
   Type type = variadicType.getElementType();
@@ -1218,26 +1241,29 @@ bool PackType::isEmpty() {
 }
 
 VariadicAttr PackType::getVariadicIfResolved() const {
-  return ::dyn_cast<VariadicAttr>(getVariadic());
+  return dyn_cast<VariadicAttr>(getVariadic());
 }
 
-ErrorOrSuccess PackType::writeTo(TypedAttr packValue, int64_t addr,
+ErrorOrSuccess PackType::writeTo(TypedAttr value, int64_t addr,
                                  InterpreterState &state) const {
-  auto packValueAttr = ::dyn_cast<PackAttr>(packValue);
-  assert(packValueAttr && "This runs after elaboration");
+  if (auto packValueAttr = dyn_cast_if_present<PackAttr>(value)) {
+    int64_t offset = 0;
+    for (TypedAttr value : packValueAttr.getValues()) {
+      auto dl = ::cast<DataLayoutInterface>(value.getType());
+      // Store each element spaced apart by padding according to its alignment.
+      offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
 
-  int64_t offset = 0;
-  for (TypedAttr value : packValueAttr.getValues()) {
-    auto dl = ::cast<DataLayoutInterface>(value.getType());
-    // Store each element spaced apart by padding according to its alignment.
-    offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
-
-    ErrorOrSuccess result = state.writeAttributeToMemory(addr + offset, value);
-    if (result.isError())
-      return result.takeError();
-    offset += *dl.getTypeSize(state.getTarget());
+      ErrorOrSuccess result =
+          state.writeAttributeToMemory(addr + offset, value);
+      if (result.isError())
+        return result.takeError();
+      offset += *dl.getTypeSize(state.getTarget());
+    }
+    return success();
   }
-  return success();
+
+  return Error("pack not a writeable type, got " + mlir::debugString(value) +
+               " instead");
 }
 
 ErrorOr<TypedAttr> PackType::readFrom(int64_t addr,
@@ -1317,7 +1343,7 @@ OptionalParseResult VariantType::parseValue(AsmParser &p,
 }
 
 LogicalResult VariantType::printValue(AsmPrinter &p, TypedAttr value) const {
-  auto variant = ::dyn_cast<VariantAttr>(value);
+  auto variant = dyn_cast<VariantAttr>(value);
   if (!variant)
     return failure();
   p << '{';
@@ -1328,7 +1354,7 @@ LogicalResult VariantType::printValue(AsmPrinter &p, TypedAttr value) const {
 
 VariantType VariantType::get(MLIRContext *ctx, TypedAttr variadic) {
   // When the type is concrete, canonicalize away the type info.
-  if (auto attr = ::dyn_cast<VariadicAttr>(variadic)) {
+  if (auto attr = dyn_cast<VariadicAttr>(variadic)) {
     SmallVector<TypedAttr> values;
     auto metatype = TypeType::get(ctx);
     for (TypedAttr value : attr.getValues()) {
@@ -1356,7 +1382,7 @@ VariantType VariantType::getFromBytecode(TypedAttr variadic) {
 llvm::iterator_range<
     llvm::mapped_iterator<ArrayRef<TypedAttr>::iterator, Type (*)(TypedAttr)>>
 VariantType::getTypes() const {
-  auto attr = ::dyn_cast<VariadicAttr>(getVariadic());
+  auto attr = dyn_cast<VariadicAttr>(getVariadic());
   assert(attr && "expected a concrete variant");
   return llvm::map_range(
       attr.getValues(),
@@ -1374,7 +1400,7 @@ Type VariantType::getType(unsigned index) const {
 /// multiple of the content element type size, which is i64.
 std::optional<int64_t>
 VariantType::getContentSize(TargetInfoAttr target) const {
-  auto variadic = ::dyn_cast<VariadicAttr>(getVariadic());
+  auto variadic = dyn_cast<VariadicAttr>(getVariadic());
   if (!variadic)
     return {};
 
@@ -1435,7 +1461,7 @@ std::optional<int64_t> VariantType::getTypeSize(TargetInfoAttr target) const {
 }
 
 std::optional<int64_t> VariantType::getTypeAlign(TargetInfoAttr target) const {
-  auto variadic = ::dyn_cast<VariadicAttr>(getVariadic());
+  auto variadic = dyn_cast<VariadicAttr>(getVariadic());
   if (!variadic)
     return {};
 
@@ -1451,21 +1477,25 @@ std::optional<int64_t> VariantType::getTypeAlign(TargetInfoAttr target) const {
 ErrorOrSuccess VariantType::writeTo(TypedAttr value, int64_t addr,
                                     InterpreterState &state) const {
   // Just write the value to the address and then the discriminator.
-  auto variant = ::cast<VariantAttr>(value);
-  TypedAttr typeValue = variant.getValue();
-  ErrorOrSuccess result = state.writeAttributeToMemory(addr, typeValue);
-  if (result.isError())
-    return result.takeError();
-  addr += *getContentSize(state.getTarget());
+  if (auto variant = dyn_cast_if_present<VariantAttr>(value)) {
+    TypedAttr typeValue = variant.getValue();
+    ErrorOrSuccess result = state.writeAttributeToMemory(addr, typeValue);
+    if (result.isError())
+      return result.takeError();
+    addr += *getContentSize(state.getTarget());
 
-  unsigned discrSize = getVariantDiscrSize(*this);
-  ErrorOr<void *> mem = state.getWritableMemory(addr, discrSize);
-  if (mem.isError())
-    return mem.takeError();
-  APInt discrVal(discrSize * CHAR_BIT, variant.getIndex());
-  llvm::StoreIntToMemory(discrVal, reinterpret_cast<uint8_t *>(*mem),
-                         discrSize);
-  return success();
+    unsigned discrSize = getVariantDiscrSize(*this);
+    ErrorOr<void *> mem = state.getWritableMemory(addr, discrSize);
+    if (mem.isError())
+      return mem.takeError();
+    APInt discrVal(discrSize * CHAR_BIT, variant.getIndex());
+    llvm::StoreIntToMemory(discrVal, reinterpret_cast<uint8_t *>(*mem),
+                           discrSize);
+    return success();
+  }
+
+  return Error("variant not a writeable type, got " + mlir::debugString(value) +
+               " instead");
 }
 
 ErrorOr<TypedAttr> VariantType::readFrom(int64_t addr,
