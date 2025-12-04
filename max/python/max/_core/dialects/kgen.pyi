@@ -1813,6 +1813,8 @@ class FnEffects(enum.Enum):
 
     register_passable = 128
 
+    extern = 256
+
 class InlineLevel(enum.Enum):
     automatic = 0
 
