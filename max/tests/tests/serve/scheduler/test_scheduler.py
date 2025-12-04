@@ -172,10 +172,11 @@ def test_scheduler_handle_terminated_responses() -> None:
         mock_2.request_id: resp_2,
     }
 
-    batch_constructor.move_completed_ce_requests_to_tg(
-        batch_executed,
-        batch_responses,
+    chunked_ids = batch_constructor.advance_requests_and_collect_invalid_ids(
+        batch_executed
     )
+    for request_id in chunked_ids:
+        del batch_responses[request_id]
 
     # Release terminated requests
     num_terminated_reqs = 0
@@ -205,10 +206,11 @@ def test_scheduler_handle_chunked_requests() -> None:
     mock_2: TextGenerationOutput = Mock(is_done=False, tokens=[])
     batch_responses = {req_1.request_id: mock_1, req_2.request_id: mock_2}
 
-    batch_constructor.move_completed_ce_requests_to_tg(
-        [batch_executed],
-        batch_responses,
+    chunked_ids = batch_constructor.advance_requests_and_collect_invalid_ids(
+        [batch_executed]
     )
+    for request_id in chunked_ids:
+        del batch_responses[request_id]
 
     assert req_2.request_id not in batch_responses
     assert batch_constructor.all_ce_reqs
@@ -413,10 +415,12 @@ def test_scheduler_dp(dp: int) -> None:
     )
     responses = {req.request_id: response for req in inputs.batch.values()}
 
-    batch_constructor.move_completed_ce_requests_to_tg(
-        inputs.batches,
-        responses,
+    chunked_ids = batch_constructor.advance_requests_and_collect_invalid_ids(
+        inputs.batches
     )
+    for request_id in chunked_ids:
+        del responses[request_id]
+
     assert len(batch_constructor.all_ce_reqs) == 0
     assert len(batch_constructor.all_tg_reqs) == num_reqs
 
