@@ -20,9 +20,11 @@ from collections.abc import Sequence
 from max.dtype import DType
 from max.graph import (
     BufferValue,
+    DeviceRef,
     ShardingStrategy,
     TensorValue,
     ops,
+    Weight
 )
 from max.nn import (
     MLP,
@@ -295,7 +297,7 @@ class Gemma3LanguageModel(Module):
 class Gemma3VisionModel(Module):
     """The Gemma3 Multi-Modal model's vision component"""
 
-    def __init__(self, config: Gemma3ForConditionalGenerationConfig) -> None:
+    def __init__(self, config: Gemma3ForConditionalGenerationConfig, device: DeviceRef) -> None:
         """Initializes the necessary components for processing vision inputs and
         projecting into language space, with multi-device functionality."""
         super().__init__()
@@ -304,7 +306,7 @@ class Gemma3VisionModel(Module):
         vision_config = config.vision_config
 
         # Vision embeddings, sharded for multi-device setups
-        self.embeddings = Gemma3VisionEmbeddings(config, device=config.devices)
+        self.embeddings = Gemma3VisionEmbeddings(config, device=config.devices[0])
         self.embeddings.sharding_strategy = ShardingStrategy.replicate(
             len(config.devices)
         )
@@ -317,7 +319,7 @@ class Gemma3VisionModel(Module):
         self.post_layernorm = LayerNorm(
             vision_config.hidden_size,
             eps=vision_config.layer_norm_eps,
-            devices=[config.devices],
+            devices=[device],
             dtype=config.dtype,
         )
         self.post_layernorm.weight.sharding_strategy = (
@@ -332,8 +334,8 @@ class Gemma3VisionModel(Module):
         post_layernorm_weight_shards = self.post_layernorm.weight.shard(
             config.devices
         )
-        post_layernorm_bias_shards = (
-            self.post_layernorm.bias.shard(config.devices)
+        post_layernorm_bias_shards: list[Weight | None] = (
+            list(self.post_layernorm.bias.shard(config.devices))
             if self.post_layernorm.bias is not None
             else [None] * len(config.devices)
         )

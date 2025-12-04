@@ -40,7 +40,7 @@ class Gemma3VisionConfig:
     More info at: https://huggingface.co/google/gemma-3-4b-it/blob/main/config.json
     """
 
-    hidden_act: str | None
+    hidden_act: str
     """The non-linear activation function (function or string) in the encoder and pooler.
     `"gelu"`, `"gelu_tanh"`, `"relu"`, `"sigmoid"`, `"silu"`, and `"tanh"` 
     are supported."""
@@ -54,7 +54,7 @@ class Gemma3VisionConfig:
     intermediate_size: int
     """Dimension of the MLP representations"""
 
-    layer_norm_eps: float | None
+    layer_norm_eps: float
     """The epsilon used by the layer normalization layers."""
 
     num_attention_heads: int
@@ -63,7 +63,7 @@ class Gemma3VisionConfig:
     num_hidden_layers: int
     """Number of hidden layers in the Transformer encoder"""
 
-    num_channels: int | None
+    num_channels: int
     """Number of channels in the input images."""
 
     patch_size: int
