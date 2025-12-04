@@ -1210,11 +1210,3 @@ bool KGEN::isAMDGPU(TargetInfoAttr target, ArrayRef<StringRef> allowedGPUs) {
 bool KGEN::isNVPTX_HopperAndAbove(TargetInfoAttr target) {
   return isNVPTX(target, {"sm_90", "sm_100", "sm_101", "sm_120"});
 }
-
-//===----------------------------------------------------------------------===//
-// isAMDGPU_gfx942
-//===----------------------------------------------------------------------===//
-
-bool KGEN::isAMDGPU_gfx942(TargetInfoAttr target) {
-  return isAMDGPU(target, {"gfx942"});
-}
