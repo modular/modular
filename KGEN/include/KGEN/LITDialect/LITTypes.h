@@ -194,6 +194,7 @@ public:
   bool isAsync() { return getFnEffects().isAsync(); }
   bool isCapturing() { return getFnEffects().isCapturing(); }
   bool isEscaping() { return getFnEffects().isEscaping(); }
+  bool isExtern() { return getFnEffects().isExtern(); }
   bool isRefResult() { return getFnEffects().isRefResult(); }
   bool isUnified() { return getFnEffects().isUnified(); }
   bool isRegisterPassable() { return getFnEffects().isRegisterPassable(); }
