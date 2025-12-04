@@ -330,3 +330,21 @@ kgen.generator export @main() {
   %0 = kgen.call @g<:i1 1>() : () -> index
   kgen.return
 }
+
+// -----
+// COM: MOCO-2892 unbound parameter causing interpret crash fix.
+// expected-note @below {{struct not a writeable type, got #kgen.unbound}}
+kgen.generator @fn(%arg0: !kgen.pointer<struct<(index) memoryOnly>> read_mem, %arg1: index) -> index {
+  %0 = kgen.struct.gep %arg0[0]: !kgen.pointer<struct<(index) memoryOnly>>
+  %1 = pop.load %0: !kgen.pointer<index>
+  %2 = index.add %1, %arg1
+  kgen.return %2: index
+}
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator export @main() -> index {
+  // expected-note @below {{failed to compile-time evaluate function call}}
+  kgen.param.apply x = [(!kgen.pointer<struct<(index) memoryOnly>>, index) -> index: @fn](store_to_mem(?), 1)
+  %0 = kgen.param.constant = <x>
+  kgen.return %0: index
+}
