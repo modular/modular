@@ -245,13 +245,4 @@ def test_equality():
 
 
 def main():
-    test_init()
-    test_bool()
-    test_str()
-    test_indexing()
-    test_unary()
-    test_binary_complex()
-    test_binary_float()
-    test_binary_rfloat()
-    test_complex_inplace()
-    test_equality()
+    TestSuite.discover_tests[__functions_in_module()]().run()

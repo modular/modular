@@ -13,7 +13,7 @@
 import time
 
 from conditional_context_mgr import ConditionalTimer, flaky_identity
-from testing import assert_raises
+from testing import assert_raises, TestSuite
 
 
 def test_conditional_timer_no_error():
@@ -48,6 +48,4 @@ def test_conditional_timer_propagated_error():
 
 
 def main():
-    test_conditional_timer_no_error()
-    test_conditional_timer_suppressed_error()
-    test_conditional_timer_propagated_error()
+    TestSuite.discover_tests[__functions_in_module()]().run()

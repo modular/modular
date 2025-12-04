@@ -57,6 +57,7 @@ mojo_binary(
 
 mojo_test(
     name = "test_gridv1",
+    size = "small",
     srcs = [
         "gridv1.mojo",
         "test/test_gridv1.mojo",
@@ -69,6 +70,7 @@ mojo_test(
 
 mojo_test(
     name = "test_gridv2",
+    size = "small",
     srcs = [
         "gridv2.mojo",
         "test/test_gridv2.mojo",
@@ -81,6 +83,7 @@ mojo_test(
 
 mojo_test(
     name = "test_gridv3",
+    size = "small",
     srcs = [
         "gridv3.mojo",
         "test/test_gridv3.mojo",

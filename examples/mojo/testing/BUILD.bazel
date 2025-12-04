@@ -21,6 +21,7 @@ mojo_binary(
 
 mojo_test(
     name = "test_inc",
+    size = "small",
     srcs = [
         "test/my_math/test_inc.mojo",
     ],
@@ -32,6 +33,7 @@ mojo_test(
 
 mojo_test(
     name = "test_dec",
+    size = "small",
     srcs = [
         "test/my_math/test_dec.mojo",
     ],

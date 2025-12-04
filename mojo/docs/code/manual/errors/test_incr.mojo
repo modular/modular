@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from handle_error import incr
-from testing import assert_equal, assert_raises
+from testing import assert_equal, assert_raises, TestSuite
 
 
 def test_incr_no_error():
@@ -26,5 +26,4 @@ def test_incr_error():
 
 
 def main():
-    test_incr_no_error()
-    test_incr_error()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -15,6 +15,7 @@ mojo_binary(
 
 mojo_test(
     name = "operators_test",
+    size = "small",
     srcs = [
         "my_complex.mojo",
         "test_my_complex.mojo",
