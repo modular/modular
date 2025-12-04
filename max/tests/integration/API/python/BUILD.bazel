@@ -164,6 +164,7 @@ modular_py_test(
     size = "large",
     srcs = [
         "conftest.py",
+        "sampling/test_build_token_frequency_csr.py",
         "sampling/test_gumbel_sampling.py",
         "sampling/test_sampling.py",
     ],
