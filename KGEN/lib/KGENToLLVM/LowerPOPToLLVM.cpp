@@ -1044,7 +1044,7 @@ private:
     if (fromFloatSemantics == llvm::APFloat::Semantics::S_IEEEsingle &&
         toFloatSemantics == llvm::APFloat::Semantics::S_BFloat) {
       // post gfx950 targets have native support for f32->bf16
-      if (target.getTriple().isAMDGPU() && isAMDGPU_gfx942(target) &&
+      if (target.getTriple().isAMDGPU() && isAMDGPU(target, {"gfx942"}) &&
           cast.getFastAttr()) {
         return convertF32ToBF16OnAMDGPU(rewriter, cast, value,
                                         fromFloatSemantics, toFloatSemantics);
@@ -1148,6 +1148,23 @@ private:
         return convertF8ToBF16OnNVPTX(rewriter, cast, value, fromFloatSemantics,
                                       toFloatSemantics);
       }
+
+      // For AMD gfx950+ GPUs, convert FP8 -> F32 -> BF16
+      if (simd && isAMDGPU(target, {"gfx950"})) {
+        // First convert FP8 to F32 using AMD intrinsics
+        auto simdF32 = SIMDType::get(rewriter.getContext(),
+                                     /*size=*/*cast.getType().getResolvedSize(),
+                                     KGENDType::f32);
+        Value f32Result = convertF8ToF32OnAMDGPUHelper(
+            rewriter, cast, value, convertType(simdF32), fromFloatSemantics,
+            llvm::APFloat::Semantics::S_IEEEsingle);
+
+        // Then convert F32 to BF16 using fptrunc
+        rewriter.replaceOpWithNewOp<LLVM::FPTruncOp>(
+            cast, convertType(cast.getType()), f32Result);
+        return success();
+      }
+
       return failure();
     }
 

@@ -730,6 +730,29 @@ module attributes {M.target_info = #M.target<triple = "amdgcn-amd-amdhsa", arch=
       !pop.simd<2, bf16>,
       !pop.simd<2, bf16>
   }
+
+  // CHECK-LABEL: simd_cast_f8_to_bf16_amd
+  kgen.func @simd_cast_f8_to_bf16_amd(%f8e4: !pop.simd<4, f8e4m3fn>, %f8e5: !pop.simd<4, f8e5m2>) -> (!pop.simd<4, bf16>, !pop.simd<4, bf16>) {
+    // For e4m3fn: First convert FP8 -> F32 using AMD intrinsics
+    // CHECK-DAG: %[[ZERO:.+]] = llvm.mlir.constant(0 : i32) : i32
+    // CHECK-DAG: %[[ONE:.+]] = llvm.mlir.constant(1 : i32) : i32
+    // CHECK-DAG: %[[FALSE:.+]] = llvm.mlir.constant(false) : i1
+    // CHECK-DAG: %[[TRUE:.+]] = llvm.mlir.constant(true) : i1
+
+    // Extract and convert FP8 elements to F32
+    // CHECK: llvm.call_intrinsic "llvm.amdgcn.cvt.pk.f32.fp8"
+    // Then convert F32 to BF16 using fptrunc
+    // CHECK: llvm.fptrunc {{.*}} : vector<4xf32> to vector<4xbf16>
+    %0 = pop.cast %f8e4 : !pop.simd<4, f8e4m3fn> to !pop.simd<4, bf16>
+
+    // For e5m2: First convert FP8 -> F32 using AMD intrinsics
+    // CHECK: llvm.call_intrinsic "llvm.amdgcn.cvt.pk.f32.bf8"
+    // Then convert F32 to BF16 using fptrunc
+    // CHECK: llvm.fptrunc {{.*}} : vector<4xf32> to vector<4xbf16>
+    %1 = pop.cast %f8e5 : !pop.simd<4, f8e5m2> to !pop.simd<4, bf16>
+
+    kgen.return %0, %1 : !pop.simd<4, bf16>, !pop.simd<4, bf16>
+  }
 }
 
 // -----
