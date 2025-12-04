@@ -10,4 +10,4 @@ from sys import env_get_bool
 
 def main():
     # CHECK: True
-    print(env_get_bool["VAR", 0]())
+    print(env_get_bool["VAR", False]())
