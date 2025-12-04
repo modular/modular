@@ -657,10 +657,10 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
           err = ptr.takeError();
           return {store, WalkResult::interrupt()};
         }
-        if (ErrorOrSuccess err =
+        if (ErrorOrSuccess error =
                 writeAttributeToMemory(ptr->getAddr(), liftedValue);
-            err.isError()) {
-          err = err.takeError();
+            error.isError()) {
+          err = error.takeError();
           return {store, WalkResult::interrupt()};
         }
         return {ptr.takeValue(), WalkResult::skip()};
