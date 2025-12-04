@@ -5,10 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
+@always_inline
 fn func(a: Int) raises:
     raise "Exception"  # raises
 
 
 fn main() raises:
     print("will start")  # breakpoint
-    func(420)
+    func(5)

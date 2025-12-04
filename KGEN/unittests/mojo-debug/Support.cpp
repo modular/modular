@@ -136,8 +136,10 @@ template <typename Ctx>
 static CommandResult runCommandForContext(StringRef command, Ctx context) {
   SBCommandReturnObject result;
   SBExecutionContext exeCtx(context);
-  getOrCreateSBDebugger().GetCommandInterpreter().HandleCommand(command.data(),
-                                                                exeCtx, result);
+  SBTarget target = exeCtx.GetTarget();
+  SBDebugger dbg = getOrCreateSBDebugger();
+  dbg.SetSelectedTarget(target);
+  dbg.GetCommandInterpreter().HandleCommand(command.data(), exeCtx, result);
 
   std::string output = std::string(result.GetOutput());
   std::string error = std::string(result.GetError());
