@@ -652,6 +652,11 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
           return {store, WalkResult::interrupt()};
         }
 
+        // This could be a landmine for supporting 32bit platform:
+        // the allocation size here is for pointer of size 32,
+        // but the interpreter internal physical memory ptr size is dependent
+        // on compilation host's ptr bitwidth which we assume to be 64bit,
+        // the allocated size will not be big enough or overwrites accidentally.
         ErrorOr<PointerAttr> ptr = allocateInternalStackFor(valueType, ptrType);
         if (ptr.isError()) {
           err = ptr.takeError();

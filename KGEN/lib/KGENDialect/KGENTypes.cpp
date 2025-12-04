@@ -859,7 +859,7 @@ KGEN::StringType::getTypeAlign(TargetInfoAttr target) const {
 static ErrorOrSuccess writePointerAndSize(int64_t writeAddr, int64_t ptr,
                                           int64_t size,
                                           InterpreterState &state) {
-  unsigned ptrSize = state.getTarget().getDefaultPointerSize();
+  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
   ErrorOr<void *> mem = state.getWritableMemory(writeAddr, ptrSize * 2);
   if (mem.isError())
     return mem.takeError();
@@ -875,7 +875,7 @@ static ErrorOrSuccess writePointerAndSize(int64_t writeAddr, int64_t ptr,
 /// width, and the pointer comes first.
 static ErrorOr<std::pair<int64_t, int64_t>>
 readPointerAndSize(int64_t readAddr, InterpreterState &state) {
-  unsigned ptrSize = state.getTarget().getDefaultPointerSize();
+  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
   ErrorOr<const void *> mem = state.getReadableMemory(readAddr, ptrSize * 2);
   if (mem.isError())
     return mem.takeError();
