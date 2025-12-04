@@ -270,6 +270,7 @@ def KGEN_FuncType : KGENType<"Func", "func", [
     bool isCapturing() const { return getFnEffects().isCapturing(); }
     bool isEscaping() const { return getFnEffects().isEscaping(); }
     bool isRefResult() const { return getFnEffects().isRefResult(); }
+    bool isExtern() const { return getFnEffects().isExtern(); }
 
     /// Return the convention for the specified value argument.
     ArgConvention getArgConvention(size_t inputNo) {

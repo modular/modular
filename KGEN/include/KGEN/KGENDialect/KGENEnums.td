@@ -260,6 +260,8 @@ def KGEN_FnEffectsImpl : I16BitEnumAttr<"FnEffects", "Function effects", [
   I16BitEnumAttrCaseBit<"Unified", 6, "unified">,
   /// Temporary effect to special case memory type for closures.
   I16BitEnumAttrCaseBit<"RegisterPassable", 7, "register_passable">,
+  /// The 'extern' effect switches the semantics of function typed values from a closure state to a function pointer
+  I16BitEnumAttrCaseBit<"Extern", 8, "extern">,
 ]> {
   let cppNamespace = "M::KGEN::impl";
   let genSpecializedAttr = 0;
