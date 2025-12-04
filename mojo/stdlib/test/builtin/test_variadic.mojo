@@ -12,10 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 
 from builtin.variadics import (
+    EmptyVariadic,
+    EmptyVariadicValue,
     VariadicOf,
     Reversed,
     Concatenated,
+    Contains,
     variadic_size,
+    MakeVariadic,
+    MakeVariadicValue,
+    Variadic,
+    VariadicOf,
+    Splatted,
+    _ReduceValueAndIdxToVariadic,
 )
 from sys.intrinsics import _type_is_eq
 from testing import assert_equal, assert_false, assert_true, TestSuite
@@ -94,6 +103,71 @@ def test_variadic_concat_identity():
     assert_equal(variadic_size(ConcattedVariadic), 2)
     assert_true(_type_is_eq[ConcattedVariadic[0], Int]())
     assert_true(_type_is_eq[ConcattedVariadic[1], String]())
+
+
+trait HasStaticValue:
+    comptime STATIC_VALUE: Int
+
+
+@fieldwise_init
+struct WithValue[value: Int](HasStaticValue, ImplicitlyCopyable, Movable):
+    comptime STATIC_VALUE = Self.value
+
+
+comptime _IntToWithValueMapper[
+    Prev: VariadicOf[HasStaticValue],
+    From: Variadic[Int],
+    idx: Int,
+] = Concatenated[Prev, MakeVariadic[WithValue[From[idx]]]]
+
+comptime IntToWithValue[*values: Int] = _ReduceValueAndIdxToVariadic[
+    BaseVal = EmptyVariadic[HasStaticValue],
+    VariadicType=values,
+    Reducer=_IntToWithValueMapper,
+]
+
+
+def test_variadic_value_reducer():
+    comptime mapped_values = IntToWithValue[1, 2, 3]
+    assert_true(_type_is_eq[mapped_values[0], WithValue[1]]())
+    assert_true(_type_is_eq[mapped_values[1], WithValue[2]]())
+    assert_true(_type_is_eq[mapped_values[2], WithValue[3]]())
+    assert_equal(variadic_size(mapped_values), 3)
+
+
+def test_variadic_value_reducer_empty():
+    comptime mapped_values = IntToWithValue[*EmptyVariadicValue[Int]]
+    assert_equal(variadic_size(mapped_values), 0)
+
+
+def test_variadic_splatted():
+    comptime splatted_variadic = Splatted[String, 3]
+    assert_equal(variadic_size(splatted_variadic), 3)
+    assert_true(_type_is_eq[splatted_variadic[0], String]())
+    assert_true(_type_is_eq[splatted_variadic[1], String]())
+    assert_true(_type_is_eq[splatted_variadic[2], String]())
+
+
+def test_variadic_splatted_zero():
+    comptime splatted_variadic = Splatted[Float64, 0]
+    assert_equal(variadic_size(splatted_variadic), 0)
+
+
+def test_variadic_contains():
+    comptime variadic = MakeVariadic[T=Writable, Int, String, Float32]
+    assert_equal(variadic_size(variadic), 3)
+    comptime ContainsWritable = Contains[Trait=Writable]
+    assert_true(ContainsWritable[Int, variadic])
+    assert_true(ContainsWritable[String, variadic])
+    assert_true(ContainsWritable[Float32, variadic])
+    assert_false(ContainsWritable[Bool, variadic])
+
+
+def test_variadic_contains_empty():
+    comptime variadic = MakeVariadic[T=Writable, *EmptyVariadic[Writable]]
+    assert_equal(variadic_size(variadic), 0)
+    comptime ContainsWritable = Contains[Trait=Writable]
+    assert_false(ContainsWritable[Bool, variadic])
 
 
 def main():

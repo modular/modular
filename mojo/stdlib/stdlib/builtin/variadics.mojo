@@ -15,6 +15,8 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+from sys.intrinsics import _type_is_eq_parse_time
+
 
 comptime Variadic[type: AnyType] = __mlir_type[`!kgen.variadic<`, type, `>`]
 """Represents a raw variadic sequence of values of the specified type."""
@@ -639,10 +641,20 @@ struct VariadicPack[
 comptime EmptyVariadic[T: type_of(AnyType)] = __mlir_attr[
     `#kgen.variadic<>: !kgen.variadic<`, T, `>`
 ]
-"""Empty comptime variadic of type values"""
+"""Empty comptime variadic of type values."""
+
+comptime EmptyVariadicValue[T: AnyType] = __mlir_attr[
+    `#kgen.variadic<>: !kgen.variadic<`, T, `>`
+]
+"""Empty comptime variadic of values."""
 
 comptime MakeVariadic[T: type_of(AnyType), //, *Ts: T] = Ts
-"""Turn discrete type values (bound by `T`) into a single variadic"""
+"""Turn discrete type values (bound by `T`) into a single variadic."""
+
+comptime MakeVariadicValue[T: AnyType, //, value: T]: Variadic[T] = __mlir_attr[
+    `#kgen.variadic<`, value, `>: !kgen.variadic<`, T, `>`
+]
+"""Turn discrete value (bound by `T`) into a single variadic."""
 
 # ===-----------------------------------------------------------------------===#
 # VariadicConcat
@@ -703,15 +715,92 @@ comptime _ReduceVariadicAndIdxToVariadic[
     `> : `,
     type_of(BaseVal),
 ]
-"""Construct a new variadic of types using with a reducer. To reduce to a single
+"""Construct a new variadic of types using a reducer. To reduce to a single
 type, one could reduce the input to a single element variadic instead.
 
 Parameters:
     BaseVal: The initial value to reduce on
     Variadic: The variadic to be reduced
-    Mapper: A `[BaseVal: VariadicOf[To], Ts: *From, idx: index] -> To` that does the reduction
+    Reducer: A `[BaseVal: VariadicOf[To], Ts: *From, idx: index] -> To` that does the reduction
 """
 
+comptime _ReduceValueIdxGeneratorTypeGenerator[
+    Prev: AnyType, From: AnyType
+] = __mlir_type[
+    `!lit.generator<<"Prev": `,
+    +Prev,
+    `, "From": !kgen.variadic<`,
+    From,
+    `>, "Idx":`,
+    Int,
+    `>`,
+    +Prev,
+    `>`,
+]
+"""This specifies a generator to generate a generator type for the reducer.
+The generated generator type is [Prev: AnyType, Ts: Variadic[AnyType], idx: Int] -> Prev,
+"""
+
+comptime _IndexToIntValueWrap[
+    From: AnyType,
+    ReduceT: AnyType,
+    ToWrap: _ReduceValueIdxGeneratorTypeGenerator[ReduceT, From],
+    PrevV: ReduceT,
+    VA: Variadic[From],
+    idx: __mlir_type.index,
+] = ToWrap[PrevV, VA, Int(mlir_value=idx)]
+
+
+comptime _ReduceValueAndIdxToVariadic[
+    From: AnyType,
+    To: type_of(AnyType), //,
+    *,
+    BaseVal: VariadicOf[To],
+    VariadicType: Variadic[From],
+    Reducer: _ReduceValueIdxGeneratorTypeGenerator[VariadicOf[To], From],
+] = __mlir_attr[
+    `#kgen.variadic.reduce<`,
+    BaseVal,
+    `,`,
+    VariadicType,
+    `,`,
+    _IndexToIntValueWrap[From, VariadicOf[To], Reducer],
+    `> : `,
+    type_of(BaseVal),
+]
+"""Construct a new variadic of types using a reducer. To reduce to a single
+type, one could reduce the input to a single element variadic instead.
+Parameters:
+    BaseVal: The initial value to reduce on
+    VariadicType: The variadic to be reduced
+    Reducer: A `[BaseVal: Variadic[To], Ts: *From, idx: index] -> To` that does the reduction
+"""
+
+
+comptime _ReduceVariadicAndIdxToValue[
+    To: AnyType,
+    From: type_of(AnyType), //,
+    *,
+    BaseVal: Variadic[To],
+    VariadicType: VariadicOf[From],
+    Reducer: _ReduceVariadicIdxGeneratorTypeGenerator[Variadic[To], From],
+] = __mlir_attr[
+    `#kgen.variadic.reduce<`,
+    BaseVal,
+    `,`,
+    VariadicType,
+    `,`,
+    _IndexToIntWrap[From, Variadic[To], Reducer],
+    `> : `,
+    type_of(BaseVal),
+]
+"""Construct a new variadic of types using a reducer. To reduce to a single
+type, one could reduce the input to a single element variadic instead.
+Parameters:
+    BaseVal: The initial value to reduce on
+    VariadicType: The variadic to be reduced
+    Reducer: A `[BaseVal: Variadic[To], Ts: *From, idx: index] -> To` that does the reduction
+"""
 
 # ===-----------------------------------------------------------------------===#
 # VariadicMap
@@ -782,4 +871,43 @@ comptime Reversed[
 
 Parameters:
     element_types: The variadic sequence of types to reverse.
+"""
+
+comptime Splatted[type: AnyType, count: Int] = __mlir_attr[
+    `#kgen.variadic.splat<`,
+    type,
+    `,`,
+    count._mlir_value,
+    `> : `,
+    VariadicOf[type_of(type)],
+]
+"""
+Splat a type into a variadic sequence.
+Parameters:
+    type: The type to splat.
+    count: The number of times to splat the type.
+"""
+
+
+comptime _ContainsReducer[
+    Trait: type_of(AnyType),
+    Type: Trait,
+    Prev: Variadic[Bool],
+    From: VariadicOf[Trait],
+    idx: Int,
+] = MakeVariadicValue[_type_is_eq_parse_time[From[idx], Type]() or Prev[0]]
+
+
+comptime Contains[
+    Trait: type_of(AnyType), //, type: Trait, element_types: VariadicOf[Trait]
+] = _ReduceVariadicAndIdxToValue[
+    BaseVal = MakeVariadicValue[False],
+    VariadicType=element_types,
+    #  Curry `_ContainsMapper` to fit the reducer signature
+    Reducer = _ContainsReducer[Trait=Trait, Type=type],
+][
+    0
+]
+"""
+Check if a type is contained in a variadic sequence.
 """
