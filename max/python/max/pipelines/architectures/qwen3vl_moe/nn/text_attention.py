@@ -32,7 +32,7 @@ from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Shardable
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
-from max.pipelines.architectures.qwen3vl_moe.nn.decoder import (
+from max.pipelines.architectures.qwen3vl_moe.nn.text_rotary import (
     Qwen3VLTextRotaryEmbedding,
 )
 
