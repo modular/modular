@@ -661,7 +661,7 @@ fn _cublas_matmul[
                 K if transpose_b else N,
                 UnsafePointer(a.ptr.bitcast[NoneType]()),
                 _convert_to_cublas_datatype[a_type](),
-                K,
+                M if transpose_a else K,
                 UnsafePointer(to=beta).bitcast[NoneType](),
                 UnsafePointer(c.ptr.bitcast[NoneType]()),
                 _convert_to_cublas_datatype[c_type](),

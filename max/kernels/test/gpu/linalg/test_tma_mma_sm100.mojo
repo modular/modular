@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import sqrt
 from memory import LegacyUnsafePointer as UnsafePointer, bitcast
 from sys import size_of
 
@@ -55,6 +56,7 @@ fn tma_umma_kernel_ss[
     b_desc_layout: Layout,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
+    transpose_a: Bool = False,
     transpose_b: Bool = True,
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -85,12 +87,16 @@ fn tma_umma_kernel_ss[
     comptime num_n_mmas = BN // MMA_N
     comptime num_k_mmas = BK // MMA_K
 
+    comptime a_k_major = not transpose_a
+    comptime b_k_major = transpose_b
     comptime a_smem_layout = tile_layout_k_major[
+        a_type, BM, BK, swizzle_mode=a_swizzle
+    ]() if a_k_major else tile_layout_mn_major[
         a_type, BM, BK, swizzle_mode=a_swizzle
     ]()
     comptime b_smem_layout = tile_layout_k_major[
         b_type, BN, BK, swizzle_mode=b_swizzle
-    ]() if transpose_b else tile_layout_mn_major[
+    ]() if b_k_major else tile_layout_mn_major[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
@@ -174,18 +180,26 @@ fn tma_umma_kernel_ss[
         if thread_idx.x >= 128:
             tmem_addr += 1 << 20  # offset for lane 16
 
-    comptime a_canonical_layout = tile_to_descriptor[a_type, a_smem_layout]()
-    comptime b_canonical_layout = tile_to_descriptor[
-        b_type, b_smem_layout, is_k_major=transpose_b
+    comptime a_canonical_layout = tile_to_descriptor[
+        a_type, a_smem_layout, is_k_major=a_k_major
     ]()
-    comptime aSBO = a_canonical_layout[0].stride[1].value() * size_of[a_type]()
-    comptime aLBO = a_canonical_layout[1].stride[1].value() * size_of[a_type]()
+    comptime b_canonical_layout = tile_to_descriptor[
+        b_type, b_smem_layout, is_k_major=b_k_major
+    ]()
+    comptime a_stride01 = a_canonical_layout[0].stride[1].value()
+    comptime a_stride11 = a_canonical_layout[1].stride[1].value()
+    comptime aSBO = (a_stride01 if a_k_major else a_stride11) * size_of[
+        a_type
+    ]()
+    comptime aLBO = (a_stride11 if a_k_major else a_stride01) * size_of[
+        a_type
+    ]()
     comptime b_stride01 = b_canonical_layout[0].stride[1].value()
     comptime b_stride11 = b_canonical_layout[1].stride[1].value()
-    comptime bSBO = (b_stride01 if transpose_b else b_stride11) * size_of[
+    comptime bSBO = (b_stride01 if b_k_major else b_stride11) * size_of[
         b_type
     ]()
-    comptime bLBO = (b_stride11 if transpose_b else b_stride01) * size_of[
+    comptime bLBO = (b_stride11 if b_k_major else b_stride01) * size_of[
         b_type
     ]()
 
@@ -198,6 +212,7 @@ fn tma_umma_kernel_ss[
         a_type,
         b_type,
         Index[dtype = DType.uint32](mma_shape[0], mma_shape[1]),
+        transpose_a=transpose_a,
         transpose_b=transpose_b,
     ]()
 
@@ -205,18 +220,18 @@ fn tma_umma_kernel_ss[
         if elect_one_thread:
             tma_mbar[0].expect_bytes(expected_bytes)
 
+            var m = block_idx.y * UInt(BM)
+            var n = block_idx.x * UInt(BN)
+            var k = i * UInt(BK)
             a_tma_op.async_copy(
                 a_smem_tile,
                 tma_mbar[0],
-                (i * UInt(BK), block_idx.y * UInt(BM)),
+                (m, k) if transpose_a else (k, m),
             )
             b_tma_op.async_copy(
                 b_smem_tile,
                 tma_mbar[0],
-                (i * UInt(BK), block_idx.x * UInt(BN)) if transpose_b else (
-                    block_idx.x * UInt(BN),
-                    i * UInt(BK),
-                ),
+                (k, n) if transpose_b else (n, k),
             )
 
         tma_mbar[0].wait(tma_phase)
@@ -596,6 +611,7 @@ def test_tma_umma[
     prob_shape: IndexList[3],
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
+    transpose_a: Bool = False,
     transpose_b: Bool = True,
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -624,6 +640,8 @@ def test_tma_umma[
         + String(prob_shape)
         + " block tile "
         + String(block_tile_shape)
+        + " transa="
+        + String(transpose_a)
         + " transb="
         + String(transpose_b)
         + "; inst shape "
@@ -640,13 +658,16 @@ def test_tma_umma[
 
     var a = ManagedLayoutTensor[
         a_type,
-        Layout.row_major(M, K),
+        Layout.row_major(K, M) if transpose_a else Layout.row_major(M, K),
     ](ctx)
 
+    var a_extreme: Float32 = sqrt(
+        sqrt(max_finite[a_type]().cast[DType.float32]())
+    )
     random(
         a.tensor[update=False](),
-        min=min_finite[a_type](),
-        max=max_finite[a_type](),
+        min=(-a_extreme).cast[a_type](),
+        max=a_extreme.cast[a_type](),
     )
 
     comptime b_layout = Layout.row_major(
@@ -655,10 +676,13 @@ def test_tma_umma[
     var b = ManagedLayoutTensor[b_type, b_layout](ctx)
     var b_col_major = ManagedLayoutTensor[b_type, Layout.row_major(N, K)](ctx)
 
+    var b_extreme: Float32 = sqrt(
+        sqrt(max_finite[b_type]().cast[DType.float32]())
+    )
     random(
         b.tensor[update=False](),
-        min=min_finite[b_type](),
-        max=max_finite[b_type](),
+        min=(-b_extreme).cast[b_type](),
+        max=b_extreme.cast[b_type](),
     )
 
     var c = ManagedLayoutTensor[
@@ -671,9 +695,11 @@ def test_tma_umma[
         Layout.row_major(M, N),
     ](ctx)
 
-    a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](
-        ctx, a.device_tensor()
-    )
+    a_tma_op = create_tma_tile[
+        Index(BK, BM) if transpose_a else Index(BM, BK),
+        is_k_major = not transpose_a,
+        swizzle_mode=a_swizzle,
+    ](ctx, a.device_tensor())
     b_tma_op = create_tma_tile[
         Index(BN, BK) if transpose_b else Index(BK, BN),
         is_k_major=transpose_b,
@@ -696,6 +722,7 @@ def test_tma_umma[
             type_of(b_tma_op).desc_layout,
             block_tile_shape,
             mma_shape,
+            transpose_a=transpose_a,
             transpose_b=transpose_b,
             cluster_shape=cluster_shape,
             a_swizzle=a_swizzle,
@@ -770,6 +797,7 @@ def test_tma_umma[
             a.device_tensor[update=False](),
             b.device_tensor[update=False](),
             c_row_major=True,
+            transpose_a=transpose_a,
             transpose_b=transpose_b,
         )
 
@@ -777,6 +805,9 @@ def test_tma_umma[
 
     c_host = c.tensor()
     c_host_ref = c_ref.tensor()
+
+    a_host = a.tensor()
+    b_host = b.tensor()
 
     for m in range(M):
         for n in range(N):
@@ -856,4 +887,21 @@ def main():
                                         b_swizzle=swizzle,
                                         transpose_b = Bool(transpose_b),
                                         a_smem=False,
+                                    ](ctx)
+
+                                    test_tma_umma[
+                                        dtype,
+                                        dtype,
+                                        DType.bfloat16,
+                                        Index(
+                                            MMA_M * size_scale,
+                                            128 * size_scale,
+                                            BK * size_scale,
+                                        ),
+                                        Index(MMA_M, 128, BK),
+                                        Index(MMA_M, 128, MMA_K),
+                                        a_swizzle=swizzle,
+                                        b_swizzle=swizzle,
+                                        transpose_a=True,
+                                        transpose_b=False,
                                     ](ctx)

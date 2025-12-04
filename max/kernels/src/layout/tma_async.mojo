@@ -118,11 +118,6 @@ fn _tma_desc_tile_layout[
                 dim0, swizzle_mode.bytes() // size_of[dtype]()
             )
         else:
-            constrained[
-                swizzle_mode == TensorMapSwizzle.SWIZZLE_128B,
-                "Only support 128B swizzle for mn-major.",
-            ]()
-
             comptime swizzle_granularity = swizzle_mode.bytes() // size_of[
                 dtype
             ]()
