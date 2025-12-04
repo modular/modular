@@ -453,7 +453,7 @@ def test_setitem_raises():
 
     d = Python.evaluate("{}")
     with assert_raises(contains="unhashable type: 'list'"):
-        d[[1, 2, 3]] = 5
+        d[Python.list(1, 2, 3)] = 5
 
 
 fn test_py_slice() raises:

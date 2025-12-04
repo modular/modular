@@ -35,7 +35,7 @@ from math import isclose
 
 from builtin._location import __call_location, _SourceLocation
 from memory import memcmp
-from python import PythonObject
+from python import PythonObject, ConvertibleToPython
 from utils._ansi import Color, Text
 
 # ===----------------------------------------------------------------------=== #
@@ -210,15 +210,21 @@ fn assert_equal(
 
 
 @always_inline
-fn assert_equal_pyobj(
-    lhs: PythonObject,
-    rhs: PythonObject,
+fn assert_equal_pyobj[
+    LHS: ConvertibleToPython & Copyable, RHS: ConvertibleToPython & Copyable
+](
+    lhs: LHS,
+    rhs: RHS,
     msg: String = "",
     *,
     location: Optional[_SourceLocation] = None,
 ) raises:
     """Asserts that the `PythonObject`s are equal. If it is not then an Error
     is raised.
+
+    Parameters:
+        LHS: Argument type that can be converted to `PythonObject`.
+        RHS: Argument type that can be converted to `PythonObject`.
 
     Args:
         lhs: The lhs of the equality.
@@ -229,10 +235,13 @@ fn assert_equal_pyobj(
     Raises:
         An Error with the provided message if assert fails.
     """
-    if lhs != rhs:
+    var lhs_obj = lhs.copy().to_python_object()
+    var rhs_obj = rhs.copy().to_python_object()
+
+    if lhs_obj != rhs_obj:
         raise _assert_cmp_error["`left == right` comparison"](
-            String(lhs),
-            String(rhs),
+            String(lhs_obj),
+            String(rhs_obj),
             msg=msg,
             loc=location.or_else(__call_location()),
         )
