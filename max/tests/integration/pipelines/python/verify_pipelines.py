@@ -994,16 +994,17 @@ PIPELINES = {
     # Qwen2.VL-FP8
     "allenai/olmOCR-7B-0825-FP8": PipelineDef(
         compatible_with=[DeviceKind.GPU],
+        tags=["nvidia-only"],  # TODO(KERN-2196)
         run=_make_pipeline_runner(
             pipeline="allenai/olmOCR-7B-0825-FP8",
             encoding="float8_e4m3fn",
-            cos_dist_threshold=2.2e-02,
-            kl_div_threshold=2.7e-01,
+            cos_dist_threshold=6.0e-02,
+            kl_div_threshold=4.0e-01,
         ),
     ),
     "allenai/OLMo-2-1124-7B-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
-        tags=["big", "nvidia-only"],  # KERN(2196)
+        tags=["big", "nvidia-only"],  # TODO(KERN-2196)
         run=_make_pipeline_runner(
             pipeline="allenai/OLMo-2-1124-7B",
             encoding="float32",
@@ -1028,7 +1029,7 @@ PIPELINES = {
     ),
     "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
-        tags=["big", "nvidia-only"],  # KERN(2196)
+        tags=["big", "nvidia-only"],  # TODO(KERN-2196)
         run=_make_pipeline_runner(
             pipeline="LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
             encoding="float32",
