@@ -63,6 +63,9 @@ py_library(
     ], exclude = [
         "modular/lib/mojo/*",
     ]),
+    pyi_srcs = glob([
+        "max/**/*.pyi",
+    ]),
     visibility = ["//visibility:public"],
     imports = ["."],
 )""",
