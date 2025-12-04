@@ -35,7 +35,7 @@ from gpu._utils import (
 )
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
-from memory import LegacyUnsafePointer as UnsafePointer, bitcast
+from memory import bitcast
 
 from utils import StaticTuple
 from utils.index import Index
@@ -246,7 +246,7 @@ fn mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 @always_inline
 fn ld_matrix[
     dtype: DType, //, simd_width: Int, *, transpose: Bool = False
-](ptr: UnsafePointer[Scalar[dtype], **_],) -> SIMD[dtype, simd_width]:
+](ptr: UnsafePointer[mut=False, Scalar[dtype], **_]) -> SIMD[dtype, simd_width]:
     """Loads a matrix from shared memory into registers in a format suitable for tensor core operations.
 
     This function performs a warp-synchronized load from shared memory to registers, formatting the data
@@ -364,7 +364,9 @@ fn ld_matrix[
 fn st_matrix[
     dtype: DType, //, simd_width: Int, *, transpose: Bool = False
 ](
-    ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED],
+    ptr: UnsafePointer[
+        mut=True, Scalar[dtype], address_space = AddressSpace.SHARED
+    ],
     d: SIMD[DType.float32, simd_width],
 ):
     """Performs warp-synchronized copy from registers to shared memory.

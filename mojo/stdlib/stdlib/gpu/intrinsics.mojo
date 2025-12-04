@@ -26,7 +26,6 @@ underlying GPU architecture.
 """
 
 from collections.string.string_slice import get_static_string
-from memory import LegacyUnsafePointer as UnsafePointer
 from os.atomic import Consistency
 from sys import (
     is_amd_gpu,
@@ -67,7 +66,7 @@ fn ldg[
     width: Int = 1,
     *,
     alignment: Int = align_of[SIMD[dtype, width]](),
-](x: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, width]:
+](x: UnsafePointer[mut=False, Scalar[dtype]]) -> SIMD[dtype, width]:
     """Load data from global memory through the non-coherent cache.
 
     This function provides a hardware-accelerated global memory load operation
@@ -734,7 +733,7 @@ fn store_release[
     scope: Scope = Scope.SYSTEM,
     memory: Bool = True,
     alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]):
+](ptr: UnsafePointer[mut=True, Scalar[dtype], **_], value: Scalar[dtype]):
     """Performs an atomic store with release memory ordering semantics.
 
     This function provides a memory barrier that ensures all previous memory operations
@@ -813,7 +812,7 @@ fn store_relaxed[
     scope: Scope = Scope.SYSTEM,
     memory: Bool = True,
     alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]):
+](ptr: UnsafePointer[mut=True, Scalar[dtype], **_], value: Scalar[dtype]):
     """Performs an atomic store with relaxed memory ordering semantics.
 
     On NVIDIA, maps to PTX st.relaxed; on AMD, maps to POP atomic store with MONOTONIC ordering.
@@ -864,7 +863,7 @@ fn load_acquire[
     scope: Scope = Scope.SYSTEM,
     memory: Bool = True,
     alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[Scalar[dtype], **_]) -> Scalar[dtype]:
+](ptr: UnsafePointer[mut=True, Scalar[dtype], **_]) -> Scalar[dtype]:
     """Performs an atomic load operation with acquire memory ordering semantics.
 
     This function provides a memory barrier that ensures no subsequent memory operations
@@ -946,7 +945,7 @@ fn load_relaxed[
     scope: Scope = Scope.SYSTEM,
     memory: Bool = True,
     alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[Scalar[dtype], **_]) -> Scalar[dtype]:
+](ptr: UnsafePointer[mut=True, Scalar[dtype], **_]) -> Scalar[dtype]:
     """Performs an atomic load with relaxed memory ordering semantics.
 
     On NVIDIA, maps to PTX ld.relaxed; on AMD, maps to POP atomic load with MONOTONIC ordering.
@@ -996,7 +995,7 @@ fn load_relaxed[
 @always_inline
 fn store_volatile[
     dtype: DType, //, memory: Bool = True
-](ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]):
+](ptr: UnsafePointer[mut=True, Scalar[dtype], **_], value: Scalar[dtype]):
     """Performs a volatile store operation that cannot be optimized away.
 
     This function guarantees that the store operation will be performed exactly as
@@ -1034,7 +1033,7 @@ fn store_volatile[
 @always_inline
 fn load_volatile[
     dtype: DType, //, memory: Bool = True
-](ptr: UnsafePointer[Scalar[dtype], **_]) -> Scalar[dtype]:
+](ptr: UnsafePointer[mut=False, Scalar[dtype], **_]) -> Scalar[dtype]:
     """Performs a volatile load operation that cannot be optimized away.
 
     This function guarantees that the load operation will be performed exactly as
@@ -1086,6 +1085,8 @@ struct AMDBufferResource:
         dtype: DType
     ](
         out self,
+        # TODO: This should propagate mutability correctly.
+        # E.g. only allow AMDBufferResource.store when mutable.
         gds_ptr: UnsafePointer[Scalar[dtype], **_],
         num_records: Int = Int(UInt32.MAX),
     ):
@@ -1206,7 +1207,7 @@ struct AMDBufferResource:
         self,
         vector_offset: Int32,
         shared_ptr: UnsafePointer[
-            Scalar[dtype], address_space = AddressSpace.SHARED
+            mut=True, Scalar[dtype], address_space = AddressSpace.SHARED
         ],
         *,
         scalar_offset: Int32 = 0,
@@ -1370,7 +1371,7 @@ fn ds_read_tr16_b64[
     dtype: DType, //,
 ](
     shared_ptr: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.SHARED, **_
+        mut=False, Scalar[dtype], address_space = AddressSpace.SHARED
     ]
 ) -> SIMD[dtype, 4]:
     """Reads a 64-bit LDS transpose block using TR16 layout and returns SIMD[dtype, 4] of 16-bit types.

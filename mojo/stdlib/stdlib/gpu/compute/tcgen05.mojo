@@ -22,7 +22,7 @@ from sys.info import _has_blackwell_tcgen05
 from gpu import external_memory
 from gpu.compute.mma import _str_iota  # TODO: move to a string module
 from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
-from memory import LegacyUnsafePointer as UnsafePointer, bitcast
+from memory import bitcast
 
 comptime check_blackwell_constraint = constrained[
     _has_blackwell_tcgen05(),
@@ -37,7 +37,9 @@ comptime check_blackwell_constraint = constrained[
 struct TensorMemory:
     """A wrapper around tensor memory allocated for tcgen05 instructions."""
 
-    var ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED]
+    var ptr: UnsafePointer[
+        UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+    ]
     """Pointer to the tensor memory address."""
 
     var num_cols: UInt32
@@ -61,7 +63,9 @@ struct TensorMemory:
 fn tcgen05_alloc[
     cta_group: Int32
 ](
-    ptr_tmem_addr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
+    ptr_tmem_addr: UnsafePointer[
+        mut=True, UInt32, address_space = AddressSpace.SHARED
+    ],
     num_cols: UInt32,
 ):
     """Allocates tensor memory for use with tcgen05 instructions.

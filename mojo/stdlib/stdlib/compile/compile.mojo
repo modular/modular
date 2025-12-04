@@ -39,10 +39,6 @@ print(info)
 """
 
 from collections.string.string_slice import _get_kgen_string
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
 from os import PathLike
 from pathlib import Path
 from sys.info import CompilationTarget, _current_target, _TargetType
@@ -68,7 +64,7 @@ struct _Info:
     var asm: __mlir_type.`!kgen.string`
     var module_name: __mlir_type.`!kgen.string`
     var num_captures: __mlir_type.index
-    var capture_sizes: UnsafePointer[UInt64]
+    var capture_sizes: UnsafePointer[UInt64, ImmutOrigin.external]
 
 
 @register_passable("trivial")
@@ -118,10 +114,12 @@ struct CompiledFunctionInfo[
     var num_captures: Int
     """Number of variables captured by the function closure."""
 
-    var capture_sizes: UnsafePointer[UInt64]
+    var capture_sizes: UnsafePointer[UInt64, ImmutOrigin.external]
     """Pointer to the sizes of the variables captured by the function closure."""
 
-    comptime populate = rebind[fn (OpaquePointer) capturing -> None](
+    comptime populate = rebind[
+        fn (OpaquePointer[MutAnyOrigin]) capturing -> None
+    ](
         __mlir_attr[
             `#kgen.compile_offload_closure<`,
             Self.target,
