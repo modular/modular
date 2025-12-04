@@ -49,3 +49,13 @@ comptime MyDepGetAlias1 = MyDep[Int].hello
 
 # expected-error @below {{'Dep[Int, 2]' value has no attribute 'hello'}}
 comptime MyDepGetAlias2 = MyDep[Int, 2].hello
+
+
+fn test_variable_type_parameterization():
+    # Store an unparameterized struct type in a variable...
+    # expected-error @below {{dynamic type values not permitted yet; try creating an `alias` instead of a `var`}}
+    var struct_type = Dep
+
+    # .. and try to parameterize it.
+    # expected-error @below {{'Dep[?, ?]' is not subscriptable, it does not implement the `__getitem__`/`__setitem__` methods}}
+    var instance: struct_type[Int]
