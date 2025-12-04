@@ -66,9 +66,9 @@ class Gemma3VisionEncoderLayer(Module):
 
     def __call__(
         self,
-        hidden_states: Sequence[TensorValue],
-        signal_buffers: Sequence[BufferValue],
-    ) -> list[TensorValue]:
+        hidden_states: TensorValue,
+        signal_buffers: BufferValue,
+    ) -> TensorValue:
         """process the input hidden states through each of the sub-layers"""
         residual = hidden_states
         hidden_states = self.layer_norm1(hidden_states)
@@ -108,14 +108,14 @@ class Gemma3VisionEncoderLayer(Module):
         norm1_weight_shards = self.layer_norm1.weight.shard(devices)
         norm1_bias_shards = (
             self.layer_norm1.bias.shard(devices)
-            if self.layer_norm1.bias is not None
-            else [None] * len(list(devices))
+            # if self.layer_norm1.bias is not None
+            # else [None] * len(list(devices))
         )
         norm2_weight_shards = self.layer_norm2.weight.shard(devices)
         norm2_bias_shards = (
             self.layer_norm2.bias.shard(devices)
-            if self.layer_norm2.bias is not None
-            else [None] * len(list(devices))
+            # if self.layer_norm2.bias is not None
+            # else [None] * len(list(devices))
         )
         attn_shards = self.self_attn.shard(devices)
         mlp_shards = self.mlp.shard(devices)

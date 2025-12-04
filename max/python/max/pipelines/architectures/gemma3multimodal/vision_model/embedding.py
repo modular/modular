@@ -29,7 +29,7 @@ class Gemma3VisionEmbeddings(Module):
     def __init__(
         self,
         config: Gemma3ForConditionalGenerationConfig,
-        device: DeviceRef | None = None,
+        device: DeviceRef,
     ) -> None:
         super().__init__()
         self.config = config

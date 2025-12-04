@@ -109,7 +109,7 @@ class Gemma3VisionAttention(Module):
         return self.out_proj(output)
 
     @property
-    def sharding_strategy(self) -> ShardingStrategy:
+    def sharding_strategy(self) -> ShardingStrategy | None:
         return self.q_proj.sharding_strategy
 
     @sharding_strategy.setter
