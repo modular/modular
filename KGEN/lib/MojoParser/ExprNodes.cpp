@@ -2739,18 +2739,18 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
         return {};
       return emitter.emitResult(result, this, dest);
     }
+
+    // If the sub-value is an unbound Type, try binding parameters to it! Handle
+    // user-defined types and custom MLIR types.
+    if (baseValue.getIfTypeValue() && sugarIsa<StructMetaType>(baseType)) {
+      PValue result = substituteParametersIntoUserDefinedType(
+          value, operands, getLoc(), lsquareLoc, rsquareLoc, emitter);
+      return emitter.emitResult(result, this, dest);
+    }
   }
 
   // If the sub-value is an unbound Type, try binding parameters to it!
   if (Type typeValue = baseValue.getIfTypeValue()) {
-    // Handle user-defined types and custom MLIR types.
-    if (auto structValue = sugarDynCast<StructMetaType>(baseType)) {
-      PValue result = substituteParametersIntoUserDefinedType(
-          baseValue.getIfPValue(), operands, getLoc(), lsquareLoc, rsquareLoc,
-          emitter);
-      return emitter.emitResult(result, this, dest);
-    }
-
     // Handle __mlir_type["foo"] and __mlir_attr["foo"].
     if (sugarIsa<MagicMLIRTypeType>(typeValue)) {
       std::string result = substituteMLIRMagic(*this, emitter);
