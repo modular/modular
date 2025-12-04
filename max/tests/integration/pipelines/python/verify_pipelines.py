@@ -992,14 +992,14 @@ PIPELINES = {
         ),
     ),
     # Qwen2.VL-FP8
-    "allenai/olmOCR-7B-0825-FP8": PipelineDef(
+    "allenai/olmOCR-2-7B-1025-FP8": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-only"],  # TODO(KERN-2196)
         run=_make_pipeline_runner(
-            pipeline="allenai/olmOCR-7B-0825-FP8",
+            pipeline="allenai/olmOCR-2-7B-1025-FP8",
             encoding="float8_e4m3fn",
-            cos_dist_threshold=6.0e-02,
-            kl_div_threshold=4.0e-01,
+            cos_dist_threshold=2.4e-01,
+            kl_div_threshold=3.0e-01,
         ),
     ),
     "allenai/OLMo-2-1124-7B-float32": PipelineDef(
