@@ -259,9 +259,12 @@ def _build_token_frequency_csr(
     tracer: Tracer = Tracer("build_token_frequency_csr")
 
     PADDING_TOKEN = -1
+    batch_size = len(batch)
 
-    frequency_row_offsets = np.zeros(len(batch) + 1, dtype=np.uint32)
-    # Calculate max size needed for token frequency pairs
+    # Pre-allocate row offsets
+    frequency_row_offsets = np.zeros(batch_size + 1, dtype=np.uint32)
+
+    # Calculate max size needed for token frequency pairs (upper bound)
     if include_prompt:
         total_tokens = sum(
             context.current_length + padding_size for context in batch
@@ -270,37 +273,41 @@ def _build_token_frequency_csr(
         total_tokens = sum(
             len(context.generated_tokens) + padding_size for context in batch
         )
-    token_frequency_pairs = np.zeros((total_tokens, 2), dtype=np.int32)
+    token_frequency_pairs = np.empty((total_tokens, 2), dtype=np.int32)
 
     tracer.next("build_token_frequency_csr_loop")
-    for i, context in enumerate(batch):
-        unique_tokens, counts = np.unique(
-            context.all_tokens if include_prompt else context.generated_tokens,
-            return_counts=True,
-        )
-        # Pad the tokens and counts to reserve space for new tokens
-        unique_tokens = np.pad(
-            unique_tokens,
-            (0, padding_size),
-            mode="constant",
-            constant_values=PADDING_TOKEN,
-        )
-        counts = np.pad(
-            counts, (0, padding_size), mode="constant", constant_values=0
-        )
-        frequency_row_offsets[i + 1] = frequency_row_offsets[i] + len(
-            unique_tokens
-        )
-        token_frequency_pairs[
-            frequency_row_offsets[i] : frequency_row_offsets[i + 1], 0
-        ] = unique_tokens
-        token_frequency_pairs[
-            frequency_row_offsets[i] : frequency_row_offsets[i + 1], 1
-        ] = counts
 
-    token_frequency_pairs = token_frequency_pairs[  # type: ignore
-        : frequency_row_offsets[-1], :
-    ]
+    current_offset = 0
+    for i, context in enumerate(batch):
+        tokens = (
+            context.all_tokens if include_prompt else context.generated_tokens
+        )
+        unique_tokens, counts = np.unique(tokens, return_counts=True)
+
+        num_unique = len(unique_tokens)
+        padded_size = num_unique + padding_size
+
+        # Record start offset for this context
+        frequency_row_offsets[i] = current_offset
+
+        # Write unique tokens and their counts directly (no np.pad)
+        end_unique = current_offset + num_unique
+        token_frequency_pairs[current_offset:end_unique, 0] = unique_tokens
+        token_frequency_pairs[current_offset:end_unique, 1] = counts
+
+        # Write padding directly
+        end_padded = current_offset + padded_size
+        token_frequency_pairs[end_unique:end_padded, 0] = PADDING_TOKEN
+        token_frequency_pairs[end_unique:end_padded, 1] = 0
+
+        current_offset = end_padded
+
+    # Record final offset
+    frequency_row_offsets[batch_size] = current_offset
+
+    # Trim to actual size used
+    # Slicing preserves 2D shape, but numpy stubs lose the specific shape type
+    token_frequency_pairs = token_frequency_pairs[:current_offset]  # type: ignore[assignment]
 
     return FrequencyData(
         data=Tensor.from_dlpack(token_frequency_pairs).to(device),
