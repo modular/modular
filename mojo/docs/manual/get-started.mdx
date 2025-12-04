@@ -298,16 +298,15 @@ names = List[String]()
 ```
 
 We can also create a `List` with an initial set of values and let the compiler
-infer the type. We can either pass multiple values directly to the `List`
-constructor or use the *list literal* syntax and simply enclose the values in
-square brackets (`[]`).
+infer the type. Use the *list literal* syntax and simply enclose the values in
+square brackets (`[]`):
 
 ```mojo
-# Create a List[Int] with the List constructor, inferring the type
-nums1 = List(12, -7, 64)
-
 # Create a List[Int] with the list literal syntax, inferring the type
 nums2 = [12, -7, 64]
+
+# which is equivalent to
+nums2: List[Int] = [12, -7, 64]
 ```
 
 The Mojo `List` type includes the ability to append to the list, pop values from
@@ -1432,7 +1431,7 @@ export const Puzzles = {
     title: "GPU Puzzles",
     description: "Learn to program GPUs in Mojo by solving increasingly complex challenges",
     metadata: {
-        permalink: "https://puzzles.modular.com/introduction.html"
+        permalink: "<https://puzzles.modular.com/introduction.html>"
     }
 };
 
@@ -1440,7 +1439,7 @@ export const Examples = {
     title: "Code examples",
     description: "Browse a wide range of Mojo code examples on GitHub",
     metadata: {
-        permalink: "https://github.com/modular/modular/tree/main/examples/mojo"
+        permalink: "<https://github.com/modular/modular/tree/main/examples/mojo>"
     }
 };
 
