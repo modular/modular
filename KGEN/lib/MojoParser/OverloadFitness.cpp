@@ -867,11 +867,15 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
         emitMissing(getDiag(), names, kindStr + " parameter");
       },
       /*emitConstraintViolations=*/
-      [&](ArrayRef<ConstraintAttr> constraints) {
+      [&](ArrayRef<std::pair<size_t, ConstraintAttr>> constraints) {
         MojoInflightDiag &d = getDiag();
         d << "violated constraint" << plural(constraints.size());
-        for (auto constraint : constraints)
-          d.attachNote(constraint.getLoc()) << "constraint declared here";
+        IndexToDeclRefRemapper remapper(paramListAttr);
+        for (auto [_, constraint] : constraints) {
+          d.attachNote(constraint.getLoc())
+              << "constraint declared here evaluated to False, expected "
+              << remapper.replace(constraint.getProposition());
+        }
       },
   };
 
@@ -956,6 +960,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
   // If anything was bound, apply it to the signature so the expected argument
   // types are updated.
+  FnTypeGeneratorType originalSignature = signature;
   std::tie(signature, newBindings) = getUnboundSpecializedSignature(
       signature, newBindings, &shared.getEvaluationContext());
 
@@ -1208,10 +1213,26 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   SmallVector<ConstraintAttr> fnUnprovableConstraints;
   // Reset diag for reuse in constraint checking.
   diag.reset();
+  auto emitFnConstraintViolations =
+      [&](ArrayRef<std::pair<size_t, ConstraintAttr>> constraints) {
+        MojoInflightDiag &d = getDiag();
+        d << "violated constraint" << plural(constraints.size());
+        // Use constraints from the original signature since the ones in
+        // `signature` have already been substituted with param bindings and
+        // will have already been folded into `False`.
+        IndexToDeclRefRemapper remapper(originalSignature.getMetadata());
+        auto originalFnConstraints =
+            originalSignature.getFnMetadata().getConstraints();
+        for (auto [idx, _] : constraints) {
+          auto originalConstraint = originalFnConstraints[idx];
+          d.attachNote(originalConstraint.getLoc())
+              << "constraint declared here evaluated to False, expected "
+              << remapper.replace(originalConstraint.getProposition());
+        }
+      };
   checkConstraints(callable.paramBindings.declScope,
                    signature.getFnMetadata().getConstraints(),
-                   bindingDiag.emitConstraintViolations,
-                   &fnUnprovableConstraints,
+                   emitFnConstraintViolations, &fnUnprovableConstraints,
                    /*evaluator=*/nullptr);
   if (diag)
     return std::move(*diag);

@@ -623,6 +623,26 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       printParam(os, operands.back(), diagShared);
       os << ']';
       return;
+    case POC::Xor:
+      // If this is a inverted boolean sugar, handle it.
+      if (op.getType().isSignlessInteger(1) && op.getNumOperands() == 2 &&
+          isa<IntegerAttr>(op.getOperand(1))) {
+        if (auto invertedExpr = dyn_cast<ParamOperatorAttr>(op.getOperand(0))) {
+          if (invertedExpr.getOpcode() == POC::EQ)
+            return printOperands(invertedExpr.getOperands(), " != ");
+          if (invertedExpr.getOpcode() == POC::LT)
+            return printOperands(invertedExpr.getOperands(), " >= ");
+          if (invertedExpr.getOpcode() == POC::LE)
+            return printOperands(invertedExpr.getOperands(), " > ");
+        }
+
+        // Otherwise, print as a generic "not".
+        os << "(not ";
+        printParam(os, op.getOperand(0), diagShared);
+        os << ")";
+        return;
+      }
+      [[fallthrough]];
     default:
       const char *binOp = nullptr;
       switch (op.getOpcode()) {

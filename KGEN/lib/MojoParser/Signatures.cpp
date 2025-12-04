@@ -984,7 +984,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
       // since they may depend on other parameters.
       if (LIT::checkConstraints(
               declScope, paramConstraints,
-              [&](ArrayRef<ConstraintAttr> constraints) {
+              [&](ArrayRef<std::pair<size_t, ConstraintAttr>> constraints) {
                 constraintEmitter.emitError(
                     arg.loc, "default value violated constraint");
               },

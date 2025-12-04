@@ -320,9 +320,9 @@ fn unfoldable_predicate(y: Int) -> Bool:
 # expected-note @below {{function declared here}}
 # expected-note @below {{cannot prove constraint}}
 fn unprovable_constraints[x: Int, y: Int]()
-  # expected-note @+1 {{constraint declared here}}
+  # expected-note @+1 {{constraint declared here evaluated to False, expected '(x >= 2)'}}
   where x > 1
-  # expected-note @+1 {{constraint declared here}}
+  # expected-note @+1 {{constraint declared here needs evidence for}}
   where unfoldable_predicate(y):
     pass
 
@@ -340,15 +340,29 @@ fn test_constraints():
   # expected-note @below {{provide evidence for the constraint here to aid in candidate selection}}
   unprovable_constraints[2, 0]()
 
+# expected-note @below {{constraint declared here evaluated to False, expected '(x >= 2)'}}
+# expected-note @below {{function declared here}}
+fn unprovable_param_constraints[x: Int where x > 1]():
+  pass
+
+fn test_param_constraints():
+  # expected-error @below {{invalid call to 'unprovable_param_constraints': violated constraint}}
+  unprovable_param_constraints[0]()
+
 # expected-note @below {{cannot prove constraint}}
 struct ConstraintStruct[
-  # expected-note @below {{constraint declared here}}
+  # expected-note @below {{constraint declared here needs evidence for}}
+  # expected-note @below {{constraint declared here evaluated to False, expected '(a >= 1)'}}
   a: Int where a > 0
 ]:
     pass
 
 # expected-error @below {{invalid bindings for 'ConstraintStruct': lacking evidence to prove correctness}}
 fn use_constraint_struct[x: Int, cs: ConstraintStruct[x]]():
+    pass
+
+# expected-error @below {{violated constraint}}
+fn violate_constraint_struct[cs: ConstraintStruct[0]]():
     pass
 
 # expected-error @below {{default value violated constraint}}

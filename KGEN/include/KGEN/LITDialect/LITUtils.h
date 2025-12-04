@@ -373,6 +373,26 @@ public:
   FailureOr<TypedAttr> evaluateGetWitness(GetWitnessAttr attr);
 };
 
+//===----------------------------------------------------------------------===//
+// IndexToDeclRefRemapper
+//===----------------------------------------------------------------------===//
+
+/// Utility class for remapping index references to parameter declaration
+/// references using metadata from a PogListAttr.
+class IndexToDeclRefRemapper
+    : public IndexParameterReplacer<IndexToDeclRefRemapper> {
+public:
+  IndexToDeclRefRemapper(PogListAttr paramListAttr)
+      : paramListAttr(paramListAttr) {}
+
+private:
+  Attribute tryReplace(Attribute attr, size_t depth);
+  Type tryReplace(Type, size_t) { return {}; }
+  friend class IndexParameterReplacer<IndexToDeclRefRemapper>;
+
+  PogListAttr paramListAttr;
+};
+
 } // namespace LIT
 } // namespace KGEN
 } // namespace M
