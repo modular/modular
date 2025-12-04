@@ -297,34 +297,6 @@ OpFoldResult MinOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
-static OpFoldResult
-foldIndexShiftOp(ArrayRef<Attribute> operands, KGENDType dtype, Operation *op,
-                 llvm::function_ref<APSInt(APSInt, APSInt)> fn) {
-  // For index type get its size from the target. If target is not specified, we
-  // fail to fold.
-  TargetInfoAttr target = lookupTargetInfo(op);
-  if (!target)
-    return {};
-  ssize_t intWidth = target.resolveIndexBitWidth();
-  if (intWidth == 64)
-    return POP::Detail::foldSIMDOpIndex<POP::k64BitResult>(
-        operands, dtype, [&](APSInt lhs, APSInt rhs) -> APSInt {
-          APSInt result = fn(lhs, rhs);
-          assert(result.isSigned() == dtype.isIndex());
-          return result.extOrTrunc(64);
-        });
-  if (intWidth == 32)
-    return POP::Detail::foldSIMDOpIndex<POP::k32BitResult>(
-        operands, dtype, [&](APSInt lhs, APSInt rhs) -> APSInt {
-          // Have to extend it because index type is stored internally as 64-bit
-          // integer.
-          APSInt result = fn(lhs, rhs);
-          assert(result.isSigned() == dtype.isIndex());
-          return result.extend(64);
-        });
-  return {};
-}
-
 OpFoldResult ShlOp::fold(FoldAdaptor adaptor) {
   ArrayRef<Attribute> operands = adaptor.getOperands();
   if (llvm::any_of(operands, [](Attribute operand) {
@@ -337,10 +309,10 @@ OpFoldResult ShlOp::fold(FoldAdaptor adaptor) {
     return {};
 
   if (dtype->isIndex() || dtype->isUIndex())
-    return foldIndexShiftOp(operands, *dtype, *this,
-                            [](APSInt lhs, APSInt rhs) -> APSInt {
-                              return APSInt(lhs.shl(rhs), !lhs.isSigned());
-                            });
+    return foldIndexForTarget(operands, *dtype, lookupTargetInfo(*this),
+                              [](APSInt lhs, APSInt rhs) -> APSInt {
+                                return APSInt(lhs.shl(rhs), !lhs.isSigned());
+                              });
   return foldSIMDOp(adaptor.getOperands(),
                     [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
                       if (rhs.uge(lhs.getBitWidth()))
@@ -361,11 +333,12 @@ OpFoldResult ShrOp::fold(FoldAdaptor adaptor) {
     return {};
 
   if (dtype->isIndex() || dtype->isUIndex())
-    return foldIndexShiftOp(
-        operands, *dtype, *this, [](APSInt lhs, APSInt rhs) -> APSInt {
-          return APSInt(lhs.isSigned() ? lhs.ashr(rhs) : lhs.lshr(rhs),
-                        !lhs.isSigned());
-        });
+    return foldIndexForTarget(operands, *dtype, lookupTargetInfo(*this),
+                              [](APSInt lhs, APSInt rhs) -> APSInt {
+                                return APSInt(lhs.isSigned() ? lhs.ashr(rhs)
+                                                             : lhs.lshr(rhs),
+                                              !lhs.isSigned());
+                              });
 
   return foldSIMDOp(
       operands, [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
