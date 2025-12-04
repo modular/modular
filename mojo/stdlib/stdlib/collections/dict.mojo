@@ -1005,7 +1005,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         """
         return self.find(key)
 
-    fn get(self, key: Self.K, default: Self.V) -> Self.V:
+    fn get(self, key: Self.K, var default: Self.V) -> Self.V:
         """Get a value from the dictionary by key.
 
         Args:
@@ -1015,7 +1015,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         Returns:
             A copy of the value if it was present, otherwise default.
         """
-        return self.find(key).or_else(default)
+        return self.find(key).or_else(default^)
 
     fn pop(mut self, key: Self.K, var default: Self.V) -> Self.V:
         """Remove a value from the dictionary by key.
@@ -1032,7 +1032,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         try:
             return self.pop(key)
         except:
-            return default.copy()
+            return default^
 
     fn pop(mut self, key: Self.K) raises -> Self.V:
         """Remove a value from the dictionary by key.

@@ -448,7 +448,7 @@ struct Optional[T: Copyable & Movable](
         debug_assert(self.__bool__(), "`.unsafe_take()` on empty `Optional`")
         return self._value.unsafe_replace[_NoneType, Self.T](_NoneType())
 
-    fn or_else(self, default: Self.T) -> Self.T:
+    fn or_else(deinit self, var default: Self.T) -> Self.T:
         """Return the underlying value contained in the `Optional` or a default
         value if the `Optional`'s underlying value is not present.
 
@@ -458,9 +458,9 @@ struct Optional[T: Copyable & Movable](
         Returns:
             The underlying value contained in the `Optional` or a default value.
         """
-        if self.__bool__():
-            return self._value[Self.T].copy()
-        return default.copy()
+        if self:
+            return self.unsafe_take()
+        return default^
 
     fn copied[
         mut: Bool,
