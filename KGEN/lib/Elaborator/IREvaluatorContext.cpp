@@ -12,6 +12,7 @@
 #include "KGEN/TransformUtils/ManglingUtils.h"
 #include "Support/Compiler/DiagnosticHandler.h"
 #include "Support/StringExtras.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/ScopeExit.h"
 
 using namespace M;
@@ -395,23 +396,22 @@ IREvaluatorContext::stringifyTypeInstanceRef(TypeInstanceRefAttr instanceRef,
   ParamNodeBase *genNode = lookupParamNodeBase(instanceRef.getSymbol());
   StructGeneratorOp genOp = cast<StructGeneratorOp>(genNode->gen);
 
+  llvm::SmallDenseMap<llvm::StringRef, llvm::StringRef> eligibleBuiltins = {
+      {"stdlib::builtin::bool::Bool", "Bool"},
+      {"stdlib::builtin::int::Int", "Int"},
+      {"stdlib::collections::list::List", "List"},
+      {"stdlib::builtin::simd::SIMD", "SIMD"},
+      {"stdlib::collections::string::string::String", "String"},
+      {"stdlib::builtin::uint::UInt", "UInt"},
+  };
+
   // Print the type name first. A few common types can be printed more tersely.
   /// NOTE: It would be better to have custom type name printing that can be
   /// implemented on the struct directly.
   std::string name = genOp.getSymName().str();
   if (!qualifiedBuiltins && name.starts_with("stdlib::")) {
-    if (name == "stdlib::builtin::simd::SIMD")
-      name = "SIMD";
-    else if (name == "stdlib::builtin::int::Int")
-      name = "Int";
-    else if (name == "stdlib::builtin::uint::UInt")
-      name = "UInt";
-    else if (name == "stdlib::builtin::bool::Bool")
-      name = "Bool";
-    else if (name == "stdlib::collections::string::string::String")
-      name = "String";
-    else if (name == "stdlib::collections::list::List")
-      name = "List";
+    if (auto it = eligibleBuiltins.find(name); it != eligibleBuiltins.end())
+      name = it->second;
   }
   replaceAll(name, "::", ".");
 
