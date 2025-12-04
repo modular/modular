@@ -87,7 +87,7 @@ struct DataFrame(Defaultable, Movable, Representable):
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:
-            return abort[UnsafePointer[Self, MutAnyOrigin]](
+            abort(
                 String(
                     (
                         "Python method receiver object did not have the"
@@ -180,6 +180,4 @@ fn PyInit_mojo_module() -> PythonObject:
         )
         return b.finalize()
     except e:
-        return abort[PythonObject](
-            String("failed to create Python module: ", e)
-        )
+        abort(String("failed to create Python module: ", e))
