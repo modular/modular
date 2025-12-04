@@ -18,6 +18,7 @@
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Types.h"
+#include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
@@ -1046,20 +1047,26 @@ std::optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
   return getMaxAlignmentAmongTypes(getElementTypes(), target);
 }
 
-ErrorOrSuccess StructType::writeTo(TypedAttr structValue, int64_t addr,
+ErrorOrSuccess StructType::writeTo(TypedAttr value, int64_t addr,
                                    InterpreterState &state) const {
   int64_t offset = 0;
-  for (TypedAttr value : ::cast<StructAttr>(structValue).getValues()) {
-    auto dl = ::cast<DataLayoutInterface>(value.getType());
-    // Store each element spaced apart by padding according to its alignment.
-    offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
+  if (auto sv = dyn_cast<StructAttr>(value)) {
+    for (TypedAttr value : sv.getValues()) {
+      auto dl = ::cast<DataLayoutInterface>(value.getType());
+      // Store each element spaced apart by padding according to its alignment.
+      offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
 
-    ErrorOrSuccess result = state.writeAttributeToMemory(addr + offset, value);
-    if (result.isError())
-      return result.takeError();
-    offset += *dl.getTypeSize(state.getTarget());
+      ErrorOrSuccess result =
+          state.writeAttributeToMemory(addr + offset, value);
+      if (result.isError())
+        return result.takeError();
+      offset += *dl.getTypeSize(state.getTarget());
+    }
+    return success();
   }
-  return success();
+
+  return Error("struct not a writeable type, got " + mlir::debugString(value) +
+               " instead");
 }
 
 ErrorOr<TypedAttr> StructType::readFrom(int64_t addr,
