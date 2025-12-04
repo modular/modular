@@ -169,6 +169,7 @@ trait IntableRaising:
 @register_passable("trivial")
 struct Int(
     Absable,
+    Boolable,
     CeilDivable,
     Ceilable,
     Comparable,
@@ -179,7 +180,6 @@ struct Int(
     DivModable,
     Floorable,
     Hashable,
-    ImplicitlyBoolable,
     ImplicitlyCopyable,
     Indexer,
     Intable,
@@ -578,7 +578,7 @@ struct Int(
         var denom = select(rhs == 0, 1, rhs)
         var div = self._positive_div(denom)
         var rem = self._positive_rem(denom)
-        var neg = ((rhs < 0) ^ (self < 0)) & rem
+        var neg = ((rhs < 0) ^ (self < 0)) & Bool(rem)
         div = select(neg, div - 1, div)
         mod = select(neg, rem + rhs, rem)
         return select(rhs == 0, 0, div), select(rhs == 0, 0, mod)
@@ -954,15 +954,6 @@ struct Int(
             False Bool value if the value is equal to 0 and True otherwise.
         """
         return self != 0
-
-    @always_inline("builtin")
-    fn __as_bool__(self) -> Bool:
-        """Convert this Int to Bool.
-
-        Returns:
-            False Bool value if the value is equal to 0 and True otherwise.
-        """
-        return self.__bool__()
 
     @always_inline("builtin")
     fn __mlir_index__(self) -> __mlir_type.index:

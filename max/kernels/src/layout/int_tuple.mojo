@@ -2246,7 +2246,7 @@ fn prefix_product(a: IntTuple, init: Int) -> IntTuple:
     if len(a) == 0:
         return IntTuple()
     # Short-circuit for single integer
-    if is_int(a) == 1:
+    if is_int(a):
         return init
 
     var init_tuple = IntTuple(init)

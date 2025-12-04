@@ -243,8 +243,7 @@ struct MHAConfig[dtype: DType](ImplicitlyCopyable, Movable, Writable):
         if sm_90_fa3:
             comptime i64_size = size_of[DType.int64]()
             num_smem_bytes += (2 * Int(self.num_pipeline_stages)) * i64_size + (
-                4 * i64_size + 2 * size_of[DType.uint32]() if persistent
-                != 0 else 0
+                4 * i64_size + 2 * size_of[DType.uint32]() if persistent else 0
             )
         return UInt(num_smem_bytes)
 

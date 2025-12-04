@@ -232,6 +232,12 @@ what we publish.
 - Various OS wraper functions now include the value of `errno` in the raised error
   message.
 
+- The `ImplicitlyBoolable` trait has been removed. This trait enabled types to
+  implicitly convert to `Bool`. This behavior was rarely used, and could lead
+  to subtle bugs, for example mistakenly passing types like `Int` or
+  `UnsafePointer` to an argument expecting a `Bool` would silently compile
+  successfully.
+
 - Using a new 'unconditional conformances' technique leveraging `conforms_to()`
   and `trait_downcast()` to perform "late" element type conformance checking,
   some standard library types are now able to conform to traits that they could

@@ -18,10 +18,10 @@ from math import Ceilable, Floorable, Truncable
 @nonmaterializable(Int)
 @register_passable("trivial")
 struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
+    Boolable,
     Ceilable,
     Defaultable,
     Floorable,
-    ImplicitlyBoolable,
     Indexer,
     Intable,
     Stringable,
@@ -423,15 +423,6 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
             False Bool value if the value is equal to 0 and True otherwise.
         """
         return self != 0
-
-    @always_inline("builtin")
-    fn __as_bool__(self) -> Bool:
-        """Convert this IntLiteral to Bool.
-
-        Returns:
-            False Bool value if the value is equal to 0 and True otherwise.
-        """
-        return self.__bool__()
 
     @always_inline("builtin")
     fn __int__(self) -> Int:

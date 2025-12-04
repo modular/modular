@@ -49,10 +49,8 @@ def test_int_conversion():
 
 def test_bool():
     assert_false(FloatLiteral.__bool__(0.0))
-    assert_false(FloatLiteral.__as_bool__(0.0))
 
     assert_true(FloatLiteral.__bool__(2.0))
-    assert_true(FloatLiteral.__as_bool__(2.0))
 
 
 def test_is_special_value():

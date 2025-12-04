@@ -2163,8 +2163,8 @@ def test_from_bytes_as_bytes():
         @parameter
         for b in range(2):
             assert_equal(
-                Int16.from_bytes[big_endian=b](
-                    Int16(x).as_bytes[big_endian=b]()
+                Int16.from_bytes[big_endian = Bool(b)](
+                    Int16(x).as_bytes[big_endian = Bool(b)]()
                 ),
                 x,
             )

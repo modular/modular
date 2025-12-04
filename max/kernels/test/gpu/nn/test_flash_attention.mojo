@@ -920,11 +920,11 @@ def main():
 
             @parameter
             for batch_size in range(1, 5, 3):
-                test_decoding[batch_size, 1, split_k](ctx, False)
+                test_decoding[batch_size, 1, Bool(split_k)](ctx, False)
 
                 @parameter
                 if not split_k:
-                    test_decoding[batch_size, 1, split_k, DType.float32](
+                    test_decoding[batch_size, 1, Bool(split_k), DType.float32](
                         ctx, False
                     )
 
@@ -935,13 +935,13 @@ def main():
                 ):
                     test_decoding_large_group[batch_size, 1](ctx)
 
-                test_decoding[batch_size, 2, split_k](ctx, False)
-                test_decoding[batch_size, 4, split_k](ctx, False)
+                test_decoding[batch_size, 2, Bool(split_k)](ctx, False)
+                test_decoding[batch_size, 4, Bool(split_k)](ctx, False)
 
                 @parameter
                 if not split_k:
-                    test_decoding[batch_size, 4, split_k, DType.float32](
+                    test_decoding[batch_size, 4, Bool(split_k), DType.float32](
                         ctx, False
                     )
-                test_decoding[batch_size, None, split_k](ctx, False)
-                test_decoding[batch_size, 32, split_k](ctx, False)
+                test_decoding[batch_size, None, Bool(split_k)](ctx, False)
+                test_decoding[batch_size, 32, Bool(split_k)](ctx, False)

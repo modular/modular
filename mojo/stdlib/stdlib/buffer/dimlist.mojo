@@ -32,10 +32,10 @@ from utils import IndexList, StaticTuple
 
 @register_passable("trivial")
 struct Dim(
+    Boolable,
     CeilDivable,
     Defaultable,
     Equatable,
-    ImplicitlyBoolable,
     Indexer,
     Intable,
     Stringable,
@@ -92,15 +92,6 @@ struct Dim(
             Whether the dimension has a static value.
         """
         return self._value_or_missing != Self._sentinel
-
-    @always_inline("builtin")
-    fn __as_bool__(self) -> Bool:
-        """Returns True if the dimension has a static value.
-
-        Returns:
-            Whether the dimension has a static value.
-        """
-        return self.__bool__()
 
     @always_inline("nodebug")
     fn has_value(self) -> Bool:

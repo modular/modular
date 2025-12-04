@@ -591,7 +591,7 @@ struct _DLHandle(Boolable, Copyable, Movable):
             A pointer to the symbol.
         """
         debug_assert(
-            self.handle,
+            Bool(self.handle),
             "Dylib handle is null when loading symbol: ",
             StringSlice(unsafe_from_utf8_ptr=cstr_name),
         )

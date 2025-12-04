@@ -4290,7 +4290,7 @@ struct CumSum:
         axis: Scalar,
         ctx: DeviceContextPtr,
     ):
-        cumsum[dtype, exclusive, reverse](
+        cumsum[dtype, Bool(exclusive), Bool(reverse)](
             output.to_layout_tensor(),
             input.to_layout_tensor(),
             _unsafe_normalize_neg_index(Int(axis), rank),

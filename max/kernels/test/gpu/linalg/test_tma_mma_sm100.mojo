@@ -837,7 +837,7 @@ def main():
                                     Index(MMA_M, 128, MMA_K),
                                     a_swizzle=swizzle,
                                     b_swizzle=swizzle,
-                                    transpose_b=transpose_b,
+                                    transpose_b = Bool(transpose_b),
                                 ](ctx)
 
                                 @parameter
@@ -854,6 +854,6 @@ def main():
                                         Index(MMA_M, 128, BK),
                                         Index(MMA_M, 128, MMA_K),
                                         b_swizzle=swizzle,
-                                        transpose_b=transpose_b,
+                                        transpose_b = Bool(transpose_b),
                                         a_smem=False,
                                     ](ctx)

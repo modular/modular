@@ -54,9 +54,9 @@ struct LegacyUnsafePointer[
     mut: Bool = True,
     origin: Origin[mut] = Origin[mut].cast_from[MutAnyOrigin],
 ](
+    Boolable,
     Comparable,
     Defaultable,
-    ImplicitlyBoolable,
     ImplicitlyCopyable,
     Intable,
     Movable,

@@ -227,35 +227,35 @@ def main():
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 128, 128),
-                transpose_b=transpose_b,
+                transpose_b = Bool(transpose_b),
             ](ctx, dynamic(128), static[128](), static[128]())
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 64, 128),
-                transpose_b=transpose_b,
+                transpose_b = Bool(transpose_b),
             ](ctx, dynamic(128), static[256](), static[128]())
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 64, 16),
-                transpose_b=transpose_b,
+                transpose_b = Bool(transpose_b),
             ](ctx, dynamic(128), static[128](), static[128]())
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 128, 128),
-                transpose_b=transpose_b,
+                transpose_b = Bool(transpose_b),
             ](ctx, dynamic(120), static[128](), static[128]())
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 128, 128),
-                transpose_b=transpose_b,
+                transpose_b = Bool(transpose_b),
             ](ctx, dynamic(120), static[129](), static[128]())
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(32, 128, 64),
-                transpose_b=transpose_b,
+                transpose_b = Bool(transpose_b),
             ](ctx, dynamic(120), static[129](), static[129]())

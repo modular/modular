@@ -134,9 +134,9 @@ struct UnsafePointer[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](
+    Boolable,
     Comparable,
     Defaultable,
-    ImplicitlyBoolable,
     ImplicitlyCopyable,
     Intable,
     Movable,
