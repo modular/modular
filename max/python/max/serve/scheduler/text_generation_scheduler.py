@@ -176,11 +176,11 @@ class TokenGenerationScheduler(Scheduler):
             total_preemption_count=self.batch_constructor.total_preemption_count,
         )
 
-        for req_id in get_cancelled_reqs(self.cancel_queue):
-            is_cancelled = self.batch_constructor.cancel_request(req_id)
-            if is_cancelled:
+        for cancelled_id in get_cancelled_reqs(self.cancel_queue):
+            if self.batch_constructor.contains(cancelled_id):
+                self.batch_constructor.release_request(cancelled_id)
                 self.response_queue.put_nowait(
-                    {req_id: SchedulerResult.cancelled()}
+                    {cancelled_id: SchedulerResult.cancelled()}
                 )
 
         return SchedulerProgress.MADE_PROGRESS
@@ -202,12 +202,12 @@ class TokenGenerationScheduler(Scheduler):
             responses,
         )
 
-        # remove terminated requests from the batch
-        num_terminated_reqs = (
-            self.batch_constructor.release_terminated_requests(
-                responses,
-            )
-        )
+        # Release terminated requests from the batch
+        num_terminated_requests = 0
+        for request_id, response in responses.items():
+            if response.is_done:
+                self.batch_constructor.release_request(request_id)
+                num_terminated_requests += 1
 
         # send the responses to the API process
         if responses:
@@ -218,7 +218,7 @@ class TokenGenerationScheduler(Scheduler):
                 }
             )
 
-        return num_terminated_reqs
+        return num_terminated_requests
 
 
 def load_text_generation_scheduler(

@@ -111,6 +111,7 @@ class TextBatchConstructor:
         self.replicas: list[ReplicaRequests] = [
             ReplicaRequests() for _ in range(self.num_replicas)
         ]
+        self._request_id_to_replica_idx: dict[RequestID, int] = {}
 
         # Round-robin counter to determine which replica to enqueue the new request to.
         # This is only used when not using paged attention.
@@ -156,6 +157,7 @@ class TextBatchConstructor:
         if replica_idx is None:
             replica_idx = self.get_next_replica_idx()
         replica = self.replicas[replica_idx]
+        self._request_id_to_replica_idx[ctx.request_id] = replica_idx
 
         # Add the request to the appropriate dict based on whether it needs CE.
         if ctx.needs_ce:
@@ -202,51 +204,45 @@ class TextBatchConstructor:
                 # Remove the request from the responses dictionary.
                 del responses[req_id]
 
-    def release_terminated_requests(
-        self,
-        responses: dict[RequestID, TextGenerationOutput],
-    ) -> int:
-        """Releases terminated requests from the batch constructor.
+    def contains(self, request_id: RequestID) -> bool:
+        """Checks if a request is in the batch constructor for any replica."""
+        return request_id in self._request_id_to_replica_idx
+
+    def release_request(self, request_id: RequestID) -> None:
+        """
+        Releases a request from the batch constructor for all replicas.
+
+        This method searches for the given request_id in both context encoding (CE)
+        and text generation (TG) request queues for each replica. If found, it removes
+        the request entry and calls self.pipeline.release(request_id) to free resources.
 
         Args:
-            responses: A dict mapping RequestID to TextGenerationOutput for all requests.
-
-        Returns:
-            The number of terminated requests.
+            request_id: The RequestID of the request to be released.
         """
+        if not self.contains(request_id):
+            raise ValueError(f"Request {request_id} not found in any replica.")
 
-        num_terminated_reqs = 0
-        for req_id, response in responses.items():
-            if not response.is_done:
-                continue
-            for replica in self.replicas:
-                if req_id not in replica.tg_reqs:
-                    continue
-                num_terminated_reqs += 1
-                self.pipeline.release(req_id)
-                del replica.tg_reqs[req_id]
-                break
-        return num_terminated_reqs
-
-    def cancel_request(self, req_id: RequestID) -> bool:
-        """Cancels a request from the batch constructor.
-
-        Args:
-            req_id: The request ID to cancel.
-        Returns:
-            True if the request was found and cancelled, False otherwise.
-        """
-        for replica in self.replicas:
-            if req_id in replica.tg_reqs:
-                del replica.tg_reqs[req_id]
-                self.pipeline.release(req_id)
-                return True
-            # TODO: Support cancellation of CE requests!
-        return False
+        # Retrieve the replica index for the request
+        replica_idx = self._request_id_to_replica_idx[request_id]
+        if request_id in self.replicas[replica_idx].ce_reqs:
+            del self.replicas[replica_idx].ce_reqs[request_id]
+            self.pipeline.release(request_id)
+            del self._request_id_to_replica_idx[request_id]
+        elif request_id in self.replicas[replica_idx].tg_reqs:
+            del self.replicas[replica_idx].tg_reqs[request_id]
+            self.pipeline.release(request_id)
+            del self._request_id_to_replica_idx[request_id]
+        else:
+            raise ValueError(
+                f"Request {request_id} not found in the ce or tg requests of its assigned replica."
+            )
 
     def clear_tg_reqs(self) -> None:
         """Clears all TG requests from all replicas."""
         for replica in self.replicas:
+            for request_id in replica.tg_reqs:
+                del self._request_id_to_replica_idx[request_id]
+
             replica.tg_reqs.clear()
 
     @property
