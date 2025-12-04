@@ -108,14 +108,14 @@ class Gemma3VisionEncoderLayer(Module):
         norm1_weight_shards = self.layer_norm1.weight.shard(devices)
         norm1_bias_shards = (
             self.layer_norm1.bias.shard(devices)
-            # if self.layer_norm1.bias is not None
-            # else [None] * len(list(devices))
+            if self.layer_norm1.bias is not None
+            else [None] * len(list(devices))
         )
         norm2_weight_shards = self.layer_norm2.weight.shard(devices)
         norm2_bias_shards = (
             self.layer_norm2.bias.shard(devices)
-            # if self.layer_norm2.bias is not None
-            # else [None] * len(list(devices))
+            if self.layer_norm2.bias is not None
+            else [None] * len(list(devices))
         )
         attn_shards = self.self_attn.shard(devices)
         mlp_shards = self.mlp.shard(devices)
@@ -194,16 +194,16 @@ class Gemma3VisionEncoder(Module):
         """Process hidden states through the stack of encoder layers,
         applying multi-device functionality if required"""
         # if hidden_states is a list, we are sharding across devices.  each device has a replication of the weights
-        if isinstance(hidden_states, list):
+        if isinstance(hidden_states, Sequence):
             outputs = []
             for device_idx, state in enumerate(hidden_states):
                 device_output = state
                 for layer in self.layers_per_device[device_idx]:
-                    device_output = layer(device_output, signal_buffers)
+                    device_output = layer(device_output, signal_buffers[device_idx])
                 outputs.append(device_output)
             return outputs
         else:
             # Single device case - use first device's layers
             for layer in self.layers_per_device[0]:
-                hidden_states = layer(hidden_states, signal_buffers)
+                hidden_states = layer(hidden_states, signal_buffers[0])
             return hidden_states

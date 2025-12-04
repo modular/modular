@@ -374,7 +374,7 @@ class Gemma3VisionModel(Module):
     ) -> Sequence[TensorValue]:
         """Processes vision inputs through the Gemma3 vision tower and produces a
         sequence of image embeddings"""
-        hidden_states = [
+        hidden_states: TensorValue | Sequence[TensorValue] = [
             embed(pixels)
             for embed, pixels in zip(
                 self.embeddings_list, pixel_values, strict=True
@@ -385,7 +385,7 @@ class Gemma3VisionModel(Module):
         hidden_states = self.encoder(hidden_states, signal_buffers)
 
         # Apply post-encoder layer norm
-        if isinstance(hidden_states, list):
+        if isinstance(hidden_states, Sequence):
             hidden_states = [
                 layer(states)
                 for layer, states in zip(
@@ -396,7 +396,7 @@ class Gemma3VisionModel(Module):
             hidden_states = self.post_layernorm_list[0](hidden_states)
 
         # Project to language model hidden size
-        if isinstance(hidden_states, list):
+        if isinstance(hidden_states, Sequence):
             image_embeddings_list = [
                 projector(states)
                 for projector, states in zip(
