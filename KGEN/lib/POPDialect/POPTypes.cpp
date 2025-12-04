@@ -15,6 +15,7 @@
 #include "Support/Compiler/MLIRDType.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -102,11 +103,20 @@ POP::ArrayType::getTypeAlign(TargetInfoAttr target) const {
 
 ErrorOrSuccess POP::ArrayType::writeTo(TypedAttr value, int64_t addr,
                                        InterpreterState &state) const {
+
   auto dl = ::cast<DataLayoutInterface>(getElementType());
+
   // Store each element spaced apart by padding according to its alignment.
   int64_t offset = llvm::alignTo(*dl.getTypeSize(state.getTarget()),
                                  *dl.getTypeAlign(state.getTarget()));
-  for (TypedAttr value : ::cast<POP::ArrayAttr>(value).getValues()) {
+
+  auto tv = dyn_cast_if_present<POP::ArrayAttr>(value);
+  if (!tv) {
+    return Error("array not a writeable type, got " + mlir::debugString(value) +
+                 " instead");
+  }
+
+  for (TypedAttr value : tv.getValues()) {
     ErrorOrSuccess result = state.writeAttributeToMemory(addr, value);
     if (result.isError())
       return result.takeError();
@@ -271,7 +281,13 @@ ErrorOrSuccess SIMDType::writeTo(TypedAttr value, int64_t addr,
     return mem.takeError();
   auto *data = reinterpret_cast<uint8_t *>(*mem);
 
-  ArrayRef<DTypeValue> values = llvm::cast<SIMDAttr>(value).getValues();
+  auto sv = dyn_cast_if_present<SIMDAttr>(value);
+  if (!sv) {
+    return Error("SIMD not a writeable type, got " + mlir::debugString(value) +
+                 " instead");
+  }
+
+  ArrayRef<DTypeValue> values = sv.getValues();
 
   // Integer dtypes s/ui1/2/4 are densely packed. Handle them here.
   if (dtype.isInt()) {
