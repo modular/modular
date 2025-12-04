@@ -176,9 +176,13 @@ def test_scheduler_handle_terminated_responses() -> None:
         batch_executed,
         batch_responses,
     )
-    num_terminated_reqs = batch_constructor.release_terminated_requests(
-        batch_responses,
-    )
+
+    # Release terminated requests
+    num_terminated_reqs = 0
+    for request_id, response in batch_responses.items():
+        if response.is_done:
+            batch_constructor.release_request(request_id)
+            num_terminated_reqs += 1
 
     assert num_terminated_reqs == 1
     assert isinstance(scheduler.pipeline, Mock)
@@ -219,7 +223,7 @@ def test_handle_cancelled_requests() -> None:
 
     cancel_push_socket.put_nowait([mock_request.request_id])
 
-    batch_constructor.cancel_request(mock_request.request_id)
+    batch_constructor.release_request(mock_request.request_id)
 
     assert len(batch_constructor.all_tg_reqs) == 0
     # Cache cleanup is now handled by pipeline.release()
