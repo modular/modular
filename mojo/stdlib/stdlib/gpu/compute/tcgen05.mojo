@@ -604,6 +604,11 @@ fn tcgen05_cp[
         or multicast == "warpx4"
     ), "multicast must be empty, 'warpx2::02_13', 'warpx2::01_23' or 'warpx4'."
 
+    constrained[
+        (datapaths != 32 or bits != 128) or multicast == "warpx4",
+        "For 32x128b, multicast must be 'warpx4'",
+    ]()
+
     comptime asm_str = (
         "tcgen05.cp.cta_group::"
         + String(cta_group)

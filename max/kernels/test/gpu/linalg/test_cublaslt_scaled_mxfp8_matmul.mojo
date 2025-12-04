@@ -30,7 +30,6 @@ from buffer import Dim
 from _cublas.cublaslt import cublasLtGetVersion, cublasLtMatmulMatrixScale_t
 from collections import OptionalReg
 from buffer import NDBuffer
-from builtin.simd import _convert_f32_to_float8_ue8m0
 from layout import Layout, LayoutTensor, IntTuple
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from sys import argv
@@ -41,65 +40,8 @@ from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     MXFP8_SF_VECTOR_SIZE,
     MXFP8_SF_DTYPE,
+    convert_ref_scales_to_mxfp8_format,
 )
-
-
-fn _convert_ref_scales_to_mxfp8_format[
-    ref_scales_type: DType,
-    scales_type: DType,
-    *,
-    REF_BLOCK_SIZE: Int,
-    SF_VECTOR_SIZE: Int,
-](
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
-    ref_a_scales: NDBuffer[ref_scales_type, 2, *_],
-    ref_b_scales: NDBuffer[ref_scales_type, 2, *_],
-    a_scales: NDBuffer[mut=True, scales_type, 5, *_],
-    b_scales: NDBuffer[mut=True, scales_type, 5, *_],
-):
-    constrained[
-        ref_scales_type == DType.float32,
-        "Only support float32 reference scales",
-    ]()
-    constrained[
-        scales_type == DType.float8_e8m0fnu,
-        "Only support float8_e8m0fnu scales",
-    ]()
-
-    var M = m.value
-    var N = n.value
-    var K = k.value
-
-    # initialize a_scales_tensor and b_scales_tensor based on reference scales
-    for m in range(M):
-        for k in range(K):
-            a_scales[
-                m // SF_MN_GROUP_SIZE,
-                k // (SF_VECTOR_SIZE * SF_ATOM_K),
-                m % SF_ATOM_M[0],
-                (m % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-                k % SF_ATOM_K,
-            ] = rebind[Scalar[scales_type]](
-                _convert_f32_to_float8_ue8m0[scales_type](
-                    ref_a_scales[k // REF_BLOCK_SIZE, m]
-                )
-            )
-
-    for n in range(N):
-        for k in range(K):
-            b_scales[
-                n // SF_MN_GROUP_SIZE,
-                k // (SF_VECTOR_SIZE * SF_ATOM_K),
-                n % SF_ATOM_M[0],
-                (n % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-                k % SF_ATOM_K,
-            ] = rebind[Scalar[scales_type]](
-                _convert_f32_to_float8_ue8m0[scales_type](
-                    ref_b_scales[n // REF_BLOCK_SIZE, k // REF_BLOCK_SIZE]
-                )
-            )
 
 
 fn test_scaled_mxfp8_cublaslt[
@@ -243,7 +185,7 @@ fn test_scaled_mxfp8_cublaslt[
         dynamic_c_shape, ctx=ctx
     )
 
-    _convert_ref_scales_to_mxfp8_format[
+    convert_ref_scales_to_mxfp8_format[
         REF_BLOCK_SIZE=REF_BLOCK_SIZE, SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE
     ](
         m,

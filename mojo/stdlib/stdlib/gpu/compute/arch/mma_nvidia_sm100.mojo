@@ -49,6 +49,9 @@ struct UMMAKind(Stringable, Writable):
     comptime KIND_I8 = Self(4)
     """i8 type"""
 
+    alias KIND_MXF8F6F4 = Self(5)
+    """mxf8f6f4 type"""
+
     @always_inline("nodebug")
     fn __int__(self) -> Int:
         """Convert UMMA kind to an integer value.
@@ -104,6 +107,8 @@ struct UMMAKind(Stringable, Writable):
             writer.write("kind::f16")
         elif self == Self.KIND_F8F6F4:
             writer.write("kind::f8f6f4")
+        elif self == Self.KIND_MXF8F6F4:
+            writer.write("kind::mxf8f6f4")
         elif self == Self.KIND_I8:
             writer.write("kind::i8")
         else:
@@ -435,6 +440,82 @@ fn _get_f8f6f4_mma_shape[
             return IndexList[3, element_type = DType.uint32](0, 0, 0)
 
 
+@always_inline
+fn _get_mxf8f6f4_mma_shape[
+    output_shape: IndexList[2, element_type = DType.uint32],
+    /,
+    *,
+    use_pair_cta: Bool = False,
+]() -> IndexList[3, element_type = DType.uint32]:
+    """Get the shape of the MMA instruction for MXF8F6F4 MMA kind.
+
+    This function returns the shape of the MMA instruction for MXF8F6F4 MMA kind.
+    """
+
+    alias mma_m = output_shape[0]
+    alias mma_n = output_shape[1]
+
+    @parameter
+    if not use_pair_cta:
+        _constrained_mma_m[
+            mma_m,
+            (128, -1),
+            UMMAKind.KIND_MXF8F6F4,
+            use_cta_pair=use_pair_cta,
+        ]()
+
+        @parameter
+        if mma_m == 128:
+            _constrained_mma_n[
+                mma_n,
+                (8, 256),
+                8,
+                UMMAKind.KIND_MXF8F6F4,
+                use_cta_pair=use_pair_cta,
+            ]()
+
+            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 32)
+
+        else:
+            constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
+
+            abort("MMA shape not supported.")
+
+    else:
+        _constrained_mma_m[
+            mma_m,
+            (128, 256),
+            UMMAKind.KIND_MXF8F6F4,
+            use_cta_pair=use_pair_cta,
+        ]()
+
+        @parameter
+        if mma_m == 128:
+            _constrained_mma_n[
+                mma_n,
+                (16, 256),
+                16,
+                UMMAKind.KIND_MXF8F6F4,
+                use_cta_pair=use_pair_cta,
+            ]()
+
+            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 32)
+        elif mma_m == 256:
+            _constrained_mma_n[
+                mma_n,
+                (16, 256),
+                16,
+                UMMAKind.KIND_MXF8F6F4,
+                use_cta_pair=use_pair_cta,
+            ]()
+
+            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 32)
+        else:
+            constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
+
+            return IndexList[3, element_type = DType.uint32](0, 0, 0)
+
+
 @register_passable("trivial")
 struct UMMAInsDescriptor[
     mma_kind: UMMAKind,
@@ -643,6 +724,64 @@ struct UMMAInsDescriptor[
         return desc
 
     @staticmethod
+    fn _create_mxf8f6f4_desc[
+        d_type: DType, a_type: DType, b_type: DType, scale_type: DType
+    ]() -> UInt32:
+        """Create a descriptor for MXF8F6F4 UMMA instructions.
+
+        This function creates a descriptor for MXF8F6F4 UMMA instructions based on the provided parameters.
+
+        Parameters:
+            d_type: The data type of matrix D.
+            a_type: The data type of matrix A.
+            b_type: The data type of matrix B.
+            scale_type: The data type of the scale factors.
+
+        Returns:
+            A 32-bit integer containing the descriptor bit layout.
+        """
+
+        alias available_d_types = (DType.float32,)
+        alias available_operand_types = (
+            DType.float8_e4m3fn,
+            DType.float8_e5m2,
+        )
+        alias available_scale_types = (DType.float8_e8m0fnu,)
+
+        constrained[
+            d_type in available_d_types,
+            String("Invalid d data type for UMMA instruction: ", d_type),
+        ]()
+
+        constrained[
+            a_type in available_operand_types
+            and b_type in available_operand_types,
+            String(
+                "Currently only support E4M3 and E5M2 for UMMA kind: ",
+                Self.mma_kind,
+            ),
+        ]()
+
+        constrained[
+            scale_type in available_scale_types,
+            String(
+                "Invalid scale data type for UMMA instruction: ", scale_type
+            ),
+        ]()
+
+        alias a_type_bit = Self._insert_bit[7](
+            0x0, 1 if a_type == DType.float8_e5m2 else 0
+        )
+
+        alias b_type_bit = Self._insert_bit[10](
+            a_type_bit, 1 if b_type == DType.float8_e5m2 else 0
+        )
+
+        alias desc = Self._insert_bit[23](b_type_bit, 1)
+
+        return desc
+
+    @staticmethod
     fn create[
         d_type: DType,
         a_type: DType,
@@ -700,12 +839,86 @@ struct UMMAInsDescriptor[
                 | Self._create_f8f6f4_desc[d_type, a_type, b_type]()
                 | transpose_bit
             )
-
         else:
             constrained[
                 False, String("Unsupported UMMA kind: ", Self.mma_kind)
             ]()
             return Self(0x0)
+
+    @staticmethod
+    fn create[
+        d_type: DType,
+        a_type: DType,
+        b_type: DType,
+        scale_type: DType,
+        output_shape: IndexList[2, element_type = DType.uint32],
+        /,
+        *,
+        transpose_a: Bool = False,
+        transpose_b: Bool = True,
+    ]() -> Self:
+        """Create a descriptor for UMMA MXF8F6F4 instructions.
+
+        This function creates a descriptor for UMMA MXF8F6F4 instructions based on the provided parameters.
+
+        Parameters:
+            d_type: The data type of matrix D.
+            a_type: The data type of matrix A.
+            b_type: The data type of matrix B.
+            scale_type: The data type of the scale factors (only applicable to MXF8F6F4).
+            output_shape: The shape of the output matrix.
+            transpose_a: Whether to transpose matrix A.
+            transpose_b: Whether to transpose matrix B.
+
+        Returns:
+            A 32-bit integer containing the complete descriptor bit layout.
+        """
+
+        alias M_bit = Self._insert_bit[17](0x0, output_shape[1] >> 3)
+        alias desc = Self._insert_bit[27](M_bit, output_shape[0] >> 7)
+
+        alias transpose_a_bit = Self._insert_bit[15](
+            0x0, 1 if transpose_a else 0
+        )
+        alias transpose_bit = Self._insert_bit[16](
+            transpose_a_bit, 0 if transpose_b else 1
+        )
+
+        @parameter
+        if Self.mma_kind == UMMAKind.KIND_MXF8F6F4:
+            return Self(
+                desc
+                | Self._create_mxf8f6f4_desc[
+                    d_type, a_type, b_type, scale_type
+                ]()
+                | transpose_bit
+            )
+        else:
+            constrained[
+                False, String("Unsupported UMMA kind: ", Self.mma_kind)
+            ]()
+            return Self(0x0)
+
+    @staticmethod
+    fn update_desc_with_sf_id[
+        sf_id: UInt32
+    ](inst_desc: UMMAInsDescriptor[UMMAKind.KIND_MXF8F6F4],) -> Self:
+        """Update the descriptor with the scale factor ID.
+
+        Parameters:
+            sf_id: The scale factor ID.
+
+        Args:
+            inst_desc: The descriptor to update.
+
+        Returns:
+            The updated descriptor.
+        """
+
+        alias sfa_bit = Self._insert_bit[4](0x0, sf_id)
+        alias sfb_bit = Self._insert_bit[29](sfa_bit, sf_id)
+
+        return Self(inst_desc.desc | sfb_bit)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1113,6 +1326,96 @@ fn mma[
             masks[5],
             masks[6],
             masks[7],
+        )
+    else:
+        constrained[False, String("Unsupported cta group: ", cta_group)]()
+
+
+@always_inline
+fn mma[
+    kind: UMMAKind, //,
+    cta_group: Int = 1,
+    /,
+    *,
+    c_scale: UInt32 = 1,
+](
+    a_desc: MMASmemDescriptor,
+    b_desc: MMASmemDescriptor,
+    c_tmem: UInt32,
+    inst_desc: UMMAInsDescriptor[kind],
+    sfa_tmem: UInt32,
+    sfb_tmem: UInt32,
+):
+    """Perform a matrix multiply-accumulate operation using the tcgen05.mma instruction.
+
+    Parameters:
+        kind: Data type of the matrices.
+        cta_group: Number of ctas used by MMA.
+        c_scale: Scale factor for the C matrix, 0 or 1.
+
+    Args:
+        a_desc: The descriptor for the A matrix.
+        b_desc: The descriptor for the B matrix.
+        c_tmem: The address of the C matrix in the tensor memory.
+        inst_desc: The descriptor for the MMA instruction.
+        sfa_tmem: The address of the block scale factor A in the tensor memory.
+        sfb_tmem: The address of the block scale factor B in the tensor memory.
+    """
+    constrained[
+        _has_blackwell_tcgen05(), "tcgen05.mma not supported on this GPU"
+    ]()
+
+    constrained[
+        c_scale == 0 or c_scale == 1, String("Invalid c_scale: ", c_scale)
+    ]()
+
+    constrained[
+        kind == UMMAKind.KIND_MXF8F6F4,
+        "Only MXF8F6F4 MMA kind supports block scale factors",
+    ]()
+
+    @parameter
+    if cta_group == 1:
+        inlined_assembly[
+            """{
+                .reg .pred p;
+                setp.ne.b32 p, $4, 0;
+                tcgen05.mma.cta_group::1."""
+            + String(kind)
+            + String(".block_scale")
+            + """ [$0], $1, $2, $3, [$5], [$6], p;
+            }""",
+            NoneType,
+            constraints="r,l,l,r,r,r,r",
+        ](
+            c_tmem,
+            a_desc,
+            b_desc,
+            inst_desc,
+            c_scale,
+            sfa_tmem,
+            sfb_tmem,
+        )
+    elif cta_group == 2:
+        inlined_assembly[
+            """{
+                .reg .pred p;
+                setp.ne.b32 p, $4, 0;
+                tcgen05.mma.cta_group::2."""
+            + String(kind)
+            + String(".block_scale")
+            + """ [$0], $1, $2, $3, [$5], [$6], p;
+            }""",
+            NoneType,
+            constraints="r,l,l,r,r,r,r",
+        ](
+            c_tmem,
+            a_desc,
+            b_desc,
+            inst_desc,
+            c_scale,
+            sfa_tmem,
+            sfb_tmem,
         )
     else:
         constrained[False, String("Unsupported cta group: ", cta_group)]()
