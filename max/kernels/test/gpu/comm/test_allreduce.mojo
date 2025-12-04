@@ -24,6 +24,8 @@ from comm.allreduce import (
     _allreduce_naive_single,
     allreduce,
     elementwise_epilogue_type,
+    group_start,
+    group_end,
 )
 import comm.vendor.ccl as vendor_ccl
 from gpu.host import DeviceBuffer, DeviceContext, DeviceMulticastBuffer
@@ -203,6 +205,7 @@ fn allreduce_test[
 
     # Warm up.
     for _ in range(num_warmups):
+        group_start()
 
         @parameter
         for i in range(ngpus):
@@ -214,6 +217,7 @@ fn allreduce_test[
                 use_multimem=use_multimem,
                 use_quickreduce=use_quickreduce,
             ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
+        group_end()
 
     # Synchronize all devices.
     for i in range(ngpus):
@@ -228,6 +232,7 @@ fn allreduce_test[
     start_t_mojo = time.perf_counter_ns()
 
     for _ in range(num_iters):
+        group_start()
 
         @parameter
         for i in range(ngpus):
@@ -239,6 +244,7 @@ fn allreduce_test[
                 use_multimem=use_multimem,
                 use_quickreduce=use_quickreduce,
             ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
+        group_end()
 
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -269,13 +275,17 @@ fn allreduce_test[
 
             # Warm-up RCCL.
             for _ in range(num_warmups):
-                vendor_ccl.allreduce[dtype=dtype, rank=rank, ngpus=ngpus](
-                    rebind[
-                        InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus]
-                    ](in_bufs),
-                    out_bufs_vendor,
-                    list_of_ctx,
-                )
+                vendor_ccl.group_start()
+
+                @parameter
+                for i in range(ngpus):
+                    vendor_ccl.allreduce[dtype=dtype, rank=rank, ngpus=ngpus](
+                        in_bufs[i],
+                        out_bufs_vendor[i],
+                        i,
+                        list_of_ctx[i],
+                    )
+                vendor_ccl.group_end()
 
             for i in range(ngpus):
                 list_of_ctx[i].synchronize()
@@ -283,13 +293,18 @@ fn allreduce_test[
             # Benchmark RCCL.
             start_t_rccl = time.perf_counter_ns()
             for _ in range(num_iters):
-                vendor_ccl.allreduce[dtype=dtype, rank=rank, ngpus=ngpus](
-                    rebind[
-                        InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus]
-                    ](in_bufs),
-                    out_bufs_vendor,
-                    list_of_ctx,
-                )
+                vendor_ccl.group_start()
+
+                @parameter
+                for i in range(ngpus):
+                    vendor_ccl.allreduce[dtype=dtype, rank=rank, ngpus=ngpus](
+                        in_bufs[i],
+                        out_bufs_vendor[i],
+                        i,
+                        list_of_ctx[i],
+                    )
+                vendor_ccl.group_end()
+
             for i in range(ngpus):
                 list_of_ctx[i].synchronize()
             end_t_rccl = time.perf_counter_ns()

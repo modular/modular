@@ -264,6 +264,15 @@ fn _p2p_cache_destroy_wrapper(ptr: OpaquePointer) -> None:
     pass
 
 
+# No-op (currently) group operation functions (enables vendor_ccl drop in replacement)
+fn group_start():
+    return
+
+
+fn group_end():
+    return
+
+
 fn can_enable_p2p() raises -> Bool:
     """
     If peer-to-peer access is supported, enables it between all GPU pairs.

@@ -230,6 +230,15 @@ fn bench_reduce[
     # Monotonic iteration counter to color quickreduce flags across launches.
     var iter = 0
 
+    # Pre-initialize vendor CCL communicators from the main thread.
+    # ncclCommInitAll is not thread-safe, so we must initialize before
+    # spawning worker threads.
+    @parameter
+    if use_vendor_ccl:
+        if not vendor_ccl.is_allreduce_available():
+            raise "Vendor CCL not available; skipping vendor path."
+        vendor_ccl.init_comms(ngpus)
+
     var results = InlineArray[Float64, ngpus](fill={})
 
     @parameter
@@ -240,6 +249,7 @@ fn bench_reduce[
             @parameter
             @always_inline
             fn call_fn(ctx: DeviceContext, iteration: Int) raises:
+                # Offset the input buffer if cache_busting
                 var offset = 0
 
                 @parameter
@@ -259,18 +269,33 @@ fn bench_reduce[
                     in_bufs[0] = NDBuffer[dtype, rank](
                         multi_ptr + offset, DimList(length)
                     )
-                allreduce[
-                    ngpus=ngpus,
-                    use_multimem=use_multimem,
-                    use_quickreduce=use_quickreduce,
-                ](
-                    in_bufs,
-                    out_bufs[i],
-                    rank_sigs,
-                    list_of_ctx[i],
-                    max_num_blocks,
-                    iter,
-                )
+
+                # Run allreduce
+                @parameter
+                if use_vendor_ccl:
+                    constrained[
+                        not use_multimem,
+                        "vendor CCL does not support multimem path",
+                    ]()
+                    vendor_ccl.allreduce[dtype=dtype, rank=rank, ngpus=ngpus](
+                        in_bufs[i],
+                        out_bufs[i],
+                        i,
+                        list_of_ctx[i],
+                    )
+                else:
+                    allreduce[
+                        ngpus=ngpus,
+                        use_multimem=use_multimem,
+                        use_quickreduce=use_quickreduce,
+                    ](
+                        in_bufs,
+                        out_bufs[i],
+                        rank_sigs,
+                        list_of_ctx[i],
+                        max_num_blocks,
+                        iter,
+                    )
 
             b.iter_custom[call_fn](list_of_ctx[i])
 
