@@ -35,7 +35,7 @@ package(default_visibility = [
         name = src.split("/")[-1].split(".")[0],
         srcs = [src],
         exec_properties = {
-            "test.resources:gpu-memory": "24",
+            "test.resources:gpu-memory": "30",
         },
         gpu_constraints = [
             "//:has_gpu",
