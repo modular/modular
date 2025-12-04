@@ -126,10 +126,10 @@ trait Quackable:
 For more information, see
 [Default method implementations](#default-method-implementations).
 
-A trait can also include associated aliases—compile-time constant values that
-must be defined by conforming structs. Associated aliases are useful for writing
+A trait can also include `comptime` members—compile-time constant values that
+must be defined by conforming structs. `comptime` members are useful for writing
 traits that describe generic types. For more information, see
-[Associated aliases for generics](#associated-aliases-for-generics).
+[`comptime` members for generics](#comptime-members-for-generics).
 
 ### Adding traits to structs
 
@@ -292,11 +292,11 @@ struct FlyingDuck(Copyable, Movable, Quackable, Flyable):
         print("Whoosh!")
 ```
 
-You can also use the `alias` keyword to create a shorthand name for a
+You can also use the `comptime` keyword to create a shorthand name for a
 trait composition:
 
 ```mojo
-alias DuckLike = Quackable & Flyable
+comptime DuckLike = Quackable & Flyable
 
 struct ToyDuck(DuckLike):
     # ... implementation omitted
@@ -313,10 +313,10 @@ trait DuckTrait(Quackable, Flyable):
 However, this is less flexible than using a trait composition and not
 recommended. The difference is that using the `trait` keyword defines a new,
 named trait. For a struct to conform to this trait, you need to *explicitly*
-include it in the struct's signature. On the other hand, the `DuckLike` alias
-represents a composition of two separate traits, `Quackable` and `Flyable`, and
-anything that conforms to those two traits conforms to `DuckLike`. For example,
-consider the `FlyingDuck` type shown above:
+include it in the struct's signature. On the other hand, the `DuckLike`
+`comptime` value represents a composition of two separate traits, `Quackable`
+and `Flyable`, and anything that conforms to those two traits conforms to
+`DuckLike`. For example, consider the `FlyingDuck` type shown above:
 
 ```mojo
 struct FlyingDuck(Copyable, Movable, Quackable, Flyable):
@@ -370,7 +370,7 @@ requirements. If you simply want to express the union of two or more traits,
 you should use a simple trait composition instead:
 
 ```mojo
-alias NamedAnimal = Animal & Named
+comptime NamedAnimal = Animal & Named
 ```
 
 ## Traits and lifecycle methods
@@ -399,7 +399,7 @@ the `Defaultable` and `Movable` traits in comments for reference:
 # trait Movable
 #     fn __moveinit__(out self, deinit existing: Self): ...
 
-alias MassProducible = Defaultable & Movable
+comptime MassProducible = Defaultable & Movable
 
 fn factory[type: MassProducible]() -> type:
     return type()
@@ -680,51 +680,51 @@ Building generic containers is an advanced topic. For an introduction, see the
 section on
 [parameterized structs](/mojo/manual/parameters/#parameterized-structs).
 
-### Associated aliases for generics
+### `comptime` members for generics
 
-In addition to methods, a trait can include _associated aliases_, which must be
+In addition to methods, a trait can include `comptime` members, which must be
 defined by any conforming struct. For example:
 
 ```mojo
 trait Repeater:
-    alias count: Int
+    comptime count: Int
 ```
 
-An implementing struct must define a concrete constant value for the alias,
-using any compile-time parameter value. For example, it can use a literal
+An implementing struct must define a concrete constant value for the `comptime`
+member, using any compile-time parameter value. For example, it can use a literal
 constant or a compile-time expression, including one that uses the struct's
 parameters.
 
 ```mojo
 struct Doublespeak(Repeater):
-    alias count: Int = 2
+    comptime count: Int = 2
 
 struct Multispeak[verbosity: Int](Repeater):
-    alias count: Int = Self.verbosity * 2 + 1
+    comptime count: Int = Self.verbosity * 2 + 1
 ```
 
-The `Doublespeak` struct has a constant value for the alias, but the `Multispeak`
+The `Doublespeak` struct has a constant value for `count`, but the `Multispeak`
 struct lets the user set the value using a parameter:
 
 ```mojo
 repeater = Multispeak[12]()
 ```
 
-Note that the alias is named `count`, and the `Multispeak` parameter is named
-`verbosity`. Parameters and aliases are in the same namespace, so the parameter
-can't have the same name as the associated alias.
+Note that the field is named `count`, and the `Multispeak` parameter is named
+`verbosity`. Parameters and `comptime` members are in the same namespace, so the
+parameter can't have the same name as the `comptime` member.
 
-Associated aliases are most useful for writing traits for generic types. For
+`comptime` members are most useful for writing traits for generic types. For
 example, imagine that you want to write a trait that describes a generic stack
 data structure that stores elements that conform to the `Copyable` and `Movable`
 traits.
 
-By adding the element type as an associated alias to the trait, you can specify
+By adding the element type as a `comptime` member on the trait, you can specify
 generic methods on the trait:
 
 ```mojo
 trait Stacklike:
-    alias EltType: Copyable & Movable
+    comptime EltType: Copyable & Movable
 
     fn push(mut self, var item: Self.EltType):
         ...
@@ -739,8 +739,8 @@ underlying storage:
 ```mojo
 struct MyStack[type: Copyable & Movable](Stacklike):
     """A simple Stack built using a List."""
-    alias EltType = Self.type
-    alias list_type = List[Self.EltType]
+    comptime EltType = Self.type
+    comptime list_type = List[Self.EltType]
 
     var list: Self.list_type
 

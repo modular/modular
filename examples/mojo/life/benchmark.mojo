@@ -19,10 +19,10 @@ import gridv3
 
 
 def main():
-    alias warmup_iterations = 10
-    alias benchmark_iterations = 1000
-    alias rows = 1024
-    alias cols = 1024
+    comptime warmup_iterations = 10
+    comptime benchmark_iterations = 1000
+    comptime rows = 1024
+    comptime cols = 1024
 
     # Initial state
     gridv1 = gridv1.Grid.random(rows, cols, seed=42)

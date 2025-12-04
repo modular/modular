@@ -17,7 +17,7 @@ from sys import exit, has_accelerator
 from gpu.host import DeviceContext
 from gpu import block_dim, block_idx, thread_idx
 
-alias num_elements = 20
+comptime num_elements = 20
 
 
 fn scalar_add(

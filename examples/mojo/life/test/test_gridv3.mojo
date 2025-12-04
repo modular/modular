@@ -14,7 +14,7 @@
 from gridv3 import Grid
 from testing import assert_equal, TestSuite
 
-alias data4x4: List[List[Int8]] = [
+comptime data4x4: List[List[Int8]] = [
     [0, 1, 1, 0],
     [1, 1, 0, 0],
     [0, 0, 1, 1],

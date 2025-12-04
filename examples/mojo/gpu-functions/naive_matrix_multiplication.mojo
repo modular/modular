@@ -19,15 +19,15 @@ from gpu import global_idx
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 
-alias float_dtype = DType.float32
+comptime float_dtype = DType.float32
 
-alias I = 5
-alias J = 4
-alias K = 6
+comptime I = 5
+comptime J = 4
+comptime K = 6
 
-alias m_layout = Layout.row_major(I, J)
-alias n_layout = Layout.row_major(J, K)
-alias p_layout = Layout.row_major(I, K)
+comptime m_layout = Layout.row_major(I, J)
+comptime n_layout = Layout.row_major(J, K)
+comptime p_layout = Layout.row_major(I, K)
 
 
 def main():
@@ -63,9 +63,9 @@ def main():
     # The grid is divided up into blocks, making sure there's an extra
     # full block for any remainder. This hasn't been tuned for any specific
     # GPU.
-    alias BLOCK_SIZE = 16
-    alias num_col_blocks = ceildiv(I, BLOCK_SIZE)
-    alias num_row_blocks = ceildiv(J, BLOCK_SIZE)
+    comptime BLOCK_SIZE = 16
+    comptime num_col_blocks = ceildiv(I, BLOCK_SIZE)
+    comptime num_row_blocks = ceildiv(J, BLOCK_SIZE)
 
     # Launch the compiled function on the GPU. The target device is specified
     # first, followed by all function arguments. The last two named parameters

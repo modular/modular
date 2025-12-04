@@ -520,8 +520,8 @@ from gpu import block_idx, thread_idx
 from sys import has_accelerator
 
 # Vector data type and size
-alias float_dtype = DType.float32
-alias vector_size = 1000
+comptime float_dtype = DType.float32
+comptime vector_size = 1000
 
 
 def main():
@@ -674,11 +674,11 @@ from layout import Layout, LayoutTensor
 A [`Layout`](/mojo/kernels/layout/layout/Layout) is a representation of memory
 layouts using shape and stride information, and it maps between logical
 coordinates and linear memory indices. We'll need to use the same `Layout`
-definition multiple times, so add the following alias to the top of the file
-after the other aliases:
+definition multiple times, so add the following `comptime` value to the top of
+the file after the other `comptime` declarations:
 
 ```mojo title="vector_addition.mojo"
-alias layout = Layout.row_major(vector_size)
+comptime layout = Layout.row_major(vector_size)
 ```
 
 Finally, add the following code to the end of the `main()` function
@@ -707,8 +707,8 @@ Then, add the following code to `vector_addition.mojo` just before the
 ```mojo title="vector_addition.mojo"
 # Calculate the number of thread blocks needed by dividing the vector size
 # by the block size and rounding up.
-alias block_size = 256
-alias num_blocks = ceildiv(vector_size, block_size)
+comptime block_size = 256
+comptime num_blocks = ceildiv(vector_size, block_size)
 
 
 fn vector_addition(
@@ -728,11 +728,11 @@ fn vector_addition(
 
 Our `vector_addition()` kernel function accepts the two input tensors and the
 output tensor as arguments. We also need to know the size of the vector (which
-we've defined with the alias `vector_size`) because it might not be a multiple
-of the block size. In fact, in this example, the size of the vector is 1,000,
-which is not a multiple of our block size of 256. So as we assign our threads to
-read elements from the tensor, we need to make sure we don't overrun the bounds
-of the tensor.
+we've defined with the `comptime` value `vector_size`) because it might not be a
+multiple of the block size. In fact, in this example, the size of the vector is
+1,000, which is not a multiple of our block size of 256. So as we assign our
+threads to read elements from the tensor, we need to make sure we don't overrun
+the bounds of the tensor.
 
 The body of the kernel function starts by calculating the linear index of the
 tensor element that a particular thread is responsible for. The `block_dim`
@@ -747,10 +747,10 @@ on.
 
 :::note
 
-As a convenience, the [`gpu`](/mojo/stdlib/gpu) package includes a
-`global_idx` alias that contains the unique "global" `x`, `y`, and `z` indices
-of the thread within the grid of thread blocks. So for our one-dimensional grid
-of one-dimensional thread blocks, `global_idx.x` is equivalent to the value of
+As a convenience, the [`gpu`](/mojo/stdlib/gpu) package includes a `global_idx`
+`comptime` value that contains the unique "global" `x`, `y`, and `z` indices of
+the thread within the grid of thread blocks. So for our one-dimensional grid of
+one-dimensional thread blocks, `global_idx.x` is equivalent to the value of
 `tid` that we calculated above. However, for this tutorial, it's best that you
 learn how to calculate `tid` manually so that you understand how the grid and
 thread block dimensions work.
@@ -805,14 +805,14 @@ from gpu import block_dim, block_idx, thread_idx
 from layout import Layout, LayoutTensor
 
 # Vector data type and size
-alias float_dtype = DType.float32
-alias vector_size = 1000
-alias layout = Layout.row_major(vector_size)
+comptime float_dtype = DType.float32
+comptime vector_size = 1000
+comptime layout = Layout.row_major(vector_size)
 
 # Calculate the number of thread blocks needed by dividing the vector size
 # by the block size and rounding up.
-alias block_size = 256
-alias num_blocks = ceildiv(vector_size, block_size)
+comptime block_size = 256
+comptime num_blocks = ceildiv(vector_size, block_size)
 
 
 fn vector_addition(
@@ -902,7 +902,7 @@ def main():
 The `enqueue_function_checked()` method enqueues the compilation and invocation
 of the `vector_addition()` kernel function, passing the input and output tensors
 as arguments. The `grid_dim` and `block_dim` arguments use the `num_blocks` and
-`block_size` aliases we defined in the previous step.
+`block_size` `comptime` values we defined in the previous step.
 
 After the kernel function has been compiled and enqueued, we create a
 `HostBuffer` to hold the result vector. Then we copy the result vector from the

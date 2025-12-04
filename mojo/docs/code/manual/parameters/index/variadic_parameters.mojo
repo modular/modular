@@ -13,14 +13,14 @@
 
 
 fn sum_params[*values: Int]() -> Int:
-    alias list = VariadicList(values)
+    comptime list = VariadicList(values)
     var sum = 0
     for v in list:
         sum += v
     return sum
 
 
-alias sum = sum_params[1, 2, 3, 4, 5]()
+comptime sum = sum_params[1, 2, 3, 4, 5]()
 
 
 def main():

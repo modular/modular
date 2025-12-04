@@ -36,7 +36,7 @@ struct FlyingDuck(Copyable, Flyable, Movable, Quackable):
         print("Whoosh!")
 
 
-alias DuckLike = Quackable & Flyable
+comptime DuckLike = Quackable & Flyable
 
 
 @fieldwise_init

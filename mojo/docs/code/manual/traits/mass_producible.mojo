@@ -18,7 +18,7 @@
 # trait Movable
 #     fn __moveinit__(out self, deinit existing: Self):
 
-alias MassProducible = Defaultable & Movable
+comptime MassProducible = Defaultable & Movable
 
 
 fn factory[type: MassProducible]() -> type:
