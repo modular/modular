@@ -1480,6 +1480,11 @@ Type FnTypeGeneratorType::getUserResultType() {
   return getBody().getUserResultType();
 }
 
+/// Get the user thrown type for a raising function.
+Type FnTypeGeneratorType::getUserThrownType() {
+  return getBody().getUserThrownType();
+}
+
 /// Substitute the specified implicit origin references into the specified
 /// type, replacing them with `values` if they are at depth 0, or decrementing
 /// their depth if not.  This returns the resultant FunctionType on success,
