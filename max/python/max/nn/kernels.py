@@ -35,6 +35,7 @@ from max.graph import (
 from max.graph.ops.quantized import repack_gguf_quantized_weights
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.nn.float8_config import (
+    Float8Config,
     Float8InputScaleSpec,
     Float8WeightScaleSpec,
 )
@@ -1573,56 +1574,126 @@ def flare_mla_prefill_plan(
     return results[0].tensor, results[1].tensor, results[2].tensor
 
 
-def k_cache_to_buffer(
+def mla_prefill_branch_fp8(
     kv_params: KVCacheParams,
-    buffer_row_offsets_1d: TensorValue,
-    cache_offsets_1d: TensorValue,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    buffer_row_offsets: TensorValue,
+    cache_offsets: TensorValue,
+    buffer_length: TensorValue,
+    kv_b_proj: TensorValue,
+    kv_b_proj_scale: TensorValue,
     kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
-    buffer_length: TensorValue,
-    buffer_size: int,
-    weight_dim: int,
+    mask_variant: MHAMaskVariant,
+    scale: float,
+    qk_nope_head_dim: int,
+    qk_rope_head_dim: int,
+    v_head_dim: int,
+    float8_config: Float8Config,
 ) -> TensorValue:
-    """This kernel copies the key cache to a contiguous buffer.
+    """
+    This is a manually fused kernel that performs the following operations:
+    - Copy the KV latent values from PagedKVCache to a contiguous buffer.
+    - Quantize the KV latent values to fp8.
+    - Up-project the latent KV values to full K and V through a matmul.
+    - Split the concatenated KV into K and V.
+    - Perform MLA prefill.
 
     Args:
         kv_params: KVCacheParams
-        buffer_row_offsets_1d: Buffer row offsets
-        cache_offsets_1d: Cache offsets
-        kv_collection: KV collection
-        layer_idx: Layer index
-        buffer_length: Buffer length
-        buffer_size: Buffer size for storing the temporal results during
-            prefill, in unit of tokens.
-        weight_dim: Weight dimension
-
-    Returns:
-        A tensor of shape [buffer_size, weight_dim] containing the copied key
-        cache.
+        input: Input tensor of shape [tot_seq_len, num_heads,
+            qk_nope_head_dim + qk_rope_head_dim].
+        input_row_offsets: Indicates where each request starts and ends in
+            `input`. This is a 1D tensor of shape [num_batches + 1].
+        buffer_row_offsets: Indicates where each request's KV latent values
+            should be stored in the contiguous buffer. This is a 1D tensor of
+            shape [num_batches + 1].
+        cache_offsets: Indicates the starting token position in the KV cache
+            from which to copy KV latent values for each request. This is a 1D
+            tensor of shape [num_batches + 1].
+        buffer_length: The total number of tokens in the KV cache. Scalar.
+        kv_b_proj: Weight matrix for up-projecting the KV latent values to full
+            K and V. Shape: [num_heads * (qk_nope_head_dim + v_head_dim),
+            kv_latent_dim].
+        kv_b_proj_scale: The scale for the weight matrix. Shape varies
+            depending on the float8_config.
+        kv_collection: Paged KV Cache object.
+        layer_idx: Layer index.
+        mask_variant: Mask variant.
+        scale: scale for the attention calculation.
+        qk_nope_head_dim: Dimension of non-rope parts of the Q/K heads.
+        qk_rope_head_dim: Dimension of rope parts of the Q/K heads.
+        v_head_dim: Dimension of the V heads.
+        float8_config: Float8Config for the weight matrix.
     """
+
+    input_rank_expected = 3
+    if input.rank != input_rank_expected:
+        raise ValueError(
+            f"expected input of rank {input_rank_expected} but got {input.rank}"
+        )
+
+    if input.dtype != kv_params.dtype:
+        raise ValueError(
+            f"expected input to be dtype: {kv_params.dtype}, got {input.dtype}"
+        )
+
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(f"expected uint32 layer_idx but got {layer_idx.dtype}")
+
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
+        )
 
     if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
         raise ValueError(
-            f"unsupported cache strategy for k_cache_to_buffer: {kv_params.cache_strategy}"
+            f"unsupported cache strategy for mla_prefill_branch_fp8: {kv_params.cache_strategy}"
         )
 
+    assert qk_nope_head_dim + qk_rope_head_dim == input.shape[2]
+    assert kv_params.page_size is not None
+    assert float8_config.input_scale.block_size is not None
+    assert float8_config.weight_scale.block_size is not None
+    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
+    parameters: dict[str, int | str | DType] = {
+        "qk_nope_head_dim": qk_nope_head_dim,
+        "m_scale_granularity": float8_config.input_scale.block_size[0],
+        "n_scale_granularity": float8_config.weight_scale.block_size[0],
+        "k_scale_granularity": float8_config.weight_scale.block_size[1],
+        "mask_str": mha_mask_config.attention_mask_variant.value,
+        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
+    }
+
+    input_values: MutableSequence[Value[Any]] = [
+        input,
+        input_row_offsets,
+        buffer_row_offsets,
+        cache_offsets,
+        buffer_length,
+        kv_b_proj,
+        kv_b_proj_scale,
+        *kv_collection,
+        layer_idx,
+        ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+    ]
     return ops.inplace_custom(
-        "mo.mla.k_cache_to_buffer.paged",
-        device=buffer_row_offsets_1d.device,
-        values=[
-            buffer_row_offsets_1d,
-            cache_offsets_1d,
-            *kv_collection,
-            layer_idx,
-            buffer_length,
-        ],
+        "mo.mla.graph.prefill.paged",
+        device=input.device,
+        values=input_values,
         out_types=[
             TensorType(
-                dtype=kv_params.dtype,
-                shape=[buffer_size, weight_dim],
-                device=buffer_row_offsets_1d.device,
-            ),
+                dtype=input.dtype,
+                shape=[
+                    input.shape[0],
+                    input.shape[1],
+                    v_head_dim,
+                ],
+                device=input.device,
+            )
         ],
+        parameters=parameters,
     )[0].tensor
 
 

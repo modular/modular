@@ -184,7 +184,7 @@ from nn.mha import flash_attention, flash_attention_ragged
 from nn.mha_mask import MHAMask
 from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 from nn.mha_utils import dispatch_mask_and_score_mod
-from nn.mla import _k_cache_to_buffer
+from nn.mla_graph import mla_prefill_branch_fp8
 from nn.moe import moe_create_indices
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import (
@@ -7077,44 +7077,75 @@ struct Struct_kv_cache_get_max_seq_len_paged:
         max_seq_len[0] = kv_collection.max_seq_length
 
 
-@compiler.register("mo.mla.k_cache_to_buffer.paged")
-struct KCacheToBuffer:
+@compiler.register("mo.mla.graph.prefill.paged")
+struct Struct_mla_prefill_graph_paged:
     @always_inline
     @staticmethod
     fn execute[
         dtype: DType,
+        fp8_dtype: DType,
+        fp8_scale_dtype: DType, //,
+        qk_nope_head_dim: Int,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
+        mask_str: StaticString,
+        score_mod_str: StaticString,
         target: StaticString,
     ](
-        k_latent_buffer: OutputTensor[dtype=dtype, rank=2],
+        output: OutputTensor[dtype=dtype, rank=3],
+        q: InputTensor[dtype=dtype, rank=3],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         buffer_row_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
         cache_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
+        buffer_length: Int32,
+        kv_b_proj: InputTensor[dtype=fp8_dtype, rank=2],
+        kv_b_proj_scale: InputTensor[dtype=fp8_scale_dtype, rank=2],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
         cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
         kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
-        buffer_length: Int32,
+        scale: Float32,
         context: DeviceContextPtr,
     ) raises:
-        constrained[
-            is_gpu[target](),
-            "mo.mla.k_cache_to_buffer is only supported on GPU",
-        ]()
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
             cache_lengths,
             kv_lookup_table,
             max_lengths,
         )
-        var k = kv_collection.get_key_cache(Int(layer_idx))
-        _k_cache_to_buffer(
-            buffer_row_offsets_1d.to_layout_tensor(),
-            cache_offsets_1d.to_layout_tensor(),
-            k,
-            Int(buffer_length),
-            k_latent_buffer.to_layout_tensor(),
-            context.get_device_context(),
-        )
+
+        constrained[
+            is_gpu[target](),
+            "mo.mla.graph.prefill.paged is only supported on GPU",
+        ]()
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.mla.graph.prefill.paged", task_id=get_safe_task_id(context)
+        ):
+            mla_prefill_branch_fp8[
+                qk_nope_head_dim=qk_nope_head_dim,
+                m_scale_granularity=m_scale_granularity,
+                n_scale_granularity=n_scale_granularity,
+                k_scale_granularity=k_scale_granularity,
+                mask_str=mask_str,
+                score_mod_str=score_mod_str,
+                target=target,
+            ](
+                output.to_layout_tensor(),
+                q.to_layout_tensor(),
+                input_row_offsets.to_layout_tensor(),
+                kv_collection,
+                layer_idx,
+                scale,
+                buffer_row_offsets_1d.to_layout_tensor(),
+                cache_offsets_1d.to_layout_tensor(),
+                Int(buffer_length),
+                kv_b_proj.to_layout_tensor(),
+                kv_b_proj_scale.to_layout_tensor(),
+                context.get_device_context(),
+            )
 
 
 # ===-----------------------------------------------------------------------===#

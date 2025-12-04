@@ -32,11 +32,10 @@ from ..float8_config import Float8Config
 from ..float8_ops import matmul_float8
 from ..kernels import (
     flare_mla_prefill_plan,
-    flare_mla_prefill_ragged,
     fused_qk_ragged_rope,
-    k_cache_to_buffer,
     kv_cache_get_max_seq_len,
     matmul_k_cache_ragged_scaled_float8,
+    mla_prefill_branch_fp8,
     quantize_dynamic_scaled_float8,
     rms_norm_key_cache,
 )
@@ -517,48 +516,24 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 mla_inputs = _mla_inputs
             xq = ops.concat([xq_nope, xq_rope], axis=2)
 
-            k_latent_buffer = k_cache_to_buffer(
-                self.kv_params,
-                mla_inputs[0][0],
-                mla_inputs[1][0],
-                kv_collection,
-                layer_idx,
-                mla_inputs[2][0],
-                self.BUFFER_TOK_SIZE,
-                int(self.kv_b_proj.shape[1]),
-            )
-            kv_buffer = matmul_float8(
-                x=k_latent_buffer,
-                weight=self.kv_b_proj,
-                weight_scale=self.kv_b_proj_scale,
-                input_scale=None,  # Dynamic scaling
-                float8_config=self.float8_config,
-                group_size_or_per_token=self.scales_granularity_mnk[2],
-            )
-
-            kv_buffer = kv_buffer.reshape(
-                (-1, self.n_heads, self.qk_nope_head_dim + self.v_head_dim)
-            )
-            k_nope, v = ops.split(
-                kv_buffer, [self.qk_nope_head_dim, self.v_head_dim], axis=2
-            )
-
-            result, _ = flare_mla_prefill_ragged(
+            return mla_prefill_branch_fp8(
                 self.kv_params,
                 xq,
-                k_nope,
-                v,
                 input_row_offsets,
                 mla_inputs[0][0],
                 mla_inputs[1][0],
+                mla_inputs[2][0],
+                self.kv_b_proj,
+                self.kv_b_proj_scale,
                 kv_collection,
                 layer_idx,
                 MHAMaskVariant.CAUSAL_MASK,
                 self.scale,
+                self.qk_nope_head_dim,
                 self.qk_rope_head_dim,
+                self.v_head_dim,
+                self.float8_config,
             )
-
-            return result
 
         # def _mla_decode() -> TensorValue:
         #     # from [B, H, D] to [H, B, D]
