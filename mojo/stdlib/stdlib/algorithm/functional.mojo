@@ -56,14 +56,55 @@ from utils.static_tuple import StaticTuple
 fn map[
     origins: OriginSet, //, func: fn (Int) capturing [origins] -> None
 ](size: Int):
-    """Maps a function over a range from 0 to size.
+    """Maps a function over the integer range [0, size).
+    This lets you apply an integer index-based operation across data
+    captured by the mapped function (for example, an indexed buffer).
 
     Parameters:
-        origins: The capture origins.
-        func: Function to map.
+        origins: Capture origins for mapped function.
+        func: Parameterized function applied at each index.
 
     Args:
-        size: The number of elements.
+        size: Number of elements in the index range.
+
+    For example:
+
+    ```mojo
+    from algorithm import map
+
+    def main():
+        # Create list with initial values to act on
+        var list = List[Float32](1.0, 2.0, 3.0, 4.0, 5.0)
+
+        # Function applied to the value at each index
+        @parameter
+        fn exponent_2(idx: Int):
+            list[idx] = 2.0 ** list[idx]
+
+        # Apply the mapped function across the index range
+        map[exponent_2](len(list))
+
+        # Show results
+        for idx in range(len(list)):
+            print(list[idx])
+    ```
+
+    Example output:
+
+    ```output
+    2.0
+    4.0
+    8.0
+    16.0
+    32.0
+    ```
+
+    :::note
+    Don't confuse `algorithm.map` (this eager, index-based helper) with
+    [`iter.map`](https://docs.modular.com/mojo/stdlib/iter/map/),
+    which returns a lazy iterator that applies a function to each element.
+    :::
+
     """
     for i in range(size):
         func(i)
