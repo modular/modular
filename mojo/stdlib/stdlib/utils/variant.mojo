@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Defines a Variant type."""
 
+from builtin.constrained import _constrained_conforms_to
+from builtin.rebind import downcast
 from os import abort
 from sys.intrinsics import _type_is_eq
 
@@ -20,7 +22,7 @@ from sys.intrinsics import _type_is_eq
 # ===----------------------------------------------------------------------=== #
 
 
-struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
+struct Variant[*Ts: Movable](ImplicitlyCopyable, Movable):
     """A union that can hold a runtime-variant value from a set of predefined
     types.
 
@@ -168,9 +170,18 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
         @parameter
         for i in range(len(VariadicList(Self.Ts))):
             comptime T = Self.Ts[i]
+            _constrained_conforms_to[
+                conforms_to(T, Copyable),
+                Parent=Self,
+                Element=T,
+                ParentConformsTo="Copyable",
+            ]()
+
+            comptime TCopyable = downcast[Copyable, T]
+
             if self._get_discr() == i:
-                self._get_ptr[T]().init_pointee_move(
-                    other._get_ptr[T]()[].copy()
+                self._get_ptr[TCopyable]().init_pointee_copy(
+                    other._get_ptr[TCopyable]()[]
                 )
                 return
 

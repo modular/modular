@@ -14,7 +14,7 @@
 from os import abort
 from sys.ffi import _Global
 
-from test_utils import MoveCopyCounter, ObservableDel
+from test_utils import MoveCopyCounter, ObservableDel, MoveOnly
 from testing import TestSuite, assert_equal, assert_false, assert_true
 
 from utils import Variant
@@ -109,7 +109,7 @@ def test_move():
     var v2 = v1
     # didn't call moveinit
     assert_equal(v1[MoveCopyCounter].moved, 1)
-    assert_equal(v2[MoveCopyCounter].moved, 2)
+    assert_equal(v2[MoveCopyCounter].moved, 1)
     # test that we didn't call the other moveinit too!
     assert_no_poison()
 
@@ -182,6 +182,12 @@ def test_is_type_supported():
     assert_equal(_y.is_type_supported[SIMD[DType.uint8, 2]](), True)
     assert_equal(_y.is_type_supported[SIMD[DType.uint8, 4]](), True)
     assert_equal(_y.is_type_supported[SIMD[DType.uint8, 8]](), False)
+
+
+def test_variant_works_with_move_only_types():
+    var v1 = Variant[MoveOnly[Int], MoveOnly[String]](MoveOnly[Int](42))
+    var v2 = v1^
+    assert_equal(v2[MoveOnly[Int]].data, 42)
 
 
 def main():

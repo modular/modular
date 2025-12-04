@@ -245,7 +245,10 @@ what we publish.
 
   - `List` now conforms to `Equatable`, `Writable`, `Stringable`,
     and `Representable`.
-  - `Tuple` no longer requires its elements to be `Copyable`.
+
+  - The following types no longer require their elements to be `Copyable`.
+    - `Tuple`
+    - `Variant`
 
 - Basic file I/O operations in the `io` module are now implemented natively in
   Mojo using direct `libc` system calls (`open`, `close`, `read`, `write`,
