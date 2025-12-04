@@ -604,9 +604,11 @@ ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl) {
   return {op, parameters, result};
 }
 
-ASTDecl *ClosureEmitter::createStructWrapper(
-    ASTDecl &moduleDecl, StringRef baseName, ASTDecl &traitDecl,
-    SMLoc smLocation, TypeConvention typeConvention, bool isCopyable) {
+ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
+                                             StringRef name, ASTDecl &traitDecl,
+                                             SMLoc smLocation,
+                                             TypeConvention typeConvention,
+                                             bool isCopyable) {
   StringRef implName = "impl";
   StringRef originSet = "origin_set";
   TraitDeclOp trait = cast<TraitDeclOp>(traitDecl.getIfOperation());
@@ -640,15 +642,9 @@ ASTDecl *ClosureEmitter::createStructWrapper(
   ASTType selfType(paramType);
 
   // Create a struct with a single field of type "impl".
-  std::pair<ASTDecl &, StructDeclOp> pair = createStruct(
-      shared, moduleDecl,
-      StringAttr::get(
-          b.getContext(),
-          baseName + "_wrapper" + (isCopyable ? "_copyable" : "") +
-              (typeConvention == TypeConvention::RegisterPassableTrivial
-                   ? "_devicePassable"
-                   : "")),
-      implParameters, smLocation);
+  std::pair<ASTDecl &, StructDeclOp> pair =
+      createStruct(shared, moduleDecl, StringAttr::get(b.getContext(), name),
+                   implParameters, smLocation);
   ASTDecl &structDecl = pair.first;
   StructDeclOp declOp = pair.second;
   declOp.setConvention(typeConvention);
@@ -2570,4 +2566,27 @@ void ClosureEmitter::addConformanceToDevicePassable(
   ClosureParent devicePassableParent(trait, {}, ClosureMethod::NONE);
   addConformanceTable(structDecl, devicePassableParent, devicePassableWitnesses,
                       fileModule);
+}
+
+TraitType ClosureEmitter::getWrapperTraitType(ASTDecl &traitDecl,
+                                              ASTDecl &moduleDecl,
+                                              bool isCopyable,
+                                              TypeConvention typeConvention) {
+  SmallVector<SymbolRefAttr> symbols;
+  symbols.push_back(traitDecl.getSymbolRef());
+  symbols.push_back(moveParent.getSymbolRef(moduleDecl));
+  symbols.push_back(anyParent.getSymbolRef(moduleDecl));
+  if (isCopyable) {
+    symbols.push_back(copyParent.getSymbolRef(moduleDecl));
+    symbols.push_back(implicitlyCopyableParent.getSymbolRef(moduleDecl));
+  }
+
+  if (typeConvention == TypeConvention::RegisterPassableTrivial) {
+    ASTDecl *devicePassableTrait =
+        shared.getBuiltinDevicePassableTrait(traitDecl.getLoc());
+    if (devicePassableTrait)
+      symbols.push_back(devicePassableTrait->getSymbolRef());
+  }
+
+  return TraitType::get(moduleDecl.getContext(), symbols);
 }

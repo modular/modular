@@ -88,7 +88,7 @@ public:
   /// closures "T" is an abstract type (ClosureType). Wrapping the closure
   /// instance in a struct renders it eligible to be handled properly by our
   /// check-lifetimes pass.
-  ASTDecl *createStructWrapper(ASTDecl &moduleDecl, StringRef baseName,
+  ASTDecl *createStructWrapper(ASTDecl &moduleDecl, StringRef name,
                                ASTDecl &traitDecl, SMLoc location,
                                TypeConvention typeConvention, bool isCopyable);
 
@@ -156,6 +156,9 @@ public:
     /// closure method tag corresponding to the method this parent represents.
     ClosureMethod closureMethod;
   };
+
+  TraitType getWrapperTraitType(ASTDecl &traitDecl, ASTDecl &moduleDecl,
+                                bool isCopyable, TypeConvention typeConvention);
 
 private:
   /// Given a name, a list of builtin parent traits (like "Movable" for

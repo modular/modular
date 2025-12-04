@@ -226,15 +226,6 @@ private:
 };
 } // namespace
 
-/// ClosureWrappers is a data structure used to cache wrappers that conform to a
-/// particular closure trait. Currently there can be two wrappers, but a more
-/// scalable approach is to use the TraitType as the key. Because there are only
-/// two today, the overhead of a hash table probably is not worth it.
-struct ClosureWrappers {
-  ASTDecl *copyable = nullptr;
-  ASTDecl *noncopyable = nullptr;
-};
-
 //===----------------------------------------------------------------------===//
 // SharedState
 //===----------------------------------------------------------------------===//
@@ -328,10 +319,11 @@ struct SharedState::Impl {
   /// Closure traits have a unique generator type and are global to the module.
   /// Cache previously built traits.
   DenseMap<GeneratorType, ASTDecl *> closureTraits;
-  /// Closure wrappers are unique to their trait signatures and local to a file
-  /// module. Cache previously built wrappers.
-  DenseMap<std::pair<TraitType, ASTDecl *>, ClosureWrappers>
-      unifiedClosureWrappers;
+  /// Closure wrappers are unique to their combined trait type and local to a
+  /// file module. The TraitType key encodes the closure trait plus Movable,
+  /// Copyable (if copyable), DevicePassable (if trivial), and extern trait
+  /// (if stateless).
+  DenseMap<std::pair<TraitType, ASTDecl *>, ASTDecl *> unifiedClosureWrappers;
 
   /// The capture values and decls associated with their enclosing nested
   /// function. This data structure is populated during the parsing of the FnOp
@@ -2080,7 +2072,9 @@ ASTDecl *SharedState::getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
   auto ptr = impl->closureTraits.find(sig);
   if (ptr == impl->closureTraits.end()) {
     std::string name = ASTType(sig).getAsString(/*diags=*/this) +
-                       (sig.isRegisterPassable() ? " register_passable" : "");
+                       (sig.isRegisterPassable() ? " register_passable" : "") +
+                       (sig.getBody().isExtern() ? " extern" : "");
+    ;
     auto result = closureEmitter->createClosureTrait(
         moduleDecl, StringAttr::get(getContext(), name), sig, loc, inlineLevel);
     impl->closureTraits.insert({sig, result});
@@ -2094,26 +2088,29 @@ ASTDecl *SharedState::getOrCreateUnifiedClosureWrapper(
     InlineLevel inlineLevel, bool isCopyable, TypeConvention typeConvention) {
   ASTDecl *traitDecl =
       getOrCreateClosureTrait(loc, *moduleDecl, sig, inlineLevel);
-  TraitDeclOp traitDeclOp =
-      dyn_cast_if_present<TraitDeclOp>(traitDecl->getIfOperation());
-  assert(traitDeclOp &&
-         "expected creation function to produce a trait decl op");
-  TraitType traitType = traitDeclOp.getCanonicalTrait();
 
-  auto ptr = impl->unifiedClosureWrappers.find({traitType, moduleDecl});
-  if (ptr == impl->unifiedClosureWrappers.end())
-    ptr = impl->unifiedClosureWrappers
-              .insert({{traitType, moduleDecl}, ClosureWrappers()})
-              .first;
-  ClosureWrappers &wrappers = ptr->second;
-  ASTDecl *&targetWrapper =
-      isCopyable ? wrappers.copyable : wrappers.noncopyable;
-  if (!targetWrapper)
-    targetWrapper = closureEmitter->createStructWrapper(
-        *moduleDecl, ASTType(sig).getAsString(/*diags=*/this), *traitDecl, loc,
-        typeConvention, isCopyable);
+  // Compute the wrapper's combined TraitType based on all conformances.
+  // This uniquely identifies the wrapper configuration.
+  TraitType wrapperTraitType = closureEmitter->getWrapperTraitType(
+      *traitDecl, *moduleDecl, isCopyable, typeConvention);
 
-  return targetWrapper;
+  auto &wrapper = impl->unifiedClosureWrappers[{wrapperTraitType, moduleDecl}];
+  if (!wrapper) {
+    // Build a unique name by combining the signature with trait abbreviations.
+    // Skip the first symbol (closure's function trait) since it's already
+    // represented in the signature string.
+    SmallString<128> baseName(ASTType(sig).getAsString(/*diags=*/this));
+    ArrayRef<SymbolRefAttr> symbols = wrapperTraitType.getSymbols();
+    for (SymbolRefAttr symbol : symbols.drop_front()) {
+      StringRef leafName = symbol.getLeafReference().getValue();
+      baseName += "_";
+      baseName += leafName.take_front(4);
+    }
+    wrapper = closureEmitter->createStructWrapper(
+        *moduleDecl, baseName, *traitDecl, loc, typeConvention, isCopyable);
+  }
+
+  return wrapper;
 }
 
 FnOp SharedState::getOrCreateFunctionThunk(Attribute key,
