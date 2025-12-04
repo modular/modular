@@ -11,6 +11,7 @@
 #include "AsyncRT/Runtime/Runtime.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "lldb/Target/Target.h"
+#include "lldb/lldb-types.h"
 
 using namespace M;
 using namespace M::KGEN::Mojo;
@@ -51,14 +52,27 @@ public:
 
 private:
   SBBreakpoint getOrCreateBreakpoint(SBDebugger &debugger) {
-    if (!bp)
-      bp = debugger.GetSelectedTarget().BreakpointCreateForException(
-          lldb::eLanguageTypeMojo, /*catch_bp=*/false, /*throw_bp=*/true);
+    SBTarget target = debugger.GetSelectedTarget();
+    lldb::user_id_t guid = target.GetGloballyUniqueID();
 
-    return bp;
+    if (!breakpointMap.contains(guid)) {
+      SBBreakpoint bp = target.BreakpointCreateForException(
+          lldb::eLanguageTypeMojo, /*catch_bp=*/false, /*throw_bp=*/true);
+      breakpointMap.insert({guid, bp});
+      return bp;
+    }
+
+    return breakpointMap[guid];
   }
 
-  SBBreakpoint bp;
+  // Have one exception breakpoint per target, so that break-on-raise works and
+  // can be toggled even when there are multiple target sessions.
+  //
+  // This map will grow with the number of targets created, but not shrink when
+  // they are deleted.  For a typical use of `mojo debug` this will have a size
+  // of 1, perhaps 2-3.  For the unittests/mojo-debug suite this will grow with
+  // the number of tests.
+  DenseMap<lldb::user_id_t, SBBreakpoint> breakpointMap;
 };
 
 //===----------------------------------------------------------------------===//
@@ -122,8 +136,9 @@ void M::KGEN::Mojo::registerMojoCommands(SBDebugger debugger, ContextRef ctx) {
       "mojo", "Commands related to the Mojo language support.");
 
   root.AddCommand("break-on-raise", new CommandBreakOnRaise(),
-                  "Enables or disables breakpoints on raise statements. If no "
-                  "arguments are specified, this feature will be enabled.",
+                  "Enables or disables breakpoints on raise statements for the "
+                  "current selected target. If no arguments are specified, "
+                  "this feature will be enabled.",
                   "mojo break-on-raise ([enable|disable])");
   root.AddCommand("statistics", new CommandStats(ctx),
                   "Internal commands related to statistics of Mojo");
