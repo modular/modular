@@ -196,11 +196,15 @@ class TokenGenerationScheduler(Scheduler):
         else:
             responses = self.pipeline.execute(inputs)
 
-        # If there is a chunked request, we put it back into the request queue
-        self.batch_constructor.move_completed_ce_requests_to_tg(
-            inputs.batches,
-            responses,
-        )
+        # Advance the requests and collect the invalid request IDs
+        for (
+            request_id
+        ) in self.batch_constructor.advance_requests_and_collect_invalid_ids(
+            inputs.batches
+        ):
+            # The only scenario where the request ID should not be in the responses dictionary, is if the pipeline
+            # errored out, this should not happen.
+            del responses[request_id]
 
         # Release terminated requests from the batch
         num_terminated_requests = 0

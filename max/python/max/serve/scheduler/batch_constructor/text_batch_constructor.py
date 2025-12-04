@@ -165,22 +165,28 @@ class TextBatchConstructor:
         else:
             replica.tg_reqs[ctx.request_id] = ctx
 
-    def move_completed_ce_requests_to_tg(
-        self,
-        executed_batches: list[dict[RequestID, TextContext]],
-        responses: dict[RequestID, TextGenerationOutput],
-    ) -> None:
-        """Processes completed context encoding (CE) batches and moves requests to appropriate queues.
+    def advance_requests_and_collect_invalid_ids(
+        self, executed_batches: list[dict[RequestID, TextContext]]
+    ) -> list[RequestID]:
+        """Advances request state based on executed CE batches and returns invalid IDs.
 
-        This method moves CE requests which have been fully encoded to the TG queue.
-        It handles the case where a request is chunked and needs to be re-enqueued
-        on the CE queue for further processing.
+        This method updates per-replica queues by moving executed context encoding (CE)
+        requests into the text generation (TG) queues. If the last request in a batch
+        is chunked and still requires additional CE work, it is moved back to the CE
+        queue for that replica, and its request ID is returned so upstream callers can
+        remove any partial responses for that request.
 
         Args:
-            executed_batches: A list of batches for each replica.
-            responses: A dict containing the responses for each request.
-        """
+            executed_batches: A list of per-replica batches, where each batch maps
+                request IDs to their corresponding `TextContext` objects that have
+                just been executed by CE.
 
+        Returns:
+            A list of request IDs that should be treated as invalid by upstream
+            consumers (for example, to be removed from the responses queue) because
+            they represent chunked requests that must be re-processed by CE.
+        """
+        chunked_request_ids: list[RequestID] = []
         for per_replica_batch, replica in zip(
             executed_batches, self.replicas, strict=True
         ):
@@ -191,18 +197,16 @@ class TextBatchConstructor:
             # Move the requests from CE to TG
             replica.tg_reqs.update(per_replica_batch)
 
-            # Check if the last request in the batch is chunked.
-            last_req = list(per_replica_batch.values())[-1]
+            # Move Chunked requests back to the Ce request queue
+            last_request = list(per_replica_batch.values())[-1]
+            if last_request.needs_ce:
+                del replica.tg_reqs[last_request.request_id]
+                replica.ce_reqs[last_request.request_id] = last_request
+                replica.ce_reqs.move_to_end(last_request.request_id, last=False)
 
-            # if we still need Context Encoding, we put it back into the ce requests queue for that replica.
-            if last_req.needs_ce:
-                req_id = last_req.request_id
-                del replica.tg_reqs[req_id]
-                replica.ce_reqs[req_id] = last_req
-                replica.ce_reqs.move_to_end(req_id, last=False)
+                chunked_request_ids.append(last_request.request_id)
 
-                # Remove the request from the responses dictionary.
-                del responses[req_id]
+        return chunked_request_ids
 
     def contains(self, request_id: RequestID) -> bool:
         """Checks if a request is in the batch constructor for any replica."""

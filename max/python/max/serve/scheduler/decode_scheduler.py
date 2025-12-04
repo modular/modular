@@ -332,10 +332,13 @@ class DecodeScheduler(Scheduler):
         assert len(inputs.batches) > 0
         responses = self.pipeline.execute(inputs)
 
-        self.batch_constructor.move_completed_ce_requests_to_tg(
-            inputs.batches,
-            responses,
+        pruned_ids = (
+            self.batch_constructor.advance_requests_and_collect_invalid_ids(
+                inputs.batches
+            )
         )
+        for request_id in pruned_ids:
+            del responses[request_id]
 
         # Release terminated requests
         num_terminated_requests = 0
