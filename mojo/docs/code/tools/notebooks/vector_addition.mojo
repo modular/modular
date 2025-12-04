@@ -18,7 +18,7 @@ from gpu import thread_idx
 from gpu.host import DeviceContext
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
-from sys import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
+from sys import has_accelerator
 
 comptime VECTOR_WIDTH = 10
 comptime layout = Layout.row_major(VECTOR_WIDTH)
@@ -35,7 +35,7 @@ fn vector_addition(left: Tensor, right: Tensor, output: Tensor):
 def main():
     # Ensure a supported GPU (NVIDIA or AMD) is available
     constrained[
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator(),
+        has_accelerator(),
         "This example requires a supported GPU",
     ]()
 

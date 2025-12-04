@@ -16,6 +16,13 @@ GPU_SRCS = [
     "vector_addition.mojo",
 ]
 
+_PLATFORM_CONSTRAINTS = {
+    "gpu_hello.mojo": ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+}
+
 # Non-GPU binaries
 
 [
@@ -35,10 +42,10 @@ GPU_SRCS = [
     mojo_binary(
         name = src.split(".")[0],
         srcs = [src],
-        target_compatible_with = ["//:has_gpu"] + select({
-            "//:apple_gpu": ["@platforms//:incompatible"],
-            "//conditions:default": [],
-        }),
+        target_compatible_with = _PLATFORM_CONSTRAINTS.get(
+            src,
+            ["//:has_gpu"],
+        ),
         deps = [
             "//max:layout",
             "@mojo//:stdlib",
