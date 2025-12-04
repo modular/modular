@@ -64,7 +64,7 @@ PINS = {
     "jinja2": "jinja2@3.1.4",
     "jiwer": "jiwer@3.0.5",
     "kaleido": "kaleido@0.2.1",
-    "kepler": "kepler@0.2.3",
+    "kepler": "kepler@0.2.4",
     "levenshtein": "levenshtein@0.27.3",
     "librosa": "librosa@0.10.2",
     "llguidance": "llguidance@1.0.1",
@@ -2968,20 +2968,20 @@ def targets():
         testonly = "kaleido" in _TESTONLY_DEPS,
     )
 
-    _kepler_0_2_3_deps = [
+    _kepler_0_2_4_deps = [
         ":numpy@2.2.6",
         ":rich@13.7.1",
     ]
 
     native.alias(
-        name = "_wheel_kepler@0.2.3",
-        actual = "@pycross_lock_file_wheel_kepler_0.2.3_py3_none_any//file",
+        name = "_wheel_kepler@0.2.4",
+        actual = "@pycross_lock_file_wheel_kepler_0.2.4_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "kepler@0.2.3",
-        deps = _kepler_0_2_3_deps,
-        wheel = ":_wheel_kepler@0.2.3",
+        name = "kepler@0.2.4",
+        deps = _kepler_0_2_4_deps,
+        wheel = ":_wheel_kepler@0.2.4",
         testonly = "kepler" in _TESTONLY_DEPS,
     )
 
@@ -12172,12 +12172,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_kepler_0.2.3_py3_none_any",
+        name = "pycross_lock_file_wheel_kepler_0.2.4_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/60/34/0b4b98a3af43a8fac2d8732ae2bf784616980429ed8556de281cf61ed9b5/kepler-0.2.3-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/eb/f7/29438bb5c67e7a106115c6fdd75ca9b93f362e232a46647f00d98b44278d/kepler-0.2.4-py3-none-any.whl",
         ],
-        sha256 = "3ee2bce977982c9e5ca490640ff8eee6086e38dbee2ea8adf9d37cf0c8b1950c",
-        downloaded_file_path = "kepler-0.2.3-py3-none-any.whl",
+        sha256 = "c87141c1f614fe2b8df3e32cc1c18f2d9cfa6e9749bcf7c63ab1219c1d385ab8",
+        downloaded_file_path = "kepler-0.2.4-py3-none-any.whl",
     )
 
     maybe(
