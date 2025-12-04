@@ -276,6 +276,8 @@ what we publish.
 - `--elaboration-max-depth` is added to control maximum elaborator
    instantiation depth. This (unsigned) value helps to detect compile time
    recursion. The default is `std::numeric_limits<unsigned>::max()`.
+- The Mojo Debugger `mojo break-on-raise` feature now works correctly with
+  multiple targets in a debugger instance. The setting is per-target.
 
 ### Experimental changes
 
