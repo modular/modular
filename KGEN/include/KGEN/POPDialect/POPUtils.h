@@ -361,9 +361,9 @@ SIMDAttr foldBitwiseSIMDReduceOp(Attribute operand, OpFns &&...ops) {
 /// Try to fold an index operation of the given result dtype for a given target.
 /// If the target is not specified, or the index bit width is not known, we only
 /// fold if the result is the same on 32 and 64 bit platforms.
-OpFoldResult foldIndexForTarget(ArrayRef<Attribute> operands, KGENDType dtype,
-                                TargetInfoAttr target,
-                                llvm::function_ref<APSInt(APSInt, APSInt)> fn);
+OpFoldResult foldIndexForTarget(
+    ArrayRef<Attribute> operands, KGENDType dtype, TargetInfoAttr target,
+    llvm::function_ref<std::optional<APSInt>(APSInt, APSInt)> fn);
 
 } // namespace M::KGEN::POP
 

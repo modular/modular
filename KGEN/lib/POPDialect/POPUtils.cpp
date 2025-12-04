@@ -382,37 +382,44 @@ OpFoldResult POP::foldSIMDReduceAnd(Value vectorVal, Attribute vectorAttr,
       [](bool lhs, bool rhs) { return lhs & rhs; });
 }
 
-OpFoldResult
-POP::foldIndexForTarget(ArrayRef<Attribute> operands, KGENDType dtype,
-                        TargetInfoAttr target,
-                        llvm::function_ref<APSInt(APSInt, APSInt)> fn) {
+OpFoldResult POP::foldIndexForTarget(
+    ArrayRef<Attribute> operands, KGENDType dtype, TargetInfoAttr target,
+    llvm::function_ref<std::optional<APSInt>(APSInt, APSInt)> fn) {
   // For index type get its size from the target.
   if (target) {
     ssize_t intWidth = target.resolveIndexBitWidth();
     if (intWidth == 64)
       return POP::Detail::foldSIMDOpIndex<POP::k64BitResult>(
-          operands, dtype, [&](APSInt lhs, APSInt rhs) -> APSInt {
-            APSInt result = fn(lhs, rhs);
-            assert(result.isSigned() == dtype.isIndex());
-            return result.extOrTrunc(64);
+          operands, dtype,
+          [&](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+            if (auto result = fn(lhs, rhs); result) {
+              assert(result->isSigned() == dtype.isIndex());
+              return result->extOrTrunc(64);
+            }
+            return {};
           });
     if (intWidth == 32)
       return POP::Detail::foldSIMDOpIndex<POP::k32BitResult>(
-          operands, dtype, [&](APSInt lhs, APSInt rhs) -> APSInt {
+          operands, dtype,
+          [&](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
             // Have to extend it because index type is stored internally as
             // 64-bit integer.
-            APSInt result = fn(lhs, rhs);
-            assert(result.isSigned() == dtype.isIndex());
-            return result.extend(64);
+            if (auto result = fn(lhs, rhs); result) {
+              assert(result->isSigned() == dtype.isIndex());
+              return result->extend(64);
+            }
+            return {};
           });
   }
 
   // If target is not specified, or the index bit width is not known, we only
   // fold if the result is the same on 32 and 64 bit platforms.
   return POP::Detail::foldSIMDOpIndex<POP::kIndexResult>(
-      operands, dtype, [&](APSInt lhs, APSInt rhs) -> APSInt {
-        APSInt result = fn(lhs, rhs);
-        assert(result.isSigned() == dtype.isIndex());
-        return result;
+      operands, dtype, [&](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+        if (auto result = fn(lhs, rhs)) {
+          assert(result->isSigned() == dtype.isIndex());
+          return result;
+        }
+        return {};
       });
 }

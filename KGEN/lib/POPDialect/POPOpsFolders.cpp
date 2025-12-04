@@ -226,6 +226,25 @@ LogicalResult DivOp::canonicalize(DivOp op, PatternRewriter &b) {
 }
 
 OpFoldResult DivOp::fold(FoldAdaptor adaptor) {
+  ArrayRef<Attribute> operands = adaptor.getOperands();
+  if (llvm::any_of(operands, [](Attribute operand) {
+        return !isa_and_nonnull<SIMDAttr>(operand);
+      }))
+    return {};
+  std::optional<KGENDType> dtype =
+      cast<SIMDAttr>(operands.front()).getType().getResolvedDType();
+  if (!dtype)
+    return {};
+
+  if (dtype->isIndex() || dtype->isUIndex())
+    return foldIndexForTarget(
+        operands, *dtype, lookupTargetInfo(*this),
+        [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+          if (rhs.isZero())
+            return std::nullopt;
+          return lhs / rhs;
+        });
+
   return foldSIMDOp(
       adaptor.getOperands(),
       [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
