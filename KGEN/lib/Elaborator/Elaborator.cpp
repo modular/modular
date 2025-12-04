@@ -2909,8 +2909,12 @@ public:
                          EnvAttr::get(DictionaryAttr::get(&getContext())));
     }
 
-    ElaborateGeneratorsOptions config{maxDepth, elaborateDebugInfo,
-                                      optimizeInterpreter};
+    ElaborateGeneratorsOptions config{maxDepth,
+                                      elaborateDebugInfo,
+                                      optimizeInterpreter,
+                                      useParametricInterpreter,
+                                      errorIncludePrelude,
+                                      errorVerbose};
 
     VerboseCompilerTimeTraceScope traceScope("elaborate-generators");
     options.elaborationErrorIncludePrelude = errorIncludePrelude;
