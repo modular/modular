@@ -17,6 +17,7 @@ import logging
 import time
 from collections import OrderedDict, deque
 from dataclasses import dataclass, field
+from enum import Enum
 
 from max.interfaces import (
     Pipeline,
@@ -70,6 +71,20 @@ class ReplicaBatch:
 
     batch: dict[RequestID, TextContext] = field(default_factory=dict)
     num_steps: int = 1
+
+
+class PreemptionReason(str, Enum):
+    KV_CACHE_MEMORY = "kv_cache_memory"
+    MAX_NUM_LORAS = "max_num_loras"
+
+    @property
+    def error_message(self) -> str:
+        match self:
+            case PreemptionReason.MAX_NUM_LORAS:
+                return "Preempted a request due to max-num-loras limit exceeded. This can affect the end-to-end performance. Consider increasing max-num-loras."
+
+            case PreemptionReason.KV_CACHE_MEMORY:
+                return "Preempted a request due to lack of KV pages. This can affect the end-to-end performance. Consider increasing device-memory-utilization via `--device-memory-utilization` to provide more KV cache memory."
 
 
 class TextBatchConstructor:
@@ -254,30 +269,40 @@ class TextBatchConstructor:
 
     @traced
     def _return_to_request_queue(
-        self, ctx: TextContext, replica_idx: int
+        self, context: TextContext, replica_idx: int
     ) -> None:
         """Resets a request and returns it to the request queue"""
-        req_id = ctx.request_id
-        self.pipeline.release(req_id)
-        ctx.reset()
-        replica = self.replicas[replica_idx]
-        if req_id in replica.tg_reqs:
-            del replica.tg_reqs[req_id]
-        replica.ce_reqs[req_id] = ctx
-        replica.ce_reqs.move_to_end(req_id, last=False)
+
+        # Release from Pipeline and reset the context, as new prompt
+        self.pipeline.release(context.request_id)
+        context.reset()
+
+        # Move to CE Queue
+        replica_requests = self.replicas[replica_idx]
+        if context.request_id in replica_requests.tg_reqs:
+            del replica_requests.tg_reqs[context.request_id]
+
+        replica_requests.ce_reqs[context.request_id] = context
+        replica_requests.ce_reqs.move_to_end(context.request_id, last=False)
 
     @traced
-    def _preempt_request(self, ctx: TextContext, replica_idx: int) -> None:
+    def _preempt_request(
+        self, context: TextContext, replica_idx: int, reason: PreemptionReason
+    ) -> None:
         """Preempts the most recently received request from active batch"""
-        self._return_to_request_queue(ctx, replica_idx)
-        # Limit logging about preemptions to at most once per second
+
+        # Return to the Request Queue
+        self._return_to_request_queue(context, replica_idx)
+
+        # Log Preemption
         current_time = time.monotonic()
         self.total_preemption_count += 1
         METRICS.preemption()
         if current_time - self.last_preemption_logging_time > 1:
             self.last_preemption_logging_time = current_time
             logger.info(
-                f"Preempted a request due to lack of KV pages. This can affect the end-to-end performance. Consider increasing device-memory-utilization to provide more KV cache memory. Total preemption count: {self.total_preemption_count}."
+                reason.error_message
+                + f" Total Preemption Count: {self.total_preemption_count}"
             )
 
     @traced
@@ -334,7 +359,9 @@ class TextBatchConstructor:
             if is_lora(ctx, self._lora_manager) and not is_active_lora(
                 ctx, self._lora_manager
             ):
-                self._preempt_lora_request(ctx, replica_idx)
+                self._preempt_request(
+                    ctx, replica_idx, reason=PreemptionReason.MAX_NUM_LORAS
+                )
                 continue
 
             is_scheduled = False
@@ -370,11 +397,17 @@ class TextBatchConstructor:
                 # We were unable to schedule this request so we will try again
                 # after preempting the newest request
                 ctx_preempt = candidate_reqs.pop()
-                self._preempt_request(ctx_preempt, replica_idx)
+                self._preempt_request(
+                    ctx_preempt,
+                    replica_idx,
+                    reason=PreemptionReason.KV_CACHE_MEMORY,
+                )
 
             # If we still can't schedule the request, we preempt it
             if not is_scheduled:
-                self._preempt_request(ctx, replica_idx)
+                self._preempt_request(
+                    ctx, replica_idx, reason=PreemptionReason.KV_CACHE_MEMORY
+                )
                 break
 
             # Add the request to the batch
@@ -632,17 +665,3 @@ class TextBatchConstructor:
                 default=0,
             ),
         )
-
-    @traced
-    def _preempt_lora_request(self, ctx: TextContext, replica_idx: int) -> None:
-        """Preempts the most recently received request from active batch"""
-        self._return_to_request_queue(ctx, replica_idx)
-        # Limit logging about preemptions to at most once per second
-        current_time = time.monotonic()
-        self.total_preemption_count += 1
-        METRICS.preemption()
-        if current_time - self.last_preemption_logging_time > 1:
-            self.last_preemption_logging_time = current_time
-            logger.info(
-                f"Preempted a request due to max-num-loras limit exceeded. This can affect the end-to-end performance. Consider increasing max-num-loras. Total preemption count: {self.total_preemption_count}."
-            )
