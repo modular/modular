@@ -16,7 +16,7 @@ from sys import prefetch
 from sys.info import align_of
 from sys.intrinsics import PrefetchOptions
 
-from buffer.buffer import NDBuffer
+from layout import Layout, LayoutTensor, RuntimeTuple
 
 from utils.index import Index, IndexList
 
@@ -34,8 +34,8 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
         simd_size: Int, kernel_rows: Int, kernel_cols: Int
     ](
         self,
-        a: NDBuffer,
-        b_packed: NDBuffer[_, 3, _, _],
+        a: LayoutTensor,
+        b_packed: LayoutTensor,
         mut c_local: _Accumulator[
             _, kernel_rows, kernel_cols // simd_size, simd_size
         ],
@@ -53,6 +53,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
         """
+        constrained[b_packed.rank == 3, "b_packed must be rank 3"]()
 
         # Seek outer indices in packed layout.
         var n_outer_idx = tile_n_k_idx[0] // kernel_cols
@@ -60,7 +61,12 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
         # Global K index.
         var global_k = global_offset.K + tile_n_k_idx[1]
 
-        var b_ptr = b_packed._offset(Index(n_outer_idx, tile_n_k_idx[1], 0))
+        var b_offset = b_packed.runtime_layout(
+            RuntimeTuple[b_packed.layout.shape](
+                Index(n_outer_idx, tile_n_k_idx[1], 0)
+            )
+        )
+        var b_ptr = b_packed.ptr.offset(b_offset)
 
         # Prefetch B matrix.
         comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
@@ -77,7 +83,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
 
         # This inner kernels works with non-transposed A.
         var K = a.dim[1]()
-        var a_ptr = a.data.offset(global_offset.M * K + global_k)
+        var a_ptr = a.ptr.offset(global_offset.M * K + global_k)
 
         comptime c_type = c_local.dtype
 
@@ -102,9 +108,9 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
         simd_size: Int,
     ](
         self,
-        c: NDBuffer,
-        a: NDBuffer,
-        b_packed: NDBuffer[_, 3, _, _],
+        c: LayoutTensor[mut=True, **_],
+        a: LayoutTensor,
+        b_packed: LayoutTensor,
         global_offset: GemmShape,
         global_bound: GemmShape,
         tile_n_k: IndexList[2],
@@ -113,17 +119,18 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (kernel_rows, TileN, TileK) tile.
         """
+        constrained[b_packed.rank == 3, "b_packed must be rank 3"]()
 
         var c_stride = c.dim[1]()
 
-        var c_ptr = c.data.offset(global_offset.M * c_stride + global_offset.N)
+        var c_ptr = c.ptr.offset(global_offset.M * c_stride + global_offset.N)
 
         var c_bound = Index(global_bound.M, global_bound.N) - Index(
             global_offset.M, global_offset.N
         )
 
         var acc = _Accumulator[
-            c.type, kernel_rows, kernel_cols // simd_size, simd_size
+            c.dtype, kernel_rows, kernel_cols // simd_size, simd_size
         ]()
 
         for idx_n in range(0, tile_n_k[0], kernel_cols):
@@ -133,7 +140,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
                 acc.init(0)
             else:
                 acc.load(
-                    rebind[UnsafePointer[Scalar[c.type]]](c_ptr),
+                    rebind[UnsafePointer[Scalar[c.dtype]]](c_ptr),
                     c_stride,
                     idx_n,
                     c_bound,
@@ -152,7 +159,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
                     Index(idx_n, idx_k),
                 )
             acc.store(
-                rebind[UnsafePointer[Scalar[c.type]]](c_ptr),
+                rebind[UnsafePointer[Scalar[c.dtype]]](c_ptr),
                 c_stride,
                 idx_n,
                 c_bound,

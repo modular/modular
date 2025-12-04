@@ -15,8 +15,8 @@ from math import align_up
 from sys import align_of
 from sys.info import CompilationTarget
 
-from buffer import NDBuffer
 from buffer.dimlist import DimList
+from layout import Layout, LayoutTensor, RuntimeLayout
 from linalg.matmul.cpu.default import Inner_matmul_default
 from linalg.matmul.cpu.i8mm import Inner_matmul_i8mm
 from linalg.matmul.cpu.neon import Inner_matmul_neon
@@ -48,15 +48,15 @@ fn _matmul_inner_loop[
     simd_size: Int,
     saturated_vnni: Bool,
 ](
-    c: NDBuffer,
-    a: NDBuffer,
-    b_packed: NDBuffer[_, 3, _, _],
+    c: LayoutTensor[mut=True, **_],
+    a: LayoutTensor,
+    b_packed: LayoutTensor,
     global_offset: GemmShape,
     global_bound: GemmShape,
     tile_n_k: IndexList[2],
     skip_boundary_check: Bool,
 ):
-    comptime kernel_id = select_inner_kernel[a.type, b_packed.type, c.type]()
+    comptime kernel_id = select_inner_kernel[a.dtype, b_packed.dtype, c.dtype]()
 
     @parameter
     if kernel_id == InnerKernelID.DEFAULT:
@@ -114,9 +114,9 @@ fn _matmul_inner_loop[
 fn matmul_inner_loop[
     config: KernelConfig,
 ](
-    c: NDBuffer,
-    a: NDBuffer,
-    b_packed: NDBuffer[_, 3, _, _],
+    c: LayoutTensor[mut=True, **_],
+    a: LayoutTensor,
+    b_packed: LayoutTensor,
     m: Int,
     n: Int,
     k: Int,
@@ -143,10 +143,11 @@ fn test_micro_kernel[
     a_type: DType, b_type: DType, c_type: DType, saturated_vnni: Bool = False
 ](m: Int, n: Int, k: Int) raises:
     print("== test_micro_kernel")
-    comptime a_shape = DimList.create_unknown[2]()
-    comptime b_shape = DimList.create_unknown[2]()
-    comptime c_shape = DimList.create_unknown[2]()
-    comptime b_packed_shape = DimList.create_unknown[3]()
+    comptime a_layout = Layout.row_major[2]()
+    # TODO(jtodd): Make `get_kernel_config` return an IndexList instead
+    # config.packed_shape is always rank 3 unknown
+    comptime b_packed_layout = Layout.row_major[3]()
+    comptime c_layout = Layout.row_major[2]()
 
     comptime config = get_kernel_config[a_type, b_type, c_type]()
     comptime use_vnni = use_vnni_fn[a_type, b_type, c_type]()
@@ -165,10 +166,11 @@ fn test_micro_kernel[
         alignment=alignment,
     )
     var c_ptr = UnsafePointer[Scalar[c_type],].alloc(m * n, alignment=alignment)
-    var a = NDBuffer[a_type, 2, _, a_shape](a_ptr, Index(m, k))
+    var a = LayoutTensor[a_type, a_layout](
+        a_ptr, RuntimeLayout[a_layout].row_major(Index(m, k))
+    )
 
-    var b_packed = NDBuffer[b_type, 3, _, config.packed_shape](
-        b_packed_ptr,
+    var b_packed_runtime_layout = RuntimeLayout[b_packed_layout].row_major(
         Index(
             np // config.kernel_cols,
             kh // factor,
@@ -176,15 +178,20 @@ fn test_micro_kernel[
         ),
     )
 
-    var c = NDBuffer[c_type, 2, _, c_shape](c_ptr, Index(m, n))
+    var b_packed = LayoutTensor[b_type, b_packed_layout](
+        b_packed_ptr, b_packed_runtime_layout
+    )
+    var c = LayoutTensor[c_type, c_layout](
+        c_ptr, RuntimeLayout[c_layout].row_major(Index(m, n))
+    )
 
-    a.fill(1)
-    b_packed.fill(1)
-    c.fill(0)
+    _ = a.fill(1)
+    _ = b_packed.fill(1)
+    _ = c.fill(0)
 
     matmul_inner_loop[config](c, a, b_packed, m, n, k)
 
-    assert_equal(Int(c[0, 0]), 256)
+    assert_equal(Int(c_ptr[0]), 256)
     a_ptr.free()
     b_packed_ptr.free()
     c_ptr.free()
