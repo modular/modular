@@ -77,12 +77,14 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
     var _initial_inner_b: Self.IteratorTypeB
 
     fn __init__(
-        out self, inner_a: Self.IteratorTypeA, inner_b: Self.IteratorTypeB
+        out self,
+        var inner_a: Self.IteratorTypeA,
+        var inner_b: Self.IteratorTypeB,
     ):
-        self._inner_a = inner_a.copy()
+        self._inner_a = inner_a^
         self._inner_b = inner_b.copy()
         self._inner_a_elem = None
-        self._initial_inner_b = inner_b.copy()
+        self._initial_inner_b = inner_b^
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
@@ -194,12 +196,12 @@ struct _Product3[
 
     fn __init__(
         out self,
-        inner_a: Self.IteratorTypeA,
-        inner_b: Self.IteratorTypeB,
-        inner_c: Self.IteratorTypeC,
+        var inner_a: Self.IteratorTypeA,
+        var inner_b: Self.IteratorTypeB,
+        var inner_c: Self.IteratorTypeC,
     ):
-        var product2 = Self._Product2Type(inner_b, inner_c)
-        self._inner = Self._OuterProduct2Type(inner_a, product2)
+        var product2 = Self._Product2Type(inner_b^, inner_c^)
+        self._inner = Self._OuterProduct2Type(inner_a^, product2^)
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
@@ -292,13 +294,13 @@ struct _Product4[
 
     fn __init__(
         out self,
-        inner_a: Self.IteratorTypeA,
-        inner_b: Self.IteratorTypeB,
-        inner_c: Self.IteratorTypeC,
-        inner_d: Self.IteratorTypeD,
+        var inner_a: Self.IteratorTypeA,
+        var inner_b: Self.IteratorTypeB,
+        var inner_c: Self.IteratorTypeC,
+        var inner_d: Self.IteratorTypeD,
     ):
-        var product3 = Self._Product3Type(inner_b, inner_c, inner_d)
-        self._inner = Self._Product2Type(inner_a, product3)
+        var product3 = Self._Product3Type(inner_b^, inner_c^, inner_d^)
+        self._inner = Self._Product2Type(inner_a^, product3^)
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()

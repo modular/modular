@@ -472,3 +472,74 @@ struct AbortOnCopy(ImplicitlyCopyable):
             other: The instance being copied from.
         """
         abort("We should never implicitly copy AbortOnCopy")
+
+
+# ===----------------------------------------------------------------------=== #
+# Observable
+# ===----------------------------------------------------------------------=== #
+
+
+struct Observable[
+    *,
+    CopyOrigin: MutOrigin = MutOrigin.external,
+    MoveOrigin: MutOrigin = MutOrigin.external,
+    DelOrigin: MutOrigin = MutOrigin.external,
+](Copyable, Movable):
+    """A type that tracks the number of times it has been copied, moved, and destroyed.
+
+    Parameters:
+        CopyOrigin: Origin of the copies pointer.
+        MoveOrigin: Origin of the moves pointer.
+        DelOrigin: Origin of the dels pointer.
+    """
+
+    var _copies: Optional[Pointer[Int, Self.CopyOrigin]]
+    var _moves: Optional[Pointer[Int, Self.MoveOrigin]]
+    var _dels: Optional[Pointer[Int, Self.DelOrigin]]
+
+    fn __init__(
+        out self,
+        *,
+        var copies: Optional[Pointer[Int, Self.CopyOrigin]] = {},
+        var moves: Optional[Pointer[Int, Self.MoveOrigin]] = {},
+        var dels: Optional[Pointer[Int, Self.DelOrigin]] = {},
+    ):
+        """Constructs a new Observable with the given pointers.
+
+        Args:
+            copies: Optional pointer to an Int to count copies.
+            moves: Optional pointer to an Int to count moves.
+            dels: Optional pointer to an Int to count dels.
+        """
+        self._copies = copies^
+        self._moves = moves^
+        self._dels = dels^
+
+    fn __copyinit__(out self, other: Self):
+        """Copy initialize the Observable and increment the copy count.
+
+        Args:
+            other: The instance being copied from.
+        """
+        self._copies = other._copies.copy()
+        self._moves = other._moves.copy()
+        self._dels = other._dels.copy()
+        if self._copies:
+            self._copies.value()[] += 1
+
+    fn __moveinit__(out self, deinit other: Self):
+        """Move initialize the Observable and increment the move count.
+
+        Args:
+            other: The instance being moved from.
+        """
+        self._copies = other._copies^
+        self._moves = other._moves^
+        self._dels = other._dels^
+        if self._moves:
+            self._moves.value()[] += 1
+
+    fn __del__(deinit self):
+        """Destroy the Observable and increment the del count."""
+        if self._dels:
+            self._dels.value()[] += 1
