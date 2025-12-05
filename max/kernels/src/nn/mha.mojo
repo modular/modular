@@ -628,6 +628,16 @@ fn flash_attention_dispatch[
                     _padded_ndbuffer=_padded_ndbuffer,
                 ]
 
+                var grid_dim = LaunchDim(
+                    Int(ceildiv(max_prompt_len, Int(BM))),
+                    Int(config.num_heads),
+                    Int(batch_size),
+                ) if has_nvidia_gpu_accelerator() else LaunchDim(
+                    Int(config.num_heads),
+                    Int(ceildiv(max_prompt_len, Int(BM))),
+                    Int(batch_size),
+                )
+
                 ctx.enqueue_function_checked[kernel, kernel](
                     q_device,
                     k,
@@ -642,11 +652,7 @@ fn flash_attention_dispatch[
                     sink_weights,
                     mask_functor,
                     score_mod_functor,
-                    grid_dim=(
-                        Int(ceildiv(max_prompt_len, Int(BM))),
-                        Int(config.num_heads),
-                        Int(batch_size),
-                    ),
+                    grid_dim=grid_dim,
                     block_dim=(Int(config.num_threads()), 1, 1),
                     shared_mem_bytes=Int(smem_use),
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
@@ -1374,6 +1380,10 @@ fn mha[
     var mask_tensor_col = num_keys_arg
     var start_pos: UInt32 = 0
 
+    @always_inline
+    fn q_block_idx() -> UInt:
+        return block_idx.x if is_nvidia_gpu() else block_idx.y
+
     @parameter
     if ragged:
         # treat valid_lengths as a input_row_offsets
@@ -1381,7 +1391,7 @@ fn mha[
         end_of_seq = Int(valid_length[batch_idx + 1])
         seq_len = end_of_seq - start_of_seq
 
-        if seq_len < Int(block_idx.x * config.block_m()):
+        if seq_len < Int(q_block_idx() * config.block_m()):
             return
 
         @parameter
@@ -1406,7 +1416,7 @@ fn mha[
         # treat valid_lengths as valid lengths
         seq_len = Int(valid_length[batch_idx])
 
-        if seq_len < Int(block_idx.x * config.block_m()):
+        if seq_len < Int(q_block_idx() * config.block_m()):
             return
 
         @parameter
@@ -1429,7 +1439,7 @@ fn mha[
             seq_len = seq_len_arg
             num_keys = num_keys_arg
 
-        if seq_len < Int(block_idx.x * config.block_m()):
+        if seq_len < Int(q_block_idx() * config.block_m()):
             return
         q_batch_offset = Int(
             config.depth * config.num_heads * UInt(max_seq_len) * batch_idx
