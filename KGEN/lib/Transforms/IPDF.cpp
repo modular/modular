@@ -524,7 +524,6 @@ bool Graph::doAnalysis(Region &region, RegionState &rs, FunctionState &fs,
     // Map all results to unknown.
     for (Value v : op.getResults())
       changed |= fs.modify(v).join(TopState{}, rs);
-    continue;
   }
 
   return changed;

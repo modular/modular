@@ -3371,7 +3371,6 @@ private:
         for (hash = implicitProducerHash.load(std::memory_order_relaxed);
              hash->prev != &other.initialImplicitProducerHash;
              hash = hash->prev) {
-          continue;
         }
         hash->prev = &initialImplicitProducerHash;
       }
@@ -3383,7 +3382,6 @@ private:
         ImplicitProducerHash *hash;
         for (hash = other.implicitProducerHash.load(std::memory_order_relaxed);
              hash->prev != &initialImplicitProducerHash; hash = hash->prev) {
-          continue;
         }
         hash->prev = &other.initialImplicitProducerHash;
       }

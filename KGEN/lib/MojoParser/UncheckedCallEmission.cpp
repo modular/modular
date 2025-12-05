@@ -606,7 +606,6 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
            "by_ref argument cannot have defaults");
     isDefaultMask.set(argIdx);
     argumentValues.push_back({PValue(defaultOr), callExpr});
-    continue;
   }
 
   assert(posOperandIdx == operands.size() &&
