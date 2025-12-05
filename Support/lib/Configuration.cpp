@@ -206,7 +206,7 @@ StringRef Config::getPath(StringRef key, StringRef relativePath) {
     return stringValue;
 
   const auto [section, _] = key.split('.');
-  StringRef packageRoot = getValue((section + "package_root").str());
+  StringRef packageRoot = getValue((section + ".package_root").str());
   std::string &value = kv[keyStr];
   value = (packageRoot + "/" + relativePath).str();
   return value;
