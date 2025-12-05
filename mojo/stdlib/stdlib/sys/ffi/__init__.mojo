@@ -20,7 +20,7 @@ from sys._libc_errno import ErrNo, get_errno, set_errno
 
 from memory import OwnedPointer
 
-from ..info import CompilationTarget, is_64bit
+from ..info import CompilationTarget, is_32bit, is_64bit
 from ..intrinsics import _mlirtype_is_eq
 from .cstring import CStringSlice
 
@@ -108,8 +108,11 @@ fn _c_long_dtype[unsigned: Bool = False]() -> DType:
     if is_64bit() and (
         CompilationTarget.is_macos() or CompilationTarget.is_linux()
     ):
-        # LP64
+        # LP64: long is 64-bit on 64-bit systems (e.g. x86_64 or aarch64)
         return DType.uint64 if unsigned else DType.int64
+    elif is_32bit():
+        # ILP32: long is 32-bit on 32-bit systems (e.g. x86 or RISC-V 32bit)
+        return DType.uint32 if unsigned else DType.int32
     else:
         constrained[False, "size of C `long` is unknown on this target"]()
         abort()
@@ -117,13 +120,10 @@ fn _c_long_dtype[unsigned: Bool = False]() -> DType:
 
 fn _c_long_long_dtype[unsigned: Bool = False]() -> DType:
     # https://en.wikipedia.org/wiki/64-bit_computing#64-bit_data_models
+    # `long long` is 64 bits on all common platforms (LP64, LLP64, ILP32).
 
     @parameter
-    if is_64bit() and (
-        CompilationTarget.is_macos() or CompilationTarget.is_linux()
-    ):
-        # On a 64-bit CPU, `long long` is *always* 64 bits in every OS's data
-        # model.
+    if is_64bit() or is_32bit():
         return DType.uint64 if unsigned else DType.int64
     else:
         constrained[False, "size of C `long long` is unknown on this target"]()
