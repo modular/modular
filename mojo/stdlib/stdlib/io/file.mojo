@@ -61,6 +61,9 @@ alias O_TRUNC = platform_map["O_TRUNC", linux=0x0200, macos=0x0400]()
 alias O_APPEND = platform_map["O_APPEND", linux=0x0400, macos=0x0008]()
 """Append mode: writes always go to end of file"""
 
+alias O_CLOEXEC = platform_map["O_CLOEXEC", linux=0x80000, macos=0x1000000]()
+"""Close file descriptor on exec"""
+
 # ===----------------------------------------------------------------------=== #
 # Helper functions
 # ===----------------------------------------------------------------------=== #
@@ -87,15 +90,15 @@ fn _open_file(path: String, mode: String) raises -> Int:
     var create_dirs = False
 
     if mode == "r":
-        flags = O_RDONLY
+        flags = O_RDONLY | O_CLOEXEC
     elif mode == "w":
-        flags = O_WRONLY | O_CREAT | O_TRUNC
+        flags = O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC
         create_dirs = True
     elif mode == "rw":
-        flags = O_RDWR | O_CREAT
+        flags = O_RDWR | O_CREAT | O_CLOEXEC
         create_dirs = True
     elif mode == "a":
-        flags = O_WRONLY | O_CREAT | O_APPEND
+        flags = O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC
         create_dirs = True
     else:
         raise Error(
