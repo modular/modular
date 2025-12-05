@@ -740,6 +740,63 @@ struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
             if cond(vec):
                 (ptr + processed + i).init_pointee_move(func(vec))
 
+    fn map_reduce[
+        dtype: DType,
+        map_dtype_out: DType,
+        accum_dtype: DType, //,
+        *,
+        map_fn: fn[w: Int] (idx: Int) capturing -> SIMD[map_dtype_out, w],
+        reduce_fn: fn[w: Int] (
+            lhs: SIMD[accum_dtype, w], rhs: SIMD[accum_dtype, w]
+        ) capturing -> SIMD[accum_dtype, w],
+        accum_fill: Scalar[accum_dtype] = 0,
+    ](self: Span[Scalar[dtype], **_]) -> Scalar[accum_dtype]:
+        """Run a given map reduce operation on the `Span`.
+
+        Parameters:
+            dtype: The dtype of the `Span`.
+            map_dtype_out: The resulting dtype from the map function.
+            accum_dtype: The accumulation dtype for the reduction function.
+            map_fn: The map function.
+            reduce_fn: The reduction function.
+            accum_fill: The value with which to fill the accumulator at the
+                beginning.
+
+        Returns:
+            The result of the map reduce operation.
+        """
+
+        alias accum_width = simd_width_of[accum_dtype]()
+        alias dtype_width = simd_width_of[dtype]()
+        var length = len(self)
+        var res_v = SIMD[accum_dtype, accum_width](accum_fill)
+        var res_s = Scalar[accum_dtype](accum_fill)
+
+        @always_inline
+        fn red(vec: SIMD[accum_dtype]) unified {mut res_s, mut res_v}:
+            @parameter
+            if vec.size == 1:
+                res_s = reduce_fn(res_s, rebind[type_of(res_s)](vec))
+            else:
+                res_v = reduce_fn(res_v, rebind[type_of(res_v)](vec))
+
+        fn run_fns[
+            width: Int
+        ](idx: Int) unified {mut res_s, mut res_v, read red}:
+            @parameter
+            if width == 1 or dtype_width <= accum_width:
+                red(map_fn[width](idx).cast[accum_dtype]())
+            else:
+                var vec = map_fn[width](idx)
+
+                @parameter
+                for i in range(dtype_width // accum_width):
+                    var v = vec.slice[accum_width, offset = i * accum_width]()
+                    red(v.cast[accum_dtype]())
+
+        vectorize[max(accum_width, dtype_width)](length, run_fns)
+        return reduce_fn(res_v.reduce[reduce_fn, 1](), res_s)
+
     fn count[
         dtype: DType, //,
         func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
@@ -754,26 +811,17 @@ struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
             The amount of times the function returns `True`.
         """
 
-        comptime simdwidth = simd_width_of[DType.int]()
-        var ptr = self.unsafe_ptr()
-        var length = len(self)
-        var countv = SIMD[DType.int, simdwidth](0)
-        var count = Scalar[DType.int](0)
+        alias D[w: Int] = SIMD[DType.uint, w]
 
-        fn do_count[
-            width: Int
-        ](idx: Int) unified {mut count, mut countv, read ptr}:
-            var vec = func(ptr.load[width=width](idx)).cast[DType.int]()
+        @parameter
+        fn reduce_fn[w: Int](lhs: D[w], rhs: D[w]) -> D[w]:
+            return lhs + rhs
 
-            @parameter
-            if width == 1:
-                count += rebind[type_of(count)](vec)
-            else:
-                countv += rebind[type_of(countv)](vec)
+        @parameter
+        fn map_fn[w: Int](idx: Int) -> SIMD[DType.bool, w]:
+            return func(self.unsafe_ptr().load[width=w](idx))
 
-        vectorize[simdwidth](length, do_count)
-
-        return UInt(countv.reduce_add() + count)
+        return UInt(self.map_reduce[map_fn=map_fn, reduce_fn=reduce_fn]())
 
     @always_inline
     fn unsafe_subspan(self, *, offset: Int, length: Int) -> Self:
