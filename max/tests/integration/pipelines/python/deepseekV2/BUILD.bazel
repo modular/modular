@@ -10,6 +10,7 @@ load(
 package(default_visibility = [
     "//:__pkg__",
     "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
 ])
 
 modular_py_library(
