@@ -30,9 +30,6 @@
 /// should enqueue to Global queue.
 constexpr int kDefaultTaskId = -1;
 
-/// Indicates that a work item has no device preference for execution.
-constexpr int kNoDevicePreference = -1;
-
 namespace M::AsyncRT {
 
 //===----------------------------------------------------------------------===//
@@ -76,10 +73,6 @@ using namespace std::chrono_literals;
 /// function. Depending on build type may contain extra bookkeeping data.
 struct WorkItem {
   TaskFunction task;
-  /// Optional worker-affinity hint. When non-negative, the scheduler may route
-  /// this item to worker (deviceHint % numWorkers). Use kNoDevicePreference to
-  /// enqueue on the global queue shared by all workers.
-  int deviceHint = kNoDevicePreference;
 
 #ifdef TRACY_ENABLE
   /// Assign a unique task id for the work item. This is used to identify the
@@ -104,8 +97,7 @@ struct WorkItem {
   /// NOTE: Intentionally not marking explicit to promote from function.
   template <typename FnTy, typename ResultTy = Detail::ResultType<FnTy>,
             std::enable_if_t<(std::is_void<ResultTy>()), int> = 0>
-  WorkItem(FnTy f)
-      : task(std::forward<FnTy>(f)), deviceHint(kNoDevicePreference) {}
+  WorkItem(FnTy f) : task(std::forward<FnTy>(f)) {}
 
   explicit operator bool() { return (bool)task; }
 };
@@ -182,9 +174,9 @@ public:
   virtual size_t getParallelismLevel() const = 0;
 
   /// Returns true when the caller is already executing on the worker thread
-  /// implied by `deviceHint`, allowing immediate execution instead of
-  /// enqueuing. Implementations should keep this lightweight.
-  virtual bool shouldRunInlineFor(int deviceHint) const { return true; }
+  /// implied by `taskId`, allowing immediate execution instead of enqueuing.
+  /// Implementations should keep this lightweight.
+  virtual bool shouldRunInlineForTask(int taskId) const { return true; }
 
   /// Shutdown the thread pool and quiesce in preparation for destruction.
   /// Must be called before the WorkQueue is destroyed. Must be called from
