@@ -169,6 +169,10 @@ struct ParamDiffer {
 
     for (auto [idx, lhsParam, rhsParam] :
          llvm::enumerate(lhs.getParamBindings(), rhs.getParamBindings())) {
+      // Hard assert because we're seeing crashes in the field that might be
+      // here.
+      if (!lhsParam || !rhsParam)
+        llvm_unreachable("param bindings should not be null");
       if (isEqualCanon(lhsParam, rhsParam))
         continue;
 
