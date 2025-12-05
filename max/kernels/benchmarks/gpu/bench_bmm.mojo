@@ -25,21 +25,18 @@ from sys.info import has_amd_gpu_accelerator
 import linalg.matmul.vendor.blas as vendor_blas
 from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import DimList, NDBuffer
+from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext, get_gpu_target
-from internal_utils import HostNDBuffer, arg_parse
+from internal_utils import arg_parse
 from internal_utils._utils import (
     InitializationType,
-    ValOrDim,
-    dynamic,
     init_vector_launch,
-    initialize,
-    random,
-    static,
 )
 from linalg.bmm import _batched_matmul_gpu
 
 from utils import Index, IndexList
+
+comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
 
 fn _get_run_name[
@@ -48,17 +45,21 @@ fn _get_run_name[
     transpose_b: Bool,
     use_vendor_blas: Bool,
     lambda_fn: Optional[epilogue_func_type] = None,
-](b: ValOrDim, m: ValOrDim, n: ValOrDim, k: ValOrDim,) -> String:
+    B: Optional[Int] = None,
+    M: Optional[Int] = None,
+    N: Optional[Int] = None,
+    K: Optional[Int] = None,
+](b: Int, m: Int, n: Int, k: Int) -> String:
     var vendor_str = "vendor_bmm" if use_vendor_blas else "bmm"
     var type_str = String("(", dtype, ") : ")
     # B
-    var b_str = String(b.value, "" if b.dim else "_dynamic")
+    var b_str = String(b, "" if B else "_dynamic")
     # M
-    var m_str = String(m.value, "" if m.dim else "_dynamic")
+    var m_str = String(m, "" if M else "_dynamic")
     # N
-    var n_str = String(n.value, "" if n.dim else "_dynamic")
+    var n_str = String(n, "" if N else "_dynamic")
     # K
-    var k_str = String(k.value, "" if k.dim else "_dynamic")
+    var k_str = String(k, "" if K else "_dynamic")
 
     var transpose_b_str = String("/transpose_b=", transpose_b)
 
@@ -99,65 +100,56 @@ fn bench_bmm[
     use_vendor_blas: Bool = False,
     transpose_b: Bool = False,
     lambda_fn: Optional[epilogue_func_type] = None,
+    B: Optional[Int] = None,
+    M: Optional[Int] = None,
+    N: Optional[Int] = None,
+    K: Optional[Int] = None,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
-    b: ValOrDim,
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
+    b: Int,
+    m: Int,
+    n: Int,
+    k: Int,
     init_type: InitializationType,
 ) raises:
-    var M = m.value
-    var N = n.value
-    var K = k.value
-    var B = b.value
-
-    comptime batch_static_a_shape = DimList(b.dim, m.dim, k.dim)
+    comptime batch_static_a_shape = DimList(to_dim[B], to_dim[M], to_dim[K])
     comptime batch_static_b_shape = DimList(
-        b.dim, n.dim, k.dim
-    ) if transpose_b else DimList(b.dim, k.dim, n.dim)
-    comptime batch_static_c_shape = DimList(b.dim, m.dim, n.dim)
+        to_dim[B], to_dim[N], to_dim[K]
+    ) if transpose_b else DimList(to_dim[B], to_dim[K], to_dim[N])
+    comptime batch_static_c_shape = DimList(to_dim[B], to_dim[M], to_dim[N])
 
-    comptime static_a_shape = DimList(m.dim, k.dim)
-    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
+    comptime static_a_shape = DimList(to_dim[M], to_dim[K])
+    comptime static_b_shape = DimList(
+        to_dim[N], to_dim[K]
+    ) if transpose_b else DimList(to_dim[K], to_dim[N])
+    comptime static_c_shape = DimList(to_dim[M], to_dim[N])
+
+    var batch_dynamic_a_shape = IndexList[3](
+        B.or_else(b), M.or_else(m), K.or_else(k)
     )
-    comptime static_c_shape = DimList(m.dim, n.dim)
-
-    var batch_dynamic_a_shape = IndexList[3](b.value, m.value, k.value)
     var batch_dynamic_b_shape = IndexList[3](
-        b.value, n.value, k.value
-    ) if transpose_b else IndexList[3](b.value, k.value, n.value)
+        B.or_else(b), N.or_else(n), K.or_else(k)
+    ) if transpose_b else IndexList[3](B.or_else(b), K.or_else(k), N.or_else(n))
 
-    var batch_dynamic_c_shape = IndexList[3](b.value, m.value, n.value)
+    var batch_dynamic_c_shape = IndexList[3](
+        B.or_else(b), M.or_else(m), N.or_else(n)
+    )
 
-    var dynamic_a_shape = IndexList[2](m.value, k.value)
+    var dynamic_a_shape = IndexList[2](M.or_else(m), K.or_else(k))
     var dynamic_b_shape = IndexList[2](
-        n.value, k.value
-    ) if transpose_b else IndexList[2](k.value, n.value)
+        N.or_else(n), K.or_else(k)
+    ) if transpose_b else IndexList[2](K.or_else(k), N.or_else(n))
 
-    var dynamic_c_shape = IndexList[2](m.value, n.value)
+    var dynamic_c_shape = IndexList[2](M.or_else(m), N.or_else(n))
 
-    var a_host = HostNDBuffer[dtype, 3, batch_static_a_shape](
-        batch_dynamic_a_shape
-    )
-    var b_host = HostNDBuffer[dtype, 3, batch_static_b_shape](
-        batch_dynamic_b_shape
-    )
-    var c_host = HostNDBuffer[dtype, 3, batch_static_c_shape](
-        batch_dynamic_c_shape
-    )
+    var a_size = b * m * k
+    var b_size = b * n * k if transpose_b else b * k * n
+    var c_size = b * m * n
 
-    var a_device_buffer = ctx.enqueue_create_buffer[dtype](
-        a_host.tensor.num_elements()
-    )
-    var b_device_buffer = ctx.enqueue_create_buffer[dtype](
-        b_host.tensor.num_elements()
-    )
-    var c_device_buffer = ctx.enqueue_create_buffer[dtype](
-        c_host.tensor.num_elements()
-    )
+    var a_device_buffer = ctx.enqueue_create_buffer[dtype](a_size)
+    var b_device_buffer = ctx.enqueue_create_buffer[dtype](b_size)
+    var c_device_buffer = ctx.enqueue_create_buffer[dtype](c_size)
 
     var a_device = NDBuffer[dtype, 3, MutAnyOrigin, batch_static_a_shape, _](
         a_device_buffer.unsafe_ptr(), batch_dynamic_a_shape
@@ -170,13 +162,8 @@ fn bench_bmm[
     )
 
     # Initialize data on the device
-
-    init_vector_launch[dtype](
-        a_device_buffer, a_host.tensor.num_elements(), init_type, ctx
-    )
-    init_vector_launch[dtype](
-        b_device_buffer, b_host.tensor.num_elements(), init_type, ctx
-    )
+    init_vector_launch[dtype](a_device_buffer, a_size, init_type, ctx)
+    init_vector_launch[dtype](b_device_buffer, b_size, init_type, ctx)
 
     @parameter
     @always_inline
@@ -197,7 +184,7 @@ fn bench_bmm[
     comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
     @always_inline
-    @__copy_capture(c_device, B, M, N)
+    @__copy_capture(c_device, b, m, n)
     @parameter
     fn func[
         simd_width: Int, rank: Int, alignment: Int = 1
@@ -241,14 +228,14 @@ fn bench_bmm[
                         b_buffer,
                         c_row_major=True,
                         transpose_b=transpose_b,
-                        batch_size=B,
+                        batch_size=b,
                     )
                 else:
                     # Fallback vendor BMM for non-AMD GPUs or when AMD GPU acceleration is not available
-                    for i in range(B):
-                        var c_ptr = c_device.data + (i * M * N)
-                        var a_ptr = a_device.data + (i * M * K)
-                        var b_ptr = b_device.data + (i * K * N)
+                    for i in range(b):
+                        var c_ptr = c_device.data + (i * m * n)
+                        var a_ptr = a_device.data + (i * m * k)
+                        var b_ptr = b_device.data + (i * k * n)
 
                         var c_buffer = NDBuffer[dtype, 2, _, static_c_shape](
                             c_ptr, dynamic_c_shape
@@ -274,7 +261,7 @@ fn bench_bmm[
                 @parameter
                 if lambda_fn:
                     elementwise[func, pack_size, target="gpu"](
-                        IndexList[3](B, M, Int(N)),
+                        IndexList[3](b, m, Int(N.value())),
                         ctx,
                     )
             else:
@@ -299,13 +286,17 @@ fn bench_bmm[
                 transpose_b=transpose_b,
                 use_vendor_blas=use_vendor_blas,
                 lambda_fn=lambda_fn,
+                B=B,
+                M=M,
+                N=N,
+                K=K,
             ](b, m, n, k)
         ),
         # TODO: Pick relevant benchmetric
         [
             ThroughputMeasure(
                 BenchMetric.flops,
-                2 * B * M * N * K,
+                2 * b * m * n * k,
             )
         ],
     )
@@ -315,10 +306,6 @@ fn bench_bmm[
     _ = b_device_buffer^
     _ = c_device_buffer^
 
-    _ = a_host^
-    _ = b_host^
-    _ = c_host^
-
 
 fn create_bmm_bench[
     dtype: DType,
@@ -326,13 +313,17 @@ fn create_bmm_bench[
     transpose_b: Bool,
     use_vendor_blas: Bool,
     lambda_fn: Optional[epilogue_func_type] = None,
+    B: Optional[Int] = None,
+    M: Optional[Int] = None,
+    N: Optional[Int] = None,
+    K: Optional[Int] = None,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
-    b: ValOrDim,
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
+    b: Int,
+    m: Int,
+    n: Int,
+    k: Int,
     init_type: InitializationType,
 ) raises:
     bench_bmm[
@@ -340,6 +331,10 @@ fn create_bmm_bench[
         transpose_b=transpose_b,
         use_vendor_blas=use_vendor_blas,
         lambda_fn=lambda_fn,
+        B=B,
+        M=M,
+        N=N,
+        K=K,
     ](
         ctx,
         bench,
@@ -354,8 +349,8 @@ fn create_bmm_bench[
 def main():
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
-    var B = Int(arg_parse("B", 1))
-    var M = Int(arg_parse("M", 1))
+    var b = Int(arg_parse("B", 1))
+    var m = Int(arg_parse("M", 1))
     comptime N = env_get_int["N", 1]()
     comptime K = env_get_int["K", 1]()
     var init_type = InitializationType.from_str(
@@ -364,20 +359,22 @@ def main():
     comptime transpose_b = False
     comptime use_vendor_blas = env_get_bool["use_vendor_blas", False]()
 
-    var m = Bench()
+    var bench = Bench()
     with DeviceContext() as ctx:
         create_bmm_bench[
             dtype,
             transpose_b=transpose_b,
             use_vendor_blas=use_vendor_blas,
+            N = Int(N),
+            K = Int(K),
         ](
             ctx,
+            bench,
+            b,
             m,
-            dynamic(B),
-            dynamic(M),
-            static[N](),
-            static[K](),
+            N,
+            K,
             init_type,
         )
 
-    m.dump_report()
+    bench.dump_report()
