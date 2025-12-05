@@ -46,7 +46,7 @@ def test_state_dict(session: InferenceSession) -> None:
     graph = Graph("initialize_state_dict", module)
     model = session.load(graph, weights_registry=state_dict)
     outputs = model()[0]
-    np.testing.assert_array_equal(outputs.to_numpy(), expected_weight * 2)  # type: ignore
+    np.testing.assert_array_equal(outputs.to_numpy(), expected_weight * 2)
 
 
 def test_load_state_dict(session: InferenceSession) -> None:
@@ -60,7 +60,7 @@ def test_load_state_dict(session: InferenceSession) -> None:
     graph = Graph("load_state_dict", module)
     model = session.load(graph, weights_registry=state_dict)
     outputs = model()[0]
-    np.testing.assert_array_equal(outputs.to_numpy(), weight * 2)  # type: ignore
+    np.testing.assert_array_equal(outputs.to_numpy(), weight * 2)
 
 
 def test_load_state_dict_with_unaligned_weights(
@@ -85,7 +85,7 @@ def test_load_state_dict_with_unaligned_weights(
     graph = Graph("load_state_dict_unaligned", module)
     model = session.load(graph, weights_registry=module.state_dict())
     outputs = model()[0]
-    np.testing.assert_array_equal(outputs.to_numpy(), weight * 2)  # type: ignore
+    np.testing.assert_array_equal(outputs.to_numpy(), weight * 2)
 
 
 def test_load_state_dict_with_symbolic_dimensions() -> None:
