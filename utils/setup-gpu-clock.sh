@@ -12,7 +12,7 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-if ! [ $(id -u) = 0 ]; then
+if ! [ "$(id -u)" = 0 ]; then
   echo "The script should be run as root." >&2
   exit 1
 fi
@@ -29,7 +29,7 @@ set_nvidia_gpu_config() {
   nvidia-smi --persistence-mode=1
   nvidia-smi -acp 0
   for i in $(seq 0 $(( $(nvidia-smi -L | wc -l) - 1 ))); do
-    nvidia-smi -ac $(nvidia-smi --query-gpu=clocks.max.memory,clocks.max.sm --format=csv,noheader,nounits -i $i | sed 's/\ //') -i $i
+    nvidia-smi -ac "$(nvidia-smi --query-gpu=clocks.max.memory,clocks.max.sm --format=csv,noheader,nounits -i "$i" | sed 's/\ //')" -i "$i"
   done
 }
 
