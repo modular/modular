@@ -23,58 +23,61 @@ using namespace M::AsyncRT;
 
 namespace {
 
-// Enqueue a worker-task that records the result of `shouldRunInlineFor` for a
-// given `checkHint`.
+// Enqueue a worker-task that records the result of `shouldRunInlineForTask` for
+// a given `checkTaskId`.
 static AsyncValueRef<bool> enqueueInlineCheck(Runtime &runtime,
                                               WorkQueue &workQueue,
-                                              int dispatchHint, int checkHint) {
+                                              int dispatchTaskId,
+                                              int checkTaskId) {
   AsyncValueRef<bool> result = AsyncValueRef<bool>::allocate(runtime);
-  WorkItem probe([&workQueue, checkHint, ready = result.copy()]() mutable {
-    ready.copy().emplace(workQueue.shouldRunInlineFor(checkHint));
+  WorkItem probe([&workQueue, checkTaskId, ready = result.copy()]() mutable {
+    ready.copy().emplace(workQueue.shouldRunInlineForTask(checkTaskId));
   });
-  probe.deviceHint = dispatchHint;
-  workQueue.addTask(std::move(probe));
+  workQueue.addTask(std::move(probe), dispatchTaskId);
   return result;
 }
 
-/// Test device-aware scheduling with device hints.
-TEST(WorkQueueTest, DeviceHintRouting) {
+/// Test task-based scheduling with taskId affinity.
+/// With conservative worker 0 avoidance:
+/// - 4 workers (0, 1, 2, 3), but we use workers 1, 2, 3 for affinity tasks
+/// - taskId = 1 + (hint % 3) for non-negative hints
+TEST(WorkQueueTest, TaskIdRouting) {
   RuntimeOptions options;
   options.numThreads = 4;
-  options.mainWillDonate = false; // Ensure predictable modulo mapping
+  options.mainWillDonate = false;
   std::unique_ptr<Runtime> runtime = createUniqueRuntime(options);
   WorkQueue *workQueue = runtime->getWorkQueue();
 
-  constexpr int numDevices = 8;
-  constexpr int numTasksPerDevice = 10;
+  // Use 3 different taskIds (1, 2, 3) since worker 0 is avoided
+  constexpr int numTaskIds = 3;
+  constexpr int numTasksPerTaskId = 10;
 
-  // Track which thread executed each task and per-device thread mapping.
+  // Track which thread executed each task and per-taskId thread mapping.
   std::unordered_map<std::thread::id, int> threadTaskCounts;
-  std::unordered_map<int, std::vector<std::thread::id>> perDeviceThreads;
+  std::unordered_map<int, std::vector<std::thread::id>> perTaskIdThreads;
   std::mutex mapMutex;
 
-  // Create work items with different device hints.
+  // Create work items with different task IDs (1, 2, 3).
   std::vector<AsyncValueRef<int>> results;
-  results.reserve(numDevices * numTasksPerDevice);
-  for (int device = 0; device < numDevices; ++device) {
-    for (int task = 0; task < numTasksPerDevice; ++task) {
+  results.reserve(numTaskIds * numTasksPerTaskId);
+  for (int taskId = 1; taskId <= numTaskIds; ++taskId) {
+    for (int task = 0; task < numTasksPerTaskId; ++task) {
       results.emplace_back(AsyncValueRef<int>::allocate(*runtime));
       AsyncValueRef<int> &result = results.back();
 
-      WorkItem workItem([device, task, result = result.copy(),
-                         &threadTaskCounts, &perDeviceThreads, &mapMutex]() {
-        // Record which thread is executing this task and per-device mapping.
+      WorkItem workItem([taskId, task, result = result.copy(),
+                         &threadTaskCounts, &perTaskIdThreads, &mapMutex]() {
+        // Record which thread is executing this task and per-taskId mapping.
         std::thread::id threadId = std::this_thread::get_id();
         {
           std::lock_guard<std::mutex> lock(mapMutex);
           threadTaskCounts[threadId] += 1;
-          perDeviceThreads[device].push_back(threadId);
+          perTaskIdThreads[taskId].push_back(threadId);
         }
-        result.copy().emplace(device * 100 + task);
+        result.copy().emplace(taskId * 100 + task);
       });
 
-      workItem.deviceHint = device;
-      workQueue->addTask(std::move(workItem));
+      workQueue->addTask(std::move(workItem), taskId);
     }
   }
 
@@ -84,40 +87,34 @@ TEST(WorkQueueTest, DeviceHintRouting) {
 
   // Verify all tasks completed
   for (size_t i = 0; i < results.size(); ++i) {
-    int device = i / numTasksPerDevice;
-    int task = i % numTasksPerDevice;
-    EXPECT_EQ(results[i].get(), device * 100 + task);
+    int taskId = 1 + static_cast<int>(i / numTasksPerTaskId);
+    int task = i % numTasksPerTaskId;
+    EXPECT_EQ(results[i].get(), taskId * 100 + task);
   }
 
   // Stronger routing checks:
-  // 1) All tasks for a given device run on the same thread.
-  for (int d = 0; d < numDevices; ++d) {
-    ASSERT_EQ(perDeviceThreads.count(d), 1u)
-        << "Missing records for device " << d;
-    const std::vector<std::thread::id> &v = perDeviceThreads[d];
+  // 1) All tasks for a given taskId run on the same thread.
+  for (int tid = 1; tid <= numTaskIds; ++tid) {
+    ASSERT_EQ(perTaskIdThreads.count(tid), 1u)
+        << "Missing records for taskId " << tid;
+    const std::vector<std::thread::id> &v = perTaskIdThreads[tid];
     ASSERT_FALSE(v.empty());
     const std::thread::id first = v.front();
-    for (const std::thread::id &tid : v)
-      EXPECT_EQ(tid, first) << "Device " << d << " ran on multiple threads";
+    for (const std::thread::id &threadId : v)
+      EXPECT_EQ(threadId, first)
+          << "TaskId " << tid << " ran on multiple threads";
   }
 
-  // 2) Devices d and d+numThreads share the same thread (modulo mapping).
-  for (int d = 0; d < 4; ++d) {
-    EXPECT_EQ(perDeviceThreads[d].front(), perDeviceThreads[d + 4].front())
-        << "Devices " << d << " and " << (d + 4)
-        << " should map to same worker";
-  }
-
-  // 3) Devices 0..numThreads-1 run on distinct threads.
-  std::set<std::thread::id> firstFour;
-  for (int d = 0; d < 4; ++d)
-    firstFour.insert(perDeviceThreads[d].front());
-  EXPECT_EQ(firstFour.size(), 4u)
-      << "First four devices should map to four distinct workers";
+  // 2) TaskIds 1, 2, 3 run on distinct threads.
+  std::set<std::thread::id> workerThreads;
+  for (int tid = 1; tid <= numTaskIds; ++tid)
+    workerThreads.insert(perTaskIdThreads[tid].front());
+  EXPECT_EQ(workerThreads.size(), static_cast<size_t>(numTaskIds))
+      << "TaskIds 1-3 should map to three distinct workers";
 }
 
-/// Test that negative device hints are handled correctly.
-TEST(WorkQueueTest, NegativeDeviceHint) {
+/// Test that negative taskIds are handled correctly (global queue).
+TEST(WorkQueueTest, NegativeTaskId) {
   RuntimeOptions options;
   options.numThreads = 4;
   std::unique_ptr<Runtime> runtime = createUniqueRuntime(options);
@@ -127,16 +124,17 @@ TEST(WorkQueueTest, NegativeDeviceHint) {
 
   WorkItem workItem([result = result.copy()]() { result.copy().emplace(42); });
 
-  // Negative device hint should be treated as no preference
-  workItem.deviceHint = -5;
-  workQueue->addTask(std::move(workItem));
+  // Negative taskId should use global queue
+  workQueue->addTask(std::move(workItem), -5);
 
   await(result);
   EXPECT_EQ(result.get(), 42);
 }
 
-/// Test device hint with mainWillDonate mode.
-TEST(WorkQueueTest, DeviceHintWithMainWillDonate) {
+/// Test taskId with mainWillDonate mode.
+/// Since we conservatively skip worker 0, all tasks should complete
+/// without needing await on main thread.
+TEST(WorkQueueTest, TaskIdWithMainWillDonate) {
   RuntimeOptions options;
   options.numThreads = 4;
   options.mainWillDonate = true;
@@ -147,7 +145,7 @@ TEST(WorkQueueTest, DeviceHintWithMainWillDonate) {
   std::vector<AsyncValueRef<int>> results;
   results.reserve(numTasks);
 
-  // Create tasks that would map to worker 0
+  // Create tasks with various taskIds (all avoid worker 0)
   for (int i = 0; i < numTasks; ++i) {
     results.emplace_back(AsyncValueRef<int>::allocate(*runtime));
     AsyncValueRef<int> &result = results.back();
@@ -158,13 +156,12 @@ TEST(WorkQueueTest, DeviceHintWithMainWillDonate) {
       result.copy().emplace(i);
     });
 
-    // Device hints that would map to worker 0 (0, 4, 8, 12, 16)
-    workItem.deviceHint = i * 4;
-    workQueue->addTask(std::move(workItem));
+    // Use taskIds 1, 2, 3 (avoiding worker 0)
+    int taskId = 1 + (i % 3);
+    workQueue->addTask(std::move(workItem), taskId);
   }
 
   // Tasks should complete without needing await on main thread
-  // (they should be redistributed away from worker 0)
   std::promise<void> done;
   std::future<void> fut = done.get_future();
   std::thread checker([&results, d = std::move(done)]() mutable {
@@ -192,8 +189,8 @@ TEST(WorkQueueTest, DeviceHintWithMainWillDonate) {
   }
 }
 
-/// Test that kNoDevicePreference works correctly.
-TEST(WorkQueueTest, NoDevicePreference) {
+/// Test that kDefaultTaskId uses global queue scheduling.
+TEST(WorkQueueTest, DefaultTaskId) {
   RuntimeOptions options;
   options.numThreads = 4;
   std::unique_ptr<Runtime> runtime = createUniqueRuntime(options);
@@ -203,9 +200,8 @@ TEST(WorkQueueTest, NoDevicePreference) {
 
   WorkItem workItem([result = result.copy()]() { result.copy().emplace(99); });
 
-  // Should use default scheduling.
-  workItem.deviceHint = kNoDevicePreference;
-  workQueue->addTask(std::move(workItem));
+  // Should use default (global queue) scheduling.
+  workQueue->addTask(std::move(workItem), kDefaultTaskId);
 
   await(result);
   EXPECT_EQ(result.get(), 99);
@@ -218,15 +214,15 @@ TEST(WorkQueueTest, ShouldRunInlineMatchesAssignedWorker) {
   std::unique_ptr<Runtime> runtime = createUniqueRuntime(options);
   WorkQueue &workQueue = *runtime->getWorkQueue();
 
-  // Each worker executes a task pinned to its own device hint and reports
-  // whether the inline heuristic agrees; the hint-aligned tasks should all come
-  // back `true`.
+  // Each worker executes a task pinned to its taskId and reports whether the
+  // inline heuristic agrees; tasks dispatched and checked with the same taskId
+  // should all come back `true`.
   std::vector<AsyncValueRef<bool>> inlineResults;
-  inlineResults.reserve(options.numThreads);
-  for (size_t idx = 0; idx < options.numThreads; ++idx) {
-    int hint = static_cast<int>(idx);
+  inlineResults.reserve(3);
+  // Test with taskIds 1, 2, 3.
+  for (int taskId = 1; taskId <= 3; ++taskId) {
     inlineResults.emplace_back(
-        enqueueInlineCheck(*runtime, workQueue, hint, hint));
+        enqueueInlineCheck(*runtime, workQueue, taskId, taskId));
   }
 
   for (size_t idx = 0; idx < inlineResults.size(); ++idx) {
@@ -234,28 +230,29 @@ TEST(WorkQueueTest, ShouldRunInlineMatchesAssignedWorker) {
     EXPECT_TRUE(inlineResults[idx].get());
   }
 
-  // When a worker is pinned to device 0 but queries device 1, it should decline
+  // When a worker is pinned to taskId 1 but queries taskId 2, it should decline
   // to inline because it is running on the wrong worker thread.
   AsyncValueRef<bool> mismatch =
-      enqueueInlineCheck(*runtime, workQueue, /*dispatchHint=*/0,
-                         /*checkHint=*/1);
+      enqueueInlineCheck(*runtime, workQueue, /*dispatchTaskId=*/1,
+                         /*checkTaskId=*/2);
   await(mismatch);
   EXPECT_FALSE(mismatch.get());
 }
 
-TEST(WorkQueueTest, ShouldRunInlineHonorsMainDonation) {
+TEST(WorkQueueTest, ShouldRunInlineHonorsWorkerAffinity) {
   RuntimeOptions options;
   options.numThreads = 3;
   options.mainWillDonate = true;
   std::unique_ptr<Runtime> runtime = createUniqueRuntime(options);
   WorkQueue &workQueue = *runtime->getWorkQueue();
 
-  // Even though device 0 is rerouted away from the donating worker, the worker
-  // that actually executes the task should still report inline = true.
+  // Enqueue tasks to workers 1 and 2.
+  // The worker that actually executes the task should still report inline =
+  // true.
   std::vector<AsyncValueRef<bool>> results;
-  for (size_t idx = 0; idx < options.numThreads; ++idx) {
-    int hint = static_cast<int>(idx);
-    results.emplace_back(enqueueInlineCheck(*runtime, workQueue, hint, hint));
+  for (int taskId = 1; taskId <= 2; ++taskId) {
+    results.emplace_back(
+        enqueueInlineCheck(*runtime, workQueue, taskId, taskId));
   }
 
   for (AsyncValueRef<bool> &ready : results) {
@@ -267,14 +264,17 @@ TEST(WorkQueueTest, ShouldRunInlineHonorsMainDonation) {
 TEST(WorkQueueTest, ShouldRunInlineFromForeignThread) {
   RuntimeOptions options;
   options.numThreads = 2;
+  options.mainWillDonate = false; // Ensure main thread is "foreign"
   std::unique_ptr<Runtime> runtime = createUniqueRuntime(options);
   WorkQueue &workQueue = *runtime->getWorkQueue();
 
-  // Main thread should inline only for "no preference"; other hints belong to
-  // workers and should return false here.
-  EXPECT_TRUE(workQueue.shouldRunInlineFor(kNoDevicePreference));
-  EXPECT_FALSE(workQueue.shouldRunInlineFor(0));
-  EXPECT_FALSE(workQueue.shouldRunInlineFor(-5));
+  // From a foreign thread (main thread not donating), we should inline only
+  // for default/negative taskId; positive taskIds belong to workers and should
+  // return false here since we're not on any worker.
+  EXPECT_TRUE(workQueue.shouldRunInlineForTask(kDefaultTaskId));
+  EXPECT_TRUE(workQueue.shouldRunInlineForTask(-5));
+  EXPECT_FALSE(workQueue.shouldRunInlineForTask(0));
+  EXPECT_FALSE(workQueue.shouldRunInlineForTask(1));
 }
 
 TEST(WorkQueueTest, ShouldRunInlineSingleThreadedAlwaysTrue) {
@@ -283,14 +283,14 @@ TEST(WorkQueueTest, ShouldRunInlineSingleThreadedAlwaysTrue) {
   std::unique_ptr<Runtime> runtime = createUniqueRuntime(options);
   WorkQueue &workQueue = *runtime->getWorkQueue();
 
-  // The single worker should inline regardless of the hint value.
+  // The single worker should inline regardless of the taskId value.
   AsyncValueRef<bool> inlineCheck =
-      enqueueInlineCheck(*runtime, workQueue, /*dispatchHint=*/0,
-                         /*checkHint=*/3);
+      enqueueInlineCheck(*runtime, workQueue, /*dispatchTaskId=*/0,
+                         /*checkTaskId=*/3);
   await(inlineCheck);
   EXPECT_TRUE(inlineCheck.get());
 
-  EXPECT_TRUE(workQueue.shouldRunInlineFor(kNoDevicePreference));
+  EXPECT_TRUE(workQueue.shouldRunInlineForTask(kDefaultTaskId));
 }
 
 } // namespace
