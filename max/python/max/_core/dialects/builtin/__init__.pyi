@@ -18,7 +18,7 @@ from collections.abc import Callable, Sequence
 from typing import Protocol, overload
 
 import max._core
-from max._mlir import Location
+from max.mlir import Location
 
 from . import passes as passes
 

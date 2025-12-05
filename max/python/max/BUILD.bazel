@@ -47,7 +47,7 @@ When you modify a .cpp file in the _core/src directory, you can run
     pyi_srcs = glob(["**/*.pyi"]),
     deps = [
         "//max/python/max/_core_types",
-        "//max/python/max/_mlir",
+        "//max/python/max/mlir",
         requirement("numpy"),
     ],
 )

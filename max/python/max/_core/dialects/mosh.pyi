@@ -20,7 +20,7 @@ import max._core
 import max._core.dialects.builtin
 import max._core.dialects.kgen
 import max._core.dialects.m
-from max._mlir import Location
+from max.mlir import Location
 
 # Many of the generated overloads for constructors are more specialized in
 # C++ than they are in Python. For example, `int32_t` and `int64_t` and `size_t`
