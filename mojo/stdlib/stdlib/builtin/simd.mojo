@@ -1265,7 +1265,9 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             True if all elements of the SIMD vectors are equal, False otherwise.
         """
-        return self.eq(rhs).reduce_and().__bool__()
+        return Bool(
+            mlir_value=__mlir_op.`pop.simd.reduce_and`(self.eq(rhs)._mlir_value)
+        )
 
     @always_inline("builtin")
     fn __gt__(self, rhs: Self) -> Bool:
