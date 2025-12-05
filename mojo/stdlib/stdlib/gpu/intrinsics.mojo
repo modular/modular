@@ -1404,7 +1404,7 @@ fn ds_read_tr16_b64[
     ), "ds_read_tr16_b64 is only supported on CDNA4+"
 
     return llvm_intrinsic[
-        "llvm.amdgcn.ds.read.tr16.b64", SIMD[dtype, 4], has_side_effect=False
+        "llvm.amdgcn.ds.read.tr16.b64", SIMD[dtype, 4], has_side_effect=True
     ](shared_ptr)
 
 

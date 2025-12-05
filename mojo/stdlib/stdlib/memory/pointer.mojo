@@ -60,6 +60,8 @@ struct AddressSpace(
     """Local GPU memory address space (per thread, private)."""
     comptime SHARED_CLUSTER = AddressSpace(7)
     """Shared cluster GPU memory address space (NVIDIA-specific)."""
+    comptime BUFFER_RESOURCE = AddressSpace(8)
+    """Buffer resource GPU memory address space (AMD-specific)."""
 
     @always_inline("builtin")
     fn __init__(out self, value: Int):
