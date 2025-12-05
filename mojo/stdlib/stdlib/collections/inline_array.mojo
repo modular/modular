@@ -367,15 +367,7 @@ struct InlineArray[
             (self.unsafe_ptr() + idx).init_pointee_move_from(other_ptr)
 
     fn __del__(deinit self):
-        """Deallocates the array and destroys its elements.
-
-        Examples:
-
-        ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
-        # arr's destructor is called automatically when it goes out of scope
-        ```
-        """
+        """Deallocates the array and destroys its elements."""
 
         @parameter
         if not Bool(Self.ElementType.__del__is_trivial):
