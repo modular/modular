@@ -71,9 +71,7 @@ struct TalkativeCopableReg(ImplicitlyCopyable, Stringable, Writable):
 
 
 # This is copyable, movable, and talkative!  It prints on move.
-struct TalkativeCopableMovableMem(
-    ImplicitlyCopyable, Movable, Stringable, Writable
-):
+struct TalkativeCopableMovableMem(ImplicitlyCopyable, Stringable, Writable):
     var state: Int
 
     @implicit

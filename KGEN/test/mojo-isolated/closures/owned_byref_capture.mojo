@@ -13,7 +13,7 @@ struct Index:
 
 
 @fieldwise_init
-struct MemType(ImplicitlyCopyable, Movable):
+struct MemType(ImplicitlyCopyable):
     fn __add__(self, rhs: MemType) -> MemType:
         return MemType()
 

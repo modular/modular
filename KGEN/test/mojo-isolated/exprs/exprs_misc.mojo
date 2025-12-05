@@ -28,7 +28,7 @@ fn literal_promotion[cond: Bool]():
 # Assignment operator
 ##===----------------------------------------------------------------------===##
 
-struct ListInitializable[T: AnyType](ImplicitlyCopyable, Movable):
+struct ListInitializable[T: AnyType](ImplicitlyCopyable):
     fn __init__(out self, *elements: Self.T, __list_literal__: () = ()):
         pass
 
@@ -479,7 +479,7 @@ fn chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
 
 # MOCO-1987: Parser error when temporary PythonObject appears in or expression
 @register_passable
-struct RPType(ImplicitlyCopyable, Movable):
+struct RPType(ImplicitlyCopyable):
     fn __init__(out self):
         pass
 

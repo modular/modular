@@ -17,13 +17,13 @@ fn function()    -> Int:
     return     10
 
 
-# CHECK: struct Foo(Copyable, Movable, Writable):
-struct Foo(Movable, Writable, Copyable):
+# CHECK: struct Foo(Copyable, Writable):
+struct Foo(Writable, Copyable):
   pass
 
 
-# CHECK: trait Bar(Copyable, Movable, Writable):
-trait Bar(Writable, Movable, Copyable):
+# CHECK: trait Bar(Copyable, Writable):
+trait Bar(Writable, Copyable):
   pass
 
 # CHECK: struct Bar[x: Int]:
@@ -33,9 +33,9 @@ struct Bar[x: Int]:
 # CHECK: struct ComplexStruct[
 # CHECK:     bar: Bar[5],
 # CHECK:     index_type: DType = _get_index_type(layout, address_space),
-# CHECK: ](Copyable, Movable, Writable):
+# CHECK: ](Copyable, Writable):
 # CHECK:     pass
 struct ComplexStruct[
     bar: Bar[5], index_type: DType = _get_index_type(layout, address_space),
-](Writable, Movable, Copyable):
+](Writable, Copyable):
     pass

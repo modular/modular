@@ -14,7 +14,7 @@ struct RegPassable(ImplicitlyCopyable):
 
 
 @fieldwise_init
-struct MemOnly(ImplicitlyCopyable, Movable):
+struct MemOnly(ImplicitlyCopyable):
     var a: Int
     var b: Int
 

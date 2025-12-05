@@ -6,7 +6,7 @@
 
 
 @fieldwise_init
-struct FactorialComputer(ImplicitlyCopyable, Movable):
+struct FactorialComputer(ImplicitlyCopyable):
     fn compute_method(self, depth: UInt8) -> UInt8:
         if depth == 0:
             return 1

@@ -277,7 +277,7 @@ struct StructExample(ImplicitlyCopyable):
 # CHECK-LABEL: lit.struct.decl @ValueMem(!AnyType_Copyable_ImplicitlyCopyable_Movable_UnknownDestructibility)
 # CHECK: move :!lit.generator<[2]({{.*}} deinit_mem, |, ?, {{.*}} byref_result) {{.*}}ValueMem::@"__moveinit__
 @fieldwise_init
-struct ValueMem(ImplicitlyCopyable, Movable):
+struct ValueMem(ImplicitlyCopyable):
     var a: Int  # Trivial
     var b: StructExample  # Copy ctor
 
@@ -322,7 +322,7 @@ struct ValueMem(ImplicitlyCopyable, Movable):
 
 # CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(!AnyType_Copyable_ImplicitlyCopyable_Movable_UnknownDestructibility)
 @fieldwise_init
-struct ValueMemHasCopy(ImplicitlyCopyable, Movable):
+struct ValueMemHasCopy(ImplicitlyCopyable):
     var a: Int
     var b: StructExample
 
@@ -401,7 +401,7 @@ struct ValueReg(ImplicitlyCopyable):
 # COM: Ensure that "self" is a valid field name.
 # CHECK-LABEL: lit.struct.decl @Foo(!AnyType_Copyable_ImplicitlyCopyable_Movable_UnknownDestructibility) attributes
 @fieldwise_init
-struct Foo(ImplicitlyCopyable, Movable):
+struct Foo(ImplicitlyCopyable):
     var a: Int
     var self: Int
 
@@ -418,10 +418,10 @@ struct ParamVarArg[*I: Int]:
 
 # CHECK-LABEL: lit.struct.decl @TraitMember
 @fieldwise_init
-struct TraitMember[T: ImplicitlyCopyable](ImplicitlyCopyable, Movable):
+struct TraitMember[T: ImplicitlyCopyable](ImplicitlyCopyable):
     var value: Self.T
     # CHECK: lit.fn @"__moveinit__
-    # CHECK: call{{.*}}__copyinit__
+    # CHECK: call{{.*}}__moveinit__
     # CHECK: lit.fn @"__copyinit__
     # CHECK: call{{.*}}__copyinit__
 
@@ -431,7 +431,7 @@ struct TraitMember[T: ImplicitlyCopyable](ImplicitlyCopyable, Movable):
 # CHECK: lit.fn @"__copyinit__{{.*}}synthetic
 # CHECK: lit.fn @"__init__{{.*}}synthetic
 @fieldwise_init
-struct NotSynthetic(ImplicitlyCopyable, Movable):
+struct NotSynthetic(ImplicitlyCopyable):
     var member: __mlir_type.`index`
 
     fn notSynthetic(self):
@@ -460,7 +460,7 @@ struct BoxCopyable[T: ImplicitlyCopyable]:
 
 
 @fieldwise_init
-struct Node(ImplicitlyCopyable, Movable):
+struct Node(ImplicitlyCopyable):
     var id: RecursiveCopyable.ID
 
 
@@ -473,7 +473,7 @@ struct RecursiveCopyable:
 
 
 # CHECK-LABEL: lit.struct.decl @RaisingFieldwiseInit
-struct RaisingFieldwiseInit(ImplicitlyCopyable, Movable):
+struct RaisingFieldwiseInit(ImplicitlyCopyable):
     var x: Int
 
     # CHECK-LABEL: lit.fn @"__init__{{.*}} throws

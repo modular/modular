@@ -139,8 +139,8 @@ fn bindAnyTraitToTrait():
 
 
 fn anytrait_assignment():
-    # expected-error @below {{cannot implicitly convert 'AnyTrait[ImplicitlyCopyable]' value to 'AnyTrait[Movable]' in alias initializer}}
-    comptime t: type_of(Movable) = ImplicitlyCopyable
+    # expected-error @below {{cannot implicitly convert 'AnyTrait[ImplicitlyCopyable]' value to 'AnyTrait[FooTrait]' in alias initializer}}
+    comptime t: type_of(FooTrait) = ImplicitlyCopyable
 
 
 trait SomeTrait:

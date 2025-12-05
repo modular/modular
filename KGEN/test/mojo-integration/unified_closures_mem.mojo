@@ -11,7 +11,7 @@
 from sys import argv
 
 
-struct Mem(Copyable, ImplicitlyCopyable):
+struct Mem(ImplicitlyCopyable):
     var str1: String
     var str2: String
 
@@ -23,7 +23,7 @@ struct Mem(Copyable, ImplicitlyCopyable):
         return self.str1 + self.str2
 
 
-struct MovableMem(Copyable, ImplicitlyCopyable, Movable):
+struct MovableMem(ImplicitlyCopyable):
     var str1: String
     var str2: String
 

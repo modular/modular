@@ -212,7 +212,7 @@ fn test_dict_literal(aBool: Bool):
 
 # CHECK-LABEL: lit.fn @"test_dict_comprehension
 fn test_dict_comprehension():
-    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#Dict <:!AnyType !Int, :!ImplicitlyCopyable_Movable !String>
+    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#Dict <:!AnyType !Int, :!ImplicitlyCopyable !String>
     # CHECK: lit.loop cond {
     # CHECK:   SimpleIntRange::@"__has_next__
     # CHECK: } body {

@@ -66,10 +66,10 @@ struct _lit_indirect_origin[mut: Bool, //, base: Origin[mut]]:
 # ===----------------------------------------------------------------------=== #
 
 
-comptime KeyElement = Copyable & Movable
+comptime KeyElement = Copyable  # & Hashable & Equatable
 
 
-struct Error(ImplicitlyCopyable, Movable):
+struct Error(ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
@@ -501,7 +501,7 @@ comptime Byte = UInt8
 @register_passable("trivial")
 struct Span[
     mut: Bool, //,
-    T: ImplicitlyCopyable & Movable,
+    T: ImplicitlyCopyable,
     origin: Origin[mut],
 ]:
     # Field
@@ -683,7 +683,7 @@ struct Slice:
         pass
 
 
-struct List[T: AnyType](Copyable, Movable):
+struct List[T: AnyType](Copyable):
     fn __init__(out self, *elements: Self.T, __list_literal__: () = ()):
         pass
 
@@ -702,7 +702,7 @@ struct Set[T: AnyType]:
         pass
 
 
-struct Dict[K: AnyType, V: ImplicitlyCopyable & Movable]:
+struct Dict[K: AnyType, V: ImplicitlyCopyable]:
     fn __init__(out self):
         pass
 
@@ -735,7 +735,7 @@ trait ExplicitlyDestroyedCopyable:
         ...
 
 
-trait Copyable:
+trait Copyable(Movable):
     fn __copyinit__(out self, existing: Self, /):
         ...
 
@@ -1197,7 +1197,7 @@ fn paramfor_next_iter[
 
 
 fn paramfor_next_value[
-    IteratorType: Iterator & ImplicitlyCopyable & ImplicitlyCopyable
+    IteratorType: Iterator & ImplicitlyCopyable
 ](it: IteratorType) -> IteratorType.Element:
     # NOTE: This function is called by the compiler's elaborator only when
     # __has_next__ will return true.  This is needed because the interpreter
@@ -1206,7 +1206,7 @@ fn paramfor_next_value[
     return result.__next__()
 
 
-struct Optional[T: ImplicitlyCopyable & Movable]:
+struct Optional[T: ImplicitlyCopyable]:
     fn __del__(deinit self):
         pass
 

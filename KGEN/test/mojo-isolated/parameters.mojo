@@ -378,7 +378,7 @@ fn test_upcast_trait[T: ASubTrait](tuples: StructWithTraitParam[T]):
 # Memory-only parameters
 ##===----------------------------------------------------------------------===##
 
-struct MemoryType(ImplicitlyCopyable, Movable):
+struct MemoryType(ImplicitlyCopyable):
     var value: Int
 
     @always_inline("nodebug")
@@ -1593,7 +1593,7 @@ fn call_variadic_pack_with_function():
 @fieldwise_init
 struct MOCO1065[
     mut: Bool, //,
-    T: ImplicitlyCopyable & Movable,
+    T: ImplicitlyCopyable,
     o: Origin[mut]._mlir_type,
 ]:
     fn __init__(out self: MOCO1065[UInt8, Self.o], ref [Self.o] string: Empty):

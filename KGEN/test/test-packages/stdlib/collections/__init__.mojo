@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct OwnedKwargsDict[V: ImplicitlyCopyable & Movable]:
+struct OwnedKwargsDict[V: ImplicitlyCopyable]:
     fn __init__(out self):
         pass
 

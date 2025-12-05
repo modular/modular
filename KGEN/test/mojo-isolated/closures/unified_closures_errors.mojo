@@ -20,7 +20,7 @@ fn make_closure(x: Int) -> Int:
 
     return x
 
-struct Mem(Copyable, ImplicitlyCopyable):
+struct Mem(ImplicitlyCopyable):
     pass
 
 fn use(a:Mem):

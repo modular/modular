@@ -65,7 +65,7 @@ fn init_self_conversion():
     comptime f: fn () -> None = Constructible.__init__
 
 
-struct ConvertibleFromInt(ImplicitlyCopyable, Movable):
+struct ConvertibleFromInt(ImplicitlyCopyable):
     @implicit
     fn __init__(out self, arg: Int):
         pass

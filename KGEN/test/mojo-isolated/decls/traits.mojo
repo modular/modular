@@ -500,7 +500,7 @@ fn bind_regpassable_required_type():
 
 # CHECK-LABEL: lit.struct.decl @RegTrivialSpecial
 @register_passable("trivial")
-struct RegTrivialSpecial(AnyType, ImplicitlyCopyable, Movable):
+struct RegTrivialSpecial(AnyType, ImplicitlyCopyable):
     pass
     # CHECK: lit.fn @"__del__
     # CHECK: lit.fn @"__moveinit__
@@ -509,7 +509,7 @@ struct RegTrivialSpecial(AnyType, ImplicitlyCopyable, Movable):
 
 # CHECK-LABEL: lit.struct.decl @RegSpecial
 @register_passable
-struct RegSpecial(AnyType, ImplicitlyCopyable, Movable):
+struct RegSpecial(AnyType, ImplicitlyCopyable):
     fn __copyinit__(out self, existing: Self):
         pass
 
@@ -518,7 +518,7 @@ struct RegSpecial(AnyType, ImplicitlyCopyable, Movable):
 
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlySpecial
-struct MemoryOnlySpecial(AnyType, ImplicitlyCopyable, Movable):
+struct MemoryOnlySpecial(AnyType, ImplicitlyCopyable):
     pass
     # CHECK: lit.fn @"__del__
     # CHECK-SAME: [{{.*}} deinit_mem, |) -> !kgen.none
@@ -718,7 +718,7 @@ struct TraitMember[T: Movable]:
 
 # CHECK-LABEL: lit.struct.decl @MyPointer
 @fieldwise_init
-struct MyPointer[T: AnyType](ImplicitlyCopyable, Movable):
+struct MyPointer[T: AnyType](ImplicitlyCopyable):
     pass
     # CHECK: lit.fn @"__del__
     # CHECK: lit.fn @"__init__
@@ -957,7 +957,7 @@ fn pass_movable_mt_ref[elt_trait: _MovableMetaType, PassT: elt_trait](mut a: Pas
     # CHECK-SAME: : !lit.generator<("value":{{.*}} elt_trait> PassT, mut *"a`"> ref) -> !kgen.none>
     take_anytype_ref(a)
 
-comptime _CollectionElementMetaType = type_of(ImplicitlyCopyable & Movable)
+comptime _CollectionElementMetaType = type_of(ImplicitlyCopyable)
 
 struct FormVariadicPackWithCastedElementVariadic[
     element_trait: _CollectionElementMetaType, //,
@@ -974,13 +974,13 @@ struct FormVariadicPackWithCastedElementVariadic[
 # to Movable correctly.
 fn take_movable_pointer[T: Movable&AnyType](ptr: UnsafePointer[T]): pass
 # CHECK-LABEL: test_parametric_anytype_movable
-# CHECK-SAME: %ptr: !lit.struct<#UnsafePointer <:!AnyType {{.*}}!lit.anytrait<!ImplicitlyCopyable_Movable> element_trait>
+# CHECK-SAME: %ptr: !lit.struct<#UnsafePointer <:!AnyType {{.*}}!lit.anytrait<!ImplicitlyCopyable> element_trait>
 fn test_parametric_anytype_movable[element_trait: _CollectionElementMetaType,
                                   *element_types: element_trait]
                                   (ptr: UnsafePointer[element_types[0]]):
 
         # CHECK: lit.call {{.*}}take_movable_pointer
-        # CHECK-SAME: <:!Movable_AnyType {{.*}}!ImplicitlyCopyable_Movable> element_trait>
+        # CHECK-SAME: <:!Movable_AnyType {{.*}}!ImplicitlyCopyable> element_trait>
         take_movable_pointer(ptr)
 
 

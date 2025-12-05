@@ -25,7 +25,7 @@
 
 
 @fieldwise_init
-struct Foo[C: Int, D: Int](ImplicitlyCopyable, Movable):
+struct Foo[C: Int, D: Int](ImplicitlyCopyable):
     var x: Int
 
     fn get(self) -> Int:

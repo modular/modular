@@ -756,14 +756,14 @@ struct HMyUnsafePointer[
 # CHECK:  "signature": "struct HMyUnsafePointer[T: AnyType, address_space: AddressSpace = AddressSpace.GENERIC]",
 
 
-struct HList[T: ImplicitlyCopyable & Movable]:
+struct HList[T: ImplicitlyCopyable]:
     # CHECK: "signature": "__getitem__(ref self, idx: Int) -> ref [self] T",
     fn __getitem__(ref self, idx: Int) -> ref [self] Self.T:
         pass
 
 
-# FIXME(MOTO-692): This should say `T: ImplicitlyCopyable & Movable`.
-# CHECK: "signature": "struct HList[T: ImplicitlyCopyable & Movable]",
+# FIXME(MOTO-692): This should say `T: ImplicitlyCopyable`.
+# CHECK: "signature": "struct HList[T: ImplicitlyCopyable]",
 
 
 # Check that we don't generate any synthesized thunk methods
@@ -816,6 +816,10 @@ struct HList[T: ImplicitlyCopyable & Movable]:
 # CHECK-NEXT:   {
 # CHECK-NEXT:     "name": "ImplicitlyCopyable",
 # CHECK-NEXT:     "path": "/stdlib/builtin/value/ImplicitlyCopyable"
+# CHECK-NEXT:   },
+# CHECK-NEXT:   {
+# CHECK-NEXT:     "name": "Movable",
+# CHECK-NEXT:     "path": "/stdlib/builtin/value/Movable"
 # CHECK-NEXT:   },
 # CHECK-NEXT:   {
 # CHECK-NEXT:     "name": "Sized",
