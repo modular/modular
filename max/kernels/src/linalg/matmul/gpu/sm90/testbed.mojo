@@ -15,18 +15,13 @@ from collections import OptionalReg
 from math import ceildiv
 from sys import align_of
 
+from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    assert_almost_equal,
-    assert_with_measure,
-    random,
-    zero,
-)
+from internal_utils import assert_almost_equal, assert_with_measure, random
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
+from memory import LegacyUnsafePointer as UnsafePointer
 
 from utils.index import Index, IndexList
 
@@ -77,32 +72,56 @@ fn test_matmul_sm90[
     )
     var dynamic_c_shape = DimList(m.value, n.value)
 
-    var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    var b_host = HostNDBuffer[b_type, 2, static_b_shape](dynamic_b_shape)
-    var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
-    var c_host_ref = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
+    # Calculate sizes
+    var a_size = M * K
+    var b_size = N * K if transpose_b else K * N
+    var c_size = M * N
 
-    var a_device = DeviceNDBuffer[a_type, 2, static_a_shape](
-        dynamic_a_shape, ctx=ctx
+    # Host allocations
+    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
+    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+
+    var a_host = NDBuffer[a_type, 2, _, static_a_shape](
+        a_host_ptr, dynamic_a_shape
     )
-    var b_device = DeviceNDBuffer[b_type, 2, static_b_shape](
-        dynamic_b_shape, ctx=ctx
+    var b_host = NDBuffer[b_type, 2, _, static_b_shape](
+        b_host_ptr, dynamic_b_shape
     )
-    var c_device = DeviceNDBuffer[c_type, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
+    var c_host = NDBuffer[c_type, 2, _, static_c_shape](
+        c_host_ptr, dynamic_c_shape
     )
-    var c_device_ref = DeviceNDBuffer[c_type, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
+    var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
+        c_host_ref_ptr, dynamic_c_shape
+    )
+
+    # Device allocations
+    var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
+    var b_dev_buffer = ctx.enqueue_create_buffer[b_type](b_size)
+    var c_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
+    var c_dev_ref_buffer = ctx.enqueue_create_buffer[c_type](c_size)
+
+    var a_device = NDBuffer[a_type, 2, _, static_a_shape](
+        a_dev_buffer.unsafe_ptr(), dynamic_a_shape
+    )
+    var b_device = NDBuffer[b_type, 2, _, static_b_shape](
+        b_dev_buffer.unsafe_ptr(), dynamic_b_shape
+    )
+    var c_device = NDBuffer[c_type, 2, _, static_c_shape](
+        c_dev_buffer.unsafe_ptr(), dynamic_c_shape
+    )
+    var c_device_ref = NDBuffer[c_type, 2, _, static_c_shape](
+        c_dev_ref_buffer.unsafe_ptr(), dynamic_c_shape
     )
 
     # Initialize matmul operands
-    random(a_host.tensor)
-    random(b_host.tensor)
+    random(a_host)
+    random(b_host)
 
     # Move operands to the Device
-
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
+    ctx.enqueue_copy(a_dev_buffer, a_host_ptr)
+    ctx.enqueue_copy(b_dev_buffer, b_host_ptr)
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -166,18 +185,16 @@ fn test_matmul_sm90[
         ),
     )
 
-    var c_tensor = c_device.tensor
-
     @parameter
     @always_inline
-    @__copy_capture(c_tensor)
+    @__copy_capture(c_device)
     fn epilogue_fn[
         _dtype: DType,
         width: Int,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_tensor.store[alignment=alignment](
+        c_device.store[alignment=alignment](
             idx, rebind[SIMD[c_type, width]](val)
         )
 
@@ -203,9 +220,9 @@ fn test_matmul_sm90[
         elementwise_lambda_fn=elf,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
     ](
-        c_device.tensor,
-        a_device.tensor,
-        b_device.tensor,
+        c_device,
+        a_device,
+        b_device,
         ctx,
     )
 
@@ -219,15 +236,15 @@ fn test_matmul_sm90[
 
     vendor_matmul(
         ctx,
-        c_device_ref.tensor,
-        a_device.tensor,
-        b_device.tensor,
+        c_device_ref,
+        a_device,
+        b_device,
         c_row_major=True,
         transpose_b=transpose_b,
     )
 
-    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
-    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+    ctx.enqueue_copy(c_host_ptr, c_dev_buffer)
+    ctx.enqueue_copy(c_host_ref_ptr, c_dev_ref_buffer)
     ctx.synchronize()
 
     @parameter
@@ -236,32 +253,35 @@ fn test_matmul_sm90[
         comptime compute_lambda = elementwise_compute_lambda_fn.value()
         for i in range(M):
             for j in range(N):
-                c_host_ref.tensor[Index(i, j)] = compute_lambda(
+                c_host_ref[Index(i, j)] = compute_lambda(
                     IndexList[2](i, j),
-                    c_host_ref.tensor[Index(i, j)],
+                    c_host_ref[Index(i, j)],
                 )
 
     @parameter
     if measure_threshold:
         assert_with_measure[relative_difference](
-            c_host.tensor,
-            c_host_ref.tensor,
+            c_host,
+            c_host_ref,
             threshold=measure_threshold.value(),
         )
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.tensor,
-        c_host_ref.tensor,
+        c_host,
+        c_host_ref,
         atol=0.0001,
         rtol=rtol,
     )
 
-    _ = c_device
-    _ = c_device_ref
-    _ = a_host
-    _ = b_host
-    _ = c_host_ref
-    _ = c_host
-    _ = a_device
-    _ = b_device
+    # Cleanup host pointers
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    c_host_ref_ptr.free()
+
+    # Consume device buffers
+    _ = a_dev_buffer^
+    _ = b_dev_buffer^
+    _ = c_dev_buffer^
+    _ = c_dev_ref_buffer^
