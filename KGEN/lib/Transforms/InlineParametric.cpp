@@ -483,13 +483,15 @@ struct ParametricInliningGraph
   bool shouldInline(ParametricInliningGraphNode *node) const {
     assert(node->level == node->func.getInlineLevel());
 
-    bool shouldInlineAutomatically =
-        node->level == InlineLevel::Always &&
-        this->getNumOperations(node) < getInlineThreshold();
-
+    // Even if we've not been told to, inline some 'always_inline' functions if
+    // they're not too big.
+    bool shouldInlineAutomatically = node->level == InlineLevel::Always;
+    // Inline nodes that meet the pass's minimum inline level
     bool shouldAlwaysInline =
         (node->level >= level && node->level != InlineLevel::Never);
-    return shouldInlineAutomatically || shouldAlwaysInline;
+    bool isWithinLimits = this->getNumOperations(node) <
+                          getInlineThreshold(node->level, shouldAlwaysInline);
+    return (shouldInlineAutomatically || shouldAlwaysInline) && isWithinLimits;
   }
 
   /// When a function is finished processing and will be inlined, compute is
@@ -507,8 +509,8 @@ struct ParametricInliningGraph
   /// Thread local mangler caches.
   ThreadLocalCache<AttrTypeMangler::Cache> manglerCaches;
 
-  /// Get inlining threshold based optimization level.
-  uint64_t getInlineThreshold() const;
+  /// Get inlining threshold based optimization level and inline level.
+  uint64_t getInlineThreshold(InlineLevel level, bool upperLimit) const;
 
   /// Compiler optimization level.
   unsigned optimizationLevel;
@@ -542,7 +544,18 @@ bool ParametricInliningGraph::prepareForInlining(
   return true;
 }
 
-uint64_t ParametricInliningGraph::getInlineThreshold() const {
+uint64_t ParametricInliningGraph::getInlineThreshold(InlineLevel level,
+                                                     bool upperLimit) const {
+  // Functions without an explicit 'always_inline' decorator should not be
+  // inlined as we are unable to choose a meaningful heuristic.
+  if (level == InlineLevel::Never || level == InlineLevel::Automatic)
+    return 0;
+
+  // Add an upper bound to constrain compile times.
+  // TODO: refine this threshold
+  if (upperLimit || level >= InlineLevel::AlwaysNoDebug)
+    return 5000;
+
   if (auto clOpt = KGENPassCLOptions::parametricInlineThreshold())
     return *clOpt;
   switch (optimizationLevel) {
@@ -612,10 +625,13 @@ void ParametricInliningGraph::performInlining(
   callerParams.calculate(paramCaches.getThreadLocalCache());
   NameUniquer uniquer(callerParams, callerParams);
   for (auto [call, callee] : caller->callsites) {
-    inlineGeneratorCall(caller->func, call, callee->func, callee->level,
-                        callerParams, callee->calleeParamGraph,
-                        callee->allDecls, manglerCaches.getThreadLocalCache(),
-                        uniquer, updateDebugInfo, !optimizationLevel);
+    // Verify we want to inline this - it may have grown in size since we first
+    // checked.
+    if (shouldInline(callee))
+      inlineGeneratorCall(caller->func, call, callee->func, callee->level,
+                          callerParams, callee->calleeParamGraph,
+                          callee->allDecls, manglerCaches.getThreadLocalCache(),
+                          uniquer, updateDebugInfo, !optimizationLevel);
   }
 }
 
@@ -667,7 +683,9 @@ void InlineParametricPass::runOnOperation() {
       // Skip nodes that are not complete.
       if (callee->numProcessedCalls != callee->callsites.size())
         continue;
-      if (!graph.isProfitableToInline(callee, graph.getInlineThreshold()))
+      if (!graph.isProfitableToInline(
+              callee, graph.getInlineThreshold(InlineLevel::Always,
+                                               /*upperLimit=*/false)))
         continue;
       inlineGeneratorCall(caller.func, call, callee->func, callee->level,
                           callerParams, callee->calleeParamGraph,
