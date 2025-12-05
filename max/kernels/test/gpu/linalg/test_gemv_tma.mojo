@@ -29,13 +29,7 @@ from gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
 )
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    assert_almost_equal,
-    random,
-    zero,
-)
+from internal_utils import assert_almost_equal, random, zero
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -231,22 +225,21 @@ fn gemv_tma_kernel[
 
 def gemv_tma[
     dtype: DType,
-    rank_c: Int,
-    rank_a: Int,
-    rank_b: Int,
+    c_shape: DimList,
+    a_shape: DimList,
+    b_shape: DimList,
 ](
-    c_device_buffer: DeviceNDBuffer[dtype, rank_c, _],
-    a_device_buffer: DeviceNDBuffer[dtype, rank_a, _],
-    b_device_buffer: DeviceNDBuffer[dtype, rank_b, _],
+    c_device: DeviceBuffer[dtype],
+    c_device_nd: NDBuffer[dtype, 2, _, c_shape],
+    a_device: DeviceBuffer[dtype],
+    a_device_nd: NDBuffer[dtype, 2, _, a_shape],
+    b_device: DeviceBuffer[dtype],
+    b_device_nd: NDBuffer[dtype, 1, _, b_shape],
     M: Int,
     N: Int,
     K: Int,
     ctx: DeviceContext,
 ):
-    var c_device = c_device_buffer.tensor
-    var a_device = a_device_buffer.tensor
-    var b_device = b_device_buffer.tensor
-
     # TODO: Tune further.
     comptime THREAD_NUM = 1024
     comptime BLOCK_SIZE_M = 64
@@ -256,22 +249,22 @@ def gemv_tma[
     comptime ROWS_PER_WARP = UInt(BLOCK_SIZE_M // WARPS_PER_BLOCK)
     comptime NUM_PIPELINE_STAGES = 1
 
-    var a = from_ndbuffer_row_major(a_device)
-    var b = from_ndbuffer_row_major(b_device)
-    var c = from_ndbuffer_row_major(c_device)
+    var a = from_ndbuffer_row_major(a_device_nd)
+    var b = from_ndbuffer_row_major(b_device_nd)
+    var c = from_ndbuffer_row_major(c_device_nd)
 
     constrained[c.rank == 2]()
     constrained[a.rank == 2]()
     constrained[b.rank == 1]()
 
     var tma_desc_a = create_tma_descriptor[dtype, 2](
-        a_device_buffer.buffer,
+        a_device,
         (M, K),
         (K, 1),
         Index(BLOCK_SIZE_M, BLOCK_SIZE_K),
     )
     var tma_desc_b = create_tma_descriptor[dtype, 1](
-        b_device_buffer.buffer,
+        b_device,
         (K),
         (1),
         Index(BLOCK_SIZE_K),
@@ -333,42 +326,62 @@ def test_gemv_tma[
     var dynamic_a_shape = DimList(m.value, k.value)
     var dynamic_b_shape = DimList(k.value)
     var dynamic_c_shape = DimList(m.value, n.value)
+    var a_size = m.value * k.value
+    var b_size = k.value
+    var c_size = m.value * n.value
 
-    var a_host = HostNDBuffer[dtype, 2, static_a_shape](dynamic_a_shape)
-    var b_host = HostNDBuffer[dtype, 1, static_b_shape](dynamic_b_shape)
-    var c_host = HostNDBuffer[dtype, 2, static_c_shape](dynamic_c_shape)
-    var c_host_ref = HostNDBuffer[dtype, 2, static_c_shape](dynamic_c_shape)
-
-    var a_device = DeviceNDBuffer[dtype, 2, static_a_shape](
-        dynamic_a_shape, ctx=ctx
+    var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(a_size)
+    var a_host = NDBuffer[dtype, 2, _, static_a_shape](
+        a_host_ptr, dynamic_a_shape
     )
-    var b_device = DeviceNDBuffer[dtype, 1, static_b_shape](
-        dynamic_b_shape, ctx=ctx
+    var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(b_size)
+    var b_host = NDBuffer[dtype, 1, _, static_b_shape](
+        b_host_ptr, dynamic_b_shape
     )
-    var c_device = DeviceNDBuffer[dtype, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
+    var c_host_ptr = UnsafePointer[Scalar[dtype]].alloc(c_size)
+    var c_host = NDBuffer[dtype, 2, _, static_c_shape](
+        c_host_ptr, dynamic_c_shape
     )
-    var c_device_ref = DeviceNDBuffer[dtype, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
+    var c_host_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(c_size)
+    var c_host_ref = NDBuffer[dtype, 2, _, static_c_shape](
+        c_host_ref_ptr, dynamic_c_shape
     )
 
-    var at = a_host.tensor
-    var bt = b_host.tensor
-    rand[dtype](at.data, M * K)
-    rand[dtype](bt.data, K * N)
-    zero(c_host.tensor)
-    zero(c_host_ref.tensor)
+    var a_device = ctx.enqueue_create_buffer[dtype](a_size)
+    var a_device_nd = NDBuffer[dtype, 2, _, static_a_shape](
+        a_device.unsafe_ptr(), dynamic_a_shape
+    )
+    var b_device = ctx.enqueue_create_buffer[dtype](b_size)
+    var b_device_nd = NDBuffer[dtype, 1, _, static_b_shape](
+        b_device.unsafe_ptr(), dynamic_b_shape
+    )
+    var c_device = ctx.enqueue_create_buffer[dtype](c_size)
+    var c_device_nd = NDBuffer[dtype, 2, _, static_c_shape](
+        c_device.unsafe_ptr(), dynamic_c_shape
+    )
+    var c_device_ref = ctx.enqueue_create_buffer[dtype](c_size)
+    var c_device_ref_nd = NDBuffer[dtype, 2, _, static_c_shape](
+        c_device_ref.unsafe_ptr(), dynamic_c_shape
+    )
 
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
+    rand[dtype](a_host_ptr, M * K)
+    rand[dtype](b_host_ptr, K * N)
+    zero(c_host)
+    zero(c_host_ref)
 
-    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
-    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
+    ctx.enqueue_copy(a_device, a_host_ptr)
+    ctx.enqueue_copy(b_device, b_host_ptr)
+
+    ctx.enqueue_copy(c_device, c_host_ptr)
+    ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
 
     gemv_tma(
         c_device,
+        c_device_nd,
         a_device,
+        a_device_nd,
         b_device,
+        b_device_nd,
         M,
         N,
         K,
@@ -386,8 +399,11 @@ def test_gemv_tma[
         fn run_func(ctx: DeviceContext) raises:
             gemv_tma(
                 c_device,
+                c_device_nd,
                 a_device,
+                a_device_nd,
                 b_device,
+                b_device_nd,
                 M,
                 N,
                 K,
@@ -412,14 +428,14 @@ def test_gemv_tma[
     else:
         # Compare with vendor BLAS for correctness.
         var b_2d = NDBuffer[dtype, 2](
-            b_device.buffer.unsafe_ptr(),
+            b_device.unsafe_ptr(),
             Index(K, 1),
             Index(1, K),
         )
         vendor_blas.matmul(
             ctx,
-            c_device_ref.tensor,
-            a_device.tensor,
+            c_device_ref_nd,
+            a_device_nd,
             b_2d,
             c_row_major=True,
             transpose_b=False,
@@ -427,26 +443,27 @@ def test_gemv_tma[
 
         ctx.synchronize()
 
-        ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
-        ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+        ctx.enqueue_copy(c_host_ptr, c_device)
+        ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
         ctx.synchronize()
 
         comptime rtol = 1e-2
         assert_almost_equal(
-            c_host.tensor,
-            c_host_ref.tensor,
+            c_host,
+            c_host_ref,
             atol=0.0001,
             rtol=rtol,
         )
 
-    _ = c_device
-    _ = c_device_ref
-    _ = a_host
-    _ = b_host
-    _ = c_host_ref
-    _ = c_host
-    _ = a_device
-    _ = b_device
+    # Cleanup
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    c_host_ref_ptr.free()
+    _ = a_device^
+    _ = b_device^
+    _ = c_device^
+    _ = c_device_ref^
 
 
 def main():
