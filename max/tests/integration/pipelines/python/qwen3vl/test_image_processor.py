@@ -15,7 +15,7 @@ import urllib.request
 import numpy as np
 
 # Import our custom processor
-from max.pipelines.architectures.qwen3vl.tokenizer import (
+from max.pipelines.architectures.qwen3vl_moe.tokenizer import (
     Qwen3VLImageProcessor,
 )
 from PIL import Image
@@ -46,7 +46,8 @@ def test_image_processor() -> None:
     # Debug: Check raw image values
     raw_array = np.array(test_image, dtype=np.float32)
     print(
-        f"Raw image array - min: {raw_array.min():.6f}, max: {raw_array.max():.6f}, mean: {raw_array.mean():.6f}"
+        f"Raw image array - min: {raw_array.min():.6f}, max:"
+        f" {raw_array.max():.6f}, mean: {raw_array.mean():.6f}"
     )
 
     # Create our custom processor
@@ -58,17 +59,15 @@ def test_image_processor() -> None:
 
     # Process with our custom processor
     print("\nProcessing with our custom processor...")
-    custom_result, custom_pixel_values_list = custom_processor(test_image)
+    pixel_values, image_grid_thw, pixel_values_list = custom_processor(
+        test_image
+    )
 
     print("Custom processor output:")
-    print(
-        f"  concatenated_pixel_values shape: {custom_result['concatenated_pixel_values'].shape}"
-    )
-    print(f"  image_grid_thw shape: {custom_result['image_grid_thw'].shape}")
-    print(
-        f"  image_grid_thw values: {custom_result['image_grid_thw'].tolist()}"
-    )
-    print(f"  pixel_values list length: {len(custom_pixel_values_list)}")
+    print(f"  concatenated_pixel_values shape: {pixel_values.shape}")
+    print(f"  image_grid_thw shape: {image_grid_thw.shape}")
+    print(f"  image_grid_thw values: {image_grid_thw.tolist()}")
+    print(f"  pixel_values list length: {len(pixel_values_list)}")
 
     print("\nProcessing with transformers library...")
     transformers_processor = Qwen3VLProcessor.from_pretrained(
@@ -82,10 +81,12 @@ def test_image_processor() -> None:
     # Let's see what the transformers image processor does to the image
     print("Transformers image processor config:")
     print(
-        f"  patch_size: {getattr(transformers_image_processor, 'patch_size', 'N/A')}"
+        "  patch_size:"
+        f" {getattr(transformers_image_processor, 'patch_size', 'N/A')}"
     )
     print(
-        f"  temporal_patch_size: {getattr(transformers_image_processor, 'temporal_patch_size', 'N/A')}"
+        "  temporal_patch_size:"
+        f" {getattr(transformers_image_processor, 'temporal_patch_size', 'N/A')}"
     )
 
     # Debug: Let's see what happens if we pass the raw image (not preprocessed)
@@ -106,10 +107,12 @@ def test_image_processor() -> None:
         f"  pixel_values shape: {transformers_result_raw['pixel_values'].shape}"
     )
     print(
-        f"  image_grid_thw shape: {transformers_result_raw['image_grid_thw'].shape}"
+        "  image_grid_thw shape:"
+        f" {transformers_result_raw['image_grid_thw'].shape}"
     )
     print(
-        f"  image_grid_thw values: {transformers_result_raw['image_grid_thw'].tolist()}"
+        "  image_grid_thw values:"
+        f" {transformers_result_raw['image_grid_thw'].tolist()}"
     )
 
     # Calculate expected patches based on grid dimensions
@@ -117,45 +120,41 @@ def test_image_processor() -> None:
     temporal, height_patches, width_patches = transformers_grid
     expected_patches = temporal * height_patches * width_patches
     print(
-        f"Expected patches from grid: {expected_patches} (t={temporal}, h={height_patches}, w={width_patches})"
+        f"Expected patches from grid: {expected_patches} (t={temporal},"
+        f" h={height_patches}, w={width_patches})"
     )
 
     # ASSERT: Compare shapes
     print("\nComparing outputs:")
     assert (
-        custom_result["concatenated_pixel_values"].shape
-        == transformers_result_raw["pixel_values"].shape
+        pixel_values.shape == transformers_result_raw["pixel_values"].shape
     ), (
-        f"pixel_values shapes don't match: "
-        f"custom {custom_result['concatenated_pixel_values'].shape} vs "
+        "pixel_values shapes don't match: "
+        f"custom {pixel_values.shape} vs "
         f"transformers {transformers_result_raw['pixel_values'].shape}"
     )
     assert (
-        custom_result["image_grid_thw"].shape
-        == transformers_result_raw["image_grid_thw"].shape
+        image_grid_thw.shape == transformers_result_raw["image_grid_thw"].shape
     ), (
-        f"image_grid_thw shapes don't match: "
-        f"custom {custom_result['image_grid_thw'].shape} vs "
+        "image_grid_thw shapes don't match: "
+        f"custom {image_grid_thw.shape} vs "
         f"transformers {transformers_result_raw['image_grid_thw'].shape}"
     )
     print("✅ Shapes match")
 
     # ASSERT: Compare grid dimensions
     assert np.array_equal(
-        custom_result["image_grid_thw"],
+        image_grid_thw,
         transformers_result_raw["image_grid_thw"],
     ), (
-        f"Grid dimensions don't match: "
-        f"custom {custom_result['image_grid_thw'].tolist()} vs "
+        "Grid dimensions don't match: "
+        f"custom {image_grid_thw.tolist()} vs "
         f"transformers {transformers_result_raw['image_grid_thw'].tolist()}"
     )
     print("✅ Grid dimensions match")
 
     # Check if the difference is systematic
-    diff = (
-        custom_result["concatenated_pixel_values"]
-        - transformers_result_raw["pixel_values"]
-    )
+    diff = pixel_values - transformers_result_raw["pixel_values"]
     print("  Difference (custom - transformers):")
     print(f"    - min: {diff.min():.6f}")
     print(f"    - max: {diff.max():.6f}")
@@ -163,9 +162,7 @@ def test_image_processor() -> None:
     print(f"    - std: {diff.std():.6f}")
 
     # Check if it's a scaling issue
-    ratio = custom_result["concatenated_pixel_values"] / (
-        transformers_result_raw["pixel_values"] + 1e-8
-    )
+    ratio = pixel_values / (transformers_result_raw["pixel_values"] + 1e-8)
     print("  Ratio (custom / transformers):")
     print(f"    - min: {ratio.min():.6f}")
     print(f"    - max: {ratio.max():.6f}")
@@ -174,33 +171,26 @@ def test_image_processor() -> None:
 
     # Debug: Show first few values from both processors
     print("\nDebug: First 10 values comparison:")
-    print(f"  Custom:     {custom_result['concatenated_pixel_values'][0, :10]}")
+    print(f"  Custom:     {pixel_values[0, :10]}")
     print(f"  Transformers: {transformers_result_raw['pixel_values'][0, :10]}")
     print(f"  Difference: {diff[0, :10]}")
 
     # Debug: Show values from middle of array
-    mid_idx = custom_result["concatenated_pixel_values"].shape[0] // 2
+    mid_idx = pixel_values.shape[0] // 2
     print(f"\nDebug: Middle 10 values (row {mid_idx}):")
+    print(f"  Custom:     {pixel_values[mid_idx, :10]}")
     print(
-        f"  Custom:     {custom_result['concatenated_pixel_values'][mid_idx, :10]}"
-    )
-    print(
-        f"  Transformers: {transformers_result_raw['pixel_values'][mid_idx, :10]}"
+        "  Transformers:"
+        f" {transformers_result_raw['pixel_values'][mid_idx, :10]}"
     )
     print(f"  Difference: {diff[mid_idx, :10]}")
 
     # ASSERT: Compare pixel values (print max abs/rel errors)
     abs_err = np.max(
-        np.abs(
-            custom_result["concatenated_pixel_values"]
-            - transformers_result_raw["pixel_values"]
-        )
+        np.abs(pixel_values - transformers_result_raw["pixel_values"])
     )
     rel_err = np.max(
-        np.abs(
-            custom_result["concatenated_pixel_values"]
-            - transformers_result_raw["pixel_values"]
-        )
+        np.abs(pixel_values - transformers_result_raw["pixel_values"])
         / (np.abs(transformers_result_raw["pixel_values"]) + 1e-12)
     )
     print(
@@ -208,15 +198,16 @@ def test_image_processor() -> None:
     )
 
     assert np.allclose(
-        custom_result["concatenated_pixel_values"],
+        pixel_values,
         transformers_result_raw["pixel_values"],
         rtol=1e-2,
         atol=1e-2,
     ), (
-        f"Pixel values don't match within tolerance. "
+        "Pixel values don't match within tolerance. "
         f"Max abs err: {abs_err:.8f}, Max rel err: {rel_err:.8f}. "
-        f"Custom min/max: {custom_result['concatenated_pixel_values'].min():.6f}/{custom_result['concatenated_pixel_values'].max():.6f}, "
-        f"Transformers min/max: {transformers_result_raw['pixel_values'].min():.6f}/{transformers_result_raw['pixel_values'].max():.6f}"
+        f"Custom min/max: {pixel_values.min():.6f}/{pixel_values.max():.6f}, "
+        "Transformers min/max:"
+        f" {transformers_result_raw['pixel_values'].min():.6f}/{transformers_result_raw['pixel_values'].max():.6f}"
     )
     print("✅ Pixel values match")
 
@@ -245,16 +236,12 @@ def test_multiple_images() -> None:
 
     # Process multiple images with our custom processor
     print("\nProcessing multiple images with our custom processor...")
-    custom_result, _ = custom_processor(test_images)
+    pixel_values, image_grid_thw, _ = custom_processor(test_images)
 
     print("Custom processor output for multiple images:")
-    print(
-        f"  concatenated_pixel_values shape: {custom_result['concatenated_pixel_values'].shape}"
-    )
-    print(f"  image_grid_thw shape: {custom_result['image_grid_thw'].shape}")
-    print(
-        f"  image_grid_thw values: {custom_result['image_grid_thw'].tolist()}"
-    )
+    print(f"  concatenated_pixel_values shape: {pixel_values.shape}")
+    print(f"  image_grid_thw shape: {image_grid_thw.shape}")
+    print(f"  image_grid_thw values: {image_grid_thw.tolist()}")
 
     # Verify the output makes sense for multiple images
     num_images = len(test_images)
@@ -265,10 +252,11 @@ def test_multiple_images() -> None:
 
     print("\nVerifying multiple image output:")
     print(f"  Expected grid shape: {expected_grid_shape}")
-    print(f"  Actual grid shape: {custom_result['image_grid_thw'].shape}")
+    print(f"  Actual grid shape: {image_grid_thw.shape}")
 
-    assert custom_result["image_grid_thw"].shape == expected_grid_shape, (
-        f"Grid shape mismatch: expected {expected_grid_shape}, got {custom_result['image_grid_thw'].shape}"
+    assert image_grid_thw.shape == expected_grid_shape, (
+        f"Grid shape mismatch: expected {expected_grid_shape}, got"
+        f" {image_grid_thw.shape}"
     )
 
     print("\nProcessing multiple images with transformers library...")
@@ -295,67 +283,60 @@ def test_multiple_images() -> None:
         f"  image_grid_thw shape: {transformers_result['image_grid_thw'].shape}"
     )
     print(
-        f"  image_grid_thw values: {transformers_result['image_grid_thw'].tolist()}"
+        "  image_grid_thw values:"
+        f" {transformers_result['image_grid_thw'].tolist()}"
     )
 
     # ASSERT: Compare shapes
     print("\nComparing multiple image outputs:")
-    assert (
-        custom_result["concatenated_pixel_values"].shape
-        == transformers_result["pixel_values"].shape
-    ), (
-        f"pixel_values shapes don't match: "
-        f"custom {custom_result['concatenated_pixel_values'].shape} vs "
+    assert pixel_values.shape == transformers_result["pixel_values"].shape, (
+        "pixel_values shapes don't match: "
+        f"custom {pixel_values.shape} vs "
         f"transformers {transformers_result['pixel_values'].shape}"
     )
     assert (
-        custom_result["image_grid_thw"].shape
-        == transformers_result["image_grid_thw"].shape
+        image_grid_thw.shape == transformers_result["image_grid_thw"].shape
     ), (
-        f"image_grid_thw shapes don't match: "
-        f"custom {custom_result['image_grid_thw'].shape} vs "
+        "image_grid_thw shapes don't match: "
+        f"custom {image_grid_thw.shape} vs "
         f"transformers {transformers_result['image_grid_thw'].shape}"
     )
     print("✅ Multiple image shapes match")
 
     # ASSERT: Compare grid dimensions
     assert np.array_equal(
-        custom_result["image_grid_thw"],
+        image_grid_thw,
         transformers_result["image_grid_thw"],
     ), (
-        f"Grid dimensions don't match: "
-        f"custom {custom_result['image_grid_thw'].tolist()} vs "
+        "Grid dimensions don't match: "
+        f"custom {image_grid_thw.tolist()} vs "
         f"transformers {transformers_result['image_grid_thw'].tolist()}"
     )
     print("✅ Multiple image grid dimensions match")
 
     # ASSERT: Compare pixel values (print max abs/rel errors)
     abs_err_multi = np.max(
-        np.abs(
-            custom_result["concatenated_pixel_values"]
-            - transformers_result["pixel_values"]
-        )
+        np.abs(pixel_values - transformers_result["pixel_values"])
     )
     rel_err_multi = np.max(
-        np.abs(
-            custom_result["concatenated_pixel_values"]
-            - transformers_result["pixel_values"]
-        )
+        np.abs(pixel_values - transformers_result["pixel_values"])
         / (np.abs(transformers_result["pixel_values"]) + 1e-12)
     )
     print(
-        f"Max absolute error (multi): {abs_err_multi:.8f}, Max relative error (multi): {rel_err_multi:.8f}"
+        f"Max absolute error (multi): {abs_err_multi:.8f}, Max relative error"
+        f" (multi): {rel_err_multi:.8f}"
     )
 
     assert np.allclose(
-        custom_result["concatenated_pixel_values"],
+        pixel_values,
         transformers_result["pixel_values"],
         rtol=1e-2,
         atol=1e-2,
     ), (
-        f"Pixel values don't match within tolerance. "
+        "Pixel values don't match within tolerance. "
         f"Max abs err: {abs_err_multi:.8f}, Max rel err: {rel_err_multi:.8f}. "
-        f"Custom min/max: {custom_result['concatenated_pixel_values'].min():.6f}/{custom_result['concatenated_pixel_values'].max():.6f}, "
-        f"Transformers min/max: {transformers_result['pixel_values'].min():.6f}/{transformers_result['pixel_values'].max():.6f}"
+        f"Custom min/max: {pixel_values.min():.6f}/{pixel_values.max():.6f}, "
+        "Transformers min/max:"
+        f" {transformers_result['pixel_values'].min():.6f}/{transformers_result['pixel_values'].max():.6f}"
     )
     print("✅ Multiple image pixel values match")
