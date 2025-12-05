@@ -57,6 +57,15 @@ specific types, similar to interfaces in Java or protocols in Swift, except
 with compile-time type checking and no run-time performance cost. [Read about
 traits](/mojo/manual/traits).
 
+- **Value semantics**: Mojo supports both value and reference semantics, but
+generally defaults to value semantics. With value semantics, each copy is
+independent—modifying one copy won't affect another. With reference
+semantics, multiple variables can point to the same instance (sometimes called
+an object), so changes made through one variable are visible through all others.
+Mojo-native types predominantly use value semantics, which prevents multiple
+variables from unexpectedly sharing the same data. Read about [value
+semantics](https://docs.modular.com/mojo/manual/values/value-semantics/).
+
 - **Value ownership**: Mojo's ownership system ensures that only one variable
 "owns" a specific value at a given time—such that Mojo can safely deallocate
 the value when the owner's lifetime ends—while still allowing you to share
@@ -86,7 +95,7 @@ export const Puzzles ={
   title: "GPU Puzzles",
   description: "Learn to program GPUs in Mojo by solving increasingly complex challenges",
   metadata: {
-    permalink: "https://puzzles.modular.com/introduction.html"
+    permalink: "<https://puzzles.modular.com/introduction.html>"
   }
 };
 
