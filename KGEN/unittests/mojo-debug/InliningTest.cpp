@@ -14,7 +14,7 @@ llvm::StringRef getFunctionName(StopContext &ctx) {
   return ctx.thread.GetSelectedFrame().GetFunctionName();
 }
 
-TEST(InliningTest, testBreakingOnInlinedCalsite) {
+TEST(InliningTest, testBreakingOnInlinedCallsite) {
   // Tests that setting breakpoints on callsites that were inlined works.
 
   StopContext ctx = buildAndLaunch("inlined_callsite.mojo");

@@ -37,11 +37,6 @@ TEST(BreakpointTest, testBreakOnRaiseInlined) {
   ctx.runCommand("mojo break-on-raise");
   ctx.resume();
 
-  // FIXME: We're getting a different line number on ARM hosts for some reason.
-#if defined(__arm__) || defined(__aarch64__)
-  GTEST_SKIP() << "ARM hosts get different line numbers for some reason.";
-#endif
-
   EXPECT_EQ(ctx.binary.getSource().findLinesWithText("# raises")[0],
             (int)ctx.thread.GetFrameAtIndex(0).GetLineEntry().GetLine());
 }
