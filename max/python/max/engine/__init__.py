@@ -20,6 +20,5 @@ from .api import (
     InferenceSession,
     LogLevel,
     Model,
-    MojoValue,
     TensorSpec,
 )

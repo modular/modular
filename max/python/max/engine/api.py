@@ -28,7 +28,7 @@ from typing import Any, cast
 import numpy as np
 from max._core.engine import InferenceSession as _InferenceSession
 from max._core.engine import Model as Model
-from max._core.engine import MojoValue, PrintStyle
+from max._core.engine import PrintStyle
 from max._core.engine import TensorSpec as TensorSpec
 from max._core.profiler import set_gpu_profiling_state
 from max.driver import Device, DLPackArray, Tensor
@@ -46,7 +46,7 @@ CustomExtensionsType = list[CustomExtensionType] | CustomExtensionType
 # Need to use tuple instead of Union to ensure that Python 3.9 support works
 
 ScalarType = (int, float, bool, np.generic)
-InputType = DLPackArray | Tensor | MojoValue | int | float | bool | np.generic
+InputType = DLPackArray | Tensor | int | float | bool | np.generic
 
 
 class GPUProfilingMode(str, Enum):
@@ -80,19 +80,15 @@ def _raise_if_not_contiguous(x: InputType) -> None:
 
 
 @traced
-def _Model_execute(self: Model, *args: InputType) -> list[Tensor | MojoValue]:
+def _Model_execute(self: Model, *args: InputType) -> list[Tensor]:
     # Original tensor-only execution path
-    input_impls: list[Tensor | MojoValue] = []
+    input_impls: list[Tensor] = []
 
     for idx, arg in enumerate(args):
         _raise_if_not_contiguous(arg)
 
         # Validate that input is one of supported types and convert if
         # necessary.
-        if isinstance(arg, MojoValue):
-            input_impls.append(arg)
-            continue
-
         if isinstance(arg, Tensor):
             tensor = arg
         elif isinstance(arg, DLPackArray):
@@ -103,7 +99,7 @@ def _Model_execute(self: Model, *args: InputType) -> list[Tensor | MojoValue]:
         else:
             raise ValueError(
                 "All positional arguments must be of the type"
-                " `max.driver.Tensor`, `MojoValue`, or a tensor type"
+                " `max.driver.Tensor` or a tensor type"
                 " implementing the dlpack protocol. We do not"
                 f" currently support inputs of the type {type(arg)}."
             )
@@ -114,7 +110,7 @@ def _Model_execute(self: Model, *args: InputType) -> list[Tensor | MojoValue]:
 
 def _Model_call(
     self: Model, *args: InputType, **kwargs: InputType
-) -> list[Tensor | MojoValue]:
+) -> list[Tensor]:
     bound = self.signature.bind(*args, **kwargs)
     return self.execute(*bound.arguments.values())
 
