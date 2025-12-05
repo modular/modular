@@ -598,9 +598,13 @@ fn fold_pop_simd_reduce_and() -> POPUInt8T[POP_UI8_77]:
 ##===----------------------------------------------------------------------===##
 
 
+fn unfoldable_function() -> Bool:
+    return False
+
+
 @always_inline("builtin")
 fn kgen_assert() -> Bool:
-    __comptime_assert False, "Ignore this"
+    __comptime_assert unfoldable_function(), "Ignore this"
     return True
 
 

@@ -818,6 +818,20 @@ ParseResult StmtParser::parseComptimeAssertStmt(LexerCursor startCursor,
     message = StringAttr::get({}, KGEN::StringType::get(builder.getContext()));
   }
 
+  // Quality-of-life: if the condition is a constant True or False, report
+  // immediately to the user rather than waiting until elaboration.
+  if (auto boolAttr = dyn_cast<BoolAttr>(propVal.get())) {
+    if (!boolAttr.getValue()) {
+      emitError(smLoc, "failed __comptime_assert: condition is always False");
+      return success();
+    }
+    // If the condition is always True, the assertion is redundant and adds no
+    // useful constraint, so skip emitting IR entirely.
+    shared.emitWarning(smLoc)
+        << "redundant __comptime_assert: condition is always True";
+    return success();
+  }
+
   Location loc = translateLocation(smLoc);
   auto assertOp =
       KGEN::ParamAssertOp::create(builder, loc, propVal.get(), message);
