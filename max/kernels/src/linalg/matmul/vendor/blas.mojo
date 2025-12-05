@@ -115,7 +115,7 @@ from linalg.fp4_utils import (
 
 
 @register_passable("trivial")
-struct Backend(Equatable, ImplicitlyCopyable, Movable, Writable):
+struct Backend(Equatable, ImplicitlyCopyable, Writable):
     var _value: Int32
 
     comptime AUTOMATIC = Self(0)
@@ -178,7 +178,7 @@ fn _resolve_backend[
 
 
 struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
-    ImplicitlyCopyable, Movable
+    ImplicitlyCopyable
 ):
     comptime resolved_backend = _resolve_backend[Self.backend]()
     comptime _cublas_type = UnsafePointer[cublasContext]

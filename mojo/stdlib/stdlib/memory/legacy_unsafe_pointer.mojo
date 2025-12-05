@@ -59,7 +59,6 @@ struct LegacyUnsafePointer[
     Defaultable,
     ImplicitlyCopyable,
     Intable,
-    Movable,
     Stringable,
     Writable,
 ):

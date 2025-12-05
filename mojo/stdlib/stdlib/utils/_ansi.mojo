@@ -30,7 +30,7 @@ fn _use_color() -> Bool:
 
 
 @fieldwise_init
-struct Color(ImplicitlyCopyable, Movable, Writable):
+struct Color(ImplicitlyCopyable, Writable):
     """ANSI colors for terminal output."""
 
     var color: StaticString

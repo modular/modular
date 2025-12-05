@@ -185,7 +185,6 @@ struct Int(
     Intable,
     IntervalElement,
     KeyElement,
-    Movable,
     Powable,
     Representable,
     Roundable,

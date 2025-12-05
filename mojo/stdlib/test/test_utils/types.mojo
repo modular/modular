@@ -170,9 +170,9 @@ struct ImplicitCopyOnly(ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct CopyCounter[
-    T: ImplicitlyCopyable & Movable & Writable & Defaultable = NoneType
-](ImplicitlyCopyable, Movable, Writable):
+struct CopyCounter[T: ImplicitlyCopyable & Writable & Defaultable = NoneType](
+    ImplicitlyCopyable, Writable
+):
     """Counts the number of copies performed on a value.
 
     Parameters:
@@ -221,8 +221,8 @@ struct CopyCounter[
 
 
 # TODO: This type should not be Copyable, but has to be to satisfy
-#       Copyable & Movable at the moment.
-struct MoveCounter[T: Copyable & Movable](Copyable, Movable):
+#       Copyable at the moment.
+struct MoveCounter[T: Copyable](Copyable):
     """Counts the number of moves performed on a value.
 
     Parameters:
@@ -259,7 +259,7 @@ struct MoveCounter[T: Copyable & Movable](Copyable, Movable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct MoveCopyCounter(ImplicitlyCopyable, Movable):
+struct MoveCopyCounter(ImplicitlyCopyable):
     """Counts both copy and move operations for testing."""
 
     var copied: Int
@@ -297,7 +297,7 @@ struct MoveCopyCounter(ImplicitlyCopyable, Movable):
 
 
 @fieldwise_init
-struct TriviallyCopyableMoveCounter(Copyable, Movable):
+struct TriviallyCopyableMoveCounter(Copyable):
     """Type used for testing that collections still perform moves and not copies
     when a type has a custom __moveinit__() but is also trivially copyable.
 
@@ -326,7 +326,7 @@ struct TriviallyCopyableMoveCounter(Copyable, Movable):
 
 
 @fieldwise_init
-struct DelRecorder[recorder_origin: ImmutOrigin](ImplicitlyCopyable, Movable):
+struct DelRecorder[recorder_origin: ImmutOrigin](ImplicitlyCopyable):
     """Records destructor calls for testing.
 
     Parameters:
@@ -357,9 +357,7 @@ struct DelRecorder[recorder_origin: ImmutOrigin](ImplicitlyCopyable, Movable):
 
 
 @fieldwise_init
-struct ObservableDel[origin: MutOrigin = MutAnyOrigin](
-    ImplicitlyCopyable, Movable
-):
+struct ObservableDel[origin: MutOrigin = MutAnyOrigin](ImplicitlyCopyable):
     """Sets a boolean flag when destroyed.
 
     Parameters:
@@ -381,7 +379,7 @@ struct ObservableDel[origin: MutOrigin = MutAnyOrigin](
 
 @fieldwise_init
 struct DelCounter[counter_origin: ImmutOrigin, *, trivial_del: Bool = False](
-    ImplicitlyCopyable, Movable, Writable
+    ImplicitlyCopyable, Writable
 ):
     """Counts the number of times instances are destroyed.
 
@@ -414,7 +412,7 @@ struct DelCounter[counter_origin: ImmutOrigin, *, trivial_del: Bool = False](
 
 
 @fieldwise_init
-struct AbortOnDel(ImplicitlyCopyable, Movable):
+struct AbortOnDel(ImplicitlyCopyable):
     """Type that aborts if its destructor is called.
 
     Used to test that destructors are not called in certain scenarios.
@@ -434,7 +432,7 @@ struct AbortOnDel(ImplicitlyCopyable, Movable):
 
 
 @fieldwise_init
-struct CopyCountedStruct(ImplicitlyCopyable, Movable):
+struct CopyCountedStruct(ImplicitlyCopyable):
     """Struct that tracks the number of times it has been copied."""
 
     var counter: CopyCounter
@@ -484,7 +482,7 @@ struct Observable[
     CopyOrigin: MutOrigin = MutOrigin.external,
     MoveOrigin: MutOrigin = MutOrigin.external,
     DelOrigin: MutOrigin = MutOrigin.external,
-](Copyable, Movable):
+](Copyable):
     """A type that tracks the number of times it has been copied, moved, and destroyed.
 
     Parameters:

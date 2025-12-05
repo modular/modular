@@ -14,7 +14,7 @@ import time
 
 
 @fieldwise_init
-struct ConditionalTimer(ImplicitlyCopyable, Movable):
+struct ConditionalTimer(ImplicitlyCopyable):
     var start_time: Int
 
     fn __init__(out self):

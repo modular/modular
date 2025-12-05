@@ -63,7 +63,6 @@ struct Level(
     Comparable,
     Identifiable,
     ImplicitlyCopyable,
-    Movable,
     Stringable,
     Writable,
 ):

@@ -460,7 +460,7 @@ fn radix_sort_pairs_kernel[
             local_offsets[radix] += 1
 
 
-struct DoubleBuffer[dtype: DType](ImplicitlyCopyable, Movable):
+struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
     var _d_buffers: InlineArray[UnsafePointer[Scalar[Self.dtype]], 2]
     var _selection: Int32
     var _size: Int

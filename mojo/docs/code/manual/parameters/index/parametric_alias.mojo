@@ -38,9 +38,7 @@ def main():
     comptime TwoOfAKind[dt: DType] = SIMD[dt, 2]
     twoFloats = TwoOfAKind[DType.float32](1.0, 2.0)
 
-    comptime StringKeyDict[ValueType: Copyable & Movable] = Dict[
-        String, ValueType
-    ]
+    comptime StringKeyDict[ValueType: Copyable] = Dict[String, ValueType]
     var b: StringKeyDict[UInt8] = {"answer": 42}
     # end-type-examples
     assert_true(twoFloats[0] == 1.0)

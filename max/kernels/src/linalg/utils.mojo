@@ -64,7 +64,7 @@ struct KernelConfig:
 
 
 @register_passable("trivial")
-struct MicroKernelShape(ImplicitlyCopyable, Movable):
+struct MicroKernelShape(ImplicitlyCopyable):
     """Record describing the inner kernel shape."""
 
     var simd_rows: Int
@@ -78,7 +78,7 @@ struct MicroKernelShape(ImplicitlyCopyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct GemmShape(ImplicitlyCopyable, Movable):
+struct GemmShape(ImplicitlyCopyable):
     """Helper class to unpack gemm dimension and layout."""
 
     var M: Int
@@ -422,7 +422,7 @@ fn get_matmul_num_tasks[
 
 
 @fieldwise_init
-struct SubMatmulConfig(ImplicitlyCopyable, Movable):
+struct SubMatmulConfig(ImplicitlyCopyable):
     """Static configuration of sub-matrices in parallel matmul."""
 
     # Starting Indices of sub-matrices.
@@ -729,7 +729,7 @@ fn packA_i8mm[
 
 @fieldwise_init
 @register_passable("trivial")
-struct InnerKernelID(ImplicitlyCopyable, Movable):
+struct InnerKernelID(ImplicitlyCopyable):
     comptime DEFAULT = InnerKernelID(0)
     comptime VNNI = InnerKernelID(1)
     comptime NEON = InnerKernelID(2)

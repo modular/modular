@@ -59,7 +59,7 @@ fn PyInit_mojo_module() -> PythonObject:
 
 
 @fieldwise_init
-struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
+struct Person(Defaultable, ImplicitlyCopyable, Representable):
     var name: String
     var age: Int
 

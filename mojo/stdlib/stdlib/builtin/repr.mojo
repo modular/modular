@@ -82,7 +82,7 @@ fn repr[T: Representable](value: T) -> String:
 
 fn repr[
     K: KeyElement & Representable,
-    V: Copyable & Movable & Representable,
+    V: Copyable & Representable,
 ](value: Dict[K, V]) -> String:
     """Returns the string representation of a `Dict[K,V]`.
 
@@ -91,7 +91,7 @@ fn repr[
 
     Parameters:
         K: A type that implements `KeyElement` and `Representable`.
-        V: A type that implements `Movable`, `Copyable` and `Representable`.
+        V: A type that implements `Copyable` and `Representable`.
 
     Returns:
         The string representation of `Dict[K,V]`.
@@ -116,14 +116,14 @@ fn repr[U: KeyElement & Representable](value: Set[U]) -> String:
     return value.__repr__()
 
 
-fn repr[U: Copyable & Movable & Writable](value: LinkedList[U]) -> String:
+fn repr[U: Copyable & Writable](value: LinkedList[U]) -> String:
     """Returns the string representation of an `LinkedList[U]`.
 
     Args:
         value: A `LinkedList` of element type `U`.
 
     Parameters:
-        U: A type that implements `Movable`, `Copyable` and `Writable`.
+        U: A type that implements `Copyable` and `Writable`.
 
     Returns:
         The string representation of `LinkedList[U]`.
@@ -132,14 +132,14 @@ fn repr[U: Copyable & Movable & Writable](value: LinkedList[U]) -> String:
     return value.__repr__()
 
 
-fn repr[T: Representable & Copyable & Movable](value: Deque[T]) -> String:
+fn repr[T: Representable & Copyable](value: Deque[T]) -> String:
     """Returns the string representation of an `Deque[U]`.
 
     Args:
         value: A `Deque` of element type `U`.
 
     Parameters:
-        T: A type that implements `Movable`, `Copyable` and `Representable`.
+        T: A type that implements `Copyable` and `Representable`.
 
     Returns:
         The string representation of `Deque[U]`.

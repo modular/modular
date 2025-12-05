@@ -97,7 +97,7 @@ fn test_zip_unequal_lengths() raises:
 
 
 @fieldwise_init
-struct TestIter(ImplicitlyCopyable, Iterable, Iterator, Movable):
+struct TestIter(ImplicitlyCopyable, Iterable, Iterator):
     comptime Element = Int
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]

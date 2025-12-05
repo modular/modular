@@ -250,7 +250,7 @@ def test_unsafe_ptr():
         assert_equal(arr[i], ptr[i])
 
 
-def _test_size_of_array[current_type: Copyable & Movable, capacity: Int]():
+def _test_size_of_array[current_type: Copyable, capacity: Int]():
     """Testing if `size_of` the array equals capacity * `size_of` current_type.
 
     Parameters:

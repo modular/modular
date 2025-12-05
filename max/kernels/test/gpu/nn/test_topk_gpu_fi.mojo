@@ -689,7 +689,7 @@ fn fill_random[
 
 
 struct TestCase[_sampling: Bool, _largest: Bool = True, _block_size: Int = 256](
-    ImplicitlyCopyable, Movable
+    ImplicitlyCopyable
 ):
     comptime sampling = Self._sampling
     comptime largest = Self._largest

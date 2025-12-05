@@ -13,13 +13,13 @@
 
 
 @fieldwise_init
-struct Duck(Copyable, Movable):
+struct Duck(Copyable):
     fn quack(self):
         print("Quack")
 
 
 @fieldwise_init
-struct StealthCow(Copyable, Movable):
+struct StealthCow(Copyable):
     fn quack(self):
         print("Moo!")
 

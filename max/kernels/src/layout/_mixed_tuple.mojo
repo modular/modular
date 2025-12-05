@@ -24,7 +24,7 @@ from memory import LegacyUnsafePointer as UnsafePointer
 from sys.intrinsics import _type_is_eq_parse_time
 
 
-trait MixedTupleLike(ImplicitlyCopyable, Movable, Representable):
+trait MixedTupleLike(ImplicitlyCopyable, Representable):
     """Trait for unified layout handling of compile-time and runtime indices."""
 
     comptime VariadicType: Variadic.TypesOfTrait[MixedTupleLike]

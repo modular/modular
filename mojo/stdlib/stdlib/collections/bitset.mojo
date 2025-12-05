@@ -89,7 +89,7 @@ fn _check_index_bounds[operation_name: StaticString](idx: Int, max_size: Int):
 
 
 struct BitSet[size: Int](
-    Boolable, Copyable, Defaultable, Movable, Sized, Stringable, Writable
+    Boolable, Copyable, Defaultable, Sized, Stringable, Writable
 ):
     """A grow-only set storing non-negative integers efficiently using bits.
 

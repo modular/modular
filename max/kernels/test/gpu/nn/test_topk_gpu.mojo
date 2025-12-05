@@ -609,9 +609,7 @@ fn fill_iota[dtype: DType](buf: LayoutTensor[mut=True, dtype, **_]):
     iota(buf.ptr, buf.runtime_layout.shape.value.flattened_length())
 
 
-struct TestCase[_sampling: Bool, _largest: Bool = True](
-    ImplicitlyCopyable, Movable
-):
+struct TestCase[_sampling: Bool, _largest: Bool = True](ImplicitlyCopyable):
     comptime sampling = Self._sampling
     comptime largest = Self._largest
     var N: Int
@@ -636,7 +634,7 @@ struct TestCase[_sampling: Bool, _largest: Bool = True](
 
 
 struct TestCaseMultiRank[_sampling: Bool, rank: Int, _largest: Bool = True](
-    ImplicitlyCopyable, Movable
+    ImplicitlyCopyable
 ):
     comptime sampling = Self._sampling
     comptime largest = Self._largest

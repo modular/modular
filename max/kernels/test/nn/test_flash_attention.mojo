@@ -294,7 +294,7 @@ def reference_attention_bshd_with_sinks[
 
 @fieldwise_init
 @register_passable("trivial")
-struct TestCaseConfig[batch_rank: Int](ImplicitlyCopyable, Movable):
+struct TestCaseConfig[batch_rank: Int](ImplicitlyCopyable):
     """Test case workload configuration hyperparameters."""
 
     comptime rank = Self.batch_rank + 2

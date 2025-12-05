@@ -25,7 +25,7 @@ from .benchmark import _run_impl, _run_impl_fixed, _RunOptions
 
 
 @fieldwise_init
-struct BenchMetric(ImplicitlyCopyable, Movable, Stringable, Writable):
+struct BenchMetric(ImplicitlyCopyable, Stringable, Writable):
     """Defines a benchmark throughput metric."""
 
     var code: Int
@@ -136,7 +136,7 @@ struct BenchMetric(ImplicitlyCopyable, Movable, Stringable, Writable):
 
 
 @fieldwise_init
-struct ThroughputMeasure(ImplicitlyCopyable, Movable):
+struct ThroughputMeasure(ImplicitlyCopyable):
     """Records a throughput metric of metric BenchMetric and value."""
 
     var metric: BenchMetric
@@ -201,7 +201,7 @@ struct ThroughputMeasure(ImplicitlyCopyable, Movable):
 
 
 @fieldwise_init
-struct Format(ImplicitlyCopyable, Movable, Stringable, Writable):
+struct Format(ImplicitlyCopyable, Stringable, Writable):
     """Defines a format for the benchmark output when printing or writing to a
     file.
     """
@@ -269,7 +269,7 @@ struct Format(ImplicitlyCopyable, Movable, Stringable, Writable):
 
 
 @fieldwise_init
-struct BenchConfig(Copyable, Movable):
+struct BenchConfig(Copyable):
     """Defines a benchmark configuration struct to control
     execution times and frequency.
     """
@@ -442,7 +442,7 @@ struct BenchId:
         self.input_id = None
 
 
-struct BenchmarkInfo(Copyable, Movable):
+struct BenchmarkInfo(Copyable):
     """Defines a Benchmark Info struct to record execution Statistics."""
 
     var name: String
@@ -479,7 +479,7 @@ struct BenchmarkInfo(Copyable, Movable):
 
 
 @fieldwise_init
-struct Mode(ImplicitlyCopyable, Movable):
+struct Mode(ImplicitlyCopyable):
     """Defines a Benchmark Mode to distinguish between test runs and actual benchmarks.
     """
 
@@ -1194,7 +1194,7 @@ struct Bench(Stringable, Writable):
 
 
 @fieldwise_init
-struct _Metric(Copyable, Movable):
+struct _Metric(Copyable):
     var max_width: Int
     var rates: Dict[Int, Float64]
 

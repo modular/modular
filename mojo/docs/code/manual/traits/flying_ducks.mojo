@@ -28,7 +28,7 @@ fn quack_and_go[type: Quackable & Flyable](quacker: type):
 
 
 @fieldwise_init
-struct FlyingDuck(Copyable, Flyable, Movable, Quackable):
+struct FlyingDuck(Copyable, Flyable, Quackable):
     fn quack(self):
         print("Quack")
 
@@ -40,7 +40,7 @@ comptime DuckLike = Quackable & Flyable
 
 
 @fieldwise_init
-struct ToyDuck(Copyable, DuckLike, Movable):
+struct ToyDuck(Copyable, DuckLike):
     fn quack(self):
         print("Squeak!")
 

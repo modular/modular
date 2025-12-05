@@ -1,9 +1,9 @@
 # `Copyable` refines `Movable`
 
 Chris Lattner, Dec 4, 2025
-Status: Will be implemented soon
+Status: Implemented in Mojo 26.1 release.
 
-This is a short rationale doc for why `Copyable` should refine the `Movable`
+This is rationale for why `Copyable` should refine the `Movable`
 trait in the Mojo standard library.
 
 ## Historical perspective

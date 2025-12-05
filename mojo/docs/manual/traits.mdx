@@ -52,12 +52,12 @@ specify the type of each argument. If you wanted to write this example in Mojo
 
 ```mojo title="🔥 Mojo"
 @fieldwise_init
-struct Duck(Copyable, Movable):
+struct Duck(Copyable):
     fn quack(self):
         print("Quack")
 
 @fieldwise_init
-struct StealthCow(Copyable, Movable):
+struct StealthCow(Copyable):
     fn quack(self):
         print("Moo!")
 
@@ -143,12 +143,12 @@ syntax.)
 
 ```mojo
 @fieldwise_init
-struct Duck(Copyable, Movable, Quackable):
+struct Duck(Copyable, Quackable):
     fn quack(self):
         print("Quack")
 
 @fieldwise_init
-struct StealthCow(Copyable, Movable, Quackable):
+struct StealthCow(Copyable, Quackable):
     fn quack(self):
         print("Moo!")
 ```
@@ -246,7 +246,7 @@ trait DefaultQuackable:
 
 
 @fieldwise_init
-struct DefaultDuck(Copyable, DefaultQuackable, Movable):
+struct DefaultDuck(Copyable, DefaultQuackable):
     pass
 ```
 
@@ -284,7 +284,7 @@ fn quack_and_go[type: Quackable & Flyable](quacker: type):
     quacker.fly()
 
 @fieldwise_init
-struct FlyingDuck(Copyable, Movable, Quackable, Flyable):
+struct FlyingDuck(Copyable, Quackable, Flyable):
     fn quack(self):
         print("Quack")
 
@@ -319,7 +319,7 @@ and `Flyable`, and anything that conforms to those two traits conforms to
 `DuckLike`. For example, consider the `FlyingDuck` type shown above:
 
 ```mojo
-struct FlyingDuck(Copyable, Movable, Quackable, Flyable):
+struct FlyingDuck(Copyable, Quackable, Flyable):
     # ... etc
 ```
 
@@ -435,7 +435,7 @@ decorator. These decorators add requirements for conforming structs:
 For the purpose of trait conformance, a trait or struct that's defined with
 `@register_passable` should automatically conform to the `Movable` trait, and a
 trait or struct that's defined with `@register_passable("trivial")` should
-automatically conform to the `Copyable` and `Movable` traits.
+automatically conform to the `Copyable` trait.
 
 :::note
 
@@ -486,7 +486,7 @@ function. For example, if you're writing a custom list type, you could
 implement this trait so your type works with `len()`:
 
 ```mojo
-struct MyList(Copyable, Movable, Sized):
+struct MyList(Copyable, Sized):
     var size: Int
     # ...
 
@@ -650,10 +650,10 @@ needs to copy a value, the compiler needs to verify that the type can be copied.
 
 The [`List`](/mojo/stdlib/collections/list) type is an example of a
 generic container. A single `List` can only hold a single type of data.
-The list elements must conform to the `Copyable` and `Movable` traits:
+The list elements must conform to the `Copyable` trait:
 
 ```mojo
-struct List[T: Copyable & Movable]:
+struct List[T: Copyable]:
 ```
 
 For example, you can create a list of integer values like this:
@@ -672,7 +672,7 @@ for i in range(len(list)):
 You can use traits to define requirements for elements that are stored in a
 container. For example, `List` requires elements that can be moved and
 copied. To store a struct in a `List`, the struct needs to conform to
-the `Copyable` and `Movable` traits, which require a
+the `Copyable` trait, which require a
 [copy constructor](/mojo/manual/lifecycle/life#copy-constructor) and a
 [move constructor](/mojo/manual/lifecycle/life#move-constructor).
 
@@ -716,15 +716,15 @@ parameter can't have the same name as the `comptime` member.
 
 `comptime` members are most useful for writing traits for generic types. For
 example, imagine that you want to write a trait that describes a generic stack
-data structure that stores elements that conform to the `Copyable` and `Movable`
-traits.
+data structure that stores elements that conform to the `Copyable`
+trait.
 
 By adding the element type as a `comptime` member on the trait, you can specify
 generic methods on the trait:
 
 ```mojo
 trait Stacklike:
-    comptime EltType: Copyable & Movable
+    comptime EltType: Copyable
 
     fn push(mut self, var item: Self.EltType):
         ...
@@ -737,7 +737,7 @@ The following struct implements the `Stacklike` trait using a `List` as the
 underlying storage:
 
 ```mojo
-struct MyStack[type: Copyable & Movable](Stacklike):
+struct MyStack[type: Copyable](Stacklike):
     """A simple Stack built using a List."""
     comptime EltType = Self.type
     comptime list_type = List[Self.EltType]
@@ -754,7 +754,7 @@ struct MyStack[type: Copyable & Movable](Stacklike):
         return self.list.pop()
 
     fn dump[
-        WritableEltType: Writable & Copyable & Movable
+        WritableEltType: Writable & Copyable
     ](self: MyStack[WritableEltType]):
         print("[", end="")
         for item in self.list:
@@ -763,7 +763,7 @@ struct MyStack[type: Copyable & Movable](Stacklike):
 ```
 
 The `MyStack` type adds a `dump()` method that prints the contents of the stack.
-Because a struct that conforms to `Copyable` and `Movable` is not necessarily
+Because a struct that conforms to `Copyable` is not necessarily
 printable, `MyStack` uses
 [conditional conformance](/mojo/manual/parameters/#conditional-conformance) to
 define a `dump()` method that works as long as the element type is

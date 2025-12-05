@@ -401,7 +401,7 @@ struct ConvTransposedPacked[
     output_type: DType,
     conv_attr: ConvInfoStatic[input_layout.rank() - 2],
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     var output: LayoutTensor[
         mut=True,
         Self.output_type,

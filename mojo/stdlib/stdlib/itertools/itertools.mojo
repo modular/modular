@@ -62,7 +62,7 @@ fn count(start: Int = 0, step: Int = 1) -> _CountIterator:
 
 @fieldwise_init
 struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
-    Copyable, Iterable, Iterator, Movable
+    Copyable, Iterable, Iterator
 ):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element, Self.IteratorTypeB.Element
@@ -177,7 +177,7 @@ fn product[
 @fieldwise_init
 struct _Product3[
     IteratorTypeA: Iterator, IteratorTypeB: Iterator, IteratorTypeC: Iterator
-](Copyable, Iterable, Iterator, Movable):
+](Copyable, Iterable, Iterator):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
         Self.IteratorTypeB.Element,
@@ -274,7 +274,7 @@ struct _Product4[
     IteratorTypeB: Iterator,
     IteratorTypeC: Iterator,
     IteratorTypeD: Iterator,
-](Copyable, Iterable, Iterator, Movable):
+](Copyable, Iterable, Iterator):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
         Self.IteratorTypeB.Element,
@@ -386,9 +386,7 @@ fn product[
 
 
 @fieldwise_init
-struct _RepeatIterator[ElementType: Copyable & Movable](
-    Copyable, Iterable, Iterator, Movable
-):
+struct _RepeatIterator[ElementType: Copyable](Copyable, Iterable, Iterator):
     """Iterator that repeats an element a specified number of times.
 
     Parameters:
@@ -423,7 +421,7 @@ struct _RepeatIterator[ElementType: Copyable & Movable](
 
 @always_inline
 fn repeat[
-    ElementType: Copyable & Movable
+    ElementType: Copyable
 ](element: ElementType, *, times: Int) -> _RepeatIterator[ElementType]:
     """Constructs an iterator that repeats the given element a specified number of times.
 

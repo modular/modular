@@ -96,7 +96,7 @@ trait HasStaticValue:
 
 
 @fieldwise_init
-struct WithValue[value: Int](HasStaticValue, ImplicitlyCopyable, Movable):
+struct WithValue[value: Int](HasStaticValue, ImplicitlyCopyable):
     comptime STATIC_VALUE = Self.value
 
 

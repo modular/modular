@@ -139,7 +139,6 @@ struct UnsafePointer[
     Defaultable,
     ImplicitlyCopyable,
     Intable,
-    Movable,
     Stringable,
     Writable,
 ):

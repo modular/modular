@@ -153,7 +153,7 @@ struct PyMojoObject[T: AnyType]:
     the registered type methods and bindings.
     """
 
-    # TODO(MSTDL-467): Replace with Optional[T] when Optional doesn't require Copyable and Movable anymore.
+    # TODO(MSTDL-467): Replace with Optional[T] when Optional doesn't require Copyable anymore.
     var is_initialized: Bool
     """Whether the Mojo value has been initialized."""
 
@@ -475,7 +475,7 @@ struct PythonModuleBuilder:
         return self.module
 
 
-struct PythonTypeBuilder(Copyable, Movable):
+struct PythonTypeBuilder(Copyable):
     """A builder for a Python 'type' binding.
 
     This is typically used to build a type description of a `PyMojoObject[T]`.

@@ -36,7 +36,7 @@ trait ConvertibleToPython:
         ...
 
 
-trait ConvertibleFromPython(Copyable, Movable):
+trait ConvertibleFromPython(Copyable):
     """Denotes a type that can attempt construction from a read-only Python
     object.
     """

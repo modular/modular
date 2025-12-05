@@ -51,7 +51,7 @@ comptime SEEK_END: UInt8 = 2
 # ===----------------------------------------------------------------------=== #
 
 
-struct _dirent_linux(Copyable, Movable):
+struct _dirent_linux(Copyable):
     comptime MAX_NAME_SIZE = 256
     var d_ino: Int64
     """File serial number."""
@@ -65,7 +65,7 @@ struct _dirent_linux(Copyable, Movable):
     """Name of entry."""
 
 
-struct _dirent_macos(Copyable, Movable):
+struct _dirent_macos(Copyable):
     comptime MAX_NAME_SIZE = 1024
     var d_ino: Int64
     """File serial number."""

@@ -151,6 +151,10 @@ what we publish.
 
 ### Library changes
 
+- The `Copyable` trait now refines the `Movable` trait.  This means that structs
+  and generic algorithms that already require `Copyable` don't need to also
+  mention they require `Movable.
+
 - `Span` now conforms to `Iterable`.
 
 - `any` and `all` now work over `Iterable`s,

@@ -78,7 +78,7 @@ struct Dim(Stringable, Writable):
         self._value = IndexList[3](index(x), index(y), index(z))
 
     @implicit
-    fn __init__[I: Indexer & Copyable & Movable, //](out self, dims: Tuple[I]):
+    fn __init__[I: Indexer & Copyable, //](out self, dims: Tuple[I]):
         """Initializes Dim with a tuple containing a single indexable value.
 
         y and z dimensions are set to 1.
@@ -93,8 +93,8 @@ struct Dim(Stringable, Writable):
 
     @implicit
     fn __init__[
-        I0: Indexer & Copyable & Movable,
-        I1: Indexer & Copyable & Movable, //,
+        I0: Indexer & Copyable,
+        I1: Indexer & Copyable, //,
     ](out self, dims: Tuple[I0, I1]):
         """Initializes Dim with a tuple of two indexable values.
 
@@ -111,9 +111,9 @@ struct Dim(Stringable, Writable):
 
     @implicit
     fn __init__[
-        I0: Indexer & Copyable & Movable,
-        I1: Indexer & Copyable & Movable,
-        I2: Indexer & Copyable & Movable, //,
+        I0: Indexer & Copyable,
+        I1: Indexer & Copyable,
+        I2: Indexer & Copyable, //,
     ](out self, dims: Tuple[I0, I1, I2]):
         """Initializes Dim with a tuple of three indexable values.
 

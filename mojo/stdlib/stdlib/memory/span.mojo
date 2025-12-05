@@ -34,10 +34,10 @@ from compile import get_type_name
 @fieldwise_init
 struct _SpanIter[
     mut: Bool, //,
-    T: Copyable & Movable,
+    T: Copyable,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterable, Iterator, Movable):
+](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator for Span.
 
     Parameters:
@@ -84,13 +84,12 @@ struct _SpanIter[
 
 
 @register_passable("trivial")
-struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
+struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
     Boolable,
     Defaultable,
     DevicePassable,
     ImplicitlyCopyable,
     Iterable,
-    Movable,
     Sized,
 ):
     """A non-owning view of contiguous data.
@@ -327,9 +326,7 @@ struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
         return False
 
     @no_inline
-    fn __str__[
-        U: Representable & Copyable & Movable, //
-    ](self: Span[U, *_]) -> String:
+    fn __str__[U: Representable & Copyable, //](self: Span[U, *_]) -> String:
         """Returns a string representation of a `Span`.
 
         Parameters:
@@ -361,7 +358,7 @@ struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
 
     @no_inline
     fn write_to[
-        U: Representable & Copyable & Movable, //
+        U: Representable & Copyable, //
     ](self: Span[U, *_], mut writer: Some[Writer]):
         """Write `my_span.__str__()` to a `Writer`.
 
@@ -380,9 +377,7 @@ struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
         writer.write("]")
 
     @no_inline
-    fn __repr__[
-        U: Representable & Copyable & Movable, //
-    ](self: Span[U, *_]) -> String:
+    fn __repr__[U: Representable & Copyable, //](self: Span[U, *_]) -> String:
         """Returns a string representation of a `Span`.
 
         Parameters:
@@ -499,13 +494,13 @@ struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
     # accesses to the origin.
     @__unsafe_disable_nested_origin_exclusivity
     fn __eq__[
-        _T: Equatable & Copyable & Movable, //,
+        _T: Equatable & Copyable, //,
     ](self: Span[_T, Self.origin], rhs: Span[_T, _],) -> Bool:
         """Verify if span is equal to another span.
 
         Parameters:
             _T: The type of the elements must implement the
-              traits `Equatable`, `Copyable` and `Movable`.
+              traits `Equatable`, `Copyable`.
 
         Args:
             rhs: The span to compare against.
@@ -528,13 +523,13 @@ struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut]](
 
     @always_inline
     fn __ne__[
-        _T: Equatable & Copyable & Movable, //
+        _T: Equatable & Copyable, //
     ](self: Span[_T, Self.origin], rhs: Span[_T]) -> Bool:
         """Verify if span is not equal to another span.
 
         Parameters:
             _T: The type of the elements in the span. Must implement the
-              traits `Equatable`, `Copyable` and `Movable`.
+              traits `Equatable`, `Copyable`.
 
         Args:
             rhs: The span to compare against.

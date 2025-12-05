@@ -258,7 +258,7 @@ def test_product_bounds():
 
 struct TestCopyIterator[
     CopyOrigin: MutOrigin,
-](Copyable, Iterator, Movable):
+](Copyable, Iterator):
     alias Element = NoneType
 
     var counter: Observable[CopyOrigin = Self.CopyOrigin]

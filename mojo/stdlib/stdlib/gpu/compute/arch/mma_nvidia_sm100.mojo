@@ -1077,7 +1077,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
 
 
 @register_passable("trivial")
-struct MMASmemDescriptorPair(ImplicitlyCopyable, Movable):
+struct MMASmemDescriptorPair(ImplicitlyCopyable):
     """Descriptor for shared memory operands tcgen05 mma instructions.
 
     This struct represents a descriptor that encodes information about shared memory layout

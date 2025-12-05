@@ -19,7 +19,7 @@ from utils import IndexList
 
 
 @fieldwise_init
-struct BoundingBox[dtype: DType](ImplicitlyCopyable, Movable):
+struct BoundingBox[dtype: DType](ImplicitlyCopyable):
     """Represents a 2D bounding box for object detection.
 
     The box is stored using two corner points: `nw` and `se`.

@@ -486,7 +486,7 @@ fn get_ib_sts() -> Int32:
 
 
 @fieldwise_init
-struct Scope(Equatable, Identifiable, ImplicitlyCopyable, Movable, Writable):
+struct Scope(Equatable, Identifiable, ImplicitlyCopyable, Writable):
     """Represents memory synchronization scope levels for GPU memory operations.
 
     Defines different scopes of memory visibility and synchronization, from

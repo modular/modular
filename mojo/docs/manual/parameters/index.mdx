@@ -181,7 +181,7 @@ build generic collections. For example, a generic array type might include code
 like this:
 
 ```mojo
-struct GenericArray[ElementType: Copyable & Movable]:
+struct GenericArray[ElementType: Copyable]:
     var data: UnsafePointer[Self.ElementType, MutOrigin.external]
     var size: Int
 
@@ -239,7 +239,7 @@ could add a static factory method to `GenericArray` with the following
 signature:
 
 ```mojo
-struct GenericArray[ElementType: Copyable & Movable]:
+struct GenericArray[ElementType: Copyable]:
     ...
 
     @staticmethod
@@ -518,7 +518,7 @@ a constructor or static method.
 For example, consider the following struct:
 
 ```mojo
-struct One[Type: Writable & Copyable & Movable]:
+struct One[Type: Writable & Copyable]:
     var value: Self.Type
 
     fn __init__(out self, value: Self.Type):
@@ -537,7 +537,7 @@ You can also infer parameters from a parameterized type passed to a constructor
 or static method:
 
 ```mojo
-struct Two[Type: Writable & Copyable & Movable]:
+struct Two[Type: Writable & Copyable]:
     var val1: Self.Type
     var val2: Self.Type
 
@@ -685,7 +685,7 @@ inferred from context or specified by keyword. Infer-only parameters are placed 
 **beginning** of the parameter list, set off from other parameters by the `//` sigil:
 
 ```mojo
-fn example[type: Copyable & Movable, //, list: List[type]]()
+fn example[type: Copyable, //, list: List[type]]()
 ```
 
 Transforming `dtype` into an infer-only parameter solves this problem:
@@ -713,7 +713,7 @@ by keyword. For example, the
 is parametric on [origin](/mojo/manual/values/lifetimes):
 
 ```mojo
-struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut], ...]:
+struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut], ...]:
     ...
 ```
 
@@ -929,7 +929,7 @@ values to express new types:
 comptime TwoOfAKind[dt: DType] = SIMD[dt, 2]
 twoFloats = TwoOfAKind[DType.float32](1.0, 2.0)
 
-comptime StringKeyDict[ValueType: Copyable & Movable] = Dict[String, ValueType]
+comptime StringKeyDict[ValueType: Copyable] = Dict[String, ValueType]
 var b: StringKeyDict[UInt8] = {"answer": 42}
 ```
 
@@ -967,9 +967,9 @@ code, showing the `List` and its derived `IteratorType`:
 @fieldwise_init
 struct _ListIter[
     mut: Bool, //,
-    T: Copyable & Movable,
+    T: Copyable,
     origin: Origin[mut],
-](ImplicitlyCopyable, Iterable, Iterator, Movable):
+](ImplicitlyCopyable, Iterable, Iterator):
 
     comptime Element = Self.T  # Required by the Iterator trait
 
@@ -978,8 +978,8 @@ struct _ListIter[
 
     ...
 
-struct List[T: Copyable & Movable](
-    Boolable, Copyable, Defaultable, Iterable, Movable, Sized
+struct List[T: Copyable](
+    Boolable, Copyable, Defaultable, Iterable, Sized
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]

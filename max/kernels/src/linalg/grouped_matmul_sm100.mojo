@@ -87,7 +87,7 @@ from .matmul.gpu.sm100.matmul import _blackwell_matmul_tma_umma_warp_specialized
 
 @fieldwise_init
 @register_passable("trivial")
-struct WarpRole(ImplicitlyCopyable, Movable):
+struct WarpRole(ImplicitlyCopyable):
     var _role: Int32
 
     comptime Mma = Self(5)

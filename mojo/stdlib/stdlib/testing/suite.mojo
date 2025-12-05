@@ -77,7 +77,7 @@ fn _writeln[
 
 
 @fieldwise_init
-struct TestResult(Equatable, ImplicitlyCopyable, Movable, Writable):
+struct TestResult(Equatable, ImplicitlyCopyable, Writable):
     """A test result code."""
 
     var _value: Int
@@ -116,7 +116,7 @@ struct TestResult(Equatable, ImplicitlyCopyable, Movable, Writable):
             writer.write(Text[Color.YELLOW]("SKIP"))
 
 
-struct TestReport(Copyable, Movable, Writable):
+struct TestReport(Copyable, Writable):
     """A report for a single unit test."""
 
     comptime _ErrorIndent = 3
@@ -222,7 +222,7 @@ struct TestReport(Copyable, Movable, Writable):
             )
 
 
-struct TestSuiteReport(Copyable, Movable, Writable):
+struct TestSuiteReport(Copyable, Writable):
     """A report for an entire test suite."""
 
     var reports: List[TestReport]
@@ -317,7 +317,7 @@ struct TestSuiteReport(Copyable, Movable, Writable):
 
 
 @fieldwise_init
-struct _Test(Copyable & Movable):
+struct _Test(Copyable):
     """A single test to run."""
 
     comptime fn_type = fn () raises

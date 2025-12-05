@@ -199,7 +199,7 @@ fn _ccl_stream_ptr(ctx: DeviceContext) raises -> OpaquePointer:
 
 
 @fieldwise_init
-struct Communicators(ImplicitlyCopyable, Movable):
+struct Communicators(ImplicitlyCopyable):
     var ngpus: Int
     var comms: InlineArray[ncclComm_t, MAX_GPUS]
 

@@ -34,7 +34,6 @@ struct DType(
     Identifiable,
     ImplicitlyCopyable,
     KeyElement,
-    Movable,
     Representable,
     Stringable,
     Writable,

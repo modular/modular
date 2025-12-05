@@ -63,7 +63,7 @@ comptime is_sm90or100 = is_sm90 or is_sm100
 
 @register_passable("trivial")
 struct FlashAttentionAlgorithm(
-    Defaultable, ImplicitlyCopyable, Movable, Stringable, Writable
+    Defaultable, ImplicitlyCopyable, Stringable, Writable
 ):
     var _value: Int32
 
@@ -122,7 +122,7 @@ struct FlashAttentionAlgorithm(
 
 @fieldwise_init
 @register_passable("trivial")
-struct MHAConfig[dtype: DType](ImplicitlyCopyable, Movable, Writable):
+struct MHAConfig[dtype: DType](ImplicitlyCopyable, Writable):
     # Q, K, V, output should have the same type.
     var num_heads: UInt
     var depth: UInt
@@ -810,7 +810,7 @@ trait MHAPartitionScheme(Copyable):
 
 @register_passable("trivial")
 struct NoPartition[dtype: DType](
-    Defaultable, ImplicitlyCopyable, MHAPartitionScheme, Movable
+    Defaultable, ImplicitlyCopyable, MHAPartitionScheme
 ):
     comptime do_partition: Bool = False
     comptime accum_dtype: DType = Self.dtype
@@ -831,9 +831,7 @@ struct NoPartition[dtype: DType](
 
 
 @register_passable("trivial")
-struct SplitKPartition[dtype: DType](
-    ImplicitlyCopyable, MHAPartitionScheme, Movable
-):
+struct SplitKPartition[dtype: DType](ImplicitlyCopyable, MHAPartitionScheme):
     comptime do_partition: Bool = True
     comptime accum_dtype: DType = Self.dtype
     var ptr: UnsafePointer[Scalar[Self.accum_dtype]]

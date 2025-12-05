@@ -26,7 +26,7 @@ from collections.string._utf8 import _is_valid_utf8
 
 
 @fieldwise_init
-struct TestStruct(Copyable, Movable):
+struct TestStruct(Copyable):
     var n: Int
 
     @staticmethod

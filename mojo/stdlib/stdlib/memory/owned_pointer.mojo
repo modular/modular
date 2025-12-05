@@ -169,7 +169,7 @@ struct OwnedPointer[T: AnyType]:
         Parameters:
             _T: The type of the data backing this `OwnedPointer`. `take()` only exists for `T: Movable`
                 since this consuming operation only makes sense for types that you want to avoid copying.
-                For types that are `ImplicitlyCopyable` or `Copyable` but are not `Movable`, you can copy them through
+                For types that are `ImplicitlyCopyable` or `Copyable` you can copy them through
                 `__getitem__` as in `var v = some_ptr_var[]`.
 
         Returns:

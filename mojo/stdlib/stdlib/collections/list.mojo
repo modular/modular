@@ -38,10 +38,10 @@ from .optional import Optional
 @fieldwise_init
 struct _ListIter[
     mut: Bool, //,
-    T: Copyable & Movable,
+    T: Copyable,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterable, Iterator, Movable):
+](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator for List.
 
     Parameters:
@@ -98,13 +98,12 @@ struct _ListIter[
         return (iter_len, {iter_len})
 
 
-struct List[T: Copyable & Movable](
+struct List[T: Copyable](
     Boolable,
     Copyable,
     Defaultable,
     Equatable,
     Iterable,
-    Movable,
     Representable,
     Sized,
     Stringable,
@@ -476,7 +475,7 @@ struct List[T: Copyable & Movable](
 
     @always_inline
     fn __ne__[
-        U: Equatable & Copyable & Movable, //
+        U: Equatable & Copyable, //
     ](self: List[U, *_], other: List[U, *_]) -> Bool:
         """Checks if two lists are not equal.
 
@@ -501,7 +500,7 @@ struct List[T: Copyable & Movable](
         return not (self == other)
 
     fn __contains__[
-        U: Equatable & Copyable & Movable, //
+        U: Equatable & Copyable, //
     ](self: List[U, *_], value: U) -> Bool:
         """Verify if a given value is present in the list.
 
@@ -1003,7 +1002,7 @@ struct List[T: Copyable & Movable](
 
     # TODO: Remove explicit self type when issue 1876 is resolved.
     fn index[
-        C: Equatable & Copyable & Movable, //
+        C: Equatable & Copyable, //
     ](
         ref self: List[C, *_],
         value: C,
@@ -1196,7 +1195,7 @@ struct List[T: Copyable & Movable](
         (self._data + idx).init_pointee_move(value^)
 
     fn count[
-        _T: Equatable & Copyable & Movable, //
+        _T: Equatable & Copyable, //
     ](self: List[_T, *_], value: _T) -> Int:
         """Counts the number of occurrences of a value in the list.
 

@@ -15,7 +15,7 @@
 # NOTE: This exact example is not currently included in the docs.
 # start-fieldwise-init-example
 @fieldwise_init
-struct MyPet(Copyable, Movable):
+struct MyPet(Copyable):
     var name: String
     var age: Int
 

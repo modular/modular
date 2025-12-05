@@ -118,7 +118,6 @@ struct MyType(
     Floatable,
     ImplicitlyCopyable,
     IntervalElement,
-    Movable,
     Stringable,
 ):
     var value: Float64

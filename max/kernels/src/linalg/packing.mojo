@@ -55,7 +55,7 @@ struct PackMatrixRows[
     row_inner_size: Int,
     packed_origin: MutOrigin,
     original_origin: Origin[original_mut],
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """Pack rows from a matrix into the mlas packed layout and
     extract inner vectors of rows into the packed inner dimension,
     e.g. extract tile [X, Y] and pack into [Xo][Y][Xi].
@@ -310,7 +310,7 @@ struct PackMatrixCols[
     use_i8mm: Bool,
     packed_origin: MutOrigin,
     original_origin: Origin[original_mut],
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """Pack columns from a matrix into the mlas packed layout and
     extract inner vectors of columns into the packed inner dimension,
     e.g. extracts [X, Y] and packs as [Yo][X][Yi].
@@ -916,7 +916,7 @@ struct BTileGenerator[
     transpose_b: Bool,
     b_packed: Bool,
     origin: Origin[mut],
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """Struct to encapsulate a tile of B that supports prepacking.
 
     If b_packed is true, calls to get_tile will return a buffer view from B.

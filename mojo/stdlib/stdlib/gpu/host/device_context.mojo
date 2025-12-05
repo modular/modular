@@ -223,7 +223,7 @@ struct _DeviceTimer:
 
 @fieldwise_init
 @register_passable("trivial")
-struct StreamPriorityRange(ImplicitlyCopyable, Movable, Stringable, Writable):
+struct StreamPriorityRange(ImplicitlyCopyable, Stringable, Writable):
     """Represents the range of valid stream priorities for a GPU device.
 
     Stream priorities control the scheduling of GPU operations, with higher
@@ -764,7 +764,7 @@ struct HostBuffer[dtype: DType](
 
 
 struct DeviceBuffer[dtype: DType](
-    DevicePassable, ImplicitlyCopyable, Movable, Sized, Stringable, Writable
+    DevicePassable, ImplicitlyCopyable, Sized, Stringable, Writable
 ):
     """Represents a block of device-resident storage. For GPU devices, a device
     buffer is allocated in the device's global memory.
@@ -1323,7 +1323,7 @@ struct DeviceBuffer[dtype: DType](
 
 
 # @doc_private does not work on structs - see MOTO-992.
-struct DeviceStream(ImplicitlyCopyable, Movable):
+struct DeviceStream(ImplicitlyCopyable):
     """Represents a CUDA/HIP stream for asynchronous GPU operations.
 
     A DeviceStream provides a queue for GPU operations that can execute concurrently
@@ -1755,7 +1755,7 @@ struct EventFlags:
         return Self(self._flags | other._flags)
 
 
-struct DeviceEvent(ImplicitlyCopyable, Movable):
+struct DeviceEvent(ImplicitlyCopyable):
     """Represents a GPU event for synchronization between streams.
 
     A DeviceEvent allows for fine-grained synchronization between different
@@ -3280,7 +3280,7 @@ struct DeviceExternalFunction:
 
 
 @register_passable
-struct DeviceContext(ImplicitlyCopyable, Movable):
+struct DeviceContext(ImplicitlyCopyable):
     """Represents a single stream of execution on a particular accelerator
     (GPU).
 

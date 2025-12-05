@@ -165,7 +165,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     DevicePassable,
     Hashable,
     ImplicitlyCopyable,
-    Movable,
     Sized,
     Stringable,
     Writable,

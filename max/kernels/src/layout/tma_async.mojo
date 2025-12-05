@@ -172,7 +172,7 @@ fn _tma_desc_tile_layout[
 
 
 @register_passable("trivial")
-struct SharedMemBarrier(ImplicitlyCopyable, Movable):
+struct SharedMemBarrier(ImplicitlyCopyable):
     """A hardware-accelerated synchronization primitive for GPU shared memory operations.
 
     This struct provides a barrier mechanism optimized for coordinating thread execution
@@ -487,7 +487,7 @@ struct SharedMemBarrier(ImplicitlyCopyable, Movable):
 
 
 @register_passable("trivial")
-struct PipelineState[num_stages: Int](Defaultable, ImplicitlyCopyable, Movable):
+struct PipelineState[num_stages: Int](Defaultable, ImplicitlyCopyable):
     """Manages state for a multi-stage pipeline with circular buffer semantics.
 
     PipelineState provides a mechanism for tracking the current stage in a
@@ -627,7 +627,7 @@ struct TMATensorTile[
     layout: Layout,
     desc_layout: Layout = layout,
     is_k_major: Bool = True,
-](DevicePassable, ImplicitlyCopyable, Movable):
+](DevicePassable, ImplicitlyCopyable):
     """
     A hardware-accelerated tensor memory access (TMA) tile for efficient asynchronous data movement.
 
@@ -2263,7 +2263,7 @@ struct TMATensorTileArray[
     dtype: DType,
     cta_tile_layout: Layout,
     desc_layout: Layout,
-](DevicePassable, ImplicitlyCopyable, Movable):
+](DevicePassable, ImplicitlyCopyable):
     """An array of TMA descripotr.
 
     Parameters:

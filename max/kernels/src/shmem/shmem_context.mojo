@@ -139,7 +139,7 @@ fn shmem_launch[func: fn (ctx: SHMEMContext) raises]() raises:
     MPI_Finalize()
 
 
-struct SHMEMContext(ImplicitlyCopyable, Movable):
+struct SHMEMContext(ImplicitlyCopyable):
     """Usable as a context manager to run kernels on a GPU with SHMEM support,
     on exit it will finalize SHMEM and clean up resources.
 

@@ -29,7 +29,7 @@ from .shapes import get_sliding_window_out_dim
 # Pooling method.
 @fieldwise_init
 @register_passable("trivial")
-struct PoolMethod(ImplicitlyCopyable, Movable):
+struct PoolMethod(ImplicitlyCopyable):
     var value: Int
     comptime MAX = PoolMethod(0)  # Max pooling.
     comptime AVG = PoolMethod(1)  # Average pooling not counting padded regions.

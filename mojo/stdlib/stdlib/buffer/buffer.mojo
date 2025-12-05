@@ -240,7 +240,6 @@ struct NDBuffer[
     Defaultable,
     DevicePassable,
     ImplicitlyCopyable,
-    Movable,
     Sized,
     Stringable,
     Writable,

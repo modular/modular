@@ -40,7 +40,7 @@ fn PyInit_mojo_module() -> PythonObject:
 
 
 @fieldwise_init
-struct MojoPair(Defaultable, ImplicitlyCopyable, Movable, Representable):
+struct MojoPair(Defaultable, ImplicitlyCopyable, Representable):
     """A pair of integers that can be initialized with custom values."""
 
     var first: Int

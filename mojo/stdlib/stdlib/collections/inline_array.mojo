@@ -58,19 +58,19 @@ fn _inline_array_construction_checks[size: Int]():
 
 
 struct InlineArray[
-    ElementType: Copyable & Movable,
+    ElementType: Copyable,
     size: Int,
-](Defaultable, DevicePassable, ImplicitlyCopyable, Movable, Sized):
+](Defaultable, DevicePassable, ImplicitlyCopyable, Sized):
     """A fixed-size sequence of homogeneous elements where size is a constant
     expression.
 
     InlineArray provides a fixed-size array implementation with compile-time
     size checking. The array size is determined at compile time and cannot be
-    changed. Elements must implement the `Copyable` and `Movable` traits.
+    changed. Elements must implement the `Copyable` trait.
 
     Parameters:
         ElementType: The type of the elements in the array. Must implement
-            `Copyable` and `Movable`.
+            `Copyable` trait.
         size: The size of the array. Must be a positive integer constant.
 
     Examples:
@@ -580,13 +580,13 @@ struct InlineArray[
 
     @always_inline
     fn __contains__[
-        T: Equatable & Copyable & Movable, //
+        T: Equatable & Copyable, //
     ](self: InlineArray[T, Self.size], value: T) -> Bool:
         """Tests if a value is present in the array using the `in` operator.
 
         Parameters:
             T: The element type, must implement both `Equatable` and
-                `Copyable` and `Movable`.
+                `Copyable`.
 
         Args:
             value: The value to search for.
@@ -607,7 +607,7 @@ struct InlineArray[
             This method enables using the `in` operator to check if a value
             exists in the array. It performs a linear search comparing each
             element for equality with the given value. The element type must
-            implement the `Equatable`, `Copyable` and `Movable` traits
+            implement the `Equatable` and `Copyable` traits
             to support equality comparison.
         """
 

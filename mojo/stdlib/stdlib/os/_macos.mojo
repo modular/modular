@@ -30,7 +30,7 @@ comptime blksize_t = Int32
 
 
 @fieldwise_init
-struct _c_stat(Copyable, Defaultable, Movable, Stringable, Writable):
+struct _c_stat(Copyable, Defaultable, Stringable, Writable):
     var st_dev: dev_t
     """ID of device containing file."""
     var st_mode: mode_t

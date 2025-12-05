@@ -65,7 +65,7 @@ fn _compute_kv_cache_dynamic_shape_strides[
 
 
 @register_passable("trivial")
-struct KVCacheStaticParams(Equatable, ImplicitlyCopyable, Movable):
+struct KVCacheStaticParams(Equatable, ImplicitlyCopyable):
     var num_heads: UInt
     var head_size: UInt
     var is_mla: Bool
@@ -100,7 +100,7 @@ struct KVCacheStaticParams(Equatable, ImplicitlyCopyable, Movable):
 
 
 @register_passable("trivial")
-trait KVCacheT(DevicePassable, ImplicitlyCopyable, Movable):
+trait KVCacheT(DevicePassable, ImplicitlyCopyable):
     """Trait for different KVCache types and implementations.
 
     Represents a single (key or value) cache.
@@ -747,7 +747,7 @@ struct PagedKVCache[
         return ptr
 
 
-trait KVCollectionT(ImplicitlyCopyable, Movable):
+trait KVCollectionT(ImplicitlyCopyable):
     """Trait for a pair of caches (keys and values)."""
 
     comptime CacheType: KVCacheT

@@ -73,7 +73,7 @@ fn abs[T: Absable](value: T) -> T:
 # ===----------------------------------------------------------------------=== #
 
 
-trait DivModable(ImplicitlyCopyable, Movable):
+trait DivModable(ImplicitlyCopyable):
     """
     The `DivModable` trait describes a type that defines division and
     modulo operations returning both quotient and remainder.

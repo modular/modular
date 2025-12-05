@@ -182,7 +182,7 @@ struct TiledMatmul[
     c_shape: DimList,
     c_origin: MutOrigin,
     algorithm: InnerMatmulKernel,
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """Tiled matmul implementation integrating packing, inner loop and tile
     partitions.
 

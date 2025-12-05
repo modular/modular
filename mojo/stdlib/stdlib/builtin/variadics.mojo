@@ -154,7 +154,7 @@ struct Variadic:
 
 @fieldwise_init
 struct _VariadicListIter[type: AnyTrivialRegType](
-    ImplicitlyCopyable, Iterable, Iterator, Movable
+    ImplicitlyCopyable, Iterable, Iterator
 ):
     """Const Iterator for VariadicList.
 

@@ -24,7 +24,7 @@ from ...utils_gpu import block_swizzle
 
 @fieldwise_init
 @register_passable("trivial")
-struct RasterOrder(Hashable, ImplicitlyCopyable, Movable, Stringable, Writable):
+struct RasterOrder(Hashable, ImplicitlyCopyable, Stringable, Writable):
     var _value: Int32
 
     comptime AlongN = Self(0)
@@ -55,7 +55,7 @@ struct RasterOrder(Hashable, ImplicitlyCopyable, Movable, Stringable, Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
+struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -112,7 +112,7 @@ struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct MatmulSchedule(ImplicitlyCopyable, Movable):
+struct MatmulSchedule(ImplicitlyCopyable):
     var _value: Int32
 
     comptime NONE = Self(0)

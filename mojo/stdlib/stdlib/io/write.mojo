@@ -45,7 +45,7 @@ trait Writer:
     from memory import Span
 
     @fieldwise_init
-    struct NewString(Writer, Writable, ImplicitlyCopyable, Movable):
+    struct NewString(Writer, Writable, ImplicitlyCopyable):
         var s: String
 
         # Writer requirement to write a Span of Bytes
@@ -64,7 +64,7 @@ trait Writer:
 
 
     @fieldwise_init
-    struct Point(Writable, ImplicitlyCopyable, Movable):
+    struct Point(Writable, ImplicitlyCopyable):
         var x: Int
         var y: Int
 
@@ -176,7 +176,7 @@ struct _WriteBufferHeap(Writable, Writer):
         self._pos = 0
 
     fn write_list[
-        T: Copyable & Movable & Writable, //
+        T: Copyable & Writable, //
     ](mut self, values: List[T, *_], *, sep: StaticString = StaticString()):
         var length = len(values)
         if length == 0:
@@ -247,7 +247,7 @@ struct _WriteBufferStack[
         self.writer = Pointer(to=writer)
 
     fn write_list[
-        T: Copyable & Movable & Writable, //
+        T: Copyable & Writable, //
     ](mut self, values: List[T, *_], *, sep: String = String()):
         var length = len(values)
         if length == 0:
@@ -294,7 +294,7 @@ struct _TotalWritableBytes(Writer):
         self.size = 0
 
     fn __init__[
-        T: Copyable & Movable & Writable, //,
+        T: Copyable & Writable, //,
         origin: ImmutOrigin = StaticConstantOrigin,
     ](
         out self,

@@ -353,7 +353,7 @@ struct AccessProperty(Identifiable, Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct LaunchAttribute(Defaultable, ImplicitlyCopyable, Movable):
+struct LaunchAttribute(Defaultable, ImplicitlyCopyable):
     """Represents a complete launch attribute with ID and value.
 
     This struct combines a `LaunchAttributeID` and `LaunchAttributeValue` to form

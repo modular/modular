@@ -13,13 +13,13 @@
 
 
 @fieldwise_init
-struct MyPet(ImplicitlyCopyable, Movable):
+struct MyPet(ImplicitlyCopyable):
     var name: String
     var age: Int
 
 
 @fieldwise_init
-struct Pair(ImplicitlyCopyable, Movable):
+struct Pair(ImplicitlyCopyable):
     var first: Int
     var second: Int
 

@@ -77,7 +77,6 @@ struct Bool(
     ImplicitlyCopyable,
     Indexer,
     Intable,
-    Movable,
     Representable,
     Stringable,
     Writable,

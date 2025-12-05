@@ -30,7 +30,6 @@ struct CStringSlice[origin: ImmutOrigin](
     Defaultable,
     Equatable,
     ImplicitlyCopyable,
-    Movable,
     Sized,
     Writable,
 ):

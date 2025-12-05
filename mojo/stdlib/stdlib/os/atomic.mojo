@@ -36,7 +36,6 @@ struct Consistency(
     Equatable,
     Identifiable,
     ImplicitlyCopyable,
-    Movable,
     Representable,
     Stringable,
 ):

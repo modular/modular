@@ -473,7 +473,7 @@ To make a type *implicitly copyable*, add the `ImplicitlyCopyable` trait:
 
 ```mojo
 @fieldwise_init
-struct MyPair(ImplicitlyCopyable, Movable):
+struct MyPair(ImplicitlyCopyable):
     var first: Int
     var second: Int
 
@@ -527,7 +527,7 @@ Here's a movable version of the `MyPet` struct:
 
 ```mojo
 @fieldwise_init
-struct MyPet(Copyable, Movable):
+struct MyPet(Copyable):
     var name: String
     var age: Int
 ```

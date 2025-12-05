@@ -18,7 +18,7 @@ fn consume(var str: String):
 
 
 @fieldwise_init
-struct TwoStrings(Copyable, Movable):
+struct TwoStrings(Copyable):
     var str1: String
     var str2: String
 

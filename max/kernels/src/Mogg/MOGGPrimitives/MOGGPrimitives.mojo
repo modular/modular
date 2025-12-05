@@ -1340,7 +1340,7 @@ fn test_my_int_to_index(x: MyInt) -> Int:
 
 
 @register_passable("trivial")
-struct MyIntReg(ImplicitlyCopyable, Movable):
+struct MyIntReg(ImplicitlyCopyable):
     var val: Int
 
     fn __init__(out self, val: Int):
@@ -1354,7 +1354,7 @@ fn test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
 
 
 @register_passable
-struct MyIntReg2(ImplicitlyCopyable, Movable):
+struct MyIntReg2(ImplicitlyCopyable):
     var val: Int
 
     fn __init__(out self, val: Int):

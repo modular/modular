@@ -18,13 +18,13 @@ trait Quackable:
 
 
 @fieldwise_init
-struct Duck(Copyable, Movable, Quackable):
+struct Duck(Copyable, Quackable):
     fn quack(self):
         print("Quack")
 
 
 @fieldwise_init
-struct StealthCow(Copyable, Movable, Quackable):
+struct StealthCow(Copyable, Quackable):
     fn quack(self):
         print("Moo!")
 

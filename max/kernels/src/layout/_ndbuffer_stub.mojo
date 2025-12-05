@@ -35,7 +35,7 @@ struct TileMask[
     rank: Int,
     element_size: IndexList[rank] = IndexList[rank](1),
     element_stride: IndexList[rank] = IndexList[rank](1),
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     var max_dim: IndexList[Self.rank]
     var offset: IndexList[Self.rank]
 
@@ -315,7 +315,7 @@ fn _to_static_tuple[*sizes: Int, rank: Int]() -> IndexList[rank]:
 # Stores the layout of the vectorized buffer element.
 #
 struct ElementLayout[rank: Int, shape: IndexList[rank]](
-    Defaultable, ImplicitlyCopyable, Movable, Stringable, Writable
+    Defaultable, ImplicitlyCopyable, Stringable, Writable
 ):
     var stride: IndexList[Self.rank]
 

@@ -321,7 +321,6 @@ struct IntTuple(
     ImplicitlyCopyable,
     Intable,
     Iterable,
-    Movable,
     Sized,
     Stringable,
     Writable,

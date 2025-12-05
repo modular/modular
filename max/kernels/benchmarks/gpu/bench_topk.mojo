@@ -575,9 +575,7 @@ fn fill_buffer[
 
 
 @fieldwise_init
-struct TestCase[_sampling: Bool, _largest: Bool = True](
-    ImplicitlyCopyable, Movable
-):
+struct TestCase[_sampling: Bool, _largest: Bool = True](ImplicitlyCopyable):
     comptime sampling = Self._sampling
     comptime largest = Self._largest
     var N: Int

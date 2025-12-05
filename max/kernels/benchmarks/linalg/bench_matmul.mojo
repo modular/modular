@@ -143,7 +143,7 @@ fn bench_matmul[
 
 
 @fieldwise_init
-struct MatmulSpecStatic(ImplicitlyCopyable, Movable):
+struct MatmulSpecStatic(ImplicitlyCopyable):
     var b_packed: Bool
     var a_type: DType
     var b_type: DType
@@ -152,7 +152,7 @@ struct MatmulSpecStatic(ImplicitlyCopyable, Movable):
 
 @fieldwise_init
 struct MatmulSpec[static_info: MatmulSpecStatic](
-    ImplicitlyCopyable, Movable, Stringable
+    ImplicitlyCopyable, Stringable
 ):
     var m: Int
     var n: Int

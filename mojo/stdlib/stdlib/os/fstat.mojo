@@ -41,7 +41,7 @@ from ._macos import _stat as _stat_macos
 # ===----------------------------------------------------------------------=== #
 
 
-struct stat_result(Copyable, Movable, Stringable, Writable):
+struct stat_result(Copyable, Stringable, Writable):
     """Object whose fields correspond  to the members of the stat structure."""
 
     var st_mode: Int

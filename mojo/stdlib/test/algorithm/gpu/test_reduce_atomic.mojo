@@ -21,7 +21,7 @@ from testing import assert_equal, TestSuite
 
 
 @fieldwise_init
-struct FillStrategy(ImplicitlyCopyable, Movable):
+struct FillStrategy(ImplicitlyCopyable):
     var value: Int
 
     comptime LINSPACE = Self(0)

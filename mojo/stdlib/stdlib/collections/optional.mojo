@@ -44,7 +44,7 @@ from memory import LegacyOpaquePointer as OpaquePointer
 
 # TODO(27780): NoneType can't currently conform to traits
 @fieldwise_init
-struct _NoneType(ImplicitlyCopyable, Movable):
+struct _NoneType(ImplicitlyCopyable):
     pass
 
 
@@ -53,13 +53,12 @@ struct _NoneType(ImplicitlyCopyable, Movable):
 # ===-----------------------------------------------------------------------===#
 
 
-struct Optional[T: Copyable & Movable](
+struct Optional[T: Copyable](
     Boolable,
     Defaultable,
     ImplicitlyCopyable,
     Iterable,
     Iterator,
-    Movable,
     Representable,
     Stringable,
     Writable,
@@ -73,7 +72,7 @@ struct Optional[T: Copyable & Movable](
     Your value can take on a value or `None`, and you need to check
     and explicitly extract the value to get it out.
 
-    Currently T is required to be a `Copyable & Movable` so we can implement
+    Currently T is required to be a `Copyable` so we can implement
     copy/move for Optional and allow it to be used in collections itself.
 
     Examples:
@@ -190,7 +189,7 @@ struct Optional[T: Copyable & Movable](
         return self is None
 
     fn __eq__[
-        _T: Equatable & Copyable & Movable
+        _T: Equatable & Copyable
     ](self: Optional[_T], rhs: Optional[_T]) -> Bool:
         """Return `True` if this is the same as another `Optional` value,
         meaning both are absent, or both are present and have the same
@@ -198,7 +197,7 @@ struct Optional[T: Copyable & Movable](
 
         Parameters:
             _T: The type of the elements in the list. Must implement the
-                traits `Copyable`, `Movable` and `Equatable`.
+                traits `Copyable` and `Equatable`.
 
         Args:
             rhs: The value to compare to.
@@ -224,7 +223,7 @@ struct Optional[T: Copyable & Movable](
         return self is not None
 
     fn __ne__[
-        _T: Equatable & Copyable & Movable, //
+        _T: Equatable & Copyable, //
     ](self: Optional[_T], rhs: Optional[_T]) -> Bool:
         """Return `False` if this is the same as another `Optional` value,
         meaning both are absent, or both are present and have the same
@@ -232,7 +231,7 @@ struct Optional[T: Copyable & Movable](
 
         Parameters:
             _T: The type of the elements in the list. Must implement the
-                traits `Copyable`, `Movable` and `Equatable`.
+                traits `Copyable` and `Equatable`.
 
         Args:
             rhs: The value to compare to.
@@ -465,7 +464,7 @@ struct Optional[T: Copyable & Movable](
     fn copied[
         mut: Bool,
         origin: Origin[mut], //,
-        _T: Copyable & Movable,
+        _T: Copyable,
     ](self: Optional[Pointer[_T, origin]]) -> Optional[_T]:
         """Converts an `Optional` containing a Pointer to an `Optional` of an
         owned value by copying.

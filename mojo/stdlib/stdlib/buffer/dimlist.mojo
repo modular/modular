@@ -307,7 +307,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
         self.value = VariadicList[Dim](Int(index(value)))
 
     @always_inline("nodebug")
-    fn __init__[I: Indexer & Copyable & Movable](out self, values: Tuple[I]):
+    fn __init__[I: Indexer & Copyable](out self, values: Tuple[I]):
         """Creates a dimension list from the given list of values.
 
         Parameters:
@@ -320,8 +320,8 @@ struct DimList(Representable, Sized, Stringable, Writable):
 
     @always_inline("nodebug")
     fn __init__[
-        I0: Indexer & Copyable & Movable,
-        I1: Indexer & Copyable & Movable,
+        I0: Indexer & Copyable,
+        I1: Indexer & Copyable,
     ](out self, values: Tuple[I0, I1]):
         """Creates a dimension list from the given list of values.
 
@@ -336,9 +336,9 @@ struct DimList(Representable, Sized, Stringable, Writable):
 
     @always_inline("nodebug")
     fn __init__[
-        I0: Indexer & Copyable & Movable,
-        I1: Indexer & Copyable & Movable,
-        I2: Indexer & Copyable & Movable,
+        I0: Indexer & Copyable,
+        I1: Indexer & Copyable,
+        I2: Indexer & Copyable,
     ](out self, values: Tuple[I0, I1, I2]):
         """Creates a dimension list from the given list of values.
 
@@ -356,8 +356,8 @@ struct DimList(Representable, Sized, Stringable, Writable):
 
     @always_inline("nodebug")
     fn __init__[
-        I0: Indexer & Copyable & Movable,
-        I1: Indexer & Copyable & Movable,
+        I0: Indexer & Copyable,
+        I1: Indexer & Copyable,
     ](out self, val0: I0, val1: I1):
         """Creates a dimension list from the given list of values.
 

@@ -39,7 +39,7 @@ struct MixedLayoutTensor[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     linear_idx_type: DType = _get_index_type(address_space),
-](Copyable, Movable, Writable):
+](Copyable, Writable):
     comptime rank = Variadic.size(Self.shape_types)
     comptime ALL_DIMS_KNOWN = MixedTuple[
         *Self.shape_types
@@ -479,7 +479,7 @@ struct MixedLayoutTensorIter[
     address_space: AddressSpace = AddressSpace.GENERIC,
     axis: Optional[Int] = None,
     linear_idx_type: DType = _get_index_type(address_space),
-](Copyable, ImplicitlyCopyable, Iterable, Iterator, Movable):
+](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator for traversing a memory buffer with a specific layout.
 
     `MixedLayoutTensorIter` provides a way to iterate through memory according to a

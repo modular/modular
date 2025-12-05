@@ -278,7 +278,7 @@ fn local_tensor_type[
 
 
 @register_passable("trivial")
-trait AccumulatorTile(ImplicitlyCopyable, Movable):
+trait AccumulatorTile(ImplicitlyCopyable):
     comptime dtype: DType
     comptime element_layout: Layout
     comptime vec_output_layout: Layout

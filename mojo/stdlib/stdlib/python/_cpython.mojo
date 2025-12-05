@@ -129,7 +129,6 @@ struct PyObjectPtr(
     Equatable,
     ImplicitlyCopyable,
     Intable,
-    Movable,
     Stringable,
     Writable,
 ):
@@ -231,7 +230,7 @@ struct PyObjectPtr(
 
 @fieldwise_init
 @register_passable
-struct PythonVersion(ImplicitlyCopyable, Movable):
+struct PythonVersion(ImplicitlyCopyable):
     """Represents a Python version with major, minor, and patch numbers."""
 
     var major: Int
@@ -279,7 +278,7 @@ fn _py_get_version(lib: _DLHandle) -> StaticString:
 
 
 @fieldwise_init
-struct PyMethodDef(Defaultable, ImplicitlyCopyable, Movable):
+struct PyMethodDef(Defaultable, ImplicitlyCopyable):
     """Represents a Python method definition. This struct is used to define
     methods for Python modules or types.
 
@@ -436,7 +435,7 @@ comptime Typed_newfunc = fn (
 
 @fieldwise_init
 @register_passable("trivial")
-struct PyType_Slot(ImplicitlyCopyable, Movable):
+struct PyType_Slot(ImplicitlyCopyable):
     """Structure defining optional functionality of a type, containing a slot ID
     and a value pointer.
 
@@ -487,7 +486,6 @@ struct PyType_Slot(ImplicitlyCopyable, Movable):
 struct PyObject(
     Defaultable,
     ImplicitlyCopyable,
-    Movable,
     Representable,
     Stringable,
     Writable,

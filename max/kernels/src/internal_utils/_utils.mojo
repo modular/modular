@@ -65,7 +65,7 @@ struct HostNDBuffer[
     rank: Int,
     /,
     shape: DimList = DimList.create_unknown[rank](),
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     var tensor: NDBuffer[Self.dtype, Self.rank, MutAnyOrigin, Self.shape]
 
     @always_inline
@@ -141,7 +141,7 @@ struct DeviceNDBuffer[
     rank: Int,
     /,
     shape: DimList = DimList.create_unknown[rank](),
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     var buffer: DeviceBuffer[Self.dtype]
     var tensor: NDBuffer[
         Self.dtype,
@@ -252,7 +252,7 @@ struct DeviceNDBuffer[
 
 # TODO: add address_space: AddressSpace = AddressSpace.GENERIC
 @fieldwise_init
-struct TestTensor[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
+struct TestTensor[dtype: DType, rank: Int](ImplicitlyCopyable):
     var ndbuffer: NDBuffer[Self.dtype, Self.rank, MutAnyOrigin]
     var shape: DimList
     var num_elements: Int
@@ -296,9 +296,7 @@ struct TestTensor[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
 
 
 @register_passable("trivial")
-struct InitializationType(
-    DevicePassable, Equatable, ImplicitlyCopyable, Movable
-):
+struct InitializationType(DevicePassable, Equatable, ImplicitlyCopyable):
     var _value: Int
     comptime zero = InitializationType(0)
     comptime one = InitializationType(1)
@@ -658,7 +656,7 @@ fn array_equal[
 
 @fieldwise_init
 @register_passable("trivial")
-struct Mode(ImplicitlyCopyable, Movable, Stringable):
+struct Mode(ImplicitlyCopyable, Stringable):
     var _value: Int
     var handle: StaticString
     comptime NONE = Self(0x0, "none")

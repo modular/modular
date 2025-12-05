@@ -19,7 +19,6 @@ These are Mojo built-ins, so you don't need to import them.
 struct Slice(
     Equatable,
     ImplicitlyCopyable,
-    Movable,
     Representable,
     Stringable,
     Writable,
@@ -204,7 +203,7 @@ struct Slice(
         return (start.value(), end.value(), step)
 
 
-struct StridedSlice(ImplicitlyCopyable, Movable):
+struct StridedSlice(ImplicitlyCopyable):
     """Represents a slice expression that has a stride.
 
     This type is used to support different behavior for strided vs unstrided
@@ -248,7 +247,7 @@ struct StridedSlice(ImplicitlyCopyable, Movable):
         return self._inner.indices(length)
 
 
-struct ContiguousSlice(ImplicitlyCopyable, Movable):
+struct ContiguousSlice(ImplicitlyCopyable):
     """Represents a slice expression without a stride.
 
     This type is used to support different behavior for strided vs unstrided
