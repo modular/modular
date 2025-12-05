@@ -3523,6 +3523,60 @@ struct DeviceContext(ImplicitlyCopyable):
         )
         return String(api_ptr)
 
+    fn _get_max_dynamic_shared_memory_bytes(
+        self, requested_bytes: Int
+    ) -> UInt32:
+        """Gets the maximum dynamic shared memory bytes for this device.
+
+        For NVIDIA GPUs, dynamic shared memory defaults to 48KB max. For larger
+        allocations, we set MAX_DYNAMIC_SHARED_SIZE_BYTES to the minimum of:
+        - The device's maximum opt-in shared memory per block
+        - The requested size rounded up to nearest 1KB boundary
+
+        For smaller allocations (<= 48KB), we return 0 to skip setting the
+        attribute (avoiding unnecessary API calls and potential errors).
+
+        For AMD GPUs, the MAX_SHARED_MEMORY_PER_BLOCK_OPTIN attribute doesn't
+        exist, so we return 0 (no automatic inference) and rely on explicit
+        func_attribute settings when needed.
+
+        Args:
+            requested_bytes: The amount of shared memory requested by the kernel.
+
+        Returns:
+            Maximum dynamic shared memory bytes to set, or 0 if not needed.
+        """
+        # NVIDIA GPUs have a 48KB default limit for dynamic shared memory
+        alias NVIDIA_DEFAULT_DYNAMIC_SHARED_LIMIT = 48 * 1024
+
+        # Only set the attribute if we need more than the default limit
+        if requested_bytes <= NVIDIA_DEFAULT_DYNAMIC_SHARED_LIMIT:
+            return 0
+
+        # Try to query the maximum opt-in shared memory limit from the device.
+        # This attribute is NVIDIA-specific (via cudaFuncSetAttribute) and may
+        # not be available on AMD GPUs or other vendors.
+        try:
+            var capacity = self.get_attribute(
+                DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK_OPTIN
+            )
+
+            # Sanity check: capacity should be reasonable (at least 48KB)
+            if capacity < NVIDIA_DEFAULT_DYNAMIC_SHARED_LIMIT:
+                # If the opt-in capacity is less than the default, something is wrong.
+                # Fall back to not setting the attribute.
+                return 0
+
+            # Round requested_bytes up to nearest 1KB and use the minimum of
+            # that and the device capacity minus 1KB system reservation
+            var rounded_request = ((requested_bytes + 1023) // 1024) * 1024
+            return UInt32(min(rounded_request, capacity - 1024))
+        except:
+            # Attribute not available (e.g., on AMD GPUs). Return 0 to skip
+            # automatic inference. Code that needs >48KB on AMD should explicitly
+            # set func_attribute.
+            return 0
+
     fn enqueue_create_buffer[
         dtype: DType
     ](self, size: Int) raises -> DeviceBuffer[dtype]:
@@ -4772,6 +4826,18 @@ struct DeviceContext(ImplicitlyCopyable):
             block_dim, location=__call_location()
         )
 
+        # If shared_mem_bytes is specified but func_attribute is not,
+        # automatically set MAX_DYNAMIC_SHARED_SIZE_BYTES if needed (>48KB)
+        var inferred_func_attribute = func_attribute
+        if not func_attribute and shared_mem_bytes:
+            var max_shared = self._get_max_dynamic_shared_memory_bytes(
+                shared_mem_bytes.value()
+            )
+            if max_shared > 0:
+                inferred_func_attribute = (
+                    FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(max_shared)
+                )
+
         var gpu_kernel = self.compile_function_checked[
             func,
             signature_func,
@@ -4779,7 +4845,7 @@ struct DeviceContext(ImplicitlyCopyable):
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
             _ptxas_info_verbose=_ptxas_info_verbose,
-        ](func_attribute=func_attribute)
+        ](func_attribute=inferred_func_attribute)
 
         self._enqueue_function_checked(
             gpu_kernel,
@@ -4879,13 +4945,25 @@ struct DeviceContext(ImplicitlyCopyable):
             block_dim, location=__call_location()
         )
 
+        # If shared_mem_bytes is specified but func_attribute is not,
+        # automatically set MAX_DYNAMIC_SHARED_SIZE_BYTES if needed (>48KB)
+        var inferred_func_attribute = func_attribute
+        if not func_attribute and shared_mem_bytes:
+            var max_shared = self._get_max_dynamic_shared_memory_bytes(
+                shared_mem_bytes.value()
+            )
+            if max_shared > 0:
+                inferred_func_attribute = (
+                    FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(max_shared)
+                )
+
         var gpu_kernel = self.compile_function_experimental[
             func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
             _ptxas_info_verbose=_ptxas_info_verbose,
-        ](func_attribute=func_attribute)
+        ](func_attribute=inferred_func_attribute)
 
         self._enqueue_function_checked(
             gpu_kernel,
@@ -4996,6 +5074,18 @@ struct DeviceContext(ImplicitlyCopyable):
             block_dim, location=__call_location()
         )
 
+        # If shared_mem_bytes is specified but func_attribute is not,
+        # automatically set MAX_DYNAMIC_SHARED_SIZE_BYTES if needed (>48KB)
+        var inferred_func_attribute = func_attribute
+        if not func_attribute and shared_mem_bytes:
+            var max_shared = self._get_max_dynamic_shared_memory_bytes(
+                shared_mem_bytes.value()
+            )
+            if max_shared > 0:
+                inferred_func_attribute = (
+                    FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(max_shared)
+                )
+
         var gpu_kernel = self.compile_function_checked[
             func,
             signature_func,
@@ -5003,7 +5093,7 @@ struct DeviceContext(ImplicitlyCopyable):
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
             _ptxas_info_verbose=_ptxas_info_verbose,
-        ](func_attribute=func_attribute)
+        ](func_attribute=inferred_func_attribute)
 
         self._enqueue_function_checked(
             gpu_kernel,
@@ -5104,13 +5194,25 @@ struct DeviceContext(ImplicitlyCopyable):
             block_dim, location=__call_location()
         )
 
+        # If shared_mem_bytes is specified but func_attribute is not,
+        # automatically set MAX_DYNAMIC_SHARED_SIZE_BYTES if needed (>48KB)
+        var inferred_func_attribute = func_attribute
+        if not func_attribute and shared_mem_bytes:
+            var max_shared = self._get_max_dynamic_shared_memory_bytes(
+                shared_mem_bytes.value()
+            )
+            if max_shared > 0:
+                inferred_func_attribute = (
+                    FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(max_shared)
+                )
+
         var gpu_kernel = self.compile_function_experimental[
             func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
             _ptxas_info_verbose=_ptxas_info_verbose,
-        ](func_attribute=func_attribute)
+        ](func_attribute=inferred_func_attribute)
 
         self._enqueue_function_checked(
             gpu_kernel,

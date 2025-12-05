@@ -1011,7 +1011,7 @@ fn multistage_gemm[
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    config.shared_mem_usage()
+                    runtime_config.shared_mem_usage()
                 ),
             )
 

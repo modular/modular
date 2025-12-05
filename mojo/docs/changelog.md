@@ -274,6 +274,15 @@ what we publish.
 - Remove the `Int.__init__(self, value: StringSlice, base: UInt)` constructor.
   Users should call `atol` directly.
 
+- `DeviceContext.enqueue_function_checked()` and
+  `DeviceContext.enqueue_function_experimental()` now automatically infer
+  `func_attribute` to `FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(shared_mem_bytes)`
+  when `shared_mem_bytes` is specified but `func_attribute` is not, for NVIDIA GPUs
+  with allocations > 48KB. This eliminates the need to specify the same shared memory
+  size twice in many cases, reducing boilerplate and preventing mismatched values.
+  On AMD GPUs or for allocations ≤ 48KB, explicit `func_attribute` values
+  should be provided when needed.
+
 ### Tooling changes
 
 - The Mojo compiler now "diffs" very long types in error messages to explain
