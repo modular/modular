@@ -105,9 +105,10 @@ struct Variadic:
     ]
     """A wrapper to reverse a variadic sequence of types.
 
-    # Parameters:
-    #     element_types: The variadic sequence of types to reverse.
-    # """
+    Parameters:
+         T: The trait that the types conform to.
+         element_types: The variadic sequence of types to reverse.
+    """
 
     comptime splat[type: AnyType, count: Int] = __mlir_attr[
         `#kgen.variadic.splat<`,
@@ -138,6 +139,11 @@ struct Variadic:
     ]
     """
     Check if a type is contained in a variadic sequence.
+
+    Parameters:
+        Trait: The trait that the types conform to.
+        type: The type to check for.
+        element_types: The variadic sequence of types to search.
     """
 
 
