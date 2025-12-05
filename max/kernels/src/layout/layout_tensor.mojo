@@ -5483,6 +5483,7 @@ struct LayoutTensor[
             _pretty_print_2d_tensor(self.coalesce(), writer)
             return
 
+        comptime layout_size = Self.layout.size()
         for i in range(self.runtime_layout.size()):
             var vec_offset = self.runtime_layout(i)
             var vec = SIMD[Self.dtype, Self.element_size]()
@@ -5493,7 +5494,7 @@ struct LayoutTensor[
                 vec[idx] = self.ptr.load(vec_offset + element_offset)
 
             writer.write(vec)
-            if i != Self.layout.size() - 1:
+            if i != layout_size - 1:
                 writer.write(" ")
 
 
