@@ -329,6 +329,19 @@ or removed in future releases.
   - `is_signed()`, `is_unsigned()`, `is_numeric()`, `is_integral()`,
     `is_floating_point()`, `is_float8()`, `is_half_float()`
 
+- Added support for `SIMD` expressions in `where` clauses:
+
+  ```mojo
+  fn foo[dt: DType, x: Int]() -> Int where SIMD[dt, 4](x) + 2 > SIMD[dt, 4](0):
+      return 42
+  ```
+
+  Currently, the following expressions are supported:
+  - default construction and construction from `Int` and `IntLiteral`
+  - equality, inequality, and other comparison operators
+  - addition, subtraction, and multiplication
+  - bitwise logical operations, excluding shifts
+
 ### ❌ Removed
 
 ### 🛠️ Fixed
