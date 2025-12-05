@@ -49,3 +49,9 @@ fn test_assert_enables_where_constraint[x: Int](y: Int):
     # Now we can call a function that requires x >= 0 via where clause
     # CHECK: lit.call {{.*}}@"requires_natural
     requires_natural[x](y)
+
+
+# CHECK-LABEL: lit.fn @"test_always_true_warning
+fn test_always_true_warning():
+    # CHECK-NOT: kgen.param.assert
+    __comptime_assert 2 > 1, "this assert is useless"
