@@ -95,6 +95,7 @@ modular_cc_library(
         "lib/DeviceContext/HIP/HIPCompilationDevice.h",
         "lib/DeviceContext/HIP/HIPDeviceContext.h",
         "lib/DeviceContext/HIP/HIPDriver.h",
+        "lib/DeviceContext/HIP/HIPDriver.inc",
         "lib/DeviceContext/Metal/MetalDeviceContext.h",
         "lib/DeviceContext/Metal/MetalDriver.hpp",
         "lib/DeviceContext/Virtual/VirtualDeviceContext.h",
