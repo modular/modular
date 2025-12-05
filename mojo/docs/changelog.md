@@ -83,9 +83,8 @@ what we publish.
     parametric_raise_example(doesnt_raise)
   ```
 
-  This support should be reliable, but there are a few limitations: 1) `with`
-  blocks are still hard coded to `Error`.  2) Thrown errors must exactly match
-  the contextual thrown type, no implicit conversions are allowed.
+  This support should be reliable, but `with` blocks are still hard coded to
+  `Error`.
 
 - Mojo now allows implicit conversions between function types from a non-raising
   function to a raising function.  It also allows implicit conversions between
