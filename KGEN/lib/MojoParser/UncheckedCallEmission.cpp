@@ -1643,6 +1643,62 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
            "rebinding sugar should work!");
   }
 
+  // Check to see if the callee is a throwing function whose thrown type
+  // mismatches any fixed contextual error type, but which is implicitly
+  // convertible.  In this case, we want to compile something like:
+  //   fn test() raises Float32: throws_int()
+  // into:
+  //   fn test() raises Float32:
+  //     try:
+  //       throws_int()
+  //     except err:
+  //       raise err
+  // This is safe because the thrown type is implicitly convertible to Float32,
+  // and the exception will be implicitly converted when rethrown.
+  if (calleeSig.isThrows() && builder) {
+    MLValue errSlot = findNearestErrorSlot();
+    ASTType thrownType = calleeSig.getUserThrownType();
+    if (errSlot &&
+        // We don't need a temp if the types line up, which is common.
+        !isEqualCanon(thrownType, errSlot.getRValueType()) &&
+        // Inferred contextual types will be resolved correctly
+        !sugarIsa<UnresolvedType>(errSlot.getRValueType()) &&
+        // Throw NeverType isn't actually thrown.
+        !sugarIsa<NeverType>(thrownType) &&
+        // Thrown type must be implicitly convertible to the error slot type.
+        canImplicitlyConvertToType({UnboundAttr::get(thrownType), callExpr},
+                                   errSlot.getRValueType(), getDeclScope())) {
+      auto loc = translateLocation(callExpr->getLoc());
+      VarDeclOp errDecl = emitVarDecl("__call_error_tmp__", thrownType, loc,
+                                      VarDeclKind::Synthesized);
+
+      // We're going to move the builder around, but restore it to the same
+      // insertion point when we're done.
+      llvm::SaveAndRestore savedBuilder(builder);
+      auto tryOp = TryOp::create(*builder, loc, errDecl,
+                                 /*suppressWarnings=*/true);
+      // Stub out the else and finally regions of this try.
+      builder->createBlock(&tryOp.getElseRegion());
+      TryYieldOp::create(*builder, tryOp.getLoc());
+      builder->createBlock(&tryOp.getFinallyRegion());
+      TryYieldOp::create(*builder, tryOp.getLoc());
+      // Emit this call into the try region.
+      builder->createBlock(&tryOp.getTryRegion());
+
+      CValue result =
+          emitCallUnchecked(callee, callOperands, dest, syntax, callExpr);
+      TryYieldOp::create(*builder, tryOp.getLoc());
+
+      // Move the error into the overall error slot.
+      builder->createBlock(&tryOp.getExceptRegion());
+      ValueDest moveDest(errSlot, EC_RaiseValue);
+      (void)emitResult(MRValue(errDecl), callExpr, moveDest);
+      RaiseOp::create(*builder, tryOp.getLoc());
+      TryYieldOp::create(*builder, tryOp.getLoc());
+      return result;
+    }
+  }
+
   // Capture the types of any "fully sugared" arguments that are passed in so
   // we can propagate them to the result type.  We capture the sugared forms of
   // things so we compile generic calls (e.g. SIMD.add(someInt8, 42)) into a
