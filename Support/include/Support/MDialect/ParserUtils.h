@@ -171,7 +171,6 @@ void printOptionalEnum(AsmPrinter &p, Operation *, EnumAttrT attr,
   if (attr.getValue() == EnumT())
     return;
   p << ' ' << stringifyEnum(attr.getValue());
-  return;
 }
 
 } // namespace M

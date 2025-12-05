@@ -760,7 +760,6 @@ static void runStackReuseOnRegion(Region &funcBody, PassInfo &pass) {
       pvs.try_emplace(alloc, Value());
       // This allocation is now one that has the uninitialized value.
       rmap[Value()].insert(alloc);
-      continue;
     }
     processRegion(funcBody, pvs, loadValues, rmap, aliases, regionVariants,
                   canElide, pass.domInfo, opaqueCounter);

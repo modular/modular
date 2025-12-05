@@ -113,7 +113,6 @@ void ParamConstantOp::getEffects(
   if (isa<KGEN::NoneType>(getValue().getType()) &&
       getOperation()->getParentOfType<KGEN::ParamDeclareRegionOp>())
     effects.emplace_back(mlir::MemoryEffects::Allocate::get());
-  return;
 }
 
 //===----------------------------------------------------------------------===//
