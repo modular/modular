@@ -147,7 +147,7 @@ class Gemma3MultiModalModelInputs(ModelInputs):
     tokens: npt.NDArray[np.integer[Any]] | Tensor
     """Tensor containing the input token IDs."""
 
-    input_row_offsets: npt.NDArray[np.integer[Any]] | Tensor | list[Tensor]
+    input_row_offsets: npt.NDArray[np.integer[Any]] | list[Tensor]
     """Tensor containing the offsets for each row in the ragged input sequence,
     or the attention mask for the padded input sequence. For distributed execution,
     this can be a list of tensors, one per device."""
@@ -167,7 +167,7 @@ class Gemma3MultiModalModelInputs(ModelInputs):
     def __init__(
         self,
         tokens: npt.NDArray[np.integer[Any]] | Tensor,
-        input_row_offsets: npt.NDArray[np.integer[Any]] | Tensor | list[Tensor],
+        input_row_offsets: npt.NDArray[np.integer[Any]] | list[Tensor],
         return_n_logits: Tensor,
         signal_buffers: list[Tensor],
         kv_cache_inputs: KVCacheInputs | None = None,
@@ -550,7 +550,10 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             getattr(self.huggingface_config, "model_type", "Gemma3"),
             input_types=self._vision_model_input_types(config),
         ) as graph:
-            vision_model = Gemma3VisionModel(config, device=DeviceRef.from_device(self.devices[0]),)
+            vision_model = Gemma3VisionModel(
+                config,
+                device=DeviceRef.from_device(self.devices[0]),
+            )
 
             vision_model.load_state_dict(
                 state_dict=state_dict,
