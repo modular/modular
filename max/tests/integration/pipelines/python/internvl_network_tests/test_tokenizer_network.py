@@ -103,6 +103,8 @@ async def test_internvl_tokenizer_apply_chat_template(
             "content": [
                 {"type": "text", "content": "What is this?"},
                 {"type": "image"},
+                {"type": "text", "content": ", what is this "},
+                {"type": "image"},
             ],
         }
     ]
@@ -121,11 +123,14 @@ async def test_internvl_tokenizer_apply_chat_template(
     mock_tokenizer.apply_chat_template.assert_called_once()
     called_messages = mock_tokenizer.apply_chat_template.call_args[0][0]
 
-    # Check that the content was converted to string.
+    # Check that the content was converted to string with image placeholders.
     assert len(called_messages) == 1
     assert called_messages[0]["role"] == "user"
     assert isinstance(called_messages[0]["content"], str)
-    assert called_messages[0]["content"] == "What is this?"
+    assert (
+        called_messages[0]["content"]
+        == "What is this? <image> , what is this  <image>"
+    )
 
     # Verify result.
     assert result == "User: What is this?"
@@ -144,7 +149,9 @@ async def test_internvl_tokenizer_apply_chat_template(
 
     # Test with multiple text parts in content.
     mock_tokenizer.apply_chat_template.reset_mock()
-    mock_tokenizer.apply_chat_template.return_value = "User: Hello world"
+    mock_tokenizer.apply_chat_template.return_value = (
+        "User: Hello <image> world"
+    )
 
     multi_text_messages = [
         {
@@ -162,4 +169,4 @@ async def test_internvl_tokenizer_apply_chat_template(
     )
 
     called_messages3 = mock_tokenizer.apply_chat_template.call_args[0][0]
-    assert called_messages3[0]["content"] == "Hello world"
+    assert called_messages3[0]["content"] == "Hello <image> world"
