@@ -1414,10 +1414,24 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
 
   if (!parsedParamList.params.empty() && baseName == "__call__" &&
       dyn_cast_or_null<StructDeclOp>(parentDecl->getIfOperation())) {
+
+    const bool hasOnlyInferredParams =
+        llvm::all_of(parsedParamList.params, [](const ParsedArgument &param) {
+          // TODO(MOCO-2928): This should ignore whether the parameter is
+          //  variadic or not, and check only whether it's inferred or not.
+          //  Checking for variadics as well is a proxy for signatures like:
+          //    fn foo[*Ts: AnyType](...)
+          //  which _can't_ make `Ts` infer-only due to MOCO-2928, an overbroad
+          //  check that `//` cannot come after any `*` token.
+          return param.kwArgHandling == KWArgHandling::kInferred ||
+                 param.variadicKind != VariadicKind::None;
+        });
+
     auto getItems = parentDecl->lookupInCurrentScope("__getitem__");
     auto setItems = parentDecl->lookupInCurrentScope("__setitem__");
     auto getAttrs = parentDecl->lookupInCurrentScope("__getattr__");
-    if (!getItems.empty() || !setItems.empty() || !getAttrs.empty()) {
+    if (!hasOnlyInferredParams &&
+        (!getItems.empty() || !setItems.empty() || !getAttrs.empty())) {
       auto diag = p.emitWarning(
           funcOp->getLoc(),
           llvm::formatv(
