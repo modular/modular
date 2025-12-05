@@ -23,8 +23,8 @@ from max.graph import (
     DeviceRef,
     ShardingStrategy,
     TensorValue,
+    Weight,
     ops,
-    Weight
 )
 from max.nn import (
     MLP,
@@ -297,7 +297,9 @@ class Gemma3LanguageModel(Module):
 class Gemma3VisionModel(Module):
     """The Gemma3 Multi-Modal model's vision component"""
 
-    def __init__(self, config: Gemma3ForConditionalGenerationConfig, device: DeviceRef) -> None:
+    def __init__(
+        self, config: Gemma3ForConditionalGenerationConfig, device: DeviceRef
+    ) -> None:
         """Initializes the necessary components for processing vision inputs and
         projecting into language space, with multi-device functionality."""
         super().__init__()
@@ -306,7 +308,9 @@ class Gemma3VisionModel(Module):
         vision_config = config.vision_config
 
         # Vision embeddings, sharded for multi-device setups
-        self.embeddings = Gemma3VisionEmbeddings(config, device=config.devices[0])
+        self.embeddings = Gemma3VisionEmbeddings(
+            config, device=config.devices[0]
+        )
         self.embeddings.sharding_strategy = ShardingStrategy.replicate(
             len(config.devices)
         )

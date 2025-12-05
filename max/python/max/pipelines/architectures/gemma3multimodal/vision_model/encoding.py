@@ -13,8 +13,15 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from typing import cast
 
-from max.graph import BufferValue, DeviceRef, ShardingStrategy, TensorValue
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    ShardingStrategy,
+    TensorValue,
+    Weight,
+)
 from max.nn import (
     LayerList,
     LayerNorm,
@@ -106,16 +113,16 @@ class Gemma3VisionEncoderLayer(Module):
         assert self.sharding_strategy
 
         norm1_weight_shards = self.layer_norm1.weight.shard(devices)
-        norm1_bias_shards = (
+        norm1_bias_shards: Sequence[Weight | None] = (
             self.layer_norm1.bias.shard(devices)
             if self.layer_norm1.bias is not None
-            else [None] * len(list(devices))
+            else cast(Sequence[Weight | None], [None] * len(list(devices)))
         )
         norm2_weight_shards = self.layer_norm2.weight.shard(devices)
-        norm2_bias_shards = (
+        norm2_bias_shards: Sequence[Weight | None] = (
             self.layer_norm2.bias.shard(devices)
             if self.layer_norm2.bias is not None
-            else [None] * len(list(devices))
+            else cast(Sequence[Weight | None], [None] * len(list(devices)))
         )
         attn_shards = self.self_attn.shard(devices)
         mlp_shards = self.mlp.shard(devices)
@@ -199,7 +206,9 @@ class Gemma3VisionEncoder(Module):
             for device_idx, state in enumerate(hidden_states):
                 device_output = state
                 for layer in self.layers_per_device[device_idx]:
-                    device_output = layer(device_output, signal_buffers[device_idx])
+                    device_output = layer(
+                        device_output, signal_buffers[device_idx]
+                    )
                 outputs.append(device_output)
             return outputs
         else:
