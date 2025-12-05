@@ -218,7 +218,7 @@ fn global_perf_counter_ns() -> SIMD[DType.uint64, 1]:
             has_side_effect=True,
         ]()
 
-    return perf_counter_ns()
+    return UInt64(perf_counter_ns())
 
 
 # ===-----------------------------------------------------------------------===#

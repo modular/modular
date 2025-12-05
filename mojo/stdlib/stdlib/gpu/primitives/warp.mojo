@@ -282,7 +282,7 @@ fn _shuffle_idx_amd[
     dtype, simd_width
 ]:
     # FIXME: Set the EXECute mask register to the mask
-    var lane: Int32 = lane_id()
+    var lane = Int32(lane_id())
     # Godbolt uses 0x3fffffc0. It is masking out the lower 64-bits
     # But it's also masking out the upper two bits. Why?
     # The lane should not be > 64 so the upper 2 bits should always be zero.
@@ -389,7 +389,7 @@ fn _shuffle_up_amd[
     dtype, simd_width
 ]:
     # FIXME: Set the EXECute mask register to the mask
-    var lane: Int32 = lane_id()
+    var lane = Int32(lane_id())
     var t0 = lane - offset.cast[DType.int32]()
     var t1 = lane & -WARP_SIZE
     var dst_lane = t0.lt(t1).select(lane, t0)
@@ -487,7 +487,7 @@ fn _shuffle_down_amd[
     dtype, simd_width
 ]:
     # FIXME: Set the EXECute mask register to the mask
-    var lane = lane_id()
+    var lane = UInt32(lane_id())
     # set the offset to 0 if lane + offset >= WARP_SIZE
     var dst_lane = (lane + offset).gt(_WIDTH_MASK).select(0, offset) + lane
     return _shuffle_amd_helper(dst_lane, val)
@@ -580,7 +580,7 @@ fn _shuffle_xor_amd[
     dtype, simd_width
 ]:
     # FIXME: Set the EXECute mask register to the mask
-    var lane: UInt32 = lane_id()
+    var lane = UInt32(lane_id())
     var t0 = lane ^ offset
     var t1 = lane & -WARP_SIZE
     # This needs to be "add nsw" = add no sign wrap

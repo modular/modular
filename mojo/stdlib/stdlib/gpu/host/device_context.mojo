@@ -2318,7 +2318,7 @@ struct DeviceFunction[
 
         @parameter
         fn _populate_arg_sizes[i: Int]():
-            dense_args_sizes[i] = UInt(size_of[Ts[i]]())
+            dense_args_sizes[i] = UInt64(size_of[Ts[i]]())
 
         @parameter
         for i in range(num_args):

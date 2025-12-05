@@ -884,7 +884,7 @@ fn hostcall(
         .offset(10)[]
     )
 
-    var me = lane_id()
+    var me = UInt32(lane_id())
     var low = readfirstlane(Int32(me)).cast[DType.uint32]()
 
     var packet_ptr = buffer.pop_free_stack(me, low)
