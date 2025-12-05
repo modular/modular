@@ -12,20 +12,49 @@
 # ===----------------------------------------------------------------------=== #
 
 import argparse
+import importlib
+import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 try:
     # Don't require including IPython as a dependency
+
     from IPython.core.magic import register_cell_magic  # type: ignore
+    from IPython.display import SVG, display
 except ImportError:
+    SVG, display = None, None
 
     def register_cell_magic(fn):  # noqa: ANN001, ANN201
         return fn
 
 
+import mojo.importer
+
 from .paths import MojoCompilationError
 from .run import subprocess_run_mojo
+
+# Template for creating a Mojo module with Python bindings that can return any object
+ENTRYPOINT_TEMPLATE = """\
+from python import PythonObject
+from python.bindings import PythonModuleBuilder
+from os import abort
+
+# --- User code:
+{USER_CODE}
+
+# --- Python module binding:
+@export
+fn PyInit_{MODNAME}() -> PythonObject:
+    try:
+        var m = PythonModuleBuilder("{MODNAME}")
+        # Register the entrypoint function that should exist in user code:
+        m.def_function[{ENTRYPOINT}]("{ENTRYPOINT}", docstring="Execute cell entry and return a PythonObject")
+        return m.finalize()
+    except e:
+        return abort[PythonObject](String("error creating Python Mojo module:", e))
+"""
 
 
 @register_cell_magic
@@ -33,7 +62,7 @@ def mojo(line, cell) -> None:  # noqa: ANN001
     """A Mojo cell.
 
     Usage:
-        - Run Mojo code in a cell
+        - Run Mojo code in a cell look for main() function:
 
             ```mojo
             %%mojo
@@ -41,7 +70,24 @@ def mojo(line, cell) -> None:  # noqa: ANN001
                 print("Hello from Mojo!")
             ```
 
-        - Compile a python extension SO file
+        - Run Mojo code in a cell with some entrypoint function:
+
+            ```mojo
+            %%mojo draw
+            from python import Python, PythonObject
+
+            # draw function is the entrypoint
+            fn draw() raises -> PythonObject:
+                Digraph = Python.import_module("graphviz").Digraph
+
+                g = Digraph()
+                g.node('A')
+                g.node('B')
+
+                return g
+            ```
+
+        - Compile a python extension SO file:
 
             ```mojo
             %%mojo build --emit shared-lib -o mojo_module.so
@@ -100,25 +146,67 @@ def mojo(line, cell) -> None:  # noqa: ANN001
 
     args, extra_args = parser.parse_known_args(line.strip().split())
 
+    # Check if entrypoint mode is requested
+    is_entrypoint = args.command not in ["run", "build", "package"]
+
     with tempfile.TemporaryDirectory() as tempdir:
         path = Path(tempdir)
-        mojo_path = path / "cell.mojo"
-        with open(mojo_path, "w") as f:
-            f.write(cell)
-        (path / "__init__.mojo").touch()
 
-        input_path = path if args.command == "package" else mojo_path
-        command = [
-            args.command,
-            str(input_path),
-            *extra_args,
-        ]
+        if is_entrypoint:
+            entrypoint = args.command
+            modname = f"mojocell_{uuid.uuid4().hex[:8]}"
 
-        result = subprocess_run_mojo(command, capture_output=True)
+            mojo_content = ENTRYPOINT_TEMPLATE.format(
+                USER_CODE=cell,
+                MODNAME=modname,
+                ENTRYPOINT=entrypoint,
+            )
+            mojo_path = path / f"{modname}.mojo"
+            with open(mojo_path, "w") as f:
+                f.write(mojo_content)
 
-    if not result.returncode:
-        print(result.stdout.decode())
-    else:
-        raise MojoCompilationError(
-            input_path, command, result.stdout.decode(), result.stderr.decode()
-        )
+            # Add the temp directory to Python path for import
+            sys.path.insert(0, str(path))
+
+            try:
+                mod = importlib.import_module(modname)
+
+                # Call entrypoint function and display result
+                result = getattr(mod, entrypoint)()
+
+                # Use IPython display for rich rendering
+                if display:
+                    display(result)
+                else:
+                    print(result)
+
+            finally:
+                # Clean up path
+                if str(path) in sys.path:
+                    sys.path.remove(str(path))
+
+        else:
+            mojo_path = path / "cell.mojo"
+            with open(mojo_path, "w") as f:
+                f.write(cell)
+            (path / "__init__.mojo").touch()
+
+            input_path = path if args.command == "package" else mojo_path
+            command = [
+                args.command,
+                str(input_path),
+                *extra_args,
+            ]
+
+            result = subprocess_run_mojo(command, capture_output=True)
+
+            if not result.returncode:
+                stdout = result.stdout.decode()
+                print(stdout)
+            else:
+                raise MojoCompilationError(
+                    input_path,
+                    command,
+                    result.stdout.decode(),
+                    result.stderr.decode(),
+                )
