@@ -3,6 +3,7 @@ load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 package(default_visibility = [
     "//:__pkg__",
     "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
 ])
 
 _NVIDIA_ONLY_TESTS = [
