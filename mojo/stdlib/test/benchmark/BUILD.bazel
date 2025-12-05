@@ -66,6 +66,7 @@ lit_tests(
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
         "//:tsan": ["@platforms//:incompatible"],
+        "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: PAQ-1717
         "//conditions:default": [],
     }),
 )
