@@ -148,6 +148,7 @@ def mock_huggingface_config(func: Callable[_P, _R]) -> Callable[_P, _R]:
                 cfg.model_type = "llama"
                 # Optional fields used in some paths
                 cfg.rope_scaling = None
+                del cfg.head_dim
 
             if any(
                 x in repo_str

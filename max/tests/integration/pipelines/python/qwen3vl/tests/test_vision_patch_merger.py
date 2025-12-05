@@ -117,7 +117,7 @@ def generate_max_outputs(
         input_types=(input_type,),
     ) as graph:
         x = graph.inputs[0]
-        output = max_merger(x.tensor, [])  # Empty signal_buffers for this test
+        output = max_merger(x.tensor)
         graph.output(output)
 
     compiled = session.load(graph, weights_registry=max_merger.state_dict())
