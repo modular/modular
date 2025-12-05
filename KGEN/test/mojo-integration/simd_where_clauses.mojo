@@ -32,6 +32,16 @@ fn simd_where_clause_bool_int_init[x: Int]() -> Int where not SIMDInt(x):
 
 
 @always_inline("builtin")
+fn simd_where_clause_int_eq[x: Int]() -> Int where SIMDInt(x) == SIMDInt(4):
+    return 1
+
+
+@always_inline("builtin")
+fn simd_where_clause_int_eq[x: Int]() -> Int where SIMDInt(x) != SIMDInt(4):
+    return 0
+
+
+@always_inline("builtin")
 fn simd_where_clause_int_gt[x: Int]() -> Int where SIMDInt(x) > SIMDInt(4):
     return 1
 
@@ -259,3 +269,8 @@ fn use_them():
     comptime inv0 = simd_where_clause_int_invert[0]()
     # CHECK: lit.alias.decl *"inv1`28": !Int = <{0}>
     comptime inv1 = simd_where_clause_int_invert[-1]()
+
+    # CHECK: lit.alias.decl *"i0`{{.*}}": !Int = <{1}>
+    comptime i0 = simd_where_clause_int_eq[4]()
+    # CHECK: lit.alias.decl *"i1`{{.*}}": !Int = <{0}>
+    comptime i1 = simd_where_clause_int_eq[9]()
