@@ -271,6 +271,9 @@ what we publish.
   of arguments, as it could be ambiguous with the remaining
   `String.join(Span[Writable])` overload.
 
+- Remove the `Int.__init__(self, value: StringSlice, base: UInt)` constructor.
+  Users should call `atol` directly.
+
 ### Tooling changes
 
 - The Mojo compiler now "diffs" very long types in error messages to explain

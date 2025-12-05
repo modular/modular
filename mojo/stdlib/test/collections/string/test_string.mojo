@@ -1063,7 +1063,6 @@ def test_removesuffix():
 
 def test_intable():
     assert_equal(Int("123"), 123)
-    assert_equal(Int("10", base=8), 8)
 
     with assert_raises():
         _ = Int("hi")

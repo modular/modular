@@ -324,41 +324,6 @@ struct Int(
         """
         self = value.__int__()
 
-    @always_inline("nodebug")
-    fn __init__(out self, value: StringSlice, base: UInt = 10) raises:
-        """Parses and returns the given string as an integer in the given base.
-
-        If base is set to 0, the string is parsed as an Integer literal, with the
-        following considerations:
-        - '0b' or '0B' prefix indicates binary (base 2)
-        - '0o' or '0O' prefix indicates octal (base 8)
-        - '0x' or '0X' prefix indicates hexadecimal (base 16)
-        - Without a prefix, it's treated as decimal (base 10)
-
-        Args:
-            value: A string to be parsed as an integer in the given base.
-            base: Base used for conversion, value must be between 2 and 36, or 0.
-
-        Raises:
-            If the given string cannot be parsed as an integer value or if an
-            incorrect base is provided.
-
-        Examples:
-            >>> Int("32")
-            32
-            >>> Int("FF", 16)
-            255
-            >>> Int("0xFF", 0)
-            255
-            >>> Int("0b1010", 0)
-            10
-
-        Notes:
-            This follows [Python's integer literals](
-            https://docs.python.org/3/reference/lexical_analysis.html#integers).
-        """
-        self = atol(value, Int(base))
-
     # ===------------------------------------------------------------------=== #
     # Operator dunders
     # ===------------------------------------------------------------------=== #
