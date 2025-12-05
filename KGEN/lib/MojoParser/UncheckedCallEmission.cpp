@@ -722,13 +722,27 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
     if (ASTType(destRValueType).isMovable(callExpr->getLoc(), emitter.shared)) {
       // If we're the top level, then nothing can use the result, so we can
       // microoptimize this case.
+      Operation *opForRaise = nullptr;
+      if (emitter.builder)
+        opForRaise =
+            findOpProcessingRaise(emitter.builder->getInsertionBlock());
+
       bool isOk = false;
-      if (emitter.builder) {
-        if (Operation *opForRaise =
-                findOpProcessingRaise(emitter.builder->getInsertionBlock()))
-          if (isa<FnOp>(opForRaise))
+      if (opForRaise) {
+        // If we're exiting the entire function, we are ok.
+        if (isa<FnOp>(opForRaise))
+          isOk = true;
+
+        // If that didn't work, see if we're initializing a vardecl within the
+        // current exception region.  If so, we know that the exception couldn't
+        // use the old value because it won't be live outside.
+        else if (VarDeclOp varDeclOp =
+                     underlyingDest.getDefiningOp<VarDeclOp>()) {
+          if (opForRaise->isAncestor(varDeclOp))
             isOk = true;
+        }
       }
+
       if (!isOk)
         return false;
     }
