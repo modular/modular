@@ -1255,7 +1255,7 @@ struct SIMD[dtype: DType, size: Int](
     # Boolean comparison operations.
     # ===------------------------------------------------------------------=== #
 
-    @always_inline
+    @always_inline("builtin")
     fn __eq__(self, rhs: Self) -> Bool:
         """Compares two SIMD vectors for equality.
 
@@ -1268,6 +1268,19 @@ struct SIMD[dtype: DType, size: Int](
         return Bool(
             mlir_value=__mlir_op.`pop.simd.reduce_and`(self.eq(rhs)._mlir_value)
         )
+
+    @always_inline("builtin")
+    fn __ne__(self, rhs: Self) -> Bool:
+        """Compares two SIMD vectors for inequality.
+
+        Args:
+            rhs: The SIMD vector to compare with.
+
+        Returns:
+            True if any elements of the SIMD vectors are not equal, False
+            otherwise.
+        """
+        return not self == rhs
 
     @always_inline("builtin")
     fn __gt__(self, rhs: Self) -> Bool:
