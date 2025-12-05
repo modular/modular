@@ -616,24 +616,43 @@ struct RaisingGetterSetter:
 fn test_raising_computed_getter() raises:
     var a = RaisingGetterSetter()[2]
 
-# CHECK-LABEL: lit.fn @"test_typed_raises_fn
+# CHECK-LABEL: lit.fn @"test_typed_raises_fn1
 # CHECK-SAME: %__error__: !lit.ref<!Int, mut *"__error__`"> byref_error
 # CHECK-SAME: ) throws -> i1
-fn test_typed_raises_fn() raises Int -> String:
+fn test_typed_raises_fn1() raises Int -> String:
     pass
 
 fn test_typed_raises_fn2() raises (Int) -> String:
     pass
 
+# CHECK-LABEL: lit.fn @"test_typed_raises_fn3
+fn test_typed_raises_fn3() raises Float32:
+    # This tests calling a function that raises Int in context that requires
+    # raising Float32.  We need a temporary for the implicit conversion.
+
+    # CHECK-NEXT: %__call_error_tmp__ = lit.var.decl{{.*}}!lit.ref<!Int
+    # CHECK-NEXT: lit.try %__call_error_tmp__
+    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl{{.*}}lit.ref<!String
+    # CHECK-NEXT: lit.call {{.*}}test_typed_raises_fn2{{.*}}(%__call_error_tmp__, %__call_result_tmp__)
+    # CHECK-NEXT: lit.ownership.use %__call_result_tmp__
+    # CHECK-NEXT: lit.try.yield
+    # CHECK-NEXT: } except {
+    # CHECK-NEXT:    = lit.ref.load %__call_error_tmp__
+    # CHECK-NEXT:    lit.call {{.*}}SIMD::@"__init__
+    # CHECK-NEXT:    = kgen.rebind
+    # CHECK-NEXT:    lit.ref.store {{.*}}, %__error__
+    # CHECK-NEXT:    lit.raise
+    _ = test_typed_raises_fn2()
+
 
 # CHECK-LABEL: lit.fn @"call_test_typed_raises_fn
 fn call_test_typed_raises_fn() raises Int:
     # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
-    # CHECK-NEXT: lit.call @decls::@"test_typed_raises_fn{{.*}}(%__error__, %__call_result_tmp__)
-    _ = test_typed_raises_fn()
+    # CHECK-NEXT: lit.call @decls::@"test_typed_raises_fn1{{.*}}(%__error__, %__call_result_tmp__)
+    _ = test_typed_raises_fn1()
 
     # CHECK: %test_type_of = lit.var.decl {{.*}} : !lit.ref<!String,
-    var test_type_of : type_of(test_typed_raises_fn())
+    var test_type_of : type_of(test_typed_raises_fn1())
 
 fn parametric_raise_example[ErrorType: AnyType](fp: fn () raises ErrorType) raises ErrorType:
     fp()
