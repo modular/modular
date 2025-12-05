@@ -229,11 +229,10 @@ kgen.func @hoist_cond_break4(%cond: i1, %arg1: index, %arg2: index, %arg3: index
 }
 
 // CHECK-LABEL: @dont_hoist_cond_return_nested
-kgen.func @dont_hoist_cond_return_nested(%cond1: i1, %cond2: i1, %arg1: index, %arg2: index, %arg3: index) -> index {
-  // CHECK-COUNT-2: return
+kgen.func @dont_hoist_cond_return_nested(%cond1: i1, %cond2: i1, %arg2: index, %arg3: index) -> index {
   hlcf.if %cond1 {
     hlcf.if %cond2 {
-      kgen.return %arg1: index
+      kgen.return %arg2: index
     } else {
       hlcf.yield
     }
@@ -241,7 +240,7 @@ kgen.func @dont_hoist_cond_return_nested(%cond1: i1, %cond2: i1, %arg1: index, %
   } else {
     hlcf.yield
   }
-  kgen.return %arg2: index
+  kgen.return %arg3: index
 }
 
 // CHECK-LABEL: @several_ifs
@@ -544,4 +543,50 @@ kgen.func @store_loop(%arg0: index, %arg1: index, %arg2: index, %arg3: !kgen.poi
     hlcf.for.yield [induction_var (%2 : index)] [retvals ()] [iterargs ()]
   }
   kgen.return
+}
+
+
+// CHECK-LABEL: @if_cond_same
+kgen.func @if_cond_same(%arg0: i1) -> i1 {
+  %0 = kgen.param.constant: i1 = <0>
+  %1 = kgen.param.constant: i1 = <1>
+  // CHECK-NEXT: return %arg0
+  %2 = hlcf.if %arg0 -> i1 {
+    hlcf.yield %1 : i1
+  } else {
+    hlcf.yield %0 : i1
+  }
+  kgen.return %2 : i1
+}
+
+
+// https://github.com/modular/modular/issues/5137:
+// Tail call optimization doesn't happen for tail recursive functions with raises
+// CHECK-LABEL: @tail_call_error_fn
+// CHECK-NEXT:   %0 = kgen.param.constant: i1 = <0>
+// CHECK-NEXT:    %1 = hlcf.if %arg0 -> i1 {
+// CHECK-NEXT:      pop.store %arg2, %arg4 : !kgen.pointer<index>
+// CHECK-NEXT:      hlcf.yield %0 : i1
+// CHECK-NEXT:    } else {
+// CHECK-NEXT:      %2 = kgen.call @tail_call_error_fn
+// CHECK-NEXT:      hlcf.yield %2 : i1
+// CHECK-NEXT:    }
+// CHECK-NEXT:    kgen.return %1
+kgen.generator export @tail_call_error_fn(%cond: i1, %arg0: index, %arg1: index, %arg2: !kgen.pointer<struct<() memoryOnly>> byref_error, %arg3: !kgen.pointer<index> byref_result) throws -> i1 attributes {sourceName = "factorial"} {
+  %0 = kgen.param.constant: i1 = <1>
+  %1 = kgen.param.constant: i1 = <0>
+  %4 = hlcf.if %cond -> i1 {
+    pop.store %arg1, %arg3 : !kgen.pointer<index>
+    hlcf.yield %1 : i1
+  } else {
+    %6 = kgen.call @tail_call_error_fn(%cond, %arg0, %arg0, %arg2, %arg3) : (i1, index, index, !kgen.pointer<struct<() memoryOnly>> byref_error, !kgen.pointer<index> byref_result) throws -> i1
+    // This 'if' should be canonicalized away.
+    hlcf.if %6 {
+      kgen.return %0 : i1
+    } else {
+      hlcf.yield
+    }
+    hlcf.yield %1 : i1
+  }
+  kgen.return %4 : i1
 }

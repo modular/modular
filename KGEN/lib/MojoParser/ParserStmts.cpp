@@ -1928,8 +1928,6 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   // The later works because of Mojo's strong early-destruction guarantees and
   // lack of frame-objects-capturing-variables problems, but the former is more
   // familiar to Pythonistas.
-
-  // In erroneous code, ASTDecl may be missing, e.g. a 'with' on an MLIR type.
   ASTType contextRVType = MLValue(contextMgrDecl).getRValueType();
   bool hasExitMethod =
       shared.typeHasMember(contextRVType, "__exit__", contextExp->getLoc());
