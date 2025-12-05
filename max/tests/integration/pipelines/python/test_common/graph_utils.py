@@ -10,7 +10,6 @@ from collections.abc import Iterable, Sequence
 from typing import TypeGuard
 
 from max.driver import Tensor
-from max.engine import MojoValue
 from max.graph import BufferValue, TensorValue, Value
 from nvitop import Device as NVITOPDevice
 
@@ -38,13 +37,13 @@ def is_a10() -> bool:
 
 
 def are_all_tensors_iterable(
-    it: Iterable[Tensor | MojoValue],
+    it: Iterable[Tensor],
 ) -> TypeGuard[Iterable[Tensor]]:
     return all(isinstance(value, Tensor) for value in it)
 
 
 def are_all_tensors_sequence(
-    it: Sequence[Tensor | MojoValue],
+    it: Sequence[Tensor],
 ) -> TypeGuard[Sequence[Tensor]]:
     return all(isinstance(value, Tensor) for value in it)
 

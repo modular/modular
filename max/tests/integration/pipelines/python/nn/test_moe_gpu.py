@@ -12,7 +12,7 @@ import numpy as np
 import torch
 from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
-from max.engine import InferenceSession, MojoValue
+from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn.kernels import moe_create_indices
 from torch.utils.dlpack import from_dlpack
@@ -62,7 +62,7 @@ def test_moe_create_indices() -> None:
     model = session.load(graph)
 
     def validate_moe_indices(
-        results: Sequence[Tensor | MojoValue],
+        results: Sequence[Tensor],
         topk_ids: np.ndarray,
         NUM_TOKENS: int,
     ) -> None:
