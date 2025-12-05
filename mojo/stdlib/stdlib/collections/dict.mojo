@@ -899,7 +899,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
     fn __str__[
         T: KeyElement & Representable,
         U: Copyable & Movable & Representable, //,
-    ](self: Dict[T, U]) -> String:
+    ](self: Dict[T, U, Self.H]) -> String:
         """Returns a string representation of a `Dict`.
 
         Parameters:
