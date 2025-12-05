@@ -634,7 +634,8 @@ struct DimList(Representable, Sized, Stringable, Writable):
         return Self(
             VariadicList[Dim](
                 __mlir_op.`pop.variadic.splat`[
-                    numElements = length._mlir_value, _type = Variadic[Dim]
+                    numElements = length._mlir_value,
+                    _type = Variadic.ValuesOfType[Dim],
                 ](Dim())
             )
         )

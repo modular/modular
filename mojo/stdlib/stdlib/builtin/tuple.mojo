@@ -18,12 +18,7 @@ These are Mojo built-ins, so you don't need to import them.
 from builtin.constrained import _constrained_conforms_to
 from sys.intrinsics import _type_is_eq
 
-from builtin.variadics import (
-    variadic_size,
-    VariadicOf,
-    Reversed,
-    Concatenated,
-)
+from builtin.variadics import Variadic
 
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -44,7 +39,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Movable, Sized):
 
     comptime _mlir_type = __mlir_type[
         `!kgen.pack<:`,
-        VariadicOf[Movable],
+        Variadic.TypesOfTrait[Movable],
         Self.element_types,
         `>`,
     ]
@@ -160,7 +155,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Movable, Sized):
             The tuple length.
         """
 
-        comptime result = stdlib.builtin.variadic_size(Self.element_types)
+        comptime result = Variadic.size(Self.element_types)
         return result
 
     @always_inline("nodebug")
@@ -243,8 +238,8 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Movable, Sized):
 
     @always_inline
     fn __eq__[
-        self_elt_types: VariadicOf[Movable & Equatable],
-        other_elt_types: VariadicOf[Movable & Equatable],
+        self_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
+        other_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using equality comparison.
 
@@ -281,8 +276,8 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Movable, Sized):
 
     @always_inline
     fn __ne__[
-        self_elt_types: VariadicOf[Movable & Equatable],
-        other_elt_types: VariadicOf[Movable & Equatable],
+        self_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
+        other_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using inequality comparison.
 
@@ -301,8 +296,8 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Movable, Sized):
 
     @always_inline
     fn _compare[
-        self_elt_types: VariadicOf[Movable & Comparable],
-        other_elt_types: VariadicOf[Movable & Comparable],
+        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
+        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Int:
         comptime self_len = type_of(self).__len__()
         comptime other_len = type_of(other).__len__()
@@ -337,8 +332,8 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Movable, Sized):
 
     @always_inline
     fn __lt__[
-        self_elt_types: VariadicOf[Movable & Comparable],
-        other_elt_types: VariadicOf[Movable & Comparable], //,
+        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
+        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable], //,
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using less than comparison.
 
@@ -356,8 +351,8 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Movable, Sized):
 
     @always_inline
     fn __le__[
-        self_elt_types: VariadicOf[Movable & Comparable],
-        other_elt_types: VariadicOf[Movable & Comparable], //,
+        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
+        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable], //,
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using less than or equal to comparison.
 
@@ -375,8 +370,8 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Movable, Sized):
 
     @always_inline
     fn __gt__[
-        self_elt_types: VariadicOf[Movable & Comparable],
-        other_elt_types: VariadicOf[Movable & Comparable], //,
+        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
+        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable], //,
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using greater than comparison.
 
@@ -396,8 +391,8 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Movable, Sized):
 
     @always_inline
     fn __ge__[
-        self_elt_types: VariadicOf[Movable & Comparable],
-        other_elt_types: VariadicOf[Movable & Comparable], //,
+        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
+        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable], //,
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using greater than or equal to comparison.
 
@@ -415,7 +410,9 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Movable, Sized):
         return self._compare(other) >= 0
 
     @always_inline("nodebug")
-    fn reverse(deinit self, out result: Tuple[*Reversed[*Self.element_types]]):
+    fn reverse(
+        deinit self, out result: Tuple[*Variadic.reverse[*Self.element_types]]
+    ):
         """Return a new tuple with the elements in reverse order.
 
         Returns:
@@ -431,7 +428,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Movable, Sized):
             UnsafePointer(to=result[i]).init_pointee_move_from(
                 rebind[UnsafePointer[type_of(result[i]), origin_of(self)]](
                     UnsafePointer(
-                        to=self[variadic_size(Self.element_types) - 1 - i]
+                        to=self[Variadic.size(Self.element_types) - 1 - i]
                     )
                 )
             )
@@ -443,7 +440,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Movable, Sized):
         deinit self,
         deinit other: Tuple[*other_element_types],
         out result: Tuple[
-            *Concatenated[Self.element_types, other_element_types]
+            *Variadic.concat[Self.element_types, other_element_types]
         ],
     ):
         """Return a new tuple that concatenates this tuple with another.

@@ -2410,7 +2410,7 @@ struct SIMD[dtype: DType, size: Int](
             position `i` is `(self + other)[permutation[i]]`.
         """
 
-        __comptime_assert output_size == stdlib.builtin.variadic_size(
+        __comptime_assert output_size == stdlib.builtin.Variadic.size(
             mask
         ), "size of the mask must match the output SIMD size"
 

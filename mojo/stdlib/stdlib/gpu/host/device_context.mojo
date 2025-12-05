@@ -45,7 +45,7 @@ from sys.param_env import _is_bool_like
 
 from builtin._location import __call_location, _SourceLocation
 from builtin.device_passable import DevicePassable
-from builtin.variadics import VariadicOf
+from builtin.variadics import Variadic
 from compile import get_type_name
 from compile.compile import CompiledFunctionInfo
 from compile.reflection import get_linkage_name
@@ -1897,7 +1897,7 @@ fn _is_path_like(ss: StringSlice) -> Bool:
 struct DeviceFunction[
     func_type: AnyTrivialRegType, //,
     func: func_type,
-    declared_arg_types: Optional[VariadicOf[AnyType]],
+    declared_arg_types: Optional[Variadic.TypesOfTrait[AnyType]],
     *,
     target: _TargetType = get_gpu_target(),
     compile_options: StaticString = CompilationTarget[
@@ -3631,7 +3631,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            Optional[VariadicOf[AnyType]](None),
+            Optional[Variadic.TypesOfTrait[AnyType]](None),
             target = Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
@@ -3692,7 +3692,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            Optional[VariadicOf[AnyType]](None),
+            Optional[Variadic.TypesOfTrait[AnyType]](None),
             target = Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
@@ -3749,7 +3749,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
     @always_inline
     fn compile_function_checked[
         func_type: AnyTrivialRegType,
-        declared_arg_types: VariadicOf[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
         func: func_type,
         signature_func: fn (* args: * declared_arg_types) -> None,
         *,
@@ -3825,7 +3825,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
 
     @always_inline
     fn compile_function_experimental[
-        declared_arg_types: VariadicOf[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
         func: fn (* args: * declared_arg_types) -> None,
         *,
         dump_asm: _DumpPath = False,
@@ -3898,7 +3898,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
     @always_inline
     fn compile_function_checked[
         func_type: AnyTrivialRegType,
-        declared_arg_types: VariadicOf[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
         func: func_type,
         signature_func: fn (* args: * declared_arg_types) capturing -> None,
         *,
@@ -3975,7 +3975,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
 
     @always_inline
     fn compile_function_experimental[
-        declared_arg_types: VariadicOf[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
         func: fn (* args: * declared_arg_types) capturing -> None,
         *,
         dump_asm: _DumpPath = False,
@@ -4679,7 +4679,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
     @always_inline
     fn enqueue_function_checked[
         func_type: AnyTrivialRegType,
-        declared_arg_types: VariadicOf[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
         func: func_type,
         signature_func: fn (* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
@@ -4796,7 +4796,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
     @parameter
     @always_inline
     fn enqueue_function_experimental[
-        declared_arg_types: VariadicOf[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
         func: fn (* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
@@ -4903,7 +4903,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
     @always_inline
     fn enqueue_function_checked[
         func_type: AnyTrivialRegType,
-        declared_arg_types: VariadicOf[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
         func: func_type,
         signature_func: fn (* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,
@@ -5020,7 +5020,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
     @parameter
     @always_inline
     fn enqueue_function_experimental[
-        declared_arg_types: VariadicOf[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
         func: fn (* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
@@ -5131,7 +5131,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
     fn enqueue_function_experimental[
         func_type: AnyTrivialRegType, //,
         func: func_type,
-        declared_arg_types: Optional[VariadicOf[AnyType]],
+        declared_arg_types: Optional[Variadic.TypesOfTrait[AnyType]],
         *Ts: DevicePassable,
     ](
         self,

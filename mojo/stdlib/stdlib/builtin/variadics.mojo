@@ -18,45 +18,127 @@ These are Mojo built-ins, so you don't need to import them.
 from sys.intrinsics import _type_is_eq_parse_time
 
 
-comptime Variadic[type: AnyType] = __mlir_type[`!kgen.variadic<`, type, `>`]
-"""Represents a raw variadic sequence of values of the specified type."""
+struct Variadic:
+    """A namespace for variadic utilities."""
 
-comptime VariadicOf[T: _AnyTypeMetaType] = __mlir_type[
-    `!kgen.variadic<`, T, `>`
-]
-"""Represents a raw variadic sequence of types that satisfy the specified trait."""
+    comptime ValuesOfType[type: AnyType] = __mlir_type[
+        `!kgen.variadic<`, type, `>`
+    ]
+    """Represents a raw variadic sequence of values of the specified type."""
 
+    comptime TypesOfTrait[T: _AnyTypeMetaType] = __mlir_type[
+        `!kgen.variadic<`, T, `>`
+    ]
+    """Represents a raw variadic sequence of types that satisfy the specified trait."""
 
-@always_inline("builtin")
-fn variadic_size[T: AnyType](seq: Variadic[T]) -> Int:
-    """Returns the length of a variadic sequence.
+    @staticmethod
+    @always_inline("builtin")
+    fn size[T: AnyType](seq: Self.ValuesOfType[T]) -> Int:
+        """Returns the length of a variadic sequence.
 
-    Parameters:
-        T: The type of values in the sequence.
+        Parameters:
+            T: The type of values in the sequence.
 
-    Args:
-        seq: The variadic sequence to measure.
+        Args:
+            seq: The variadic sequence to measure.
 
-    Returns:
-        The length of the variadic sequence.
+        Returns:
+            The length of the variadic sequence.
+        """
+        return Int(mlir_value=__mlir_op.`pop.variadic.size`(seq))
+
+    @staticmethod
+    @always_inline("builtin")
+    fn size[T: _AnyTypeMetaType](seq: Self.TypesOfTrait[T]) -> Int:
+        """Returns the length of a variadic sequence.
+
+        Parameters:
+            T: The trait that types in the sequence must conform to.
+
+        Args:
+            seq: The variadic sequence of types to measure.
+
+        Returns:
+            The length of the variadic sequence.
+        """
+        return Int(mlir_value=__mlir_op.`pop.variadic.size`(seq))
+
+    # ===-----------------------------------------------------------------------===#
+    # Utils
+    # ===-----------------------------------------------------------------------===#
+
+    comptime empty_of_trait[T: type_of(AnyType)] = __mlir_attr[
+        `#kgen.variadic<>: !kgen.variadic<`, T, `>`
+    ]
+    """Empty comptime variadic of type values."""
+
+    comptime empty_of_type[T: AnyType] = __mlir_attr[
+        `#kgen.variadic<>: !kgen.variadic<`, T, `>`
+    ]
+    """Empty comptime variadic of values."""
+
+    comptime types[T: type_of(AnyType), //, *Ts: T] = Ts
+    """Turn discrete type values (bound by `T`) into a single variadic."""
+
+    comptime values[T: AnyType, //, *values_: T]: Variadic.ValuesOfType[
+        T
+    ] = values_
+    """Turn discrete value (bound by `T`) into a single variadic."""
+
+    # ===-----------------------------------------------------------------------===#
+    # VariadicConcat
+    # ===-----------------------------------------------------------------------===#
+
+    comptime concat[
+        T: type_of(AnyType), //, *Ts: Variadic.TypesOfTrait[T]
+    ] = __mlir_attr[
+        `#kgen.variadic.concat<`, Ts, `> :`, Variadic.TypesOfTrait[T]
+    ]
     """
-    return Int(mlir_value=__mlir_op.`pop.variadic.size`(seq))
-
-
-@always_inline("builtin")
-fn variadic_size[T: _AnyTypeMetaType](seq: VariadicOf[T]) -> Int:
-    """Returns the length of a variadic sequence.
-
-    Parameters:
-        T: The trait that types in the sequence must conform to.
-
-    Args:
-        seq: The variadic sequence of types to measure.
-
-    Returns:
-        The length of the variadic sequence.
+    Represents the concatenation of multiple variadic sequences of types.
     """
-    return Int(mlir_value=__mlir_op.`pop.variadic.size`(seq))
+
+    comptime reverse[
+        T: type_of(AnyType), //, *element_types: T
+    ] = _MapVariadicAndIdxToType[
+        To=T, VariadicType=element_types, Mapper = _ReversedVariadic[T]
+    ]
+    """A wrapper to reverse a variadic sequence of types.
+
+    # Parameters:
+    #     element_types: The variadic sequence of types to reverse.
+    # """
+
+    comptime splat[type: AnyType, count: Int] = __mlir_attr[
+        `#kgen.variadic.splat<`,
+        type,
+        `,`,
+        count._mlir_value,
+        `> : `,
+        Variadic.TypesOfTrait[type_of(type)],
+    ]
+    """
+    Splat a type into a variadic sequence.
+    Parameters:
+        type: The type to splat.
+        count: The number of times to splat the type.
+    """
+
+    comptime contains[
+        Trait: type_of(AnyType), //,
+        type: Trait,
+        element_types: Variadic.TypesOfTrait[Trait],
+    ] = _ReduceVariadicAndIdxToValue[
+        BaseVal = Variadic.values[False],
+        VariadicType=element_types,
+        #  Curry `_ContainsMapper` to fit the reducer signature
+        Reducer = _ContainsReducer[Trait=Trait, Type=type],
+    ][
+        0
+    ]
+    """
+    Check if a type is contained in a variadic sequence.
+    """
 
 
 # ===-----------------------------------------------------------------------===#
@@ -140,7 +222,7 @@ struct VariadicList[type: AnyTrivialRegType](Iterable, Sized):
         type: The type of the elements in the list.
     """
 
-    comptime _mlir_type = Variadic[Self.type]
+    comptime _mlir_type = Variadic.ValuesOfType[Self.type]
 
     var value: Self._mlir_type
     """The underlying storage for the variadic list."""
@@ -278,7 +360,7 @@ struct VariadicListMem[
     """
 
     comptime reference_type = Pointer[Self.element_type, Self.origin]
-    comptime _mlir_type = Variadic[Self.reference_type._mlir_type]
+    comptime _mlir_type = Variadic.ValuesOfType[Self.reference_type._mlir_type]
 
     var value: Self._mlir_type
     """The underlying storage, a variadic list of references to elements of the
@@ -546,7 +628,7 @@ struct VariadicPack[
             The number of elements in the variadic pack.
         """
 
-        comptime result = variadic_size(Self.element_types)
+        comptime result = Variadic.size(Self.element_types)
         return result
 
     @always_inline
@@ -584,16 +666,16 @@ struct VariadicPack[
     # C Pack Utilities
     # ===-------------------------------------------------------------------===#
 
-    comptime _kgen_element_types = rebind[Variadic[AnyTrivialRegType]](
-        Self.element_types
-    )
+    comptime _kgen_element_types = rebind[
+        Variadic.ValuesOfType[AnyTrivialRegType]
+    ](Self.element_types)
     """This is the element_types list lowered to `variadic<type>` type for kgen.
     """
     comptime _variadic_pointer_types = __mlir_attr[
         `#kgen.param.expr<variadic_ptr_map, `,
         Self._kgen_element_types,
         `, 0: index>: `,
-        Variadic[AnyTrivialRegType],
+        Variadic.ValuesOfType[AnyTrivialRegType],
     ]
     """Use variadic_ptr_map to construct the type list of the !kgen.pack that
     the !lit.ref.pack will lower to.  It exposes the pointers introduced by the
@@ -615,7 +697,7 @@ struct VariadicPack[
         `#kgen.param.expr<variadic_ptrremove_map, `,
         Self._variadic_pointer_types,
         `>: `,
-        Variadic[AnyTrivialRegType],
+        Variadic.ValuesOfType[AnyTrivialRegType],
     ]
     comptime _loaded_kgen_pack_type = __mlir_type[
         `!kgen.pack<:variadic<type> `, Self._variadic_with_pointers_removed, `>`
@@ -635,39 +717,6 @@ struct VariadicPack[
 
 
 # ===-----------------------------------------------------------------------===#
-# Utils
-# ===-----------------------------------------------------------------------===#
-
-comptime EmptyVariadic[T: type_of(AnyType)] = __mlir_attr[
-    `#kgen.variadic<>: !kgen.variadic<`, T, `>`
-]
-"""Empty comptime variadic of type values."""
-
-comptime EmptyVariadicValue[T: AnyType] = __mlir_attr[
-    `#kgen.variadic<>: !kgen.variadic<`, T, `>`
-]
-"""Empty comptime variadic of values."""
-
-comptime MakeVariadic[T: type_of(AnyType), //, *Ts: T] = Ts
-"""Turn discrete type values (bound by `T`) into a single variadic."""
-
-comptime MakeVariadicValue[T: AnyType, //, value: T]: Variadic[T] = __mlir_attr[
-    `#kgen.variadic<`, value, `>: !kgen.variadic<`, T, `>`
-]
-"""Turn discrete value (bound by `T`) into a single variadic."""
-
-# ===-----------------------------------------------------------------------===#
-# VariadicConcat
-# ===-----------------------------------------------------------------------===#
-
-comptime Concatenated[
-    T: type_of(AnyType), //, *Ts: VariadicOf[T]
-] = __mlir_attr[`#kgen.variadic.concat<`, Ts, `> :`, VariadicOf[T]]
-"""
-Represents the concatenation of multiple variadic sequences of types.
-"""
-
-# ===-----------------------------------------------------------------------===#
 # VariadicReduce
 # ===-----------------------------------------------------------------------===#
 
@@ -685,7 +734,7 @@ comptime _ReduceVariadicIdxGeneratorTypeGenerator[
     `>`,
 ]
 """This specifies a generator to generate a generator type for the reducer.
-The generated generator type is [Prev: AnyType, Ts: VariadicOf[AnyType], idx: Int] -> Prev,
+The generated generator type is [Prev: AnyType, Ts: Variadic.TypesOfTrait[AnyType], idx: Int] -> Prev,
 """
 
 comptime _IndexToIntWrap[
@@ -693,7 +742,7 @@ comptime _IndexToIntWrap[
     ReduceT: AnyType,
     ToWrap: _ReduceVariadicIdxGeneratorTypeGenerator[ReduceT, From],
     PrevV: ReduceT,
-    VA: VariadicOf[From],
+    VA: Variadic.TypesOfTrait[From],
     idx: __mlir_type.index,
 ] = ToWrap[PrevV, VA, Int(mlir_value=idx)]
 
@@ -702,16 +751,18 @@ comptime _ReduceVariadicAndIdxToVariadic[
     From: type_of(AnyType),
     To: type_of(AnyType), //,
     *,
-    BaseVal: VariadicOf[To],
-    Variadic: VariadicOf[From],
-    Reducer: _ReduceVariadicIdxGeneratorTypeGenerator[VariadicOf[To], From],
+    BaseVal: Variadic.TypesOfTrait[To],
+    VariadicType: Variadic.TypesOfTrait[From],
+    Reducer: _ReduceVariadicIdxGeneratorTypeGenerator[
+        Variadic.TypesOfTrait[To], From
+    ],
 ] = __mlir_attr[
     `#kgen.variadic.reduce<`,
     BaseVal,
     `,`,
-    Variadic,
+    VariadicType,
     `,`,
-    _IndexToIntWrap[From, VariadicOf[To], Reducer],
+    _IndexToIntWrap[From, Variadic.TypesOfTrait[To], Reducer],
     `> : `,
     type_of(BaseVal),
 ]
@@ -720,8 +771,8 @@ type, one could reduce the input to a single element variadic instead.
 
 Parameters:
     BaseVal: The initial value to reduce on
-    Variadic: The variadic to be reduced
-    Reducer: A `[BaseVal: VariadicOf[To], Ts: *From, idx: index] -> To` that does the reduction
+    VariadicType: The variadic to be reduced
+    Reducer: A `[BaseVal: Variadic.TypesOfTrait[To], Ts: *From, idx: index] -> To` that does the reduction
 """
 
 comptime _ReduceValueIdxGeneratorTypeGenerator[
@@ -738,7 +789,7 @@ comptime _ReduceValueIdxGeneratorTypeGenerator[
     `>`,
 ]
 """This specifies a generator to generate a generator type for the reducer.
-The generated generator type is [Prev: AnyType, Ts: Variadic[AnyType], idx: Int] -> Prev,
+The generated generator type is [Prev: AnyType, Ts: Variadic.ValuesOfType[AnyType], idx: Int] -> Prev,
 """
 
 comptime _IndexToIntValueWrap[
@@ -746,7 +797,7 @@ comptime _IndexToIntValueWrap[
     ReduceT: AnyType,
     ToWrap: _ReduceValueIdxGeneratorTypeGenerator[ReduceT, From],
     PrevV: ReduceT,
-    VA: Variadic[From],
+    VA: Variadic.ValuesOfType[From],
     idx: __mlir_type.index,
 ] = ToWrap[PrevV, VA, Int(mlir_value=idx)]
 
@@ -755,16 +806,18 @@ comptime _ReduceValueAndIdxToVariadic[
     From: AnyType,
     To: type_of(AnyType), //,
     *,
-    BaseVal: VariadicOf[To],
-    VariadicType: Variadic[From],
-    Reducer: _ReduceValueIdxGeneratorTypeGenerator[VariadicOf[To], From],
+    BaseVal: Variadic.TypesOfTrait[To],
+    VariadicType: Variadic.ValuesOfType[From],
+    Reducer: _ReduceValueIdxGeneratorTypeGenerator[
+        Variadic.TypesOfTrait[To], From
+    ],
 ] = __mlir_attr[
     `#kgen.variadic.reduce<`,
     BaseVal,
     `,`,
     VariadicType,
     `,`,
-    _IndexToIntValueWrap[From, VariadicOf[To], Reducer],
+    _IndexToIntValueWrap[From, Variadic.TypesOfTrait[To], Reducer],
     `> : `,
     type_of(BaseVal),
 ]
@@ -773,7 +826,7 @@ type, one could reduce the input to a single element variadic instead.
 Parameters:
     BaseVal: The initial value to reduce on
     VariadicType: The variadic to be reduced
-    Reducer: A `[BaseVal: Variadic[To], Ts: *From, idx: index] -> To` that does the reduction
+    Reducer: A `[BaseVal: Variadic.ValuesOfType[To], Ts: *From, idx: index] -> To` that does the reduction
 """
 
 
@@ -781,16 +834,18 @@ comptime _ReduceVariadicAndIdxToValue[
     To: AnyType,
     From: type_of(AnyType), //,
     *,
-    BaseVal: Variadic[To],
-    VariadicType: VariadicOf[From],
-    Reducer: _ReduceVariadicIdxGeneratorTypeGenerator[Variadic[To], From],
+    BaseVal: Variadic.ValuesOfType[To],
+    VariadicType: Variadic.TypesOfTrait[From],
+    Reducer: _ReduceVariadicIdxGeneratorTypeGenerator[
+        Variadic.ValuesOfType[To], From
+    ],
 ] = __mlir_attr[
     `#kgen.variadic.reduce<`,
     BaseVal,
     `,`,
     VariadicType,
     `,`,
-    _IndexToIntWrap[From, Variadic[To], Reducer],
+    _IndexToIntWrap[From, Variadic.ValuesOfType[To], Reducer],
     `> : `,
     type_of(BaseVal),
 ]
@@ -799,7 +854,7 @@ type, one could reduce the input to a single element variadic instead.
 Parameters:
     BaseVal: The initial value to reduce on
     VariadicType: The variadic to be reduced
-    Reducer: A `[BaseVal: Variadic[To], Ts: *From, idx: index] -> To` that does the reduction
+    Reducer: A `[BaseVal: Variadic.ValuesOfType[To], Ts: *From, idx: index] -> To` that does the reduction
 """
 
 # ===-----------------------------------------------------------------------===#
@@ -818,7 +873,7 @@ comptime _VariadicIdxToTypeGeneratorTypeGenerator[
     `>`,
 ]
 """This specifies a generator to generate a generator type for the mapper.
-The generated generator type is [Ts: VariadicOf[AnyType], idx: Int] -> AnyType,
+The generated generator type is [Ts: Variadic.TypesOfTrait[AnyType], idx: Int] -> AnyType,
 which maps the input variadic + index of the current element to another type.
 """
 
@@ -826,35 +881,35 @@ comptime _WrapVariadicIdxToTypeMapperToReducer[
     F: type_of(AnyType),
     T: type_of(AnyType),
     Mapper: _VariadicIdxToTypeGeneratorTypeGenerator[F, T],
-    Prev: VariadicOf[T],
-    From: VariadicOf[F],
+    Prev: Variadic.TypesOfTrait[T],
+    From: Variadic.TypesOfTrait[F],
     Idx: Int,
-] = Concatenated[Prev, MakeVariadic[Mapper[From, Idx]]]
+] = Variadic.concat[Prev, Variadic.types[Mapper[From, Idx]]]
 
 comptime _MapVariadicAndIdxToType[
     From: type_of(AnyType), //,
     *,
     To: type_of(AnyType),
-    Variadic: VariadicOf[From],
+    VariadicType: Variadic.TypesOfTrait[From],
     Mapper: _VariadicIdxToTypeGeneratorTypeGenerator[From, To],
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = EmptyVariadic[To],  # reduce from a empty variadic
-    Variadic=Variadic,
+    BaseVal = Variadic.empty_of_trait[To],  # reduce from a empty variadic
+    VariadicType=VariadicType,
     Reducer = _WrapVariadicIdxToTypeMapperToReducer[From, To, Mapper],
 ]
 """Construct a new variadic of types using a type-to-type mapper.
 
 Parameters:
     To: A common trait bound for the mapped type
-    Variadic: The variadic to be mapped
+    VariadicType: The variadic to be mapped
     Mapper: A `[Ts: *From, idx: index] -> To` that does the transform
 """
 
 comptime _ReversedVariadic[
     T: type_of(AnyType),
-    element_types: VariadicOf[T],
+    element_types: Variadic.TypesOfTrait[T],
     idx: Int,
-] = element_types[variadic_size(element_types) - 1 - idx]
+] = element_types[Variadic.size(element_types) - 1 - idx]
 """A generator that reverses a variadic sequence of types.
 
 Parameters:
@@ -862,52 +917,11 @@ Parameters:
     idx: The index of the type to generate in the reversed sequence.
 """
 
-comptime Reversed[
-    T: type_of(AnyType), //, *element_types: T
-] = _MapVariadicAndIdxToType[
-    To=T, Variadic=element_types, Mapper = _ReversedVariadic[T]
-]
-"""A wrapper to reverse a variadic sequence of types.
-
-Parameters:
-    element_types: The variadic sequence of types to reverse.
-"""
-
-comptime Splatted[type: AnyType, count: Int] = __mlir_attr[
-    `#kgen.variadic.splat<`,
-    type,
-    `,`,
-    count._mlir_value,
-    `> : `,
-    VariadicOf[type_of(type)],
-]
-"""
-Splat a type into a variadic sequence.
-Parameters:
-    type: The type to splat.
-    count: The number of times to splat the type.
-"""
-
 
 comptime _ContainsReducer[
     Trait: type_of(AnyType),
     Type: Trait,
-    Prev: Variadic[Bool],
-    From: VariadicOf[Trait],
+    Prev: Variadic.ValuesOfType[Bool],
+    From: Variadic.TypesOfTrait[Trait],
     idx: Int,
-] = MakeVariadicValue[_type_is_eq_parse_time[From[idx], Type]() or Prev[0]]
-
-
-comptime Contains[
-    Trait: type_of(AnyType), //, type: Trait, element_types: VariadicOf[Trait]
-] = _ReduceVariadicAndIdxToValue[
-    BaseVal = MakeVariadicValue[False],
-    VariadicType=element_types,
-    #  Curry `_ContainsMapper` to fit the reducer signature
-    Reducer = _ContainsReducer[Trait=Trait, Type=type],
-][
-    0
-]
-"""
-Check if a type is contained in a variadic sequence.
-"""
+] = Variadic.values[_type_is_eq_parse_time[From[idx], Type]() or Prev[0]]

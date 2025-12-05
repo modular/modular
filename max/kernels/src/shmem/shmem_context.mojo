@@ -15,7 +15,7 @@ from algorithm import parallelize
 from collections.optional import OptionalReg
 from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort, getenv, setenv
-from builtin.variadics import VariadicOf
+from builtin.variadics import Variadic
 from builtin.device_passable import DevicePassable
 from sys import (
     CompilationTarget,
@@ -454,7 +454,7 @@ struct SHMEMContext(ImplicitlyCopyable, Movable):
     @parameter
     fn enqueue_function_checked[
         func_type: AnyTrivialRegType,
-        declared_arg_types: VariadicOf[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
         func: func_type,
         signature_func: fn (* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
@@ -709,7 +709,7 @@ struct SHMEMContext(ImplicitlyCopyable, Movable):
     @parameter
     fn enqueue_function_collective_checked[
         func_type: AnyTrivialRegType,
-        declared_arg_types: VariadicOf[AnyType], //,
+        declared_arg_types: Variadic.TypesOfTrait[AnyType], //,
         func: func_type,
         signature_func: fn (* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,

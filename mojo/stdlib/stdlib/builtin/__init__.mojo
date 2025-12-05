@@ -12,4 +12,4 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the builtin package."""
 
-from .variadics import variadic_size
+from .variadics import Variadic

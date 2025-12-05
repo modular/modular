@@ -82,7 +82,7 @@ from layout.layout_tensor import LayoutTensorIter
 fn _to_int_tuple[*vals: Int]() -> IntTuple:
     res = IntTuple()
 
-    comptime num_vals = stdlib.builtin.variadic_size(vals)
+    comptime num_vals = stdlib.builtin.Variadic.size(vals)
 
     @parameter
     for i in range(num_vals):

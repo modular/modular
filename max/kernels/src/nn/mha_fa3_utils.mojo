@@ -23,7 +23,6 @@ from sys import size_of
 
 import gpu.warp as warp
 from algorithm.functional import unswitch
-from builtin.variadics import VariadicOf
 from gpu import block_idx, thread_idx
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host import DeviceContext, DeviceBuffer
