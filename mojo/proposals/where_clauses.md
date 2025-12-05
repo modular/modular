@@ -10,6 +10,9 @@ Implementation has been scoped out and prioritized.
 **Oct 1, 2025**
 Status: Updated to remove the error message field. Implementation in progress.
 
+**Dec 4, 2025**
+Status: Original feature implemented. Added `__comptime_assert` statement.
+
 This document explores adding “where” clauses to Mojo, a major missing
 feature that will allow more safety, expressivity, and APIs that work better
 for our users.
@@ -322,6 +325,120 @@ candidates to fail without the expression type checker failing overall.
 However, if the whole set fails, we want to report the first failing condition.
 This can be done by adding a new failure kind to `OverloadFitness` which error
 emission uses.
+
+## Pain Point: Expressing “assumptions” is cumbersome
+
+An “assumption” is the term we use for constraints we know to be true in a
+given lexical scope. For example, a parameter-if provides its nested scope with
+the assumption that the if-condition is true.
+
+Often-times, users know that a given condition is satisfiable, but it’s not
+directly provable from the code. E.g.
+
+```python
+fn needs_prime[x: Int where x.is_prime()]:
+  ...
+
+fn main():
+  # Un-provable constraint: 2.is_prime().
+  needs_prime[2]()
+```
+
+This example shows a fully concrete constraint expression that we cannot
+evaluate today, but it extends to fully symbolic expressions too.
+
+The current paradigm we’re forcing users to adopt is a parameter-if:
+
+```python
+@parameter
+if 2.is_prime():
+  needs_prime[2]()
+else
+  constrained[False, "This shouldn't happen"]()
+```
+
+There are two problems:
+
+1. **Forced Verbosity**: The user is forced to write an `else` branch in order
+to verify their assumption.
+
+2. **Forced Scope**: The user is forced to introduce a scope. This can be
+problematic for organizing subsequent code.
+
+### Proposal: Explicit Assumption Injection
+
+A dedicated statement that brings into scope an assumption, similar to
+`constrained` but more powerful.
+
+```python
+__comptime_assert 2.is_prime()
+needs_prime[2]()
+```
+
+This allows users to easily insert a *checked* assumption into the current
+parameter scope. This is a meta-code statement by nature, so its order relative
+to the base code is irrelevant (similar to `comptime`). It would serve two
+purposes in one go:
+
+- Check that the assumption holds.
+- Inject the assumption into the current scope.
+
+Over time, we plan to phase out the stdlib `constrained` function in favor of
+this statement.
+
+#### Syntax
+
+This will be a simple statement that accepts one/two parameters:
+
+- A Bool expr that represents the condition to assert for.
+- [Optional] A StaticString expr that represents the error message to report
+when the condition fails.
+  - This does *not* need to be a string literal expr.
+
+Examples:
+
+```python
+__comptime_assert 2.is_prime()
+
+__comptime_assert 2.is_prime(), "2 should be a prime"
+
+__comptime_assert x > 2, "x should be greater than 2, got " + x + " instead"
+```
+
+The leading underscores indicate that this is not its final name.
+
+#### Semantics
+
+**Checking**:
+
+If the condition folds to False in the parser, the parser will report a local error.
+
+> error: failed __comptime_assert: condition is always False.
+>
+
+If the condition folds to True in the parser, the parser will report a warning
+that this statement can be removed.
+
+> warning: redundant __comptime_assert: condition is always True.
+>
+
+Otherwise, the condition is verified by the elaborator, and works exactly like
+`constrained` does today (same error behavior).
+
+**Assuming**:
+
+The parser is able to assume that the condition is true in the current
+parameter scope, and allow users to use this assumption when binding parameters
+/ invoking functions in this parameter scope.
+
+```python
+fn needs_prime[x: Int where is_prime(x)]():
+  ...
+
+fn main():
+ __comptime_assert is_prime(2)
+ needs_prime[2]()   # This is OK.
+```
 
 ## Logical extensions (not in scope for this proposal)
 
