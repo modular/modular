@@ -1389,6 +1389,17 @@ class Tensor(DLPackArray, HasTensorValue):
         return F.logical_not(self)
 
 
+_SEED: ContextVar[Tensor] = ContextVar("_SEED")
+
+
+def seed() -> Tensor:
+    if (seed := _SEED.get()) is None:
+        seed = driver.Tensor(ops.random.SeedType)
+        seed[0] = 0
+        _SEED.set(Tensor(storage=seed))
+    return seed
+
+
 class ComputeGraph:
     """Computation graph for managing tensor operations.
 
