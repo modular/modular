@@ -383,17 +383,24 @@ class InternVLProcessor:
             if isinstance(content, str):
                 text_message["content"] = content
             elif isinstance(content, list):
-                # Extract text from multimodal content
-                text_parts = []
+                # Process multimodal content in order, placing <image> placeholders
+                # where image content appears to match VLMEvalKit behavior.
+                content_parts = []
                 for item in content:
-                    if isinstance(item, dict) and item.get("type") == "text":
-                        # Handle both "content" and "text" keys
-                        text_content = item.get("content") or item.get(
-                            "text", ""
-                        )
-                        if text_content:
-                            text_parts.append(text_content)
-                text_message["content"] = " ".join(text_parts)
+                    if isinstance(item, dict):
+                        if item.get("type") == "text":
+                            # Handle both "content" and "text" keys.
+                            text_content = item.get("content") or item.get(
+                                "text", ""
+                            )
+                            if text_content:
+                                content_parts.append(text_content)
+                        elif item.get("type") == "image":
+                            # Insert image placeholder where image content appears.
+                            content_parts.append("<image>")
+
+                # Join content parts preserving order.
+                text_message["content"] = " ".join(content_parts)
             else:
                 text_message["content"] = ""
 
