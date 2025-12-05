@@ -38,8 +38,19 @@ def _extract_linker_variables(ctx):
         variables = variables,
     )
 
-    # TODO: Fix -Wl, exclusion
-    system_libs = [x for x in link_arguments if not x.startswith("-Wl,")]
+    system_libs = []
+    for x in link_arguments:
+        if x.startswith("-Wl,"):
+            args = x.split(",")[1:]
+            if args == ["-pie"]:
+                # Skip -pie because some tests link shared libs libs,
+                # assume they will add it anyways
+                continue
+            for y in args:
+                system_libs.append("-Xlinker")
+                system_libs.append(y)
+        else:
+            system_libs.append(x)
 
     return linker_driver, system_libs, env, cc_toolchain.all_files
 
