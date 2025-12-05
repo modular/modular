@@ -58,6 +58,20 @@ struct PCallWithGetAttr:
         return 2
 
 
+# Note: Test heuristic fix for MOCO-2833
+struct PCallWithGetItemAndInferredParameters:
+    fn __init__(out self):
+        pass
+
+    # This does *not* produce a warning, because the parameters are all
+    # inferred.
+    fn __call__[T: Movable, //](ref self, var y: T) -> T:
+        return y^
+
+    fn __getitem__(ref self, y: Int) -> Int:
+        return y
+
+
 fn main():
     var pc = PCall()
     _ = pc[1](2)
