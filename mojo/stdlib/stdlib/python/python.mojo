@@ -561,7 +561,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Returns:
             Mojo string representing the given Python object.
         """
-        ref cpy = Self().cpython()
+        ref cpy = self.cpython()
         return cpy.PyUnicode_AsUTF8AndSize(obj._obj_ptr)
 
     @staticmethod
