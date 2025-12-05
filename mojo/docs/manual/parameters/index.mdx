@@ -206,8 +206,8 @@ struct GenericArray[ElementType: Copyable]:
 This struct has a single parameter, `ElementType`, which is a placeholder for
 the data type you want to store in the array, sometimes called a *type
 parameter*. `ElementType` conforms to the
-[`Copyable`](/mojo/stdlib/builtin/value/Copyable) and
-[`Movable`](/mojo/stdlib/builtin/value/Movable) traits.
+[`Copyable`](/mojo/stdlib/builtin/value/Copyable) trait and therefore to the 
+[`Movable`](/mojo/stdlib/builtin/value/Movable) trait.
 
 As with parameterized functions, you need to pass in parameter values when you
 use a parameterized struct. In this case, when you create an instance of
@@ -261,8 +261,8 @@ The method returns an instance of `GenericArray[Float64]`.
 When creating a generic struct, you might want to define some methods that
 require extra features. For example, consider a collection like `GenericArray`
 that holds instances of a type that conforms to the
-[`Copyable`](/mojo/stdlib/builtin/value/Copyable) and
-[`Movable`](/mojo/stdlib/builtin/value/Movable) traits. This imposes a lot
+[`Copyable`](/mojo/stdlib/builtin/value/Copyable) trait and therefore to the 
+[`Movable`](/mojo/stdlib/builtin/value/Movable) trait. This imposes a lot
 of limitations: you can't implement a `sort()` method because you can't
 guarantee that the stored type supports the comparison operators; you can't
 write a useful `__str__()` or `__repr__()` dunder method because you can't

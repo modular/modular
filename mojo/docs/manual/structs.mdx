@@ -150,7 +150,7 @@ myCustomType = CustomType(0.5, fish="swordfish")
 myCustomType = {0.7, fish="salmon"}
 ```
 
-## Making a struct copyable and movable
+## Making a struct Copyable {#making-a-struct-copyable-and-movable}
 
 Mojo structs are not copyable or movable by default.
 
@@ -168,12 +168,12 @@ var c = a.copy()  # 'MyPair' value has no attribute 'copy'
 
 # Move
 var d = a^  #  value of type 'MyPair' cannot be copied or moved; consider
-            # conforming it to 'Movable'
+            # conforming it to 'Copyable', which also adds 'Movable' conformance.
 
 ```
 
-In most cases, you can make a struct copyable and movable just by adding the
-appropriate [traits](/mojo/manual/traits).
+In most cases, you can make a struct copyable (and movable) just by adding the
+`Copyable` [trait](/mojo/manual/traits).
 
 ### Movability
 
@@ -204,9 +204,12 @@ need custom logic in the copy constructor—for example, if your struct
 dynamically allocates memory. For more information, see the section on
 [copy constructors](/mojo/manual/lifecycle/life#copy-constructor).
 
-The `Copyable` trait also supplies the `copy()` method, which
+The `Copyable` trait supplies the `copy()` method, which
 provides a more user-friendly way to copy a value than invoking the
 copy constructor directly.
+
+In addition, `Copyable` automatically adds movability, so you won't
+need to add both `Copyable` _and_ `Movable` to your declarations.
 
 ### Implicit copyability
 
@@ -405,4 +408,4 @@ essential lifecycle methods you need (and save yourself some time) using the
 `@fieldwise_init` decorator (described in
 [Struct definition](#struct-definition)), and the `Copyable` and `Movable`
 traits (described in
-[Making a struct copyable and movable](#making-a-struct-copyable-and-movable)).
+[Making a struct copyable](#making-a-struct-copyable-and-movable)).
