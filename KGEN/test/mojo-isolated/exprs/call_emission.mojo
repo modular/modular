@@ -436,7 +436,7 @@ fn test_cond_conformance(exclude: Bool):
 
 # MOCO-1442: Unnecessary copies being generated from owned values in constructors
 @fieldwise_init  # This is copyable, but we don't want to.
-struct Heavy(ImplicitlyCopyable, Movable):
+struct Heavy(ImplicitlyCopyable):
   pass
 
 # This is intended to be a lightweight view of Heavy.
@@ -489,12 +489,12 @@ fn testSomeStructWithRefMethod[val: SomeStructWithRefMethod]():
 # COM: Avoid copies when unnecessary
 
 @fieldwise_init
-struct MyDictEntry[K: KeyElement, V: Copyable & Movable](Copyable, Movable):
+struct MyDictEntry[K: KeyElement, V: Copyable](Copyable):
     var key: Self.K
     var value: Self.V
 
 
-struct MyDict[K: KeyElement, V: Copyable & Movable](Copyable, Movable):
+struct MyDict[K: KeyElement, V: Copyable](Copyable):
     var _entries: List[MyDictEntry[Self.K, Self.V]]
 
     fn __getitem__(
@@ -507,7 +507,7 @@ struct MyDict[K: KeyElement, V: Copyable & Movable](Copyable, Movable):
         pass
 
 @fieldwise_init
-struct Value(ImplicitlyCopyable, Movable):
+struct Value(ImplicitlyCopyable):
     var max_width: Int
     fn mutate(mut self): pass
 

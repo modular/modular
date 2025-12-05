@@ -130,7 +130,7 @@ fn mul2_callee[n: Int, //, some_t: TakesIntParam[n * 2]]():
 ##===----------------------------------------------------------------------===##
 
 
-trait FancyTrait(ImplicitlyCopyable, Movable):
+trait FancyTrait(ImplicitlyCopyable):
     fn __eq__(self, other: Self) -> Bool:
         ...
 
@@ -141,7 +141,7 @@ struct MyFancyStruct(FancyTrait):
 
 
 @fieldwise_init
-struct MyOptional[T: ImplicitlyCopyable & Movable]:
+struct MyOptional[T: ImplicitlyCopyable]:
     fn __eq__[U: FancyTrait](self: MyOptional[U], rhs: MyOptional[U]) -> Bool:
         pass
 

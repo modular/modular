@@ -119,7 +119,7 @@ fn inferred_params_kw_only[x: Int, //, *, y: Int]():
 
 
 @fieldwise_init
-struct MemoryOnly(ImplicitlyCopyable, Movable):
+struct MemoryOnly(ImplicitlyCopyable):
     pass
 
 

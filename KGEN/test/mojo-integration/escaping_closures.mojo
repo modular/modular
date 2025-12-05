@@ -58,7 +58,7 @@ struct Bar[C: Int, D: Int]:
 
 @fieldwise_init
 @register_passable
-struct Bat[A: Int](ImplicitlyCopyable, Movable):
+struct Bat[A: Int](ImplicitlyCopyable):
     var b: Int
 
     fn get[B: Int](self) -> fn (y: Int) escaping -> Bar[B, Self.A]:

@@ -18,5 +18,5 @@
 
 
 @fieldwise_init
-struct MyValueStruct(Copyable, Movable):
+struct MyValueStruct(Copyable):
     var value: __mlir_type.index

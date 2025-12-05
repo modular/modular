@@ -7,7 +7,7 @@
 # COM: Capture inside a nested escaping closure.
 
 
-struct MemType(ImplicitlyCopyable, Movable):
+struct MemType(ImplicitlyCopyable):
     var x: Int
 
     @always_inline("nodebug")

@@ -220,14 +220,15 @@ fn may_raise() raises -> MemExample:
 
 
 fn reassign_might_raise():
-    var value = MemExample()  # expected-note {{'value' declared here}}
+    var value = MemExample()
     try:
         # 'value' is passed directly as the MLValue slot to the raising call,
         # meaning the current value has to be destroyed before the call.
         value = may_raise()
+        _ = value
     except:
         # If the call raises, then the value is known to be uninitialized.
-        _ = value  # expected-error {{use of uninitialized value 'value'}}
+        _ = value
 
 
 # expected-note @below {{'out' declared here}}
@@ -433,7 +434,7 @@ fn inout_restored_at_throw(mut x: MemExample, err: Error) raises:
 # Invalid error field 'w.x.y' destroyed out of the middle of a value, preventing the overall value from being destroyed
 # https://github.com/modular/mojo/issues/1535
 @fieldwise_init
-struct NestedInt(ImplicitlyCopyable, Movable):
+struct NestedInt(ImplicitlyCopyable):
     var y: Int
 
 

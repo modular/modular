@@ -11,7 +11,7 @@
 # RUN: %parse-mojo-isolated %s | kgen-opt -lower-semantic-cf -check-lifetimes -verify-parameters -verify-diagnostics | FileCheck %s
 
 
-struct MyList[T: ImplicitlyCopyable & Movable]:
+struct MyList[T: ImplicitlyCopyable]:
     var data: UnsafePointer[Self.T]
 
     fn __init__(out self):

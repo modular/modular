@@ -7,20 +7,20 @@
 # RUN: %parse-mojo-isolated %s --kgen-print-inline-type-values | FileCheck %s
 
 
-struct X_T(ImplicitlyCopyable, Movable):
+struct X_T(ImplicitlyCopyable):
     pass
 
 
-struct Y_T(ImplicitlyCopyable, Movable):
+struct Y_T(ImplicitlyCopyable):
     pass
 
 
-struct X_N(ImplicitlyCopyable, Movable):
+struct X_N(ImplicitlyCopyable):
     fn __del__(deinit self):
         pass
 
 
-struct X_T_U(ImplicitlyCopyable, Movable):
+struct X_T_U(ImplicitlyCopyable):
     fn __del__(deinit self):
         pass
 
@@ -30,8 +30,8 @@ struct X_T_U(ImplicitlyCopyable, Movable):
 
 # CHECK-LABEL: lit.struct.decl @C
 #  CHECK-SAME: <X: [[X_TYPE:!.*]], Y: [[Y_TYPE:!.*]]>
-struct C[X: ImplicitlyCopyable & Movable, Y: ImplicitlyCopyable & Movable](
-    ImplicitlyCopyable, Movable
+struct C[X: ImplicitlyCopyable, Y: ImplicitlyCopyable](
+    ImplicitlyCopyable
 ):
     var x: Self.X
     var y: Self.Y
@@ -63,7 +63,7 @@ struct C[X: ImplicitlyCopyable & Movable, Y: ImplicitlyCopyable & Movable](
 
 
 # CHECK-LABEL: lit.struct.decl @StructMLIRTypeOnly
-struct StructMLIRTypeOnly(ImplicitlyCopyable & Movable):
+struct StructMLIRTypeOnly(ImplicitlyCopyable):
     var x: __mlir_type.index
     var y: __mlir_type.index
 
@@ -74,7 +74,7 @@ struct StructMLIRTypeOnly(ImplicitlyCopyable & Movable):
 
 # MOCO-2396:
 # CHECK-LABEL: lit.struct.decl @NotTrivial
-struct NotTrivial(Copyable, Movable):
+struct NotTrivial(Copyable):
     fn __copyinit__(out self, other: Self):
         pass
 
@@ -90,7 +90,7 @@ struct NotTrivial(Copyable, Movable):
 
 
 # CHECK-LABEL: lit.struct.decl @Wrapper
-struct Wrapper(Copyable, Movable):
+struct Wrapper(Copyable):
     var value: NotTrivial
 
     # Should be parser-folded.

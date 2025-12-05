@@ -217,7 +217,7 @@ fn take_two_spans(a: MyMutSpan[_], b: MyMutSpan[_]):
 
 
 @fieldwise_init
-struct MyStruct(ImplicitlyCopyable, Movable):
+struct MyStruct(ImplicitlyCopyable):
     var a: Int
     var b: Int
 

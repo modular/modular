@@ -10,9 +10,7 @@ from utils.variant import Variant
 from collections import List
 
 
-struct MTuple[T: ImplicitlyCopyable & Movable](
-    ImplicitlyCopyable, Movable, Stringable, Writable
-):
+struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Stringable, Writable):
     comptime Element = Variant[Self.T, Self]
     var elts: List[Self.Element]
 

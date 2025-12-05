@@ -57,7 +57,7 @@ def test_use_non_copyable_type(var b: ThingWithStaticMethod):
 
 
 @fieldwise_init
-struct MemType(ImplicitlyCopyable, Movable):
+struct MemType(ImplicitlyCopyable):
     pass
 
 # COM: Issue https://github.com/modularml/modular/issues/37758 where the
@@ -750,7 +750,7 @@ fn test_deinit_fn_types():
   var fp2 : fn(deinit self: GoodDtor) -> None
 
 @fieldwise_init
-struct CantSynthesize(ImplicitlyCopyable, Movable):
+struct CantSynthesize(ImplicitlyCopyable):
 # expected-error @below {{cannot synthesize fieldwise init because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
 # expected-error @below {{cannot synthesize __moveinit__ because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
 # expected-error @below {{cannot synthesize __copyinit__ because field 'x' has non-copyable type 'InMemStruct'}}
@@ -801,7 +801,7 @@ struct NotRegisterPassable:
 
 @fieldwise_init
 @register_passable
-struct Outer34551(ImplicitlyCopyable, Movable): # expected-error {{all members of '@register_passable' struct must themselves be '@register_passable'}}
+struct Outer34551(ImplicitlyCopyable): # expected-error {{all members of '@register_passable' struct must themselves be '@register_passable'}}
     # expected-error @below {{cannot synthesize __moveinit__ because field '_inner' has non-copyable and non-movable type 'NotRegisterPassable'}}
     # expected-error @below {{cannot synthesize __copyinit__ because field '_inner' has non-copyable type 'NotRegisterPassable'}}
     # expected-note @below {{'_inner' declared with type 'NotRegisterPassable'}}
@@ -885,7 +885,7 @@ fn bad_trait_params[T: EverythingIsWrongTrait](x: T):
   # expected-error @below {{invalid call to 'parametric': failed to infer parameter 'x', it isn't used in any argument}}
   x.parametric()
 
-trait Shape(ImplicitlyCopyable, Movable):
+trait Shape(ImplicitlyCopyable):
 	fn area(self) -> Int:
 	    ...
 
@@ -1003,7 +1003,7 @@ struct Outer: # expected-error {{all members of '@register_passable' struct must
 
 
 @fieldwise_init
-struct AnyTypeMember[T: AnyType](ImplicitlyCopyable, Movable):
+struct AnyTypeMember[T: AnyType](ImplicitlyCopyable):
 # expected-error @below {{cannot synthesize fieldwise init because field 'value' has non-copyable and non-movable type 'T'}}
 # expected-error @below {{cannot synthesize __moveinit__ because field 'value' has non-copyable and non-movable type 'T'}}
 # expected-error @below {{cannot synthesize __copyinit__ because field 'value' has non-copyable type 'T'}}
@@ -1049,7 +1049,7 @@ fn test(arg: HasBoolParam[True]):
 
 
 @fieldwise_init
-struct Foo(ImplicitlyCopyable, Movable):
+struct Foo(ImplicitlyCopyable):
     var val: Int
 
 @fieldwise_init

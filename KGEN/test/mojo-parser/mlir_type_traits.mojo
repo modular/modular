@@ -6,7 +6,7 @@
 # RUN: kgen-translate -import-mojo --kgen-print-inline-type-values %s | FileCheck %s
 
 
-comptime Composition = Movable & ImplicitlyCopyable
+comptime Composition = ImplicitlyCopyable
 
 
 # CHECK-LABEL: lit.fn @"mlir_type_trait_conformance

@@ -73,12 +73,12 @@ struct DtorExample5[T: AnyType]:
 # ===----------------------------------------------------------------------=== #
 
 
-struct IntPair(ImplicitlyCopyable, Movable):
+struct IntPair(ImplicitlyCopyable):
     var x: Int
     var y: Int
 
 
-struct IntPairWrapper(ImplicitlyCopyable, Movable):
+struct IntPairWrapper(ImplicitlyCopyable):
     var value: IntPair
 
 

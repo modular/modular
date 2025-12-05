@@ -11,7 +11,7 @@ from collections.deque import _DequeIter
 
 
 fn not_a_list[
-    T: Copyable & Movable
+    T: Copyable
 ](ref value: Deque[T]) -> _DequeIter[T, origin_of(value), False]:
     return value.__reversed__()
 

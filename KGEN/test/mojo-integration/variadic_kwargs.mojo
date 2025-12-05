@@ -21,7 +21,7 @@ fn takes_int_variadic_kwargs(**kwargs: Int) raises:
         print("non-existent key not found (as expected)")
 
 
-trait Resettable(ImplicitlyCopyable, Movable):
+trait Resettable(ImplicitlyCopyable):
     fn reset(mut self):
         ...
 

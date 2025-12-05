@@ -59,7 +59,7 @@ struct Bar(Foo):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Zork(ImplicitlyCopyable, Movable):
+struct Zork(ImplicitlyCopyable):
     pass
 
 

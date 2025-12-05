@@ -9,7 +9,7 @@
 # RUN: %parse-mojo-isolated %s --mlir-print-debuginfo --debug-level full -o /dev/null
 
 # CHECK-LABEL: lit.struct.decl @MemExample
-struct MemExample(ImplicitlyCopyable, Movable, Copyable):
+struct MemExample(ImplicitlyCopyable, Copyable):
   var x : Int
   fn __init__(out self): self.x = 42; pass
   fn noop(self): pass
@@ -371,12 +371,10 @@ fn test_result_optimization():
   # CHECK-NEXT: lifetime.start %__call_result_tmp__
   # CHECK-NEXT: lit.call {{.*}}use_and_return{{.*}}([[IMMREF]], %__call_result_tmp__)
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%example)
-  # CHECK-NEXT: lifetime.end %example
-  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %__call_result_tmp__
-  # CHECK-NEXT: lifetime.start %example
-  # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}([[IMMREF]], %example)
-  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%__call_result_tmp__)
-  # CHECK-NEXT: lifetime.end %__call_result_tmp__
+  # CHECK-NEXT: lit.var.lifetime.end %example
+  # CHECK-NEXT: lit.var.lifetime.start %example
+  # CHECK-NEXT: lit.call @{{.*}}@"__moveinit__{{.*}}(%__call_result_tmp__, %example)
+  # CHECK-NEXT: lit.var.lifetime.end %__call_result_tmp__
   example = use_and_return(example)
 
   # Aliased reuse of part of the result slot forces a temporary.
@@ -398,15 +396,12 @@ fn test_result_optimization():
   # CHECK-NEXT: [[TMPVAR:%.*]] = lit.var.decl
   # CHECK-NEXT: lifetime.start [[TMPVAR]]
   # CHECK-NEXT: lit.call {{.*}}use_and_return{{.*}}([[IMMREF]], [[TMPVAR]])
-  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[TMPVAR]]
 
   # Delete the old thing at the reference pointed-to-by return_ref before we
   # copy into it.
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[RETREF]])
 
-  # FieldSensitiveMem doesn't have a moveinit.
-  # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}([[IMMREF]], [[RETREF]])
-  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[TMPVAR]])
+  # CHECK-NEXT: lit.call @{{.*}}@"__moveinit__{{.*}}([[TMPVAR]], [[RETREF]])
   # CHECK-NEXT: lifetime.end [[TMPVAR]]
   return_ref(example) = use_and_return(example)
 
@@ -939,14 +934,14 @@ struct HasMemExample:
       pass
 
 @fieldwise_init
-struct Dim(ImplicitlyCopyable, Movable):
+struct Dim(ImplicitlyCopyable):
   var dim: Int
 
 fn maybeDim() raises -> Dim:
    return Dim(3)
 
 @fieldwise_init
-struct List(ImplicitlyCopyable, Movable):
+struct List(ImplicitlyCopyable):
   fn append(self, d: MemExample):
      pass
 
@@ -1025,7 +1020,7 @@ fn test_if_ownership(x: Bool, var a: RegExample, var b: RegExample) -> RegExampl
     return a if x else b
 
 
-struct MyStructWithMarkDestroyed[T: ImplicitlyCopyable & Movable]:
+struct MyStructWithMarkDestroyed[T: ImplicitlyCopyable]:
     var a: Self.T
     var b: Self.T
 
@@ -1378,7 +1373,7 @@ def origin_of_def_arg(a: String):
 
 # MOCO-1542: Need to rebind field type when checking size.
 @fieldwise_init
-struct MyParameterizedField[T: ImplicitlyCopyable & Movable](ImplicitlyCopyable, Movable):
+struct MyParameterizedField[T: ImplicitlyCopyable](ImplicitlyCopyable):
   var a: Self.T
   var b: Self.T
 
@@ -1419,7 +1414,7 @@ struct SomeStruct:
     fn __init__(out self) raises:
         self.test_agent = SomeValue(123)
 
-struct SomeValue[T: ImplicitlyCopyable & Movable]:
+struct SomeValue[T: ImplicitlyCopyable]:
     var value: Self.T
     var name: String
     var tmp: Int

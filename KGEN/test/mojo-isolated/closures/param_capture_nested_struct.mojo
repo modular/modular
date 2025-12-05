@@ -18,7 +18,7 @@
 
 @fieldwise_init
 @register_passable
-struct Foo[A: Int](ImplicitlyCopyable, Movable):
+struct Foo[A: Int](ImplicitlyCopyable):
     var b: Int
 
     fn get[C: Int](self) -> fn (y: Int) escaping -> Int:

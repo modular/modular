@@ -309,7 +309,7 @@ struct LHS:
   fn __init__(out self, value: Int):
     pass
 
-struct RHS(Movable, ImplicitlyCopyable):
+struct RHS(ImplicitlyCopyable):
   fn __radd__(self, lhs: LHS) -> RHS: return self
   fn __rsub__(self, lhs: LHS) -> RHS: return self
   fn __rmul__(self, lhs: LHS) -> RHS: return self
@@ -516,13 +516,12 @@ fn andOr2(b: Boolish, d: MemBoolish):
   # CHECK-NEXT: [[DI1:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[DBOOL]])
   # CHECK-NEXT: [[IFRESULT:%.*]] = lit.var.decl {{.*}} : !lit.ref<!MemBoolish
   # CHECK-NEXT: hlcf.if [[DI1]] {
-  # CHECK-NEXT:   lit.call {{.*}}__copyinit__{{.*}}(%d, [[ANON:%.*]])
+  # CHECK-NEXT:   lit.call {{.*}}__copyinit__{{.*}}(%d, [[ANON:%[^)]*]])
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: } else {
   # CHECK-NEXT:   [[TMPMEM:%.*]] = lit.var.decl
   # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}(%b, [[TMPMEM]])
-  # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut [[TMPMEM]]
-  # CHECK-NEXT:   lit.call {{.*}}__copyinit__{{.*}}([[IMMREF]], [[ANON]])
+  # CHECK-NEXT:   lit.call {{.*}}__moveinit__{{.*}}([[TMPMEM]], [[ANON]])
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: }
   _ = d or b
@@ -1171,7 +1170,7 @@ fn dependent_callee[dtype: DType](storage: UnsafePointer[SIMD[dtype, 1]],
 # This requires handling of VariadicAttr in parameter inference.
 fn variadic_attr_caller(*inputs: Tuple[Int]):
    variadic_attr_callee[Int](inputs)
-fn variadic_attr_callee[key_type: ImplicitlyCopyable & Movable](
+fn variadic_attr_callee[key_type: ImplicitlyCopyable](
        inputs: VariadicListMem[Tuple[key_type], _]
     ):
   pass

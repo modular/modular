@@ -61,7 +61,7 @@ def with_it_err(handle: Bool) -> Int:
 
 
 @fieldwise_init
-struct MemoryType(ImplicitlyCopyable, Movable):
+struct MemoryType(ImplicitlyCopyable):
     fn __del__(deinit self):
         print("delete")
 
@@ -112,7 +112,7 @@ fn raising_finally():
 
 
 @fieldwise_init
-struct MoveMe(Copyable, Movable):
+struct MoveMe(Copyable):
     pass
 
 

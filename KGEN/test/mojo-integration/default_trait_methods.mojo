@@ -135,7 +135,7 @@ trait AATrait1:
 
 
 trait AATrait2:
-    comptime X: ImplicitlyCopyable & Movable
+    comptime X: ImplicitlyCopyable
 
     fn zork(self, x: Self.X) -> Self.X:
         print("In AATrait2.zork")

@@ -16,7 +16,7 @@ fn use_any[*Ts: AnyType](*args: *Ts): pass
 # ===----------------------------------------------------------------------=== #
 
 # CHECK-LABEL: lit.struct.decl @MemExample
-struct MemExample(ImplicitlyCopyable, Movable):
+struct MemExample(ImplicitlyCopyable):
   fn __init__(out self): pass
   fn __moveinit__(out self, deinit existing: Self): pass
   fn __copyinit__(out self, existing: Self): pass

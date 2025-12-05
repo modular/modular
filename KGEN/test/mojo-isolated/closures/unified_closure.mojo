@@ -509,7 +509,7 @@ fn takeIt[T: Copyable](impl: T):
 
 
 @fieldwise_init
-struct CopyMe(Copyable, ImplicitlyCopyable, Movable):
+struct CopyMe(ImplicitlyCopyable):
     var x: Int
     var y: Int
 

@@ -123,7 +123,7 @@ fn tuples_lv(i0: Int, f0: FloatDyn):
 ##===----------------------------------------------------------------------===##
 
 
-trait CollectionType(ImplicitlyCopyable, Movable):
+trait CollectionType(ImplicitlyCopyable):
     pass
 
 
@@ -203,9 +203,9 @@ fn returnTup2b() -> Tuple[Int, FloatDyn]:
     return Int(4), 2.0
 
 
-# CHECK-LABEL: lit.fn @"takesSugarTuple{{.*}}<T: !ImplicitlyCopyable_Movable>
-# CHECK-SAME: #Tuple <:variadic<!AnyType> [!kgen.param<:!ImplicitlyCopyable_Movable T>, !kgen.param<:!ImplicitlyCopyable_Movable T>]>
-fn takesSugarTuple[T: ImplicitlyCopyable & Movable](elements: Tuple[T, T]):
+# CHECK-LABEL: lit.fn @"takesSugarTuple{{.*}}<T: !ImplicitlyCopyable>
+# CHECK-SAME: #Tuple <:variadic<!AnyType> [!kgen.param<:!ImplicitlyCopyable T>, !kgen.param<:!ImplicitlyCopyable T>]>
+fn takesSugarTuple[T: ImplicitlyCopyable](elements: Tuple[T, T]):
     pass
 
 

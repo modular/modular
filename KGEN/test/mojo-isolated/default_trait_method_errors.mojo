@@ -44,7 +44,7 @@ trait AA1:
 
 
 trait AA2:
-    comptime X: ImplicitlyCopyable & Movable
+    comptime X: ImplicitlyCopyable
 
     # expected-note @+1 {{conflicting implementation from trait 'AA2' here}}
     fn zork(self, x: Self.X) -> Self.X:
@@ -54,7 +54,7 @@ trait AA2:
 @fieldwise_init
 # expected-error @+1 {{trait method requirement 'zork' has conflicting default implementations in 'AA1' and 'AA2' you must implement it manually}}
 struct Bar(AA1, AA2):
-    comptime X: ImplicitlyCopyable & Movable = Int
+    comptime X: ImplicitlyCopyable = Int
 
 
 trait WithAsyncMethod:
