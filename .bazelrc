@@ -9,6 +9,9 @@ build --per_file_copt=external/.*@-w --host_per_file_copt=external/.*@-w
 
 import %workspace%/bazel/internal/common.bazelrc
 
+# TODO: Fix mypy issues and re-enable.
+build --config=disable-mypy
+
 # Load config generated from tools/bazel
 import %workspace%/build/wrapper.bazelrc
 
