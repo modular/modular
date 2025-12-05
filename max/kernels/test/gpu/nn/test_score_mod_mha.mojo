@@ -24,7 +24,7 @@ from kv_cache.types import (
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from nn.mha import flash_attention
+from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from tensor import IOUnknown, ManagedTensorSlice
@@ -341,8 +341,7 @@ def execute_flash_attention[
     )
 
     # Here pass mask that includes bias in q_idx >= k_idx (to compare).
-    flash_attention(
-        ref_output_tensor,
+    mha_gpu_naive(
         q_tensor,
         k_cache_device,
         v_cache_device,
@@ -355,9 +354,15 @@ def execute_flash_attention[
             ),
             start_pos=cache_lengths_lt,
         ),
-        IdentityScoreMod(),
+        ref_output_tensor,
         valid_length_tensor,
         rsqrt(Float32(kv_params.head_size)),
+        batch_size,
+        max_prompt_len,
+        max_context_len,
+        num_q_heads,
+        Int(kv_params.head_size),
+        num_q_heads // Int(kv_params.num_heads),
         ctx,
     )
 
