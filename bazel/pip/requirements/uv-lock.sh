@@ -22,6 +22,7 @@ trap 'rm -rf "$tmpdir"' EXIT
 ln -s "$PWD/{{pyproject}}" "$tmpdir/pyproject.toml"
 cp "$PWD/{{existing_lockfile}}" "$tmpdir/uv.lock"
 
+# shellcheck disable=SC2288
 "{{uv}}" \
   lock \
   --directory "$tmpdir" \

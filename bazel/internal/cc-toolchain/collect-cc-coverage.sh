@@ -22,8 +22,10 @@ fi
 
 # Make sure running llvm-profdata doesn't produce its own profile.
 unset LLVM_PROFILE_FILE
-llvm_profdata=("$ROOT"/external/+http_archive+*/bin/llvm-profdata)
-llvm_cov=("$ROOT"/external/+http_archive+*/bin/llvm-cov)
+llvm_profdata_glob=("$ROOT"/external/+http_archive+*/bin/llvm-profdata)
+llvm_profdata=${llvm_profdata_glob[0]}
+llvm_cov_glob=("$ROOT"/external/+http_archive+*/bin/llvm-cov)
+llvm_cov=${llvm_cov_glob[0]}
 
 if [[ ! -x "$llvm_profdata" || ! -x "$llvm_cov" ]]; then
   echo "error: llvm-profdata or llvm-cov not found" >&2
@@ -58,11 +60,11 @@ while read -r line; do
 done < "$COVERAGE_MANIFEST"
 
 llvm_cov_args=(
-  $object_param
+  "$object_param"
   -ignore-filename-regex='^/tmp/.+'
   -ignore-filename-regex='external/.+'
   -instr-profile "$profdata"
-  -path-equivalence .,$TEST_SRCDIR/_main
+  -path-equivalence ".,$TEST_SRCDIR/_main"
 )
 
 # Parse-able lcov file

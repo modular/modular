@@ -17,6 +17,7 @@ set -euo pipefail
 # --- begin runfiles.bash initialization v3 ---
 # Copy-pasted from the Bazel Bash runfiles library v3.
 set -uo pipefail; set +e; f=bazel_tools/tools/bash/runfiles/runfiles.bash
+# shellcheck disable=SC1090
 source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
   source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d' ')" 2>/dev/null || \
   source "$0.runfiles/$f" 2>/dev/null || \
@@ -26,7 +27,7 @@ source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
 # --- end runfiles.bash initialization v3 ---
 
 uv=$(rlocation "$UV")
-python=$(rlocation "$PYTHON")
-export UV_PYTHON="$python"
+python_exe=$(rlocation "$PYTHON")
+export UV_PYTHON="$python_exe"
 
 "$uv" --directory "$BUILD_WORKSPACE_DIRECTORY/bazel/pip/requirements" "$@"
