@@ -88,8 +88,8 @@ There are two ways to run kbench:
     example in [`sample.mojo`](sample.mojo):
 
     ```mojo
-    from sys import env_get_string, env_get_int
-    from internal_utils import env_get_dtype, env_get_shape, int_list_to_tuple
+    from sys import env_get_string, env_get_int, env_get_dtype
+    from internal_utils import env_get_shape, int_list_to_tuple
     from benchmark import (
         BenchConfig,
         Bench,
