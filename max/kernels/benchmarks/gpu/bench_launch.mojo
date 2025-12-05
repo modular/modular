@@ -11,11 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from benchmark import Bench, Bencher, BenchId
+from benchmark import Bench, BenchConfig, Bencher, BenchId
 from gpu.host import DeviceContext, Dim
 from layout import *
 
-comptime NUM_KERNELS = 100
+comptime NUM_KERNELS_PER_ITERATION = 128
+comptime NUM_WARMUP_ITERATIONS = 3
+comptime NUM_ITERATIONS = 1000
 
 
 fn empty_kernel():
@@ -92,12 +94,19 @@ fn bench_gpu_kernel_enqueue_caller(mut m: Bench, ctx: DeviceContext) raises:
     var size = 1
     var buf = ctx.create_buffer_sync[DType.uint64](size)
 
+    # Warm up before benchmarking
+    for _ in range(NUM_WARMUP_ITERATIONS):
+        ctx.enqueue_function_checked[small_kernel, small_kernel](
+            buf, grid_dim=Dim(1), block_dim=Dim(1)
+        )
+
+    # Benchmark Mojo function
     @parameter
     @always_inline
     fn bench_gpu_kernel_enqueue(mut b: Bencher) raises:
         @parameter
         fn launch() raises:
-            for _ in range(NUM_KERNELS):
+            for _ in range(NUM_KERNELS_PER_ITERATION):
                 ctx.enqueue_function_checked[small_kernel, small_kernel](
                     buf, grid_dim=Dim(1), block_dim=Dim(1)
                 )
@@ -112,7 +121,14 @@ fn bench_gpu_kernel_enqueue_caller(mut m: Bench, ctx: DeviceContext) raises:
 
 def main():
     with DeviceContext() as ctx:
-        var m = Bench()
+        var m = Bench(
+            BenchConfig(
+                min_runtime_secs=0.0,
+                max_runtime_secs=600.0,
+                max_iters=NUM_ITERATIONS,
+                max_batch_size=100,
+            )
+        )
         bench_empty_launch_caller(m, ctx)
         bench_empty_launch_many_params_caller(m, ctx)
         bench_gpu_kernel_enqueue_caller(m, ctx)
