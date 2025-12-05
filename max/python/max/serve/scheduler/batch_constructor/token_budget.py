@@ -19,6 +19,17 @@ from enum import Enum
 from max.interfaces.pipeline_variants import TextGenerationContext
 
 
+class RequestType(str, Enum):
+    TG = "text_generation"
+    CE = "context_encoding"
+    MIXED = "mixed"
+    UNKNOWN = "unknown"
+
+    @classmethod
+    def all(cls) -> list[RequestType]:
+        return [RequestType.TG, RequestType.CE, RequestType.MIXED]
+
+
 class BudgetStatus(str, Enum):
     """Enumeration describing the result of applying a token budget to a context.
 
@@ -72,11 +83,18 @@ class TokenBudget(ABC):
         used: Number of tokens currently consumed from this budget.
     """
 
-    def __init__(self, capacity: int, allow_chunking: bool) -> None:
+    def __init__(
+        self,
+        capacity: int,
+        allow_chunking: bool,
+        applicable_types: list[RequestType],
+    ) -> None:
         self.capacity = capacity
         self.allow_chunking = allow_chunking
+        self.applicable_types = applicable_types
 
         self.used = 0
+        self.active_request_type = RequestType.UNKNOWN
 
     @property
     def remaining(self) -> int:
@@ -86,13 +104,17 @@ class TokenBudget(ABC):
     def status_after_context(
         self,
         context: TextGenerationContext,
+        request_type: RequestType,
         num_steps: int = 1,
     ) -> BudgetStatus:
         pass
 
     @abstractmethod
     def add_to_budget(
-        self, context: TextGenerationContext, num_steps: int = 1
+        self,
+        context: TextGenerationContext,
+        request_type: RequestType,
+        num_steps: int = 1,
     ) -> None:
         pass
 
@@ -121,6 +143,7 @@ class TokenBudgetCollection:
     def status_after_context(
         self,
         context: TextGenerationContext,
+        request_type: RequestType,
         num_steps: int = 1,
     ) -> BudgetStatus:
         """Evaluate all budgets against a context and return the first violation.
@@ -133,6 +156,7 @@ class TokenBudgetCollection:
 
         Args:
             context: The context being considered for inclusion in the batch.
+            request_type: The type of request being evaluated.
             num_steps: Planned number of generation steps for this context. This
                 is forwarded to each underlying :class:`TokenBudget`.
 
@@ -142,23 +166,29 @@ class TokenBudgetCollection:
             all budgets accept the context.
         """
         for token_budget in self.token_budgets:
-            status = token_budget.status_after_context(context, num_steps)
+            status = token_budget.status_after_context(
+                context, request_type, num_steps
+            )
             if status != BudgetStatus.BUDGET_AVAILABLE:
                 return status
         return BudgetStatus.BUDGET_AVAILABLE
 
     def add_to_budget(
-        self, context: TextGenerationContext, num_steps: int = 1
+        self,
+        context: TextGenerationContext,
+        request_type: RequestType,
+        num_steps: int = 1,
     ) -> None:
         """Apply the token cost to all underlying budgets for an accepted context.
 
         Args:
             context: The context that was just admitted into the batch.
+            request_type: The type of request being added to the budget.
             num_steps: Planned number of generation steps that were considered
                 when :meth:`status_after_context` was called.
         """
         for token_budget in self.token_budgets:
-            token_budget.add_to_budget(context, num_steps)
+            token_budget.add_to_budget(context, request_type, num_steps)
 
 
 class ActiveTokenBudget(TokenBudget):
@@ -174,12 +204,10 @@ class ActiveTokenBudget(TokenBudget):
     :attr:`used`, and :meth:`remaining`.
     """
 
-    def __init__(self, capacity: int, allow_chunking: bool) -> None:
-        super().__init__(capacity=capacity, allow_chunking=allow_chunking)
-
     def status_after_context(
         self,
         context: TextGenerationContext,
+        request_type: RequestType,
         num_steps: int = 1,
     ) -> BudgetStatus:
         """Evaluate whether the context's active tokens fit within the budget.
@@ -202,6 +230,7 @@ class ActiveTokenBudget(TokenBudget):
 
         Args:
             context: The :class:`TextGenerationContext` being considered.
+            request_type: The type of request being evaluated.
             num_steps: Planned number of generation steps. Currently ignored for
                 active-token budgets, which operate strictly on a per-step basis.
 
@@ -220,6 +249,12 @@ class ActiveTokenBudget(TokenBudget):
                 unable to reduce the active window to within the remaining
                 capacity.
         """
+        if (
+            self.active_request_type not in self.applicable_types
+            and request_type not in self.applicable_types
+        ):
+            return BudgetStatus.BUDGET_AVAILABLE
+
         tokens_remaining = self.remaining
 
         # Already at or beyond capacity - no more contexts can be accepted.
@@ -244,7 +279,10 @@ class ActiveTokenBudget(TokenBudget):
             return BudgetStatus.BUDGET_EXHAUSTED
 
     def add_to_budget(
-        self, context: TextGenerationContext, num_steps: int = 1
+        self,
+        context: TextGenerationContext,
+        request_type: RequestType,
+        num_steps: int = 1,
     ) -> None:
         """Record the token cost for an accepted context's active tokens.
 
@@ -255,9 +293,16 @@ class ActiveTokenBudget(TokenBudget):
         Args:
             context: The context that was just admitted into the batch (possibly
                 after being chunked).
+            request_type: The type of request being added to the budget.
             num_steps: Planned number of generation steps. Currently ignored for
                 active-token budgets, which consume only the per-step active window.
         """
+        if (
+            self.active_request_type != RequestType.MIXED
+            and request_type != self.active_request_type
+        ):
+            self.active_request_type = request_type
+
         self.used += context.active_length
 
 
@@ -272,12 +317,10 @@ class TotalContextTokenBudget(TokenBudget):
     in a batch across multiple steps.
     """
 
-    def __init__(self, capacity: int, allow_chunking: bool) -> None:
-        super().__init__(capacity=capacity, allow_chunking=allow_chunking)
-
     def status_after_context(
         self,
         context: TextGenerationContext,
+        request_type: RequestType,
         num_steps: int = 1,
     ) -> BudgetStatus:
         """Evaluate whether the context's total length fits within the budget.
@@ -298,6 +341,7 @@ class TotalContextTokenBudget(TokenBudget):
 
         Args:
             context: The :class:`TextGenerationContext` being considered.
+            request_type: The type of request being evaluated.
             num_steps: Planned number of generation steps for this context.
 
         Returns:
@@ -315,6 +359,9 @@ class TotalContextTokenBudget(TokenBudget):
                 not succeed in reducing the effective cost to the remaining
                 capacity.
         """
+        if request_type not in self.applicable_types:
+            return BudgetStatus.BUDGET_AVAILABLE
+
         tokens_remaining = self.remaining
 
         # Already at or beyond capacity - no more contexts can be accepted.
@@ -337,7 +384,10 @@ class TotalContextTokenBudget(TokenBudget):
         return BudgetStatus.BUDGET_REACHED
 
     def add_to_budget(
-        self, context: TextGenerationContext, num_steps: int = 1
+        self,
+        context: TextGenerationContext,
+        request_type: RequestType,
+        num_steps: int = 1,
     ) -> None:
         """Record the token cost for an accepted context's total length.
 
@@ -352,6 +402,8 @@ class TotalContextTokenBudget(TokenBudget):
 
         Args:
             context: The context that was just admitted into the batch.
+            request_type: The type of request being added to the budget.
             num_steps: Planned number of generation steps for this context.
         """
-        self.used += context.active_length + (num_steps - 1)
+        self.used += context.current_length + (num_steps - 1)
+        print(f"Used: {self.used}")

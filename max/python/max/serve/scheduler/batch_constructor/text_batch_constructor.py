@@ -37,7 +37,12 @@ from ..lora_scheduler_utils import (
     is_active_lora,
     is_lora,
 )
-from .token_budget import ActiveTokenBudget, BudgetStatus, TokenBudgetCollection
+from .token_budget import (
+    ActiveTokenBudget,
+    BudgetStatus,
+    RequestType,
+    TokenBudgetCollection,
+)
 
 logger = logging.getLogger("max.serve")
 
@@ -126,6 +131,11 @@ class TextBatchConstructor:
                 ActiveTokenBudget(
                     capacity=self.scheduler_config.target_tokens_per_batch_ce,
                     allow_chunking=self.scheduler_config.enable_chunked_prefill,
+                    applicable_types=[
+                        RequestType.CE,
+                        RequestType.TG,
+                        RequestType.MIXED,
+                    ],
                 )
             ]
         )
@@ -503,7 +513,7 @@ class TextBatchConstructor:
             for ctx in ce_batch.values():
                 # active length should be 1 for TG requests
                 assert ctx.active_length == 1
-                token_budget.add_to_budget(ctx)
+                token_budget.add_to_budget(ctx, request_type=RequestType.TG)
 
         if self._lora_manager:
             # Track which LoRAs are currently active from running (TG) requests
@@ -606,7 +616,9 @@ class TextBatchConstructor:
                 self._lora_manager.activate_adapter(ctx.model_name)
                 active_loras.add(ctx.model_name)
 
-            budget_status = token_budget.status_after_context(ctx)
+            budget_status = token_budget.status_after_context(
+                ctx, request_type=RequestType.CE
+            )
 
             if budget_status == BudgetStatus.BUDGET_EXHAUSTED:
                 self._return_to_request_queue(ctx, replica_idx)
@@ -614,7 +626,7 @@ class TextBatchConstructor:
 
             batch_context_length += ctx.current_length
             ce_batch[req_id] = ctx
-            token_budget.add_to_budget(ctx)
+            token_budget.add_to_budget(ctx, request_type=RequestType.CE)
 
             if budget_status == BudgetStatus.BUDGET_REACHED:
                 break
