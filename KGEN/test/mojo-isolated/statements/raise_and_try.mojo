@@ -166,7 +166,7 @@ fn rethrowsToRethrow():
         return
 
 
-struct S(ImplicitlyCopyable):
+struct S(ImplicitlyCopyable, Movable):
     var v: Int
 
     @implicit
