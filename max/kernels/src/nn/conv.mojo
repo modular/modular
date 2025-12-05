@@ -1398,6 +1398,9 @@ struct ConvDirectNHWC[
             right_pad_impact_start,
             self.conv_shape.wo(),
         )
+        # TODO(MOCO-2074): Suppress false positive unused var warning.
+        _ = input_base
+        _ = output_base
 
     fn output_space_loop_2d[
         micro_kernel_height: Int,
@@ -1479,6 +1482,9 @@ struct ConvDirectNHWC[
                 right_pad_impact_start,
                 self.conv_shape.wo(),
             )
+            # TODO(MOCO-2074): Suppress false positive unused var warning.
+            _ = input_base
+            _ = output_base
 
     fn output_space_loop_3d[
         micro_kernel_height: Int,
@@ -1571,6 +1577,9 @@ struct ConvDirectNHWC[
                     right_pad_impact_start,
                     self.conv_shape.wo(),
                 )
+                # TODO(MOCO-2074): Suppress false positive unused var warning.
+                _ = input_base
+                _ = output_base
 
     fn _f_tile_loop_static[
         last_c_tile: Bool

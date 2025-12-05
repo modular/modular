@@ -871,6 +871,9 @@ struct ConvTransposedPacked[
                 right_pad_impact_start,
                 self.conv_shape.w(),
             )
+            # TODO(MOCO-2074): Suppress false positive unused var warning.
+            _ = input_base
+            _ = output_base
 
     @always_inline
     fn input_space_loop_3d[
@@ -959,6 +962,9 @@ struct ConvTransposedPacked[
                     right_pad_impact_start,
                     self.conv_shape.w(),
                 )
+                # TODO(MOCO-2074): Suppress false positive unused var warning.
+                _ = input_base
+                _ = output_base
 
     @always_inline
     fn apply_epilogue(self, n: Int, g: Int):

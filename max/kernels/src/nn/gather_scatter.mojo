@@ -266,6 +266,8 @@ fn gather_reduce[
                 gather_k_tile,
                 k_tile_sizes,
             ](0, row_size)
+            # TODO(MOCO-2074): Suppress false positive unused var warning.
+            _ = i
 
     sync_parallelize[task_func](num_tasks)
 
