@@ -90,10 +90,6 @@ from gpu.host._nvidia_cuda import CUDA
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from runtime.tracing import Trace, TraceLevel
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-)
 from buffer import DimList, NDBuffer
 from utils import IndexList
 from utils.variant import Variant
