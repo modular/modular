@@ -1500,10 +1500,13 @@ struct PythonObject(
 
     # see https://github.com/python/cpython/blob/main/Objects/call.c
     # for decrement rules
-    fn __call__(
-        self, *args: PythonObject, **kwargs: PythonObject
-    ) raises -> PythonObject:
+    fn __call__[
+        *Ts: ConvertibleToPython & Copyable,
+    ](self, *args: *Ts, **kwargs: PythonObject) raises -> PythonObject:
         """Call the underlying object as if it were a function.
+
+        Parameters:
+            Ts: Types of the positional arguments.
 
         Args:
             args: Positional arguments to the function.
@@ -1515,13 +1518,18 @@ struct PythonObject(
         Returns:
             The return value from the called object.
         """
+        comptime size = len(VariadicList(Ts))
+
         ref cpy = Python().cpython()
-        var size = len(args)
         var args_ptr = cpy.PyTuple_New(size)
+
+        @parameter
         for i in range(size):
-            _ = cpy.PyTuple_SetItem(
-                args_ptr, i, cpy.Py_NewRef(args[i]._obj_ptr)
-            )
+            var arg = args[i].copy().to_python_object()
+
+            _ = cpy.PyTuple_SetItem(args_ptr, i, cpy.Py_NewRef(arg._obj_ptr))
+
+            _ = arg^
         var kwargs_ptr = Python._dict(kwargs)
         var res_ptr = cpy.PyObject_Call(self._obj_ptr, args_ptr, kwargs_ptr)
         cpy.Py_DecRef(args_ptr)
