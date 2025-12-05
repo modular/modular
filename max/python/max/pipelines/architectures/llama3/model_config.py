@@ -181,13 +181,17 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         cache_dtype: DType,
         data_parallel_degree: int = 1,
     ) -> KVCacheParams:
+        if hasattr(huggingface_config, "head_dim"):
+            head_dim = huggingface_config.head_dim
+        else:
+            head_dim = (
+                huggingface_config.hidden_size
+                // huggingface_config.num_attention_heads
+            )
         return KVCacheParams(
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=(
-                huggingface_config.hidden_size
-                // huggingface_config.num_attention_heads
-            ),
+            head_dim=head_dim,
             num_layers=Llama3Config.get_num_layers(huggingface_config),
             page_size=kv_cache_config.kv_cache_page_size,
             cache_strategy=kv_cache_config.cache_strategy,

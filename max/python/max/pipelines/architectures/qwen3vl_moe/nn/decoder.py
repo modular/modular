@@ -318,24 +318,54 @@ class Qwen3VLMoEDecoder(Module):
         self,
         hidden_states: TensorValue,
         visual_embeds: TensorValue,
+        gather_indices: TensorValue,
+        scatter_indices: TensorValue,
     ) -> TensorValue:
         """Add deepstack visual embeddings to hidden states at visual positions.
 
         This method implements the DeepStack feature where visual embeddings
         are added to the hidden states at positions corresponding to visual tokens.
-        Equivalent to: hidden_states[visual_pos_masks, :] += visual_embeds
+        Equivalent to: hidden_states[scatter_indices, :] += visual_embeds
 
         Args:
-            hidden_states: Hidden states tensor of shape (seq_len, hidden_dim).
-            visual_pos_masks: Boolean mask of shape (seq_len,) indicating visual token positions.
-            visual_embeds: Visual embeddings of shape (visual_seqlen, hidden_dim) where
-                visual_seqlen is the number of True values in visual_pos_masks.
+            hidden_states: Hidden states (output of a decoder layer) tensor of shape (seq_len, hidden_dim).
+            visual_embeds: deepstack visual embeddings. tensor of shape (visual_seqlen, hidden_dim).
+            scatter_indices: Per-device scatter indices for image embeddings.
+            gather_indices: Per-device gather indices for image embeddings.
 
         Returns:
-            Updated hidden states with visual embeddings added at visual positions.
+            Updated hidden states with visual embeddings added at visual positions. tensor of shape (seq_len, hidden_dim).
         """
-        raise NotImplementedError(
-            "Deepstack processing is not implemented for Qwen3VL MoE decoder."
+
+        # Get indices where mask is True
+        gather_indices_unsqueezed = ops.unsqueeze(gather_indices, -1)
+        scatter_indices_unsqueezed = ops.unsqueeze(scatter_indices, -1)
+
+        # Gather hidden states at visual positions
+        visual_hidden = ops.gather_nd(
+            input=hidden_states,
+            indices=scatter_indices_unsqueezed,
+        )  # (visual_seqlen, hidden_dim)
+
+        visual_embeds = ops.gather_nd(
+            input=visual_embeds,
+            indices=gather_indices_unsqueezed,
+        )  # (visual_seqlen, hidden_dim)
+
+        # Ensure visual_embeds has the same dtype as hidden_states
+        if visual_embeds.dtype != hidden_states.dtype:
+            visual_embeds = ops.cast(visual_embeds, hidden_states.dtype)
+
+        # Add visual embeddings
+        visual_hidden_updated = (
+            visual_hidden + visual_embeds
+        )  # (visual_seqlen, hidden_dim)
+
+        # Scatter back into hidden_states
+        return ops.scatter_nd(
+            input=hidden_states,
+            updates=visual_hidden_updated,
+            indices=scatter_indices_unsqueezed,
         )
 
     def __call__(
@@ -419,11 +449,17 @@ class Qwen3VLMoEDecoder(Module):
                 visual_embeds = deepstack_visual_embeds[layer_idx]
                 h = [
                     self._deepstack_process(
-                        hidden_states=h_device,
-                        visual_embeds=visual_embeds_device,
+                        h_device,
+                        visual_embeds_device,
+                        gather_indices_device,
+                        scatter_indices_device,
                     )
-                    for h_device, visual_embeds_device in zip(
-                        h, visual_embeds, strict=True
+                    for h_device, visual_embeds_device, gather_indices_device, scatter_indices_device in zip(
+                        h,
+                        visual_embeds,
+                        gather_indices,
+                        scatter_indices,
+                        strict=True,
                     )
                 ]
 
