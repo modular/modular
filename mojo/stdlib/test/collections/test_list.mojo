@@ -192,6 +192,78 @@ def test_list_pop():
     assert_equal(0, len(list))
 
 
+def test_list_pop_slice():
+    var list = [1, 2, 3]
+    var popped = list.pop({1, None, None})
+    assert_equal(popped, [2, 3])
+    assert_equal(list, [1])
+
+    list = [1, 2, 3]
+    popped = list.pop({None, -1, None})
+    assert_equal(popped, [1, 2])
+    assert_equal(list, [3])
+
+    list = [1, 2, 3]
+    popped = list.pop({1, -1, 1})
+    assert_equal(popped, [2])
+    assert_equal(list, [1, 3])
+
+    list = [1, 2, 3]
+    popped = list.pop({None, None, -1})
+    assert_equal(popped, [3, 2, 1])
+    assert_equal(len(list), 0)
+
+    list = [1, 2, 3]
+    popped = list.pop({None, None, None})
+    assert_equal(popped, [1, 2, 3])
+    assert_equal(len(list), 0)
+
+    list = [1, 2, 3]
+    popped = list.pop({1, 0, -1})
+    assert_equal(popped, [2])
+    assert_equal(list, [1, 3])
+
+    list = [1, 2, 3]
+    popped = list.pop({None, 0, -1})
+    assert_equal(popped, [3, 2])
+    assert_equal(list, [1])
+
+    list = [1, 2, 3]
+    popped = list.pop({1, 2, -1})
+    assert_equal(len(popped), 0)
+    assert_equal(list, [1, 2, 3])
+
+    list = [1, 2, 3, 4, 5, 6]
+    popped = list.pop({None, None, 2})
+    assert_equal(popped, [1, 3, 5])
+    assert_equal(list, [2, 4, 6])
+
+    list = [1, 2, 3, 4, 5, 6]
+    popped = list.pop({1, None, 2})
+    assert_equal(popped, [2, 4, 6])
+    assert_equal(list, [1, 3, 5])
+
+    list = [1, 2, 3, 4, 5, 6]
+    popped = list.pop({1, 4, 2})
+    assert_equal(popped, [2, 4])
+    assert_equal(list, [1, 3, 5, 6])
+
+    list = [1, 2, 3, 4, 5, 6]
+    popped = list.pop({None, None, -2})
+    assert_equal(popped, [6, 4, 2])
+    assert_equal(list, [1, 3, 5])
+
+    list = [1, 2, 3, 4, 5, 6]
+    popped = list.pop({4, None, -2})
+    assert_equal(popped, [5, 3, 1])
+    assert_equal(list, [2, 4, 6])
+
+    list = [1, 2, 3, 4, 5, 6]
+    popped = list.pop({4, 1, -2})
+    assert_equal(popped, [5, 3])
+    assert_equal(list, [1, 2, 4, 6])
+
+
 def test_list_variadic_constructor():
     var l = [2, 4, 6]
     assert_equal(3, len(l))
