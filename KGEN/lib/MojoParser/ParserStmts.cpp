@@ -29,6 +29,7 @@
 #include "KGEN/MojoParser/ASTType.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -1054,6 +1055,17 @@ static LogicalResult injectDebuggerRaiseHookCall(SharedState &shared,
                    std::move(bindings), node, CallSyntax::kDirectCall);
   ValueDest raiseHookDest(EC_RaiseValue);
   call.emitCall({}, raiseHookDest, emitter);
+
+  // Emit a LineTableLocOp after the call to ensure the instruction after the
+  // call has the correct debug location. This is needed for ARM where StepOut()
+  // lands on the return address (the instruction after the call), and without
+  // this the debugger would report the wrong line number for inlined functions.
+  if (emitter.builder && shared.diBuilder) {
+    Location scopedLoc =
+        shared.diBuilder->createScopedLoc(shared.diags.translateLocation(loc));
+    DebugInfo::LineTableLocOp::create(*emitter.builder, scopedLoc);
+  }
+
   return success();
 }
 
