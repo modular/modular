@@ -177,7 +177,12 @@ LogicalResult TypeType::printValue(AsmPrinter &p, TypedAttr value) const {
 std::optional<int64_t> TypeType::getTypeSize(TargetInfoAttr target) const {
   // TODO: Types don't have a runtime representation yet! But one can imagine it
   // would contain a type ID, and a pointer to the witness table.
-  return target.getDataLayout().getPointerSize() * 2;
+
+  // We use this size to allocate in the interpreter memory space
+  // to store an opaque pointer which we always assume is of 64bit,
+  // so we should allocate space for 64bit integers instead of
+  // target specific pointer size which can be 32bit.
+  return target.getDefaultPointerSize() * 2;
 }
 
 std::optional<int64_t> TypeType::getTypeAlign(TargetInfoAttr target) const {
@@ -451,6 +456,8 @@ std::optional<int64_t> FuncType::getTypeAlign(TargetInfoAttr target) const {
 ErrorOrSuccess FuncType::writeTo(TypedAttr value, int64_t addr,
                                  InterpreterState &state) const {
   // The index is written to the slot.
+  // Get the default pointer size which is always 8 bytes since we are going to
+  // write index which is of type uint64_t.
   unsigned ptrSize = state.getTarget().getDefaultPointerSize();
   ErrorOr<void *> mem =
       state.getWritableMemory(addr, ptrSize, RegionMark::Symbol);
@@ -845,7 +852,12 @@ ErrorOr<TypedAttr> KGEN::NoneType::readFrom(int64_t addr,
 // An index type as same alignment and size of a pointer type.
 std::optional<int64_t>
 KGEN::StringType::getTypeSize(TargetInfoAttr target) const {
-  return 2 * llvm::alignTo(target.getDataLayout().getPointerSize(),
+  // We use this size to allocate in the interpreter memory space
+  // to store the pointer points to the string and its size.
+  // Those two numbers are alway stored as 64bit integers,
+  // so we should allocate space for s64bit integers instead of
+  // target specific pointer size which can be 32bit.
+  return 2 * llvm::alignTo(target.getDefaultPointerSize(),
                            target.getDataLayout().getPointerABIAlign());
 }
 
@@ -859,7 +871,9 @@ KGEN::StringType::getTypeAlign(TargetInfoAttr target) const {
 static ErrorOrSuccess writePointerAndSize(int64_t writeAddr, int64_t ptr,
                                           int64_t size,
                                           InterpreterState &state) {
-  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  // Get the default pointer size which is always 8 bytes since we are going to
+  // write ptr and size which are of type int64_t.
+  unsigned ptrSize = state.getTarget().getDefaultPointerSize();
   ErrorOr<void *> mem = state.getWritableMemory(writeAddr, ptrSize * 2);
   if (mem.isError())
     return mem.takeError();
@@ -875,7 +889,7 @@ static ErrorOrSuccess writePointerAndSize(int64_t writeAddr, int64_t ptr,
 /// width, and the pointer comes first.
 static ErrorOr<std::pair<int64_t, int64_t>>
 readPointerAndSize(int64_t readAddr, InterpreterState &state) {
-  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  unsigned ptrSize = state.getTarget().getDefaultPointerSize();
   ErrorOr<const void *> mem = state.getReadableMemory(readAddr, ptrSize * 2);
   if (mem.isError())
     return mem.takeError();
@@ -933,7 +947,12 @@ ErrorOr<TypedAttr> StringType::readFrom(int64_t addr,
 /// the size of a pointer, plus the size of the size type (which has the same
 /// size and alignment as a pointer type).
 std::optional<int64_t> VariadicType::getTypeSize(TargetInfoAttr target) const {
-  return 2 * llvm::alignTo(target.getDataLayout().getPointerSize(),
+  // We use this size to allocate in the interpreter memory space
+  // to store the pointer points to the start of the contiguous sequence
+  // and its size. Those two numbers are alway stored as 64bit integers,
+  // so we should allocate space for s64bit integers instead of
+  // target specific pointer size which can be 32bit.
+  return 2 * llvm::alignTo(target.getDefaultPointerSize(),
                            target.getDataLayout().getPointerABIAlign());
 }
 
