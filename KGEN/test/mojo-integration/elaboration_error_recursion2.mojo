@@ -13,7 +13,7 @@
 # expected-note @below {{function instantiation in parameter domain that recursively requires itself}}
 # expected-note @below {{back to parameter domain function call here}}
 fn bar[D: Int]() -> Int:
-    alias x = foo[D]()
+    comptime x = foo[D]()
     return x
 
 

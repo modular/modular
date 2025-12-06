@@ -10,14 +10,14 @@
 # This creates recursive cycles: foo[D] -> bar[D] -> foo[D] and foo[D] -> baz[D] -> foo[D]
 # expected-note @below {{recursively instantiated through here}}
 fn bar[D: Int]() -> Int:
-    alias x = foo[D]()
+    comptime x = foo[D]()
     return x
 
 
 # expected-note @below {{function instantiation failed}}
 # expected-note @below {{function instantiation in parameter domain that recursively requires itself}}
 fn baz[D: Int]() -> Int:
-    alias x = foo[D]()
+    comptime x = foo[D]()
     return x
 
 

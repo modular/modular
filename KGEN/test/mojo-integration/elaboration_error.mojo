@@ -78,12 +78,12 @@ fn parametric_assert[param: Int]():
 
 # This creates recursive cycles: foo[D] -> bar[D] -> foo[D] and foo[D] -> baz[D] -> foo[D]
 fn bar[D: Int]() -> Int:
-    alias x = foo[D]()
+    comptime x = foo[D]()
     return x
 
 
 fn baz[D: Int]() -> Int:
-    alias x = foo[D]()
+    comptime x = foo[D]()
     return x
 
 
@@ -110,7 +110,7 @@ fn test_recursion2():
 
 # This creates a recursive cycle: foo1[D] -> bar1[D] -> foo1[D]
 fn bar1[D: Int]() -> Int:
-    alias x = foo1[D]()
+    comptime x = foo1[D]()
     return x
 
 
