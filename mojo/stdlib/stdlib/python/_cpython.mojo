@@ -527,9 +527,21 @@ struct PyType_Slot(ImplicitlyCopyable, Movable):
         )
 
     @staticmethod
+    fn mp_length(func: lenfunc) -> Self:
+        return PyType_Slot(
+            Py_mp_length, rebind[OpaquePointer[MutAnyOrigin]](func)
+        )
+
+    @staticmethod
     fn mp_subscript(func: binaryfunc) -> Self:
         return PyType_Slot(
             Py_mp_subscript, rebind[OpaquePointer[MutAnyOrigin]](func)
+        )
+
+    @staticmethod
+    fn mp_ass_subscript(func: objobjargproc) -> Self:
+        return PyType_Slot(
+            Py_mp_ass_subscript, rebind[OpaquePointer[MutAnyOrigin]](func)
         )
 
     @staticmethod

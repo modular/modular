@@ -18,7 +18,7 @@ from memory import UnsafePointer, alloc
 from utils import IndexList
 from python import Python, PythonObject
 from python._cpython import PyObjectPtr, Py_LT, Py_GT
-from python.bindings import PythonModuleBuilder, TypeObjectSlot
+from python.bindings import PythonModuleBuilder
 
 
 fn _extent(
@@ -131,6 +131,12 @@ struct DataFrame(Defaultable, Movable, Representable):
         return PythonObject(alloc=DataFrame(m_x, m_y))
 
     @staticmethod
+    fn py__len__(py_self: PythonObject) raises -> Int:
+        """For __len__ we return the number of rows in the DataFrame."""
+        var self_ptr = Self._get_self_ptr(py_self)
+        return self_ptr[].pos_x.size()
+
+    @staticmethod
     fn py__getitem__(
         py_self: PythonObject, index: PythonObject
     ) raises -> PythonObject:
@@ -140,6 +146,17 @@ struct DataFrame(Defaultable, Movable, Representable):
         return Python().tuple(
             self_ptr[].pos_x[index_mojo], self_ptr[].pos_y[index_mojo]
         )
+
+    @staticmethod
+    fn py__setitem__(
+        py_self: PythonObject, index: PythonObject, value: PythonObject
+    ) raises -> None:
+        """For __setitem__ we set the x and y values at the given index."""
+        var self_ptr = Self._get_self_ptr(py_self)
+        var index_mojo = Int(index)
+        # Expect value to be a tuple of (x, y)
+        self_ptr[].pos_x[index_mojo] = Float64(value[0])
+        self_ptr[].pos_y[index_mojo] = Float64(value[1])
 
     fn __repr__(self) -> String:
         return String("DataFrame( length=", self.pos_x.size(), ")")
@@ -173,9 +190,9 @@ fn PyInit_mojo_module() -> PythonObject:
             .def_init_defaultable[DataFrame]()
             .def_staticmethod[DataFrame.with_columns]("with_columns")
             # Mapping protocol.
-            .def_special_method[
-                DataFrame.py__getitem__, TypeObjectSlot.MappingGetItem
-            ]("__getitem__")
+            .def_mapping_length[DataFrame.py__len__]()
+            .def_mapping_getitem[DataFrame.py__getitem__]()
+            .def_mapping_setitem[DataFrame.py__setitem__]()
             .def_rich_compare[DataFrame.rich_compare]()
         )
         return b.finalize()

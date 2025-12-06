@@ -28,9 +28,20 @@ def test_mojo_columnar() -> None:
     df = mojo_module.DataFrame.with_columns([1.0, 2.0, 3.0], [0.1, 0.2, 0.3])
     assert "DataFrame" in str(df)
 
+    # Test __len__ (mapping protocol mp_length)
+    assert len(df) == 3
+
     # Access rows in the DataFrame
     assert df[0] == (1.0, 0.1)
     assert df[1] == (2.0, 0.2)
+
+    # Test __setitem__ (mapping protocol mp_ass_subscript)
+    df[1] = (5.0, 6.0)
+    assert df[1] == (5.0, 6.0)
+    # Verify other values unchanged
+    assert df[0] == (1.0, 0.1)
+    assert df[2] == (3.0, 0.3)
+
     big_df = mojo_module.DataFrame.with_columns(
         [1.0, 2.0, 30000.0], [0.1, 0.2, 1.0]
     )
