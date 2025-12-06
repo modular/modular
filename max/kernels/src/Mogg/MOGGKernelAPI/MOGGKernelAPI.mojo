@@ -4244,9 +4244,6 @@ struct LogSoftmax:
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) capturing raises:
-        # shape should be the same between the two inputs
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-
         # For adapting input fusion lambda required by call
         @parameter
         @always_inline
